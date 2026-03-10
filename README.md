@@ -88,6 +88,7 @@ docker compose run --rm sync node dist/index.js sync --since-days=30
 - [ ] Continuous aggregates for long-range trends
 - [ ] Progress indicator for Apple Health imports (file size / record count progress)
 - [x] Peloton direct provider (automated Auth0 login, workouts + performance metrics)
+- [ ] RideWithGPS provider (routes, rides)
 
 ## Stack
 

@@ -1,6 +1,6 @@
 import type { Provider, SyncResult, SyncError } from "./types.js";
 import type { Database } from "../db/index.js";
-import { bodyMeasurement, cardioActivity, metricStream, dailyMetrics, sleepSession } from "../db/schema.js";
+import { bodyMeasurement, cardioActivity, metricStream, dailyMetrics, sleepSession, labResult } from "../db/schema.js";
 import { ensureProvider } from "../db/tokens.js";
 import sax from "sax";
 import yauzl from "yauzl";
@@ -873,16 +873,197 @@ export async function importAppleHealthFile(
   console.log(`[apple_health] Importing from ${xmlPath} (since ${since.toISOString()})`);
   const result = await runImport(db, "apple_health", xmlPath, since);
 
+  // Import clinical records (lab results) from zip
+  if (filePath.endsWith(".zip")) {
+    console.log("[apple_health] Importing clinical records...");
+    const labCounts = await importClinicalRecords(db, "apple_health", filePath, xmlPath);
+    result.recordsSynced += labCounts.inserted;
+    if (labCounts.errors.length > 0) {
+      result.errors.push(...labCounts.errors);
+    }
+    console.log(
+      `[apple_health] ${labCounts.inserted} lab results, ` +
+      `${labCounts.skipped} skipped, ${labCounts.errors.length} errors`,
+    );
+  }
+
   // Clean up extracted temp file
   if (cleanupPath) {
     try {
-      const { rmSync } = await import("fs");
-      const { dirname } = await import("path");
-      rmSync(dirname(cleanupPath), { recursive: true, force: true });
+      const { rmSync: rm } = await import("fs");
+      const { dirname: dir } = await import("path");
+      rm(dir(cleanupPath), { recursive: true, force: true });
     } catch { /* best effort */ }
   }
 
   return result;
+}
+
+// ============================================================
+// Clinical records import from ZIP
+// ============================================================
+
+function readZipEntries(
+  zipPath: string,
+  match: (name: string) => boolean,
+): Promise<{ name: string; data: Buffer }[]> {
+  return new Promise((resolve, reject) => {
+    const results: { name: string; data: Buffer }[] = [];
+    yauzl.open(zipPath, { lazyEntries: true }, (err, zipfile) => {
+      if (err || !zipfile) return reject(err ?? new Error("Failed to open ZIP"));
+
+      zipfile.readEntry();
+      zipfile.on("entry", (entry) => {
+        if (match(entry.fileName)) {
+          zipfile.openReadStream(entry, (err2, stream) => {
+            if (err2 || !stream) { zipfile.readEntry(); return; }
+            const chunks: Buffer[] = [];
+            stream.on("data", (chunk: Buffer) => chunks.push(chunk));
+            stream.on("end", () => {
+              results.push({ name: entry.fileName, data: Buffer.concat(chunks) });
+              zipfile.readEntry();
+            });
+            stream.on("error", () => zipfile.readEntry());
+          });
+        } else {
+          zipfile.readEntry();
+        }
+      });
+
+      zipfile.on("end", () => resolve(results));
+      zipfile.on("error", reject);
+    });
+  });
+}
+
+/**
+ * Stream the on-disk export.xml with SAX, extracting only <ClinicalRecord>
+ * sourceName → resourceFilePath mappings. This avoids loading the full
+ * 2.5GB XML into memory.
+ */
+function buildSourceNameMap(xmlPath: string): Promise<Map<string, string>> {
+  return new Promise((resolve, reject) => {
+    const map = new Map<string, string>();
+    const parser = sax.createStream(true, { trim: true });
+
+    parser.on("opentag", (node) => {
+      if (node.name === "ClinicalRecord") {
+        const sourceName = node.attributes["sourceName"] as string | undefined;
+        const resourcePath = node.attributes["resourceFilePath"] as string | undefined;
+        if (sourceName && resourcePath) {
+          map.set(resourcePath.replace(/^\//, ""), sourceName);
+        }
+      }
+    });
+
+    parser.on("end", () => resolve(map));
+    parser.on("error", (err) => reject(err));
+
+    createReadStream(xmlPath, { encoding: "utf8" }).pipe(parser);
+  });
+}
+
+async function importClinicalRecords(
+  db: Database,
+  providerId: string,
+  zipPath: string,
+  xmlPath: string,
+): Promise<{ inserted: number; skipped: number; errors: SyncError[] }> {
+  const errors: SyncError[] = [];
+
+  // Read all FHIR JSON files from the zip
+  const clinicalFiles = await readZipEntries(zipPath, (name) =>
+    name.includes("clinical-records/") && name.endsWith(".json"),
+  );
+
+  if (clinicalFiles.length === 0) {
+    return { inserted: 0, skipped: 0, errors };
+  }
+
+  // Parse files, separating Observations from DiagnosticReports
+  const observations: { obs: FhirObservation; fileName: string }[] = [];
+  const diagnosticReports: FhirDiagnosticReport[] = [];
+  let skipped = 0;
+
+  for (const file of clinicalFiles) {
+    try {
+      const resource = JSON.parse(file.data.toString("utf-8"));
+      if (resource.resourceType === "Observation") {
+        observations.push({ obs: resource, fileName: file.name });
+      } else if (resource.resourceType === "DiagnosticReport") {
+        diagnosticReports.push(resource);
+      } else {
+        skipped++;
+      }
+    } catch (err) {
+      errors.push({
+        message: `Failed to parse ${file.name}: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
+  }
+
+  // Build panel map from DiagnosticReports
+  const panelMap = buildPanelMap(diagnosticReports);
+
+  // Build source name map from XML stubs
+  const sourceNameMap = await buildSourceNameMap(xmlPath);
+
+  // Parse and insert Observations
+  let inserted = 0;
+  const batch: (typeof labResult.$inferInsert)[] = [];
+
+  for (const { obs, fileName } of observations) {
+    // Only import lab results (skip vitals, etc.)
+    const categories = Array.isArray(obs.category) ? obs.category : obs.category ? [obs.category] : [];
+    const isLab = categories.some((cat) =>
+      cat.coding?.some((c) => c.code === "laboratory" || c.code === "LAB"),
+    );
+    if (!isLab) { skipped++; continue; }
+
+    try {
+      const normalizedPath = fileName.replace(/^apple_health_export\//, "");
+      const sourceName = sourceNameMap.get(normalizedPath) ?? "Unknown";
+      const parsed = parseFhirObservation(obs, sourceName);
+      const panelName = panelMap.get(obs.id);
+
+      batch.push({
+        providerId,
+        externalId: parsed.externalId,
+        testName: parsed.testName,
+        loincCode: parsed.loincCode,
+        value: parsed.value,
+        valueText: parsed.valueText,
+        unit: parsed.unit,
+        referenceRangeLow: parsed.referenceRangeLow,
+        referenceRangeHigh: parsed.referenceRangeHigh,
+        referenceRangeText: parsed.referenceRangeText,
+        panelName,
+        status: parsed.status,
+        sourceName: parsed.sourceName,
+        recordedAt: parsed.recordedAt,
+        issuedAt: parsed.issuedAt,
+        raw: parsed.raw,
+      });
+
+      if (batch.length >= 500) {
+        await db.insert(labResult).values(batch).onConflictDoNothing();
+        inserted += batch.length;
+        batch.length = 0;
+      }
+    } catch (err) {
+      errors.push({
+        message: `Observation ${obs.id}: ${err instanceof Error ? err.message : String(err)}`,
+        externalId: obs.id,
+      });
+    }
+  }
+
+  if (batch.length > 0) {
+    await db.insert(labResult).values(batch).onConflictDoNothing();
+    inserted += batch.length;
+  }
+
+  return { inserted, skipped, errors };
 }
 
 // ============================================================
@@ -929,4 +1110,140 @@ export class AppleHealthProvider implements Provider {
 
     return importAppleHealthFile(db, filePath, since);
   }
+}
+
+// ============================================================
+// FHIR Clinical Records — Lab Results
+// ============================================================
+
+export interface FhirCoding {
+  system?: string;
+  code?: string;
+  display?: string;
+}
+
+export interface FhirCodeableConcept {
+  text?: string;
+  coding?: FhirCoding[];
+}
+
+export interface FhirQuantity {
+  value?: number;
+  unit?: string;
+  system?: string;
+  code?: string;
+}
+
+export interface FhirReferenceRange {
+  low?: FhirQuantity;
+  high?: FhirQuantity;
+  text?: string;
+}
+
+export interface FhirObservation {
+  resourceType: "Observation";
+  id: string;
+  status?: string;
+  category?: FhirCodeableConcept | FhirCodeableConcept[];
+  code: FhirCodeableConcept;
+  valueQuantity?: FhirQuantity;
+  valueString?: string;
+  referenceRange?: FhirReferenceRange[];
+  effectiveDateTime?: string;
+  issued?: string;
+}
+
+export interface FhirDiagnosticReport {
+  resourceType: "DiagnosticReport";
+  id: string;
+  status?: string;
+  code: FhirCodeableConcept;
+  effectiveDateTime?: string;
+  issued?: string;
+  result?: { reference: string }[];
+}
+
+export interface ParsedLabResult {
+  externalId: string;
+  testName: string;
+  loincCode?: string;
+  value?: number;
+  valueText?: string;
+  unit?: string;
+  referenceRangeLow?: number;
+  referenceRangeHigh?: number;
+  referenceRangeText?: string;
+  status?: string;
+  sourceName: string;
+  recordedAt: Date;
+  issuedAt?: Date;
+  raw: Record<string, unknown>;
+}
+
+/**
+ * Extract the LOINC code from a FHIR CodeableConcept's coding array.
+ */
+function extractLoincCode(concept: FhirCodeableConcept): string | undefined {
+  return concept.coding?.find((c) => c.system === "http://loinc.org")?.code;
+}
+
+/**
+ * Get display name from a CodeableConcept — prefer text, then coding display.
+ */
+function getDisplayName(concept: FhirCodeableConcept): string {
+  if (concept.text) return concept.text;
+  for (const coding of concept.coding ?? []) {
+    if (coding.display) return coding.display;
+  }
+  return concept.coding?.[0]?.code ?? "Unknown";
+}
+
+/**
+ * Parse a FHIR Observation into a ParsedLabResult.
+ */
+export function parseFhirObservation(obs: FhirObservation, sourceName: string): ParsedLabResult {
+  const result: ParsedLabResult = {
+    externalId: obs.id,
+    testName: getDisplayName(obs.code),
+    loincCode: extractLoincCode(obs.code),
+    status: obs.status,
+    sourceName,
+    recordedAt: new Date(obs.effectiveDateTime ?? obs.issued ?? ""),
+    issuedAt: obs.issued ? new Date(obs.issued) : undefined,
+    raw: obs as unknown as Record<string, unknown>,
+  };
+
+  // Value: numeric or text
+  if (obs.valueQuantity?.value != null) {
+    result.value = obs.valueQuantity.value;
+    result.unit = obs.valueQuantity.unit;
+  } else if (obs.valueString) {
+    result.valueText = obs.valueString;
+  }
+
+  // Reference range
+  const range = obs.referenceRange?.[0];
+  if (range) {
+    if (range.low?.value != null) result.referenceRangeLow = range.low.value;
+    if (range.high?.value != null) result.referenceRangeHigh = range.high.value;
+    if (range.text && !range.low && !range.high) result.referenceRangeText = range.text;
+  }
+
+  return result;
+}
+
+/**
+ * Build a map from Observation FHIR ID → panel name, using DiagnosticReports.
+ */
+export function buildPanelMap(reports: FhirDiagnosticReport[]): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const report of reports) {
+    const panelName = getDisplayName(report.code);
+    for (const ref of report.result ?? []) {
+      // reference format: "Observation/obs-id-here"
+      const obsId = ref.reference.replace(/^Observation\//, "");
+      map.set(obsId, panelName);
+    }
+  }
+  return map;
 }
