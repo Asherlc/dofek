@@ -3,12 +3,13 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx src/index.ts",
-    "sync": "tsx src/index.ts sync",
+    "dev": "tsx --env-file=.env src/index.ts",
+    "sync": "tsx --env-file=.env src/index.ts sync",
     "migrate": "drizzle-kit migrate",
     "generate": "drizzle-kit generate",
     "test": "vitest",
     "test:watch": "vitest --watch",
+    "server": "tsx --env-file=.env src/server.ts",
     "build": "tsc",
     "start": "node dist/index.js"
   },
@@ -17,15 +18,18 @@
     "fit-file-parser": "^2.3.3",
     "postgres": "^3.4.0",
     "sax": "^1.5.0",
+    "yauzl": "^3.2.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/sax": "^1.2.7",
+    "@types/yauzl": "^2.10.3",
     "drizzle-kit": "^0.30.0",
     "testcontainers": "^10.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
-  }
+  },
+  "packageManager": "pnpm@10.28.0+sha512.05df71d1421f21399e053fde567cea34d446fa02c76571441bfc1c7956e98e363088982d940465fd34480d4d90a0668bc12362f8aa88000a64e83d0b0e47be48"
 }

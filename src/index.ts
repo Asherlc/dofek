@@ -83,7 +83,37 @@ async function main() {
     process.exit(0);
   }
 
-  console.error(`Unknown command: ${command}\nUsage: health-data <sync|auth>`);
+  if (command === "import") {
+    const subcommand = process.argv[3];
+
+    if (subcommand === "apple-health") {
+      const filePath = process.argv[4];
+      if (!filePath) {
+        console.error("Usage: health-data import apple-health <path-to-export.zip|xml> [--full-sync] [--since-days=N]");
+        process.exit(1);
+      }
+
+      const fullSync = process.argv.includes("--full-sync");
+      const days = parseSinceDays();
+      const since = fullSync ? new Date(0) : new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+      const { importAppleHealthFile } = await import("./providers/apple-health.js");
+      const db = createDatabaseFromEnv();
+      const result = await importAppleHealthFile(db, filePath, since);
+      console.log(
+        `[import] Done: ${result.recordsSynced} records, ${result.errors.length} errors in ${result.duration}ms`,
+      );
+      if (result.errors.length > 0) {
+        for (const err of result.errors) console.error(`  - ${err.message}`);
+      }
+      process.exit(result.errors.length > 0 ? 1 : 0);
+    }
+
+    console.error("Usage: health-data import <apple-health> <file>");
+    process.exit(1);
+  }
+
+  console.error(`Unknown command: ${command}\nUsage: health-data <sync|auth|import>`);
   process.exit(1);
 }
 

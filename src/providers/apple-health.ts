@@ -3,8 +3,10 @@ import type { Database } from "../db/index.js";
 import { bodyMeasurement, cardioActivity, metricStream, dailyMetrics, sleepSession } from "../db/schema.js";
 import { ensureProvider } from "../db/tokens.js";
 import sax from "sax";
-import { createReadStream, readdirSync, statSync } from "fs";
+import yauzl from "yauzl";
+import { createReadStream, createWriteStream, readdirSync, statSync, mkdirSync } from "fs";
 import { join } from "path";
+import { tmpdir } from "os";
 
 // ============================================================
 // Apple Health date parsing
@@ -717,6 +719,146 @@ async function upsertSleepBatch(
 // Provider implementation
 // ============================================================
 
+// ============================================================
+// ZIP extraction
+// ============================================================
+
+/**
+ * Extract export.xml from an Apple Health export ZIP file.
+ * Returns the path to the extracted XML file in a temp directory.
+ */
+export function extractExportXml(zipPath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const outDir = join(tmpdir(), `apple-health-import-${Date.now()}`);
+    mkdirSync(outDir, { recursive: true });
+
+    yauzl.open(zipPath, { lazyEntries: true }, (err, zipfile) => {
+      if (err || !zipfile) return reject(err ?? new Error("Failed to open ZIP"));
+
+      zipfile.readEntry();
+      zipfile.on("entry", (entry) => {
+        // Look for export.xml (may be in apple_health_export/ subdirectory)
+        if (entry.fileName.endsWith("export.xml")) {
+          zipfile.openReadStream(entry, (err2, readStream) => {
+            if (err2 || !readStream) return reject(err2 ?? new Error("Failed to read entry"));
+            const outPath = join(outDir, "export.xml");
+            const writeStream = createWriteStream(outPath);
+            readStream.pipe(writeStream);
+            writeStream.on("finish", () => resolve(outPath));
+            writeStream.on("error", reject);
+          });
+        } else {
+          zipfile.readEntry();
+        }
+      });
+
+      zipfile.on("end", () => {
+        reject(new Error("No export.xml found in ZIP file"));
+      });
+      zipfile.on("error", reject);
+    });
+  });
+}
+
+// ============================================================
+// Import logic (shared between CLI and sync)
+// ============================================================
+
+async function runImport(
+  db: Database,
+  providerId: string,
+  xmlPath: string,
+  since: Date,
+): Promise<SyncResult> {
+  const start = Date.now();
+  const errors: SyncError[] = [];
+  let recordsSynced = 0;
+
+  try {
+    const counts = await streamHealthExport(xmlPath, since, {
+      onRecordBatch: async (records) => {
+        const metricRecords = records.filter((r) => METRIC_STREAM_TYPES[r.type]);
+        const bodyRecords = records.filter((r) => BODY_MEASUREMENT_TYPES.has(r.type));
+        const dailyRecords = records.filter((r) => DAILY_METRIC_TYPES.has(r.type));
+
+        if (metricRecords.length > 0) {
+          const c = await upsertMetricStreamBatch(db, providerId, metricRecords);
+          recordsSynced += c;
+        }
+        if (bodyRecords.length > 0) {
+          const c = await upsertBodyMeasurementBatch(db, providerId, bodyRecords);
+          recordsSynced += c;
+        }
+        if (dailyRecords.length > 0) {
+          const c = await upsertDailyMetricsBatch(db, providerId, dailyRecords);
+          recordsSynced += c;
+        }
+      },
+      onSleepBatch: async (records) => {
+        const c = await upsertSleepBatch(db, providerId, records);
+        recordsSynced += c;
+      },
+      onWorkoutBatch: async (workouts) => {
+        const c = await upsertWorkoutBatch(db, providerId, workouts);
+        recordsSynced += c;
+      },
+    });
+
+    console.log(
+      `[apple_health] Parsed ${counts.recordCount} records, ` +
+      `${counts.workoutCount} workouts, ${counts.sleepCount} sleep records`,
+    );
+  } catch (err) {
+    errors.push({
+      message: err instanceof Error ? err.message : String(err),
+      cause: err,
+    });
+  }
+
+  return { provider: providerId, recordsSynced, errors, duration: Date.now() - start };
+}
+
+/**
+ * Import from a file path — accepts either a .zip or .xml file.
+ */
+export async function importAppleHealthFile(
+  db: Database,
+  filePath: string,
+  since: Date,
+): Promise<SyncResult> {
+  await ensureProvider(db, "apple_health", "Apple Health");
+
+  let xmlPath: string;
+  let cleanupPath: string | null = null;
+
+  if (filePath.endsWith(".zip")) {
+    console.log(`[apple_health] Extracting ${filePath}...`);
+    xmlPath = await extractExportXml(filePath);
+    cleanupPath = xmlPath;
+    console.log(`[apple_health] Extracted to ${xmlPath}`);
+  } else {
+    xmlPath = filePath;
+  }
+
+  console.log(`[apple_health] Importing from ${xmlPath} (since ${since.toISOString()})`);
+  const result = await runImport(db, "apple_health", xmlPath, since);
+
+  // Clean up extracted temp file
+  if (cleanupPath) {
+    try {
+      const { rmSync } = await import("fs");
+      const { dirname } = await import("path");
+      rmSync(dirname(cleanupPath), { recursive: true, force: true });
+    } catch { /* best effort */ }
+  }
+
+  return result;
+}
+
+// ============================================================
+// Provider implementation
+// ============================================================
+
 export class AppleHealthProvider implements Provider {
   readonly id = "apple_health";
   readonly name = "Apple Health";
@@ -732,8 +874,9 @@ export class AppleHealthProvider implements Provider {
     if (!dir) return null;
 
     try {
+      // Look for both .xml and .zip files
       const files = readdirSync(dir)
-        .filter((f) => f.endsWith(".xml"))
+        .filter((f) => f.endsWith(".xml") || f.endsWith(".zip"))
         .map((f) => ({ name: f, mtime: statSync(join(dir, f)).mtimeMs }))
         .sort((a, b) => b.mtime - a.mtime);
 
@@ -744,61 +887,16 @@ export class AppleHealthProvider implements Provider {
   }
 
   async sync(db: Database, since: Date): Promise<SyncResult> {
-    const start = Date.now();
-    const errors: SyncError[] = [];
-    let recordsSynced = 0;
-
-    await ensureProvider(db, this.id, this.name);
-
     const filePath = this.findLatestExport();
     if (!filePath) {
-      errors.push({ message: "No Apple Health export XML found in APPLE_HEALTH_IMPORT_DIR" });
-      return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
+      return {
+        provider: this.id,
+        recordsSynced: 0,
+        errors: [{ message: "No Apple Health export found in APPLE_HEALTH_IMPORT_DIR" }],
+        duration: 0,
+      };
     }
 
-    console.log(`[apple_health] Importing from ${filePath}`);
-
-    try {
-      const counts = await streamHealthExport(filePath, since, {
-        onRecordBatch: async (records) => {
-          const metricRecords = records.filter((r) => METRIC_STREAM_TYPES[r.type]);
-          const bodyRecords = records.filter((r) => BODY_MEASUREMENT_TYPES.has(r.type));
-          const dailyRecords = records.filter((r) => DAILY_METRIC_TYPES.has(r.type));
-
-          if (metricRecords.length > 0) {
-            const c = await upsertMetricStreamBatch(db, this.id, metricRecords);
-            recordsSynced += c;
-          }
-          if (bodyRecords.length > 0) {
-            const c = await upsertBodyMeasurementBatch(db, this.id, bodyRecords);
-            recordsSynced += c;
-          }
-          if (dailyRecords.length > 0) {
-            const c = await upsertDailyMetricsBatch(db, this.id, dailyRecords);
-            recordsSynced += c;
-          }
-        },
-        onSleepBatch: async (records) => {
-          const c = await upsertSleepBatch(db, this.id, records);
-          recordsSynced += c;
-        },
-        onWorkoutBatch: async (workouts) => {
-          const c = await upsertWorkoutBatch(db, this.id, workouts);
-          recordsSynced += c;
-        },
-      });
-
-      console.log(
-        `[apple_health] Parsed ${counts.recordCount} records, ` +
-        `${counts.workoutCount} workouts, ${counts.sleepCount} sleep records`,
-      );
-    } catch (err) {
-      errors.push({
-        message: err instanceof Error ? err.message : String(err),
-        cause: err,
-      });
-    }
-
-    return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
+    return importAppleHealthFile(db, filePath, since);
   }
 }
