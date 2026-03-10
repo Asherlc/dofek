@@ -7,11 +7,13 @@ import { ensureProvider, saveTokens } from "./db/tokens.js";
 import { WahooProvider } from "./providers/wahoo.js";
 import { WithingsProvider } from "./providers/withings.js";
 import { PelotonProvider } from "./providers/peloton.js";
+import { FatSecretProvider } from "./providers/fatsecret.js";
 
 // Register all providers
 registerProvider(new WahooProvider());
 registerProvider(new WithingsProvider());
 registerProvider(new PelotonProvider());
+registerProvider(new FatSecretProvider());
 
 function parseSinceDays(): number {
   const arg = process.argv.find((a) => a.startsWith("--since-days="));
@@ -65,7 +67,46 @@ async function main() {
     const { oauthConfig, exchangeCode, apiBaseUrl } = setup;
 
     let tokens;
-    if (setup.automatedLogin) {
+
+    // OAuth 1.0 3-legged flow (FatSecret)
+    if ("oauth1Flow" in setup && setup.oauth1Flow) {
+      const oauth1 = setup.oauth1Flow as {
+        getRequestToken: (callbackUrl: string) => Promise<{ oauthToken: string; oauthTokenSecret: string; authorizeUrl: string }>;
+        exchangeForAccessToken: (requestToken: string, requestTokenSecret: string, oauthVerifier: string) => Promise<{ token: string; tokenSecret: string }>;
+      };
+
+      const callbackUrl = oauthConfig.redirectUri;
+      const callbackParsed = new URL(callbackUrl);
+      const callbackPort = parseInt(callbackParsed.port || "9876", 10);
+
+      console.log("[auth] Requesting OAuth 1.0 request token...");
+      const requestToken = await oauth1.getRequestToken(callbackUrl);
+
+      console.log(`[auth] Open this URL in your browser:\n\n  ${requestToken.authorizeUrl}\n`);
+      console.log("[auth] Waiting for callback...");
+
+      const { code: verifier, cleanup: cleanupServer } = await waitForAuthCode(callbackPort, {
+        https: false,
+        paramName: "oauth_verifier",
+      });
+      cleanupServer();
+
+      console.log("[auth] Exchanging for access token...");
+      const accessToken = await oauth1.exchangeForAccessToken(
+        requestToken.oauthToken,
+        requestToken.oauthTokenSecret,
+        verifier,
+      );
+
+      // Store OAuth 1.0 tokens in the existing oauthToken table
+      // token → accessToken, tokenSecret → refreshToken, far-future expiry
+      tokens = {
+        accessToken: accessToken.token,
+        refreshToken: accessToken.tokenSecret,
+        expiresAt: new Date("2099-12-31T23:59:59Z"),
+        scopes: "",
+      };
+    } else if (setup.automatedLogin) {
       // Automated login flow (no browser needed)
       const email = process.env[`${provider.id.toUpperCase()}_USERNAME`];
       const password = process.env[`${provider.id.toUpperCase()}_PASSWORD`];
@@ -76,7 +117,7 @@ async function main() {
       console.log(`[auth] Logging in as ${email}...`);
       tokens = await setup.automatedLogin(email, password);
     } else {
-      // Browser-based OAuth flow
+      // Browser-based OAuth 2.0 flow
       const authUrl = setup.authUrl ?? buildAuthorizationUrl(oauthConfig);
       console.log(`[auth] Open this URL in your browser:\n\n  ${authUrl}\n`);
       console.log("[auth] Waiting for callback...");

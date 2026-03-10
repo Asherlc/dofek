@@ -32,9 +32,10 @@ function generateSelfSignedCert(): { key: string; cert: string } {
  */
 export function waitForAuthCode(
   port: number,
-  options: { https?: boolean } = {},
+  options: { https?: boolean; paramName?: string } = {},
 ): Promise<{ code: string; cleanup: () => void }> {
   const useHttps = options.https ?? true;
+  const paramName = options.paramName ?? "code";
 
   return new Promise((resolve, reject) => {
     const handler = (req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse) => {
@@ -42,7 +43,7 @@ export function waitForAuthCode(
       const url = new URL(req.url ?? "/", `${proto}://localhost:${port}`);
 
       if (url.pathname === "/callback") {
-        const code = url.searchParams.get("code");
+        const code = url.searchParams.get(paramName);
         const error = url.searchParams.get("error");
 
         if (error) {

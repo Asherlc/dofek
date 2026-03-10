@@ -20,7 +20,7 @@ const singleEntryResponse: FatSecretFoodEntriesResponse = {
         serving_id: "5678",
         number_of_units: "1.000",
         meal: "Breakfast",
-        date_int: "19814", // 2024-03-15
+        date_int: "19797", // 2024-03-15
         calories: "158",
         carbohydrate: "27.40",
         protein: "5.90",
@@ -53,7 +53,7 @@ const multiEntryResponse: FatSecretFoodEntriesResponse = {
         serving_id: "3333",
         number_of_units: "2.000",
         meal: "Breakfast",
-        date_int: "19814",
+        date_int: "19797",
         calories: "182",
         carbohydrate: "2.40",
         protein: "12.10",
@@ -79,7 +79,7 @@ const multiEntryResponse: FatSecretFoodEntriesResponse = {
         serving_id: "5555",
         number_of_units: "1.000",
         meal: "Lunch",
-        date_int: "19814",
+        date_int: "19797",
         calories: "280",
         carbohydrate: "0.00",
         protein: "52.00",
@@ -159,7 +159,7 @@ describe("FatSecret Provider", () => {
 
     it("converts date_int to ISO date string", () => {
       const entries = parseFoodEntries(singleEntryResponse);
-      // 19814 days since epoch = 2024-03-15
+      // 19797 days since epoch = 2024-03-15
       expect(entries[0].date).toBe("2024-03-15");
     });
 

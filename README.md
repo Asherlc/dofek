@@ -78,9 +78,9 @@ docker compose run --rm sync node dist/index.js sync --since-days=30
 - [x] Apple Health XML parser (HR streams, HRV, sleep stages, workouts, body measurements)
 - [ ] Apple Health automated import (iOS Shortcut → HTTP upload endpoint)
 - [ ] Apple Health workout routes (GPS data from WorkoutRoute elements)
-- [ ] Clinical/lab data ingestion (Apple Health clinical records, MyChart/Kaiser FHIR, lab results)
-- [ ] Nutrition data ingestion
-- [ ] Supplement tracking (investigate whether nutrition source covers this or needs a dedicated source)
+- [x] Clinical/lab data ingestion (Apple Health FHIR clinical records — 1,173 lab results)
+- [x] Nutrition data ingestion (FatSecret provider — per-food-item granularity with full micro/macronutrients)
+- [x] Supplement tracking (tracked as food entries in FatSecret, `category` enum distinguishes supplements from food)
 - [ ] Cross-provider deduplication via materialized views (prefer direct-provider data over Apple Health)
 - [ ] CLI for authenticating, pulling, and managing providers
 - [ ] Automated analysis and insights generation
