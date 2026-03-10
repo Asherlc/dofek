@@ -94,6 +94,10 @@ export const bodyMeasurement = fitness.table(
     boneMassKg: real("bone_mass_kg"),
     waterPct: real("water_pct"),
     bmi: real("bmi"),
+    systolicBp: integer("systolic_bp"),
+    diastolicBp: integer("diastolic_bp"),
+    heartPulse: integer("heart_pulse"),
+    temperatureC: real("temperature_c"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [uniqueIndex("body_measurement_provider_external_idx").on(t.providerId, t.externalId)],
@@ -183,11 +187,13 @@ export const cardioActivity = fitness.table(
   ],
 );
 
-export const activityStream = fitness.table(
-  "activity_stream",
+export const metricStream = fitness.table(
+  "metric_stream",
   {
-    activityId: uuid("activity_id")
+    providerId: text("provider_id")
       .notNull()
+      .references(() => provider.id),
+    activityId: uuid("activity_id")
       .references(() => cardioActivity.id, { onDelete: "cascade" }),
     recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
     // Core fields — typed columns for fast queries
@@ -203,6 +209,8 @@ export const activityStream = fitness.table(
     grade: real("grade"),                            // percent
     calories: integer("calories"),                   // cumulative kcal
     verticalSpeed: real("vertical_speed"),           // m/s
+    spo2: real("spo2"),                                // percent (0-1)
+    respiratoryRate: real("respiratory_rate"),          // breaths/min
     gpsAccuracy: integer("gps_accuracy"),            // meters
     accumulatedPower: integer("accumulated_power"),  // cumulative watts
     leftRightBalance: real("left_right_balance"),    // percent
@@ -218,10 +226,13 @@ export const activityStream = fitness.table(
     leftPedalSmoothness: real("left_pedal_smoothness"),          // percent
     rightPedalSmoothness: real("right_pedal_smoothness"),        // percent
     combinedPedalSmoothness: real("combined_pedal_smoothness"),  // percent
-    // Complete raw FIT record — every field, no data loss
+    // Complete raw record — every field, no data loss
     raw: jsonb("raw"),
   },
-  (t) => [index("activity_stream_activity_time_idx").on(t.activityId, t.recordedAt)],
+  (t) => [
+    index("metric_stream_provider_time_idx").on(t.providerId, t.recordedAt),
+    index("metric_stream_activity_time_idx").on(t.activityId, t.recordedAt),
+  ],
 );
 
 // ============================================================
@@ -242,6 +253,12 @@ export const dailyMetrics = fitness.table(
     eftp: real("eftp"),
     restingHr: integer("resting_hr"),
     hrv: real("hrv"),
+    vo2max: real("vo2max"),
+    spo2Avg: real("spo2_avg"),
+    respiratoryRateAvg: real("respiratory_rate_avg"),
+    steps: integer("steps"),
+    activeEnergyKcal: real("active_energy_kcal"),
+    basalEnergyKcal: real("basal_energy_kcal"),
     sleepScore: real("sleep_score"),
     readiness: real("readiness"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -297,4 +314,25 @@ export const nutritionDaily = fitness.table(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.date, t.providerId] })],
+);
+
+// ============================================================
+// Sync log — tracks reliability per provider per data type
+// ============================================================
+
+export const syncLog = fitness.table(
+  "sync_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    providerId: text("provider_id")
+      .notNull()
+      .references(() => provider.id),
+    dataType: text("data_type").notNull(), // e.g. "recovery", "sleep", "hr_stream", "workouts"
+    status: text("status").notNull(), // "success" | "error"
+    recordCount: integer("record_count").default(0),
+    errorMessage: text("error_message"),
+    durationMs: integer("duration_ms"),
+    syncedAt: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("sync_log_provider_type_idx").on(t.providerId, t.dataType, t.syncedAt)],
 );

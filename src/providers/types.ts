@@ -1,5 +1,15 @@
 import { z } from "zod";
 import type { Database } from "../db/index.js";
+import type { OAuthConfig, TokenSet } from "../auth/oauth.js";
+
+/**
+ * Auth setup returned by providers that use OAuth.
+ */
+export interface ProviderAuthSetup {
+  oauthConfig: OAuthConfig;
+  exchangeCode: (code: string) => Promise<TokenSet>;
+  apiBaseUrl?: string;
+}
 
 /**
  * Result of a single sync run for a provider.
@@ -33,6 +43,12 @@ export interface Provider {
    * Returns null if valid, or an error message if not.
    */
   validate(): string | null;
+
+  /**
+   * Returns OAuth configuration for providers that support the `auth` command.
+   * Providers without OAuth (e.g. API-key-only) return undefined.
+   */
+  authSetup?(): ProviderAuthSetup;
 
   /**
    * Pull data from the provider API and upsert into the database.

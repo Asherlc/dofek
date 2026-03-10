@@ -1,13 +1,45 @@
-import { createServer, type Server } from "node:http";
+import { createServer as createHttpServer, type Server } from "node:http";
+import { createServer as createHttpsServer } from "node:https";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 /**
- * Starts a temporary HTTP server to receive the OAuth callback.
+ * Generate a self-signed cert for localhost. Returns key + cert PEM strings.
+ */
+function generateSelfSignedCert(): { key: string; cert: string } {
+  const dir = mkdtempSync(join(tmpdir(), "health-data-cert-"));
+  const keyPath = join(dir, "key.pem");
+  const certPath = join(dir, "cert.pem");
+
+  execFileSync("openssl", [
+    "req", "-x509", "-newkey", "rsa:2048",
+    "-keyout", keyPath, "-out", certPath,
+    "-days", "1", "-nodes", "-subj", "/CN=localhost",
+  ], { stdio: "ignore" });
+
+  const key = readFileSync(keyPath, "utf-8");
+  const cert = readFileSync(certPath, "utf-8");
+  rmSync(dir, { recursive: true });
+  return { key, cert };
+}
+
+/**
+ * Starts a temporary HTTPS server to receive the OAuth callback.
+ * Falls back to HTTP if the redirect URI is not https.
  * Returns a promise that resolves with the authorization code.
  */
-export function waitForAuthCode(port: number): Promise<{ code: string; cleanup: () => void }> {
+export function waitForAuthCode(
+  port: number,
+  options: { https?: boolean } = {},
+): Promise<{ code: string; cleanup: () => void }> {
+  const useHttps = options.https ?? true;
+
   return new Promise((resolve, reject) => {
-    const server: Server = createServer((req, res) => {
-      const url = new URL(req.url ?? "/", `http://localhost:${port}`);
+    const handler = (req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse) => {
+      const proto = useHttps ? "https" : "http";
+      const url = new URL(req.url ?? "/", `${proto}://localhost:${port}`);
 
       if (url.pathname === "/callback") {
         const code = url.searchParams.get("code");
@@ -31,10 +63,22 @@ export function waitForAuthCode(port: number): Promise<{ code: string; cleanup: 
 
       res.writeHead(404);
       res.end("Not found");
-    });
+    };
 
+    let server: Server;
+    if (useHttps) {
+      const { key, cert } = generateSelfSignedCert();
+      server = createHttpsServer({ key, cert }, handler);
+    } else {
+      server = createHttpServer(handler);
+    }
+
+    const proto = useHttps ? "https" : "http";
     server.listen(port, () => {
-      console.log(`[auth] Callback server listening on http://localhost:${port}/callback`);
+      console.log(`[auth] Callback server listening on ${proto}://localhost:${port}/callback`);
+      if (useHttps) {
+        console.log("[auth] Using self-signed cert — accept the browser warning to complete auth.");
+      }
     });
 
     server.on("error", reject);
