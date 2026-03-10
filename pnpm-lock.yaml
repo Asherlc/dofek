@@ -11,6 +11,9 @@ importers:
       drizzle-orm:
         specifier: ^0.38.0
         version: 0.38.4(postgres@3.4.8)
+      fit-file-parser:
+        specifier: ^2.3.3
+        version: 2.3.3
       postgres:
         specifier: ^3.4.0
         version: 3.4.8
@@ -1094,6 +1097,9 @@ packages:
     peerDependenciesMeta:
       picomatch:
         optional: true
+
+  fit-file-parser@2.3.3:
+    resolution: {integrity: sha512-TZPFfjkEev5TTd9RnZ4xn4k5ZSx2VZiKNjoZsHIkmQDK0S0XA7ebfdMLj76BK7kStsHh5WbK8Fmn/w85jgd0dA==}
 
   foreground-child@3.3.1:
     resolution: {integrity: sha512-gIXjKqtFuWEgzFRJA9WCQeSJLZDjgJUOMCMzxtvFq/37KojM1BFGufqsCy0r4qSQmYLsZYMeyRqzIWOMup03sw==}
@@ -2390,6 +2396,10 @@ snapshots:
   fdir@6.5.0(picomatch@4.0.3):
     optionalDependencies:
       picomatch: 4.0.3
+
+  fit-file-parser@2.3.3:
+    dependencies:
+      buffer: 6.0.3
 
   foreground-child@3.3.1:
     dependencies:

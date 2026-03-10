@@ -8,6 +8,7 @@ import {
   integer,
   boolean,
   date,
+  jsonb,
   uniqueIndex,
   index,
   primaryKey,
@@ -189,15 +190,36 @@ export const activityStream = fitness.table(
       .notNull()
       .references(() => cardioActivity.id, { onDelete: "cascade" }),
     recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+    // Core fields — typed columns for fast queries
     heartRate: integer("heart_rate"),
-    powerWatts: integer("power_watts"),
+    power: integer("power"),
     cadence: integer("cadence"),
-    speed: real("speed"),
-    lat: real("lat"),
-    lng: real("lng"),
-    altitude: real("altitude"),
-    temperature: real("temperature"),
-    distance: real("distance"),
+    speed: real("speed"),                           // m/s
+    lat: real("lat"),                               // degrees (converted from semicircles)
+    lng: real("lng"),                                // degrees
+    altitude: real("altitude"),                      // meters
+    temperature: real("temperature"),                // celsius
+    distance: real("distance"),                      // cumulative meters
+    grade: real("grade"),                            // percent
+    calories: integer("calories"),                   // cumulative kcal
+    verticalSpeed: real("vertical_speed"),           // m/s
+    gpsAccuracy: integer("gps_accuracy"),            // meters
+    accumulatedPower: integer("accumulated_power"),  // cumulative watts
+    leftRightBalance: real("left_right_balance"),    // percent
+    verticalOscillation: real("vertical_oscillation"), // mm (running)
+    stanceTime: real("stance_time"),                 // ms (running)
+    stanceTimePercent: real("stance_time_percent"),  // percent (running)
+    stepLength: real("step_length"),                 // mm (running)
+    verticalRatio: real("vertical_ratio"),            // percent (running)
+    stanceTimeBalance: real("stance_time_balance"),   // percent (running)
+    // Power pedaling dynamics
+    leftTorqueEffectiveness: real("left_torque_effectiveness"),   // percent
+    rightTorqueEffectiveness: real("right_torque_effectiveness"), // percent
+    leftPedalSmoothness: real("left_pedal_smoothness"),          // percent
+    rightPedalSmoothness: real("right_pedal_smoothness"),        // percent
+    combinedPedalSmoothness: real("combined_pedal_smoothness"),  // percent
+    // Complete raw FIT record — every field, no data loss
+    raw: jsonb("raw"),
   },
   (t) => [index("activity_stream_activity_time_idx").on(t.activityId, t.recordedAt)],
 );

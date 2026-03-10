@@ -14,15 +14,16 @@
   },
   "dependencies": {
     "drizzle-orm": "^0.38.0",
+    "fit-file-parser": "^2.3.3",
     "postgres": "^3.4.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "drizzle-kit": "^0.30.0",
+    "testcontainers": "^10.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",
-    "vitest": "^3.0.0",
-    "testcontainers": "^10.0.0"
+    "vitest": "^3.0.0"
   }
 }
