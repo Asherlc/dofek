@@ -1,0 +1,111 @@
+# Apple Health Provider
+
+## Export Format
+
+Apple Health exports as a zip file containing:
+
+```
+apple_health_export/
+  export.xml              — Main XML with Record, Workout, ClinicalRecord elements
+  export_cda.xml          — Clinical Document Architecture (ECG, etc.)
+  clinical-records/       — FHIR JSON files (Observation, DiagnosticReport, etc.)
+  workout-routes/         — GPX files for workout routes
+  electrocardiograms/     — ECG CSV data
+```
+
+### XML Format
+
+The `export.xml` can be 1GB+ for users with years of data. We use a SAX streaming parser with backpressure to avoid OOM.
+
+**Date format**: `"2024-03-01 10:30:00 -0500"` (not ISO 8601). Parse with `new Date(str)` which handles this format.
+
+### Record Elements
+
+```xml
+<Record type="HKQuantityTypeIdentifierHeartRate" sourceName="Apple Watch"
+  startDate="2024-03-01 10:30:00 -0500" endDate="2024-03-01 10:30:05 -0500"
+  value="72" unit="count/min" />
+```
+
+We parse records into:
+- **body_measurement**: Weight, body fat, BMI, blood pressure, temperature
+- **metric_stream**: Heart rate, respiratory rate, SpO2, HRV
+- **daily_metrics**: Steps, active/basal energy, resting HR, VO2max
+
+### ClinicalRecord Elements
+
+```xml
+<ClinicalRecord type="HKClinicalTypeIdentifierLabResultRecord"
+  identifier="..." sourceName="UCSF Health" fhirVersion="4.0.1"
+  receivedDate="2025-09-05 07:59:48 -0700"
+  resourceFilePath="/clinical-records/Observation-UUID.json" />
+```
+
+These are stubs — actual data is in referenced FHIR JSON files.
+
+## Clinical Records (FHIR)
+
+### Resource Types in Export
+
+| Type | Count (typical) | Description |
+|------|----------------|-------------|
+| Observation | ~1300 | Individual lab results |
+| DiagnosticReport | ~250 | Panel groupings referencing Observations |
+| MedicationRequest | ~115 | Prescriptions |
+| DocumentReference | ~180 | Clinical documents |
+| Condition | ~25 | Diagnoses |
+| AllergyIntolerance | ~3 | Allergies |
+
+### FHIR Observation (Lab Result)
+
+Two value formats:
+- **Numeric**: `valueQuantity: { value: 145.0, unit: "mg/dL" }`
+- **Text**: `valueString: "NEGATIVE"`
+
+Reference ranges also vary:
+- **Structured**: `referenceRange: [{ low: { value: 1.9, unit: "g/dL" }, high: { value: 3.7, unit: "g/dL" } }]`
+- **Text only**: `referenceRange: [{ text: "<130" }]`
+
+LOINC codes are in `code.coding[].code` where `system` is `http://loinc.org`.
+
+### FHIR DiagnosticReport (Panel)
+
+Groups Observations via `result[]` array:
+```json
+{
+  "resourceType": "DiagnosticReport",
+  "code": { "coding": [{ "display": "Lipid Panel", "code": "57698-3" }] },
+  "result": [
+    { "reference": "Observation/abc123" },
+    { "reference": "Observation/def456" }
+  ]
+}
+```
+
+We use DiagnosticReports to populate `panel_name` on lab_result rows.
+
+### FHIR Versions
+
+Exports may contain both DSTU2 (1.0.2) and R4 (4.0.1) resources. Key differences:
+- **Category field**: DSTU2 uses `category` (single object), R4 uses `category` (array)
+- **Code system URLs**: Slightly different between versions
+
+### Multiple Health Systems
+
+A single export may contain records from multiple health systems (e.g., UCSF Health, Sutter Health, Quest Diagnostics). The `sourceName` attribute on `ClinicalRecord` and the `subject.display` field in FHIR resources identify the source.
+
+## Import
+
+### CLI
+
+```bash
+pnpm dev import apple-health <path-to-export.zip> [--full-sync] [--since-days=N]
+```
+
+### Backpressure
+
+The SAX parser reads much faster than the DB can write. We implement backpressure by pausing/resuming the file stream when pending DB writes exceed a threshold (MAX_PENDING = 2). Without this, full imports OOM at ~1.3M records.
+
+### Batch Inserts
+
+metric_stream rows are collected into batches (500 rows) and inserted with `onConflictDoNothing()` for deduplication.

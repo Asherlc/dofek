@@ -318,6 +318,42 @@ export const nutritionDaily = fitness.table(
 );
 
 // ============================================================
+// Lab results (clinical records from Apple Health / FHIR)
+// ============================================================
+
+export const labResult = fitness.table(
+  "lab_result",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    providerId: text("provider_id")
+      .notNull()
+      .references(() => provider.id),
+    externalId: text("external_id"),
+    testName: text("test_name").notNull(),
+    loincCode: text("loinc_code"),
+    value: real("value"),
+    valueText: text("value_text"),
+    unit: text("unit"),
+    referenceRangeLow: real("reference_range_low"),
+    referenceRangeHigh: real("reference_range_high"),
+    referenceRangeText: text("reference_range_text"),
+    panelName: text("panel_name"),
+    status: text("status"),
+    sourceName: text("source_name"),
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+    issuedAt: timestamp("issued_at", { withTimezone: true }),
+    raw: jsonb("raw"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("lab_result_provider_external_idx").on(t.providerId, t.externalId),
+    index("lab_result_recorded_idx").on(t.recordedAt),
+    index("lab_result_loinc_idx").on(t.loincCode),
+    index("lab_result_test_name_idx").on(t.testName),
+  ],
+);
+
+// ============================================================
 // Sync log — tracks reliability per provider per data type
 // ============================================================
 
