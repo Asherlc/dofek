@@ -11,7 +11,7 @@ import {
 // ── Types ─────────────────────────────────────────────────────────────────
 
 export interface DailyRow {
-  date: string;
+  date: string | Date;
   resting_hr: number | null;
   hrv: number | null;
   spo2_avg: number | null;
@@ -41,7 +41,7 @@ export type ConfidenceLevel = "strong" | "emerging" | "early" | "insufficient";
 
 export interface Insight {
   id: string;
-  type: "conditional" | "correlation" | "trend";
+  type: "conditional" | "correlation" | "discovery";
   confidence: ConfidenceLevel;
   metric: string;
   action: string;
@@ -89,7 +89,14 @@ function joinByDate(
   sleep: SleepRow[],
   activities: ActivityRow[],
 ): JoinedDay[] {
-  const metricsByDate = new Map(metrics.map((m) => [m.date, m]));
+  // m.date may be a Date object or string depending on the driver — normalize to YYYY-MM-DD
+  const metricsByDate = new Map(
+    metrics.map((m) => {
+      const dateStr =
+        m.date instanceof Date ? m.date.toISOString().slice(0, 10) : String(m.date).slice(0, 10);
+      return [dateStr, m];
+    }),
+  );
 
   // Sleep: assign to the date the person woke up (next day from started_at)
   const sleepByWakeDate = new Map<string, SleepRow>();
@@ -297,6 +304,133 @@ function getCorrelationPairs(): CorrelationPair[] {
   ];
 }
 
+// ── Exhaustive pairwise discovery ──────────────────────────────────────────
+
+interface MetricDef {
+  key: string;
+  label: string;
+  extract: (day: JoinedDay) => number | null;
+}
+
+function getAllMetrics(): MetricDef[] {
+  return [
+    { key: "resting_hr", label: "resting HR", extract: (d) => d.resting_hr },
+    { key: "hrv", label: "HRV", extract: (d) => d.hrv },
+    { key: "spo2", label: "SpO2", extract: (d) => d.spo2_avg },
+    { key: "steps", label: "steps", extract: (d) => d.steps },
+    { key: "active_kcal", label: "active calories", extract: (d) => d.active_energy_kcal },
+    { key: "skin_temp", label: "skin temp", extract: (d) => d.skin_temp_c },
+    { key: "sleep_dur", label: "sleep duration", extract: (d) => d.sleep_duration_min },
+    { key: "deep_sleep", label: "deep sleep", extract: (d) => d.deep_min },
+    { key: "rem_sleep", label: "REM sleep", extract: (d) => d.rem_min },
+    { key: "sleep_eff", label: "sleep efficiency", extract: (d) => d.sleep_efficiency },
+    { key: "exercise", label: "exercise duration", extract: (d) => d.exercise_minutes },
+  ];
+}
+
+const MAX_LAG = 2;
+const MIN_SAMPLES = 20;
+const MIN_RHO = 0.15;
+
+function exhaustiveSweep(joined: JoinedDay[], existingIds: Set<string>): Insight[] {
+  const metrics = getAllMetrics();
+  const candidates: Array<{
+    id: string;
+    xLabel: string;
+    yLabel: string;
+    lag: number;
+    rho: number;
+    pValue: number;
+    n: number;
+  }> = [];
+
+  for (const mx of metrics) {
+    for (const my of metrics) {
+      if (mx.key === my.key) continue;
+
+      for (let lag = 0; lag <= MAX_LAG; lag++) {
+        const id = `disc-${mx.key}-${my.key}-lag${lag}`;
+        // Skip if a curated insight already covers this metric pair
+        const lagLabel =
+          lag === 0 ? my.label : `${lag === 1 ? "next day" : `${lag} days later`} ${my.label}`;
+        if (
+          existingIds.has(`${mx.label}::${lagLabel}`) ||
+          existingIds.has(`${mx.label}::${my.label}`)
+        )
+          continue;
+
+        const xs: number[] = [];
+        const ys: number[] = [];
+
+        for (let i = 0; i < joined.length - lag; i++) {
+          const x = mx.extract(joined[i]);
+          const y = my.extract(joined[i + lag]);
+          if (x != null && y != null) {
+            xs.push(x);
+            ys.push(y);
+          }
+        }
+
+        if (xs.length < MIN_SAMPLES) continue;
+
+        const corr = spearmanCorrelation(xs, ys);
+        if (Math.abs(corr.rho) < MIN_RHO) continue;
+
+        candidates.push({
+          id,
+          xLabel: mx.label,
+          yLabel: my.label,
+          lag,
+          rho: corr.rho,
+          pValue: corr.pValue,
+          n: corr.n,
+        });
+      }
+    }
+  }
+
+  if (candidates.length === 0) return [];
+
+  // Apply FDR correction across all discovery candidates
+  const pValues = candidates.map((c) => c.pValue);
+  const significant = benjaminiHochberg(pValues, 0.05);
+
+  const discoveries: Insight[] = [];
+  for (let i = 0; i < candidates.length; i++) {
+    if (!significant[i]) continue;
+
+    const c = candidates[i];
+    const absRho = Math.abs(c.rho);
+    const direction = c.rho > 0 ? "positively" : "negatively";
+    const strength = absRho >= 0.6 ? "strongly" : absRho >= 0.4 ? "moderately" : "";
+    const lagText = c.lag === 0 ? "same day" : c.lag === 1 ? "next day" : `${c.lag} days later`;
+    const confidence: ConfidenceLevel =
+      absRho >= 0.5 && c.n >= 30 ? "strong" : absRho >= 0.35 && c.n >= 20 ? "emerging" : "early";
+
+    const yWithLag = c.lag > 0 ? `${lagText} ${c.yLabel}` : c.yLabel;
+
+    discoveries.push({
+      id: c.id,
+      type: "discovery",
+      confidence,
+      metric: c.yLabel,
+      action: c.xLabel,
+      message: `${c.xLabel} is ${strength ? `${strength} ` : ""}${direction} associated with ${yWithLag}`,
+      detail: `Spearman ρ=${c.rho.toFixed(2)}, ${lagText}, n=${c.n}`,
+      whenTrue: describe([]),
+      whenFalse: describe([]),
+      effectSize: c.rho,
+      pValue: c.pValue,
+      correlation: { rho: c.rho, pValue: c.pValue, n: c.n },
+    });
+  }
+
+  // Sort discoveries by absolute rho descending
+  discoveries.sort((a, b) => Math.abs(b.effectSize) - Math.abs(a.effectSize));
+
+  return discoveries;
+}
+
 // ── Main engine ───────────────────────────────────────────────────────────
 
 export function computeInsights(
@@ -413,6 +547,12 @@ export function computeInsights(
       }
     }
   }
+
+  // 3. Exhaustive pairwise discovery sweep
+  // Build set of already-covered metric pairs (by action+metric combo)
+  const existingIds = new Set(insights.map((i) => `${i.action}::${i.metric}`));
+  const discoveryInsights = exhaustiveSweep(joined, existingIds);
+  insights.push(...discoveryInsights);
 
   // Sort: strong first, then by absolute effect size
   const confidenceOrder: Record<ConfidenceLevel, number> = {

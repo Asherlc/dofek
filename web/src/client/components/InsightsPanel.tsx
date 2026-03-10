@@ -1,6 +1,6 @@
 interface Insight {
   id: string;
-  type: "conditional" | "correlation" | "trend";
+  type: "conditional" | "correlation" | "discovery";
   confidence: "strong" | "emerging" | "early" | "insufficient";
   metric: string;
   action: string;
@@ -33,7 +33,7 @@ const confidenceBadge = {
 const typeIcon = {
   conditional: "↕",
   correlation: "↗",
-  trend: "→",
+  discovery: "🔍",
 };
 
 export function InsightsPanel({ insights, loading }: InsightsPanelProps) {
