@@ -31,9 +31,8 @@ pnpm install
 pnpm generate
 pnpm migrate
 
-# Run sync (requires provider API keys in .env)
-cp .env.example .env
-# Edit .env with your API keys
+# Set up SOPS age key (see "Secrets" section below)
+# Then edit secrets with: sops .env
 pnpm sync
 ```
 
@@ -80,7 +79,7 @@ docker compose run --rm sync node dist/index.js sync --since-days=30
 - [ ] Apple Health workout routes (GPS data from WorkoutRoute elements)
 - [x] Clinical/lab data ingestion (Apple Health FHIR clinical records — 1,173 lab results)
 - [x] Nutrition data ingestion (FatSecret provider — per-food-item granularity with full micro/macronutrients)
-- [x] Supplement tracking (tracked as food entries in FatSecret, `category` enum distinguishes supplements from food)
+- [x] Supplement tracking (auto-supplements provider reads config, inserts daily; `category` enum distinguishes supplements from food)
 - [ ] Cross-provider deduplication via materialized views (prefer direct-provider data over Apple Health)
 - [ ] CLI for authenticating, pulling, and managing providers
 - [ ] Automated analysis and insights generation
@@ -89,6 +88,26 @@ docker compose run --rm sync node dist/index.js sync --since-days=30
 - [ ] Progress indicator for Apple Health imports (file size / record count progress)
 - [x] Peloton direct provider (automated Auth0 login, workouts + performance metrics)
 - [ ] RideWithGPS provider (routes, rides)
+
+## Secrets
+
+`.env` is encrypted with [SOPS](https://github.com/getsops/sops) + [age](https://github.com/FiloSottile/age). To decrypt/edit secrets you need the age private key.
+
+### Setup (new machine)
+
+```bash
+# Retrieve age key from 1Password ("Homelab SOPS Age Key" in Personal vault)
+mkdir -p ~/Library/Application\ Support/sops/age
+op item get "Homelab SOPS Age Key" --account my.1password.com --fields notesPlain \
+  | grep -A2 "^# created" > ~/Library/Application\ Support/sops/age/keys.txt
+chmod 600 ~/Library/Application\ Support/sops/age/keys.txt
+```
+
+### Editing secrets
+
+```bash
+sops .env   # opens decrypted file in $EDITOR; re-encrypts on save
+```
 
 ## Stack
 
