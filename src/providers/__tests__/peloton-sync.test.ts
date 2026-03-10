@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { eq } from "drizzle-orm";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.js";
+import { ensureProvider, saveTokens } from "../../db/tokens.js";
 import { cardioActivity, metricStream } from "../../db/schema.js";
 import { PelotonProvider, type PelotonWorkout, type PelotonPerformanceGraph } from "../peloton.js";
 
@@ -85,9 +86,19 @@ function createMockFetch(
   return (async (input: RequestInfo | URL): Promise<Response> => {
     const urlStr = input.toString();
 
-    // Login
-    if (urlStr.includes("/auth/login")) {
-      return Response.json({ session_id: "test-session", user_id: "user-123" });
+    // Token refresh
+    if (urlStr.includes("/oauth/token")) {
+      return Response.json({
+        access_token: "refreshed-token",
+        refresh_token: "new-refresh",
+        expires_in: 172800,
+        scope: "offline_access openid peloton-api.members:default",
+      });
+    }
+
+    // Get user info
+    if (urlStr.includes("/api/me")) {
+      return Response.json({ id: "user-123" });
     }
 
     // Performance graph
@@ -123,6 +134,7 @@ describe("PelotonProvider.sync() (integration)", () => {
 
   beforeAll(async () => {
     ctx = await setupTestDatabase();
+    await ensureProvider(ctx.db, "peloton", "Peloton", "https://api.onepeloton.com");
   }, 60_000);
 
   afterAll(async () => {
@@ -130,6 +142,14 @@ describe("PelotonProvider.sync() (integration)", () => {
   });
 
   it("syncs workouts with enriched stats into cardio_activity", async () => {
+    // Seed valid tokens
+    await saveTokens(ctx.db, "peloton", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "offline_access openid peloton-api.members:default",
+    });
+
     const workouts = [
       fakeWorkout({ id: "workout-001", start_time: 1709280000, end_time: 1709281800 }),
       fakeWorkout({
@@ -146,9 +166,6 @@ describe("PelotonProvider.sync() (integration)", () => {
         },
       }),
     ];
-
-    process.env.PELOTON_USERNAME = "test@example.com";
-    process.env.PELOTON_PASSWORD = "test-password";
 
     const provider = new PelotonProvider(createMockFetch(workouts));
     const since = new Date("2024-01-01T00:00:00Z");
@@ -186,7 +203,6 @@ describe("PelotonProvider.sync() (integration)", () => {
   });
 
   it("inserts metric_stream rows from performance graph", async () => {
-    // The previous test already synced — verify streams were inserted
     const rows = await ctx.db
       .select()
       .from(metricStream)
@@ -195,7 +211,6 @@ describe("PelotonProvider.sync() (integration)", () => {
     // 2 workouts × 3 samples each = 6 rows
     expect(rows).toHaveLength(6);
 
-    // Verify first workout's HR stream
     const workout1Start = new Date(1709280000 * 1000);
     const firstRow = rows.find(
       (r) => r.recordedAt.getTime() === workout1Start.getTime(),
@@ -233,9 +248,8 @@ describe("PelotonProvider.sync() (integration)", () => {
     ];
 
     const provider = new PelotonProvider(createMockFetch(workouts));
-    const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"));
+    await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"));
 
-    // Should not have synced the incomplete workout
     const rows = await ctx.db
       .select()
       .from(cardioActivity)
@@ -244,21 +258,24 @@ describe("PelotonProvider.sync() (integration)", () => {
     expect(rows).toHaveLength(0);
   });
 
-  it("handles login failure gracefully", async () => {
-    const failFetch = (async (input: RequestInfo | URL): Promise<Response> => {
-      const urlStr = input.toString();
-      if (urlStr.includes("/auth/login")) {
-        return new Response("Unauthorized", { status: 401 });
-      }
-      return new Response("Not found", { status: 404 });
-    }) as typeof globalThis.fetch;
+  it("returns error when no tokens exist", async () => {
+    const { oauthToken } = await import("../../db/schema.js");
+    await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "peloton"));
 
-    const provider = new PelotonProvider(failFetch);
+    const provider = new PelotonProvider(createMockFetch([]));
     const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0].message).toContain("401");
+    expect(result.errors[0].message).toContain("No OAuth tokens found");
     expect(result.recordsSynced).toBe(0);
+
+    // Restore tokens for other tests
+    await saveTokens(ctx.db, "peloton", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "offline_access openid peloton-api.members:default",
+    });
   });
 
   it("continues syncing workouts even if performance graph fails", async () => {
@@ -266,10 +283,10 @@ describe("PelotonProvider.sync() (integration)", () => {
       fakeWorkout({ id: "workout-graph-fail", start_time: 1709539200, end_time: 1709541000 }),
     ];
 
-    const failGraphFetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const failGraphFetch = (async (input: RequestInfo | URL): Promise<Response> => {
       const urlStr = input.toString();
-      if (urlStr.includes("/auth/login")) {
-        return Response.json({ session_id: "test-session", user_id: "user-123" });
+      if (urlStr.includes("/api/me")) {
+        return Response.json({ id: "user-123" });
       }
       if (urlStr.includes("/performance_graph")) {
         return new Response("Internal Server Error", { status: 500 });
@@ -293,7 +310,6 @@ describe("PelotonProvider.sync() (integration)", () => {
     const provider = new PelotonProvider(failGraphFetch);
     const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"));
 
-    // Should have 1 error for the graph failure but still synced the workout
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0].message).toContain("Performance graph");
 
@@ -303,7 +319,6 @@ describe("PelotonProvider.sync() (integration)", () => {
       .where(eq(cardioActivity.externalId, "workout-graph-fail"));
 
     expect(rows).toHaveLength(1);
-    // Without graph enrichment, HR/power should be undefined
     expect(rows[0].avgHeartRate).toBeNull();
   });
 });

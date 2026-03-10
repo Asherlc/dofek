@@ -130,12 +130,13 @@ async function withingsTokenExchange(
   params: Record<string, string>,
   fetchFn: typeof globalThis.fetch = globalThis.fetch,
 ): Promise<TokenSet> {
-  const body = new URLSearchParams({
+  const bodyParams: Record<string, string> = {
     action: "requesttoken",
     client_id: config.clientId,
-    client_secret: config.clientSecret,
     ...params,
-  });
+  };
+  if (config.clientSecret) bodyParams.client_secret = config.clientSecret;
+  const body = new URLSearchParams(bodyParams);
 
   const response = await fetchFn(config.tokenUrl, {
     method: "POST",

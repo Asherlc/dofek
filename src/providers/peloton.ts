@@ -1,8 +1,16 @@
-import type { Provider, SyncResult, SyncError } from "./types.js";
+import type { Provider, SyncResult, SyncError, ProviderAuthSetup } from "./types.js";
 import type { Database } from "../db/index.js";
+import type { OAuthConfig, TokenSet } from "../auth/oauth.js";
+import {
+  exchangeCodeForTokens,
+  refreshAccessToken,
+  generateCodeVerifier,
+  generateCodeChallenge,
+  buildAuthorizationUrl,
+} from "../auth/oauth.js";
+import { loadTokens, saveTokens, ensureProvider } from "../db/tokens.js";
 import { cardioActivity, metricStream } from "../db/schema.js";
 import { withSyncLog } from "../db/sync-log.js";
-import { ensureProvider } from "../db/tokens.js";
 
 // ============================================================
 // Peloton API types
@@ -69,11 +77,6 @@ export interface PelotonPerformanceGraph {
   average_summaries: { display_name: string; value: string; slug: string }[];
   summaries: { display_name: string; value: string; slug: string }[];
   metrics: PelotonMetric[];
-}
-
-interface PelotonAuthResponse {
-  session_id: string;
-  user_id: string;
 }
 
 // ============================================================
@@ -224,34 +227,13 @@ export function enrichWorkoutFromGraph(
 const PELOTON_API_BASE = "https://api.onepeloton.com";
 
 export class PelotonClient {
-  private sessionId: string;
-  private userId: string;
+  private accessToken: string;
+  private userId: string | null = null;
   private fetchFn: typeof globalThis.fetch;
 
-  constructor(sessionId: string, userId: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.sessionId = sessionId;
-    this.userId = userId;
+  constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
+    this.accessToken = accessToken;
     this.fetchFn = fetchFn;
-  }
-
-  static async login(
-    usernameOrEmail: string,
-    password: string,
-    fetchFn: typeof globalThis.fetch = globalThis.fetch,
-  ): Promise<PelotonClient> {
-    const response = await fetchFn(`${PELOTON_API_BASE}/auth/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username_or_email: usernameOrEmail, password }),
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`Peloton login failed (${response.status}): ${text}`);
-    }
-
-    const data = (await response.json()) as PelotonAuthResponse;
-    return new PelotonClient(data.session_id, data.user_id, fetchFn);
   }
 
   private async get<T>(path: string, params?: Record<string, string>): Promise<T> {
@@ -264,7 +246,7 @@ export class PelotonClient {
 
     const response = await this.fetchFn(url.toString(), {
       headers: {
-        Cookie: `peloton_session_id=${this.sessionId}`,
+        Authorization: `Bearer ${this.accessToken}`,
         "peloton-platform": "web",
       },
     });
@@ -277,9 +259,17 @@ export class PelotonClient {
     return response.json() as Promise<T>;
   }
 
+  async getUserId(): Promise<string> {
+    if (this.userId) return this.userId;
+    const me = await this.get<{ id: string }>("/api/me");
+    this.userId = me.id;
+    return me.id;
+  }
+
   async getWorkouts(page = 0, limit = 20): Promise<PelotonWorkoutListResponse> {
+    const userId = await this.getUserId();
     return this.get<PelotonWorkoutListResponse>(
-      `/api/user/${this.userId}/workouts`,
+      `/api/user/${userId}/workouts`,
       {
         page: String(page),
         limit: String(limit),
@@ -301,6 +291,23 @@ export class PelotonClient {
 // Provider implementation
 // ============================================================
 
+const PELOTON_AUTH_DOMAIN = "https://auth.onepeloton.com";
+const PELOTON_CLIENT_ID = "WVoJxVDdPoFx4RNewvvg6ch2mZ7bwnsM";
+const DEFAULT_REDIRECT_URI = "http://localhost:9876/callback";
+
+export function pelotonOAuthConfig(): OAuthConfig {
+  const redirectUri = process.env.OAUTH_REDIRECT_URI ?? DEFAULT_REDIRECT_URI;
+  return {
+    clientId: PELOTON_CLIENT_ID,
+    authorizeUrl: `${PELOTON_AUTH_DOMAIN}/authorize`,
+    tokenUrl: `${PELOTON_AUTH_DOMAIN}/oauth/token`,
+    redirectUri,
+    scopes: ["offline_access", "openid", "peloton-api.members:default"],
+    usePkce: true,
+    audience: `${PELOTON_API_BASE}/`,
+  };
+}
+
 export class PelotonProvider implements Provider {
   readonly id = "peloton";
   readonly name = "Peloton";
@@ -311,9 +318,38 @@ export class PelotonProvider implements Provider {
   }
 
   validate(): string | null {
-    if (!process.env.PELOTON_USERNAME) return "PELOTON_USERNAME is not set";
-    if (!process.env.PELOTON_PASSWORD) return "PELOTON_PASSWORD is not set";
+    // No env vars needed — uses OAuth with PKCE (public client)
     return null;
+  }
+
+  authSetup(): ProviderAuthSetup {
+    const config = pelotonOAuthConfig();
+    const codeVerifier = generateCodeVerifier();
+    const codeChallenge = generateCodeChallenge(codeVerifier);
+
+    return {
+      oauthConfig: config,
+      authUrl: buildAuthorizationUrl(config, { codeChallenge }),
+      exchangeCode: (code) => exchangeCodeForTokens(config, code, this.fetchFn, { codeVerifier }),
+      apiBaseUrl: PELOTON_API_BASE,
+    };
+  }
+
+  private async resolveTokens(db: Database): Promise<TokenSet> {
+    const tokens = await loadTokens(db, this.id);
+    if (!tokens) {
+      throw new Error("No OAuth tokens found for Peloton. Run: pnpm dev auth peloton");
+    }
+
+    if (tokens.expiresAt > new Date()) {
+      return tokens;
+    }
+
+    console.log("[peloton] Access token expired, refreshing...");
+    const config = pelotonOAuthConfig();
+    const refreshed = await refreshAccessToken(config, tokens.refreshToken, this.fetchFn);
+    await saveTokens(db, this.id, refreshed);
+    return refreshed;
   }
 
   async sync(db: Database, since: Date): Promise<SyncResult> {
@@ -321,17 +357,15 @@ export class PelotonProvider implements Provider {
     const errors: SyncError[] = [];
     let recordsSynced = 0;
 
-    const username = process.env.PELOTON_USERNAME!;
-    const password = process.env.PELOTON_PASSWORD!;
-
-    let client: PelotonClient;
+    let tokens: TokenSet;
     try {
-      client = await PelotonClient.login(username, password, this.fetchFn);
+      tokens = await this.resolveTokens(db);
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
+    const client = new PelotonClient(tokens.accessToken, this.fetchFn);
     await ensureProvider(db, this.id, this.name, PELOTON_API_BASE);
 
     // Single-pass: fetch workouts, then for each fetch performance graph,

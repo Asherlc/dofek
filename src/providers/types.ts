@@ -7,6 +7,8 @@ import type { OAuthConfig, TokenSet } from "../auth/oauth.js";
  */
 export interface ProviderAuthSetup {
   oauthConfig: OAuthConfig;
+  /** Override the authorization URL (e.g. with PKCE challenge baked in) */
+  authUrl?: string;
   exchangeCode: (code: string) => Promise<TokenSet>;
   apiBaseUrl?: string;
 }

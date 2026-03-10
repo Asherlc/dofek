@@ -3,6 +3,8 @@ import {
   buildAuthorizationUrl,
   exchangeCodeForTokens,
   refreshAccessToken,
+  generateCodeVerifier,
+  generateCodeChallenge,
   type OAuthConfig,
   type TokenSet,
 } from "../oauth.js";
@@ -118,6 +120,84 @@ describe("OAuth", () => {
       await expect(refreshAccessToken(config, "revoked-token", mockFetch)).rejects.toThrow(
         "Token refresh failed (401)",
       );
+    });
+  });
+
+  describe("PKCE", () => {
+    it("generates a code verifier of correct length", () => {
+      const verifier = generateCodeVerifier();
+      // 32 bytes base64url = 43 chars
+      expect(verifier.length).toBe(43);
+      expect(verifier).toMatch(/^[A-Za-z0-9_-]+$/);
+    });
+
+    it("generates unique verifiers", () => {
+      const v1 = generateCodeVerifier();
+      const v2 = generateCodeVerifier();
+      expect(v1).not.toBe(v2);
+    });
+
+    it("generates a valid S256 code challenge from verifier", () => {
+      const verifier = generateCodeVerifier();
+      const challenge = generateCodeChallenge(verifier);
+      // SHA-256 base64url = 43 chars
+      expect(challenge.length).toBe(43);
+      expect(challenge).toMatch(/^[A-Za-z0-9_-]+$/);
+    });
+
+    it("same verifier always produces same challenge", () => {
+      const verifier = "test-verifier-value-1234567890abcdefghijk";
+      const c1 = generateCodeChallenge(verifier);
+      const c2 = generateCodeChallenge(verifier);
+      expect(c1).toBe(c2);
+    });
+
+    it("includes PKCE params in authorization URL", () => {
+      const url = buildAuthorizationUrl(config, { codeChallenge: "test-challenge-abc" });
+      const parsed = new URL(url);
+
+      expect(parsed.searchParams.get("code_challenge")).toBe("test-challenge-abc");
+      expect(parsed.searchParams.get("code_challenge_method")).toBe("S256");
+    });
+
+    it("includes audience in authorization URL when configured", () => {
+      const pkceConfig: OAuthConfig = {
+        ...config,
+        audience: "https://api.example.com/",
+        usePkce: true,
+      };
+      const url = buildAuthorizationUrl(pkceConfig);
+      const parsed = new URL(url);
+
+      expect(parsed.searchParams.get("audience")).toBe("https://api.example.com/");
+    });
+
+    it("sends code_verifier instead of client_secret in token exchange", async () => {
+      const pkceConfig: OAuthConfig = {
+        ...config,
+        clientSecret: undefined,
+        usePkce: true,
+      };
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            access_token: "pkce-access",
+            refresh_token: "pkce-refresh",
+            expires_in: 172800,
+            scope: "openid offline_access",
+          }),
+      });
+
+      await exchangeCodeForTokens(pkceConfig, "auth-code", mockFetch, {
+        codeVerifier: "my-verifier",
+      });
+
+      const [, options] = mockFetch.mock.calls[0];
+      const body = new URLSearchParams(options.body);
+      expect(body.get("code_verifier")).toBe("my-verifier");
+      expect(body.get("client_secret")).toBeNull();
     });
   });
 });

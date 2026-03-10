@@ -61,9 +61,10 @@ async function main() {
     const validation = provider.validate();
     if (validation) { console.error(`[auth] ${validation}`); process.exit(1); }
 
-    const { oauthConfig, exchangeCode, apiBaseUrl } = provider.authSetup();
+    const setup = provider.authSetup();
+    const { oauthConfig, exchangeCode, apiBaseUrl } = setup;
 
-    const authUrl = buildAuthorizationUrl(oauthConfig);
+    const authUrl = setup.authUrl ?? buildAuthorizationUrl(oauthConfig);
     console.log(`[auth] Open this URL in your browser:\n\n  ${authUrl}\n`);
     console.log("[auth] Waiting for callback...");
 

@@ -1,10 +1,28 @@
+import { randomBytes, createHash } from "node:crypto";
+
 export interface OAuthConfig {
   clientId: string;
-  clientSecret: string;
+  clientSecret?: string;
   authorizeUrl: string;
   tokenUrl: string;
   redirectUri: string;
   scopes: string[];
+  /** Enable PKCE (Proof Key for Code Exchange) — required for public clients */
+  usePkce?: boolean;
+  /** Auth0 audience parameter */
+  audience?: string;
+}
+
+// ============================================================
+// PKCE helpers
+// ============================================================
+
+export function generateCodeVerifier(): string {
+  return randomBytes(32).toString("base64url");
+}
+
+export function generateCodeChallenge(verifier: string): string {
+  return createHash("sha256").update(verifier).digest("base64url");
 }
 
 export interface TokenSet {
@@ -16,12 +34,22 @@ export interface TokenSet {
 
 type FetchFn = typeof globalThis.fetch;
 
-export function buildAuthorizationUrl(config: OAuthConfig): string {
+export function buildAuthorizationUrl(
+  config: OAuthConfig,
+  pkce?: { codeChallenge: string },
+): string {
   const url = new URL(config.authorizeUrl);
   url.searchParams.set("client_id", config.clientId);
   url.searchParams.set("redirect_uri", config.redirectUri);
   url.searchParams.set("response_type", "code");
   url.searchParams.set("scope", config.scopes.join(" "));
+  if (config.audience) {
+    url.searchParams.set("audience", config.audience);
+  }
+  if (pkce) {
+    url.searchParams.set("code_challenge", pkce.codeChallenge);
+    url.searchParams.set("code_challenge_method", "S256");
+  }
   return url.toString();
 }
 
@@ -39,14 +67,18 @@ export async function exchangeCodeForTokens(
   config: OAuthConfig,
   code: string,
   fetchFn: FetchFn = globalThis.fetch,
+  pkce?: { codeVerifier: string },
 ): Promise<TokenSet> {
-  const body = new URLSearchParams({
+  const params: Record<string, string> = {
     grant_type: "authorization_code",
     code,
     client_id: config.clientId,
-    client_secret: config.clientSecret,
     redirect_uri: config.redirectUri,
-  });
+  };
+  if (config.clientSecret) params.client_secret = config.clientSecret;
+  if (pkce) params.code_verifier = pkce.codeVerifier;
+
+  const body = new URLSearchParams(params);
 
   const response = await fetchFn(config.tokenUrl, {
     method: "POST",
@@ -68,12 +100,14 @@ export async function refreshAccessToken(
   refreshToken: string,
   fetchFn: FetchFn = globalThis.fetch,
 ): Promise<TokenSet> {
-  const body = new URLSearchParams({
+  const params: Record<string, string> = {
     grant_type: "refresh_token",
     refresh_token: refreshToken,
     client_id: config.clientId,
-    client_secret: config.clientSecret,
-  });
+  };
+  if (config.clientSecret) params.client_secret = config.clientSecret;
+
+  const body = new URLSearchParams(params);
 
   const response = await fetchFn(config.tokenUrl, {
     method: "POST",
