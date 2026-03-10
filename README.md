@@ -73,6 +73,20 @@ Use `--since-days=N` to control the sync window:
 docker compose run --rm sync node dist/index.js sync --since-days=30
 ```
 
+## Roadmap
+
+- [x] Apple Health XML parser (HR streams, HRV, sleep stages, workouts, body measurements)
+- [ ] Apple Health automated import (iOS Shortcut → HTTP upload endpoint)
+- [ ] Apple Health workout routes (GPS data from WorkoutRoute elements)
+- [ ] Clinical/lab data ingestion (Apple Health clinical records, MyChart/Kaiser FHIR, lab results)
+- [ ] Nutrition data ingestion
+- [ ] Supplement tracking (investigate whether nutrition source covers this or needs a dedicated source)
+- [ ] Cross-provider deduplication via materialized views (prefer direct-provider data over Apple Health)
+- [ ] CLI for authenticating, pulling, and managing providers
+- [ ] Automated analysis and insights generation
+- [ ] Grafana dashboard templates
+- [ ] Continuous aggregates for long-range trends
+
 ## Stack
 
 - **TypeScript** — sync scripts and provider plugins

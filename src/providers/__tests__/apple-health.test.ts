@@ -1,0 +1,366 @@
+import { describe, it, expect } from "vitest";
+import {
+  parseRecord,
+  parseWorkout,
+  parseSleepAnalysis,
+  type HealthRecord,
+  type HealthWorkout,
+} from "../apple-health.js";
+
+// ============================================================
+// Pure parsing unit tests — Apple Health XML element attributes
+// ============================================================
+
+// Record elements come as attribute maps from the SAX parser
+const heartRateAttrs: Record<string, string> = {
+  type: "HKQuantityTypeIdentifierHeartRate",
+  sourceName: "Apple Watch",
+  unit: "count/min",
+  creationDate: "2024-03-01 10:30:00 -0500",
+  startDate: "2024-03-01 10:30:00 -0500",
+  endDate: "2024-03-01 10:30:05 -0500",
+  value: "72",
+};
+
+const bodyMassAttrs: Record<string, string> = {
+  type: "HKQuantityTypeIdentifierBodyMass",
+  sourceName: "Withings",
+  unit: "kg",
+  creationDate: "2024-03-01 08:00:00 -0500",
+  startDate: "2024-03-01 08:00:00 -0500",
+  endDate: "2024-03-01 08:00:00 -0500",
+  value: "72.5",
+};
+
+const bodyFatAttrs: Record<string, string> = {
+  type: "HKQuantityTypeIdentifierBodyFatPercentage",
+  sourceName: "Withings",
+  unit: "%",
+  creationDate: "2024-03-01 08:00:00 -0500",
+  startDate: "2024-03-01 08:00:00 -0500",
+  endDate: "2024-03-01 08:00:00 -0500",
+  value: "0.215",
+};
+
+const restingHrAttrs: Record<string, string> = {
+  type: "HKQuantityTypeIdentifierRestingHeartRate",
+  sourceName: "Apple Watch",
+  unit: "count/min",
+  creationDate: "2024-03-01 00:00:00 -0500",
+  startDate: "2024-03-01 00:00:00 -0500",
+  endDate: "2024-03-01 00:00:00 -0500",
+  value: "52",
+};
+
+const hrvAttrs: Record<string, string> = {
+  type: "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
+  sourceName: "Apple Watch",
+  unit: "ms",
+  creationDate: "2024-03-01 07:00:00 -0500",
+  startDate: "2024-03-01 07:00:00 -0500",
+  endDate: "2024-03-01 07:00:00 -0500",
+  value: "45.3",
+};
+
+const vo2maxAttrs: Record<string, string> = {
+  type: "HKQuantityTypeIdentifierVO2Max",
+  sourceName: "Apple Watch",
+  unit: "mL/min·kg",
+  creationDate: "2024-03-01 12:00:00 -0500",
+  startDate: "2024-03-01 12:00:00 -0500",
+  endDate: "2024-03-01 12:00:00 -0500",
+  value: "48.2",
+};
+
+const oxygenSatAttrs: Record<string, string> = {
+  type: "HKQuantityTypeIdentifierOxygenSaturation",
+  sourceName: "Apple Watch",
+  unit: "%",
+  creationDate: "2024-03-01 03:00:00 -0500",
+  startDate: "2024-03-01 03:00:00 -0500",
+  endDate: "2024-03-01 03:00:05 -0500",
+  value: "0.97",
+};
+
+const stepCountAttrs: Record<string, string> = {
+  type: "HKQuantityTypeIdentifierStepCount",
+  sourceName: "iPhone",
+  unit: "count",
+  creationDate: "2024-03-01 14:00:00 -0500",
+  startDate: "2024-03-01 14:00:00 -0500",
+  endDate: "2024-03-01 14:15:00 -0500",
+  value: "1250",
+};
+
+const activeEnergyAttrs: Record<string, string> = {
+  type: "HKQuantityTypeIdentifierActiveEnergyBurned",
+  sourceName: "Apple Watch",
+  unit: "kcal",
+  creationDate: "2024-03-01 14:00:00 -0500",
+  startDate: "2024-03-01 14:00:00 -0500",
+  endDate: "2024-03-01 14:30:00 -0500",
+  value: "85.3",
+};
+
+const respiratoryRateAttrs: Record<string, string> = {
+  type: "HKQuantityTypeIdentifierRespiratoryRate",
+  sourceName: "Apple Watch",
+  unit: "count/min",
+  creationDate: "2024-03-01 03:00:00 -0500",
+  startDate: "2024-03-01 03:00:00 -0500",
+  endDate: "2024-03-01 03:00:00 -0500",
+  value: "14.5",
+};
+
+const bloodPressureSysAttrs: Record<string, string> = {
+  type: "HKQuantityTypeIdentifierBloodPressureSystolic",
+  sourceName: "Withings",
+  unit: "mmHg",
+  creationDate: "2024-03-01 09:00:00 -0500",
+  startDate: "2024-03-01 09:00:00 -0500",
+  endDate: "2024-03-01 09:00:00 -0500",
+  value: "118",
+};
+
+const bloodPressureDiaAttrs: Record<string, string> = {
+  type: "HKQuantityTypeIdentifierBloodPressureDiastolic",
+  sourceName: "Withings",
+  unit: "mmHg",
+  creationDate: "2024-03-01 09:00:00 -0500",
+  startDate: "2024-03-01 09:00:00 -0500",
+  endDate: "2024-03-01 09:00:00 -0500",
+  value: "78",
+};
+
+const bodyTempAttrs: Record<string, string> = {
+  type: "HKQuantityTypeIdentifierBodyTemperature",
+  sourceName: "Withings",
+  unit: "degC",
+  creationDate: "2024-03-01 09:30:00 -0500",
+  startDate: "2024-03-01 09:30:00 -0500",
+  endDate: "2024-03-01 09:30:00 -0500",
+  value: "36.8",
+};
+
+// Sleep analysis — newer iOS uses named values
+const sleepAsleepCoreAttrs: Record<string, string> = {
+  type: "HKCategoryTypeIdentifierSleepAnalysis",
+  sourceName: "Apple Watch",
+  creationDate: "2024-03-01 23:30:00 -0500",
+  startDate: "2024-03-01 23:30:00 -0500",
+  endDate: "2024-03-02 00:45:00 -0500",
+  value: "HKCategoryValueSleepAnalysisAsleepCore",
+};
+
+const sleepAsleepDeepAttrs: Record<string, string> = {
+  type: "HKCategoryTypeIdentifierSleepAnalysis",
+  sourceName: "Apple Watch",
+  creationDate: "2024-03-02 00:45:00 -0500",
+  startDate: "2024-03-02 00:45:00 -0500",
+  endDate: "2024-03-02 01:30:00 -0500",
+  value: "HKCategoryValueSleepAnalysisAsleepDeep",
+};
+
+const sleepAsleepRemAttrs: Record<string, string> = {
+  type: "HKCategoryTypeIdentifierSleepAnalysis",
+  sourceName: "Apple Watch",
+  creationDate: "2024-03-02 01:30:00 -0500",
+  startDate: "2024-03-02 01:30:00 -0500",
+  endDate: "2024-03-02 02:00:00 -0500",
+  value: "HKCategoryValueSleepAnalysisAsleepREM",
+};
+
+const sleepAwakeAttrs: Record<string, string> = {
+  type: "HKCategoryTypeIdentifierSleepAnalysis",
+  sourceName: "Apple Watch",
+  creationDate: "2024-03-02 02:00:00 -0500",
+  startDate: "2024-03-02 02:00:00 -0500",
+  endDate: "2024-03-02 02:05:00 -0500",
+  value: "HKCategoryValueSleepAnalysisAwake",
+};
+
+const sleepInBedAttrs: Record<string, string> = {
+  type: "HKCategoryTypeIdentifierSleepAnalysis",
+  sourceName: "Apple Watch",
+  creationDate: "2024-03-01 23:00:00 -0500",
+  startDate: "2024-03-01 23:00:00 -0500",
+  endDate: "2024-03-02 07:00:00 -0500",
+  value: "HKCategoryValueSleepAnalysisInBed",
+};
+
+// Workout element attributes
+const workoutAttrs: Record<string, string> = {
+  workoutActivityType: "HKWorkoutActivityTypeRunning",
+  duration: "30.5",
+  durationUnit: "min",
+  totalDistance: "5200",
+  totalDistanceUnit: "m",
+  totalEnergyBurned: "320.5",
+  totalEnergyBurnedUnit: "kcal",
+  sourceName: "Apple Watch",
+  sourceVersion: "11.0",
+  creationDate: "2024-03-01 18:30:00 -0500",
+  startDate: "2024-03-01 18:00:00 -0500",
+  endDate: "2024-03-01 18:30:30 -0500",
+};
+
+describe("Apple Health Provider — parsing", () => {
+  describe("parseRecord", () => {
+    it("parses heart rate records", () => {
+      const result = parseRecord(heartRateAttrs);
+      expect(result).not.toBeNull();
+      expect(result!.type).toBe("HKQuantityTypeIdentifierHeartRate");
+      expect(result!.value).toBe(72);
+      expect(result!.unit).toBe("count/min");
+      expect(result!.sourceName).toBe("Apple Watch");
+      expect(result!.startDate).toBeInstanceOf(Date);
+      expect(result!.endDate).toBeInstanceOf(Date);
+    });
+
+    it("parses body mass records", () => {
+      const result = parseRecord(bodyMassAttrs);
+      expect(result!.type).toBe("HKQuantityTypeIdentifierBodyMass");
+      expect(result!.value).toBe(72.5);
+      expect(result!.unit).toBe("kg");
+    });
+
+    it("parses body fat percentage (0-1 scale)", () => {
+      const result = parseRecord(bodyFatAttrs);
+      expect(result!.value).toBe(0.215);
+    });
+
+    it("parses resting heart rate", () => {
+      const result = parseRecord(restingHrAttrs);
+      expect(result!.value).toBe(52);
+    });
+
+    it("parses HRV", () => {
+      const result = parseRecord(hrvAttrs);
+      expect(result!.value).toBeCloseTo(45.3);
+    });
+
+    it("parses VO2 max", () => {
+      const result = parseRecord(vo2maxAttrs);
+      expect(result!.value).toBeCloseTo(48.2);
+    });
+
+    it("parses oxygen saturation", () => {
+      const result = parseRecord(oxygenSatAttrs);
+      expect(result!.value).toBe(0.97);
+    });
+
+    it("parses step count", () => {
+      const result = parseRecord(stepCountAttrs);
+      expect(result!.value).toBe(1250);
+    });
+
+    it("parses active energy burned", () => {
+      const result = parseRecord(activeEnergyAttrs);
+      expect(result!.value).toBeCloseTo(85.3);
+    });
+
+    it("parses respiratory rate", () => {
+      const result = parseRecord(respiratoryRateAttrs);
+      expect(result!.value).toBeCloseTo(14.5);
+    });
+
+    it("parses blood pressure systolic", () => {
+      const result = parseRecord(bloodPressureSysAttrs);
+      expect(result!.value).toBe(118);
+    });
+
+    it("parses blood pressure diastolic", () => {
+      const result = parseRecord(bloodPressureDiaAttrs);
+      expect(result!.value).toBe(78);
+    });
+
+    it("parses body temperature", () => {
+      const result = parseRecord(bodyTempAttrs);
+      expect(result!.value).toBeCloseTo(36.8);
+    });
+
+    it("parses Apple Health date format with timezone", () => {
+      const result = parseRecord(heartRateAttrs);
+      // "2024-03-01 10:30:00 -0500" should parse correctly
+      expect(result!.startDate.getTime()).not.toBeNaN();
+    });
+  });
+
+  describe("parseSleepAnalysis", () => {
+    it("parses core sleep stage", () => {
+      const result = parseSleepAnalysis(sleepAsleepCoreAttrs);
+      expect(result!.stage).toBe("core");
+      expect(result!.startDate).toBeInstanceOf(Date);
+      expect(result!.endDate).toBeInstanceOf(Date);
+    });
+
+    it("parses deep sleep stage", () => {
+      const result = parseSleepAnalysis(sleepAsleepDeepAttrs);
+      expect(result!.stage).toBe("deep");
+    });
+
+    it("parses REM sleep stage", () => {
+      const result = parseSleepAnalysis(sleepAsleepRemAttrs);
+      expect(result!.stage).toBe("rem");
+    });
+
+    it("parses awake stage", () => {
+      const result = parseSleepAnalysis(sleepAwakeAttrs);
+      expect(result!.stage).toBe("awake");
+    });
+
+    it("parses in-bed stage", () => {
+      const result = parseSleepAnalysis(sleepInBedAttrs);
+      expect(result!.stage).toBe("inBed");
+    });
+
+    it("computes duration in minutes", () => {
+      const result = parseSleepAnalysis(sleepAsleepCoreAttrs);
+      // 23:30 to 00:45 = 75 minutes
+      expect(result!.durationMinutes).toBe(75);
+    });
+  });
+
+  describe("parseWorkout", () => {
+    it("parses workout attributes", () => {
+      const result = parseWorkout(workoutAttrs);
+      expect(result.activityType).toBe("running");
+      expect(result.durationSeconds).toBeCloseTo(1830); // 30.5 min
+      expect(result.distanceMeters).toBe(5200);
+      expect(result.calories).toBe(321); // rounded
+      expect(result.sourceName).toBe("Apple Watch");
+      expect(result.startDate).toBeInstanceOf(Date);
+      expect(result.endDate).toBeInstanceOf(Date);
+    });
+
+    it("maps workout activity types to normalized names", () => {
+      const running = parseWorkout({ ...workoutAttrs, workoutActivityType: "HKWorkoutActivityTypeRunning" });
+      expect(running.activityType).toBe("running");
+
+      const cycling = parseWorkout({ ...workoutAttrs, workoutActivityType: "HKWorkoutActivityTypeCycling" });
+      expect(cycling.activityType).toBe("cycling");
+
+      const swimming = parseWorkout({ ...workoutAttrs, workoutActivityType: "HKWorkoutActivityTypeSwimming" });
+      expect(swimming.activityType).toBe("swimming");
+
+      const hiking = parseWorkout({ ...workoutAttrs, workoutActivityType: "HKWorkoutActivityTypeHiking" });
+      expect(hiking.activityType).toBe("hiking");
+    });
+
+    it("handles missing optional fields", () => {
+      const minimal: Record<string, string> = {
+        workoutActivityType: "HKWorkoutActivityTypeRunning",
+        duration: "10",
+        durationUnit: "min",
+        sourceName: "Apple Watch",
+        creationDate: "2024-03-01 18:00:00 -0500",
+        startDate: "2024-03-01 18:00:00 -0500",
+        endDate: "2024-03-01 18:10:00 -0500",
+      };
+      const result = parseWorkout(minimal);
+      expect(result.activityType).toBe("running");
+      expect(result.distanceMeters).toBeUndefined();
+      expect(result.calories).toBeUndefined();
+    });
+  });
+});
