@@ -184,13 +184,7 @@ describe("PelotonProvider.sync() (integration)", () => {
 
     const ride = rows.find((r) => r.externalId === "workout-001")!;
     expect(ride.activityType).toBe("cycling");
-    expect(ride.avgHeartRate).toBe(145);
-    expect(ride.maxHeartRate).toBe(160);
-    expect(ride.avgPower).toBe(200);
-    expect(ride.maxPower).toBe(220);
-    expect(ride.avgCadence).toBe(85);
-    expect(ride.calories).toBe(450);
-    expect(ride.distanceMeters).toBeCloseTo(14886.43, 0);
+    expect(ride.name).toBe("30 min Power Zone Ride");
 
     // Check raw JSONB metadata
     const raw = ride.raw as Record<string, unknown>;
@@ -319,6 +313,6 @@ describe("PelotonProvider.sync() (integration)", () => {
       .where(eq(cardioActivity.externalId, "workout-graph-fail"));
 
     expect(rows).toHaveLength(1);
-    expect(rows[0].avgHeartRate).toBeNull();
+    expect(rows[0].activityType).toBe("cycling");
   });
 });

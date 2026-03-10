@@ -50,6 +50,13 @@
       "when": 1773165774460,
       "tag": "0006_sharp_black_tarantula",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1773170000000,
+      "tag": "0007_slim_cardio_activity",
+      "breakpoints": true
     }
   ]
 }

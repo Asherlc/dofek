@@ -82,22 +82,9 @@ function mapWorkoutType(typeId: number): string {
 export interface ParsedCardioActivity {
   externalId: string;
   activityType: string;
+  name?: string;
   startedAt: Date;
   endedAt?: Date;
-  durationSeconds?: number;
-  distanceMeters?: number;
-  calories?: number;
-  avgHeartRate?: number;
-  maxHeartRate?: number;
-  avgPower?: number;
-  maxPower?: number;
-  avgSpeed?: number;
-  maxSpeed?: number;
-  avgCadence?: number;
-  totalElevationGain?: number;
-  normalizedPower?: number;
-  intensityFactor?: number;
-  tss?: number;
   fitFileUrl?: string;
 }
 
@@ -107,24 +94,11 @@ export function parseWorkoutSummary(workout: WahooWorkout): ParsedCardioActivity
   return {
     externalId: String(workout.id),
     activityType: mapWorkoutType(workout.workout_type_id),
+    name: workout.name,
     startedAt: new Date(workout.starts),
     endedAt: summary?.duration_total_accum
       ? new Date(new Date(workout.starts).getTime() + summary.duration_total_accum * 1000)
       : undefined,
-    durationSeconds: summary?.duration_active_accum
-      ? Math.round(summary.duration_active_accum)
-      : undefined,
-    distanceMeters: summary?.distance_accum,
-    calories: summary?.calories_accum ? Math.round(summary.calories_accum) : undefined,
-    avgHeartRate: summary?.heart_rate_avg ? Math.round(summary.heart_rate_avg) : undefined,
-    avgPower: summary?.power_avg ? Math.round(summary.power_avg) : undefined,
-    avgSpeed: summary?.speed_avg,
-    avgCadence: summary?.cadence_avg ? Math.round(summary.cadence_avg) : undefined,
-    totalElevationGain: summary?.ascent_accum,
-    normalizedPower: summary?.power_bike_np_last
-      ? Math.round(summary.power_bike_np_last)
-      : undefined,
-    tss: summary?.power_bike_tss_last,
     fitFileUrl: summary?.file?.url,
   };
 }
@@ -298,16 +272,7 @@ export class WahooProvider implements Provider {
               activityType: workout.activityType,
               startedAt: workout.startedAt,
               endedAt: workout.endedAt,
-              durationSeconds: workout.durationSeconds,
-              distanceMeters: workout.distanceMeters,
-              calories: workout.calories,
-              avgHeartRate: workout.avgHeartRate,
-              avgPower: workout.avgPower,
-              avgSpeed: workout.avgSpeed,
-              avgCadence: workout.avgCadence,
-              totalElevationGain: workout.totalElevationGain,
-              normalizedPower: workout.normalizedPower,
-              tss: workout.tss,
+              name: workout.name,
             })
             .onConflictDoUpdate({
               target: [cardioActivity.providerId, cardioActivity.externalId],
@@ -315,16 +280,7 @@ export class WahooProvider implements Provider {
                 activityType: workout.activityType,
                 startedAt: workout.startedAt,
                 endedAt: workout.endedAt,
-                durationSeconds: workout.durationSeconds,
-                distanceMeters: workout.distanceMeters,
-                calories: workout.calories,
-                avgHeartRate: workout.avgHeartRate,
-                avgPower: workout.avgPower,
-                avgSpeed: workout.avgSpeed,
-                avgCadence: workout.avgCadence,
-                totalElevationGain: workout.totalElevationGain,
-                normalizedPower: workout.normalizedPower,
-                tss: workout.tss,
+                name: workout.name,
               },
             });
 

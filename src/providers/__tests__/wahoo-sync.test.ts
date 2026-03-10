@@ -107,9 +107,6 @@ describe("WahooProvider.sync() (integration)", () => {
 
     const ride = rows.find((r) => r.externalId === "1001")!;
     expect(ride.activityType).toBe("cycling");
-    expect(ride.distanceMeters).toBeCloseTo(42000);
-    expect(ride.avgPower).toBe(220);
-    expect(ride.normalizedPower).toBe(235);
 
     const run = rows.find((r) => r.externalId === "1002")!;
     expect(run.activityType).toBe("running");

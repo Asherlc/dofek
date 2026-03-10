@@ -656,21 +656,12 @@ async function upsertWorkoutBatch(
       activityType: w.activityType,
       startedAt: w.startDate,
       endedAt: w.endDate,
-      durationSeconds: Math.round(w.durationSeconds),
-      distanceMeters: w.distanceMeters,
-      calories: w.calories,
-      avgHeartRate: w.avgHeartRate,
-      maxHeartRate: w.maxHeartRate,
+      name: w.activityType, // Apple Health doesn't have workout names
     }).onConflictDoUpdate({
       target: [cardioActivity.providerId, cardioActivity.externalId],
       set: {
         activityType: w.activityType,
         endedAt: w.endDate,
-        durationSeconds: Math.round(w.durationSeconds),
-        distanceMeters: w.distanceMeters,
-        calories: w.calories,
-        avgHeartRate: w.avgHeartRate,
-        maxHeartRate: w.maxHeartRate,
       },
     });
     count++;

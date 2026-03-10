@@ -110,28 +110,15 @@ export function mapFitnessDiscipline(discipline: string): string {
 export interface ParsedPelotonWorkout {
   externalId: string;
   activityType: string;
+  name?: string;
   startedAt: Date;
   endedAt?: Date;
-  durationSeconds?: number;
-  distanceMeters?: number;
-  calories?: number;
-  avgHeartRate?: number;
-  maxHeartRate?: number;
-  avgPower?: number;
-  maxPower?: number;
-  avgSpeed?: number;
-  maxSpeed?: number;
-  avgCadence?: number;
   raw: Record<string, unknown>;
 }
 
 export function parseWorkout(workout: PelotonWorkout): ParsedPelotonWorkout {
   const startedAt = new Date(workout.start_time * 1000);
   const endedAt = workout.end_time > 0 ? new Date(workout.end_time * 1000) : undefined;
-
-  const durationSeconds = endedAt
-    ? Math.round((endedAt.getTime() - startedAt.getTime()) / 1000)
-    : workout.ride?.duration;
 
   const raw: Record<string, unknown> = {
     instructor: workout.ride?.instructor?.name,
@@ -150,9 +137,9 @@ export function parseWorkout(workout: PelotonWorkout): ParsedPelotonWorkout {
   return {
     externalId: workout.id,
     activityType: mapFitnessDiscipline(workout.fitness_discipline),
+    name: workout.ride?.title,
     startedAt,
     endedAt,
-    durationSeconds,
     raw,
   };
 }
@@ -180,45 +167,8 @@ export function parsePerformanceGraph(
   }));
 }
 
-/**
- * Enrich a parsed workout with summary stats from its performance graph.
- */
-export function enrichWorkoutFromGraph(
-  workout: ParsedPelotonWorkout,
-  series: ParsedMetricSeries[],
-  summaries: PelotonPerformanceGraph["summaries"],
-): void {
-  const hr = series.find((s) => s.slug === "heart_rate");
-  const power = series.find((s) => s.slug === "output");
-  const speed = series.find((s) => s.slug === "speed");
-  const cadence = series.find((s) => s.slug === "cadence");
-
-  if (hr) {
-    workout.avgHeartRate = Math.round(hr.averageValue);
-    workout.maxHeartRate = Math.round(hr.maxValue);
-  }
-  if (power) {
-    workout.avgPower = Math.round(power.averageValue);
-    workout.maxPower = Math.round(power.maxValue);
-  }
-  if (speed) {
-    workout.avgSpeed = speed.averageValue;
-    workout.maxSpeed = speed.maxValue;
-  }
-  if (cadence) {
-    workout.avgCadence = Math.round(cadence.averageValue);
-  }
-
-  // Extract calories and distance from summaries
-  const caloriesSummary = summaries.find((s) => s.slug === "calories");
-  if (caloriesSummary) workout.calories = Math.round(parseFloat(caloriesSummary.value));
-
-  const distanceSummary = summaries.find((s) => s.slug === "distance");
-  if (distanceSummary) {
-    // Peloton reports distance in miles
-    workout.distanceMeters = parseFloat(distanceSummary.value) * 1609.344;
-  }
-}
+// Aggregate enrichment removed — all metrics live in metric_stream rows.
+// enrichWorkoutFromGraph() was here but violated the "no duplicate sources of truth" principle.
 
 // ============================================================
 // Peloton API client
@@ -616,9 +566,6 @@ export class PelotonProvider implements Provider {
             const graph = await client.getPerformanceGraph(workout.id, everyN);
             const series = parsePerformanceGraph(graph, everyN);
 
-            // Enrich cardio_activity with summary stats from the graph
-            enrichWorkoutFromGraph(parsed, series, graph.summaries);
-
             // Insert time-series metric_stream rows
             const hrSeries = series.find((s) => s.slug === "heart_rate");
             const powerSeries = series.find((s) => s.slug === "output");
@@ -670,16 +617,7 @@ export class PelotonProvider implements Provider {
                 activityType: parsed.activityType,
                 startedAt: parsed.startedAt,
                 endedAt: parsed.endedAt,
-                durationSeconds: parsed.durationSeconds,
-                distanceMeters: parsed.distanceMeters,
-                calories: parsed.calories,
-                avgHeartRate: parsed.avgHeartRate,
-                maxHeartRate: parsed.maxHeartRate,
-                avgPower: parsed.avgPower,
-                maxPower: parsed.maxPower,
-                avgSpeed: parsed.avgSpeed,
-                maxSpeed: parsed.maxSpeed,
-                avgCadence: parsed.avgCadence,
+                name: parsed.name,
                 raw: parsed.raw,
               })
               .onConflictDoUpdate({
@@ -688,16 +626,7 @@ export class PelotonProvider implements Provider {
                   activityType: parsed.activityType,
                   startedAt: parsed.startedAt,
                   endedAt: parsed.endedAt,
-                  durationSeconds: parsed.durationSeconds,
-                  distanceMeters: parsed.distanceMeters,
-                  calories: parsed.calories,
-                  avgHeartRate: parsed.avgHeartRate,
-                  maxHeartRate: parsed.maxHeartRate,
-                  avgPower: parsed.avgPower,
-                  maxPower: parsed.maxPower,
-                  avgSpeed: parsed.avgSpeed,
-                  maxSpeed: parsed.maxSpeed,
-                  avgCadence: parsed.avgCadence,
+                  name: parsed.name,
                   raw: parsed.raw,
                 },
               });

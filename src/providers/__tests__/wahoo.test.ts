@@ -46,16 +46,6 @@ describe("Wahoo Provider", () => {
       expect(result.externalId).toBe("42");
       expect(result.activityType).toBe("cycling");
       expect(result.startedAt).toEqual(new Date("2025-03-01T08:00:00.000Z"));
-      expect(result.durationSeconds).toBe(5400);
-      expect(result.distanceMeters).toBeCloseTo(42000.0);
-      expect(result.calories).toBe(1500);
-      expect(result.avgHeartRate).toBe(145);
-      expect(result.avgPower).toBe(196);
-      expect(result.avgSpeed).toBeCloseTo(7.78);
-      expect(result.avgCadence).toBe(85);
-      expect(result.totalElevationGain).toBeCloseTo(350.5);
-      expect(result.normalizedPower).toBe(220);
-      expect(result.tss).toBeCloseTo(85.5);
     });
 
     it("handles missing workout summary gracefully", () => {
@@ -68,8 +58,7 @@ describe("Wahoo Provider", () => {
 
       expect(result.externalId).toBe("42");
       expect(result.activityType).toBe("cycling");
-      expect(result.durationSeconds).toBeUndefined();
-      expect(result.avgHeartRate).toBeUndefined();
+      expect(result.endedAt).toBeUndefined();
     });
 
     it("maps workout_type_id to activity type", () => {
