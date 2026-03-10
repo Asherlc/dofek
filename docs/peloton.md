@@ -76,7 +76,7 @@ Returns time-series metrics (heart_rate, output/power, cadence, speed) plus summ
 
 ## Data Stored
 
-- **cardio_activity**: Activity type, duration, distance, calories, HR, power, cadence, speed, plus JSONB `raw` with instructor, class title, difficulty rating, leaderboard rank
+- **activity**: Activity type, duration, distance, calories, HR, power, cadence, speed, plus JSONB `raw` with instructor, class title, difficulty rating, leaderboard rank
 - **metric_stream**: Time-series rows at 5-second intervals for HR, power, cadence, speed
 
 ## Environment Variables

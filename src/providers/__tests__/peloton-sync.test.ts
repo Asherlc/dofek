@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { eq } from "drizzle-orm";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.js";
 import { ensureProvider, saveTokens } from "../../db/tokens.js";
-import { cardioActivity, metricStream } from "../../db/schema.js";
+import { activity, metricStream } from "../../db/schema.js";
 import { PelotonProvider, type PelotonWorkout, type PelotonPerformanceGraph } from "../peloton.js";
 
 // ============================================================
@@ -177,8 +177,8 @@ describe("PelotonProvider.sync() (integration)", () => {
     // Verify cardio_activity rows
     const rows = await ctx.db
       .select()
-      .from(cardioActivity)
-      .where(eq(cardioActivity.providerId, "peloton"));
+      .from(activity)
+      .where(eq(activity.providerId, "peloton"));
 
     expect(rows).toHaveLength(2);
 
@@ -224,8 +224,8 @@ describe("PelotonProvider.sync() (integration)", () => {
 
     const rows = await ctx.db
       .select()
-      .from(cardioActivity)
-      .where(eq(cardioActivity.providerId, "peloton"));
+      .from(activity)
+      .where(eq(activity.providerId, "peloton"));
 
     const countOf001 = rows.filter((r) => r.externalId === "workout-001").length;
     expect(countOf001).toBe(1);
@@ -246,8 +246,8 @@ describe("PelotonProvider.sync() (integration)", () => {
 
     const rows = await ctx.db
       .select()
-      .from(cardioActivity)
-      .where(eq(cardioActivity.externalId, "workout-incomplete"));
+      .from(activity)
+      .where(eq(activity.externalId, "workout-incomplete"));
 
     expect(rows).toHaveLength(0);
   });
@@ -309,8 +309,8 @@ describe("PelotonProvider.sync() (integration)", () => {
 
     const rows = await ctx.db
       .select()
-      .from(cardioActivity)
-      .where(eq(cardioActivity.externalId, "workout-graph-fail"));
+      .from(activity)
+      .where(eq(activity.externalId, "workout-graph-fail"));
 
     expect(rows).toHaveLength(1);
     expect(rows[0].activityType).toBe("cycling");

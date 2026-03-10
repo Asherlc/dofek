@@ -25,11 +25,11 @@ All tables live in the `fitness` Postgres schema. The source of truth is `src/db
 | `fitness.strength_workout` | Workout sessions (name, time, notes) |
 | `fitness.strength_set` | Individual sets (exercise, weight, reps, RPE, set type) |
 
-### Cardio / Endurance
+### Activities
 
 | Table | Purpose |
 |-------|---------|
-| `fitness.cardio_activity` | Activity summaries (distance, HR, power, TSS, etc.) |
+| `fitness.activity` | Any timed activity — cardio, strength, yoga, meditation, etc. (type, times, raw JSONB summary) |
 | `fitness.activity_stream` | Second-by-second sensor data (hypertable) — HR, power, cadence, speed, GPS |
 
 ### Daily Metrics

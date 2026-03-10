@@ -64,6 +64,13 @@
       "when": 1773180000000,
       "tag": "0008_expand_health_types",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1773190000000,
+      "tag": "0009_add_skin_temp",
+      "breakpoints": true
     }
   ]
 }

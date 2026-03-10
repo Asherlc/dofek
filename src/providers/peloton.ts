@@ -9,7 +9,7 @@ import {
   buildAuthorizationUrl,
 } from "../auth/oauth.js";
 import { loadTokens, saveTokens, ensureProvider } from "../db/tokens.js";
-import { cardioActivity, metricStream } from "../db/schema.js";
+import { activity, metricStream } from "../db/schema.js";
 import { withSyncLog } from "../db/sync-log.js";
 
 // ============================================================
@@ -610,7 +610,7 @@ export class PelotonProvider implements Provider {
           // Upsert the cardio_activity (enriched or not)
           try {
             await db
-              .insert(cardioActivity)
+              .insert(activity)
               .values({
                 providerId: this.id,
                 externalId: parsed.externalId,
@@ -621,7 +621,7 @@ export class PelotonProvider implements Provider {
                 raw: parsed.raw,
               })
               .onConflictDoUpdate({
-                target: [cardioActivity.providerId, cardioActivity.externalId],
+                target: [activity.providerId, activity.externalId],
                 set: {
                   activityType: parsed.activityType,
                   startedAt: parsed.startedAt,

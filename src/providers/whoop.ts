@@ -1,6 +1,6 @@
 import type { Provider, SyncResult, SyncError } from "./types.js";
 import type { Database } from "../db/index.js";
-import { sleepSession, dailyMetrics, metricStream } from "../db/schema.js";
+import { sleepSession, dailyMetrics, metricStream, activity } from "../db/schema.js";
 import { withSyncLog } from "../db/sync-log.js";
 import { ensureProvider } from "../db/tokens.js";
 
@@ -347,6 +347,21 @@ export function parseHeartRateValues(values: WhoopHrValue[]): ParsedHrRecord[] {
 }
 
 // ============================================================
+// Cycle — aggregated response from internal API
+// ============================================================
+
+export interface WhoopCycle {
+  id: number;
+  user_id: number;
+  days?: string[];
+  recovery?: WhoopRecoveryRecord;
+  sleep?: { id: number };
+  strain?: {
+    workouts: WhoopWorkoutRecord[];
+  };
+}
+
+// ============================================================
 // WHOOP internal API client
 // ============================================================
 
@@ -426,8 +441,8 @@ export class WhoopInternalClient {
     return response.values ?? [];
   }
 
-  async getCycles(start: string, end: string): Promise<Record<string, unknown>[]> {
-    return this.get<Record<string, unknown>[]>(
+  async getCycles(start: string, end: string): Promise<WhoopCycle[]> {
+    return this.get<WhoopCycle[]>(
       `/users/${this.userId}/cycles`,
       { start, end },
     );
@@ -482,37 +497,59 @@ export class WhoopProvider implements Provider {
     const sinceStr = since.toISOString();
     const nowStr = new Date().toISOString();
 
-    // --- Sync recovery & sleep from cycles ---
+    // --- Fetch all cycles (recovery + sleep + workouts embedded) ---
+    let cycles: WhoopCycle[] = [];
     try {
-      const cycleCount = await withSyncLog(db, this.id, "recovery", async () => {
-        const cycles = await client.getCycles(sinceStr, nowStr);
+      cycles = await client.getCycles(sinceStr, nowStr);
+    } catch (err) {
+      errors.push({ message: `getCycles: ${err instanceof Error ? err.message : String(err)}`, cause: err });
+      return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
+    }
+
+    // --- Sync recovery from cycles ---
+    try {
+      const recoveryCount = await withSyncLog(db, this.id, "recovery", async () => {
         let count = 0;
-        for (const raw of cycles) {
-          const recovery = raw as unknown as { recovery?: WhoopRecoveryRecord; sleep?: { id: number }; days?: string[] };
-          if (recovery.recovery?.score_state === "SCORED" && recovery.recovery.score) {
-            const parsed = parseRecovery(recovery.recovery);
-            const cycleDay = recovery.days?.[0]
-              ?? new Date(recovery.recovery.created_at).toISOString().split("T")[0];
+        for (const cycle of cycles) {
+          if (cycle.recovery?.score_state === "SCORED" && cycle.recovery.score) {
+            const parsed = parseRecovery(cycle.recovery);
+            const cycleDay = cycle.days?.[0]
+              ?? new Date(cycle.recovery.created_at).toISOString().split("T")[0];
 
             await db.insert(dailyMetrics).values({
               date: cycleDay,
               providerId: this.id,
               restingHr: parsed.restingHr,
               hrv: parsed.hrv,
+              spo2Avg: parsed.spo2,
+              skinTempC: parsed.skinTemp,
             }).onConflictDoUpdate({
               target: [dailyMetrics.date, dailyMetrics.providerId],
               set: {
                 restingHr: parsed.restingHr,
                 hrv: parsed.hrv,
+                spo2Avg: parsed.spo2,
+                skinTempC: parsed.skinTemp,
               },
             });
             count++;
           }
+        }
+        return { recordCount: count, result: count };
+      });
+      recordsSynced += recoveryCount;
+    } catch (err) {
+      errors.push({ message: `recovery: ${err instanceof Error ? err.message : String(err)}`, cause: err });
+    }
 
-          // Sleep from this cycle
-          if (recovery.sleep?.id) {
+    // --- Sync sleep from cycles ---
+    try {
+      const sleepCount = await withSyncLog(db, this.id, "sleep", async () => {
+        let count = 0;
+        for (const cycle of cycles) {
+          if (cycle.sleep?.id) {
             try {
-              const sleepData = await client.getSleep(recovery.sleep.id);
+              const sleepData = await client.getSleep(cycle.sleep.id);
               const parsed = parseSleep(sleepData);
 
               await db.insert(sleepSession).values({
@@ -543,8 +580,8 @@ export class WhoopProvider implements Provider {
               count++;
             } catch (err) {
               errors.push({
-                message: `Sleep ${recovery.sleep.id}: ${err instanceof Error ? err.message : String(err)}`,
-                externalId: String(recovery.sleep.id),
+                message: `Sleep ${cycle.sleep.id}: ${err instanceof Error ? err.message : String(err)}`,
+                externalId: String(cycle.sleep.id),
                 cause: err,
               });
             }
@@ -552,9 +589,70 @@ export class WhoopProvider implements Provider {
         }
         return { recordCount: count, result: count };
       });
-      recordsSynced += cycleCount;
+      recordsSynced += sleepCount;
     } catch (err) {
-      errors.push({ message: `recovery/sleep: ${err instanceof Error ? err.message : String(err)}`, cause: err });
+      errors.push({ message: `sleep: ${err instanceof Error ? err.message : String(err)}`, cause: err });
+    }
+
+    // --- Sync workouts from cycles ---
+    try {
+      const workoutCount = await withSyncLog(db, this.id, "workouts", async () => {
+        let count = 0;
+        for (const cycle of cycles) {
+          const workouts = cycle.strain?.workouts ?? [];
+          for (const workoutRecord of workouts) {
+            try {
+              const parsed = parseWorkout(workoutRecord);
+
+              await db.insert(activity).values({
+                providerId: this.id,
+                externalId: parsed.externalId,
+                activityType: parsed.activityType,
+                startedAt: parsed.startedAt,
+                endedAt: parsed.endedAt,
+                raw: {
+                  strain: workoutRecord.score?.strain,
+                  avgHeartRate: parsed.avgHeartRate,
+                  maxHeartRate: parsed.maxHeartRate,
+                  calories: parsed.calories,
+                  distanceMeters: parsed.distanceMeters,
+                  totalElevationGain: parsed.totalElevationGain,
+                  durationSeconds: parsed.durationSeconds,
+                  zoneDuration: workoutRecord.score?.zone_duration,
+                },
+              }).onConflictDoUpdate({
+                target: [activity.providerId, activity.externalId],
+                set: {
+                  activityType: parsed.activityType,
+                  startedAt: parsed.startedAt,
+                  endedAt: parsed.endedAt,
+                  raw: {
+                    strain: workoutRecord.score?.strain,
+                    avgHeartRate: parsed.avgHeartRate,
+                    maxHeartRate: parsed.maxHeartRate,
+                    calories: parsed.calories,
+                    distanceMeters: parsed.distanceMeters,
+                    totalElevationGain: parsed.totalElevationGain,
+                    durationSeconds: parsed.durationSeconds,
+                    zoneDuration: workoutRecord.score?.zone_duration,
+                  },
+                },
+              });
+              count++;
+            } catch (err) {
+              errors.push({
+                message: `Workout ${workoutRecord.id}: ${err instanceof Error ? err.message : String(err)}`,
+                externalId: String(workoutRecord.id),
+                cause: err,
+              });
+            }
+          }
+        }
+        return { recordCount: count, result: count };
+      });
+      recordsSynced += workoutCount;
+    } catch (err) {
+      errors.push({ message: `workouts: ${err instanceof Error ? err.message : String(err)}`, cause: err });
     }
 
     // --- Sync HR stream (6s intervals) ---

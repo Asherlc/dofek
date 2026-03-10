@@ -3,7 +3,7 @@ import type { Database } from "../db/index.js";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.js";
 import { exchangeCodeForTokens, refreshAccessToken } from "../auth/oauth.js";
 import { loadTokens, saveTokens } from "../db/tokens.js";
-import { cardioActivity, metricStream } from "../db/schema.js";
+import { activity, metricStream } from "../db/schema.js";
 import { parseFitFile, type ParsedFitRecord } from "../fit/parser.js";
 
 // ============================================================
@@ -318,7 +318,7 @@ export class WahooProvider implements Provider {
 
         try {
           const [row] = await db
-            .insert(cardioActivity)
+            .insert(activity)
             .values({
               providerId: this.id,
               externalId: workout.externalId,
@@ -328,7 +328,7 @@ export class WahooProvider implements Provider {
               name: workout.name,
             })
             .onConflictDoUpdate({
-              target: [cardioActivity.providerId, cardioActivity.externalId],
+              target: [activity.providerId, activity.externalId],
               set: {
                 activityType: workout.activityType,
                 startedAt: workout.startedAt,
@@ -336,7 +336,7 @@ export class WahooProvider implements Provider {
                 name: workout.name,
               },
             })
-            .returning({ id: cardioActivity.id });
+            .returning({ id: activity.id });
 
           recordsSynced++;
 

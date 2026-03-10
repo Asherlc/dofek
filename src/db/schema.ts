@@ -207,8 +207,8 @@ export const strengthSet = fitness.table(
 // Cardio / endurance activities
 // ============================================================
 
-export const cardioActivity = fitness.table(
-  "cardio_activity",
+export const activity = fitness.table(
+  "activity",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     providerId: text("provider_id")
@@ -224,7 +224,7 @@ export const cardioActivity = fitness.table(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    uniqueIndex("cardio_activity_provider_external_idx").on(t.providerId, t.externalId),
+    uniqueIndex("activity_provider_external_idx").on(t.providerId, t.externalId),
   ],
 );
 
@@ -235,7 +235,7 @@ export const metricStream = fitness.table(
       .notNull()
       .references(() => provider.id),
     activityId: uuid("activity_id")
-      .references(() => cardioActivity.id, { onDelete: "cascade" }),
+      .references(() => activity.id, { onDelete: "cascade" }),
     recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
     // Core fields — typed columns for fast queries
     heartRate: integer("heart_rate"),
@@ -311,6 +311,7 @@ export const dailyMetrics = fitness.table(
     standHours: integer("stand_hours"),
     environmentalAudioExposure: real("environmental_audio_exposure"), // dBASPL avg
     headphoneAudioExposure: real("headphone_audio_exposure"),    // dBASPL avg
+    skinTempC: real("skin_temp_c"),                              // celsius (WHOOP)
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.date, t.providerId] })],

@@ -1,6 +1,6 @@
 import type { Provider, SyncResult, SyncError } from "./types.js";
 import type { Database } from "../db/index.js";
-import { bodyMeasurement, cardioActivity, metricStream, dailyMetrics, sleepSession, labResult, nutritionDaily, healthEvent } from "../db/schema.js";
+import { bodyMeasurement, activity, metricStream, dailyMetrics, sleepSession, labResult, nutritionDaily, healthEvent } from "../db/schema.js";
 import { ensureProvider } from "../db/tokens.js";
 import sax from "sax";
 import yauzl from "yauzl";
@@ -882,7 +882,7 @@ async function upsertWorkoutBatch(
   let count = 0;
   for (const w of workouts) {
     const externalId = `ah:workout:${w.startDate.toISOString()}`;
-    const [row] = await db.insert(cardioActivity).values({
+    const [row] = await db.insert(activity).values({
       providerId,
       externalId,
       activityType: w.activityType,
@@ -890,12 +890,12 @@ async function upsertWorkoutBatch(
       endedAt: w.endDate,
       name: w.activityType, // Apple Health doesn't have workout names
     }).onConflictDoUpdate({
-      target: [cardioActivity.providerId, cardioActivity.externalId],
+      target: [activity.providerId, activity.externalId],
       set: {
         activityType: w.activityType,
         endedAt: w.endDate,
       },
-    }).returning({ id: cardioActivity.id });
+    }).returning({ id: activity.id });
     count++;
 
     // Insert route GPS data into metric_stream

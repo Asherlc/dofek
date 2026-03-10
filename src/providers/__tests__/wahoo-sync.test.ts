@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.js";
 import { ensureProvider, saveTokens } from "../../db/tokens.js";
-import { cardioActivity, metricStream } from "../../db/schema.js";
+import { activity, metricStream } from "../../db/schema.js";
 import { WahooProvider, type WahooWorkout } from "../wahoo.js";
 
 // Fake Wahoo API responses
@@ -118,8 +118,8 @@ describe("WahooProvider.sync() (integration)", () => {
     // Verify rows in DB
     const rows = await ctx.db
       .select()
-      .from(cardioActivity)
-      .where(eq(cardioActivity.providerId, "wahoo"));
+      .from(activity)
+      .where(eq(activity.providerId, "wahoo"));
 
     expect(rows).toHaveLength(2);
 
@@ -150,8 +150,8 @@ describe("WahooProvider.sync() (integration)", () => {
 
     const rows = await ctx.db
       .select()
-      .from(cardioActivity)
-      .where(eq(cardioActivity.providerId, "wahoo"));
+      .from(activity)
+      .where(eq(activity.providerId, "wahoo"));
 
     // Should have 2 from previous test + no new dupes for 1001
     const countOf1001 = rows.filter((r) => r.externalId === "1001").length;
@@ -196,8 +196,8 @@ describe("WahooProvider.sync() (integration)", () => {
     // Verify metric_stream rows linked to the cardio_activity
     const activities = await ctx.db
       .select()
-      .from(cardioActivity)
-      .where(eq(cardioActivity.externalId, "2001"));
+      .from(activity)
+      .where(eq(activity.externalId, "2001"));
 
     expect(activities).toHaveLength(1);
     const activityId = activities[0].id;
@@ -240,8 +240,8 @@ describe("WahooProvider.sync() (integration)", () => {
     // Verify the cardio_activity was still created
     const activities = await ctx.db
       .select()
-      .from(cardioActivity)
-      .where(eq(cardioActivity.externalId, "3001"));
+      .from(activity)
+      .where(eq(activity.externalId, "3001"));
     expect(activities).toHaveLength(1);
   });
 
