@@ -1,0 +1,158 @@
+import { describe, it, expect } from "vitest";
+import {
+  parseRecovery,
+  parseSleep,
+  parseWorkout,
+  parseHeartRateValues,
+  type WhoopRecoveryRecord,
+  type WhoopSleepRecord,
+  type WhoopWorkoutRecord,
+  type WhoopHrValue,
+} from "../whoop.js";
+
+// ============================================================
+// Pure parsing unit tests (no DB, no network)
+// ============================================================
+
+const sampleRecovery: WhoopRecoveryRecord = {
+  cycle_id: 93845,
+  sleep_id: 10235,
+  user_id: 10129,
+  created_at: "2026-03-01T11:25:44.774Z",
+  updated_at: "2026-03-01T14:25:44.774Z",
+  score_state: "SCORED",
+  score: {
+    user_calibrating: false,
+    recovery_score: 78,
+    resting_heart_rate: 52,
+    hrv_rmssd_milli: 65.5,
+    spo2_percentage: 97.2,
+    skin_temp_celsius: 33.7,
+  },
+};
+
+const sampleSleep: WhoopSleepRecord = {
+  id: 10235,
+  user_id: 10129,
+  created_at: "2026-03-01T06:00:00Z",
+  updated_at: "2026-03-01T06:30:00Z",
+  start: "2026-02-28T23:00:00Z",
+  end: "2026-03-01T06:30:00Z",
+  timezone_offset: "-05:00",
+  nap: false,
+  score_state: "SCORED",
+  score: {
+    stage_summary: {
+      total_in_bed_time_milli: 27000000,
+      total_awake_time_milli: 1800000,
+      total_no_data_time_milli: 0,
+      total_light_sleep_time_milli: 10800000,
+      total_slow_wave_sleep_time_milli: 7200000,
+      total_rem_sleep_time_milli: 5400000,
+      sleep_cycle_count: 4,
+      disturbance_count: 2,
+    },
+    sleep_needed: {
+      baseline_milli: 28800000,
+      need_from_sleep_debt_milli: 1800000,
+      need_from_recent_strain_milli: 900000,
+      need_from_recent_nap_milli: 0,
+    },
+    respiratory_rate: 16.1,
+    sleep_performance_percentage: 92,
+    sleep_consistency_percentage: 88,
+    sleep_efficiency_percentage: 91.7,
+  },
+};
+
+const sampleWorkout: WhoopWorkoutRecord = {
+  id: 1043,
+  user_id: 9012,
+  created_at: "2026-03-01T10:00:00Z",
+  updated_at: "2026-03-01T11:00:00Z",
+  start: "2026-03-01T10:00:00Z",
+  end: "2026-03-01T11:00:00Z",
+  timezone_offset: "-05:00",
+  sport_id: 0,
+  score_state: "SCORED",
+  score: {
+    strain: 12.5,
+    average_heart_rate: 155,
+    max_heart_rate: 185,
+    kilojoule: 2500.5,
+    percent_recorded: 100,
+    distance_meter: 10000,
+    altitude_gain_meter: 150.5,
+    altitude_change_meter: -5.2,
+    zone_duration: {
+      zone_zero_milli: 60000,
+      zone_one_milli: 300000,
+      zone_two_milli: 900000,
+      zone_three_milli: 1200000,
+      zone_four_milli: 600000,
+      zone_five_milli: 300000,
+    },
+  },
+};
+
+describe("WHOOP Provider — parsing", () => {
+  describe("parseRecovery", () => {
+    it("maps recovery fields to daily metrics", () => {
+      const result = parseRecovery(sampleRecovery);
+      expect(result.restingHr).toBe(52);
+      expect(result.hrv).toBeCloseTo(65.5);
+      expect(result.readiness).toBe(78);
+    });
+
+    it("returns null fields for unscored recovery", () => {
+      const unscored = { ...sampleRecovery, score_state: "PENDING_SCORE", score: undefined };
+      const result = parseRecovery(unscored as WhoopRecoveryRecord);
+      expect(result.restingHr).toBeUndefined();
+      expect(result.hrv).toBeUndefined();
+      expect(result.readiness).toBeUndefined();
+    });
+  });
+
+  describe("parseSleep", () => {
+    it("maps sleep fields to sleep session", () => {
+      const result = parseSleep(sampleSleep);
+      expect(result.externalId).toBe("10235");
+      expect(result.startedAt).toEqual(new Date("2026-02-28T23:00:00Z"));
+      expect(result.endedAt).toEqual(new Date("2026-03-01T06:30:00Z"));
+      expect(result.deepMinutes).toBe(120); // 7200000ms / 60000
+      expect(result.remMinutes).toBe(90);
+      expect(result.lightMinutes).toBe(180);
+      expect(result.awakeMinutes).toBe(30);
+      expect(result.efficiencyPct).toBeCloseTo(91.7);
+      expect(result.isNap).toBe(false);
+    });
+  });
+
+  describe("parseWorkout", () => {
+    it("maps workout fields to cardio activity", () => {
+      const result = parseWorkout(sampleWorkout);
+      expect(result.externalId).toBe("1043");
+      expect(result.activityType).toBe("running");
+      expect(result.avgHeartRate).toBe(155);
+      expect(result.maxHeartRate).toBe(185);
+      expect(result.distanceMeters).toBe(10000);
+      expect(result.totalElevationGain).toBeCloseTo(150.5);
+      expect(result.calories).toBe(598); // 2500.5 kJ / 4.184
+    });
+  });
+
+  describe("parseHeartRateValues", () => {
+    it("converts WHOOP HR values to parsed records", () => {
+      const values: WhoopHrValue[] = [
+        { time: 1709251200000, data: 72 },
+        { time: 1709251206000, data: 75 },
+        { time: 1709251212000, data: 78 },
+      ];
+      const records = parseHeartRateValues(values);
+      expect(records).toHaveLength(3);
+      expect(records[0].heartRate).toBe(72);
+      expect(records[0].recordedAt).toEqual(new Date(1709251200000));
+      expect(records[2].heartRate).toBe(78);
+    });
+  });
+});
