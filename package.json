@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "./scripts/with-env.sh tsx src/index.ts",
     "sync": "./scripts/with-env.sh tsx src/index.ts sync",
+    "auth": "./scripts/with-env.sh tsx src/index.ts auth",
     "migrate": "./scripts/with-env.sh drizzle-kit migrate",
     "generate": "drizzle-kit generate",
     "test": "vitest",
