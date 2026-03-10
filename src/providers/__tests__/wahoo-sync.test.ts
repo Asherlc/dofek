@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { eq } from "drizzle-orm";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.js";
 import { ensureProvider, saveTokens } from "../../db/tokens.js";
-import { cardioActivity } from "../../db/schema.js";
+import { cardioActivity, metricStream } from "../../db/schema.js";
 import { WahooProvider, type WahooWorkout } from "../wahoo.js";
 
 // Fake Wahoo API responses
@@ -28,12 +30,20 @@ function fakeWorkout(overrides: Partial<WahooWorkout> = {}): WahooWorkout {
       power_bike_tss_last: 78.5,
       created_at: "2026-03-01T11:00:00Z",
       updated_at: "2026-03-01T11:00:00Z",
+      file: { url: "https://cdn.wahoo.com/files/test.fit" },
     },
     ...overrides,
   };
 }
 
-function createMockFetch(workouts: WahooWorkout[]): typeof globalThis.fetch {
+// Load a real FIT fixture for testing
+const FIT_FIXTURE_PATH = resolve(import.meta.dirname, "../../fit/__tests__/fixtures/test.fit");
+const fitFileBuffer = readFileSync(FIT_FIXTURE_PATH);
+
+function createMockFetch(
+  workouts: WahooWorkout[],
+  opts?: { fitFileError?: boolean },
+): typeof globalThis.fetch {
   return (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const urlStr = input.toString();
 
@@ -45,6 +55,14 @@ function createMockFetch(workouts: WahooWorkout[]): typeof globalThis.fetch {
         expires_in: 7200,
         scope: "user_read workouts_read",
       });
+    }
+
+    // FIT file download
+    if (urlStr.includes(".fit")) {
+      if (opts?.fitFileError) {
+        return new Response("Internal Server Error", { status: 500 });
+      }
+      return new Response(fitFileBuffer);
     }
 
     // Workout list
@@ -155,6 +173,76 @@ describe("WahooProvider.sync() (integration)", () => {
     const { loadTokens } = await import("../../db/tokens.js");
     const tokens = await loadTokens(ctx.db, "wahoo");
     expect(tokens!.accessToken).toBe("refreshed-token");
+  });
+
+  it("downloads FIT files and inserts metric_stream records", async () => {
+    await saveTokens(ctx.db, "wahoo", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user_read workouts_read",
+    });
+
+    const workouts = [
+      fakeWorkout({ id: 2001, starts: "2026-04-01T10:00:00Z" }),
+    ];
+
+    const provider = new WahooProvider(createMockFetch(workouts));
+    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
+
+    // Verify metric_stream rows linked to the cardio_activity
+    const activities = await ctx.db
+      .select()
+      .from(cardioActivity)
+      .where(eq(cardioActivity.externalId, "2001"));
+
+    expect(activities).toHaveLength(1);
+    const activityId = activities[0].id;
+
+    const metrics = await ctx.db
+      .select()
+      .from(metricStream)
+      .where(eq(metricStream.activityId, activityId));
+
+    // test.fit has 3229 records
+    expect(metrics.length).toBe(3229);
+    // Verify records have actual sensor data (speed is present in test.fit)
+    const withSpeed = metrics.filter((m) => m.speed !== null);
+    expect(withSpeed.length).toBeGreaterThan(0);
+    // All records should be linked to the activity
+    expect(metrics.every((m) => m.activityId === activityId)).toBe(true);
+  });
+
+  it("continues syncing if FIT file download fails", async () => {
+    await saveTokens(ctx.db, "wahoo", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user_read workouts_read",
+    });
+
+    const workouts = [
+      fakeWorkout({ id: 3001, starts: "2026-05-01T10:00:00Z" }),
+    ];
+
+    const provider = new WahooProvider(createMockFetch(workouts, { fitFileError: true }));
+    const result = await provider.sync(ctx.db, new Date("2026-04-01T00:00:00Z"));
+
+    // Activity should still be inserted
+    expect(result.recordsSynced).toBe(1);
+    // But there should be a FIT file error
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0].message).toContain("FIT file");
+
+    // Verify the cardio_activity was still created
+    const activities = await ctx.db
+      .select()
+      .from(cardioActivity)
+      .where(eq(cardioActivity.externalId, "3001"));
+    expect(activities).toHaveLength(1);
   });
 
   it("returns error when no tokens exist", async () => {

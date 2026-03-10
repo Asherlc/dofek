@@ -2,9 +2,11 @@ import { describe, it, expect, vi } from "vitest";
 import {
   parseWorkoutSummary,
   parseWorkoutList,
+  fitRecordsToMetricStream,
   type WahooWorkout,
   type WahooWorkoutSummary,
 } from "../wahoo.js";
+import type { ParsedFitRecord } from "../../fit/parser.js";
 
 const sampleWorkoutSummary: WahooWorkoutSummary = {
   id: 101,
@@ -113,6 +115,73 @@ describe("Wahoo Provider", () => {
       const result = parseWorkoutList(response);
 
       expect(result.hasMore).toBe(false);
+    });
+  });
+
+  describe("fitRecordsToMetricStream", () => {
+    const fakeRecords: ParsedFitRecord[] = [
+      {
+        recordedAt: new Date("2026-03-01T10:00:00Z"),
+        heartRate: 130,
+        power: 200,
+        cadence: 85,
+        speed: 8.5,
+        lat: 40.7128,
+        lng: -74.006,
+        altitude: 15.2,
+        temperature: 22,
+        distance: 100,
+        raw: { timestamp: "2026-03-01T10:00:00Z", heart_rate: 130, power: 200 },
+      },
+      {
+        recordedAt: new Date("2026-03-01T10:00:05Z"),
+        heartRate: 135,
+        power: 210,
+        cadence: 88,
+        speed: 8.7,
+        lat: 40.7129,
+        lng: -74.0059,
+        altitude: 15.5,
+        temperature: 22,
+        distance: 143,
+        verticalOscillation: 9.2,
+        stanceTime: 240,
+        raw: { timestamp: "2026-03-01T10:00:05Z", heart_rate: 135, power: 210 },
+      },
+    ];
+
+    it("maps FIT records to metric_stream insert rows", () => {
+      const rows = fitRecordsToMetricStream(fakeRecords, "wahoo", "activity-uuid-123");
+      expect(rows).toHaveLength(2);
+
+      expect(rows[0].providerId).toBe("wahoo");
+      expect(rows[0].activityId).toBe("activity-uuid-123");
+      expect(rows[0].recordedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
+      expect(rows[0].heartRate).toBe(130);
+      expect(rows[0].power).toBe(200);
+      expect(rows[0].cadence).toBe(85);
+      expect(rows[0].speed).toBe(8.5);
+      expect(rows[0].lat).toBe(40.7128);
+      expect(rows[0].lng).toBe(-74.006);
+      expect(rows[0].altitude).toBe(15.2);
+      expect(rows[0].temperature).toBe(22);
+      expect(rows[0].distance).toBe(100);
+    });
+
+    it("includes running dynamics when present", () => {
+      const rows = fitRecordsToMetricStream(fakeRecords, "wahoo", "activity-uuid-123");
+      expect(rows[1].verticalOscillation).toBe(9.2);
+      expect(rows[1].stanceTime).toBe(240);
+    });
+
+    it("includes raw JSONB for every record", () => {
+      const rows = fitRecordsToMetricStream(fakeRecords, "wahoo", "activity-uuid-123");
+      expect(rows[0].raw).toEqual({ timestamp: "2026-03-01T10:00:00Z", heart_rate: 130, power: 200 });
+    });
+
+    it("handles empty records array", () => {
+      const rows = fitRecordsToMetricStream([], "wahoo", "activity-uuid-123");
+      expect(rows).toHaveLength(0);
     });
   });
 });

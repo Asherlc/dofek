@@ -3,7 +3,8 @@ import type { Database } from "../db/index.js";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.js";
 import { exchangeCodeForTokens, refreshAccessToken } from "../auth/oauth.js";
 import { loadTokens, saveTokens } from "../db/tokens.js";
-import { cardioActivity } from "../db/schema.js";
+import { cardioActivity, metricStream } from "../db/schema.js";
+import { parseFitFile, type ParsedFitRecord } from "../fit/parser.js";
 
 // ============================================================
 // Wahoo API types
@@ -122,6 +123,49 @@ export function parseWorkoutList(response: WahooWorkoutListResponse): ParsedWork
 }
 
 // ============================================================
+// FIT record → metric_stream mapping
+// ============================================================
+
+export function fitRecordsToMetricStream(
+  records: ParsedFitRecord[],
+  providerId: string,
+  activityId: string,
+): (typeof metricStream.$inferInsert)[] {
+  return records.map((r) => ({
+    providerId,
+    activityId,
+    recordedAt: r.recordedAt,
+    heartRate: r.heartRate,
+    power: r.power,
+    cadence: r.cadence,
+    speed: r.speed,
+    lat: r.lat,
+    lng: r.lng,
+    altitude: r.altitude,
+    temperature: r.temperature,
+    distance: r.distance,
+    grade: r.grade,
+    calories: r.calories,
+    verticalSpeed: r.verticalSpeed,
+    gpsAccuracy: r.gpsAccuracy,
+    accumulatedPower: r.accumulatedPower,
+    leftRightBalance: r.leftRightBalance,
+    verticalOscillation: r.verticalOscillation,
+    stanceTime: r.stanceTime,
+    stanceTimePercent: r.stanceTimePercent,
+    stepLength: r.stepLength,
+    verticalRatio: r.verticalRatio,
+    stanceTimeBalance: r.stanceTimeBalance,
+    leftTorqueEffectiveness: r.leftTorqueEffectiveness,
+    rightTorqueEffectiveness: r.rightTorqueEffectiveness,
+    leftPedalSmoothness: r.leftPedalSmoothness,
+    rightPedalSmoothness: r.rightPedalSmoothness,
+    combinedPedalSmoothness: r.combinedPedalSmoothness,
+    raw: r.raw,
+  }));
+}
+
+// ============================================================
 // Wahoo API client
 // ============================================================
 
@@ -165,6 +209,15 @@ export class WahooClient {
 
   async getWorkout(id: number): Promise<{ workout: WahooWorkout }> {
     return this.get<{ workout: WahooWorkout }>(`/v1/workouts/${id}`);
+  }
+
+  async downloadFitFile(url: string): Promise<Buffer> {
+    const response = await this.fetchFn(url);
+    if (!response.ok) {
+      throw new Error(`Failed to download FIT file (${response.status})`);
+    }
+    const arrayBuffer = await response.arrayBuffer();
+    return Buffer.from(arrayBuffer);
   }
 }
 
@@ -264,7 +317,7 @@ export class WahooProvider implements Provider {
         }
 
         try {
-          await db
+          const [row] = await db
             .insert(cardioActivity)
             .values({
               providerId: this.id,
@@ -282,9 +335,35 @@ export class WahooProvider implements Provider {
                 endedAt: workout.endedAt,
                 name: workout.name,
               },
-            });
+            })
+            .returning({ id: cardioActivity.id });
 
           recordsSynced++;
+
+          // Download and parse FIT file for raw sensor data
+          if (workout.fitFileUrl) {
+            try {
+              const fitBuffer = await client.downloadFitFile(workout.fitFileUrl);
+              const fitData = await parseFitFile(fitBuffer);
+              const metricRows = fitRecordsToMetricStream(fitData.records, this.id, row.id);
+
+              if (metricRows.length > 0) {
+                // Insert in batches of 500
+                for (let i = 0; i < metricRows.length; i += 500) {
+                  await db.insert(metricStream).values(metricRows.slice(i, i + 500));
+                }
+                console.log(
+                  `[wahoo] Inserted ${metricRows.length} metric_stream records for workout ${workout.externalId}`,
+                );
+              }
+            } catch (fitErr) {
+              errors.push({
+                message: `FIT file for ${workout.externalId}: ${fitErr instanceof Error ? fitErr.message : String(fitErr)}`,
+                externalId: workout.externalId,
+                cause: fitErr,
+              });
+            }
+          }
         } catch (err) {
           errors.push({
             message: err instanceof Error ? err.message : String(err),
