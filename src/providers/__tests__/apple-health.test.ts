@@ -6,8 +6,10 @@ import {
   parseActivitySummary,
   parseWorkoutStatistics,
   enrichWorkoutFromStats,
+  parseRouteLocation,
   type HealthRecord,
   type HealthWorkout,
+  type RouteLocation,
 } from "../apple-health.js";
 
 // ============================================================
@@ -472,6 +474,55 @@ describe("Apple Health Provider — parsing", () => {
       ]);
 
       expect(workout.calories).toBe(originalCalories);
+    });
+  });
+
+  describe("parseRouteLocation", () => {
+    const locationAttrs: Record<string, string> = {
+      date: "2024-03-01 18:05:00 -0500",
+      latitude: "40.712800",
+      longitude: "-74.006000",
+      altitude: "10.500",
+      horizontalAccuracy: "5.000",
+      verticalAccuracy: "3.000",
+      course: "180.500",
+      speed: "3.500",
+    };
+
+    it("parses all Location attributes", () => {
+      const result = parseRouteLocation(locationAttrs);
+      expect(result).not.toBeNull();
+      expect(result!.date).toBeInstanceOf(Date);
+      expect(result!.lat).toBeCloseTo(40.7128);
+      expect(result!.lng).toBeCloseTo(-74.006);
+      expect(result!.altitude).toBeCloseTo(10.5);
+      expect(result!.horizontalAccuracy).toBeCloseTo(5.0);
+      expect(result!.verticalAccuracy).toBeCloseTo(3.0);
+      expect(result!.course).toBeCloseTo(180.5);
+      expect(result!.speed).toBeCloseTo(3.5);
+    });
+
+    it("returns null without lat/lng", () => {
+      const noLat = { ...locationAttrs };
+      delete noLat.latitude;
+      expect(parseRouteLocation(noLat)).toBeNull();
+
+      const noLng = { ...locationAttrs };
+      delete noLng.longitude;
+      expect(parseRouteLocation(noLng)).toBeNull();
+    });
+
+    it("handles missing optional fields", () => {
+      const minimal: Record<string, string> = {
+        date: "2024-03-01 18:05:00 -0500",
+        latitude: "40.7128",
+        longitude: "-74.006",
+      };
+      const result = parseRouteLocation(minimal);
+      expect(result).not.toBeNull();
+      expect(result!.altitude).toBeUndefined();
+      expect(result!.speed).toBeUndefined();
+      expect(result!.course).toBeUndefined();
     });
   });
 });

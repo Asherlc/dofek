@@ -115,6 +115,7 @@ export interface HealthWorkout {
   maxHeartRate?: number;
   startDate: Date;
   endDate: Date;
+  routeLocations?: RouteLocation[];
 }
 
 // Map HKWorkoutActivityType* to normalized lowercase names
@@ -252,6 +253,43 @@ export function parseWorkout(attrs: Record<string, string>): HealthWorkout {
 }
 
 // ============================================================
+// WorkoutRoute Location parsing
+// ============================================================
+
+export interface RouteLocation {
+  date: Date;
+  lat: number;
+  lng: number;
+  altitude?: number;
+  horizontalAccuracy?: number;
+  verticalAccuracy?: number;
+  course?: number;
+  speed?: number;
+}
+
+export function parseRouteLocation(attrs: Record<string, string>): RouteLocation | null {
+  const lat = parseFloat(attrs.latitude);
+  const lng = parseFloat(attrs.longitude);
+  if (isNaN(lat) || isNaN(lng)) return null;
+
+  const optNum = (key: string): number | undefined => {
+    const v = parseFloat(attrs[key]);
+    return isNaN(v) ? undefined : v;
+  };
+
+  return {
+    date: parseHealthDate(attrs.date),
+    lat,
+    lng,
+    altitude: optNum("altitude"),
+    horizontalAccuracy: optNum("horizontalAccuracy"),
+    verticalAccuracy: optNum("verticalAccuracy"),
+    course: optNum("course"),
+    speed: optNum("speed"),
+  };
+}
+
+// ============================================================
 // Streaming XML parser with batched callbacks
 // ============================================================
 
@@ -342,6 +380,8 @@ export function streamHealthExport(
     // State for nested elements
     let currentWorkout: HealthWorkout | null = null;
     let currentWorkoutStats: WorkoutStatistics[] = [];
+    let currentRouteLocations: RouteLocation[] = [];
+    let insideWorkoutRoute = false;
 
     // Backpressure: pause the file stream while DB writes are in progress.
     // Max concurrent flushes before we pause.
@@ -420,6 +460,12 @@ export function streamHealthExport(
         }
       } else if (node.name === "WorkoutStatistics" && currentWorkout) {
         currentWorkoutStats.push(parseWorkoutStatistics(attrs));
+      } else if (node.name === "WorkoutRoute" && currentWorkout) {
+        insideWorkoutRoute = true;
+        currentRouteLocations = [];
+      } else if (node.name === "Location" && insideWorkoutRoute && currentWorkout) {
+        const loc = parseRouteLocation(attrs);
+        if (loc) currentRouteLocations.push(loc);
       } else if (node.name === "ActivitySummary") {
         // ActivitySummary contains daily ring data — treat as a record batch
         const summary = parseActivitySummary(attrs);
@@ -442,7 +488,13 @@ export function streamHealthExport(
     });
 
     parser.on("closetag", (name) => {
-      if (name === "Workout") {
+      if (name === "WorkoutRoute") {
+        insideWorkoutRoute = false;
+        if (currentWorkout && currentRouteLocations.length > 0) {
+          currentWorkout.routeLocations = currentRouteLocations;
+        }
+        currentRouteLocations = [];
+      } else if (name === "Workout") {
         flushWorkout();
       }
     });
@@ -650,7 +702,7 @@ async function upsertWorkoutBatch(
   let count = 0;
   for (const w of workouts) {
     const externalId = `ah:workout:${w.startDate.toISOString()}`;
-    await db.insert(cardioActivity).values({
+    const [row] = await db.insert(cardioActivity).values({
       providerId,
       externalId,
       activityType: w.activityType,
@@ -663,8 +715,26 @@ async function upsertWorkoutBatch(
         activityType: w.activityType,
         endedAt: w.endDate,
       },
-    });
+    }).returning({ id: cardioActivity.id });
     count++;
+
+    // Insert route GPS data into metric_stream
+    if (w.routeLocations && w.routeLocations.length > 0) {
+      const metricRows: (typeof metricStream.$inferInsert)[] = w.routeLocations.map((loc) => ({
+        providerId,
+        activityId: row.id,
+        recordedAt: loc.date,
+        lat: loc.lat,
+        lng: loc.lng,
+        altitude: loc.altitude,
+        speed: loc.speed,
+        gpsAccuracy: loc.horizontalAccuracy != null ? Math.round(loc.horizontalAccuracy) : undefined,
+      }));
+
+      for (let i = 0; i < metricRows.length; i += 500) {
+        await db.insert(metricStream).values(metricRows.slice(i, i + 500));
+      }
+    }
   }
   return count;
 }

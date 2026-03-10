@@ -138,6 +138,11 @@ const SAMPLE_EXPORT = `<?xml version="1.0" encoding="UTF-8"?>
    startDate="2024-03-01 18:00:00 -0500"
    endDate="2024-03-01 18:30:30 -0500"
    sum="320" unit="kcal"/>
+  <WorkoutRoute sourceName="Apple Watch" creationDate="2024-03-01 18:30:30 -0500">
+   <Location date="2024-03-01 18:00:00 -0500" latitude="40.712800" longitude="-74.006000" altitude="10.5" horizontalAccuracy="5" verticalAccuracy="3" course="180" speed="3.5"/>
+   <Location date="2024-03-01 18:00:05 -0500" latitude="40.712900" longitude="-74.005900" altitude="10.8" horizontalAccuracy="4" verticalAccuracy="3" course="175" speed="3.6"/>
+   <Location date="2024-03-01 18:00:10 -0500" latitude="40.713000" longitude="-74.005800" altitude="11.0" horizontalAccuracy="3" verticalAccuracy="2" course="170" speed="3.7"/>
+  </WorkoutRoute>
  </Workout>
 
  <ActivitySummary dateComponents="2024-03-01"
@@ -321,6 +326,32 @@ describe("Apple Health streaming import (integration)", () => {
     expect(workouts.length).toBe(1);
     expect(workouts[0].avgHeartRate).toBe(148);
     expect(workouts[0].maxHeartRate).toBe(175);
+  });
+
+  it("parses WorkoutRoute GPS locations and attaches to workout", async () => {
+    const since = new Date("2024-01-01");
+    const workouts: import("../apple-health.js").HealthWorkout[] = [];
+
+    await streamHealthExport(xmlPath, since, {
+      onRecordBatch: async () => {},
+      onSleepBatch: async () => {},
+      onWorkoutBatch: async (batch) => { workouts.push(...batch); },
+    });
+
+    expect(workouts.length).toBe(1);
+    expect(workouts[0].routeLocations).toBeDefined();
+    expect(workouts[0].routeLocations!.length).toBe(3);
+
+    const first = workouts[0].routeLocations![0];
+    expect(first.lat).toBeCloseTo(40.7128);
+    expect(first.lng).toBeCloseTo(-74.006);
+    expect(first.altitude).toBeCloseTo(10.5);
+    expect(first.speed).toBeCloseTo(3.5);
+    expect(first.date).toBeInstanceOf(Date);
+
+    const last = workouts[0].routeLocations![2];
+    expect(last.lat).toBeCloseTo(40.713);
+    expect(last.speed).toBeCloseTo(3.7);
   });
 
   it("parses ActivitySummary as active energy records", async () => {
