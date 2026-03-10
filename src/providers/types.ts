@@ -11,6 +11,8 @@ export interface ProviderAuthSetup {
   authUrl?: string;
   exchangeCode: (code: string) => Promise<TokenSet>;
   apiBaseUrl?: string;
+  /** Automated login that drives the OAuth flow with credentials (no browser needed) */
+  automatedLogin?: (email: string, password: string) => Promise<TokenSet>;
 }
 
 /**

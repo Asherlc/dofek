@@ -4,6 +4,7 @@ import {
   parsePerformanceGraph,
   enrichWorkoutFromGraph,
   mapFitnessDiscipline,
+  parseAuth0FormHtml,
   type PelotonWorkout,
   type PelotonPerformanceGraph,
 } from "../peloton.js";
@@ -363,6 +364,57 @@ describe("Peloton Provider", () => {
       expect(parsed.avgHeartRate).toBeUndefined();
       expect(parsed.avgPower).toBeUndefined();
       expect(parsed.calories).toBeUndefined();
+    });
+  });
+
+  describe("parseAuth0FormHtml", () => {
+    it("extracts form action and hidden fields", () => {
+      const html = `
+        <html><body>
+          <form method="POST" action="https://auth.onepeloton.com/login/callback">
+            <input type="hidden" name="wa" value="wsignin1.0" />
+            <input type="hidden" name="wresult" value="eyJ0eXAi..." />
+            <input type="hidden" name="wctx" value="some-context" />
+          </form>
+        </body></html>
+      `;
+
+      const result = parseAuth0FormHtml(html);
+      expect(result.action).toBe("https://auth.onepeloton.com/login/callback");
+      expect(result.fields).toEqual({
+        wa: "wsignin1.0",
+        wresult: "eyJ0eXAi...",
+        wctx: "some-context",
+      });
+    });
+
+    it("handles empty value attributes", () => {
+      const html = `
+        <form action="https://example.com/cb">
+          <input type="hidden" name="token" value="" />
+        </form>
+      `;
+
+      const result = parseAuth0FormHtml(html);
+      expect(result.fields.token).toBe("");
+    });
+
+    it("throws when no form found", () => {
+      expect(() => parseAuth0FormHtml("<html><body>No form here</body></html>"))
+        .toThrow("Could not find form action");
+    });
+
+    it("handles input attributes in any order", () => {
+      const html = `
+        <form action="https://example.com/cb" method="POST">
+          <input name="field1" type="hidden" value="val1" />
+          <input value="val2" name="field2" type="hidden" />
+        </form>
+      `;
+
+      const result = parseAuth0FormHtml(html);
+      expect(result.fields.field1).toBe("val1");
+      expect(result.fields.field2).toBe("val2");
     });
   });
 });

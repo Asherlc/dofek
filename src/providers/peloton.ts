@@ -293,19 +293,235 @@ export class PelotonClient {
 
 const PELOTON_AUTH_DOMAIN = "https://auth.onepeloton.com";
 const PELOTON_CLIENT_ID = "WVoJxVDdPoFx4RNewvvg6ch2mZ7bwnsM";
-const DEFAULT_REDIRECT_URI = "http://localhost:9876/callback";
+const PELOTON_REDIRECT_URI = "https://members.onepeloton.com/callback";
+const AUTH0_CLIENT = btoa(JSON.stringify({ name: "auth0.js-ulp", version: "9.14.3" }));
 
 export function pelotonOAuthConfig(): OAuthConfig {
-  const redirectUri = process.env.OAUTH_REDIRECT_URI ?? DEFAULT_REDIRECT_URI;
   return {
     clientId: PELOTON_CLIENT_ID,
     authorizeUrl: `${PELOTON_AUTH_DOMAIN}/authorize`,
     tokenUrl: `${PELOTON_AUTH_DOMAIN}/oauth/token`,
-    redirectUri,
+    redirectUri: PELOTON_REDIRECT_URI,
     scopes: ["offline_access", "openid", "peloton-api.members:default"],
     usePkce: true,
     audience: `${PELOTON_API_BASE}/`,
   };
+}
+
+// ============================================================
+// Auth0 automated login flow
+// ============================================================
+
+/**
+ * Extract hidden input fields from an Auth0 HTML form response.
+ * Auth0 returns HTML with a form containing hidden inputs after successful login.
+ */
+export function parseAuth0FormHtml(html: string): { action: string; fields: Record<string, string> } {
+  const actionMatch = html.match(/<form[^>]+action="([^"]+)"/);
+  if (!actionMatch) {
+    throw new Error("Could not find form action in Auth0 response");
+  }
+
+  const fields: Record<string, string> = {};
+  const inputRegex = /<input[^>]+type="hidden"[^>]*>/gi;
+  let match;
+  while ((match = inputRegex.exec(html)) !== null) {
+    const tag = match[0];
+    const nameMatch = tag.match(/name="([^"]+)"/);
+    const valueMatch = tag.match(/value="([^"]*)"/);
+    if (nameMatch) {
+      fields[nameMatch[1]] = valueMatch?.[1] ?? "";
+    }
+  }
+
+  return { action: actionMatch[1], fields };
+}
+
+function getSetCookieHeaders(headers: Headers): string[] {
+  if (typeof headers.getSetCookie === "function") {
+    return headers.getSetCookie();
+  }
+  const combined = headers.get("set-cookie");
+  return combined ? combined.split(", ") : [];
+}
+
+/**
+ * Simple cookie jar that tracks cookies per domain.
+ */
+class CookieJar {
+  private cookies = new Map<string, Map<string, string>>();
+
+  addFromResponse(url: string, headers: Headers): void {
+    const domain = new URL(url).hostname;
+    const existing = this.cookies.get(domain) ?? new Map();
+    for (const header of getSetCookieHeaders(headers)) {
+      const match = header.match(/^([^=]+)=([^;]*)/);
+      if (match) existing.set(match[1], match[2]);
+    }
+    this.cookies.set(domain, existing);
+  }
+
+  getForUrl(url: string): string {
+    const hostname = new URL(url).hostname;
+    const parts: string[] = [];
+    // Include cookies from matching domains (exact + parent domain)
+    for (const [domain, cookies] of this.cookies) {
+      if (hostname === domain || hostname.endsWith(`.${domain}`)) {
+        for (const [name, value] of cookies) {
+          parts.push(`${name}=${value}`);
+        }
+      }
+    }
+    return parts.join("; ");
+  }
+}
+
+/**
+ * Drive Auth0's Universal Login Page programmatically to obtain tokens.
+ * Simulates what a browser does: POST credentials, parse HTML form, follow redirects.
+ */
+/**
+ * Helper to follow redirects manually, tracking cookies per-domain.
+ * Returns the final response and the last redirect Location (if any).
+ */
+async function followRedirects(
+  url: string,
+  jar: CookieJar,
+  fetchFn: typeof globalThis.fetch,
+  init?: RequestInit,
+): Promise<{ response: Response; location: string | null }> {
+  const fullUrl = url.startsWith("http") ? url : `${PELOTON_AUTH_DOMAIN}${url}`;
+  const resp = await fetchFn(fullUrl, {
+    ...init,
+    redirect: "manual",
+    headers: { ...init?.headers as Record<string, string>, Cookie: jar.getForUrl(fullUrl) },
+  });
+  jar.addFromResponse(fullUrl, resp.headers);
+  return { response: resp, location: resp.headers.get("location") };
+}
+
+export async function pelotonAutomatedLogin(
+  email: string,
+  password: string,
+  fetchFn: typeof globalThis.fetch = globalThis.fetch,
+): Promise<TokenSet> {
+  const config = pelotonOAuthConfig();
+  const codeVerifier = generateCodeVerifier();
+  const codeChallenge = generateCodeChallenge(codeVerifier);
+  const state = generateCodeVerifier();
+  const nonce = generateCodeVerifier();
+  const jar = new CookieJar();
+
+  // Step 1: GET /authorize → follow redirects to reach the login page
+  const authorizeUrl = new URL(`${PELOTON_AUTH_DOMAIN}/authorize`);
+  authorizeUrl.searchParams.set("client_id", PELOTON_CLIENT_ID);
+  authorizeUrl.searchParams.set("redirect_uri", PELOTON_REDIRECT_URI);
+  authorizeUrl.searchParams.set("response_type", "code");
+  authorizeUrl.searchParams.set("scope", config.scopes.join(" "));
+  authorizeUrl.searchParams.set("audience", `${PELOTON_API_BASE}/`);
+  authorizeUrl.searchParams.set("code_challenge", codeChallenge);
+  authorizeUrl.searchParams.set("code_challenge_method", "S256");
+  authorizeUrl.searchParams.set("state", state);
+  authorizeUrl.searchParams.set("nonce", nonce);
+
+  console.log("[peloton] Initiating Auth0 login flow...");
+  let { response, location } = await followRedirects(authorizeUrl.toString(), jar, fetchFn);
+
+  while (location) {
+    ({ response, location } = await followRedirects(location, jar, fetchFn));
+  }
+
+  // Parse injectedConfig from login page (contains state, csrf, nonce)
+  const loginPageHtml = await response.text();
+  const configMatch = loginPageHtml.match(/window\.injectedConfig\s*=\s*[^"]*"([^"]+)"/);
+  if (!configMatch) {
+    throw new Error("Could not find injectedConfig in Auth0 login page");
+  }
+
+  const injectedConfig = JSON.parse(Buffer.from(configMatch[1], "base64").toString("utf-8"));
+  const extraParams = injectedConfig.extraParams as Record<string, string>;
+  if (!extraParams.state || !extraParams._csrf) {
+    throw new Error("Could not extract state/_csrf from Auth0 injectedConfig");
+  }
+
+  // Step 2: POST credentials to Auth0 login endpoint
+  console.log("[peloton] Submitting credentials...");
+  const loginUrl = `${PELOTON_AUTH_DOMAIN}/usernamepassword/login`;
+  const { response: loginResp } = await followRedirects(loginUrl, jar, fetchFn, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Auth0-Client": AUTH0_CLIENT,
+    },
+    body: JSON.stringify({
+      client_id: PELOTON_CLIENT_ID,
+      redirect_uri: PELOTON_REDIRECT_URI,
+      tenant: "peloton-prod",
+      response_type: "code",
+      scope: config.scopes.join(" "),
+      audience: `${PELOTON_API_BASE}/`,
+      _csrf: extraParams._csrf,
+      state: extraParams.state,
+      nonce: extraParams.nonce ?? nonce,
+      connection: "pelo-user-password",
+      username: email,
+      password,
+      code_challenge: codeChallenge,
+      code_challenge_method: "S256",
+    }),
+  });
+
+  if (!loginResp.ok) {
+    const errorText = await loginResp.text();
+    throw new Error(`Auth0 login failed (${loginResp.status}): ${errorText}`);
+  }
+
+  // Step 3: Parse the hidden form from HTML response
+  const loginHtml = await loginResp.text();
+  const { action: formAction, fields } = parseAuth0FormHtml(loginHtml);
+  // HTML-decode field values (Auth0 encodes entities like &#34; in the JWT)
+  for (const [key, val] of Object.entries(fields)) {
+    fields[key] = val
+      .replace(/&#34;/g, '"').replace(/&#39;/g, "'").replace(/&quot;/g, '"')
+      .replace(/&#x27;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+      .replace(/&amp;/g, "&");
+  }
+
+  // Step 4: Submit form, then follow redirects until we find ?code= in a Location header
+  console.log("[peloton] Following Auth0 redirect chain...");
+  let { location: redirectUrl } = await followRedirects(formAction, jar, fetchFn, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams(fields).toString(),
+  });
+
+  let maxRedirects = 15;
+  while (redirectUrl && maxRedirects > 0) {
+    // Stop before fetching the callback URL — just read the code from it
+    if (redirectUrl.includes("code=") || redirectUrl.includes("error=")) break;
+    ({ location: redirectUrl } = await followRedirects(redirectUrl, jar, fetchFn));
+    maxRedirects--;
+  }
+
+  if (!redirectUrl) {
+    throw new Error("Auth0 redirect chain ended without a Location header");
+  }
+
+  if (redirectUrl.includes("error=")) {
+    const errorParams = new URL(redirectUrl).searchParams;
+    throw new Error(
+      `Auth0 returned error: ${errorParams.get("error_description") ?? errorParams.get("error")}`,
+    );
+  }
+
+  const authCode = new URL(redirectUrl).searchParams.get("code");
+  if (!authCode) {
+    throw new Error("Authorization code not found in callback URL");
+  }
+
+  // Step 5: Exchange code for tokens
+  console.log("[peloton] Exchanging authorization code for tokens...");
+  return exchangeCodeForTokens(config, authCode, fetchFn, { codeVerifier });
 }
 
 export class PelotonProvider implements Provider {
@@ -318,7 +534,9 @@ export class PelotonProvider implements Provider {
   }
 
   validate(): string | null {
-    // No env vars needed — uses OAuth with PKCE (public client)
+    if (!process.env.PELOTON_USERNAME || !process.env.PELOTON_PASSWORD) {
+      return "PELOTON_USERNAME and PELOTON_PASSWORD are required for Peloton auth";
+    }
     return null;
   }
 
@@ -326,11 +544,13 @@ export class PelotonProvider implements Provider {
     const config = pelotonOAuthConfig();
     const codeVerifier = generateCodeVerifier();
     const codeChallenge = generateCodeChallenge(codeVerifier);
+    const fetchFn = this.fetchFn;
 
     return {
       oauthConfig: config,
       authUrl: buildAuthorizationUrl(config, { codeChallenge }),
-      exchangeCode: (code) => exchangeCodeForTokens(config, code, this.fetchFn, { codeVerifier }),
+      exchangeCode: (code) => exchangeCodeForTokens(config, code, fetchFn, { codeVerifier }),
+      automatedLogin: (email, password) => pelotonAutomatedLogin(email, password, fetchFn),
       apiBaseUrl: PELOTON_API_BASE,
     };
   }

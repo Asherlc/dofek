@@ -64,17 +64,32 @@ async function main() {
     const setup = provider.authSetup();
     const { oauthConfig, exchangeCode, apiBaseUrl } = setup;
 
-    const authUrl = setup.authUrl ?? buildAuthorizationUrl(oauthConfig);
-    console.log(`[auth] Open this URL in your browser:\n\n  ${authUrl}\n`);
-    console.log("[auth] Waiting for callback...");
+    let tokens;
+    if (setup.automatedLogin) {
+      // Automated login flow (no browser needed)
+      const email = process.env[`${provider.id.toUpperCase()}_USERNAME`];
+      const password = process.env[`${provider.id.toUpperCase()}_PASSWORD`];
+      if (!email || !password) {
+        console.error(`[auth] ${provider.id.toUpperCase()}_USERNAME and ${provider.id.toUpperCase()}_PASSWORD required`);
+        process.exit(1);
+      }
+      console.log(`[auth] Logging in as ${email}...`);
+      tokens = await setup.automatedLogin(email, password);
+    } else {
+      // Browser-based OAuth flow
+      const authUrl = setup.authUrl ?? buildAuthorizationUrl(oauthConfig);
+      console.log(`[auth] Open this URL in your browser:\n\n  ${authUrl}\n`);
+      console.log("[auth] Waiting for callback...");
 
-    const callbackUrl = new URL(oauthConfig.redirectUri);
-    const callbackPort = parseInt(callbackUrl.port || "9876", 10);
-    const useHttps = callbackUrl.protocol === "https:";
-    const { code, cleanup } = await waitForAuthCode(callbackPort, { https: useHttps });
-    console.log("[auth] Received authorization code. Exchanging for tokens...");
+      const callbackUrl = new URL(oauthConfig.redirectUri);
+      const callbackPort = parseInt(callbackUrl.port || "9876", 10);
+      const useHttps = callbackUrl.protocol === "https:";
+      const { code, cleanup: cleanupServer } = await waitForAuthCode(callbackPort, { https: useHttps });
+      console.log("[auth] Received authorization code. Exchanging for tokens...");
+      tokens = await exchangeCode(code);
+      cleanupServer();
+    }
 
-    const tokens = await exchangeCode(code);
     console.log(`[auth] Authorized! Token expires at ${tokens.expiresAt.toISOString()}`);
 
     const db = createDatabaseFromEnv();
@@ -82,7 +97,6 @@ async function main() {
     await saveTokens(db, provider.id, tokens);
     console.log("[auth] Tokens saved to database.");
 
-    cleanup();
     process.exit(0);
   }
 
