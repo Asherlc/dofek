@@ -109,3 +109,15 @@ The SAX parser reads much faster than the DB can write. We implement backpressur
 ### Batch Inserts
 
 metric_stream rows are collected into batches (500 rows) and inserted with `onConflictDoNothing()` for deduplication.
+
+### Clinical Records Import
+
+The clinical records import runs after the XML import:
+1. Read FHIR JSON files from `clinical-records/` directory in the zip (via yauzl)
+2. Separate Observations from DiagnosticReports
+3. Build panel map from DiagnosticReports (maps Observation IDs → panel names)
+4. Stream `export.xml` with SAX to build source name map (ClinicalRecord `resourceFilePath` → `sourceName`)
+5. Filter to lab-category Observations only
+6. Parse and batch-insert into `lab_result` table (500 per batch)
+
+The source name map uses SAX streaming — the export.xml can be 2.5GB and must not be loaded into memory. The SAX parser fires `opentag` for each `<ClinicalRecord>` element and extracts only the `sourceName` and `resourceFilePath` attributes.
