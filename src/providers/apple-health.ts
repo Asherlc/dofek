@@ -109,6 +109,8 @@ export interface HealthWorkout {
   durationSeconds: number;
   distanceMeters?: number;
   calories?: number;
+  avgHeartRate?: number;
+  maxHeartRate?: number;
   startDate: Date;
   endDate: Date;
 }
@@ -251,6 +253,61 @@ export function parseWorkout(attrs: Record<string, string>): HealthWorkout {
 // Streaming XML parser with batched callbacks
 // ============================================================
 
+export interface ActivitySummary {
+  date: string; // YYYY-MM-DD
+  activeEnergyBurned?: number;
+  appleExerciseMinutes?: number;
+  appleStandHours?: number;
+}
+
+export function parseActivitySummary(attrs: Record<string, string>): ActivitySummary | null {
+  const date = attrs.dateComponents;
+  if (!date) return null;
+
+  return {
+    date,
+    activeEnergyBurned: attrs.activeEnergyBurned ? parseFloat(attrs.activeEnergyBurned) : undefined,
+    appleExerciseMinutes: attrs.appleExerciseTime ? parseFloat(attrs.appleExerciseTime) : undefined,
+    appleStandHours: attrs.appleStandHours ? parseFloat(attrs.appleStandHours) : undefined,
+  };
+}
+
+export interface WorkoutStatistics {
+  type: string;
+  sum?: number;
+  average?: number;
+  minimum?: number;
+  maximum?: number;
+  unit?: string;
+}
+
+export function parseWorkoutStatistics(attrs: Record<string, string>): WorkoutStatistics {
+  return {
+    type: attrs.type ?? "",
+    sum: attrs.sum ? parseFloat(attrs.sum) : undefined,
+    average: attrs.average ? parseFloat(attrs.average) : undefined,
+    minimum: attrs.minimum ? parseFloat(attrs.minimum) : undefined,
+    maximum: attrs.maximum ? parseFloat(attrs.maximum) : undefined,
+    unit: attrs.unit,
+  };
+}
+
+export function enrichWorkoutFromStats(workout: HealthWorkout, stats: WorkoutStatistics[]): void {
+  for (const s of stats) {
+    switch (s.type) {
+      case "HKQuantityTypeIdentifierHeartRate":
+        if (s.average !== undefined) workout.avgHeartRate = Math.round(s.average);
+        if (s.maximum !== undefined) workout.maxHeartRate = Math.round(s.maximum);
+        break;
+      case "HKQuantityTypeIdentifierActiveEnergyBurned":
+        if (s.sum !== undefined && workout.calories === undefined) {
+          workout.calories = Math.round(s.sum);
+        }
+        break;
+    }
+  }
+}
+
 export interface StreamCallbacks {
   onRecordBatch: (records: HealthRecord[]) => Promise<void>;
   onSleepBatch: (records: SleepAnalysisRecord[]) => Promise<void>;
@@ -279,53 +336,103 @@ export function streamHealthExport(
     let sleepCount = 0;
     let pending = Promise.resolve();
 
+    // State for nested elements
+    let currentWorkout: HealthWorkout | null = null;
+    let currentWorkoutStats: WorkoutStatistics[] = [];
+
     function enqueue(fn: () => Promise<void>) {
       pending = pending.then(fn);
     }
 
-    parser.on("opentag", (node) => {
-      if (node.name === "Record") {
-        const attrs = node.attributes as Record<string, string>;
+    function addRecord(record: HealthRecord) {
+      recordBatch.push(record);
+      recordCount++;
+      if (recordBatch.length >= BATCH_SIZE) {
+        const batch = recordBatch;
+        recordBatch = [];
+        enqueue(() => callbacks.onRecordBatch(batch));
+      }
+    }
 
+    function addSleep(sleep: SleepAnalysisRecord) {
+      sleepBatch.push(sleep);
+      sleepCount++;
+      if (sleepBatch.length >= BATCH_SIZE) {
+        const batch = sleepBatch;
+        sleepBatch = [];
+        enqueue(() => callbacks.onSleepBatch(batch));
+      }
+    }
+
+    function flushWorkout() {
+      if (currentWorkout) {
+        if (currentWorkoutStats.length > 0) {
+          enrichWorkoutFromStats(currentWorkout, currentWorkoutStats);
+        }
+        workoutBatch.push(currentWorkout);
+        workoutCount++;
+        if (workoutBatch.length >= BATCH_SIZE) {
+          const batch = workoutBatch;
+          workoutBatch = [];
+          enqueue(() => callbacks.onWorkoutBatch(batch));
+        }
+      }
+      currentWorkout = null;
+      currentWorkoutStats = [];
+    }
+
+    parser.on("opentag", (node) => {
+      const attrs = node.attributes as Record<string, string>;
+
+      // Records appear at top level and inside Correlations (e.g. BP pairs)
+      if (node.name === "Record") {
+        // Records appear both at top level and inside Correlations
         if (attrs.type === "HKCategoryTypeIdentifierSleepAnalysis") {
           const sleep = parseSleepAnalysis(attrs);
-          if (sleep && sleep.startDate >= since) {
-            sleepBatch.push(sleep);
-            sleepCount++;
-            if (sleepBatch.length >= BATCH_SIZE) {
-              const batch = sleepBatch;
-              sleepBatch = [];
-              enqueue(() => callbacks.onSleepBatch(batch));
-            }
-          }
+          if (sleep && sleep.startDate >= since) addSleep(sleep);
         } else {
           const record = parseRecord(attrs);
-          if (record && record.startDate >= since) {
-            recordBatch.push(record);
-            recordCount++;
-            if (recordBatch.length >= BATCH_SIZE) {
-              const batch = recordBatch;
-              recordBatch = [];
-              enqueue(() => callbacks.onRecordBatch(batch));
-            }
-          }
+          if (record && record.startDate >= since) addRecord(record);
         }
       } else if (node.name === "Workout") {
-        const workout = parseWorkout(node.attributes as Record<string, string>);
+        const workout = parseWorkout(attrs);
         if (workout.startDate >= since) {
-          workoutBatch.push(workout);
-          workoutCount++;
-          if (workoutBatch.length >= BATCH_SIZE) {
-            const batch = workoutBatch;
-            workoutBatch = [];
-            enqueue(() => callbacks.onWorkoutBatch(batch));
+          currentWorkout = workout;
+          currentWorkoutStats = [];
+        }
+      } else if (node.name === "WorkoutStatistics" && currentWorkout) {
+        currentWorkoutStats.push(parseWorkoutStatistics(attrs));
+      } else if (node.name === "ActivitySummary") {
+        // ActivitySummary contains daily ring data — treat as a record batch
+        const summary = parseActivitySummary(attrs);
+        if (summary) {
+          // Convert to HealthRecords for the daily metrics pipeline
+          const date = parseHealthDate(`${summary.date} 00:00:00 +0000`);
+          if (date >= since) {
+            if (summary.activeEnergyBurned !== undefined) {
+              addRecord({
+                type: "HKQuantityTypeIdentifierActiveEnergyBurned",
+                sourceName: "ActivitySummary",
+                unit: "kcal",
+                value: summary.activeEnergyBurned,
+                startDate: date, endDate: date, creationDate: date,
+              });
+            }
           }
         }
       }
     });
 
+    parser.on("closetag", (name) => {
+      if (name === "Workout") {
+        flushWorkout();
+      }
+    });
+
     parser.on("error", (err) => reject(err));
     parser.on("end", () => {
+      // Flush any in-progress workout
+      flushWorkout();
       // Flush remaining batches
       if (recordBatch.length > 0) enqueue(() => callbacks.onRecordBatch(recordBatch));
       if (sleepBatch.length > 0) enqueue(() => callbacks.onSleepBatch(sleepBatch));
@@ -521,6 +628,8 @@ async function upsertWorkoutBatch(
       durationSeconds: Math.round(w.durationSeconds),
       distanceMeters: w.distanceMeters,
       calories: w.calories,
+      avgHeartRate: w.avgHeartRate,
+      maxHeartRate: w.maxHeartRate,
     }).onConflictDoUpdate({
       target: [cardioActivity.providerId, cardioActivity.externalId],
       set: {
@@ -529,6 +638,8 @@ async function upsertWorkoutBatch(
         durationSeconds: Math.round(w.durationSeconds),
         distanceMeters: w.distanceMeters,
         calories: w.calories,
+        avgHeartRate: w.avgHeartRate,
+        maxHeartRate: w.maxHeartRate,
       },
     });
     count++;

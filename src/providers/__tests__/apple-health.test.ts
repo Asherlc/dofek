@@ -3,6 +3,9 @@ import {
   parseRecord,
   parseWorkout,
   parseSleepAnalysis,
+  parseActivitySummary,
+  parseWorkoutStatistics,
+  enrichWorkoutFromStats,
   type HealthRecord,
   type HealthWorkout,
 } from "../apple-health.js";
@@ -361,6 +364,114 @@ describe("Apple Health Provider — parsing", () => {
       expect(result.activityType).toBe("running");
       expect(result.distanceMeters).toBeUndefined();
       expect(result.calories).toBeUndefined();
+    });
+  });
+
+  describe("parseActivitySummary", () => {
+    it("parses daily activity ring data", () => {
+      const attrs: Record<string, string> = {
+        dateComponents: "2024-03-01",
+        activeEnergyBurned: "523.4",
+        activeEnergyBurnedGoal: "600",
+        activeEnergyBurnedUnit: "kcal",
+        appleExerciseTime: "45",
+        appleExerciseTimeGoal: "30",
+        appleStandHours: "12",
+        appleStandHoursGoal: "12",
+      };
+      const result = parseActivitySummary(attrs);
+      expect(result).not.toBeNull();
+      expect(result!.date).toBe("2024-03-01");
+      expect(result!.activeEnergyBurned).toBeCloseTo(523.4);
+      expect(result!.appleExerciseMinutes).toBe(45);
+      expect(result!.appleStandHours).toBe(12);
+    });
+
+    it("returns null without dateComponents", () => {
+      const result = parseActivitySummary({});
+      expect(result).toBeNull();
+    });
+
+    it("handles missing optional fields", () => {
+      const result = parseActivitySummary({ dateComponents: "2024-03-01" });
+      expect(result!.activeEnergyBurned).toBeUndefined();
+      expect(result!.appleExerciseMinutes).toBeUndefined();
+    });
+  });
+
+  describe("WorkoutStatistics", () => {
+    it("parses statistics attributes", () => {
+      const attrs: Record<string, string> = {
+        type: "HKQuantityTypeIdentifierHeartRate",
+        startDate: "2024-03-01 18:00:00 -0500",
+        endDate: "2024-03-01 18:30:00 -0500",
+        average: "145",
+        minimum: "120",
+        maximum: "175",
+        unit: "count/min",
+      };
+      const result = parseWorkoutStatistics(attrs);
+      expect(result.type).toBe("HKQuantityTypeIdentifierHeartRate");
+      expect(result.average).toBe(145);
+      expect(result.minimum).toBe(120);
+      expect(result.maximum).toBe(175);
+    });
+
+    it("enriches workout with HR stats", () => {
+      const workout = parseWorkout(workoutAttrs);
+      expect(workout.avgHeartRate).toBeUndefined();
+
+      enrichWorkoutFromStats(workout, [
+        {
+          type: "HKQuantityTypeIdentifierHeartRate",
+          average: 148.5,
+          minimum: 115,
+          maximum: 182,
+          unit: "count/min",
+        },
+      ]);
+
+      expect(workout.avgHeartRate).toBe(149); // rounded
+      expect(workout.maxHeartRate).toBe(182);
+    });
+
+    it("enriches workout calories from ActiveEnergyBurned", () => {
+      const minimal: Record<string, string> = {
+        workoutActivityType: "HKWorkoutActivityTypeRunning",
+        duration: "30",
+        durationUnit: "min",
+        sourceName: "Apple Watch",
+        creationDate: "2024-03-01 18:00:00 -0500",
+        startDate: "2024-03-01 18:00:00 -0500",
+        endDate: "2024-03-01 18:30:00 -0500",
+      };
+      const workout = parseWorkout(minimal);
+      expect(workout.calories).toBeUndefined();
+
+      enrichWorkoutFromStats(workout, [
+        {
+          type: "HKQuantityTypeIdentifierActiveEnergyBurned",
+          sum: 312.7,
+          unit: "kcal",
+        },
+      ]);
+
+      expect(workout.calories).toBe(313);
+    });
+
+    it("does not overwrite existing calories from workout attributes", () => {
+      const workout = parseWorkout(workoutAttrs);
+      const originalCalories = workout.calories;
+
+      enrichWorkoutFromStats(workout, [
+        {
+          type: "HKQuantityTypeIdentifierActiveEnergyBurned",
+          sum: 999,
+          unit: "kcal",
+        },
+      ]);
+
+      expect(workout.calories).toBe(originalCalories);
     });
   });
 });

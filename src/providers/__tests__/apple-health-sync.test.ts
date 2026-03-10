@@ -103,6 +103,25 @@ const SAMPLE_EXPORT = `<?xml version="1.0" encoding="UTF-8"?>
   endDate="2024-03-02 03:30:00 -0500"
   value="HKCategoryValueSleepAnalysisAsleepREM"/>
 
+ <Correlation type="HKCorrelationTypeIdentifierBloodPressure"
+  sourceName="Withings"
+  creationDate="2024-03-01 09:00:00 -0500"
+  startDate="2024-03-01 09:00:00 -0500"
+  endDate="2024-03-01 09:00:00 -0500">
+  <Record type="HKQuantityTypeIdentifierBloodPressureSystolic"
+   sourceName="Withings" unit="mmHg"
+   creationDate="2024-03-01 09:00:00 -0500"
+   startDate="2024-03-01 09:00:00 -0500"
+   endDate="2024-03-01 09:00:00 -0500"
+   value="120"/>
+  <Record type="HKQuantityTypeIdentifierBloodPressureDiastolic"
+   sourceName="Withings" unit="mmHg"
+   creationDate="2024-03-01 09:00:00 -0500"
+   startDate="2024-03-01 09:00:00 -0500"
+   endDate="2024-03-01 09:00:00 -0500"
+   value="80"/>
+ </Correlation>
+
  <Workout workoutActivityType="HKWorkoutActivityTypeRunning"
   duration="30.5" durationUnit="min"
   totalDistance="5200" totalDistanceUnit="m"
@@ -110,7 +129,25 @@ const SAMPLE_EXPORT = `<?xml version="1.0" encoding="UTF-8"?>
   sourceName="Apple Watch"
   creationDate="2024-03-01 18:30:00 -0500"
   startDate="2024-03-01 18:00:00 -0500"
-  endDate="2024-03-01 18:30:30 -0500"/>
+  endDate="2024-03-01 18:30:30 -0500">
+  <WorkoutStatistics type="HKQuantityTypeIdentifierHeartRate"
+   startDate="2024-03-01 18:00:00 -0500"
+   endDate="2024-03-01 18:30:30 -0500"
+   average="148" minimum="120" maximum="175" unit="count/min"/>
+  <WorkoutStatistics type="HKQuantityTypeIdentifierActiveEnergyBurned"
+   startDate="2024-03-01 18:00:00 -0500"
+   endDate="2024-03-01 18:30:30 -0500"
+   sum="320" unit="kcal"/>
+ </Workout>
+
+ <ActivitySummary dateComponents="2024-03-01"
+  activeEnergyBurned="523.4"
+  activeEnergyBurnedGoal="600"
+  activeEnergyBurnedUnit="kcal"
+  appleExerciseTime="45"
+  appleExerciseTimeGoal="30"
+  appleStandHours="12"
+  appleStandHoursGoal="12"/>
 
  <Record type="HKQuantityTypeIdentifierHeartRate"
   sourceName="Apple Watch" unit="count/min"
@@ -245,5 +282,64 @@ describe("Apple Health streaming import (integration)", () => {
 
     // 1250 + 800 = 2050 steps for 2024-03-01
     expect(stepsByDay.get("2024-03-01")).toBe(2050);
+  });
+
+  it("parses BP records from Correlation elements", async () => {
+    const since = new Date("2024-01-01");
+    const bpRecords: { type: string; value: number }[] = [];
+
+    await streamHealthExport(xmlPath, since, {
+      onRecordBatch: async (records) => {
+        for (const r of records) {
+          if (r.type.includes("BloodPressure")) {
+            bpRecords.push({ type: r.type, value: r.value });
+          }
+        }
+      },
+      onSleepBatch: async () => {},
+      onWorkoutBatch: async () => {},
+    });
+
+    expect(bpRecords).toEqual(
+      expect.arrayContaining([
+        { type: "HKQuantityTypeIdentifierBloodPressureSystolic", value: 120 },
+        { type: "HKQuantityTypeIdentifierBloodPressureDiastolic", value: 80 },
+      ]),
+    );
+  });
+
+  it("enriches workouts with WorkoutStatistics HR data", async () => {
+    const since = new Date("2024-01-01");
+    const workouts: import("../apple-health.js").HealthWorkout[] = [];
+
+    await streamHealthExport(xmlPath, since, {
+      onRecordBatch: async () => {},
+      onSleepBatch: async () => {},
+      onWorkoutBatch: async (batch) => { workouts.push(...batch); },
+    });
+
+    expect(workouts.length).toBe(1);
+    expect(workouts[0].avgHeartRate).toBe(148);
+    expect(workouts[0].maxHeartRate).toBe(175);
+  });
+
+  it("parses ActivitySummary as active energy records", async () => {
+    const since = new Date("2024-01-01");
+    let activitySummaryEnergyCount = 0;
+
+    await streamHealthExport(xmlPath, since, {
+      onRecordBatch: async (records) => {
+        for (const r of records) {
+          if (r.type === "HKQuantityTypeIdentifierActiveEnergyBurned" && r.sourceName === "ActivitySummary") {
+            activitySummaryEnergyCount++;
+            expect(r.value).toBeCloseTo(523.4);
+          }
+        }
+      },
+      onSleepBatch: async () => {},
+      onWorkoutBatch: async () => {},
+    });
+
+    expect(activitySummaryEnergyCount).toBe(1);
   });
 });
