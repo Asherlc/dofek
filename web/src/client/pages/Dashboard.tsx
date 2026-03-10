@@ -1,5 +1,6 @@
 import { ActivityList } from "../components/ActivityList.js";
 import { HealthStatusBar } from "../components/HealthStatusBar.js";
+import { InsightsPanel } from "../components/InsightsPanel.js";
 import { NutritionChart } from "../components/NutritionChart.js";
 import { SleepChart } from "../components/SleepChart.js";
 import { TimeSeriesChart } from "../components/TimeSeriesChart.js";
@@ -12,6 +13,7 @@ export function Dashboard() {
   const sleepData = trpc.sleep.list.useQuery({ days: 14 });
   const bodyData = trpc.body.list.useQuery({ days: 90 });
   const nutritionData = trpc.nutrition.daily.useQuery({ days: 14 });
+  const insightsData = trpc.insights.compute.useQuery({ days: 90 });
 
   const t = trends.data as any;
 
@@ -131,6 +133,15 @@ export function Dashboard() {
         <section>
           <SectionHeader title="Health Monitor" subtitle="30-day baseline comparison" />
           <HealthStatusBar metrics={healthMetrics} loading={trends.isLoading} />
+        </section>
+
+        {/* Insights */}
+        <section>
+          <SectionHeader title="Insights" subtitle="Actionable patterns from your data (90 days)" />
+          <InsightsPanel
+            insights={(insightsData.data ?? []) as any[]}
+            loading={insightsData.isLoading}
+          />
         </section>
 
         {/* HRV & Resting HR */}
