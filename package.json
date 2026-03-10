@@ -3,13 +3,13 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx --env-file=.env src/index.ts",
-    "sync": "tsx --env-file=.env src/index.ts sync",
-    "migrate": "drizzle-kit migrate",
+    "dev": "./scripts/with-env.sh tsx src/index.ts",
+    "sync": "./scripts/with-env.sh tsx src/index.ts sync",
+    "migrate": "./scripts/with-env.sh drizzle-kit migrate",
     "generate": "drizzle-kit generate",
     "test": "vitest",
     "test:watch": "vitest --watch",
-    "server": "tsx --env-file=.env src/server.ts",
+    "server": "./scripts/with-env.sh tsx src/server.ts",
     "build": "tsc",
     "start": "node dist/index.js"
   },
