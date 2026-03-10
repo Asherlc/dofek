@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   parseFoodEntries,
   buildOAuth1Header,
+  inferCategory,
   type FatSecretFoodEntriesResponse,
 } from "../fatsecret.js";
 
@@ -166,6 +167,42 @@ describe("FatSecret Provider", () => {
     it("normalizes meal names to lowercase", () => {
       const entries = parseFoodEntries(singleEntryResponse);
       expect(entries[0].meal).toBe("breakfast");
+    });
+  });
+
+  describe("inferCategory", () => {
+    it("identifies common supplement keywords", () => {
+      expect(inferCategory("Vitamin D3 5000 IU")).toBe("supplement");
+      expect(inferCategory("Fish Oil Capsules")).toBe("supplement");
+      expect(inferCategory("Creatine Monohydrate")).toBe("supplement");
+      expect(inferCategory("Magnesium Glycinate 400mg")).toBe("supplement");
+      expect(inferCategory("Whey Protein Powder")).toBe("supplement");
+      expect(inferCategory("Zinc 50mg Tablet")).toBe("supplement");
+      expect(inferCategory("Multivitamin")).toBe("supplement");
+      expect(inferCategory("Probiotic Capsule")).toBe("supplement");
+      expect(inferCategory("Omega-3 Softgel")).toBe("supplement");
+      expect(inferCategory("Ashwagandha Extract")).toBe("supplement");
+      expect(inferCategory("Collagen Peptides")).toBe("supplement");
+    });
+
+    it("does not flag regular foods as supplements", () => {
+      expect(inferCategory("Scrambled Eggs")).toBeUndefined();
+      expect(inferCategory("Chicken Breast")).toBeUndefined();
+      expect(inferCategory("Oatmeal")).toBeUndefined();
+      expect(inferCategory("Orange Juice")).toBeUndefined();
+      expect(inferCategory("Salmon Fillet")).toBeUndefined();
+      expect(inferCategory("Greek Yogurt")).toBeUndefined();
+    });
+
+    it("handles case-insensitive matching", () => {
+      expect(inferCategory("VITAMIN C")).toBe("supplement");
+      expect(inferCategory("fish oil")).toBe("supplement");
+    });
+
+    it("matches dosage patterns (mg, mcg, IU)", () => {
+      expect(inferCategory("CoQ10 200mg")).toBe("supplement");
+      expect(inferCategory("B12 1000mcg")).toBe("supplement");
+      expect(inferCategory("D3 5000IU")).toBe("supplement");
     });
   });
 

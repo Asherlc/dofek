@@ -175,6 +175,47 @@ function normalizeMeal(meal: string): string {
   return "other";
 }
 
+// ============================================================
+// Category inference (keyword heuristic)
+// ============================================================
+
+const SUPPLEMENT_KEYWORDS = [
+  "vitamin", "multivitamin",
+  "supplement", "capsule", "capsules", "tablet", "tablets", "softgel", "softgels",
+  "fish oil", "omega-3", "omega 3",
+  "creatine", "collagen", "probiotic", "prebiotic",
+  "magnesium", "zinc", "iron supplement", "calcium supplement",
+  "ashwagandha", "turmeric", "curcumin",
+  "melatonin", "coq10",
+  "whey protein", "casein protein", "protein powder",
+  "bcaa", "glutamine", "electrolyte",
+  "extract",
+];
+
+/**
+ * Dosage pattern: matches "200mg", "1000mcg", "5000IU", "500 mg", etc.
+ */
+const DOSAGE_PATTERN = /\b\d+\s*(?:mg|mcg|iu|µg)\b/i;
+
+/**
+ * Infer food category from the food entry name using keyword heuristics.
+ * Returns "supplement" if the name matches supplement patterns, undefined otherwise.
+ * This is a best-effort heuristic — API-based category enrichment (Premier tier) is more accurate.
+ */
+export function inferCategory(foodName: string): "supplement" | undefined {
+  const lower = foodName.toLowerCase();
+
+  // Check keyword matches
+  for (const keyword of SUPPLEMENT_KEYWORDS) {
+    if (lower.includes(keyword)) return "supplement";
+  }
+
+  // Check dosage patterns (e.g., "200mg", "5000IU") — strong supplement signal
+  if (DOSAGE_PATTERN.test(foodName)) return "supplement";
+
+  return undefined;
+}
+
 /**
  * Parse FatSecret food_entries.get response into ParsedFoodEntry array.
  */
@@ -516,6 +557,7 @@ export class FatSecretProvider implements Provider {
             meal: e.meal as "breakfast" | "lunch" | "dinner" | "snack" | "other",
             foodName: e.foodName,
             foodDescription: e.foodDescription,
+            category: inferCategory(e.foodName),
             providerFoodId: e.fatsecretFoodId,
             providerServingId: e.fatsecretServingId,
             numberOfUnits: e.numberOfUnits,
