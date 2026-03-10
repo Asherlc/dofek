@@ -3,7 +3,7 @@ import { writeFileSync, mkdirSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.js";
-import { streamHealthExport } from "../apple-health.js";
+import { streamHealthExport, type ProgressInfo } from "../apple-health.js";
 import * as schema from "../../db/schema.js";
 
 // ============================================================
@@ -496,5 +496,28 @@ describe("Apple Health streaming import (integration)", () => {
     });
 
     expect(activitySummaryEnergyCount).toBe(1);
+  });
+
+  it("calls onProgress with increasing percentages", async () => {
+    const since = new Date("2024-01-01");
+    const progressUpdates: ProgressInfo[] = [];
+    await streamHealthExport(xmlPath, since, {
+      onRecordBatch: async () => {},
+      onSleepBatch: async () => {},
+      onWorkoutBatch: async () => {},
+      onProgress: (info) => progressUpdates.push({ ...info }),
+    });
+
+    expect(progressUpdates.length).toBeGreaterThan(0);
+    // Should reach 100%
+    expect(progressUpdates[progressUpdates.length - 1].pct).toBe(100);
+    // Percentages should be non-decreasing
+    for (let i = 1; i < progressUpdates.length; i++) {
+      expect(progressUpdates[i].pct).toBeGreaterThanOrEqual(progressUpdates[i - 1].pct);
+    }
+    // Should report file size and bytes read
+    const last = progressUpdates[progressUpdates.length - 1];
+    expect(last.totalBytes).toBeGreaterThan(0);
+    expect(last.bytesRead).toBe(last.totalBytes);
   });
 });

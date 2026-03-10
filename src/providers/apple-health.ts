@@ -370,11 +370,21 @@ export function enrichWorkoutFromStats(workout: HealthWorkout, stats: WorkoutSta
   }
 }
 
+export interface ProgressInfo {
+  bytesRead: number;
+  totalBytes: number;
+  pct: number;
+  recordCount: number;
+  workoutCount: number;
+  sleepCount: number;
+}
+
 export interface StreamCallbacks {
   onRecordBatch: (records: HealthRecord[]) => Promise<void>;
   onSleepBatch: (records: SleepAnalysisRecord[]) => Promise<void>;
   onWorkoutBatch: (workouts: HealthWorkout[]) => Promise<void>;
   onCategoryBatch?: (records: CategoryRecord[]) => Promise<void>;
+  onProgress?: (info: ProgressInfo) => void;
 }
 
 const BATCH_SIZE = 500;
@@ -401,6 +411,26 @@ export function streamHealthExport(
     let sleepCount = 0;
     let categoryCount = 0;
     let pendingFlushes = 0;
+
+    // Progress tracking
+    const totalBytes = statSync(filePath).size;
+    let bytesRead = 0;
+    let lastReportedPct = -1;
+    fileStream.on("data", (chunk: string | Buffer) => {
+      bytesRead += typeof chunk === "string" ? Buffer.byteLength(chunk) : chunk.length;
+      const pct = Math.floor((bytesRead / totalBytes) * 100);
+      if (pct > lastReportedPct) {
+        lastReportedPct = pct;
+        callbacks.onProgress?.({
+          bytesRead,
+          totalBytes,
+          pct,
+          recordCount,
+          workoutCount,
+          sleepCount,
+        });
+      }
+    });
 
     // State for nested elements
     let currentWorkout: HealthWorkout | null = null;
@@ -1031,6 +1061,29 @@ export function extractExportXml(zipPath: string): Promise<string> {
 }
 
 // ============================================================
+// Default console progress reporter
+// ============================================================
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+function defaultConsoleProgress(info: ProgressInfo): void {
+  const bar = "█".repeat(Math.floor(info.pct / 2)) + "░".repeat(50 - Math.floor(info.pct / 2));
+  process.stderr.write(
+    `\r[apple_health] ${bar} ${info.pct}% ` +
+    `(${formatBytes(info.bytesRead)}/${formatBytes(info.totalBytes)}) ` +
+    `${info.recordCount} records, ${info.workoutCount} workouts, ${info.sleepCount} sleep`,
+  );
+  if (info.pct >= 100) {
+    process.stderr.write("\n");
+  }
+}
+
+// ============================================================
 // Import logic (shared between CLI and sync)
 // ============================================================
 
@@ -1039,6 +1092,7 @@ async function runImport(
   providerId: string,
   xmlPath: string,
   since: Date,
+  onProgress?: (info: ProgressInfo) => void,
 ): Promise<SyncResult> {
   const start = Date.now();
   const errors: SyncError[] = [];
@@ -1046,6 +1100,7 @@ async function runImport(
 
   try {
     const counts = await streamHealthExport(xmlPath, since, {
+      onProgress,
       onRecordBatch: async (records) => {
         const metricRecords = records.filter((r) => METRIC_STREAM_TYPES[r.type]);
         const bodyRecords = records.filter((r) => BODY_MEASUREMENT_TYPES.has(r.type));
@@ -1124,6 +1179,7 @@ export async function importAppleHealthFile(
   db: Database,
   filePath: string,
   since: Date,
+  onProgress?: (info: ProgressInfo) => void,
 ): Promise<SyncResult> {
   await ensureProvider(db, "apple_health", "Apple Health");
 
@@ -1139,8 +1195,11 @@ export async function importAppleHealthFile(
     xmlPath = filePath;
   }
 
+  // Default to console progress if no callback provided
+  const progressFn = onProgress ?? defaultConsoleProgress;
+
   console.log(`[apple_health] Importing from ${xmlPath} (since ${since.toISOString()})`);
-  const result = await runImport(db, "apple_health", xmlPath, since);
+  const result = await runImport(db, "apple_health", xmlPath, since, progressFn);
 
   // Import clinical records (lab results) from zip
   if (filePath.endsWith(".zip")) {
