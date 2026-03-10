@@ -1,10 +1,10 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { eq } from "drizzle-orm";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { eq } from "drizzle-orm";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.js";
-import { ensureProvider, saveTokens } from "../../db/tokens.js";
 import { activity, metricStream } from "../../db/schema.js";
+import { ensureProvider, saveTokens } from "../../db/tokens.js";
 import { WahooProvider, type WahooWorkout } from "../wahoo.js";
 
 // Fake Wahoo API responses
@@ -44,7 +44,7 @@ function createMockFetch(
   workouts: WahooWorkout[],
   opts?: { fitFileError?: boolean },
 ): typeof globalThis.fetch {
-  return (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  return (async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
     const urlStr = input.toString();
 
     // Token refresh
@@ -116,10 +116,7 @@ describe("WahooProvider.sync() (integration)", () => {
     expect(result.errors).toHaveLength(0);
 
     // Verify rows in DB
-    const rows = await ctx.db
-      .select()
-      .from(activity)
-      .where(eq(activity.providerId, "wahoo"));
+    const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "wahoo"));
 
     expect(rows).toHaveLength(2);
 
@@ -138,9 +135,7 @@ describe("WahooProvider.sync() (integration)", () => {
       scopes: "user_read workouts_read",
     });
 
-    const workouts = [
-      fakeWorkout({ id: 1001, starts: "2026-03-01T10:00:00Z" }),
-    ];
+    const workouts = [fakeWorkout({ id: 1001, starts: "2026-03-01T10:00:00Z" })];
 
     const provider = new WahooProvider(createMockFetch(workouts));
     await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
@@ -148,10 +143,7 @@ describe("WahooProvider.sync() (integration)", () => {
     // Sync again — should upsert, not duplicate
     await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
-    const rows = await ctx.db
-      .select()
-      .from(activity)
-      .where(eq(activity.providerId, "wahoo"));
+    const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "wahoo"));
 
     // Should have 2 from previous test + no new dupes for 1001
     const countOf1001 = rows.filter((r) => r.externalId === "1001").length;
@@ -183,9 +175,7 @@ describe("WahooProvider.sync() (integration)", () => {
       scopes: "user_read workouts_read",
     });
 
-    const workouts = [
-      fakeWorkout({ id: 2001, starts: "2026-04-01T10:00:00Z" }),
-    ];
+    const workouts = [fakeWorkout({ id: 2001, starts: "2026-04-01T10:00:00Z" })];
 
     const provider = new WahooProvider(createMockFetch(workouts));
     const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
@@ -194,10 +184,7 @@ describe("WahooProvider.sync() (integration)", () => {
     expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
 
     // Verify metric_stream rows linked to the cardio_activity
-    const activities = await ctx.db
-      .select()
-      .from(activity)
-      .where(eq(activity.externalId, "2001"));
+    const activities = await ctx.db.select().from(activity).where(eq(activity.externalId, "2001"));
 
     expect(activities).toHaveLength(1);
     const activityId = activities[0].id;
@@ -224,9 +211,7 @@ describe("WahooProvider.sync() (integration)", () => {
       scopes: "user_read workouts_read",
     });
 
-    const workouts = [
-      fakeWorkout({ id: 3001, starts: "2026-05-01T10:00:00Z" }),
-    ];
+    const workouts = [fakeWorkout({ id: 3001, starts: "2026-05-01T10:00:00Z" })];
 
     const provider = new WahooProvider(createMockFetch(workouts, { fitFileError: true }));
     const result = await provider.sync(ctx.db, new Date("2026-04-01T00:00:00Z"));
@@ -238,10 +223,7 @@ describe("WahooProvider.sync() (integration)", () => {
     expect(result.errors[0].message).toContain("FIT file");
 
     // Verify the cardio_activity was still created
-    const activities = await ctx.db
-      .select()
-      .from(activity)
-      .where(eq(activity.externalId, "3001"));
+    const activities = await ctx.db.select().from(activity).where(eq(activity.externalId, "3001"));
     expect(activities).toHaveLength(1);
   });
 

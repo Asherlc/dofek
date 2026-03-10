@@ -1,4 +1,4 @@
-import { randomBytes, createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
 export interface OAuthConfig {
   clientId: string;

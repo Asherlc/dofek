@@ -1,9 +1,9 @@
-import type { Provider, SyncResult, SyncError, ProviderAuthSetup } from "./types.js";
-import type { Database } from "../db/index.js";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.js";
+import type { Database } from "../db/index.js";
 import { bodyMeasurement } from "../db/schema.js";
-import { loadTokens, saveTokens, ensureProvider } from "../db/tokens.js";
 import { withSyncLog } from "../db/sync-log.js";
+import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.js";
+import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.js";
 
 // ============================================================
 // Withings API types
@@ -43,7 +43,7 @@ const MEAS_BONE_MASS = 88;
 // ============================================================
 
 function realValue(measure: WithingsMeasure): number {
-  return measure.value * Math.pow(10, measure.unit);
+  return measure.value * 10 ** measure.unit;
 }
 
 export interface ParsedBodyMeasurement {
@@ -170,11 +170,15 @@ export async function exchangeWithingsCode(
   code: string,
   fetchFn?: typeof globalThis.fetch,
 ): Promise<TokenSet> {
-  return withingsTokenExchange(config, {
-    grant_type: "authorization_code",
-    code,
-    redirect_uri: config.redirectUri,
-  }, fetchFn);
+  return withingsTokenExchange(
+    config,
+    {
+      grant_type: "authorization_code",
+      code,
+      redirect_uri: config.redirectUri,
+    },
+    fetchFn,
+  );
 }
 
 export async function refreshWithingsToken(
@@ -182,10 +186,14 @@ export async function refreshWithingsToken(
   refreshToken: string,
   fetchFn?: typeof globalThis.fetch,
 ): Promise<TokenSet> {
-  return withingsTokenExchange(config, {
-    grant_type: "refresh_token",
-    refresh_token: refreshToken,
-  }, fetchFn);
+  return withingsTokenExchange(
+    config,
+    {
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+    },
+    fetchFn,
+  );
 }
 
 // ============================================================
@@ -237,10 +245,17 @@ export class WithingsClient {
     return this.post("/measure", {
       action: "getmeas",
       meastype: [
-        MEAS_WEIGHT, MEAS_FAT_RATIO, MEAS_FAT_FREE_MASS, MEAS_FAT_MASS,
-        MEAS_MUSCLE_MASS, MEAS_BONE_MASS,
-        MEAS_SYSTOLIC_BP, MEAS_DIASTOLIC_BP, MEAS_HEART_PULSE,
-        MEAS_BODY_TEMP, MEAS_SKIN_TEMP,
+        MEAS_WEIGHT,
+        MEAS_FAT_RATIO,
+        MEAS_FAT_FREE_MASS,
+        MEAS_FAT_MASS,
+        MEAS_MUSCLE_MASS,
+        MEAS_BONE_MASS,
+        MEAS_SYSTOLIC_BP,
+        MEAS_DIASTOLIC_BP,
+        MEAS_HEART_PULSE,
+        MEAS_BODY_TEMP,
+        MEAS_SKIN_TEMP,
       ].join(","),
       category: "1",
       startdate: String(startdate),
@@ -336,21 +351,12 @@ export class WithingsProvider implements Provider {
             }
 
             try {
-              await db.insert(bodyMeasurement).values({
-                providerId: this.id,
-                externalId: parsed.externalId,
-                recordedAt: parsed.recordedAt,
-                weightKg: parsed.weightKg,
-                bodyFatPct: parsed.bodyFatPct,
-                muscleMassKg: parsed.muscleMassKg,
-                boneMassKg: parsed.boneMassKg,
-                systolicBp: parsed.systolicBp,
-                diastolicBp: parsed.diastolicBp,
-                heartPulse: parsed.heartPulse,
-                temperatureC: parsed.temperatureC,
-              }).onConflictDoUpdate({
-                target: [bodyMeasurement.providerId, bodyMeasurement.externalId],
-                set: {
+              await db
+                .insert(bodyMeasurement)
+                .values({
+                  providerId: this.id,
+                  externalId: parsed.externalId,
+                  recordedAt: parsed.recordedAt,
                   weightKg: parsed.weightKg,
                   bodyFatPct: parsed.bodyFatPct,
                   muscleMassKg: parsed.muscleMassKg,
@@ -359,8 +365,20 @@ export class WithingsProvider implements Provider {
                   diastolicBp: parsed.diastolicBp,
                   heartPulse: parsed.heartPulse,
                   temperatureC: parsed.temperatureC,
-                },
-              });
+                })
+                .onConflictDoUpdate({
+                  target: [bodyMeasurement.providerId, bodyMeasurement.externalId],
+                  set: {
+                    weightKg: parsed.weightKg,
+                    bodyFatPct: parsed.bodyFatPct,
+                    muscleMassKg: parsed.muscleMassKg,
+                    boneMassKg: parsed.boneMassKg,
+                    systolicBp: parsed.systolicBp,
+                    diastolicBp: parsed.diastolicBp,
+                    heartPulse: parsed.heartPulse,
+                    temperatureC: parsed.temperatureC,
+                  },
+                });
               count++;
             } catch (err) {
               errors.push({
@@ -379,7 +397,10 @@ export class WithingsProvider implements Provider {
       });
       recordsSynced += measCount;
     } catch (err) {
-      errors.push({ message: `body_measurement: ${err instanceof Error ? err.message : String(err)}`, cause: err });
+      errors.push({
+        message: `body_measurement: ${err instanceof Error ? err.message : String(err)}`,
+        cause: err,
+      });
     }
 
     return {

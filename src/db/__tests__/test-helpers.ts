@@ -1,9 +1,9 @@
-import { GenericContainer } from "testcontainers";
+import { readdirSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
+import { GenericContainer } from "testcontainers";
 import * as schema from "../schema.js";
-import { readFileSync, readdirSync } from "node:fs";
-import { resolve } from "node:path";
 
 export type TestDatabase = ReturnType<typeof drizzle<typeof schema>>;
 

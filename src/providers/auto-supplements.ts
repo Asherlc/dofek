@@ -1,8 +1,8 @@
 import { z } from "zod";
-import type { Provider, SyncResult, SyncError } from "./types.js";
 import type { Database } from "../db/index.js";
 import { foodEntry } from "../db/schema.js";
 import { ensureProvider } from "../db/tokens.js";
+import type { Provider, SyncError, SyncResult } from "./types.js";
 
 // ============================================================
 // Supplement config types & validation
@@ -185,7 +185,12 @@ export class AutoSupplementsProvider implements Provider {
     const errors: SyncError[] = [];
 
     if (!this.config) {
-      return { provider: PROVIDER_ID, recordsSynced: 0, errors: [{ message: "No supplement config" }], duration: Date.now() - start };
+      return {
+        provider: PROVIDER_ID,
+        recordsSynced: 0,
+        errors: [{ message: "No supplement config" }],
+        duration: Date.now() - start,
+      };
     }
 
     const supplements = parseSupplementConfig(this.config);

@@ -1,10 +1,10 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { writeFileSync, mkdirSync, rmSync } from "fs";
-import { join } from "path";
-import { tmpdir } from "os";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.js";
-import { streamHealthExport, type ProgressInfo } from "../apple-health.js";
 import * as schema from "../../db/schema.js";
+import { type ProgressInfo, streamHealthExport } from "../apple-health.js";
 
 // ============================================================
 // Integration test — stream Apple Health XML → DB
@@ -287,7 +287,9 @@ describe("Apple Health streaming import (integration)", () => {
     await streamHealthExport(xmlPath, since, {
       onRecordBatch: async () => {},
       onSleepBatch: async () => {},
-      onWorkoutBatch: async (batch) => { workouts.push(...batch); },
+      onWorkoutBatch: async (batch) => {
+        workouts.push(...batch);
+      },
     });
 
     expect(workouts.length).toBe(1);
@@ -299,7 +301,9 @@ describe("Apple Health streaming import (integration)", () => {
 
     const counts = await streamHealthExport(xmlPath, since, {
       onRecordBatch: async () => {},
-      onSleepBatch: async (batch) => { sleepCount += batch.length; },
+      onSleepBatch: async (batch) => {
+        sleepCount += batch.length;
+      },
       onWorkoutBatch: async () => {},
     });
 
@@ -362,7 +366,9 @@ describe("Apple Health streaming import (integration)", () => {
     await streamHealthExport(xmlPath, since, {
       onRecordBatch: async () => {},
       onSleepBatch: async () => {},
-      onWorkoutBatch: async (batch) => { workouts.push(...batch); },
+      onWorkoutBatch: async (batch) => {
+        workouts.push(...batch);
+      },
     });
 
     expect(workouts.length).toBe(1);
@@ -377,7 +383,9 @@ describe("Apple Health streaming import (integration)", () => {
     await streamHealthExport(xmlPath, since, {
       onRecordBatch: async () => {},
       onSleepBatch: async () => {},
-      onWorkoutBatch: async (batch) => { workouts.push(...batch); },
+      onWorkoutBatch: async (batch) => {
+        workouts.push(...batch);
+      },
     });
 
     expect(workouts.length).toBe(1);
@@ -447,7 +455,9 @@ describe("Apple Health streaming import (integration)", () => {
       onRecordBatch: async () => {},
       onSleepBatch: async () => {},
       onWorkoutBatch: async () => {},
-      onCategoryBatch: async (records) => { categories.push(...records); },
+      onCategoryBatch: async (records) => {
+        categories.push(...records);
+      },
     });
 
     expect(categories.length).toBeGreaterThanOrEqual(1);
@@ -485,7 +495,10 @@ describe("Apple Health streaming import (integration)", () => {
     await streamHealthExport(xmlPath, since, {
       onRecordBatch: async (records) => {
         for (const r of records) {
-          if (r.type === "HKQuantityTypeIdentifierActiveEnergyBurned" && r.sourceName === "ActivitySummary") {
+          if (
+            r.type === "HKQuantityTypeIdentifierActiveEnergyBurned" &&
+            r.sourceName === "ActivitySummary"
+          ) {
             activitySummaryEnergyCount++;
             expect(r.value).toBeCloseTo(523.4);
           }

@@ -1,5 +1,5 @@
-import { syncLog } from "./schema.js";
 import type { Database } from "./index.js";
+import { syncLog } from "./schema.js";
 
 export interface SyncLogEntry {
   providerId: string;

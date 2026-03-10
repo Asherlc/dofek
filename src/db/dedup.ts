@@ -25,10 +25,10 @@ export async function refreshDedupViews(db: Database): Promise<void> {
       // 1. View has not been populated yet (first refresh)
       // 2. View has no unique index (e.g., v_metric_stream)
       // Fall back to non-concurrent refresh in both cases
-      if (err instanceof Error && (
-        err.message.includes("has not been populated") ||
-        err.message.includes("concurrently")
-      )) {
+      if (
+        err instanceof Error &&
+        (err.message.includes("has not been populated") || err.message.includes("concurrently"))
+      ) {
         await db.execute(sql.raw(`REFRESH MATERIALIZED VIEW ${view}`));
       } else {
         throw err;

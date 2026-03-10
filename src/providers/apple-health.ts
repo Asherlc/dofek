@@ -1,12 +1,21 @@
-import type { Provider, SyncResult, SyncError } from "./types.js";
-import type { Database } from "../db/index.js";
-import { bodyMeasurement, activity, metricStream, dailyMetrics, sleepSession, labResult, nutritionDaily, healthEvent } from "../db/schema.js";
-import { ensureProvider } from "../db/tokens.js";
+import { createReadStream, createWriteStream, mkdirSync, readdirSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import sax from "sax";
 import yauzl from "yauzl";
-import { createReadStream, createWriteStream, readdirSync, statSync, mkdirSync } from "fs";
-import { join } from "path";
-import { tmpdir } from "os";
+import type { Database } from "../db/index.js";
+import {
+  activity,
+  bodyMeasurement,
+  dailyMetrics,
+  healthEvent,
+  labResult,
+  metricStream,
+  nutritionDaily,
+  sleepSession,
+} from "../db/schema.js";
+import { ensureProvider } from "../db/tokens.js";
+import type { Provider, SyncError, SyncResult } from "./types.js";
 
 // ============================================================
 // Apple Health date parsing
@@ -18,9 +27,7 @@ import { tmpdir } from "os";
  */
 export function parseHealthDate(dateStr: string): Date {
   // "2024-03-01 10:30:00 -0500" → "2024-03-01T10:30:00-05:00"
-  const match = dateStr.match(
-    /^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})\s+([+-]\d{2})(\d{2})$/,
-  );
+  const match = dateStr.match(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})\s+([+-]\d{2})(\d{2})$/);
   if (!match) {
     return new Date(dateStr); // fallback
   }
@@ -44,7 +51,7 @@ export interface HealthRecord {
 export function parseRecord(attrs: Record<string, string>): HealthRecord | null {
   const type = attrs.type;
   const value = parseFloat(attrs.value);
-  if (!type || isNaN(value)) return null;
+  if (!type || Number.isNaN(value)) return null;
 
   return {
     type,
@@ -230,24 +237,31 @@ const WORKOUT_TYPE_MAP: Record<string, string> = {
 function normalizeDuration(value: string, unit: string): number {
   const v = parseFloat(value);
   switch (unit) {
-    case "min": return v * 60;
-    case "hr": return v * 3600;
-    default: return v; // assume seconds
+    case "min":
+      return v * 60;
+    case "hr":
+      return v * 3600;
+    default:
+      return v; // assume seconds
   }
 }
 
 function normalizeDistance(value: string, unit: string): number {
   const v = parseFloat(value);
   switch (unit) {
-    case "km": return v * 1000;
-    case "mi": return v * 1609.344;
-    default: return v; // assume meters
+    case "km":
+      return v * 1000;
+    case "mi":
+      return v * 1609.344;
+    default:
+      return v; // assume meters
   }
 }
 
 export function parseWorkout(attrs: Record<string, string>): HealthWorkout {
   const rawType = attrs.workoutActivityType ?? "HKWorkoutActivityTypeOther";
-  const activityType = WORKOUT_TYPE_MAP[rawType] ?? rawType.replace("HKWorkoutActivityType", "").toLowerCase();
+  const activityType =
+    WORKOUT_TYPE_MAP[rawType] ?? rawType.replace("HKWorkoutActivityType", "").toLowerCase();
 
   const durationSeconds = normalizeDuration(attrs.duration ?? "0", attrs.durationUnit ?? "min");
 
@@ -292,11 +306,11 @@ export interface RouteLocation {
 export function parseRouteLocation(attrs: Record<string, string>): RouteLocation | null {
   const lat = parseFloat(attrs.latitude);
   const lng = parseFloat(attrs.longitude);
-  if (isNaN(lat) || isNaN(lng)) return null;
+  if (Number.isNaN(lat) || Number.isNaN(lng)) return null;
 
   const optNum = (key: string): number | undefined => {
     const v = parseFloat(attrs[key]);
-    return isNaN(v) ? undefined : v;
+    return Number.isNaN(v) ? undefined : v;
   };
 
   return {
@@ -398,7 +412,12 @@ export function streamHealthExport(
   filePath: string,
   since: Date,
   callbacks: StreamCallbacks,
-): Promise<{ recordCount: number; workoutCount: number; sleepCount: number; categoryCount: number }> {
+): Promise<{
+  recordCount: number;
+  workoutCount: number;
+  sleepCount: number;
+  categoryCount: number;
+}> {
   return new Promise((resolve, reject) => {
     const parser = sax.createStream(true, { trim: true });
     const fileStream = createReadStream(filePath, { encoding: "utf8" });
@@ -447,14 +466,16 @@ export function streamHealthExport(
       if (pendingFlushes >= MAX_PENDING) {
         fileStream.pause();
       }
-      fn().then(() => {
-        pendingFlushes--;
-        if (pendingFlushes < MAX_PENDING) {
-          fileStream.resume();
-        }
-      }).catch((err) => {
-        reject(err);
-      });
+      fn()
+        .then(() => {
+          pendingFlushes--;
+          if (pendingFlushes < MAX_PENDING) {
+            fileStream.resume();
+          }
+        })
+        .catch((err) => {
+          reject(err);
+        });
     }
 
     function addRecord(record: HealthRecord) {
@@ -549,7 +570,9 @@ export function streamHealthExport(
                 sourceName: "ActivitySummary",
                 unit: "kcal",
                 value: summary.activeEnergyBurned,
-                startDate: date, endDate: date, creationDate: date,
+                startDate: date,
+                endDate: date,
+                creationDate: date,
               });
             }
           }
@@ -705,11 +728,21 @@ async function upsertMetricStreamBatch(
     };
 
     switch (field) {
-      case "heartRate": row.heartRate = Math.round(record.value); break;
-      case "spo2": row.spo2 = record.value; break;
-      case "respiratoryRate": row.respiratoryRate = record.value; break;
-      case "bloodGlucose": row.bloodGlucose = record.value; break;
-      case "audioExposure": row.audioExposure = record.value; break;
+      case "heartRate":
+        row.heartRate = Math.round(record.value);
+        break;
+      case "spo2":
+        row.spo2 = record.value;
+        break;
+      case "respiratoryRate":
+        row.respiratoryRate = record.value;
+        break;
+      case "bloodGlucose":
+        row.bloodGlucose = record.value;
+        break;
+      case "audioExposure":
+        row.audioExposure = record.value;
+        break;
     }
 
     rows.push(row as typeof metricStream.$inferInsert);
@@ -748,18 +781,36 @@ async function upsertBodyMeasurementBatch(
 
     for (const r of group) {
       switch (r.type) {
-        case "HKQuantityTypeIdentifierBodyMass": row.weightKg = r.value; break;
-        case "HKQuantityTypeIdentifierBodyFatPercentage": row.bodyFatPct = r.value * 100; break;
-        case "HKQuantityTypeIdentifierBodyMassIndex": row.bmi = r.value; break;
-        case "HKQuantityTypeIdentifierBloodPressureSystolic": row.systolicBp = Math.round(r.value); break;
-        case "HKQuantityTypeIdentifierBloodPressureDiastolic": row.diastolicBp = Math.round(r.value); break;
-        case "HKQuantityTypeIdentifierBodyTemperature": row.temperatureC = r.value; break;
-        case "HKQuantityTypeIdentifierHeight": row.heightCm = r.unit === "m" ? r.value * 100 : r.value; break;
-        case "HKQuantityTypeIdentifierWaistCircumference": row.waistCircumferenceCm = r.unit === "m" ? r.value * 100 : r.value; break;
+        case "HKQuantityTypeIdentifierBodyMass":
+          row.weightKg = r.value;
+          break;
+        case "HKQuantityTypeIdentifierBodyFatPercentage":
+          row.bodyFatPct = r.value * 100;
+          break;
+        case "HKQuantityTypeIdentifierBodyMassIndex":
+          row.bmi = r.value;
+          break;
+        case "HKQuantityTypeIdentifierBloodPressureSystolic":
+          row.systolicBp = Math.round(r.value);
+          break;
+        case "HKQuantityTypeIdentifierBloodPressureDiastolic":
+          row.diastolicBp = Math.round(r.value);
+          break;
+        case "HKQuantityTypeIdentifierBodyTemperature":
+          row.temperatureC = r.value;
+          break;
+        case "HKQuantityTypeIdentifierHeight":
+          row.heightCm = r.unit === "m" ? r.value * 100 : r.value;
+          break;
+        case "HKQuantityTypeIdentifierWaistCircumference":
+          row.waistCircumferenceCm = r.unit === "m" ? r.value * 100 : r.value;
+          break;
       }
     }
 
-    await db.insert(bodyMeasurement).values(row as typeof bodyMeasurement.$inferInsert)
+    await db
+      .insert(bodyMeasurement)
+      .values(row as typeof bodyMeasurement.$inferInsert)
       .onConflictDoUpdate({
         target: [bodyMeasurement.providerId, bodyMeasurement.externalId],
         set: row as Record<string, unknown>,
@@ -799,27 +850,63 @@ async function upsertDailyMetricsBatch(
 
     for (const [type, value] of metrics) {
       switch (type) {
-        case "HKQuantityTypeIdentifierRestingHeartRate": row.restingHr = Math.round(value); break;
-        case "HKQuantityTypeIdentifierHeartRateVariabilitySDNN": row.hrv = value; break;
-        case "HKQuantityTypeIdentifierVO2Max": row.vo2max = value; break;
-        case "HKQuantityTypeIdentifierStepCount": row.steps = Math.round(value); break;
-        case "HKQuantityTypeIdentifierActiveEnergyBurned": row.activeEnergyKcal = value; break;
-        case "HKQuantityTypeIdentifierBasalEnergyBurned": row.basalEnergyKcal = value; break;
-        case "HKQuantityTypeIdentifierDistanceWalkingRunning": row.distanceKm = value / 1000; break;
-        case "HKQuantityTypeIdentifierDistanceCycling": row.cyclingDistanceKm = value / 1000; break;
-        case "HKQuantityTypeIdentifierFlightsClimbed": row.flightsClimbed = Math.round(value); break;
-        case "HKQuantityTypeIdentifierAppleExerciseTime": row.exerciseMinutes = Math.round(value); break;
-        case "HKQuantityTypeIdentifierAppleStandTime": row.standHours = Math.round(value / 60); break;
-        case "HKQuantityTypeIdentifierWalkingSpeed": row.walkingSpeed = value; break;
-        case "HKQuantityTypeIdentifierWalkingStepLength": row.walkingStepLength = value; break;
-        case "HKQuantityTypeIdentifierWalkingDoubleSupportPercentage": row.walkingDoubleSupportPct = value; break;
-        case "HKQuantityTypeIdentifierWalkingAsymmetryPercentage": row.walkingAsymmetryPct = value; break;
-        case "HKQuantityTypeIdentifierAppleWalkingSteadiness": row.walkingSteadiness = value; break;
-        case "HKQuantityTypeIdentifierWalkingHeartRateAverage": row.restingHr = row.restingHr ?? Math.round(value); break;
+        case "HKQuantityTypeIdentifierRestingHeartRate":
+          row.restingHr = Math.round(value);
+          break;
+        case "HKQuantityTypeIdentifierHeartRateVariabilitySDNN":
+          row.hrv = value;
+          break;
+        case "HKQuantityTypeIdentifierVO2Max":
+          row.vo2max = value;
+          break;
+        case "HKQuantityTypeIdentifierStepCount":
+          row.steps = Math.round(value);
+          break;
+        case "HKQuantityTypeIdentifierActiveEnergyBurned":
+          row.activeEnergyKcal = value;
+          break;
+        case "HKQuantityTypeIdentifierBasalEnergyBurned":
+          row.basalEnergyKcal = value;
+          break;
+        case "HKQuantityTypeIdentifierDistanceWalkingRunning":
+          row.distanceKm = value / 1000;
+          break;
+        case "HKQuantityTypeIdentifierDistanceCycling":
+          row.cyclingDistanceKm = value / 1000;
+          break;
+        case "HKQuantityTypeIdentifierFlightsClimbed":
+          row.flightsClimbed = Math.round(value);
+          break;
+        case "HKQuantityTypeIdentifierAppleExerciseTime":
+          row.exerciseMinutes = Math.round(value);
+          break;
+        case "HKQuantityTypeIdentifierAppleStandTime":
+          row.standHours = Math.round(value / 60);
+          break;
+        case "HKQuantityTypeIdentifierWalkingSpeed":
+          row.walkingSpeed = value;
+          break;
+        case "HKQuantityTypeIdentifierWalkingStepLength":
+          row.walkingStepLength = value;
+          break;
+        case "HKQuantityTypeIdentifierWalkingDoubleSupportPercentage":
+          row.walkingDoubleSupportPct = value;
+          break;
+        case "HKQuantityTypeIdentifierWalkingAsymmetryPercentage":
+          row.walkingAsymmetryPct = value;
+          break;
+        case "HKQuantityTypeIdentifierAppleWalkingSteadiness":
+          row.walkingSteadiness = value;
+          break;
+        case "HKQuantityTypeIdentifierWalkingHeartRateAverage":
+          row.restingHr = row.restingHr ?? Math.round(value);
+          break;
       }
     }
 
-    await db.insert(dailyMetrics).values(row as typeof dailyMetrics.$inferInsert)
+    await db
+      .insert(dailyMetrics)
+      .values(row as typeof dailyMetrics.$inferInsert)
       .onConflictDoUpdate({
         target: [dailyMetrics.date, dailyMetrics.providerId],
         set: row as Record<string, unknown>,
@@ -854,16 +941,30 @@ async function upsertNutritionBatch(
 
     for (const [field, value] of nutrients) {
       switch (field) {
-        case "calories": row.calories = Math.round(value); break;
-        case "proteinG": row.proteinG = value; break;
-        case "carbsG": row.carbsG = value; break;
-        case "fatG": row.fatG = value; break;
-        case "fiberG": row.fiberG = value; break;
-        case "waterMl": row.waterMl = Math.round(value); break;
+        case "calories":
+          row.calories = Math.round(value);
+          break;
+        case "proteinG":
+          row.proteinG = value;
+          break;
+        case "carbsG":
+          row.carbsG = value;
+          break;
+        case "fatG":
+          row.fatG = value;
+          break;
+        case "fiberG":
+          row.fiberG = value;
+          break;
+        case "waterMl":
+          row.waterMl = Math.round(value);
+          break;
       }
     }
 
-    await db.insert(nutritionDaily).values(row as typeof nutritionDaily.$inferInsert)
+    await db
+      .insert(nutritionDaily)
+      .values(row as typeof nutritionDaily.$inferInsert)
       .onConflictDoUpdate({
         target: [nutritionDaily.date, nutritionDaily.providerId],
         set: row as Record<string, unknown>,
@@ -897,7 +998,9 @@ async function upsertHealthEventBatch(
 
   if (rows.length > 0) {
     for (let i = 0; i < rows.length; i += 500) {
-      await db.insert(healthEvent).values(rows.slice(i, i + 500))
+      await db
+        .insert(healthEvent)
+        .values(rows.slice(i, i + 500))
         .onConflictDoNothing();
     }
   }
@@ -912,20 +1015,24 @@ async function upsertWorkoutBatch(
   let count = 0;
   for (const w of workouts) {
     const externalId = `ah:workout:${w.startDate.toISOString()}`;
-    const [row] = await db.insert(activity).values({
-      providerId,
-      externalId,
-      activityType: w.activityType,
-      startedAt: w.startDate,
-      endedAt: w.endDate,
-      name: w.activityType, // Apple Health doesn't have workout names
-    }).onConflictDoUpdate({
-      target: [activity.providerId, activity.externalId],
-      set: {
+    const [row] = await db
+      .insert(activity)
+      .values({
+        providerId,
+        externalId,
         activityType: w.activityType,
+        startedAt: w.startDate,
         endedAt: w.endDate,
-      },
-    }).returning({ id: activity.id });
+        name: w.activityType, // Apple Health doesn't have workout names
+      })
+      .onConflictDoUpdate({
+        target: [activity.providerId, activity.externalId],
+        set: {
+          activityType: w.activityType,
+          endedAt: w.endDate,
+        },
+      })
+      .returning({ id: activity.id });
     count++;
 
     // Insert route GPS data into metric_stream
@@ -938,7 +1045,8 @@ async function upsertWorkoutBatch(
         lng: loc.lng,
         altitude: loc.altitude,
         speed: loc.speed,
-        gpsAccuracy: loc.horizontalAccuracy != null ? Math.round(loc.horizontalAccuracy) : undefined,
+        gpsAccuracy:
+          loc.horizontalAccuracy != null ? Math.round(loc.horizontalAccuracy) : undefined,
       }));
 
       for (let i = 0; i < metricRows.length; i += 500) {
@@ -973,10 +1081,18 @@ async function upsertSleepBatch(
 
     for (const s of stages) {
       switch (s.stage) {
-        case "deep": deepMinutes += s.durationMinutes; break;
-        case "rem": remMinutes += s.durationMinutes; break;
-        case "core": lightMinutes += s.durationMinutes; break;
-        case "awake": awakeMinutes += s.durationMinutes; break;
+        case "deep":
+          deepMinutes += s.durationMinutes;
+          break;
+        case "rem":
+          remMinutes += s.durationMinutes;
+          break;
+        case "core":
+          lightMinutes += s.durationMinutes;
+          break;
+        case "awake":
+          awakeMinutes += s.durationMinutes;
+          break;
       }
     }
 
@@ -984,32 +1100,36 @@ async function upsertSleepBatch(
     const externalId = `ah:sleep:${bed.startDate.toISOString()}`;
     const isNap = bed.durationMinutes < 120; // < 2 hours = nap
 
-    await db.insert(sleepSession).values({
-      providerId,
-      externalId,
-      startedAt: bed.startDate,
-      endedAt: bed.endDate,
-      durationMinutes: bed.durationMinutes,
-      deepMinutes: deepMinutes || undefined,
-      remMinutes: remMinutes || undefined,
-      lightMinutes: lightMinutes || undefined,
-      awakeMinutes: awakeMinutes || undefined,
-      efficiencyPct: bed.durationMinutes > 0
-        ? Math.round((totalSleepMinutes / bed.durationMinutes) * 100) / 100
-        : undefined,
-      isNap,
-    }).onConflictDoUpdate({
-      target: [sleepSession.providerId, sleepSession.externalId],
-      set: {
+    await db
+      .insert(sleepSession)
+      .values({
+        providerId,
+        externalId,
+        startedAt: bed.startDate,
         endedAt: bed.endDate,
         durationMinutes: bed.durationMinutes,
         deepMinutes: deepMinutes || undefined,
         remMinutes: remMinutes || undefined,
         lightMinutes: lightMinutes || undefined,
         awakeMinutes: awakeMinutes || undefined,
+        efficiencyPct:
+          bed.durationMinutes > 0
+            ? Math.round((totalSleepMinutes / bed.durationMinutes) * 100) / 100
+            : undefined,
         isNap,
-      },
-    });
+      })
+      .onConflictDoUpdate({
+        target: [sleepSession.providerId, sleepSession.externalId],
+        set: {
+          endedAt: bed.endDate,
+          durationMinutes: bed.durationMinutes,
+          deepMinutes: deepMinutes || undefined,
+          remMinutes: remMinutes || undefined,
+          lightMinutes: lightMinutes || undefined,
+          awakeMinutes: awakeMinutes || undefined,
+          isNap,
+        },
+      });
     count++;
   }
   return count;
@@ -1075,8 +1195,8 @@ function defaultConsoleProgress(info: ProgressInfo): void {
   const bar = "█".repeat(Math.floor(info.pct / 2)) + "░".repeat(50 - Math.floor(info.pct / 2));
   process.stderr.write(
     `\r[apple_health] ${bar} ${info.pct}% ` +
-    `(${formatBytes(info.bytesRead)}/${formatBytes(info.totalBytes)}) ` +
-    `${info.recordCount} records, ${info.workoutCount} workouts, ${info.sleepCount} sleep`,
+      `(${formatBytes(info.bytesRead)}/${formatBytes(info.totalBytes)}) ` +
+      `${info.recordCount} records, ${info.workoutCount} workouts, ${info.sleepCount} sleep`,
   );
   if (info.pct >= 100) {
     process.stderr.write("\n");
@@ -1150,7 +1270,9 @@ async function runImport(
           endDate: r.endDate,
         }));
         for (let i = 0; i < rows.length; i += 500) {
-          await db.insert(healthEvent).values(rows.slice(i, i + 500))
+          await db
+            .insert(healthEvent)
+            .values(rows.slice(i, i + 500))
             .onConflictDoNothing();
         }
         recordsSynced += rows.length;
@@ -1159,8 +1281,8 @@ async function runImport(
 
     console.log(
       `[apple_health] Parsed ${counts.recordCount} records, ` +
-      `${counts.workoutCount} workouts, ${counts.sleepCount} sleep records, ` +
-      `${counts.categoryCount} category events`,
+        `${counts.workoutCount} workouts, ${counts.sleepCount} sleep records, ` +
+        `${counts.categoryCount} category events`,
     );
   } catch (err) {
     errors.push({
@@ -1211,17 +1333,19 @@ export async function importAppleHealthFile(
     }
     console.log(
       `[apple_health] ${labCounts.inserted} lab results, ` +
-      `${labCounts.skipped} skipped, ${labCounts.errors.length} errors`,
+        `${labCounts.skipped} skipped, ${labCounts.errors.length} errors`,
     );
   }
 
   // Clean up extracted temp file
   if (cleanupPath) {
     try {
-      const { rmSync: rm } = await import("fs");
-      const { dirname: dir } = await import("path");
+      const { rmSync: rm } = await import("node:fs");
+      const { dirname: dir } = await import("node:path");
       rm(dir(cleanupPath), { recursive: true, force: true });
-    } catch { /* best effort */ }
+    } catch {
+      /* best effort */
+    }
   }
 
   return result;
@@ -1244,7 +1368,10 @@ function readZipEntries(
       zipfile.on("entry", (entry) => {
         if (match(entry.fileName)) {
           zipfile.openReadStream(entry, (err2, stream) => {
-            if (err2 || !stream) { zipfile.readEntry(); return; }
+            if (err2 || !stream) {
+              zipfile.readEntry();
+              return;
+            }
             const chunks: Buffer[] = [];
             stream.on("data", (chunk: Buffer) => chunks.push(chunk));
             stream.on("end", () => {
@@ -1276,8 +1403,8 @@ function buildSourceNameMap(xmlPath: string): Promise<Map<string, string>> {
 
     parser.on("opentag", (node) => {
       if (node.name === "ClinicalRecord") {
-        const sourceName = node.attributes["sourceName"] as string | undefined;
-        const resourcePath = node.attributes["resourceFilePath"] as string | undefined;
+        const sourceName = node.attributes.sourceName as string | undefined;
+        const resourcePath = node.attributes.resourceFilePath as string | undefined;
         if (sourceName && resourcePath) {
           map.set(resourcePath.replace(/^\//, ""), sourceName);
         }
@@ -1300,8 +1427,9 @@ async function importClinicalRecords(
   const errors: SyncError[] = [];
 
   // Read all FHIR JSON files from the zip
-  const clinicalFiles = await readZipEntries(zipPath, (name) =>
-    name.includes("clinical-records/") && name.endsWith(".json"),
+  const clinicalFiles = await readZipEntries(
+    zipPath,
+    (name) => name.includes("clinical-records/") && name.endsWith(".json"),
   );
 
   if (clinicalFiles.length === 0) {
@@ -1342,11 +1470,18 @@ async function importClinicalRecords(
 
   for (const { obs, fileName } of observations) {
     // Only import lab results (skip vitals, etc.)
-    const categories = Array.isArray(obs.category) ? obs.category : obs.category ? [obs.category] : [];
+    const categories = Array.isArray(obs.category)
+      ? obs.category
+      : obs.category
+        ? [obs.category]
+        : [];
     const isLab = categories.some((cat) =>
       cat.coding?.some((c) => c.code === "laboratory" || c.code === "LAB"),
     );
-    if (!isLab) { skipped++; continue; }
+    if (!isLab) {
+      skipped++;
+      continue;
+    }
 
     try {
       const normalizedPath = fileName.replace(/^apple_health_export\//, "");
@@ -1537,7 +1672,10 @@ export function parseFhirObservation(obs: FhirObservation, sourceName: string): 
     externalId: obs.id,
     testName: getDisplayName(obs.code),
     loincCode: extractLoincCode(obs.code),
-    status: obs.status && VALID_LAB_STATUSES.has(obs.status) ? (obs.status as LabResultStatus) : undefined,
+    status:
+      obs.status && VALID_LAB_STATUSES.has(obs.status)
+        ? (obs.status as LabResultStatus)
+        : undefined,
     sourceName,
     recordedAt: new Date(obs.effectiveDateTime ?? obs.issued ?? ""),
     issuedAt: obs.issued ? new Date(obs.issued) : undefined,

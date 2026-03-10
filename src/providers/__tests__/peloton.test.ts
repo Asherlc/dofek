@@ -1,11 +1,11 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
-  parseWorkout,
-  parsePerformanceGraph,
   mapFitnessDiscipline,
-  parseAuth0FormHtml,
-  type PelotonWorkout,
   type PelotonPerformanceGraph,
+  type PelotonWorkout,
+  parseAuth0FormHtml,
+  parsePerformanceGraph,
+  parseWorkout,
 } from "../peloton.js";
 
 // ============================================================
@@ -352,8 +352,9 @@ describe("Peloton Provider", () => {
     });
 
     it("throws when no form found", () => {
-      expect(() => parseAuth0FormHtml("<html><body>No form here</body></html>"))
-        .toThrow("Could not find form action");
+      expect(() => parseAuth0FormHtml("<html><body>No form here</body></html>")).toThrow(
+        "Could not find form action",
+      );
     });
 
     it("handles input attributes in any order", () => {

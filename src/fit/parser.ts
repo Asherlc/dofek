@@ -84,7 +84,7 @@ export interface ParsedFitActivity {
 // ============================================================
 
 function num(val: unknown): number | undefined {
-  if (typeof val === "number" && !isNaN(val)) return val;
+  if (typeof val === "number" && !Number.isNaN(val)) return val;
   return undefined;
 }
 

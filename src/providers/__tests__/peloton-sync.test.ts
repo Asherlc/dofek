@@ -1,9 +1,9 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { eq } from "drizzle-orm";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.js";
-import { ensureProvider, saveTokens } from "../../db/tokens.js";
 import { activity, metricStream } from "../../db/schema.js";
-import { PelotonProvider, type PelotonWorkout, type PelotonPerformanceGraph } from "../peloton.js";
+import { ensureProvider, saveTokens } from "../../db/tokens.js";
+import { type PelotonPerformanceGraph, PelotonProvider, type PelotonWorkout } from "../peloton.js";
 
 // ============================================================
 // Fake Peloton API responses
@@ -175,10 +175,7 @@ describe("PelotonProvider.sync() (integration)", () => {
     expect(result.errors).toHaveLength(0);
 
     // Verify cardio_activity rows
-    const rows = await ctx.db
-      .select()
-      .from(activity)
-      .where(eq(activity.providerId, "peloton"));
+    const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "peloton"));
 
     expect(rows).toHaveLength(2);
 
@@ -206,9 +203,7 @@ describe("PelotonProvider.sync() (integration)", () => {
     expect(rows).toHaveLength(6);
 
     const workout1Start = new Date(1709280000 * 1000);
-    const firstRow = rows.find(
-      (r) => r.recordedAt.getTime() === workout1Start.getTime(),
-    )!;
+    const firstRow = rows.find((r) => r.recordedAt.getTime() === workout1Start.getTime())!;
     expect(firstRow.heartRate).toBe(130);
     expect(firstRow.power).toBe(180);
     expect(firstRow.cadence).toBe(80);
@@ -222,10 +217,7 @@ describe("PelotonProvider.sync() (integration)", () => {
     const provider = new PelotonProvider(createMockFetch(workouts));
     await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"));
 
-    const rows = await ctx.db
-      .select()
-      .from(activity)
-      .where(eq(activity.providerId, "peloton"));
+    const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "peloton"));
 
     const countOf001 = rows.filter((r) => r.externalId === "workout-001").length;
     expect(countOf001).toBe(1);

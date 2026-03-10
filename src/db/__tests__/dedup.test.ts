@@ -1,15 +1,9 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { sql } from "drizzle-orm";
-import { setupTestDatabase, type TestContext } from "./test-helpers.js";
-import { ensureProvider } from "../tokens.js";
-import {
-  activity,
-  sleepSession,
-  bodyMeasurement,
-  dailyMetrics,
-  metricStream,
-} from "../schema.js";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { refreshDedupViews } from "../dedup.js";
+import { activity, bodyMeasurement, dailyMetrics, metricStream, sleepSession } from "../schema.js";
+import { ensureProvider } from "../tokens.js";
+import { setupTestDatabase, type TestContext } from "./test-helpers.js";
 
 describe("Deduplication materialized views", () => {
   let ctx: TestContext;
@@ -71,9 +65,7 @@ describe("Deduplication materialized views", () => {
 
     await refreshDedupViews(ctx.db);
 
-    const rows = await ctx.db.execute(
-      sql`SELECT * FROM fitness.v_activity ORDER BY started_at`,
-    );
+    const rows = await ctx.db.execute(sql`SELECT * FROM fitness.v_activity ORDER BY started_at`);
 
     // Should have 2 canonical activities: merged run + standalone yoga
     expect(rows.length).toBe(2);
@@ -257,32 +249,60 @@ describe("Deduplication materialized views", () => {
 
   it("v_metric_stream uses primary provider from v_activity", async () => {
     // Create an activity with metric streams from two providers
-    const [wahooActivity] = await ctx.db.insert(activity).values({
-      providerId: "wahoo",
-      externalId: "wahoo-ride-ms",
-      activityType: "cycling",
-      startedAt: new Date("2026-03-05T10:00:00Z"),
-      endedAt: new Date("2026-03-05T11:00:00Z"),
-    }).returning({ id: activity.id });
+    const [wahooActivity] = await ctx.db
+      .insert(activity)
+      .values({
+        providerId: "wahoo",
+        externalId: "wahoo-ride-ms",
+        activityType: "cycling",
+        startedAt: new Date("2026-03-05T10:00:00Z"),
+        endedAt: new Date("2026-03-05T11:00:00Z"),
+      })
+      .returning({ id: activity.id });
 
-    const [whoopActivity] = await ctx.db.insert(activity).values({
-      providerId: "whoop",
-      externalId: "whoop-ride-ms",
-      activityType: "cycling",
-      startedAt: new Date("2026-03-05T10:00:00Z"),
-      endedAt: new Date("2026-03-05T11:00:00Z"),
-    }).returning({ id: activity.id });
+    const [whoopActivity] = await ctx.db
+      .insert(activity)
+      .values({
+        providerId: "whoop",
+        externalId: "whoop-ride-ms",
+        activityType: "cycling",
+        startedAt: new Date("2026-03-05T10:00:00Z"),
+        endedAt: new Date("2026-03-05T11:00:00Z"),
+      })
+      .returning({ id: activity.id });
 
     // Wahoo stream — has power data
     await ctx.db.insert(metricStream).values([
-      { providerId: "wahoo", activityId: wahooActivity.id, recordedAt: new Date("2026-03-05T10:00:00Z"), heartRate: 140, power: 200 },
-      { providerId: "wahoo", activityId: wahooActivity.id, recordedAt: new Date("2026-03-05T10:00:06Z"), heartRate: 145, power: 210 },
+      {
+        providerId: "wahoo",
+        activityId: wahooActivity.id,
+        recordedAt: new Date("2026-03-05T10:00:00Z"),
+        heartRate: 140,
+        power: 200,
+      },
+      {
+        providerId: "wahoo",
+        activityId: wahooActivity.id,
+        recordedAt: new Date("2026-03-05T10:00:06Z"),
+        heartRate: 145,
+        power: 210,
+      },
     ]);
 
     // WHOOP stream — HR only
     await ctx.db.insert(metricStream).values([
-      { providerId: "whoop", activityId: whoopActivity.id, recordedAt: new Date("2026-03-05T10:00:00Z"), heartRate: 138 },
-      { providerId: "whoop", activityId: whoopActivity.id, recordedAt: new Date("2026-03-05T10:00:06Z"), heartRate: 143 },
+      {
+        providerId: "whoop",
+        activityId: whoopActivity.id,
+        recordedAt: new Date("2026-03-05T10:00:00Z"),
+        heartRate: 138,
+      },
+      {
+        providerId: "whoop",
+        activityId: whoopActivity.id,
+        recordedAt: new Date("2026-03-05T10:00:06Z"),
+        heartRate: 143,
+      },
     ]);
 
     // Non-activity-linked WHOOP 24/7 HR (should pass through)

@@ -1,9 +1,9 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
-  parseFhirObservation,
   buildPanelMap,
-  type FhirObservation,
   type FhirDiagnosticReport,
+  type FhirObservation,
+  parseFhirObservation,
 } from "../apple-health.js";
 
 // ============================================================
@@ -37,13 +37,18 @@ const textObservation: FhirObservation = {
   id: "obs-nitrite-001",
   status: "final",
   category: [
-    { coding: [{ system: "http://terminology.hl7.org/CodeSystem/observation-category", code: "laboratory" }] },
+    {
+      coding: [
+        {
+          system: "http://terminology.hl7.org/CodeSystem/observation-category",
+          code: "laboratory",
+        },
+      ],
+    },
   ],
   code: {
     text: "Nitrite, UA",
-    coding: [
-      { system: "http://loinc.org", code: "5802-4" },
-    ],
+    coding: [{ system: "http://loinc.org", code: "5802-4" }],
   },
   valueString: "NEGATIVE",
   referenceRange: [{ text: "NEGATIVE" }],
@@ -75,10 +80,7 @@ const diagnosticReport: FhirDiagnosticReport = {
     coding: [{ display: "Lipid Panel", system: "http://loinc.org", code: "57698-3" }],
   },
   effectiveDateTime: "2023-02-27T00:00:00-05:00",
-  result: [
-    { reference: "Observation/obs-chol-001" },
-    { reference: "Observation/obs-ldl-001" },
-  ],
+  result: [{ reference: "Observation/obs-chol-001" }, { reference: "Observation/obs-ldl-001" }],
 };
 
 // ============================================================

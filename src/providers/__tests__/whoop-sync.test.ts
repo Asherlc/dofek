@@ -1,19 +1,14 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { eq, and } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.js";
+import { activity, dailyMetrics, metricStream, sleepSession } from "../../db/schema.js";
 import { ensureProvider } from "../../db/tokens.js";
 import {
-  activity,
-  metricStream,
-  dailyMetrics,
-  sleepSession,
-} from "../../db/schema.js";
-import {
+  type WhoopHrValue,
   WhoopProvider,
   type WhoopRecoveryRecord,
   type WhoopSleepRecord,
   type WhoopWorkoutRecord,
-  type WhoopHrValue,
 } from "../whoop.js";
 
 // ============================================================
@@ -229,10 +224,7 @@ describe("WhoopProvider.sync() (integration)", () => {
 
     expect(result.errors).toHaveLength(0);
 
-    const rows = await ctx.db
-      .select()
-      .from(activity)
-      .where(eq(activity.providerId, "whoop"));
+    const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "whoop"));
 
     expect(rows.length).toBeGreaterThanOrEqual(1);
     const workout = rows.find((r) => r.externalId === "1043")!;
@@ -299,10 +291,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     const provider = new WhoopProvider(createMockFetch([twoWorkoutCycle]));
     await provider.sync(ctx.db, new Date("2026-03-04T00:00:00Z"));
 
-    const rows = await ctx.db
-      .select()
-      .from(activity)
-      .where(eq(activity.providerId, "whoop"));
+    const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "whoop"));
 
     const lift = rows.find((r) => r.externalId === "2001")!;
     expect(lift.activityType).toBe("weightlifting");
@@ -329,27 +318,34 @@ describe("WhoopProvider.sync() (integration)", () => {
   });
 
   it("upserts workouts on re-sync (no duplicates)", async () => {
-    const cycles = [fakeCycle({ id: 300, strain: {
-      workouts: [{
-        id: 5001,
-        user_id: 10129,
-        created_at: "2026-03-08T10:00:00Z",
-        updated_at: "2026-03-08T11:00:00Z",
-        start: "2026-03-08T10:00:00Z",
-        end: "2026-03-08T11:00:00Z",
-        timezone_offset: "-05:00",
-        sport_id: 0,
-        score_state: "SCORED",
-        score: {
-          strain: 10,
-          average_heart_rate: 145,
-          max_heart_rate: 175,
-          kilojoule: 2000,
-          percent_recorded: 100,
-          zone_duration: {},
+    const cycles = [
+      fakeCycle({
+        id: 300,
+        strain: {
+          workouts: [
+            {
+              id: 5001,
+              user_id: 10129,
+              created_at: "2026-03-08T10:00:00Z",
+              updated_at: "2026-03-08T11:00:00Z",
+              start: "2026-03-08T10:00:00Z",
+              end: "2026-03-08T11:00:00Z",
+              timezone_offset: "-05:00",
+              sport_id: 0,
+              score_state: "SCORED",
+              score: {
+                strain: 10,
+                average_heart_rate: 145,
+                max_heart_rate: 175,
+                kilojoule: 2000,
+                percent_recorded: 100,
+                zone_duration: {},
+              },
+            },
+          ],
         },
-      }],
-    }})];
+      }),
+    ];
 
     const provider = new WhoopProvider(createMockFetch(cycles));
     await provider.sync(ctx.db, new Date("2026-03-07T00:00:00Z"));
@@ -358,10 +354,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     const rows = await ctx.db
       .select()
       .from(activity)
-      .where(and(
-        eq(activity.providerId, "whoop"),
-        eq(activity.externalId, "5001"),
-      ));
+      .where(and(eq(activity.providerId, "whoop"), eq(activity.externalId, "5001")));
 
     expect(rows).toHaveLength(1);
   });
@@ -378,25 +371,27 @@ describe("WhoopProvider.sync() (integration)", () => {
     // Cycle with invalid workout that will cause an error
     const cycle = fakeCycle({
       strain: {
-        workouts: [{
-          id: 9999,
-          user_id: 10129,
-          created_at: "invalid-date",
-          updated_at: "invalid-date",
-          start: "invalid-date",
-          end: "invalid-date",
-          timezone_offset: "-05:00",
-          sport_id: 0,
-          score_state: "SCORED",
-          score: {
-            strain: 10,
-            average_heart_rate: 145,
-            max_heart_rate: 175,
-            kilojoule: 2000,
-            percent_recorded: 100,
-            zone_duration: {},
+        workouts: [
+          {
+            id: 9999,
+            user_id: 10129,
+            created_at: "invalid-date",
+            updated_at: "invalid-date",
+            start: "invalid-date",
+            end: "invalid-date",
+            timezone_offset: "-05:00",
+            sport_id: 0,
+            score_state: "SCORED",
+            score: {
+              strain: 10,
+              average_heart_rate: 145,
+              max_heart_rate: 175,
+              kilojoule: 2000,
+              percent_recorded: 100,
+              zone_duration: {},
+            },
           },
-        }],
+        ],
       },
     });
 

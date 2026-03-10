@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
-import { oauthToken, provider } from "./schema.js";
-import type { Database } from "./index.js";
 import type { TokenSet } from "../auth/oauth.js";
+import type { Database } from "./index.js";
+import { oauthToken, provider } from "./schema.js";
 
 /**
  * Ensure a provider row exists. Idempotent — does nothing if already present.
@@ -52,10 +52,7 @@ export async function saveTokens(
 /**
  * Load stored tokens for a provider. Returns null if none exist.
  */
-export async function loadTokens(
-  db: Database,
-  providerId: string,
-): Promise<TokenSet | null> {
+export async function loadTokens(db: Database, providerId: string): Promise<TokenSet | null> {
   const rows = await db
     .select()
     .from(oauthToken)

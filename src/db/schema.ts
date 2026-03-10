@@ -1,18 +1,16 @@
 import {
-  pgSchema,
-  pgTable,
-
-  text,
-  uuid,
-  timestamp,
-  real,
-  integer,
   boolean,
   date,
-  jsonb,
-  uniqueIndex,
   index,
+  integer,
+  jsonb,
+  pgSchema,
   primaryKey,
+  real,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
 } from "drizzle-orm/pg-core";
 
 // All tables live in the 'fitness' schema
@@ -22,13 +20,7 @@ const fitness = pgSchema("fitness");
 // Enums
 // ============================================================
 
-export const mealEnum = fitness.enum("meal", [
-  "breakfast",
-  "lunch",
-  "dinner",
-  "snack",
-  "other",
-]);
+export const mealEnum = fitness.enum("meal", ["breakfast", "lunch", "dinner", "snack", "other"]);
 
 export const foodCategoryEnum = fitness.enum("food_category", [
   // FatSecret standard categories
@@ -54,12 +46,7 @@ export const foodCategoryEnum = fitness.enum("food_category", [
   "other",
 ]);
 
-export const setTypeEnum = fitness.enum("set_type", [
-  "working",
-  "warmup",
-  "dropset",
-  "failure",
-]);
+export const setTypeEnum = fitness.enum("set_type", ["working", "warmup", "dropset", "failure"]);
 
 export const labResultStatusEnum = fitness.enum("lab_result_status", [
   "final",
@@ -105,9 +92,7 @@ export const exerciseAlias = fitness.table(
     providerExerciseId: text("provider_exercise_id"),
     providerExerciseName: text("provider_exercise_name").notNull(),
   },
-  (t) => [
-    uniqueIndex("exercise_alias_provider_name_idx").on(t.providerId, t.providerExerciseName),
-  ],
+  (t) => [uniqueIndex("exercise_alias_provider_name_idx").on(t.providerId, t.providerExerciseName)],
 );
 
 // ============================================================
@@ -174,9 +159,7 @@ export const strengthWorkout = fitness.table(
     notes: text("notes"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [
-    uniqueIndex("strength_workout_provider_external_idx").on(t.providerId, t.externalId),
-  ],
+  (t) => [uniqueIndex("strength_workout_provider_external_idx").on(t.providerId, t.externalId)],
 );
 
 export const strengthSet = fitness.table(
@@ -223,9 +206,7 @@ export const activity = fitness.table(
     raw: jsonb("raw"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [
-    uniqueIndex("activity_provider_external_idx").on(t.providerId, t.externalId),
-  ],
+  (t) => [uniqueIndex("activity_provider_external_idx").on(t.providerId, t.externalId)],
 );
 
 export const metricStream = fitness.table(
@@ -234,42 +215,41 @@ export const metricStream = fitness.table(
     providerId: text("provider_id")
       .notNull()
       .references(() => provider.id),
-    activityId: uuid("activity_id")
-      .references(() => activity.id, { onDelete: "cascade" }),
+    activityId: uuid("activity_id").references(() => activity.id, { onDelete: "cascade" }),
     recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
     // Core fields — typed columns for fast queries
     heartRate: integer("heart_rate"),
     power: integer("power"),
     cadence: integer("cadence"),
-    speed: real("speed"),                           // m/s
-    lat: real("lat"),                               // degrees (converted from semicircles)
-    lng: real("lng"),                                // degrees
-    altitude: real("altitude"),                      // meters
-    temperature: real("temperature"),                // celsius
-    distance: real("distance"),                      // cumulative meters
-    grade: real("grade"),                            // percent
-    calories: integer("calories"),                   // cumulative kcal
-    verticalSpeed: real("vertical_speed"),           // m/s
-    spo2: real("spo2"),                                // percent (0-1)
-    respiratoryRate: real("respiratory_rate"),          // breaths/min
-    gpsAccuracy: integer("gps_accuracy"),            // meters
-    accumulatedPower: integer("accumulated_power"),  // cumulative watts
-    leftRightBalance: real("left_right_balance"),    // percent
+    speed: real("speed"), // m/s
+    lat: real("lat"), // degrees (converted from semicircles)
+    lng: real("lng"), // degrees
+    altitude: real("altitude"), // meters
+    temperature: real("temperature"), // celsius
+    distance: real("distance"), // cumulative meters
+    grade: real("grade"), // percent
+    calories: integer("calories"), // cumulative kcal
+    verticalSpeed: real("vertical_speed"), // m/s
+    spo2: real("spo2"), // percent (0-1)
+    respiratoryRate: real("respiratory_rate"), // breaths/min
+    gpsAccuracy: integer("gps_accuracy"), // meters
+    accumulatedPower: integer("accumulated_power"), // cumulative watts
+    leftRightBalance: real("left_right_balance"), // percent
     verticalOscillation: real("vertical_oscillation"), // mm (running)
-    stanceTime: real("stance_time"),                 // ms (running)
-    stanceTimePercent: real("stance_time_percent"),  // percent (running)
-    stepLength: real("step_length"),                 // mm (running)
-    verticalRatio: real("vertical_ratio"),            // percent (running)
-    stanceTimeBalance: real("stance_time_balance"),   // percent (running)
+    stanceTime: real("stance_time"), // ms (running)
+    stanceTimePercent: real("stance_time_percent"), // percent (running)
+    stepLength: real("step_length"), // mm (running)
+    verticalRatio: real("vertical_ratio"), // percent (running)
+    stanceTimeBalance: real("stance_time_balance"), // percent (running)
     // Power pedaling dynamics
-    leftTorqueEffectiveness: real("left_torque_effectiveness"),   // percent
+    leftTorqueEffectiveness: real("left_torque_effectiveness"), // percent
     rightTorqueEffectiveness: real("right_torque_effectiveness"), // percent
-    leftPedalSmoothness: real("left_pedal_smoothness"),          // percent
-    rightPedalSmoothness: real("right_pedal_smoothness"),        // percent
-    combinedPedalSmoothness: real("combined_pedal_smoothness"),  // percent
+    leftPedalSmoothness: real("left_pedal_smoothness"), // percent
+    rightPedalSmoothness: real("right_pedal_smoothness"), // percent
+    combinedPedalSmoothness: real("combined_pedal_smoothness"), // percent
     // Apple Health / medical
-    bloodGlucose: real("blood_glucose"),                 // mmol/L
-    audioExposure: real("audio_exposure"),               // dBASPL
+    bloodGlucose: real("blood_glucose"), // mmol/L
+    audioExposure: real("audio_exposure"), // dBASPL
     // Complete raw record — every field, no data loss
     raw: jsonb("raw"),
   },
@@ -298,20 +278,20 @@ export const dailyMetrics = fitness.table(
     steps: integer("steps"),
     activeEnergyKcal: real("active_energy_kcal"),
     basalEnergyKcal: real("basal_energy_kcal"),
-    distanceKm: real("distance_km"),                            // walking + running
+    distanceKm: real("distance_km"), // walking + running
     cyclingDistanceKm: real("cycling_distance_km"),
     flightsClimbed: integer("flights_climbed"),
     exerciseMinutes: integer("exercise_minutes"),
     mindfulMinutes: integer("mindful_minutes"),
-    walkingSpeed: real("walking_speed"),                         // m/s
-    walkingStepLength: real("walking_step_length"),              // cm
+    walkingSpeed: real("walking_speed"), // m/s
+    walkingStepLength: real("walking_step_length"), // cm
     walkingDoubleSupportPct: real("walking_double_support_pct"), // percent
-    walkingAsymmetryPct: real("walking_asymmetry_pct"),          // percent
-    walkingSteadiness: real("walking_steadiness"),               // 0-1
+    walkingAsymmetryPct: real("walking_asymmetry_pct"), // percent
+    walkingSteadiness: real("walking_steadiness"), // 0-1
     standHours: integer("stand_hours"),
     environmentalAudioExposure: real("environmental_audio_exposure"), // dBASPL avg
-    headphoneAudioExposure: real("headphone_audio_exposure"),    // dBASPL avg
-    skinTempC: real("skin_temp_c"),                              // celsius (WHOOP)
+    headphoneAudioExposure: real("headphone_audio_exposure"), // dBASPL avg
+    skinTempC: real("skin_temp_c"), // celsius (WHOOP)
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.date, t.providerId] })],
@@ -340,9 +320,7 @@ export const sleepSession = fitness.table(
     isNap: boolean("is_nap").default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [
-    uniqueIndex("sleep_session_provider_external_idx").on(t.providerId, t.externalId),
-  ],
+  (t) => [uniqueIndex("sleep_session_provider_external_idx").on(t.providerId, t.externalId)],
 );
 
 // ============================================================
@@ -378,10 +356,10 @@ export const foodEntry = fitness.table(
     date: date("date").notNull(),
     meal: mealEnum("meal"),
     foodName: text("food_name").notNull(),
-    foodDescription: text("food_description"),        // e.g. "1 cup, cooked"
+    foodDescription: text("food_description"), // e.g. "1 cup, cooked"
     category: foodCategoryEnum("category"),
-    providerFoodId: text("provider_food_id"),         // provider's food DB ID
-    providerServingId: text("provider_serving_id"),   // provider's serving ID
+    providerFoodId: text("provider_food_id"), // provider's food DB ID
+    providerServingId: text("provider_serving_id"), // provider's serving ID
     numberOfUnits: real("number_of_units"),
     // Macronutrients
     calories: integer("calories"),
@@ -463,9 +441,9 @@ export const healthEvent = fitness.table(
       .notNull()
       .references(() => provider.id),
     externalId: text("external_id"),
-    type: text("type").notNull(),                                // HK type identifier
-    value: real("value"),                                        // numeric value (if any)
-    valueText: text("value_text"),                               // category/string value (if any)
+    type: text("type").notNull(), // HK type identifier
+    value: real("value"), // numeric value (if any)
+    valueText: text("value_text"), // category/string value (if any)
     unit: text("unit"),
     sourceName: text("source_name"),
     startDate: timestamp("start_date", { withTimezone: true }).notNull(),

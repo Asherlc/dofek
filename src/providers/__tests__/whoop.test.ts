@@ -1,13 +1,13 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
+  parseHeartRateValues,
   parseRecovery,
   parseSleep,
   parseWorkout,
-  parseHeartRateValues,
+  type WhoopHrValue,
   type WhoopRecoveryRecord,
   type WhoopSleepRecord,
   type WhoopWorkoutRecord,
-  type WhoopHrValue,
 } from "../whoop.js";
 
 // ============================================================

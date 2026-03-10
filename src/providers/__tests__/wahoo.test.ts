@@ -1,12 +1,12 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, expect, it } from "vitest";
+import type { ParsedFitRecord } from "../../fit/parser.js";
 import {
-  parseWorkoutSummary,
-  parseWorkoutList,
   fitRecordsToMetricStream,
+  parseWorkoutList,
+  parseWorkoutSummary,
   type WahooWorkout,
   type WahooWorkoutSummary,
 } from "../wahoo.js";
-import type { ParsedFitRecord } from "../../fit/parser.js";
 
 const sampleWorkoutSummary: WahooWorkoutSummary = {
   id: 101,
@@ -176,7 +176,11 @@ describe("Wahoo Provider", () => {
 
     it("includes raw JSONB for every record", () => {
       const rows = fitRecordsToMetricStream(fakeRecords, "wahoo", "activity-uuid-123");
-      expect(rows[0].raw).toEqual({ timestamp: "2026-03-01T10:00:00Z", heart_rate: 130, power: 200 });
+      expect(rows[0].raw).toEqual({
+        timestamp: "2026-03-01T10:00:00Z",
+        heart_rate: 130,
+        power: 200,
+      });
     });
 
     it("handles empty records array", () => {

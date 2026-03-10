@@ -1,8 +1,8 @@
-import type { Provider, SyncResult, SyncError } from "./types.js";
+import { createHmac, randomBytes } from "node:crypto";
 import type { Database } from "../db/index.js";
 import { foodEntry } from "../db/schema.js";
 import { ensureProvider } from "../db/tokens.js";
-import { randomBytes, createHmac } from "node:crypto";
+import type { Provider, SyncError, SyncResult } from "./types.js";
 
 // ============================================================
 // OAuth 1.0 HMAC-SHA1 signing
@@ -51,9 +51,7 @@ export function buildOAuth1Header(
   ].join("&");
 
   const signingKey = `${encodeRFC3986(creds.consumerSecret)}&${encodeRFC3986(creds.tokenSecret)}`;
-  const signature = createHmac("sha1", signingKey)
-    .update(baseString)
-    .digest("base64");
+  const signature = createHmac("sha1", signingKey).update(baseString).digest("base64");
 
   oauthParams.oauth_signature = signature;
 
@@ -69,8 +67,9 @@ export function buildOAuth1Header(
  * RFC 3986 percent-encoding (stricter than encodeURIComponent).
  */
 function encodeRFC3986(str: string): string {
-  return encodeURIComponent(str).replace(/[!'()*]/g, (c) =>
-    `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
+  return encodeURIComponent(str).replace(
+    /[!'()*]/g,
+    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
   );
 }
 
@@ -161,7 +160,7 @@ function dateIntToIso(dateInt: string): string {
 function optNum(val: string | undefined): number | undefined {
   if (val === undefined) return undefined;
   const n = parseFloat(val);
-  return isNaN(n) ? undefined : n;
+  return Number.isNaN(n) ? undefined : n;
 }
 
 /**
@@ -180,15 +179,37 @@ function normalizeMeal(meal: string): string {
 // ============================================================
 
 const SUPPLEMENT_KEYWORDS = [
-  "vitamin", "multivitamin",
-  "supplement", "capsule", "capsules", "tablet", "tablets", "softgel", "softgels",
-  "fish oil", "omega-3", "omega 3",
-  "creatine", "collagen", "probiotic", "prebiotic",
-  "magnesium", "zinc", "iron supplement", "calcium supplement",
-  "ashwagandha", "turmeric", "curcumin",
-  "melatonin", "coq10",
-  "whey protein", "casein protein", "protein powder",
-  "bcaa", "glutamine", "electrolyte",
+  "vitamin",
+  "multivitamin",
+  "supplement",
+  "capsule",
+  "capsules",
+  "tablet",
+  "tablets",
+  "softgel",
+  "softgels",
+  "fish oil",
+  "omega-3",
+  "omega 3",
+  "creatine",
+  "collagen",
+  "probiotic",
+  "prebiotic",
+  "magnesium",
+  "zinc",
+  "iron supplement",
+  "calcium supplement",
+  "ashwagandha",
+  "turmeric",
+  "curcumin",
+  "melatonin",
+  "coq10",
+  "whey protein",
+  "casein protein",
+  "protein powder",
+  "bcaa",
+  "glutamine",
+  "electrolyte",
   "extract",
 ];
 
@@ -322,16 +343,12 @@ async function getRequestToken(
     .map((k) => `${encodeRFC3986(k)}=${encodeRFC3986(oauthParams[k])}`)
     .join("&");
 
-  const baseString = [
-    "POST",
-    encodeRFC3986(REQUEST_TOKEN_URL),
-    encodeRFC3986(paramString),
-  ].join("&");
+  const baseString = ["POST", encodeRFC3986(REQUEST_TOKEN_URL), encodeRFC3986(paramString)].join(
+    "&",
+  );
 
   const signingKey = `${encodeRFC3986(consumerSecret)}&`;
-  const signature = createHmac("sha1", signingKey)
-    .update(baseString)
-    .digest("base64");
+  const signature = createHmac("sha1", signingKey).update(baseString).digest("base64");
 
   oauthParams.oauth_signature = signature;
 
@@ -396,16 +413,12 @@ async function exchangeForAccessToken(
     .map((k) => `${encodeRFC3986(k)}=${encodeRFC3986(oauthParams[k])}`)
     .join("&");
 
-  const baseString = [
-    "POST",
-    encodeRFC3986(ACCESS_TOKEN_URL),
-    encodeRFC3986(paramString),
-  ].join("&");
+  const baseString = ["POST", encodeRFC3986(ACCESS_TOKEN_URL), encodeRFC3986(paramString)].join(
+    "&",
+  );
 
   const signingKey = `${encodeRFC3986(consumerSecret)}&${encodeRFC3986(requestTokenSecret)}`;
-  const signature = createHmac("sha1", signingKey)
-    .update(baseString)
-    .digest("base64");
+  const signature = createHmac("sha1", signingKey).update(baseString).digest("base64");
 
   oauthParams.oauth_signature = signature;
 
@@ -542,12 +555,12 @@ export class FatSecretProvider implements Provider {
       const dateInt = Math.floor(current.getTime() / 86400000).toString();
 
       try {
-        const response = await fatsecretApi(
+        const response = (await fatsecretApi(
           "food_entries.get.v2",
           { date: dateInt },
           creds,
           this.fetchFn,
-        ) as FatSecretFoodEntriesResponse;
+        )) as FatSecretFoodEntriesResponse;
 
         const entries = parseFoodEntries(response);
 

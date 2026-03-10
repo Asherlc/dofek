@@ -1,7 +1,6 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { registerProvider, getProvider, getAllProviders, getEnabledProviders } from "../index.js";
-import type { Provider, SyncResult } from "../types.js";
-import type { Database } from "../../db/index.js";
+import { describe, expect, it } from "vitest";
+import { getEnabledProviders, getProvider, registerProvider } from "../index.js";
+import type { Provider } from "../types.js";
 
 function createMockProvider(overrides: Partial<Provider> = {}): Provider {
   return {
@@ -53,9 +52,7 @@ describe("Provider Registry", () => {
     const disabledId = uniqueId();
 
     registerProvider(createMockProvider({ id: enabledId, validate: () => null }));
-    registerProvider(
-      createMockProvider({ id: disabledId, validate: () => "Missing API key" }),
-    );
+    registerProvider(createMockProvider({ id: disabledId, validate: () => "Missing API key" }));
 
     const enabled = getEnabledProviders();
     expect(enabled.some((p) => p.id === enabledId)).toBe(true);

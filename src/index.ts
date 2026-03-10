@@ -1,15 +1,15 @@
 import { execFile } from "node:child_process";
-import { createDatabaseFromEnv } from "./db/index.js";
-import { runSync } from "./sync/runner.js";
-import { registerProvider, getEnabledProviders, getAllProviders } from "./providers/index.js";
-import { buildAuthorizationUrl } from "./auth/index.js";
 import { waitForAuthCode } from "./auth/callback-server.js";
+import { buildAuthorizationUrl } from "./auth/index.js";
+import { createDatabaseFromEnv } from "./db/index.js";
 import { ensureProvider, saveTokens } from "./db/tokens.js";
+import { AutoSupplementsProvider } from "./providers/auto-supplements.js";
+import { FatSecretProvider } from "./providers/fatsecret.js";
+import { getAllProviders, getEnabledProviders, registerProvider } from "./providers/index.js";
+import { PelotonProvider } from "./providers/peloton.js";
 import { WahooProvider } from "./providers/wahoo.js";
 import { WithingsProvider } from "./providers/withings.js";
-import { PelotonProvider } from "./providers/peloton.js";
-import { FatSecretProvider } from "./providers/fatsecret.js";
-import { AutoSupplementsProvider } from "./providers/auto-supplements.js";
+import { runSync } from "./sync/runner.js";
 
 // Load supplement config (optional — provider validates on sync)
 let supplementConfig: import("./providers/auto-supplements.js").SupplementConfig | undefined;
@@ -75,18 +75,27 @@ async function main() {
     }
 
     const validation = provider.validate();
-    if (validation) { console.error(`[auth] ${validation}`); process.exit(1); }
+    if (validation) {
+      console.error(`[auth] ${validation}`);
+      process.exit(1);
+    }
 
     const setup = provider.authSetup();
     const { oauthConfig, exchangeCode, apiBaseUrl } = setup;
 
-    let tokens;
+    let tokens: any;
 
     // OAuth 1.0 3-legged flow (FatSecret)
     if ("oauth1Flow" in setup && setup.oauth1Flow) {
       const oauth1 = setup.oauth1Flow as {
-        getRequestToken: (callbackUrl: string) => Promise<{ oauthToken: string; oauthTokenSecret: string; authorizeUrl: string }>;
-        exchangeForAccessToken: (requestToken: string, requestTokenSecret: string, oauthVerifier: string) => Promise<{ token: string; tokenSecret: string }>;
+        getRequestToken: (
+          callbackUrl: string,
+        ) => Promise<{ oauthToken: string; oauthTokenSecret: string; authorizeUrl: string }>;
+        exchangeForAccessToken: (
+          requestToken: string,
+          requestTokenSecret: string,
+          oauthVerifier: string,
+        ) => Promise<{ token: string; tokenSecret: string }>;
       };
 
       const callbackUrl = oauthConfig.redirectUri;
@@ -126,7 +135,9 @@ async function main() {
       const email = process.env[`${provider.id.toUpperCase()}_USERNAME`];
       const password = process.env[`${provider.id.toUpperCase()}_PASSWORD`];
       if (!email || !password) {
-        console.error(`[auth] ${provider.id.toUpperCase()}_USERNAME and ${provider.id.toUpperCase()}_PASSWORD required`);
+        console.error(
+          `[auth] ${provider.id.toUpperCase()}_USERNAME and ${provider.id.toUpperCase()}_PASSWORD required`,
+        );
         process.exit(1);
       }
       console.log(`[auth] Logging in as ${email}...`);
@@ -141,7 +152,9 @@ async function main() {
       const callbackUrl = new URL(oauthConfig.redirectUri);
       const callbackPort = parseInt(callbackUrl.port || "9876", 10);
       const useHttps = callbackUrl.protocol === "https:";
-      const { code, cleanup: cleanupServer } = await waitForAuthCode(callbackPort, { https: useHttps });
+      const { code, cleanup: cleanupServer } = await waitForAuthCode(callbackPort, {
+        https: useHttps,
+      });
       console.log("[auth] Received authorization code. Exchanging for tokens...");
       tokens = await exchangeCode(code);
       cleanupServer();
@@ -163,7 +176,9 @@ async function main() {
     if (subcommand === "apple-health") {
       const filePath = process.argv[4];
       if (!filePath) {
-        console.error("Usage: health-data import apple-health <path-to-export.zip|xml> [--full-sync] [--since-days=N]");
+        console.error(
+          "Usage: health-data import apple-health <path-to-export.zip|xml> [--full-sync] [--since-days=N]",
+        );
         process.exit(1);
       }
 

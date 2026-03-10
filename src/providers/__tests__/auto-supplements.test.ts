@@ -1,7 +1,7 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
-  parseSupplementConfig,
   buildDailyEntries,
+  parseSupplementConfig,
   type SupplementConfig,
   type SupplementDefinition,
 } from "../auto-supplements.js";
@@ -74,9 +74,7 @@ describe("Auto-Supplements Provider", () => {
     it("rejects supplement with invalid meal", () => {
       expect(() =>
         parseSupplementConfig({
-          supplements: [
-            { name: "Test", meal: "midnight_snack" as "breakfast" },
-          ],
+          supplements: [{ name: "Test", meal: "midnight_snack" as "breakfast" }],
         }),
       ).toThrow();
     });
@@ -93,9 +91,7 @@ describe("Auto-Supplements Provider", () => {
 
   describe("buildDailyEntries", () => {
     it("generates entries for a single date", () => {
-      const entries = buildDailyEntries(sampleConfig.supplements, [
-        "2024-03-15",
-      ]);
+      const entries = buildDailyEntries(sampleConfig.supplements, ["2024-03-15"]);
       expect(entries).toHaveLength(4);
       entries.forEach((e) => {
         expect(e.date).toBe("2024-03-15");
@@ -105,25 +101,18 @@ describe("Auto-Supplements Provider", () => {
     });
 
     it("generates entries for multiple dates", () => {
-      const entries = buildDailyEntries(sampleConfig.supplements, [
-        "2024-03-15",
-        "2024-03-16",
-      ]);
+      const entries = buildDailyEntries(sampleConfig.supplements, ["2024-03-15", "2024-03-16"]);
       expect(entries).toHaveLength(8); // 4 supplements × 2 days
     });
 
     it("generates stable externalIds from name + date", () => {
-      const entries = buildDailyEntries(sampleConfig.supplements, [
-        "2024-03-15",
-      ]);
+      const entries = buildDailyEntries(sampleConfig.supplements, ["2024-03-15"]);
       const vitD = entries.find((e) => e.foodName === "Vitamin D3 5000 IU");
       expect(vitD?.externalId).toBe("auto:vitamin-d3-5000-iu:2024-03-15");
     });
 
     it("maps all nutritional fields from supplement definition", () => {
-      const entries = buildDailyEntries(sampleConfig.supplements, [
-        "2024-03-15",
-      ]);
+      const entries = buildDailyEntries(sampleConfig.supplements, ["2024-03-15"]);
       const fishOil = entries.find((e) => e.foodName === "Fish Oil")!;
       expect(fishOil.calories).toBe(25);
       expect(fishOil.fatG).toBeCloseTo(2.5);
@@ -134,13 +123,9 @@ describe("Auto-Supplements Provider", () => {
     });
 
     it("assigns correct meal from supplement definition", () => {
-      const entries = buildDailyEntries(sampleConfig.supplements, [
-        "2024-03-15",
-      ]);
+      const entries = buildDailyEntries(sampleConfig.supplements, ["2024-03-15"]);
       const vitD = entries.find((e) => e.foodName === "Vitamin D3 5000 IU");
-      const mag = entries.find(
-        (e) => e.foodName === "Magnesium Glycinate 400mg",
-      );
+      const mag = entries.find((e) => e.foodName === "Magnesium Glycinate 400mg");
       expect(vitD?.meal).toBe("breakfast");
       expect(mag?.meal).toBe("dinner");
     });
@@ -158,9 +143,7 @@ describe("Auto-Supplements Provider", () => {
         [{ name: "CoQ10 200mg (Ubiquinol)", description: "1 softgel" }],
         ["2024-03-15"],
       );
-      expect(entries[0].externalId).toBe(
-        "auto:coq10-200mg-ubiquinol:2024-03-15",
-      );
+      expect(entries[0].externalId).toBe("auto:coq10-200mg-ubiquinol:2024-03-15");
     });
   });
 });

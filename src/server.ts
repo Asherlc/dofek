@@ -1,7 +1,7 @@
-import { createServer } from "http";
-import { createWriteStream, mkdirSync } from "fs";
-import { join } from "path";
-import { tmpdir } from "os";
+import { createWriteStream, mkdirSync } from "node:fs";
+import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createDatabaseFromEnv } from "./db/index.js";
 import { importAppleHealthFile } from "./providers/apple-health.js";
 
@@ -59,17 +59,21 @@ const server = createServer(async (req, res) => {
 
       // Cleanup
       try {
-        const { rmSync } = await import("fs");
+        const { rmSync } = await import("node:fs");
         rmSync(tmpDir, { recursive: true, force: true });
-      } catch { /* best effort */ }
+      } catch {
+        /* best effort */
+      }
 
       const status = result.errors.length > 0 ? 207 : 200;
       res.writeHead(status, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({
-        recordsSynced: result.recordsSynced,
-        errors: result.errors.map((e) => e.message),
-        duration: result.duration,
-      }));
+      res.end(
+        JSON.stringify({
+          recordsSynced: result.recordsSynced,
+          errors: result.errors.map((e) => e.message),
+          duration: result.duration,
+        }),
+      );
     } catch (err) {
       console.error("[server] Import failed:", err);
       res.writeHead(500, { "Content-Type": "application/json" });

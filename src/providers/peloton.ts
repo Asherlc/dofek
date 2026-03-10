@@ -1,16 +1,16 @@
-import type { Provider, SyncResult, SyncError, ProviderAuthSetup } from "./types.js";
-import type { Database } from "../db/index.js";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.js";
 import {
-  exchangeCodeForTokens,
-  refreshAccessToken,
-  generateCodeVerifier,
-  generateCodeChallenge,
   buildAuthorizationUrl,
+  exchangeCodeForTokens,
+  generateCodeChallenge,
+  generateCodeVerifier,
+  refreshAccessToken,
 } from "../auth/oauth.js";
-import { loadTokens, saveTokens, ensureProvider } from "../db/tokens.js";
+import type { Database } from "../db/index.js";
 import { activity, metricStream } from "../db/schema.js";
 import { withSyncLog } from "../db/sync-log.js";
+import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.js";
+import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.js";
 
 // ============================================================
 // Peloton API types
@@ -218,22 +218,18 @@ export class PelotonClient {
 
   async getWorkouts(page = 0, limit = 20): Promise<PelotonWorkoutListResponse> {
     const userId = await this.getUserId();
-    return this.get<PelotonWorkoutListResponse>(
-      `/api/user/${userId}/workouts`,
-      {
-        page: String(page),
-        limit: String(limit),
-        sort_by: "-created_at",
-        joins: "ride",
-      },
-    );
+    return this.get<PelotonWorkoutListResponse>(`/api/user/${userId}/workouts`, {
+      page: String(page),
+      limit: String(limit),
+      sort_by: "-created_at",
+      joins: "ride",
+    });
   }
 
   async getPerformanceGraph(workoutId: string, everyN = 5): Promise<PelotonPerformanceGraph> {
-    return this.get<PelotonPerformanceGraph>(
-      `/api/workout/${workoutId}/performance_graph`,
-      { every_n: String(everyN) },
-    );
+    return this.get<PelotonPerformanceGraph>(`/api/workout/${workoutId}/performance_graph`, {
+      every_n: String(everyN),
+    });
   }
 }
 
@@ -266,7 +262,10 @@ export function pelotonOAuthConfig(): OAuthConfig {
  * Extract hidden input fields from an Auth0 HTML form response.
  * Auth0 returns HTML with a form containing hidden inputs after successful login.
  */
-export function parseAuth0FormHtml(html: string): { action: string; fields: Record<string, string> } {
+export function parseAuth0FormHtml(html: string): {
+  action: string;
+  fields: Record<string, string>;
+} {
   const actionMatch = html.match(/<form[^>]+action="([^"]+)"/);
   if (!actionMatch) {
     throw new Error("Could not find form action in Auth0 response");
@@ -274,7 +273,8 @@ export function parseAuth0FormHtml(html: string): { action: string; fields: Reco
 
   const fields: Record<string, string> = {};
   const inputRegex = /<input[^>]+type="hidden"[^>]*>/gi;
-  let match;
+  let match: RegExpExecArray | null;
+  // biome-ignore lint/suspicious/noAssignInExpressions: standard regex exec loop
   while ((match = inputRegex.exec(html)) !== null) {
     const tag = match[0];
     const nameMatch = tag.match(/name="([^"]+)"/);
@@ -344,7 +344,7 @@ async function followRedirects(
   const resp = await fetchFn(fullUrl, {
     ...init,
     redirect: "manual",
-    headers: { ...init?.headers as Record<string, string>, Cookie: jar.getForUrl(fullUrl) },
+    headers: { ...(init?.headers as Record<string, string>), Cookie: jar.getForUrl(fullUrl) },
   });
   jar.addFromResponse(fullUrl, resp.headers);
   return { response: resp, location: resp.headers.get("location") };
@@ -432,8 +432,12 @@ export async function pelotonAutomatedLogin(
   // HTML-decode field values (Auth0 encodes entities like &#34; in the JWT)
   for (const [key, val] of Object.entries(fields)) {
     fields[key] = val
-      .replace(/&#34;/g, '"').replace(/&#39;/g, "'").replace(/&quot;/g, '"')
-      .replace(/&#x27;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+      .replace(/&#34;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&quot;/g, '"')
+      .replace(/&#x27;/g, "'")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
       .replace(/&amp;/g, "&");
   }
 
@@ -572,10 +576,11 @@ export class PelotonProvider implements Provider {
             const cadenceSeries = series.find((s) => s.slug === "cadence");
             const speedSeries = series.find((s) => s.slug === "speed");
 
-            const sampleCount = hrSeries?.values.length
-              ?? powerSeries?.values.length
-              ?? cadenceSeries?.values.length
-              ?? 0;
+            const sampleCount =
+              hrSeries?.values.length ??
+              powerSeries?.values.length ??
+              cadenceSeries?.values.length ??
+              0;
 
             if (sampleCount > 0) {
               const rows = [];

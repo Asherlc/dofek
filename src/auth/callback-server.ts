@@ -1,9 +1,9 @@
-import { createServer as createHttpServer, type Server } from "node:http";
-import { createServer as createHttpsServer } from "node:https";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { createServer as createHttpServer, type Server } from "node:http";
+import { createServer as createHttpsServer } from "node:https";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 /**
  * Generate a self-signed cert for localhost. Returns key + cert PEM strings.
@@ -13,11 +13,25 @@ function generateSelfSignedCert(): { key: string; cert: string } {
   const keyPath = join(dir, "key.pem");
   const certPath = join(dir, "cert.pem");
 
-  execFileSync("openssl", [
-    "req", "-x509", "-newkey", "rsa:2048",
-    "-keyout", keyPath, "-out", certPath,
-    "-days", "1", "-nodes", "-subj", "/CN=localhost",
-  ], { stdio: "ignore" });
+  execFileSync(
+    "openssl",
+    [
+      "req",
+      "-x509",
+      "-newkey",
+      "rsa:2048",
+      "-keyout",
+      keyPath,
+      "-out",
+      certPath,
+      "-days",
+      "1",
+      "-nodes",
+      "-subj",
+      "/CN=localhost",
+    ],
+    { stdio: "ignore" },
+  );
 
   const key = readFileSync(keyPath, "utf-8");
   const cert = readFileSync(certPath, "utf-8");
@@ -38,7 +52,10 @@ export function waitForAuthCode(
   const paramName = options.paramName ?? "code";
 
   return new Promise((resolve, reject) => {
-    const handler = (req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse) => {
+    const handler = (
+      req: import("node:http").IncomingMessage,
+      res: import("node:http").ServerResponse,
+    ) => {
       const proto = useHttps ? "https" : "http";
       const url = new URL(req.url ?? "/", `${proto}://localhost:${port}`);
 

@@ -1,17 +1,13 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
-  parseRecord,
-  parseWorkout,
-  parseSleepAnalysis,
-  parseActivitySummary,
-  parseWorkoutStatistics,
   enrichWorkoutFromStats,
-  parseRouteLocation,
+  parseActivitySummary,
   parseCategoryRecord,
-  type HealthRecord,
-  type HealthWorkout,
-  type RouteLocation,
-  type CategoryRecord,
+  parseRecord,
+  parseRouteLocation,
+  parseSleepAnalysis,
+  parseWorkout,
+  parseWorkoutStatistics,
 } from "../apple-health.js";
 
 // ============================================================
@@ -341,16 +337,28 @@ describe("Apple Health Provider — parsing", () => {
     });
 
     it("maps workout activity types to normalized names", () => {
-      const running = parseWorkout({ ...workoutAttrs, workoutActivityType: "HKWorkoutActivityTypeRunning" });
+      const running = parseWorkout({
+        ...workoutAttrs,
+        workoutActivityType: "HKWorkoutActivityTypeRunning",
+      });
       expect(running.activityType).toBe("running");
 
-      const cycling = parseWorkout({ ...workoutAttrs, workoutActivityType: "HKWorkoutActivityTypeCycling" });
+      const cycling = parseWorkout({
+        ...workoutAttrs,
+        workoutActivityType: "HKWorkoutActivityTypeCycling",
+      });
       expect(cycling.activityType).toBe("cycling");
 
-      const swimming = parseWorkout({ ...workoutAttrs, workoutActivityType: "HKWorkoutActivityTypeSwimming" });
+      const swimming = parseWorkout({
+        ...workoutAttrs,
+        workoutActivityType: "HKWorkoutActivityTypeSwimming",
+      });
       expect(swimming.activityType).toBe("swimming");
 
-      const hiking = parseWorkout({ ...workoutAttrs, workoutActivityType: "HKWorkoutActivityTypeHiking" });
+      const hiking = parseWorkout({
+        ...workoutAttrs,
+        workoutActivityType: "HKWorkoutActivityTypeHiking",
+      });
       expect(hiking.activityType).toBe("hiking");
     });
 

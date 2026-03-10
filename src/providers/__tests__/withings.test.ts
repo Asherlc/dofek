@@ -1,8 +1,5 @@
-import { describe, it, expect } from "vitest";
-import {
-  parseMeasureGroup,
-  type WithingsMeasureGroup,
-} from "../withings.js";
+import { describe, expect, it } from "vitest";
+import { parseMeasureGroup, type WithingsMeasureGroup } from "../withings.js";
 
 // ============================================================
 // Pure parsing unit tests
@@ -15,13 +12,13 @@ const scaleGroup: WithingsMeasureGroup = {
   date: 1709251200, // Unix seconds
   category: 1, // real measurement
   measures: [
-    { type: 1, value: 72500, unit: -3 },   // weight 72.5 kg
-    { type: 6, value: 215, unit: -1 },      // fat ratio 21.5%
-    { type: 76, value: 31200, unit: -3 },   // muscle mass 31.2 kg
-    { type: 88, value: 3100, unit: -3 },    // bone mass 3.1 kg
-    { type: 77, value: 38500, unit: -3 },   // hydration 38.5 kg (water)
-    { type: 5, value: 57300, unit: -3 },    // fat free mass 57.3 kg
-    { type: 8, value: 15200, unit: -3 },    // fat mass weight 15.2 kg
+    { type: 1, value: 72500, unit: -3 }, // weight 72.5 kg
+    { type: 6, value: 215, unit: -1 }, // fat ratio 21.5%
+    { type: 76, value: 31200, unit: -3 }, // muscle mass 31.2 kg
+    { type: 88, value: 3100, unit: -3 }, // bone mass 3.1 kg
+    { type: 77, value: 38500, unit: -3 }, // hydration 38.5 kg (water)
+    { type: 5, value: 57300, unit: -3 }, // fat free mass 57.3 kg
+    { type: 8, value: 15200, unit: -3 }, // fat mass weight 15.2 kg
   ],
 };
 
@@ -30,9 +27,9 @@ const bpGroup: WithingsMeasureGroup = {
   date: 1709337600,
   category: 1,
   measures: [
-    { type: 10, value: 120, unit: 0 },  // systolic 120 mmHg
-    { type: 9, value: 80, unit: 0 },    // diastolic 80 mmHg
-    { type: 11, value: 72, unit: 0 },   // heart pulse 72 bpm
+    { type: 10, value: 120, unit: 0 }, // systolic 120 mmHg
+    { type: 9, value: 80, unit: 0 }, // diastolic 80 mmHg
+    { type: 11, value: 72, unit: 0 }, // heart pulse 72 bpm
   ],
 };
 
@@ -41,7 +38,7 @@ const tempGroup: WithingsMeasureGroup = {
   date: 1709424000,
   category: 1,
   measures: [
-    { type: 71, value: 3720, unit: -2 },  // body temp 37.20 C
+    { type: 71, value: 3720, unit: -2 }, // body temp 37.20 C
   ],
 };
 
@@ -69,7 +66,7 @@ describe("Withings Provider — parsing", () => {
 
     it("parses temperature measurements", () => {
       const result = parseMeasureGroup(tempGroup);
-      expect(result.temperatureC).toBeCloseTo(37.20);
+      expect(result.temperatureC).toBeCloseTo(37.2);
       expect(result.weightKg).toBeUndefined();
     });
 

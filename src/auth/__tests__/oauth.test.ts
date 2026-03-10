@@ -1,11 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   buildAuthorizationUrl,
   exchangeCodeForTokens,
-  refreshAccessToken,
-  generateCodeVerifier,
   generateCodeChallenge,
+  generateCodeVerifier,
   type OAuthConfig,
+  refreshAccessToken,
   type TokenSet,
 } from "../oauth.js";
 
@@ -34,7 +34,7 @@ describe("OAuth", () => {
 
   describe("exchangeCodeForTokens", () => {
     it("exchanges an authorization code for tokens", async () => {
-      const mockResponse: TokenSet = {
+      const _mockResponse: TokenSet = {
         accessToken: "access-123",
         refreshToken: "refresh-456",
         expiresAt: new Date("2025-01-01T02:00:00Z"),
