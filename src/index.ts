@@ -1,3 +1,4 @@
+import { execFile } from "node:child_process";
 import { createDatabaseFromEnv } from "./db/index.js";
 import { runSync } from "./sync/runner.js";
 import { registerProvider, getEnabledProviders, getAllProviders } from "./providers/index.js";
@@ -95,7 +96,8 @@ async function main() {
       console.log("[auth] Requesting OAuth 1.0 request token...");
       const requestToken = await oauth1.getRequestToken(callbackUrl);
 
-      console.log(`[auth] Open this URL in your browser:\n\n  ${requestToken.authorizeUrl}\n`);
+      console.log(`[auth] Opening browser...\n\n  ${requestToken.authorizeUrl}\n`);
+      execFile("open", [requestToken.authorizeUrl]);
       console.log("[auth] Waiting for callback...");
 
       const { code: verifier, cleanup: cleanupServer } = await waitForAuthCode(callbackPort, {
@@ -132,7 +134,8 @@ async function main() {
     } else {
       // Browser-based OAuth 2.0 flow
       const authUrl = setup.authUrl ?? buildAuthorizationUrl(oauthConfig);
-      console.log(`[auth] Open this URL in your browser:\n\n  ${authUrl}\n`);
+      console.log(`[auth] Opening browser...\n\n  ${authUrl}\n`);
+      execFile("open", [authUrl]);
       console.log("[auth] Waiting for callback...");
 
       const callbackUrl = new URL(oauthConfig.redirectUri);
