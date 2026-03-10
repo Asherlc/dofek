@@ -1,7 +1,9 @@
-import type { Provider, SyncResult, SyncError } from "./types.js";
+import type { Provider, SyncResult, SyncError, ProviderAuthSetup } from "./types.js";
 import type { Database } from "../db/index.js";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.js";
-import { refreshAccessToken } from "../auth/oauth.js";
+import { exchangeCodeForTokens, refreshAccessToken } from "../auth/oauth.js";
+import { loadTokens, saveTokens } from "../db/tokens.js";
+import { cardioActivity } from "../db/schema.js";
 
 // ============================================================
 // Wahoo API types
@@ -196,16 +198,19 @@ export class WahooClient {
 // Provider implementation
 // ============================================================
 
+const DEFAULT_REDIRECT_URI = "https://localhost:9876/callback";
+
 export function wahooOAuthConfig(): OAuthConfig {
   const clientId = process.env.WAHOO_CLIENT_ID;
   const clientSecret = process.env.WAHOO_CLIENT_SECRET;
+  const redirectUri = process.env.OAUTH_REDIRECT_URI ?? DEFAULT_REDIRECT_URI;
 
   return {
     clientId: clientId ?? "",
     clientSecret: clientSecret ?? "",
     authorizeUrl: `${WAHOO_API_BASE}/oauth/authorize`,
     tokenUrl: `${WAHOO_API_BASE}/oauth/token`,
-    redirectUri: "http://localhost:9876/callback",
+    redirectUri,
     scopes: ["user_read", "workouts_read", "offline_data"],
   };
 }
@@ -213,6 +218,11 @@ export function wahooOAuthConfig(): OAuthConfig {
 export class WahooProvider implements Provider {
   readonly id = "wahoo";
   readonly name = "Wahoo";
+  private fetchFn: typeof globalThis.fetch;
+
+  constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
+    this.fetchFn = fetchFn;
+  }
 
   validate(): string | null {
     if (!process.env.WAHOO_CLIENT_ID) return "WAHOO_CLIENT_ID is not set";
@@ -220,13 +230,117 @@ export class WahooProvider implements Provider {
     return null;
   }
 
+  authSetup(): ProviderAuthSetup {
+    const config = wahooOAuthConfig();
+    return {
+      oauthConfig: config,
+      exchangeCode: (code) => exchangeCodeForTokens(config, code),
+      apiBaseUrl: WAHOO_API_BASE,
+    };
+  }
+
+  /**
+   * Resolve a valid access token — refreshing if expired.
+   */
+  private async resolveTokens(db: Database): Promise<TokenSet> {
+    const tokens = await loadTokens(db, this.id);
+    if (!tokens) {
+      throw new Error("No OAuth tokens found for Wahoo. Run: health-data auth wahoo");
+    }
+
+    if (tokens.expiresAt > new Date()) {
+      return tokens;
+    }
+
+    console.log("[wahoo] Access token expired, refreshing...");
+    const config = wahooOAuthConfig();
+    const refreshed = await refreshAccessToken(config, tokens.refreshToken, this.fetchFn);
+    await saveTokens(db, this.id, refreshed);
+    return refreshed;
+  }
+
   async sync(db: Database, since: Date): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
 
-    // TODO: Load tokens from DB, refresh if needed, fetch workouts, upsert
-    // This will be implemented once we have the DB integration tests
+    let tokens: TokenSet;
+    try {
+      tokens = await this.resolveTokens(db);
+    } catch (err) {
+      errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
+      return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
+    }
+
+    const client = new WahooClient(tokens.accessToken, this.fetchFn);
+
+    // Paginate through all workouts
+    let page = 1;
+    let hasMore = true;
+
+    while (hasMore) {
+      const response = await client.getWorkouts(page);
+      const parsed = parseWorkoutList(response);
+
+      for (const workout of parsed.workouts) {
+        // Skip workouts before our sync window
+        if (workout.startedAt < since) {
+          hasMore = false;
+          break;
+        }
+
+        try {
+          await db
+            .insert(cardioActivity)
+            .values({
+              providerId: this.id,
+              externalId: workout.externalId,
+              activityType: workout.activityType,
+              startedAt: workout.startedAt,
+              endedAt: workout.endedAt,
+              durationSeconds: workout.durationSeconds,
+              distanceMeters: workout.distanceMeters,
+              calories: workout.calories,
+              avgHeartRate: workout.avgHeartRate,
+              avgPower: workout.avgPower,
+              avgSpeed: workout.avgSpeed,
+              avgCadence: workout.avgCadence,
+              totalElevationGain: workout.totalElevationGain,
+              normalizedPower: workout.normalizedPower,
+              tss: workout.tss,
+            })
+            .onConflictDoUpdate({
+              target: [cardioActivity.providerId, cardioActivity.externalId],
+              set: {
+                activityType: workout.activityType,
+                startedAt: workout.startedAt,
+                endedAt: workout.endedAt,
+                durationSeconds: workout.durationSeconds,
+                distanceMeters: workout.distanceMeters,
+                calories: workout.calories,
+                avgHeartRate: workout.avgHeartRate,
+                avgPower: workout.avgPower,
+                avgSpeed: workout.avgSpeed,
+                avgCadence: workout.avgCadence,
+                totalElevationGain: workout.totalElevationGain,
+                normalizedPower: workout.normalizedPower,
+                tss: workout.tss,
+              },
+            });
+
+          recordsSynced++;
+        } catch (err) {
+          errors.push({
+            message: err instanceof Error ? err.message : String(err),
+            externalId: workout.externalId,
+            cause: err,
+          });
+        }
+      }
+
+      hasMore = hasMore && parsed.hasMore;
+      page++;
+    }
 
     return {
       provider: this.id,
