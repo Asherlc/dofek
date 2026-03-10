@@ -8,12 +8,25 @@ import { WahooProvider } from "./providers/wahoo.js";
 import { WithingsProvider } from "./providers/withings.js";
 import { PelotonProvider } from "./providers/peloton.js";
 import { FatSecretProvider } from "./providers/fatsecret.js";
+import { AutoSupplementsProvider } from "./providers/auto-supplements.js";
+
+// Load supplement config (optional — provider validates on sync)
+let supplementConfig: import("./providers/auto-supplements.js").SupplementConfig | undefined;
+try {
+  const mod = await import("./supplements.config.js");
+  supplementConfig = mod.default;
+} catch {
+  // No config file — auto-supplements provider will report validation error
+}
 
 // Register all providers
 registerProvider(new WahooProvider());
 registerProvider(new WithingsProvider());
 registerProvider(new PelotonProvider());
 registerProvider(new FatSecretProvider());
+if (supplementConfig) {
+  registerProvider(new AutoSupplementsProvider(supplementConfig));
+}
 
 function parseSinceDays(): number {
   const arg = process.argv.find((a) => a.startsWith("--since-days="));

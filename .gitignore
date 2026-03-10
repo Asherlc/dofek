@@ -4,3 +4,5 @@ dist/
 # .env.plain is the decrypted version — never commit
 .env.plain
 *.log
+# Personal supplement stack — differs per user
+src/supplements.config.ts
