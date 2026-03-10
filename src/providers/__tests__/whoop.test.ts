@@ -101,7 +101,6 @@ describe("WHOOP Provider — parsing", () => {
       const result = parseRecovery(sampleRecovery);
       expect(result.restingHr).toBe(52);
       expect(result.hrv).toBeCloseTo(65.5);
-      expect(result.readiness).toBe(78);
     });
 
     it("returns null fields for unscored recovery", () => {
@@ -109,7 +108,6 @@ describe("WHOOP Provider — parsing", () => {
       const result = parseRecovery(unscored as WhoopRecoveryRecord);
       expect(result.restingHr).toBeUndefined();
       expect(result.hrv).toBeUndefined();
-      expect(result.readiness).toBeUndefined();
     });
   });
 

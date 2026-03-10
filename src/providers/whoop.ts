@@ -256,7 +256,6 @@ export interface ParsedRecovery {
   cycleId: number;
   restingHr?: number;
   hrv?: number;
-  readiness?: number;
   spo2?: number;
   skinTemp?: number;
 }
@@ -267,7 +266,6 @@ export function parseRecovery(record: WhoopRecoveryRecord): ParsedRecovery {
     cycleId: record.cycle_id,
     restingHr: score?.resting_heart_rate,
     hrv: score?.hrv_rmssd_milli,
-    readiness: score?.recovery_score,
     spo2: score?.spo2_percentage,
     skinTemp: score?.skin_temp_celsius,
   };
@@ -499,16 +497,13 @@ export class WhoopProvider implements Provider {
             await db.insert(dailyMetrics).values({
               date: cycleDay,
               providerId: this.id,
-              sport: "all",
               restingHr: parsed.restingHr,
               hrv: parsed.hrv,
-              readiness: parsed.readiness,
             }).onConflictDoUpdate({
-              target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sport],
+              target: [dailyMetrics.date, dailyMetrics.providerId],
               set: {
                 restingHr: parsed.restingHr,
                 hrv: parsed.hrv,
-                readiness: parsed.readiness,
               },
             });
             count++;

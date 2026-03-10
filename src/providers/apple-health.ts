@@ -619,7 +619,6 @@ async function upsertDailyMetricsBatch(
     const row: Record<string, unknown> = {
       date: dateKey,
       providerId,
-      sport: "all",
     };
 
     for (const [type, value] of metrics) {
@@ -635,7 +634,7 @@ async function upsertDailyMetricsBatch(
 
     await db.insert(dailyMetrics).values(row as typeof dailyMetrics.$inferInsert)
       .onConflictDoUpdate({
-        target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sport],
+        target: [dailyMetrics.date, dailyMetrics.providerId],
         set: row as Record<string, unknown>,
       });
     count++;
@@ -1163,6 +1162,9 @@ export interface FhirDiagnosticReport {
   result?: { reference: string }[];
 }
 
+const VALID_LAB_STATUSES = new Set(["final", "preliminary", "corrected", "cancelled"]);
+type LabResultStatus = "final" | "preliminary" | "corrected" | "cancelled";
+
 export interface ParsedLabResult {
   externalId: string;
   testName: string;
@@ -1173,7 +1175,7 @@ export interface ParsedLabResult {
   referenceRangeLow?: number;
   referenceRangeHigh?: number;
   referenceRangeText?: string;
-  status?: string;
+  status?: LabResultStatus;
   sourceName: string;
   recordedAt: Date;
   issuedAt?: Date;
@@ -1206,7 +1208,7 @@ export function parseFhirObservation(obs: FhirObservation, sourceName: string): 
     externalId: obs.id,
     testName: getDisplayName(obs.code),
     loincCode: extractLoincCode(obs.code),
-    status: obs.status,
+    status: obs.status && VALID_LAB_STATUSES.has(obs.status) ? (obs.status as LabResultStatus) : undefined,
     sourceName,
     recordedAt: new Date(obs.effectiveDateTime ?? obs.issued ?? ""),
     issuedAt: obs.issued ? new Date(obs.issued) : undefined,

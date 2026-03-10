@@ -1,6 +1,7 @@
 import {
   pgSchema,
   pgTable,
+
   text,
   uuid,
   timestamp,
@@ -16,6 +17,56 @@ import {
 
 // All tables live in the 'fitness' schema
 const fitness = pgSchema("fitness");
+
+// ============================================================
+// Enums
+// ============================================================
+
+export const mealEnum = fitness.enum("meal", [
+  "breakfast",
+  "lunch",
+  "dinner",
+  "snack",
+  "other",
+]);
+
+export const foodCategoryEnum = fitness.enum("food_category", [
+  // FatSecret standard categories
+  "beans_and_legumes",
+  "beverages",
+  "breads_and_cereals",
+  "cheese_milk_and_dairy",
+  "eggs",
+  "fast_food",
+  "fish_and_seafood",
+  "fruit",
+  "meat",
+  "nuts_and_seeds",
+  "pasta_rice_and_noodles",
+  "salads",
+  "sauces_spices_and_spreads",
+  "snacks",
+  "soups",
+  "sweets_candy_and_desserts",
+  "vegetables",
+  // Custom categories
+  "supplement",
+  "other",
+]);
+
+export const setTypeEnum = fitness.enum("set_type", [
+  "working",
+  "warmup",
+  "dropset",
+  "failure",
+]);
+
+export const labResultStatusEnum = fitness.enum("lab_result_status", [
+  "final",
+  "preliminary",
+  "corrected",
+  "cancelled",
+]);
 
 // ============================================================
 // Reference / lookup tables
@@ -138,7 +189,7 @@ export const strengthSet = fitness.table(
       .references(() => exercise.id),
     exerciseIndex: integer("exercise_index").notNull(),
     setIndex: integer("set_index").notNull(),
-    setType: text("set_type").default("working"),
+    setType: setTypeEnum("set_type").default("working"),
     weightKg: real("weight_kg"),
     reps: integer("reps"),
     distanceMeters: real("distance_meters"),
@@ -247,11 +298,6 @@ export const dailyMetrics = fitness.table(
     providerId: text("provider_id")
       .notNull()
       .references(() => provider.id),
-    sport: text("sport").default("all"),
-    ctl: real("ctl"),
-    atl: real("atl"),
-    tsb: real("tsb"),
-    eftp: real("eftp"),
     restingHr: integer("resting_hr"),
     hrv: real("hrv"),
     vo2max: real("vo2max"),
@@ -260,11 +306,9 @@ export const dailyMetrics = fitness.table(
     steps: integer("steps"),
     activeEnergyKcal: real("active_energy_kcal"),
     basalEnergyKcal: real("basal_energy_kcal"),
-    sleepScore: real("sleep_score"),
-    readiness: real("readiness"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [primaryKey({ columns: [t.date, t.providerId, t.sport] })],
+  (t) => [primaryKey({ columns: [t.date, t.providerId] })],
 );
 
 // ============================================================
@@ -317,6 +361,54 @@ export const nutritionDaily = fitness.table(
   (t) => [primaryKey({ columns: [t.date, t.providerId] })],
 );
 
+export const foodEntry = fitness.table(
+  "food_entry",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    providerId: text("provider_id")
+      .notNull()
+      .references(() => provider.id),
+    externalId: text("external_id"),
+    date: date("date").notNull(),
+    meal: mealEnum("meal"),
+    foodName: text("food_name").notNull(),
+    foodDescription: text("food_description"),        // e.g. "1 cup, cooked"
+    category: foodCategoryEnum("category"),
+    providerFoodId: text("provider_food_id"),         // provider's food DB ID
+    providerServingId: text("provider_serving_id"),   // provider's serving ID
+    numberOfUnits: real("number_of_units"),
+    // Macronutrients
+    calories: integer("calories"),
+    proteinG: real("protein_g"),
+    carbsG: real("carbs_g"),
+    fatG: real("fat_g"),
+    // Fat breakdown
+    saturatedFatG: real("saturated_fat_g"),
+    polyunsaturatedFatG: real("polyunsaturated_fat_g"),
+    monounsaturatedFatG: real("monounsaturated_fat_g"),
+    transFatG: real("trans_fat_g"),
+    // Other macros
+    cholesterolMg: real("cholesterol_mg"),
+    sodiumMg: real("sodium_mg"),
+    potassiumMg: real("potassium_mg"),
+    fiberG: real("fiber_g"),
+    sugarG: real("sugar_g"),
+    // Micronutrients
+    vitaminAMcg: real("vitamin_a_mcg"),
+    vitaminCMg: real("vitamin_c_mg"),
+    calciumMg: real("calcium_mg"),
+    ironMg: real("iron_mg"),
+    // Raw API response
+    raw: jsonb("raw"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("food_entry_provider_external_idx").on(t.providerId, t.externalId),
+    index("food_entry_date_idx").on(t.date),
+    index("food_entry_date_meal_idx").on(t.date, t.meal),
+  ],
+);
+
 // ============================================================
 // Lab results (clinical records from Apple Health / FHIR)
 // ============================================================
@@ -338,7 +430,7 @@ export const labResult = fitness.table(
     referenceRangeHigh: real("reference_range_high"),
     referenceRangeText: text("reference_range_text"),
     panelName: text("panel_name"),
-    status: text("status"),
+    status: labResultStatusEnum("status"),
     sourceName: text("source_name"),
     recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
     issuedAt: timestamp("issued_at", { withTimezone: true }),
