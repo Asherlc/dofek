@@ -1,6 +1,6 @@
 import type { Provider, SyncResult, SyncError } from "./types.js";
 import type { Database } from "../db/index.js";
-import { bodyMeasurement, cardioActivity, metricStream, dailyMetrics, sleepSession, labResult } from "../db/schema.js";
+import { bodyMeasurement, cardioActivity, metricStream, dailyMetrics, sleepSession, labResult, nutritionDaily, healthEvent } from "../db/schema.js";
 import { ensureProvider } from "../db/tokens.js";
 import sax from "sax";
 import yauzl from "yauzl";
@@ -54,6 +54,28 @@ export function parseRecord(attrs: Record<string, string>): HealthRecord | null 
     startDate: parseHealthDate(attrs.startDate),
     endDate: parseHealthDate(attrs.endDate),
     creationDate: parseHealthDate(attrs.creationDate),
+  };
+}
+
+// Category records have string values (e.g., MindfulSession, SexualActivity)
+export interface CategoryRecord {
+  type: string;
+  sourceName: string;
+  value: string;
+  startDate: Date;
+  endDate: Date;
+}
+
+export function parseCategoryRecord(attrs: Record<string, string>): CategoryRecord | null {
+  const type = attrs.type;
+  if (!type) return null;
+
+  return {
+    type,
+    sourceName: attrs.sourceName ?? "",
+    value: attrs.value ?? "",
+    startDate: parseHealthDate(attrs.startDate),
+    endDate: parseHealthDate(attrs.endDate),
   };
 }
 
@@ -352,6 +374,7 @@ export interface StreamCallbacks {
   onRecordBatch: (records: HealthRecord[]) => Promise<void>;
   onSleepBatch: (records: SleepAnalysisRecord[]) => Promise<void>;
   onWorkoutBatch: (workouts: HealthWorkout[]) => Promise<void>;
+  onCategoryBatch?: (records: CategoryRecord[]) => Promise<void>;
 }
 
 const BATCH_SIZE = 500;
@@ -365,16 +388,18 @@ export function streamHealthExport(
   filePath: string,
   since: Date,
   callbacks: StreamCallbacks,
-): Promise<{ recordCount: number; workoutCount: number; sleepCount: number }> {
+): Promise<{ recordCount: number; workoutCount: number; sleepCount: number; categoryCount: number }> {
   return new Promise((resolve, reject) => {
     const parser = sax.createStream(true, { trim: true });
     const fileStream = createReadStream(filePath, { encoding: "utf8" });
     let recordBatch: HealthRecord[] = [];
     let sleepBatch: SleepAnalysisRecord[] = [];
     let workoutBatch: HealthWorkout[] = [];
+    let categoryBatch: CategoryRecord[] = [];
     let recordCount = 0;
     let workoutCount = 0;
     let sleepCount = 0;
+    let categoryCount = 0;
     let pendingFlushes = 0;
 
     // State for nested elements
@@ -422,6 +447,17 @@ export function streamHealthExport(
       }
     }
 
+    function addCategory(cat: CategoryRecord) {
+      if (!callbacks.onCategoryBatch) return;
+      categoryBatch.push(cat);
+      categoryCount++;
+      if (categoryBatch.length >= BATCH_SIZE) {
+        const batch = categoryBatch;
+        categoryBatch = [];
+        trackFlush(() => callbacks.onCategoryBatch!(batch));
+      }
+    }
+
     function flushWorkout() {
       if (currentWorkout) {
         if (currentWorkoutStats.length > 0) {
@@ -448,6 +484,10 @@ export function streamHealthExport(
         if (attrs.type === "HKCategoryTypeIdentifierSleepAnalysis") {
           const sleep = parseSleepAnalysis(attrs);
           if (sleep && sleep.startDate >= since) addSleep(sleep);
+        } else if (attrs.type?.startsWith("HKCategoryType")) {
+          // Category types (MindfulSession, SexualActivity, etc.) — non-numeric
+          const cat = parseCategoryRecord(attrs);
+          if (cat && cat.startDate >= since) addCategory(cat);
         } else {
           const record = parseRecord(attrs);
           if (record && record.startDate >= since) addRecord(record);
@@ -509,6 +549,9 @@ export function streamHealthExport(
       if (recordBatch.length > 0) finalFlushes.push(callbacks.onRecordBatch(recordBatch));
       if (sleepBatch.length > 0) finalFlushes.push(callbacks.onSleepBatch(sleepBatch));
       if (workoutBatch.length > 0) finalFlushes.push(callbacks.onWorkoutBatch(workoutBatch));
+      if (categoryBatch.length > 0 && callbacks.onCategoryBatch) {
+        finalFlushes.push(callbacks.onCategoryBatch(categoryBatch));
+      }
 
       // Wait for all pending + final flushes
       const waitForPending = (): Promise<void> => {
@@ -520,7 +563,7 @@ export function streamHealthExport(
 
       waitForPending()
         .then(() => Promise.all(finalFlushes))
-        .then(() => resolve({ recordCount, workoutCount, sleepCount }))
+        .then(() => resolve({ recordCount, workoutCount, sleepCount, categoryCount }))
         .catch(reject);
     });
 
@@ -537,6 +580,9 @@ const METRIC_STREAM_TYPES: Record<string, string> = {
   HKQuantityTypeIdentifierHeartRate: "heartRate",
   HKQuantityTypeIdentifierOxygenSaturation: "spo2",
   HKQuantityTypeIdentifierRespiratoryRate: "respiratoryRate",
+  HKQuantityTypeIdentifierBloodGlucose: "bloodGlucose",
+  HKQuantityTypeIdentifierEnvironmentalAudioExposure: "audioExposure",
+  HKQuantityTypeIdentifierHeadphoneAudioExposure: "audioExposure",
 };
 
 // Records that map to body_measurement
@@ -548,9 +594,12 @@ const BODY_MEASUREMENT_TYPES = new Set([
   "HKQuantityTypeIdentifierBloodPressureSystolic",
   "HKQuantityTypeIdentifierBloodPressureDiastolic",
   "HKQuantityTypeIdentifierBodyTemperature",
+  "HKQuantityTypeIdentifierHeight",
+  "HKQuantityTypeIdentifierWaistCircumference",
 ]);
 
 // Records that map to daily_metrics (one value per day)
+// Additive types get summed; point-in-time types keep latest value
 const DAILY_METRIC_TYPES = new Set([
   "HKQuantityTypeIdentifierRestingHeartRate",
   "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
@@ -558,6 +607,48 @@ const DAILY_METRIC_TYPES = new Set([
   "HKQuantityTypeIdentifierStepCount",
   "HKQuantityTypeIdentifierActiveEnergyBurned",
   "HKQuantityTypeIdentifierBasalEnergyBurned",
+  "HKQuantityTypeIdentifierDistanceWalkingRunning",
+  "HKQuantityTypeIdentifierDistanceCycling",
+  "HKQuantityTypeIdentifierFlightsClimbed",
+  "HKQuantityTypeIdentifierAppleExerciseTime",
+  "HKQuantityTypeIdentifierAppleStandTime",
+  "HKQuantityTypeIdentifierWalkingSpeed",
+  "HKQuantityTypeIdentifierWalkingStepLength",
+  "HKQuantityTypeIdentifierWalkingDoubleSupportPercentage",
+  "HKQuantityTypeIdentifierWalkingAsymmetryPercentage",
+  "HKQuantityTypeIdentifierAppleWalkingSteadiness",
+  "HKQuantityTypeIdentifierWalkingHeartRateAverage",
+]);
+
+// Additive daily metrics (summed across all records in a day)
+const ADDITIVE_DAILY_TYPES = new Set([
+  "HKQuantityTypeIdentifierStepCount",
+  "HKQuantityTypeIdentifierActiveEnergyBurned",
+  "HKQuantityTypeIdentifierBasalEnergyBurned",
+  "HKQuantityTypeIdentifierDistanceWalkingRunning",
+  "HKQuantityTypeIdentifierDistanceCycling",
+  "HKQuantityTypeIdentifierFlightsClimbed",
+  "HKQuantityTypeIdentifierAppleExerciseTime",
+  "HKQuantityTypeIdentifierAppleStandTime",
+]);
+
+// Nutrition records → nutritionDaily (aggregate by day)
+const NUTRITION_TYPES: Record<string, string> = {
+  HKQuantityTypeIdentifierDietaryEnergyConsumed: "calories",
+  HKQuantityTypeIdentifierDietaryProtein: "proteinG",
+  HKQuantityTypeIdentifierDietaryCarbohydrates: "carbsG",
+  HKQuantityTypeIdentifierDietaryFatTotal: "fatG",
+  HKQuantityTypeIdentifierDietaryFiber: "fiberG",
+  HKQuantityTypeIdentifierDietaryWater: "waterMl",
+};
+
+// All explicitly routed types — anything not here goes to health_event
+const ALL_ROUTED_TYPES = new Set([
+  ...Object.keys(METRIC_STREAM_TYPES),
+  ...BODY_MEASUREMENT_TYPES,
+  ...DAILY_METRIC_TYPES,
+  ...Object.keys(NUTRITION_TYPES),
+  "HKCategoryTypeIdentifierSleepAnalysis", // handled separately in SAX parser
 ]);
 
 function dateToString(d: Date): string {
@@ -583,9 +674,13 @@ async function upsertMetricStreamBatch(
       recordedAt: record.startDate,
     };
 
-    if (field === "heartRate") row.heartRate = Math.round(record.value);
-    else if (field === "spo2") row.spo2 = record.value;
-    else if (field === "respiratoryRate") row.respiratoryRate = record.value;
+    switch (field) {
+      case "heartRate": row.heartRate = Math.round(record.value); break;
+      case "spo2": row.spo2 = record.value; break;
+      case "respiratoryRate": row.respiratoryRate = record.value; break;
+      case "bloodGlucose": row.bloodGlucose = record.value; break;
+      case "audioExposure": row.audioExposure = record.value; break;
+    }
 
     rows.push(row as typeof metricStream.$inferInsert);
   }
@@ -629,6 +724,8 @@ async function upsertBodyMeasurementBatch(
         case "HKQuantityTypeIdentifierBloodPressureSystolic": row.systolicBp = Math.round(r.value); break;
         case "HKQuantityTypeIdentifierBloodPressureDiastolic": row.diastolicBp = Math.round(r.value); break;
         case "HKQuantityTypeIdentifierBodyTemperature": row.temperatureC = r.value; break;
+        case "HKQuantityTypeIdentifierHeight": row.heightCm = r.unit === "m" ? r.value * 100 : r.value; break;
+        case "HKQuantityTypeIdentifierWaistCircumference": row.waistCircumferenceCm = r.unit === "m" ? r.value * 100 : r.value; break;
       }
     }
 
@@ -655,10 +752,7 @@ async function upsertDailyMetricsBatch(
     if (!byDate.has(dateKey)) byDate.set(dateKey, new Map());
     const day = byDate.get(dateKey)!;
 
-    // Additive metrics get summed
-    if (r.type === "HKQuantityTypeIdentifierStepCount" ||
-        r.type === "HKQuantityTypeIdentifierActiveEnergyBurned" ||
-        r.type === "HKQuantityTypeIdentifierBasalEnergyBurned") {
+    if (ADDITIVE_DAILY_TYPES.has(r.type)) {
       day.set(r.type, (day.get(r.type) ?? 0) + r.value);
     } else {
       // Point-in-time: keep latest
@@ -681,6 +775,17 @@ async function upsertDailyMetricsBatch(
         case "HKQuantityTypeIdentifierStepCount": row.steps = Math.round(value); break;
         case "HKQuantityTypeIdentifierActiveEnergyBurned": row.activeEnergyKcal = value; break;
         case "HKQuantityTypeIdentifierBasalEnergyBurned": row.basalEnergyKcal = value; break;
+        case "HKQuantityTypeIdentifierDistanceWalkingRunning": row.distanceKm = value / 1000; break;
+        case "HKQuantityTypeIdentifierDistanceCycling": row.cyclingDistanceKm = value / 1000; break;
+        case "HKQuantityTypeIdentifierFlightsClimbed": row.flightsClimbed = Math.round(value); break;
+        case "HKQuantityTypeIdentifierAppleExerciseTime": row.exerciseMinutes = Math.round(value); break;
+        case "HKQuantityTypeIdentifierAppleStandTime": row.standHours = Math.round(value / 60); break;
+        case "HKQuantityTypeIdentifierWalkingSpeed": row.walkingSpeed = value; break;
+        case "HKQuantityTypeIdentifierWalkingStepLength": row.walkingStepLength = value; break;
+        case "HKQuantityTypeIdentifierWalkingDoubleSupportPercentage": row.walkingDoubleSupportPct = value; break;
+        case "HKQuantityTypeIdentifierWalkingAsymmetryPercentage": row.walkingAsymmetryPct = value; break;
+        case "HKQuantityTypeIdentifierAppleWalkingSteadiness": row.walkingSteadiness = value; break;
+        case "HKQuantityTypeIdentifierWalkingHeartRateAverage": row.restingHr = row.restingHr ?? Math.round(value); break;
       }
     }
 
@@ -692,6 +797,81 @@ async function upsertDailyMetricsBatch(
     count++;
   }
   return count;
+}
+
+async function upsertNutritionBatch(
+  db: Database,
+  providerId: string,
+  records: HealthRecord[],
+): Promise<number> {
+  // Aggregate nutrition by date
+  const byDate = new Map<string, Map<string, number>>();
+  for (const r of records) {
+    const field = NUTRITION_TYPES[r.type];
+    if (!field) continue;
+    const dateKey = dateToString(r.startDate);
+    if (!byDate.has(dateKey)) byDate.set(dateKey, new Map());
+    const day = byDate.get(dateKey)!;
+    day.set(field, (day.get(field) ?? 0) + r.value);
+  }
+
+  let count = 0;
+  for (const [dateKey, nutrients] of byDate) {
+    const row: Record<string, unknown> = {
+      date: dateKey,
+      providerId,
+    };
+
+    for (const [field, value] of nutrients) {
+      switch (field) {
+        case "calories": row.calories = Math.round(value); break;
+        case "proteinG": row.proteinG = value; break;
+        case "carbsG": row.carbsG = value; break;
+        case "fatG": row.fatG = value; break;
+        case "fiberG": row.fiberG = value; break;
+        case "waterMl": row.waterMl = Math.round(value); break;
+      }
+    }
+
+    await db.insert(nutritionDaily).values(row as typeof nutritionDaily.$inferInsert)
+      .onConflictDoUpdate({
+        target: [nutritionDaily.date, nutritionDaily.providerId],
+        set: row as Record<string, unknown>,
+      });
+    count++;
+  }
+  return count;
+}
+
+async function upsertHealthEventBatch(
+  db: Database,
+  providerId: string,
+  records: HealthRecord[],
+): Promise<number> {
+  const rows: (typeof healthEvent.$inferInsert)[] = [];
+  for (const r of records) {
+    // Skip already-routed types
+    if (ALL_ROUTED_TYPES.has(r.type)) continue;
+
+    rows.push({
+      providerId,
+      externalId: `ah:${r.type}:${r.startDate.toISOString()}`,
+      type: r.type,
+      value: r.value,
+      unit: r.unit,
+      sourceName: r.sourceName,
+      startDate: r.startDate,
+      endDate: r.endDate,
+    });
+  }
+
+  if (rows.length > 0) {
+    for (let i = 0; i < rows.length; i += 500) {
+      await db.insert(healthEvent).values(rows.slice(i, i + 500))
+        .onConflictDoNothing();
+    }
+  }
+  return rows.length;
 }
 
 async function upsertWorkoutBatch(
@@ -870,6 +1050,9 @@ async function runImport(
         const metricRecords = records.filter((r) => METRIC_STREAM_TYPES[r.type]);
         const bodyRecords = records.filter((r) => BODY_MEASUREMENT_TYPES.has(r.type));
         const dailyRecords = records.filter((r) => DAILY_METRIC_TYPES.has(r.type));
+        const nutritionRecords = records.filter((r) => NUTRITION_TYPES[r.type]);
+        // Catch-all: anything not routed above
+        const unrouted = records.filter((r) => !ALL_ROUTED_TYPES.has(r.type));
 
         if (metricRecords.length > 0) {
           const c = await upsertMetricStreamBatch(db, providerId, metricRecords);
@@ -883,6 +1066,14 @@ async function runImport(
           const c = await upsertDailyMetricsBatch(db, providerId, dailyRecords);
           recordsSynced += c;
         }
+        if (nutritionRecords.length > 0) {
+          const c = await upsertNutritionBatch(db, providerId, nutritionRecords);
+          recordsSynced += c;
+        }
+        if (unrouted.length > 0) {
+          const c = await upsertHealthEventBatch(db, providerId, unrouted);
+          recordsSynced += c;
+        }
       },
       onSleepBatch: async (records) => {
         const c = await upsertSleepBatch(db, providerId, records);
@@ -892,11 +1083,29 @@ async function runImport(
         const c = await upsertWorkoutBatch(db, providerId, workouts);
         recordsSynced += c;
       },
+      onCategoryBatch: async (records) => {
+        // Insert category records into health_event table
+        const rows: (typeof healthEvent.$inferInsert)[] = records.map((r) => ({
+          providerId,
+          externalId: `ah:${r.type}:${r.startDate.toISOString()}`,
+          type: r.type,
+          valueText: r.value || undefined,
+          sourceName: r.sourceName,
+          startDate: r.startDate,
+          endDate: r.endDate,
+        }));
+        for (let i = 0; i < rows.length; i += 500) {
+          await db.insert(healthEvent).values(rows.slice(i, i + 500))
+            .onConflictDoNothing();
+        }
+        recordsSynced += rows.length;
+      },
     });
 
     console.log(
       `[apple_health] Parsed ${counts.recordCount} records, ` +
-      `${counts.workoutCount} workouts, ${counts.sleepCount} sleep records`,
+      `${counts.workoutCount} workouts, ${counts.sleepCount} sleep records, ` +
+      `${counts.categoryCount} category events`,
     );
   } catch (err) {
     errors.push({

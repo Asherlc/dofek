@@ -154,6 +154,48 @@ const SAMPLE_EXPORT = `<?xml version="1.0" encoding="UTF-8"?>
   appleStandHours="12"
   appleStandHoursGoal="12"/>
 
+ <Record type="HKQuantityTypeIdentifierBloodGlucose"
+  sourceName="Dexcom G7" unit="mmol/L"
+  creationDate="2024-03-01 12:00:00 -0500"
+  startDate="2024-03-01 12:00:00 -0500"
+  endDate="2024-03-01 12:00:00 -0500"
+  value="5.4"/>
+
+ <Record type="HKQuantityTypeIdentifierDietaryProtein"
+  sourceName="MyFitnessPal" unit="g"
+  creationDate="2024-03-01 20:00:00 -0500"
+  startDate="2024-03-01 20:00:00 -0500"
+  endDate="2024-03-01 20:00:00 -0500"
+  value="45.5"/>
+
+ <Record type="HKQuantityTypeIdentifierDietaryEnergyConsumed"
+  sourceName="MyFitnessPal" unit="kcal"
+  creationDate="2024-03-01 20:00:00 -0500"
+  startDate="2024-03-01 20:00:00 -0500"
+  endDate="2024-03-01 20:00:00 -0500"
+  value="650"/>
+
+ <Record type="HKQuantityTypeIdentifierDistanceWalkingRunning"
+  sourceName="iPhone" unit="m"
+  creationDate="2024-03-01 14:00:00 -0500"
+  startDate="2024-03-01 14:00:00 -0500"
+  endDate="2024-03-01 14:15:00 -0500"
+  value="523.7"/>
+
+ <Record type="HKQuantityTypeIdentifierFlightsClimbed"
+  sourceName="iPhone" unit="count"
+  creationDate="2024-03-01 14:00:00 -0500"
+  startDate="2024-03-01 14:00:00 -0500"
+  endDate="2024-03-01 14:15:00 -0500"
+  value="3"/>
+
+ <Record type="HKCategoryTypeIdentifierMindfulSession"
+  sourceName="Headspace"
+  creationDate="2024-03-01 07:00:00 -0500"
+  startDate="2024-03-01 07:00:00 -0500"
+  endDate="2024-03-01 07:15:00 -0500"
+  value="1"/>
+
  <Record type="HKQuantityTypeIdentifierHeartRate"
   sourceName="Apple Watch" unit="count/min"
   creationDate="2023-01-01 10:00:00 -0500"
@@ -352,6 +394,88 @@ describe("Apple Health streaming import (integration)", () => {
     const last = workouts[0].routeLocations![2];
     expect(last.lat).toBeCloseTo(40.713);
     expect(last.speed).toBeCloseTo(3.7);
+  });
+
+  it("parses blood glucose into record batch", async () => {
+    const since = new Date("2024-01-01");
+    const bgRecords: import("../apple-health.js").HealthRecord[] = [];
+
+    await streamHealthExport(xmlPath, since, {
+      onRecordBatch: async (records) => {
+        for (const r of records) {
+          if (r.type === "HKQuantityTypeIdentifierBloodGlucose") {
+            bgRecords.push(r);
+          }
+        }
+      },
+      onSleepBatch: async () => {},
+      onWorkoutBatch: async () => {},
+    });
+
+    expect(bgRecords).toHaveLength(1);
+    expect(bgRecords[0].value).toBeCloseTo(5.4);
+  });
+
+  it("parses nutrition records", async () => {
+    const since = new Date("2024-01-01");
+    const nutritionRecords: import("../apple-health.js").HealthRecord[] = [];
+
+    await streamHealthExport(xmlPath, since, {
+      onRecordBatch: async (records) => {
+        for (const r of records) {
+          if (r.type.startsWith("HKQuantityTypeIdentifierDietary")) {
+            nutritionRecords.push(r);
+          }
+        }
+      },
+      onSleepBatch: async () => {},
+      onWorkoutBatch: async () => {},
+    });
+
+    expect(nutritionRecords).toHaveLength(2);
+    const protein = nutritionRecords.find((r) => r.type.includes("Protein"))!;
+    expect(protein.value).toBeCloseTo(45.5);
+    const energy = nutritionRecords.find((r) => r.type.includes("Energy"))!;
+    expect(energy.value).toBe(650);
+  });
+
+  it("parses category records (mindful sessions)", async () => {
+    const since = new Date("2024-01-01");
+    const categories: import("../apple-health.js").CategoryRecord[] = [];
+
+    await streamHealthExport(xmlPath, since, {
+      onRecordBatch: async () => {},
+      onSleepBatch: async () => {},
+      onWorkoutBatch: async () => {},
+      onCategoryBatch: async (records) => { categories.push(...records); },
+    });
+
+    expect(categories.length).toBeGreaterThanOrEqual(1);
+    const mindful = categories.find((c) => c.type === "HKCategoryTypeIdentifierMindfulSession");
+    expect(mindful).toBeDefined();
+    expect(mindful!.sourceName).toBe("Headspace");
+  });
+
+  it("routes walking distance and flights climbed", async () => {
+    const since = new Date("2024-01-01");
+    const distanceRecords: import("../apple-health.js").HealthRecord[] = [];
+    const flightRecords: import("../apple-health.js").HealthRecord[] = [];
+
+    await streamHealthExport(xmlPath, since, {
+      onRecordBatch: async (records) => {
+        for (const r of records) {
+          if (r.type === "HKQuantityTypeIdentifierDistanceWalkingRunning") distanceRecords.push(r);
+          if (r.type === "HKQuantityTypeIdentifierFlightsClimbed") flightRecords.push(r);
+        }
+      },
+      onSleepBatch: async () => {},
+      onWorkoutBatch: async () => {},
+    });
+
+    expect(distanceRecords).toHaveLength(1);
+    expect(distanceRecords[0].value).toBeCloseTo(523.7);
+    expect(flightRecords).toHaveLength(1);
+    expect(flightRecords[0].value).toBe(3);
   });
 
   it("parses ActivitySummary as active energy records", async () => {

@@ -7,9 +7,11 @@ import {
   parseWorkoutStatistics,
   enrichWorkoutFromStats,
   parseRouteLocation,
+  parseCategoryRecord,
   type HealthRecord,
   type HealthWorkout,
   type RouteLocation,
+  type CategoryRecord,
 } from "../apple-health.js";
 
 // ============================================================
@@ -523,6 +525,146 @@ describe("Apple Health Provider — parsing", () => {
       expect(result!.altitude).toBeUndefined();
       expect(result!.speed).toBeUndefined();
       expect(result!.course).toBeUndefined();
+    });
+  });
+
+  describe("parseRecord — new types", () => {
+    it("parses blood glucose", () => {
+      const attrs: Record<string, string> = {
+        type: "HKQuantityTypeIdentifierBloodGlucose",
+        sourceName: "Dexcom G7",
+        unit: "mmol/L",
+        value: "5.4",
+        creationDate: "2024-03-01 10:00:00 -0500",
+        startDate: "2024-03-01 10:00:00 -0500",
+        endDate: "2024-03-01 10:00:00 -0500",
+      };
+      const result = parseRecord(attrs);
+      expect(result!.type).toBe("HKQuantityTypeIdentifierBloodGlucose");
+      expect(result!.value).toBeCloseTo(5.4);
+    });
+
+    it("parses dietary energy consumed", () => {
+      const attrs: Record<string, string> = {
+        type: "HKQuantityTypeIdentifierDietaryEnergyConsumed",
+        sourceName: "MyFitnessPal",
+        unit: "kcal",
+        value: "2100",
+        creationDate: "2024-03-01 20:00:00 -0500",
+        startDate: "2024-03-01 20:00:00 -0500",
+        endDate: "2024-03-01 20:00:00 -0500",
+      };
+      const result = parseRecord(attrs);
+      expect(result!.value).toBe(2100);
+    });
+
+    it("parses dietary protein", () => {
+      const attrs: Record<string, string> = {
+        type: "HKQuantityTypeIdentifierDietaryProtein",
+        sourceName: "MyFitnessPal",
+        unit: "g",
+        value: "145.5",
+        creationDate: "2024-03-01 20:00:00 -0500",
+        startDate: "2024-03-01 20:00:00 -0500",
+        endDate: "2024-03-01 20:00:00 -0500",
+      };
+      const result = parseRecord(attrs);
+      expect(result!.value).toBeCloseTo(145.5);
+    });
+
+    it("parses walking/running distance", () => {
+      const attrs: Record<string, string> = {
+        type: "HKQuantityTypeIdentifierDistanceWalkingRunning",
+        sourceName: "iPhone",
+        unit: "m",
+        value: "523.7",
+        creationDate: "2024-03-01 14:00:00 -0500",
+        startDate: "2024-03-01 14:00:00 -0500",
+        endDate: "2024-03-01 14:15:00 -0500",
+      };
+      const result = parseRecord(attrs);
+      expect(result!.value).toBeCloseTo(523.7);
+    });
+
+    it("parses flights climbed", () => {
+      const attrs: Record<string, string> = {
+        type: "HKQuantityTypeIdentifierFlightsClimbed",
+        sourceName: "iPhone",
+        unit: "count",
+        value: "3",
+        creationDate: "2024-03-01 14:00:00 -0500",
+        startDate: "2024-03-01 14:00:00 -0500",
+        endDate: "2024-03-01 14:15:00 -0500",
+      };
+      const result = parseRecord(attrs);
+      expect(result!.value).toBe(3);
+    });
+
+    it("parses environmental audio exposure", () => {
+      const attrs: Record<string, string> = {
+        type: "HKQuantityTypeIdentifierEnvironmentalAudioExposure",
+        sourceName: "Apple Watch",
+        unit: "dBASPL",
+        value: "72.5",
+        creationDate: "2024-03-01 14:00:00 -0500",
+        startDate: "2024-03-01 14:00:00 -0500",
+        endDate: "2024-03-01 14:30:00 -0500",
+      };
+      const result = parseRecord(attrs);
+      expect(result!.value).toBeCloseTo(72.5);
+    });
+
+    it("parses height", () => {
+      const attrs: Record<string, string> = {
+        type: "HKQuantityTypeIdentifierHeight",
+        sourceName: "Health",
+        unit: "cm",
+        value: "180.3",
+        creationDate: "2024-03-01 08:00:00 -0500",
+        startDate: "2024-03-01 08:00:00 -0500",
+        endDate: "2024-03-01 08:00:00 -0500",
+      };
+      const result = parseRecord(attrs);
+      expect(result!.value).toBeCloseTo(180.3);
+    });
+  });
+
+  describe("parseCategoryRecord", () => {
+    it("parses mindful session", () => {
+      const attrs: Record<string, string> = {
+        type: "HKCategoryTypeIdentifierMindfulSession",
+        sourceName: "Headspace",
+        value: "1",
+        creationDate: "2024-03-01 07:00:00 -0500",
+        startDate: "2024-03-01 07:00:00 -0500",
+        endDate: "2024-03-01 07:15:00 -0500",
+      };
+      const result = parseCategoryRecord(attrs);
+      expect(result).not.toBeNull();
+      expect(result!.type).toBe("HKCategoryTypeIdentifierMindfulSession");
+      expect(result!.value).toBe("1");
+      expect(result!.sourceName).toBe("Headspace");
+      expect(result!.startDate).toBeInstanceOf(Date);
+      expect(result!.endDate).toBeInstanceOf(Date);
+    });
+
+    it("parses menstrual flow", () => {
+      const attrs: Record<string, string> = {
+        type: "HKCategoryTypeIdentifierMenstrualFlow",
+        sourceName: "Apple Health",
+        value: "HKCategoryValueMenstrualFlowLight",
+        creationDate: "2024-03-01 08:00:00 -0500",
+        startDate: "2024-03-01 08:00:00 -0500",
+        endDate: "2024-03-01 08:00:00 -0500",
+      };
+      const result = parseCategoryRecord(attrs);
+      expect(result!.type).toBe("HKCategoryTypeIdentifierMenstrualFlow");
+      expect(result!.value).toBe("HKCategoryValueMenstrualFlowLight");
+    });
+
+    it("returns null without type", () => {
+      const result = parseCategoryRecord({ value: "1" });
+      expect(result).toBeNull();
     });
   });
 });

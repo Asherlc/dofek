@@ -145,6 +145,8 @@ export const bodyMeasurement = fitness.table(
     boneMassKg: real("bone_mass_kg"),
     waterPct: real("water_pct"),
     bmi: real("bmi"),
+    heightCm: real("height_cm"),
+    waistCircumferenceCm: real("waist_circumference_cm"),
     systolicBp: integer("systolic_bp"),
     diastolicBp: integer("diastolic_bp"),
     heartPulse: integer("heart_pulse"),
@@ -265,6 +267,9 @@ export const metricStream = fitness.table(
     leftPedalSmoothness: real("left_pedal_smoothness"),          // percent
     rightPedalSmoothness: real("right_pedal_smoothness"),        // percent
     combinedPedalSmoothness: real("combined_pedal_smoothness"),  // percent
+    // Apple Health / medical
+    bloodGlucose: real("blood_glucose"),                 // mmol/L
+    audioExposure: real("audio_exposure"),               // dBASPL
     // Complete raw record — every field, no data loss
     raw: jsonb("raw"),
   },
@@ -293,6 +298,19 @@ export const dailyMetrics = fitness.table(
     steps: integer("steps"),
     activeEnergyKcal: real("active_energy_kcal"),
     basalEnergyKcal: real("basal_energy_kcal"),
+    distanceKm: real("distance_km"),                            // walking + running
+    cyclingDistanceKm: real("cycling_distance_km"),
+    flightsClimbed: integer("flights_climbed"),
+    exerciseMinutes: integer("exercise_minutes"),
+    mindfulMinutes: integer("mindful_minutes"),
+    walkingSpeed: real("walking_speed"),                         // m/s
+    walkingStepLength: real("walking_step_length"),              // cm
+    walkingDoubleSupportPct: real("walking_double_support_pct"), // percent
+    walkingAsymmetryPct: real("walking_asymmetry_pct"),          // percent
+    walkingSteadiness: real("walking_steadiness"),               // 0-1
+    standHours: integer("stand_hours"),
+    environmentalAudioExposure: real("environmental_audio_exposure"), // dBASPL avg
+    headphoneAudioExposure: real("headphone_audio_exposure"),    // dBASPL avg
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.date, t.providerId] })],
@@ -429,6 +447,33 @@ export const labResult = fitness.table(
     index("lab_result_recorded_idx").on(t.recordedAt),
     index("lab_result_loinc_idx").on(t.loincCode),
     index("lab_result_test_name_idx").on(t.testName),
+  ],
+);
+
+// ============================================================
+// Generic health events / catch-all
+// ============================================================
+
+export const healthEvent = fitness.table(
+  "health_event",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    providerId: text("provider_id")
+      .notNull()
+      .references(() => provider.id),
+    externalId: text("external_id"),
+    type: text("type").notNull(),                                // HK type identifier
+    value: real("value"),                                        // numeric value (if any)
+    valueText: text("value_text"),                               // category/string value (if any)
+    unit: text("unit"),
+    sourceName: text("source_name"),
+    startDate: timestamp("start_date", { withTimezone: true }).notNull(),
+    endDate: timestamp("end_date", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("health_event_provider_external_idx").on(t.providerId, t.externalId),
+    index("health_event_type_time_idx").on(t.type, t.startDate),
   ],
 );
 
