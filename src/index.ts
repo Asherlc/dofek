@@ -6,10 +6,12 @@ import { waitForAuthCode } from "./auth/callback-server.js";
 import { ensureProvider, saveTokens } from "./db/tokens.js";
 import { WahooProvider } from "./providers/wahoo.js";
 import { WithingsProvider } from "./providers/withings.js";
+import { PelotonProvider } from "./providers/peloton.js";
 
 // Register all providers
 registerProvider(new WahooProvider());
 registerProvider(new WithingsProvider());
+registerProvider(new PelotonProvider());
 
 function parseSinceDays(): number {
   const arg = process.argv.find((a) => a.startsWith("--since-days="));

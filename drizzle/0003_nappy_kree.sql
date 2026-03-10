@@ -1,0 +1,1 @@
+ALTER TABLE "fitness"."cardio_activity" ADD COLUMN "raw" jsonb;

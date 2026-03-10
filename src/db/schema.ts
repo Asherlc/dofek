@@ -180,6 +180,7 @@ export const cardioActivity = fitness.table(
     intensityFactor: real("intensity_factor"),
     tss: real("tss"),
     notes: text("notes"),
+    raw: jsonb("raw"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

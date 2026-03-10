@@ -86,6 +86,7 @@ docker compose run --rm sync node dist/index.js sync --since-days=30
 - [ ] Automated analysis and insights generation
 - [ ] Grafana dashboard templates
 - [ ] Continuous aggregates for long-range trends
+- [ ] Progress indicator for Apple Health imports (file size / record count progress)
 
 ## Stack
 

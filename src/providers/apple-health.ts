@@ -330,20 +330,36 @@ export function streamHealthExport(
 ): Promise<{ recordCount: number; workoutCount: number; sleepCount: number }> {
   return new Promise((resolve, reject) => {
     const parser = sax.createStream(true, { trim: true });
+    const fileStream = createReadStream(filePath, { encoding: "utf8" });
     let recordBatch: HealthRecord[] = [];
     let sleepBatch: SleepAnalysisRecord[] = [];
     let workoutBatch: HealthWorkout[] = [];
     let recordCount = 0;
     let workoutCount = 0;
     let sleepCount = 0;
-    let pending = Promise.resolve();
+    let pendingFlushes = 0;
 
     // State for nested elements
     let currentWorkout: HealthWorkout | null = null;
     let currentWorkoutStats: WorkoutStatistics[] = [];
 
-    function enqueue(fn: () => Promise<void>) {
-      pending = pending.then(fn);
+    // Backpressure: pause the file stream while DB writes are in progress.
+    // Max concurrent flushes before we pause.
+    const MAX_PENDING = 2;
+
+    function trackFlush(fn: () => Promise<void>) {
+      pendingFlushes++;
+      if (pendingFlushes >= MAX_PENDING) {
+        fileStream.pause();
+      }
+      fn().then(() => {
+        pendingFlushes--;
+        if (pendingFlushes < MAX_PENDING) {
+          fileStream.resume();
+        }
+      }).catch((err) => {
+        reject(err);
+      });
     }
 
     function addRecord(record: HealthRecord) {
@@ -352,7 +368,7 @@ export function streamHealthExport(
       if (recordBatch.length >= BATCH_SIZE) {
         const batch = recordBatch;
         recordBatch = [];
-        enqueue(() => callbacks.onRecordBatch(batch));
+        trackFlush(() => callbacks.onRecordBatch(batch));
       }
     }
 
@@ -362,7 +378,7 @@ export function streamHealthExport(
       if (sleepBatch.length >= BATCH_SIZE) {
         const batch = sleepBatch;
         sleepBatch = [];
-        enqueue(() => callbacks.onSleepBatch(batch));
+        trackFlush(() => callbacks.onSleepBatch(batch));
       }
     }
 
@@ -376,7 +392,7 @@ export function streamHealthExport(
         if (workoutBatch.length >= BATCH_SIZE) {
           const batch = workoutBatch;
           workoutBatch = [];
-          enqueue(() => callbacks.onWorkoutBatch(batch));
+          trackFlush(() => callbacks.onWorkoutBatch(batch));
         }
       }
       currentWorkout = null;
@@ -435,17 +451,28 @@ export function streamHealthExport(
     parser.on("end", () => {
       // Flush any in-progress workout
       flushWorkout();
-      // Flush remaining batches
-      if (recordBatch.length > 0) enqueue(() => callbacks.onRecordBatch(recordBatch));
-      if (sleepBatch.length > 0) enqueue(() => callbacks.onSleepBatch(sleepBatch));
-      if (workoutBatch.length > 0) enqueue(() => callbacks.onWorkoutBatch(workoutBatch));
 
-      pending
+      // Flush remaining batches
+      const finalFlushes: Promise<void>[] = [];
+      if (recordBatch.length > 0) finalFlushes.push(callbacks.onRecordBatch(recordBatch));
+      if (sleepBatch.length > 0) finalFlushes.push(callbacks.onSleepBatch(sleepBatch));
+      if (workoutBatch.length > 0) finalFlushes.push(callbacks.onWorkoutBatch(workoutBatch));
+
+      // Wait for all pending + final flushes
+      const waitForPending = (): Promise<void> => {
+        if (pendingFlushes > 0) {
+          return new Promise<void>((res) => setTimeout(res, 50)).then(waitForPending);
+        }
+        return Promise.resolve();
+      };
+
+      waitForPending()
+        .then(() => Promise.all(finalFlushes))
         .then(() => resolve({ recordCount, workoutCount, sleepCount }))
         .catch(reject);
     });
 
-    createReadStream(filePath, { encoding: "utf8" }).pipe(parser);
+    fileStream.pipe(parser);
   });
 }
 
@@ -494,7 +521,7 @@ async function upsertMetricStreamBatch(
   providerId: string,
   records: HealthRecord[],
 ): Promise<number> {
-  let count = 0;
+  const rows: (typeof metricStream.$inferInsert)[] = [];
   for (const record of records) {
     const field = METRIC_STREAM_TYPES[record.type];
     if (!field) continue;
@@ -508,10 +535,13 @@ async function upsertMetricStreamBatch(
     else if (field === "spo2") row.spo2 = record.value;
     else if (field === "respiratoryRate") row.respiratoryRate = record.value;
 
-    await db.insert(metricStream).values(row as typeof metricStream.$inferInsert);
-    count++;
+    rows.push(row as typeof metricStream.$inferInsert);
   }
-  return count;
+
+  if (rows.length > 0) {
+    await db.insert(metricStream).values(rows);
+  }
+  return rows.length;
 }
 
 async function upsertBodyMeasurementBatch(
