@@ -1,0 +1,25 @@
+services:
+  db:
+    image: timescale/timescaledb:latest-pg16
+    container_name: health-data-db
+    environment:
+      POSTGRES_DB: health
+      POSTGRES_USER: health
+      POSTGRES_PASSWORD: health
+    ports:
+      - "5435:5432"
+    volumes:
+      - health-db-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  sync:
+    build: .
+    container_name: health-data-sync
+    env_file: .env
+    depends_on:
+      - db
+    profiles:
+      - sync
+
+volumes:
+  health-db-data:

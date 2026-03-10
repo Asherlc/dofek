@@ -1,0 +1,28 @@
+{
+  "name": "health-data",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "sync": "tsx src/index.ts sync",
+    "migrate": "drizzle-kit migrate",
+    "generate": "drizzle-kit generate",
+    "test": "vitest",
+    "test:watch": "vitest --watch",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.38.0",
+    "postgres": "^3.4.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "drizzle-kit": "^0.30.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0",
+    "testcontainers": "^10.0.0"
+  }
+}
