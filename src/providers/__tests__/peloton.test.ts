@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   parseWorkout,
   parsePerformanceGraph,
+  enrichWorkoutFromGraph,
   mapFitnessDiscipline,
   type PelotonWorkout,
   type PelotonPerformanceGraph,
@@ -315,6 +316,53 @@ describe("Peloton Provider", () => {
 
       const result = parsePerformanceGraph(empty, 5);
       expect(result).toEqual([]);
+    });
+  });
+
+  describe("enrichWorkoutFromGraph", () => {
+    it("sets HR, power, speed, cadence from performance graph", () => {
+      const parsed = parseWorkout(sampleCyclingWorkout);
+      const series = parsePerformanceGraph(samplePerformanceGraph, 5);
+
+      enrichWorkoutFromGraph(parsed, series, samplePerformanceGraph.summaries);
+
+      expect(parsed.avgHeartRate).toBe(146);
+      expect(parsed.maxHeartRate).toBe(160);
+      expect(parsed.avgPower).toBe(200);
+      expect(parsed.maxPower).toBe(220);
+      expect(parsed.avgSpeed).toBeCloseTo(18.5);
+      expect(parsed.maxSpeed).toBeCloseTo(20.0);
+      expect(parsed.avgCadence).toBe(85);
+    });
+
+    it("extracts calories from summaries", () => {
+      const parsed = parseWorkout(sampleCyclingWorkout);
+      const series = parsePerformanceGraph(samplePerformanceGraph, 5);
+
+      enrichWorkoutFromGraph(parsed, series, samplePerformanceGraph.summaries);
+
+      expect(parsed.calories).toBe(450);
+    });
+
+    it("extracts distance from summaries (converts miles to meters)", () => {
+      const parsed = parseWorkout(sampleCyclingWorkout);
+      const series = parsePerformanceGraph(samplePerformanceGraph, 5);
+
+      enrichWorkoutFromGraph(parsed, series, samplePerformanceGraph.summaries);
+
+      // 9.25 miles * 1609.344 = 14886.432 meters
+      expect(parsed.distanceMeters).toBeCloseTo(14886.43, 0);
+    });
+
+    it("handles missing metrics gracefully", () => {
+      const parsed = parseWorkout(sampleCyclingWorkout);
+      const emptySeries = parsePerformanceGraph({ ...samplePerformanceGraph, metrics: [] }, 5);
+
+      enrichWorkoutFromGraph(parsed, emptySeries, []);
+
+      expect(parsed.avgHeartRate).toBeUndefined();
+      expect(parsed.avgPower).toBeUndefined();
+      expect(parsed.calories).toBeUndefined();
     });
   });
 });
