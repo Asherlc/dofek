@@ -335,17 +335,18 @@ async function getRequestToken(
 
   oauthParams.oauth_signature = signature;
 
-  const headerParts = Object.keys(oauthParams)
+  // FatSecret expects OAuth params as POST body
+  const bodyString = Object.keys(oauthParams)
     .sort()
-    .map((k) => `${k}="${encodeRFC3986(oauthParams[k])}"`)
-    .join(", ");
+    .map((k) => `${encodeRFC3986(k)}=${encodeRFC3986(oauthParams[k])}`)
+    .join("&");
 
   const response = await fetchFn(REQUEST_TOKEN_URL, {
     method: "POST",
     headers: {
-      Authorization: `OAuth ${headerParts}`,
       "Content-Type": "application/x-www-form-urlencoded",
     },
+    body: bodyString,
   });
 
   if (!response.ok) {
@@ -408,17 +409,18 @@ async function exchangeForAccessToken(
 
   oauthParams.oauth_signature = signature;
 
-  const headerParts = Object.keys(oauthParams)
+  // FatSecret expects OAuth params as POST body, not Authorization header
+  const bodyString = Object.keys(oauthParams)
     .sort()
-    .map((k) => `${k}="${encodeRFC3986(oauthParams[k])}"`)
-    .join(", ");
+    .map((k) => `${encodeRFC3986(k)}=${encodeRFC3986(oauthParams[k])}`)
+    .join("&");
 
   const response = await fetchFn(ACCESS_TOKEN_URL, {
     method: "POST",
     headers: {
-      Authorization: `OAuth ${headerParts}`,
       "Content-Type": "application/x-www-form-urlencoded",
     },
+    body: bodyString,
   });
 
   if (!response.ok) {
