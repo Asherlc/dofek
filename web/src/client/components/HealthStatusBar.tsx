@@ -1,0 +1,89 @@
+interface HealthMetric {
+  label: string;
+  value: number | null | undefined;
+  avg: number | null | undefined;
+  stddev: number | null | undefined;
+  unit: string;
+  /** Whether lower is better (e.g., resting HR) */
+  lowerBetter?: boolean;
+}
+
+interface HealthStatusBarProps {
+  metrics: HealthMetric[];
+  loading?: boolean;
+}
+
+function getStatus(
+  value: number | null | undefined,
+  avg: number | null | undefined,
+  stddev: number | null | undefined,
+): "green" | "yellow" | "red" | "unknown" {
+  if (value == null || avg == null || stddev == null || stddev === 0) return "unknown";
+  const zScore = Math.abs((value - avg) / stddev);
+  if (zScore < 1) return "green";
+  if (zScore < 2) return "yellow";
+  return "red";
+}
+
+const statusColors = {
+  green: "bg-emerald-500",
+  yellow: "bg-amber-500",
+  red: "bg-red-500",
+  unknown: "bg-zinc-700",
+};
+
+const statusText = {
+  green: "Normal",
+  yellow: "Elevated",
+  red: "Abnormal",
+  unknown: "—",
+};
+
+export function HealthStatusBar({ metrics, loading }: HealthStatusBarProps) {
+  if (loading) {
+    return (
+      <div className="flex gap-3">
+        {Array.from({ length: 5 }).map((_, i) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton
+          <div key={i} className="flex-1 h-16 rounded-lg bg-zinc-800 animate-pulse" />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex gap-3 overflow-x-auto">
+      {metrics.map((m) => {
+        const status = getStatus(m.value, m.avg, m.stddev);
+        return (
+          <div
+            key={m.label}
+            className="flex-1 min-w-[120px] rounded-lg border border-zinc-800 bg-zinc-900 p-3"
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <div className={`w-2 h-2 rounded-full ${statusColors[status]}`} />
+              <span className="text-xs text-zinc-400 uppercase tracking-wider">{m.label}</span>
+            </div>
+            <div className="text-lg font-semibold tabular-nums">
+              {m.value != null ? (
+                <>
+                  {typeof m.value === "number" && !Number.isInteger(m.value)
+                    ? m.value.toFixed(1)
+                    : m.value}
+                  <span className="ml-1 text-xs font-normal text-zinc-500">{m.unit}</span>
+                </>
+              ) : (
+                <span className="text-zinc-600">—</span>
+              )}
+            </div>
+            <div className="text-[10px] text-zinc-500">
+              {status !== "unknown" && m.avg != null
+                ? `avg ${Number(m.avg).toFixed(1)} · ${statusText[status]}`
+                : ""}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}

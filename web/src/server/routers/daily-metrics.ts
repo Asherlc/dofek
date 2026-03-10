@@ -13,7 +13,7 @@ export const dailyMetricsRouter = router({
       const rows = await ctx.db.execute(
         sql`SELECT * FROM fitness.v_daily_metrics
             WHERE date > CURRENT_DATE - ${input.days}::int
-            ORDER BY date DESC`,
+            ORDER BY date ASC`,
       );
       return rows;
     }),
@@ -24,4 +24,47 @@ export const dailyMetricsRouter = router({
     );
     return rows[0] ?? null;
   }),
+
+  trends: publicProcedure
+    .input(
+      z.object({
+        days: z.number().default(30),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const rows = await ctx.db.execute(
+        sql`WITH current AS (
+              SELECT * FROM fitness.v_daily_metrics
+              WHERE date > CURRENT_DATE - ${input.days}::int
+            ),
+            stats AS (
+              SELECT
+                AVG(resting_hr) AS avg_resting_hr,
+                AVG(hrv) AS avg_hrv,
+                AVG(spo2_avg) AS avg_spo2,
+                AVG(steps) AS avg_steps,
+                AVG(active_energy_kcal) AS avg_active_energy,
+                AVG(skin_temp_c) AS avg_skin_temp,
+                STDDEV(resting_hr) AS stddev_resting_hr,
+                STDDEV(hrv) AS stddev_hrv,
+                STDDEV(spo2_avg) AS stddev_spo2,
+                STDDEV(skin_temp_c) AS stddev_skin_temp
+              FROM current
+            )
+            SELECT
+              stats.*,
+              latest.resting_hr AS latest_resting_hr,
+              latest.hrv AS latest_hrv,
+              latest.spo2_avg AS latest_spo2,
+              latest.steps AS latest_steps,
+              latest.active_energy_kcal AS latest_active_energy,
+              latest.skin_temp_c AS latest_skin_temp,
+              latest.date AS latest_date
+            FROM stats
+            CROSS JOIN LATERAL (
+              SELECT * FROM current ORDER BY date DESC LIMIT 1
+            ) latest`,
+      );
+      return rows[0] ?? null;
+    }),
 });

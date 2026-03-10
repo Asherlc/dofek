@@ -13,8 +13,17 @@ export const sleepRouter = router({
       const rows = await ctx.db.execute(
         sql`SELECT * FROM fitness.v_sleep
             WHERE started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
-            ORDER BY started_at DESC`,
+            ORDER BY started_at ASC`,
       );
       return rows;
     }),
+
+  latest: publicProcedure.query(async ({ ctx }) => {
+    const rows = await ctx.db.execute(
+      sql`SELECT * FROM fitness.v_sleep
+          WHERE is_nap = false
+          ORDER BY started_at DESC LIMIT 1`,
+    );
+    return rows[0] ?? null;
+  }),
 });

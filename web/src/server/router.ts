@@ -2,6 +2,7 @@ import { router } from "../shared/trpc.js";
 import { activityRouter } from "./routers/activity.js";
 import { bodyRouter } from "./routers/body.js";
 import { dailyMetricsRouter } from "./routers/daily-metrics.js";
+import { nutritionRouter } from "./routers/nutrition.js";
 import { sleepRouter } from "./routers/sleep.js";
 
 export const appRouter = router({
@@ -9,6 +10,7 @@ export const appRouter = router({
   sleep: sleepRouter,
   dailyMetrics: dailyMetricsRouter,
   body: bodyRouter,
+  nutrition: nutritionRouter,
 });
 
 export type AppRouter = typeof appRouter;
