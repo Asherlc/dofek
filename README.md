@@ -87,7 +87,7 @@ docker compose run --rm sync node dist/index.js sync --since-days=30
 - [ ] Grafana dashboard templates
 - [ ] Continuous aggregates for long-range trends
 - [ ] Progress indicator for Apple Health imports (file size / record count progress)
-- [ ] Peloton direct provider (blocked as of Oct 2025 — data available via Apple Health for now; bearer token workaround or official API may emerge)
+- [x] Peloton direct provider (automated Auth0 login, workouts + performance metrics)
 
 ## Stack
 
