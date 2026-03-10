@@ -71,6 +71,13 @@
       "when": 1773190000000,
       "tag": "0009_add_skin_temp",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1773200000000,
+      "tag": "0010_dedup_materialized_views",
+      "breakpoints": true
     }
   ]
 }

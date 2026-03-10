@@ -1,6 +1,7 @@
 import type { Database } from "../db/index.js";
 import type { Provider, SyncResult } from "../providers/types.js";
 import { getEnabledProviders } from "../providers/index.js";
+import { refreshDedupViews } from "../db/dedup.js";
 
 export interface SyncRunResult {
   results: SyncResult[];
@@ -41,6 +42,15 @@ export async function runSync(
       duration: 0,
     };
   });
+
+  // Refresh deduplication views after all providers have synced
+  try {
+    console.log("[sync] Refreshing deduplication views...");
+    await refreshDedupViews(db);
+    console.log("[sync] Deduplication views refreshed.");
+  } catch (err) {
+    console.error("[sync] Failed to refresh dedup views:", err);
+  }
 
   return {
     results: settled,
