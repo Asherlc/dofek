@@ -30,6 +30,6 @@ COPY --from=builder /app/web/package.json ./web/
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/web/node_modules ./web/node_modules
 
-# Use tsx so workspace package exports (pointing to .ts source) resolve correctly.
-# Default: sync runner. Override in compose for web.
-CMD ["node_modules/.bin/tsx", "dist/index.js", "sync"]
+COPY entrypoint.sh .
+ENTRYPOINT ["./entrypoint.sh"]
+CMD ["sync"]
