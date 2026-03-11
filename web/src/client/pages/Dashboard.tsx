@@ -1,19 +1,39 @@
+import { useState } from "react";
 import { ActivityList } from "../components/ActivityList.js";
 import { HealthStatusBar } from "../components/HealthStatusBar.js";
 import { InsightsPanel } from "../components/InsightsPanel.js";
+import { LifeEventsPanel } from "../components/LifeEventsPanel.js";
 import { NutritionChart } from "../components/NutritionChart.js";
+import { SupplementStackPanel } from "../components/SupplementStackPanel.js";
 import { SleepChart } from "../components/SleepChart.js";
 import { TimeSeriesChart } from "../components/TimeSeriesChart.js";
 import { trpc } from "../lib/trpc.js";
 
+const TIME_RANGES = [
+  { label: "7d", days: 7 },
+  { label: "14d", days: 14 },
+  { label: "30d", days: 30 },
+  { label: "90d", days: 90 },
+  { label: "1y", days: 365 },
+  { label: "All", days: 3650 },
+] as const;
+
 export function Dashboard() {
-  const trends = trpc.dailyMetrics.trends.useQuery({ days: 30 });
-  const dailyMetrics = trpc.dailyMetrics.list.useQuery({ days: 30 });
-  const activities = trpc.activity.list.useQuery({ days: 30 });
-  const sleepData = trpc.sleep.list.useQuery({ days: 14 });
-  const bodyData = trpc.body.list.useQuery({ days: 90 });
-  const nutritionData = trpc.nutrition.daily.useQuery({ days: 14 });
-  const insightsData = trpc.insights.compute.useQuery({ days: 90 });
+  const [days, setDays] = useState(30);
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({
+    bodyComp: true,
+  });
+
+  const toggle = (key: string) =>
+    setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }));
+
+  const trends = trpc.dailyMetrics.trends.useQuery({ days });
+  const dailyMetrics = trpc.dailyMetrics.list.useQuery({ days });
+  const activities = trpc.activity.list.useQuery({ days });
+  const sleepData = trpc.sleep.list.useQuery({ days });
+  const bodyData = trpc.body.list.useQuery({ days: Math.max(days, 90) });
+  const nutritionData = trpc.nutrition.daily.useQuery({ days });
+  const insightsData = trpc.insights.compute.useQuery({ days: 3650 });
 
   const t = trends.data as any;
 
@@ -34,7 +54,7 @@ export function Dashboard() {
           stddev: t.stddev_hrv,
           unit: "ms",
         },
-        {
+        t.latest_spo2 != null && {
           label: "SpO2",
           value: t.latest_spo2,
           avg: t.avg_spo2,
@@ -55,14 +75,14 @@ export function Dashboard() {
           stddev: null,
           unit: "kcal",
         },
-        {
+        t.latest_skin_temp != null && {
           label: "Skin Temp",
           value: t.latest_skin_temp,
           avg: t.avg_skin_temp,
           stddev: t.stddev_skin_temp,
           unit: "°C",
         },
-      ]
+      ].filter((m): m is { label: string; value: any; avg: any; stddev: any; unit: string; lowerBetter?: boolean } => Boolean(m))
     : [];
 
   const metrics = (dailyMetrics.data ?? []) as any[];
@@ -78,7 +98,11 @@ export function Dashboard() {
     name: "Resting HR",
     data: metrics.map((d) => [d.date, d.resting_hr] as [string, number | null]),
     color: "#ef4444",
+    yAxisIndex: 1,
   };
+
+  const hasSpO2 = metrics.some((d) => d.spo2_avg != null);
+  const hasSkinTemp = metrics.some((d) => d.skin_temp_c != null);
 
   const spo2Series = {
     name: "SpO2",
@@ -105,48 +129,106 @@ export function Dashboard() {
     name: "Weight",
     data: body
       .filter((d) => d.weight_kg != null)
-      .map((d) => [d.recorded_at, d.weight_kg] as [string, number | null]),
+      .map((d) => [new Date(d.recorded_at).toISOString(), d.weight_kg] as [string, number | null]),
     color: "#06b6d4",
   };
   const bodyFatSeries = {
     name: "Body Fat",
     data: body
       .filter((d) => d.body_fat_pct != null)
-      .map((d) => [d.recorded_at, d.body_fat_pct] as [string, number | null]),
+      .map((d) => [new Date(d.recorded_at).toISOString(), d.body_fat_pct] as [string, number | null]),
     color: "#f97316",
     yAxisIndex: 1,
   };
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
-      <header className="border-b border-zinc-800 px-6 py-4">
-        <h1 className="text-xl font-semibold tracking-tight">Health Dashboard</h1>
-        <p className="text-xs text-zinc-500 mt-1">
-          {t?.latest_date
-            ? `Latest: ${new Date(t.latest_date).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}`
-            : ""}
-        </p>
+      <header className="border-b border-zinc-800 px-6 py-4 flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight">Health Dashboard</h1>
+          <p className="text-xs text-zinc-500 mt-1">
+            {t?.latest_date
+              ? `Latest: ${new Date(t.latest_date).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}`
+              : ""}
+          </p>
+        </div>
+        <div className="flex gap-1 bg-zinc-900 rounded-lg p-1 border border-zinc-800">
+          {TIME_RANGES.map((r) => (
+            <button
+              key={r.label}
+              type="button"
+              onClick={() => setDays(r.days)}
+              className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                days === r.days
+                  ? "bg-zinc-700 text-zinc-100"
+                  : "text-zinc-500 hover:text-zinc-300"
+              }`}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
       </header>
 
       <main className="mx-auto max-w-7xl p-6 space-y-8">
         {/* Health Monitor */}
-        <section>
-          <SectionHeader title="Health Monitor" subtitle="30-day baseline comparison" />
+        <CollapsibleSection
+          id="healthMonitor"
+          title="Health Monitor"
+          subtitle="Today's values vs. rolling average"
+          collapsed={collapsed.healthMonitor}
+          onToggle={() => toggle("healthMonitor")}
+        >
           <HealthStatusBar metrics={healthMetrics} loading={trends.isLoading} />
-        </section>
+        </CollapsibleSection>
 
         {/* Insights */}
-        <section>
-          <SectionHeader title="Insights" subtitle="Actionable patterns from your data (90 days)" />
+        <CollapsibleSection
+          id="insights"
+          title="Insights"
+          subtitle="Actionable patterns from all your data"
+          collapsed={collapsed.insights}
+          onToggle={() => toggle("insights")}
+        >
           <InsightsPanel
             insights={(insightsData.data ?? []) as any[]}
             loading={insightsData.isLoading}
           />
-        </section>
+        </CollapsibleSection>
+
+        {/* Life Events / Markers */}
+        <CollapsibleSection
+          id="lifeEvents"
+          title="Life Events"
+          subtitle="Track changes and see their impact"
+          collapsed={collapsed.lifeEvents}
+          onToggle={() => toggle("lifeEvents")}
+        >
+          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+            <LifeEventsPanel />
+          </div>
+        </CollapsibleSection>
+
+        {/* Supplement Stack */}
+        <CollapsibleSection
+          id="supplements"
+          title="Supplement Stack"
+          subtitle="Daily supplements synced as nutrition data"
+          collapsed={collapsed.supplements}
+          onToggle={() => toggle("supplements")}
+        >
+          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+            <SupplementStackPanel />
+          </div>
+        </CollapsibleSection>
 
         {/* HRV & Resting HR */}
-        <section>
-          <SectionHeader title="Heart Rate Variability & Resting HR" />
+        <CollapsibleSection
+          id="hrvRhr"
+          title="Heart Rate Variability & Resting HR"
+          collapsed={collapsed.hrvRhr}
+          onToggle={() => toggle("hrvRhr")}
+        >
           <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
             <TimeSeriesChart
               series={[hrvSeries, restingHrSeries]}
@@ -158,24 +240,37 @@ export function Dashboard() {
               loading={dailyMetrics.isLoading}
             />
           </div>
-        </section>
+        </CollapsibleSection>
 
         {/* Two-column: SpO2 + Skin Temp | Steps */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <section>
-            <SectionHeader title="SpO2 & Skin Temperature" />
-            <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-              <TimeSeriesChart
-                series={[spo2Series, skinTempSeries]}
-                height={200}
-                yAxis={[{ name: "SpO2 (%)", min: 90 }, { name: "°C" }]}
-                loading={dailyMetrics.isLoading}
-              />
-            </div>
-          </section>
+          {(hasSpO2 || hasSkinTemp) && (
+            <CollapsibleSection
+              id="spo2Temp"
+              title="SpO2 & Skin Temperature"
+              collapsed={collapsed.spo2Temp}
+              onToggle={() => toggle("spo2Temp")}
+            >
+              <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+                <TimeSeriesChart
+                  series={[
+                    ...(hasSpO2 ? [spo2Series] : []),
+                    ...(hasSkinTemp ? [skinTempSeries] : []),
+                  ]}
+                  height={200}
+                  yAxis={[{ name: "SpO2 (%)", min: 90 }, { name: "°C" }]}
+                  loading={dailyMetrics.isLoading}
+                />
+              </div>
+            </CollapsibleSection>
+          )}
 
-          <section>
-            <SectionHeader title="Daily Steps" />
+          <CollapsibleSection
+            id="steps"
+            title="Daily Steps"
+            collapsed={collapsed.steps}
+            onToggle={() => toggle("steps")}
+          >
             <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
               <TimeSeriesChart
                 series={[stepsSeries]}
@@ -184,31 +279,46 @@ export function Dashboard() {
                 loading={dailyMetrics.isLoading}
               />
             </div>
-          </section>
+          </CollapsibleSection>
         </div>
 
         {/* Sleep */}
-        <section>
-          <SectionHeader title="Sleep" subtitle="Stage breakdown (14 days)" />
+        <CollapsibleSection
+          id="sleep"
+          title="Sleep"
+          subtitle={`Stage breakdown (${days} days)`}
+          collapsed={collapsed.sleep}
+          onToggle={() => toggle("sleep")}
+        >
           <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
             <SleepChart data={(sleepData.data ?? []) as any[]} loading={sleepData.isLoading} />
           </div>
-        </section>
+        </CollapsibleSection>
 
         {/* Nutrition */}
-        <section>
-          <SectionHeader title="Nutrition" subtitle="Calories & macros (14 days)" />
+        <CollapsibleSection
+          id="nutrition"
+          title="Nutrition"
+          subtitle={`Calories & macros (${days} days)`}
+          collapsed={collapsed.nutrition}
+          onToggle={() => toggle("nutrition")}
+        >
           <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
             <NutritionChart
               data={(nutritionData.data ?? []) as any[]}
               loading={nutritionData.isLoading}
             />
           </div>
-        </section>
+        </CollapsibleSection>
 
         {/* Body Composition */}
-        <section>
-          <SectionHeader title="Body Composition" subtitle="90-day trend" />
+        <CollapsibleSection
+          id="bodyComp"
+          title="Body Composition"
+          subtitle={`${Math.max(days, 90)}-day trend`}
+          collapsed={collapsed.bodyComp}
+          onToggle={() => toggle("bodyComp")}
+        >
           <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
             <TimeSeriesChart
               series={[weightSeries, bodyFatSeries]}
@@ -217,28 +327,62 @@ export function Dashboard() {
               loading={bodyData.isLoading}
             />
           </div>
-        </section>
+        </CollapsibleSection>
 
         {/* Recent Activities */}
-        <section>
-          <SectionHeader title="Recent Activities" subtitle="Last 30 days" />
+        <CollapsibleSection
+          id="activities"
+          title="Recent Activities"
+          subtitle={`Last ${days} days`}
+          collapsed={collapsed.activities}
+          onToggle={() => toggle("activities")}
+        >
           <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
             <ActivityList
               activities={(activities.data ?? []) as any[]}
               loading={activities.isLoading}
             />
           </div>
-        </section>
+        </CollapsibleSection>
       </main>
     </div>
   );
 }
 
-function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }) {
+function CollapsibleSection({
+  title,
+  subtitle,
+  collapsed,
+  onToggle,
+  children,
+}: {
+  id?: string;
+  title: string;
+  subtitle?: string;
+  collapsed?: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="mb-3">
-      <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider">{title}</h2>
-      {subtitle && <p className="text-xs text-zinc-600 mt-0.5">{subtitle}</p>}
-    </div>
+    <section>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="mb-3 flex items-center gap-2 group cursor-pointer w-full text-left"
+      >
+        <span
+          className={`text-zinc-600 text-xs transition-transform ${collapsed ? "" : "rotate-90"}`}
+        >
+          ▶
+        </span>
+        <div>
+          <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider group-hover:text-zinc-300 transition-colors">
+            {title}
+          </h2>
+          {subtitle && <p className="text-xs text-zinc-600 mt-0.5">{subtitle}</p>}
+        </div>
+      </button>
+      {!collapsed && children}
+    </section>
   );
 }

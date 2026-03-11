@@ -53,17 +53,14 @@ export const dailyMetricsRouter = router({
             )
             SELECT
               stats.*,
-              latest.resting_hr AS latest_resting_hr,
-              latest.hrv AS latest_hrv,
-              latest.spo2_avg AS latest_spo2,
-              latest.steps AS latest_steps,
-              latest.active_energy_kcal AS latest_active_energy,
-              latest.skin_temp_c AS latest_skin_temp,
-              latest.date AS latest_date
-            FROM stats
-            CROSS JOIN LATERAL (
-              SELECT * FROM current ORDER BY date DESC LIMIT 1
-            ) latest`,
+              (SELECT resting_hr FROM current WHERE resting_hr IS NOT NULL ORDER BY date DESC LIMIT 1) AS latest_resting_hr,
+              (SELECT hrv FROM current WHERE hrv IS NOT NULL ORDER BY date DESC LIMIT 1) AS latest_hrv,
+              (SELECT spo2_avg FROM current WHERE spo2_avg IS NOT NULL ORDER BY date DESC LIMIT 1) AS latest_spo2,
+              (SELECT steps FROM current WHERE steps IS NOT NULL ORDER BY date DESC LIMIT 1) AS latest_steps,
+              (SELECT active_energy_kcal FROM current WHERE active_energy_kcal IS NOT NULL ORDER BY date DESC LIMIT 1) AS latest_active_energy,
+              (SELECT skin_temp_c FROM current WHERE skin_temp_c IS NOT NULL ORDER BY date DESC LIMIT 1) AS latest_skin_temp,
+              (SELECT date FROM current ORDER BY date DESC LIMIT 1) AS latest_date
+            FROM stats`,
       );
       return rows[0] ?? null;
     }),

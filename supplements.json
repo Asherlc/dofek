@@ -1,0 +1,12 @@
+{
+  "supplements": [
+    {
+      "name": "Creatine Monohydrate",
+      "amount": 5,
+      "unit": "g",
+      "form": "powder",
+      "description": "5g powder",
+      "meal": "other"
+    }
+  ]
+}

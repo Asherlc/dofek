@@ -33,8 +33,32 @@ const supplementDefinitionSchema = z.object({
   // Micronutrients
   vitaminAMcg: z.number().optional(),
   vitaminCMg: z.number().optional(),
+  vitaminDMcg: z.number().optional(),
+  vitaminEMg: z.number().optional(),
+  vitaminKMcg: z.number().optional(),
+  vitaminB1Mg: z.number().optional(),
+  vitaminB2Mg: z.number().optional(),
+  vitaminB3Mg: z.number().optional(),
+  vitaminB5Mg: z.number().optional(),
+  vitaminB6Mg: z.number().optional(),
+  vitaminB7Mcg: z.number().optional(),
+  vitaminB9Mcg: z.number().optional(),
+  vitaminB12Mcg: z.number().optional(),
   calciumMg: z.number().optional(),
   ironMg: z.number().optional(),
+  magnesiumMg: z.number().optional(),
+  zincMg: z.number().optional(),
+  seleniumMcg: z.number().optional(),
+  copperMg: z.number().optional(),
+  manganeseMg: z.number().optional(),
+  chromiumMcg: z.number().optional(),
+  iodineMcg: z.number().optional(),
+  omega3Mg: z.number().optional(),
+  omega6Mg: z.number().optional(),
+  // Supplement-specific metadata
+  amount: z.number().optional(),
+  unit: z.string().optional(),
+  form: z.string().optional(),
 });
 
 const supplementConfigSchema = z.object({
@@ -61,6 +85,19 @@ function slugify(name: string): string {
     .replace(/(^-|-$)/g, "");
 }
 
+/** Nutrient keys shared between SupplementDefinition and food_entry schema */
+const NUTRIENT_KEYS = [
+  "calories", "proteinG", "carbsG", "fatG",
+  "saturatedFatG", "polyunsaturatedFatG", "monounsaturatedFatG", "transFatG",
+  "cholesterolMg", "sodiumMg", "potassiumMg", "fiberG", "sugarG",
+  "vitaminAMcg", "vitaminCMg", "vitaminDMcg", "vitaminEMg", "vitaminKMcg",
+  "vitaminB1Mg", "vitaminB2Mg", "vitaminB3Mg", "vitaminB5Mg", "vitaminB6Mg",
+  "vitaminB7Mcg", "vitaminB9Mcg", "vitaminB12Mcg",
+  "calciumMg", "ironMg", "magnesiumMg", "zincMg", "seleniumMcg",
+  "copperMg", "manganeseMg", "chromiumMcg", "iodineMcg",
+  "omega3Mg", "omega6Mg",
+] as const;
+
 export interface DailySupplementEntry {
   providerId: string;
   externalId: string;
@@ -70,23 +107,7 @@ export interface DailySupplementEntry {
   foodDescription: string | undefined;
   category: "supplement";
   numberOfUnits: number;
-  calories: number | undefined;
-  proteinG: number | undefined;
-  carbsG: number | undefined;
-  fatG: number | undefined;
-  saturatedFatG: number | undefined;
-  polyunsaturatedFatG: number | undefined;
-  monounsaturatedFatG: number | undefined;
-  transFatG: number | undefined;
-  cholesterolMg: number | undefined;
-  sodiumMg: number | undefined;
-  potassiumMg: number | undefined;
-  fiberG: number | undefined;
-  sugarG: number | undefined;
-  vitaminAMcg: number | undefined;
-  vitaminCMg: number | undefined;
-  calciumMg: number | undefined;
-  ironMg: number | undefined;
+  nutrients: Partial<Record<typeof NUTRIENT_KEYS[number], number>>;
 }
 
 /**
@@ -100,6 +121,10 @@ export function buildDailyEntries(
 
   for (const date of dates) {
     for (const supp of supplements) {
+      const nutrients: DailySupplementEntry["nutrients"] = {};
+      for (const key of NUTRIENT_KEYS) {
+        if (supp[key] != null) nutrients[key] = supp[key];
+      }
       entries.push({
         providerId: "auto-supplements",
         externalId: `auto:${slugify(supp.name)}:${date}`,
@@ -109,23 +134,7 @@ export function buildDailyEntries(
         foodDescription: supp.description,
         category: "supplement",
         numberOfUnits: 1,
-        calories: supp.calories,
-        proteinG: supp.proteinG,
-        carbsG: supp.carbsG,
-        fatG: supp.fatG,
-        saturatedFatG: supp.saturatedFatG,
-        polyunsaturatedFatG: supp.polyunsaturatedFatG,
-        monounsaturatedFatG: supp.monounsaturatedFatG,
-        transFatG: supp.transFatG,
-        cholesterolMg: supp.cholesterolMg,
-        sodiumMg: supp.sodiumMg,
-        potassiumMg: supp.potassiumMg,
-        fiberG: supp.fiberG,
-        sugarG: supp.sugarG,
-        vitaminAMcg: supp.vitaminAMcg,
-        vitaminCMg: supp.vitaminCMg,
-        calciumMg: supp.calciumMg,
-        ironMg: supp.ironMg,
+        nutrients,
       });
     }
   }
@@ -217,46 +226,14 @@ export class AutoSupplementsProvider implements Provider {
             foodDescription: entry.foodDescription,
             category: "supplement",
             numberOfUnits: entry.numberOfUnits,
-            calories: entry.calories,
-            proteinG: entry.proteinG,
-            carbsG: entry.carbsG,
-            fatG: entry.fatG,
-            saturatedFatG: entry.saturatedFatG,
-            polyunsaturatedFatG: entry.polyunsaturatedFatG,
-            monounsaturatedFatG: entry.monounsaturatedFatG,
-            transFatG: entry.transFatG,
-            cholesterolMg: entry.cholesterolMg,
-            sodiumMg: entry.sodiumMg,
-            potassiumMg: entry.potassiumMg,
-            fiberG: entry.fiberG,
-            sugarG: entry.sugarG,
-            vitaminAMcg: entry.vitaminAMcg,
-            vitaminCMg: entry.vitaminCMg,
-            calciumMg: entry.calciumMg,
-            ironMg: entry.ironMg,
+            ...entry.nutrients,
           })
           .onConflictDoUpdate({
             target: [foodEntry.providerId, foodEntry.externalId],
             set: {
               foodName: entry.foodName,
               foodDescription: entry.foodDescription,
-              calories: entry.calories,
-              proteinG: entry.proteinG,
-              carbsG: entry.carbsG,
-              fatG: entry.fatG,
-              saturatedFatG: entry.saturatedFatG,
-              polyunsaturatedFatG: entry.polyunsaturatedFatG,
-              monounsaturatedFatG: entry.monounsaturatedFatG,
-              transFatG: entry.transFatG,
-              cholesterolMg: entry.cholesterolMg,
-              sodiumMg: entry.sodiumMg,
-              potassiumMg: entry.potassiumMg,
-              fiberG: entry.fiberG,
-              sugarG: entry.sugarG,
-              vitaminAMcg: entry.vitaminAMcg,
-              vitaminCMg: entry.vitaminCMg,
-              calciumMg: entry.calciumMg,
-              ironMg: entry.ironMg,
+              ...entry.nutrients,
             },
           });
         synced++;

@@ -29,9 +29,9 @@ export function TimeSeriesChart({ series, height = 200, yAxis, loading }: TimeSe
     name: axis.name,
     min: axis.min,
     max: axis.max,
-    splitLine: { lineStyle: { color: "#27272a" } },
+    splitLine: i === 0 ? { lineStyle: { color: "#27272a" } } : { show: false },
     axisLabel: { color: "#71717a", fontSize: 11 },
-    axisLine: { show: false },
+    axisLine: { show: true, lineStyle: { color: "#3f3f46" } },
     nameTextStyle: { color: "#71717a", fontSize: 11 },
     position: i === 0 ? ("left" as const) : ("right" as const),
   }));

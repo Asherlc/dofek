@@ -50,6 +50,10 @@ See [docs/schema.md](docs/schema.md) for the full data model.
 pnpm test          # run tests
 pnpm test:watch    # run tests in watch mode
 pnpm dev           # run sync in dev mode
+
+# Web dashboard (runs on port 3001)
+cd web
+PORT=3001 pnpm dev
 ```
 
 Tests use [Vitest](https://vitest.dev/). TDD is the standard workflow — write tests first, then implement.
@@ -71,6 +75,22 @@ Use `--since-days=N` to control the sync window:
 # Sync last 30 days (backfill)
 docker compose run --rm sync node dist/index.js sync --since-days=30
 ```
+
+## Supplements
+
+Supplements are fundamentally **nutrition data**, not a separate concept. The `auto-supplements` provider automates repetitive daily entry by reading a supplement stack config and inserting one `food_entry` row per supplement per day, with `category = 'supplement'`. This means:
+
+- Supplement start/stop dates are **implicit** — they're visible from when consumption records begin and end in the `food_entry` table. No separate tracking needed.
+- Supplement data participates in all nutrition analysis (calorie totals, micro/macronutrient breakdowns, insights engine) automatically.
+- The web UI provides a supplement stack editor to define what you take daily. Changes to the stack config are reflected in future sync runs.
+
+See `src/providers/auto-supplements.ts` for the provider implementation.
+
+## Life Events
+
+Life events are arbitrary time markers (point-in-time, bounded date range, or ongoing) that let you annotate your health timeline and compare metrics before/during/after. Examples: starting a diet, an injury, a training change. The web dashboard provides a UI to create events and view before/after analysis across heart rate, HRV, sleep, body composition, and activity metrics.
+
+See `web/src/server/routers/life-events.ts` for the API and `web/src/client/components/LifeEventsPanel.tsx` for the UI.
 
 ## Roadmap
 

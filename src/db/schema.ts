@@ -380,8 +380,28 @@ export const foodEntry = fitness.table(
     // Micronutrients
     vitaminAMcg: real("vitamin_a_mcg"),
     vitaminCMg: real("vitamin_c_mg"),
+    vitaminDMcg: real("vitamin_d_mcg"),
+    vitaminEMg: real("vitamin_e_mg"),
+    vitaminKMcg: real("vitamin_k_mcg"),
+    vitaminB1Mg: real("vitamin_b1_mg"), // thiamin
+    vitaminB2Mg: real("vitamin_b2_mg"), // riboflavin
+    vitaminB3Mg: real("vitamin_b3_mg"), // niacin
+    vitaminB5Mg: real("vitamin_b5_mg"), // pantothenic acid
+    vitaminB6Mg: real("vitamin_b6_mg"),
+    vitaminB7Mcg: real("vitamin_b7_mcg"), // biotin
+    vitaminB9Mcg: real("vitamin_b9_mcg"), // folate
+    vitaminB12Mcg: real("vitamin_b12_mcg"),
     calciumMg: real("calcium_mg"),
     ironMg: real("iron_mg"),
+    magnesiumMg: real("magnesium_mg"),
+    zincMg: real("zinc_mg"),
+    seleniumMcg: real("selenium_mcg"),
+    copperMg: real("copper_mg"),
+    manganeseMg: real("manganese_mg"),
+    chromiumMcg: real("chromium_mcg"),
+    iodineMcg: real("iodine_mcg"),
+    omega3Mg: real("omega3_mg"),
+    omega6Mg: real("omega6_mg"),
     // Raw API response
     raw: jsonb("raw"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -475,4 +495,23 @@ export const syncLog = fitness.table(
     syncedAt: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("sync_log_provider_type_idx").on(t.providerId, t.dataType, t.syncedAt)],
+);
+
+// ============================================================
+// Life Events / Markers
+// ============================================================
+
+export const lifeEvents = fitness.table(
+  "life_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    label: text("label").notNull(),
+    startedAt: date("started_at").notNull(),
+    endedAt: date("ended_at"),
+    category: text("category"),
+    ongoing: boolean("ongoing").notNull().default(false),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("life_events_started_at_idx").on(t.startedAt)],
 );

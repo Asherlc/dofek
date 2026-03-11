@@ -114,12 +114,12 @@ describe("Auto-Supplements Provider", () => {
     it("maps all nutritional fields from supplement definition", () => {
       const entries = buildDailyEntries(sampleConfig.supplements, ["2024-03-15"]);
       const fishOil = entries.find((e) => e.foodName === "Fish Oil")!;
-      expect(fishOil.calories).toBe(25);
-      expect(fishOil.fatG).toBeCloseTo(2.5);
-      expect(fishOil.saturatedFatG).toBeCloseTo(0.5);
-      expect(fishOil.polyunsaturatedFatG).toBeCloseTo(1.5);
-      expect(fishOil.monounsaturatedFatG).toBeCloseTo(0.5);
-      expect(fishOil.cholesterolMg).toBeCloseTo(10);
+      expect(fishOil.nutrients.calories).toBe(25);
+      expect(fishOil.nutrients.fatG).toBeCloseTo(2.5);
+      expect(fishOil.nutrients.saturatedFatG).toBeCloseTo(0.5);
+      expect(fishOil.nutrients.polyunsaturatedFatG).toBeCloseTo(1.5);
+      expect(fishOil.nutrients.monounsaturatedFatG).toBeCloseTo(0.5);
+      expect(fishOil.nutrients.cholesterolMg).toBeCloseTo(10);
     });
 
     it("assigns correct meal from supplement definition", () => {

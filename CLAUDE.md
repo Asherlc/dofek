@@ -13,11 +13,13 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 - **Provider-agnostic**: The schema and sync framework must not be coupled to any specific provider. Providers implement a plugin interface.
 - **Isolated & modular providers**: Each provider must be self-contained in its own file under `src/providers/`. Providers implement the `Provider` interface from `types.ts` and must not depend on other providers. All provider-specific types, parsing, API client code, and sync logic live within the provider's own file. This keeps providers easy to add, remove, or modify independently.
 - **Raw data only, no duplicate sources of truth**: Only store raw data — never store computed or aggregate values that can be derived from raw data. If a value is computable from existing data (averages, totals, durations, start/end times), don't store it. Be ruthless about this. Every column must earn its place by being genuinely raw or structural (e.g., activity type, name) and not derivable from other stored data.
+- **No `any` types**: Never use `any` in TypeScript. Use proper types, generics, `unknown`, or type assertions with specific types instead. If a type is complex, define an interface or use `as SomeType` — but never `any`.
 - **Ask about trade-offs**: When there are design decisions with multiple valid approaches (e.g., completeness vs simplicity, stability vs features), always ask the user rather than making assumptions. Don't cut corners without asking first.
 - **Commit regularly**: Commit at regular intervals — after each meaningful chunk of work (new feature, passing tests, refactor). Don't let changes accumulate.
 - **Always push after commit**: Push to remote after every commit so CI runs and changes are backed up.
 - **Document as you go**: Keep README.md and docs/ updated with every significant change. When learning about external APIs, data formats, auth protocols, or provider quirks, write notes in `docs/` (e.g., `docs/peloton.md`, `docs/apple-health.md`). These notes help future development and debugging.
 - **Run migrations**: After generating a migration from schema changes, always run `pnpm migrate` yourself — don't tell the user to do it.
+- **Drizzle generate is interactive**: `pnpm generate` (`drizzle-kit generate`) prompts interactively when it detects potential table/column renames. Since CLI tools can't handle interactive prompts, write migration SQL files manually when `generate` would prompt. Name them sequentially (e.g., `drizzle/0012_description.sql`). Use `ALTER TABLE ... ADD COLUMN` for new columns, etc. Always run `pnpm migrate` after creating manual migrations.
 
 ## Commands
 - `pnpm test` — run tests
@@ -25,6 +27,7 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 - `pnpm dev` — run sync in dev mode
 - `pnpm generate` — generate Drizzle migrations from schema changes
 - `pnpm migrate` — apply migrations
+- `cd web && PORT=3001 pnpm dev` — run web dashboard (http://localhost:3001)
 - `pnpm lint` — run Biome linter
 - `pnpm lint:fix` — auto-fix lint issues
 - `pnpm format` — format code with Biome
