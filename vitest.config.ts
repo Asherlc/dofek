@@ -6,6 +6,7 @@ export default defineConfig({
     testTimeout: 30_000,
   },
   resolve: {
+    conditions: ["source"],
     alias: {
       "@": "./src",
     },
