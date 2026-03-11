@@ -199,9 +199,7 @@ export function SupplementStackPanel() {
       )}
 
       {saveMutation.isError && (
-        <p className="text-xs text-red-500">
-          Failed to save: {saveMutation.error.message}
-        </p>
+        <p className="text-xs text-red-500">Failed to save: {saveMutation.error.message}</p>
       )}
     </div>
   );
@@ -219,20 +217,26 @@ function SupplementRow({
   onMoveDown?: () => void;
 }) {
   const dose = formatDose(supp);
-  const nutrients = NUTRIENT_FIELDS.filter(
-    (f) => supp[f.key] != null && supp[f.key] !== 0,
-  );
+  const nutrients = NUTRIENT_FIELDS.filter((f) => supp[f.key] != null && supp[f.key] !== 0);
 
   return (
     <div className="flex items-center gap-3 rounded border border-zinc-800 bg-zinc-950 px-3 py-2 group">
       <div className="flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
         {onMoveUp && (
-          <button type="button" onClick={onMoveUp} className="text-[10px] text-zinc-600 hover:text-zinc-400">
+          <button
+            type="button"
+            onClick={onMoveUp}
+            className="text-[10px] text-zinc-600 hover:text-zinc-400"
+          >
             ▲
           </button>
         )}
         {onMoveDown && (
-          <button type="button" onClick={onMoveDown} className="text-[10px] text-zinc-600 hover:text-zinc-400">
+          <button
+            type="button"
+            onClick={onMoveDown}
+            className="text-[10px] text-zinc-600 hover:text-zinc-400"
+          >
             ▼
           </button>
         )}
@@ -240,18 +244,15 @@ function SupplementRow({
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-2">
           <span className="text-sm text-zinc-200">{supp.name}</span>
-          {dose && (
-            <span className="text-xs text-zinc-500">{dose}</span>
-          )}
-          {supp.meal && (
-            <span className="text-[10px] text-zinc-600 uppercase">{supp.meal}</span>
-          )}
+          {dose && <span className="text-xs text-zinc-500">{dose}</span>}
+          {supp.meal && <span className="text-[10px] text-zinc-600 uppercase">{supp.meal}</span>}
         </div>
         {nutrients.length > 0 && (
           <div className="flex flex-wrap gap-x-3 gap-y-0 mt-0.5">
             {nutrients.map((f) => (
               <span key={f.key} className="text-[10px] text-zinc-600">
-                {f.label}: {supp[f.key]}{f.unit}
+                {f.label}: {supp[f.key]}
+                {f.unit}
               </span>
             ))}
           </div>
@@ -299,10 +300,10 @@ function SupplementForm({
   });
 
   const amountNum = amount ? Number(amount) : null;
-  const hasAmount = amountNum != null && !isNaN(amountNum) && amountNum > 0;
+  const hasAmount = amountNum != null && !Number.isNaN(amountNum) && amountNum > 0;
   const invalidNutrients = NUTRIENT_FIELDS.some((f) => {
     const v = nutrients[f.key];
-    return v !== "" && (isNaN(Number(v)) || Number(v) < 0);
+    return v !== "" && (Number.isNaN(Number(v)) || Number(v) < 0);
   });
   const canSubmit = name.trim().length > 0 && !invalidNutrients && !saving;
 
@@ -323,7 +324,7 @@ function SupplementForm({
 
     for (const f of NUTRIENT_FIELDS) {
       const v = nutrients[f.key];
-      if (v !== "" && !isNaN(Number(v)) && Number(v) >= 0) {
+      if (v !== "" && !Number.isNaN(Number(v)) && Number(v) >= 0) {
         Object.assign(supp, { [f.key]: Number(v) });
       }
     }
@@ -362,7 +363,9 @@ function SupplementForm({
             className="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-zinc-500"
           >
             {UNITS.map((u) => (
-              <option key={u} value={u}>{u}</option>
+              <option key={u} value={u}>
+                {u}
+              </option>
             ))}
           </select>
         </div>
@@ -375,7 +378,9 @@ function SupplementForm({
           >
             <option value="">—</option>
             {FORMS.map((f) => (
-              <option key={f} value={f}>{f}</option>
+              <option key={f} value={f}>
+                {f}
+              </option>
             ))}
           </select>
         </div>
@@ -388,7 +393,9 @@ function SupplementForm({
           >
             <option value="">—</option>
             {MEALS.map((m) => (
-              <option key={m} value={m}>{m}</option>
+              <option key={m} value={m}>
+                {m}
+              </option>
             ))}
           </select>
         </div>
@@ -413,9 +420,7 @@ function SupplementForm({
                   type="number"
                   step="any"
                   value={nutrients[f.key]}
-                  onChange={(e) =>
-                    setNutrients((prev) => ({ ...prev, [f.key]: e.target.value }))
-                  }
+                  onChange={(e) => setNutrients((prev) => ({ ...prev, [f.key]: e.target.value }))}
                   className="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-100 focus:outline-none focus:border-zinc-500 tabular-nums"
                 />
               </div>

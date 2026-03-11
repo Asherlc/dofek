@@ -180,7 +180,9 @@ function AddEventForm({
           >
             <option value="">None</option>
             {CATEGORIES.map((c) => (
-              <option key={c} value={c}>{c}</option>
+              <option key={c} value={c}>
+                {c}
+              </option>
             ))}
           </select>
         </div>
@@ -296,11 +298,7 @@ function EventAnalysis({
     body: numify(analysis.bodyComp.find((m: any) => m.period === "after")),
   };
 
-  const periodLabel = event.ended_at
-    ? "During"
-    : event.ongoing
-      ? "Since"
-      : "After";
+  const periodLabel = event.ended_at ? "During" : event.ongoing ? "Since" : "After";
 
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4 space-y-4">
@@ -311,7 +309,11 @@ function EventAnalysis({
           </h3>
           <p className="text-xs text-zinc-500 mt-0.5">
             {formatDate(event.started_at)}
-            {event.ended_at ? ` — ${formatDate(event.ended_at)}` : event.ongoing ? " — ongoing" : ""}
+            {event.ended_at
+              ? ` — ${formatDate(event.ended_at)}`
+              : event.ongoing
+                ? " — ongoing"
+                : ""}
             {event.notes && ` · ${event.notes}`}
           </p>
         </div>
@@ -407,9 +409,11 @@ function EventAnalysis({
       </div>
 
       <p className="text-[11px] text-zinc-600">
-        Comparing {windowDays} days before vs. {periodLabel.toLowerCase()}.
-        Before: {before.metrics?.days ?? 0} days of metrics, {before.sleep?.nights ?? 0} nights of sleep, {before.body?.measurements ?? 0} body measurements.
-        {periodLabel}: {after.metrics?.days ?? 0} days, {after.sleep?.nights ?? 0} nights, {after.body?.measurements ?? 0} measurements.
+        Comparing {windowDays} days before vs. {periodLabel.toLowerCase()}. Before:{" "}
+        {before.metrics?.days ?? 0} days of metrics, {before.sleep?.nights ?? 0} nights of sleep,{" "}
+        {before.body?.measurements ?? 0} body measurements.
+        {periodLabel}: {after.metrics?.days ?? 0} days, {after.sleep?.nights ?? 0} nights,{" "}
+        {after.body?.measurements ?? 0} measurements.
       </p>
     </div>
   );
@@ -458,7 +462,8 @@ function CompareCard({
               improved ? "text-emerald-500" : "text-red-500"
             }`}
           >
-            {pctDiff > 0 ? "+" : ""}{pctDiff.toFixed(0)}%
+            {pctDiff > 0 ? "+" : ""}
+            {pctDiff.toFixed(0)}%
           </span>
         )}
       </div>
@@ -469,17 +474,23 @@ function CompareCard({
 
 function categoryIcon(category: string | null): string {
   switch (category) {
-    case "diet": return "\u{1F957}";
-    case "supplement": return "\u{1F48A}";
-    case "injury": return "\u{1FA79}";
-    case "lifestyle": return "\u{1F3E0}";
-    case "training": return "\u{1F3CB}";
-    default: return "\u{1F4CD}";
+    case "diet":
+      return "\u{1F957}";
+    case "supplement":
+      return "\u{1F48A}";
+    case "injury":
+      return "\u{1FA79}";
+    case "lifestyle":
+      return "\u{1F3E0}";
+    case "training":
+      return "\u{1F3CB}";
+    default:
+      return "\u{1F4CD}";
   }
 }
 
 function formatDate(d: string): string {
-  return new Date(d + "T00:00:00").toLocaleDateString("en-US", {
+  return new Date(`${d}T00:00:00`).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",

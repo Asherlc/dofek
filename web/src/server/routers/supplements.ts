@@ -65,7 +65,7 @@ async function readConfig(): Promise<Supplement[]> {
 }
 
 async function writeConfig(supplements: Supplement[]): Promise<void> {
-  await writeFile(CONFIG_PATH, JSON.stringify({ supplements }, null, 2) + "\n");
+  await writeFile(CONFIG_PATH, `${JSON.stringify({ supplements }, null, 2)}\n`);
 }
 
 export const supplementsRouter = router({

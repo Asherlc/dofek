@@ -87,15 +87,43 @@ function slugify(name: string): string {
 
 /** Nutrient keys shared between SupplementDefinition and food_entry schema */
 const NUTRIENT_KEYS = [
-  "calories", "proteinG", "carbsG", "fatG",
-  "saturatedFatG", "polyunsaturatedFatG", "monounsaturatedFatG", "transFatG",
-  "cholesterolMg", "sodiumMg", "potassiumMg", "fiberG", "sugarG",
-  "vitaminAMcg", "vitaminCMg", "vitaminDMcg", "vitaminEMg", "vitaminKMcg",
-  "vitaminB1Mg", "vitaminB2Mg", "vitaminB3Mg", "vitaminB5Mg", "vitaminB6Mg",
-  "vitaminB7Mcg", "vitaminB9Mcg", "vitaminB12Mcg",
-  "calciumMg", "ironMg", "magnesiumMg", "zincMg", "seleniumMcg",
-  "copperMg", "manganeseMg", "chromiumMcg", "iodineMcg",
-  "omega3Mg", "omega6Mg",
+  "calories",
+  "proteinG",
+  "carbsG",
+  "fatG",
+  "saturatedFatG",
+  "polyunsaturatedFatG",
+  "monounsaturatedFatG",
+  "transFatG",
+  "cholesterolMg",
+  "sodiumMg",
+  "potassiumMg",
+  "fiberG",
+  "sugarG",
+  "vitaminAMcg",
+  "vitaminCMg",
+  "vitaminDMcg",
+  "vitaminEMg",
+  "vitaminKMcg",
+  "vitaminB1Mg",
+  "vitaminB2Mg",
+  "vitaminB3Mg",
+  "vitaminB5Mg",
+  "vitaminB6Mg",
+  "vitaminB7Mcg",
+  "vitaminB9Mcg",
+  "vitaminB12Mcg",
+  "calciumMg",
+  "ironMg",
+  "magnesiumMg",
+  "zincMg",
+  "seleniumMcg",
+  "copperMg",
+  "manganeseMg",
+  "chromiumMcg",
+  "iodineMcg",
+  "omega3Mg",
+  "omega6Mg",
 ] as const;
 
 export interface DailySupplementEntry {
@@ -107,7 +135,7 @@ export interface DailySupplementEntry {
   foodDescription: string | undefined;
   category: "supplement";
   numberOfUnits: number;
-  nutrients: Partial<Record<typeof NUTRIENT_KEYS[number], number>>;
+  nutrients: Partial<Record<(typeof NUTRIENT_KEYS)[number], number>>;
 }
 
 /**

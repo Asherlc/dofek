@@ -61,10 +61,11 @@ export function InsightsPanel({ insights, loading }: InsightsPanelProps) {
   return (
     <div className="space-y-3">
       <p className="text-xs text-zinc-600 leading-relaxed">
-        Statistical patterns found in your health data. <strong className="text-zinc-500">Strong</strong> patterns
-        are highly consistent; <strong className="text-zinc-500">Emerging</strong> patterns need more data to confirm;{" "}
-        <strong className="text-zinc-500">Early signals</strong> are preliminary and may not hold up.
-        Correlation ≠ causation — these show associations, not proven causes.
+        Statistical patterns found in your health data.{" "}
+        <strong className="text-zinc-500">Strong</strong> patterns are highly consistent;{" "}
+        <strong className="text-zinc-500">Emerging</strong> patterns need more data to confirm;{" "}
+        <strong className="text-zinc-500">Early signals</strong> are preliminary and may not hold
+        up. Correlation ≠ causation — these show associations, not proven causes.
       </p>
       {insights.map((insight) => {
         const badge = confidenceBadge[insight.confidence];
@@ -153,7 +154,8 @@ function ComparisonBars({
 
       <div className="text-center px-3">
         <span className="text-zinc-500 tabular-nums font-medium">
-          {sign}{pctDiff.toFixed(0)}%
+          {sign}
+          {pctDiff.toFixed(0)}%
         </span>
       </div>
 

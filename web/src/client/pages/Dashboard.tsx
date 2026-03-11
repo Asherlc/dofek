@@ -4,8 +4,8 @@ import { HealthStatusBar } from "../components/HealthStatusBar.js";
 import { InsightsPanel } from "../components/InsightsPanel.js";
 import { LifeEventsPanel } from "../components/LifeEventsPanel.js";
 import { NutritionChart } from "../components/NutritionChart.js";
-import { SupplementStackPanel } from "../components/SupplementStackPanel.js";
 import { SleepChart } from "../components/SleepChart.js";
+import { SupplementStackPanel } from "../components/SupplementStackPanel.js";
 import { TimeSeriesChart } from "../components/TimeSeriesChart.js";
 import { trpc } from "../lib/trpc.js";
 
@@ -24,8 +24,7 @@ export function Dashboard() {
     bodyComp: true,
   });
 
-  const toggle = (key: string) =>
-    setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }));
+  const toggle = (key: string) => setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }));
 
   const trends = trpc.dailyMetrics.trends.useQuery({ days });
   const dailyMetrics = trpc.dailyMetrics.list.useQuery({ days });
@@ -82,7 +81,18 @@ export function Dashboard() {
           stddev: t.stddev_skin_temp,
           unit: "°C",
         },
-      ].filter((m): m is { label: string; value: any; avg: any; stddev: any; unit: string; lowerBetter?: boolean } => Boolean(m))
+      ].filter(
+        (
+          m,
+        ): m is {
+          label: string;
+          value: any;
+          avg: any;
+          stddev: any;
+          unit: string;
+          lowerBetter?: boolean;
+        } => Boolean(m),
+      )
     : [];
 
   const metrics = (dailyMetrics.data ?? []) as any[];
@@ -136,7 +146,9 @@ export function Dashboard() {
     name: "Body Fat",
     data: body
       .filter((d) => d.body_fat_pct != null)
-      .map((d) => [new Date(d.recorded_at).toISOString(), d.body_fat_pct] as [string, number | null]),
+      .map(
+        (d) => [new Date(d.recorded_at).toISOString(), d.body_fat_pct] as [string, number | null],
+      ),
     color: "#f97316",
     yAxisIndex: 1,
   };
@@ -159,9 +171,7 @@ export function Dashboard() {
               type="button"
               onClick={() => setDays(r.days)}
               className={`px-3 py-1 text-xs rounded-md transition-colors ${
-                days === r.days
-                  ? "bg-zinc-700 text-zinc-100"
-                  : "text-zinc-500 hover:text-zinc-300"
+                days === r.days ? "bg-zinc-700 text-zinc-100" : "text-zinc-500 hover:text-zinc-300"
               }`}
             >
               {r.label}

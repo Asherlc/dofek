@@ -138,13 +138,24 @@ interface JoinedDay {
 
 function classifyActivity(type: string): "cardio" | "strength" | "flexibility" | "other" {
   const t = type.toLowerCase();
-  if (["cycling", "walking", "hiking", "running", "swimming", "cross_country_skiing",
-       "downhill_skiing", "cardio", "cross_training", "tennis", "climbing"].includes(t))
+  if (
+    [
+      "cycling",
+      "walking",
+      "hiking",
+      "running",
+      "swimming",
+      "cross_country_skiing",
+      "downhill_skiing",
+      "cardio",
+      "cross_training",
+      "tennis",
+      "climbing",
+    ].includes(t)
+  )
     return "cardio";
-  if (["strength_training", "functional_strength", "strength"].includes(t))
-    return "strength";
-  if (["yoga", "stretching", "preparation_and_recovery"].includes(t))
-    return "flexibility";
+  if (["strength_training", "functional_strength", "strength"].includes(t)) return "strength";
+  if (["yoga", "stretching", "preparation_and_recovery"].includes(t)) return "flexibility";
   return "other";
 }
 
@@ -156,9 +167,7 @@ function joinByDate(
   bodyComp: BodyCompRow[],
   config: InsightsConfig,
 ): JoinedDay[] {
-  const metricsByDate = new Map(
-    metrics.map((m) => [toDateStr(m.date), m]),
-  );
+  const metricsByDate = new Map(metrics.map((m) => [toDateStr(m.date), m]));
 
   // Sleep: assign to the date the person woke up
   const sleepByWakeDate = new Map<string, SleepRow>();
@@ -176,10 +185,18 @@ function joinByDate(
   }
 
   // Activities: sum duration per date, broken down by category
-  const activityByDate = new Map<string, { minutes: number; cardio: number; strength: number; flexibility: number }>();
+  const activityByDate = new Map<
+    string,
+    { minutes: number; cardio: number; strength: number; flexibility: number }
+  >();
   for (const a of activities) {
     const dateStr = new Date(a.started_at).toISOString().slice(0, 10);
-    const existing = activityByDate.get(dateStr) ?? { minutes: 0, cardio: 0, strength: 0, flexibility: 0 };
+    const existing = activityByDate.get(dateStr) ?? {
+      minutes: 0,
+      cardio: 0,
+      strength: 0,
+      flexibility: 0,
+    };
     if (a.ended_at) {
       const dur = (new Date(a.ended_at).getTime() - new Date(a.started_at).getTime()) / 60000;
       existing.minutes += dur;
@@ -193,9 +210,7 @@ function joinByDate(
 
   // Nutrition by date — filter out incomplete tracking days
   const completeNutrition = nutrition.filter((n) => (n.calories ?? 0) >= config.minDailyCalories);
-  const nutritionByDate = new Map(
-    completeNutrition.map((n) => [toDateStr(n.date), n]),
-  );
+  const nutritionByDate = new Map(completeNutrition.map((n) => [toDateStr(n.date), n]));
 
   // Body comp: one measurement per date (latest if multiple)
   const bodyCompByDate = new Map<string, BodyCompRow>();
@@ -497,7 +512,8 @@ function getConditionalTests(): ConditionalTest[] {
       scope: "month" as const,
       splitFn: (_d, all, i) => {
         const avg = rollingAvg(all, i, 30, (d) =>
-          d.protein_g != null && d.calories ? (d.protein_g * 4 / d.calories) * 100 : null);
+          d.protein_g != null && d.calories ? ((d.protein_g * 4) / d.calories) * 100 : null,
+        );
         return avg != null ? avg >= 30 : null;
       },
       valueFn: (d) => d.weight_7d_delta,
@@ -509,7 +525,8 @@ function getConditionalTests(): ConditionalTest[] {
       scope: "month" as const,
       splitFn: (_d, all, i) => {
         const avg = rollingAvg(all, i, 30, (d) =>
-          d.protein_g != null && d.calories ? (d.protein_g * 4 / d.calories) * 100 : null);
+          d.protein_g != null && d.calories ? ((d.protein_g * 4) / d.calories) * 100 : null,
+        );
         return avg != null ? avg >= 30 : null;
       },
       valueFn: (d) => d.body_fat_7d_delta,
@@ -521,7 +538,8 @@ function getConditionalTests(): ConditionalTest[] {
       scope: "month" as const,
       splitFn: (_d, all, i) => {
         const avg = rollingAvg(all, i, 30, (d) =>
-          d.carbs_g != null && d.calories ? (d.carbs_g * 4 / d.calories) * 100 : null);
+          d.carbs_g != null && d.calories ? ((d.carbs_g * 4) / d.calories) * 100 : null,
+        );
         return avg != null ? avg >= 50 : null;
       },
       valueFn: (d) => d.weight_7d_delta,
@@ -533,7 +551,8 @@ function getConditionalTests(): ConditionalTest[] {
       scope: "month" as const,
       splitFn: (_d, all, i) => {
         const avg = rollingAvg(all, i, 30, (d) =>
-          d.fat_g != null && d.calories ? (d.fat_g * 9 / d.calories) * 100 : null);
+          d.fat_g != null && d.calories ? ((d.fat_g * 9) / d.calories) * 100 : null,
+        );
         return avg != null ? avg >= 35 : null;
       },
       valueFn: (d) => d.body_fat_7d_delta,
@@ -623,32 +642,40 @@ function getCorrelationPairs(): CorrelationPair[] {
       id: "protein-pct-30d-weight-delta",
       xName: "30-day avg protein %",
       yName: "monthly weight change",
-      xFn: (_d, all, i) => rollingAvg(all, i, 30, (r) =>
-        r.protein_g != null && r.calories ? (r.protein_g * 4 / r.calories) * 100 : null),
+      xFn: (_d, all, i) =>
+        rollingAvg(all, i, 30, (r) =>
+          r.protein_g != null && r.calories ? ((r.protein_g * 4) / r.calories) * 100 : null,
+        ),
       yFn: (d) => d.weight_7d_delta,
     },
     {
       id: "protein-pct-30d-bf-delta",
       xName: "30-day avg protein %",
       yName: "monthly body fat change",
-      xFn: (_d, all, i) => rollingAvg(all, i, 30, (r) =>
-        r.protein_g != null && r.calories ? (r.protein_g * 4 / r.calories) * 100 : null),
+      xFn: (_d, all, i) =>
+        rollingAvg(all, i, 30, (r) =>
+          r.protein_g != null && r.calories ? ((r.protein_g * 4) / r.calories) * 100 : null,
+        ),
       yFn: (d) => d.body_fat_7d_delta,
     },
     {
       id: "carb-pct-30d-weight-delta",
       xName: "30-day avg carb %",
       yName: "monthly weight change",
-      xFn: (_d, all, i) => rollingAvg(all, i, 30, (r) =>
-        r.carbs_g != null && r.calories ? (r.carbs_g * 4 / r.calories) * 100 : null),
+      xFn: (_d, all, i) =>
+        rollingAvg(all, i, 30, (r) =>
+          r.carbs_g != null && r.calories ? ((r.carbs_g * 4) / r.calories) * 100 : null,
+        ),
       yFn: (d) => d.weight_7d_delta,
     },
     {
       id: "fat-pct-30d-bf-delta",
       xName: "30-day avg fat %",
       yName: "monthly body fat change",
-      xFn: (_d, all, i) => rollingAvg(all, i, 30, (r) =>
-        r.fat_g != null && r.calories ? (r.fat_g * 9 / r.calories) * 100 : null),
+      xFn: (_d, all, i) =>
+        rollingAvg(all, i, 30, (r) =>
+          r.fat_g != null && r.calories ? ((r.fat_g * 9) / r.calories) * 100 : null,
+        ),
       yFn: (d) => d.body_fat_7d_delta,
     },
     // ── Exercise → body comp (30-day rolling) ──
@@ -720,25 +747,65 @@ function getAllMetrics(): MetricDef[] {
     { key: "skin_temp", label: "skin temp", role: "outcome", extract: (d) => d.skin_temp_c },
     // Action variables — controllable inputs
     { key: "steps", label: "steps", role: "action", extract: (d) => d.steps },
-    { key: "active_kcal", label: "active calories", role: "action", extract: (d) => d.active_energy_kcal },
-    { key: "exercise", label: "exercise duration", role: "action", extract: (d) => d.exercise_minutes },
+    {
+      key: "active_kcal",
+      label: "active calories",
+      role: "action",
+      extract: (d) => d.active_energy_kcal,
+    },
+    {
+      key: "exercise",
+      label: "exercise duration",
+      role: "action",
+      extract: (d) => d.exercise_minutes,
+    },
     { key: "calories", label: "calories", role: "action", extract: (d) => d.calories },
     { key: "protein", label: "protein", role: "action", extract: (d) => d.protein_g },
     { key: "carbs", label: "carbs", role: "action", extract: (d) => d.carbs_g },
     { key: "fat", label: "dietary fat", role: "action", extract: (d) => d.fat_g },
     { key: "fiber", label: "fiber", role: "action", extract: (d) => d.fiber_g },
     // Bidirectional — sleep is both an action (going to bed) and an outcome (affected by exercise)
-    { key: "sleep_dur", label: "sleep duration", role: "bidirectional", extract: (d) => d.sleep_duration_min },
+    {
+      key: "sleep_dur",
+      label: "sleep duration",
+      role: "bidirectional",
+      extract: (d) => d.sleep_duration_min,
+    },
     { key: "deep_sleep", label: "deep sleep", role: "bidirectional", extract: (d) => d.deep_min },
     { key: "rem_sleep", label: "REM sleep", role: "bidirectional", extract: (d) => d.rem_min },
-    { key: "sleep_eff", label: "sleep efficiency", role: "bidirectional", extract: (d) => d.sleep_efficiency },
+    {
+      key: "sleep_eff",
+      label: "sleep efficiency",
+      role: "bidirectional",
+      extract: (d) => d.sleep_efficiency,
+    },
     // Body comp — outcome (you can't directly control weight/bf, only influence via actions)
     { key: "weight", label: "weight", role: "outcome", extract: (d) => d.weight_kg },
     { key: "body_fat", label: "body fat %", role: "outcome", extract: (d) => d.body_fat_pct },
-    { key: "weight_7d", label: "7-day avg weight", role: "outcome", extract: (d) => d.weight_7d_avg },
-    { key: "bf_7d", label: "7-day avg body fat", role: "outcome", extract: (d) => d.body_fat_7d_avg },
-    { key: "weight_delta", label: "weekly weight change", role: "outcome", extract: (d) => d.weight_7d_delta },
-    { key: "bf_delta", label: "weekly body fat change", role: "outcome", extract: (d) => d.body_fat_7d_delta },
+    {
+      key: "weight_7d",
+      label: "7-day avg weight",
+      role: "outcome",
+      extract: (d) => d.weight_7d_avg,
+    },
+    {
+      key: "bf_7d",
+      label: "7-day avg body fat",
+      role: "outcome",
+      extract: (d) => d.body_fat_7d_avg,
+    },
+    {
+      key: "weight_delta",
+      label: "weekly weight change",
+      role: "outcome",
+      extract: (d) => d.weight_7d_delta,
+    },
+    {
+      key: "bf_delta",
+      label: "weekly body fat change",
+      role: "outcome",
+      extract: (d) => d.body_fat_7d_delta,
+    },
   ];
 }
 
@@ -776,20 +843,41 @@ function exhaustiveSweep(joined: JoinedDay[], existingIds: Set<string>): Insight
 
   // Group keys that are derived from the same underlying metric or category
   const derivedGroups: Record<string, string> = {
-    weight_7d: "weight", bf_7d: "body_fat",
-    weight_delta: "weight", bf_delta: "body_fat",
+    weight_7d: "weight",
+    bf_7d: "body_fat",
+    weight_delta: "weight",
+    bf_delta: "body_fat",
   };
   // Keys in the same category — skip intra-category correlations (e.g. calories↔carbs)
   const categoryMap: Record<string, string> = {
-    calories: "nutrition", protein: "nutrition", carbs: "nutrition",
-    fat: "nutrition", fiber: "nutrition",
-    weight: "bodycomp", body_fat: "bodycomp", weight_7d: "bodycomp",
-    bf_7d: "bodycomp", weight_delta: "bodycomp", bf_delta: "bodycomp",
-    sleep_dur: "sleep", deep_sleep: "sleep", rem_sleep: "sleep", sleep_eff: "sleep",
-    steps: "activity", active_kcal: "activity", exercise: "activity",
+    calories: "nutrition",
+    protein: "nutrition",
+    carbs: "nutrition",
+    fat: "nutrition",
+    fiber: "nutrition",
+    weight: "bodycomp",
+    body_fat: "bodycomp",
+    weight_7d: "bodycomp",
+    bf_7d: "bodycomp",
+    weight_delta: "bodycomp",
+    bf_delta: "bodycomp",
+    sleep_dur: "sleep",
+    deep_sleep: "sleep",
+    rem_sleep: "sleep",
+    sleep_eff: "sleep",
+    steps: "activity",
+    active_kcal: "activity",
+    exercise: "activity",
   };
   // Body comp metrics shouldn't appear in short-lag (0-2 day) discovery — only meaningful at monthly scale
-  const bodyCompKeys = new Set(["weight", "body_fat", "weight_7d", "bf_7d", "weight_delta", "bf_delta"]);
+  const bodyCompKeys = new Set([
+    "weight",
+    "body_fat",
+    "weight_7d",
+    "bf_7d",
+    "weight_delta",
+    "bf_delta",
+  ]);
 
   for (const mx of metrics) {
     for (const my of metrics) {
@@ -957,19 +1045,31 @@ function aggregateMonthly(joined: JoinedDay[]): MonthlyAgg[] {
     const strengthDays = days.filter((d) => (d.strength_minutes ?? 0) >= 10).length;
 
     // Use first/last 5 measurements for stable start/end
-    const weightStart = weights.length >= 5
-      ? weights.slice(0, 5).reduce((s, d) => s + d.weight_kg!, 0) / 5
-      : weights.length >= 2 ? weights[0].weight_kg : null;
-    const weightEnd = weights.length >= 5
-      ? weights.slice(-5).reduce((s, d) => s + d.weight_kg!, 0) / 5
-      : weights.length >= 2 ? weights[weights.length - 1].weight_kg : null;
+    const weightStart =
+      weights.length >= 5
+        ? weights.slice(0, 5).reduce((s, d) => s + d.weight_kg!, 0) / 5
+        : weights.length >= 2
+          ? weights[0].weight_kg
+          : null;
+    const weightEnd =
+      weights.length >= 5
+        ? weights.slice(-5).reduce((s, d) => s + d.weight_kg!, 0) / 5
+        : weights.length >= 2
+          ? weights[weights.length - 1].weight_kg
+          : null;
 
-    const bfStart = bfs.length >= 5
-      ? bfs.slice(0, 5).reduce((s, d) => s + d.body_fat_pct!, 0) / 5
-      : bfs.length >= 2 ? bfs[0].body_fat_pct : null;
-    const bfEnd = bfs.length >= 5
-      ? bfs.slice(-5).reduce((s, d) => s + d.body_fat_pct!, 0) / 5
-      : bfs.length >= 2 ? bfs[bfs.length - 1].body_fat_pct : null;
+    const bfStart =
+      bfs.length >= 5
+        ? bfs.slice(0, 5).reduce((s, d) => s + d.body_fat_pct!, 0) / 5
+        : bfs.length >= 2
+          ? bfs[0].body_fat_pct
+          : null;
+    const bfEnd =
+      bfs.length >= 5
+        ? bfs.slice(-5).reduce((s, d) => s + d.body_fat_pct!, 0) / 5
+        : bfs.length >= 2
+          ? bfs[bfs.length - 1].body_fat_pct
+          : null;
 
     months.push({
       month,
@@ -1008,44 +1108,119 @@ interface MonthlyCorrelationPair {
 function getMonthlyCorrelations(): MonthlyCorrelationPair[] {
   return [
     // Total calories → weight (not isocaloric — this is the total energy signal)
-    { id: "m-calories-weight", xName: "monthly avg calories", yName: "monthly weight change",
-      xFn: (m) => m.avgCalories, yFn: (m) => m.weightDelta },
+    {
+      id: "m-calories-weight",
+      xName: "monthly avg calories",
+      yName: "monthly weight change",
+      xFn: (m) => m.avgCalories,
+      yFn: (m) => m.weightDelta,
+    },
     // Macro % → body comp (isocaloric: controlling for total calories)
-    { id: "m-protein-pct-weight", xName: "monthly protein % of calories", yName: "monthly weight change",
-      xFn: (m) => m.avgProtein != null && m.avgCalories ? (m.avgProtein * 4 / m.avgCalories) * 100 : null,
-      yFn: (m) => m.weightDelta },
-    { id: "m-protein-pct-bf", xName: "monthly protein % of calories", yName: "monthly body fat change",
-      xFn: (m) => m.avgProtein != null && m.avgCalories ? (m.avgProtein * 4 / m.avgCalories) * 100 : null,
-      yFn: (m) => m.bfDelta },
-    { id: "m-carb-pct-weight", xName: "monthly carb % of calories", yName: "monthly weight change",
-      xFn: (m) => m.avgCarbs != null && m.avgCalories ? (m.avgCarbs * 4 / m.avgCalories) * 100 : null,
-      yFn: (m) => m.weightDelta },
-    { id: "m-fat-pct-bf", xName: "monthly fat % of calories", yName: "monthly body fat change",
-      xFn: (m) => m.avgFat != null && m.avgCalories ? (m.avgFat * 9 / m.avgCalories) * 100 : null,
-      yFn: (m) => m.bfDelta },
+    {
+      id: "m-protein-pct-weight",
+      xName: "monthly protein % of calories",
+      yName: "monthly weight change",
+      xFn: (m) =>
+        m.avgProtein != null && m.avgCalories ? ((m.avgProtein * 4) / m.avgCalories) * 100 : null,
+      yFn: (m) => m.weightDelta,
+    },
+    {
+      id: "m-protein-pct-bf",
+      xName: "monthly protein % of calories",
+      yName: "monthly body fat change",
+      xFn: (m) =>
+        m.avgProtein != null && m.avgCalories ? ((m.avgProtein * 4) / m.avgCalories) * 100 : null,
+      yFn: (m) => m.bfDelta,
+    },
+    {
+      id: "m-carb-pct-weight",
+      xName: "monthly carb % of calories",
+      yName: "monthly weight change",
+      xFn: (m) =>
+        m.avgCarbs != null && m.avgCalories ? ((m.avgCarbs * 4) / m.avgCalories) * 100 : null,
+      yFn: (m) => m.weightDelta,
+    },
+    {
+      id: "m-fat-pct-bf",
+      xName: "monthly fat % of calories",
+      yName: "monthly body fat change",
+      xFn: (m) =>
+        m.avgFat != null && m.avgCalories ? ((m.avgFat * 9) / m.avgCalories) * 100 : null,
+      yFn: (m) => m.bfDelta,
+    },
     // Total exercise
-    { id: "m-exercise-vol-weight", xName: "monthly exercise volume", yName: "monthly weight change",
-      xFn: (m) => m.exerciseMinutes > 0 ? m.exerciseMinutes : null, yFn: (m) => m.weightDelta },
-    { id: "m-exercise-vol-bf", xName: "monthly exercise volume", yName: "monthly body fat change",
-      xFn: (m) => m.exerciseMinutes > 0 ? m.exerciseMinutes : null, yFn: (m) => m.bfDelta },
-    { id: "m-exercise-freq-weight", xName: "monthly exercise frequency", yName: "monthly weight change",
-      xFn: (m) => m.exerciseDays > 0 ? m.exerciseDays : null, yFn: (m) => m.weightDelta },
-    { id: "m-exercise-freq-bf", xName: "monthly exercise frequency", yName: "monthly body fat change",
-      xFn: (m) => m.exerciseDays > 0 ? m.exerciseDays : null, yFn: (m) => m.bfDelta },
+    {
+      id: "m-exercise-vol-weight",
+      xName: "monthly exercise volume",
+      yName: "monthly weight change",
+      xFn: (m) => (m.exerciseMinutes > 0 ? m.exerciseMinutes : null),
+      yFn: (m) => m.weightDelta,
+    },
+    {
+      id: "m-exercise-vol-bf",
+      xName: "monthly exercise volume",
+      yName: "monthly body fat change",
+      xFn: (m) => (m.exerciseMinutes > 0 ? m.exerciseMinutes : null),
+      yFn: (m) => m.bfDelta,
+    },
+    {
+      id: "m-exercise-freq-weight",
+      xName: "monthly exercise frequency",
+      yName: "monthly weight change",
+      xFn: (m) => (m.exerciseDays > 0 ? m.exerciseDays : null),
+      yFn: (m) => m.weightDelta,
+    },
+    {
+      id: "m-exercise-freq-bf",
+      xName: "monthly exercise frequency",
+      yName: "monthly body fat change",
+      xFn: (m) => (m.exerciseDays > 0 ? m.exerciseDays : null),
+      yFn: (m) => m.bfDelta,
+    },
     // Cardio → body comp
-    { id: "m-cardio-vol-weight", xName: "monthly cardio volume", yName: "monthly weight change",
-      xFn: (m) => m.cardioMinutes > 0 ? m.cardioMinutes : null, yFn: (m) => m.weightDelta },
-    { id: "m-cardio-vol-bf", xName: "monthly cardio volume", yName: "monthly body fat change",
-      xFn: (m) => m.cardioMinutes > 0 ? m.cardioMinutes : null, yFn: (m) => m.bfDelta },
-    { id: "m-cardio-freq-weight", xName: "monthly cardio frequency", yName: "monthly weight change",
-      xFn: (m) => m.cardioDays > 0 ? m.cardioDays : null, yFn: (m) => m.weightDelta },
+    {
+      id: "m-cardio-vol-weight",
+      xName: "monthly cardio volume",
+      yName: "monthly weight change",
+      xFn: (m) => (m.cardioMinutes > 0 ? m.cardioMinutes : null),
+      yFn: (m) => m.weightDelta,
+    },
+    {
+      id: "m-cardio-vol-bf",
+      xName: "monthly cardio volume",
+      yName: "monthly body fat change",
+      xFn: (m) => (m.cardioMinutes > 0 ? m.cardioMinutes : null),
+      yFn: (m) => m.bfDelta,
+    },
+    {
+      id: "m-cardio-freq-weight",
+      xName: "monthly cardio frequency",
+      yName: "monthly weight change",
+      xFn: (m) => (m.cardioDays > 0 ? m.cardioDays : null),
+      yFn: (m) => m.weightDelta,
+    },
     // Strength → body comp
-    { id: "m-strength-vol-weight", xName: "monthly strength volume", yName: "monthly weight change",
-      xFn: (m) => m.strengthMinutes > 0 ? m.strengthMinutes : null, yFn: (m) => m.weightDelta },
-    { id: "m-strength-vol-bf", xName: "monthly strength volume", yName: "monthly body fat change",
-      xFn: (m) => m.strengthMinutes > 0 ? m.strengthMinutes : null, yFn: (m) => m.bfDelta },
-    { id: "m-strength-freq-bf", xName: "monthly strength frequency", yName: "monthly body fat change",
-      xFn: (m) => m.strengthDays > 0 ? m.strengthDays : null, yFn: (m) => m.bfDelta },
+    {
+      id: "m-strength-vol-weight",
+      xName: "monthly strength volume",
+      yName: "monthly weight change",
+      xFn: (m) => (m.strengthMinutes > 0 ? m.strengthMinutes : null),
+      yFn: (m) => m.weightDelta,
+    },
+    {
+      id: "m-strength-vol-bf",
+      xName: "monthly strength volume",
+      yName: "monthly body fat change",
+      xFn: (m) => (m.strengthMinutes > 0 ? m.strengthMinutes : null),
+      yFn: (m) => m.bfDelta,
+    },
+    {
+      id: "m-strength-freq-bf",
+      xName: "monthly strength frequency",
+      yName: "monthly body fat change",
+      xFn: (m) => (m.strengthDays > 0 ? m.strengthDays : null),
+      yFn: (m) => m.bfDelta,
+    },
   ];
 }
 
@@ -1078,8 +1253,11 @@ function computeMonthlyInsights(joined: JoinedDay[]): Insight[] {
     const strength =
       Math.abs(corr.rho) >= 0.6 ? "strongly" : Math.abs(corr.rho) >= 0.4 ? "moderately" : "weakly";
     const confidence: ConfidenceLevel =
-      Math.abs(corr.rho) >= 0.5 && xs.length >= 10 ? "strong" :
-      Math.abs(corr.rho) >= 0.35 && xs.length >= 6 ? "emerging" : "early";
+      Math.abs(corr.rho) >= 0.5 && xs.length >= 10
+        ? "strong"
+        : Math.abs(corr.rho) >= 0.35 && xs.length >= 6
+          ? "emerging"
+          : "early";
 
     insights.push({
       id: pair.id,
@@ -1112,7 +1290,10 @@ function computeMonthlyInsights(joined: JoinedDay[]): Insight[] {
 
       if (highWeightDeltas.length >= 5 && lowWeightDeltas.length >= 5) {
         const d = cohensD(highWeightDeltas, lowWeightDeltas);
-        const conf = classifyConfidence(d, Math.min(highWeightDeltas.length, lowWeightDeltas.length));
+        const conf = classifyConfidence(
+          d,
+          Math.min(highWeightDeltas.length, lowWeightDeltas.length),
+        );
         if (conf !== "insufficient") {
           const tResult = welchTTest(highWeightDeltas, lowWeightDeltas);
           const trueStats = describe(highWeightDeltas);
@@ -1154,12 +1335,23 @@ function getContextVariables(): ContextVariable[] {
     { label: "protein", unit: "g", extract: (d) => d.protein_g },
     { label: "carbs", unit: "g", extract: (d) => d.carbs_g },
     { label: "fat", unit: "g", extract: (d) => d.fat_g },
-    { label: "protein % of cal", unit: "%", extract: (d) =>
-      d.protein_g != null && d.calories ? (d.protein_g * 4 / d.calories) * 100 : null },
-    { label: "carb % of cal", unit: "%", extract: (d) =>
-      d.carbs_g != null && d.calories ? (d.carbs_g * 4 / d.calories) * 100 : null },
-    { label: "fat % of cal", unit: "%", extract: (d) =>
-      d.fat_g != null && d.calories ? (d.fat_g * 9 / d.calories) * 100 : null },
+    {
+      label: "protein % of cal",
+      unit: "%",
+      extract: (d) =>
+        d.protein_g != null && d.calories ? ((d.protein_g * 4) / d.calories) * 100 : null,
+    },
+    {
+      label: "carb % of cal",
+      unit: "%",
+      extract: (d) =>
+        d.carbs_g != null && d.calories ? ((d.carbs_g * 4) / d.calories) * 100 : null,
+    },
+    {
+      label: "fat % of cal",
+      unit: "%",
+      extract: (d) => (d.fat_g != null && d.calories ? ((d.fat_g * 9) / d.calories) * 100 : null),
+    },
     { label: "exercise duration", unit: "min", extract: (d) => d.exercise_minutes },
     { label: "cardio duration", unit: "min", extract: (d) => d.cardio_minutes },
     { label: "strength training duration", unit: "min", extract: (d) => d.strength_minutes },
@@ -1218,22 +1410,30 @@ function findCorrelationConfounders(
 
 // Variables that are subsets/supersets or mechanically related — not true confounders
 const relatedVars: Record<string, Set<string>> = {
-  "exercise": new Set(["cardio", "strength", "active calories", "steps"]),
-  "cardio": new Set(["exercise", "active calories", "steps"]),
-  "strength": new Set(["exercise"]),
-  "steps": new Set(["exercise", "cardio", "active calories"]),
+  exercise: new Set(["cardio", "strength", "active calories", "steps"]),
+  cardio: new Set(["exercise", "active calories", "steps"]),
+  strength: new Set(["exercise"]),
+  steps: new Set(["exercise", "cardio", "active calories"]),
   "active calories": new Set(["exercise", "cardio", "steps"]),
-  "calories": new Set(["protein", "carbs", "fat", "fiber", "protein % of cal", "carb % of cal", "fat % of cal"]),
-  "protein": new Set(["calories", "protein % of cal"]),
-  "carbs": new Set(["calories", "carb % of cal"]),
-  "fat": new Set(["calories", "fat % of cal"]),
+  calories: new Set([
+    "protein",
+    "carbs",
+    "fat",
+    "fiber",
+    "protein % of cal",
+    "carb % of cal",
+    "fat % of cal",
+  ]),
+  protein: new Set(["calories", "protein % of cal"]),
+  carbs: new Set(["calories", "carb % of cal"]),
+  fat: new Set(["calories", "fat % of cal"]),
   "protein % of cal": new Set(["carb % of cal", "fat % of cal"]),
   "carb % of cal": new Set(["protein % of cal", "fat % of cal"]),
   "fat % of cal": new Set(["protein % of cal", "carb % of cal"]),
   "sleep duration": new Set(["deep sleep"]),
   "deep sleep": new Set(["sleep duration"]),
   "resting HR": new Set(["HRV"]),
-  "HRV": new Set(["resting HR"]),
+  HRV: new Set(["resting HR"]),
 };
 
 function isRelatedToAction(actionLabel: string, cvLabel: string): boolean {
@@ -1253,7 +1453,16 @@ function isRelatedToAction(actionLabel: string, cvLabel: string): boolean {
 
   // Calorie actions → all macros are derivatives, not confounders
   if (actionLower.includes("calorie") || actionLower.includes("cal ")) {
-    const macroLabels = ["protein", "carbs", "fat", "fiber", "protein % of cal", "carb % of cal", "fat % of cal", "calories"];
+    const macroLabels = [
+      "protein",
+      "carbs",
+      "fat",
+      "fiber",
+      "protein % of cal",
+      "carb % of cal",
+      "fat % of cal",
+      "calories",
+    ];
     if (macroLabels.includes(cvLower)) return true;
   }
 
@@ -1263,20 +1472,28 @@ function isRelatedToAction(actionLabel: string, cvLabel: string): boolean {
   }
 
   // Exercise family — all exercise types are related to each other
-  const exerciseLabels = ["exercise duration", "cardio duration", "strength training duration", "active calories", "steps"];
-  if (actionLower.includes("exercise") || actionLower.includes("cardio") ||
-      actionLower.includes("strength") || actionLower.includes("yoga") ||
-      actionLower.includes("flexibility") || actionLower.includes("cycling")) {
+  const exerciseLabels = [
+    "exercise duration",
+    "cardio duration",
+    "strength training duration",
+    "active calories",
+    "steps",
+  ];
+  if (
+    actionLower.includes("exercise") ||
+    actionLower.includes("cardio") ||
+    actionLower.includes("strength") ||
+    actionLower.includes("yoga") ||
+    actionLower.includes("flexibility") ||
+    actionLower.includes("cycling")
+  ) {
     if (exerciseLabels.includes(cvLower)) return true;
   }
 
   return false;
 }
 
-function findConfounders(
-  test: ConditionalTest,
-  joined: JoinedDay[],
-): string[] {
+function findConfounders(test: ConditionalTest, joined: JoinedDay[]): string[] {
   // Split the same way the test does
   const trueIndices: number[] = [];
   const falseIndices: number[] = [];
@@ -1325,8 +1542,22 @@ function findConfounders(
   // Deduplicate confounder families: if a parent is present, remove children
   // e.g., if "calories" is flagged, don't also list "protein", "carbs", "fat"
   const families: Array<{ parent: string; children: string[] }> = [
-    { parent: "calories", children: ["protein", "carbs", "fat", "fiber", "protein % of cal", "carb % of cal", "fat % of cal"] },
-    { parent: "exercise duration", children: ["cardio duration", "strength training duration", "steps", "active calories"] },
+    {
+      parent: "calories",
+      children: [
+        "protein",
+        "carbs",
+        "fat",
+        "fiber",
+        "protein % of cal",
+        "carb % of cal",
+        "fat % of cal",
+      ],
+    },
+    {
+      parent: "exercise duration",
+      children: ["cardio duration", "strength training duration", "steps", "active calories"],
+    },
     { parent: "sleep duration", children: ["deep sleep", "sleep efficiency"] },
   ];
 
@@ -1345,12 +1576,18 @@ function findConfounders(
 // ── Human-readable explanation generator ──────────────────────────────────
 
 const metricUnits: Record<string, string> = {
-  "next-day HRV": "ms", "HRV": "ms",
-  "next-day resting HR": "bpm", "resting HR": "bpm",
-  "sleep duration that night": "min", "sleep duration": "min",
-  "deep sleep that night": "min", "deep sleep": "min",
-  "sleep efficiency that night": "%", "sleep efficiency": "%",
-  "monthly weight change": "lbs", "monthly body fat change": "%",
+  "next-day HRV": "ms",
+  HRV: "ms",
+  "next-day resting HR": "bpm",
+  "resting HR": "bpm",
+  "sleep duration that night": "min",
+  "sleep duration": "min",
+  "deep sleep that night": "min",
+  "deep sleep": "min",
+  "sleep efficiency that night": "%",
+  "sleep efficiency": "%",
+  "monthly weight change": "lbs",
+  "monthly body fat change": "%",
   "exercise duration": "min",
 };
 
@@ -1365,14 +1602,19 @@ function explainInsight(insight: Omit<Insight, "explanation">): string {
     const higher = trueM > falseM;
 
     // Make the action phrase read naturally
-    const actionPhrase = /^\d/.test(action) || action.startsWith(">")
-      ? `you have ${action.toLowerCase()}`
-      : /day$/.test(action)
-        ? `it's a ${action.toLowerCase()}`
-        : `you get ${action.toLowerCase()}`;
+    const actionPhrase =
+      /^\d/.test(action) || action.startsWith(">")
+        ? `you have ${action.toLowerCase()}`
+        : /day$/.test(action)
+          ? `it's a ${action.toLowerCase()}`
+          : `you get ${action.toLowerCase()}`;
 
-    const freq = confidence === "strong" ? "consistently"
-      : confidence === "emerging" ? "generally" : "sometimes";
+    const freq =
+      confidence === "strong"
+        ? "consistently"
+        : confidence === "emerging"
+          ? "generally"
+          : "sometimes";
 
     // Format the diff value with unit
     const fmtDiff = `${diff < 10 ? diff.toFixed(1) : Math.round(diff)}${unit ? ` ${unit}` : ""}`;
@@ -1381,8 +1623,10 @@ function explainInsight(insight: Omit<Insight, "explanation">): string {
       const what = metric.includes("weight") ? "weight" : "body fat";
       const unitLabel = metric.includes("weight") ? "lbs" : "%";
       // Positive mean = gaining, negative = losing
-      const withDesc = trueM >= 0 ? `+${trueM.toFixed(2)} ${unitLabel}` : `${trueM.toFixed(2)} ${unitLabel}`;
-      const withoutDesc = falseM >= 0 ? `+${falseM.toFixed(2)} ${unitLabel}` : `${falseM.toFixed(2)} ${unitLabel}`;
+      const withDesc =
+        trueM >= 0 ? `+${trueM.toFixed(2)} ${unitLabel}` : `${trueM.toFixed(2)} ${unitLabel}`;
+      const withoutDesc =
+        falseM >= 0 ? `+${falseM.toFixed(2)} ${unitLabel}` : `${falseM.toFixed(2)} ${unitLabel}`;
       return `When ${actionPhrase}, your ${what} ${freq} changes by ${withDesc}/mo vs ${withoutDesc}/mo without.`;
     }
     const direction = higher ? "higher" : "lower";
@@ -1390,8 +1634,11 @@ function explainInsight(insight: Omit<Insight, "explanation">): string {
   }
 
   if (type === "correlation" || type === "discovery") {
-    const moreOrHigher = /calories|volume|frequency|protein|carb|fat|fiber|steps|exercise/.test(action)
-      ? "More" : "Higher";
+    const moreOrHigher = /calories|volume|frequency|protein|carb|fat|fiber|steps|exercise/.test(
+      action,
+    )
+      ? "More"
+      : "Higher";
     const upOrDown = effectSize > 0 ? "higher" : "lower";
     return `${moreOrHigher} ${action} is linked to ${upOrDown} ${metric}.`;
   }
