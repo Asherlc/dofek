@@ -6,7 +6,7 @@ NODE="node --experimental-transform-types --disable-warning=ExperimentalWarning"
 
 case "${1:-sync}" in
   web)
-    exec $NODE web/src/server/index.ts
+    exec $NODE packages/server/src/index.ts
     ;;
   sync)
     exec $NODE src/index.ts sync

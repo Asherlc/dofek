@@ -36,7 +36,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm tsc --noEmit
-      - run: cd web && pnpm tsc --noEmit
+      - run: cd packages/server && pnpm tsc --noEmit
+      - run: cd packages/web && pnpm tsc --noEmit
 
   test:
     name: Tests
@@ -62,7 +63,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: cd web && npx vite build
+      - run: cd packages/web && pnpm run build
 
   docker:
     name: Build & Push Docker Image
@@ -82,9 +83,17 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: docker/metadata-action@v5
-        id: meta
+        id: server-meta
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha
+            type=raw,value=latest
+
+      - uses: docker/metadata-action@v5
+        id: client-meta
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-client
           tags: |
             type=sha
             type=raw,value=latest
@@ -92,6 +101,15 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: .
+          target: server
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.server-meta.outputs.tags }}
+          labels: ${{ steps.server-meta.outputs.labels }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: client
+          push: true
+          tags: ${{ steps.client-meta.outputs.tags }}
+          labels: ${{ steps.client-meta.outputs.labels }}
