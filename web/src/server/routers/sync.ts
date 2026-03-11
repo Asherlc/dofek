@@ -114,12 +114,14 @@ export const syncRouter = router({
     .input(
       z.object({
         providerId: z.string().optional(),
-        sinceDays: z.number().default(7),
+        sinceDays: z.number().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
       await ensureProvidersRegistered();
-      const since = new Date(Date.now() - input.sinceDays * 24 * 60 * 60 * 1000);
+      const since = input.sinceDays
+        ? new Date(Date.now() - input.sinceDays * 24 * 60 * 60 * 1000)
+        : new Date(0); // full sync
 
       let providers: Provider[];
       if (input.providerId) {

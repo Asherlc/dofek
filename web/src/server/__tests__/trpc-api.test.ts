@@ -77,11 +77,24 @@ describe("tRPC API", () => {
   });
 
   describe("POST mutations", () => {
-    it("handles triggerSync mutation", async () => {
+    it("handles triggerSync mutation with sinceDays", async () => {
       const res = await fetch(`${baseUrl}/api/trpc/sync.triggerSync?batch=1`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ "0": { sinceDays: 7 } }),
+      });
+
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data).toHaveLength(1);
+      expect(data[0].result.data.jobId).toMatch(/^sync-/);
+    });
+
+    it("handles triggerSync mutation without sinceDays (full sync)", async () => {
+      const res = await fetch(`${baseUrl}/api/trpc/sync.triggerSync?batch=1`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ "0": {} }),
       });
 
       expect(res.status).toBe(200);

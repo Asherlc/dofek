@@ -41,10 +41,13 @@ export function DataSourcesPanel() {
   );
 
   const handleSync = useCallback(
-    async (providerId: string) => {
+    async (providerId: string, fullSync = false) => {
       updateState(providerId, { status: "syncing" });
       try {
-        const { jobId } = await syncMutation.mutateAsync({ providerId, sinceDays: 7 });
+        const { jobId } = await syncMutation.mutateAsync({
+          providerId,
+          sinceDays: fullSync ? undefined : 7,
+        });
         await doPollSyncJob(jobId, [providerId]);
       } catch (err: unknown) {
         updateState(providerId, {
@@ -56,24 +59,29 @@ export function DataSourcesPanel() {
     [syncMutation, updateState, doPollSyncJob],
   );
 
-  const handleSyncAll = useCallback(async () => {
-    const enabled = (providers.data ?? []).filter((p) => p.enabled);
-    const ids = enabled.map((p) => p.id);
-    for (const p of enabled) {
-      updateState(p.id, { status: "syncing" });
-    }
-    try {
-      const { jobId } = await syncMutation.mutateAsync({ sinceDays: 7 });
-      await doPollSyncJob(jobId, ids);
-    } catch (err: unknown) {
+  const handleSyncAll = useCallback(
+    async (fullSync = false) => {
+      const enabled = (providers.data ?? []).filter((p) => p.enabled);
+      const ids = enabled.map((p) => p.id);
       for (const p of enabled) {
-        updateState(p.id, {
-          status: "error",
-          message: err instanceof Error ? err.message : "Sync failed",
-        });
+        updateState(p.id, { status: "syncing" });
       }
-    }
-  }, [providers.data, syncMutation, updateState, doPollSyncJob]);
+      try {
+        const { jobId } = await syncMutation.mutateAsync({
+          sinceDays: fullSync ? undefined : 7,
+        });
+        await doPollSyncJob(jobId, ids);
+      } catch (err: unknown) {
+        for (const p of enabled) {
+          updateState(p.id, {
+            status: "error",
+            message: err instanceof Error ? err.message : "Sync failed",
+          });
+        }
+      }
+    },
+    [providers.data, syncMutation, updateState, doPollSyncJob],
+  );
 
   const pollUploadStatus = useCallback(async (jobId: string) => {
     const poll = async (): Promise<void> => {
@@ -198,13 +206,12 @@ export function DataSourcesPanel() {
   const enabledProviders = (providers.data ?? []).filter((p) => p.enabled);
 
   const handleProviderClick = useCallback(
-    (p: { id: string; needsOAuth: boolean; authorized: boolean }) => {
+    (p: { id: string; needsOAuth: boolean; authorized: boolean }, fullSync = false) => {
       if (p.needsOAuth && !p.authorized) {
-        // Open OAuth flow in new tab — will redirect back to /callback
         window.open(`/auth/${p.id}`, "_blank");
         return;
       }
-      handleSync(p.id);
+      handleSync(p.id, fullSync);
     },
     [handleSync],
   );
@@ -216,14 +223,24 @@ export function DataSourcesPanel() {
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-medium text-zinc-300">Connected Providers</h3>
           {enabledProviders.length > 1 && (
-            <button
-              type="button"
-              onClick={handleSyncAll}
-              disabled={syncMutation.isPending}
-              className="text-xs px-3 py-1 rounded bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50 transition-colors"
-            >
-              Sync All
-            </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => handleSyncAll()}
+                disabled={syncMutation.isPending}
+                className="text-xs px-3 py-1 rounded bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50 transition-colors"
+              >
+                Sync All
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSyncAll(true)}
+                disabled={syncMutation.isPending}
+                className="text-xs px-3 py-1 rounded bg-zinc-800 text-zinc-400 hover:bg-zinc-700 disabled:opacity-50 transition-colors"
+              >
+                Full Sync All
+              </button>
+            </div>
           )}
         </div>
 
@@ -239,15 +256,17 @@ export function DataSourcesPanel() {
               const state = providerStates[p.id] ?? { status: "idle" };
               const needsAuth = p.needsOAuth && !p.authorized;
               return (
-                <button
+                <div
                   key={p.id}
-                  type="button"
-                  onClick={() => handleProviderClick(p)}
-                  disabled={state.status === "syncing"}
-                  className="flex flex-col items-start rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-2.5 hover:bg-zinc-800 disabled:opacity-50 transition-colors"
-                  title={needsAuth ? "Click to connect" : state.message}
+                  className="flex flex-col items-start rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-2.5 transition-colors"
                 >
-                  <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleProviderClick(p)}
+                    disabled={state.status === "syncing"}
+                    className="flex items-center gap-2 hover:opacity-80 disabled:opacity-50"
+                    title={needsAuth ? "Click to connect" : "Sync last 7 days"}
+                  >
                     {needsAuth ? (
                       <span className="inline-block w-2 h-2 rounded-full bg-blue-400" />
                     ) : (
@@ -258,7 +277,7 @@ export function DataSourcesPanel() {
                     {state.status === "syncing" && (
                       <span className="text-xs text-zinc-500">...</span>
                     )}
-                  </div>
+                  </button>
                   {state.message && state.status !== "syncing" && (
                     <span className="text-xs text-zinc-500 mt-0.5">{state.message}</span>
                   )}
@@ -267,7 +286,16 @@ export function DataSourcesPanel() {
                       Last sync: {formatRelativeTime(p.lastSyncedAt)}
                     </span>
                   )}
-                </button>
+                  {!needsAuth && state.status !== "syncing" && (
+                    <button
+                      type="button"
+                      onClick={() => handleProviderClick(p, true)}
+                      className="text-xs text-zinc-600 hover:text-zinc-400 mt-0.5 transition-colors"
+                    >
+                      Full sync
+                    </button>
+                  )}
+                </div>
               );
             })}
           </div>
