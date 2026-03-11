@@ -66,6 +66,33 @@ function cleanupJob(jobId: string) {
   setTimeout(() => syncJobs.delete(jobId), 10 * 60 * 1000);
 }
 
+// ── In-memory ring buffer for console output ──
+const MAX_SYSTEM_LOGS = 500;
+const systemLogs: Array<{ timestamp: string; level: string; message: string }> = [];
+
+function captureSystemLog(level: string, message: string) {
+  systemLogs.push({ timestamp: new Date().toISOString(), level, message });
+  if (systemLogs.length > MAX_SYSTEM_LOGS)
+    systemLogs.splice(0, systemLogs.length - MAX_SYSTEM_LOGS);
+}
+
+// Intercept console.log/error/warn to capture system output
+const origLog = console.log;
+const origError = console.error;
+const origWarn = console.warn;
+console.log = (...args: unknown[]) => {
+  origLog(...args);
+  captureSystemLog("info", args.map(String).join(" "));
+};
+console.error = (...args: unknown[]) => {
+  origError(...args);
+  captureSystemLog("error", args.map(String).join(" "));
+};
+console.warn = (...args: unknown[]) => {
+  origWarn(...args);
+  captureSystemLog("warn", args.map(String).join(" "));
+};
+
 export const syncRouter = router({
   /** List all providers and whether they're enabled (have valid config) */
   providers: publicProcedure.query(async ({ ctx }) => {
@@ -236,5 +263,12 @@ export const syncRouter = router({
       const { desc } = await import("drizzle-orm");
 
       return ctx.db.select().from(syncLog).orderBy(desc(syncLog.syncedAt)).limit(input.limit);
+    }),
+
+  /** Get recent system logs (console output) */
+  systemLogs: publicProcedure
+    .input(z.object({ limit: z.number().default(200) }))
+    .query(({ input }) => {
+      return systemLogs.slice(-input.limit);
     }),
 });

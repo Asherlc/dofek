@@ -409,12 +409,22 @@ export class WhoopInternalClient {
       body: JSON.stringify({ username, password }),
     });
 
-    const data = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+    // Read body as text first (body stream can only be consumed once)
+    const bodyText = await response.text().catch(() => "");
+    let data: Record<string, unknown> | null = null;
+    try {
+      data = JSON.parse(bodyText) as Record<string, unknown>;
+    } catch {
+      // Not JSON — plain text error like "HTTP 401 Unauthorized"
+    }
 
-    // 2FA challenge — WHOOP returns a non-200 with verification info, or a 200 with
-    // a verification step indicator instead of tokens
+    // Auth failure with no useful JSON body
+    if (!response.ok && !data) {
+      throw new Error(`WHOOP auth failed (${response.status}): ${bodyText || response.statusText}`);
+    }
+
+    // Got JSON but no access_token — could be 2FA challenge or structured error
     if (data && !data.access_token) {
-      // The response may contain a verification state/token for 2FA
       const state =
         (data.verification_id as string) ??
         (data.mfa_token as string) ??
@@ -423,20 +433,18 @@ export class WhoopInternalClient {
         "";
       const method = (data.verification_method as string) ?? (data.method as string) ?? "sms";
 
-      if (state || response.status === 403 || response.status === 401) {
-        // If we got a structured response with some kind of state, it's likely 2FA
-        if (state) {
-          return { type: "verification_required", state, method };
-        }
-        // Otherwise it's a plain auth failure
-        const text = JSON.stringify(data);
-        throw new Error(`WHOOP auth failed (${response.status}): ${text}`);
+      if (state) {
+        return { type: "verification_required", state, method };
       }
+
+      // Structured error response (e.g. { "error": "..." })
+      throw new Error(`WHOOP auth failed (${response.status}): ${bodyText}`);
     }
 
-    if (!response.ok || !data?.access_token) {
-      const text = data ? JSON.stringify(data) : await response.text().catch(() => "Unknown error");
-      throw new Error(`WHOOP auth failed (${response.status}): ${text}`);
+    if (!data?.access_token) {
+      throw new Error(
+        `WHOOP auth failed (${response.status}): ${bodyText || "No access token in response"}`,
+      );
     }
 
     const userId = await WhoopInternalClient._fetchUserId(data.access_token as string, fetchFn);
