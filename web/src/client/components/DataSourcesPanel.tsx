@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import { pollSyncJob } from "../lib/poll-sync-job.js";
 import { trpc } from "../lib/trpc.js";
 
 type SyncStatus = "idle" | "syncing" | "done" | "error";
@@ -27,57 +28,15 @@ export function DataSourcesPanel() {
     [],
   );
 
-  /** Poll a sync job until all providers finish */
-  const pollSyncJob = useCallback(
-    async (jobId: string, providerIds: string[]) => {
-      const resetSyncing = () => {
-        // If polling ends unexpectedly, reset any still-syncing providers
-        setProviderStates((prev) => {
-          const next = { ...prev };
-          for (const pid of providerIds) {
-            if (next[pid]?.status === "syncing") {
-              next[pid] = { status: "error", message: "Lost sync status" };
-            }
-          }
-          return next;
-        });
-      };
-
-      const poll = async (): Promise<void> => {
-        try {
-          const job = await trpcUtils.sync.syncStatus.fetch({ jobId });
-          if (!job) {
-            // Job not found (server restarted or expired)
-            resetSyncing();
-            return;
-          }
-
-          // Update per-provider states from the job
-          for (const [pid, pStatus] of Object.entries(job.providers)) {
-            if (pStatus.status === "done" || pStatus.status === "error") {
-              updateState(pid, {
-                status: pStatus.status === "done" ? "done" : "error",
-                message: pStatus.message ?? undefined,
-              });
-            } else if (pStatus.status === "running") {
-              updateState(pid, { status: "syncing", message: "Syncing..." });
-            }
-          }
-
-          if (job.status === "done" || job.status === "error") {
-            // Refresh provider list to update lastSyncedAt
-            trpcUtils.sync.providers.invalidate();
-            return;
-          }
-
-          await new Promise((r) => setTimeout(r, 1000));
-          return poll();
-        } catch {
-          resetSyncing();
-        }
-      };
-      return poll();
-    },
+  const doPollSyncJob = useCallback(
+    (jobId: string, providerIds: string[]) =>
+      pollSyncJob({
+        jobId,
+        providerIds,
+        fetchStatus: (id) => trpcUtils.sync.syncStatus.fetch({ jobId: id }),
+        updateState,
+        onComplete: () => trpcUtils.sync.providers.invalidate(),
+      }),
     [trpcUtils, updateState],
   );
 
@@ -86,7 +45,7 @@ export function DataSourcesPanel() {
       updateState(providerId, { status: "syncing" });
       try {
         const { jobId } = await syncMutation.mutateAsync({ providerId, sinceDays: 7 });
-        await pollSyncJob(jobId, [providerId]);
+        await doPollSyncJob(jobId, [providerId]);
       } catch (err: unknown) {
         updateState(providerId, {
           status: "error",
@@ -94,7 +53,7 @@ export function DataSourcesPanel() {
         });
       }
     },
-    [syncMutation, updateState, pollSyncJob],
+    [syncMutation, updateState, doPollSyncJob],
   );
 
   const handleSyncAll = useCallback(async () => {
@@ -105,7 +64,7 @@ export function DataSourcesPanel() {
     }
     try {
       const { jobId } = await syncMutation.mutateAsync({ sinceDays: 7 });
-      await pollSyncJob(jobId, ids);
+      await doPollSyncJob(jobId, ids);
     } catch (err: unknown) {
       for (const p of enabled) {
         updateState(p.id, {
@@ -114,7 +73,7 @@ export function DataSourcesPanel() {
         });
       }
     }
-  }, [providers.data, syncMutation, updateState, pollSyncJob]);
+  }, [providers.data, syncMutation, updateState, doPollSyncJob]);
 
   const pollUploadStatus = useCallback(async (jobId: string) => {
     const poll = async (): Promise<void> => {
