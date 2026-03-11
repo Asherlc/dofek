@@ -1,4 +1,5 @@
 import { logSync } from "dofek/db/sync-log";
+import { ensureProvider } from "dofek/db/tokens";
 import { getAllProviders, registerProvider } from "dofek/providers/registry";
 import type { Provider } from "dofek/providers/types";
 import { z } from "zod";
@@ -128,6 +129,9 @@ export const syncRouter = router({
           for (const provider of providers) {
             const job = syncJobs.get(jobId)!;
             job.providers[provider.id] = { status: "running" };
+
+            // Ensure provider row exists before syncing (needed for sync_log FK)
+            await ensureProvider(ctx.db, provider.id, provider.name);
 
             const syncStart = Date.now();
             try {
