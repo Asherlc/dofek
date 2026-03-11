@@ -390,6 +390,8 @@ async function cognitoCall(
   body: Record<string, unknown>,
   fetchFn: typeof globalThis.fetch,
 ): Promise<Record<string, unknown>> {
+  console.log(`[whoop] Cognito ${action} → ${COGNITO_ENDPOINT}`);
+
   const response = await fetchFn(COGNITO_ENDPOINT, {
     method: "POST",
     headers: {
@@ -399,14 +401,24 @@ async function cognitoCall(
     body: JSON.stringify(body),
   });
 
-  const data = (await response.json()) as Record<string, unknown>;
+  // Read body as text first — the proxy may return non-JSON errors
+  const bodyText = await response.text();
+  let data: Record<string, unknown>;
+  try {
+    data = JSON.parse(bodyText) as Record<string, unknown>;
+  } catch {
+    console.error(`[whoop] Cognito ${action} returned non-JSON (${response.status}): ${bodyText}`);
+    throw new Error(`WHOOP auth failed (${response.status}): ${bodyText || response.statusText}`);
+  }
 
   if (!response.ok) {
     const errorType = (data.__type as string)?.split("#").pop() ?? "UnknownError";
     const errorMessage = (data.message as string) ?? (data.Message as string) ?? "Auth failed";
+    console.error(`[whoop] Cognito ${action} error: ${errorType}: ${errorMessage}`);
     throw new Error(`WHOOP Cognito ${errorType}: ${errorMessage}`);
   }
 
+  console.log(`[whoop] Cognito ${action} succeeded`);
   return data;
 }
 
