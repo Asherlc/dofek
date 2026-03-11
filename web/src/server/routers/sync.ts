@@ -11,12 +11,12 @@ import { publicProcedure, router } from "../../shared/trpc.js";
 async function countProviderRecords(db: Database, providerId: string): Promise<number> {
   const result = await db.execute<{ total: string }>(sql`
     SELECT
-      (SELECT count(*) FROM cardio_activity WHERE provider_id = ${providerId}) +
-      (SELECT count(*) FROM daily_metrics WHERE provider_id = ${providerId}) +
-      (SELECT count(*) FROM sleep_session WHERE provider_id = ${providerId}) +
-      (SELECT count(*) FROM body_measurement WHERE provider_id = ${providerId}) +
-      (SELECT count(*) FROM food_entry WHERE provider_id = ${providerId}) +
-      (SELECT count(*) FROM health_event WHERE provider_id = ${providerId})
+      (SELECT count(*) FROM fitness.activity WHERE provider_id = ${providerId}) +
+      (SELECT count(*) FROM fitness.daily_metrics WHERE provider_id = ${providerId}) +
+      (SELECT count(*) FROM fitness.sleep_session WHERE provider_id = ${providerId}) +
+      (SELECT count(*) FROM fitness.body_measurement WHERE provider_id = ${providerId}) +
+      (SELECT count(*) FROM fitness.food_entry WHERE provider_id = ${providerId}) +
+      (SELECT count(*) FROM fitness.health_event WHERE provider_id = ${providerId})
     AS total
   `);
   return Number(result[0]?.total ?? 0);

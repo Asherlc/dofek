@@ -39,13 +39,14 @@ async function assembleChunks(chunkDir: string, outputPath: string): Promise<voi
   });
 }
 
-async function main() {
-  // Auto-run pending migrations on startup
-  await runMigrations(process.env.DATABASE_URL!);
-
+/** Create the Express app with all routes. Exported for testing. */
+export function createApp(db: import("dofek/db").Database): express.Express {
   const app = express();
-  const db = createDatabaseFromEnv();
+  setupRoutes(app, db);
+  return app;
+}
 
+function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
   // ── Apple Health upload state ──
   interface UploadChunks {
     received: Set<number>;
@@ -411,6 +412,14 @@ async function main() {
       allowMethodOverride: true,
     }),
   );
+}
+
+async function main() {
+  // Auto-run pending migrations on startup
+  await runMigrations(process.env.DATABASE_URL!);
+
+  const db = createDatabaseFromEnv();
+  const app = createApp(db);
 
   if (isDev) {
     // In dev, use Vite's dev server as middleware
@@ -437,7 +446,13 @@ async function main() {
   });
 }
 
-main().catch((err) => {
-  console.error("[web] Failed to start:", err);
-  process.exit(1);
-});
+// Only start server when run directly (not imported for testing)
+const isDirectRun =
+  typeof process.argv[1] === "string" &&
+  import.meta.url.endsWith(process.argv[1].replace(/.*\//, ""));
+if (isDirectRun) {
+  main().catch((err: unknown) => {
+    console.error("[web] Failed to start:", err);
+    process.exit(1);
+  });
+}
