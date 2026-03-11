@@ -29,11 +29,28 @@ export function DataSourcesPanel() {
 
   /** Poll a sync job until all providers finish */
   const pollSyncJob = useCallback(
-    async (jobId: string) => {
+    async (jobId: string, providerIds: string[]) => {
+      const resetSyncing = () => {
+        // If polling ends unexpectedly, reset any still-syncing providers
+        setProviderStates((prev) => {
+          const next = { ...prev };
+          for (const pid of providerIds) {
+            if (next[pid]?.status === "syncing") {
+              next[pid] = { status: "error", message: "Lost sync status" };
+            }
+          }
+          return next;
+        });
+      };
+
       const poll = async (): Promise<void> => {
         try {
           const job = await trpcUtils.sync.syncStatus.fetch({ jobId });
-          if (!job) return;
+          if (!job) {
+            // Job not found (server restarted or expired)
+            resetSyncing();
+            return;
+          }
 
           // Update per-provider states from the job
           for (const [pid, pStatus] of Object.entries(job.providers)) {
@@ -47,12 +64,16 @@ export function DataSourcesPanel() {
             }
           }
 
-          if (job.status === "done" || job.status === "error") return;
+          if (job.status === "done" || job.status === "error") {
+            // Refresh provider list to update lastSyncedAt
+            trpcUtils.sync.providers.invalidate();
+            return;
+          }
 
           await new Promise((r) => setTimeout(r, 1000));
           return poll();
         } catch {
-          // If polling fails, don't crash — just stop
+          resetSyncing();
         }
       };
       return poll();
@@ -65,11 +86,11 @@ export function DataSourcesPanel() {
       updateState(providerId, { status: "syncing" });
       try {
         const { jobId } = await syncMutation.mutateAsync({ providerId, sinceDays: 7 });
-        await pollSyncJob(jobId);
-      } catch (err: any) {
+        await pollSyncJob(jobId, [providerId]);
+      } catch (err: unknown) {
         updateState(providerId, {
           status: "error",
-          message: err.message ?? "Sync failed",
+          message: err instanceof Error ? err.message : "Sync failed",
         });
       }
     },
@@ -78,15 +99,19 @@ export function DataSourcesPanel() {
 
   const handleSyncAll = useCallback(async () => {
     const enabled = (providers.data ?? []).filter((p) => p.enabled);
+    const ids = enabled.map((p) => p.id);
     for (const p of enabled) {
       updateState(p.id, { status: "syncing" });
     }
     try {
       const { jobId } = await syncMutation.mutateAsync({ sinceDays: 7 });
-      await pollSyncJob(jobId);
-    } catch (err: any) {
+      await pollSyncJob(jobId, ids);
+    } catch (err: unknown) {
       for (const p of enabled) {
-        updateState(p.id, { status: "error", message: err.message });
+        updateState(p.id, {
+          status: "error",
+          message: err instanceof Error ? err.message : "Sync failed",
+        });
       }
     }
   }, [providers.data, syncMutation, updateState, pollSyncJob]);
