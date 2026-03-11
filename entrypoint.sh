@@ -1,15 +1,15 @@
 #!/bin/sh
 set -e
 
-# Node 22+ natively strips TypeScript types, needed for workspace .ts exports
-NODE="node --experimental-strip-types --disable-warning=ExperimentalWarning"
+# Node 22+ natively handles TypeScript — transform-types also rewrites .ts imports
+NODE="node --experimental-transform-types --disable-warning=ExperimentalWarning"
 
 case "${1:-sync}" in
   web)
-    exec $NODE web/dist/server/server/index.js
+    exec $NODE web/src/server/index.ts
     ;;
   sync)
-    exec $NODE dist/index.js sync
+    exec $NODE src/index.ts sync
     ;;
   *)
     echo "Unknown mode: $1 (expected 'web' or 'sync')" >&2

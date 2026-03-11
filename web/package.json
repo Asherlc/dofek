@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "../scripts/with-env.sh tsx src/server/index.ts",
-    "build": "vite build && tsc -p tsconfig.server.json",
+    "build": "vite build",
     "preview": "NODE_ENV=production tsx src/server/index.ts"
   },
   "dependencies": {

@@ -8,9 +8,8 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY web/package.json ./web/
 RUN pnpm install --frozen-lockfile
 
-# Copy source and build everything
+# Copy source and build client bundle only (server runs from .ts source)
 COPY . .
-RUN pnpm build
 RUN cd web && pnpm run build
 # Strip devDependencies before copying to production image
 RUN pnpm prune --prod && cd web && pnpm prune --prod
@@ -20,13 +19,13 @@ FROM node:22-slim
 ENV NODE_ENV=production
 WORKDIR /app
 
-# Root package (sync runner + source for workspace exports)
-COPY --from=builder /app/dist ./dist
+# Root package (sync runner — runs .ts source directly)
 COPY --from=builder /app/src ./src
 COPY --from=builder /app/drizzle ./drizzle
 COPY --from=builder /app/package.json .
 
-# Web dashboard
+# Web dashboard (server .ts source + client bundle)
+COPY --from=builder /app/web/src ./web/src
 COPY --from=builder /app/web/dist ./web/dist
 COPY --from=builder /app/web/package.json ./web/
 
