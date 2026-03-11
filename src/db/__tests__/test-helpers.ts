@@ -29,6 +29,19 @@ export async function setupTestDatabase(): Promise<TestContext> {
 
   const connectionString = `postgres://test:test@${container.getHost()}:${container.getMappedPort(5432)}/test`;
 
+  // Wait for PostgreSQL to be ready (container port maps before DB is accepting connections)
+  for (let attempt = 0; attempt < 30; attempt++) {
+    try {
+      const probe = postgres(connectionString, { max: 1 });
+      await probe`SELECT 1`;
+      await probe.end();
+      break;
+    } catch {
+      if (attempt === 29) throw new Error("Database did not become ready in time");
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  }
+
   // Run all migrations in order
   const migrationClient = postgres(connectionString, { max: 1 });
   const drizzleDir = resolve(import.meta.dirname, "../../../drizzle");

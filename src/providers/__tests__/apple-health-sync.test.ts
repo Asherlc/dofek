@@ -227,8 +227,8 @@ describe("Apple Health streaming import (integration)", () => {
   }, 60_000);
 
   afterAll(async () => {
-    rmSync(tmpDir, { recursive: true, force: true });
-    await ctx.cleanup();
+    if (tmpDir) rmSync(tmpDir, { recursive: true, force: true });
+    if (ctx) await ctx.cleanup();
   });
 
   it("streams records and inserts into metric_stream", async () => {

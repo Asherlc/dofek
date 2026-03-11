@@ -176,7 +176,7 @@ describe("WhoopProvider.sync() (integration)", () => {
   }, 60_000);
 
   afterAll(async () => {
-    await ctx.cleanup();
+    if (ctx) await ctx.cleanup();
   });
 
   it("syncs recovery into daily_metrics with spo2 and skin temp", async () => {

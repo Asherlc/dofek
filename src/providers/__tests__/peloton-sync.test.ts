@@ -138,7 +138,7 @@ describe("PelotonProvider.sync() (integration)", () => {
   }, 60_000);
 
   afterAll(async () => {
-    await ctx.cleanup();
+    if (ctx) await ctx.cleanup();
   });
 
   it("syncs workouts with enriched stats into cardio_activity", async () => {

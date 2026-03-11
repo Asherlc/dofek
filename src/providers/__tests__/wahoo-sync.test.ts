@@ -90,7 +90,7 @@ describe("WahooProvider.sync() (integration)", () => {
   }, 60_000);
 
   afterAll(async () => {
-    await ctx.cleanup();
+    if (ctx) await ctx.cleanup();
   });
 
   it("syncs workouts into cardio_activity", async () => {
