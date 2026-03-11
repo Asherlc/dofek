@@ -8,6 +8,7 @@ import { nutritionRouter } from "./routers/nutrition.ts";
 import { sleepRouter } from "./routers/sleep.ts";
 import { supplementsRouter } from "./routers/supplements.ts";
 import { syncRouter } from "./routers/sync.ts";
+import { trainingRouter } from "./routers/training.ts";
 import { whoopAuthRouter } from "./routers/whoop-auth.ts";
 
 export const appRouter = router({
@@ -20,6 +21,7 @@ export const appRouter = router({
   lifeEvents: lifeEventsRouter,
   supplements: supplementsRouter,
   sync: syncRouter,
+  training: trainingRouter,
   whoopAuth: whoopAuthRouter,
 });
 

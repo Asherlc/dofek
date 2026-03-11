@@ -172,6 +172,11 @@ function createMockFetch(
       return Response.json({ values });
     }
 
+    // Journal / behavior-impact-service
+    if (urlStr.includes("behavior-impact-service")) {
+      return Response.json([]);
+    }
+
     return new Response("Not found", { status: 404 });
   }) as typeof globalThis.fetch;
 }
