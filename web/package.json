@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx src/server/index.ts",
+    "dev": "../scripts/with-env.sh tsx src/server/index.ts",
     "build": "vite build && tsc -p tsconfig.server.json",
     "preview": "NODE_ENV=production tsx src/server/index.ts"
   },
