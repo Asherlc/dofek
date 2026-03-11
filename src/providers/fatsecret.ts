@@ -494,7 +494,7 @@ export class FatSecretProvider implements Provider {
         clientSecret: consumerSecret,
         authorizeUrl: AUTHORIZE_URL,
         tokenUrl: ACCESS_TOKEN_URL,
-        redirectUri: "http://localhost:9876/callback",
+        redirectUri: process.env.OAUTH_REDIRECT_URI ?? "http://localhost:9876/callback",
         scopes: [],
       },
       oauth1Flow: {

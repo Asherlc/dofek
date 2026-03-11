@@ -74,6 +74,7 @@ async function main() {
     setJobStatus(jobId, { status: "processing", progress: 0, message: "Starting import..." });
 
     (async () => {
+      const importStart = Date.now();
       try {
         const { importAppleHealthFile } = await import("dofek/providers/apple-health");
         const result = await importAppleHealthFile(db, filePath, since, (info) => {
@@ -89,12 +90,33 @@ async function main() {
           message: `${result.recordsSynced} records imported, ${result.errors?.length ?? 0} errors`,
           result,
         });
+        const { logSync } = await import("dofek/db/sync-log");
+        await logSync(db, {
+          providerId: "apple-health",
+          dataType: "import",
+          status: result.errors?.length ? "error" : "success",
+          recordCount: result.recordsSynced,
+          errorMessage: result.errors?.length
+            ? result.errors.map((e: any) => e.message).join("; ")
+            : undefined,
+          durationMs: Date.now() - importStart,
+        });
       } catch (err: any) {
         console.error("[upload] Background import failed:", err);
         setJobStatus(jobId, {
           status: "error",
           message: err.message ?? "Import failed",
         });
+        try {
+          const { logSync } = await import("dofek/db/sync-log");
+          await logSync(db, {
+            providerId: "apple-health",
+            dataType: "import",
+            status: "error",
+            errorMessage: err.message ?? "Import failed",
+            durationMs: Date.now() - importStart,
+          });
+        } catch {}
       } finally {
         await unlink(filePath).catch(() => {});
       }
@@ -194,6 +216,10 @@ async function main() {
     }
   });
 
+  // ── OAuth state ──
+  // OAuth 1.0 request token secrets (keyed by oauth_token)
+  const oauth1Secrets = new Map<string, { providerId: string; tokenSecret: string }>();
+
   // ── OAuth callback for providers that need a public redirect URI ──
   app.get("/auth/:provider", async (req, res) => {
     try {
@@ -239,6 +265,21 @@ async function main() {
         return;
       }
 
+      // OAuth 1.0 providers (e.g. FatSecret) — get request token first
+      if ((setup as any).oauth1Flow) {
+        const oauth1 = (setup as any).oauth1Flow;
+        const callbackUrl = `${process.env.OAUTH_REDIRECT_URI ?? "https://dofek.asherlc.com/callback"}`;
+        const result = await oauth1.getRequestToken(callbackUrl);
+        oauth1Secrets.set(result.oauthToken, {
+          providerId,
+          tokenSecret: result.oauthTokenSecret,
+        });
+        // Clean up after 10 minutes
+        setTimeout(() => oauth1Secrets.delete(result.oauthToken), 10 * 60 * 1000);
+        res.redirect(result.authorizeUrl);
+        return;
+      }
+
       const { buildAuthorizationUrl } = await import("dofek/auth/oauth");
       const url = buildAuthorizationUrl(setup.oauthConfig);
       // Append state so the callback knows which provider this is for
@@ -256,9 +297,11 @@ async function main() {
       const code = req.query.code as string | undefined;
       const state = req.query.state as string | undefined;
       const error = req.query.error as string | undefined;
+      const oauthToken = req.query.oauth_token as string | undefined;
+      const oauthVerifier = req.query.oauth_verifier as string | undefined;
 
       // Bare GET with no params — providers (e.g. Withings) verify the URL is reachable
-      if (!code && !state && !error) {
+      if (!code && !state && !error && !oauthToken) {
         res.send("OK");
         return;
       }
@@ -267,6 +310,59 @@ async function main() {
         res.status(400).send(`Authorization denied: ${error}`);
         return;
       }
+
+      // ── OAuth 1.0 callback (FatSecret) ──
+      if (oauthToken && oauthVerifier) {
+        const stored = oauth1Secrets.get(oauthToken);
+        if (!stored) {
+          res.status(400).send("Unknown or expired OAuth 1.0 request token");
+          return;
+        }
+        oauth1Secrets.delete(oauthToken);
+
+        const { getAllProviders } = await import("dofek/providers/registry");
+        const { ensureProvidersRegistered } = await import("./routers/sync.js");
+        await ensureProvidersRegistered();
+
+        const provider = getAllProviders().find((p) => p.id === stored.providerId);
+        if (!provider) {
+          res.status(404).send(`Unknown provider: ${stored.providerId}`);
+          return;
+        }
+
+        const setup = provider.authSetup?.();
+        const oauth1Flow = (setup as any)?.oauth1Flow;
+        if (!oauth1Flow) {
+          res.status(400).send(`Provider ${stored.providerId} does not support OAuth 1.0`);
+          return;
+        }
+
+        console.log(`[auth] Exchanging OAuth 1.0 tokens for ${stored.providerId}...`);
+        const { token, tokenSecret } = await oauth1Flow.exchangeForAccessToken(
+          oauthToken,
+          stored.tokenSecret,
+          oauthVerifier,
+        );
+
+        const { ensureProvider, saveTokens } = await import("dofek/db/tokens");
+        await ensureProvider(db, provider.id, provider.name);
+        // Store OAuth 1.0 tokens — token as accessToken, tokenSecret as refreshToken
+        // OAuth 1.0 tokens don't expire
+        await saveTokens(db, provider.id, {
+          accessToken: token,
+          refreshToken: tokenSecret,
+          expiresAt: new Date("2099-12-31"),
+          scopes: "",
+        });
+
+        console.log(`[auth] ${stored.providerId} OAuth 1.0 tokens saved.`);
+        res.send(
+          `<html><body style="font-family:system-ui;background:#111;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center"><h1>Authorized!</h1><p>${provider.name} connected successfully.</p><p><a href="/" style="color:#10b981">Return to dashboard</a></p></div></body></html>`,
+        );
+        return;
+      }
+
+      // ── OAuth 2.0 callback ──
       if (!code || !state) {
         res.status(400).send("Missing code or state parameter");
         return;

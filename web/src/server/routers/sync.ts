@@ -1,3 +1,4 @@
+import { logSync } from "dofek/db/sync-log";
 import { getAllProviders, registerProvider } from "dofek/providers/registry";
 import type { Provider } from "dofek/providers/types";
 import { z } from "zod";
@@ -128,18 +129,37 @@ export const syncRouter = router({
             const job = syncJobs.get(jobId)!;
             job.providers[provider.id] = { status: "running" };
 
+            const syncStart = Date.now();
             try {
               console.log(`[sync] Starting ${provider.name}...`);
               const result = await provider.sync(ctx.db, since);
+              const hasErrors = result.errors.length > 0;
               job.providers[provider.id] = {
-                status: result.errors.length > 0 ? "error" : "done",
+                status: hasErrors ? "error" : "done",
                 message: `${result.recordsSynced} records, ${result.errors.length} errors`,
               };
+              await logSync(ctx.db, {
+                providerId: provider.id,
+                dataType: "sync",
+                status: hasErrors ? "error" : "success",
+                recordCount: result.recordsSynced,
+                errorMessage: hasErrors
+                  ? result.errors.map((e) => e.message).join("; ")
+                  : undefined,
+                durationMs: Date.now() - syncStart,
+              });
             } catch (err: any) {
               job.providers[provider.id] = {
                 status: "error",
                 message: err.message ?? "Sync failed",
               };
+              await logSync(ctx.db, {
+                providerId: provider.id,
+                dataType: "sync",
+                status: "error",
+                errorMessage: err.message ?? "Sync failed",
+                durationMs: Date.now() - syncStart,
+              });
             }
           }
 

@@ -62,6 +62,10 @@
     "./auth/oauth": {
       "import": "./dist/auth/oauth.js",
       "default": "./src/auth/oauth.ts"
+    },
+    "./db/sync-log": {
+      "import": "./dist/db/sync-log.js",
+      "default": "./src/db/sync-log.ts"
     }
   },
   "scripts": {
