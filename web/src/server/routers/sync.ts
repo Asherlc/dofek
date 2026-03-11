@@ -79,10 +79,12 @@ export const syncRouter = router({
       all.map(async (p) => {
         const setup = p.authSetup?.();
         // Providers with oauthConfig need auth (browser redirect or automatedLogin).
-        // Credential-only providers (e.g. WHOOP) have no authSetup and auth inline.
+        // WHOOP uses custom token-based auth (no authSetup, but needs stored tokens).
         const needsOAuth = !!setup?.oauthConfig;
-        let authorized = !needsOAuth;
-        if (needsOAuth) {
+        const needsCustomAuth = p.id === "whoop";
+        const needsAuth = needsOAuth || needsCustomAuth;
+        let authorized = !needsAuth;
+        if (needsAuth) {
           const tokens = await loadTokens(ctx.db, p.id);
           authorized = tokens !== null;
         }
@@ -102,6 +104,7 @@ export const syncRouter = router({
           enabled: p.validate() === null,
           error: p.validate(),
           needsOAuth,
+          needsCustomAuth,
           authorized,
           lastSyncedAt,
         };

@@ -23,6 +23,9 @@ export function DataSourcesPanel() {
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // WHOOP auth modal state
+  const [whoopAuthOpen, setWhoopAuthOpen] = useState(false);
+
   const updateState = useCallback(
     (id: string, state: ProviderState) => setProviderStates((prev) => ({ ...prev, [id]: state })),
     [],
@@ -61,7 +64,7 @@ export function DataSourcesPanel() {
 
   const handleSyncAll = useCallback(
     async (fullSync = false) => {
-      const enabled = (providers.data ?? []).filter((p) => p.enabled);
+      const enabled = (providers.data ?? []).filter((p) => p.enabled && p.authorized);
       const ids = enabled.map((p) => p.id);
       for (const p of enabled) {
         updateState(p.id, { status: "syncing" });
@@ -206,7 +209,14 @@ export function DataSourcesPanel() {
   const enabledProviders = (providers.data ?? []).filter((p) => p.enabled);
 
   const handleProviderClick = useCallback(
-    (p: { id: string; needsOAuth: boolean; authorized: boolean }, fullSync = false) => {
+    (
+      p: { id: string; needsOAuth: boolean; needsCustomAuth?: boolean; authorized: boolean },
+      fullSync = false,
+    ) => {
+      if (p.needsCustomAuth && !p.authorized) {
+        setWhoopAuthOpen(true);
+        return;
+      }
       if (p.needsOAuth && !p.authorized) {
         window.open(`/auth/${p.id}`, "_blank");
         return;
@@ -254,7 +264,7 @@ export function DataSourcesPanel() {
           <div className="flex flex-wrap gap-2">
             {enabledProviders.map((p) => {
               const state = providerStates[p.id] ?? { status: "idle" };
-              const needsAuth = p.needsOAuth && !p.authorized;
+              const needsAuth = (p.needsOAuth || p.needsCustomAuth) && !p.authorized;
               return (
                 <div
                   key={p.id}
@@ -301,6 +311,17 @@ export function DataSourcesPanel() {
           </div>
         )}
       </div>
+
+      {/* WHOOP Auth Modal */}
+      {whoopAuthOpen && (
+        <WhoopAuthModal
+          onClose={() => setWhoopAuthOpen(false)}
+          onSuccess={() => {
+            setWhoopAuthOpen(false);
+            trpcUtils.sync.providers.invalidate();
+          }}
+        />
+      )}
 
       {/* Apple Health Upload */}
       <div>
@@ -362,6 +383,172 @@ export function DataSourcesPanel() {
     </div>
   );
 }
+
+// ── WHOOP Auth Modal ──
+
+type WhoopStep = "credentials" | "verify" | "saving";
+
+function WhoopAuthModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
+  const [step, setStep] = useState<WhoopStep>("credentials");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
+  const [challengeId, setChallengeId] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const signInMutation = trpc.whoopAuth.signIn.useMutation();
+  const verifyMutation = trpc.whoopAuth.verifyCode.useMutation();
+  const saveTokensMutation = trpc.whoopAuth.saveTokens.useMutation();
+
+  const handleSignIn = useCallback(
+    async (e: React.FormEvent<HTMLFormElement>) => {
+      e.preventDefault();
+      setError("");
+      setLoading(true);
+      try {
+        const result = await signInMutation.mutateAsync({ username, password });
+        if (result.status === "verification_required") {
+          setChallengeId(result.challengeId);
+          setStep("verify");
+        } else if (result.status === "success" && result.token) {
+          setStep("saving");
+          await saveTokensMutation.mutateAsync(result.token);
+          onSuccess();
+        }
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : "Sign in failed");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [username, password, signInMutation, saveTokensMutation, onSuccess],
+  );
+
+  const handleVerify = useCallback(
+    async (e: React.FormEvent<HTMLFormElement>) => {
+      e.preventDefault();
+      setError("");
+      setLoading(true);
+      try {
+        const result = await verifyMutation.mutateAsync({ challengeId, code });
+        if (result.status === "success") {
+          setStep("saving");
+          await saveTokensMutation.mutateAsync(result.token);
+          onSuccess();
+        }
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : "Verification failed");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [challengeId, code, verifyMutation, saveTokensMutation, onSuccess],
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 w-full max-w-sm shadow-2xl">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-semibold text-zinc-200">Connect WHOOP</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-zinc-500 hover:text-zinc-300 text-lg leading-none"
+          >
+            &times;
+          </button>
+        </div>
+
+        {error && (
+          <div className="mb-3 text-xs text-red-400 bg-red-400/10 rounded px-3 py-2">{error}</div>
+        )}
+
+        {step === "credentials" && (
+          <form onSubmit={handleSignIn} className="space-y-3">
+            <div>
+              <label htmlFor="whoop-email" className="block text-xs text-zinc-400 mb-1">
+                Email
+              </label>
+              <input
+                id="whoop-email"
+                type="email"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                required
+                // biome-ignore lint/a11y/noAutofocus: modal should auto-focus first input
+                autoFocus
+                className="w-full px-3 py-2 text-sm bg-zinc-800 border border-zinc-700 rounded text-zinc-200 focus:outline-none focus:border-zinc-500"
+                placeholder="you@example.com"
+              />
+            </div>
+            <div>
+              <label htmlFor="whoop-password" className="block text-xs text-zinc-400 mb-1">
+                Password
+              </label>
+              <input
+                id="whoop-password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                className="w-full px-3 py-2 text-sm bg-zinc-800 border border-zinc-700 rounded text-zinc-200 focus:outline-none focus:border-zinc-500"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-2 text-sm font-medium rounded bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
+            >
+              {loading ? "Signing in..." : "Sign In"}
+            </button>
+          </form>
+        )}
+
+        {step === "verify" && (
+          <form onSubmit={handleVerify} className="space-y-3">
+            <p className="text-xs text-zinc-400">
+              WHOOP sent a verification code to your phone. Enter it below.
+            </p>
+            <div>
+              <label htmlFor="whoop-code" className="block text-xs text-zinc-400 mb-1">
+                Verification Code
+              </label>
+              <input
+                id="whoop-code"
+                type="text"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                required
+                // biome-ignore lint/a11y/noAutofocus: modal should auto-focus first input
+                autoFocus
+                inputMode="numeric"
+                pattern="[0-9]*"
+                className="w-full px-3 py-2 text-sm bg-zinc-800 border border-zinc-700 rounded text-zinc-200 focus:outline-none focus:border-zinc-500 text-center tracking-widest text-lg"
+                placeholder="000000"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-2 text-sm font-medium rounded bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
+            >
+              {loading ? "Verifying..." : "Verify"}
+            </button>
+          </form>
+        )}
+
+        {step === "saving" && (
+          <div className="text-center py-4">
+            <div className="text-sm text-zinc-300">Saving credentials...</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Helpers ──
 
 function formatRelativeTime(isoString: string): string {
   const diff = Date.now() - new Date(isoString).getTime();

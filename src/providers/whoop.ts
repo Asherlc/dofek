@@ -1,7 +1,7 @@
 import type { Database } from "../db/index.ts";
 import { activity, dailyMetrics, metricStream, sleepSession } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
-import { ensureProvider } from "../db/tokens.ts";
+import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import type { Provider, SyncError, SyncResult } from "./types.ts";
 
 // ============================================================
@@ -363,15 +363,22 @@ export interface WhoopCycle {
 }
 
 // ============================================================
-// WHOOP internal API client
+// WHOOP internal API client (api.prod.whoop.com)
 // ============================================================
 
-const WHOOP_AUTH_BASE = "https://api-7.whoop.com";
+const WHOOP_API_BASE = "https://api.prod.whoop.com";
+const WHOOP_API_VERSION = "7";
 
-interface WhoopAuthToken {
+export interface WhoopAuthToken {
   accessToken: string;
+  refreshToken: string;
   userId: number;
 }
+
+/** Result of the initial sign-in — either success or 2FA challenge */
+export type WhoopSignInResult =
+  | { type: "success"; token: WhoopAuthToken }
+  | { type: "verification_required"; state: string; method: string };
 
 export class WhoopInternalClient {
   private accessToken: string;
@@ -384,46 +391,185 @@ export class WhoopInternalClient {
     this.fetchFn = fetchFn;
   }
 
+  /**
+   * Step 1: Sign in with email + password.
+   * Returns either a token (no 2FA) or a verification challenge state.
+   */
+  static async signIn(
+    username: string,
+    password: string,
+    fetchFn: typeof globalThis.fetch = globalThis.fetch,
+  ): Promise<WhoopSignInResult> {
+    const response = await fetchFn(`${WHOOP_API_BASE}/auth-service/v2/whoop/sign-in`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": "WHOOP/4.0",
+      },
+      body: JSON.stringify({ username, password }),
+    });
+
+    const data = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+
+    // 2FA challenge — WHOOP returns a non-200 with verification info, or a 200 with
+    // a verification step indicator instead of tokens
+    if (data && !data.access_token) {
+      // The response may contain a verification state/token for 2FA
+      const state =
+        (data.verification_id as string) ??
+        (data.mfa_token as string) ??
+        (data.state as string) ??
+        (data.step as string) ??
+        "";
+      const method = (data.verification_method as string) ?? (data.method as string) ?? "sms";
+
+      if (state || response.status === 403 || response.status === 401) {
+        // If we got a structured response with some kind of state, it's likely 2FA
+        if (state) {
+          return { type: "verification_required", state, method };
+        }
+        // Otherwise it's a plain auth failure
+        const text = JSON.stringify(data);
+        throw new Error(`WHOOP auth failed (${response.status}): ${text}`);
+      }
+    }
+
+    if (!response.ok || !data?.access_token) {
+      const text = data ? JSON.stringify(data) : await response.text().catch(() => "Unknown error");
+      throw new Error(`WHOOP auth failed (${response.status}): ${text}`);
+    }
+
+    const userId = await WhoopInternalClient._fetchUserId(data.access_token as string, fetchFn);
+
+    return {
+      type: "success",
+      token: {
+        accessToken: data.access_token as string,
+        refreshToken: (data.refresh_token as string) ?? "",
+        userId,
+      },
+    };
+  }
+
+  /**
+   * Step 2: Submit 2FA verification code (if sign-in returned a challenge).
+   */
+  static async verifyCode(
+    state: string,
+    code: string,
+    fetchFn: typeof globalThis.fetch = globalThis.fetch,
+  ): Promise<WhoopAuthToken> {
+    // Try common WHOOP verification endpoints
+    const response = await fetchFn(`${WHOOP_API_BASE}/auth-service/v2/whoop/verify`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": "WHOOP/4.0",
+      },
+      body: JSON.stringify({ state, code, verification_id: state }),
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => "Unknown error");
+      throw new Error(`WHOOP verification failed (${response.status}): ${text}`);
+    }
+
+    const data = (await response.json()) as Record<string, unknown>;
+    if (!data.access_token) {
+      throw new Error("WHOOP verification response missing access_token");
+    }
+
+    const userId = await WhoopInternalClient._fetchUserId(data.access_token as string, fetchFn);
+
+    return {
+      accessToken: data.access_token as string,
+      refreshToken: (data.refresh_token as string) ?? "",
+      userId,
+    };
+  }
+
+  /**
+   * Refresh an expired access token using a refresh token.
+   */
+  static async refreshAccessToken(
+    refreshToken: string,
+    fetchFn: typeof globalThis.fetch = globalThis.fetch,
+  ): Promise<WhoopAuthToken> {
+    const response = await fetchFn(`${WHOOP_API_BASE}/auth-service/v2/whoop/token/refresh`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": "WHOOP/4.0",
+      },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => "Unknown error");
+      throw new Error(`WHOOP token refresh failed (${response.status}): ${text}`);
+    }
+
+    const data = (await response.json()) as Record<string, unknown>;
+    if (!data.access_token) {
+      throw new Error("WHOOP refresh response missing access_token");
+    }
+
+    const userId = await WhoopInternalClient._fetchUserId(data.access_token as string, fetchFn);
+
+    return {
+      accessToken: data.access_token as string,
+      refreshToken: (data.refresh_token as string) ?? refreshToken,
+      userId,
+    };
+  }
+
+  /** Backwards-compatible authenticate — works for accounts WITHOUT 2FA */
   static async authenticate(
     username: string,
     password: string,
     fetchFn: typeof globalThis.fetch = globalThis.fetch,
   ): Promise<WhoopAuthToken> {
-    const response = await fetchFn(`${WHOOP_AUTH_BASE}/oauth/token`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        username,
-        password,
-        grant_type: "password",
-        issueRefresh: false,
-      }),
+    const result = await WhoopInternalClient.signIn(username, password, fetchFn);
+    if (result.type === "verification_required") {
+      throw new Error("WHOOP account requires 2FA — use the web UI to authenticate");
+    }
+    return result.token;
+  }
+
+  private static async _fetchUserId(
+    accessToken: string,
+    fetchFn: typeof globalThis.fetch,
+  ): Promise<number> {
+    const response = await fetchFn(`${WHOOP_API_BASE}/auth-service/v2/user`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "User-Agent": "WHOOP/4.0",
+      },
     });
 
     if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`WHOOP auth failed (${response.status}): ${text}`);
+      throw new Error(`Failed to fetch WHOOP user ID (${response.status})`);
     }
 
     const data = (await response.json()) as Record<string, unknown>;
-    const user = data.user as Record<string, unknown>;
-
-    return {
-      accessToken: data.access_token as string,
-      userId: (user?.id as number) ?? 0,
-    };
+    const user = data.user as Record<string, unknown> | undefined;
+    return (user?.id as number) ?? (data.user_id as number) ?? 0;
   }
 
-  private async get<T>(path: string, params?: Record<string, string>): Promise<T> {
-    const url = new URL(path, WHOOP_AUTH_BASE);
+  private async get<T>(url: string, params?: Record<string, string>): Promise<T> {
+    const u = new URL(url);
     if (params) {
       for (const [key, value] of Object.entries(params)) {
-        url.searchParams.set(key, value);
+        u.searchParams.set(key, value);
       }
     }
+    u.searchParams.set("apiVersion", WHOOP_API_VERSION);
 
-    const response = await this.fetchFn(url.toString(), {
-      headers: { Authorization: `bearer ${this.accessToken}` },
+    const response = await this.fetchFn(u.toString(), {
+      headers: {
+        Authorization: `Bearer ${this.accessToken}`,
+        "User-Agent": "WHOOP/4.0",
+      },
     });
 
     if (!response.ok) {
@@ -435,21 +581,26 @@ export class WhoopInternalClient {
   }
 
   async getHeartRate(start: string, end: string, step = 6): Promise<WhoopHrValue[]> {
-    const response = await this.get<WhoopHrResponse>(`/users/${this.userId}/metrics/heart_rate`, {
-      start,
-      end,
-      step: String(step),
-      order: "t",
-    });
+    const response = await this.get<WhoopHrResponse>(
+      `${WHOOP_API_BASE}/metrics-service/v1/metrics/user/${this.userId}`,
+      { start, end, step: String(step), name: "heart_rate" },
+    );
     return response.values ?? [];
   }
 
-  async getCycles(start: string, end: string): Promise<WhoopCycle[]> {
-    return this.get<WhoopCycle[]>(`/users/${this.userId}/cycles`, { start, end });
+  async getCycles(start: string, end: string, limit = 26): Promise<WhoopCycle[]> {
+    return this.get<WhoopCycle[]>(`${WHOOP_API_BASE}/core-details-bff/v0/cycles/details`, {
+      id: String(this.userId),
+      startTime: start,
+      endTime: end,
+      limit: String(limit),
+    });
   }
 
   async getSleep(sleepId: number): Promise<WhoopSleepRecord> {
-    return this.get<WhoopSleepRecord>(`/users/${this.userId}/sleeps/${sleepId}`);
+    return this.get<WhoopSleepRecord>(`${WHOOP_API_BASE}/sleep-service/v1/sleep-events`, {
+      activityId: String(sleepId),
+    });
   }
 }
 
@@ -467,8 +618,7 @@ export class WhoopProvider implements Provider {
   }
 
   validate(): string | null {
-    if (!process.env.WHOOP_USERNAME) return "WHOOP_USERNAME is not set";
-    if (!process.env.WHOOP_PASSWORD) return "WHOOP_PASSWORD is not set";
+    // WHOOP is always "enabled" — auth state is checked at sync time via stored tokens
     return null;
   }
 
@@ -481,11 +631,23 @@ export class WhoopProvider implements Provider {
 
     let client: WhoopInternalClient;
     try {
-      const token = await WhoopInternalClient.authenticate(
-        process.env.WHOOP_USERNAME!,
-        process.env.WHOOP_PASSWORD!,
-        this.fetchFn,
-      );
+      // Try loading stored tokens from DB
+      const stored = await loadTokens(db, this.id);
+      if (!stored?.refreshToken) {
+        throw new Error("WHOOP not connected — authenticate via the web UI");
+      }
+
+      // Refresh the access token using the stored refresh token
+      const token = await WhoopInternalClient.refreshAccessToken(stored.refreshToken, this.fetchFn);
+
+      // Save the refreshed tokens back to DB
+      await saveTokens(db, this.id, {
+        accessToken: token.accessToken,
+        refreshToken: token.refreshToken,
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // assume ~24h expiry
+        scopes: "",
+      });
+
       client = new WhoopInternalClient(token, this.fetchFn);
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });

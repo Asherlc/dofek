@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
 import { activity, dailyMetrics, metricStream, sleepSession } from "../../db/schema.ts";
-import { ensureProvider } from "../../db/tokens.ts";
+import { ensureProvider, saveTokens } from "../../db/tokens.ts";
 import {
   type WhoopHrValue,
   WhoopProvider,
@@ -135,30 +135,34 @@ function createMockFetch(
   return (async (input: RequestInfo | URL): Promise<Response> => {
     const urlStr = input.toString();
 
-    // Auth
-    if (urlStr.includes("/oauth/token")) {
+    // Token refresh
+    if (urlStr.includes("token/refresh")) {
       if (opts?.authError) {
         return new Response("Unauthorized", { status: 401 });
       }
       return Response.json({
         access_token: "test-token",
-        user: { id: 10129 },
+        refresh_token: "test-refresh",
       });
     }
 
-    // Cycles
+    // User endpoint (for getting userId after auth)
+    if (urlStr.includes("auth-service/v2/user")) {
+      return Response.json({ user: { id: 10129 } });
+    }
+
+    // Cycles (BFF endpoint)
     if (urlStr.includes("/cycles")) {
       return Response.json(cycles);
     }
 
-    // Sleep by ID
-    const sleepMatch = urlStr.match(/\/sleeps\/(\d+)/);
-    if (sleepMatch) {
+    // Sleep events
+    if (urlStr.includes("sleep-events") || urlStr.includes("sleep-service")) {
       return Response.json(fakeSleepResponse);
     }
 
-    // Heart rate
-    if (urlStr.includes("/metrics/heart_rate")) {
+    // Heart rate (metrics-service)
+    if (urlStr.includes("metrics-service") || urlStr.includes("metrics/user")) {
       const values = opts?.hrValues ?? fakeHrValues(100, Date.now() - 600000);
       return Response.json({ values });
     }
@@ -173,6 +177,13 @@ describe("WhoopProvider.sync() (integration)", () => {
   beforeAll(async () => {
     ctx = await setupTestDatabase();
     await ensureProvider(ctx.db, "whoop", "WHOOP");
+    // Store a fake refresh token so the provider can authenticate
+    await saveTokens(ctx.db, "whoop", {
+      accessToken: "fake-access",
+      refreshToken: "fake-refresh",
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      scopes: "",
+    });
   }, 60_000);
 
   afterAll(async () => {
@@ -364,7 +375,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors.length).toBeGreaterThan(0);
-    expect(result.errors[0].message).toContain("auth");
+    expect(result.errors[0].message).toMatch(/refresh failed|auth/i);
   });
 
   it("continues syncing other data types if workout sync fails", async () => {

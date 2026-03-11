@@ -96,16 +96,110 @@ const sampleWorkout: WhoopWorkoutRecord = {
   },
 };
 
-describe("WhoopInternalClient.authenticate", () => {
-  it("posts to /api/oauth endpoint", async () => {
+describe("WhoopInternalClient.signIn", () => {
+  it("posts to api.prod.whoop.com sign-in endpoint", async () => {
     let capturedUrl = "";
-    const mockFetch = (async (input: RequestInfo | URL) => {
-      capturedUrl = input.toString();
-      return Response.json({ access_token: "tok", user: { id: 1 } });
+    let capturedBody = "";
+    const mockFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      if (url.includes("sign-in")) {
+        capturedUrl = url;
+        capturedBody = init?.body as string;
+        return Response.json({ access_token: "tok", refresh_token: "ref" });
+      }
+      // user endpoint
+      if (url.includes("auth-service/v2/user")) {
+        return Response.json({ user: { id: 42 } });
+      }
+      return new Response("Not found", { status: 404 });
     }) as typeof globalThis.fetch;
 
-    await WhoopInternalClient.authenticate("user", "pass", mockFetch);
-    expect(capturedUrl).toBe("https://api-7.whoop.com/oauth/token");
+    await WhoopInternalClient.signIn("user@test.com", "pass", mockFetch);
+    expect(capturedUrl).toBe("https://api.prod.whoop.com/auth-service/v2/whoop/sign-in");
+    const body = JSON.parse(capturedBody);
+    expect(body.username).toBe("user@test.com");
+    expect(body.password).toBe("pass");
+  });
+
+  it("fetches user ID from auth-service/v2/user after sign-in", async () => {
+    let userEndpointCalled = false;
+    const mockFetch = (async (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.includes("sign-in")) {
+        return Response.json({ access_token: "tok", refresh_token: "ref" });
+      }
+      if (url.includes("auth-service/v2/user")) {
+        userEndpointCalled = true;
+        return Response.json({ user: { id: 42 } });
+      }
+      return new Response("Not found", { status: 404 });
+    }) as typeof globalThis.fetch;
+
+    const result = await WhoopInternalClient.signIn("user@test.com", "pass", mockFetch);
+    expect(userEndpointCalled).toBe(true);
+    expect(result.type).toBe("success");
+    if (result.type === "success") {
+      expect(result.token.userId).toBe(42);
+    }
+  });
+
+  it("returns verification_required when 2FA is needed", async () => {
+    const mockFetch = (async (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.includes("sign-in")) {
+        return new Response(
+          JSON.stringify({ verification_id: "vrf-123", verification_method: "sms" }),
+          { status: 200 },
+        );
+      }
+      return new Response("Not found", { status: 404 });
+    }) as typeof globalThis.fetch;
+
+    const result = await WhoopInternalClient.signIn("user@test.com", "pass", mockFetch);
+    expect(result.type).toBe("verification_required");
+    if (result.type === "verification_required") {
+      expect(result.state).toBe("vrf-123");
+      expect(result.method).toBe("sms");
+    }
+  });
+
+  it("authenticate() throws on 2FA-required accounts", async () => {
+    const mockFetch = (async (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.includes("sign-in")) {
+        return Response.json({ verification_id: "vrf-123" });
+      }
+      return new Response("Not found", { status: 404 });
+    }) as typeof globalThis.fetch;
+
+    await expect(
+      WhoopInternalClient.authenticate("user@test.com", "pass", mockFetch),
+    ).rejects.toThrow("2FA");
+  });
+});
+
+describe("WhoopInternalClient.refreshAccessToken", () => {
+  it("sends refresh token to token/refresh endpoint", async () => {
+    let capturedUrl = "";
+    let capturedBody = "";
+    const mockFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      if (url.includes("token/refresh")) {
+        capturedUrl = url;
+        capturedBody = init?.body as string;
+        return Response.json({ access_token: "new-tok", refresh_token: "new-ref" });
+      }
+      if (url.includes("auth-service/v2/user")) {
+        return Response.json({ user: { id: 42 } });
+      }
+      return new Response("Not found", { status: 404 });
+    }) as typeof globalThis.fetch;
+
+    const token = await WhoopInternalClient.refreshAccessToken("old-ref", mockFetch);
+    expect(capturedUrl).toContain("auth-service/v2/whoop/token/refresh");
+    expect(JSON.parse(capturedBody).refresh_token).toBe("old-ref");
+    expect(token.accessToken).toBe("new-tok");
+    expect(token.userId).toBe(42);
   });
 });
 
