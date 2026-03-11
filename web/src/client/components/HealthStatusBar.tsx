@@ -44,7 +44,6 @@ export function HealthStatusBar({ metrics, loading }: HealthStatusBarProps) {
     return (
       <div className="flex gap-3">
         {Array.from({ length: 5 }).map((_, i) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton
           <div key={i} className="flex-1 h-16 rounded-lg bg-zinc-800 animate-pulse" />
         ))}
       </div>

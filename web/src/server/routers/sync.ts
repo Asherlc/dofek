@@ -1,5 +1,5 @@
-import { getAllProviders, registerProvider } from "health-data/providers/registry";
-import { runSync } from "health-data/sync/runner";
+import { getAllProviders, registerProvider } from "dofek/providers/registry";
+import { runSync } from "dofek/sync/runner";
 import { z } from "zod";
 import { publicProcedure, router } from "../../shared/trpc.js";
 
@@ -12,19 +12,19 @@ async function ensureProvidersRegistered() {
 
   // Dynamically import providers — they self-validate via env vars
   try {
-    const { WahooProvider } = await import("health-data/providers/wahoo");
+    const { WahooProvider } = await import("dofek/providers/wahoo");
     registerProvider(new WahooProvider());
   } catch {}
   try {
-    const { WithingsProvider } = await import("health-data/providers/withings");
+    const { WithingsProvider } = await import("dofek/providers/withings");
     registerProvider(new WithingsProvider());
   } catch {}
   try {
-    const { PelotonProvider } = await import("health-data/providers/peloton");
+    const { PelotonProvider } = await import("dofek/providers/peloton");
     registerProvider(new PelotonProvider());
   } catch {}
   try {
-    const { FatSecretProvider } = await import("health-data/providers/fatsecret");
+    const { FatSecretProvider } = await import("dofek/providers/fatsecret");
     registerProvider(new FatSecretProvider());
   } catch {}
 }

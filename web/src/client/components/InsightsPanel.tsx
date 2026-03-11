@@ -43,7 +43,6 @@ export function InsightsPanel({ insights, loading }: InsightsPanelProps) {
     return (
       <div className="space-y-3">
         {Array.from({ length: 3 }).map((_, i) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton
           <div key={i} className="h-24 rounded-lg bg-zinc-800 animate-pulse" />
         ))}
       </div>

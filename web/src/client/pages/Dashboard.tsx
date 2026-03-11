@@ -158,8 +158,9 @@ export function Dashboard() {
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
       <header className="border-b border-zinc-800 px-6 py-4 flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">Health Dashboard</h1>
+        <div className="flex items-center gap-3">
+          <DofekLogo />
+          <h1 className="text-xl font-semibold tracking-tight">Dofek</h1>
           <p className="text-xs text-zinc-500 mt-1">
             {t?.latest_date
               ? `Latest: ${new Date(t.latest_date).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}`
@@ -409,5 +410,30 @@ function CollapsibleSection({
       </button>
       {!collapsed && children}
     </section>
+  );
+}
+
+function DofekLogo() {
+  return (
+    <svg
+      width="28"
+      height="28"
+      viewBox="0 0 28 28"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      role="img"
+      aria-label="Dofek logo"
+    >
+      <title>Dofek</title>
+      <circle cx="14" cy="14" r="13" stroke="#22c55e" strokeWidth="2" opacity="0.3" />
+      <polyline
+        points="3,14 8,14 10,8 13,20 16,6 19,18 21,14 25,14"
+        stroke="#22c55e"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
+    </svg>
   );
 }

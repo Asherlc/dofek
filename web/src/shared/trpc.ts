@@ -1,5 +1,5 @@
 import { initTRPC } from "@trpc/server";
-import type { Database } from "health-data/db";
+import type { Database } from "dofek/db";
 
 export interface Context {
   db: Database;

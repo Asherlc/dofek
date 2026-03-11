@@ -87,6 +87,9 @@ importers:
       clsx:
         specifier: ^2.1.0
         version: 2.1.1
+      dofek:
+        specifier: workspace:*
+        version: link:..
       echarts:
         specifier: ^5.6.0
         version: 5.6.0
@@ -96,9 +99,6 @@ importers:
       express:
         specifier: ^5.0.0
         version: 5.2.1
-      health-data:
-        specifier: workspace:*
-        version: link:..
       react:
         specifier: ^19.0.0
         version: 19.2.4

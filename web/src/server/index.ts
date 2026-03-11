@@ -3,9 +3,9 @@ import { unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
+import { createDatabaseFromEnv } from "dofek/db";
+import { runMigrations } from "dofek/db/migrate";
 import express from "express";
-import { createDatabaseFromEnv } from "health-data/db";
-import { runMigrations } from "health-data/db/migrate";
 import type { Context } from "../shared/trpc.js";
 import { appRouter } from "./router.js";
 
@@ -38,7 +38,7 @@ async function main() {
         req.on("error", reject);
       });
 
-      const { importAppleHealthFile } = await import("health-data/providers/apple-health");
+      const { importAppleHealthFile } = await import("dofek/providers/apple-health");
       const result = await importAppleHealthFile(db, tmpFile, since);
       res.json(result);
     } catch (err: any) {

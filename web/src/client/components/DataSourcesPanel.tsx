@@ -160,9 +160,7 @@ export function DataSourcesPanel() {
                 >
                   <StatusDot status={state.status} />
                   <span className="text-sm font-medium text-zinc-200">{p.name}</span>
-                  {state.status === "syncing" && (
-                    <span className="text-xs text-zinc-500">...</span>
-                  )}
+                  {state.status === "syncing" && <span className="text-xs text-zinc-500">...</span>}
                 </button>
               );
             })}
