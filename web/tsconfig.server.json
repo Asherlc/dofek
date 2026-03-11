@@ -6,8 +6,10 @@
     "allowImportingTsExtensions": false,
     "rewriteRelativeImportExtensions": true,
     "jsx": "react-jsx",
+    "rootDir": "src",
     "outDir": "dist/server",
     "noEmit": false
   },
-  "include": ["src/server", "src/shared"]
+  "include": ["src/server", "src/shared"],
+  "exclude": ["src/**/__tests__", "src/**/*.test.*"]
 }
