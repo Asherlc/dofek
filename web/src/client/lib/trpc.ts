@@ -10,6 +10,7 @@ export function createTRPCClient() {
     links: [
       httpBatchLink({
         url: "/api/trpc",
+        methodOverride: "POST",
       }),
     ],
   });

@@ -2,7 +2,7 @@ export function AppHeader({
   activePage,
   children,
 }: {
-  activePage: "dashboard" | "insights";
+  activePage: "dashboard" | "insights" | "logs";
   children?: React.ReactNode;
 }) {
   return (
@@ -30,6 +30,16 @@ export function AppHeader({
             }`}
           >
             Insights
+          </a>
+          <a
+            href="#logs"
+            className={`px-3 py-1 text-xs rounded-md transition-colors ${
+              activePage === "logs"
+                ? "bg-zinc-700 text-zinc-100"
+                : "text-zinc-500 hover:text-zinc-300"
+            }`}
+          >
+            Logs
           </a>
         </nav>
       </div>

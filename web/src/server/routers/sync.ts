@@ -222,4 +222,18 @@ export const syncRouter = router({
     if (!job) return null;
     return job;
   }),
+
+  /** Get sync log history */
+  logs: publicProcedure
+    .input(z.object({ limit: z.number().default(100) }))
+    .query(async ({ ctx, input }) => {
+      const { syncLog } = await import("dofek/db/schema");
+      const { desc } = await import("drizzle-orm");
+
+      return ctx.db
+        .select()
+        .from(syncLog)
+        .orderBy(desc(syncLog.syncedAt))
+        .limit(input.limit);
+    }),
 });

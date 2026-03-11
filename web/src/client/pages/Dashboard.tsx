@@ -5,17 +5,9 @@ import { DataSourcesPanel } from "../components/DataSourcesPanel.js";
 import { HealthStatusBar } from "../components/HealthStatusBar.js";
 import { NutritionChart } from "../components/NutritionChart.js";
 import { SleepChart } from "../components/SleepChart.js";
+import { TimeRangeSelector } from "../components/TimeRangeSelector.js";
 import { TimeSeriesChart } from "../components/TimeSeriesChart.js";
 import { trpc } from "../lib/trpc.js";
-
-const TIME_RANGES = [
-  { label: "7d", days: 7 },
-  { label: "14d", days: 14 },
-  { label: "30d", days: 30 },
-  { label: "90d", days: 90 },
-  { label: "1y", days: 365 },
-  { label: "All", days: 3650 },
-] as const;
 
 export function Dashboard() {
   const [days, setDays] = useState(30);
@@ -160,22 +152,7 @@ export function Dashboard() {
               ? `Latest: ${new Date(t.latest_date).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}`
               : ""}
           </p>
-          <div className="flex gap-1 bg-zinc-900 rounded-lg p-1 border border-zinc-800">
-            {TIME_RANGES.map((r) => (
-              <button
-                key={r.label}
-                type="button"
-                onClick={() => setDays(r.days)}
-                className={`px-3 py-1 text-xs rounded-md transition-colors ${
-                  days === r.days
-                    ? "bg-zinc-700 text-zinc-100"
-                    : "text-zinc-500 hover:text-zinc-300"
-                }`}
-              >
-                {r.label}
-              </button>
-            ))}
-          </div>
+          <TimeRangeSelector days={days} onChange={setDays} />
         </div>
       </AppHeader>
 

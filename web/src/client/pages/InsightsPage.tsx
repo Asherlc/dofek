@@ -1,15 +1,20 @@
+import { useState } from "react";
 import { AppHeader } from "../components/AppHeader.js";
 import { InsightsPanel } from "../components/InsightsPanel.js";
 import { LifeEventsPanel } from "../components/LifeEventsPanel.js";
 import { SupplementStackPanel } from "../components/SupplementStackPanel.js";
+import { TimeRangeSelector } from "../components/TimeRangeSelector.js";
 import { trpc } from "../lib/trpc.js";
 
 export function InsightsPage() {
-  const insightsData = trpc.insights.compute.useQuery({ days: 3650 });
+  const [days, setDays] = useState(365);
+  const insightsData = trpc.insights.compute.useQuery({ days });
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
-      <AppHeader activePage="insights" />
+      <AppHeader activePage="insights">
+        <TimeRangeSelector days={days} onChange={setDays} />
+      </AppHeader>
       <main className="mx-auto max-w-7xl p-6 space-y-8">
         <section>
           <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-1">
