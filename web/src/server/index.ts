@@ -214,6 +214,31 @@ async function main() {
         return;
       }
 
+      // Providers with automatedLogin (e.g. Peloton) — run login server-side
+      if (setup.automatedLogin) {
+        const envPrefix = providerId.toUpperCase();
+        const email = process.env[`${envPrefix}_USERNAME`];
+        const password = process.env[`${envPrefix}_PASSWORD`];
+        if (!email || !password) {
+          res.status(400).send(`${envPrefix}_USERNAME and ${envPrefix}_PASSWORD must be set`);
+          return;
+        }
+
+        console.log(`[auth] Running automated login for ${providerId}...`);
+        const tokens = await setup.automatedLogin(email, password);
+        const { ensureProvider, saveTokens } = await import("dofek/db/tokens");
+        await ensureProvider(db, provider.id, provider.name, setup.apiBaseUrl);
+        await saveTokens(db, provider.id, tokens);
+
+        console.log(
+          `[auth] ${providerId} tokens saved. Expires: ${tokens.expiresAt.toISOString()}`,
+        );
+        res.send(
+          `<html><body style="font-family:system-ui;background:#111;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center"><h1>Authorized!</h1><p>${provider.name} connected successfully.</p><p>Token expires: ${tokens.expiresAt.toISOString()}</p><p><a href="/" style="color:#10b981">Return to dashboard</a></p></div></body></html>`,
+        );
+        return;
+      }
+
       const { buildAuthorizationUrl } = await import("dofek/auth/oauth");
       const url = buildAuthorizationUrl(setup.oauthConfig);
       // Append state so the callback knows which provider this is for

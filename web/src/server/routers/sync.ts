@@ -53,15 +53,30 @@ export const syncRouter = router({
     await ensureProvidersRegistered();
     const all = getAllProviders();
     const { loadTokens } = await import("dofek/db/tokens");
+    const { syncLog } = await import("dofek/db/schema");
+    const { desc, eq } = await import("drizzle-orm");
 
     return Promise.all(
       all.map(async (p) => {
-        const needsOAuth = !!p.authSetup?.();
-        let authorized = !needsOAuth; // non-OAuth providers are always "authorized"
+        const setup = p.authSetup?.();
+        // Only OAuth-redirect providers need browser auth — automatedLogin and
+        // credential-only providers handle auth internally during sync
+        const needsOAuth = !!setup?.oauthConfig && !setup.automatedLogin;
+        let authorized = !needsOAuth;
         if (needsOAuth) {
           const tokens = await loadTokens(ctx.db, p.id);
           authorized = tokens !== null;
         }
+
+        // Get last sync time
+        const lastSyncRows = await ctx.db
+          .select({ syncedAt: syncLog.syncedAt })
+          .from(syncLog)
+          .where(eq(syncLog.providerId, p.id))
+          .orderBy(desc(syncLog.syncedAt))
+          .limit(1);
+        const lastSyncedAt = lastSyncRows[0]?.syncedAt?.toISOString() ?? null;
+
         return {
           id: p.id,
           name: p.name,
@@ -69,6 +84,7 @@ export const syncRouter = router({
           error: p.validate(),
           needsOAuth,
           authorized,
+          lastSyncedAt,
         };
       }),
     );

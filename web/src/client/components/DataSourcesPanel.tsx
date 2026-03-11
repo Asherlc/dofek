@@ -260,17 +260,29 @@ export function DataSourcesPanel() {
                   type="button"
                   onClick={() => handleProviderClick(p)}
                   disabled={state.status === "syncing"}
-                  className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-2.5 hover:bg-zinc-800 disabled:opacity-50 transition-colors"
+                  className="flex flex-col items-start rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-2.5 hover:bg-zinc-800 disabled:opacity-50 transition-colors"
                   title={needsAuth ? "Click to connect" : state.message}
                 >
-                  {needsAuth ? (
-                    <span className="inline-block w-2 h-2 rounded-full bg-blue-400" />
-                  ) : (
-                    <StatusDot status={state.status} />
+                  <div className="flex items-center gap-2">
+                    {needsAuth ? (
+                      <span className="inline-block w-2 h-2 rounded-full bg-blue-400" />
+                    ) : (
+                      <StatusDot status={state.status} />
+                    )}
+                    <span className="text-sm font-medium text-zinc-200">{p.name}</span>
+                    {needsAuth && <span className="text-xs text-blue-400">Connect</span>}
+                    {state.status === "syncing" && (
+                      <span className="text-xs text-zinc-500">...</span>
+                    )}
+                  </div>
+                  {state.message && state.status !== "syncing" && (
+                    <span className="text-xs text-zinc-500 mt-0.5">{state.message}</span>
                   )}
-                  <span className="text-sm font-medium text-zinc-200">{p.name}</span>
-                  {needsAuth && <span className="text-xs text-blue-400">Connect</span>}
-                  {state.status === "syncing" && <span className="text-xs text-zinc-500">...</span>}
+                  {!state.message && p.lastSyncedAt && (
+                    <span className="text-xs text-zinc-600 mt-0.5">
+                      Last sync: {formatRelativeTime(p.lastSyncedAt)}
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -337,6 +349,17 @@ export function DataSourcesPanel() {
       </div>
     </div>
   );
+}
+
+function formatRelativeTime(isoString: string): string {
+  const diff = Date.now() - new Date(isoString).getTime();
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
 }
 
 function StatusDot({ status }: { status: SyncStatus }) {
