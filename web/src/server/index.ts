@@ -46,34 +46,92 @@ async function main() {
   const app = express();
   const db = createDatabaseFromEnv();
 
-  // Chunked Apple Health upload.
-  // Client sends chunks with headers: x-upload-id, x-chunk-index, x-chunk-total, x-file-ext
-  // Each chunk is saved to a temp dir. When the last chunk arrives, they're assembled and imported.
-  const activeUploads = new Map<string, { received: Set<number>; total: number; dir: string }>();
+  // ── Apple Health upload state ──
+  interface UploadChunks {
+    received: Set<number>;
+    total: number;
+    dir: string;
+  }
+  interface JobStatus {
+    status: "uploading" | "assembling" | "processing" | "done" | "error";
+    progress?: number;
+    message?: string;
+    result?: any;
+  }
+  const activeUploads = new Map<string, UploadChunks>();
+  const jobStatuses = new Map<string, JobStatus>();
 
+  // Clean up completed jobs after 10 minutes
+  function setJobStatus(id: string, status: JobStatus) {
+    jobStatuses.set(id, status);
+    if (status.status === "done" || status.status === "error") {
+      setTimeout(() => jobStatuses.delete(id), 10 * 60 * 1000);
+    }
+  }
+
+  // Background import — fires and forgets, updates jobStatuses as it runs
+  function startBackgroundImport(jobId: string, filePath: string, since: Date) {
+    setJobStatus(jobId, { status: "processing", progress: 0, message: "Starting import..." });
+
+    (async () => {
+      try {
+        const { importAppleHealthFile } = await import("dofek/providers/apple-health");
+        const result = await importAppleHealthFile(db, filePath, since, (info) => {
+          setJobStatus(jobId, {
+            status: "processing",
+            progress: info.pct,
+            message: `Processing: ${info.pct}%`,
+          });
+        });
+        setJobStatus(jobId, {
+          status: "done",
+          progress: 100,
+          message: `${result.recordsSynced} records imported, ${result.errors?.length ?? 0} errors`,
+          result,
+        });
+      } catch (err: any) {
+        console.error("[upload] Background import failed:", err);
+        setJobStatus(jobId, {
+          status: "error",
+          message: err.message ?? "Import failed",
+        });
+      } finally {
+        await unlink(filePath).catch(() => {});
+      }
+    })();
+  }
+
+  // Poll job status
+  app.get("/api/upload/apple-health/status/:jobId", (req, res) => {
+    const status = jobStatuses.get(req.params.jobId);
+    if (!status) {
+      res.status(404).json({ error: "Unknown job" });
+      return;
+    }
+    res.json(status);
+  });
+
+  // Chunked upload endpoint
   app.post("/api/upload/apple-health", async (req, res) => {
     const uploadId = req.headers["x-upload-id"] as string | undefined;
     const chunkIndex = parseInt(req.headers["x-chunk-index"] as string, 10);
     const chunkTotal = parseInt(req.headers["x-chunk-total"] as string, 10);
     const fileExt = (req.headers["x-file-ext"] as string) || ".zip";
+    const fullSync = req.query.fullSync === "true";
+    const since = fullSync ? new Date(0) : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-    // Non-chunked upload (single request, small files)
+    // Non-chunked upload (single small file) — still processes in background
     if (!uploadId || Number.isNaN(chunkTotal) || chunkTotal <= 1) {
-      const sinceDays = parseInt(req.query.sinceDays as string, 10) || 7;
-      const fullSync = req.query.fullSync === "true";
-      const since = fullSync ? new Date(0) : new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000);
+      const jobId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
       const ext = (req.headers["content-type"] ?? "").includes("xml") ? ".xml" : ".zip";
-      const tmpFile = join(tmpdir(), `apple-health-${Date.now()}${ext}`);
+      const tmpFile = join(tmpdir(), `apple-health-${jobId}${ext}`);
       try {
         await streamToFile(req, tmpFile);
-        const { importAppleHealthFile } = await import("dofek/providers/apple-health");
-        const result = await importAppleHealthFile(db, tmpFile, since);
-        res.json(result);
+        startBackgroundImport(jobId, tmpFile, since);
+        res.json({ status: "processing", jobId });
       } catch (err: any) {
-        console.error("[upload] Apple Health import failed:", err);
-        res.status(500).json({ error: err.message ?? "Import failed" });
-      } finally {
-        await unlink(tmpFile).catch(() => {});
+        console.error("[upload] Apple Health upload failed:", err);
+        res.status(500).json({ error: err.message ?? "Upload failed" });
       }
       return;
     }
@@ -86,43 +144,52 @@ async function main() {
         await mkdir(dir, { recursive: true });
         upload = { received: new Set(), total: chunkTotal, dir };
         activeUploads.set(uploadId, upload);
+        setJobStatus(uploadId, {
+          status: "uploading",
+          progress: 0,
+          message: "Receiving chunks...",
+        });
       }
 
-      // Save this chunk
       const chunkPath = join(upload.dir, `chunk-${String(chunkIndex).padStart(6, "0")}`);
       await streamToFile(req, chunkPath);
       upload.received.add(chunkIndex);
 
+      const uploadPct = Math.round((upload.received.size / upload.total) * 100);
       console.log(`[upload] Chunk ${chunkIndex + 1}/${chunkTotal} for ${uploadId}`);
 
-      // Not all chunks yet — respond with progress
       if (upload.received.size < upload.total) {
-        res.json({ status: "partial", received: upload.received.size, total: upload.total });
+        setJobStatus(uploadId, {
+          status: "uploading",
+          progress: uploadPct,
+          message: `Received ${upload.received.size}/${upload.total} chunks`,
+        });
+        res.json({
+          status: "uploading",
+          jobId: uploadId,
+          received: upload.received.size,
+          total: upload.total,
+        });
         return;
       }
 
-      // All chunks received — assemble and import
-      console.log(`[upload] All ${chunkTotal} chunks received, assembling...`);
+      // All chunks received — assemble then process in background
+      setJobStatus(uploadId, { status: "assembling", progress: 0, message: "Assembling file..." });
       const assembledFile = join(tmpdir(), `apple-health-${uploadId}${fileExt}`);
       await assembleChunks(upload.dir, assembledFile);
       activeUploads.delete(uploadId);
       await rm(upload.dir, { recursive: true, force: true });
 
-      const fullSync = req.query.fullSync === "true";
-      const since = fullSync ? new Date(0) : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-
-      const { importAppleHealthFile } = await import("dofek/providers/apple-health");
-      const result = await importAppleHealthFile(db, assembledFile, since);
-      await unlink(assembledFile).catch(() => {});
-      res.json(result);
+      startBackgroundImport(uploadId, assembledFile, since);
+      res.json({ status: "processing", jobId: uploadId });
     } catch (err: any) {
       console.error("[upload] Chunked upload failed:", err);
-      // Clean up on error
       const upload = activeUploads.get(uploadId);
       if (upload) {
         activeUploads.delete(uploadId);
         await rm(upload.dir, { recursive: true, force: true }).catch(() => {});
       }
+      setJobStatus(uploadId, { status: "error", message: err.message ?? "Upload failed" });
       res.status(500).json({ error: err.message ?? "Upload failed" });
     }
   });

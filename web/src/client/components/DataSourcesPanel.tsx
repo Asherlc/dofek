@@ -65,74 +65,105 @@ export function DataSourcesPanel() {
     }
   }, [providers.data, syncMutation, updateState]);
 
-  const uploadFile = useCallback(async (file: File) => {
-    const CHUNK_SIZE = 50 * 1024 * 1024; // 50MB chunks to stay under Cloudflare's 100MB limit
-    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-    const uploadId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const fileExt = file.name.endsWith(".xml") ? ".xml" : ".zip";
-
-    setUploadState({
-      status: "syncing",
-      progress: 0,
-      message: `Uploading ${file.name} (${(file.size / 1024 / 1024).toFixed(0)} MB)...`,
-    });
-
-    try {
-      let finalResult: any = null;
-
-      for (let i = 0; i < totalChunks; i++) {
-        const start = i * CHUNK_SIZE;
-        const end = Math.min(start + CHUNK_SIZE, file.size);
-        const chunk = file.slice(start, end);
-
-        const pct = Math.round(((i + 1) / totalChunks) * 100);
-        setUploadState({
-          status: "syncing",
-          progress: pct,
-          message:
-            totalChunks > 1
-              ? `Uploading chunk ${i + 1}/${totalChunks} (${pct}%)...`
-              : `Uploading ${file.name}...`,
-        });
-
-        const resp = await fetch("/api/upload/apple-health?fullSync=true", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/octet-stream",
-            "x-upload-id": uploadId,
-            "x-chunk-index": String(i),
-            "x-chunk-total": String(totalChunks),
-            "x-file-ext": fileExt,
-          },
-          body: chunk,
-        });
-
-        if (!resp.ok) {
-          const err = await resp.json().catch(() => ({ error: resp.statusText }));
-          throw new Error(err.error ?? "Upload failed");
-        }
-
+  const pollJobStatus = useCallback(async (jobId: string) => {
+    const poll = async (): Promise<void> => {
+      try {
+        const resp = await fetch(`/api/upload/apple-health/status/${jobId}`);
+        if (!resp.ok) throw new Error("Failed to get status");
         const data = await resp.json();
-        if (data.status !== "partial") {
-          finalResult = data;
-        }
-      }
 
-      if (finalResult) {
+        if (data.status === "done") {
+          setUploadState({
+            status: "done",
+            progress: 100,
+            message: data.message,
+          });
+          return;
+        }
+
+        if (data.status === "error") {
+          setUploadState({ status: "error", message: data.message ?? "Import failed" });
+          return;
+        }
+
+        // Still processing
         setUploadState({
           status: "syncing",
-          progress: 100,
-          message: "Processing import...",
+          progress: data.progress ?? 0,
+          message: data.message ?? "Processing...",
         });
-        setUploadState({
-          status: finalResult.errors?.length > 0 ? "error" : "done",
-          message: `${finalResult.recordsSynced} records imported, ${finalResult.errors?.length ?? 0} errors (${(finalResult.duration / 1000).toFixed(1)}s)`,
-        });
+
+        await new Promise((r) => setTimeout(r, 1000));
+        return poll();
+      } catch {
+        setUploadState({ status: "error", message: "Lost connection to server" });
       }
-    } catch (err: any) {
-      setUploadState({ status: "error", message: err.message ?? "Upload failed" });
-    }
+    };
+    return poll();
   }, []);
+
+  const uploadFile = useCallback(
+    async (file: File) => {
+      const CHUNK_SIZE = 50 * 1024 * 1024; // 50MB to stay under Cloudflare's 100MB limit
+      const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+      const uploadId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const fileExt = file.name.endsWith(".xml") ? ".xml" : ".zip";
+
+      setUploadState({
+        status: "syncing",
+        progress: 0,
+        message: `Uploading ${file.name} (${(file.size / 1024 / 1024).toFixed(0)} MB)...`,
+      });
+
+      try {
+        let jobId: string | null = null;
+
+        for (let i = 0; i < totalChunks; i++) {
+          const start = i * CHUNK_SIZE;
+          const end = Math.min(start + CHUNK_SIZE, file.size);
+          const chunk = file.slice(start, end);
+
+          const uploadPct = Math.round(((i + 1) / totalChunks) * 50); // upload is 0-50%
+          setUploadState({
+            status: "syncing",
+            progress: uploadPct,
+            message:
+              totalChunks > 1
+                ? `Uploading chunk ${i + 1}/${totalChunks}...`
+                : `Uploading ${file.name}...`,
+          });
+
+          const resp = await fetch("/api/upload/apple-health?fullSync=true", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/octet-stream",
+              "x-upload-id": uploadId,
+              "x-chunk-index": String(i),
+              "x-chunk-total": String(totalChunks),
+              "x-file-ext": fileExt,
+            },
+            body: chunk,
+          });
+
+          if (!resp.ok) {
+            const err = await resp.json().catch(() => ({ error: resp.statusText }));
+            throw new Error(err.error ?? "Upload failed");
+          }
+
+          const data = await resp.json();
+          if (data.jobId) jobId = data.jobId;
+        }
+
+        if (jobId) {
+          setUploadState({ status: "syncing", progress: 50, message: "Processing import..." });
+          await pollJobStatus(jobId);
+        }
+      } catch (err: any) {
+        setUploadState({ status: "error", message: err.message ?? "Upload failed" });
+      }
+    },
+    [pollJobStatus],
+  );
 
   const handleFileSelect = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
