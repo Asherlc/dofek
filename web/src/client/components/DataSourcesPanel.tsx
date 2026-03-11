@@ -15,6 +15,7 @@ export function DataSourcesPanel() {
   const trpcUtils = trpc.useUtils();
 
   const [providerStates, setProviderStates] = useState<Record<string, ProviderState>>({});
+  const [syncAllMode, setSyncAllMode] = useState<"sync" | "full" | null>(null);
   const [uploadState, setUploadState] = useState<{
     status: SyncStatus;
     progress?: number;
@@ -64,6 +65,7 @@ export function DataSourcesPanel() {
 
   const handleSyncAll = useCallback(
     async (fullSync = false) => {
+      setSyncAllMode(fullSync ? "full" : "sync");
       const enabled = (providers.data ?? []).filter((p) => p.enabled && p.authorized);
       const ids = enabled.map((p) => p.id);
       for (const p of enabled) {
@@ -81,6 +83,8 @@ export function DataSourcesPanel() {
             message: err instanceof Error ? err.message : "Sync failed",
           });
         }
+      } finally {
+        setSyncAllMode(null);
       }
     },
     [providers.data, syncMutation, updateState, doPollSyncJob],
@@ -238,17 +242,25 @@ export function DataSourcesPanel() {
                 type="button"
                 onClick={() => handleSyncAll()}
                 disabled={syncMutation.isPending}
-                className="text-xs px-3 py-1 rounded bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50 transition-colors"
+                className={`text-xs px-3 py-1 rounded transition-colors ${
+                  syncAllMode === "sync"
+                    ? "bg-emerald-600 text-white"
+                    : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50"
+                }`}
               >
-                Sync All
+                {syncAllMode === "sync" ? "Syncing..." : "Sync All"}
               </button>
               <button
                 type="button"
                 onClick={() => handleSyncAll(true)}
                 disabled={syncMutation.isPending}
-                className="text-xs px-3 py-1 rounded bg-zinc-800 text-zinc-400 hover:bg-zinc-700 disabled:opacity-50 transition-colors"
+                className={`text-xs px-3 py-1 rounded transition-colors ${
+                  syncAllMode === "full"
+                    ? "bg-emerald-600 text-white"
+                    : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700 disabled:opacity-50"
+                }`}
               >
-                Full Sync All
+                {syncAllMode === "full" ? "Full Syncing..." : "Full Sync All"}
               </button>
             </div>
           )}
