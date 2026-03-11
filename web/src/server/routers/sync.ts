@@ -230,10 +230,6 @@ export const syncRouter = router({
       const { syncLog } = await import("dofek/db/schema");
       const { desc } = await import("drizzle-orm");
 
-      return ctx.db
-        .select()
-        .from(syncLog)
-        .orderBy(desc(syncLog.syncedAt))
-        .limit(input.limit);
+      return ctx.db.select().from(syncLog).orderBy(desc(syncLog.syncedAt)).limit(input.limit);
     }),
 });

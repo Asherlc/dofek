@@ -22,9 +22,7 @@ export function TimeRangeSelector({
           type="button"
           onClick={() => onChange(r.days)}
           className={`px-3 py-1 text-xs rounded-md transition-colors ${
-            days === r.days
-              ? "bg-zinc-700 text-zinc-100"
-              : "text-zinc-500 hover:text-zinc-300"
+            days === r.days ? "bg-zinc-700 text-zinc-100" : "text-zinc-500 hover:text-zinc-300"
           }`}
         >
           {r.label}

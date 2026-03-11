@@ -33,13 +33,7 @@ export function App() {
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
       <QueryClientProvider client={queryClient}>
-        {route === "insights" ? (
-          <InsightsPage />
-        ) : route === "logs" ? (
-          <LogsPage />
-        ) : (
-          <Dashboard />
-        )}
+        {route === "insights" ? <InsightsPage /> : route === "logs" ? <LogsPage /> : <Dashboard />}
       </QueryClientProvider>
     </trpc.Provider>
   );
