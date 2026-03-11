@@ -257,6 +257,12 @@ async function main() {
       const state = req.query.state as string | undefined;
       const error = req.query.error as string | undefined;
 
+      // Bare GET with no params — providers (e.g. Withings) verify the URL is reachable
+      if (!code && !state && !error) {
+        res.send("OK");
+        return;
+      }
+
       if (error) {
         res.status(400).send(`Authorization denied: ${error}`);
         return;
