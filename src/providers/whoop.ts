@@ -1,5 +1,5 @@
 import type { Database } from "../db/index.ts";
-import { activity, dailyMetrics, metricStream, sleepSession } from "../db/schema.ts";
+import { activity, dailyMetrics, healthEvent, metricStream, sleepSession } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import type { Provider, SyncError, SyncResult } from "./types.ts";
@@ -674,6 +674,143 @@ export class WhoopInternalClient {
       activityId: String(sleepId),
     });
   }
+
+  async getJournal(start: string, end: string): Promise<unknown> {
+    return this.get<unknown>(`${WHOOP_API_BASE}/behavior-impact-service/v1/impact`, {
+      startTime: start,
+      endTime: end,
+    });
+  }
+}
+
+// ============================================================
+// Journal parsing — response shape discovered empirically
+// ============================================================
+
+interface ParsedJournalEntry {
+  externalId: string;
+  type: string; // e.g. "whoop_journal_caffeine", "whoop_journal_alcohol"
+  value: number | null;
+  valueText: string | null;
+  date: Date;
+}
+
+/**
+ * Parse the behavior-impact-service response into health_event entries.
+ * The response shape isn't documented — this handles several possibilities:
+ * - Array of journal entry objects
+ * - Wrapped object with entries under a known key
+ * - Individual entry with nested answers
+ */
+function parseJournalResponse(raw: unknown): ParsedJournalEntry[] {
+  if (!raw || typeof raw !== "object") return [];
+
+  // Unwrap if wrapped in a known key
+  let items: unknown[];
+  if (Array.isArray(raw)) {
+    items = raw;
+  } else {
+    const obj = raw as Record<string, unknown>;
+    // Try common wrapper keys
+    const wrapped =
+      obj.impacts ?? obj.entries ?? obj.data ?? obj.results ?? obj.journal ?? obj.records;
+    if (Array.isArray(wrapped)) {
+      items = wrapped;
+    } else {
+      // Single object — wrap it
+      items = [raw];
+    }
+  }
+
+  const entries: ParsedJournalEntry[] = [];
+  for (const item of items) {
+    if (!item || typeof item !== "object") continue;
+    const obj = item as Record<string, unknown>;
+
+    // Try to extract a date
+    const dateStr =
+      (obj.date as string) ??
+      (obj.created_at as string) ??
+      (obj.cycle_start as string) ??
+      (obj.start as string) ??
+      (obj.day as string);
+    const date = dateStr ? new Date(dateStr) : null;
+    if (!date || Number.isNaN(date.getTime())) continue;
+
+    const id = (obj.id as string | number) ?? (obj.cycle_id as string | number) ?? dateStr;
+    const idStr = String(id);
+
+    // Check if it has nested answers/behaviors
+    const answers =
+      (obj.answers as unknown[]) ??
+      (obj.behaviors as unknown[]) ??
+      (obj.items as unknown[]) ??
+      (obj.journal_entries as unknown[]);
+
+    if (Array.isArray(answers)) {
+      for (const answer of answers) {
+        if (!answer || typeof answer !== "object") continue;
+        const a = answer as Record<string, unknown>;
+        const name =
+          (a.name as string) ??
+          (a.behavior as string) ??
+          (a.question as string) ??
+          (a.type as string) ??
+          "unknown";
+        const value =
+          typeof a.value === "number"
+            ? a.value
+            : typeof a.score === "number"
+              ? a.score
+              : typeof a.impact === "number"
+                ? a.impact
+                : null;
+        const valueText =
+          typeof a.answer === "string"
+            ? a.answer
+            : typeof a.response === "string"
+              ? a.response
+              : typeof a.value === "string"
+                ? a.value
+                : null;
+
+        entries.push({
+          externalId: `journal-${idStr}-${name}`,
+          type: `whoop_journal_${name.toLowerCase().replace(/\s+/g, "_")}`,
+          value,
+          valueText,
+          date,
+        });
+      }
+    } else {
+      // Flat entry — use available fields
+      const name =
+        (obj.name as string) ?? (obj.behavior as string) ?? (obj.type as string) ?? "journal";
+      const value =
+        typeof obj.value === "number"
+          ? obj.value
+          : typeof obj.score === "number"
+            ? obj.score
+            : typeof obj.impact === "number"
+              ? obj.impact
+              : null;
+      const valueText =
+        typeof obj.answer === "string"
+          ? obj.answer
+          : typeof obj.response === "string"
+            ? obj.response
+            : null;
+
+      entries.push({
+        externalId: `journal-${idStr}-${name}`,
+        type: `whoop_journal_${name.toLowerCase().replace(/\s+/g, "_")}`,
+        value,
+        valueText,
+        date,
+      });
+    }
+  }
+  return entries;
 }
 
 // ============================================================
@@ -959,6 +1096,45 @@ export class WhoopProvider implements Provider {
     } catch (err) {
       errors.push({
         message: `hr_stream: ${err instanceof Error ? err.message : String(err)}`,
+        cause: err,
+      });
+    }
+
+    // --- Sync journal entries ---
+    try {
+      const journalCount = await withSyncLog(db, this.id, "journal", async () => {
+        const raw = await client.getJournal(since.toISOString(), new Date().toISOString());
+        console.log(`[whoop] Journal response shape: ${JSON.stringify(raw).slice(0, 500)}`);
+
+        const entries = parseJournalResponse(raw);
+        let count = 0;
+        for (const entry of entries) {
+          await db
+            .insert(healthEvent)
+            .values({
+              providerId: this.id,
+              externalId: entry.externalId,
+              type: entry.type,
+              value: entry.value,
+              valueText: entry.valueText,
+              startDate: entry.date,
+              sourceName: "WHOOP Journal",
+            })
+            .onConflictDoUpdate({
+              target: [healthEvent.providerId, healthEvent.externalId],
+              set: {
+                value: entry.value,
+                valueText: entry.valueText,
+              },
+            });
+          count++;
+        }
+        return { recordCount: count, result: count };
+      });
+      recordsSynced += journalCount;
+    } catch (err) {
+      errors.push({
+        message: `journal: ${err instanceof Error ? err.message : String(err)}`,
         cause: err,
       });
     }
