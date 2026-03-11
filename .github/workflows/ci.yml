@@ -35,7 +35,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm build
+      - run: npx tsc --noEmit
+      - run: cd web && npx tsc --noEmit
 
   test:
     name: Tests
