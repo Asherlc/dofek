@@ -6,6 +6,7 @@ import type { Provider } from "dofek/providers/types";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { publicProcedure, router } from "../../shared/trpc.ts";
+import { getSystemLogs, logger } from "../logger.ts";
 
 /** Count total records across main tables for a provider (excludes metric_stream for speed). */
 async function countProviderRecords(db: Database, providerId: string): Promise<number> {
@@ -65,33 +66,6 @@ const syncJobs = new Map<string, SyncJob>();
 function cleanupJob(jobId: string) {
   setTimeout(() => syncJobs.delete(jobId), 10 * 60 * 1000);
 }
-
-// ── In-memory ring buffer for console output ──
-const MAX_SYSTEM_LOGS = 500;
-const systemLogs: Array<{ timestamp: string; level: string; message: string }> = [];
-
-function captureSystemLog(level: string, message: string) {
-  systemLogs.push({ timestamp: new Date().toISOString(), level, message });
-  if (systemLogs.length > MAX_SYSTEM_LOGS)
-    systemLogs.splice(0, systemLogs.length - MAX_SYSTEM_LOGS);
-}
-
-// Intercept console.log/error/warn to capture system output
-const origLog = console.log;
-const origError = console.error;
-const origWarn = console.warn;
-console.log = (...args: unknown[]) => {
-  origLog(...args);
-  captureSystemLog("info", args.map(String).join(" "));
-};
-console.error = (...args: unknown[]) => {
-  origError(...args);
-  captureSystemLog("error", args.map(String).join(" "));
-};
-console.warn = (...args: unknown[]) => {
-  origWarn(...args);
-  captureSystemLog("warn", args.map(String).join(" "));
-};
 
 export const syncRouter = router({
   /** List all providers and whether they're enabled (have valid config) */
@@ -185,7 +159,7 @@ export const syncRouter = router({
             const syncStart = Date.now();
             const countBefore = await countProviderRecords(ctx.db, provider.id);
             try {
-              console.log(`[sync] Starting ${provider.name}...`);
+              logger.info(`[sync] Starting ${provider.name}...`);
               const result = await provider.sync(ctx.db, since);
               const countAfter = await countProviderRecords(ctx.db, provider.id);
               const newRecords = countAfter - countBefore;
@@ -228,7 +202,7 @@ export const syncRouter = router({
             const { refreshDedupViews } = await import("dofek/db/dedup");
             await refreshDedupViews(ctx.db);
           } catch (err) {
-            console.error("[sync] Failed to refresh dedup views:", err);
+            logger.error(`[sync] Failed to refresh dedup views: ${err}`);
           }
 
           const job = syncJobs.get(jobId)!;
@@ -269,6 +243,6 @@ export const syncRouter = router({
   systemLogs: publicProcedure
     .input(z.object({ limit: z.number().default(200) }))
     .query(({ input }) => {
-      return systemLogs.slice(-input.limit);
+      return getSystemLogs(input.limit);
     }),
 });

@@ -7,6 +7,7 @@ import { createDatabaseFromEnv } from "dofek/db";
 import { runMigrations } from "dofek/db/migrate";
 import express from "express";
 import type { Context } from "../shared/trpc.ts";
+import { logger } from "./logger.ts";
 import { appRouter } from "./router.ts";
 
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
@@ -52,7 +53,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
     const start = Date.now();
     res.on("finish", () => {
       const duration = Date.now() - start;
-      console.log(`[web] ${req.method} ${req.originalUrl} ${res.statusCode} ${duration}ms`);
+      logger.info(`[web] ${req.method} ${req.originalUrl} ${res.statusCode} ${duration}ms`);
     });
     next();
   });
@@ -82,28 +83,38 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
 
   // Background import — fires and forgets, updates jobStatuses as it runs
   function startBackgroundImport(jobId: string, filePath: string, since: Date) {
+    logger.info("[apple-health] Starting import...");
     setJobStatus(jobId, { status: "processing", progress: 0, message: "Starting import..." });
 
     (async () => {
       const importStart = Date.now();
       try {
         const { importAppleHealthFile } = await import("dofek/providers/apple-health");
+        let lastLoggedPct = 0;
         const result = await importAppleHealthFile(db, filePath, since, (info) => {
           setJobStatus(jobId, {
             status: "processing",
             progress: info.pct,
             message: `Processing: ${info.pct}%`,
           });
+          // Log every 10% to avoid noise
+          if (info.pct >= lastLoggedPct + 10) {
+            logger.info(`[apple-health] Import progress: ${info.pct}%`);
+            lastLoggedPct = info.pct;
+          }
         });
+        const durationSec = ((Date.now() - importStart) / 1000).toFixed(1);
+        const msg = `${result.recordsSynced} records imported, ${result.errors?.length ?? 0} errors in ${durationSec}s`;
+        logger.info(`[apple-health] Import complete: ${msg}`);
         setJobStatus(jobId, {
           status: "done",
           progress: 100,
-          message: `${result.recordsSynced} records imported, ${result.errors?.length ?? 0} errors`,
+          message: msg,
           result,
         });
         const { logSync } = await import("dofek/db/sync-log");
         await logSync(db, {
-          providerId: "apple-health",
+          providerId: "apple_health",
           dataType: "import",
           status: result.errors?.length ? "error" : "success",
           recordCount: result.recordsSynced,
@@ -113,7 +124,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
           durationMs: Date.now() - importStart,
         });
       } catch (err: any) {
-        console.error("[upload] Background import failed:", err);
+        logger.error(`[upload] Background import failed: ${err}`);
         setJobStatus(jobId, {
           status: "error",
           message: err.message ?? "Import failed",
@@ -121,7 +132,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
         try {
           const { logSync } = await import("dofek/db/sync-log");
           await logSync(db, {
-            providerId: "apple-health",
+            providerId: "apple_health",
             dataType: "import",
             status: "error",
             errorMessage: err.message ?? "Import failed",
@@ -163,7 +174,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
         startBackgroundImport(jobId, tmpFile, since);
         res.json({ status: "processing", jobId });
       } catch (err: any) {
-        console.error("[upload] Apple Health upload failed:", err);
+        logger.error(`[upload] Apple Health upload failed: ${err}`);
         res.status(500).json({ error: err.message ?? "Upload failed" });
       }
       return;
@@ -189,7 +200,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       upload.received.add(chunkIndex);
 
       const uploadPct = Math.round((upload.received.size / upload.total) * 100);
-      console.log(`[upload] Chunk ${chunkIndex + 1}/${chunkTotal} for ${uploadId}`);
+      logger.info(`[upload] Chunk ${chunkIndex + 1}/${chunkTotal} for ${uploadId}`);
 
       if (upload.received.size < upload.total) {
         setJobStatus(uploadId, {
@@ -216,7 +227,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       startBackgroundImport(uploadId, assembledFile, since);
       res.json({ status: "processing", jobId: uploadId });
     } catch (err: any) {
-      console.error("[upload] Chunked upload failed:", err);
+      logger.error(`[upload] Chunked upload failed: ${err}`);
       const upload = activeUploads.get(uploadId);
       if (upload) {
         activeUploads.delete(uploadId);
@@ -261,13 +272,13 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
           return;
         }
 
-        console.log(`[auth] Running automated login for ${providerId}...`);
+        logger.info(`[auth] Running automated login for ${providerId}...`);
         const tokens = await setup.automatedLogin(email, password);
         const { ensureProvider, saveTokens } = await import("dofek/db/tokens");
         await ensureProvider(db, provider.id, provider.name, setup.apiBaseUrl);
         await saveTokens(db, provider.id, tokens);
 
-        console.log(
+        logger.info(
           `[auth] ${providerId} tokens saved. Expires: ${tokens.expiresAt.toISOString()}`,
         );
         res.send(
@@ -298,7 +309,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       authUrl.searchParams.set("state", providerId);
       res.redirect(authUrl.toString());
     } catch (err: any) {
-      console.error("[auth] Failed to start OAuth flow:", err);
+      logger.error(`[auth] Failed to start OAuth flow: ${err}`);
       res.status(500).send(`Auth error: ${err.message}`);
     }
   });
@@ -348,7 +359,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
           return;
         }
 
-        console.log(`[auth] Exchanging OAuth 1.0 tokens for ${stored.providerId}...`);
+        logger.info(`[auth] Exchanging OAuth 1.0 tokens for ${stored.providerId}...`);
         const { token, tokenSecret } = await oauth1Flow.exchangeForAccessToken(
           oauthToken,
           stored.tokenSecret,
@@ -366,7 +377,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
           scopes: "",
         });
 
-        console.log(`[auth] ${stored.providerId} OAuth 1.0 tokens saved.`);
+        logger.info(`[auth] ${stored.providerId} OAuth 1.0 tokens saved.`);
         res.send(
           `<html><body style="font-family:system-ui;background:#111;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center"><h1>Authorized!</h1><p>${provider.name} connected successfully.</p><p><a href="/" style="color:#10b981">Return to dashboard</a></p></div></body></html>`,
         );
@@ -395,7 +406,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
         return;
       }
 
-      console.log(`[auth] Exchanging code for ${state} tokens...`);
+      logger.info(`[auth] Exchanging code for ${state} tokens...`);
       const tokens = await setup.exchangeCode(code);
 
       const { ensureProvider } = await import("dofek/db/tokens");
@@ -403,12 +414,12 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       await ensureProvider(db, provider.id, provider.name, setup.apiBaseUrl);
       await saveTokens(db, provider.id, tokens);
 
-      console.log(`[auth] ${state} tokens saved. Expires: ${tokens.expiresAt.toISOString()}`);
+      logger.info(`[auth] ${state} tokens saved. Expires: ${tokens.expiresAt.toISOString()}`);
       res.send(
         `<html><body style="font-family:system-ui;background:#111;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center"><h1>Authorized!</h1><p>${provider.name} connected successfully.</p><p>Token expires: ${tokens.expiresAt.toISOString()}</p><p><a href="/" style="color:#10b981">Return to dashboard</a></p></div></body></html>`,
       );
     } catch (err: any) {
-      console.error("[auth] OAuth callback failed:", err);
+      logger.error(`[auth] OAuth callback failed: ${err}`);
       res.status(500).send(`Token exchange failed: ${err.message}`);
     }
   });
@@ -451,8 +462,8 @@ async function main() {
   }
 
   app.listen(PORT, () => {
-    console.log(`[web] Server running at http://localhost:${PORT}`);
-    console.log(`[web] tRPC API at http://localhost:${PORT}/api/trpc`);
+    logger.info(`[web] Server running at http://localhost:${PORT}`);
+    logger.info(`[web] tRPC API at http://localhost:${PORT}/api/trpc`);
   });
 }
 
@@ -462,7 +473,7 @@ const isDirectRun =
   import.meta.url.endsWith(process.argv[1].replace(/.*\//, ""));
 if (isDirectRun) {
   main().catch((err: unknown) => {
-    console.error("[web] Failed to start:", err);
+    logger.error(`[web] Failed to start: ${err}`);
     process.exit(1);
   });
 }
