@@ -156,7 +156,7 @@ sops .env   # opens decrypted file in $EDITOR; re-encrypts on save
 
 ## Stack
 
-- **TypeScript** — sync scripts, provider plugins, and web dashboard
+- **TypeScript** — sync scripts, provider plugins, and web dashboard (Node 22 native type stripping at runtime — no tsx in production)
 - **Drizzle ORM** — type-safe schema and migrations
 - **TimescaleDB** — Postgres with time-series extensions (hypertables, continuous aggregates, compression)
 - **Vite + React** — web dashboard frontend

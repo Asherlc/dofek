@@ -1,15 +1,15 @@
 #!/bin/sh
 set -e
 
-# tsx is required because workspace package exports resolve to .ts source files
-TSX="node_modules/.bin/tsx"
+# Node 22+ natively strips TypeScript types, needed for workspace .ts exports
+NODE="node --experimental-strip-types --disable-warning=ExperimentalWarning"
 
 case "${1:-sync}" in
   web)
-    exec "$TSX" web/dist/server/server/index.js
+    exec $NODE web/dist/server/server/index.js
     ;;
   sync)
-    exec "$TSX" dist/index.js sync
+    exec $NODE dist/index.js sync
     ;;
   *)
     echo "Unknown mode: $1 (expected 'web' or 'sync')" >&2
