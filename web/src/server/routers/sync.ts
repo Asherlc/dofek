@@ -1,9 +1,26 @@
+import type { Database } from "dofek/db";
 import { logSync } from "dofek/db/sync-log";
 import { ensureProvider } from "dofek/db/tokens";
 import { getAllProviders, registerProvider } from "dofek/providers/registry";
 import type { Provider } from "dofek/providers/types";
+import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { publicProcedure, router } from "../../shared/trpc.js";
+
+/** Count total records across main tables for a provider (excludes metric_stream for speed). */
+async function countProviderRecords(db: Database, providerId: string): Promise<number> {
+  const result = await db.execute<{ total: string }>(sql`
+    SELECT
+      (SELECT count(*) FROM cardio_activity WHERE provider_id = ${providerId}) +
+      (SELECT count(*) FROM daily_metrics WHERE provider_id = ${providerId}) +
+      (SELECT count(*) FROM sleep_session WHERE provider_id = ${providerId}) +
+      (SELECT count(*) FROM body_measurement WHERE provider_id = ${providerId}) +
+      (SELECT count(*) FROM food_entry WHERE provider_id = ${providerId}) +
+      (SELECT count(*) FROM health_event WHERE provider_id = ${providerId})
+    AS total
+  `);
+  return Number(result[0]?.total ?? 0);
+}
 
 // Register providers on first import
 let providersRegistered = false;
@@ -134,13 +151,20 @@ export const syncRouter = router({
             await ensureProvider(ctx.db, provider.id, provider.name);
 
             const syncStart = Date.now();
+            const countBefore = await countProviderRecords(ctx.db, provider.id);
             try {
               console.log(`[sync] Starting ${provider.name}...`);
               const result = await provider.sync(ctx.db, since);
+              const countAfter = await countProviderRecords(ctx.db, provider.id);
+              const newRecords = countAfter - countBefore;
               const hasErrors = result.errors.length > 0;
+              const parts = [];
+              if (newRecords > 0) parts.push(`${newRecords} new`);
+              parts.push(`${result.recordsSynced} synced`);
+              if (hasErrors) parts.push(`${result.errors.length} errors`);
               job.providers[provider.id] = {
                 status: hasErrors ? "error" : "done",
-                message: `${result.recordsSynced} records, ${result.errors.length} errors`,
+                message: parts.join(", "),
               };
               await logSync(ctx.db, {
                 providerId: provider.id,
