@@ -245,4 +245,46 @@ export const syncRouter = router({
     .query(({ input }) => {
       return getSystemLogs(input.limit);
     }),
+
+  /** Per-provider record counts broken down by table */
+  providerStats: publicProcedure.query(async ({ ctx }) => {
+    const rows = await ctx.db.execute<{
+      provider_id: string;
+      activities: string;
+      daily_metrics: string;
+      sleep_sessions: string;
+      body_measurements: string;
+      food_entries: string;
+      health_events: string;
+      metric_stream: string;
+      nutrition_daily: string;
+      lab_results: string;
+    }>(sql`
+      SELECT
+        p.id AS provider_id,
+        (SELECT count(*) FROM fitness.activity WHERE provider_id = p.id)::text AS activities,
+        (SELECT count(*) FROM fitness.daily_metrics WHERE provider_id = p.id)::text AS daily_metrics,
+        (SELECT count(*) FROM fitness.sleep_session WHERE provider_id = p.id)::text AS sleep_sessions,
+        (SELECT count(*) FROM fitness.body_measurement WHERE provider_id = p.id)::text AS body_measurements,
+        (SELECT count(*) FROM fitness.food_entry WHERE provider_id = p.id)::text AS food_entries,
+        (SELECT count(*) FROM fitness.health_event WHERE provider_id = p.id)::text AS health_events,
+        (SELECT count(*) FROM fitness.metric_stream WHERE provider_id = p.id)::text AS metric_stream,
+        (SELECT count(*) FROM fitness.nutrition_daily WHERE provider_id = p.id)::text AS nutrition_daily,
+        (SELECT count(*) FROM fitness.lab_result WHERE provider_id = p.id)::text AS lab_results
+      FROM fitness.provider p
+      ORDER BY p.id
+    `);
+    return rows.map((r) => ({
+      providerId: r.provider_id,
+      activities: Number(r.activities),
+      dailyMetrics: Number(r.daily_metrics),
+      sleepSessions: Number(r.sleep_sessions),
+      bodyMeasurements: Number(r.body_measurements),
+      foodEntries: Number(r.food_entries),
+      healthEvents: Number(r.health_events),
+      metricStream: Number(r.metric_stream),
+      nutritionDaily: Number(r.nutrition_daily),
+      labResults: Number(r.lab_results),
+    }));
+  }),
 });

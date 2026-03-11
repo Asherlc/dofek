@@ -1,8 +1,16 @@
+type Page = "dashboard" | "insights" | "providers";
+
+const navItems: Array<{ page: Page; label: string }> = [
+  { page: "dashboard", label: "Dashboard" },
+  { page: "insights", label: "Insights" },
+  { page: "providers", label: "Providers" },
+];
+
 export function AppHeader({
   activePage,
   children,
 }: {
-  activePage: "dashboard" | "insights" | "logs";
+  activePage: Page;
   children?: React.ReactNode;
 }) {
   return (
@@ -11,36 +19,19 @@ export function AppHeader({
         <DofekLogo />
         <h1 className="text-xl font-semibold tracking-tight">Dofek</h1>
         <nav className="flex gap-1 ml-4">
-          <a
-            href="#dashboard"
-            className={`px-3 py-1 text-xs rounded-md transition-colors ${
-              activePage === "dashboard"
-                ? "bg-zinc-700 text-zinc-100"
-                : "text-zinc-500 hover:text-zinc-300"
-            }`}
-          >
-            Dashboard
-          </a>
-          <a
-            href="#insights"
-            className={`px-3 py-1 text-xs rounded-md transition-colors ${
-              activePage === "insights"
-                ? "bg-zinc-700 text-zinc-100"
-                : "text-zinc-500 hover:text-zinc-300"
-            }`}
-          >
-            Insights
-          </a>
-          <a
-            href="#logs"
-            className={`px-3 py-1 text-xs rounded-md transition-colors ${
-              activePage === "logs"
-                ? "bg-zinc-700 text-zinc-100"
-                : "text-zinc-500 hover:text-zinc-300"
-            }`}
-          >
-            Logs
-          </a>
+          {navItems.map(({ page, label }) => (
+            <a
+              key={page}
+              href={`#${page}`}
+              className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                activePage === page
+                  ? "bg-zinc-700 text-zinc-100"
+                  : "text-zinc-500 hover:text-zinc-300"
+              }`}
+            >
+              {label}
+            </a>
+          ))}
         </nav>
       </div>
       {children}

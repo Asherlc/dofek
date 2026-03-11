@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { ActivityList } from "../components/ActivityList.tsx";
 import { AppHeader } from "../components/AppHeader.tsx";
-import { DataSourcesPanel } from "../components/DataSourcesPanel.tsx";
 import { HealthStatusBar } from "../components/HealthStatusBar.tsx";
 import { NutritionChart } from "../components/NutritionChart.tsx";
 import { SleepChart } from "../components/SleepChart.tsx";
@@ -13,7 +12,6 @@ export function Dashboard() {
   const [days, setDays] = useState(30);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({
     bodyComp: true,
-    dataSources: true,
   });
 
   const toggle = (key: string) => setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -157,19 +155,6 @@ export function Dashboard() {
       </AppHeader>
 
       <main className="mx-auto max-w-7xl p-6 space-y-8">
-        {/* Data Sources */}
-        <CollapsibleSection
-          id="dataSources"
-          title="Data Sources"
-          subtitle="Sync providers and import Apple Health"
-          collapsed={collapsed.dataSources}
-          onToggle={() => toggle("dataSources")}
-        >
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-            <DataSourcesPanel />
-          </div>
-        </CollapsibleSection>
-
         {/* Health Monitor */}
         <CollapsibleSection
           id="healthMonitor"
