@@ -408,6 +408,7 @@ async function main() {
     createExpressMiddleware({
       router: appRouter,
       createContext: (): Context => ({ db }),
+      allowMethodOverride: true,
     }),
   );
 
