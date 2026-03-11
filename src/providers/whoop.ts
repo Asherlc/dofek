@@ -713,13 +713,23 @@ export class WhoopProvider implements Provider {
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
-    const sinceStr = since.toISOString();
-    const nowStr = new Date().toISOString();
-
     // --- Fetch all cycles (recovery + sleep + workouts embedded) ---
+    // WHOOP API limits cycle queries to 200-day windows
+    const MAX_CYCLE_WINDOW_MS = 200 * 24 * 60 * 60 * 1000;
     let cycles: WhoopCycle[] = [];
     try {
-      cycles = await client.getCycles(sinceStr, nowStr);
+      let windowStart = since.getTime();
+      const nowMs = Date.now();
+      while (windowStart < nowMs) {
+        const windowEnd = Math.min(windowStart + MAX_CYCLE_WINDOW_MS, nowMs);
+        const startStr = new Date(windowStart).toISOString();
+        const endStr = new Date(windowEnd).toISOString();
+        console.log(`[whoop] Fetching cycles ${startStr} → ${endStr}`);
+        const chunk = await client.getCycles(startStr, endStr);
+        cycles.push(...chunk);
+        windowStart = windowEnd;
+      }
+      console.log(`[whoop] Fetched ${cycles.length} total cycles`);
     } catch (err) {
       errors.push({
         message: `getCycles: ${err instanceof Error ? err.message : String(err)}`,
