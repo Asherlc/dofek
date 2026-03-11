@@ -662,7 +662,9 @@ export class WhoopInternalClient {
         const val = (raw as Record<string, unknown>)[key];
         if (Array.isArray(val)) return val as WhoopCycle[];
       }
-      console.log(`[whoop] getCycles unexpected response shape: ${JSON.stringify(Object.keys(raw as object))}`);
+      console.log(
+        `[whoop] getCycles unexpected response shape: ${JSON.stringify(Object.keys(raw as object))}`,
+      );
     }
     return [];
   }
@@ -727,7 +729,7 @@ export class WhoopProvider implements Provider {
     // --- Fetch all cycles (recovery + sleep + workouts embedded) ---
     // WHOOP API limits cycle queries to 200-day windows
     const MAX_CYCLE_WINDOW_MS = 200 * 24 * 60 * 60 * 1000;
-    let cycles: WhoopCycle[] = [];
+    const cycles: WhoopCycle[] = [];
     try {
       let windowStart = since.getTime();
       const nowMs = Date.now();
