@@ -401,7 +401,7 @@ export interface StreamCallbacks {
   onProgress?: (info: ProgressInfo) => void;
 }
 
-const BATCH_SIZE = 500;
+const BATCH_SIZE = 5000;
 
 /**
  * Stream-parse an Apple Health export.xml file.
@@ -459,7 +459,7 @@ export function streamHealthExport(
 
     // Backpressure: pause the file stream while DB writes are in progress.
     // Max concurrent flushes before we pause.
-    const MAX_PENDING = 2;
+    const MAX_PENDING = 5;
 
     function trackFlush(fn: () => Promise<void>) {
       pendingFlushes++;
@@ -769,7 +769,7 @@ async function upsertBodyMeasurementBatch(
     byTime.set(key, group);
   }
 
-  let count = 0;
+  const rows: (typeof bodyMeasurement.$inferInsert)[] = [];
   for (const [, group] of byTime) {
     const first = group[0];
     const externalId = `ah:body:${first.startDate.toISOString()}`;
@@ -807,17 +807,24 @@ async function upsertBodyMeasurementBatch(
           break;
       }
     }
-
-    await db
-      .insert(bodyMeasurement)
-      .values(row as typeof bodyMeasurement.$inferInsert)
-      .onConflictDoUpdate({
-        target: [bodyMeasurement.providerId, bodyMeasurement.externalId],
-        set: row as Record<string, unknown>,
-      });
-    count++;
+    rows.push(row as typeof bodyMeasurement.$inferInsert);
   }
-  return count;
+
+  // Upsert in parallel batches of 50 (each row may have different columns set)
+  for (let i = 0; i < rows.length; i += 50) {
+    await Promise.all(
+      rows.slice(i, i + 50).map((row) =>
+        db
+          .insert(bodyMeasurement)
+          .values(row)
+          .onConflictDoUpdate({
+            target: [bodyMeasurement.providerId, bodyMeasurement.externalId],
+            set: row as Record<string, unknown>,
+          }),
+      ),
+    );
+  }
+  return rows.length;
 }
 
 async function upsertDailyMetricsBatch(
@@ -841,7 +848,7 @@ async function upsertDailyMetricsBatch(
     }
   }
 
-  let count = 0;
+  const rows: { row: Record<string, unknown> }[] = [];
   for (const [dateKey, metrics] of byDate) {
     const row: Record<string, unknown> = {
       date: dateKey,
@@ -903,17 +910,24 @@ async function upsertDailyMetricsBatch(
           break;
       }
     }
-
-    await db
-      .insert(dailyMetrics)
-      .values(row as typeof dailyMetrics.$inferInsert)
-      .onConflictDoUpdate({
-        target: [dailyMetrics.date, dailyMetrics.providerId],
-        set: row as Record<string, unknown>,
-      });
-    count++;
+    rows.push({ row });
   }
-  return count;
+
+  // Upsert in parallel batches of 50
+  for (let i = 0; i < rows.length; i += 50) {
+    await Promise.all(
+      rows.slice(i, i + 50).map(({ row }) =>
+        db
+          .insert(dailyMetrics)
+          .values(row as typeof dailyMetrics.$inferInsert)
+          .onConflictDoUpdate({
+            target: [dailyMetrics.date, dailyMetrics.providerId],
+            set: row as Record<string, unknown>,
+          }),
+      ),
+    );
+  }
+  return rows.length;
 }
 
 async function upsertNutritionBatch(
@@ -932,7 +946,7 @@ async function upsertNutritionBatch(
     day.set(field, (day.get(field) ?? 0) + r.value);
   }
 
-  let count = 0;
+  const rows: { row: Record<string, unknown> }[] = [];
   for (const [dateKey, nutrients] of byDate) {
     const row: Record<string, unknown> = {
       date: dateKey,
@@ -961,17 +975,23 @@ async function upsertNutritionBatch(
           break;
       }
     }
-
-    await db
-      .insert(nutritionDaily)
-      .values(row as typeof nutritionDaily.$inferInsert)
-      .onConflictDoUpdate({
-        target: [nutritionDaily.date, nutritionDaily.providerId],
-        set: row as Record<string, unknown>,
-      });
-    count++;
+    rows.push({ row });
   }
-  return count;
+
+  for (let i = 0; i < rows.length; i += 50) {
+    await Promise.all(
+      rows.slice(i, i + 50).map(({ row }) =>
+        db
+          .insert(nutritionDaily)
+          .values(row as typeof nutritionDaily.$inferInsert)
+          .onConflictDoUpdate({
+            target: [nutritionDaily.date, nutritionDaily.providerId],
+            set: row as Record<string, unknown>,
+          }),
+      ),
+    );
+  }
+  return rows.length;
 }
 
 async function upsertHealthEventBatch(
@@ -997,10 +1017,10 @@ async function upsertHealthEventBatch(
   }
 
   if (rows.length > 0) {
-    for (let i = 0; i < rows.length; i += 500) {
+    for (let i = 0; i < rows.length; i += 5000) {
       await db
         .insert(healthEvent)
-        .values(rows.slice(i, i + 500))
+        .values(rows.slice(i, i + 5000))
         .onConflictDoNothing();
     }
   }
@@ -1012,49 +1032,60 @@ async function upsertWorkoutBatch(
   providerId: string,
   workouts: HealthWorkout[],
 ): Promise<number> {
-  let count = 0;
-  for (const w of workouts) {
-    const externalId = `ah:workout:${w.startDate.toISOString()}`;
-    const [row] = await db
-      .insert(activity)
-      .values({
-        providerId,
-        externalId,
-        activityType: w.activityType,
-        startedAt: w.startDate,
-        endedAt: w.endDate,
-        name: w.activityType, // Apple Health doesn't have workout names
-      })
-      .onConflictDoUpdate({
-        target: [activity.providerId, activity.externalId],
-        set: {
-          activityType: w.activityType,
-          endedAt: w.endDate,
-        },
-      })
-      .returning({ id: activity.id });
-    count++;
+  // Insert all activities in parallel batches, then batch GPS routes
+  const activityResults: { activityId: string; workout: HealthWorkout }[] = [];
 
-    // Insert route GPS data into metric_stream
-    if (w.routeLocations && w.routeLocations.length > 0) {
-      const metricRows: (typeof metricStream.$inferInsert)[] = w.routeLocations.map((loc) => ({
-        providerId,
-        activityId: row.id,
-        recordedAt: loc.date,
-        lat: loc.lat,
-        lng: loc.lng,
-        altitude: loc.altitude,
-        speed: loc.speed,
-        gpsAccuracy:
-          loc.horizontalAccuracy != null ? Math.round(loc.horizontalAccuracy) : undefined,
-      }));
+  for (let i = 0; i < workouts.length; i += 20) {
+    const batch = workouts.slice(i, i + 20);
+    const results = await Promise.all(
+      batch.map(async (w) => {
+        const externalId = `ah:workout:${w.startDate.toISOString()}`;
+        const [row] = await db
+          .insert(activity)
+          .values({
+            providerId,
+            externalId,
+            activityType: w.activityType,
+            startedAt: w.startDate,
+            endedAt: w.endDate,
+            name: w.activityType,
+          })
+          .onConflictDoUpdate({
+            target: [activity.providerId, activity.externalId],
+            set: { activityType: w.activityType, endedAt: w.endDate },
+          })
+          .returning({ id: activity.id });
+        return { activityId: row.id, workout: w };
+      }),
+    );
+    activityResults.push(...results);
+  }
 
-      for (let i = 0; i < metricRows.length; i += 500) {
-        await db.insert(metricStream).values(metricRows.slice(i, i + 500));
+  // Batch all GPS route locations across all workouts
+  const allGpsRows: (typeof metricStream.$inferInsert)[] = [];
+  for (const { activityId, workout } of activityResults) {
+    if (workout.routeLocations && workout.routeLocations.length > 0) {
+      for (const loc of workout.routeLocations) {
+        allGpsRows.push({
+          providerId,
+          activityId,
+          recordedAt: loc.date,
+          lat: loc.lat,
+          lng: loc.lng,
+          altitude: loc.altitude,
+          speed: loc.speed,
+          gpsAccuracy:
+            loc.horizontalAccuracy != null ? Math.round(loc.horizontalAccuracy) : undefined,
+        });
       }
     }
   }
-  return count;
+
+  for (let i = 0; i < allGpsRows.length; i += 5000) {
+    await db.insert(metricStream).values(allGpsRows.slice(i, i + 5000));
+  }
+
+  return activityResults.length;
 }
 
 async function upsertSleepBatch(
@@ -1067,9 +1098,8 @@ async function upsertSleepBatch(
   const inBedRecords = records.filter((r) => r.stage === "inBed");
   const stageRecords = records.filter((r) => r.stage !== "inBed");
 
-  let count = 0;
-  for (const bed of inBedRecords) {
-    // Find stages that overlap with this inBed period
+  // Build all sleep session rows, then upsert in parallel
+  const sleepRows = inBedRecords.map((bed) => {
     const stages = stageRecords.filter(
       (s) => s.startDate >= bed.startDate && s.endDate <= bed.endDate,
     );
@@ -1098,41 +1128,57 @@ async function upsertSleepBatch(
 
     const totalSleepMinutes = deepMinutes + remMinutes + lightMinutes;
     const externalId = `ah:sleep:${bed.startDate.toISOString()}`;
-    const isNap = bed.durationMinutes < 120; // < 2 hours = nap
+    const isNap = bed.durationMinutes < 120;
 
-    await db
-      .insert(sleepSession)
-      .values({
-        providerId,
-        externalId,
-        startedAt: bed.startDate,
-        endedAt: bed.endDate,
-        durationMinutes: bed.durationMinutes,
-        deepMinutes: deepMinutes || undefined,
-        remMinutes: remMinutes || undefined,
-        lightMinutes: lightMinutes || undefined,
-        awakeMinutes: awakeMinutes || undefined,
-        efficiencyPct:
-          bed.durationMinutes > 0
-            ? Math.round((totalSleepMinutes / bed.durationMinutes) * 100) / 100
-            : undefined,
-        isNap,
-      })
-      .onConflictDoUpdate({
-        target: [sleepSession.providerId, sleepSession.externalId],
-        set: {
-          endedAt: bed.endDate,
-          durationMinutes: bed.durationMinutes,
-          deepMinutes: deepMinutes || undefined,
-          remMinutes: remMinutes || undefined,
-          lightMinutes: lightMinutes || undefined,
-          awakeMinutes: awakeMinutes || undefined,
-          isNap,
-        },
-      });
-    count++;
+    return {
+      bed,
+      deepMinutes,
+      remMinutes,
+      lightMinutes,
+      awakeMinutes,
+      totalSleepMinutes,
+      externalId,
+      isNap,
+    };
+  });
+
+  for (let i = 0; i < sleepRows.length; i += 20) {
+    await Promise.all(
+      sleepRows.slice(i, i + 20).map((s) =>
+        db
+          .insert(sleepSession)
+          .values({
+            providerId,
+            externalId: s.externalId,
+            startedAt: s.bed.startDate,
+            endedAt: s.bed.endDate,
+            durationMinutes: s.bed.durationMinutes,
+            deepMinutes: s.deepMinutes || undefined,
+            remMinutes: s.remMinutes || undefined,
+            lightMinutes: s.lightMinutes || undefined,
+            awakeMinutes: s.awakeMinutes || undefined,
+            efficiencyPct:
+              s.bed.durationMinutes > 0
+                ? Math.round((s.totalSleepMinutes / s.bed.durationMinutes) * 100) / 100
+                : undefined,
+            isNap: s.isNap,
+          })
+          .onConflictDoUpdate({
+            target: [sleepSession.providerId, sleepSession.externalId],
+            set: {
+              endedAt: s.bed.endDate,
+              durationMinutes: s.bed.durationMinutes,
+              deepMinutes: s.deepMinutes || undefined,
+              remMinutes: s.remMinutes || undefined,
+              lightMinutes: s.lightMinutes || undefined,
+              awakeMinutes: s.awakeMinutes || undefined,
+              isNap: s.isNap,
+            },
+          }),
+      ),
+    );
   }
-  return count;
+  return sleepRows.length;
 }
 
 // ============================================================
@@ -1226,29 +1272,17 @@ async function runImport(
         const bodyRecords = records.filter((r) => BODY_MEASUREMENT_TYPES.has(r.type));
         const dailyRecords = records.filter((r) => DAILY_METRIC_TYPES.has(r.type));
         const nutritionRecords = records.filter((r) => NUTRITION_TYPES[r.type]);
-        // Catch-all: anything not routed above
         const unrouted = records.filter((r) => !ALL_ROUTED_TYPES.has(r.type));
 
-        if (metricRecords.length > 0) {
-          const c = await upsertMetricStreamBatch(db, providerId, metricRecords);
-          recordsSynced += c;
-        }
-        if (bodyRecords.length > 0) {
-          const c = await upsertBodyMeasurementBatch(db, providerId, bodyRecords);
-          recordsSynced += c;
-        }
-        if (dailyRecords.length > 0) {
-          const c = await upsertDailyMetricsBatch(db, providerId, dailyRecords);
-          recordsSynced += c;
-        }
-        if (nutritionRecords.length > 0) {
-          const c = await upsertNutritionBatch(db, providerId, nutritionRecords);
-          recordsSynced += c;
-        }
-        if (unrouted.length > 0) {
-          const c = await upsertHealthEventBatch(db, providerId, unrouted);
-          recordsSynced += c;
-        }
+        // Run all table inserts in parallel — they target independent tables
+        const results = await Promise.all([
+          metricRecords.length > 0 ? upsertMetricStreamBatch(db, providerId, metricRecords) : 0,
+          bodyRecords.length > 0 ? upsertBodyMeasurementBatch(db, providerId, bodyRecords) : 0,
+          dailyRecords.length > 0 ? upsertDailyMetricsBatch(db, providerId, dailyRecords) : 0,
+          nutritionRecords.length > 0 ? upsertNutritionBatch(db, providerId, nutritionRecords) : 0,
+          unrouted.length > 0 ? upsertHealthEventBatch(db, providerId, unrouted) : 0,
+        ]);
+        for (const c of results) recordsSynced += c;
       },
       onSleepBatch: async (records) => {
         const c = await upsertSleepBatch(db, providerId, records);
