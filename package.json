@@ -50,6 +50,10 @@
     "./sync/runner": {
       "import": "./dist/sync/runner.js",
       "default": "./src/sync/runner.ts"
+    },
+    "./db/migrate": {
+      "import": "./dist/db/migrate.js",
+      "default": "./src/db/migrate.ts"
     }
   },
   "scripts": {

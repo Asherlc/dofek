@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { waitForAuthCode } from "./auth/callback-server.js";
 import { buildAuthorizationUrl } from "./auth/index.js";
 import { createDatabaseFromEnv } from "./db/index.js";
+import { runMigrations } from "./db/migrate.js";
 import { ensureProvider, saveTokens } from "./db/tokens.js";
 import { AutoSupplementsProvider } from "./providers/auto-supplements.js";
 import { FatSecretProvider } from "./providers/fatsecret.js";
@@ -40,6 +41,11 @@ function parseSinceDays(): number {
 
 async function main() {
   const command = process.argv[2] ?? "sync";
+
+  // Auto-run pending migrations on startup
+  if (process.env.DATABASE_URL) {
+    await runMigrations(process.env.DATABASE_URL);
+  }
 
   if (command === "sync") {
     const fullSync = process.argv.includes("--full-sync");

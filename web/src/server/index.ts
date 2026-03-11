@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import express from "express";
 import { createDatabaseFromEnv } from "health-data/db";
+import { runMigrations } from "health-data/db/migrate";
 import type { Context } from "../shared/trpc.js";
 import { appRouter } from "./router.js";
 
@@ -12,6 +13,9 @@ const PORT = parseInt(process.env.PORT ?? "3000", 10);
 const isDev = process.env.NODE_ENV !== "production";
 
 async function main() {
+  // Auto-run pending migrations on startup
+  await runMigrations(process.env.DATABASE_URL!);
+
   const app = express();
   const db = createDatabaseFromEnv();
 
