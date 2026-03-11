@@ -11,9 +11,12 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 RUN pnpm build
 RUN cd web && pnpm run build
+# Strip devDependencies before copying to production image
+RUN pnpm prune --prod && cd web && pnpm prune --prod
 
 # ── Production image ──────────────────────────────────────────────────────
 FROM node:22-slim
+ENV NODE_ENV=production
 WORKDIR /app
 
 # Root package (sync runner + source for workspace exports)

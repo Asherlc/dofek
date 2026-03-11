@@ -24,53 +24,53 @@ export function Dashboard() {
   const hrvBaseline = trpc.dailyMetrics.hrvBaseline.useQuery({ days });
   const bodyData = trpc.body.list.useQuery({ days: Math.max(days, 90) });
   const nutritionData = trpc.nutrition.daily.useQuery({ days });
-  const t = trends.data as any;
+  const trendData = trends.data as any;
 
   const healthMetrics = useMemo(
     () =>
-      t
+      trendData
         ? [
             {
               label: "Resting HR",
-              value: t.latest_resting_hr,
-              avg: t.avg_resting_hr,
-              stddev: t.stddev_resting_hr,
+              value: trendData.latest_resting_hr,
+              avg: trendData.avg_resting_hr,
+              stddev: trendData.stddev_resting_hr,
               unit: "bpm",
               lowerBetter: true,
             },
             {
               label: "HRV",
-              value: t.latest_hrv,
-              avg: t.avg_hrv,
-              stddev: t.stddev_hrv,
+              value: trendData.latest_hrv,
+              avg: trendData.avg_hrv,
+              stddev: trendData.stddev_hrv,
               unit: "ms",
             },
-            t.latest_spo2 != null && {
+            trendData.latest_spo2 != null && {
               label: "SpO2",
-              value: t.latest_spo2,
-              avg: t.avg_spo2,
-              stddev: t.stddev_spo2,
+              value: trendData.latest_spo2,
+              avg: trendData.avg_spo2,
+              stddev: trendData.stddev_spo2,
               unit: "%",
             },
             {
               label: "Steps",
-              value: t.latest_steps,
-              avg: t.avg_steps,
+              value: trendData.latest_steps,
+              avg: trendData.avg_steps,
               stddev: null,
               unit: "",
             },
             {
               label: "Active Energy",
-              value: t.latest_active_energy,
-              avg: t.avg_active_energy,
+              value: trendData.latest_active_energy,
+              avg: trendData.avg_active_energy,
               stddev: null,
               unit: "kcal",
             },
-            t.latest_skin_temp != null && {
+            trendData.latest_skin_temp != null && {
               label: "Skin Temp",
-              value: t.latest_skin_temp,
-              avg: t.avg_skin_temp,
-              stddev: t.stddev_skin_temp,
+              value: trendData.latest_skin_temp,
+              avg: trendData.avg_skin_temp,
+              stddev: trendData.stddev_skin_temp,
               unit: "°C",
             },
           ].filter(
@@ -86,7 +86,7 @@ export function Dashboard() {
             } => Boolean(m),
           )
         : [],
-    [t],
+    [trendData],
   );
 
   const metrics = (dailyMetrics.data ?? []) as any[];
@@ -142,8 +142,7 @@ export function Dashboard() {
       data: body
         .filter((d) => d.body_fat_pct != null)
         .map(
-          (d) =>
-            [new Date(d.recorded_at).toISOString(), d.body_fat_pct] as [string, number | null],
+          (d) => [new Date(d.recorded_at).toISOString(), d.body_fat_pct] as [string, number | null],
         ),
       color: "#f97316",
       yAxisIndex: 1,
@@ -156,8 +155,8 @@ export function Dashboard() {
       <AppHeader activePage="dashboard">
         <div className="flex items-center gap-4">
           <p className="text-xs text-zinc-500">
-            {t?.latest_date
-              ? `Latest: ${new Date(t.latest_date).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}`
+            {trendData?.latest_date
+              ? `Latest: ${new Date(trendData.latest_date).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}`
               : ""}
           </p>
           <TimeRangeSelector days={days} onChange={setDays} />

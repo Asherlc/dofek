@@ -23,7 +23,7 @@ class RingBufferTransport extends TransportStream {
       message: info.message,
     });
     if (ringBuffer.length > MAX_ENTRIES) {
-      ringBuffer.splice(0, ringBuffer.length - MAX_ENTRIES);
+      ringBuffer.shift();
     }
     callback();
   }

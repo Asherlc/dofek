@@ -33,31 +33,39 @@ export const trainingRouter = router({
   hrZones: publicProcedure
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
-      // First get max observed HR (used as proxy for max HR)
-      const maxHrResult = await ctx.db.execute(
-        sql`SELECT MAX(heart_rate) AS max_hr
-            FROM fitness.metric_stream
-            WHERE heart_rate IS NOT NULL
-              AND activity_id IS NOT NULL`,
-      );
-      const maxHr = (maxHrResult as Record<string, unknown>[])[0]?.max_hr as number | null;
-      if (!maxHr) return { maxHr: null, weeks: [] };
-
-      const rows = await ctx.db.execute(
-        sql`SELECT
+      // Single query: CTE computes max HR, then zone distribution in one scan
+      const rows = await ctx.db.execute<{
+        max_hr: number | null;
+        week: string;
+        zone1: number;
+        zone2: number;
+        zone3: number;
+        zone4: number;
+        zone5: number;
+      }>(
+        sql`WITH max_hr_cte AS (
+              SELECT MAX(heart_rate) AS max_hr
+              FROM fitness.metric_stream
+              WHERE heart_rate IS NOT NULL AND activity_id IS NOT NULL
+            )
+            SELECT
+              mh.max_hr,
               date_trunc('week', ms.recorded_at)::date AS week,
-              COUNT(*) FILTER (WHERE ms.heart_rate < ${maxHr} * 0.6)::int AS zone1,
-              COUNT(*) FILTER (WHERE ms.heart_rate >= ${maxHr} * 0.6 AND ms.heart_rate < ${maxHr} * 0.7)::int AS zone2,
-              COUNT(*) FILTER (WHERE ms.heart_rate >= ${maxHr} * 0.7 AND ms.heart_rate < ${maxHr} * 0.8)::int AS zone3,
-              COUNT(*) FILTER (WHERE ms.heart_rate >= ${maxHr} * 0.8 AND ms.heart_rate < ${maxHr} * 0.9)::int AS zone4,
-              COUNT(*) FILTER (WHERE ms.heart_rate >= ${maxHr} * 0.9)::int AS zone5
+              COUNT(*) FILTER (WHERE ms.heart_rate < mh.max_hr * 0.6)::int AS zone1,
+              COUNT(*) FILTER (WHERE ms.heart_rate >= mh.max_hr * 0.6 AND ms.heart_rate < mh.max_hr * 0.7)::int AS zone2,
+              COUNT(*) FILTER (WHERE ms.heart_rate >= mh.max_hr * 0.7 AND ms.heart_rate < mh.max_hr * 0.8)::int AS zone3,
+              COUNT(*) FILTER (WHERE ms.heart_rate >= mh.max_hr * 0.8 AND ms.heart_rate < mh.max_hr * 0.9)::int AS zone4,
+              COUNT(*) FILTER (WHERE ms.heart_rate >= mh.max_hr * 0.9)::int AS zone5
             FROM fitness.metric_stream ms
+            CROSS JOIN max_hr_cte mh
             WHERE ms.heart_rate IS NOT NULL
               AND ms.activity_id IS NOT NULL
               AND ms.recorded_at > NOW() - ${input.days}::int * INTERVAL '1 day'
-            GROUP BY date_trunc('week', ms.recorded_at)
+            GROUP BY mh.max_hr, date_trunc('week', ms.recorded_at)
             ORDER BY week`,
       );
+      const maxHr = (rows[0]?.max_hr as number | null) ?? null;
+      if (!maxHr) return { maxHr: null, weeks: [] };
       return { maxHr, weeks: rows };
     }),
 

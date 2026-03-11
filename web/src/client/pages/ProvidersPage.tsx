@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { AppHeader } from "../components/AppHeader.tsx";
 import { DataSourcesPanel } from "../components/DataSourcesPanel.tsx";
 import { trpc } from "../lib/trpc.ts";
@@ -6,23 +6,33 @@ import { trpc } from "../lib/trpc.ts";
 export function ProvidersPage() {
   const stats = trpc.sync.providerStats.useQuery();
   const providers = trpc.sync.providers.useQuery();
-  const logs = trpc.sync.logs.useQuery({ limit: 500 });
-  const systemLogs = trpc.sync.systemLogs.useQuery({ limit: 200 }, { refetchInterval: 5000 });
+  const logs = trpc.sync.logs.useQuery({ limit: 100 });
+  // Only poll system logs when a sync is actively running
+  const activeSyncJob = trpc.sync.syncStatus.useQuery({ jobId: "" }, { enabled: false });
+  const isSyncing = activeSyncJob.data?.status === "running";
+  const systemLogs = trpc.sync.systemLogs.useQuery(
+    { limit: 100 },
+    { refetchInterval: isSyncing ? 5000 : false },
+  );
 
   const [logFilter, setLogFilter] = useState<string | null>(null);
 
   const providerList = providers.data ?? [];
-  const statsByProvider = new Map((stats.data ?? []).map((s) => [s.providerId, s]));
+  const statsByProvider = useMemo(
+    () => new Map((stats.data ?? []).map((s) => [s.providerId, s])),
+    [stats.data],
+  );
 
-  // Merge provider info with stats
-  const allProviders = providerList.map((p) => ({
-    ...p,
-    stats: statsByProvider.get(p.id),
-  }));
+  const allProviders = useMemo(
+    () => providerList.map((p) => ({ ...p, stats: statsByProvider.get(p.id) })),
+    [providerList, statsByProvider],
+  );
 
-  // Also include providers that have stats but aren't in the registered list (e.g. apple_health)
-  const registeredIds = new Set(providerList.map((p) => p.id));
-  const extraStats = (stats.data ?? []).filter((s) => !registeredIds.has(s.providerId));
+  const registeredIds = useMemo(() => new Set(providerList.map((p) => p.id)), [providerList]);
+  const extraStats = useMemo(
+    () => (stats.data ?? []).filter((s) => !registeredIds.has(s.providerId)),
+    [stats.data, registeredIds],
+  );
 
   const syncRows = (logs.data ?? []) as Array<{
     id: string;
@@ -35,7 +45,26 @@ export function ProvidersPage() {
     syncedAt: string;
   }>;
 
+  // Pre-group logs by provider to avoid repeated .filter() in render loop
+  const logsByProvider = useMemo(() => {
+    const map = new Map<string, typeof syncRows>();
+    for (const row of syncRows) {
+      let arr = map.get(row.providerId);
+      if (!arr) {
+        arr = [];
+        map.set(row.providerId, arr);
+      }
+      arr.push(row);
+    }
+    return map;
+  }, [syncRows]);
+
   const filteredLogs = logFilter ? syncRows.filter((r) => r.providerId === logFilter) : syncRows;
+
+  const reversedSystemLogs = useMemo(
+    () => [...(systemLogs.data ?? [])].reverse(),
+    [systemLogs.data],
+  );
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
@@ -63,7 +92,7 @@ export function ProvidersPage() {
                   authorized={p.authorized}
                   lastSyncedAt={p.lastSyncedAt}
                   stats={p.stats}
-                  recentLogs={syncRows.filter((r) => r.providerId === p.id).slice(0, 5)}
+                  recentLogs={(logsByProvider.get(p.id) ?? []).slice(0, 5)}
                   onFilterLogs={() => setLogFilter((f) => (f === p.id ? null : p.id))}
                   isFiltered={logFilter === p.id}
                 />
@@ -74,11 +103,9 @@ export function ProvidersPage() {
                   name={formatProviderName(s.providerId)}
                   providerId={s.providerId}
                   authorized={true}
-                  lastSyncedAt={
-                    syncRows.find((r) => r.providerId === s.providerId)?.syncedAt ?? null
-                  }
+                  lastSyncedAt={(logsByProvider.get(s.providerId) ?? [])[0]?.syncedAt ?? null}
                   stats={s}
-                  recentLogs={syncRows.filter((r) => r.providerId === s.providerId).slice(0, 5)}
+                  recentLogs={(logsByProvider.get(s.providerId) ?? []).slice(0, 5)}
                   onFilterLogs={() =>
                     setLogFilter((f) => (f === s.providerId ? null : s.providerId))
                   }
@@ -206,7 +233,7 @@ export function ProvidersPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {[...(systemLogs.data ?? [])].reverse().map((entry, i) => (
+                  {reversedSystemLogs.map((entry, i) => (
                     <tr
                       key={`${entry.timestamp}-${i}`}
                       className="border-b border-zinc-800/50 hover:bg-zinc-800/30"

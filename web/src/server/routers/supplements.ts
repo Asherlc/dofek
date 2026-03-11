@@ -54,17 +54,22 @@ const supplementSchema = z.object({
 
 export type Supplement = z.infer<typeof supplementSchema>;
 
+let cachedSupplements: Supplement[] | null = null;
+
 async function readConfig(): Promise<Supplement[]> {
+  if (cachedSupplements) return cachedSupplements;
   try {
     const raw = await readFile(CONFIG_PATH, "utf-8");
     const parsed = JSON.parse(raw);
-    return z.array(supplementSchema).parse(parsed.supplements ?? parsed);
+    cachedSupplements = z.array(supplementSchema).parse(parsed.supplements ?? parsed);
+    return cachedSupplements;
   } catch {
     return [];
   }
 }
 
 async function writeConfig(supplements: Supplement[]): Promise<void> {
+  cachedSupplements = null; // invalidate cache on write
   await writeFile(CONFIG_PATH, `${JSON.stringify({ supplements }, null, 2)}\n`);
 }
 

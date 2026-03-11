@@ -1,4 +1,3 @@
-import type { Database } from "dofek/db";
 import { logSync } from "dofek/db/sync-log";
 import { ensureProvider } from "dofek/db/tokens";
 import { getAllProviders, registerProvider } from "dofek/providers/registry";
@@ -8,29 +7,17 @@ import { z } from "zod";
 import { publicProcedure, router } from "../../shared/trpc.ts";
 import { getSystemLogs, logger } from "../logger.ts";
 
-/** Count total records across main tables for a provider (excludes metric_stream for speed). */
-async function countProviderRecords(db: Database, providerId: string): Promise<number> {
-  const result = await db.execute<{ total: string }>(sql`
-    SELECT
-      (SELECT count(*) FROM fitness.activity WHERE provider_id = ${providerId}) +
-      (SELECT count(*) FROM fitness.daily_metrics WHERE provider_id = ${providerId}) +
-      (SELECT count(*) FROM fitness.sleep_session WHERE provider_id = ${providerId}) +
-      (SELECT count(*) FROM fitness.body_measurement WHERE provider_id = ${providerId}) +
-      (SELECT count(*) FROM fitness.food_entry WHERE provider_id = ${providerId}) +
-      (SELECT count(*) FROM fitness.health_event WHERE provider_id = ${providerId})
-    AS total
-  `);
-  return Number(result[0]?.total ?? 0);
+// ── Provider registration (race-safe) ──
+let registrationPromise: Promise<void> | null = null;
+
+export function ensureProvidersRegistered(): Promise<void> {
+  if (!registrationPromise) {
+    registrationPromise = doRegisterProviders();
+  }
+  return registrationPromise;
 }
 
-// Register providers on first import
-let providersRegistered = false;
-
-export async function ensureProvidersRegistered() {
-  if (providersRegistered) return;
-  providersRegistered = true;
-
-  // Dynamically import providers — they self-validate via env vars
+async function doRegisterProviders() {
   try {
     const { WahooProvider } = await import("dofek/providers/wahoo");
     registerProvider(new WahooProvider());
@@ -53,6 +40,34 @@ export async function ensureProvidersRegistered() {
   } catch {}
 }
 
+// ── Simple TTL cache ──
+interface CacheEntry<T> {
+  data: T;
+  expiresAt: number;
+}
+
+const cacheStore = new Map<string, CacheEntry<unknown>>();
+
+export function getCached<T>(key: string): T | null {
+  const entry = cacheStore.get(key);
+  if (entry && entry.expiresAt > Date.now()) return entry.data as T;
+  cacheStore.delete(key);
+  return null;
+}
+
+export function setCache<T>(key: string, data: T, ttlMs: number): void {
+  cacheStore.set(key, { data, expiresAt: Date.now() + ttlMs });
+}
+
+/** Invalidate caches after sync completes */
+export function invalidateSyncCaches(): void {
+  cacheStore.delete("providerStats");
+  // Invalidate all insights caches
+  for (const key of cacheStore.keys()) {
+    if (key.startsWith("insights:")) cacheStore.delete(key);
+  }
+}
+
 // ── Background sync job tracking ──
 export interface SyncJob {
   status: "running" | "done" | "error";
@@ -72,45 +87,42 @@ export const syncRouter = router({
   providers: publicProcedure.query(async ({ ctx }) => {
     await ensureProvidersRegistered();
     const all = getAllProviders();
-    const { loadTokens } = await import("dofek/db/tokens");
-    const { syncLog } = await import("dofek/db/schema");
-    const { desc, eq } = await import("drizzle-orm");
 
-    return Promise.all(
-      all.map(async (p) => {
-        const setup = p.authSetup?.();
-        // Providers with oauthConfig need auth (browser redirect or automatedLogin).
-        // WHOOP uses custom token-based auth (no authSetup, but needs stored tokens).
-        const needsOAuth = !!setup?.oauthConfig;
-        const needsCustomAuth = p.id === "whoop";
-        const needsAuth = needsOAuth || needsCustomAuth;
-        let authorized = !needsAuth;
-        if (needsAuth) {
-          const tokens = await loadTokens(ctx.db, p.id);
-          authorized = tokens !== null;
-        }
+    // Batch: load all tokens + last sync times in 2 queries instead of 2N
+    const [allTokens, lastSyncs] = await Promise.all([
+      ctx.db.execute<{ provider_id: string }>(
+        sql`SELECT DISTINCT provider_id FROM fitness.oauth_token`,
+      ),
+      ctx.db.execute<{ provider_id: string; last_synced: string }>(sql`
+        SELECT provider_id, MAX(synced_at) AS last_synced
+        FROM fitness.sync_log
+        GROUP BY provider_id
+      `),
+    ]);
 
-        // Get last sync time
-        const lastSyncRows = await ctx.db
-          .select({ syncedAt: syncLog.syncedAt })
-          .from(syncLog)
-          .where(eq(syncLog.providerId, p.id))
-          .orderBy(desc(syncLog.syncedAt))
-          .limit(1);
-        const lastSyncedAt = lastSyncRows[0]?.syncedAt?.toISOString() ?? null;
+    const tokenSet = new Set(allTokens.map((r) => r.provider_id));
+    const lastSyncMap = new Map(lastSyncs.map((r) => [r.provider_id, r.last_synced]));
 
-        return {
-          id: p.id,
-          name: p.name,
-          enabled: p.validate() === null,
-          error: p.validate(),
-          needsOAuth,
-          needsCustomAuth,
-          authorized,
-          lastSyncedAt,
-        };
-      }),
-    );
+    return all.map((p) => {
+      const setup = p.authSetup?.();
+      const needsOAuth = !!setup?.oauthConfig;
+      const needsCustomAuth = p.id === "whoop";
+      const needsAuth = needsOAuth || needsCustomAuth;
+      const authorized = needsAuth ? tokenSet.has(p.id) : true;
+      const lastSyncedAt = lastSyncMap.get(p.id) ?? null;
+      const validation = p.validate();
+
+      return {
+        id: p.id,
+        name: p.name,
+        enabled: validation === null,
+        error: validation,
+        needsOAuth,
+        needsCustomAuth,
+        authorized,
+        lastSyncedAt,
+      };
+    });
   }),
 
   /** Trigger sync — returns immediately with a jobId, processes in the background */
@@ -145,28 +157,21 @@ export const syncRouter = router({
       }
       syncJobs.set(jobId, { status: "running", providers: providerStatuses });
 
-      // Fire and forget
+      // Fire and forget — .catch ensures no unhandled rejections
       (async () => {
         try {
-          // Sync providers sequentially so we can update per-provider status
           for (const provider of providers) {
             const job = syncJobs.get(jobId)!;
             job.providers[provider.id] = { status: "running" };
 
-            // Ensure provider row exists before syncing (needed for sync_log FK)
             await ensureProvider(ctx.db, provider.id, provider.name);
 
             const syncStart = Date.now();
-            const countBefore = await countProviderRecords(ctx.db, provider.id);
             try {
               logger.info(`[sync] Starting ${provider.name}...`);
               const result = await provider.sync(ctx.db, since);
-              const countAfter = await countProviderRecords(ctx.db, provider.id);
-              const newRecords = countAfter - countBefore;
               const hasErrors = result.errors.length > 0;
-              const parts = [];
-              if (newRecords > 0) parts.push(`${newRecords} new`);
-              parts.push(`${result.recordsSynced} synced`);
+              const parts = [`${result.recordsSynced} synced`];
               if (hasErrors) parts.push(`${result.errors.length} errors`);
               job.providers[provider.id] = {
                 status: hasErrors ? "error" : "done",
@@ -205,6 +210,9 @@ export const syncRouter = router({
             logger.error(`[sync] Failed to refresh dedup views: ${err}`);
           }
 
+          // Invalidate server-side caches
+          invalidateSyncCaches();
+
           const job = syncJobs.get(jobId)!;
           job.status = "done";
           job.message = "Sync complete";
@@ -217,7 +225,7 @@ export const syncRouter = router({
             cleanupJob(jobId);
           }
         }
-      })();
+      })().catch((err) => logger.error(`[sync] Unhandled sync error: ${err}`));
 
       return { jobId };
     }),
@@ -246,8 +254,11 @@ export const syncRouter = router({
       return getSystemLogs(input.limit);
     }),
 
-  /** Per-provider record counts broken down by table */
+  /** Per-provider record counts broken down by table — cached 5 min, invalidated on sync */
   providerStats: publicProcedure.query(async ({ ctx }) => {
+    const cached = getCached<ReturnType<typeof mapProviderStats>>("providerStats");
+    if (cached) return cached;
+
     const rows = await ctx.db.execute<{
       provider_id: string;
       activities: string;
@@ -263,31 +274,61 @@ export const syncRouter = router({
     }>(sql`
       SELECT
         p.id AS provider_id,
-        (SELECT count(*) FROM fitness.activity WHERE provider_id = p.id)::text AS activities,
-        (SELECT count(*) FROM fitness.daily_metrics WHERE provider_id = p.id)::text AS daily_metrics,
-        (SELECT count(*) FROM fitness.sleep_session WHERE provider_id = p.id)::text AS sleep_sessions,
-        (SELECT count(*) FROM fitness.body_measurement WHERE provider_id = p.id)::text AS body_measurements,
-        (SELECT count(*) FROM fitness.food_entry WHERE provider_id = p.id)::text AS food_entries,
-        (SELECT count(*) FROM fitness.health_event WHERE provider_id = p.id)::text AS health_events,
-        (SELECT count(*) FROM fitness.metric_stream WHERE provider_id = p.id)::text AS metric_stream,
-        (SELECT count(*) FROM fitness.nutrition_daily WHERE provider_id = p.id)::text AS nutrition_daily,
-        (SELECT count(*) FROM fitness.lab_result WHERE provider_id = p.id)::text AS lab_results,
-        (SELECT count(*) FROM fitness.journal_entry WHERE provider_id = p.id)::text AS journal_entries
+        COALESCE(a.cnt, 0)::text AS activities,
+        COALESCE(dm.cnt, 0)::text AS daily_metrics,
+        COALESCE(ss.cnt, 0)::text AS sleep_sessions,
+        COALESCE(bm.cnt, 0)::text AS body_measurements,
+        COALESCE(fe.cnt, 0)::text AS food_entries,
+        COALESCE(he.cnt, 0)::text AS health_events,
+        COALESCE(ms.cnt, 0)::text AS metric_stream,
+        COALESCE(nd.cnt, 0)::text AS nutrition_daily,
+        COALESCE(lr.cnt, 0)::text AS lab_results,
+        COALESCE(je.cnt, 0)::text AS journal_entries
       FROM fitness.provider p
+      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.activity GROUP BY provider_id) a ON a.provider_id = p.id
+      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.daily_metrics GROUP BY provider_id) dm ON dm.provider_id = p.id
+      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.sleep_session GROUP BY provider_id) ss ON ss.provider_id = p.id
+      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.body_measurement GROUP BY provider_id) bm ON bm.provider_id = p.id
+      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.food_entry GROUP BY provider_id) fe ON fe.provider_id = p.id
+      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.health_event GROUP BY provider_id) he ON he.provider_id = p.id
+      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.metric_stream GROUP BY provider_id) ms ON ms.provider_id = p.id
+      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.nutrition_daily GROUP BY provider_id) nd ON nd.provider_id = p.id
+      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.lab_result GROUP BY provider_id) lr ON lr.provider_id = p.id
+      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.journal_entry GROUP BY provider_id) je ON je.provider_id = p.id
       ORDER BY p.id
     `);
-    return rows.map((r) => ({
-      providerId: r.provider_id,
-      activities: Number(r.activities),
-      dailyMetrics: Number(r.daily_metrics),
-      sleepSessions: Number(r.sleep_sessions),
-      bodyMeasurements: Number(r.body_measurements),
-      foodEntries: Number(r.food_entries),
-      healthEvents: Number(r.health_events),
-      metricStream: Number(r.metric_stream),
-      nutritionDaily: Number(r.nutrition_daily),
-      labResults: Number(r.lab_results),
-      journalEntries: Number(r.journal_entries),
-    }));
+    const result = mapProviderStats(rows);
+    setCache("providerStats", result, 5 * 60 * 1000);
+    return result;
   }),
 });
+
+function mapProviderStats(
+  rows: Array<{
+    provider_id: string;
+    activities: string;
+    daily_metrics: string;
+    sleep_sessions: string;
+    body_measurements: string;
+    food_entries: string;
+    health_events: string;
+    metric_stream: string;
+    nutrition_daily: string;
+    lab_results: string;
+    journal_entries: string;
+  }>,
+) {
+  return rows.map((r) => ({
+    providerId: r.provider_id,
+    activities: Number(r.activities),
+    dailyMetrics: Number(r.daily_metrics),
+    sleepSessions: Number(r.sleep_sessions),
+    bodyMeasurements: Number(r.body_measurements),
+    foodEntries: Number(r.food_entries),
+    healthEvents: Number(r.health_events),
+    metricStream: Number(r.metric_stream),
+    nutritionDaily: Number(r.nutrition_daily),
+    labResults: Number(r.lab_results),
+    journalEntries: Number(r.journal_entries),
+  }));
+}

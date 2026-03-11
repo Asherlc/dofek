@@ -3,6 +3,7 @@ import { mkdir, readdir, rm, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
+import compression from "compression";
 import { createDatabaseFromEnv } from "dofek/db";
 import { runMigrations } from "dofek/db/migrate";
 import express from "express";
@@ -48,6 +49,9 @@ export function createApp(db: import("dofek/db").Database): express.Express {
 }
 
 function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
+  // ── Compression ──
+  app.use(compression());
+
   // ── Request logging ──
   app.use((req, res, next) => {
     const start = Date.now();
@@ -188,6 +192,18 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
         await mkdir(dir, { recursive: true });
         upload = { received: new Set(), total: chunkTotal, dir };
         activeUploads.set(uploadId, upload);
+        // Clean up abandoned uploads after 30 minutes
+        setTimeout(
+          async () => {
+            const stale = activeUploads.get(uploadId);
+            if (stale) {
+              activeUploads.delete(uploadId);
+              await rm(stale.dir, { recursive: true, force: true }).catch(() => {});
+              setJobStatus(uploadId, { status: "error", message: "Upload timed out" });
+            }
+          },
+          30 * 60 * 1000,
+        );
         setJobStatus(uploadId, {
           status: "uploading",
           progress: 0,
@@ -452,11 +468,19 @@ async function main() {
     });
     app.use(vite.middlewares);
   } else {
-    // In production, serve the built client files
+    // In production, serve the built client files with cache headers
     const { default: path } = await import("node:path");
     const clientDir = path.resolve(import.meta.dirname, "../../client");
-    app.use(express.static(clientDir));
+    // Vite-hashed assets get long cache; index.html uses no-cache for fresh deploys
+    app.use(
+      express.static(clientDir, {
+        maxAge: "1y",
+        immutable: true,
+        index: false,
+      }),
+    );
     app.get("{*path}", (_req, res) => {
+      res.setHeader("Cache-Control", "no-cache");
       res.sendFile(path.join(clientDir, "index.html"));
     });
   }

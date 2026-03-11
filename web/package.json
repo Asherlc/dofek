@@ -19,10 +19,11 @@
     "@trpc/react-query": "^11.0.0",
     "@trpc/server": "^11.0.0",
     "clsx": "^2.1.0",
+    "compression": "^1.8.1",
+    "dofek": "workspace:*",
     "echarts": "^5.6.0",
     "echarts-for-react": "^3.0.0",
     "express": "^5.0.0",
-    "dofek": "workspace:*",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "simple-statistics": "^7.8.9",
@@ -31,6 +32,7 @@
     "zod": "^3.23.0"
   },
   "devDependencies": {
+    "@types/compression": "^1.8.1",
     "@types/express": "^5.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",

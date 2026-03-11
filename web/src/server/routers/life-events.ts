@@ -45,22 +45,28 @@ export const lifeEventsRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const sets: string[] = [];
       const { id, ...fields } = input;
-      if (fields.label !== undefined) sets.push(`label = '${fields.label}'`);
-      if (fields.startedAt !== undefined) sets.push(`started_at = '${fields.startedAt}'::date`);
+      const setClauses: ReturnType<typeof sql>[] = [];
+      if (fields.label !== undefined) setClauses.push(sql`label = ${fields.label}`);
+      if (fields.startedAt !== undefined)
+        setClauses.push(sql`started_at = ${fields.startedAt}::date`);
       if (fields.endedAt !== undefined)
-        sets.push(fields.endedAt ? `ended_at = '${fields.endedAt}'::date` : "ended_at = NULL");
+        setClauses.push(
+          fields.endedAt ? sql`ended_at = ${fields.endedAt}::date` : sql`ended_at = NULL`,
+        );
       if (fields.category !== undefined)
-        sets.push(fields.category ? `category = '${fields.category}'` : "category = NULL");
-      if (fields.ongoing !== undefined) sets.push(`ongoing = ${fields.ongoing}`);
+        setClauses.push(
+          fields.category ? sql`category = ${fields.category}` : sql`category = NULL`,
+        );
+      if (fields.ongoing !== undefined) setClauses.push(sql`ongoing = ${fields.ongoing}`);
       if (fields.notes !== undefined)
-        sets.push(fields.notes ? `notes = '${fields.notes}'` : "notes = NULL");
+        setClauses.push(fields.notes ? sql`notes = ${fields.notes}` : sql`notes = NULL`);
 
-      if (sets.length === 0) return null;
+      if (setClauses.length === 0) return null;
 
+      const setExpr = sql.join(setClauses, sql`, `);
       const rows = await ctx.db.execute(
-        sql.raw(`UPDATE fitness.life_events SET ${sets.join(", ")} WHERE id = '${id}' RETURNING *`),
+        sql`UPDATE fitness.life_events SET ${setExpr} WHERE id = ${id} RETURNING *`,
       );
       return rows[0] ?? null;
     }),
@@ -127,75 +133,75 @@ export const lifeEventsRouter = router({
         ORDER BY period
       `);
 
-      // Also get sleep data
-      const sleepResults = await ctx.db.execute(sql`
-        WITH before_sleep AS (
-          SELECT 'before' as period, *
-          FROM fitness.v_sleep
-          WHERE started_at::date BETWEEN (${startDate}::date - ${w}::int) AND (${startDate}::date - 1)
-            AND NOT is_nap
-        ),
-        after_sleep AS (
-          SELECT 'after' as period, *
-          FROM fitness.v_sleep
-          WHERE ${
-            endDate
-              ? endDate === "NOW()"
-                ? sql`started_at::date BETWEEN ${startDate}::date AND CURRENT_DATE`
-                : sql`started_at::date BETWEEN ${startDate}::date AND ${endDate}::date`
-              : sql`started_at::date BETWEEN ${startDate}::date AND (${startDate}::date + ${w}::int)`
-          }
-            AND NOT is_nap
-        ),
-        combined AS (
-          SELECT * FROM before_sleep
-          UNION ALL
-          SELECT * FROM after_sleep
-        )
-        SELECT
-          period,
-          COUNT(*) as nights,
-          AVG(duration_minutes)::numeric(10,0) as avg_sleep_min,
-          AVG(deep_minutes)::numeric(10,0) as avg_deep_min,
-          AVG(rem_minutes)::numeric(10,0) as avg_rem_min,
-          AVG(efficiency_pct)::numeric(10,1) as avg_efficiency
-        FROM combined
-        GROUP BY period
-        ORDER BY period
-      `);
-
-      // Body comp
-      const bodyResults = await ctx.db.execute(sql`
-        WITH before_body AS (
-          SELECT 'before' as period, *
-          FROM fitness.v_body_measurement
-          WHERE recorded_at::date BETWEEN (${startDate}::date - ${w}::int) AND (${startDate}::date - 1)
-        ),
-        after_body AS (
-          SELECT 'after' as period, *
-          FROM fitness.v_body_measurement
-          WHERE ${
-            endDate
-              ? endDate === "NOW()"
-                ? sql`recorded_at::date BETWEEN ${startDate}::date AND CURRENT_DATE`
-                : sql`recorded_at::date BETWEEN ${startDate}::date AND ${endDate}::date`
-              : sql`recorded_at::date BETWEEN ${startDate}::date AND (${startDate}::date + ${w}::int)`
-          }
-        ),
-        combined AS (
-          SELECT * FROM before_body
-          UNION ALL
-          SELECT * FROM after_body
-        )
-        SELECT
-          period,
-          COUNT(*) as measurements,
-          AVG(weight_kg)::numeric(10,2) as avg_weight,
-          AVG(body_fat_pct)::numeric(10,1) as avg_body_fat
-        FROM combined
-        GROUP BY period
-        ORDER BY period
-      `);
+      // Sleep + body comp queries in parallel
+      const [sleepResults, bodyResults] = await Promise.all([
+        ctx.db.execute(sql`
+          WITH before_sleep AS (
+            SELECT 'before' as period, *
+            FROM fitness.v_sleep
+            WHERE started_at::date BETWEEN (${startDate}::date - ${w}::int) AND (${startDate}::date - 1)
+              AND NOT is_nap
+          ),
+          after_sleep AS (
+            SELECT 'after' as period, *
+            FROM fitness.v_sleep
+            WHERE ${
+              endDate
+                ? endDate === "NOW()"
+                  ? sql`started_at::date BETWEEN ${startDate}::date AND CURRENT_DATE`
+                  : sql`started_at::date BETWEEN ${startDate}::date AND ${endDate}::date`
+                : sql`started_at::date BETWEEN ${startDate}::date AND (${startDate}::date + ${w}::int)`
+            }
+              AND NOT is_nap
+          ),
+          combined AS (
+            SELECT * FROM before_sleep
+            UNION ALL
+            SELECT * FROM after_sleep
+          )
+          SELECT
+            period,
+            COUNT(*) as nights,
+            AVG(duration_minutes)::numeric(10,0) as avg_sleep_min,
+            AVG(deep_minutes)::numeric(10,0) as avg_deep_min,
+            AVG(rem_minutes)::numeric(10,0) as avg_rem_min,
+            AVG(efficiency_pct)::numeric(10,1) as avg_efficiency
+          FROM combined
+          GROUP BY period
+          ORDER BY period
+        `),
+        ctx.db.execute(sql`
+          WITH before_body AS (
+            SELECT 'before' as period, *
+            FROM fitness.v_body_measurement
+            WHERE recorded_at::date BETWEEN (${startDate}::date - ${w}::int) AND (${startDate}::date - 1)
+          ),
+          after_body AS (
+            SELECT 'after' as period, *
+            FROM fitness.v_body_measurement
+            WHERE ${
+              endDate
+                ? endDate === "NOW()"
+                  ? sql`recorded_at::date BETWEEN ${startDate}::date AND CURRENT_DATE`
+                  : sql`recorded_at::date BETWEEN ${startDate}::date AND ${endDate}::date`
+                : sql`recorded_at::date BETWEEN ${startDate}::date AND (${startDate}::date + ${w}::int)`
+            }
+          ),
+          combined AS (
+            SELECT * FROM before_body
+            UNION ALL
+            SELECT * FROM after_body
+          )
+          SELECT
+            period,
+            COUNT(*) as measurements,
+            AVG(weight_kg)::numeric(10,2) as avg_weight,
+            AVG(body_fat_pct)::numeric(10,1) as avg_body_fat
+          FROM combined
+          GROUP BY period
+          ORDER BY period
+        `),
+      ]);
 
       return {
         event,

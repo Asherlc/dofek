@@ -5,7 +5,11 @@ import * as schema from "./schema.ts";
 export type Database = ReturnType<typeof createDatabase>;
 
 export function createDatabase(connectionString: string) {
-  const client = postgres(connectionString);
+  const client = postgres(connectionString, {
+    max: 5, // conservative for small homelab server
+    idle_timeout: 30,
+    connect_timeout: 10,
+  });
   return drizzle(client, { schema });
 }
 
