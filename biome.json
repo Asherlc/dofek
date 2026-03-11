@@ -7,7 +7,7 @@
   },
   "files": {
     "ignoreUnknown": true,
-    "includes": ["src/**", "web/src/**"]
+    "includes": ["src/**", "packages/server/src/**", "packages/web/src/**"]
   },
   "formatter": {
     "indentStyle": "space",

@@ -1,0 +1,30 @@
+{
+  "name": "dofek-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./router": "./src/router.ts"
+  },
+  "scripts": {
+    "dev": "../../scripts/with-env.sh tsx src/index.ts"
+  },
+  "dependencies": {
+    "@stdlib/stats-pcorrtest": "^0.2.3",
+    "@stdlib/stats-ranks": "^0.2.3",
+    "@stdlib/stats-ttest": "^0.2.3",
+    "@stdlib/stats-wilcoxon": "^0.2.3",
+    "@trpc/server": "^11.0.0",
+    "compression": "^1.8.1",
+    "dofek": "workspace:*",
+    "express": "^5.0.0",
+    "simple-statistics": "^7.8.9",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/compression": "^1.8.1",
+    "@types/express": "^5.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

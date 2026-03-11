@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { setupTestDatabase, type TestContext } from "../../../../src/db/__tests__/test-helpers.ts";
-import { createApp } from "../index.ts";
+import { setupTestDatabase, type TestContext } from "../../../src/db/__tests__/test-helpers.ts";
+import { createApp } from "./index.ts";
 
 /**
  * Integration tests for the tRPC API layer.

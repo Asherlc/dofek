@@ -1,7 +1,7 @@
 import { ensureProvider, saveTokens } from "dofek/db/tokens";
 import { WhoopInternalClient } from "dofek/providers/whoop";
 import { z } from "zod";
-import { publicProcedure, router } from "../../shared/trpc.ts";
+import { publicProcedure, router } from "../trpc.ts";
 
 // In-memory store for pending MFA challenges (keyed by a random ID)
 const pendingChallenges = new Map<

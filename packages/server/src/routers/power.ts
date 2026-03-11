@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { publicProcedure, router } from "../../shared/trpc.ts";
+import { publicProcedure, router } from "../trpc.ts";
 
 /** Standard durations for the power duration curve (in seconds). */
 const STANDARD_DURATIONS = [5, 15, 30, 60, 120, 300, 600, 1200, 1800, 3600, 5400, 7200] as const;

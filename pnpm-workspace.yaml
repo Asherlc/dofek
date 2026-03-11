@@ -1,6 +1,7 @@
 packages:
   - .
-  - web
+  - packages/server
+  - packages/web
 
 ignoredBuiltDependencies:
   - cpu-features

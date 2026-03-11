@@ -4,8 +4,8 @@ import { getAllProviders, registerProvider } from "dofek/providers/registry";
 import type { Provider } from "dofek/providers/types";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { publicProcedure, router } from "../../shared/trpc.ts";
 import { getSystemLogs, logger } from "../logger.ts";
+import { publicProcedure, router } from "../trpc.ts";
 
 // ── Provider registration (race-safe) ──
 let registrationPromise: Promise<void> | null = null;

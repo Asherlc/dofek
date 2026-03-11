@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { publicProcedure, router } from "../../shared/trpc.ts";
+import { publicProcedure, router } from "../trpc.ts";
 
 export const activityRouter = router({
   list: publicProcedure

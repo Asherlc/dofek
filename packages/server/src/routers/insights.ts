@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { publicProcedure, router } from "../../shared/trpc.ts";
 import { computeInsights } from "../insights/engine.ts";
+import { publicProcedure, router } from "../trpc.ts";
 import { getCached, setCache } from "./sync.ts";
 
 export const insightsRouter = router({

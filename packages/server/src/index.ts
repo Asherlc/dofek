@@ -7,12 +7,11 @@ import compression from "compression";
 import { createDatabaseFromEnv } from "dofek/db";
 import { runMigrations } from "dofek/db/migrate";
 import express from "express";
-import type { Context } from "../shared/trpc.ts";
 import { logger } from "./logger.ts";
 import { appRouter } from "./router.ts";
+import type { Context } from "./trpc.ts";
 
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
-const isDev = process.env.NODE_ENV !== "production";
 
 /** Stream a request body to a file on disk. */
 function streamToFile(req: import("express").Request, filePath: string): Promise<void> {
@@ -458,36 +457,9 @@ async function main() {
   const db = createDatabaseFromEnv();
   const app = createApp(db);
 
-  if (isDev) {
-    // In dev, use Vite's dev server as middleware
-    const { createServer } = await import("vite");
-    const vite = await createServer({
-      configFile: new URL("../../vite.config.ts", import.meta.url).pathname,
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    // In production, serve the built client files with cache headers
-    const { default: path } = await import("node:path");
-    const clientDir = path.resolve(import.meta.dirname, "../../client");
-    // Vite-hashed assets get long cache; index.html uses no-cache for fresh deploys
-    app.use(
-      express.static(clientDir, {
-        maxAge: "1y",
-        immutable: true,
-        index: false,
-      }),
-    );
-    app.get("{*path}", (_req, res) => {
-      res.setHeader("Cache-Control", "no-cache");
-      res.sendFile(path.join(clientDir, "index.html"));
-    });
-  }
-
   app.listen(PORT, () => {
-    logger.info(`[web] Server running at http://localhost:${PORT}`);
-    logger.info(`[web] tRPC API at http://localhost:${PORT}/api/trpc`);
+    logger.info(`[server] API running at http://localhost:${PORT}`);
+    logger.info(`[server] tRPC at http://localhost:${PORT}/api/trpc`);
   });
 }
 

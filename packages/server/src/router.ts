@@ -1,4 +1,3 @@
-import { router } from "../shared/trpc.ts";
 import { activityRouter } from "./routers/activity.ts";
 import { bodyRouter } from "./routers/body.ts";
 import { calendarRouter } from "./routers/calendar.ts";
@@ -14,6 +13,7 @@ import { supplementsRouter } from "./routers/supplements.ts";
 import { syncRouter } from "./routers/sync.ts";
 import { trainingRouter } from "./routers/training.ts";
 import { whoopAuthRouter } from "./routers/whoop-auth.ts";
+import { router } from "./trpc.ts";
 
 export const appRouter = router({
   activity: activityRouter,
