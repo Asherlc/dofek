@@ -8,7 +8,7 @@ import {
   parseSleepAnalysis,
   parseWorkout,
   parseWorkoutStatistics,
-} from "../apple-health.js";
+} from "../apple-health.ts";
 
 // ============================================================
 // Pure parsing unit tests — Apple Health XML element attributes

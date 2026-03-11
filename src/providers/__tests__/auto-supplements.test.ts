@@ -4,7 +4,7 @@ import {
   parseSupplementConfig,
   type SupplementConfig,
   type SupplementDefinition,
-} from "../auto-supplements.js";
+} from "../auto-supplements.ts";
 
 // ============================================================
 // Sample configs

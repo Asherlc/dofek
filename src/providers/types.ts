@@ -1,6 +1,6 @@
 import { z } from "zod";
-import type { OAuthConfig, TokenSet } from "../auth/oauth.js";
-import type { Database } from "../db/index.js";
+import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
+import type { Database } from "../db/index.ts";
 
 /**
  * Auth setup returned by providers that use OAuth.

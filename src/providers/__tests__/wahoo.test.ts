@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { ParsedFitRecord } from "../../fit/parser.js";
+import type { ParsedFitRecord } from "../../fit/parser.ts";
 import {
   fitRecordsToMetricStream,
   parseWorkoutList,
   parseWorkoutSummary,
   type WahooWorkout,
   type WahooWorkoutSummary,
-} from "../wahoo.js";
+} from "../wahoo.ts";
 
 const sampleWorkoutSummary: WahooWorkoutSummary = {
   id: 101,

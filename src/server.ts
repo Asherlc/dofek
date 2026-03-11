@@ -2,8 +2,8 @@ import { createWriteStream, mkdirSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createDatabaseFromEnv } from "./db/index.js";
-import { importAppleHealthFile } from "./providers/apple-health.js";
+import { createDatabaseFromEnv } from "./db/index.ts";
+import { importAppleHealthFile } from "./providers/apple-health.ts";
 
 const PORT = parseInt(process.env.UPLOAD_PORT ?? "9877", 10);
 const API_KEY = process.env.UPLOAD_API_KEY;

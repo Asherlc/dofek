@@ -7,7 +7,7 @@ import {
   type OAuthConfig,
   refreshAccessToken,
   type TokenSet,
-} from "../oauth.js";
+} from "../oauth.ts";
 
 const config: OAuthConfig = {
   clientId: "test-client-id",

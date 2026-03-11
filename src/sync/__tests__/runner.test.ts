@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Database } from "../../db/index.js";
-import type { Provider } from "../../providers/types.js";
-import { runSync } from "../runner.js";
+import type { Database } from "../../db/index.ts";
+import type { Provider } from "../../providers/types.ts";
+import { runSync } from "../runner.ts";
 
 function createMockProvider(overrides: Partial<Provider> = {}): Provider {
   return {

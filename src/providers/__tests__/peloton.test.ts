@@ -6,7 +6,7 @@ import {
   parseAuth0FormHtml,
   parsePerformanceGraph,
   parseWorkout,
-} from "../peloton.js";
+} from "../peloton.ts";
 
 // ============================================================
 // Sample API responses

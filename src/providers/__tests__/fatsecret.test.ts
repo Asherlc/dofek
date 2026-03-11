@@ -4,7 +4,7 @@ import {
   type FatSecretFoodEntriesResponse,
   inferCategory,
   parseFoodEntries,
-} from "../fatsecret.js";
+} from "../fatsecret.ts";
 
 // ============================================================
 // Sample API responses (based on FatSecret Platform API docs)

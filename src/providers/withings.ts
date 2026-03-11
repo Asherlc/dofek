@@ -1,9 +1,9 @@
-import type { OAuthConfig, TokenSet } from "../auth/oauth.js";
-import type { Database } from "../db/index.js";
-import { bodyMeasurement } from "../db/schema.js";
-import { withSyncLog } from "../db/sync-log.js";
-import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.js";
-import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.js";
+import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
+import type { Database } from "../db/index.ts";
+import { bodyMeasurement } from "../db/schema.ts";
+import { withSyncLog } from "../db/sync-log.ts";
+import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
 
 // ============================================================
 // Withings API types

@@ -5,7 +5,7 @@ import { getAllProviders, registerProvider } from "dofek/providers/registry";
 import type { Provider } from "dofek/providers/types";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { publicProcedure, router } from "../../shared/trpc.js";
+import { publicProcedure, router } from "../../shared/trpc.ts";
 
 /** Count total records across main tables for a provider (excludes metric_stream for speed). */
 async function countProviderRecords(db: Database, providerId: string): Promise<number> {

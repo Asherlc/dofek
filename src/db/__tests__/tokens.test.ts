@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { ensureProvider, loadTokens, saveTokens } from "../tokens.js";
-import { setupTestDatabase, type TestContext } from "./test-helpers.js";
+import { ensureProvider, loadTokens, saveTokens } from "../tokens.ts";
+import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
 
 describe("Token storage (integration)", () => {
   let ctx: TestContext;

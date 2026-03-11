@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { z } from "zod";
-import { publicProcedure, router } from "../../shared/trpc.js";
+import { publicProcedure, router } from "../../shared/trpc.ts";
 
 // Config file lives at project root (alongside supplements.config.ts)
 const CONFIG_PATH = resolve(import.meta.dirname, "../../../../supplements.json");

@@ -1,8 +1,8 @@
 import { z } from "zod";
-import type { Database } from "../db/index.js";
-import { foodEntry } from "../db/schema.js";
-import { ensureProvider } from "../db/tokens.js";
-import type { Provider, SyncError, SyncResult } from "./types.js";
+import type { Database } from "../db/index.ts";
+import { foodEntry } from "../db/schema.ts";
+import { ensureProvider } from "../db/tokens.ts";
+import type { Provider, SyncError, SyncResult } from "./types.ts";
 
 // ============================================================
 // Supplement config types & validation

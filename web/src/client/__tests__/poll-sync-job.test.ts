@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { pollSyncJob, type SyncJobStatus } from "../lib/poll-sync-job.js";
+import { pollSyncJob, type SyncJobStatus } from "../lib/poll-sync-job.ts";
 
 describe("pollSyncJob", () => {
   it("resets syncing providers when job is null (server restart)", async () => {

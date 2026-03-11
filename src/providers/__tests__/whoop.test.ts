@@ -8,7 +8,7 @@ import {
   type WhoopRecoveryRecord,
   type WhoopSleepRecord,
   type WhoopWorkoutRecord,
-} from "../whoop.js";
+} from "../whoop.ts";
 
 // ============================================================
 // Pure parsing unit tests (no DB, no network)

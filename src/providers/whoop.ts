@@ -1,8 +1,8 @@
-import type { Database } from "../db/index.js";
-import { activity, dailyMetrics, metricStream, sleepSession } from "../db/schema.js";
-import { withSyncLog } from "../db/sync-log.js";
-import { ensureProvider } from "../db/tokens.js";
-import type { Provider, SyncError, SyncResult } from "./types.js";
+import type { Database } from "../db/index.ts";
+import { activity, dailyMetrics, metricStream, sleepSession } from "../db/schema.ts";
+import { withSyncLog } from "../db/sync-log.ts";
+import { ensureProvider } from "../db/tokens.ts";
+import type { Provider, SyncError, SyncResult } from "./types.ts";
 
 // ============================================================
 // WHOOP internal API types

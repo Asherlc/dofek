@@ -2,10 +2,10 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.js";
-import { activity, metricStream } from "../../db/schema.js";
-import { ensureProvider, saveTokens } from "../../db/tokens.js";
-import { WahooProvider, type WahooWorkout } from "../wahoo.js";
+import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
+import { activity, metricStream } from "../../db/schema.ts";
+import { ensureProvider, saveTokens } from "../../db/tokens.ts";
+import { WahooProvider, type WahooWorkout } from "../wahoo.ts";
 
 // Fake Wahoo API responses
 function fakeWorkout(overrides: Partial<WahooWorkout> = {}): WahooWorkout {
@@ -162,7 +162,7 @@ describe("WahooProvider.sync() (integration)", () => {
     await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     // Verify token was refreshed in DB
-    const { loadTokens } = await import("../../db/tokens.js");
+    const { loadTokens } = await import("../../db/tokens.ts");
     const tokens = await loadTokens(ctx.db, "wahoo");
     expect(tokens!.accessToken).toBe("refreshed-token");
   });
@@ -231,7 +231,7 @@ describe("WahooProvider.sync() (integration)", () => {
     // Clear tokens by saving then deleting — or simpler, just test with
     // a provider that tries to sync without tokens.
     // Delete existing wahoo tokens first.
-    const { oauthToken } = await import("../../db/schema.js");
+    const { oauthToken } = await import("../../db/schema.ts");
     const { eq } = await import("drizzle-orm");
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "wahoo"));
 

@@ -6,7 +6,7 @@ import {
   describe,
   spearmanCorrelation,
   welchTTest,
-} from "./stats.js";
+} from "./stats.ts";
 
 // ── Configuration ─────────────────────────────────────────────────────────
 

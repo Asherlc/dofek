@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { setupTestDatabase, type TestContext } from "../../../../src/db/__tests__/test-helpers.js";
+import { setupTestDatabase, type TestContext } from "../../../../src/db/__tests__/test-helpers.ts";
 
 /**
  * Test that raw SQL queries use schema-qualified table names.

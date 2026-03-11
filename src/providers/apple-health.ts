@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { sql } from "drizzle-orm";
 import sax from "sax";
 import yauzl from "yauzl";
-import type { Database } from "../db/index.js";
+import type { Database } from "../db/index.ts";
 import {
   activity,
   bodyMeasurement,
@@ -14,9 +14,9 @@ import {
   metricStream,
   nutritionDaily,
   sleepSession,
-} from "../db/schema.js";
-import { ensureProvider } from "../db/tokens.js";
-import type { Provider, SyncError, SyncResult } from "./types.js";
+} from "../db/schema.ts";
+import { ensureProvider } from "../db/tokens.ts";
+import type { Provider, SyncError, SyncResult } from "./types.ts";
 
 // ============================================================
 // Apple Health date parsing

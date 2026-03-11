@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import type { Database } from "./index.js";
+import type { Database } from "./index.ts";
 
 const MATERIALIZED_VIEWS = [
   "fitness.v_activity",

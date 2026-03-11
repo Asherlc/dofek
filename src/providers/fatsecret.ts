@@ -1,8 +1,8 @@
 import { createHmac, randomBytes } from "node:crypto";
-import type { Database } from "../db/index.js";
-import { foodEntry } from "../db/schema.js";
-import { ensureProvider } from "../db/tokens.js";
-import type { Provider, SyncError, SyncResult } from "./types.js";
+import type { Database } from "../db/index.ts";
+import { foodEntry } from "../db/schema.ts";
+import { ensureProvider } from "../db/tokens.ts";
+import type { Provider, SyncError, SyncResult } from "./types.ts";
 
 // ============================================================
 // OAuth 1.0 HMAC-SHA1 signing
@@ -528,7 +528,7 @@ export class FatSecretProvider implements Provider {
     await ensureProvider(db, this.id, this.name);
 
     // Load stored OAuth 1.0 tokens
-    const { loadTokens } = await import("../db/tokens.js");
+    const { loadTokens } = await import("../db/tokens.ts");
     const tokens = await loadTokens(db, this.id);
     if (!tokens) {
       return {

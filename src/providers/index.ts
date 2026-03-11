@@ -1,4 +1,4 @@
-import type { Provider } from "./types.js";
+import type { Provider } from "./types.ts";
 
 /**
  * Registry of all available providers.

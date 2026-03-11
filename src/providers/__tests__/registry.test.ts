@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { getEnabledProviders, getProvider, registerProvider } from "../index.js";
-import type { Provider } from "../types.js";
+import { getEnabledProviders, getProvider, registerProvider } from "../index.ts";
+import type { Provider } from "../types.ts";
 
 function createMockProvider(overrides: Partial<Provider> = {}): Provider {
   return {

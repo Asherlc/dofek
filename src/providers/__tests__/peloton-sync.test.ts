@@ -1,9 +1,9 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.js";
-import { activity, metricStream } from "../../db/schema.js";
-import { ensureProvider, saveTokens } from "../../db/tokens.js";
-import { type PelotonPerformanceGraph, PelotonProvider, type PelotonWorkout } from "../peloton.js";
+import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
+import { activity, metricStream } from "../../db/schema.ts";
+import { ensureProvider, saveTokens } from "../../db/tokens.ts";
+import { type PelotonPerformanceGraph, PelotonProvider, type PelotonWorkout } from "../peloton.ts";
 
 // ============================================================
 // Fake Peloton API responses
@@ -245,7 +245,7 @@ describe("PelotonProvider.sync() (integration)", () => {
   });
 
   it("returns error when no tokens exist", async () => {
-    const { oauthToken } = await import("../../db/schema.js");
+    const { oauthToken } = await import("../../db/schema.ts");
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "peloton"));
 
     const provider = new PelotonProvider(createMockFetch([]));

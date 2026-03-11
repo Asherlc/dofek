@@ -1,15 +1,15 @@
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.js";
-import { activity, dailyMetrics, metricStream, sleepSession } from "../../db/schema.js";
-import { ensureProvider } from "../../db/tokens.js";
+import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
+import { activity, dailyMetrics, metricStream, sleepSession } from "../../db/schema.ts";
+import { ensureProvider } from "../../db/tokens.ts";
 import {
   type WhoopHrValue,
   WhoopProvider,
   type WhoopRecoveryRecord,
   type WhoopSleepRecord,
   type WhoopWorkoutRecord,
-} from "../whoop.js";
+} from "../whoop.ts";
 
 // ============================================================
 // Fake WHOOP internal API cycle response

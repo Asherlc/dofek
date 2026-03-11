@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
-import type { TokenSet } from "../auth/oauth.js";
-import type { Database } from "./index.js";
-import { oauthToken, provider } from "./schema.js";
+import type { TokenSet } from "../auth/oauth.ts";
+import type { Database } from "./index.ts";
+import { oauthToken, provider } from "./schema.ts";
 
 /**
  * Ensure a provider row exists. Idempotent — does nothing if already present.

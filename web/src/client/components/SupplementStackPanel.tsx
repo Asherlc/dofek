@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { trpc } from "../lib/trpc.js";
+import { trpc } from "../lib/trpc.ts";
 
 interface Supplement {
   name: string;

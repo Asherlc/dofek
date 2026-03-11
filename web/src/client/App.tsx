@@ -1,9 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState, useSyncExternalStore } from "react";
-import { createTRPCClient, trpc } from "./lib/trpc.js";
-import { Dashboard } from "./pages/Dashboard.js";
-import { InsightsPage } from "./pages/InsightsPage.js";
-import { LogsPage } from "./pages/LogsPage.js";
+import { createTRPCClient, trpc } from "./lib/trpc.ts";
+import { Dashboard } from "./pages/Dashboard.tsx";
+import { InsightsPage } from "./pages/InsightsPage.tsx";
+import { LogsPage } from "./pages/LogsPage.tsx";
 
 type Route = "dashboard" | "insights" | "logs";
 

@@ -4,7 +4,7 @@ import {
   type FhirDiagnosticReport,
   type FhirObservation,
   parseFhirObservation,
-} from "../apple-health.js";
+} from "../apple-health.ts";
 
 // ============================================================
 // Sample FHIR resources (based on real export data)

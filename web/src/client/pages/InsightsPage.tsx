@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { AppHeader } from "../components/AppHeader.js";
-import { InsightsPanel } from "../components/InsightsPanel.js";
-import { LifeEventsPanel } from "../components/LifeEventsPanel.js";
-import { SupplementStackPanel } from "../components/SupplementStackPanel.js";
-import { TimeRangeSelector } from "../components/TimeRangeSelector.js";
-import { trpc } from "../lib/trpc.js";
+import { AppHeader } from "../components/AppHeader.tsx";
+import { InsightsPanel } from "../components/InsightsPanel.tsx";
+import { LifeEventsPanel } from "../components/LifeEventsPanel.tsx";
+import { SupplementStackPanel } from "../components/SupplementStackPanel.tsx";
+import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
+import { trpc } from "../lib/trpc.ts";
 
 export function InsightsPage() {
   const [days, setDays] = useState(365);

@@ -1,7 +1,7 @@
-import { refreshDedupViews } from "../db/dedup.js";
-import type { Database } from "../db/index.js";
-import { getEnabledProviders } from "../providers/index.js";
-import type { Provider, SyncResult } from "../providers/types.js";
+import { refreshDedupViews } from "../db/dedup.ts";
+import type { Database } from "../db/index.ts";
+import { getEnabledProviders } from "../providers/index.ts";
+import type { Provider, SyncResult } from "../providers/types.ts";
 
 export interface SyncRunResult {
   results: SyncResult[];

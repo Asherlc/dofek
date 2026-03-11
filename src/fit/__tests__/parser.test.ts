@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { parseFitFile, parseFitRecord } from "../parser.js";
+import { parseFitFile, parseFitRecord } from "../parser.ts";
 
 const FIXTURES = resolve(import.meta.dirname, "fixtures");
 

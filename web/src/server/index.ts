@@ -6,8 +6,8 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { createDatabaseFromEnv } from "dofek/db";
 import { runMigrations } from "dofek/db/migrate";
 import express from "express";
-import type { Context } from "../shared/trpc.js";
-import { appRouter } from "./router.js";
+import type { Context } from "../shared/trpc.ts";
+import { appRouter } from "./router.ts";
 
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
 const isDev = process.env.NODE_ENV !== "production";
@@ -226,7 +226,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
     try {
       const providerId = req.params.provider;
       const { getAllProviders } = await import("dofek/providers/registry");
-      const { ensureProvidersRegistered } = await import("./routers/sync.js");
+      const { ensureProvidersRegistered } = await import("./routers/sync.ts");
       await ensureProvidersRegistered();
 
       const provider = getAllProviders().find((p) => p.id === providerId);
@@ -322,7 +322,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
         oauth1Secrets.delete(oauthToken);
 
         const { getAllProviders } = await import("dofek/providers/registry");
-        const { ensureProvidersRegistered } = await import("./routers/sync.js");
+        const { ensureProvidersRegistered } = await import("./routers/sync.ts");
         await ensureProvidersRegistered();
 
         const provider = getAllProviders().find((p) => p.id === stored.providerId);
@@ -370,7 +370,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       }
 
       const { getAllProviders } = await import("dofek/providers/registry");
-      const { ensureProvidersRegistered } = await import("./routers/sync.js");
+      const { ensureProvidersRegistered } = await import("./routers/sync.ts");
       await ensureProvidersRegistered();
 
       const provider = getAllProviders().find((p) => p.id === state);

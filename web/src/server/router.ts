@@ -1,13 +1,13 @@
-import { router } from "../shared/trpc.js";
-import { activityRouter } from "./routers/activity.js";
-import { bodyRouter } from "./routers/body.js";
-import { dailyMetricsRouter } from "./routers/daily-metrics.js";
-import { insightsRouter } from "./routers/insights.js";
-import { lifeEventsRouter } from "./routers/life-events.js";
-import { nutritionRouter } from "./routers/nutrition.js";
-import { sleepRouter } from "./routers/sleep.js";
-import { supplementsRouter } from "./routers/supplements.js";
-import { syncRouter } from "./routers/sync.js";
+import { router } from "../shared/trpc.ts";
+import { activityRouter } from "./routers/activity.ts";
+import { bodyRouter } from "./routers/body.ts";
+import { dailyMetricsRouter } from "./routers/daily-metrics.ts";
+import { insightsRouter } from "./routers/insights.ts";
+import { lifeEventsRouter } from "./routers/life-events.ts";
+import { nutritionRouter } from "./routers/nutrition.ts";
+import { sleepRouter } from "./routers/sleep.ts";
+import { supplementsRouter } from "./routers/supplements.ts";
+import { syncRouter } from "./routers/sync.ts";
 
 export const appRouter = router({
   activity: activityRouter,

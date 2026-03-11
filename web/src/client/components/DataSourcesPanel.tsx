@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "react";
-import { pollSyncJob } from "../lib/poll-sync-job.js";
-import { trpc } from "../lib/trpc.js";
+import { pollSyncJob } from "../lib/poll-sync-job.ts";
+import { trpc } from "../lib/trpc.ts";
 
 type SyncStatus = "idle" | "syncing" | "done" | "error";
 

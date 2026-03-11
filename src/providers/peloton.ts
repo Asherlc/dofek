@@ -1,16 +1,16 @@
-import type { OAuthConfig, TokenSet } from "../auth/oauth.js";
+import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import {
   buildAuthorizationUrl,
   exchangeCodeForTokens,
   generateCodeChallenge,
   generateCodeVerifier,
   refreshAccessToken,
-} from "../auth/oauth.js";
-import type { Database } from "../db/index.js";
-import { activity, metricStream } from "../db/schema.js";
-import { withSyncLog } from "../db/sync-log.js";
-import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.js";
-import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.js";
+} from "../auth/oauth.ts";
+import type { Database } from "../db/index.ts";
+import { activity, metricStream } from "../db/schema.ts";
+import { withSyncLog } from "../db/sync-log.ts";
+import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
 
 // ============================================================
 // Peloton API types

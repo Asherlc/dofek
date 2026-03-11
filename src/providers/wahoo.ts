@@ -1,10 +1,10 @@
-import type { OAuthConfig, TokenSet } from "../auth/oauth.js";
-import { exchangeCodeForTokens, refreshAccessToken } from "../auth/oauth.js";
-import type { Database } from "../db/index.js";
-import { activity, metricStream } from "../db/schema.js";
-import { loadTokens, saveTokens } from "../db/tokens.js";
-import { type ParsedFitRecord, parseFitFile } from "../fit/parser.js";
-import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.js";
+import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
+import { exchangeCodeForTokens, refreshAccessToken } from "../auth/oauth.ts";
+import type { Database } from "../db/index.ts";
+import { activity, metricStream } from "../db/schema.ts";
+import { loadTokens, saveTokens } from "../db/tokens.ts";
+import { type ParsedFitRecord, parseFitFile } from "../fit/parser.ts";
+import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
 
 // ============================================================
 // Wahoo API types

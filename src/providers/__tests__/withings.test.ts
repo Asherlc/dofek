@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseMeasureGroup, type WithingsMeasureGroup } from "../withings.js";
+import { parseMeasureGroup, type WithingsMeasureGroup } from "../withings.ts";
 
 // ============================================================
 // Pure parsing unit tests

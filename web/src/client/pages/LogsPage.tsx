@@ -1,5 +1,5 @@
-import { AppHeader } from "../components/AppHeader.js";
-import { trpc } from "../lib/trpc.js";
+import { AppHeader } from "../components/AppHeader.tsx";
+import { trpc } from "../lib/trpc.ts";
 
 export function LogsPage() {
   const logs = trpc.sync.logs.useQuery({ limit: 200 });

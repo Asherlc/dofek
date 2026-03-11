@@ -16,8 +16,9 @@ RUN cd web && pnpm run build
 FROM node:22-slim
 WORKDIR /app
 
-# Root package (sync runner)
+# Root package (sync runner + source for workspace exports)
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/src ./src
 COPY --from=builder /app/drizzle ./drizzle
 COPY --from=builder /app/package.json .
 
@@ -29,5 +30,6 @@ COPY --from=builder /app/web/package.json ./web/
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/web/node_modules ./web/node_modules
 
+# Use tsx so workspace package exports (pointing to .ts source) resolve correctly.
 # Default: sync runner. Override in compose for web.
-CMD ["node", "dist/index.js", "sync"]
+CMD ["node_modules/.bin/tsx", "dist/index.js", "sync"]

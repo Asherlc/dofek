@@ -1,9 +1,9 @@
-export { waitForAuthCode } from "./callback-server.js";
-export type { OAuthConfig, TokenSet } from "./oauth.js";
+export { waitForAuthCode } from "./callback-server.ts";
+export type { OAuthConfig, TokenSet } from "./oauth.ts";
 export {
   buildAuthorizationUrl,
   exchangeCodeForTokens,
   generateCodeChallenge,
   generateCodeVerifier,
   refreshAccessToken,
-} from "./oauth.js";
+} from "./oauth.ts";

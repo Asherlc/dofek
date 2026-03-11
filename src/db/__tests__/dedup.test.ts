@@ -1,9 +1,9 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { refreshDedupViews } from "../dedup.js";
-import { activity, bodyMeasurement, dailyMetrics, metricStream, sleepSession } from "../schema.js";
-import { ensureProvider } from "../tokens.js";
-import { setupTestDatabase, type TestContext } from "./test-helpers.js";
+import { refreshDedupViews } from "../dedup.ts";
+import { activity, bodyMeasurement, dailyMetrics, metricStream, sleepSession } from "../schema.ts";
+import { ensureProvider } from "../tokens.ts";
+import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
 
 describe("Deduplication materialized views", () => {
   let ctx: TestContext;

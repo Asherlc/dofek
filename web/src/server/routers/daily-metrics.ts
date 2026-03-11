@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { publicProcedure, router } from "../../shared/trpc.js";
+import { publicProcedure, router } from "../../shared/trpc.ts";
 
 export const dailyMetricsRouter = router({
   list: publicProcedure

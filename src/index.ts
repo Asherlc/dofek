@@ -1,19 +1,19 @@
 import { execFile } from "node:child_process";
-import { waitForAuthCode } from "./auth/callback-server.js";
-import { buildAuthorizationUrl } from "./auth/index.js";
-import { createDatabaseFromEnv } from "./db/index.js";
-import { runMigrations } from "./db/migrate.js";
-import { ensureProvider, saveTokens } from "./db/tokens.js";
-import { AutoSupplementsProvider } from "./providers/auto-supplements.js";
-import { FatSecretProvider } from "./providers/fatsecret.js";
-import { getAllProviders, getEnabledProviders, registerProvider } from "./providers/index.js";
-import { PelotonProvider } from "./providers/peloton.js";
-import { WahooProvider } from "./providers/wahoo.js";
-import { WithingsProvider } from "./providers/withings.js";
-import { runSync } from "./sync/runner.js";
+import { waitForAuthCode } from "./auth/callback-server.ts";
+import { buildAuthorizationUrl } from "./auth/index.ts";
+import { createDatabaseFromEnv } from "./db/index.ts";
+import { runMigrations } from "./db/migrate.ts";
+import { ensureProvider, saveTokens } from "./db/tokens.ts";
+import { AutoSupplementsProvider } from "./providers/auto-supplements.ts";
+import { FatSecretProvider } from "./providers/fatsecret.ts";
+import { getAllProviders, getEnabledProviders, registerProvider } from "./providers/index.ts";
+import { PelotonProvider } from "./providers/peloton.ts";
+import { WahooProvider } from "./providers/wahoo.ts";
+import { WithingsProvider } from "./providers/withings.ts";
+import { runSync } from "./sync/runner.ts";
 
 // Load supplement config from supplements.json (managed via web UI)
-let supplementConfig: import("./providers/auto-supplements.js").SupplementConfig | undefined;
+let supplementConfig: import("./providers/auto-supplements.ts").SupplementConfig | undefined;
 try {
   const { readFileSync } = await import("node:fs");
   const { resolve } = await import("node:path");
@@ -195,7 +195,7 @@ async function main() {
       const days = parseSinceDays();
       const since = fullSync ? new Date(0) : new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
-      const { importAppleHealthFile } = await import("./providers/apple-health.js");
+      const { importAppleHealthFile } = await import("./providers/apple-health.ts");
       const db = createDatabaseFromEnv();
       const result = await importAppleHealthFile(db, filePath, since);
       console.log(

@@ -1,13 +1,13 @@
 import { useState } from "react";
-import { ActivityList } from "../components/ActivityList.js";
-import { AppHeader } from "../components/AppHeader.js";
-import { DataSourcesPanel } from "../components/DataSourcesPanel.js";
-import { HealthStatusBar } from "../components/HealthStatusBar.js";
-import { NutritionChart } from "../components/NutritionChart.js";
-import { SleepChart } from "../components/SleepChart.js";
-import { TimeRangeSelector } from "../components/TimeRangeSelector.js";
-import { TimeSeriesChart } from "../components/TimeSeriesChart.js";
-import { trpc } from "../lib/trpc.js";
+import { ActivityList } from "../components/ActivityList.tsx";
+import { AppHeader } from "../components/AppHeader.tsx";
+import { DataSourcesPanel } from "../components/DataSourcesPanel.tsx";
+import { HealthStatusBar } from "../components/HealthStatusBar.tsx";
+import { NutritionChart } from "../components/NutritionChart.tsx";
+import { SleepChart } from "../components/SleepChart.tsx";
+import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
+import { TimeSeriesChart } from "../components/TimeSeriesChart.tsx";
+import { trpc } from "../lib/trpc.ts";
 
 export function Dashboard() {
   const [days, setDays] = useState(30);
