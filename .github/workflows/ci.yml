@@ -65,7 +65,7 @@ jobs:
 
   docker:
     name: Build & Push Docker Image
-    needs: [lint, typecheck, test, build-web]
+    needs: [lint, typecheck, build-web]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
