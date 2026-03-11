@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  WhoopInternalClient,
   parseHeartRateValues,
   parseRecovery,
   parseSleep,
@@ -94,6 +95,19 @@ const sampleWorkout: WhoopWorkoutRecord = {
     },
   },
 };
+
+describe("WhoopInternalClient.authenticate", () => {
+  it("posts to /api/oauth endpoint", async () => {
+    let capturedUrl = "";
+    const mockFetch = (async (input: RequestInfo | URL) => {
+      capturedUrl = input.toString();
+      return Response.json({ access_token: "tok", user: { id: 1 } });
+    }) as typeof globalThis.fetch;
+
+    await WhoopInternalClient.authenticate("user", "pass", mockFetch);
+    expect(capturedUrl).toBe("https://api-7.whoop.com/api/oauth");
+  });
+});
 
 describe("WHOOP Provider — parsing", () => {
   describe("parseRecovery", () => {

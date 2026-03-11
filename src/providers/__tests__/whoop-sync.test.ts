@@ -136,7 +136,7 @@ function createMockFetch(
     const urlStr = input.toString();
 
     // Auth
-    if (urlStr.includes("/oauth/token")) {
+    if (urlStr.includes("/api/oauth")) {
       if (opts?.authError) {
         return new Response("Unauthorized", { status: 401 });
       }
