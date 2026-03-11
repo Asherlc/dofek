@@ -70,7 +70,7 @@ async function main() {
   } else {
     // In production, serve the built client files
     const { default: path } = await import("node:path");
-    const clientDir = path.resolve(import.meta.dirname, "../../dist/client");
+    const clientDir = path.resolve(import.meta.dirname, "../../client");
     app.use(express.static(clientDir));
     app.get("{*path}", (_req, res) => {
       res.sendFile(path.join(clientDir, "index.html"));
