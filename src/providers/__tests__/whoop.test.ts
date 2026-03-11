@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
-  WhoopInternalClient,
   parseHeartRateValues,
   parseRecovery,
   parseSleep,
   parseWorkout,
   type WhoopHrValue,
+  WhoopInternalClient,
   type WhoopRecoveryRecord,
   type WhoopSleepRecord,
   type WhoopWorkoutRecord,
