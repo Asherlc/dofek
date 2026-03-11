@@ -1,12 +1,10 @@
 import { useState } from "react";
 import { ActivityList } from "../components/ActivityList.js";
+import { AppHeader } from "../components/AppHeader.js";
 import { DataSourcesPanel } from "../components/DataSourcesPanel.js";
 import { HealthStatusBar } from "../components/HealthStatusBar.js";
-import { InsightsPanel } from "../components/InsightsPanel.js";
-import { LifeEventsPanel } from "../components/LifeEventsPanel.js";
 import { NutritionChart } from "../components/NutritionChart.js";
 import { SleepChart } from "../components/SleepChart.js";
-import { SupplementStackPanel } from "../components/SupplementStackPanel.js";
 import { TimeSeriesChart } from "../components/TimeSeriesChart.js";
 import { trpc } from "../lib/trpc.js";
 
@@ -34,8 +32,6 @@ export function Dashboard() {
   const sleepData = trpc.sleep.list.useQuery({ days });
   const bodyData = trpc.body.list.useQuery({ days: Math.max(days, 90) });
   const nutritionData = trpc.nutrition.daily.useQuery({ days });
-  const insightsData = trpc.insights.compute.useQuery({ days: 3650 });
-
   const t = trends.data as any;
 
   const healthMetrics = t
@@ -157,31 +153,31 @@ export function Dashboard() {
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
-      <header className="border-b border-zinc-800 px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <DofekLogo />
-          <h1 className="text-xl font-semibold tracking-tight">Dofek</h1>
-          <p className="text-xs text-zinc-500 mt-1">
+      <AppHeader activePage="dashboard">
+        <div className="flex items-center gap-4">
+          <p className="text-xs text-zinc-500">
             {t?.latest_date
               ? `Latest: ${new Date(t.latest_date).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}`
               : ""}
           </p>
+          <div className="flex gap-1 bg-zinc-900 rounded-lg p-1 border border-zinc-800">
+            {TIME_RANGES.map((r) => (
+              <button
+                key={r.label}
+                type="button"
+                onClick={() => setDays(r.days)}
+                className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                  days === r.days
+                    ? "bg-zinc-700 text-zinc-100"
+                    : "text-zinc-500 hover:text-zinc-300"
+                }`}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="flex gap-1 bg-zinc-900 rounded-lg p-1 border border-zinc-800">
-          {TIME_RANGES.map((r) => (
-            <button
-              key={r.label}
-              type="button"
-              onClick={() => setDays(r.days)}
-              className={`px-3 py-1 text-xs rounded-md transition-colors ${
-                days === r.days ? "bg-zinc-700 text-zinc-100" : "text-zinc-500 hover:text-zinc-300"
-              }`}
-            >
-              {r.label}
-            </button>
-          ))}
-        </div>
-      </header>
+      </AppHeader>
 
       <main className="mx-auto max-w-7xl p-6 space-y-8">
         {/* Data Sources */}
@@ -206,46 +202,6 @@ export function Dashboard() {
           onToggle={() => toggle("healthMonitor")}
         >
           <HealthStatusBar metrics={healthMetrics} loading={trends.isLoading} />
-        </CollapsibleSection>
-
-        {/* Insights */}
-        <CollapsibleSection
-          id="insights"
-          title="Insights"
-          subtitle="Actionable patterns from all your data"
-          collapsed={collapsed.insights}
-          onToggle={() => toggle("insights")}
-        >
-          <InsightsPanel
-            insights={(insightsData.data ?? []) as any[]}
-            loading={insightsData.isLoading}
-          />
-        </CollapsibleSection>
-
-        {/* Life Events / Markers */}
-        <CollapsibleSection
-          id="lifeEvents"
-          title="Life Events"
-          subtitle="Track changes and see their impact"
-          collapsed={collapsed.lifeEvents}
-          onToggle={() => toggle("lifeEvents")}
-        >
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-            <LifeEventsPanel />
-          </div>
-        </CollapsibleSection>
-
-        {/* Supplement Stack */}
-        <CollapsibleSection
-          id="supplements"
-          title="Supplement Stack"
-          subtitle="Daily supplements synced as nutrition data"
-          collapsed={collapsed.supplements}
-          onToggle={() => toggle("supplements")}
-        >
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-            <SupplementStackPanel />
-          </div>
         </CollapsibleSection>
 
         {/* HRV & Resting HR */}
@@ -410,30 +366,5 @@ function CollapsibleSection({
       </button>
       {!collapsed && children}
     </section>
-  );
-}
-
-function DofekLogo() {
-  return (
-    <svg
-      width="28"
-      height="28"
-      viewBox="0 0 28 28"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      role="img"
-      aria-label="Dofek logo"
-    >
-      <title>Dofek</title>
-      <circle cx="14" cy="14" r="13" stroke="#22c55e" strokeWidth="2" opacity="0.3" />
-      <polyline
-        points="3,14 8,14 10,8 13,20 16,6 19,18 21,14 25,14"
-        stroke="#22c55e"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-      />
-    </svg>
   );
 }
