@@ -1,10 +1,14 @@
 import { router } from "../shared/trpc.ts";
 import { activityRouter } from "./routers/activity.ts";
 import { bodyRouter } from "./routers/body.ts";
+import { calendarRouter } from "./routers/calendar.ts";
 import { dailyMetricsRouter } from "./routers/daily-metrics.ts";
+import { efficiencyRouter } from "./routers/efficiency.ts";
 import { insightsRouter } from "./routers/insights.ts";
 import { lifeEventsRouter } from "./routers/life-events.ts";
 import { nutritionRouter } from "./routers/nutrition.ts";
+import { pmcRouter } from "./routers/pmc.ts";
+import { powerRouter } from "./routers/power.ts";
 import { sleepRouter } from "./routers/sleep.ts";
 import { supplementsRouter } from "./routers/supplements.ts";
 import { syncRouter } from "./routers/sync.ts";
@@ -22,6 +26,10 @@ export const appRouter = router({
   supplements: supplementsRouter,
   sync: syncRouter,
   training: trainingRouter,
+  calendar: calendarRouter,
+  pmc: pmcRouter,
+  power: powerRouter,
+  efficiency: efficiencyRouter,
   whoopAuth: whoopAuthRouter,
 });
 

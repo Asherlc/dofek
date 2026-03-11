@@ -4,7 +4,6 @@ import { InsightsPanel } from "../components/InsightsPanel.tsx";
 import { LifeEventsPanel } from "../components/LifeEventsPanel.tsx";
 import { SupplementStackPanel } from "../components/SupplementStackPanel.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
-import { TrainingInsightsPanel } from "../components/TrainingInsightsPanel.tsx";
 import { trpc } from "../lib/trpc.ts";
 
 export function InsightsPage() {
@@ -26,16 +25,6 @@ export function InsightsPage() {
             insights={(insightsData.data ?? []) as any[]}
             loading={insightsData.isLoading}
           />
-        </section>
-
-        <section>
-          <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-1">
-            Training
-          </h2>
-          <p className="text-xs text-zinc-600 mb-4">Volume, HR zones & intensity distribution</p>
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-            <TrainingInsightsPanel days={days} />
-          </div>
         </section>
 
         <section>
