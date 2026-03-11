@@ -18,6 +18,38 @@
     "./providers/types": {
       "import": "./dist/providers/types.js",
       "default": "./src/providers/types.ts"
+    },
+    "./providers/registry": {
+      "import": "./dist/providers/index.js",
+      "default": "./src/providers/index.ts"
+    },
+    "./providers/wahoo": {
+      "import": "./dist/providers/wahoo.js",
+      "default": "./src/providers/wahoo.ts"
+    },
+    "./providers/withings": {
+      "import": "./dist/providers/withings.js",
+      "default": "./src/providers/withings.ts"
+    },
+    "./providers/whoop": {
+      "import": "./dist/providers/whoop.js",
+      "default": "./src/providers/whoop.ts"
+    },
+    "./providers/peloton": {
+      "import": "./dist/providers/peloton.js",
+      "default": "./src/providers/peloton.ts"
+    },
+    "./providers/fatsecret": {
+      "import": "./dist/providers/fatsecret.js",
+      "default": "./src/providers/fatsecret.ts"
+    },
+    "./providers/apple-health": {
+      "import": "./dist/providers/apple-health.js",
+      "default": "./src/providers/apple-health.ts"
+    },
+    "./sync/runner": {
+      "import": "./dist/sync/runner.js",
+      "default": "./src/sync/runner.ts"
     }
   },
   "scripts": {

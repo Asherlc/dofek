@@ -7,6 +7,7 @@ import { lifeEventsRouter } from "./routers/life-events.js";
 import { nutritionRouter } from "./routers/nutrition.js";
 import { sleepRouter } from "./routers/sleep.js";
 import { supplementsRouter } from "./routers/supplements.js";
+import { syncRouter } from "./routers/sync.js";
 
 export const appRouter = router({
   activity: activityRouter,
@@ -17,6 +18,7 @@ export const appRouter = router({
   insights: insightsRouter,
   lifeEvents: lifeEventsRouter,
   supplements: supplementsRouter,
+  sync: syncRouter,
 });
 
 export type AppRouter = typeof appRouter;
