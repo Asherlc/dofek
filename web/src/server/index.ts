@@ -68,7 +68,7 @@ async function main() {
     const { default: path } = await import("node:path");
     const clientDir = path.resolve(import.meta.dirname, "../../dist/client");
     app.use(express.static(clientDir));
-    app.get("*", (_req, res) => {
+    app.get("{*path}", (_req, res) => {
       res.sendFile(path.join(clientDir, "index.html"));
     });
   }

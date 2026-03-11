@@ -146,36 +146,24 @@ export function DataSourcesPanel() {
             No providers configured. Set API keys in .env to enable providers.
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="flex flex-wrap gap-2">
             {enabledProviders.map((p) => {
               const state = providerStates[p.id] ?? { status: "idle" };
               return (
-                <div
+                <button
                   key={p.id}
-                  className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-3"
+                  type="button"
+                  onClick={() => handleSync(p.id)}
+                  disabled={state.status === "syncing"}
+                  className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-2.5 hover:bg-zinc-800 disabled:opacity-50 transition-colors"
+                  title={state.message}
                 >
-                  <div className="flex items-center gap-3">
-                    <StatusDot status={state.status} />
-                    <div>
-                      <div className="text-sm font-medium text-zinc-200">{p.name}</div>
-                      {state.message && (
-                        <div
-                          className={`text-xs mt-0.5 ${state.status === "error" ? "text-red-400" : "text-zinc-500"}`}
-                        >
-                          {state.message}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleSync(p.id)}
-                    disabled={state.status === "syncing"}
-                    className="text-xs px-3 py-1.5 rounded bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50 transition-colors"
-                  >
-                    {state.status === "syncing" ? "Syncing..." : "Sync"}
-                  </button>
-                </div>
+                  <StatusDot status={state.status} />
+                  <span className="text-sm font-medium text-zinc-200">{p.name}</span>
+                  {state.status === "syncing" && (
+                    <span className="text-xs text-zinc-500">...</span>
+                  )}
+                </button>
               );
             })}
           </div>
