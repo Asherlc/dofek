@@ -66,29 +66,69 @@ export function DataSourcesPanel() {
   }, [providers.data, syncMutation, updateState]);
 
   const uploadFile = useCallback(async (file: File) => {
-    setUploadState({ status: "syncing", message: `Uploading ${file.name}...` });
-    try {
-      const fullSync = true; // Apple Health exports are complete snapshots
-      const resp = await fetch(`/api/upload/apple-health?fullSync=${fullSync}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": file.name.endsWith(".xml")
-            ? "application/xml"
-            : "application/octet-stream",
-        },
-        body: file,
-      });
+    const CHUNK_SIZE = 50 * 1024 * 1024; // 50MB chunks to stay under Cloudflare's 100MB limit
+    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+    const uploadId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const fileExt = file.name.endsWith(".xml") ? ".xml" : ".zip";
 
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({ error: resp.statusText }));
-        throw new Error(err.error ?? "Upload failed");
+    setUploadState({
+      status: "syncing",
+      progress: 0,
+      message: `Uploading ${file.name} (${(file.size / 1024 / 1024).toFixed(0)} MB)...`,
+    });
+
+    try {
+      let finalResult: any = null;
+
+      for (let i = 0; i < totalChunks; i++) {
+        const start = i * CHUNK_SIZE;
+        const end = Math.min(start + CHUNK_SIZE, file.size);
+        const chunk = file.slice(start, end);
+
+        const pct = Math.round(((i + 1) / totalChunks) * 100);
+        setUploadState({
+          status: "syncing",
+          progress: pct,
+          message:
+            totalChunks > 1
+              ? `Uploading chunk ${i + 1}/${totalChunks} (${pct}%)...`
+              : `Uploading ${file.name}...`,
+        });
+
+        const resp = await fetch("/api/upload/apple-health?fullSync=true", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/octet-stream",
+            "x-upload-id": uploadId,
+            "x-chunk-index": String(i),
+            "x-chunk-total": String(totalChunks),
+            "x-file-ext": fileExt,
+          },
+          body: chunk,
+        });
+
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({ error: resp.statusText }));
+          throw new Error(err.error ?? "Upload failed");
+        }
+
+        const data = await resp.json();
+        if (data.status !== "partial") {
+          finalResult = data;
+        }
       }
 
-      const result = await resp.json();
-      setUploadState({
-        status: result.errors?.length > 0 ? "error" : "done",
-        message: `${result.recordsSynced} records imported, ${result.errors?.length ?? 0} errors (${(result.duration / 1000).toFixed(1)}s)`,
-      });
+      if (finalResult) {
+        setUploadState({
+          status: "syncing",
+          progress: 100,
+          message: "Processing import...",
+        });
+        setUploadState({
+          status: finalResult.errors?.length > 0 ? "error" : "done",
+          message: `${finalResult.recordsSynced} records imported, ${finalResult.errors?.length ?? 0} errors (${(finalResult.duration / 1000).toFixed(1)}s)`,
+        });
+      }
     } catch (err: any) {
       setUploadState({ status: "error", message: err.message ?? "Upload failed" });
     }
@@ -199,6 +239,14 @@ export function DataSourcesPanel() {
             <div>
               <div className="text-sm text-zinc-300 mb-1">Importing...</div>
               <div className="text-xs text-zinc-500">{uploadState.message}</div>
+              {uploadState.progress != null && (
+                <div className="mt-2 w-48 mx-auto h-1.5 rounded-full bg-zinc-800 overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-emerald-500 transition-all duration-300"
+                    style={{ width: `${uploadState.progress}%` }}
+                  />
+                </div>
+              )}
             </div>
           ) : (
             <div>
