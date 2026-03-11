@@ -54,6 +54,14 @@
     "./db/migrate": {
       "import": "./dist/db/migrate.js",
       "default": "./src/db/migrate.ts"
+    },
+    "./db/tokens": {
+      "import": "./dist/db/tokens.js",
+      "default": "./src/db/tokens.ts"
+    },
+    "./auth/oauth": {
+      "import": "./dist/auth/oauth.js",
+      "default": "./src/auth/oauth.ts"
     }
   },
   "scripts": {

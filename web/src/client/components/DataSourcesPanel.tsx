@@ -11,6 +11,7 @@ interface ProviderState {
 export function DataSourcesPanel() {
   const providers = trpc.sync.providers.useQuery();
   const syncMutation = trpc.sync.triggerSync.useMutation();
+  const trpcUtils = trpc.useUtils();
 
   const [providerStates, setProviderStates] = useState<Record<string, ProviderState>>({});
   const [uploadState, setUploadState] = useState<{
@@ -26,15 +27,45 @@ export function DataSourcesPanel() {
     [],
   );
 
+  /** Poll a sync job until all providers finish */
+  const pollSyncJob = useCallback(
+    async (jobId: string) => {
+      const poll = async (): Promise<void> => {
+        try {
+          const job = await trpcUtils.sync.syncStatus.fetch({ jobId });
+          if (!job) return;
+
+          // Update per-provider states from the job
+          for (const [pid, pStatus] of Object.entries(job.providers)) {
+            if (pStatus.status === "done" || pStatus.status === "error") {
+              updateState(pid, {
+                status: pStatus.status === "done" ? "done" : "error",
+                message: pStatus.message ?? undefined,
+              });
+            } else if (pStatus.status === "running") {
+              updateState(pid, { status: "syncing", message: "Syncing..." });
+            }
+          }
+
+          if (job.status === "done" || job.status === "error") return;
+
+          await new Promise((r) => setTimeout(r, 1000));
+          return poll();
+        } catch {
+          // If polling fails, don't crash — just stop
+        }
+      };
+      return poll();
+    },
+    [trpcUtils, updateState],
+  );
+
   const handleSync = useCallback(
     async (providerId: string) => {
       updateState(providerId, { status: "syncing" });
       try {
-        const result = await syncMutation.mutateAsync({ providerId, sinceDays: 7 });
-        updateState(providerId, {
-          status: "done",
-          message: `${result.totalRecords} records, ${result.totalErrors} errors (${(result.duration / 1000).toFixed(1)}s)`,
-        });
+        const { jobId } = await syncMutation.mutateAsync({ providerId, sinceDays: 7 });
+        await pollSyncJob(jobId);
       } catch (err: any) {
         updateState(providerId, {
           status: "error",
@@ -42,7 +73,7 @@ export function DataSourcesPanel() {
         });
       }
     },
-    [syncMutation, updateState],
+    [syncMutation, updateState, pollSyncJob],
   );
 
   const handleSyncAll = useCallback(async () => {
@@ -51,21 +82,16 @@ export function DataSourcesPanel() {
       updateState(p.id, { status: "syncing" });
     }
     try {
-      const result = await syncMutation.mutateAsync({ sinceDays: 7 });
-      for (const r of result.results) {
-        updateState(r.provider, {
-          status: r.errors.length > 0 ? "error" : "done",
-          message: `${r.recordsSynced} records, ${r.errors.length} errors`,
-        });
-      }
+      const { jobId } = await syncMutation.mutateAsync({ sinceDays: 7 });
+      await pollSyncJob(jobId);
     } catch (err: any) {
       for (const p of enabled) {
         updateState(p.id, { status: "error", message: err.message });
       }
     }
-  }, [providers.data, syncMutation, updateState]);
+  }, [providers.data, syncMutation, updateState, pollSyncJob]);
 
-  const pollJobStatus = useCallback(async (jobId: string) => {
+  const pollUploadStatus = useCallback(async (jobId: string) => {
     const poll = async (): Promise<void> => {
       try {
         const resp = await fetch(`/api/upload/apple-health/status/${jobId}`);
@@ -73,11 +99,7 @@ export function DataSourcesPanel() {
         const data = await resp.json();
 
         if (data.status === "done") {
-          setUploadState({
-            status: "done",
-            progress: 100,
-            message: data.message,
-          });
+          setUploadState({ status: "done", progress: 100, message: data.message });
           return;
         }
 
@@ -86,7 +108,6 @@ export function DataSourcesPanel() {
           return;
         }
 
-        // Still processing
         setUploadState({
           status: "syncing",
           progress: data.progress ?? 0,
@@ -123,7 +144,7 @@ export function DataSourcesPanel() {
           const end = Math.min(start + CHUNK_SIZE, file.size);
           const chunk = file.slice(start, end);
 
-          const uploadPct = Math.round(((i + 1) / totalChunks) * 50); // upload is 0-50%
+          const uploadPct = Math.round(((i + 1) / totalChunks) * 50);
           setUploadState({
             status: "syncing",
             progress: uploadPct,
@@ -156,13 +177,13 @@ export function DataSourcesPanel() {
 
         if (jobId) {
           setUploadState({ status: "syncing", progress: 50, message: "Processing import..." });
-          await pollJobStatus(jobId);
+          await pollUploadStatus(jobId);
         }
       } catch (err: any) {
         setUploadState({ status: "error", message: err.message ?? "Upload failed" });
       }
     },
-    [pollJobStatus],
+    [pollUploadStatus],
   );
 
   const handleFileSelect = useCallback(
@@ -192,6 +213,18 @@ export function DataSourcesPanel() {
 
   const enabledProviders = (providers.data ?? []).filter((p) => p.enabled);
 
+  const handleProviderClick = useCallback(
+    (p: { id: string; needsOAuth: boolean; authorized: boolean }) => {
+      if (p.needsOAuth && !p.authorized) {
+        // Open OAuth flow in new tab — will redirect back to /callback
+        window.open(`/auth/${p.id}`, "_blank");
+        return;
+      }
+      handleSync(p.id);
+    },
+    [handleSync],
+  );
+
   return (
     <div className="space-y-6">
       {/* Provider Sync */}
@@ -220,17 +253,23 @@ export function DataSourcesPanel() {
           <div className="flex flex-wrap gap-2">
             {enabledProviders.map((p) => {
               const state = providerStates[p.id] ?? { status: "idle" };
+              const needsAuth = p.needsOAuth && !p.authorized;
               return (
                 <button
                   key={p.id}
                   type="button"
-                  onClick={() => handleSync(p.id)}
+                  onClick={() => handleProviderClick(p)}
                   disabled={state.status === "syncing"}
                   className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-2.5 hover:bg-zinc-800 disabled:opacity-50 transition-colors"
-                  title={state.message}
+                  title={needsAuth ? "Click to connect" : state.message}
                 >
-                  <StatusDot status={state.status} />
+                  {needsAuth ? (
+                    <span className="inline-block w-2 h-2 rounded-full bg-blue-400" />
+                  ) : (
+                    <StatusDot status={state.status} />
+                  )}
                   <span className="text-sm font-medium text-zinc-200">{p.name}</span>
+                  {needsAuth && <span className="text-xs text-blue-400">Connect</span>}
                   {state.status === "syncing" && <span className="text-xs text-zinc-500">...</span>}
                 </button>
               );

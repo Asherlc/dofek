@@ -194,6 +194,87 @@ async function main() {
     }
   });
 
+  // ── OAuth callback for providers that need a public redirect URI ──
+  app.get("/auth/:provider", async (req, res) => {
+    try {
+      const providerId = req.params.provider;
+      const { getAllProviders } = await import("dofek/providers/registry");
+      const { ensureProvidersRegistered } = await import("./routers/sync.js");
+      await ensureProvidersRegistered();
+
+      const provider = getAllProviders().find((p) => p.id === providerId);
+      if (!provider) {
+        res.status(404).send(`Unknown provider: ${providerId}`);
+        return;
+      }
+
+      const setup = provider.authSetup?.();
+      if (!setup?.oauthConfig) {
+        res.status(400).send(`Provider ${providerId} does not use OAuth`);
+        return;
+      }
+
+      const { buildAuthorizationUrl } = await import("dofek/auth/oauth");
+      const url = buildAuthorizationUrl(setup.oauthConfig);
+      // Append state so the callback knows which provider this is for
+      const authUrl = new URL(url);
+      authUrl.searchParams.set("state", providerId);
+      res.redirect(authUrl.toString());
+    } catch (err: any) {
+      console.error("[auth] Failed to start OAuth flow:", err);
+      res.status(500).send(`Auth error: ${err.message}`);
+    }
+  });
+
+  app.get("/callback", async (req, res) => {
+    try {
+      const code = req.query.code as string | undefined;
+      const state = req.query.state as string | undefined;
+      const error = req.query.error as string | undefined;
+
+      if (error) {
+        res.status(400).send(`Authorization denied: ${error}`);
+        return;
+      }
+      if (!code || !state) {
+        res.status(400).send("Missing code or state parameter");
+        return;
+      }
+
+      const { getAllProviders } = await import("dofek/providers/registry");
+      const { ensureProvidersRegistered } = await import("./routers/sync.js");
+      await ensureProvidersRegistered();
+
+      const provider = getAllProviders().find((p) => p.id === state);
+      if (!provider) {
+        res.status(404).send(`Unknown provider: ${state}`);
+        return;
+      }
+
+      const setup = provider.authSetup?.();
+      if (!setup?.oauthConfig || !setup.exchangeCode) {
+        res.status(400).send(`Provider ${state} does not support OAuth code exchange`);
+        return;
+      }
+
+      console.log(`[auth] Exchanging code for ${state} tokens...`);
+      const tokens = await setup.exchangeCode(code);
+
+      const { ensureProvider } = await import("dofek/db/tokens");
+      const { saveTokens } = await import("dofek/db/tokens");
+      await ensureProvider(db, provider.id, provider.name, setup.apiBaseUrl);
+      await saveTokens(db, provider.id, tokens);
+
+      console.log(`[auth] ${state} tokens saved. Expires: ${tokens.expiresAt.toISOString()}`);
+      res.send(
+        `<html><body style="font-family:system-ui;background:#111;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center"><h1>Authorized!</h1><p>${provider.name} connected successfully.</p><p>Token expires: ${tokens.expiresAt.toISOString()}</p><p><a href="/" style="color:#10b981">Return to dashboard</a></p></div></body></html>`,
+      );
+    } catch (err: any) {
+      console.error("[auth] OAuth callback failed:", err);
+      res.status(500).send(`Token exchange failed: ${err.message}`);
+    }
+  });
+
   // tRPC API
   app.use(
     "/api/trpc",

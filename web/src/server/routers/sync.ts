@@ -1,12 +1,12 @@
 import { getAllProviders, registerProvider } from "dofek/providers/registry";
-import { runSync } from "dofek/sync/runner";
+import type { Provider } from "dofek/providers/types";
 import { z } from "zod";
 import { publicProcedure, router } from "../../shared/trpc.js";
 
 // Register providers on first import
 let providersRegistered = false;
 
-async function ensureProvidersRegistered() {
+export async function ensureProvidersRegistered() {
   if (providersRegistered) return;
   providersRegistered = true;
 
@@ -27,22 +27,54 @@ async function ensureProvidersRegistered() {
     const { FatSecretProvider } = await import("dofek/providers/fatsecret");
     registerProvider(new FatSecretProvider());
   } catch {}
+  try {
+    const { WhoopProvider } = await import("dofek/providers/whoop");
+    registerProvider(new WhoopProvider());
+  } catch {}
+}
+
+// ── Background sync job tracking ──
+export interface SyncJob {
+  status: "running" | "done" | "error";
+  providers: Record<string, { status: "pending" | "running" | "done" | "error"; message?: string }>;
+  message?: string;
+  result?: unknown;
+}
+
+const syncJobs = new Map<string, SyncJob>();
+
+function cleanupJob(jobId: string) {
+  setTimeout(() => syncJobs.delete(jobId), 10 * 60 * 1000);
 }
 
 export const syncRouter = router({
   /** List all providers and whether they're enabled (have valid config) */
-  providers: publicProcedure.query(async () => {
+  providers: publicProcedure.query(async ({ ctx }) => {
     await ensureProvidersRegistered();
     const all = getAllProviders();
-    return all.map((p) => ({
-      id: p.id,
-      name: p.name,
-      enabled: p.validate() === null,
-      error: p.validate(),
-    }));
+    const { loadTokens } = await import("dofek/db/tokens");
+
+    return Promise.all(
+      all.map(async (p) => {
+        const needsOAuth = !!p.authSetup?.();
+        let authorized = !needsOAuth; // non-OAuth providers are always "authorized"
+        if (needsOAuth) {
+          const tokens = await loadTokens(ctx.db, p.id);
+          authorized = tokens !== null;
+        }
+        return {
+          id: p.id,
+          name: p.name,
+          enabled: p.validate() === null,
+          error: p.validate(),
+          needsOAuth,
+          authorized,
+        };
+      }),
+    );
   }),
 
-  /** Trigger sync for a specific provider or all enabled providers */
+  /** Trigger sync — returns immediately with a jobId, processes in the background */
   triggerSync: publicProcedure
     .input(
       z.object({
@@ -54,14 +86,76 @@ export const syncRouter = router({
       await ensureProvidersRegistered();
       const since = new Date(Date.now() - input.sinceDays * 24 * 60 * 60 * 1000);
 
+      let providers: Provider[];
       if (input.providerId) {
         const provider = getAllProviders().find((p) => p.id === input.providerId);
         if (!provider) throw new Error(`Unknown provider: ${input.providerId}`);
         const validation = provider.validate();
         if (validation) throw new Error(`Provider not configured: ${validation}`);
-        return runSync(ctx.db, since, [provider]);
+        providers = [provider];
+      } else {
+        providers = getAllProviders().filter((p) => p.validate() === null);
       }
 
-      return runSync(ctx.db, since);
+      const jobId = `sync-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const providerStatuses: SyncJob["providers"] = {};
+      for (const p of providers) {
+        providerStatuses[p.id] = { status: "pending" };
+      }
+      syncJobs.set(jobId, { status: "running", providers: providerStatuses });
+
+      // Fire and forget
+      (async () => {
+        try {
+          // Sync providers sequentially so we can update per-provider status
+          for (const provider of providers) {
+            const job = syncJobs.get(jobId)!;
+            job.providers[provider.id] = { status: "running" };
+
+            try {
+              console.log(`[sync] Starting ${provider.name}...`);
+              const result = await provider.sync(ctx.db, since);
+              job.providers[provider.id] = {
+                status: result.errors.length > 0 ? "error" : "done",
+                message: `${result.recordsSynced} records, ${result.errors.length} errors`,
+              };
+            } catch (err: any) {
+              job.providers[provider.id] = {
+                status: "error",
+                message: err.message ?? "Sync failed",
+              };
+            }
+          }
+
+          // Refresh dedup views
+          try {
+            const { refreshDedupViews } = await import("dofek/db/dedup");
+            await refreshDedupViews(ctx.db);
+          } catch (err) {
+            console.error("[sync] Failed to refresh dedup views:", err);
+          }
+
+          const job = syncJobs.get(jobId)!;
+          job.status = "done";
+          job.message = "Sync complete";
+          cleanupJob(jobId);
+        } catch (err: any) {
+          const job = syncJobs.get(jobId);
+          if (job) {
+            job.status = "error";
+            job.message = err.message ?? "Sync failed";
+            cleanupJob(jobId);
+          }
+        }
+      })();
+
+      return { jobId };
     }),
+
+  /** Poll sync job status */
+  syncStatus: publicProcedure.input(z.object({ jobId: z.string() })).query(({ input }) => {
+    const job = syncJobs.get(input.jobId);
+    if (!job) return null;
+    return job;
+  }),
 });
