@@ -105,7 +105,7 @@ describe("WhoopInternalClient.authenticate", () => {
     }) as typeof globalThis.fetch;
 
     await WhoopInternalClient.authenticate("user", "pass", mockFetch);
-    expect(capturedUrl).toBe("https://api-7.whoop.com/api/oauth");
+    expect(capturedUrl).toBe("https://api-7.whoop.com/oauth/token");
   });
 });
 

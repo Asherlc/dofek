@@ -389,7 +389,7 @@ export class WhoopInternalClient {
     password: string,
     fetchFn: typeof globalThis.fetch = globalThis.fetch,
   ): Promise<WhoopAuthToken> {
-    const response = await fetchFn(`${WHOOP_AUTH_BASE}/api/oauth`, {
+    const response = await fetchFn(`${WHOOP_AUTH_BASE}/oauth/token`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
