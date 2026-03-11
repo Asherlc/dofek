@@ -60,9 +60,9 @@ export const syncRouter = router({
     return Promise.all(
       all.map(async (p) => {
         const setup = p.authSetup?.();
-        // Only OAuth-redirect providers need browser auth — automatedLogin and
-        // credential-only providers handle auth internally during sync
-        const needsOAuth = !!setup?.oauthConfig && !setup.automatedLogin;
+        // Providers with oauthConfig need auth (browser redirect or automatedLogin).
+        // Credential-only providers (e.g. WHOOP) have no authSetup and auth inline.
+        const needsOAuth = !!setup?.oauthConfig;
         let authorized = !needsOAuth;
         if (needsOAuth) {
           const tokens = await loadTokens(ctx.db, p.id);
