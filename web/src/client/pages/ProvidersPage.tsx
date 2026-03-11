@@ -259,6 +259,7 @@ interface ProviderCardProps {
     metricStream: number;
     nutritionDaily: number;
     labResults: number;
+    journalEntries: number;
   };
   recentLogs: Array<{
     status: string;
@@ -289,7 +290,8 @@ function ProviderCard({
       stats.healthEvents +
       stats.metricStream +
       stats.nutritionDaily +
-      stats.labResults
+      stats.labResults +
+      stats.journalEntries
     : 0;
 
   const recentErrors = recentLogs.filter((l) => l.status === "error").length;
@@ -342,6 +344,7 @@ function ProviderCard({
         { label: "Nutrition", count: stats.nutritionDaily },
         { label: "Events", count: stats.healthEvents },
         { label: "Lab Results", count: stats.labResults },
+        { label: "Journal", count: stats.journalEntries },
       ].filter((b) => b.count > 0)
     : [];
 

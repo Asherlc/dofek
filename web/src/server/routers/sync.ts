@@ -259,6 +259,7 @@ export const syncRouter = router({
       metric_stream: string;
       nutrition_daily: string;
       lab_results: string;
+      journal_entries: string;
     }>(sql`
       SELECT
         p.id AS provider_id,
@@ -270,7 +271,8 @@ export const syncRouter = router({
         (SELECT count(*) FROM fitness.health_event WHERE provider_id = p.id)::text AS health_events,
         (SELECT count(*) FROM fitness.metric_stream WHERE provider_id = p.id)::text AS metric_stream,
         (SELECT count(*) FROM fitness.nutrition_daily WHERE provider_id = p.id)::text AS nutrition_daily,
-        (SELECT count(*) FROM fitness.lab_result WHERE provider_id = p.id)::text AS lab_results
+        (SELECT count(*) FROM fitness.lab_result WHERE provider_id = p.id)::text AS lab_results,
+        (SELECT count(*) FROM fitness.journal_entry WHERE provider_id = p.id)::text AS journal_entries
       FROM fitness.provider p
       ORDER BY p.id
     `);
@@ -285,6 +287,7 @@ export const syncRouter = router({
       metricStream: Number(r.metric_stream),
       nutritionDaily: Number(r.nutrition_daily),
       labResults: Number(r.lab_results),
+      journalEntries: Number(r.journal_entries),
     }));
   }),
 });

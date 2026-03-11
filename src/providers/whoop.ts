@@ -1,5 +1,5 @@
 import type { Database } from "../db/index.ts";
-import { activity, dailyMetrics, healthEvent, metricStream, sleepSession } from "../db/schema.ts";
+import { activity, dailyMetrics, journalEntry, metricStream, sleepSession } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import type { Provider, SyncError, SyncResult } from "./types.ts";
@@ -688,10 +688,10 @@ export class WhoopInternalClient {
 // ============================================================
 
 interface ParsedJournalEntry {
-  externalId: string;
-  type: string; // e.g. "whoop_journal_caffeine", "whoop_journal_alcohol"
-  value: number | null;
-  valueText: string | null;
+  question: string; // e.g. "caffeine", "alcohol", "melatonin"
+  answerText: string | null;
+  answerNumeric: number | null;
+  impactScore: number | null;
   date: Date;
 }
 
@@ -737,9 +737,6 @@ function parseJournalResponse(raw: unknown): ParsedJournalEntry[] {
     const date = dateStr ? new Date(dateStr) : null;
     if (!date || Number.isNaN(date.getTime())) continue;
 
-    const id = (obj.id as string | number) ?? (obj.cycle_id as string | number) ?? dateStr;
-    const idStr = String(id);
-
     // Check if it has nested answers/behaviors
     const answers =
       (obj.answers as unknown[]) ??
@@ -751,21 +748,15 @@ function parseJournalResponse(raw: unknown): ParsedJournalEntry[] {
       for (const answer of answers) {
         if (!answer || typeof answer !== "object") continue;
         const a = answer as Record<string, unknown>;
-        const name =
+        const question =
           (a.name as string) ??
           (a.behavior as string) ??
           (a.question as string) ??
           (a.type as string) ??
           "unknown";
-        const value =
-          typeof a.value === "number"
-            ? a.value
-            : typeof a.score === "number"
-              ? a.score
-              : typeof a.impact === "number"
-                ? a.impact
-                : null;
-        const valueText =
+        const answerNumeric =
+          typeof a.value === "number" ? a.value : typeof a.score === "number" ? a.score : null;
+        const answerText =
           typeof a.answer === "string"
             ? a.answer
             : typeof a.response === "string"
@@ -773,39 +764,49 @@ function parseJournalResponse(raw: unknown): ParsedJournalEntry[] {
               : typeof a.value === "string"
                 ? a.value
                 : null;
+        const impactScore =
+          typeof a.impact === "number"
+            ? a.impact
+            : typeof a.impact_score === "number"
+              ? a.impact_score
+              : null;
 
         entries.push({
-          externalId: `journal-${idStr}-${name}`,
-          type: `whoop_journal_${name.toLowerCase().replace(/\s+/g, "_")}`,
-          value,
-          valueText,
+          question: question.toLowerCase().replace(/\s+/g, "_"),
+          answerText,
+          answerNumeric,
+          impactScore,
           date,
         });
       }
     } else {
       // Flat entry — use available fields
-      const name =
+      const question =
         (obj.name as string) ?? (obj.behavior as string) ?? (obj.type as string) ?? "journal";
-      const value =
+      const answerNumeric =
         typeof obj.value === "number"
           ? obj.value
           : typeof obj.score === "number"
             ? obj.score
-            : typeof obj.impact === "number"
-              ? obj.impact
-              : null;
-      const valueText =
+            : null;
+      const answerText =
         typeof obj.answer === "string"
           ? obj.answer
           : typeof obj.response === "string"
             ? obj.response
             : null;
+      const impactScore =
+        typeof obj.impact === "number"
+          ? obj.impact
+          : typeof obj.impact_score === "number"
+            ? obj.impact_score
+            : null;
 
       entries.push({
-        externalId: `journal-${idStr}-${name}`,
-        type: `whoop_journal_${name.toLowerCase().replace(/\s+/g, "_")}`,
-        value,
-        valueText,
+        question: question.toLowerCase().replace(/\s+/g, "_"),
+        answerText,
+        answerNumeric,
+        impactScore,
         date,
       });
     }
@@ -1110,21 +1111,21 @@ export class WhoopProvider implements Provider {
         let count = 0;
         for (const entry of entries) {
           await db
-            .insert(healthEvent)
+            .insert(journalEntry)
             .values({
+              date: entry.date.toISOString().split("T")[0],
               providerId: this.id,
-              externalId: entry.externalId,
-              type: entry.type,
-              value: entry.value,
-              valueText: entry.valueText,
-              startDate: entry.date,
-              sourceName: "WHOOP Journal",
+              question: entry.question,
+              answerText: entry.answerText,
+              answerNumeric: entry.answerNumeric,
+              impactScore: entry.impactScore,
             })
             .onConflictDoUpdate({
-              target: [healthEvent.providerId, healthEvent.externalId],
+              target: [journalEntry.providerId, journalEntry.date, journalEntry.question],
               set: {
-                value: entry.value,
-                valueText: entry.valueText,
+                answerText: entry.answerText,
+                answerNumeric: entry.answerNumeric,
+                impactScore: entry.impactScore,
               },
             });
           count++;

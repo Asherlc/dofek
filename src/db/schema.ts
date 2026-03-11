@@ -498,6 +498,30 @@ export const syncLog = fitness.table(
 );
 
 // ============================================================
+// Journal entries — daily behavioral self-reports (WHOOP journal, etc.)
+// ============================================================
+
+export const journalEntry = fitness.table(
+  "journal_entry",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    date: date("date").notNull(),
+    providerId: text("provider_id")
+      .notNull()
+      .references(() => provider.id),
+    question: text("question").notNull(), // e.g. "caffeine", "alcohol", "melatonin"
+    answerText: text("answer_text"), // free-form or categorical answer
+    answerNumeric: real("answer_numeric"), // numeric value (quantity, score, etc.)
+    impactScore: real("impact_score"), // provider-computed impact on recovery/strain
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("journal_entry_provider_date_question_idx").on(t.providerId, t.date, t.question),
+    index("journal_entry_date_idx").on(t.date),
+  ],
+);
+
+// ============================================================
 // Life Events / Markers
 // ============================================================
 
