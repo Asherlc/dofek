@@ -3,10 +3,22 @@
   "version": "0.1.0",
   "type": "module",
   "exports": {
-    "./db": "./src/db/index.ts",
-    "./db/schema": "./src/db/schema.ts",
-    "./db/dedup": "./src/db/dedup.ts",
-    "./providers/types": "./src/providers/types.ts"
+    "./db": {
+      "import": "./dist/db/index.js",
+      "default": "./src/db/index.ts"
+    },
+    "./db/schema": {
+      "import": "./dist/db/schema.js",
+      "default": "./src/db/schema.ts"
+    },
+    "./db/dedup": {
+      "import": "./dist/db/dedup.js",
+      "default": "./src/db/dedup.ts"
+    },
+    "./providers/types": {
+      "import": "./dist/providers/types.js",
+      "default": "./src/providers/types.ts"
+    }
   },
   "scripts": {
     "dev": "./scripts/with-env.sh tsx src/index.ts",
