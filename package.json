@@ -43,6 +43,7 @@
     "winston": "^3.19.0",
     "winston-transport": "^4.9.0",
     "yauzl": "^3.2.0",
+    "tsx": "^4.19.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {
@@ -52,7 +53,6 @@
     "@types/yauzl": "^2.10.3",
     "drizzle-kit": "^0.30.0",
     "testcontainers": "^10.0.0",
-    "tsx": "^4.19.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   },
