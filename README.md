@@ -1,22 +1,26 @@
-# health-data
+# Dofek (דופק)
 
-Provider-agnostic fitness and health data pipeline. Pulls data from various APIs (strength training, cardio, body composition, sleep, nutrition) into a TimescaleDB database for Grafana dashboards.
+Provider-agnostic fitness and health data pipeline. Pulls data from various APIs (strength training, cardio, body composition, sleep, nutrition, journals) into a TimescaleDB database with a built-in web dashboard.
 
 ## Architecture
 
 ```
 ┌─────────────┐
-│  Hevy API   │──┐
-├─────────────┤  │     ┌──────────────┐     ┌──────────────┐     ┌─────────┐
-│  Wahoo API  │──┼────▶│  Sync Runner │────▶│ TimescaleDB  │────▶│ Grafana │
-├─────────────┤  │     └──────────────┘     └──────────────┘     └─────────┘
-│Intervals.icu│──┤        (provider           (fitness schema)
-├─────────────┤  │         plugins)
+│ Apple Health │──┐
+├─────────────┤  │
+│  Wahoo API  │──┤
+├─────────────┤  │     ┌──────────────┐     ┌──────────────┐     ┌───────────┐
+│  WHOOP API  │──┼────▶│  Sync Runner │────▶│ TimescaleDB  │────▶│ Web UI    │
+├─────────────┤  │     └──────────────┘     └──────────────┘     │ (Vite +   │
+│  Peloton    │──┤        (provider           (fitness schema)   │  React +  │
+├─────────────┤  │         plugins)                               │  tRPC)    │
+│  FatSecret  │──┤                                                └───────────┘
+├─────────────┤  │
 │  Withings   │──┘
 └─────────────┘
 ```
 
-Each data source is a **provider plugin** that implements a simple interface. The sync runner orchestrates all enabled providers. Data lands in a `fitness` Postgres schema that Grafana queries directly. Sync runs as a one-shot container triggered by a server cron job.
+Each data source is a **provider plugin** that implements a simple interface. The sync runner orchestrates all enabled providers. Data lands in a `fitness` Postgres schema. The web dashboard provides sync controls, provider health monitoring, insights, and data exploration. Sync runs as a one-shot container triggered by a server cron job.
 
 ## Quick Start
 
@@ -60,11 +64,15 @@ Tests use [Vitest](https://vitest.dev/). TDD is the standard workflow — write 
 
 ## Deployment
 
+Deployed at `dofek.asherlc.com` (behind Authentik) and `dofek.home` (local). Docker image: `ghcr.io/asherlc/dofek:latest`.
+
+GitHub Actions builds and pushes on merge to main. Watchtower auto-pulls the image on the server (5min poll). Homelab compose runs: `dofek-db` (TimescaleDB), `dofek-web`, `dofek-sync`, `dofek-db-backup`.
+
 The sync container runs as a one-shot job triggered by cron on the server:
 
 ```bash
 # Every 6 hours
-0 */6 * * * docker compose -f /path/to/health-data/docker-compose.yml run --rm sync
+0 */6 * * * docker compose -f /path/to/dofek/docker-compose.yml run --rm sync
 ```
 
 The `--rm` flag removes the container after each run. Upserts make re-runs safe and idempotent.
@@ -94,20 +102,37 @@ See `web/src/server/routers/life-events.ts` for the API and `web/src/client/comp
 
 ## Roadmap
 
-- [x] Apple Health XML parser (HR streams, HRV, sleep stages, workouts, body measurements)
-- [ ] Apple Health automated import (iOS Shortcut → HTTP upload endpoint)
-- [ ] Apple Health workout routes (GPS data from WorkoutRoute elements)
+### Data Ingestion
+- [x] Apple Health XML parser (HR streams, HRV, sleep stages, workouts, body measurements, blood glucose, nutrition, walking stats, mindful sessions)
+- [x] Apple Health HTTP upload with chunked transfer and progress indicator
+- [x] Apple Health workout routes (GPS data from WorkoutRoute elements → metric_stream)
 - [x] Clinical/lab data ingestion (Apple Health FHIR clinical records — 1,173 lab results)
 - [x] Nutrition data ingestion (FatSecret provider — per-food-item granularity with full micro/macronutrients)
 - [x] Supplement tracking (auto-supplements provider reads config, inserts daily; `category` enum distinguishes supplements from food)
-- [ ] Cross-provider deduplication via materialized views (prefer direct-provider data over Apple Health)
-- [ ] CLI for authenticating, pulling, and managing providers
-- [ ] Automated analysis and insights generation
-- [ ] Grafana dashboard templates
-- [ ] Continuous aggregates for long-range trends
-- [ ] Progress indicator for Apple Health imports (file size / record count progress)
 - [x] Peloton direct provider (automated Auth0 login, workouts + performance metrics)
+- [x] Wahoo provider (OAuth + FIT file parsing → GPS/power/HR/cadence/running dynamics)
+- [x] WHOOP provider (sleep, recovery, workouts, 6s HR streams, journal entries via internal API)
+- [x] Withings provider (OAuth + sync for scale, BP, thermometer — awaiting credentials)
+- [x] Cross-provider deduplication via materialized views (recursive CTE overlap clustering, per-field merge by provider priority)
+- [ ] Apple Health automated import (iOS Shortcut trigger)
+- [ ] Hevy provider (strength training)
+- [ ] Intervals.icu provider (training analytics)
 - [ ] RideWithGPS provider (routes, rides)
+
+### Dashboard & Insights
+- [x] Web dashboard (Vite + React + tRPC + ECharts + shadcn/ui)
+- [x] Providers page with sync controls, health status, record counts, and log history
+- [x] Life events timeline (annotate health data with arbitrary date markers, before/after analysis)
+- [x] Insights engine (training volume, HR zone distribution, 80/20 polarization analysis)
+- [ ] Additional insight categories (ACWR, TRIMP, overtraining detection, recovery tests)
+- [ ] Continuous aggregates for long-range trends
+
+### Infrastructure
+- [x] Winston structured logging with ring buffer transport for UI system logs
+- [x] SOPS + Age encrypted secrets
+- [x] GHA CI with Docker build + push to GHCR
+- [x] Watchtower auto-deploy with Slack notifications
+- [ ] CLI for authenticating, pulling, and managing providers
 
 ## Secrets
 
@@ -131,8 +156,14 @@ sops .env   # opens decrypted file in $EDITOR; re-encrypts on save
 
 ## Stack
 
-- **TypeScript** — sync scripts and provider plugins
+- **TypeScript** — sync scripts, provider plugins, and web dashboard
 - **Drizzle ORM** — type-safe schema and migrations
 - **TimescaleDB** — Postgres with time-series extensions (hypertables, continuous aggregates, compression)
+- **Vite + React** — web dashboard frontend
+- **tRPC + Express** — API layer
+- **ECharts** — data visualization
+- **shadcn/ui + Tailwind** — UI components
+- **Winston** — structured logging
 - **Vitest** — testing
-- **Docker** — deployment
+- **Biome** — linting and formatting
+- **Docker + GHCR** — deployment via GitHub Actions + Watchtower
