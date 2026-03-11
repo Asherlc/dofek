@@ -18,7 +18,8 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 - **Ask about trade-offs**: When there are design decisions with multiple valid approaches (e.g., completeness vs simplicity, stability vs features), always ask the user rather than making assumptions. Don't cut corners without asking first.
 - **Commit regularly**: Commit at regular intervals — after each meaningful chunk of work (new feature, passing tests, refactor). Don't let changes accumulate.
 - **Always push after commit**: Push to remote after every commit so CI runs and changes are backed up.
-- **Pre-push checks**: Before every push, run `pnpm lint`, `pnpm test`, and `pnpm tsc --noEmit` (+ `cd web && pnpm tsc --noEmit`). Never push code that fails lint, tests, or type checking.
+- **Pre-push checks**: Before every push, run `pnpm lint`, `pnpm test`, and typecheck all packages (`pnpm tsc --noEmit`, `cd packages/server && pnpm tsc --noEmit`, `cd packages/web && pnpm tsc --noEmit`). Never push code that fails lint, tests, or type checking.
+- **Test Docker changes locally**: Before pushing Dockerfile or entrypoint changes, build and verify both targets locally (`docker build --target server`, `docker build --target client`). Don't deploy Docker changes that haven't been tested locally.
 - **Document as you go**: Keep README.md and docs/ updated with every significant change. When learning about external APIs, data formats, auth protocols, or provider quirks, write notes in `docs/` (e.g., `docs/peloton.md`, `docs/apple-health.md`). These notes help future development and debugging.
 - **Run migrations**: After generating a migration from schema changes, always run `pnpm migrate` yourself — don't tell the user to do it.
 - **Drizzle generate is interactive**: `pnpm generate` (`drizzle-kit generate`) prompts interactively when it detects potential table/column renames. Since CLI tools can't handle interactive prompts, write migration SQL files manually when `generate` would prompt. Name them sequentially (e.g., `drizzle/0012_description.sql`). Use `ALTER TABLE ... ADD COLUMN` for new columns, etc. Always run `pnpm migrate` after creating manual migrations.
@@ -29,7 +30,8 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 - `pnpm dev` — run sync in dev mode
 - `pnpm generate` — generate Drizzle migrations from schema changes
 - `pnpm migrate` — apply migrations
-- `cd web && PORT=3001 pnpm dev` — run web dashboard (http://localhost:3001)
+- `cd packages/web && pnpm dev` — run Vite dev server (proxies /api to Express)
+- `cd packages/server && pnpm dev` — run Express API server
 - `pnpm lint` — run Biome linter
 - `pnpm lint:fix` — auto-fix lint issues
 - `pnpm format` — format code with Biome
@@ -43,18 +45,22 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 
 ## Project Structure
 ```
-src/                     — Pipeline (sync, providers, CLI)
-  db/schema.ts           — Drizzle schema (source of truth for DB)
-  db/index.ts            — DB connection
-  providers/types.ts     — Provider plugin interface
-  providers/             — Provider implementations
-  sync/runner.ts         — Sync orchestrator
-  index.ts               — CLI entry point
-web/                     — React dashboard (Vite + tRPC)
-  src/client/            — React frontend (ECharts, shadcn/ui, Tailwind)
-  src/server/            — Express + tRPC API server
-  src/shared/            — Shared tRPC types
-drizzle/                 — Generated migrations
-.github/workflows/       — CI (lint, test, build)
-docker-compose.yml       — TimescaleDB
+src/                         — Root package: sync runner, providers, DB schema
+  db/schema.ts               — Drizzle schema (source of truth for DB)
+  db/index.ts                — DB connection
+  providers/types.ts         — Provider plugin interface
+  providers/                 — Provider implementations
+  sync/runner.ts             — Sync orchestrator
+  index.ts                   — CLI entry point
+packages/
+  server/src/                — dofek-server: Express + tRPC API (Node)
+    routers/                 — tRPC route handlers
+    index.ts                 — Express server entry point
+  web/src/                   — dofek-web: Vite + React SPA (browser)
+    components/              — React components (ECharts, shadcn/ui, Tailwind)
+    pages/                   — Route pages
+    lib/trpc.ts              — tRPC client (imports AppRouter from dofek-server)
+drizzle/                     — SQL migrations
+Dockerfile                   — Multi-stage: server + client targets
+nginx.conf                   — Nginx config (static files + API proxy)
 ```

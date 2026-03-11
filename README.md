@@ -48,6 +48,22 @@ See [docs/adding-a-provider.md](docs/adding-a-provider.md).
 
 See [docs/schema.md](docs/schema.md) for the full data model.
 
+## Project Structure
+
+pnpm workspace monorepo with three packages:
+
+```
+dofek/
+├── src/                    # Root package — sync runner, providers, DB schema
+├── packages/
+│   ├── server/             # dofek-server — Express + tRPC API (Node)
+│   └── web/                # dofek-web — Vite + React SPA (browser)
+├── drizzle/                # SQL migrations
+└── Dockerfile              # Multi-stage: server + client targets
+```
+
+The server imports shared code from the root package via `dofek` workspace dependency (e.g. `import { createDatabaseFromEnv } from "dofek/db"`). The web client imports the `AppRouter` type from the server via `dofek-server/router`.
+
 ## Development
 
 ```bash
@@ -55,34 +71,87 @@ pnpm test          # run tests
 pnpm test:watch    # run tests in watch mode
 pnpm dev           # run sync in dev mode
 
-# Web dashboard (runs on port 3001)
-cd web
-PORT=3001 pnpm dev
+# Web dashboard — starts Vite dev server (proxies /api to Express)
+cd packages/web && pnpm dev
+
+# API server
+cd packages/server && pnpm dev
 ```
 
-Tests use [Vitest](https://vitest.dev/). TDD is the standard workflow — write tests first, then implement.
+Tests use [Vitest](https://vitest.dev/). TDD is the standard workflow — write tests first, then implement. Test files are colocated with source files (e.g. `index.test.ts` next to `index.ts`).
+
+## Docker
+
+Two images built from a single multi-stage Dockerfile:
+
+| Image | Base | Contents | Size |
+|-------|------|----------|------|
+| `ghcr.io/asherlc/dofek:latest` | node:22-slim | Express API + sync runner | ~350MB |
+| `ghcr.io/asherlc/dofek-client:latest` | nginx:alpine | Vite static bundle | ~63MB |
+
+### How it works
+
+```
+Dockerfile (multi-stage)
+├── build stage    — pnpm install, vite build, pnpm deploy
+├── server target  — self-contained Node app (API + sync)
+└── client target  — Nginx serving static files + proxying API
+```
+
+Uses `pnpm deploy --legacy` to create isolated, self-contained directories for each package with all dependencies (including workspace deps) resolved and flattened — no symlinks, no pnpm store. BuildKit cache mounts keep the pnpm store across builds.
+
+### Building locally
+
+```bash
+# Build and test both targets before pushing
+docker build --target server -t dofek-server:local .
+docker build --target client -t dofek-client:local .
+
+# Verify server can resolve its dependencies
+docker run --rm --entrypoint node dofek-server:local \
+  --experimental-transform-types -e "console.log('OK')"
+
+# Verify nginx config is valid
+docker run --rm dofek-client:local nginx -t
+```
+
+Always test Docker builds locally before deploying. The CI build runs on Linux and may behave differently than local dev.
+
+### Production architecture
+
+```
+Traefik (host routing + Authentik auth)
+  └── dofek-client (Nginx :80)
+        ├── /assets/*    → static files (1yr cache)
+        ├── /api/*       → proxy_pass dofek-web:3000
+        ├── /auth/*      → proxy_pass dofek-web:3000
+        ├── /callback    → proxy_pass dofek-web:3000
+        └── /*           → index.html (SPA fallback)
+```
+
+Traefik handles host-based routing and authentication. Nginx owns all path-based routing within the app — this keeps infrastructure config decoupled from application routing. The Express server (`dofek-web`) has no published port and is only reachable internally via Nginx.
+
+### Entrypoint modes
+
+The server image runs in two modes via `entrypoint.sh`:
+
+```bash
+# API server (Express + tRPC)
+docker run dofek:latest web
+
+# Sync runner (provider data sync)
+docker run dofek:latest sync
+```
+
+Both use Node 22 `--experimental-transform-types` to run TypeScript source directly — no build step.
 
 ## Deployment
 
-Deployed at `dofek.asherlc.com` (behind Authentik) and `dofek.home` (local). Docker image: `ghcr.io/asherlc/dofek:latest`.
+Deployed at `dofek.asherlc.com` (behind Authentik) and `dofek.home` (local).
 
-GitHub Actions builds and pushes on merge to main. Watchtower auto-pulls the image on the server (5min poll). Homelab compose runs: `dofek-db` (TimescaleDB), `dofek-web`, `dofek-sync`, `dofek-db-backup`.
+GitHub Actions builds and pushes both images on merge to main. Watchtower auto-pulls (label-based, 5min poll). Homelab compose runs: `dofek-db` (TimescaleDB), `dofek-web` (API server), `dofek-client` (Nginx), `dofek-sync`, `dofek-db-backup`.
 
-The sync container runs as a one-shot job triggered by cron on the server:
-
-```bash
-# Every 6 hours
-0 */6 * * * docker compose -f /path/to/dofek/docker-compose.yml run --rm sync
-```
-
-The `--rm` flag removes the container after each run. Upserts make re-runs safe and idempotent.
-
-Use `--since-days=N` to control the sync window:
-
-```bash
-# Sync last 30 days (backfill)
-docker compose run --rm sync node dist/index.js sync --since-days=30
-```
+Migrations run automatically on startup (both `web` and `sync` modes call `runMigrations()`). Upserts make re-runs safe and idempotent.
 
 ## Supplements
 
@@ -98,7 +167,7 @@ See `src/providers/auto-supplements.ts` for the provider implementation.
 
 Life events are arbitrary time markers (point-in-time, bounded date range, or ongoing) that let you annotate your health timeline and compare metrics before/during/after. Examples: starting a diet, an injury, a training change. The web dashboard provides a UI to create events and view before/after analysis across heart rate, HRV, sleep, body composition, and activity metrics.
 
-See `web/src/server/routers/life-events.ts` for the API and `web/src/client/components/LifeEventsPanel.tsx` for the UI.
+See `packages/server/src/routers/life-events.ts` for the API and `packages/web/src/components/LifeEventsPanel.tsx` for the UI.
 
 ## Roadmap
 
