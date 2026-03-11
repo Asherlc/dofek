@@ -186,17 +186,21 @@ export function parseFitFile(buffer: Buffer): Promise<ParsedFitActivity> {
       elapsedRecordField: true,
     });
 
-    parser.parse(buffer, (err: unknown, data: Record<string, unknown>) => {
+    parser.parse(Buffer.from(buffer) as Buffer<ArrayBuffer>, (err, data) => {
       if (err) {
-        reject(err instanceof Error ? err : new Error(String(err)));
+        reject(new Error(String(err)));
+        return;
+      }
+      if (!data) {
+        reject(new Error("FIT parser returned no data"));
         return;
       }
 
-      const sessions = data.sessions as Record<string, unknown>[] | undefined;
-      const rawSession = sessions?.[0] ?? {};
-      const rawRecords = (data.records as Record<string, unknown>[]) ?? [];
-      const rawLaps = (data.laps as Record<string, unknown>[]) ?? [];
-      const rawEvents = (data.events as Record<string, unknown>[]) ?? [];
+      const sessions = data.sessions ?? [];
+      const rawSession = (sessions[0] ?? {}) as unknown as Record<string, unknown>;
+      const rawRecords = (data.records ?? []) as unknown as Record<string, unknown>[];
+      const rawLaps = (data.laps ?? []) as unknown as Record<string, unknown>[];
+      const rawEvents = (data.events ?? []) as unknown as Record<string, unknown>[];
 
       resolve({
         session: parseFitSession(rawSession),

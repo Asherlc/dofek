@@ -11,7 +11,7 @@ import { WahooProvider } from "./providers/wahoo.js";
 import { WithingsProvider } from "./providers/withings.js";
 import { runSync } from "./sync/runner.js";
 
-// Load supplement config: prefer supplements.json (web UI), fall back to supplements.config.ts
+// Load supplement config from supplements.json (managed via web UI)
 let supplementConfig: import("./providers/auto-supplements.js").SupplementConfig | undefined;
 try {
   const { readFileSync } = await import("node:fs");
@@ -20,12 +20,7 @@ try {
   const raw = readFileSync(jsonPath, "utf-8");
   supplementConfig = JSON.parse(raw);
 } catch {
-  try {
-    const mod = await import("./supplements.config.js");
-    supplementConfig = mod.default;
-  } catch {
-    // No config file — auto-supplements provider will report validation error
-  }
+  // No config file — auto-supplements provider will report validation error
 }
 
 // Register all providers
