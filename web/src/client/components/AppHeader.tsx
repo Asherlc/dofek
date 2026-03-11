@@ -1,10 +1,11 @@
-type Page = "dashboard" | "training" | "insights" | "providers";
+type Page = "dashboard" | "training" | "insights" | "providers" | "settings";
 
 const navItems: Array<{ page: Page; label: string }> = [
   { page: "dashboard", label: "Dashboard" },
   { page: "training", label: "Training" },
   { page: "insights", label: "Insights" },
   { page: "providers", label: "Providers" },
+  { page: "settings", label: "Settings" },
 ];
 
 export function AppHeader({

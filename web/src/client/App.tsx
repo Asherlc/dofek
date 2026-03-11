@@ -14,14 +14,18 @@ const ProvidersPage = lazy(() =>
 const TrainingPage = lazy(() =>
   import("./pages/TrainingPage.tsx").then((m) => ({ default: m.TrainingPage })),
 );
+const SettingsPage = lazy(() =>
+  import("./pages/SettingsPage.tsx").then((m) => ({ default: m.SettingsPage })),
+);
 
-type Route = "dashboard" | "training" | "insights" | "providers";
+type Route = "dashboard" | "training" | "insights" | "providers" | "settings";
 
 function getRoute(): Route {
   const hash = window.location.hash.slice(1);
   if (hash === "training") return "training";
   if (hash === "insights") return "insights";
   if (hash === "providers") return "providers";
+  if (hash === "settings") return "settings";
   return "dashboard" as Route;
 }
 
@@ -41,6 +45,7 @@ const pages = {
   training: TrainingPage,
   insights: InsightsPage,
   providers: ProvidersPage,
+  settings: SettingsPage,
 } as const;
 
 export function App() {
