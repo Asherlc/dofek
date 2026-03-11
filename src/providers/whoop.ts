@@ -369,6 +369,10 @@ export interface WhoopCycle {
 const WHOOP_API_BASE = "https://api.prod.whoop.com";
 const WHOOP_API_VERSION = "7";
 
+// Cognito auth config (from id.whoop.com web app)
+const COGNITO_ENDPOINT = `${WHOOP_API_BASE}/auth-service/v3/whoop/`;
+const COGNITO_CLIENT_ID = "37365lrcda1js3fapqfe2n40eh";
+
 export interface WhoopAuthToken {
   accessToken: string;
   refreshToken: string;
@@ -378,7 +382,33 @@ export interface WhoopAuthToken {
 /** Result of the initial sign-in — either success or 2FA challenge */
 export type WhoopSignInResult =
   | { type: "success"; token: WhoopAuthToken }
-  | { type: "verification_required"; state: string; method: string };
+  | { type: "verification_required"; session: string; method: string };
+
+/** Make a Cognito API call through WHOOP's proxy endpoint */
+async function cognitoCall(
+  action: string,
+  body: Record<string, unknown>,
+  fetchFn: typeof globalThis.fetch,
+): Promise<Record<string, unknown>> {
+  const response = await fetchFn(COGNITO_ENDPOINT, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-amz-json-1.1",
+      "X-Amz-Target": `AWSCognitoIdentityProviderService.${action}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  const data = (await response.json()) as Record<string, unknown>;
+
+  if (!response.ok) {
+    const errorType = (data.__type as string)?.split("#").pop() ?? "UnknownError";
+    const errorMessage = (data.message as string) ?? (data.Message as string) ?? "Auth failed";
+    throw new Error(`WHOOP Cognito ${errorType}: ${errorMessage}`);
+  }
+
+  return data;
+}
 
 export class WhoopInternalClient {
   private accessToken: string;
@@ -392,146 +422,154 @@ export class WhoopInternalClient {
   }
 
   /**
-   * Step 1: Sign in with email + password.
-   * Returns either a token (no 2FA) or a verification challenge state.
+   * Step 1: Sign in with email + password via Cognito USER_PASSWORD_AUTH.
+   * Returns either tokens (no MFA) or an MFA challenge session.
    */
   static async signIn(
     username: string,
     password: string,
     fetchFn: typeof globalThis.fetch = globalThis.fetch,
   ): Promise<WhoopSignInResult> {
-    const response = await fetchFn(`${WHOOP_API_BASE}/auth-service/v2/whoop/sign-in`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "User-Agent": "WHOOP/4.0",
+    const data = await cognitoCall(
+      "InitiateAuth",
+      {
+        AuthFlow: "USER_PASSWORD_AUTH",
+        ClientId: COGNITO_CLIENT_ID,
+        AuthParameters: {
+          USERNAME: username,
+          PASSWORD: password,
+        },
       },
-      body: JSON.stringify({ username, password }),
-    });
+      fetchFn,
+    );
 
-    // Read body as text first (body stream can only be consumed once)
-    const bodyText = await response.text().catch(() => "");
-    let data: Record<string, unknown> | null = null;
-    try {
-      data = JSON.parse(bodyText) as Record<string, unknown>;
-    } catch {
-      // Not JSON — plain text error like "HTTP 401 Unauthorized"
+    // MFA challenge — Cognito returns ChallengeName + Session
+    const challengeName = data.ChallengeName as string | undefined;
+    if (challengeName) {
+      return {
+        type: "verification_required",
+        session: data.Session as string,
+        method: challengeName === "SOFTWARE_TOKEN_MFA" ? "totp" : "sms",
+      };
     }
 
-    // Auth failure with no useful JSON body
-    if (!response.ok && !data) {
-      throw new Error(`WHOOP auth failed (${response.status}): ${bodyText || response.statusText}`);
+    // No MFA — tokens returned directly
+    const authResult = data.AuthenticationResult as Record<string, unknown>;
+    if (!authResult?.AccessToken) {
+      throw new Error("WHOOP sign-in: no tokens in response");
     }
 
-    // Got JSON but no access_token — could be 2FA challenge or structured error
-    if (data && !data.access_token) {
-      const state =
-        (data.verification_id as string) ??
-        (data.mfa_token as string) ??
-        (data.state as string) ??
-        (data.step as string) ??
-        "";
-      const method = (data.verification_method as string) ?? (data.method as string) ?? "sms";
-
-      if (state) {
-        return { type: "verification_required", state, method };
-      }
-
-      // Structured error response (e.g. { "error": "..." })
-      throw new Error(`WHOOP auth failed (${response.status}): ${bodyText}`);
-    }
-
-    if (!data?.access_token) {
-      throw new Error(
-        `WHOOP auth failed (${response.status}): ${bodyText || "No access token in response"}`,
-      );
-    }
-
-    const userId = await WhoopInternalClient._fetchUserId(data.access_token as string, fetchFn);
+    const userId = await WhoopInternalClient._fetchUserId(
+      authResult.AccessToken as string,
+      fetchFn,
+    );
 
     return {
       type: "success",
       token: {
-        accessToken: data.access_token as string,
-        refreshToken: (data.refresh_token as string) ?? "",
+        accessToken: authResult.AccessToken as string,
+        refreshToken: (authResult.RefreshToken as string) ?? "",
         userId,
       },
     };
   }
 
   /**
-   * Step 2: Submit 2FA verification code (if sign-in returned a challenge).
+   * Step 2: Submit MFA code via Cognito RespondToAuthChallenge.
    */
   static async verifyCode(
-    state: string,
+    session: string,
     code: string,
+    username?: string,
     fetchFn: typeof globalThis.fetch = globalThis.fetch,
   ): Promise<WhoopAuthToken> {
-    // Try common WHOOP verification endpoints
-    const response = await fetchFn(`${WHOOP_API_BASE}/auth-service/v2/whoop/verify`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "User-Agent": "WHOOP/4.0",
-      },
-      body: JSON.stringify({ state, code, verification_id: state }),
-    });
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => "Unknown error");
-      throw new Error(`WHOOP verification failed (${response.status}): ${text}`);
+    // Try SMS_MFA first, fall back to SOFTWARE_TOKEN_MFA
+    let data: Record<string, unknown>;
+    try {
+      data = await cognitoCall(
+        "RespondToAuthChallenge",
+        {
+          ChallengeName: "SMS_MFA",
+          ClientId: COGNITO_CLIENT_ID,
+          Session: session,
+          ChallengeResponses: {
+            USERNAME: username ?? "",
+            SMS_MFA_CODE: code,
+          },
+        },
+        fetchFn,
+      );
+    } catch {
+      data = await cognitoCall(
+        "RespondToAuthChallenge",
+        {
+          ChallengeName: "SOFTWARE_TOKEN_MFA",
+          ClientId: COGNITO_CLIENT_ID,
+          Session: session,
+          ChallengeResponses: {
+            USERNAME: username ?? "",
+            SOFTWARE_TOKEN_MFA_CODE: code,
+          },
+        },
+        fetchFn,
+      );
     }
 
-    const data = (await response.json()) as Record<string, unknown>;
-    if (!data.access_token) {
-      throw new Error("WHOOP verification response missing access_token");
+    const authResult = data.AuthenticationResult as Record<string, unknown>;
+    if (!authResult?.AccessToken) {
+      throw new Error("WHOOP verification: no tokens in response");
     }
 
-    const userId = await WhoopInternalClient._fetchUserId(data.access_token as string, fetchFn);
+    const userId = await WhoopInternalClient._fetchUserId(
+      authResult.AccessToken as string,
+      fetchFn,
+    );
 
     return {
-      accessToken: data.access_token as string,
-      refreshToken: (data.refresh_token as string) ?? "",
+      accessToken: authResult.AccessToken as string,
+      refreshToken: (authResult.RefreshToken as string) ?? "",
       userId,
     };
   }
 
   /**
-   * Refresh an expired access token using a refresh token.
+   * Refresh an expired access token using a Cognito refresh token.
    */
   static async refreshAccessToken(
     refreshToken: string,
     fetchFn: typeof globalThis.fetch = globalThis.fetch,
   ): Promise<WhoopAuthToken> {
-    const response = await fetchFn(`${WHOOP_API_BASE}/auth-service/v2/whoop/token/refresh`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "User-Agent": "WHOOP/4.0",
+    const data = await cognitoCall(
+      "InitiateAuth",
+      {
+        AuthFlow: "REFRESH_TOKEN_AUTH",
+        ClientId: COGNITO_CLIENT_ID,
+        AuthParameters: {
+          REFRESH_TOKEN: refreshToken,
+        },
       },
-      body: JSON.stringify({ refresh_token: refreshToken }),
-    });
+      fetchFn,
+    );
 
-    if (!response.ok) {
-      const text = await response.text().catch(() => "Unknown error");
-      throw new Error(`WHOOP token refresh failed (${response.status}): ${text}`);
+    const authResult = data.AuthenticationResult as Record<string, unknown>;
+    if (!authResult?.AccessToken) {
+      throw new Error("WHOOP token refresh: no tokens in response");
     }
 
-    const data = (await response.json()) as Record<string, unknown>;
-    if (!data.access_token) {
-      throw new Error("WHOOP refresh response missing access_token");
-    }
-
-    const userId = await WhoopInternalClient._fetchUserId(data.access_token as string, fetchFn);
+    const userId = await WhoopInternalClient._fetchUserId(
+      authResult.AccessToken as string,
+      fetchFn,
+    );
 
     return {
-      accessToken: data.access_token as string,
-      refreshToken: (data.refresh_token as string) ?? refreshToken,
+      accessToken: authResult.AccessToken as string,
+      // Cognito REFRESH_TOKEN_AUTH doesn't return a new refresh token — reuse the old one
+      refreshToken: (authResult.RefreshToken as string) ?? refreshToken,
       userId,
     };
   }
 
-  /** Backwards-compatible authenticate — works for accounts WITHOUT 2FA */
+  /** Backwards-compatible authenticate — works for accounts WITHOUT MFA */
   static async authenticate(
     username: string,
     password: string,
@@ -539,7 +577,7 @@ export class WhoopInternalClient {
   ): Promise<WhoopAuthToken> {
     const result = await WhoopInternalClient.signIn(username, password, fetchFn);
     if (result.type === "verification_required") {
-      throw new Error("WHOOP account requires 2FA — use the web UI to authenticate");
+      throw new Error("WHOOP account requires MFA — use the web UI to authenticate");
     }
     return result.token;
   }
@@ -548,20 +586,21 @@ export class WhoopInternalClient {
     accessToken: string,
     fetchFn: typeof globalThis.fetch,
   ): Promise<number> {
-    const response = await fetchFn(`${WHOOP_API_BASE}/auth-service/v2/user`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "User-Agent": "WHOOP/4.0",
+    const response = await fetchFn(
+      `${WHOOP_API_BASE}/users-service/v2/bootstrap/?accountType=users&apiVersion=7&include=profile`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
       },
-    });
+    );
 
     if (!response.ok) {
       throw new Error(`Failed to fetch WHOOP user ID (${response.status})`);
     }
 
     const data = (await response.json()) as Record<string, unknown>;
-    const user = data.user as Record<string, unknown> | undefined;
-    return (user?.id as number) ?? (data.user_id as number) ?? 0;
+    return (data.id as number) ?? (data.user_id as number) ?? 0;
   }
 
   private async get<T>(url: string, params?: Record<string, string>): Promise<T> {

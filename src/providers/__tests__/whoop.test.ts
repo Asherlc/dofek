@@ -96,109 +96,105 @@ const sampleWorkout: WhoopWorkoutRecord = {
   },
 };
 
-describe("WhoopInternalClient.signIn", () => {
-  it("posts to api.prod.whoop.com sign-in endpoint", async () => {
-    let capturedUrl = "";
-    let capturedBody = "";
-    const mockFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = input.toString();
-      if (url.includes("sign-in")) {
-        capturedUrl = url;
-        capturedBody = init?.body as string;
-        return Response.json({ access_token: "tok", refresh_token: "ref" });
+/** Helper: mock fetch that routes Cognito calls and user bootstrap */
+function makeCognitoMockFetch(
+  cognitoHandler: (body: Record<string, unknown>, headers: Record<string, string>) => unknown,
+) {
+  return ((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = input.toString();
+    if (url.includes("auth-service/v3/whoop")) {
+      const body = JSON.parse(init?.body as string);
+      const headers: Record<string, string> = {};
+      if (init?.headers) {
+        for (const [k, v] of Object.entries(init.headers as Record<string, string>)) {
+          headers[k] = v;
+        }
       }
-      // user endpoint
-      if (url.includes("auth-service/v2/user")) {
-        return Response.json({ user: { id: 42 } });
-      }
-      return new Response("Not found", { status: 404 });
-    }) as typeof globalThis.fetch;
+      const result = cognitoHandler(body, headers);
+      return Promise.resolve(Response.json(result));
+    }
+    if (url.includes("users-service/v2/bootstrap")) {
+      return Promise.resolve(Response.json({ id: 42 }));
+    }
+    return Promise.resolve(new Response("Not found", { status: 404 }));
+  }) as typeof globalThis.fetch;
+}
+
+describe("WhoopInternalClient.signIn (Cognito v3)", () => {
+  it("calls Cognito InitiateAuth with USER_PASSWORD_AUTH", async () => {
+    let capturedBody: Record<string, unknown> = {};
+    let capturedTarget = "";
+    const mockFetch = makeCognitoMockFetch((body, headers) => {
+      capturedBody = body;
+      capturedTarget = headers["X-Amz-Target"] ?? "";
+      return {
+        AuthenticationResult: {
+          AccessToken: "tok",
+          RefreshToken: "ref",
+        },
+      };
+    });
 
     await WhoopInternalClient.signIn("user@test.com", "pass", mockFetch);
-    expect(capturedUrl).toBe("https://api.prod.whoop.com/auth-service/v2/whoop/sign-in");
-    const body = JSON.parse(capturedBody);
-    expect(body.username).toBe("user@test.com");
-    expect(body.password).toBe("pass");
+    expect(capturedTarget).toBe("AWSCognitoIdentityProviderService.InitiateAuth");
+    expect(capturedBody.AuthFlow).toBe("USER_PASSWORD_AUTH");
+    expect((capturedBody.AuthParameters as Record<string, string>).USERNAME).toBe("user@test.com");
+    expect((capturedBody.AuthParameters as Record<string, string>).PASSWORD).toBe("pass");
   });
 
-  it("fetches user ID from auth-service/v2/user after sign-in", async () => {
-    let userEndpointCalled = false;
-    const mockFetch = (async (input: RequestInfo | URL) => {
-      const url = input.toString();
-      if (url.includes("sign-in")) {
-        return Response.json({ access_token: "tok", refresh_token: "ref" });
-      }
-      if (url.includes("auth-service/v2/user")) {
-        userEndpointCalled = true;
-        return Response.json({ user: { id: 42 } });
-      }
-      return new Response("Not found", { status: 404 });
-    }) as typeof globalThis.fetch;
+  it("fetches user ID from users-service bootstrap after sign-in", async () => {
+    const mockFetch = makeCognitoMockFetch(() => ({
+      AuthenticationResult: { AccessToken: "tok", RefreshToken: "ref" },
+    }));
 
     const result = await WhoopInternalClient.signIn("user@test.com", "pass", mockFetch);
-    expect(userEndpointCalled).toBe(true);
     expect(result.type).toBe("success");
     if (result.type === "success") {
       expect(result.token.userId).toBe(42);
     }
   });
 
-  it("returns verification_required when 2FA is needed", async () => {
-    const mockFetch = (async (input: RequestInfo | URL) => {
-      const url = input.toString();
-      if (url.includes("sign-in")) {
-        return new Response(
-          JSON.stringify({ verification_id: "vrf-123", verification_method: "sms" }),
-          { status: 200 },
-        );
-      }
-      return new Response("Not found", { status: 404 });
-    }) as typeof globalThis.fetch;
+  it("returns verification_required when MFA challenge is returned", async () => {
+    const mockFetch = makeCognitoMockFetch(() => ({
+      ChallengeName: "SMS_MFA",
+      Session: "session-abc",
+    }));
 
     const result = await WhoopInternalClient.signIn("user@test.com", "pass", mockFetch);
     expect(result.type).toBe("verification_required");
     if (result.type === "verification_required") {
-      expect(result.state).toBe("vrf-123");
+      expect(result.session).toBe("session-abc");
       expect(result.method).toBe("sms");
     }
   });
 
-  it("authenticate() throws on 2FA-required accounts", async () => {
-    const mockFetch = (async (input: RequestInfo | URL) => {
-      const url = input.toString();
-      if (url.includes("sign-in")) {
-        return Response.json({ verification_id: "vrf-123" });
-      }
-      return new Response("Not found", { status: 404 });
-    }) as typeof globalThis.fetch;
+  it("authenticate() throws on MFA-required accounts", async () => {
+    const mockFetch = makeCognitoMockFetch(() => ({
+      ChallengeName: "SMS_MFA",
+      Session: "session-abc",
+    }));
 
     await expect(
       WhoopInternalClient.authenticate("user@test.com", "pass", mockFetch),
-    ).rejects.toThrow("2FA");
+    ).rejects.toThrow("MFA");
   });
 });
 
-describe("WhoopInternalClient.refreshAccessToken", () => {
-  it("sends refresh token to token/refresh endpoint", async () => {
-    let capturedUrl = "";
-    let capturedBody = "";
-    const mockFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = input.toString();
-      if (url.includes("token/refresh")) {
-        capturedUrl = url;
-        capturedBody = init?.body as string;
-        return Response.json({ access_token: "new-tok", refresh_token: "new-ref" });
-      }
-      if (url.includes("auth-service/v2/user")) {
-        return Response.json({ user: { id: 42 } });
-      }
-      return new Response("Not found", { status: 404 });
-    }) as typeof globalThis.fetch;
+describe("WhoopInternalClient.refreshAccessToken (Cognito v3)", () => {
+  it("calls Cognito InitiateAuth with REFRESH_TOKEN_AUTH", async () => {
+    let capturedBody: Record<string, unknown> = {};
+    const mockFetch = makeCognitoMockFetch((body) => {
+      capturedBody = body;
+      return {
+        AuthenticationResult: { AccessToken: "new-tok" },
+      };
+    });
 
     const token = await WhoopInternalClient.refreshAccessToken("old-ref", mockFetch);
-    expect(capturedUrl).toContain("auth-service/v2/whoop/token/refresh");
-    expect(JSON.parse(capturedBody).refresh_token).toBe("old-ref");
+    expect(capturedBody.AuthFlow).toBe("REFRESH_TOKEN_AUTH");
+    expect((capturedBody.AuthParameters as Record<string, string>).REFRESH_TOKEN).toBe("old-ref");
     expect(token.accessToken).toBe("new-tok");
+    expect(token.refreshToken).toBe("old-ref"); // reuses old when not returned
     expect(token.userId).toBe(42);
   });
 });

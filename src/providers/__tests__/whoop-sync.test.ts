@@ -135,20 +135,25 @@ function createMockFetch(
   return (async (input: RequestInfo | URL): Promise<Response> => {
     const urlStr = input.toString();
 
-    // Token refresh
-    if (urlStr.includes("token/refresh")) {
+    // Cognito v3 auth endpoint (token refresh via REFRESH_TOKEN_AUTH)
+    if (urlStr.includes("auth-service/v3/whoop")) {
       if (opts?.authError) {
-        return new Response("Unauthorized", { status: 401 });
+        return Response.json(
+          { __type: "NotAuthorizedException", message: "Invalid refresh token" },
+          { status: 400 },
+        );
       }
       return Response.json({
-        access_token: "test-token",
-        refresh_token: "test-refresh",
+        AuthenticationResult: {
+          AccessToken: "test-token",
+          RefreshToken: "test-refresh",
+        },
       });
     }
 
-    // User endpoint (for getting userId after auth)
-    if (urlStr.includes("auth-service/v2/user")) {
-      return Response.json({ user: { id: 10129 } });
+    // User bootstrap endpoint (for getting userId after auth)
+    if (urlStr.includes("users-service/v2/bootstrap")) {
+      return Response.json({ id: 10129 });
     }
 
     // Cycles (BFF endpoint)

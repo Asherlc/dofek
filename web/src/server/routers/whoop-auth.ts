@@ -3,10 +3,10 @@ import { WhoopInternalClient } from "dofek/providers/whoop";
 import { z } from "zod";
 import { publicProcedure, router } from "../../shared/trpc.ts";
 
-// In-memory store for pending 2FA challenges (keyed by a random ID)
+// In-memory store for pending MFA challenges (keyed by a random ID)
 const pendingChallenges = new Map<
   string,
-  { state: string; method: string; username: string; expiresAt: number }
+  { session: string; method: string; username: string; expiresAt: number }
 >();
 
 function cleanupExpired() {
@@ -17,17 +17,17 @@ function cleanupExpired() {
 }
 
 export const whoopAuthRouter = router({
-  /** Step 1: Sign in with email + password */
+  /** Step 1: Sign in with email + password via Cognito */
   signIn: publicProcedure
     .input(z.object({ username: z.string(), password: z.string() }))
     .mutation(async ({ input }) => {
       const result = await WhoopInternalClient.signIn(input.username, input.password);
 
       if (result.type === "verification_required") {
-        // Store challenge state for step 2
+        // Store Cognito session for step 2
         const challengeId = `whoop-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
         pendingChallenges.set(challengeId, {
-          state: result.state,
+          session: result.session,
           method: result.method,
           username: input.username,
           expiresAt: Date.now() + 10 * 60 * 1000, // 10 min TTL
@@ -41,7 +41,7 @@ export const whoopAuthRouter = router({
         };
       }
 
-      // No 2FA — save tokens directly
+      // No MFA — save tokens directly
       const { token } = result;
       return {
         status: "success" as const,
@@ -53,7 +53,7 @@ export const whoopAuthRouter = router({
       };
     }),
 
-  /** Step 2: Submit 2FA verification code */
+  /** Step 2: Submit MFA verification code via Cognito RespondToAuthChallenge */
   verifyCode: publicProcedure
     .input(z.object({ challengeId: z.string(), code: z.string() }))
     .mutation(async ({ input }) => {
@@ -66,7 +66,11 @@ export const whoopAuthRouter = router({
         throw new Error("Verification session expired — please sign in again");
       }
 
-      const token = await WhoopInternalClient.verifyCode(challenge.state, input.code);
+      const token = await WhoopInternalClient.verifyCode(
+        challenge.session,
+        input.code,
+        challenge.username,
+      );
       pendingChallenges.delete(input.challengeId);
 
       return {
