@@ -81,6 +81,15 @@ export interface Insight {
   correlation?: CorrelationResult;
   explanation?: string;
   confounders?: string[];
+
+  /** Raw data points for scatter plot visualization (correlation/discovery types) */
+  dataPoints?: Array<{ x: number; y: number; date: string }>;
+
+  /** Distribution data for conditional comparisons */
+  distributions?: {
+    withAction: number[];
+    withoutAction: number[];
+  };
 }
 
 // ── Confidence classification ─────────────────────────────────────────────
@@ -91,6 +100,19 @@ function classifyConfidence(d: number, minN: number): ConfidenceLevel {
   if (absD >= 0.5 && minN >= 15) return "emerging";
   if (absD >= 0.3 && minN >= 10) return "early";
   return "insufficient";
+}
+
+const MAX_DATA_POINTS = 200;
+
+/** Evenly downsample an array to at most `max` elements */
+function downsample<T>(arr: T[], max: number): T[] {
+  if (arr.length <= max) return arr;
+  const step = arr.length / max;
+  const result: T[] = [];
+  for (let i = 0; i < max; i++) {
+    result.push(arr[Math.floor(i * step)]);
+  }
+  return result;
 }
 
 // ── Date normalization helper ─────────────────────────────────────────────
@@ -839,6 +861,7 @@ function exhaustiveSweep(joined: JoinedDay[], existingIds: Set<string>): Insight
     rho: number;
     pValue: number;
     n: number;
+    dataPoints: Array<{ x: number; y: number; date: string }>;
   }> = [];
 
   // Group keys that are derived from the same underlying metric or category
@@ -908,6 +931,7 @@ function exhaustiveSweep(joined: JoinedDay[], existingIds: Set<string>): Insight
 
         const xs: number[] = [];
         const ys: number[] = [];
+        const dates: string[] = [];
 
         for (let i = 0; i < joined.length - lag; i++) {
           const x = mx.extract(joined[i], joined, i);
@@ -915,6 +939,7 @@ function exhaustiveSweep(joined: JoinedDay[], existingIds: Set<string>): Insight
           if (x != null && y != null) {
             xs.push(x);
             ys.push(y);
+            dates.push(joined[i].date);
           }
         }
 
@@ -922,6 +947,12 @@ function exhaustiveSweep(joined: JoinedDay[], existingIds: Set<string>): Insight
 
         const corr = spearmanCorrelation(xs, ys);
         if (Math.abs(corr.rho) < MIN_RHO) continue;
+
+        const rawPoints = xs.map((xVal, j) => ({
+          x: xVal,
+          y: ys[j],
+          date: dates[j],
+        }));
 
         candidates.push({
           id,
@@ -931,6 +962,7 @@ function exhaustiveSweep(joined: JoinedDay[], existingIds: Set<string>): Insight
           rho: corr.rho,
           pValue: corr.pValue,
           n: corr.n,
+          dataPoints: downsample(rawPoints, MAX_DATA_POINTS),
         });
       }
     }
@@ -968,6 +1000,7 @@ function exhaustiveSweep(joined: JoinedDay[], existingIds: Set<string>): Insight
       effectSize: c.rho,
       pValue: c.pValue,
       correlation: { rho: c.rho, pValue: c.pValue, n: c.n },
+      dataPoints: c.dataPoints,
     });
   }
 
@@ -1714,6 +1747,10 @@ export function computeInsights(
       effectSize: d,
       pValue: tResult.pValue,
       confounders: confounders.length > 0 ? confounders : undefined,
+      distributions: {
+        withAction: downsample(trueValues, MAX_DATA_POINTS),
+        withoutAction: downsample(falseValues, MAX_DATA_POINTS),
+      },
     });
   }
 
@@ -1744,6 +1781,12 @@ export function computeInsights(
       Math.abs(corr.rho) >= 0.6 ? "strongly" : Math.abs(corr.rho) >= 0.4 ? "moderately" : "weakly";
     const confounders = findCorrelationConfounders(pair.xName, pair.yName, xs, ys, joined, indices);
 
+    const allPoints = indices.map((idx, j) => ({
+      x: xs[j],
+      y: ys[j],
+      date: joined[idx].date,
+    }));
+
     correlationInsights.push({
       id: pair.id,
       type: "correlation",
@@ -1758,6 +1801,7 @@ export function computeInsights(
       pValue: corr.pValue,
       correlation: corr,
       confounders: confounders.length > 0 ? confounders : undefined,
+      dataPoints: downsample(allPoints, MAX_DATA_POINTS),
       rawPValue: corr.pValue,
     });
   }

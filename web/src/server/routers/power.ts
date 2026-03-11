@@ -27,6 +27,66 @@ interface EftpRow {
   best_20min_power: number;
 }
 
+/** Simple linear regression: y = slope * x + intercept */
+function linearRegression(
+  xs: number[],
+  ys: number[],
+): { slope: number; intercept: number; r2: number } {
+  const n = xs.length;
+  const sumX = xs.reduce((a, b) => a + b, 0);
+  const sumY = ys.reduce((a, b) => a + b, 0);
+  const sumXY = xs.reduce((a, x, i) => a + x * ys[i], 0);
+  const sumX2 = xs.reduce((a, x) => a + x * x, 0);
+
+  const denom = n * sumX2 - sumX * sumX;
+  if (denom === 0) return { slope: 0, intercept: 0, r2: 0 };
+
+  const slope = (n * sumXY - sumX * sumY) / denom;
+  const intercept = (sumY - slope * sumX) / n;
+
+  const yMean = sumY / n;
+  const ssTotal = ys.reduce((a, y) => a + (y - yMean) ** 2, 0);
+  const ssResidual = ys.reduce((a, y, i) => a + (y - (slope * xs[i] + intercept)) ** 2, 0);
+  const r2 = ssTotal > 0 ? 1 - ssResidual / ssTotal : 0;
+
+  return { slope, intercept, r2 };
+}
+
+export interface CriticalPowerModel {
+  cp: number;
+  wPrime: number;
+  r2: number;
+}
+
+/**
+ * Fit Morton's 2-parameter Critical Power model (Monod-Scherrer).
+ *
+ * Model: P(t) = CP + W'/t
+ * Linearized: Work = P*t = CP*t + W'
+ * Linear regression of Work vs Time gives slope=CP, intercept=W'.
+ *
+ * Only uses durations >= 120s where the aerobic system dominates.
+ */
+function fitCriticalPower(
+  points: { durationSeconds: number; bestPower: number }[],
+): CriticalPowerModel | null {
+  const valid = points.filter((p) => p.durationSeconds >= 120 && p.bestPower > 0);
+  if (valid.length < 3) return null;
+
+  const xs = valid.map((p) => p.durationSeconds);
+  const ys = valid.map((p) => p.bestPower * p.durationSeconds); // work in joules
+
+  const { slope: cp, intercept: wPrime, r2 } = linearRegression(xs, ys);
+
+  if (cp <= 0) return null;
+
+  return {
+    cp: Math.round(cp),
+    wPrime: Math.round(wPrime),
+    r2: Math.round(r2 * 1000) / 1000,
+  };
+}
+
 export const powerRouter = router({
   /**
    * Power Duration Curve: best average power for standard durations.
@@ -86,7 +146,10 @@ export const powerRouter = router({
         }
       }
 
-      return results;
+      return {
+        points: results,
+        model: fitCriticalPower(results),
+      };
     }),
 
   /**
@@ -136,15 +199,53 @@ export const powerRouter = router({
         activityName: r.activity_name,
       }));
 
-      // Current eFTP = best in last 90 days
-      const recent = trend.filter((t) => {
-        const date = new Date(t.date);
-        const cutoff = new Date();
-        cutoff.setDate(cutoff.getDate() - 90);
-        return date >= cutoff;
-      });
-      const currentEftp = recent.length > 0 ? Math.max(...recent.map((t) => t.eftp)) : null;
+      // Compute current eFTP via CP model from last 90 days' power curve
+      // Query best power at standard durations for the last 90 days
+      const cpPoints: { durationSeconds: number; bestPower: number }[] = [];
+      for (const duration of STANDARD_DURATIONS) {
+        const cpRows = await ctx.db.execute(sql`
+          WITH activity_power AS (
+            SELECT ms.activity_id, ms.recorded_at, ms.power
+            FROM fitness.metric_stream ms
+            JOIN fitness.v_activity a ON a.id = ms.activity_id
+            WHERE ms.power > 0
+              AND a.started_at > NOW() - 90 * INTERVAL '1 day'
+          )
+          SELECT MAX(avg_power)::int AS best_power
+          FROM (
+            SELECT
+              AVG(power) OVER (
+                PARTITION BY activity_id ORDER BY recorded_at
+                ROWS BETWEEN ${duration - 1} PRECEDING AND CURRENT ROW
+              ) AS avg_power,
+              COUNT(*) OVER (
+                PARTITION BY activity_id ORDER BY recorded_at
+                ROWS BETWEEN ${duration - 1} PRECEDING AND CURRENT ROW
+              ) AS window_size
+            FROM activity_power
+          ) sub
+          WHERE window_size >= ${duration}
+        `);
+        const cpRow = cpRows[0] as Record<string, unknown> | undefined;
+        const bestPower = Number(cpRow?.best_power ?? 0);
+        if (bestPower > 0) {
+          cpPoints.push({ durationSeconds: duration, bestPower });
+        }
+      }
 
-      return { trend, currentEftp };
+      const model = fitCriticalPower(cpPoints);
+      // Fall back to 95% of best recent 20-min power if CP model can't fit
+      let currentEftp: number | null = model?.cp ?? null;
+      if (currentEftp == null) {
+        const recent = trend.filter((t) => {
+          const date = new Date(t.date);
+          const cutoff = new Date();
+          cutoff.setDate(cutoff.getDate() - 90);
+          return date >= cutoff;
+        });
+        currentEftp = recent.length > 0 ? Math.max(...recent.map((t) => t.eftp)) : null;
+      }
+
+      return { trend, currentEftp, model };
     }),
 });

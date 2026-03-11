@@ -7,9 +7,16 @@ interface PowerCurvePoint {
   activityDate: string;
 }
 
+interface CriticalPowerModel {
+  cp: number;
+  wPrime: number;
+  r2: number;
+}
+
 interface PowerCurveChartProps {
   data: PowerCurvePoint[];
   comparisonData?: PowerCurvePoint[];
+  model?: CriticalPowerModel | null;
   loading?: boolean;
 }
 
@@ -19,7 +26,7 @@ function formatDuration(seconds: number): string {
   return `${Math.round(seconds / 3600)}h`;
 }
 
-export function PowerCurveChart({ data, comparisonData, loading }: PowerCurveChartProps) {
+export function PowerCurveChart({ data, comparisonData, model, loading }: PowerCurveChartProps) {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[280px]">
@@ -36,17 +43,32 @@ export function PowerCurveChart({ data, comparisonData, loading }: PowerCurveCha
     );
   }
 
-  const series: Array<{
+  // Generate CP model curve points (smooth line from 120s to 7200s)
+  const modelCurveData: [number, number][] = [];
+  if (model && model.cp > 0) {
+    const logMin = Math.log10(120);
+    const logMax = Math.log10(7200);
+    const steps = 50;
+    for (let i = 0; i <= steps; i++) {
+      const t = 10 ** (logMin + (logMax - logMin) * (i / steps));
+      const p = model.cp + model.wPrime / t;
+      modelCurveData.push([Math.round(t), Math.round(p)]);
+    }
+  }
+
+  interface SeriesItem {
     name: string;
     type: "line";
     data: [number, number][];
-    smooth: number;
+    smooth: number | boolean;
     symbol: string;
     symbolSize: number;
-    lineStyle: { width: number; color: string };
+    lineStyle: { width: number; color: string; type?: "dashed" | "solid" };
     itemStyle: { color: string };
     areaStyle?: { opacity: number; color: string };
-  }> = [
+  }
+
+  const series: SeriesItem[] = [
     {
       name: "Best Power",
       type: "line",
@@ -59,6 +81,19 @@ export function PowerCurveChart({ data, comparisonData, loading }: PowerCurveCha
       areaStyle: { opacity: 0.1, color: "#8b5cf6" },
     },
   ];
+
+  if (modelCurveData.length > 0 && model) {
+    series.push({
+      name: `CP Model (${model.cp}W, W'=${Math.round(model.wPrime / 1000)}kJ)`,
+      type: "line",
+      data: modelCurveData,
+      smooth: true,
+      symbol: "none",
+      symbolSize: 0,
+      lineStyle: { width: 2, color: "#f97316", type: "dashed" },
+      itemStyle: { color: "#f97316" },
+    });
+  }
 
   if (comparisonData && comparisonData.length > 0) {
     series.push({
@@ -112,7 +147,7 @@ export function PowerCurveChart({ data, comparisonData, loading }: PowerCurveCha
     },
     legend: {
       show: series.length > 1,
-      textStyle: { color: "#a1a1aa", fontSize: 11 },
+      textStyle: { color: "#a1a1aa", fontSize: 10 },
       top: 0,
     },
     series,

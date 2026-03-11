@@ -38,7 +38,7 @@ export function EftpTrendChart({ data, currentEftp, loading }: EftpTrendChartPro
           symbol: "none" as const,
           lineStyle: { color: "#f97316", type: "dashed" as const, width: 1 },
           label: {
-            formatter: `eFTP: ${currentEftp}W`,
+            formatter: `CP: ${currentEftp}W`,
             color: "#f97316",
             fontSize: 11,
           },

@@ -58,12 +58,16 @@ export function TrainingPage() {
           title="Fitness / Fatigue / Form"
           subtitle="Performance Management Chart (CTL/ATL/TSB)"
         >
-          <PmcChart data={pmcData.data ?? []} loading={pmcData.isLoading} />
+          <PmcChart
+            data={pmcData.data?.data ?? []}
+            model={pmcData.data?.model ?? null}
+            loading={pmcData.isLoading}
+          />
         </Section>
 
         {/* eFTP + Power Curve side by side */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Section title="eFTP Trend" subtitle="Estimated FTP over time (95% of best 20-min power)">
+          <Section title="eFTP Trend" subtitle="Estimated FTP via Critical Power model">
             <EftpTrendChart
               data={eftpTrend.data?.trend ?? []}
               currentEftp={eftpTrend.data?.currentEftp ?? null}
@@ -72,7 +76,11 @@ export function TrainingPage() {
           </Section>
 
           <Section title="Power Duration Curve" subtitle="Best power at each duration">
-            <PowerCurveChart data={powerCurve.data ?? []} loading={powerCurve.isLoading} />
+            <PowerCurveChart
+              data={powerCurve.data?.points ?? []}
+              model={powerCurve.data?.model ?? null}
+              loading={powerCurve.isLoading}
+            />
           </Section>
         </div>
 

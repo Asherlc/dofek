@@ -8,12 +8,41 @@ interface PmcDataPoint {
   tsb: number;
 }
 
+interface TssModelInfo {
+  type: "learned" | "generic";
+  pairedActivities: number;
+  r2: number | null;
+  ftp: number | null;
+}
+
 interface PmcChartProps {
   data: PmcDataPoint[];
+  model?: TssModelInfo | null;
   loading?: boolean;
 }
 
-export function PmcChart({ data, loading }: PmcChartProps) {
+function ModelBadge({ model }: { model: TssModelInfo }) {
+  if (model.type === "learned") {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs bg-emerald-900/40 text-emerald-400 border border-emerald-800/50">
+        <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400" />
+        Learned model (R²={model.r2?.toFixed(2)}, {model.pairedActivities} paired activities
+        {model.ftp != null && `, FTP ${model.ftp}W`})
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs bg-zinc-800 text-zinc-400 border border-zinc-700/50">
+      <span className="inline-block w-1.5 h-1.5 rounded-full bg-zinc-500" />
+      Generic TRIMP model
+      {model.pairedActivities > 0 && ` (${model.pairedActivities} paired activities — need 10+)`}
+      {model.ftp != null && ` · FTP ${model.ftp}W`}
+    </span>
+  );
+}
+
+export function PmcChart({ data, model, loading }: PmcChartProps) {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[300px]">
@@ -147,5 +176,14 @@ export function PmcChart({ data, loading }: PmcChartProps) {
     ],
   };
 
-  return <ReactECharts option={option} style={{ height: 300 }} notMerge={true} />;
+  return (
+    <div>
+      {model && (
+        <div className="mb-2">
+          <ModelBadge model={model} />
+        </div>
+      )}
+      <ReactECharts option={option} style={{ height: 300 }} notMerge={true} />
+    </div>
+  );
 }
