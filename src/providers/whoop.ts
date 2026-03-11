@@ -648,12 +648,23 @@ export class WhoopInternalClient {
   }
 
   async getCycles(start: string, end: string, limit = 26): Promise<WhoopCycle[]> {
-    return this.get<WhoopCycle[]>(`${WHOOP_API_BASE}/core-details-bff/v0/cycles/details`, {
+    const raw = await this.get<unknown>(`${WHOOP_API_BASE}/core-details-bff/v0/cycles/details`, {
       id: String(this.userId),
       startTime: start,
       endTime: end,
       limit: String(limit),
     });
+    // BFF may return bare array or wrapped object — normalize
+    if (Array.isArray(raw)) return raw as WhoopCycle[];
+    if (raw && typeof raw === "object") {
+      // Try common wrapper keys
+      for (const key of ["cycles", "records", "data", "results"]) {
+        const val = (raw as Record<string, unknown>)[key];
+        if (Array.isArray(val)) return val as WhoopCycle[];
+      }
+      console.log(`[whoop] getCycles unexpected response shape: ${JSON.stringify(Object.keys(raw as object))}`);
+    }
+    return [];
   }
 
   async getSleep(sleepId: number): Promise<WhoopSleepRecord> {
