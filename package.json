@@ -3,70 +3,22 @@
   "version": "0.1.0",
   "type": "module",
   "exports": {
-    "./db": {
-      "import": "./dist/db/index.js",
-      "default": "./src/db/index.ts"
-    },
-    "./db/schema": {
-      "import": "./dist/db/schema.js",
-      "default": "./src/db/schema.ts"
-    },
-    "./db/dedup": {
-      "import": "./dist/db/dedup.js",
-      "default": "./src/db/dedup.ts"
-    },
-    "./providers/types": {
-      "import": "./dist/providers/types.js",
-      "default": "./src/providers/types.ts"
-    },
-    "./providers/registry": {
-      "import": "./dist/providers/index.js",
-      "default": "./src/providers/index.ts"
-    },
-    "./providers/wahoo": {
-      "import": "./dist/providers/wahoo.js",
-      "default": "./src/providers/wahoo.ts"
-    },
-    "./providers/withings": {
-      "import": "./dist/providers/withings.js",
-      "default": "./src/providers/withings.ts"
-    },
-    "./providers/whoop": {
-      "import": "./dist/providers/whoop.js",
-      "default": "./src/providers/whoop.ts"
-    },
-    "./providers/peloton": {
-      "import": "./dist/providers/peloton.js",
-      "default": "./src/providers/peloton.ts"
-    },
-    "./providers/fatsecret": {
-      "import": "./dist/providers/fatsecret.js",
-      "default": "./src/providers/fatsecret.ts"
-    },
-    "./providers/apple-health": {
-      "import": "./dist/providers/apple-health.js",
-      "default": "./src/providers/apple-health.ts"
-    },
-    "./sync/runner": {
-      "import": "./dist/sync/runner.js",
-      "default": "./src/sync/runner.ts"
-    },
-    "./db/migrate": {
-      "import": "./dist/db/migrate.js",
-      "default": "./src/db/migrate.ts"
-    },
-    "./db/tokens": {
-      "import": "./dist/db/tokens.js",
-      "default": "./src/db/tokens.ts"
-    },
-    "./auth/oauth": {
-      "import": "./dist/auth/oauth.js",
-      "default": "./src/auth/oauth.ts"
-    },
-    "./db/sync-log": {
-      "import": "./dist/db/sync-log.js",
-      "default": "./src/db/sync-log.ts"
-    }
+    "./db": "./src/db/index.ts",
+    "./db/schema": "./src/db/schema.ts",
+    "./db/dedup": "./src/db/dedup.ts",
+    "./providers/types": "./src/providers/types.ts",
+    "./providers/registry": "./src/providers/index.ts",
+    "./providers/wahoo": "./src/providers/wahoo.ts",
+    "./providers/withings": "./src/providers/withings.ts",
+    "./providers/whoop": "./src/providers/whoop.ts",
+    "./providers/peloton": "./src/providers/peloton.ts",
+    "./providers/fatsecret": "./src/providers/fatsecret.ts",
+    "./providers/apple-health": "./src/providers/apple-health.ts",
+    "./sync/runner": "./src/sync/runner.ts",
+    "./db/migrate": "./src/db/migrate.ts",
+    "./db/tokens": "./src/db/tokens.ts",
+    "./auth/oauth": "./src/auth/oauth.ts",
+    "./db/sync-log": "./src/db/sync-log.ts"
   },
   "scripts": {
     "dev": "./scripts/with-env.sh tsx src/index.ts",
