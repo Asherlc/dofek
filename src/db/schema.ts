@@ -253,6 +253,7 @@ export const activity = fitness.table(
     endedAt: timestamp("ended_at", { withTimezone: true }),
     name: text("name"),
     notes: text("notes"),
+    perceivedExertion: real("perceived_exertion"),
     raw: jsonb("raw"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -260,6 +261,69 @@ export const activity = fitness.table(
     uniqueIndex("activity_provider_external_idx").on(table.providerId, table.externalId),
     index("activity_user_provider_idx").on(table.userId, table.providerId),
   ],
+);
+
+// ============================================================
+// Sport settings — per-sport zone configuration
+// ============================================================
+
+export const sportSettings = fitness.table(
+  "sport_settings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => userProfile.id),
+    sport: text("sport").notNull(),
+    ftp: smallint("ftp"),
+    thresholdHr: smallint("threshold_hr"),
+    thresholdPacePerKm: real("threshold_pace_per_km"),
+    powerZonePcts: jsonb("power_zone_pcts"),
+    hrZonePcts: jsonb("hr_zone_pcts"),
+    paceZonePcts: jsonb("pace_zone_pcts"),
+    effectiveFrom: date("effective_from").notNull().defaultNow(),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("sport_settings_user_sport_date_idx").on(
+      table.userId,
+      table.sport,
+      table.effectiveFrom,
+    ),
+    index("sport_settings_user_idx").on(table.userId),
+  ],
+);
+
+// ============================================================
+// Activity intervals / laps
+// ============================================================
+
+export const activityInterval = fitness.table(
+  "activity_interval",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    activityId: uuid("activity_id")
+      .notNull()
+      .references(() => activity.id, { onDelete: "cascade" }),
+    intervalIndex: integer("interval_index").notNull(),
+    label: text("label"),
+    intervalType: text("interval_type"),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    avgHeartRate: real("avg_heart_rate"),
+    maxHeartRate: smallint("max_heart_rate"),
+    avgPower: real("avg_power"),
+    maxPower: smallint("max_power"),
+    avgSpeed: real("avg_speed"),
+    maxSpeed: real("max_speed"),
+    avgCadence: real("avg_cadence"),
+    distanceMeters: real("distance_meters"),
+    elevationGain: real("elevation_gain"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("activity_interval_activity_idx").on(table.activityId, table.intervalIndex)],
 );
 
 // ============================================================

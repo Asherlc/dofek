@@ -157,6 +157,7 @@ describe("Router SQL validity", () => {
     it("workloadRatio", () => expectValidSql("recovery.workloadRatio", { days: 30 }));
     it("sleepAnalytics", () => expectValidSql("recovery.sleepAnalytics", { days: 30 }));
     it("readinessScore", () => expectValidSql("recovery.readinessScore", { days: 30 }));
+    it("sleepConsistency", () => expectValidSql("recovery.sleepConsistency", { days: 30 }));
   });
 
   // ── Strength ──
@@ -166,6 +167,28 @@ describe("Router SQL validity", () => {
     it("muscleGroupVolume", () => expectValidSql("strength.muscleGroupVolume", { days: 90 }));
     it("progressiveOverload", () => expectValidSql("strength.progressiveOverload", { days: 90 }));
     it("workoutSummary", () => expectValidSql("strength.workoutSummary", { days: 90 }));
+  });
+
+  // ── Nutrition Analytics ──
+  describe("nutritionAnalytics", () => {
+    it("micronutrientAdequacy", () =>
+      expectValidSql("nutritionAnalytics.micronutrientAdequacy", { days: 30 }));
+    it("caloricBalance", () => expectValidSql("nutritionAnalytics.caloricBalance", { days: 30 }));
+    it("adaptiveTdee", () => expectValidSql("nutritionAnalytics.adaptiveTdee", { days: 90 }));
+    it("macroRatios", () => expectValidSql("nutritionAnalytics.macroRatios", { days: 30 }));
+  });
+
+  // ── Body Analytics ──
+  describe("bodyAnalytics", () => {
+    it("smoothedWeight", () => expectValidSql("bodyAnalytics.smoothedWeight", { days: 90 }));
+    it("recomposition", () => expectValidSql("bodyAnalytics.recomposition", { days: 180 }));
+    it("weightTrend", () => expectValidSql("bodyAnalytics.weightTrend", {}));
+  });
+
+  // ── Anomaly Detection ──
+  describe("anomalyDetection", () => {
+    it("check", () => expectValidSql("anomalyDetection.check", {}));
+    it("history", () => expectValidSql("anomalyDetection.history", { days: 90 }));
   });
 
   // ── Calendar ──

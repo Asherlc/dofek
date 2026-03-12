@@ -25,7 +25,7 @@ export function EftpTrendChart({ data, currentEftp, loading }: EftpTrendChartPro
     return (
       <div className="flex items-center justify-center h-[240px]">
         <span className="text-zinc-600 text-sm">
-          No eFTP data (need 20+ min activities with power)
+          No threshold power data (need 20+ min activities with power)
         </span>
       </div>
     );
@@ -38,7 +38,7 @@ export function EftpTrendChart({ data, currentEftp, loading }: EftpTrendChartPro
           symbol: "none" as const,
           lineStyle: { color: "#f97316", type: "dashed" as const, width: 1 },
           label: {
-            formatter: `CP: ${currentEftp}W`,
+            formatter: `Threshold: ${currentEftp}W`,
             color: "#f97316",
             fontSize: 11,
           },
@@ -78,7 +78,7 @@ export function EftpTrendChart({ data, currentEftp, loading }: EftpTrendChartPro
     },
     yAxis: {
       type: "value" as const,
-      name: "eFTP (W)",
+      name: "Est. Threshold Power (W)",
       min: "dataMin" as const,
       splitLine: { lineStyle: { color: "#27272a" } },
       axisLabel: { color: "#71717a", fontSize: 11 },
@@ -87,7 +87,7 @@ export function EftpTrendChart({ data, currentEftp, loading }: EftpTrendChartPro
     },
     series: [
       {
-        name: "eFTP",
+        name: "Est. Threshold Power",
         type: "line",
         data: data.map((d) => [d.date, d.eftp]),
         smooth: true,

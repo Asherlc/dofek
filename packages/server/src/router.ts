@@ -1,22 +1,29 @@
 import { activityRouter } from "./routers/activity.ts";
+import { anomalyDetectionRouter } from "./routers/anomaly-detection.ts";
 import { bodyRouter } from "./routers/body.ts";
+import { bodyAnalyticsRouter } from "./routers/body-analytics.ts";
 import { calendarRouter } from "./routers/calendar.ts";
 import { cyclingAdvancedRouter } from "./routers/cycling-advanced.ts";
 import { dailyMetricsRouter } from "./routers/daily-metrics.ts";
+import { durationCurvesRouter } from "./routers/duration-curves.ts";
 import { efficiencyRouter } from "./routers/efficiency.ts";
 import { foodRouter } from "./routers/food.ts";
 import { healthKitSyncRouter } from "./routers/health-kit-sync.ts";
 import { healthspanRouter } from "./routers/healthspan.ts";
 import { hikingRouter } from "./routers/hiking.ts";
 import { insightsRouter } from "./routers/insights.ts";
+import { intervalsRouter } from "./routers/intervals.ts";
 import { lifeEventsRouter } from "./routers/life-events.ts";
 import { nutritionRouter } from "./routers/nutrition.ts";
+import { nutritionAnalyticsRouter } from "./routers/nutrition-analytics.ts";
 import { pmcRouter } from "./routers/pmc.ts";
 import { powerRouter } from "./routers/power.ts";
+import { predictionsRouter } from "./routers/predictions.ts";
 import { recoveryRouter } from "./routers/recovery.ts";
 import { settingsRouter } from "./routers/settings.ts";
 import { sleepRouter } from "./routers/sleep.ts";
 import { sleepNeedRouter } from "./routers/sleep-need.ts";
+import { sportSettingsRouter } from "./routers/sport-settings.ts";
 import { strengthRouter } from "./routers/strength.ts";
 import { stressRouter } from "./routers/stress.ts";
 import { supplementsRouter } from "./routers/supplements.ts";
@@ -28,11 +35,14 @@ import { router } from "./trpc.ts";
 
 export const appRouter = router({
   activity: activityRouter,
+  anomalyDetection: anomalyDetectionRouter,
   sleep: sleepRouter,
   sleepNeed: sleepNeedRouter,
   dailyMetrics: dailyMetricsRouter,
   body: bodyRouter,
+  bodyAnalytics: bodyAnalyticsRouter,
   nutrition: nutritionRouter,
+  nutritionAnalytics: nutritionAnalyticsRouter,
   insights: insightsRouter,
   lifeEvents: lifeEventsRouter,
   supplements: supplementsRouter,
@@ -41,6 +51,7 @@ export const appRouter = router({
   calendar: calendarRouter,
   pmc: pmcRouter,
   power: powerRouter,
+  durationCurves: durationCurvesRouter,
   efficiency: efficiencyRouter,
   food: foodRouter,
   healthKitSync: healthKitSyncRouter,
@@ -48,11 +59,14 @@ export const appRouter = router({
   strength: strengthRouter,
   cyclingAdvanced: cyclingAdvancedRouter,
   hiking: hikingRouter,
+  predictions: predictionsRouter,
   recovery: recoveryRouter,
   settings: settingsRouter,
   stress: stressRouter,
   healthspan: healthspanRouter,
   weeklyReport: weeklyReportRouter,
+  sportSettings: sportSettingsRouter,
+  intervals: intervalsRouter,
 });
 
 export type AppRouter = typeof appRouter;

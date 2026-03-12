@@ -25,6 +25,15 @@ async function doRegisterProviders() {
     ["peloton", () => import("dofek/providers/peloton").then((m) => new m.PelotonProvider())],
     ["fatsecret", () => import("dofek/providers/fatsecret").then((m) => new m.FatSecretProvider())],
     ["whoop", () => import("dofek/providers/whoop").then((m) => new m.WhoopProvider())],
+    ["hevy", () => import("dofek/providers/hevy").then((m) => new m.HevyProvider())],
+    [
+      "ride-with-gps",
+      () => import("dofek/providers/ride-with-gps").then((m) => new m.RideWithGpsProvider()),
+    ],
+    [
+      "strong-csv",
+      () => import("dofek/providers/strong-csv").then((m) => new m.StrongCsvProvider()),
+    ],
   ] as const;
 
   for (const [name, loadProvider] of providers) {
@@ -199,6 +208,22 @@ export const syncRouter = router({
 
           // Invalidate all server-side caches
           await queryCache.invalidateAll();
+
+          // Run anomaly detection and send Slack alerts if needed
+          try {
+            const { checkAnomalies, sendAnomalyAlertToSlack } = await import(
+              "./anomaly-detection.ts"
+            );
+            const anomalyResult = await checkAnomalies(ctx.db, ctx.userId);
+            if (anomalyResult.anomalies.length > 0) {
+              logger.info(
+                `[sync] Detected ${anomalyResult.anomalies.length} anomaly(ies), sending alert`,
+              );
+              await sendAnomalyAlertToSlack(ctx.db, ctx.userId, anomalyResult.anomalies);
+            }
+          } catch (err) {
+            logger.error(`[sync] Anomaly detection failed: ${err}`);
+          }
 
           const job = syncJobs.get(jobId);
           if (!job) return;

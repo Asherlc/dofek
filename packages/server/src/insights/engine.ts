@@ -143,7 +143,7 @@ function toDateStr(d: string | Date): string {
 
 // ── Join data by date ─────────────────────────────────────────────────────
 
-interface JoinedDay {
+export interface JoinedDay {
   date: string;
   // metrics
   resting_hr: number | null;
@@ -201,7 +201,7 @@ function classifyActivity(type: string): "cardio" | "strength" | "flexibility" |
   return "other";
 }
 
-function joinByDate(
+export function joinByDate(
   metrics: DailyRow[],
   sleep: SleepRow[],
   activities: ActivityRow[],

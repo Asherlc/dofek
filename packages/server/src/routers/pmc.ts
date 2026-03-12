@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { linearRegression } from "../lib/math.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 interface ActivityRow {
@@ -31,34 +32,6 @@ export interface TssModelInfo {
 export interface PmcChartResult {
   data: PmcDataPoint[];
   model: TssModelInfo;
-}
-
-/** Simple linear regression: y = slope * x + intercept */
-function linearRegression(
-  xs: number[],
-  ys: number[],
-): { slope: number; intercept: number; r2: number } {
-  const count = xs.length;
-  const sumX = xs.reduce((acc, val) => acc + val, 0);
-  const sumY = ys.reduce((acc, val) => acc + val, 0);
-  const sumXY = xs.reduce((acc, val, idx) => acc + val * (ys[idx] ?? 0), 0);
-  const sumX2 = xs.reduce((acc, val) => acc + val * val, 0);
-
-  const denom = count * sumX2 - sumX * sumX;
-  if (denom === 0) return { slope: 0, intercept: 0, r2: 0 };
-
-  const slope = (count * sumXY - sumX * sumY) / denom;
-  const intercept = (sumY - slope * sumX) / count;
-
-  const yMean = sumY / count;
-  const ssTotal = ys.reduce((acc, val) => acc + (val - yMean) ** 2, 0);
-  const ssResidual = ys.reduce(
-    (acc, val, idx) => acc + (val - (slope * (xs[idx] ?? 0) + intercept)) ** 2,
-    0,
-  );
-  const r2 = ssTotal > 0 ? 1 - ssResidual / ssTotal : 0;
-
-  return { slope, intercept, r2 };
 }
 
 /**

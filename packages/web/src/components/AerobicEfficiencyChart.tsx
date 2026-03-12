@@ -63,7 +63,7 @@ export function AerobicEfficiencyChart({
     return (
       <div className="flex items-center justify-center h-[100px]">
         <span className="text-zinc-600 text-sm">
-          No activities with sufficient Z2 power + HR data
+          No activities with sufficient Zone 2 power + heart rate data
         </span>
       </div>
     );
@@ -129,10 +129,10 @@ export function AerobicEfficiencyChart({
         return [
           `<strong>${data.name}</strong>`,
           `Date: ${date}`,
-          `EF: ${ef.toFixed(3)} W/bpm`,
-          `Avg Power (Z2): ${data.avgPower}W`,
-          `Avg HR (Z2): ${data.avgHr} bpm`,
-          `Z2 time: ${mins} min`,
+          `Efficiency: ${ef.toFixed(3)} W/bpm`,
+          `Avg Power (Zone 2): ${data.avgPower}W`,
+          `Avg Heart Rate (Zone 2): ${data.avgHr} bpm`,
+          `Zone 2 time: ${mins} min`,
         ].join("<br/>");
       },
     },
@@ -144,7 +144,7 @@ export function AerobicEfficiencyChart({
     },
     yAxis: {
       type: "value",
-      name: "EF (W/bpm)",
+      name: "Efficiency Factor (W/bpm)",
       splitLine: { lineStyle: { color: "#27272a" } },
       axisLabel: { color: "#71717a", fontSize: 11 },
       axisLine: { show: true, lineStyle: { color: "#3f3f46" } },
@@ -171,8 +171,8 @@ export function AerobicEfficiencyChart({
   return (
     <div>
       <h3 className="text-xs font-medium text-zinc-500 mb-2">
-        Aerobic Efficiency (Power/HR in Zone 2)
-        {maxHr && <span className="text-zinc-700 ml-2">(max HR: {maxHr} bpm)</span>}
+        Aerobic Efficiency (Power / Heart Rate in Zone 2)
+        {maxHr && <span className="text-zinc-700 ml-2">(max heart rate: {maxHr} bpm)</span>}
         <span
           className={`ml-2 ${trendDirection === "improving" ? "text-green-500" : trendDirection === "declining" ? "text-red-400" : "text-zinc-500"}`}
         >
@@ -181,8 +181,8 @@ export function AerobicEfficiencyChart({
       </h3>
       <ReactECharts option={option} style={{ height: 280 }} notMerge={true} />
       <p className="text-xs text-zinc-700 mt-1">
-        Higher EF = better aerobic efficiency. Each dot is one activity with 5+ min of Z2 data
-        (60-70% max HR).
+        Higher efficiency = better aerobic fitness. Each dot is one activity with 5+ min of Zone 2
+        data (60-70% max heart rate).
       </p>
     </div>
   );

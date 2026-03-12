@@ -183,9 +183,8 @@ See `packages/server/src/routers/life-events.ts` for the API and `packages/web/s
 - [x] WHOOP provider (sleep, recovery, workouts, 6s HR streams, journal entries via internal API)
 - [x] Withings provider (OAuth + sync for scale, BP, thermometer — awaiting credentials)
 - [x] Cross-provider deduplication via materialized views (recursive CTE overlap clustering, per-field merge by provider priority)
-- [ ] Apple Health automated import (iOS Shortcut trigger)
 - [ ] Hevy provider (strength training)
-- [ ] Intervals.icu provider (training analytics)
+- [ ] Strong CSV import (strength training history)
 - [ ] RideWithGPS provider (routes, rides)
 
 ### Dashboard & Insights
@@ -193,7 +192,7 @@ See `packages/server/src/routers/life-events.ts` for the API and `packages/web/s
 - [x] Providers page with sync controls, health status, record counts, and log history
 - [x] Life events timeline (annotate health data with arbitrary date markers, before/after analysis)
 - [x] Insights engine (training volume, HR zone distribution, 80/20 polarization analysis)
-- [ ] Additional insight categories (ACWR, TRIMP, overtraining detection, recovery tests)
+- [ ] Additional insight categories (ACWR, TRIMP, critical power curves, overtraining detection, recovery tests)
 - [ ] Continuous aggregates for long-range trends
 
 ### Infrastructure

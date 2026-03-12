@@ -1,0 +1,99 @@
+import ReactECharts from "echarts-for-react";
+import type { BodyRecompositionRow } from "../../../server/src/routers/body-analytics.ts";
+
+interface BodyRecompositionChartProps {
+  data: BodyRecompositionRow[];
+  loading?: boolean;
+}
+
+export function BodyRecompositionChart({ data, loading }: BodyRecompositionChartProps) {
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-[250px]">
+        <span className="text-zinc-600 text-sm">Loading...</span>
+      </div>
+    );
+  }
+
+  if (data.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-[250px]">
+        <span className="text-zinc-600 text-sm">
+          Need weight + body fat data for recomposition tracking
+        </span>
+      </div>
+    );
+  }
+
+  // Compute change from first to last
+  const first = data[0]!;
+  const last = data[data.length - 1]!;
+  const fatChange = last.smoothedFatMass - first.smoothedFatMass;
+  const leanChange = last.smoothedLeanMass - first.smoothedLeanMass;
+
+  const option = {
+    backgroundColor: "transparent",
+    grid: { top: 30, right: 12, bottom: 30, left: 50 },
+    tooltip: {
+      trigger: "axis" as const,
+      backgroundColor: "#18181b",
+      borderColor: "#3f3f46",
+      textStyle: { color: "#e4e4e7", fontSize: 12 },
+    },
+    legend: {
+      top: 0,
+      textStyle: { color: "#71717a", fontSize: 11 },
+    },
+    xAxis: {
+      type: "time" as const,
+      axisLabel: { color: "#71717a", fontSize: 11 },
+      axisLine: { lineStyle: { color: "#3f3f46" } },
+      splitLine: { show: false },
+    },
+    yAxis: {
+      type: "value" as const,
+      name: "kg",
+      axisLabel: { color: "#71717a", fontSize: 11 },
+      splitLine: { lineStyle: { color: "#27272a" } },
+      nameTextStyle: { color: "#71717a", fontSize: 11 },
+    },
+    series: [
+      {
+        name: "Fat Mass (smoothed)",
+        type: "line",
+        data: data.map((d) => [d.date, d.smoothedFatMass]),
+        smooth: true,
+        symbol: "none",
+        lineStyle: { color: "#f97316", width: 2 },
+        itemStyle: { color: "#f97316" },
+        areaStyle: { color: "rgba(249,115,22,0.1)" },
+      },
+      {
+        name: "Lean Mass (smoothed)",
+        type: "line",
+        data: data.map((d) => [d.date, d.smoothedLeanMass]),
+        smooth: true,
+        symbol: "none",
+        lineStyle: { color: "#3b82f6", width: 2 },
+        itemStyle: { color: "#3b82f6" },
+        areaStyle: { color: "rgba(59,130,246,0.1)" },
+      },
+    ],
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex gap-4 text-sm">
+        <span className={`font-medium ${fatChange <= 0 ? "text-green-400" : "text-red-400"}`}>
+          Fat: {fatChange > 0 ? "+" : ""}
+          {fatChange.toFixed(1)} kg
+        </span>
+        <span className={`font-medium ${leanChange >= 0 ? "text-green-400" : "text-red-400"}`}>
+          Lean: {leanChange > 0 ? "+" : ""}
+          {leanChange.toFixed(1)} kg
+        </span>
+      </div>
+      <ReactECharts option={option} style={{ height: 250 }} />
+    </div>
+  );
+}

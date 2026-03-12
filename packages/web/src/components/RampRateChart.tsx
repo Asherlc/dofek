@@ -71,7 +71,7 @@ export function RampRateChart({
     },
     yAxis: {
       type: "value" as const,
-      name: "Ramp Rate (CTL/week)",
+      name: "Ramp Rate (fitness/week)",
       splitLine: { lineStyle: { color: "#27272a" } },
       axisLabel: { color: "#71717a", fontSize: 11 },
       axisLine: { show: false },
