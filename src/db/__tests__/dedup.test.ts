@@ -247,24 +247,13 @@ describe("Deduplication materialized views", () => {
     expect(day.source_providers).toContain("apple_health");
   });
 
-  it("v_metric_stream uses primary provider from v_activity", async () => {
-    // Create an activity with metric streams from two providers
+  it("activity_summary aggregates per-activity stats from metric_stream", async () => {
+    // Create an activity with metric streams
     const [wahooActivity] = await ctx.db
       .insert(activity)
       .values({
         providerId: "wahoo",
         externalId: "wahoo-ride-ms",
-        activityType: "cycling",
-        startedAt: new Date("2026-03-05T10:00:00Z"),
-        endedAt: new Date("2026-03-05T11:00:00Z"),
-      })
-      .returning({ id: activity.id });
-
-    const [whoopActivity] = await ctx.db
-      .insert(activity)
-      .values({
-        providerId: "whoop",
-        externalId: "whoop-ride-ms",
         activityType: "cycling",
         startedAt: new Date("2026-03-05T10:00:00Z"),
         endedAt: new Date("2026-03-05T11:00:00Z"),
@@ -289,46 +278,22 @@ describe("Deduplication materialized views", () => {
       },
     ]);
 
-    // WHOOP stream — HR only
-    await ctx.db.insert(metricStream).values([
-      {
-        providerId: "whoop",
-        activityId: whoopActivity.id,
-        recordedAt: new Date("2026-03-05T10:00:00Z"),
-        heartRate: 138,
-      },
-      {
-        providerId: "whoop",
-        activityId: whoopActivity.id,
-        recordedAt: new Date("2026-03-05T10:00:06Z"),
-        heartRate: 143,
-      },
-    ]);
-
-    // Non-activity-linked WHOOP 24/7 HR (should pass through)
-    await ctx.db.insert(metricStream).values({
-      providerId: "whoop",
-      activityId: null,
-      recordedAt: new Date("2026-03-05T03:00:00Z"),
-      heartRate: 55,
-    });
-
     await refreshDedupViews(ctx.db);
 
     const rows = await ctx.db.execute(
-      sql`SELECT * FROM fitness.v_metric_stream WHERE recorded_at::date = '2026-03-05' ORDER BY recorded_at`,
+      sql`SELECT * FROM fitness.activity_summary WHERE activity_id = ${wahooActivity.id}`,
     );
 
-    // Should have: 1 non-activity HR + 2 wahoo activity streams = 3
-    // (WHOOP activity streams excluded because wahoo is primary)
-    expect(rows.length).toBe(3);
-    const activityStreams = rows.filter((r: any) => r.activity_id !== null);
-    expect(activityStreams.length).toBe(2);
-    // All activity streams should be from wahoo
-    expect(activityStreams.every((r: any) => r.provider_id === "wahoo")).toBe(true);
-    // Non-activity stream should pass through
-    const bgStream = rows.find((r: any) => r.activity_id === null) as any;
-    expect(bgStream.heart_rate).toBe(55);
+    expect(rows.length).toBe(1);
+    const summary = rows[0] as any;
+    expect(summary.activity_type).toBe("cycling");
+    expect(Number(summary.avg_hr)).toBeCloseTo(142.5, 0);
+    expect(summary.max_hr).toBe(145);
+    expect(Number(summary.avg_power)).toBeCloseTo(205, 0);
+    expect(summary.max_power).toBe(210);
+    expect(summary.sample_count).toBe(2);
+    expect(summary.hr_sample_count).toBe(2);
+    expect(summary.power_sample_count).toBe(2);
   });
 
   it("refreshDedupViews can be called multiple times", async () => {

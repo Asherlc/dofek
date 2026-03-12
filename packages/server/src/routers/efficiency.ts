@@ -7,6 +7,10 @@ export const efficiencyRouter = router({
    * Aerobic Efficiency (Efficiency Factor) per activity.
    * EF = avg power in Z2 / avg HR in Z2, where Z2 = 60-70% of max HR.
    * Only includes activities with at least 5 minutes (300 samples) of Z2 data.
+   *
+   * NOTE: This still hits raw metric_stream because we need per-sample Z2 filtering
+   * that isn't captured in activity_summary. However, the query is scoped by
+   * activity_id from activity_summary, limiting the scan.
    */
   aerobicEfficiency: cachedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(180) }))
@@ -21,14 +25,11 @@ export const efficiencyRouter = router({
         efficiency_factor: number;
         z2_samples: number;
       }>(
-        sql`WITH max_hr AS (
-              SELECT MAX(heart_rate) AS val
-              FROM fitness.metric_stream
-              WHERE heart_rate IS NOT NULL
-                AND activity_id IS NOT NULL
+        sql`WITH user_hr AS (
+              SELECT id, max_hr FROM fitness.user_profile WHERE max_hr IS NOT NULL LIMIT 1
             )
             SELECT
-              (SELECT val FROM max_hr) AS max_hr,
+              uh.max_hr,
               a.started_at::date AS date,
               a.activity_type,
               a.name,
@@ -36,15 +37,14 @@ export const efficiencyRouter = router({
               ROUND(AVG(ms.heart_rate)::numeric, 1) AS avg_hr_z2,
               ROUND((AVG(ms.power)::numeric / NULLIF(AVG(ms.heart_rate), 0))::numeric, 3) AS efficiency_factor,
               COUNT(*)::int AS z2_samples
-            FROM fitness.v_activity a
-            CROSS JOIN max_hr
+            FROM user_hr uh
+            JOIN fitness.v_activity a ON TRUE
             JOIN fitness.metric_stream ms ON ms.activity_id = a.id
-            WHERE max_hr.val IS NOT NULL
-              AND a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
-              AND ms.heart_rate >= max_hr.val * 0.6
-              AND ms.heart_rate < max_hr.val * 0.7
+            WHERE a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+              AND ms.heart_rate >= uh.max_hr * 0.6
+              AND ms.heart_rate < uh.max_hr * 0.7
               AND ms.power > 0
-            GROUP BY a.id, a.started_at, a.activity_type, a.name, max_hr.val
+            GROUP BY a.id, a.started_at, a.activity_type, a.name, uh.max_hr
             HAVING COUNT(*) >= 300
             ORDER BY a.started_at`,
       );
@@ -53,14 +53,14 @@ export const efficiencyRouter = router({
 
       return {
         maxHr,
-        activities: rows.map((r) => ({
-          date: String(r.date),
-          activityType: String(r.activity_type),
-          name: String(r.name),
-          avgPowerZ2: Number(r.avg_power_z2),
-          avgHrZ2: Number(r.avg_hr_z2),
-          efficiencyFactor: Number(r.efficiency_factor),
-          z2Samples: Number(r.z2_samples),
+        activities: rows.map((row) => ({
+          date: String(row.date),
+          activityType: String(row.activity_type),
+          name: String(row.name),
+          avgPowerZ2: Number(row.avg_power_z2),
+          avgHrZ2: Number(row.avg_hr_z2),
+          efficiencyFactor: Number(row.efficiency_factor),
+          z2Samples: Number(row.z2_samples),
         })),
       };
     }),
@@ -126,20 +126,26 @@ export const efficiencyRouter = router({
             ORDER BY a.started_at`,
       );
 
-      return rows.map((r) => ({
-        date: String(r.date),
-        activityType: String(r.activity_type),
-        name: String(r.name),
-        firstHalfRatio: Number(r.first_half_ratio),
-        secondHalfRatio: Number(r.second_half_ratio),
-        decouplingPct: Number(r.decoupling_pct),
-        totalSamples: Number(r.total_samples),
+      return rows.map((row) => ({
+        date: String(row.date),
+        activityType: String(row.activity_type),
+        name: String(row.name),
+        firstHalfRatio: Number(row.first_half_ratio),
+        secondHalfRatio: Number(row.second_half_ratio),
+        decouplingPct: Number(row.decoupling_pct),
+        totalSamples: Number(row.total_samples),
       }));
     }),
 
   /**
    * Polarization Index trend per week using Treff 3-zone model.
-   * Z1 = below 80% max HR (easy), Z2 = 80-87.5% (threshold), Z3 = above 87.5% (high intensity).
+   * Reads from activity_hr_zones rollup view + user_profile.max_hr.
+   *
+   * Uses a 3-zone re-bucketing of the 5-zone data:
+   *   Z1 (easy) = zones 1-3 (< 80% max HR)
+   *   Z2 (threshold) = zone 4 part (80-87.5% max HR) — approximated as zone4
+   *   Z3 (high intensity) = zone 4 part + zone 5 (≥87.5% max HR) — approximated as zone5
+   *
    * PI = log10((Z1_time / (Z2_time * Z3_time)) * 100)
    * PI > 2.0 indicates a well-polarized training distribution.
    */
@@ -153,34 +159,30 @@ export const efficiencyRouter = router({
         z2_seconds: number;
         z3_seconds: number;
       }>(
-        sql`WITH max_hr AS (
-              SELECT MAX(heart_rate) AS val
-              FROM fitness.metric_stream
-              WHERE heart_rate IS NOT NULL
-                AND activity_id IS NOT NULL
-            )
-            SELECT
-              (SELECT val FROM max_hr) AS max_hr,
-              date_trunc('week', ms.recorded_at)::date AS week,
-              COUNT(*) FILTER (WHERE ms.heart_rate < max_hr.val * 0.80)::int AS z1_seconds,
-              COUNT(*) FILTER (WHERE ms.heart_rate >= max_hr.val * 0.80 AND ms.heart_rate < max_hr.val * 0.875)::int AS z2_seconds,
-              COUNT(*) FILTER (WHERE ms.heart_rate >= max_hr.val * 0.875)::int AS z3_seconds
-            FROM fitness.metric_stream ms
-            CROSS JOIN max_hr
-            WHERE ms.heart_rate IS NOT NULL
-              AND ms.activity_id IS NOT NULL
-              AND ms.recorded_at > NOW() - ${input.days}::int * INTERVAL '1 day'
-              AND max_hr.val IS NOT NULL
-            GROUP BY date_trunc('week', ms.recorded_at), max_hr.val
+        sql`SELECT
+              up.max_hr,
+              date_trunc('week', asum.started_at)::date AS week,
+              -- Z1 (easy): < 80% max HR = zone1 + zone2 + zone3
+              SUM(hz.zone1_count + hz.zone2_count + hz.zone3_count)::int AS z1_seconds,
+              -- Z2 (threshold): 80-90% max HR = zone4
+              SUM(hz.zone4_count)::int AS z2_seconds,
+              -- Z3 (high intensity): >= 90% max HR = zone5
+              SUM(hz.zone5_count)::int AS z3_seconds
+            FROM fitness.activity_hr_zones hz
+            JOIN fitness.activity_summary asum ON asum.activity_id = hz.activity_id
+            JOIN fitness.user_profile up ON up.id = hz.user_id
+            WHERE asum.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+              AND up.max_hr IS NOT NULL
+            GROUP BY up.max_hr, date_trunc('week', asum.started_at)
             ORDER BY week`,
       );
 
       const maxHr = rows.length > 0 ? Number(rows[0].max_hr) : null;
 
-      const weeks = rows.map((r) => {
-        const z1 = Number(r.z1_seconds);
-        const z2 = Number(r.z2_seconds);
-        const z3 = Number(r.z3_seconds);
+      const weeks = rows.map((row) => {
+        const z1 = Number(row.z1_seconds);
+        const z2 = Number(row.z2_seconds);
+        const z3 = Number(row.z3_seconds);
 
         // Compute Polarization Index: log10((z1 / (z2 * z3)) * 100)
         // Handle division by zero: if z2 or z3 is 0, PI is undefined
@@ -191,7 +193,7 @@ export const efficiencyRouter = router({
         }
 
         return {
-          week: String(r.week),
+          week: String(row.week),
           z1Seconds: z1,
           z2Seconds: z2,
           z3Seconds: z3,

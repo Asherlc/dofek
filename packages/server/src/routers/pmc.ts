@@ -38,21 +38,24 @@ function linearRegression(
   xs: number[],
   ys: number[],
 ): { slope: number; intercept: number; r2: number } {
-  const n = xs.length;
-  const sumX = xs.reduce((a, b) => a + b, 0);
-  const sumY = ys.reduce((a, b) => a + b, 0);
-  const sumXY = xs.reduce((a, x, i) => a + x * ys[i], 0);
-  const sumX2 = xs.reduce((a, x) => a + x * x, 0);
+  const count = xs.length;
+  const sumX = xs.reduce((acc, val) => acc + val, 0);
+  const sumY = ys.reduce((acc, val) => acc + val, 0);
+  const sumXY = xs.reduce((acc, val, idx) => acc + val * ys[idx], 0);
+  const sumX2 = xs.reduce((acc, val) => acc + val * val, 0);
 
-  const denom = n * sumX2 - sumX * sumX;
+  const denom = count * sumX2 - sumX * sumX;
   if (denom === 0) return { slope: 0, intercept: 0, r2: 0 };
 
-  const slope = (n * sumXY - sumX * sumY) / denom;
-  const intercept = (sumY - slope * sumX) / n;
+  const slope = (count * sumXY - sumX * sumY) / denom;
+  const intercept = (sumY - slope * sumX) / count;
 
-  const yMean = sumY / n;
-  const ssTotal = ys.reduce((a, y) => a + (y - yMean) ** 2, 0);
-  const ssResidual = ys.reduce((a, y, i) => a + (y - (slope * xs[i] + intercept)) ** 2, 0);
+  const yMean = sumY / count;
+  const ssTotal = ys.reduce((acc, val) => acc + (val - yMean) ** 2, 0);
+  const ssResidual = ys.reduce(
+    (acc, val, idx) => acc + (val - (slope * xs[idx] + intercept)) ** 2,
+    0,
+  );
   const r2 = ssTotal > 0 ? 1 - ssResidual / ssTotal : 0;
 
   return { slope, intercept, r2 };
@@ -119,8 +122,8 @@ function buildTssModel(
   // Require at least 10 paired activities
   if (paired.length < 10) return null;
 
-  const xs = paired.map((p) => p.trimp);
-  const ys = paired.map((p) => p.powerTss);
+  const xs = paired.map((point) => point.trimp);
+  const ys = paired.map((point) => point.powerTss);
 
   const result = linearRegression(xs, ys);
 
@@ -136,16 +139,17 @@ function buildTssModel(
  */
 function estimateFtp(activities: ActivityRow[]): number | null {
   const qualifying = activities.filter(
-    (a) => a.avg_power != null && a.avg_power > 0 && a.duration_min >= 20,
+    (act) => act.avg_power != null && act.avg_power > 0 && act.duration_min >= 20,
   );
   if (qualifying.length === 0) return null;
-  const bestAvgPower = Math.max(...qualifying.map((a) => Number(a.avg_power)));
+  const bestAvgPower = Math.max(...qualifying.map((act) => Number(act.avg_power)));
   return Math.round(bestAvgPower * 0.95);
 }
 
 export const pmcRouter = router({
   /**
    * Performance Management Chart data.
+   * Reads from activity_summary rollup + user_profile for max_hr.
    * Computes daily TSS using a learned regression model (power+HR paired activities)
    * when available, falling back to generic Bannister TRIMP normalization.
    * Derives CTL (42d), ATL (7d), TSB from daily TSS.
@@ -156,40 +160,28 @@ export const pmcRouter = router({
       // Fetch extra history for EWMA warm-up (42 days for CTL)
       const queryDays = input.days + 42;
 
-      // Get max HR, resting HR, and per-activity stats in one query
+      // Get max HR, resting HR from user_profile + per-activity stats from activity_summary
       const activityRows = await ctx.db.execute(
-        sql`WITH max_hr AS (
-              SELECT MAX(heart_rate) AS val
-              FROM fitness.metric_stream
-              WHERE heart_rate IS NOT NULL
-                AND activity_id IS NOT NULL
-            ),
-            resting AS (
-              SELECT resting_hr AS val
-              FROM fitness.v_daily_metrics
-              WHERE resting_hr IS NOT NULL
-              ORDER BY date DESC
-              LIMIT 1
-            )
-            SELECT
-              (SELECT val FROM max_hr) AS global_max_hr,
-              COALESCE((SELECT val FROM resting), 60) AS resting_hr,
-              a.id,
-              a.started_at::date AS date,
-              EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 60 AS duration_min,
-              AVG(ms.heart_rate) AS avg_hr,
-              MAX(ms.heart_rate) AS max_hr,
-              AVG(ms.power) FILTER (WHERE ms.power > 0) AS avg_power,
-              COUNT(*) FILTER (WHERE ms.power > 0) AS power_samples,
-              COUNT(*) FILTER (WHERE ms.heart_rate IS NOT NULL) AS hr_samples
-            FROM fitness.v_activity a
-            CROSS JOIN max_hr
-            JOIN fitness.metric_stream ms ON ms.activity_id = a.id
-            WHERE max_hr.val IS NOT NULL
-              AND a.started_at > NOW() - ${queryDays}::int * INTERVAL '1 day'
-              AND a.ended_at IS NOT NULL
-              AND ms.heart_rate IS NOT NULL
-            GROUP BY a.id, a.started_at, a.ended_at, max_hr.val`,
+        sql`SELECT
+              up.max_hr AS global_max_hr,
+              COALESCE(up.resting_hr, (
+                SELECT resting_hr FROM fitness.v_daily_metrics
+                WHERE resting_hr IS NOT NULL ORDER BY date DESC LIMIT 1
+              ), 60) AS resting_hr,
+              asum.activity_id AS id,
+              asum.started_at::date AS date,
+              EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60 AS duration_min,
+              asum.avg_hr,
+              asum.max_hr,
+              asum.avg_power,
+              asum.power_sample_count AS power_samples,
+              asum.hr_sample_count AS hr_samples
+            FROM fitness.activity_summary asum
+            JOIN fitness.user_profile up ON up.id = asum.user_id
+            WHERE up.max_hr IS NOT NULL
+              AND asum.started_at > NOW() - ${queryDays}::int * INTERVAL '1 day'
+              AND asum.ended_at IS NOT NULL
+              AND asum.hr_sample_count > 0`,
       );
 
       interface CombinedActivityRow extends ActivityRow {

@@ -7,6 +7,7 @@ import {
   pgSchema,
   primaryKey,
   real,
+  smallint,
   text,
   timestamp,
   uniqueIndex,
@@ -15,6 +16,9 @@ import {
 
 // All tables live in the 'fitness' schema
 const fitness = pgSchema("fitness");
+
+// Default user UUID for single-user migration path
+export const DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001";
 
 // ============================================================
 // Enums
@@ -56,15 +60,38 @@ export const labResultStatusEnum = fitness.enum("lab_result_status", [
 ]);
 
 // ============================================================
+// User profile — multi-user support
+// ============================================================
+
+export const userProfile = fitness.table("user_profile", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  email: text("email").unique(),
+  maxHr: smallint("max_hr"),
+  restingHr: smallint("resting_hr"),
+  ftp: smallint("ftp"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ============================================================
 // Reference / lookup tables
 // ============================================================
 
-export const provider = fitness.table("provider", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  apiBaseUrl: text("api_base_url"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const provider = fitness.table(
+  "provider",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    apiBaseUrl: text("api_base_url"),
+    userId: uuid("user_id")
+      .notNull()
+      .default(DEFAULT_USER_ID)
+      .references(() => userProfile.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("provider_user_name_idx").on(table.userId, table.name)],
+);
 
 export const exercise = fitness.table(
   "exercise",
@@ -76,7 +103,7 @@ export const exercise = fitness.table(
     movement: text("movement"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex("exercise_name_equipment_idx").on(t.name, t.equipment)],
+  (table) => [uniqueIndex("exercise_name_equipment_idx").on(table.name, table.equipment)],
 );
 
 export const exerciseAlias = fitness.table(
@@ -92,7 +119,12 @@ export const exerciseAlias = fitness.table(
     providerExerciseId: text("provider_exercise_id"),
     providerExerciseName: text("provider_exercise_name").notNull(),
   },
-  (t) => [uniqueIndex("exercise_alias_provider_name_idx").on(t.providerId, t.providerExerciseName)],
+  (table) => [
+    uniqueIndex("exercise_alias_provider_name_idx").on(
+      table.providerId,
+      table.providerExerciseName,
+    ),
+  ],
 );
 
 // ============================================================
@@ -123,6 +155,10 @@ export const bodyMeasurement = fitness.table(
     providerId: text("provider_id")
       .notNull()
       .references(() => provider.id),
+    userId: uuid("user_id")
+      .notNull()
+      .default(DEFAULT_USER_ID)
+      .references(() => userProfile.id),
     externalId: text("external_id"),
     weightKg: real("weight_kg"),
     bodyFatPct: real("body_fat_pct"),
@@ -138,7 +174,9 @@ export const bodyMeasurement = fitness.table(
     temperatureC: real("temperature_c"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex("body_measurement_provider_external_idx").on(t.providerId, t.externalId)],
+  (table) => [
+    uniqueIndex("body_measurement_provider_external_idx").on(table.providerId, table.externalId),
+  ],
 );
 
 // ============================================================
@@ -152,6 +190,10 @@ export const strengthWorkout = fitness.table(
     providerId: text("provider_id")
       .notNull()
       .references(() => provider.id),
+    userId: uuid("user_id")
+      .notNull()
+      .default(DEFAULT_USER_ID)
+      .references(() => userProfile.id),
     externalId: text("external_id"),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
     endedAt: timestamp("ended_at", { withTimezone: true }),
@@ -159,7 +201,9 @@ export const strengthWorkout = fitness.table(
     notes: text("notes"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex("strength_workout_provider_external_idx").on(t.providerId, t.externalId)],
+  (table) => [
+    uniqueIndex("strength_workout_provider_external_idx").on(table.providerId, table.externalId),
+  ],
 );
 
 export const strengthSet = fitness.table(
@@ -183,7 +227,7 @@ export const strengthSet = fitness.table(
     notes: text("notes"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("strength_set_workout_idx").on(t.workoutId)],
+  (table) => [index("strength_set_workout_idx").on(table.workoutId)],
 );
 
 // ============================================================
@@ -197,6 +241,10 @@ export const activity = fitness.table(
     providerId: text("provider_id")
       .notNull()
       .references(() => provider.id),
+    userId: uuid("user_id")
+      .notNull()
+      .default(DEFAULT_USER_ID)
+      .references(() => userProfile.id),
     externalId: text("external_id"),
     activityType: text("activity_type").notNull(),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
@@ -206,34 +254,45 @@ export const activity = fitness.table(
     raw: jsonb("raw"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex("activity_provider_external_idx").on(t.providerId, t.externalId)],
+  (table) => [uniqueIndex("activity_provider_external_idx").on(table.providerId, table.externalId)],
 );
+
+// ============================================================
+// Metric stream (TimescaleDB hypertable — DDL managed by SQL migration, not Drizzle)
+// This Drizzle definition exists for type-safe queries/inserts only.
+// ============================================================
 
 export const metricStream = fitness.table(
   "metric_stream",
   {
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .default(DEFAULT_USER_ID)
+      .references(() => userProfile.id),
+    activityId: uuid("activity_id").references(() => activity.id, { onDelete: "cascade" }),
     providerId: text("provider_id")
       .notNull()
       .references(() => provider.id),
-    activityId: uuid("activity_id").references(() => activity.id, { onDelete: "cascade" }),
-    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
     // Core fields — typed columns for fast queries
-    heartRate: integer("heart_rate"),
-    power: integer("power"),
-    cadence: integer("cadence"),
+    heartRate: smallint("heart_rate"),
+    power: smallint("power"),
+    cadence: smallint("cadence"),
     speed: real("speed"), // m/s
-    lat: real("lat"), // degrees (converted from semicircles)
+    lat: real("lat"), // degrees
     lng: real("lng"), // degrees
     altitude: real("altitude"), // meters
     temperature: real("temperature"), // celsius
     distance: real("distance"), // cumulative meters
     grade: real("grade"), // percent
-    calories: integer("calories"), // cumulative kcal
+    calories: real("calories"), // cumulative kcal
     verticalSpeed: real("vertical_speed"), // m/s
     spo2: real("spo2"), // percent (0-1)
     respiratoryRate: real("respiratory_rate"), // breaths/min
-    gpsAccuracy: integer("gps_accuracy"), // meters
+    gpsAccuracy: smallint("gps_accuracy"), // meters
     accumulatedPower: integer("accumulated_power"), // cumulative watts
+    stress: smallint("stress"),
+    // Running dynamics
     leftRightBalance: real("left_right_balance"), // percent
     verticalOscillation: real("vertical_oscillation"), // mm (running)
     stanceTime: real("stance_time"), // ms (running)
@@ -241,6 +300,11 @@ export const metricStream = fitness.table(
     stepLength: real("step_length"), // mm (running)
     verticalRatio: real("vertical_ratio"), // percent (running)
     stanceTimeBalance: real("stance_time_balance"), // percent (running)
+    groundContactTime: real("ground_contact_time"), // ms
+    strideLength: real("stride_length"), // meters
+    formPower: real("form_power"), // watts
+    legSpringStiff: real("leg_spring_stiff"),
+    airPower: real("air_power"), // watts
     // Power pedaling dynamics
     leftTorqueEffectiveness: real("left_torque_effectiveness"), // percent
     rightTorqueEffectiveness: real("right_torque_effectiveness"), // percent
@@ -250,12 +314,13 @@ export const metricStream = fitness.table(
     // Apple Health / medical
     bloodGlucose: real("blood_glucose"), // mmol/L
     audioExposure: real("audio_exposure"), // dBASPL
+    skinTemperature: real("skin_temperature"), // celsius
     // Complete raw record — every field, no data loss
     raw: jsonb("raw"),
   },
-  (t) => [
-    index("metric_stream_provider_time_idx").on(t.providerId, t.recordedAt),
-    index("metric_stream_activity_time_idx").on(t.activityId, t.recordedAt),
+  (table) => [
+    index("metric_stream_provider_time_idx").on(table.providerId, table.recordedAt),
+    index("metric_stream_activity_time_idx").on(table.activityId, table.recordedAt),
   ],
 );
 
@@ -270,6 +335,10 @@ export const dailyMetrics = fitness.table(
     providerId: text("provider_id")
       .notNull()
       .references(() => provider.id),
+    userId: uuid("user_id")
+      .notNull()
+      .default(DEFAULT_USER_ID)
+      .references(() => userProfile.id),
     restingHr: integer("resting_hr"),
     hrv: real("hrv"),
     vo2max: real("vo2max"),
@@ -294,7 +363,7 @@ export const dailyMetrics = fitness.table(
     skinTempC: real("skin_temp_c"), // celsius (WHOOP)
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [primaryKey({ columns: [t.date, t.providerId] })],
+  (table) => [primaryKey({ columns: [table.date, table.providerId] })],
 );
 
 // ============================================================
@@ -308,6 +377,10 @@ export const sleepSession = fitness.table(
     providerId: text("provider_id")
       .notNull()
       .references(() => provider.id),
+    userId: uuid("user_id")
+      .notNull()
+      .default(DEFAULT_USER_ID)
+      .references(() => userProfile.id),
     externalId: text("external_id"),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
     endedAt: timestamp("ended_at", { withTimezone: true }),
@@ -320,7 +393,9 @@ export const sleepSession = fitness.table(
     isNap: boolean("is_nap").default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex("sleep_session_provider_external_idx").on(t.providerId, t.externalId)],
+  (table) => [
+    uniqueIndex("sleep_session_provider_external_idx").on(table.providerId, table.externalId),
+  ],
 );
 
 // ============================================================
@@ -334,6 +409,10 @@ export const nutritionDaily = fitness.table(
     providerId: text("provider_id")
       .notNull()
       .references(() => provider.id),
+    userId: uuid("user_id")
+      .notNull()
+      .default(DEFAULT_USER_ID)
+      .references(() => userProfile.id),
     calories: integer("calories"),
     proteinG: real("protein_g"),
     carbsG: real("carbs_g"),
@@ -342,7 +421,7 @@ export const nutritionDaily = fitness.table(
     waterMl: integer("water_ml"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [primaryKey({ columns: [t.date, t.providerId] })],
+  (table) => [primaryKey({ columns: [table.date, table.providerId] })],
 );
 
 export const foodEntry = fitness.table(
@@ -352,14 +431,18 @@ export const foodEntry = fitness.table(
     providerId: text("provider_id")
       .notNull()
       .references(() => provider.id),
+    userId: uuid("user_id")
+      .notNull()
+      .default(DEFAULT_USER_ID)
+      .references(() => userProfile.id),
     externalId: text("external_id"),
     date: date("date").notNull(),
     meal: mealEnum("meal"),
     foodName: text("food_name").notNull(),
-    foodDescription: text("food_description"), // e.g. "1 cup, cooked"
+    foodDescription: text("food_description"),
     category: foodCategoryEnum("category"),
-    providerFoodId: text("provider_food_id"), // provider's food DB ID
-    providerServingId: text("provider_serving_id"), // provider's serving ID
+    providerFoodId: text("provider_food_id"),
+    providerServingId: text("provider_serving_id"),
     numberOfUnits: real("number_of_units"),
     loggedAt: timestamp("logged_at", { withTimezone: true }),
     barcode: text("barcode"),
@@ -387,13 +470,13 @@ export const foodEntry = fitness.table(
     vitaminDMcg: real("vitamin_d_mcg"),
     vitaminEMg: real("vitamin_e_mg"),
     vitaminKMcg: real("vitamin_k_mcg"),
-    vitaminB1Mg: real("vitamin_b1_mg"), // thiamin
-    vitaminB2Mg: real("vitamin_b2_mg"), // riboflavin
-    vitaminB3Mg: real("vitamin_b3_mg"), // niacin
-    vitaminB5Mg: real("vitamin_b5_mg"), // pantothenic acid
+    vitaminB1Mg: real("vitamin_b1_mg"),
+    vitaminB2Mg: real("vitamin_b2_mg"),
+    vitaminB3Mg: real("vitamin_b3_mg"),
+    vitaminB5Mg: real("vitamin_b5_mg"),
     vitaminB6Mg: real("vitamin_b6_mg"),
-    vitaminB7Mcg: real("vitamin_b7_mcg"), // biotin
-    vitaminB9Mcg: real("vitamin_b9_mcg"), // folate
+    vitaminB7Mcg: real("vitamin_b7_mcg"),
+    vitaminB9Mcg: real("vitamin_b9_mcg"),
     vitaminB12Mcg: real("vitamin_b12_mcg"),
     calciumMg: real("calcium_mg"),
     ironMg: real("iron_mg"),
@@ -410,10 +493,10 @@ export const foodEntry = fitness.table(
     raw: jsonb("raw"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [
-    uniqueIndex("food_entry_provider_external_idx").on(t.providerId, t.externalId),
-    index("food_entry_date_idx").on(t.date),
-    index("food_entry_date_meal_idx").on(t.date, t.meal),
+  (table) => [
+    uniqueIndex("food_entry_provider_external_idx").on(table.providerId, table.externalId),
+    index("food_entry_date_idx").on(table.date),
+    index("food_entry_date_meal_idx").on(table.date, table.meal),
   ],
 );
 
@@ -428,6 +511,10 @@ export const labResult = fitness.table(
     providerId: text("provider_id")
       .notNull()
       .references(() => provider.id),
+    userId: uuid("user_id")
+      .notNull()
+      .default(DEFAULT_USER_ID)
+      .references(() => userProfile.id),
     externalId: text("external_id"),
     testName: text("test_name").notNull(),
     loincCode: text("loinc_code"),
@@ -445,11 +532,11 @@ export const labResult = fitness.table(
     raw: jsonb("raw"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [
-    uniqueIndex("lab_result_provider_external_idx").on(t.providerId, t.externalId),
-    index("lab_result_recorded_idx").on(t.recordedAt),
-    index("lab_result_loinc_idx").on(t.loincCode),
-    index("lab_result_test_name_idx").on(t.testName),
+  (table) => [
+    uniqueIndex("lab_result_provider_external_idx").on(table.providerId, table.externalId),
+    index("lab_result_recorded_idx").on(table.recordedAt),
+    index("lab_result_loinc_idx").on(table.loincCode),
+    index("lab_result_test_name_idx").on(table.testName),
   ],
 );
 
@@ -464,6 +551,10 @@ export const healthEvent = fitness.table(
     providerId: text("provider_id")
       .notNull()
       .references(() => provider.id),
+    userId: uuid("user_id")
+      .notNull()
+      .default(DEFAULT_USER_ID)
+      .references(() => userProfile.id),
     externalId: text("external_id"),
     type: text("type").notNull(), // HK type identifier
     value: real("value"), // numeric value (if any)
@@ -474,9 +565,9 @@ export const healthEvent = fitness.table(
     endDate: timestamp("end_date", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [
-    uniqueIndex("health_event_provider_external_idx").on(t.providerId, t.externalId),
-    index("health_event_type_time_idx").on(t.type, t.startDate),
+  (table) => [
+    uniqueIndex("health_event_provider_external_idx").on(table.providerId, table.externalId),
+    index("health_event_type_time_idx").on(table.type, table.startDate),
   ],
 );
 
@@ -501,14 +592,20 @@ export const syncLog = fitness.table(
     providerId: text("provider_id")
       .notNull()
       .references(() => provider.id),
-    dataType: text("data_type").notNull(), // e.g. "recovery", "sleep", "hr_stream", "workouts"
-    status: text("status").notNull(), // "success" | "error"
+    userId: uuid("user_id")
+      .notNull()
+      .default(DEFAULT_USER_ID)
+      .references(() => userProfile.id),
+    dataType: text("data_type").notNull(),
+    status: text("status").notNull(),
     recordCount: integer("record_count").default(0),
     errorMessage: text("error_message"),
     durationMs: integer("duration_ms"),
     syncedAt: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("sync_log_provider_type_idx").on(t.providerId, t.dataType, t.syncedAt)],
+  (table) => [
+    index("sync_log_provider_type_idx").on(table.providerId, table.dataType, table.syncedAt),
+  ],
 );
 
 // ============================================================
@@ -523,15 +620,23 @@ export const journalEntry = fitness.table(
     providerId: text("provider_id")
       .notNull()
       .references(() => provider.id),
-    question: text("question").notNull(), // e.g. "caffeine", "alcohol", "melatonin"
-    answerText: text("answer_text"), // free-form or categorical answer
-    answerNumeric: real("answer_numeric"), // numeric value (quantity, score, etc.)
-    impactScore: real("impact_score"), // provider-computed impact on recovery/strain
+    userId: uuid("user_id")
+      .notNull()
+      .default(DEFAULT_USER_ID)
+      .references(() => userProfile.id),
+    question: text("question").notNull(),
+    answerText: text("answer_text"),
+    answerNumeric: real("answer_numeric"),
+    impactScore: real("impact_score"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [
-    uniqueIndex("journal_entry_provider_date_question_idx").on(t.providerId, t.date, t.question),
-    index("journal_entry_date_idx").on(t.date),
+  (table) => [
+    uniqueIndex("journal_entry_provider_date_question_idx").on(
+      table.providerId,
+      table.date,
+      table.question,
+    ),
+    index("journal_entry_date_idx").on(table.date),
   ],
 );
 
@@ -544,6 +649,10 @@ export const lifeEvents = fitness.table(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     label: text("label").notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .default(DEFAULT_USER_ID)
+      .references(() => userProfile.id),
     startedAt: date("started_at").notNull(),
     endedAt: date("ended_at"),
     category: text("category"),
@@ -551,5 +660,5 @@ export const lifeEvents = fitness.table(
     notes: text("notes"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("life_events_started_at_idx").on(t.startedAt)],
+  (table) => [index("life_events_started_at_idx").on(table.startedAt)],
 );

@@ -52,39 +52,27 @@ const daysInput = z.object({ days: z.number().default(90) });
 export const cyclingAdvancedRouter = router({
   /**
    * Ramp Rate: week-over-week CTL change based on HR TRIMP load.
-   * TRIMP = duration_min * avg_hr / max_observed_hr per activity.
-   * CTL = 42-day exponentially weighted moving average.
-   * Ramp rate = CTL change per week. Safe <5, Aggressive 5-7, Danger >7.
+   * Reads from activity_summary rollup + user_profile.max_hr.
    */
   rampRate: cachedQuery(CacheTTL.LONG)
     .input(daysInput)
     .query(async ({ ctx, input }): Promise<RampRateResult> => {
-      // Get max observed HR and daily TRIMP loads in a single query
+      // Get daily TRIMP loads from activity_summary
       const dailyLoads = await ctx.db.execute(
-        sql`WITH max_hr AS (
-              SELECT MAX(heart_rate) AS val
-              FROM fitness.metric_stream
-              WHERE heart_rate IS NOT NULL
-                AND activity_id IS NOT NULL
-            )
-            SELECT
-              a.started_at::date AS day,
+        sql`SELECT
+              asum.started_at::date AS day,
               SUM(
-                EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 60.0
-                * sub.avg_hr / (SELECT val FROM max_hr)::float
+                EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0
+                * asum.avg_hr / up.max_hr::float
               ) AS trimp
-            FROM fitness.v_activity a
-            CROSS JOIN max_hr
-            JOIN LATERAL (
-              SELECT AVG(ms.heart_rate) AS avg_hr
-              FROM fitness.metric_stream ms
-              WHERE ms.activity_id = a.id
-                AND ms.heart_rate IS NOT NULL
-            ) sub ON sub.avg_hr IS NOT NULL AND sub.avg_hr > 0
-            WHERE max_hr.val IS NOT NULL
-              AND a.started_at > NOW() - (${input.days} + 42)::int * INTERVAL '1 day'
-              AND a.ended_at IS NOT NULL
-            GROUP BY a.started_at::date
+            FROM fitness.activity_summary asum
+            JOIN fitness.user_profile up ON up.id = asum.user_id
+            WHERE up.max_hr IS NOT NULL
+              AND asum.started_at > NOW() - (${input.days} + 42)::int * INTERVAL '1 day'
+              AND asum.ended_at IS NOT NULL
+              AND asum.avg_hr IS NOT NULL
+              AND asum.avg_hr > 0
+            GROUP BY asum.started_at::date
             ORDER BY day`,
       );
 
@@ -103,30 +91,36 @@ export const cyclingAdvancedRouter = router({
       const alpha = 2 / (42 + 1);
       let ctl = 0;
 
-      for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
-        const key = d.toISOString().slice(0, 10);
+      for (
+        let current = new Date(startDate);
+        current <= endDate;
+        current.setDate(current.getDate() + 1)
+      ) {
+        const key = current.toISOString().slice(0, 10);
         const load = loadMap.get(key) ?? 0;
         ctl = ctl * (1 - alpha) + load * alpha;
         ctlByDate.set(key, ctl);
       }
 
       // Group into weeks and compute ramp rate
-      const ctlEntries = [...ctlByDate.entries()].sort(([a], [b]) => a.localeCompare(b));
+      const ctlEntries = [...ctlByDate.entries()].sort(([dateA], [dateB]) =>
+        dateA.localeCompare(dateB),
+      );
 
       // Filter to only the requested date range (exclude the 42-day warmup)
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - input.days);
       const cutoffStr = cutoffDate.toISOString().slice(0, 10);
-      const filtered = ctlEntries.filter(([date]) => date >= cutoffStr);
+      const filtered = ctlEntries.filter(([dateStr]) => dateStr >= cutoffStr);
 
       // Group by ISO week
       const weekMap = new Map<string, { first: number; last: number }>();
       for (const [dateStr, ctlValue] of filtered) {
-        const d = new Date(dateStr);
+        const dateObj = new Date(dateStr);
         // Get Monday of the week
-        const dayOfWeek = d.getDay();
-        const monday = new Date(d);
-        monday.setDate(d.getDate() - ((dayOfWeek + 6) % 7));
+        const dayOfWeek = dateObj.getDay();
+        const monday = new Date(dateObj);
+        monday.setDate(dateObj.getDate() - ((dayOfWeek + 6) % 7));
         const weekKey = monday.toISOString().slice(0, 10);
 
         const existing = weekMap.get(weekKey);
@@ -139,14 +133,14 @@ export const cyclingAdvancedRouter = router({
 
       const weeks: RampRateWeek[] = [];
       const weekKeys = [...weekMap.keys()].sort();
-      for (let i = 1; i < weekKeys.length; i++) {
-        const prevWeek = weekMap.get(weekKeys[i - 1]);
-        const currWeek = weekMap.get(weekKeys[i]);
+      for (let idx = 1; idx < weekKeys.length; idx++) {
+        const prevWeek = weekMap.get(weekKeys[idx - 1]);
+        const currWeek = weekMap.get(weekKeys[idx]);
         if (!prevWeek || !currWeek) continue;
 
         const rampRate = Math.round((currWeek.last - prevWeek.last) * 100) / 100;
         weeks.push({
-          week: weekKeys[i],
+          week: weekKeys[idx],
           ctlStart: Math.round(prevWeek.last * 100) / 100,
           ctlEnd: Math.round(currWeek.last * 100) / 100,
           rampRate,
@@ -169,37 +163,28 @@ export const cyclingAdvancedRouter = router({
 
   /**
    * Training Monotony: weekly monotony (mean daily load / stdev) and strain.
+   * Reads from activity_summary rollup + user_profile.max_hr.
    * High monotony (>2.0) with high load = elevated illness/overtraining risk.
    */
   trainingMonotony: cachedQuery(CacheTTL.LONG)
     .input(daysInput)
     .query(async ({ ctx, input }): Promise<TrainingMonotonyWeek[]> => {
       const rows = await ctx.db.execute(
-        sql`WITH max_hr AS (
-              SELECT MAX(heart_rate) AS val
-              FROM fitness.metric_stream
-              WHERE heart_rate IS NOT NULL
-                AND activity_id IS NOT NULL
-            ),
-            daily_loads AS (
+        sql`WITH daily_loads AS (
               SELECT
-                a.started_at::date AS day,
+                asum.started_at::date AS day,
                 SUM(
-                  EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 60.0
-                  * sub.avg_hr / (SELECT val FROM max_hr)::float
+                  EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0
+                  * asum.avg_hr / up.max_hr::float
                 ) AS trimp
-              FROM fitness.v_activity a
-              CROSS JOIN max_hr
-              JOIN LATERAL (
-                SELECT AVG(ms.heart_rate) AS avg_hr
-                FROM fitness.metric_stream ms
-                WHERE ms.activity_id = a.id
-                  AND ms.heart_rate IS NOT NULL
-              ) sub ON sub.avg_hr IS NOT NULL AND sub.avg_hr > 0
-              WHERE max_hr.val IS NOT NULL
-                AND a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
-                AND a.ended_at IS NOT NULL
-              GROUP BY a.started_at::date
+              FROM fitness.activity_summary asum
+              JOIN fitness.user_profile up ON up.id = asum.user_id
+              WHERE up.max_hr IS NOT NULL
+                AND asum.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+                AND asum.ended_at IS NOT NULL
+                AND asum.avg_hr IS NOT NULL
+                AND asum.avg_hr > 0
+              GROUP BY asum.started_at::date
             ),
             weekly_stats AS (
               SELECT
@@ -220,18 +205,18 @@ export const cyclingAdvancedRouter = router({
             ORDER BY week`,
       );
 
-      return rows.map((r) => ({
-        week: String(r.week),
-        monotony: Number(r.monotony),
-        strain: Number(r.strain),
-        weeklyLoad: Number(r.weekly_load),
+      return rows.map((row) => ({
+        week: String(row.week),
+        monotony: Number(row.monotony),
+        strain: Number(row.strain),
+        weeklyLoad: Number(row.weekly_load),
       }));
     }),
 
   /**
    * Activity Variability: Normalized Power, Variability Index, Intensity Factor.
    * NP computed from 30s rolling average of power samples.
-   * FTP estimated as 95% of best 20-minute power across the date range.
+   * MUST hit raw metric_stream for sequential window functions.
    */
   activityVariability: cachedQuery(CacheTTL.LONG)
     .input(daysInput)
@@ -289,12 +274,12 @@ export const cyclingAdvancedRouter = router({
             ORDER BY a.started_at`,
       );
 
-      return rows.map((r) => {
-        const normalizedPower = Number(r.np);
-        const averagePower = Number(r.avg_power);
+      return rows.map((row) => {
+        const normalizedPower = Number(row.np);
+        const averagePower = Number(row.avg_power);
         return {
-          date: String(r.date),
-          activityName: String(r.name),
+          date: String(row.date),
+          activityName: String(row.name),
           normalizedPower,
           averagePower,
           variabilityIndex: Math.round((normalizedPower / averagePower) * 1000) / 1000,
@@ -305,7 +290,7 @@ export const cyclingAdvancedRouter = router({
 
   /**
    * Vertical Ascent Rate (VAM) for segments where grade > 3%.
-   * VAM = vertical meters gained per hour of climbing.
+   * MUST hit raw metric_stream for LAG() over sequential altitude.
    */
   verticalAscentRate: cachedQuery(CacheTTL.LONG)
     .input(daysInput)
@@ -348,9 +333,9 @@ export const cyclingAdvancedRouter = router({
             ORDER BY a.started_at`,
       );
 
-      return rows.map((r) => {
-        const elevationGainMeters = Number(r.elevation_gain);
-        const climbingSeconds = Number(r.climbing_seconds);
+      return rows.map((row) => {
+        const elevationGainMeters = Number(row.elevation_gain);
+        const climbingSeconds = Number(row.climbing_seconds);
         const climbingMinutes = Math.round((climbingSeconds / 60) * 10) / 10;
         const verticalAscentRate =
           climbingSeconds > 0
@@ -358,8 +343,8 @@ export const cyclingAdvancedRouter = router({
             : 0;
 
         return {
-          date: String(r.date),
-          activityName: String(r.name),
+          date: String(row.date),
+          activityName: String(row.name),
           verticalAscentRate,
           elevationGainMeters,
           climbingMinutes,
@@ -369,36 +354,34 @@ export const cyclingAdvancedRouter = router({
 
   /**
    * Pedal Dynamics: left/right balance, torque effectiveness, pedal smoothness.
+   * Reads from activity_summary rollup view.
    */
   pedalDynamics: cachedQuery(CacheTTL.LONG)
     .input(daysInput)
     .query(async ({ ctx, input }): Promise<PedalDynamicsRow[]> => {
       const rows = await ctx.db.execute(
         sql`SELECT
-              a.started_at::date AS date,
-              a.name,
-              ROUND(AVG(ms.left_right_balance)::numeric, 1) AS avg_balance,
+              asum.started_at::date AS date,
+              asum.name,
+              ROUND(asum.avg_left_balance::numeric, 1) AS avg_balance,
               ROUND(
-                ((AVG(ms.left_torque_effectiveness) + AVG(ms.right_torque_effectiveness)) / 2)::numeric, 1
+                ((asum.avg_left_torque_eff + asum.avg_right_torque_eff) / 2)::numeric, 1
               ) AS avg_torque_effectiveness,
               ROUND(
-                ((AVG(ms.left_pedal_smoothness) + AVG(ms.right_pedal_smoothness)) / 2)::numeric, 1
+                ((asum.avg_left_pedal_smooth + asum.avg_right_pedal_smooth) / 2)::numeric, 1
               ) AS avg_pedal_smoothness
-            FROM fitness.v_activity a
-            JOIN fitness.metric_stream ms ON ms.activity_id = a.id
-            WHERE a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
-              AND ms.left_right_balance IS NOT NULL
-            GROUP BY a.id, a.started_at, a.name
-            HAVING COUNT(ms.left_right_balance) >= 60
-            ORDER BY a.started_at`,
+            FROM fitness.activity_summary asum
+            WHERE asum.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+              AND asum.avg_left_balance IS NOT NULL
+            ORDER BY asum.started_at`,
       );
 
-      return rows.map((r) => ({
-        date: String(r.date),
-        activityName: String(r.name),
-        leftRightBalance: Number(r.avg_balance),
-        avgTorqueEffectiveness: Number(r.avg_torque_effectiveness),
-        avgPedalSmoothness: Number(r.avg_pedal_smoothness),
+      return rows.map((row) => ({
+        date: String(row.date),
+        activityName: String(row.name),
+        leftRightBalance: Number(row.avg_balance),
+        avgTorqueEffectiveness: Number(row.avg_torque_effectiveness),
+        avgPedalSmoothness: Number(row.avg_pedal_smoothness),
       }));
     }),
 });

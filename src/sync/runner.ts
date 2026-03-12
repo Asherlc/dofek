@@ -1,4 +1,4 @@
-import { refreshDedupViews } from "../db/dedup.ts";
+import { refreshDedupViews, updateUserMaxHr } from "../db/dedup.ts";
 import type { Database } from "../db/index.ts";
 import { getEnabledProviders } from "../providers/index.ts";
 import type { Provider, SyncResult } from "../providers/types.ts";
@@ -33,29 +33,37 @@ export async function runSync(
     }),
   );
 
-  const settled: SyncResult[] = results.map((r, i) => {
-    if (r.status === "fulfilled") return r.value;
+  const settled: SyncResult[] = results.map((result, index) => {
+    if (result.status === "fulfilled") return result.value;
     return {
-      provider: toSync[i].id,
+      provider: toSync[index].id,
       recordsSynced: 0,
-      errors: [{ message: String(r.reason) }],
+      errors: [{ message: String(result.reason) }],
       duration: 0,
     };
   });
 
-  // Refresh deduplication views after all providers have synced
+  // Update max HR from newly synced data
   try {
-    console.log("[sync] Refreshing deduplication views...");
-    await refreshDedupViews(db);
-    console.log("[sync] Deduplication views refreshed.");
+    console.log("[sync] Updating user max HR...");
+    await updateUserMaxHr(db);
   } catch (err) {
-    console.error("[sync] Failed to refresh dedup views:", err);
+    console.error("[sync] Failed to update max HR:", err);
+  }
+
+  // Refresh deduplication + rollup views after all providers have synced
+  try {
+    console.log("[sync] Refreshing materialized views...");
+    await refreshDedupViews(db);
+    console.log("[sync] Materialized views refreshed.");
+  } catch (err) {
+    console.error("[sync] Failed to refresh views:", err);
   }
 
   return {
     results: settled,
-    totalRecords: settled.reduce((sum, r) => sum + r.recordsSynced, 0),
-    totalErrors: settled.reduce((sum, r) => sum + r.errors.length, 0),
+    totalRecords: settled.reduce((sum, result) => sum + result.recordsSynced, 0),
+    totalErrors: settled.reduce((sum, result) => sum + result.errors.length, 0),
     duration: Date.now() - start,
   };
 }

@@ -175,12 +175,20 @@ export const syncRouter = router({
             }
           }
 
-          // Refresh dedup views
+          // Update user max HR from newly synced data
+          try {
+            const { updateUserMaxHr } = await import("dofek/db/dedup");
+            await updateUserMaxHr(ctx.db);
+          } catch (err) {
+            logger.error(`[sync] Failed to update max HR: ${err}`);
+          }
+
+          // Refresh dedup + rollup views
           try {
             const { refreshDedupViews } = await import("dofek/db/dedup");
             await refreshDedupViews(ctx.db);
           } catch (err) {
-            logger.error(`[sync] Failed to refresh dedup views: ${err}`);
+            logger.error(`[sync] Failed to refresh views: ${err}`);
           }
 
           // Invalidate all server-side caches
