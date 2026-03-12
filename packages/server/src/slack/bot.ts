@@ -1,4 +1,6 @@
-import { App, ExpressReceiver } from "@slack/bolt";
+import type { App as AppType } from "@slack/bolt";
+import bolt from "@slack/bolt";
+const { App, ExpressReceiver } = bolt;
 import type { GenericMessageEvent } from "@slack/types";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
@@ -102,7 +104,7 @@ function todayDate(): string {
 }
 
 /** Register message and action handlers on a Bolt app */
-function registerHandlers(app: App, db: Database) {
+function registerHandlers(app: AppType, db: Database) {
   // Handle direct messages
   app.message(async ({ message, say, client }) => {
     const msg = message as GenericMessageEvent;
@@ -237,7 +239,7 @@ function registerHandlers(app: App, db: Database) {
 }
 
 interface SlackBotResult {
-  app: App;
+  app: AppType;
   mode: "socket" | "http";
   /** Express router for HTTP mode — mount on your Express app at /slack */
   router?: express.Router;
