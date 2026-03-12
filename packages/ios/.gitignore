@@ -1,0 +1,9 @@
+# Expo generated native projects
+ios/
+android/
+
+# Expo cache
+.expo/
+
+# Node
+node_modules/

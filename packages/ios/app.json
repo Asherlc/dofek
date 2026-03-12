@@ -31,8 +31,7 @@
         {
           "cameraPermission": "Dofek uses the camera to scan food barcodes."
         }
-      ],
-      "./modules/health-kit"
+      ]
     ]
   }
 }

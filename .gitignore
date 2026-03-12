@@ -7,3 +7,4 @@ dist/
 *.log
 # Personal supplement stack — differs per user
 src/supplements.config.ts
+packages/ios/ios/
