@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { publicProcedure, router } from "../trpc.ts";
+import { CacheTTL, cachedQuery, router } from "../trpc.ts";
 
 export interface GradeAdjustedPaceRow {
   date: string;
@@ -48,7 +48,7 @@ export const hikingRouter = router({
    * Grade-adjusted pace for walking, hiking, and trail running activities.
    * Uses the Minetti cost factor model to normalize pace for grade.
    */
-  gradeAdjustedPace: publicProcedure
+  gradeAdjustedPace: cachedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
       interface GradeRow {
@@ -146,7 +146,7 @@ export const hikingRouter = router({
   /**
    * Weekly cumulative elevation gain from hiking and walking activities.
    */
-  elevationProfile: publicProcedure
+  elevationProfile: cachedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(365) }))
     .query(async ({ ctx, input }) => {
       interface ElevRow {
@@ -200,7 +200,7 @@ export const hikingRouter = router({
   /**
    * Walking biomechanics from daily health metrics.
    */
-  walkingBiomechanics: publicProcedure
+  walkingBiomechanics: cachedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
       interface WalkRow {
@@ -243,7 +243,7 @@ export const hikingRouter = router({
   /**
    * Compare repeated activities (same name, 2+ instances) over time.
    */
-  activityComparison: publicProcedure
+  activityComparison: cachedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(365) }))
     .query(async ({ ctx, input }) => {
       interface CompRow {

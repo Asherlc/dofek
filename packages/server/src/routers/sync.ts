@@ -4,8 +4,9 @@ import { getAllProviders, registerProvider } from "dofek/providers/registry";
 import type { Provider } from "dofek/providers/types";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { queryCache } from "../lib/cache.ts";
 import { getSystemLogs, logger } from "../logger.ts";
-import { publicProcedure, router } from "../trpc.ts";
+import { CacheTTL, cachedQuery, publicProcedure, router } from "../trpc.ts";
 
 // ── Provider registration (race-safe) ──
 let registrationPromise: Promise<void> | null = null;
@@ -40,34 +41,6 @@ async function doRegisterProviders() {
   } catch {}
 }
 
-// ── Simple TTL cache ──
-interface CacheEntry<T> {
-  data: T;
-  expiresAt: number;
-}
-
-const cacheStore = new Map<string, CacheEntry<unknown>>();
-
-export function getCached<T>(key: string): T | null {
-  const entry = cacheStore.get(key);
-  if (entry && entry.expiresAt > Date.now()) return entry.data as T;
-  cacheStore.delete(key);
-  return null;
-}
-
-export function setCache<T>(key: string, data: T, ttlMs: number): void {
-  cacheStore.set(key, { data, expiresAt: Date.now() + ttlMs });
-}
-
-/** Invalidate caches after sync completes */
-export function invalidateSyncCaches(): void {
-  cacheStore.delete("providerStats");
-  // Invalidate all insights caches
-  for (const key of cacheStore.keys()) {
-    if (key.startsWith("insights:")) cacheStore.delete(key);
-  }
-}
-
 // ── Background sync job tracking ──
 export interface SyncJob {
   status: "running" | "done" | "error";
@@ -84,7 +57,7 @@ function cleanupJob(jobId: string) {
 
 export const syncRouter = router({
   /** List all providers and whether they're enabled (have valid config) */
-  providers: publicProcedure.query(async ({ ctx }) => {
+  providers: cachedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
     await ensureProvidersRegistered();
     const all = getAllProviders();
 
@@ -210,8 +183,8 @@ export const syncRouter = router({
             logger.error(`[sync] Failed to refresh dedup views: ${err}`);
           }
 
-          // Invalidate server-side caches
-          invalidateSyncCaches();
+          // Invalidate all server-side caches
+          await queryCache.invalidateAll();
 
           const job = syncJobs.get(jobId)!;
           job.status = "done";
@@ -238,7 +211,7 @@ export const syncRouter = router({
   }),
 
   /** Get sync log history */
-  logs: publicProcedure
+  logs: cachedQuery(CacheTTL.SHORT)
     .input(z.object({ limit: z.number().default(100) }))
     .query(async ({ ctx, input }) => {
       const { syncLog } = await import("dofek/db/schema");
@@ -254,11 +227,8 @@ export const syncRouter = router({
       return getSystemLogs(input.limit);
     }),
 
-  /** Per-provider record counts broken down by table — cached 5 min, invalidated on sync */
-  providerStats: publicProcedure.query(async ({ ctx }) => {
-    const cached = getCached<ReturnType<typeof mapProviderStats>>("providerStats");
-    if (cached) return cached;
-
+  /** Per-provider record counts broken down by table */
+  providerStats: cachedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
     const rows = await ctx.db.execute<{
       provider_id: string;
       activities: string;
@@ -297,9 +267,7 @@ export const syncRouter = router({
       LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.journal_entry GROUP BY provider_id) je ON je.provider_id = p.id
       ORDER BY p.id
     `);
-    const result = mapProviderStats(rows);
-    setCache("providerStats", result, 5 * 60 * 1000);
-    return result;
+    return mapProviderStats(rows);
   }),
 });
 

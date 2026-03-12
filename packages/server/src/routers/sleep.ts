@@ -1,9 +1,9 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { publicProcedure, router } from "../trpc.ts";
+import { CacheTTL, cachedQuery, router } from "../trpc.ts";
 
 export const sleepRouter = router({
-  list: publicProcedure
+  list: cachedQuery(CacheTTL.MEDIUM)
     .input(
       z.object({
         days: z.number().default(30),
@@ -18,7 +18,7 @@ export const sleepRouter = router({
       return rows;
     }),
 
-  latest: publicProcedure.query(async ({ ctx }) => {
+  latest: cachedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
     const rows = await ctx.db.execute(
       sql`SELECT * FROM fitness.v_sleep
           WHERE is_nap = false

@@ -1,17 +1,12 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { computeInsights } from "../insights/engine.ts";
-import { publicProcedure, router } from "../trpc.ts";
-import { getCached, setCache } from "./sync.ts";
+import { CacheTTL, cachedQuery, router } from "../trpc.ts";
 
 export const insightsRouter = router({
-  compute: publicProcedure
+  compute: cachedQuery(CacheTTL.MEDIUM)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
-      const cacheKey = `insights:${input.days}`;
-      const cached = getCached<Awaited<ReturnType<typeof computeInsights>>>(cacheKey);
-      if (cached) return cached;
-
       const [metrics, sleep, activities, nutrition, bodyComp] = await Promise.all([
         ctx.db.execute(
           sql`SELECT date, resting_hr, hrv, spo2_avg, steps, active_energy_kcal, skin_temp_c
@@ -46,15 +41,12 @@ export const insightsRouter = router({
         ),
       ]);
 
-      const result = computeInsights(
+      return computeInsights(
         metrics as any,
         sleep as any,
         activities as any,
         nutrition as any,
         bodyComp as any,
       );
-
-      setCache(cacheKey, result, 10 * 60 * 1000); // 10 min TTL
-      return result;
     }),
 });

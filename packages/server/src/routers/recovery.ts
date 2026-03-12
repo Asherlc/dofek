@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { publicProcedure, router } from "../trpc.ts";
+import { CacheTTL, cachedQuery, router } from "../trpc.ts";
 
 export interface HrvVariabilityRow {
   date: string;
@@ -51,7 +51,7 @@ export const recoveryRouter = router({
    * Rolling 7-day coefficient of variation of HRV (stddev/mean * 100).
    * Fetches extra warmup rows to ensure window functions have data from day 1.
    */
-  hrvVariability: publicProcedure
+  hrvVariability: cachedQuery(CacheTTL.MEDIUM)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }): Promise<HrvVariabilityRow[]> => {
       const queryDays = input.days + 7;
@@ -102,7 +102,7 @@ export const recoveryRouter = router({
    * Daily load = sum of (duration_min * avg_hr / max_hr) per activity.
    * Acute = 7-day sum, Chronic = 28-day average of daily load.
    */
-  workloadRatio: publicProcedure
+  workloadRatio: cachedQuery(CacheTTL.MEDIUM)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }): Promise<WorkloadRatioRow[]> => {
       const queryDays = input.days + 28;
@@ -183,7 +183,7 @@ export const recoveryRouter = router({
    * Sleep analytics: stage percentages, rolling avg duration, sleep debt.
    * Excludes naps. Sleep debt = cumulative deficit vs 8hr target over 14 days.
    */
-  sleepAnalytics: publicProcedure
+  sleepAnalytics: cachedQuery(CacheTTL.MEDIUM)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }): Promise<SleepAnalyticsResult> => {
       const rows = await ctx.db.execute(
@@ -262,7 +262,7 @@ export const recoveryRouter = router({
    *   sleep efficiency (20%), ACWR balance (20%).
    * Each component is a z-score mapped to 0-100.
    */
-  readinessScore: publicProcedure
+  readinessScore: cachedQuery(CacheTTL.MEDIUM)
     .input(z.object({ days: z.number().default(30) }))
     .query(async ({ ctx, input }): Promise<ReadinessRow[]> => {
       const queryDays = input.days + 60;

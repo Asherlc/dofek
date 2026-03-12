@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { publicProcedure, router } from "../trpc.ts";
+import { CacheTTL, cachedQuery, router } from "../trpc.ts";
 
 /** Human-readable labels for each duration. */
 const DURATION_LABELS: Record<number, string> = {
@@ -148,7 +148,7 @@ export const powerRouter = router({
    * Power Duration Curve: best average power for standard durations.
    * Single query computes all durations via cumulative sums.
    */
-  powerCurve: publicProcedure
+  powerCurve: cachedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
       const rows = await ctx.db.execute(powerCurveQuery(input.days));
@@ -170,7 +170,7 @@ export const powerRouter = router({
    * eFTP trend: estimated Functional Threshold Power over time.
    * eFTP = 95% of best 20-minute power for each qualifying activity.
    */
-  eftpTrend: publicProcedure
+  eftpTrend: cachedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(365) }))
     .query(async ({ ctx, input }) => {
       // Find best 20-min (1200s) average power per activity

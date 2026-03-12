@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { publicProcedure, router } from "../trpc.ts";
+import { CacheTTL, cachedQuery, router } from "../trpc.ts";
 
 export interface RampRateWeek {
   week: string;
@@ -56,7 +56,7 @@ export const cyclingAdvancedRouter = router({
    * CTL = 42-day exponentially weighted moving average.
    * Ramp rate = CTL change per week. Safe <5, Aggressive 5-7, Danger >7.
    */
-  rampRate: publicProcedure
+  rampRate: cachedQuery(CacheTTL.LONG)
     .input(daysInput)
     .query(async ({ ctx, input }): Promise<RampRateResult> => {
       // Get max observed HR and daily TRIMP loads in a single query
@@ -171,7 +171,7 @@ export const cyclingAdvancedRouter = router({
    * Training Monotony: weekly monotony (mean daily load / stdev) and strain.
    * High monotony (>2.0) with high load = elevated illness/overtraining risk.
    */
-  trainingMonotony: publicProcedure
+  trainingMonotony: cachedQuery(CacheTTL.LONG)
     .input(daysInput)
     .query(async ({ ctx, input }): Promise<TrainingMonotonyWeek[]> => {
       const rows = await ctx.db.execute(
@@ -233,7 +233,7 @@ export const cyclingAdvancedRouter = router({
    * NP computed from 30s rolling average of power samples.
    * FTP estimated as 95% of best 20-minute power across the date range.
    */
-  activityVariability: publicProcedure
+  activityVariability: cachedQuery(CacheTTL.LONG)
     .input(daysInput)
     .query(async ({ ctx, input }): Promise<ActivityVariabilityRow[]> => {
       // Estimate FTP as 95% of best 20-minute average power
@@ -307,7 +307,7 @@ export const cyclingAdvancedRouter = router({
    * Vertical Ascent Rate (VAM) for segments where grade > 3%.
    * VAM = vertical meters gained per hour of climbing.
    */
-  verticalAscentRate: publicProcedure
+  verticalAscentRate: cachedQuery(CacheTTL.LONG)
     .input(daysInput)
     .query(async ({ ctx, input }): Promise<VerticalAscentRow[]> => {
       const rows = await ctx.db.execute(
@@ -370,7 +370,7 @@ export const cyclingAdvancedRouter = router({
   /**
    * Pedal Dynamics: left/right balance, torque effectiveness, pedal smoothness.
    */
-  pedalDynamics: publicProcedure
+  pedalDynamics: cachedQuery(CacheTTL.LONG)
     .input(daysInput)
     .query(async ({ ctx, input }): Promise<PedalDynamicsRow[]> => {
       const rows = await ctx.db.execute(

@@ -1,9 +1,9 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { publicProcedure, router } from "../trpc.ts";
+import { CacheTTL, cachedQuery, router } from "../trpc.ts";
 
 export const calendarRouter = router({
-  calendarData: publicProcedure
+  calendarData: cachedQuery(CacheTTL.LONG)
     .input(
       z.object({
         days: z.number().default(365),

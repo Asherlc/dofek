@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { publicProcedure, router } from "../trpc.ts";
+import { CacheTTL, cachedQuery, router } from "../trpc.ts";
 
 export const efficiencyRouter = router({
   /**
@@ -8,7 +8,7 @@ export const efficiencyRouter = router({
    * EF = avg power in Z2 / avg HR in Z2, where Z2 = 60-70% of max HR.
    * Only includes activities with at least 5 minutes (300 samples) of Z2 data.
    */
-  aerobicEfficiency: publicProcedure
+  aerobicEfficiency: cachedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(180) }))
     .query(async ({ ctx, input }) => {
       const rows = await ctx.db.execute<{
@@ -70,7 +70,7 @@ export const efficiencyRouter = router({
    * Compares power:HR ratio in first half vs second half of each activity.
    * Decoupling < 5% indicates a strong aerobic base.
    */
-  aerobicDecoupling: publicProcedure
+  aerobicDecoupling: cachedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(180) }))
     .query(async ({ ctx, input }) => {
       const rows = await ctx.db.execute<{
@@ -143,7 +143,7 @@ export const efficiencyRouter = router({
    * PI = log10((Z1_time / (Z2_time * Z3_time)) * 100)
    * PI > 2.0 indicates a well-polarized training distribution.
    */
-  polarizationTrend: publicProcedure
+  polarizationTrend: cachedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(180) }))
     .query(async ({ ctx, input }) => {
       const rows = await ctx.db.execute<{

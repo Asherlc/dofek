@@ -1,9 +1,9 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { publicProcedure, router } from "../trpc.ts";
+import { CacheTTL, cachedQuery, publicProcedure, router } from "../trpc.ts";
 
 export const lifeEventsRouter = router({
-  list: publicProcedure.query(async ({ ctx }) => {
+  list: cachedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
     const rows = await ctx.db.execute(
       sql`SELECT id, label, started_at, ended_at, category, ongoing, notes, created_at
           FROM fitness.life_events
@@ -79,7 +79,7 @@ export const lifeEventsRouter = router({
     }),
 
   /** Analyze: compare metrics before vs after (or during vs outside) a life event */
-  analyze: publicProcedure
+  analyze: cachedQuery(CacheTTL.SHORT)
     .input(
       z.object({
         id: z.string().uuid(),

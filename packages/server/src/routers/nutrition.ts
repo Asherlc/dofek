@@ -1,9 +1,9 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { publicProcedure, router } from "../trpc.ts";
+import { CacheTTL, cachedQuery, router } from "../trpc.ts";
 
 export const nutritionRouter = router({
-  daily: publicProcedure
+  daily: cachedQuery(CacheTTL.MEDIUM)
     .input(
       z.object({
         days: z.number().default(30),

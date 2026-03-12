@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { publicProcedure, router } from "../trpc.ts";
+import { CacheTTL, cachedQuery, router } from "../trpc.ts";
 
 export interface VolumeOverTimeRow {
   week: string;
@@ -51,7 +51,7 @@ export const strengthRouter = router({
   /**
    * Weekly tonnage: SUM(weight_kg * reps) grouped by week.
    */
-  volumeOverTime: publicProcedure
+  volumeOverTime: cachedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
       const rows = await ctx.db.execute(
@@ -86,7 +86,7 @@ export const strengthRouter = router({
    * Best e1RM per workout per exercise. Only working sets, weight > 0, reps 1-12,
    * exercises with 3+ appearances.
    */
-  estimatedOneRepMax: publicProcedure
+  estimatedOneRepMax: cachedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
       const rows = await ctx.db.execute(
@@ -155,7 +155,7 @@ export const strengthRouter = router({
   /**
    * Weekly sets per muscle group.
    */
-  muscleGroupVolume: publicProcedure
+  muscleGroupVolume: cachedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
       const rows = await ctx.db.execute(
@@ -188,7 +188,7 @@ export const strengthRouter = router({
   /**
    * Weekly volume per exercise with linear regression slope.
    */
-  progressiveOverload: publicProcedure
+  progressiveOverload: cachedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
       const rows = await ctx.db.execute(
@@ -232,7 +232,7 @@ export const strengthRouter = router({
   /**
    * Recent workout summaries.
    */
-  workoutSummary: publicProcedure
+  workoutSummary: cachedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
       const rows = await ctx.db.execute(

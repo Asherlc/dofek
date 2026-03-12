@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { publicProcedure, router } from "../trpc.ts";
+import { CacheTTL, cachedQuery, router } from "../trpc.ts";
 
 interface ActivityRow {
   id: string;
@@ -150,7 +150,7 @@ export const pmcRouter = router({
    * when available, falling back to generic Bannister TRIMP normalization.
    * Derives CTL (42d), ATL (7d), TSB from daily TSS.
    */
-  chart: publicProcedure
+  chart: cachedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(180) }))
     .query(async ({ ctx, input }): Promise<PmcChartResult> => {
       // Fetch extra history for EWMA warm-up (42 days for CTL)

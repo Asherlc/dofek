@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { publicProcedure, router } from "../trpc.ts";
+import { CacheTTL, cachedQuery, router } from "../trpc.ts";
 
 export interface HrvBaselineRow {
   date: string;
@@ -12,7 +12,7 @@ export interface HrvBaselineRow {
 }
 
 export const dailyMetricsRouter = router({
-  list: publicProcedure
+  list: cachedQuery(CacheTTL.MEDIUM)
     .input(
       z.object({
         days: z.number().default(30),
@@ -27,14 +27,14 @@ export const dailyMetricsRouter = router({
       return rows;
     }),
 
-  latest: publicProcedure.query(async ({ ctx }) => {
+  latest: cachedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
     const rows = await ctx.db.execute(
       sql`SELECT * FROM fitness.v_daily_metrics ORDER BY date DESC LIMIT 1`,
     );
     return rows[0] ?? null;
   }),
 
-  hrvBaseline: publicProcedure
+  hrvBaseline: cachedQuery(CacheTTL.MEDIUM)
     .input(
       z.object({
         days: z.number().default(30),
@@ -57,7 +57,7 @@ export const dailyMetricsRouter = router({
       return (rows as unknown as HrvBaselineRow[]).filter((r) => r.date >= cutoffStr);
     }),
 
-  trends: publicProcedure
+  trends: cachedQuery(CacheTTL.MEDIUM)
     .input(
       z.object({
         days: z.number().default(30),
@@ -82,7 +82,7 @@ export const dailyMetricsRouter = router({
                 STDDEV(spo2_avg) AS stddev_spo2,
                 STDDEV(skin_temp_c) AS stddev_skin_temp
               FROM current
-            )
+            ),
             latest AS (
               SELECT
                 date,

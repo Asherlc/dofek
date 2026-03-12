@@ -1,13 +1,13 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { publicProcedure, router } from "../trpc.ts";
+import { CacheTTL, cachedQuery, router } from "../trpc.ts";
 
 export const trainingRouter = router({
   /**
    * Weekly training volume grouped by activity type.
    * Returns hours and count per activity type per ISO week.
    */
-  weeklyVolume: publicProcedure
+  weeklyVolume: cachedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
       const rows = await ctx.db.execute(
@@ -30,7 +30,7 @@ export const trainingRouter = router({
    * Uses max observed HR to define 5 zones (60/70/80/90% thresholds).
    * Each record in metric_stream ≈ 1 second of recording time.
    */
-  hrZones: publicProcedure
+  hrZones: cachedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
       // Single query: CTE computes max HR, then zone distribution in one scan
@@ -73,7 +73,7 @@ export const trainingRouter = router({
    * Per-activity summary with HR and power stats.
    * Useful for activity-level analysis and eFTP estimation.
    */
-  activityStats: publicProcedure
+  activityStats: cachedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
       const rows = await ctx.db.execute(

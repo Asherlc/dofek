@@ -11,6 +11,24 @@ import { logger } from "./logger.ts";
 import { appRouter } from "./router.ts";
 import type { Context } from "./trpc.ts";
 
+/** Fire common dashboard queries to populate cache after deploy */
+async function warmCache(db: import("dofek/db").Database) {
+  const caller = appRouter.createCaller({ db });
+  const queries = [
+    () => caller.dailyMetrics.list({ days: 30 }),
+    () => caller.dailyMetrics.list({ days: 90 }),
+    () => caller.dailyMetrics.trends({ days: 30 }),
+    () => caller.dailyMetrics.latest(),
+    () => caller.sleep.list({ days: 30 }),
+    () => caller.sync.providers(),
+    () => caller.sync.providerStats(),
+    () => caller.insights.compute({ days: 90 }),
+  ];
+  const results = await Promise.allSettled(queries.map((q) => q()));
+  const ok = results.filter((r) => r.status === "fulfilled").length;
+  logger.info(`[cache] Warmed ${ok}/${results.length} queries`);
+}
+
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
 
 /** Stream a request body to a file on disk. */
@@ -460,6 +478,9 @@ async function main() {
   app.listen(PORT, () => {
     logger.info(`[server] API running at http://localhost:${PORT}`);
     logger.info(`[server] tRPC at http://localhost:${PORT}/api/trpc`);
+
+    // Warm cache with common dashboard queries (fire-and-forget)
+    warmCache(db).catch((err) => logger.error(`[cache] Warm failed: ${err}`));
   });
 }
 
