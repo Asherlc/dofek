@@ -138,6 +138,10 @@ describe("tRPC API", () => {
       const res = await fetch(`${baseUrl}/metrics`);
       const body = await res.text();
       expect(body).toContain("trpc_procedure_duration_seconds");
+      expect(body).toContain("trpc_db_query_duration_seconds");
+      expect(body).toContain("trpc_cache_lookup_duration_seconds");
+      expect(body).toContain("trpc_cache_hits_total");
+      expect(body).toContain("trpc_cache_misses_total");
     });
   });
 

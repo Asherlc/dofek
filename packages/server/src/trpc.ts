@@ -2,7 +2,13 @@ import { initTRPC } from "@trpc/server";
 import { middlewareMarker } from "@trpc/server/unstable-core-do-not-import";
 import type { Database } from "dofek/db";
 import { queryCache } from "./lib/cache.ts";
-import { trpcProcedureDuration } from "./lib/metrics.ts";
+import {
+  cacheHitsTotal,
+  cacheMissesTotal,
+  trpcCacheLookupDuration,
+  trpcDbQueryDuration,
+  trpcProcedureDuration,
+} from "./lib/metrics.ts";
 
 export interface Context {
   db: Database;
@@ -24,8 +30,17 @@ function cached(ttlMs: number) {
     const start = performance.now();
     const rawInput = await getRawInput();
     const key = `${path}:${JSON.stringify(rawInput)}`;
+
+    // Cache lookup
+    const cacheLookupStart = performance.now();
     const hit = await queryCache.get(key);
+    trpcCacheLookupDuration.observe(
+      { procedure: path, hit: hit !== undefined ? "true" : "false" },
+      (performance.now() - cacheLookupStart) / 1000,
+    );
+
     if (hit !== undefined) {
+      cacheHitsTotal.inc({ procedure: path });
       trpcProcedureDuration.observe(
         { procedure: path, type, cache_hit: "true" },
         (performance.now() - start) / 1000,
@@ -33,7 +48,13 @@ function cached(ttlMs: number) {
       return { ok: true as const, data: hit, marker: middlewareMarker };
     }
 
+    cacheMissesTotal.inc({ procedure: path });
+
+    // DB query (everything in next())
+    const dbStart = performance.now();
     const result = await next();
+    trpcDbQueryDuration.observe({ procedure: path }, (performance.now() - dbStart) / 1000);
+
     trpcProcedureDuration.observe(
       { procedure: path, type, cache_hit: "false" },
       (performance.now() - start) / 1000,
