@@ -26,10 +26,7 @@ async function warmCache(db: import("dofek/db").Database) {
     ["insights.compute(90)", () => caller.insights.compute({ days: 90 })],
     // Training page
     ["training.weeklyVolume(90)", () => caller.training.weeklyVolume({ days: 90 })],
-    [
-      "training.intensityDistribution(90)",
-      () => caller.training.intensityDistribution({ days: 90 }),
-    ],
+    ["training.hrZones(90)", () => caller.training.hrZones({ days: 90 })],
     ["pmc.chart(90)", () => caller.pmc.chart({ days: 90 })],
     ["power.powerCurve(90)", () => caller.power.powerCurve({ days: 90 })],
     ["power.eftpTrend(90)", () => caller.power.eftpTrend({ days: 90 })],
