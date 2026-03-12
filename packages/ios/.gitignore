@@ -1,6 +1,6 @@
 # Expo generated native projects
-ios/
-android/
+/ios/
+/android/
 
 # Expo cache
 .expo/

@@ -122,13 +122,21 @@ public class HealthKitModule: Module {
                 }
                 let samples = (results as? [HKCategorySample])?.map { sample -> [String: Any] in
                     let valueStr: String
-                    switch sample.value {
-                    case HKCategoryValueSleepAnalysis.inBed.rawValue: valueStr = "inBed"
-                    case HKCategoryValueSleepAnalysis.asleepCore.rawValue: valueStr = "asleepCore"
-                    case HKCategoryValueSleepAnalysis.asleepDeep.rawValue: valueStr = "asleepDeep"
-                    case HKCategoryValueSleepAnalysis.asleepREM.rawValue: valueStr = "asleepREM"
-                    case HKCategoryValueSleepAnalysis.awake.rawValue: valueStr = "awake"
-                    default: valueStr = "unknown"
+                    if #available(iOS 16.0, *) {
+                        switch sample.value {
+                        case HKCategoryValueSleepAnalysis.inBed.rawValue: valueStr = "inBed"
+                        case HKCategoryValueSleepAnalysis.asleepCore.rawValue: valueStr = "asleepCore"
+                        case HKCategoryValueSleepAnalysis.asleepDeep.rawValue: valueStr = "asleepDeep"
+                        case HKCategoryValueSleepAnalysis.asleepREM.rawValue: valueStr = "asleepREM"
+                        case HKCategoryValueSleepAnalysis.awake.rawValue: valueStr = "awake"
+                        default: valueStr = "unknown"
+                        }
+                    } else {
+                        switch sample.value {
+                        case HKCategoryValueSleepAnalysis.inBed.rawValue: valueStr = "inBed"
+                        case HKCategoryValueSleepAnalysis.awake.rawValue: valueStr = "awake"
+                        default: valueStr = "asleep"
+                        }
                     }
                     return [
                         "uuid": sample.uuid.uuidString,
