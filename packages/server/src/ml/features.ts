@@ -9,7 +9,7 @@
 export interface FeatureDefinition {
   name: string;
   description: string;
-  extract: (day: DailyFeatureRow, prev: DailyFeatureRow | null) => number | null;
+  extract: (day: DailyFeatureRow) => number | null;
 }
 
 /** Minimal row shape needed for feature extraction — mirrors JoinedDay from insights/engine */
@@ -50,22 +50,10 @@ export interface ExtractedDataset {
  */
 export function getHrvPredictionFeatures(): FeatureDefinition[] {
   return [
-    // Autoregressive: today's HRV predicts tomorrow's
-    {
-      name: "hrv_today",
-      description: "Today's HRV (autoregressive)",
-      extract: (d) => d.hrv,
-    },
     {
       name: "resting_hr",
       description: "Resting heart rate",
       extract: (d) => d.resting_hr,
-    },
-    // HRV day-over-day delta (momentum)
-    {
-      name: "hrv_delta",
-      description: "HRV change from previous day",
-      extract: (d, prev) => (d.hrv != null && prev?.hrv != null ? d.hrv - prev.hrv : null),
     },
     // Sleep
     {
@@ -172,8 +160,7 @@ export function buildHrvDataset(
     const tomorrow = days[i + 1]!;
     if (tomorrow.hrv == null) continue;
 
-    const prev = i > 0 ? days[i - 1]! : null;
-    const features = featureDefs.map((f) => f.extract(today, prev));
+    const features = featureDefs.map((f) => f.extract(today));
     rawRows.push({ features, target: tomorrow.hrv, date: today.date });
   }
 

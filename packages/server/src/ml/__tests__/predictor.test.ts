@@ -90,13 +90,13 @@ describe("trainHrvPredictor", () => {
     expect(result.diagnostics.crossValidatedRSquared).toBeGreaterThan(-0.5);
   });
 
-  it("ranks sleep and autoregressive features highly", () => {
+  it("ranks sleep and vitals features highly", () => {
     const days = generateSyntheticDays(300);
     const result = trainHrvPredictor(days)!;
 
-    // In our synthetic data, hrv_today and sleep features should be top-ranked
+    // In our synthetic data, sleep and resting HR should be top-ranked
     const topFeatures = result.featureImportances.slice(0, 5).map((f) => f.name);
-    const importantFeatures = ["hrv_today", "sleep_duration", "deep_sleep", "resting_hr"];
+    const importantFeatures = ["sleep_duration", "deep_sleep", "resting_hr"];
     const topContainsImportant = importantFeatures.some((f) => topFeatures.includes(f));
     expect(topContainsImportant).toBe(true);
   });

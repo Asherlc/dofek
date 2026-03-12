@@ -20,7 +20,7 @@ export function PredictionsPage() {
             HRV Prediction
           </h2>
           <p className="text-xs text-zinc-600 mt-0.5">
-            Two models learn from your sleep, exercise, and nutrition to predict tomorrow's HRV.
+            What controllable factors — sleep, exercise, nutrition — actually drive your HRV?
           </p>
         </div>
 
@@ -162,8 +162,6 @@ interface FeatureImportance {
 }
 
 const FRIENDLY_FEATURE_NAMES: Record<string, string> = {
-  hrv_today: "Today's HRV",
-  hrv_delta: "HRV trend (day-over-day change)",
   resting_hr: "Resting heart rate",
   sleep_duration: "Sleep duration",
   deep_sleep: "Deep sleep",
