@@ -6,13 +6,13 @@ import { fetchConfiguredProviders } from "../lib/auth.ts";
 const providerLabels: Record<IdentityProviderName, string> = {
   google: "Google",
   apple: "Apple",
-  authentik: "Authentik",
+  authentik: "Homelab",
 };
 
 const providerIcons: Record<IdentityProviderName, string> = {
   google: "G",
   apple: "\uF8FF",
-  authentik: "A",
+  authentik: "⌂",
 };
 
 function LoginPage() {
@@ -36,10 +36,7 @@ function LoginPage() {
             <div className="w-6 h-6 border-2 border-zinc-600 border-t-emerald-500 rounded-full animate-spin" />
           </div>
         ) : providers.length === 0 ? (
-          <p className="text-zinc-500 text-center text-sm">
-            No identity providers configured. Set environment variables for Google, Apple, or
-            Authentik.
-          </p>
+          <p className="text-zinc-500 text-center text-sm">No identity providers configured.</p>
         ) : (
           <div className="space-y-3">
             {providers.map((name) => (
