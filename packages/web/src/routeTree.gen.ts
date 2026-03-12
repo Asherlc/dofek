@@ -9,17 +9,18 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from "./routes/__root";
+import { Route as TrainingRouteImport } from "./routes/training";
+import { Route as SettingsRouteImport } from "./routes/settings";
+import { Route as ProvidersRouteImport } from "./routes/providers";
+import { Route as NutritionRouteImport } from "./routes/nutrition";
+import { Route as InsightsRouteImport } from "./routes/insights";
 import { Route as DashboardRouteImport } from "./routes/dashboard";
 import { Route as IndexRouteImport } from "./routes/index";
-import { Route as InsightsRouteImport } from "./routes/insights";
-import { Route as ProvidersRouteImport } from "./routes/providers";
-import { Route as SettingsRouteImport } from "./routes/settings";
-import { Route as TrainingRouteImport } from "./routes/training";
-import { Route as TrainingEnduranceRouteImport } from "./routes/training/endurance";
-import { Route as TrainingHikingRouteImport } from "./routes/training/hiking";
 import { Route as TrainingIndexRouteImport } from "./routes/training/index";
-import { Route as TrainingRecoveryRouteImport } from "./routes/training/recovery";
 import { Route as TrainingStrengthRouteImport } from "./routes/training/strength";
+import { Route as TrainingRecoveryRouteImport } from "./routes/training/recovery";
+import { Route as TrainingHikingRouteImport } from "./routes/training/hiking";
+import { Route as TrainingEnduranceRouteImport } from "./routes/training/endurance";
 
 const TrainingRoute = TrainingRouteImport.update({
   id: "/training",
@@ -34,6 +35,11 @@ const SettingsRoute = SettingsRouteImport.update({
 const ProvidersRoute = ProvidersRouteImport.update({
   id: "/providers",
   path: "/providers",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const NutritionRoute = NutritionRouteImport.update({
+  id: "/nutrition",
+  path: "/nutrition",
   getParentRoute: () => rootRouteImport,
 } as any);
 const InsightsRoute = InsightsRouteImport.update({
@@ -81,6 +87,7 @@ export interface FileRoutesByFullPath {
   "/": typeof IndexRoute;
   "/dashboard": typeof DashboardRoute;
   "/insights": typeof InsightsRoute;
+  "/nutrition": typeof NutritionRoute;
   "/providers": typeof ProvidersRoute;
   "/settings": typeof SettingsRoute;
   "/training": typeof TrainingRouteWithChildren;
@@ -94,6 +101,7 @@ export interface FileRoutesByTo {
   "/": typeof IndexRoute;
   "/dashboard": typeof DashboardRoute;
   "/insights": typeof InsightsRoute;
+  "/nutrition": typeof NutritionRoute;
   "/providers": typeof ProvidersRoute;
   "/settings": typeof SettingsRoute;
   "/training/endurance": typeof TrainingEnduranceRoute;
@@ -107,6 +115,7 @@ export interface FileRoutesById {
   "/": typeof IndexRoute;
   "/dashboard": typeof DashboardRoute;
   "/insights": typeof InsightsRoute;
+  "/nutrition": typeof NutritionRoute;
   "/providers": typeof ProvidersRoute;
   "/settings": typeof SettingsRoute;
   "/training": typeof TrainingRouteWithChildren;
@@ -122,6 +131,7 @@ export interface FileRouteTypes {
     | "/"
     | "/dashboard"
     | "/insights"
+    | "/nutrition"
     | "/providers"
     | "/settings"
     | "/training"
@@ -135,6 +145,7 @@ export interface FileRouteTypes {
     | "/"
     | "/dashboard"
     | "/insights"
+    | "/nutrition"
     | "/providers"
     | "/settings"
     | "/training/endurance"
@@ -147,6 +158,7 @@ export interface FileRouteTypes {
     | "/"
     | "/dashboard"
     | "/insights"
+    | "/nutrition"
     | "/providers"
     | "/settings"
     | "/training"
@@ -161,6 +173,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute;
   DashboardRoute: typeof DashboardRoute;
   InsightsRoute: typeof InsightsRoute;
+  NutritionRoute: typeof NutritionRoute;
   ProvidersRoute: typeof ProvidersRoute;
   SettingsRoute: typeof SettingsRoute;
   TrainingRoute: typeof TrainingRouteWithChildren;
@@ -187,6 +200,13 @@ declare module "@tanstack/react-router" {
       path: "/providers";
       fullPath: "/providers";
       preLoaderRoute: typeof ProvidersRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/nutrition": {
+      id: "/nutrition";
+      path: "/nutrition";
+      fullPath: "/nutrition";
+      preLoaderRoute: typeof NutritionRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/insights": {
@@ -270,6 +290,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DashboardRoute: DashboardRoute,
   InsightsRoute: InsightsRoute,
+  NutritionRoute: NutritionRoute,
   ProvidersRoute: ProvidersRoute,
   SettingsRoute: SettingsRoute,
   TrainingRoute: TrainingRouteWithChildren,

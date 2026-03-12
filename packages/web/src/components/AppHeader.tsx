@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 const navItems = [
   { to: "/dashboard", label: "Dashboard" },
   { to: "/training", label: "Training" },
+  { to: "/nutrition", label: "Nutrition" },
   { to: "/insights", label: "Insights" },
   { to: "/providers", label: "Providers" },
   { to: "/settings", label: "Settings" },
