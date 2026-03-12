@@ -1,7 +1,7 @@
 import { createReadStream, createWriteStream, mkdirSync, readdirSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { sql } from "drizzle-orm";
+import { and, eq, gte, sql } from "drizzle-orm";
 import sax from "sax";
 import yauzl from "yauzl";
 import type { Database } from "../db/index.ts";
@@ -431,6 +431,7 @@ export function streamHealthExport(
     let sleepCount = 0;
     let categoryCount = 0;
     let pendingFlushes = 0;
+    let drainResolve: (() => void) | null = null;
 
     // Progress tracking
     const totalBytes = statSync(filePath).size;
@@ -472,6 +473,10 @@ export function streamHealthExport(
           pendingFlushes--;
           if (pendingFlushes < MAX_PENDING) {
             fileStream.resume();
+          }
+          if (pendingFlushes === 0 && drainResolve) {
+            drainResolve();
+            drainResolve = null;
           }
         })
         .catch((err) => {
@@ -607,15 +612,15 @@ export function streamHealthExport(
         finalFlushes.push(callbacks.onCategoryBatch(categoryBatch));
       }
 
-      // Wait for all pending + final flushes
-      const waitForPending = (): Promise<void> => {
-        if (pendingFlushes > 0) {
-          return new Promise<void>((res) => setTimeout(res, 50)).then(waitForPending);
-        }
-        return Promise.resolve();
+      // Wait for all pending flushes to drain, then run final flushes
+      const waitForDrain = (): Promise<void> => {
+        if (pendingFlushes === 0) return Promise.resolve();
+        return new Promise<void>((res) => {
+          drainResolve = res;
+        });
       };
 
-      waitForPending()
+      waitForDrain()
         .then(() => Promise.all(finalFlushes))
         .then(() => resolve({ recordCount, workoutCount, sleepCount, categoryCount }))
         .catch(reject);
@@ -749,8 +754,8 @@ async function upsertMetricStreamBatch(
     rows.push(row as typeof metricStream.$inferInsert);
   }
 
-  if (rows.length > 0) {
-    await db.insert(metricStream).values(rows);
+  for (let i = 0; i < rows.length; i += 1000) {
+    await db.insert(metricStream).values(rows.slice(i, i + 1000));
   }
   return rows.length;
 }
@@ -1301,14 +1306,28 @@ async function runImport(
   let recordsSynced = 0;
 
   try {
+    // Delete existing metric_stream rows for this provider/time range so re-imports
+    // don't create duplicates (metric_stream has no unique constraint).
+    await db
+      .delete(metricStream)
+      .where(and(eq(metricStream.providerId, providerId), gte(metricStream.recordedAt, since)));
+
     const counts = await streamHealthExport(xmlPath, since, {
       onProgress,
       onRecordBatch: async (records) => {
-        const metricRecords = records.filter((r) => METRIC_STREAM_TYPES[r.type]);
-        const bodyRecords = records.filter((r) => BODY_MEASUREMENT_TYPES.has(r.type));
-        const dailyRecords = records.filter((r) => DAILY_METRIC_TYPES.has(r.type));
-        const nutritionRecords = records.filter((r) => NUTRITION_TYPES[r.type]);
-        const unrouted = records.filter((r) => !ALL_ROUTED_TYPES.has(r.type));
+        // Single-pass classification instead of 5 separate .filter() calls
+        const metricRecords: HealthRecord[] = [];
+        const bodyRecords: HealthRecord[] = [];
+        const dailyRecords: HealthRecord[] = [];
+        const nutritionRecords: HealthRecord[] = [];
+        const unrouted: HealthRecord[] = [];
+        for (const r of records) {
+          if (METRIC_STREAM_TYPES[r.type]) metricRecords.push(r);
+          else if (BODY_MEASUREMENT_TYPES.has(r.type)) bodyRecords.push(r);
+          else if (DAILY_METRIC_TYPES.has(r.type)) dailyRecords.push(r);
+          else if (NUTRITION_TYPES[r.type]) nutritionRecords.push(r);
+          else if (!ALL_ROUTED_TYPES.has(r.type)) unrouted.push(r);
+        }
 
         // Run all table inserts in parallel — they target independent tables
         const results = await Promise.all([
