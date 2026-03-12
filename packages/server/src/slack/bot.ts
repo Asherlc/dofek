@@ -120,13 +120,35 @@ async function saveFoodEntries(
       sql`INSERT INTO fitness.food_entry (
             user_id, provider_id, date, meal, food_name, food_description, category,
             calories, protein_g, carbs_g, fat_g, fiber_g,
-            saturated_fat_g, sugar_g, sodium_mg
+            saturated_fat_g, sugar_g, sodium_mg,
+            polyunsaturated_fat_g, monounsaturated_fat_g, trans_fat_g, cholesterol_mg,
+            potassium_mg, calcium_mg, iron_mg, magnesium_mg, zinc_mg,
+            selenium_mcg, copper_mg, manganese_mg, chromium_mcg, iodine_mcg,
+            vitamin_a_mcg, vitamin_c_mg, vitamin_d_mcg, vitamin_e_mg, vitamin_k_mcg,
+            vitamin_b1_mg, vitamin_b2_mg, vitamin_b3_mg, vitamin_b5_mg,
+            vitamin_b6_mg, vitamin_b7_mcg, vitamin_b9_mcg, vitamin_b12_mcg,
+            omega3_mg, omega6_mg
           ) VALUES (
             ${userId}, ${DOFEK_PROVIDER_ID}, ${date}::date,
             ${item.meal}, ${item.foodName}, ${item.foodDescription},
             ${item.category}, ${item.calories}, ${item.proteinG},
             ${item.carbsG}, ${item.fatG}, ${item.fiberG},
-            ${item.saturatedFatG}, ${item.sugarG}, ${item.sodiumMg}
+            ${item.saturatedFatG}, ${item.sugarG}, ${item.sodiumMg},
+            ${item.polyunsaturatedFatG ?? null}, ${item.monounsaturatedFatG ?? null},
+            ${item.transFatG ?? null}, ${item.cholesterolMg ?? null},
+            ${item.potassiumMg ?? null}, ${item.calciumMg ?? null},
+            ${item.ironMg ?? null}, ${item.magnesiumMg ?? null},
+            ${item.zincMg ?? null}, ${item.seleniumMcg ?? null},
+            ${item.copperMg ?? null}, ${item.manganeseMg ?? null},
+            ${item.chromiumMcg ?? null}, ${item.iodineMcg ?? null},
+            ${item.vitaminAMcg ?? null}, ${item.vitaminCMg ?? null},
+            ${item.vitaminDMcg ?? null}, ${item.vitaminEMg ?? null},
+            ${item.vitaminKMcg ?? null}, ${item.vitaminB1Mg ?? null},
+            ${item.vitaminB2Mg ?? null}, ${item.vitaminB3Mg ?? null},
+            ${item.vitaminB5Mg ?? null}, ${item.vitaminB6Mg ?? null},
+            ${item.vitaminB7Mcg ?? null}, ${item.vitaminB9Mcg ?? null},
+            ${item.vitaminB12Mcg ?? null}, ${item.omega3Mg ?? null},
+            ${item.omega6Mg ?? null}
           )`,
     );
   }

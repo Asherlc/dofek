@@ -41,6 +41,39 @@ export const aiNutritionSchema = z.object({
   saturatedFatG: z.number().nonnegative().describe("Saturated fat in grams"),
   sugarG: z.number().nonnegative().describe("Sugar in grams"),
   sodiumMg: z.number().nonnegative().describe("Sodium in milligrams"),
+  // Fat breakdown
+  polyunsaturatedFatG: z.number().nonnegative().optional().describe("Polyunsaturated fat in grams"),
+  monounsaturatedFatG: z.number().nonnegative().optional().describe("Monounsaturated fat in grams"),
+  transFatG: z.number().nonnegative().optional().describe("Trans fat in grams"),
+  cholesterolMg: z.number().nonnegative().optional().describe("Cholesterol in milligrams"),
+  // Minerals
+  potassiumMg: z.number().nonnegative().optional().describe("Potassium in milligrams"),
+  calciumMg: z.number().nonnegative().optional().describe("Calcium in milligrams"),
+  ironMg: z.number().nonnegative().optional().describe("Iron in milligrams"),
+  magnesiumMg: z.number().nonnegative().optional().describe("Magnesium in milligrams"),
+  zincMg: z.number().nonnegative().optional().describe("Zinc in milligrams"),
+  seleniumMcg: z.number().nonnegative().optional().describe("Selenium in micrograms"),
+  copperMg: z.number().nonnegative().optional().describe("Copper in milligrams"),
+  manganeseMg: z.number().nonnegative().optional().describe("Manganese in milligrams"),
+  chromiumMcg: z.number().nonnegative().optional().describe("Chromium in micrograms"),
+  iodineMcg: z.number().nonnegative().optional().describe("Iodine in micrograms"),
+  // Vitamins
+  vitaminAMcg: z.number().nonnegative().optional().describe("Vitamin A in micrograms RAE"),
+  vitaminCMg: z.number().nonnegative().optional().describe("Vitamin C in milligrams"),
+  vitaminDMcg: z.number().nonnegative().optional().describe("Vitamin D in micrograms"),
+  vitaminEMg: z.number().nonnegative().optional().describe("Vitamin E in milligrams"),
+  vitaminKMcg: z.number().nonnegative().optional().describe("Vitamin K in micrograms"),
+  vitaminB1Mg: z.number().nonnegative().optional().describe("Thiamine (B1) in milligrams"),
+  vitaminB2Mg: z.number().nonnegative().optional().describe("Riboflavin (B2) in milligrams"),
+  vitaminB3Mg: z.number().nonnegative().optional().describe("Niacin (B3) in milligrams"),
+  vitaminB5Mg: z.number().nonnegative().optional().describe("Pantothenic acid (B5) in milligrams"),
+  vitaminB6Mg: z.number().nonnegative().optional().describe("Vitamin B6 in milligrams"),
+  vitaminB7Mcg: z.number().nonnegative().optional().describe("Biotin (B7) in micrograms"),
+  vitaminB9Mcg: z.number().nonnegative().optional().describe("Folate (B9) in micrograms DFE"),
+  vitaminB12Mcg: z.number().nonnegative().optional().describe("Vitamin B12 in micrograms"),
+  // Fatty acids
+  omega3Mg: z.number().nonnegative().optional().describe("Omega-3 fatty acids in milligrams"),
+  omega6Mg: z.number().nonnegative().optional().describe("Omega-6 fatty acids in milligrams"),
 });
 
 export type AiNutritionResult = z.infer<typeof aiNutritionSchema>;
@@ -58,7 +91,7 @@ const aiNutritionMultiSchema = z.object({
   items: z.array(aiNutritionItemWithMealSchema).min(1),
 });
 
-const SYSTEM_PROMPT = `You are a nutrition estimation expert. Given a natural language description of food, estimate the nutritional content as accurately as possible.
+const SYSTEM_PROMPT = `You are a nutrition estimation expert. Given a natural language description of food, estimate the nutritional content as accurately as possible — including both macronutrients and micronutrients.
 
 Guidelines:
 - Estimate for a typical serving size unless the user specifies otherwise.
@@ -66,9 +99,10 @@ Guidelines:
 - Round calories to the nearest integer and macros to one decimal place.
 - For mixed dishes, estimate the combined nutritional content as a single entry.
 - Be conservative with calorie estimates — it's better to slightly overestimate than underestimate.
-- Use your knowledge of USDA food composition data and common nutrition databases.`;
+- Use your knowledge of USDA food composition data and common nutrition databases.
+- Estimate all micronutrients (vitamins, minerals, omega fatty acids) you are confident about. Omit any you are unsure of rather than guessing wildly.`;
 
-const MULTI_ITEM_SYSTEM_PROMPT = `You are a nutrition estimation expert. Given a natural language description of what someone ate, break it into individual food items and estimate the nutritional content of each.
+const MULTI_ITEM_SYSTEM_PROMPT = `You are a nutrition estimation expert. Given a natural language description of what someone ate, break it into individual food items and estimate the nutritional content of each — including both macronutrients and micronutrients.
 
 Guidelines:
 - Break everything into the most granular individual food items possible. Each distinct ingredient or food that could be tracked separately should be its own entry.
@@ -80,7 +114,8 @@ Guidelines:
 - Infer the meal type (breakfast, lunch, dinner, snack) from context clues like time of day or explicit mentions. Default to "other" if unclear.
 - Round calories to the nearest integer and macros to one decimal place.
 - Be conservative with calorie estimates — slightly overestimate rather than underestimate.
-- Use your knowledge of USDA food composition data.`;
+- Use your knowledge of USDA food composition data.
+- Estimate all micronutrients (vitamins, minerals, omega fatty acids) you are confident about. Omit any you are unsure of rather than guessing wildly.`;
 
 interface ProviderConfig {
   name: string;
