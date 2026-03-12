@@ -41,9 +41,12 @@ export function StrengthVolumeChart({ data, loading }: StrengthVolumeChartProps)
       borderColor: "#3f3f46",
       textStyle: { color: "#e4e4e7", fontSize: 12 },
       formatter(params: { dataIndex: number }[]) {
-        const index = params[0].dataIndex;
+        const first = params[0];
+        if (!first) return "";
+        const index = first.dataIndex;
         const d = data[index];
-        return `<strong>${weeks[index]}</strong><br/>
+        if (!d) return "";
+        return `<strong>${weeks[index] ?? ""}</strong><br/>
           Volume: ${Math.round(d.totalVolumeKg).toLocaleString()} kg<br/>
           Sets: ${d.setCount}`;
       },

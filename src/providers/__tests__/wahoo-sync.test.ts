@@ -187,7 +187,7 @@ describe("WahooProvider.sync() (integration)", () => {
     const activities = await ctx.db.select().from(activity).where(eq(activity.externalId, "2001"));
 
     expect(activities).toHaveLength(1);
-    const activityId = activities[0].id;
+    const activityId = activities[0]!.id;
 
     const metrics = await ctx.db
       .select()
@@ -220,7 +220,7 @@ describe("WahooProvider.sync() (integration)", () => {
     expect(result.recordsSynced).toBe(1);
     // But there should be a FIT file error
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0].message).toContain("FIT file");
+    expect(result.errors[0]?.message).toContain("FIT file");
 
     // Verify the cardio_activity was still created
     const activities = await ctx.db.select().from(activity).where(eq(activity.externalId, "3001"));
@@ -239,7 +239,7 @@ describe("WahooProvider.sync() (integration)", () => {
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0].message).toContain("No OAuth tokens found");
+    expect(result.errors[0]?.message).toContain("No OAuth tokens found");
     expect(result.recordsSynced).toBe(0);
   });
 });

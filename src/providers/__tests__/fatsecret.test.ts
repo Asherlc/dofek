@@ -106,7 +106,7 @@ describe("FatSecret Provider", () => {
       const entries = parseFoodEntries(singleEntryResponse);
       expect(entries).toHaveLength(1);
 
-      const entry = entries[0];
+      const entry = entries[0]!;
       expect(entry.externalId).toBe("12345");
       expect(entry.foodName).toBe("Oatmeal");
       expect(entry.foodDescription).toBe("1 cup, cooked");
@@ -136,15 +136,15 @@ describe("FatSecret Provider", () => {
     it("parses multiple entries", () => {
       const entries = parseFoodEntries(multiEntryResponse);
       expect(entries).toHaveLength(2);
-      expect(entries[0].meal).toBe("breakfast");
-      expect(entries[1].meal).toBe("lunch");
-      expect(entries[0].foodName).toBe("Scrambled Eggs");
-      expect(entries[1].foodName).toBe("Chicken Breast");
+      expect(entries[0]?.meal).toBe("breakfast");
+      expect(entries[1]?.meal).toBe("lunch");
+      expect(entries[0]?.foodName).toBe("Scrambled Eggs");
+      expect(entries[1]?.foodName).toBe("Chicken Breast");
     });
 
     it("handles entries with missing optional nutrients", () => {
       const entries = parseFoodEntries(multiEntryResponse);
-      const chicken = entries[1];
+      const chicken = entries[1]!;
       expect(chicken.calories).toBe(280);
       expect(chicken.proteinG).toBeCloseTo(52.0);
       expect(chicken.saturatedFatG).toBeUndefined();
@@ -161,12 +161,12 @@ describe("FatSecret Provider", () => {
     it("converts date_int to ISO date string", () => {
       const entries = parseFoodEntries(singleEntryResponse);
       // 19797 days since epoch = 2024-03-15
-      expect(entries[0].date).toBe("2024-03-15");
+      expect(entries[0]?.date).toBe("2024-03-15");
     });
 
     it("normalizes meal names to lowercase", () => {
       const entries = parseFoodEntries(singleEntryResponse);
-      expect(entries[0].meal).toBe("breakfast");
+      expect(entries[0]?.meal).toBe("breakfast");
     });
   });
 

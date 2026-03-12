@@ -52,11 +52,14 @@ export function TrainingMonotonyChart({ data, loading }: TrainingMonotonyChartPr
         }>,
       ) {
         if (!params.length) return "";
-        const idx = params[0].dataIndex;
+        const first = params[0];
+        if (!first) return "";
+        const idx = first.dataIndex;
         const d = data[idx];
+        if (!d) return "";
         const monotonyColor = d.monotony > 2.0 ? "#ef4444" : "#3b82f6";
         return [
-          `<strong>${weeks[idx]}</strong>`,
+          `<strong>${weeks[idx] ?? ""}</strong>`,
           `Monotony: <span style="color:${monotonyColor}">${d.monotony.toFixed(2)}</span>${d.monotony > 2.0 ? " (high!)" : ""}`,
           `Strain: ${d.strain.toFixed(1)}`,
         ].join("<br/>");

@@ -35,10 +35,12 @@ export function SleepChart({ data, loading }: SleepChartProps) {
       backgroundColor: "#18181b",
       borderColor: "#3f3f46",
       textStyle: { color: "#e4e4e7", fontSize: 12 },
-      formatter: (params: any) => {
+      formatter: (
+        params: Array<{ axisValue?: string; color: string; seriesName: string; value?: number }>,
+      ) => {
         const date = params[0]?.axisValue ?? "";
         let total = 0;
-        const lines = params.map((p: any) => {
+        const lines = params.map((p) => {
           total += p.value ?? 0;
           return `<span style="color:${p.color}">\u25CF</span> ${p.seriesName}: ${p.value ?? 0}m`;
         });

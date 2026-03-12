@@ -104,7 +104,8 @@ export function benjaminiHochberg(pValues: number[], alpha: number = 0.05): bool
 
   let maxK = -1;
   for (let k = 0; k < m; k++) {
-    if (indexed[k].p <= ((k + 1) / m) * alpha) {
+    const entry = indexed[k];
+    if (entry && entry.p <= ((k + 1) / m) * alpha) {
       maxK = k;
     }
   }
@@ -112,7 +113,8 @@ export function benjaminiHochberg(pValues: number[], alpha: number = 0.05): bool
   const significant = new Array(m).fill(false);
   if (maxK >= 0) {
     for (let k = 0; k <= maxK; k++) {
-      significant[indexed[k].i] = true;
+      const entry = indexed[k];
+      if (entry) significant[entry.i] = true;
     }
   }
   return significant;
@@ -185,9 +187,9 @@ function lgamma(z: number): number {
     return Math.log(Math.PI / Math.sin(Math.PI * z)) - lgamma(1 - z);
   }
   z -= 1;
-  let x = coef[0];
+  let x = coef[0] ?? 0;
   for (let i = 1; i < g + 2; i++) {
-    x += coef[i] / (z + i);
+    x += (coef[i] ?? 0) / (z + i);
   }
   const t = z + g + 0.5;
   return 0.5 * Math.log(2 * Math.PI) + (z + 0.5) * Math.log(t) - t + Math.log(x);

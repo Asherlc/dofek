@@ -8,6 +8,7 @@ import { FatSecretProvider } from "./providers/fatsecret.ts";
 import { getAllProviders, getEnabledProviders, registerProvider } from "./providers/index.ts";
 import { PelotonProvider } from "./providers/peloton.ts";
 import { WahooProvider } from "./providers/wahoo.ts";
+import { WhoopProvider } from "./providers/whoop.ts";
 import { WithingsProvider } from "./providers/withings.ts";
 import { runSync } from "./sync/runner.ts";
 
@@ -19,8 +20,12 @@ try {
   const jsonPath = resolve(import.meta.dirname, "../supplements.json");
   const raw = readFileSync(jsonPath, "utf-8");
   supplementConfig = JSON.parse(raw);
-} catch {
-  // No config file — auto-supplements provider will report validation error
+} catch (err) {
+  // File not found is expected — auto-supplements provider will report validation error
+  // Log other errors (e.g., corrupt JSON) so they're not silently swallowed
+  if (err instanceof Error && !err.message.includes("ENOENT")) {
+    console.error(`[supplements] Failed to load config: ${err.message}`);
+  }
 }
 
 // Register all providers
@@ -28,13 +33,14 @@ registerProvider(new WahooProvider());
 registerProvider(new WithingsProvider());
 registerProvider(new PelotonProvider());
 registerProvider(new FatSecretProvider());
+registerProvider(new WhoopProvider());
 if (supplementConfig) {
   registerProvider(new AutoSupplementsProvider(supplementConfig));
 }
 
 function parseSinceDays(): number {
   const arg = process.argv.find((a) => a.startsWith("--since-days="));
-  if (arg) return parseInt(arg.split("=")[1], 10);
+  if (arg) return parseInt(arg.split("=")[1] ?? "7", 10);
   return 7;
 }
 
@@ -89,20 +95,11 @@ async function main() {
     const setup = provider.authSetup();
     const { oauthConfig, exchangeCode, apiBaseUrl } = setup;
 
-    let tokens: any;
+    let tokens: import("./auth/oauth.ts").TokenSet;
 
     // OAuth 1.0 3-legged flow (FatSecret)
-    if ("oauth1Flow" in setup && setup.oauth1Flow) {
-      const oauth1 = setup.oauth1Flow as {
-        getRequestToken: (
-          callbackUrl: string,
-        ) => Promise<{ oauthToken: string; oauthTokenSecret: string; authorizeUrl: string }>;
-        exchangeForAccessToken: (
-          requestToken: string,
-          requestTokenSecret: string,
-          oauthVerifier: string,
-        ) => Promise<{ token: string; tokenSecret: string }>;
-      };
+    if (setup.oauth1Flow) {
+      const oauth1 = setup.oauth1Flow;
 
       const callbackUrl = oauthConfig.redirectUri;
       const callbackParsed = new URL(callbackUrl);

@@ -313,6 +313,7 @@ export const hikingRouter = router({
         if (!grouped.has(name)) {
           grouped.set(name, []);
         }
+        // biome-ignore lint/style/noNonNullAssertion: guaranteed by the has() + set() above
         grouped.get(name)!.push({
           date: String(r.date),
           durationMinutes: Number(r.duration_minutes),

@@ -8,272 +8,272 @@
 // You should NOT make any changes in this file as it will be overwritten.
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
-import { Route as rootRouteImport } from './routes/__root'
-import { Route as TrainingRouteImport } from './routes/training'
-import { Route as SettingsRouteImport } from './routes/settings'
-import { Route as ProvidersRouteImport } from './routes/providers'
-import { Route as NutritionRouteImport } from './routes/nutrition'
-import { Route as InsightsRouteImport } from './routes/insights'
-import { Route as DashboardRouteImport } from './routes/dashboard'
-import { Route as IndexRouteImport } from './routes/index'
-import { Route as TrainingIndexRouteImport } from './routes/training/index'
-import { Route as TrainingStrengthRouteImport } from './routes/training/strength'
-import { Route as TrainingRecoveryRouteImport } from './routes/training/recovery'
-import { Route as TrainingHikingRouteImport } from './routes/training/hiking'
-import { Route as TrainingEnduranceRouteImport } from './routes/training/endurance'
+import { Route as rootRouteImport } from "./routes/__root";
+import { Route as DashboardRouteImport } from "./routes/dashboard";
+import { Route as IndexRouteImport } from "./routes/index";
+import { Route as InsightsRouteImport } from "./routes/insights";
+import { Route as NutritionRouteImport } from "./routes/nutrition";
+import { Route as ProvidersRouteImport } from "./routes/providers";
+import { Route as SettingsRouteImport } from "./routes/settings";
+import { Route as TrainingRouteImport } from "./routes/training";
+import { Route as TrainingEnduranceRouteImport } from "./routes/training/endurance";
+import { Route as TrainingHikingRouteImport } from "./routes/training/hiking";
+import { Route as TrainingIndexRouteImport } from "./routes/training/index";
+import { Route as TrainingRecoveryRouteImport } from "./routes/training/recovery";
+import { Route as TrainingStrengthRouteImport } from "./routes/training/strength";
 
 const TrainingRoute = TrainingRouteImport.update({
-  id: '/training',
-  path: '/training',
+  id: "/training",
+  path: "/training",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const SettingsRoute = SettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
+  id: "/settings",
+  path: "/settings",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const ProvidersRoute = ProvidersRouteImport.update({
-  id: '/providers',
-  path: '/providers',
+  id: "/providers",
+  path: "/providers",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const NutritionRoute = NutritionRouteImport.update({
-  id: '/nutrition',
-  path: '/nutrition',
+  id: "/nutrition",
+  path: "/nutrition",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const InsightsRoute = InsightsRouteImport.update({
-  id: '/insights',
-  path: '/insights',
+  id: "/insights",
+  path: "/insights",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const DashboardRoute = DashboardRouteImport.update({
-  id: '/dashboard',
-  path: '/dashboard',
+  id: "/dashboard",
+  path: "/dashboard",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+  id: "/",
+  path: "/",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const TrainingIndexRoute = TrainingIndexRouteImport.update({
-  id: '/',
-  path: '/',
+  id: "/",
+  path: "/",
   getParentRoute: () => TrainingRoute,
-} as any)
+} as any);
 const TrainingStrengthRoute = TrainingStrengthRouteImport.update({
-  id: '/strength',
-  path: '/strength',
+  id: "/strength",
+  path: "/strength",
   getParentRoute: () => TrainingRoute,
-} as any)
+} as any);
 const TrainingRecoveryRoute = TrainingRecoveryRouteImport.update({
-  id: '/recovery',
-  path: '/recovery',
+  id: "/recovery",
+  path: "/recovery",
   getParentRoute: () => TrainingRoute,
-} as any)
+} as any);
 const TrainingHikingRoute = TrainingHikingRouteImport.update({
-  id: '/hiking',
-  path: '/hiking',
+  id: "/hiking",
+  path: "/hiking",
   getParentRoute: () => TrainingRoute,
-} as any)
+} as any);
 const TrainingEnduranceRoute = TrainingEnduranceRouteImport.update({
-  id: '/endurance',
-  path: '/endurance',
+  id: "/endurance",
+  path: "/endurance",
   getParentRoute: () => TrainingRoute,
-} as any)
+} as any);
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
-  '/dashboard': typeof DashboardRoute
-  '/insights': typeof InsightsRoute
-  '/nutrition': typeof NutritionRoute
-  '/providers': typeof ProvidersRoute
-  '/settings': typeof SettingsRoute
-  '/training': typeof TrainingRouteWithChildren
-  '/training/endurance': typeof TrainingEnduranceRoute
-  '/training/hiking': typeof TrainingHikingRoute
-  '/training/recovery': typeof TrainingRecoveryRoute
-  '/training/strength': typeof TrainingStrengthRoute
-  '/training/': typeof TrainingIndexRoute
+  "/": typeof IndexRoute;
+  "/dashboard": typeof DashboardRoute;
+  "/insights": typeof InsightsRoute;
+  "/nutrition": typeof NutritionRoute;
+  "/providers": typeof ProvidersRoute;
+  "/settings": typeof SettingsRoute;
+  "/training": typeof TrainingRouteWithChildren;
+  "/training/endurance": typeof TrainingEnduranceRoute;
+  "/training/hiking": typeof TrainingHikingRoute;
+  "/training/recovery": typeof TrainingRecoveryRoute;
+  "/training/strength": typeof TrainingStrengthRoute;
+  "/training/": typeof TrainingIndexRoute;
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
-  '/dashboard': typeof DashboardRoute
-  '/insights': typeof InsightsRoute
-  '/nutrition': typeof NutritionRoute
-  '/providers': typeof ProvidersRoute
-  '/settings': typeof SettingsRoute
-  '/training/endurance': typeof TrainingEnduranceRoute
-  '/training/hiking': typeof TrainingHikingRoute
-  '/training/recovery': typeof TrainingRecoveryRoute
-  '/training/strength': typeof TrainingStrengthRoute
-  '/training': typeof TrainingIndexRoute
+  "/": typeof IndexRoute;
+  "/dashboard": typeof DashboardRoute;
+  "/insights": typeof InsightsRoute;
+  "/nutrition": typeof NutritionRoute;
+  "/providers": typeof ProvidersRoute;
+  "/settings": typeof SettingsRoute;
+  "/training/endurance": typeof TrainingEnduranceRoute;
+  "/training/hiking": typeof TrainingHikingRoute;
+  "/training/recovery": typeof TrainingRecoveryRoute;
+  "/training/strength": typeof TrainingStrengthRoute;
+  "/training": typeof TrainingIndexRoute;
 }
 export interface FileRoutesById {
-  __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
-  '/dashboard': typeof DashboardRoute
-  '/insights': typeof InsightsRoute
-  '/nutrition': typeof NutritionRoute
-  '/providers': typeof ProvidersRoute
-  '/settings': typeof SettingsRoute
-  '/training': typeof TrainingRouteWithChildren
-  '/training/endurance': typeof TrainingEnduranceRoute
-  '/training/hiking': typeof TrainingHikingRoute
-  '/training/recovery': typeof TrainingRecoveryRoute
-  '/training/strength': typeof TrainingStrengthRoute
-  '/training/': typeof TrainingIndexRoute
+  __root__: typeof rootRouteImport;
+  "/": typeof IndexRoute;
+  "/dashboard": typeof DashboardRoute;
+  "/insights": typeof InsightsRoute;
+  "/nutrition": typeof NutritionRoute;
+  "/providers": typeof ProvidersRoute;
+  "/settings": typeof SettingsRoute;
+  "/training": typeof TrainingRouteWithChildren;
+  "/training/endurance": typeof TrainingEnduranceRoute;
+  "/training/hiking": typeof TrainingHikingRoute;
+  "/training/recovery": typeof TrainingRecoveryRoute;
+  "/training/strength": typeof TrainingStrengthRoute;
+  "/training/": typeof TrainingIndexRoute;
 }
 export interface FileRouteTypes {
-  fileRoutesByFullPath: FileRoutesByFullPath
+  fileRoutesByFullPath: FileRoutesByFullPath;
   fullPaths:
-    | '/'
-    | '/dashboard'
-    | '/insights'
-    | '/nutrition'
-    | '/providers'
-    | '/settings'
-    | '/training'
-    | '/training/endurance'
-    | '/training/hiking'
-    | '/training/recovery'
-    | '/training/strength'
-    | '/training/'
-  fileRoutesByTo: FileRoutesByTo
+    | "/"
+    | "/dashboard"
+    | "/insights"
+    | "/nutrition"
+    | "/providers"
+    | "/settings"
+    | "/training"
+    | "/training/endurance"
+    | "/training/hiking"
+    | "/training/recovery"
+    | "/training/strength"
+    | "/training/";
+  fileRoutesByTo: FileRoutesByTo;
   to:
-    | '/'
-    | '/dashboard'
-    | '/insights'
-    | '/nutrition'
-    | '/providers'
-    | '/settings'
-    | '/training/endurance'
-    | '/training/hiking'
-    | '/training/recovery'
-    | '/training/strength'
-    | '/training'
+    | "/"
+    | "/dashboard"
+    | "/insights"
+    | "/nutrition"
+    | "/providers"
+    | "/settings"
+    | "/training/endurance"
+    | "/training/hiking"
+    | "/training/recovery"
+    | "/training/strength"
+    | "/training";
   id:
-    | '__root__'
-    | '/'
-    | '/dashboard'
-    | '/insights'
-    | '/nutrition'
-    | '/providers'
-    | '/settings'
-    | '/training'
-    | '/training/endurance'
-    | '/training/hiking'
-    | '/training/recovery'
-    | '/training/strength'
-    | '/training/'
-  fileRoutesById: FileRoutesById
+    | "__root__"
+    | "/"
+    | "/dashboard"
+    | "/insights"
+    | "/nutrition"
+    | "/providers"
+    | "/settings"
+    | "/training"
+    | "/training/endurance"
+    | "/training/hiking"
+    | "/training/recovery"
+    | "/training/strength"
+    | "/training/";
+  fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
-  DashboardRoute: typeof DashboardRoute
-  InsightsRoute: typeof InsightsRoute
-  NutritionRoute: typeof NutritionRoute
-  ProvidersRoute: typeof ProvidersRoute
-  SettingsRoute: typeof SettingsRoute
-  TrainingRoute: typeof TrainingRouteWithChildren
+  IndexRoute: typeof IndexRoute;
+  DashboardRoute: typeof DashboardRoute;
+  InsightsRoute: typeof InsightsRoute;
+  NutritionRoute: typeof NutritionRoute;
+  ProvidersRoute: typeof ProvidersRoute;
+  SettingsRoute: typeof SettingsRoute;
+  TrainingRoute: typeof TrainingRouteWithChildren;
 }
 
-declare module '@tanstack/react-router' {
+declare module "@tanstack/react-router" {
   interface FileRoutesByPath {
-    '/training': {
-      id: '/training'
-      path: '/training'
-      fullPath: '/training'
-      preLoaderRoute: typeof TrainingRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/settings': {
-      id: '/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof SettingsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/providers': {
-      id: '/providers'
-      path: '/providers'
-      fullPath: '/providers'
-      preLoaderRoute: typeof ProvidersRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/nutrition': {
-      id: '/nutrition'
-      path: '/nutrition'
-      fullPath: '/nutrition'
-      preLoaderRoute: typeof NutritionRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/insights': {
-      id: '/insights'
-      path: '/insights'
-      fullPath: '/insights'
-      preLoaderRoute: typeof InsightsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/dashboard': {
-      id: '/dashboard'
-      path: '/dashboard'
-      fullPath: '/dashboard'
-      preLoaderRoute: typeof DashboardRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/training/': {
-      id: '/training/'
-      path: '/'
-      fullPath: '/training/'
-      preLoaderRoute: typeof TrainingIndexRouteImport
-      parentRoute: typeof TrainingRoute
-    }
-    '/training/strength': {
-      id: '/training/strength'
-      path: '/strength'
-      fullPath: '/training/strength'
-      preLoaderRoute: typeof TrainingStrengthRouteImport
-      parentRoute: typeof TrainingRoute
-    }
-    '/training/recovery': {
-      id: '/training/recovery'
-      path: '/recovery'
-      fullPath: '/training/recovery'
-      preLoaderRoute: typeof TrainingRecoveryRouteImport
-      parentRoute: typeof TrainingRoute
-    }
-    '/training/hiking': {
-      id: '/training/hiking'
-      path: '/hiking'
-      fullPath: '/training/hiking'
-      preLoaderRoute: typeof TrainingHikingRouteImport
-      parentRoute: typeof TrainingRoute
-    }
-    '/training/endurance': {
-      id: '/training/endurance'
-      path: '/endurance'
-      fullPath: '/training/endurance'
-      preLoaderRoute: typeof TrainingEnduranceRouteImport
-      parentRoute: typeof TrainingRoute
-    }
+    "/training": {
+      id: "/training";
+      path: "/training";
+      fullPath: "/training";
+      preLoaderRoute: typeof TrainingRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/settings": {
+      id: "/settings";
+      path: "/settings";
+      fullPath: "/settings";
+      preLoaderRoute: typeof SettingsRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/providers": {
+      id: "/providers";
+      path: "/providers";
+      fullPath: "/providers";
+      preLoaderRoute: typeof ProvidersRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/nutrition": {
+      id: "/nutrition";
+      path: "/nutrition";
+      fullPath: "/nutrition";
+      preLoaderRoute: typeof NutritionRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/insights": {
+      id: "/insights";
+      path: "/insights";
+      fullPath: "/insights";
+      preLoaderRoute: typeof InsightsRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/dashboard": {
+      id: "/dashboard";
+      path: "/dashboard";
+      fullPath: "/dashboard";
+      preLoaderRoute: typeof DashboardRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/": {
+      id: "/";
+      path: "/";
+      fullPath: "/";
+      preLoaderRoute: typeof IndexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/training/": {
+      id: "/training/";
+      path: "/";
+      fullPath: "/training/";
+      preLoaderRoute: typeof TrainingIndexRouteImport;
+      parentRoute: typeof TrainingRoute;
+    };
+    "/training/strength": {
+      id: "/training/strength";
+      path: "/strength";
+      fullPath: "/training/strength";
+      preLoaderRoute: typeof TrainingStrengthRouteImport;
+      parentRoute: typeof TrainingRoute;
+    };
+    "/training/recovery": {
+      id: "/training/recovery";
+      path: "/recovery";
+      fullPath: "/training/recovery";
+      preLoaderRoute: typeof TrainingRecoveryRouteImport;
+      parentRoute: typeof TrainingRoute;
+    };
+    "/training/hiking": {
+      id: "/training/hiking";
+      path: "/hiking";
+      fullPath: "/training/hiking";
+      preLoaderRoute: typeof TrainingHikingRouteImport;
+      parentRoute: typeof TrainingRoute;
+    };
+    "/training/endurance": {
+      id: "/training/endurance";
+      path: "/endurance";
+      fullPath: "/training/endurance";
+      preLoaderRoute: typeof TrainingEnduranceRouteImport;
+      parentRoute: typeof TrainingRoute;
+    };
   }
 }
 
 interface TrainingRouteChildren {
-  TrainingEnduranceRoute: typeof TrainingEnduranceRoute
-  TrainingHikingRoute: typeof TrainingHikingRoute
-  TrainingRecoveryRoute: typeof TrainingRecoveryRoute
-  TrainingStrengthRoute: typeof TrainingStrengthRoute
-  TrainingIndexRoute: typeof TrainingIndexRoute
+  TrainingEnduranceRoute: typeof TrainingEnduranceRoute;
+  TrainingHikingRoute: typeof TrainingHikingRoute;
+  TrainingRecoveryRoute: typeof TrainingRecoveryRoute;
+  TrainingStrengthRoute: typeof TrainingStrengthRoute;
+  TrainingIndexRoute: typeof TrainingIndexRoute;
 }
 
 const TrainingRouteChildren: TrainingRouteChildren = {
@@ -282,11 +282,9 @@ const TrainingRouteChildren: TrainingRouteChildren = {
   TrainingRecoveryRoute: TrainingRecoveryRoute,
   TrainingStrengthRoute: TrainingStrengthRoute,
   TrainingIndexRoute: TrainingIndexRoute,
-}
+};
 
-const TrainingRouteWithChildren = TrainingRoute._addFileChildren(
-  TrainingRouteChildren,
-)
+const TrainingRouteWithChildren = TrainingRoute._addFileChildren(TrainingRouteChildren);
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
@@ -296,7 +294,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProvidersRoute: ProvidersRoute,
   SettingsRoute: SettingsRoute,
   TrainingRoute: TrainingRouteWithChildren,
-}
+};
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
-  ._addFileTypes<FileRouteTypes>()
+  ._addFileTypes<FileRouteTypes>();

@@ -30,8 +30,8 @@ export function TrainingCalendar({ data, height = 180 }: TrainingCalendarProps) 
 
   // Determine date range from data
   const dates = data.map((d) => d.date).sort();
-  const startDate = dates[0];
-  const endDate = dates[dates.length - 1];
+  const startDate = dates[0] ?? "";
+  const endDate = dates[dates.length - 1] ?? "";
 
   // Series data: [date, totalMinutes]
   const seriesData: [string, number][] = data.map((d) => [d.date, d.totalMinutes]);

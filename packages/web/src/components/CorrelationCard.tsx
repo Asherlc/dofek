@@ -190,8 +190,8 @@ function ScatterPlot({ insight }: { insight: Insight }) {
   let num = 0;
   let den = 0;
   for (let i = 0; i < xs.length; i++) {
-    num += (xs[i] - xMean) * (ys[i] - yMean);
-    den += (xs[i] - xMean) ** 2;
+    num += ((xs[i] ?? 0) - xMean) * ((ys[i] ?? 0) - yMean);
+    den += ((xs[i] ?? 0) - xMean) ** 2;
   }
   const slope = den !== 0 ? num / den : 0;
   const intercept = yMean - slope * xMean;

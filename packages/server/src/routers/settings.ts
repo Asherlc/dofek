@@ -9,8 +9,9 @@ export const settingsRouter = router({
       const rows = await ctx.db.execute<{ key: string; value: unknown }>(
         sql`SELECT key, value FROM fitness.user_settings WHERE key = ${input.key} LIMIT 1`,
       );
-      if (rows.length === 0) return null;
-      return { key: rows[0].key, value: rows[0].value };
+      const row = rows[0];
+      if (!row) return null;
+      return { key: row.key, value: row.value };
     }),
 
   getAll: cachedQuery(CacheTTL.LONG).query(async ({ ctx }) => {
@@ -29,6 +30,8 @@ export const settingsRouter = router({
             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
             RETURNING key, value`,
       );
-      return { key: rows[0].key, value: rows[0].value };
+      const result = rows[0];
+      if (!result) throw new Error("Failed to upsert setting");
+      return { key: result.key, value: result.value };
     }),
 });

@@ -79,8 +79,9 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
         if (!params.length) return "";
         const idx = (params[0] as unknown as { dataIndex: number }).dataIndex;
         const d = data[idx];
+        if (!d) return "";
         return [
-          `<strong>${dates[idx]}</strong>`,
+          `<strong>${dates[idx] ?? ""}</strong>`,
           `<span style="color:#71717a">Load:</span> ${d.load.toFixed(1)}`,
           `<span style="color:#3b82f6">Fitness (CTL):</span> ${d.ctl.toFixed(1)}`,
           `<span style="color:#ec4899">Fatigue (ATL):</span> ${d.atl.toFixed(1)}`,

@@ -58,6 +58,7 @@ export function ReadinessScoreCard({ data, loading }: ReadinessScoreCardProps) {
   }
 
   const latest = data[data.length - 1];
+  if (!latest) return null;
   const score = latest.readinessScore;
   const color = ScoreColor(score);
 

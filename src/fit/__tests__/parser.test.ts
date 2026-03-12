@@ -151,9 +151,10 @@ describe("FIT Parser", () => {
       const result = await parseFitFile(buf);
 
       const firstRecord = result.records[0];
-      expect(firstRecord.recordedAt).toBeInstanceOf(Date);
-      expect(firstRecord.raw).toBeDefined();
-      expect(firstRecord.raw.timestamp).toBeDefined();
+      expect(firstRecord).toBeDefined();
+      expect(firstRecord?.recordedAt).toBeInstanceOf(Date);
+      expect(firstRecord?.raw).toBeDefined();
+      expect(firstRecord?.raw.timestamp).toBeDefined();
     });
 
     it("preserves all fields in raw even when not mapped to typed columns", async () => {

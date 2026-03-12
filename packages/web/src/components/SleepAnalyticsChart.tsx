@@ -55,9 +55,10 @@ export function SleepAnalyticsChart({ nightly, sleepDebt, loading }: SleepAnalyt
         if (!params || params.length === 0) return "";
         const idx = (params[0] as unknown as { dataIndex: number }).dataIndex;
         const night = nightly[idx];
+        if (!night) return "";
         const totalHr = Math.floor(night.durationMinutes / 60);
         const totalMin = night.durationMinutes % 60;
-        let html = `<div style="font-weight:600;margin-bottom:4px">${dates[idx]} (${totalHr}h ${totalMin}m)</div>`;
+        let html = `<div style="font-weight:600;margin-bottom:4px">${dates[idx] ?? ""} (${totalHr}h ${totalMin}m)</div>`;
         for (const p of params) {
           if (p.seriesName === "7d Avg") {
             if (p.value != null) {

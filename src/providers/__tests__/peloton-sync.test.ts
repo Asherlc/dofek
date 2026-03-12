@@ -252,7 +252,7 @@ describe("PelotonProvider.sync() (integration)", () => {
     const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0].message).toContain("No OAuth tokens found");
+    expect(result.errors[0]?.message).toContain("No OAuth tokens found");
     expect(result.recordsSynced).toBe(0);
 
     // Restore tokens for other tests
@@ -297,7 +297,7 @@ describe("PelotonProvider.sync() (integration)", () => {
     const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0].message).toContain("Performance graph");
+    expect(result.errors[0]?.message).toContain("Performance graph");
 
     const rows = await ctx.db
       .select()
@@ -305,6 +305,6 @@ describe("PelotonProvider.sync() (integration)", () => {
       .where(eq(activity.externalId, "workout-graph-fail"));
 
     expect(rows).toHaveLength(1);
-    expect(rows[0].activityType).toBe("cycling");
+    expect(rows[0]?.activityType).toBe("cycling");
   });
 });

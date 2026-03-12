@@ -200,7 +200,7 @@ describe("Food router", () => {
       expect(result.result.data).toBeDefined();
       const data = result.result.data as Array<{ food_name: string }>;
       expect(data.length).toBeGreaterThanOrEqual(1);
-      expect(data[0].food_name).toContain("Oatmeal");
+      expect(data[0]?.food_name).toContain("Oatmeal");
     });
 
     it("respects the limit parameter", async () => {

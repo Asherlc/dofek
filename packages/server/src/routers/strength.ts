@@ -286,8 +286,8 @@ function linearRegressionSlope(values: number[]): number {
 
   for (let i = 0; i < n; i++) {
     sumX += i;
-    sumY += values[i];
-    sumXY += i * values[i];
+    sumY += values[i] ?? 0;
+    sumXY += i * (values[i] ?? 0);
     sumX2 += i * i;
   }
 

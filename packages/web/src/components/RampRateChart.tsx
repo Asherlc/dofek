@@ -58,11 +58,14 @@ export function RampRateChart({
       textStyle: { color: "#e4e4e7", fontSize: 12 },
       formatter(params: Array<{ dataIndex: number; value: number; marker: string }>) {
         if (!params.length) return "";
-        const idx = params[0].dataIndex;
+        const first = params[0];
+        if (!first) return "";
+        const idx = first.dataIndex;
         const d = data[idx];
+        if (!d) return "";
         const color = getRampColor(d.rampRate);
         return [
-          `<strong>${weeks[idx]}</strong>`,
+          `<strong>${weeks[idx] ?? ""}</strong>`,
           `Ramp Rate: <span style="color:${color}">${d.rampRate.toFixed(2)}</span>`,
         ].join("<br/>");
       },

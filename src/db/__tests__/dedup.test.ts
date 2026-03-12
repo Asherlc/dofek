@@ -70,6 +70,7 @@ describe("Deduplication materialized views", () => {
     // Should have 2 canonical activities: merged run + standalone yoga
     expect(rows.length).toBe(2);
 
+    // biome-ignore lint/suspicious/noExplicitAny: raw SQL view result — untyped db.execute
     const run = rows.find((r: any) => r.activity_type === "running") as any;
     expect(run).toBeDefined();
     // Wahoo is highest priority (10), should be the primary
@@ -85,6 +86,7 @@ describe("Deduplication materialized views", () => {
     expect(raw.avgPower).toBe(220);
     expect(raw.strain).toBe(12.5); // from WHOOP, no conflict with wahoo
 
+    // biome-ignore lint/suspicious/noExplicitAny: raw SQL view result — untyped db.execute
     const yoga = rows.find((r: any) => r.activity_type === "yoga") as any;
     expect(yoga).toBeDefined();
     expect(yoga.provider_id).toBe("whoop");
@@ -156,12 +158,17 @@ describe("Deduplication materialized views", () => {
     );
 
     // Should merge into 1 canonical sleep session
+    // biome-ignore lint/suspicious/noExplicitAny: raw SQL view result — untyped db.execute
     const mainSleep = rows.filter((r: any) => !r.is_nap);
     expect(mainSleep.length).toBe(1);
     // WHOOP should win (priority 30 < apple_health 90)
+    // biome-ignore lint/suspicious/noExplicitAny: raw SQL view result — untyped db.execute
     expect((mainSleep[0] as any).provider_id).toBe("whoop");
+    // biome-ignore lint/suspicious/noExplicitAny: raw SQL view result — untyped db.execute
     expect((mainSleep[0] as any).deep_minutes).toBe(120);
+    // biome-ignore lint/suspicious/noExplicitAny: raw SQL view result — untyped db.execute
     expect((mainSleep[0] as any).source_providers).toContain("whoop");
+    // biome-ignore lint/suspicious/noExplicitAny: raw SQL view result — untyped db.execute
     expect((mainSleep[0] as any).source_providers).toContain("apple_health");
   });
 
@@ -192,6 +199,7 @@ describe("Deduplication materialized views", () => {
     );
 
     expect(rows.length).toBe(1);
+    // biome-ignore lint/suspicious/noExplicitAny: raw SQL view result — untyped db.execute
     const m = rows[0] as any;
     // Withings wins (priority 15)
     expect(m.provider_id).toBe("withings");
@@ -232,6 +240,7 @@ describe("Deduplication materialized views", () => {
     );
 
     expect(rows.length).toBe(1);
+    // biome-ignore lint/suspicious/noExplicitAny: raw SQL view result — untyped db.execute
     const day = rows[0] as any;
     // WHOOP wins for restingHr/hrv/spo2 (priority 30 < 90)
     expect(day.resting_hr).toBe(52);
@@ -249,7 +258,7 @@ describe("Deduplication materialized views", () => {
 
   it("activity_summary aggregates per-activity stats from metric_stream", async () => {
     // Create an activity with metric streams
-    const [wahooActivity] = await ctx.db
+    const wahooActivityRows = await ctx.db
       .insert(activity)
       .values({
         providerId: "wahoo",
@@ -259,6 +268,7 @@ describe("Deduplication materialized views", () => {
         endedAt: new Date("2026-03-05T11:00:00Z"),
       })
       .returning({ id: activity.id });
+    const wahooActivity = wahooActivityRows[0]!;
 
     // Wahoo stream — has power data
     await ctx.db.insert(metricStream).values([
@@ -285,6 +295,7 @@ describe("Deduplication materialized views", () => {
     );
 
     expect(rows.length).toBe(1);
+    // biome-ignore lint/suspicious/noExplicitAny: raw SQL view result — untyped db.execute
     const summary = rows[0] as any;
     expect(summary.activity_type).toBe("cycling");
     expect(Number(summary.avg_hr)).toBeCloseTo(142.5, 0);

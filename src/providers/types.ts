@@ -1,6 +1,19 @@
-import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import type { Database } from "../db/index.ts";
+
+/**
+ * OAuth 1.0 3-legged flow (e.g. FatSecret).
+ */
+export interface OAuth1Flow {
+  getRequestToken: (
+    callbackUrl: string,
+  ) => Promise<{ oauthToken: string; oauthTokenSecret: string; authorizeUrl: string }>;
+  exchangeForAccessToken: (
+    requestToken: string,
+    requestTokenSecret: string,
+    oauthVerifier: string,
+  ) => Promise<{ token: string; tokenSecret: string }>;
+}
 
 /**
  * Auth setup returned by providers that use OAuth.
@@ -13,6 +26,8 @@ export interface ProviderAuthSetup {
   apiBaseUrl?: string;
   /** Automated login that drives the OAuth flow with credentials (no browser needed) */
   automatedLogin?: (email: string, password: string) => Promise<TokenSet>;
+  /** OAuth 1.0 flow for providers that use 3-legged OAuth (e.g. FatSecret) */
+  oauth1Flow?: OAuth1Flow;
 }
 
 /**
@@ -61,16 +76,3 @@ export interface Provider {
    */
   sync(db: Database, since: Date): Promise<SyncResult>;
 }
-
-/**
- * Configuration for a provider, loaded from environment variables.
- */
-export const providerConfigSchema = z.object({
-  enabled: z.boolean().default(false),
-  apiKey: z.string().optional(),
-  clientId: z.string().optional(),
-  clientSecret: z.string().optional(),
-  athleteId: z.string().optional(),
-});
-
-export type ProviderConfig = z.infer<typeof providerConfigSchema>;

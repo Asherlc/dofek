@@ -44,6 +44,7 @@ export function ElevationGainChart({ data, loading }: ElevationGainChartProps) {
           dataIndex: number;
         };
         const row = data[param.dataIndex];
+        if (!row) return "";
         return [
           `<strong>Week of ${row.week}</strong>`,
           `Elevation Gain: ${row.elevationGainMeters.toFixed(0)} m`,

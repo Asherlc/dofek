@@ -49,7 +49,7 @@ export const efficiencyRouter = router({
             ORDER BY a.started_at`,
       );
 
-      const maxHr = rows.length > 0 ? Number(rows[0].max_hr) : null;
+      const maxHr = rows.length > 0 ? Number(rows[0]?.max_hr) : null;
 
       return {
         maxHr,
@@ -177,7 +177,7 @@ export const efficiencyRouter = router({
             ORDER BY week`,
       );
 
-      const maxHr = rows.length > 0 ? Number(rows[0].max_hr) : null;
+      const maxHr = rows.length > 0 ? Number(rows[0]?.max_hr) : null;
 
       const weeks = rows.map((row) => {
         const z1 = Number(row.z1_seconds);

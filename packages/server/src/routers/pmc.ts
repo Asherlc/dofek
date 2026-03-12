@@ -41,7 +41,7 @@ function linearRegression(
   const count = xs.length;
   const sumX = xs.reduce((acc, val) => acc + val, 0);
   const sumY = ys.reduce((acc, val) => acc + val, 0);
-  const sumXY = xs.reduce((acc, val, idx) => acc + val * ys[idx], 0);
+  const sumXY = xs.reduce((acc, val, idx) => acc + val * (ys[idx] ?? 0), 0);
   const sumX2 = xs.reduce((acc, val) => acc + val * val, 0);
 
   const denom = count * sumX2 - sumX * sumX;
@@ -53,7 +53,7 @@ function linearRegression(
   const yMean = sumY / count;
   const ssTotal = ys.reduce((acc, val) => acc + (val - yMean) ** 2, 0);
   const ssResidual = ys.reduce(
-    (acc, val, idx) => acc + (val - (slope * xs[idx] + intercept)) ** 2,
+    (acc, val, idx) => acc + (val - (slope * (xs[idx] ?? 0) + intercept)) ** 2,
     0,
   );
   const r2 = ssTotal > 0 ? 1 - ssResidual / ssTotal : 0;
@@ -190,7 +190,7 @@ export const pmcRouter = router({
       }
       const allRows = activityRows as unknown as CombinedActivityRow[];
 
-      const globalMaxHr = allRows.length > 0 ? Number(allRows[0].global_max_hr) : null;
+      const globalMaxHr = allRows.length > 0 ? Number(allRows[0]?.global_max_hr) : null;
       if (!globalMaxHr) {
         return {
           data: [],
@@ -198,7 +198,7 @@ export const pmcRouter = router({
         };
       }
 
-      const restingHr = allRows.length > 0 ? Number(allRows[0].resting_hr) : 60;
+      const restingHr = allRows.length > 0 ? Number(allRows[0]?.resting_hr) : 60;
       const activities = allRows as unknown as ActivityRow[];
 
       // Estimate FTP from the data
@@ -267,7 +267,7 @@ export const pmcRouter = router({
       let dayIndex = 0;
 
       while (current <= endDate) {
-        const dateStr = current.toISOString().split("T")[0];
+        const dateStr = current.toISOString().split("T")[0] ?? "";
         const load = dailyLoad.get(dateStr) ?? 0;
 
         // EWMA update

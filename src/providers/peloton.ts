@@ -280,12 +280,17 @@ export function parseAuth0FormHtml(html: string): {
     const tag = match[0];
     const nameMatch = tag.match(/name="([^"]+)"/);
     const valueMatch = tag.match(/value="([^"]*)"/);
-    if (nameMatch) {
-      fields[nameMatch[1]] = valueMatch?.[1] ?? "";
+    const nameVal = nameMatch?.[1];
+    if (nameVal) {
+      fields[nameVal] = valueMatch?.[1] ?? "";
     }
   }
 
-  return { action: actionMatch[1], fields };
+  const action = actionMatch[1];
+  if (!action) {
+    throw new Error("Could not parse form action from Auth0 response");
+  }
+  return { action, fields };
 }
 
 function getSetCookieHeaders(headers: Headers): string[] {
@@ -389,7 +394,11 @@ export async function pelotonAutomatedLogin(
     throw new Error("Could not find injectedConfig in Auth0 login page");
   }
 
-  const injectedConfig = JSON.parse(Buffer.from(configMatch[1], "base64").toString("utf-8"));
+  const configBase64 = configMatch[1];
+  if (!configBase64) {
+    throw new Error("Could not extract injectedConfig value from Auth0 login page");
+  }
+  const injectedConfig = JSON.parse(Buffer.from(configBase64, "base64").toString("utf-8"));
   const extraParams = injectedConfig.extraParams as Record<string, string>;
   if (!extraParams.state || !extraParams._csrf) {
     throw new Error("Could not extract state/_csrf from Auth0 injectedConfig");
@@ -591,7 +600,7 @@ export class PelotonProvider implements Provider {
               })
               .returning({ id: activity.id });
 
-            activityId = row.id;
+            activityId = row?.id ?? null;
             workoutCount++;
           } catch (err) {
             errors.push({

@@ -110,7 +110,8 @@ function downsample<T>(arr: T[], max: number): T[] {
   const step = arr.length / max;
   const result: T[] = [];
   for (let i = 0; i < max; i++) {
-    result.push(arr[Math.floor(i * step)]);
+    const item = arr[Math.floor(i * step)];
+    if (item !== undefined) result.push(item);
   }
   return result;
 }
@@ -289,11 +290,14 @@ function joinByDate(
     const weights = window.map((d) => d.weight_kg).filter((v): v is number => v != null);
     const fats = window.map((d) => d.body_fat_pct).filter((v): v is number => v != null);
 
+    const day = joined[i];
+    if (!day) continue;
+
     if (weights.length >= 5) {
-      joined[i].weight_7d_avg = weights.reduce((a, b) => a + b, 0) / weights.length;
+      day.weight_7d_avg = weights.reduce((a, b) => a + b, 0) / weights.length;
     }
     if (fats.length >= 5) {
-      joined[i].body_fat_7d_avg = fats.reduce((a, b) => a + b, 0) / fats.length;
+      day.body_fat_7d_avg = fats.reduce((a, b) => a + b, 0) / fats.length;
     }
 
     // Delta: compare this 30-day avg to previous 30-day avg
@@ -305,12 +309,12 @@ function joinByDate(
       if (weights.length >= 5 && prevWeights.length >= 5) {
         const curAvg = weights.reduce((a, b) => a + b, 0) / weights.length;
         const prevAvg = prevWeights.reduce((a, b) => a + b, 0) / prevWeights.length;
-        joined[i].weight_7d_delta = curAvg - prevAvg;
+        day.weight_7d_delta = curAvg - prevAvg;
       }
       if (fats.length >= 5 && prevFats.length >= 5) {
         const curAvg = fats.reduce((a, b) => a + b, 0) / fats.length;
         const prevAvg = prevFats.reduce((a, b) => a + b, 0) / prevFats.length;
-        joined[i].body_fat_7d_delta = curAvg - prevAvg;
+        day.body_fat_7d_delta = curAvg - prevAvg;
       }
     }
   }
@@ -934,12 +938,15 @@ function exhaustiveSweep(joined: JoinedDay[], existingIds: Set<string>): Insight
         const dates: string[] = [];
 
         for (let i = 0; i < joined.length - lag; i++) {
-          const x = mx.extract(joined[i], joined, i);
-          const y = my.extract(joined[i + lag], joined, i + lag);
+          const dayX = joined[i];
+          const dayY = joined[i + lag];
+          if (!dayX || !dayY) continue;
+          const x = mx.extract(dayX, joined, i);
+          const y = my.extract(dayY, joined, i + lag);
           if (x != null && y != null) {
             xs.push(x);
             ys.push(y);
-            dates.push(joined[i].date);
+            dates.push(dayX.date);
           }
         }
 
@@ -948,11 +955,15 @@ function exhaustiveSweep(joined: JoinedDay[], existingIds: Set<string>): Insight
         const corr = spearmanCorrelation(xs, ys);
         if (Math.abs(corr.rho) < MIN_RHO) continue;
 
-        const rawPoints = xs.map((xVal, j) => ({
-          x: xVal,
-          y: ys[j],
-          date: dates[j],
-        }));
+        const rawPoints: { x: number; y: number; date: string }[] = [];
+        for (let j = 0; j < xs.length; j++) {
+          const yVal = ys[j];
+          const dateVal = dates[j];
+          if (yVal !== undefined && dateVal !== undefined) {
+            const xVal = xs[j];
+            if (xVal !== undefined) rawPoints.push({ x: xVal, y: yVal, date: dateVal });
+          }
+        }
 
         candidates.push({
           id,
@@ -975,9 +986,8 @@ function exhaustiveSweep(joined: JoinedDay[], existingIds: Set<string>): Insight
 
   const discoveries: Insight[] = [];
   for (let i = 0; i < candidates.length; i++) {
-    if (!significant[i]) continue;
-
     const c = candidates[i];
+    if (!significant[i] || !c) continue;
     const absRho = Math.abs(c.rho);
     const direction = c.rho > 0 ? "positively" : "negatively";
     const strength = absRho >= 0.6 ? "strongly" : absRho >= 0.4 ? "moderately" : "";
@@ -1080,28 +1090,28 @@ function aggregateMonthly(joined: JoinedDay[]): MonthlyAgg[] {
     // Use first/last 5 measurements for stable start/end
     const weightStart =
       weights.length >= 5
-        ? weights.slice(0, 5).reduce((s, d) => s + d.weight_kg!, 0) / 5
+        ? weights.slice(0, 5).reduce((s, d) => s + (d.weight_kg ?? 0), 0) / 5
         : weights.length >= 2
-          ? weights[0].weight_kg
+          ? (weights[0]?.weight_kg ?? null)
           : null;
     const weightEnd =
       weights.length >= 5
-        ? weights.slice(-5).reduce((s, d) => s + d.weight_kg!, 0) / 5
+        ? weights.slice(-5).reduce((s, d) => s + (d.weight_kg ?? 0), 0) / 5
         : weights.length >= 2
-          ? weights[weights.length - 1].weight_kg
+          ? (weights[weights.length - 1]?.weight_kg ?? null)
           : null;
 
     const bfStart =
       bfs.length >= 5
-        ? bfs.slice(0, 5).reduce((s, d) => s + d.body_fat_pct!, 0) / 5
+        ? bfs.slice(0, 5).reduce((s, d) => s + (d.body_fat_pct ?? 0), 0) / 5
         : bfs.length >= 2
-          ? bfs[0].body_fat_pct
+          ? (bfs[0]?.body_fat_pct ?? null)
           : null;
     const bfEnd =
       bfs.length >= 5
-        ? bfs.slice(-5).reduce((s, d) => s + d.body_fat_pct!, 0) / 5
+        ? bfs.slice(-5).reduce((s, d) => s + (d.body_fat_pct ?? 0), 0) / 5
         : bfs.length >= 2
-          ? bfs[bfs.length - 1].body_fat_pct
+          ? (bfs[bfs.length - 1]?.body_fat_pct ?? null)
           : null;
 
     months.push({
@@ -1312,14 +1322,16 @@ function computeMonthlyInsights(joined: JoinedDay[]): Insight[] {
   const exerciseMonths = months.filter((m) => m.weightDelta != null);
   if (exerciseMonths.length >= 10) {
     const medianDays = [...exerciseMonths].sort((a, b) => a.exerciseDays - b.exerciseDays);
-    const medExDays = medianDays[Math.floor(medianDays.length / 2)].exerciseDays;
+    const medExDays = medianDays[Math.floor(medianDays.length / 2)]?.exerciseDays ?? 0;
 
     const highEx = exerciseMonths.filter((m) => m.exerciseDays > medExDays);
     const lowEx = exerciseMonths.filter((m) => m.exerciseDays <= medExDays);
 
     if (highEx.length >= 5 && lowEx.length >= 5) {
-      const highWeightDeltas = highEx.map((m) => m.weightDelta!).filter((v) => v != null);
-      const lowWeightDeltas = lowEx.map((m) => m.weightDelta!).filter((v) => v != null);
+      const highWeightDeltas = highEx
+        .map((m) => m.weightDelta)
+        .filter((v): v is number => v != null);
+      const lowWeightDeltas = lowEx.map((m) => m.weightDelta).filter((v): v is number => v != null);
 
       if (highWeightDeltas.length >= 5 && lowWeightDeltas.length >= 5) {
         const d = cohensD(highWeightDeltas, lowWeightDeltas);
@@ -1418,11 +1430,17 @@ function findCorrelationConfounders(
     const xFiltered: number[] = [];
     const yFiltered: number[] = [];
     for (let j = 0; j < indices.length; j++) {
-      const z = cv.extract(joined[indices[j]]);
-      if (z != null) {
+      const idx = indices[j];
+      if (idx === undefined) continue;
+      const day = joined[idx];
+      if (!day) continue;
+      const z = cv.extract(day);
+      const xv = xValues[j];
+      const yv = yValues[j];
+      if (z != null && xv !== undefined && yv !== undefined) {
         zValues.push(z);
-        xFiltered.push(xValues[j]);
-        yFiltered.push(yValues[j]);
+        xFiltered.push(xv);
+        yFiltered.push(yv);
       }
     }
     if (zValues.length < 10) continue;
@@ -1531,7 +1549,9 @@ function findConfounders(test: ConditionalTest, joined: JoinedDay[]): string[] {
   const trueIndices: number[] = [];
   const falseIndices: number[] = [];
   for (let i = 0; i < joined.length; i++) {
-    const split = test.splitFn(joined[i], joined, i);
+    const day = joined[i];
+    if (!day) continue;
+    const split = test.splitFn(day, joined, i);
     if (split === true) trueIndices.push(i);
     else if (split === false) falseIndices.push(i);
   }
@@ -1548,10 +1568,16 @@ function findConfounders(test: ConditionalTest, joined: JoinedDay[]): string[] {
     if (isRelatedToAction(test.action, cv.label)) continue;
 
     const trueVals = trueIndices
-      .map((i) => cv.extract(joined[i]))
+      .map((i) => {
+        const d = joined[i];
+        return d ? cv.extract(d) : undefined;
+      })
       .filter((v): v is number => v != null);
     const falseVals = falseIndices
-      .map((i) => cv.extract(joined[i]))
+      .map((i) => {
+        const d = joined[i];
+        return d ? cv.extract(d) : undefined;
+      })
       .filter((v): v is number => v != null);
 
     if (trueVals.length < 5 || falseVals.length < 5) continue;
@@ -1596,7 +1622,7 @@ function findConfounders(test: ConditionalTest, joined: JoinedDay[]): string[] {
 
   const presentLabels = new Set(confounders.map((c) => c.split(" also ")[0]));
   const filtered = confounders.filter((c) => {
-    const label = c.split(" also ")[0];
+    const label = c.split(" also ")[0] ?? "";
     for (const fam of families) {
       if (fam.children.includes(label) && presentLabels.has(fam.parent)) return false;
     }
@@ -1701,10 +1727,12 @@ export function computeInsights(
     const falseValues: number[] = [];
 
     for (let i = 0; i < joined.length; i++) {
-      const split = test.splitFn(joined[i], joined, i);
+      const day = joined[i];
+      if (!day) continue;
+      const split = test.splitFn(day, joined, i);
       if (split == null) continue;
 
-      const value = test.valueFn(joined[i], joined, i);
+      const value = test.valueFn(day, joined, i);
       if (value == null) continue;
 
       if (split) {
@@ -1762,8 +1790,10 @@ export function computeInsights(
     const indices: number[] = [];
 
     for (let i = 0; i < joined.length; i++) {
-      const x = pair.xFn(joined[i], joined, i);
-      const y = pair.yFn(joined[i], joined, i);
+      const day = joined[i];
+      if (!day) continue;
+      const x = pair.xFn(day, joined, i);
+      const y = pair.yFn(day, joined, i);
       if (x != null && y != null) {
         xs.push(x);
         ys.push(y);
@@ -1781,11 +1811,16 @@ export function computeInsights(
       Math.abs(corr.rho) >= 0.6 ? "strongly" : Math.abs(corr.rho) >= 0.4 ? "moderately" : "weakly";
     const confounders = findCorrelationConfounders(pair.xName, pair.yName, xs, ys, joined, indices);
 
-    const allPoints = indices.map((idx, j) => ({
-      x: xs[j],
-      y: ys[j],
-      date: joined[idx].date,
-    }));
+    const allPoints: Array<{ x: number; y: number; date: string }> = [];
+    for (let j = 0; j < indices.length; j++) {
+      const xVal = xs[j];
+      const yVal = ys[j];
+      const idx = indices[j];
+      if (xVal == null || yVal == null || idx == null) continue;
+      const joinedDay = joined[idx];
+      if (!joinedDay) continue;
+      allPoints.push({ x: xVal, y: yVal, date: joinedDay.date });
+    }
 
     correlationInsights.push({
       id: pair.id,
@@ -1811,8 +1846,9 @@ export function computeInsights(
     const pValues = correlationInsights.map((c) => c.rawPValue);
     const significant = benjaminiHochberg(pValues, 0.05);
     for (let i = 0; i < correlationInsights.length; i++) {
-      if (significant[i]) {
-        const { rawPValue: _, ...insight } = correlationInsights[i];
+      const ci = correlationInsights[i];
+      if (significant[i] && ci) {
+        const { rawPValue: _, ...insight } = ci;
         insights.push(insight);
       }
     }

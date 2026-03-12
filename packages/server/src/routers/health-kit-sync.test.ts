@@ -64,7 +64,7 @@ describe("HealthKit sync router", () => {
               AND external_id = 'hk:body-mass-uuid-1'`,
       );
       expect(rows.length).toBe(1);
-      expect(rows[0].weight_kg).toBeCloseTo(82.5, 1);
+      expect(rows[0]?.weight_kg).toBeCloseTo(82.5, 1);
     });
 
     it("routes body fat percentage and multiplies by 100", async () => {
@@ -91,7 +91,7 @@ describe("HealthKit sync router", () => {
               AND external_id = 'hk:body-fat-uuid-1'`,
       );
       expect(rows.length).toBe(1);
-      expect(rows[0].body_fat_pct).toBeCloseTo(18, 1);
+      expect(rows[0]?.body_fat_pct).toBeCloseTo(18, 1);
     });
   });
 
@@ -153,11 +153,11 @@ describe("HealthKit sync router", () => {
       );
       expect(rows.length).toBe(1);
       // Steps should be summed: 3000 + 5000
-      expect(rows[0].steps).toBe(8000);
+      expect(rows[0]?.steps).toBe(8000);
       // Resting HR is point-in-time (latest value)
-      expect(rows[0].resting_hr).toBe(55);
+      expect(rows[0]?.resting_hr).toBe(55);
       // Distance in km: 2500m / 1000
-      expect(rows[0].distance_km).toBeCloseTo(2.5, 1);
+      expect(rows[0]?.distance_km).toBeCloseTo(2.5, 1);
     });
 
     it("handles VO2Max as a point-in-time metric", async () => {
@@ -184,7 +184,7 @@ describe("HealthKit sync router", () => {
               AND date = '2025-06-03'`,
       );
       expect(rows.length).toBe(1);
-      expect(rows[0].vo2max).toBeCloseTo(48.5, 1);
+      expect(rows[0]?.vo2max).toBeCloseTo(48.5, 1);
     });
   });
 
@@ -225,11 +225,11 @@ describe("HealthKit sync router", () => {
       expect(rows.length).toBeGreaterThanOrEqual(2);
       const hrRow = rows.find((r: Record<string, unknown>) => r.heart_rate !== null);
       expect(hrRow).toBeDefined();
-      expect(hrRow!.heart_rate).toBe(72);
+      expect(hrRow?.heart_rate).toBe(72);
 
       const spo2Row = rows.find((r: Record<string, unknown>) => r.spo2 !== null);
       expect(spo2Row).toBeDefined();
-      expect(spo2Row!.spo2).toBeCloseTo(0.98, 2);
+      expect(spo2Row?.spo2).toBeCloseTo(0.98, 2);
     });
   });
 
@@ -258,8 +258,8 @@ describe("HealthKit sync router", () => {
               AND external_id = 'hk:unknown-uuid-1'`,
       );
       expect(rows.length).toBe(1);
-      expect(rows[0].type).toBe("HKQuantityTypeIdentifierSomeUnknownType");
-      expect(rows[0].value).toBeCloseTo(42, 0);
+      expect(rows[0]?.type).toBe("HKQuantityTypeIdentifierSomeUnknownType");
+      expect(rows[0]?.value).toBeCloseTo(42, 0);
     });
   });
 
@@ -289,7 +289,7 @@ describe("HealthKit sync router", () => {
               AND external_id = 'hk:workout:workout-uuid-1'`,
       );
       expect(rows.length).toBe(1);
-      expect(rows[0].activity_type).toBe("running");
+      expect(rows[0]?.activity_type).toBe("running");
     });
 
     it("maps unknown workout types to 'other'", async () => {
@@ -317,7 +317,7 @@ describe("HealthKit sync router", () => {
               AND external_id = 'hk:workout:workout-uuid-unknown'`,
       );
       expect(rows.length).toBe(1);
-      expect(rows[0].activity_type).toBe("other");
+      expect(rows[0]?.activity_type).toBe("other");
     });
   });
 
@@ -371,10 +371,10 @@ describe("HealthKit sync router", () => {
               AND external_id = 'hk:sleep:sleep-inbed-1'`,
       );
       expect(rows.length).toBe(1);
-      expect(rows[0].deep_minutes).toBe(60);
-      expect(rows[0].rem_minutes).toBe(60);
-      expect(rows[0].light_minutes).toBe(240);
-      expect(rows[0].awake_minutes).toBe(15);
+      expect(rows[0]?.deep_minutes).toBe(60);
+      expect(rows[0]?.rem_minutes).toBe(60);
+      expect(rows[0]?.light_minutes).toBe(240);
+      expect(rows[0]?.awake_minutes).toBe(15);
     });
   });
 

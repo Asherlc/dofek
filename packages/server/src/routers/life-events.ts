@@ -91,7 +91,9 @@ export const lifeEventsRouter = router({
       const events = await ctx.db.execute(
         sql`SELECT * FROM fitness.life_events WHERE id = ${input.id}`,
       );
-      const event = events[0] as any;
+      const event = events[0] as
+        | { started_at: string; ended_at: string | null; ongoing: boolean; [key: string]: unknown }
+        | undefined;
       if (!event) return null;
 
       const startDate = event.started_at;

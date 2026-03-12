@@ -33,9 +33,9 @@ describe("Token storage (integration)", () => {
 
     const loaded = await loadTokens(ctx.db, "wahoo");
     expect(loaded).not.toBeNull();
-    expect(loaded!.accessToken).toBe("access-123");
-    expect(loaded!.refreshToken).toBe("refresh-456");
-    expect(loaded!.scopes).toBe("user_read workouts_read");
+    expect(loaded?.accessToken).toBe("access-123");
+    expect(loaded?.refreshToken).toBe("refresh-456");
+    expect(loaded?.scopes).toBe("user_read workouts_read");
   });
 
   it("saveTokens upserts (overwrites existing tokens)", async () => {
@@ -56,8 +56,8 @@ describe("Token storage (integration)", () => {
     });
 
     const loaded = await loadTokens(ctx.db, "wahoo");
-    expect(loaded!.accessToken).toBe("new-access");
-    expect(loaded!.refreshToken).toBe("new-refresh");
+    expect(loaded?.accessToken).toBe("new-access");
+    expect(loaded?.refreshToken).toBe("new-refresh");
   });
 
   it("loadTokens returns null for unknown provider", async () => {

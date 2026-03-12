@@ -110,6 +110,7 @@ function WeeklyVolumeChart({ data }: { data: WeeklyVolumeRow[] }) {
   const lookup = new Map<string, Map<string, number>>();
   for (const row of data) {
     if (!lookup.has(row.week)) lookup.set(row.week, new Map());
+    // biome-ignore lint/style/noNonNullAssertion: guaranteed by has() + set() above
     lookup.get(row.week)!.set(row.activity_type, Number(row.hours) || 0);
   }
 
@@ -218,7 +219,7 @@ function HrZoneChart({ weeks, maxHr }: { weeks: HrZoneWeek[]; maxHr: number }) {
           .filter((p) => p.value > 0)
           .map((p) => {
             const zoneKey = zoneKeys[params.indexOf(p)];
-            const secs = raw ? (raw[zoneKey] ?? 0) : 0;
+            const secs = raw && zoneKey ? (raw[zoneKey] ?? 0) : 0;
             const mins = Math.round(secs / 60);
             return `<span style="color:${p.color}">\u25CF</span> ${p.seriesName}: ${p.value.toFixed(1)}% (${mins}m)`;
           });

@@ -63,7 +63,8 @@ async function readConfig(): Promise<Supplement[]> {
     const parsed = JSON.parse(raw);
     cachedSupplements = z.array(supplementSchema).parse(parsed.supplements ?? parsed);
     return cachedSupplements;
-  } catch {
+  } catch (err) {
+    console.error(`[supplements] Failed to read config: ${err}`);
     return [];
   }
 }
