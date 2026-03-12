@@ -34,4 +34,17 @@ export const settingsRouter = router({
       if (!result) throw new Error("Failed to upsert setting");
       return { key: result.key, value: result.value };
     }),
+
+  slackStatus: cachedProtectedQuery(CacheTTL.MEDIUM).query(async ({ ctx }) => {
+    const rows = await ctx.db.execute<{ provider_account_id: string }>(
+      sql`SELECT provider_account_id FROM fitness.auth_account
+          WHERE user_id = ${ctx.userId} AND auth_provider = 'slack'
+          LIMIT 1`,
+    );
+    const configured = !!(process.env.SLACK_CLIENT_ID && process.env.SLACK_SIGNING_SECRET);
+    return {
+      configured,
+      connected: rows.length > 0,
+    };
+  }),
 });

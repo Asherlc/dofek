@@ -45,6 +45,19 @@ export const aiNutritionSchema = z.object({
 
 export type AiNutritionResult = z.infer<typeof aiNutritionSchema>;
 
+const mealValues = ["breakfast", "lunch", "dinner", "snack", "other"] as const;
+
+/** Schema for multi-item nutrition analysis with meal detection */
+const aiNutritionItemWithMealSchema = aiNutritionSchema.extend({
+  meal: z.enum(mealValues).describe("The meal this food belongs to, inferred from context"),
+});
+
+export type NutritionItemWithMeal = z.infer<typeof aiNutritionItemWithMealSchema>;
+
+const aiNutritionMultiSchema = z.object({
+  items: z.array(aiNutritionItemWithMealSchema).min(1),
+});
+
 const SYSTEM_PROMPT = `You are a nutrition estimation expert. Given a natural language description of food, estimate the nutritional content as accurately as possible.
 
 Guidelines:
@@ -54,6 +67,17 @@ Guidelines:
 - For mixed dishes, estimate the combined nutritional content as a single entry.
 - Be conservative with calorie estimates — it's better to slightly overestimate than underestimate.
 - Use your knowledge of USDA food composition data and common nutrition databases.`;
+
+const MULTI_ITEM_SYSTEM_PROMPT = `You are a nutrition estimation expert. Given a natural language description of what someone ate, break it into individual food items and estimate the nutritional content of each.
+
+Guidelines:
+- Split distinct food items into separate entries (e.g. "a burrito and a coke" = 2 items).
+- Do NOT split components of a single dish (e.g. "chicken stir fry with rice" = 1 item).
+- Estimate for typical serving sizes unless specified otherwise.
+- Infer the meal type (breakfast, lunch, dinner, snack) from context clues like time of day or explicit mentions. Default to "other" if unclear.
+- Round calories to the nearest integer and macros to one decimal place.
+- Be conservative with calorie estimates — slightly overestimate rather than underestimate.
+- Use your knowledge of USDA food composition data.`;
 
 interface ProviderConfig {
   name: string;
@@ -136,6 +160,57 @@ export async function analyzeNutrition(description: string): Promise<AnalyzeResu
 
       return {
         nutrition: result.output,
+        provider: provider.name,
+      };
+    } catch (error) {
+      lastError = error;
+      if (isRateLimitError(error)) {
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  throw new Error(
+    `All AI providers rate-limited. Last error: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
+  );
+}
+
+export interface AnalyzeMultiResult {
+  items: NutritionItemWithMeal[];
+  provider: string;
+}
+
+/**
+ * Analyze a food description and return multiple individual food items with meal detection.
+ * Cascades through configured providers on rate limit errors.
+ */
+export async function analyzeNutritionItems(description: string): Promise<AnalyzeMultiResult> {
+  const providers = getConfiguredProviders();
+
+  if (providers.length === 0) {
+    throw new Error(
+      "No AI providers configured. Set at least one of: GEMINI_API_KEY, MISTRAL_API_KEY",
+    );
+  }
+
+  let lastError: unknown;
+
+  for (const provider of providers) {
+    try {
+      const result = await generateText({
+        model: provider.createModel(),
+        output: Output.object({ schema: aiNutritionMultiSchema }),
+        system: MULTI_ITEM_SYSTEM_PROMPT,
+        prompt: description,
+      });
+
+      if (!result.output) {
+        throw new Error(`AI provider ${provider.name} returned no structured output`);
+      }
+
+      return {
+        items: result.output.items,
         provider: provider.name,
       };
     } catch (error) {

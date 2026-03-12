@@ -32,6 +32,7 @@ import { createSession, deleteSession, validateSession } from "./auth/session.ts
 import { httpRequestDuration, registry } from "./lib/metrics.ts";
 import { logger } from "./logger.ts";
 import { appRouter } from "./router.ts";
+import { startSlackBot } from "./slack/bot.ts";
 import type { Context } from "./trpc.ts";
 
 /** Max upload size: 2 GB */
@@ -511,6 +512,31 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
     res.json(rows[0]);
   });
 
+  // ── Slack OAuth (Add to Slack) ──
+  const SLACK_SCOPES = [
+    "chat:write",
+    "im:history",
+    "im:read",
+    "im:write",
+    "users:read",
+    "users:read.email",
+  ];
+
+  app.get("/auth/provider/slack", (_req, res) => {
+    const clientId = process.env.SLACK_CLIENT_ID;
+    if (!clientId) {
+      res.status(400).send("SLACK_CLIENT_ID is not configured");
+      return;
+    }
+    const redirectUri = `${process.env.OAUTH_REDIRECT_URI ?? "https://dofek.asherlc.com/callback"}`;
+    const url = new URL("https://slack.com/oauth/v2/authorize");
+    url.searchParams.set("client_id", clientId);
+    url.searchParams.set("scope", SLACK_SCOPES.join(","));
+    url.searchParams.set("redirect_uri", redirectUri);
+    url.searchParams.set("state", "slack");
+    res.redirect(url.toString());
+  });
+
   // ── Data-provider OAuth (Wahoo, Withings, etc.) ──
   app.get("/auth/provider/:provider", async (req, res) => {
     try {
@@ -660,6 +686,77 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
         return;
       }
 
+      // ── Slack OAuth callback (Add to Slack) ──
+      if (state === "slack") {
+        const clientId = process.env.SLACK_CLIENT_ID;
+        const clientSecret = process.env.SLACK_CLIENT_SECRET;
+        if (!clientId || !clientSecret) {
+          res.status(400).send("SLACK_CLIENT_ID and SLACK_CLIENT_SECRET must be set");
+          return;
+        }
+
+        const redirectUri = `${process.env.OAUTH_REDIRECT_URI ?? "https://dofek.asherlc.com/callback"}`;
+        logger.info("[auth] Exchanging Slack OAuth code for bot token...");
+
+        // Exchange code for access token via Slack's oauth.v2.access
+        const tokenResponse = await fetch("https://slack.com/api/oauth.v2.access", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            client_id: clientId,
+            client_secret: clientSecret,
+            code,
+            redirect_uri: redirectUri,
+          }),
+        });
+        const tokenData = (await tokenResponse.json()) as {
+          ok: boolean;
+          error?: string;
+          team?: { id: string; name: string };
+          access_token?: string;
+          bot_user_id?: string;
+          app_id?: string;
+          authed_user?: { id: string };
+        };
+
+        if (!tokenData.ok || !tokenData.access_token || !tokenData.team?.id) {
+          res.status(400).send(`Slack OAuth failed: ${tokenData.error ?? "unknown error"}`);
+          return;
+        }
+
+        // Store the installation
+        await db.execute(
+          sql`INSERT INTO fitness.slack_installation (
+                team_id, team_name, bot_token, bot_user_id, app_id,
+                installer_slack_user_id, raw_installation
+              ) VALUES (
+                ${tokenData.team.id},
+                ${tokenData.team.name ?? null},
+                ${tokenData.access_token},
+                ${tokenData.bot_user_id ?? null},
+                ${tokenData.app_id ?? null},
+                ${tokenData.authed_user?.id ?? null},
+                ${JSON.stringify(tokenData)}::jsonb
+              )
+              ON CONFLICT (team_id) DO UPDATE SET
+                team_name = EXCLUDED.team_name,
+                bot_token = EXCLUDED.bot_token,
+                bot_user_id = EXCLUDED.bot_user_id,
+                app_id = EXCLUDED.app_id,
+                installer_slack_user_id = EXCLUDED.installer_slack_user_id,
+                raw_installation = EXCLUDED.raw_installation,
+                updated_at = NOW()`,
+        );
+
+        logger.info(
+          `[auth] Slack installed for team ${tokenData.team.id} (${tokenData.team.name})`,
+        );
+        res.send(
+          `<html><body style="font-family:system-ui;background:#111;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center"><h1>Slack Connected!</h1><p>Bot added to <strong>${tokenData.team.name}</strong>.</p><p>Send me a DM about what you ate!</p><p><a href="/" style="color:#10b981">Return to dashboard</a></p></div></body></html>`,
+        );
+        return;
+      }
+
       // Resolve provider from random state token
       const providerId = oauthStateMap.get(state);
       if (!providerId) {
@@ -734,6 +831,9 @@ async function main() {
 
     // Warm cache with common dashboard queries (fire-and-forget)
     warmCache(db).catch((err) => logger.error(`[cache] Warm failed: ${err}`));
+
+    // Start Slack bot if configured (fire-and-forget)
+    startSlackBot(db, app).catch((err) => logger.error(`[slack] Slack bot error: ${err}`));
   });
 }
 

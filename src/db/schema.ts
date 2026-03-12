@@ -595,6 +595,28 @@ export const authAccount = fitness.table(
 );
 
 // ============================================================
+// Slack installations — multi-workspace bot token storage
+// ============================================================
+
+export const slackInstallation = fitness.table(
+  "slack_installation",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    teamId: text("team_id").notNull().unique(),
+    teamName: text("team_name"),
+    botToken: text("bot_token").notNull(),
+    botId: text("bot_id"),
+    botUserId: text("bot_user_id"),
+    appId: text("app_id"),
+    installerSlackUserId: text("installer_slack_user_id"),
+    rawInstallation: jsonb("raw_installation").notNull(),
+    installedAt: timestamp("installed_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("slack_installation_team_idx").on(table.teamId)],
+);
+
+// ============================================================
 // Sessions — database-backed session tokens
 // ============================================================
 
