@@ -130,10 +130,8 @@ describe("Router SQL validity", () => {
   describe("hiking", () => {
     it("gradeAdjustedPace", () => expectValidSql("hiking.gradeAdjustedPace", { days: 90 }));
     it("elevationProfile", () => expectValidSql("hiking.elevationProfile", { days: 90 }));
-    it("walkingBiomechanics", () =>
-      expectValidSql("hiking.walkingBiomechanics", { days: 90 }));
-    it("activityComparison", () =>
-      expectValidSql("hiking.activityComparison", { days: 90 }));
+    it("walkingBiomechanics", () => expectValidSql("hiking.walkingBiomechanics", { days: 90 }));
+    it("activityComparison", () => expectValidSql("hiking.activityComparison", { days: 90 }));
   });
 
   // ── Recovery ──
@@ -149,8 +147,7 @@ describe("Router SQL validity", () => {
     it("volumeOverTime", () => expectValidSql("strength.volumeOverTime", { days: 90 }));
     it("estimatedOneRepMax", () => expectValidSql("strength.estimatedOneRepMax", { days: 90 }));
     it("muscleGroupVolume", () => expectValidSql("strength.muscleGroupVolume", { days: 90 }));
-    it("progressiveOverload", () =>
-      expectValidSql("strength.progressiveOverload", { days: 90 }));
+    it("progressiveOverload", () => expectValidSql("strength.progressiveOverload", { days: 90 }));
     it("workoutSummary", () => expectValidSql("strength.workoutSummary", { days: 90 }));
   });
 
