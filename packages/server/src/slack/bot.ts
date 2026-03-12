@@ -265,6 +265,8 @@ export function createSlackBot(db: Database): SlackBotResult | null {
   if (signingSecret) {
     const receiver = new ExpressReceiver({
       signingSecret,
+      // Router is mounted at /slack, so use /events here → full path /slack/events
+      endpoints: "/events",
       // No clientId/clientSecret — OAuth is handled by the main auth routes
       processBeforeResponse: true,
     });
