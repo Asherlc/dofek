@@ -1,3 +1,4 @@
+import type React from "react";
 import { useCallback, useRef, useState } from "react";
 import { pollSyncJob } from "../lib/poll-sync-job.ts";
 import { trpc } from "../lib/trpc.ts";
@@ -16,13 +17,6 @@ export function DataSourcesPanel() {
 
   const [providerStates, setProviderStates] = useState<Record<string, ProviderState>>({});
   const [syncAllMode, setSyncAllMode] = useState<"sync" | "full" | null>(null);
-  const [uploadState, setUploadState] = useState<{
-    status: SyncStatus;
-    progress?: number;
-    message?: string;
-  }>({ status: "idle" });
-  const [dragOver, setDragOver] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // WHOOP auth modal state
   const [whoopAuthOpen, setWhoopAuthOpen] = useState(false);
@@ -89,129 +83,6 @@ export function DataSourcesPanel() {
     },
     [providers.data, syncMutation, updateState, doPollSyncJob],
   );
-
-  const pollUploadStatus = useCallback(async (jobId: string) => {
-    const poll = async (): Promise<void> => {
-      try {
-        const resp = await fetch(`/api/upload/apple-health/status/${jobId}`);
-        if (!resp.ok) throw new Error("Failed to get status");
-        const data = await resp.json();
-
-        if (data.status === "done") {
-          setUploadState({ status: "done", progress: 100, message: data.message });
-          return;
-        }
-
-        if (data.status === "error") {
-          setUploadState({ status: "error", message: data.message ?? "Import failed" });
-          return;
-        }
-
-        setUploadState({
-          status: "syncing",
-          progress: data.progress ?? 0,
-          message: data.message ?? "Processing...",
-        });
-
-        await new Promise((r) => setTimeout(r, 1000));
-        return poll();
-      } catch {
-        setUploadState({ status: "error", message: "Lost connection to server" });
-      }
-    };
-    return poll();
-  }, []);
-
-  const uploadFile = useCallback(
-    async (file: File) => {
-      const CHUNK_SIZE = 50 * 1024 * 1024; // 50MB to stay under Cloudflare's 100MB limit
-      const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-      const uploadId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const fileExt = file.name.endsWith(".xml") ? ".xml" : ".zip";
-
-      setUploadState({
-        status: "syncing",
-        progress: 0,
-        message: `Uploading ${file.name} (${(file.size / 1024 / 1024).toFixed(0)} MB)...`,
-      });
-
-      try {
-        let jobId: string | null = null;
-
-        for (let i = 0; i < totalChunks; i++) {
-          const start = i * CHUNK_SIZE;
-          const end = Math.min(start + CHUNK_SIZE, file.size);
-          const chunk = file.slice(start, end);
-
-          const uploadPct = Math.round(((i + 1) / totalChunks) * 50);
-          setUploadState({
-            status: "syncing",
-            progress: uploadPct,
-            message:
-              totalChunks > 1
-                ? `Uploading chunk ${i + 1}/${totalChunks}...`
-                : `Uploading ${file.name}...`,
-          });
-
-          const resp = await fetch("/api/upload/apple-health?fullSync=true", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/octet-stream",
-              "x-upload-id": uploadId,
-              "x-chunk-index": String(i),
-              "x-chunk-total": String(totalChunks),
-              "x-file-ext": fileExt,
-            },
-            body: chunk,
-          });
-
-          if (!resp.ok) {
-            const err = await resp.json().catch(() => ({ error: resp.statusText }));
-            throw new Error(err.error ?? "Upload failed");
-          }
-
-          const data = await resp.json();
-          if (data.jobId) jobId = data.jobId;
-        }
-
-        if (jobId) {
-          setUploadState({ status: "syncing", progress: 50, message: "Processing import..." });
-          await pollUploadStatus(jobId);
-        }
-      } catch (err: unknown) {
-        setUploadState({
-          status: "error",
-          message: err instanceof Error ? err.message : "Upload failed",
-        });
-      }
-    },
-    [pollUploadStatus],
-  );
-
-  const handleFileSelect = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (file) uploadFile(file);
-    },
-    [uploadFile],
-  );
-
-  const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      setDragOver(false);
-      const file = e.dataTransfer.files[0];
-      if (file) uploadFile(file);
-    },
-    [uploadFile],
-  );
-
-  const handleDropZoneKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      fileInputRef.current?.click();
-    }
-  }, []);
 
   const enabledProviders = (providers.data ?? []).filter((p) => p.enabled);
 
@@ -338,62 +209,33 @@ export function DataSourcesPanel() {
         />
       )}
 
-      {/* Apple Health Upload */}
+      {/* File Imports */}
       <div>
-        <h3 className="text-sm font-medium text-zinc-300 mb-3">Apple Health Import</h3>
-        <div
-          role="button"
-          tabIndex={0}
-          onDragOver={(e) => {
-            e.preventDefault();
-            setDragOver(true);
-          }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={handleDrop}
-          onClick={() => fileInputRef.current?.click()}
-          onKeyDown={handleDropZoneKeyDown}
-          className={`rounded-lg border-2 border-dashed p-8 text-center cursor-pointer transition-colors ${
-            dragOver
-              ? "border-blue-500 bg-blue-500/10"
-              : "border-zinc-700 hover:border-zinc-600 bg-zinc-900/30"
-          }`}
-        >
-          <input
-            ref={fileInputRef}
-            type="file"
+        <h3 className="text-sm font-medium text-zinc-300 mb-3">File Imports</h3>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <FileImportZone
+            title="Apple Health"
+            description=".zip or .xml from Health app export"
             accept=".zip,.xml"
-            onChange={handleFileSelect}
-            className="hidden"
+            uploadUrl="/api/upload/apple-health?fullSync=true"
+            statusUrl="/api/upload/apple-health/status"
+            chunked
           />
-          {uploadState.status === "syncing" ? (
-            <div>
-              <div className="text-sm text-zinc-300 mb-1">Importing...</div>
-              <div className="text-xs text-zinc-500">{uploadState.message}</div>
-              {uploadState.progress != null && (
-                <div className="mt-2 w-48 mx-auto h-1.5 rounded-full bg-zinc-800 overflow-hidden">
-                  <div
-                    className="h-full rounded-full bg-emerald-500 transition-all duration-300"
-                    style={{ width: `${uploadState.progress}%` }}
-                  />
-                </div>
-              )}
-            </div>
-          ) : (
-            <div>
-              <div className="text-sm text-zinc-400 mb-1">
-                Drop Apple Health export here or click to browse
-              </div>
-              <div className="text-xs text-zinc-600">.zip or .xml from Health app export</div>
-            </div>
-          )}
+          <FileImportZone
+            title="Strong"
+            description=".csv export from Strong app"
+            accept=".csv"
+            uploadUrl="/api/upload/strong-csv?units=kg"
+            statusUrl="/api/upload/strong-csv/status"
+          />
+          <FileImportZone
+            title="Cronometer"
+            description=".csv servings export from Cronometer"
+            accept=".csv"
+            uploadUrl="/api/upload/cronometer-csv"
+            statusUrl="/api/upload/cronometer-csv/status"
+          />
         </div>
-        {uploadState.status !== "idle" && uploadState.status !== "syncing" && (
-          <div
-            className={`mt-2 text-xs ${uploadState.status === "error" ? "text-red-400" : "text-emerald-400"}`}
-          >
-            {uploadState.message}
-          </div>
-        )}
       </div>
     </div>
   );
@@ -584,4 +426,215 @@ function StatusDot({ status }: { status: SyncStatus }) {
     error: "bg-red-400",
   };
   return <span className={`inline-block w-2 h-2 rounded-full ${colors[status]}`} />;
+}
+
+// ── File Import Zone (reusable for Apple Health, Strong CSV, Cronometer CSV) ──
+
+interface FileImportZoneProps {
+  title: string;
+  description: string;
+  accept: string;
+  uploadUrl: string;
+  statusUrl: string;
+  chunked?: boolean;
+}
+
+function FileImportZone({
+  title,
+  description,
+  accept,
+  uploadUrl,
+  statusUrl,
+  chunked,
+}: FileImportZoneProps) {
+  const [state, setState] = useState<{ status: SyncStatus; progress?: number; message?: string }>({
+    status: "idle",
+  });
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const pollStatus = useCallback(
+    async (jobId: string) => {
+      const poll = async (): Promise<void> => {
+        try {
+          const resp = await fetch(`${statusUrl}/${jobId}`);
+          if (!resp.ok) throw new Error("Failed to get status");
+          const data = await resp.json();
+
+          if (data.status === "done") {
+            setState({ status: "done", progress: 100, message: data.message });
+            return;
+          }
+          if (data.status === "error") {
+            setState({ status: "error", message: data.message ?? "Import failed" });
+            return;
+          }
+
+          setState({
+            status: "syncing",
+            progress: data.progress ?? 0,
+            message: data.message ?? "Processing...",
+          });
+          await new Promise((r) => setTimeout(r, 1000));
+          return poll();
+        } catch {
+          setState({ status: "error", message: "Lost connection to server" });
+        }
+      };
+      return poll();
+    },
+    [statusUrl],
+  );
+
+  const uploadFile = useCallback(
+    async (file: File) => {
+      setState({ status: "syncing", progress: 0, message: `Uploading ${file.name}...` });
+
+      try {
+        let jobId: string | null = null;
+
+        if (chunked) {
+          const CHUNK_SIZE = 50 * 1024 * 1024;
+          const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+          const uploadId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+          const fileExt = file.name.endsWith(".xml") ? ".xml" : ".zip";
+
+          for (let i = 0; i < totalChunks; i++) {
+            const start = i * CHUNK_SIZE;
+            const end = Math.min(start + CHUNK_SIZE, file.size);
+            const chunk = file.slice(start, end);
+            const uploadPct = Math.round(((i + 1) / totalChunks) * 50);
+            setState({
+              status: "syncing",
+              progress: uploadPct,
+              message:
+                totalChunks > 1
+                  ? `Uploading chunk ${i + 1}/${totalChunks}...`
+                  : `Uploading ${file.name}...`,
+            });
+
+            const resp = await fetch(uploadUrl, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/octet-stream",
+                "x-upload-id": uploadId,
+                "x-chunk-index": String(i),
+                "x-chunk-total": String(totalChunks),
+                "x-file-ext": fileExt,
+              },
+              body: chunk,
+            });
+            if (!resp.ok) {
+              const err = await resp.json().catch(() => ({ error: resp.statusText }));
+              throw new Error(err.error ?? "Upload failed");
+            }
+            const data = await resp.json();
+            if (data.jobId) jobId = data.jobId;
+          }
+        } else {
+          const resp = await fetch(uploadUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/octet-stream" },
+            body: file,
+          });
+          if (!resp.ok) {
+            const err = await resp.json().catch(() => ({ error: resp.statusText }));
+            throw new Error(err.error ?? "Upload failed");
+          }
+          const data = await resp.json();
+          jobId = data.jobId ?? null;
+        }
+
+        if (jobId) {
+          setState({ status: "syncing", progress: 50, message: "Processing import..." });
+          await pollStatus(jobId);
+        }
+      } catch (err: unknown) {
+        setState({
+          status: "error",
+          message: err instanceof Error ? err.message : "Upload failed",
+        });
+      }
+    },
+    [uploadUrl, chunked, pollStatus],
+  );
+
+  const handleFileSelect = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file) uploadFile(file);
+    },
+    [uploadFile],
+  );
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setDragOver(false);
+      const file = e.dataTransfer.files[0];
+      if (file) uploadFile(file);
+    },
+    [uploadFile],
+  );
+
+  return (
+    <div>
+      <div
+        role="button"
+        tabIndex={0}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragOver(true);
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={handleDrop}
+        onClick={() => fileInputRef.current?.click()}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            fileInputRef.current?.click();
+          }
+        }}
+        className={`rounded-lg border-2 border-dashed p-6 text-center cursor-pointer transition-colors ${
+          dragOver
+            ? "border-blue-500 bg-blue-500/10"
+            : "border-zinc-700 hover:border-zinc-600 bg-zinc-900/30"
+        }`}
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept={accept}
+          onChange={handleFileSelect}
+          className="hidden"
+        />
+        {state.status === "syncing" ? (
+          <div>
+            <div className="text-sm text-zinc-300 mb-1">Importing...</div>
+            <div className="text-xs text-zinc-500">{state.message}</div>
+            {state.progress != null && (
+              <div className="mt-2 w-36 mx-auto h-1.5 rounded-full bg-zinc-800 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-emerald-500 transition-all duration-300"
+                  style={{ width: `${state.progress}%` }}
+                />
+              </div>
+            )}
+          </div>
+        ) : (
+          <div>
+            <div className="text-sm text-zinc-400 mb-1">{title}</div>
+            <div className="text-xs text-zinc-600">{description}</div>
+          </div>
+        )}
+      </div>
+      {state.status !== "idle" && state.status !== "syncing" && (
+        <div
+          className={`mt-2 text-xs ${state.status === "error" ? "text-red-400" : "text-emerald-400"}`}
+        >
+          {state.message}
+        </div>
+      )}
+    </div>
+  );
 }
