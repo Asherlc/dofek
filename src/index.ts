@@ -2,7 +2,6 @@ import { execFile } from "node:child_process";
 import { waitForAuthCode } from "./auth/callback-server.ts";
 import { buildAuthorizationUrl } from "./auth/index.ts";
 import { createDatabaseFromEnv } from "./db/index.ts";
-import { runMigrations } from "./db/migrate.ts";
 import { ensureProvider, saveTokens } from "./db/tokens.ts";
 import { AutoSupplementsProvider } from "./providers/auto-supplements.ts";
 import { FatSecretProvider } from "./providers/fatsecret.ts";
@@ -42,10 +41,8 @@ function parseSinceDays(): number {
 async function main() {
   const command = process.argv[2] ?? "sync";
 
-  // Auto-run pending migrations on startup
-  if (process.env.DATABASE_URL) {
-    await runMigrations(process.env.DATABASE_URL);
-  }
+  // Migrations run from the web server only (packages/server/src/index.ts).
+  // The sync CLI skips migrations to avoid racing the web container.
 
   if (command === "sync") {
     const fullSync = process.argv.includes("--full-sync");
