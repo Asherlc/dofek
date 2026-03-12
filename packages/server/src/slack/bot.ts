@@ -177,19 +177,20 @@ function registerHandlers(app: AppType, db: Database) {
       }
     }
 
-    // Top-level message — fresh analysis
+    // Top-level message — fresh analysis (reply in thread so user can refine)
     logger.info(`[slack] Parsing food from ${msg.user}: "${msg.text}"`);
 
     try {
       const result = await analyzeNutritionItems(msg.text);
       const confirmation = formatConfirmationMessage(result.items);
-      await say(confirmation);
+      await say({ ...confirmation, thread_ts: msg.ts });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       logger.error(`[slack] AI analysis failed: ${errorMessage}`);
-      await say(
-        `Sorry, I couldn't parse that. Try describing what you ate more specifically.\n\`${errorMessage}\``,
-      );
+      await say({
+        text: `Sorry, I couldn't parse that. Try describing what you ate more specifically.\n\`${errorMessage}\``,
+        thread_ts: msg.ts,
+      });
     }
   });
 
