@@ -1,4 +1,4 @@
-import { App, ExpressReceiver, type ExpressReceiverOptions } from "@slack/bolt";
+import { App, ExpressReceiver } from "@slack/bolt";
 import type { GenericMessageEvent } from "@slack/types";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
@@ -6,7 +6,6 @@ import type express from "express";
 import { analyzeNutritionItems, type NutritionItemWithMeal } from "../lib/ai-nutrition.ts";
 import { logger } from "../logger.ts";
 import { formatConfirmationMessage, formatSavedMessage } from "./formatting.ts";
-import { createInstallationStore } from "./installation-store.ts";
 
 const DOFEK_PROVIDER_ID = "dofek";
 
@@ -106,7 +105,7 @@ function registerHandlers(app: App, db: Database) {
     const msg = message as GenericMessageEvent;
     if (msg.subtype || !msg.text || msg.bot_id) return;
 
-    const userId = await lookupOrCreateUserId(db, msg.user, client);
+    await lookupOrCreateUserId(db, msg.user, client);
 
     logger.info(`[slack] Parsing food from ${msg.user}: "${msg.text}"`);
 
@@ -166,6 +165,59 @@ function registerHandlers(app: App, db: Database) {
     }
   });
 
+  // Publish Home Tab when user opens the app
+  app.event("app_home_opened", async ({ event, client }) => {
+    try {
+      await client.views.publish({
+        user_id: event.user,
+        view: {
+          type: "home",
+          blocks: [
+            {
+              type: "header",
+              text: { type: "plain_text", text: "Dofek — Nutrition Tracker" },
+            },
+            {
+              type: "section",
+              text: {
+                type: "mrkdwn",
+                text: "Track what you eat by sending me a message. I'll use AI to estimate the nutrition and let you confirm before saving.",
+              },
+            },
+            { type: "divider" },
+            {
+              type: "section",
+              text: {
+                type: "mrkdwn",
+                text: "*How it works:*\n\n1. Send me a DM describing what you ate\n2. I'll parse it into individual items with calorie and macro estimates\n3. Review and hit *Confirm* to save, or *Cancel* to discard",
+              },
+            },
+            { type: "divider" },
+            {
+              type: "section",
+              text: {
+                type: "mrkdwn",
+                text: '*Examples:*\n\n• _"Two eggs, toast with butter, and a coffee with milk"_\n• _"Chicken salad with avocado for lunch"_\n• _"A slice of pepperoni pizza and a coke"_',
+              },
+            },
+            {
+              type: "context",
+              elements: [
+                {
+                  type: "mrkdwn",
+                  text: "Tip: Be specific about portions and preparation for more accurate estimates.",
+                },
+              ],
+            },
+          ],
+        },
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error(`[slack] Failed to publish Home Tab: ${errorMessage}`);
+    }
+  });
+
   // Handle "Cancel" button click
   app.action("cancel_food", async ({ ack, body, client }) => {
     await ack();
@@ -194,37 +246,51 @@ interface SlackBotResult {
  * **Socket Mode** (single workspace): Set SLACK_BOT_TOKEN + SLACK_APP_TOKEN.
  *   Bot connects outbound via WebSocket, no public URL needed.
  *
- * **HTTP/OAuth Mode** (multi-workspace): Set SLACK_CLIENT_ID + SLACK_CLIENT_SECRET + SLACK_SIGNING_SECRET.
- *   Enables "Add to Slack" OAuth flow. Events arrive via HTTP webhook.
+ * **HTTP Mode** (multi-workspace): Set SLACK_SIGNING_SECRET.
+ *   Events arrive via HTTP webhook. OAuth is handled by the main auth routes
+ *   (/auth/provider/slack → /callback), not by Bolt's built-in installer.
  *   Mount the returned router on your Express app.
  */
 export function createSlackBot(db: Database): SlackBotResult | null {
-  const clientId = process.env.SLACK_CLIENT_ID;
-  const clientSecret = process.env.SLACK_CLIENT_SECRET;
   const signingSecret = process.env.SLACK_SIGNING_SECRET;
 
-  // HTTP/OAuth mode (multi-workspace distribution)
-  if (clientId && clientSecret && signingSecret) {
-    const installationStore = createInstallationStore(db);
-
-    const receiverOptions: ExpressReceiverOptions = {
+  // HTTP mode (multi-workspace) — OAuth handled externally via /auth/provider/slack
+  if (signingSecret) {
+    const receiver = new ExpressReceiver({
       signingSecret,
-      clientId,
-      clientSecret,
-      stateSecret: process.env.SLACK_STATE_SECRET ?? "dofek-slack-state",
-      scopes: ["chat:write", "im:history", "im:read", "im:write"],
-      installationStore,
-      installerOptions: {
-        directInstall: true,
+      // No clientId/clientSecret — OAuth is handled by the main auth routes
+      processBeforeResponse: true,
+    });
+
+    const app = new App({
+      receiver,
+      authorize: async ({ teamId }) => {
+        if (!teamId) throw new Error("Missing teamId in Slack event");
+        const rows = await db.execute<{
+          bot_token: string;
+          bot_id: string | null;
+          bot_user_id: string | null;
+        }>(
+          sql`SELECT bot_token, bot_id, bot_user_id
+              FROM fitness.slack_installation
+              WHERE team_id = ${teamId}
+              LIMIT 1`,
+        );
+        if (rows.length === 0) {
+          throw new Error(`No Slack installation found for team ${teamId}`);
+        }
+        return {
+          botToken: rows[0].bot_token,
+          botId: rows[0].bot_id ?? undefined,
+          botUserId: rows[0].bot_user_id ?? undefined,
+        };
       },
-    };
-
-    const receiver = new ExpressReceiver(receiverOptions);
-
-    const app = new App({ receiver });
+    });
     registerHandlers(app, db);
 
-    logger.info("[slack] Configured in HTTP/OAuth mode (multi-workspace)");
+    logger.info(
+      "[slack] Configured in HTTP mode (multi-workspace, OAuth via /auth/provider/slack)",
+    );
     return { app, mode: "http", router: receiver.router };
   }
 
@@ -246,7 +312,7 @@ export function createSlackBot(db: Database): SlackBotResult | null {
   }
 
   logger.info(
-    "[slack] No Slack credentials configured. Set SLACK_BOT_TOKEN+SLACK_APP_TOKEN for Socket Mode, or SLACK_CLIENT_ID+SLACK_CLIENT_SECRET+SLACK_SIGNING_SECRET for OAuth mode.",
+    "[slack] No Slack credentials configured. Set SLACK_BOT_TOKEN+SLACK_APP_TOKEN for Socket Mode, or SLACK_SIGNING_SECRET for HTTP mode.",
   );
   return null;
 }
@@ -258,10 +324,9 @@ export async function startSlackBot(db: Database, expressApp?: express.Express):
 
   try {
     if (result.mode === "http" && result.router && expressApp) {
-      // Mount Slack routes on Express — Bolt handles /slack/events, /slack/install, /slack/oauth_redirect
+      // Mount Slack event receiver — OAuth is handled by /auth/provider/slack
       expressApp.use("/slack", result.router);
-      logger.info("[slack] Slack bot mounted at /slack (HTTP mode)");
-      logger.info("[slack] Install URL: /slack/install");
+      logger.info("[slack] Slack bot mounted at /slack/events (HTTP mode)");
     } else if (result.mode === "socket") {
       await result.app.start();
       logger.info("[slack] Slack bot connected (Socket Mode)");
