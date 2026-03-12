@@ -213,10 +213,7 @@ export class WithingsClient {
   }
 
   private async post<T>(path: string, params: Record<string, string>): Promise<T> {
-    const body = new URLSearchParams({
-      action: params.action,
-      ...params,
-    });
+    const body = new URLSearchParams(params);
 
     const response = await this.fetchFn(`${WITHINGS_API_BASE}${path}`, {
       method: "POST",

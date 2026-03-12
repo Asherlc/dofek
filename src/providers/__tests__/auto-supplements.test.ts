@@ -55,8 +55,8 @@ describe("Auto-Supplements Provider", () => {
     it("validates a correct config", () => {
       const result = parseSupplementConfig(sampleConfig);
       expect(result).toHaveLength(4);
-      expect(result[0].name).toBe("Vitamin D3 5000 IU");
-      expect(result[3].name).toBe("Magnesium Glycinate 400mg");
+      expect(result[0]!.name).toBe("Vitamin D3 5000 IU");
+      expect(result[3]!.name).toBe("Magnesium Glycinate 400mg");
     });
 
     it("rejects config with empty supplements array", () => {
@@ -83,9 +83,9 @@ describe("Auto-Supplements Provider", () => {
       const result = parseSupplementConfig({
         supplements: [{ name: "Zinc 50mg", description: "1 tablet" }],
       });
-      expect(result[0].calories).toBeUndefined();
-      expect(result[0].fatG).toBeUndefined();
-      expect(result[0].proteinG).toBeUndefined();
+      expect(result[0]!.calories).toBeUndefined();
+      expect(result[0]!.fatG).toBeUndefined();
+      expect(result[0]!.proteinG).toBeUndefined();
     });
   });
 
@@ -135,7 +135,7 @@ describe("Auto-Supplements Provider", () => {
         [{ name: "Zinc 50mg", description: "1 tablet" }],
         ["2024-03-15"],
       );
-      expect(entries[0].meal).toBe("other");
+      expect(entries[0]!.meal).toBe("other");
     });
 
     it("slugifies names consistently for externalId", () => {
@@ -143,7 +143,7 @@ describe("Auto-Supplements Provider", () => {
         [{ name: "CoQ10 200mg (Ubiquinol)", description: "1 softgel" }],
         ["2024-03-15"],
       );
-      expect(entries[0].externalId).toBe("auto:coq10-200mg-ubiquinol:2024-03-15");
+      expect(entries[0]!.externalId).toBe("auto:coq10-200mg-ubiquinol:2024-03-15");
     });
   });
 });

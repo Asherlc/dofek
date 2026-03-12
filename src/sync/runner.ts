@@ -36,7 +36,7 @@ export async function runSync(
   const settled: SyncResult[] = results.map((result, index) => {
     if (result.status === "fulfilled") return result.value;
     return {
-      provider: toSync[index].id,
+      provider: toSync[index]!.id,
       recordsSynced: 0,
       errors: [{ message: String(result.reason) }],
       duration: 0,
