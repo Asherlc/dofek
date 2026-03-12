@@ -34,6 +34,13 @@ async function doRegisterProviders() {
       "strong-csv",
       () => import("dofek/providers/strong-csv").then((m) => new m.StrongCsvProvider()),
     ],
+    ["polar", () => import("dofek/providers/polar").then((m) => new m.PolarProvider())],
+    ["fitbit", () => import("dofek/providers/fitbit").then((m) => new m.FitbitProvider())],
+    ["garmin", () => import("dofek/providers/garmin").then((m) => new m.GarminProvider())],
+    [
+      "cronometer-csv",
+      () => import("dofek/providers/cronometer-csv").then((m) => new m.CronometerCsvProvider()),
+    ],
   ] as const;
 
   for (const [name, loadProvider] of providers) {
