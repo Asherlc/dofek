@@ -11,22 +11,39 @@ import { logger } from "./logger.ts";
 import { appRouter } from "./router.ts";
 import type { Context } from "./trpc.ts";
 
-/** Fire common dashboard queries to populate cache after deploy */
+/** Fire common queries sequentially to populate cache without overwhelming the DB */
 async function warmCache(db: import("dofek/db").Database) {
   const caller = appRouter.createCaller({ db });
-  const queries = [
-    () => caller.dailyMetrics.list({ days: 30 }),
-    () => caller.dailyMetrics.list({ days: 90 }),
-    () => caller.dailyMetrics.trends({ days: 30 }),
-    () => caller.dailyMetrics.latest(),
-    () => caller.sleep.list({ days: 30 }),
-    () => caller.sync.providers(),
-    () => caller.sync.providerStats(),
-    () => caller.insights.compute({ days: 90 }),
+  const queries: Array<[string, () => Promise<unknown>]> = [
+    // Dashboard
+    ["dailyMetrics.list(30)", () => caller.dailyMetrics.list({ days: 30 })],
+    ["dailyMetrics.list(90)", () => caller.dailyMetrics.list({ days: 90 })],
+    ["dailyMetrics.trends(30)", () => caller.dailyMetrics.trends({ days: 30 })],
+    ["dailyMetrics.latest", () => caller.dailyMetrics.latest()],
+    ["sleep.list(30)", () => caller.sleep.list({ days: 30 })],
+    ["sync.providers", () => caller.sync.providers()],
+    ["sync.providerStats", () => caller.sync.providerStats()],
+    ["insights.compute(90)", () => caller.insights.compute({ days: 90 })],
+    // Training page
+    ["training.weeklyVolume(90)", () => caller.training.weeklyVolume({ days: 90 })],
+    [
+      "training.intensityDistribution(90)",
+      () => caller.training.intensityDistribution({ days: 90 }),
+    ],
+    ["pmc.chart(90)", () => caller.pmc.chart({ days: 90 })],
+    ["power.powerCurve(90)", () => caller.power.powerCurve({ days: 90 })],
+    ["power.eftpTrend(90)", () => caller.power.eftpTrend({ days: 90 })],
   ];
-  const results = await Promise.allSettled(queries.map((q) => q()));
-  const ok = results.filter((r) => r.status === "fulfilled").length;
-  logger.info(`[cache] Warmed ${ok}/${results.length} queries`);
+  let ok = 0;
+  for (const [name, fn] of queries) {
+    try {
+      await fn();
+      ok++;
+    } catch (err) {
+      logger.error(`[cache] Failed to warm ${name}: ${err}`);
+    }
+  }
+  logger.info(`[cache] Warmed ${ok}/${queries.length} queries`);
 }
 
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
