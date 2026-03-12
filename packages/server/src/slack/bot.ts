@@ -7,11 +7,43 @@ import type { GenericMessageEvent } from "@slack/types";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import type express from "express";
-import { analyzeNutritionItems, type NutritionItemWithMeal } from "../lib/ai-nutrition.ts";
+import {
+  analyzeNutritionItems,
+  type NutritionItemWithMeal,
+  refineNutritionItems,
+} from "../lib/ai-nutrition.ts";
 import { logger } from "../logger.ts";
 import { formatConfirmationMessage, formatSavedMessage } from "./formatting.ts";
 
 const DOFEK_PROVIDER_ID = "dofek";
+
+/**
+ * Extract food items from thread messages returned by conversations.replies.
+ * Walks backwards to find the most recent bot message with a confirm button.
+ */
+function extractItemsFromThread(
+  messages: Array<{ bot_id?: string; blocks?: unknown[] }>,
+): NutritionItemWithMeal[] | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const threadMsg = messages[i]!;
+    if (!threadMsg.bot_id || !threadMsg.blocks) continue;
+
+    for (const rawBlock of threadMsg.blocks) {
+      const block = rawBlock as {
+        type?: string;
+        elements?: Array<{ action_id?: string; value?: string }>;
+      };
+      if (block.type !== "actions" || !block.elements) continue;
+      for (const element of block.elements) {
+        if (element.action_id === "confirm_food" && element.value) {
+          return JSON.parse(element.value) as NutritionItemWithMeal[];
+        }
+      }
+    }
+  }
+
+  return null;
+}
 
 /** Look up the dofek user ID for a Slack user, or create a new user + link if none exists. */
 async function lookupOrCreateUserId(
@@ -107,13 +139,45 @@ function todayDate(): string {
 
 /** Register message and action handlers on a Bolt app */
 function registerHandlers(app: AppType, db: Database) {
-  // Handle direct messages
+  // Handle direct messages (both top-level and thread replies)
   app.message(async ({ message, say, client }) => {
     const msg = message as GenericMessageEvent;
     if (msg.subtype || !msg.text || msg.bot_id) return;
 
     await lookupOrCreateUserId(db, msg.user, client);
 
+    // Thread reply — look for previous items to refine
+    if (msg.thread_ts && msg.thread_ts !== msg.ts) {
+      logger.info(`[slack] Thread reply from ${msg.user}: "${msg.text}"`);
+
+      try {
+        const thread = await client.conversations.replies({
+          channel: msg.channel,
+          ts: msg.thread_ts,
+        });
+        const previousItems = extractItemsFromThread(
+          (thread.messages ?? []) as Array<{ bot_id?: string; blocks?: unknown[] }>,
+        );
+
+        if (previousItems) {
+          logger.info(`[slack] Refining ${previousItems.length} items with: "${msg.text}"`);
+          const result = await refineNutritionItems(previousItems, msg.text);
+          const confirmation = formatConfirmationMessage(result.items);
+          await say({ ...confirmation, thread_ts: msg.thread_ts });
+          return;
+        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        logger.error(`[slack] Refinement failed: ${errorMessage}`);
+        await say({
+          text: `Sorry, I couldn't refine that.\n\`${errorMessage}\``,
+          thread_ts: msg.thread_ts,
+        });
+        return;
+      }
+    }
+
+    // Top-level message — fresh analysis
     logger.info(`[slack] Parsing food from ${msg.user}: "${msg.text}"`);
 
     try {

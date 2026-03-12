@@ -185,6 +185,66 @@ export interface AnalyzeMultiResult {
  * Analyze a food description and return multiple individual food items with meal detection.
  * Cascades through configured providers on rate limit errors.
  */
+/**
+ * Refine a previous nutrition analysis based on follow-up instructions.
+ * Uses chat-style messages so the AI sees the original items as context.
+ */
+export async function refineNutritionItems(
+  previousItems: NutritionItemWithMeal[],
+  refinement: string,
+): Promise<AnalyzeMultiResult> {
+  const providers = getConfiguredProviders();
+
+  if (providers.length === 0) {
+    throw new Error(
+      "No AI providers configured. Set at least one of: GEMINI_API_KEY, MISTRAL_API_KEY",
+    );
+  }
+
+  const previousSummary = previousItems
+    .map(
+      (item) =>
+        `- ${item.foodName} (${item.meal}): ${item.calories} cal, P:${item.proteinG}g C:${item.carbsG}g F:${item.fatG}g`,
+    )
+    .join("\n");
+
+  let lastError: unknown;
+
+  for (const provider of providers) {
+    try {
+      const result = await generateText({
+        model: provider.createModel(),
+        output: Output.object({ schema: aiNutritionMultiSchema }),
+        system: `${MULTI_ITEM_SYSTEM_PROMPT}\n\nThe user is refining a previous analysis. Apply their corrections to the items and return the full updated list. If they say to remove an item, omit it. If they correct a quantity or add a new item, adjust accordingly.`,
+        messages: [
+          { role: "user", content: "Here's what I ate: the items below" },
+          { role: "assistant", content: previousSummary },
+          { role: "user", content: refinement },
+        ],
+      });
+
+      if (!result.output) {
+        throw new Error(`AI provider ${provider.name} returned no structured output`);
+      }
+
+      return {
+        items: result.output.items,
+        provider: provider.name,
+      };
+    } catch (error) {
+      lastError = error;
+      if (isRateLimitError(error)) {
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  throw new Error(
+    `All AI providers rate-limited. Last error: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
+  );
+}
+
 export async function analyzeNutritionItems(description: string): Promise<AnalyzeMultiResult> {
   const providers = getConfiguredProviders();
 
