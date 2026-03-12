@@ -35,6 +35,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: cd packages/web && pnpm exec tsr generate
       - run: pnpm tsc --noEmit
       - run: cd packages/server && pnpm tsc --noEmit
       - run: cd packages/web && pnpm tsc --noEmit

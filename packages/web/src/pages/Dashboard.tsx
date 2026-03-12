@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { ActivityList } from "../components/ActivityList.tsx";
 import { AppHeader } from "../components/AppHeader.tsx";
+import { CorrelationCard, type Insight } from "../components/CorrelationCard.tsx";
 import { HealthStatusBar } from "../components/HealthStatusBar.tsx";
 import { HrvBaselineChart } from "../components/HrvBaselineChart.tsx";
 import { NutritionChart } from "../components/NutritionChart.tsx";
@@ -24,7 +25,16 @@ export function Dashboard() {
   const hrvBaseline = trpc.dailyMetrics.hrvBaseline.useQuery({ days });
   const bodyData = trpc.body.list.useQuery({ days: Math.max(days, 90) });
   const nutritionData = trpc.nutrition.daily.useQuery({ days });
+  const insightsQuery = trpc.insights.compute.useQuery({ days });
   const trendData = trends.data as any;
+
+  const topInsights = useMemo(() => {
+    const all = (insightsQuery.data ?? []) as Insight[];
+    return all
+      .filter((i) => i.confidence !== "insufficient")
+      .sort((a, b) => Math.abs(b.effectSize) - Math.abs(a.effectSize))
+      .slice(0, 2);
+  }, [insightsQuery.data]);
 
   const healthMetrics = useMemo(
     () =>
@@ -173,6 +183,32 @@ export function Dashboard() {
           onToggle={() => toggle("healthMonitor")}
         >
           <HealthStatusBar metrics={healthMetrics} loading={trends.isLoading} />
+        </CollapsibleSection>
+
+        {/* Top Insights */}
+        <CollapsibleSection
+          id="topInsights"
+          title="Top Insights"
+          subtitle="Strongest correlations in your data"
+          collapsed={collapsed.topInsights}
+          onToggle={() => toggle("topInsights")}
+        >
+          {insightsQuery.isLoading ? (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div className="h-48 rounded-lg bg-zinc-800 animate-pulse" />
+              <div className="h-48 rounded-lg bg-zinc-800 animate-pulse" />
+            </div>
+          ) : topInsights.length > 0 ? (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {topInsights.map((insight) => (
+                <CorrelationCard key={insight.id} insight={insight} />
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-zinc-500">
+              Not enough data to surface insights yet. Check back after a few more days of tracking.
+            </p>
+          )}
         </CollapsibleSection>
 
         {/* HRV & Resting HR */}

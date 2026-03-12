@@ -5,7 +5,5 @@ dist/
 # .env.plain is the decrypted version — never commit
 .env.plain
 *.log
-# TanStack Router auto-generated route tree
-packages/web/src/routeTree.gen.ts
 # Personal supplement stack — differs per user
 src/supplements.config.ts
