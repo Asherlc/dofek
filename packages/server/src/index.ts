@@ -430,14 +430,17 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
 
       let userId: string;
 
-      if (existingAccount.length > 0) {
-        userId = existingAccount[0].user_id;
+      const firstAccount = existingAccount[0];
+      if (existingAccount.length > 0 && firstAccount) {
+        userId = firstAccount.user_id;
       } else {
         // Check if this is the very first auth account (claim DEFAULT_USER_ID data)
         const accountCount = await db.execute<{ count: string }>(
           sql`SELECT COUNT(*)::text AS count FROM fitness.auth_account`,
         );
-        const isFirstUser = parseInt(accountCount[0].count, 10) === 0;
+        const countRow = accountCount[0];
+        if (!countRow) throw new Error("Failed to query account count");
+        const isFirstUser = parseInt(countRow.count, 10) === 0;
 
         if (isFirstUser) {
           // First user — link to the default user profile and update it
@@ -458,7 +461,9 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
                 VALUES (${identityUser.name ?? "User"}, ${identityUser.email})
                 RETURNING id`,
           );
-          userId = newUser[0].id;
+          const newUserRow = newUser[0];
+          if (!newUserRow) throw new Error("Failed to create user profile");
+          userId = newUserRow.id;
         }
 
         // Create the auth account link

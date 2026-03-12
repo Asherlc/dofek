@@ -60,11 +60,12 @@ export function createInstallationStore(db: Database): InstallationStore {
         sql`SELECT raw_installation FROM fitness.slack_installation WHERE team_id = ${teamId} LIMIT 1`,
       );
 
-      if (rows.length === 0) {
+      const row = rows[0];
+      if (rows.length === 0 || !row) {
         throw new Error(`No installation found for team ${teamId}`);
       }
 
-      const raw = rows[0].raw_installation;
+      const raw = row.raw_installation;
       return (typeof raw === "string" ? JSON.parse(raw) : raw) as Installation;
     },
 
