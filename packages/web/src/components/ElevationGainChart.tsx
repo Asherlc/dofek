@@ -40,12 +40,17 @@ export function ElevationGainChart({ data, loading }: ElevationGainChartProps) {
       formatter: (params: Record<string, unknown>[]) => {
         const param = params[0] as {
           name: string;
-          value: number;
+          value: [string, number];
           dataIndex: number;
         };
         const row = data[param.dataIndex];
+        const dateLabel = new Date(row.week).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        });
         return [
-          `<strong>Week of ${row.week}</strong>`,
+          `<strong>Week of ${dateLabel}</strong>`,
           `Elevation Gain: ${row.elevationGainMeters.toFixed(0)} m`,
           `Activities: ${row.activityCount}`,
           `Distance: ${row.totalDistanceKm.toFixed(1)} km`,
@@ -53,9 +58,8 @@ export function ElevationGainChart({ data, loading }: ElevationGainChartProps) {
       },
     },
     xAxis: {
-      type: "category",
-      data: data.map((d) => d.week),
-      axisLabel: { color: "#71717a", fontSize: 11, rotate: 45 },
+      type: "time" as const,
+      axisLabel: { color: "#71717a", fontSize: 11 },
       axisLine: { lineStyle: { color: "#3f3f46" } },
       splitLine: { show: false },
     },
@@ -70,7 +74,7 @@ export function ElevationGainChart({ data, loading }: ElevationGainChartProps) {
     series: [
       {
         type: "bar",
-        data: data.map((d) => d.elevationGainMeters),
+        data: data.map((d) => [d.week, d.elevationGainMeters]),
         itemStyle: { color: "#f59e0b" },
         barMaxWidth: 30,
       },

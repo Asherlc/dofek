@@ -42,15 +42,14 @@ export function PolarizationTrendChart({ weeks, maxHr, loading }: PolarizationTr
     );
   }
 
-  const weekLabels = validWeeks.map((w) =>
-    new Date(w.week).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-  );
-
   const piValues = validWeeks.map((w) => w.polarizationIndex as number);
   const piMin = Math.min(...piValues);
   const piMax = Math.max(...piValues);
   const yMin = Math.floor(Math.min(piMin, 0) * 10) / 10;
   const yMax = Math.ceil(Math.max(piMax, 2.5) * 10) / 10;
+
+  const firstDate = validWeeks[0].week;
+  const lastDate = validWeeks[validWeeks.length - 1].week;
 
   const option = {
     backgroundColor: "transparent",
@@ -61,7 +60,12 @@ export function PolarizationTrendChart({ weeks, maxHr, loading }: PolarizationTr
       borderColor: "#3f3f46",
       textStyle: { color: "#e4e4e7", fontSize: 12 },
       formatter: (
-        params: Array<{ axisValue: string; value: number; dataIndex: number; color: string }>,
+        params: Array<{
+          axisValue: string;
+          value: [string, number];
+          dataIndex: number;
+          color: string;
+        }>,
       ) => {
         const param = params[0];
         if (!param) return "";
@@ -69,12 +73,17 @@ export function PolarizationTrendChart({ weeks, maxHr, loading }: PolarizationTr
         if (!w) return "";
         const pi = w.polarizationIndex;
         const piStr = pi !== null ? pi.toFixed(3) : "N/A";
+        const dateLabel = new Date(w.week).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        });
         const status =
           pi !== null && pi >= 2.0
             ? '<span style="color:#22c55e">Polarized</span>'
             : '<span style="color:#ef4444">Not polarized</span>';
         return [
-          `<strong>Week of ${param.axisValue}</strong>`,
+          `<strong>Week of ${dateLabel}</strong>`,
           `PI: ${piStr} ${status}`,
           `Z1 (easy, <80%): ${formatMinutes(w.z1Seconds)}`,
           `Z2 (threshold, 80-87.5%): ${formatMinutes(w.z2Seconds)}`,
@@ -83,9 +92,8 @@ export function PolarizationTrendChart({ weeks, maxHr, loading }: PolarizationTr
       },
     },
     xAxis: {
-      type: "category",
-      data: weekLabels,
-      axisLabel: { color: "#71717a", fontSize: 11, rotate: 45 },
+      type: "time" as const,
+      axisLabel: { color: "#71717a", fontSize: 11 },
       axisLine: { lineStyle: { color: "#3f3f46" } },
     },
     yAxis: {
@@ -110,7 +118,10 @@ export function PolarizationTrendChart({ weeks, maxHr, loading }: PolarizationTr
       {
         name: "Polarized zone",
         type: "line",
-        data: weekLabels.map(() => yMax),
+        data: [
+          [firstDate, yMax],
+          [lastDate, yMax],
+        ],
         symbol: "none",
         lineStyle: { width: 0 },
         areaStyle: { color: "#22c55e", opacity: 0.05, origin: 2.0 },
@@ -121,7 +132,10 @@ export function PolarizationTrendChart({ weeks, maxHr, loading }: PolarizationTr
       {
         name: "Non-polarized zone",
         type: "line",
-        data: weekLabels.map(() => yMin),
+        data: [
+          [firstDate, yMin],
+          [lastDate, yMin],
+        ],
         symbol: "none",
         lineStyle: { width: 0 },
         areaStyle: { color: "#ef4444", opacity: 0.05, origin: 2.0 },
@@ -149,7 +163,7 @@ export function PolarizationTrendChart({ weeks, maxHr, loading }: PolarizationTr
       {
         name: "Polarization Index",
         type: "line",
-        data: piValues,
+        data: validWeeks.map((w) => [w.week, w.polarizationIndex]),
         smooth: true,
         symbol: "circle",
         symbolSize: 6,

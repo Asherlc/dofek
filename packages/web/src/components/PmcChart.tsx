@@ -59,10 +59,6 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
     );
   }
 
-  const dates = data.map((d) =>
-    new Date(d.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-  );
-
   // Split TSB into positive (green) and negative (red) for area coloring
   const tsbPositive = data.map((d) => (d.tsb >= 0 ? d.tsb : 0));
   const tsbNegative = data.map((d) => (d.tsb < 0 ? d.tsb : 0));
@@ -79,8 +75,13 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
         if (!params.length) return "";
         const idx = (params[0] as unknown as { dataIndex: number }).dataIndex;
         const d = data[idx];
+        const label = new Date(d.date).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        });
         return [
-          `<strong>${dates[idx]}</strong>`,
+          `<strong>${label}</strong>`,
           `<span style="color:#71717a">Load:</span> ${d.load.toFixed(1)}`,
           `<span style="color:#3b82f6">Fitness (CTL):</span> ${d.ctl.toFixed(1)}`,
           `<span style="color:#ec4899">Fatigue (ATL):</span> ${d.atl.toFixed(1)}`,
@@ -94,9 +95,8 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
       top: 0,
     },
     xAxis: {
-      type: "category" as const,
-      data: dates,
-      axisLabel: { color: "#71717a", fontSize: 11, rotate: 45 },
+      type: "time" as const,
+      axisLabel: { color: "#71717a", fontSize: 11 },
       axisLine: { lineStyle: { color: "#3f3f46" } },
     },
     yAxis: [
@@ -122,7 +122,7 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
       {
         name: "Load",
         type: "bar",
-        data: data.map((d) => d.load),
+        data: data.map((d) => [d.date, d.load]),
         itemStyle: { color: "#71717a", opacity: 0.35 },
         yAxisIndex: 0,
         z: 1,
@@ -130,7 +130,7 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
       {
         name: "Fitness (CTL)",
         type: "line",
-        data: data.map((d) => d.ctl),
+        data: data.map((d) => [d.date, d.ctl]),
         smooth: true,
         symbol: "none",
         lineStyle: { color: "#3b82f6", width: 2 },
@@ -141,7 +141,7 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
       {
         name: "Fatigue (ATL)",
         type: "line",
-        data: data.map((d) => d.atl),
+        data: data.map((d) => [d.date, d.atl]),
         smooth: true,
         symbol: "none",
         lineStyle: { color: "#ec4899", width: 2 },
@@ -152,7 +152,7 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
       {
         name: "Form +",
         type: "line",
-        data: tsbPositive,
+        data: data.map((d, i) => [d.date, tsbPositive[i]]),
         smooth: true,
         symbol: "none",
         lineStyle: { width: 0 },
@@ -164,7 +164,7 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
       {
         name: "Form -",
         type: "line",
-        data: tsbNegative,
+        data: data.map((d, i) => [d.date, tsbNegative[i]]),
         smooth: true,
         symbol: "none",
         lineStyle: { width: 0 },
