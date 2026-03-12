@@ -71,13 +71,20 @@ jobs:
       - run: cd packages/web && pnpm run build
 
   docker:
-    name: Build & Push Docker Image
+    name: Docker (${{ matrix.target }})
     needs: [check, test, build-web]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+    strategy:
+      matrix:
+        include:
+          - target: server
+            suffix: ""
+          - target: client
+            suffix: "-client"
     steps:
       - uses: actions/checkout@v4
 
@@ -90,17 +97,9 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: docker/metadata-action@v5
-        id: server-meta
+        id: meta
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=sha
-            type=raw,value=latest
-
-      - uses: docker/metadata-action@v5
-        id: client-meta
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-client
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}${{ matrix.suffix }}
           tags: |
             type=sha
             type=raw,value=latest
@@ -108,19 +107,9 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: .
-          target: server
+          target: ${{ matrix.target }}
           push: true
-          tags: ${{ steps.server-meta.outputs.tags }}
-          labels: ${{ steps.server-meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          target: client
-          push: true
-          tags: ${{ steps.client-meta.outputs.tags }}
-          labels: ${{ steps.client-meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.target }}
