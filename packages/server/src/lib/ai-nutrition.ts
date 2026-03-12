@@ -71,8 +71,11 @@ Guidelines:
 const MULTI_ITEM_SYSTEM_PROMPT = `You are a nutrition estimation expert. Given a natural language description of what someone ate, break it into individual food items and estimate the nutritional content of each.
 
 Guidelines:
-- Split distinct food items into separate entries (e.g. "a burrito and a coke" = 2 items).
-- Do NOT split components of a single dish (e.g. "chicken stir fry with rice" = 1 item).
+- Break everything into the most granular individual food items possible. Each distinct ingredient or food that could be tracked separately should be its own entry.
+  - "two eggs and toast with butter" = 3 items: eggs, toast, butter.
+  - "coffee with milk and sugar" = 3 items: coffee, milk, sugar.
+  - "chicken salad with avocado and dressing" = 3 items: chicken salad, avocado, dressing.
+- The only exception is a composed dish where the components are inseparable and always eaten together (e.g. "a burrito" = 1 item, "miso soup" = 1 item). If in doubt, split it.
 - Estimate for typical serving sizes unless specified otherwise.
 - Infer the meal type (breakfast, lunch, dinner, snack) from context clues like time of day or explicit mentions. Default to "other" if unclear.
 - Round calories to the nearest integer and macros to one decimal place.
