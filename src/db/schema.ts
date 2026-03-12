@@ -176,6 +176,7 @@ export const bodyMeasurement = fitness.table(
   },
   (table) => [
     uniqueIndex("body_measurement_provider_external_idx").on(table.providerId, table.externalId),
+    index("body_measurement_user_provider_idx").on(table.userId, table.providerId),
   ],
 );
 
@@ -254,7 +255,10 @@ export const activity = fitness.table(
     raw: jsonb("raw"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [uniqueIndex("activity_provider_external_idx").on(table.providerId, table.externalId)],
+  (table) => [
+    uniqueIndex("activity_provider_external_idx").on(table.providerId, table.externalId),
+    index("activity_user_provider_idx").on(table.userId, table.providerId),
+  ],
 );
 
 // ============================================================
@@ -321,6 +325,7 @@ export const metricStream = fitness.table(
   (table) => [
     index("metric_stream_provider_time_idx").on(table.providerId, table.recordedAt),
     index("metric_stream_activity_time_idx").on(table.activityId, table.recordedAt),
+    index("metric_stream_user_provider_idx").on(table.userId, table.providerId),
   ],
 );
 
@@ -363,7 +368,10 @@ export const dailyMetrics = fitness.table(
     skinTempC: real("skin_temp_c"), // celsius (WHOOP)
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [primaryKey({ columns: [table.date, table.providerId] })],
+  (table) => [
+    primaryKey({ columns: [table.date, table.providerId] }),
+    index("daily_metrics_user_provider_idx").on(table.userId, table.providerId),
+  ],
 );
 
 // ============================================================
@@ -395,6 +403,7 @@ export const sleepSession = fitness.table(
   },
   (table) => [
     uniqueIndex("sleep_session_provider_external_idx").on(table.providerId, table.externalId),
+    index("sleep_session_user_provider_idx").on(table.userId, table.providerId),
   ],
 );
 
@@ -421,7 +430,10 @@ export const nutritionDaily = fitness.table(
     waterMl: integer("water_ml"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [primaryKey({ columns: [table.date, table.providerId] })],
+  (table) => [
+    primaryKey({ columns: [table.date, table.providerId] }),
+    index("nutrition_daily_user_provider_idx").on(table.userId, table.providerId),
+  ],
 );
 
 export const foodEntry = fitness.table(
@@ -497,6 +509,7 @@ export const foodEntry = fitness.table(
     uniqueIndex("food_entry_provider_external_idx").on(table.providerId, table.externalId),
     index("food_entry_date_idx").on(table.date),
     index("food_entry_date_meal_idx").on(table.date, table.meal),
+    index("food_entry_user_provider_idx").on(table.userId, table.providerId),
   ],
 );
 
@@ -537,6 +550,7 @@ export const labResult = fitness.table(
     index("lab_result_recorded_idx").on(table.recordedAt),
     index("lab_result_loinc_idx").on(table.loincCode),
     index("lab_result_test_name_idx").on(table.testName),
+    index("lab_result_user_provider_idx").on(table.userId, table.providerId),
   ],
 );
 
@@ -568,6 +582,7 @@ export const healthEvent = fitness.table(
   (table) => [
     uniqueIndex("health_event_provider_external_idx").on(table.providerId, table.externalId),
     index("health_event_type_time_idx").on(table.type, table.startDate),
+    index("health_event_user_provider_idx").on(table.userId, table.providerId),
   ],
 );
 
@@ -678,6 +693,7 @@ export const syncLog = fitness.table(
   },
   (table) => [
     index("sync_log_provider_type_idx").on(table.providerId, table.dataType, table.syncedAt),
+    index("sync_log_synced_at_idx").on(table.syncedAt),
   ],
 );
 
@@ -710,6 +726,7 @@ export const journalEntry = fitness.table(
       table.question,
     ),
     index("journal_entry_date_idx").on(table.date),
+    index("journal_entry_user_provider_idx").on(table.userId, table.providerId),
   ],
 );
 
