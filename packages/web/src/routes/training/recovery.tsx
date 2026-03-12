@@ -31,7 +31,10 @@ function RecoveryTab() {
           />
         </Section>
 
-        <Section title="Acute:Chronic Workload Ratio" subtitle="TRIMP-based training load balance">
+        <Section
+          title="Acute:Chronic Workload Ratio"
+          subtitle="7-day vs 28-day training load ratio — stay between 0.8 and 1.3"
+        >
           <WorkloadRatioChart
             data={(workloadRatio.data ?? []) as never[]}
             loading={workloadRatio.isLoading}

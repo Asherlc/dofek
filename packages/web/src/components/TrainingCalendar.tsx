@@ -28,13 +28,18 @@ export function TrainingCalendar({ data, height = 180 }: TrainingCalendarProps) 
     dayMap.set(d.date, d);
   }
 
-  // Determine date range from data
+  // Determine date range from data, capping to 1 year for calendar readability
   const dates = data.map((d) => d.date).sort();
-  const startDate = dates[0];
   const endDate = dates[dates.length - 1];
+  const oneYearBefore = new Date(endDate);
+  oneYearBefore.setFullYear(oneYearBefore.getFullYear() - 1);
+  const minDate = oneYearBefore.toISOString().split("T")[0];
+  const startDate = dates[0] > minDate ? dates[0] : minDate;
 
-  // Series data: [date, totalMinutes]
-  const seriesData: [string, number][] = data.map((d) => [d.date, d.totalMinutes]);
+  // Series data: [date, totalMinutes] — only include dates within the display range
+  const seriesData: [string, number][] = data
+    .filter((d) => d.date >= startDate)
+    .map((d) => [d.date, d.totalMinutes]);
 
   const option: EChartsOption = {
     backgroundColor: "transparent",

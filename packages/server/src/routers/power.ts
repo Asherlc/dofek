@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { enduranceTypeFilter } from "../lib/endurance-types.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 /** Human-readable labels for each duration. */
@@ -115,6 +116,7 @@ function powerCurveQuery(days: number, userId: string) {
       WHERE a.user_id = ${userId}
         AND ms.power > 0
         AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
+        AND ${enduranceTypeFilter("a")}
     ),
     durations AS (
       SELECT unnest(ARRAY[5,15,30,60,120,300,600,1200,1800,3600,5400,7200]) AS duration_s
@@ -192,6 +194,7 @@ export const powerRouter = router({
           WHERE a.user_id = ${ctx.userId}
             AND ms.power > 0
             AND a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+            AND ${enduranceTypeFilter("a")}
         )
         SELECT
           ap.activity_date::text AS activity_date,

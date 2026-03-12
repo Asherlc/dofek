@@ -108,7 +108,7 @@ export function TrainingPage() {
 
           <Section
             title="Acute:Chronic Workload Ratio"
-            subtitle="TRIMP-based training load balance"
+            subtitle="7-day vs 28-day training load ratio — stay between 0.8 and 1.3"
           >
             <WorkloadRatioChart
               data={(workloadRatio.data ?? []) as never[]}
@@ -144,7 +144,7 @@ export function TrainingPage() {
         {/* ── Performance Management ─────────────────────────── */}
         <Section
           title="Fitness / Fatigue / Form"
-          subtitle="Performance Management Chart (CTL/ATL/TSB)"
+          subtitle="Long-term fitness, short-term fatigue, and training form over time"
         >
           <PmcChart
             data={pmcData.data?.data ?? []}
@@ -153,7 +153,10 @@ export function TrainingPage() {
           />
         </Section>
 
-        <Section title="Ramp Rate" subtitle="Weekly CTL ramp rate with training recommendations">
+        <Section
+          title="Ramp Rate"
+          subtitle="How quickly your fitness load is building week over week"
+        >
           <RampRateChart
             data={((rampRate.data as Record<string, unknown> | undefined)?.weeks ?? []) as never[]}
             currentRampRate={
@@ -224,7 +227,10 @@ export function TrainingPage() {
 
         {/* ── Aerobic Efficiency + Polarization ──────────────── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Section title="Aerobic Efficiency" subtitle="Power/HR ratio in Z2 over time">
+          <Section
+            title="Aerobic Efficiency"
+            subtitle="Power output per heartbeat at easy effort — higher means fitter"
+          >
             <AerobicEfficiencyChart
               activities={effData?.activities ?? []}
               maxHr={effData?.maxHr ?? null}
@@ -234,7 +240,7 @@ export function TrainingPage() {
 
           <Section
             title="Polarization Index"
-            subtitle="Weekly PI trend (>2.0 = polarized training)"
+            subtitle="Weekly training distribution — above 2.0 means mostly easy and hard, little moderate"
           >
             <PolarizationTrendChart
               weeks={polData?.weeks ?? []}
@@ -253,7 +259,10 @@ export function TrainingPage() {
             />
           </Section>
 
-          <Section title="Estimated 1-Rep Max" subtitle="Epley-formula e1RM trends per exercise">
+          <Section
+            title="Estimated 1-Rep Max"
+            subtitle="Estimated max single-rep strength per exercise over time"
+          >
             <EstimatedMaxChart
               exercises={(estimatedMax.data ?? []) as never[]}
               loading={estimatedMax.isLoading}

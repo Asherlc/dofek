@@ -94,11 +94,21 @@ export interface Insight {
 
 // ── Confidence classification ─────────────────────────────────────────────
 
+/** Classify confidence for conditional tests (Cohen's d effect size) */
 function classifyConfidence(d: number, minN: number): ConfidenceLevel {
   const absD = Math.abs(d);
   if (absD >= 0.8 && minN >= 30) return "strong";
   if (absD >= 0.5 && minN >= 15) return "emerging";
   if (absD >= 0.3 && minN >= 10) return "early";
+  return "insufficient";
+}
+
+/** Classify confidence for correlation-based insights (Spearman rho) */
+function classifyCorrelationConfidence(rho: number, n: number): ConfidenceLevel {
+  const absRho = Math.abs(rho);
+  if (absRho >= 0.5 && n >= 30) return "strong";
+  if (absRho >= 0.35 && n >= 15) return "emerging";
+  if (absRho >= 0.2 && n >= 10) return "early";
   return "insufficient";
 }
 
@@ -151,11 +161,11 @@ interface JoinedDay {
   // body comp (daily, pick closest measurement)
   weight_kg: number | null;
   body_fat_pct: number | null;
-  // rolling body comp (7-day trailing)
-  weight_7d_avg: number | null;
-  body_fat_7d_avg: number | null;
-  weight_7d_delta: number | null;
-  body_fat_7d_delta: number | null;
+  // rolling body comp (30-day trailing)
+  weight_30d_avg: number | null;
+  body_fat_30d_avg: number | null;
+  weight_30d_delta: number | null;
+  body_fat_30d_delta: number | null;
 }
 
 function classifyActivity(type: string): "cardio" | "strength" | "flexibility" | "other" {
@@ -271,10 +281,10 @@ function joinByDate(
       weight_kg: bc?.weight_kg ?? null,
       body_fat_pct: bc?.body_fat_pct ?? null,
       // rolling values computed below
-      weight_7d_avg: null,
-      body_fat_7d_avg: null,
-      weight_7d_delta: null,
-      body_fat_7d_delta: null,
+      weight_30d_avg: null,
+      body_fat_30d_avg: null,
+      weight_30d_delta: null,
+      body_fat_30d_delta: null,
     });
   }
 
@@ -290,10 +300,10 @@ function joinByDate(
     const fats = window.map((d) => d.body_fat_pct).filter((v): v is number => v != null);
 
     if (weights.length >= 5) {
-      joined[i].weight_7d_avg = weights.reduce((a, b) => a + b, 0) / weights.length;
+      joined[i].weight_30d_avg = weights.reduce((a, b) => a + b, 0) / weights.length;
     }
     if (fats.length >= 5) {
-      joined[i].body_fat_7d_avg = fats.reduce((a, b) => a + b, 0) / fats.length;
+      joined[i].body_fat_30d_avg = fats.reduce((a, b) => a + b, 0) / fats.length;
     }
 
     // Delta: compare this 30-day avg to previous 30-day avg
@@ -305,12 +315,12 @@ function joinByDate(
       if (weights.length >= 5 && prevWeights.length >= 5) {
         const curAvg = weights.reduce((a, b) => a + b, 0) / weights.length;
         const prevAvg = prevWeights.reduce((a, b) => a + b, 0) / prevWeights.length;
-        joined[i].weight_7d_delta = curAvg - prevAvg;
+        joined[i].weight_30d_delta = curAvg - prevAvg;
       }
       if (fats.length >= 5 && prevFats.length >= 5) {
         const curAvg = fats.reduce((a, b) => a + b, 0) / fats.length;
         const prevAvg = prevFats.reduce((a, b) => a + b, 0) / prevFats.length;
-        joined[i].body_fat_7d_delta = curAvg - prevAvg;
+        joined[i].body_fat_30d_delta = curAvg - prevAvg;
       }
     }
   }
@@ -500,7 +510,7 @@ function getConditionalTests(): ConditionalTest[] {
         const exerciseDays = month.filter((d) => (d.exercise_minutes ?? 0) >= 20).length;
         return exerciseDays >= 12;
       },
-      valueFn: (d) => d.weight_7d_delta,
+      valueFn: (d) => d.weight_30d_delta,
     },
     {
       id: "exercise-monthly-bf",
@@ -513,7 +523,7 @@ function getConditionalTests(): ConditionalTest[] {
         const exerciseDays = month.filter((d) => (d.exercise_minutes ?? 0) >= 20).length;
         return exerciseDays >= 12;
       },
-      valueFn: (d) => d.body_fat_7d_delta,
+      valueFn: (d) => d.body_fat_30d_delta,
     },
     // ── Nutrition → body comp (30-day rolling, isocaloric: use % of calories) ──
     {
@@ -525,7 +535,7 @@ function getConditionalTests(): ConditionalTest[] {
         const avg = rollingAvg(all, i, 30, (d) => d.calories);
         return avg != null ? avg >= 2500 : null;
       },
-      valueFn: (d) => d.weight_7d_delta,
+      valueFn: (d) => d.weight_30d_delta,
     },
     {
       id: "high-protein-pct-weight",
@@ -538,7 +548,7 @@ function getConditionalTests(): ConditionalTest[] {
         );
         return avg != null ? avg >= 30 : null;
       },
-      valueFn: (d) => d.weight_7d_delta,
+      valueFn: (d) => d.weight_30d_delta,
     },
     {
       id: "high-protein-pct-bf",
@@ -551,7 +561,7 @@ function getConditionalTests(): ConditionalTest[] {
         );
         return avg != null ? avg >= 30 : null;
       },
-      valueFn: (d) => d.body_fat_7d_delta,
+      valueFn: (d) => d.body_fat_30d_delta,
     },
     {
       id: "high-carb-pct-weight",
@@ -564,7 +574,7 @@ function getConditionalTests(): ConditionalTest[] {
         );
         return avg != null ? avg >= 50 : null;
       },
-      valueFn: (d) => d.weight_7d_delta,
+      valueFn: (d) => d.weight_30d_delta,
     },
     {
       id: "high-fat-pct-bf",
@@ -577,7 +587,7 @@ function getConditionalTests(): ConditionalTest[] {
         );
         return avg != null ? avg >= 35 : null;
       },
-      valueFn: (d) => d.body_fat_7d_delta,
+      valueFn: (d) => d.body_fat_30d_delta,
     },
     // ── Nutrition → recovery ──
     {
@@ -658,7 +668,7 @@ function getCorrelationPairs(): CorrelationPair[] {
       xName: "30-day avg calories",
       yName: "monthly weight change",
       xFn: (_d, all, i) => rollingAvg(all, i, 30, (r) => r.calories),
-      yFn: (d) => d.weight_7d_delta,
+      yFn: (d) => d.weight_30d_delta,
     },
     {
       id: "protein-pct-30d-weight-delta",
@@ -668,7 +678,7 @@ function getCorrelationPairs(): CorrelationPair[] {
         rollingAvg(all, i, 30, (r) =>
           r.protein_g != null && r.calories ? ((r.protein_g * 4) / r.calories) * 100 : null,
         ),
-      yFn: (d) => d.weight_7d_delta,
+      yFn: (d) => d.weight_30d_delta,
     },
     {
       id: "protein-pct-30d-bf-delta",
@@ -678,7 +688,7 @@ function getCorrelationPairs(): CorrelationPair[] {
         rollingAvg(all, i, 30, (r) =>
           r.protein_g != null && r.calories ? ((r.protein_g * 4) / r.calories) * 100 : null,
         ),
-      yFn: (d) => d.body_fat_7d_delta,
+      yFn: (d) => d.body_fat_30d_delta,
     },
     {
       id: "carb-pct-30d-weight-delta",
@@ -688,7 +698,7 @@ function getCorrelationPairs(): CorrelationPair[] {
         rollingAvg(all, i, 30, (r) =>
           r.carbs_g != null && r.calories ? ((r.carbs_g * 4) / r.calories) * 100 : null,
         ),
-      yFn: (d) => d.weight_7d_delta,
+      yFn: (d) => d.weight_30d_delta,
     },
     {
       id: "fat-pct-30d-bf-delta",
@@ -698,7 +708,7 @@ function getCorrelationPairs(): CorrelationPair[] {
         rollingAvg(all, i, 30, (r) =>
           r.fat_g != null && r.calories ? ((r.fat_g * 9) / r.calories) * 100 : null,
         ),
-      yFn: (d) => d.body_fat_7d_delta,
+      yFn: (d) => d.body_fat_30d_delta,
     },
     // ── Exercise → body comp (30-day rolling) ──
     {
@@ -711,7 +721,7 @@ function getCorrelationPairs(): CorrelationPair[] {
         const total = month.reduce((sum, w) => sum + (w.exercise_minutes ?? 0), 0);
         return total > 0 ? total : null;
       },
-      yFn: (d) => d.weight_7d_delta,
+      yFn: (d) => d.weight_30d_delta,
     },
     {
       id: "exercise-30d-bf-delta",
@@ -723,7 +733,7 @@ function getCorrelationPairs(): CorrelationPair[] {
         const total = month.reduce((sum, w) => sum + (w.exercise_minutes ?? 0), 0);
         return total > 0 ? total : null;
       },
-      yFn: (d) => d.body_fat_7d_delta,
+      yFn: (d) => d.body_fat_30d_delta,
     },
     // ── Nutrition → recovery ──
     {
@@ -805,28 +815,28 @@ function getAllMetrics(): MetricDef[] {
     { key: "weight", label: "weight", role: "outcome", extract: (d) => d.weight_kg },
     { key: "body_fat", label: "body fat %", role: "outcome", extract: (d) => d.body_fat_pct },
     {
-      key: "weight_7d",
-      label: "7-day avg weight",
+      key: "weight_30d",
+      label: "30-day avg weight",
       role: "outcome",
-      extract: (d) => d.weight_7d_avg,
+      extract: (d) => d.weight_30d_avg,
     },
     {
-      key: "bf_7d",
-      label: "7-day avg body fat",
+      key: "bf_30d",
+      label: "30-day avg body fat",
       role: "outcome",
-      extract: (d) => d.body_fat_7d_avg,
+      extract: (d) => d.body_fat_30d_avg,
     },
     {
       key: "weight_delta",
-      label: "weekly weight change",
+      label: "monthly weight change",
       role: "outcome",
-      extract: (d) => d.weight_7d_delta,
+      extract: (d) => d.weight_30d_delta,
     },
     {
       key: "bf_delta",
-      label: "weekly body fat change",
+      label: "monthly body fat change",
       role: "outcome",
-      extract: (d) => d.body_fat_7d_delta,
+      extract: (d) => d.body_fat_30d_delta,
     },
   ];
 }
@@ -866,8 +876,8 @@ function exhaustiveSweep(joined: JoinedDay[], existingIds: Set<string>): Insight
 
   // Group keys that are derived from the same underlying metric or category
   const derivedGroups: Record<string, string> = {
-    weight_7d: "weight",
-    bf_7d: "body_fat",
+    weight_30d: "weight",
+    bf_30d: "body_fat",
     weight_delta: "weight",
     bf_delta: "body_fat",
   };
@@ -880,8 +890,8 @@ function exhaustiveSweep(joined: JoinedDay[], existingIds: Set<string>): Insight
     fiber: "nutrition",
     weight: "bodycomp",
     body_fat: "bodycomp",
-    weight_7d: "bodycomp",
-    bf_7d: "bodycomp",
+    weight_30d: "bodycomp",
+    bf_30d: "bodycomp",
     weight_delta: "bodycomp",
     bf_delta: "bodycomp",
     sleep_dur: "sleep",
@@ -896,8 +906,8 @@ function exhaustiveSweep(joined: JoinedDay[], existingIds: Set<string>): Insight
   const bodyCompKeys = new Set([
     "weight",
     "body_fat",
-    "weight_7d",
-    "bf_7d",
+    "weight_30d",
+    "bf_30d",
     "weight_delta",
     "bf_delta",
   ]);
@@ -982,8 +992,7 @@ function exhaustiveSweep(joined: JoinedDay[], existingIds: Set<string>): Insight
     const direction = c.rho > 0 ? "positively" : "negatively";
     const strength = absRho >= 0.6 ? "strongly" : absRho >= 0.4 ? "moderately" : "";
     const lagText = c.lag === 0 ? "same day" : c.lag === 1 ? "next day" : `${c.lag} days later`;
-    const confidence: ConfidenceLevel =
-      absRho >= 0.5 && c.n >= 30 ? "strong" : absRho >= 0.35 && c.n >= 20 ? "emerging" : "early";
+    const confidence = classifyCorrelationConfidence(c.rho, c.n);
 
     const yWithLag = c.lag > 0 ? `${lagText} ${c.yLabel}` : c.yLabel;
 
@@ -1285,12 +1294,7 @@ function computeMonthlyInsights(joined: JoinedDay[]): Insight[] {
     const direction = corr.rho > 0 ? "positively" : "negatively";
     const strength =
       Math.abs(corr.rho) >= 0.6 ? "strongly" : Math.abs(corr.rho) >= 0.4 ? "moderately" : "weakly";
-    const confidence: ConfidenceLevel =
-      Math.abs(corr.rho) >= 0.5 && xs.length >= 10
-        ? "strong"
-        : Math.abs(corr.rho) >= 0.35 && xs.length >= 6
-          ? "emerging"
-          : "early";
+    const confidence = classifyCorrelationConfidence(corr.rho, xs.length);
 
     insights.push({
       id: pair.id,
@@ -1339,8 +1343,8 @@ function computeMonthlyInsights(joined: JoinedDay[]): Insight[] {
             confidence: conf,
             metric: "monthly weight change",
             action: `above-median exercise (>${medExDays} days/mo)`,
-            message: `Months with more exercise have ${Math.abs(diff).toFixed(1)} lbs ${diff < 0 ? "less" : "more"} weight change`,
-            detail: `High exercise months: avg ${trueStats.mean.toFixed(1)} lbs vs ${falseStats.mean.toFixed(1)} lbs (n=${highWeightDeltas.length}/${lowWeightDeltas.length})`,
+            message: `Months with more exercise have ${Math.abs(diff).toFixed(1)} kg ${diff < 0 ? "less" : "more"} weight change`,
+            detail: `High exercise months: avg ${trueStats.mean.toFixed(1)} kg vs ${falseStats.mean.toFixed(1)} kg (n=${highWeightDeltas.length}/${lowWeightDeltas.length})`,
             whenTrue: trueStats,
             whenFalse: falseStats,
             effectSize: d,
@@ -1619,7 +1623,7 @@ const metricUnits: Record<string, string> = {
   "deep sleep": "min",
   "sleep efficiency that night": "%",
   "sleep efficiency": "%",
-  "monthly weight change": "lbs",
+  "monthly weight change": "kg",
   "monthly body fat change": "%",
   "exercise duration": "min",
 };
@@ -1654,7 +1658,7 @@ function explainInsight(insight: Omit<Insight, "explanation">): string {
 
     if (metric.includes("weight change") || metric.includes("body fat change")) {
       const what = metric.includes("weight") ? "weight" : "body fat";
-      const unitLabel = metric.includes("weight") ? "lbs" : "%";
+      const unitLabel = metric.includes("weight") ? "kg" : "%";
       // Positive mean = gaining, negative = losing
       const withDesc =
         trueM >= 0 ? `+${trueM.toFixed(2)} ${unitLabel}` : `${trueM.toFixed(2)} ${unitLabel}`;
@@ -1696,6 +1700,8 @@ export function computeInsights(
   const insights: Insight[] = [];
 
   // 1. Conditional analysis (primary method)
+  // Collect all candidates first, then apply FDR correction
+  const conditionalCandidates: Array<Insight & { rawPValue: number }> = [];
   for (const test of getConditionalTests()) {
     const trueValues: number[] = [];
     const falseValues: number[] = [];
@@ -1734,7 +1740,7 @@ export function computeInsights(
 
     const scopePhrase = test.scope === "month" ? "during months with" : "on days with";
     const confounders = findConfounders(test, joined);
-    insights.push({
+    conditionalCandidates.push({
       id: test.id,
       type: "conditional",
       confidence,
@@ -1751,7 +1757,20 @@ export function computeInsights(
         withAction: downsample(trueValues, MAX_DATA_POINTS),
         withoutAction: downsample(falseValues, MAX_DATA_POINTS),
       },
+      rawPValue: tResult.pValue,
     });
+  }
+
+  // Apply FDR correction to conditional test p-values
+  if (conditionalCandidates.length > 0) {
+    const pValues = conditionalCandidates.map((c) => c.rawPValue);
+    const significant = benjaminiHochberg(pValues, 0.05);
+    for (let i = 0; i < conditionalCandidates.length; i++) {
+      if (significant[i]) {
+        const { rawPValue: _, ...insight } = conditionalCandidates[i];
+        insights.push(insight);
+      }
+    }
   }
 
   // 2. Continuous correlations (supplementary)
@@ -1790,7 +1809,7 @@ export function computeInsights(
     correlationInsights.push({
       id: pair.id,
       type: "correlation",
-      confidence: Math.abs(corr.rho) >= 0.5 && xs.length >= 30 ? "strong" : "emerging",
+      confidence: classifyCorrelationConfidence(corr.rho, xs.length),
       metric: pair.yName,
       action: pair.xName,
       message: `${pair.xName} is ${strength} ${direction} associated with ${pair.yName}`,

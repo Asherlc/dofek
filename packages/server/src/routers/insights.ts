@@ -1,5 +1,12 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import type {
+  ActivityRow,
+  BodyCompRow,
+  DailyRow,
+  NutritionRow,
+  SleepRow,
+} from "../insights/engine.ts";
 import { computeInsights } from "../insights/engine.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
@@ -20,14 +27,14 @@ export const insightsRouter = router({
                      light_minutes, awake_minutes, efficiency_pct, is_nap
               FROM fitness.v_sleep
               WHERE user_id = ${ctx.userId}
-                AND started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+                AND started_at > CURRENT_DATE - ${input.days}::int
               ORDER BY started_at ASC`,
         ),
         ctx.db.execute(
           sql`SELECT started_at, ended_at, activity_type
               FROM fitness.v_activity
               WHERE user_id = ${ctx.userId}
-                AND started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+                AND started_at > CURRENT_DATE - ${input.days}::int
               ORDER BY started_at ASC`,
         ),
         ctx.db.execute(
@@ -41,17 +48,17 @@ export const insightsRouter = router({
           sql`SELECT recorded_at, weight_kg, body_fat_pct
               FROM fitness.v_body_measurement
               WHERE user_id = ${ctx.userId}
-                AND recorded_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+                AND recorded_at > CURRENT_DATE - ${input.days}::int
               ORDER BY recorded_at ASC`,
         ),
       ]);
 
       return computeInsights(
-        metrics as any,
-        sleep as any,
-        activities as any,
-        nutrition as any,
-        bodyComp as any,
+        metrics as unknown as DailyRow[],
+        sleep as unknown as SleepRow[],
+        activities as unknown as ActivityRow[],
+        nutrition as unknown as NutritionRow[],
+        bodyComp as unknown as BodyCompRow[],
       );
     }),
 });
