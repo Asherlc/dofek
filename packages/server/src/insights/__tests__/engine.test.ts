@@ -379,7 +379,7 @@ describe("computeInsights()", () => {
     for (const insight of bodyCompInsights) {
       const pctMatch = insight.message.match(/(\d+)%/);
       if (pctMatch) {
-        const pct = Number.parseInt(pctMatch[1], 10);
+        const pct = Number.parseInt(pctMatch[1]!, 10);
         expect(pct).toBeLessThanOrEqual(100);
       }
     }
