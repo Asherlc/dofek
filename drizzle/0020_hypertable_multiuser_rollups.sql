@@ -6,12 +6,20 @@
 -- 3. metric_stream as TimescaleDB hypertable
 -- 4. activity_summary + activity_hr_zones rollup materialized views
 -- 5. Updated dedup views with user_id
+--
+-- NOTE: Uses IF NOT EXISTS / IF NOT EXISTS throughout to be idempotent
+-- in case a previous partial run applied some statements before failing.
+
+-- Enable TimescaleDB extension (required for create_hypertable)
+CREATE EXTENSION IF NOT EXISTS timescaledb;
+
+--> statement-breakpoint
 
 -- ============================================================
 -- 1. user_profile table
 -- ============================================================
 
-CREATE TABLE fitness.user_profile (
+CREATE TABLE IF NOT EXISTS fitness.user_profile (
   id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name       TEXT NOT NULL,
   email      TEXT UNIQUE,
@@ -24,7 +32,8 @@ CREATE TABLE fitness.user_profile (
 
 -- Seed a default user for single-user migration path
 INSERT INTO fitness.user_profile (id, name)
-VALUES ('00000000-0000-0000-0000-000000000001', 'Default User');
+VALUES ('00000000-0000-0000-0000-000000000001', 'Default User')
+ON CONFLICT (id) DO NOTHING;
 
 --> statement-breakpoint
 
@@ -34,95 +43,93 @@ VALUES ('00000000-0000-0000-0000-000000000001', 'Default User');
 
 -- provider: add user_id + update unique constraint
 ALTER TABLE fitness.provider
-  ADD COLUMN user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'
+  ADD COLUMN IF NOT EXISTS user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'
   REFERENCES fitness.user_profile(id);
 
--- Drop the implicit unique on provider.id (it's the PK, stays),
--- but add a unique constraint on (user_id, name) for multi-user
-CREATE UNIQUE INDEX provider_user_name_idx ON fitness.provider (user_id, name);
+CREATE UNIQUE INDEX IF NOT EXISTS provider_user_name_idx ON fitness.provider (user_id, name);
 
 --> statement-breakpoint
 
 -- activity
 ALTER TABLE fitness.activity
-  ADD COLUMN user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'
+  ADD COLUMN IF NOT EXISTS user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'
   REFERENCES fitness.user_profile(id);
 
 --> statement-breakpoint
 
 -- sleep_session
 ALTER TABLE fitness.sleep_session
-  ADD COLUMN user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'
+  ADD COLUMN IF NOT EXISTS user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'
   REFERENCES fitness.user_profile(id);
 
 --> statement-breakpoint
 
 -- daily_metrics
 ALTER TABLE fitness.daily_metrics
-  ADD COLUMN user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'
+  ADD COLUMN IF NOT EXISTS user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'
   REFERENCES fitness.user_profile(id);
 
 --> statement-breakpoint
 
 -- body_measurement
 ALTER TABLE fitness.body_measurement
-  ADD COLUMN user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'
+  ADD COLUMN IF NOT EXISTS user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'
   REFERENCES fitness.user_profile(id);
 
 --> statement-breakpoint
 
 -- food_entry
 ALTER TABLE fitness.food_entry
-  ADD COLUMN user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'
+  ADD COLUMN IF NOT EXISTS user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'
   REFERENCES fitness.user_profile(id);
 
 --> statement-breakpoint
 
 -- nutrition_daily
 ALTER TABLE fitness.nutrition_daily
-  ADD COLUMN user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'
+  ADD COLUMN IF NOT EXISTS user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'
   REFERENCES fitness.user_profile(id);
 
 --> statement-breakpoint
 
 -- strength_workout
 ALTER TABLE fitness.strength_workout
-  ADD COLUMN user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'
+  ADD COLUMN IF NOT EXISTS user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'
   REFERENCES fitness.user_profile(id);
 
 --> statement-breakpoint
 
 -- lab_result
 ALTER TABLE fitness.lab_result
-  ADD COLUMN user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'
+  ADD COLUMN IF NOT EXISTS user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'
   REFERENCES fitness.user_profile(id);
 
 --> statement-breakpoint
 
 -- health_event
 ALTER TABLE fitness.health_event
-  ADD COLUMN user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'
+  ADD COLUMN IF NOT EXISTS user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'
   REFERENCES fitness.user_profile(id);
 
 --> statement-breakpoint
 
 -- life_events
 ALTER TABLE fitness.life_events
-  ADD COLUMN user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'
+  ADD COLUMN IF NOT EXISTS user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'
   REFERENCES fitness.user_profile(id);
 
 --> statement-breakpoint
 
 -- journal_entry
 ALTER TABLE fitness.journal_entry
-  ADD COLUMN user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'
+  ADD COLUMN IF NOT EXISTS user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'
   REFERENCES fitness.user_profile(id);
 
 --> statement-breakpoint
 
 -- sync_log
 ALTER TABLE fitness.sync_log
-  ADD COLUMN user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'
+  ADD COLUMN IF NOT EXISTS user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'
   REFERENCES fitness.user_profile(id);
 
 --> statement-breakpoint
@@ -131,7 +138,7 @@ ALTER TABLE fitness.sync_log
 -- 3. Recreate metric_stream as TimescaleDB hypertable
 -- ============================================================
 
-CREATE TABLE fitness.metric_stream (
+CREATE TABLE IF NOT EXISTS fitness.metric_stream (
   recorded_at       TIMESTAMPTZ NOT NULL,
   user_id           UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'
                     REFERENCES fitness.user_profile(id),
@@ -185,39 +192,52 @@ CREATE TABLE fitness.metric_stream (
 --> statement-breakpoint
 
 -- Convert to hypertable: 1-week chunks
-SELECT create_hypertable('fitness.metric_stream', 'recorded_at',
-  chunk_time_interval => INTERVAL '1 week',
-  migrate_data => false
-);
+-- This is a no-op if already a hypertable (will error, caught by DO block)
+DO $$
+BEGIN
+  PERFORM create_hypertable('fitness.metric_stream', 'recorded_at',
+    chunk_time_interval => INTERVAL '1 week',
+    migrate_data => false,
+    if_not_exists => true
+  );
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE 'create_hypertable skipped: %', SQLERRM;
+END;
+$$;
 
 --> statement-breakpoint
 
 -- Compression policy: compress chunks older than 2 weeks
-ALTER TABLE fitness.metric_stream SET (
-  timescaledb.compress,
-  timescaledb.compress_segmentby = 'user_id, activity_id',
-  timescaledb.compress_orderby = 'recorded_at ASC'
-);
-
-SELECT add_compression_policy('fitness.metric_stream', INTERVAL '2 weeks');
+DO $$
+BEGIN
+  ALTER TABLE fitness.metric_stream SET (
+    timescaledb.compress,
+    timescaledb.compress_segmentby = 'user_id, activity_id',
+    timescaledb.compress_orderby = 'recorded_at ASC'
+  );
+  PERFORM add_compression_policy('fitness.metric_stream', INTERVAL '2 weeks', if_not_exists => true);
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE 'compression setup skipped: %', SQLERRM;
+END;
+$$;
 
 --> statement-breakpoint
 
 -- Covering index for activity-based queries
-CREATE INDEX metric_stream_activity_covering_idx
+CREATE INDEX IF NOT EXISTS metric_stream_activity_covering_idx
 ON fitness.metric_stream (activity_id)
 INCLUDE (heart_rate, power, distance, altitude, cadence, recorded_at);
 
 -- User + time index for time-range queries
-CREATE INDEX metric_stream_user_time_idx
+CREATE INDEX IF NOT EXISTS metric_stream_user_time_idx
 ON fitness.metric_stream (user_id, recorded_at DESC);
 
 -- Provider + time index (existing pattern)
-CREATE INDEX metric_stream_provider_time_idx
+CREATE INDEX IF NOT EXISTS metric_stream_provider_time_idx
 ON fitness.metric_stream (provider_id, recorded_at);
 
 -- Activity + time index
-CREATE INDEX metric_stream_activity_time_idx
+CREATE INDEX IF NOT EXISTS metric_stream_activity_time_idx
 ON fitness.metric_stream (activity_id, recorded_at);
 
 --> statement-breakpoint
@@ -225,6 +245,12 @@ ON fitness.metric_stream (activity_id, recorded_at);
 -- ============================================================
 -- 4. Rollup materialized views
 -- ============================================================
+
+-- Drop if exists so we can recreate cleanly
+DROP MATERIALIZED VIEW IF EXISTS fitness.activity_summary;
+DROP MATERIALIZED VIEW IF EXISTS fitness.activity_hr_zones;
+
+--> statement-breakpoint
 
 -- activity_summary: pre-aggregated per-activity stats
 CREATE MATERIALIZED VIEW fitness.activity_summary AS
@@ -305,6 +331,14 @@ CREATE INDEX activity_hr_zones_user ON fitness.activity_hr_zones (user_id);
 -- ============================================================
 -- 5. Updated dedup views with user_id
 -- ============================================================
+
+-- Drop existing dedup views so we can recreate with user_id
+DROP MATERIALIZED VIEW IF EXISTS fitness.v_activity;
+DROP MATERIALIZED VIEW IF EXISTS fitness.v_sleep;
+DROP MATERIALIZED VIEW IF EXISTS fitness.v_body_measurement;
+DROP MATERIALIZED VIEW IF EXISTS fitness.v_daily_metrics;
+
+--> statement-breakpoint
 
 -- v_activity: canonical activities (unchanged logic, just recreated after drop)
 CREATE MATERIALIZED VIEW fitness.v_activity AS
