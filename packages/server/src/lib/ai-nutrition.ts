@@ -71,12 +71,11 @@ Guidelines:
 const MULTI_ITEM_SYSTEM_PROMPT = `You are a nutrition estimation expert. Given a natural language description of what someone ate, break it into individual food items and estimate the nutritional content of each.
 
 Guidelines:
-- ALWAYS break meals into their specific, individual food items. Each distinct food should be its own entry with its own nutritional estimate. For example:
-  - "I had a turkey sandwich, chips, and a soda" → 3 items: turkey sandwich, chips, soda.
-  - "eggs, bacon, and toast with butter for breakfast" → 4 items: eggs, bacon, toast, butter.
-  - "a salad with grilled chicken, croutons, and ranch dressing" → 4 items: mixed greens, grilled chicken, croutons, ranch dressing.
-- For composed dishes that are eaten as a single unit (e.g. "a burrito", "a slice of pizza", "chicken stir fry"), keep them as one item — don't deconstruct their ingredients.
-- When someone lists a meal vaguely (e.g. "lunch at Chipotle"), ask yourself what distinct items they likely had and list each one separately.
+- Break everything into the most granular individual food items possible. Each distinct ingredient or food that could be tracked separately should be its own entry.
+  - "two eggs and toast with butter" = 3 items: eggs, toast, butter.
+  - "coffee with milk and sugar" = 3 items: coffee, milk, sugar.
+  - "chicken salad with avocado and dressing" = 3 items: chicken salad, avocado, dressing.
+- The only exception is a composed dish where the components are inseparable and always eaten together (e.g. "a burrito" = 1 item, "miso soup" = 1 item). If in doubt, split it.
 - Estimate for typical serving sizes unless specified otherwise.
 - Infer the meal type (breakfast, lunch, dinner, snack) from context clues like time of day or explicit mentions. Default to "other" if unclear.
 - Round calories to the nearest integer and macros to one decimal place.
@@ -189,6 +188,66 @@ export interface AnalyzeMultiResult {
  * Analyze a food description and return multiple individual food items with meal detection.
  * Cascades through configured providers on rate limit errors.
  */
+/**
+ * Refine a previous nutrition analysis based on follow-up instructions.
+ * Uses chat-style messages so the AI sees the original items as context.
+ */
+export async function refineNutritionItems(
+  previousItems: NutritionItemWithMeal[],
+  refinement: string,
+): Promise<AnalyzeMultiResult> {
+  const providers = getConfiguredProviders();
+
+  if (providers.length === 0) {
+    throw new Error(
+      "No AI providers configured. Set at least one of: GEMINI_API_KEY, MISTRAL_API_KEY",
+    );
+  }
+
+  const previousSummary = previousItems
+    .map(
+      (item) =>
+        `- ${item.foodName} (${item.meal}): ${item.calories} cal, P:${item.proteinG}g C:${item.carbsG}g F:${item.fatG}g`,
+    )
+    .join("\n");
+
+  let lastError: unknown;
+
+  for (const provider of providers) {
+    try {
+      const result = await generateText({
+        model: provider.createModel(),
+        output: Output.object({ schema: aiNutritionMultiSchema }),
+        system: `${MULTI_ITEM_SYSTEM_PROMPT}\n\nThe user is refining a previous analysis. Apply their corrections to the items and return the full updated list. If they say to remove an item, omit it. If they correct a quantity or add a new item, adjust accordingly.`,
+        messages: [
+          { role: "user", content: "Here's what I ate: the items below" },
+          { role: "assistant", content: previousSummary },
+          { role: "user", content: refinement },
+        ],
+      });
+
+      if (!result.output) {
+        throw new Error(`AI provider ${provider.name} returned no structured output`);
+      }
+
+      return {
+        items: result.output.items,
+        provider: provider.name,
+      };
+    } catch (error) {
+      lastError = error;
+      if (isRateLimitError(error)) {
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  throw new Error(
+    `All AI providers rate-limited. Last error: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
+  );
+}
+
 export async function analyzeNutritionItems(description: string): Promise<AnalyzeMultiResult> {
   const providers = getConfiguredProviders();
 
