@@ -1,0 +1,625 @@
+import { sql } from "drizzle-orm";
+import { z } from "zod";
+import { publicProcedure, router } from "../trpc.ts";
+
+const PROVIDER_ID = "apple_health_kit";
+const BATCH_SIZE = 500;
+
+// ── Zod schemas ──
+
+const healthKitSampleSchema = z.object({
+  type: z.string(),
+  value: z.number(),
+  unit: z.string(),
+  startDate: z.string(),
+  endDate: z.string(),
+  sourceName: z.string(),
+  sourceBundle: z.string(),
+  uuid: z.string(),
+});
+
+const workoutSampleSchema = z.object({
+  uuid: z.string(),
+  workoutType: z.string(),
+  startDate: z.string(),
+  endDate: z.string(),
+  duration: z.number(),
+  totalEnergyBurned: z.number().nullable(),
+  totalDistance: z.number().nullable(),
+  sourceName: z.string(),
+  sourceBundle: z.string(),
+});
+
+const sleepSampleSchema = z.object({
+  uuid: z.string(),
+  startDate: z.string(),
+  endDate: z.string(),
+  value: z.string(),
+  sourceName: z.string(),
+});
+
+type HealthKitSample = z.infer<typeof healthKitSampleSchema>;
+type WorkoutSample = z.infer<typeof workoutSampleSchema>;
+type SleepSample = z.infer<typeof sleepSampleSchema>;
+
+// ── Type routing maps ──
+
+/** Body measurement types and their column names */
+const bodyMeasurementTypes: Record<
+  string,
+  { column: string; transform?: (value: number) => number }
+> = {
+  HKQuantityTypeIdentifierBodyMass: { column: "weight_kg" },
+  HKQuantityTypeIdentifierBodyFatPercentage: {
+    column: "body_fat_pct",
+    transform: (value) => value * 100,
+  },
+  HKQuantityTypeIdentifierBodyMassIndex: { column: "bmi" },
+  HKQuantityTypeIdentifierHeight: { column: "height_cm" },
+};
+
+/** Additive daily metrics -- values that should be summed within a day */
+const additiveDailyMetricTypes: Record<
+  string,
+  { column: string; transform?: (value: number) => number }
+> = {
+  HKQuantityTypeIdentifierStepCount: { column: "steps" },
+  HKQuantityTypeIdentifierActiveEnergyBurned: { column: "active_energy_kcal" },
+  HKQuantityTypeIdentifierBasalEnergyBurned: { column: "basal_energy_kcal" },
+  HKQuantityTypeIdentifierDistanceWalkingRunning: {
+    column: "distance_km",
+    transform: (value) => value / 1000,
+  },
+  HKQuantityTypeIdentifierDistanceCycling: {
+    column: "cycling_distance_km",
+    transform: (value) => value / 1000,
+  },
+  HKQuantityTypeIdentifierFlightsClimbed: { column: "flights_climbed" },
+  HKQuantityTypeIdentifierAppleExerciseTime: { column: "exercise_minutes" },
+};
+
+/** Point-in-time daily metrics -- use latest value for the day */
+const pointInTimeDailyMetricTypes: Record<string, { column: string }> = {
+  HKQuantityTypeIdentifierRestingHeartRate: { column: "resting_hr" },
+  HKQuantityTypeIdentifierHeartRateVariabilitySDNN: { column: "hrv" },
+  HKQuantityTypeIdentifierVO2Max: { column: "vo2max" },
+  HKQuantityTypeIdentifierWalkingSpeed: { column: "walking_speed" },
+  HKQuantityTypeIdentifierWalkingStepLength: { column: "walking_step_length" },
+  HKQuantityTypeIdentifierWalkingDoubleSupportPercentage: { column: "walking_double_support_pct" },
+  HKQuantityTypeIdentifierWalkingAsymmetryPercentage: { column: "walking_asymmetry_pct" },
+};
+
+/** Metric stream types and their column names */
+const metricStreamTypes: Record<string, { column: string }> = {
+  HKQuantityTypeIdentifierHeartRate: { column: "heart_rate" },
+  HKQuantityTypeIdentifierOxygenSaturation: { column: "spo2" },
+  HKQuantityTypeIdentifierRespiratoryRate: { column: "respiratory_rate" },
+  HKQuantityTypeIdentifierBloodGlucose: { column: "blood_glucose" },
+  HKQuantityTypeIdentifierEnvironmentalAudioExposure: { column: "audio_exposure" },
+};
+
+/** HKWorkoutActivityType raw values to activity type strings */
+const workoutActivityTypeMap: Record<string, string> = {
+  "1": "americanFootball",
+  "2": "archery",
+  "3": "australianFootball",
+  "4": "badminton",
+  "5": "baseball",
+  "6": "basketball",
+  "7": "bowling",
+  "8": "boxing",
+  "9": "climbing",
+  "10": "cricket",
+  "11": "crossTraining",
+  "12": "curling",
+  "13": "cycling",
+  "14": "dance",
+  "15": "elliptical",
+  "16": "equestrianSports",
+  "17": "fencing",
+  "18": "fishing",
+  "19": "functionalStrengthTraining",
+  "20": "golf",
+  "21": "gymnastics",
+  "22": "handball",
+  "23": "hiking",
+  "24": "hockey",
+  "25": "hunting",
+  "26": "lacrosse",
+  "27": "martialArts",
+  "28": "mindAndBody",
+  "29": "paddleSports",
+  "30": "play",
+  "31": "preparationAndRecovery",
+  "32": "racquetball",
+  "33": "rowing",
+  "34": "rugby",
+  "35": "running",
+  "36": "sailing",
+  "37": "running",
+  "38": "snowSports",
+  "39": "soccer",
+  "40": "softball",
+  "41": "squash",
+  "42": "stairClimbing",
+  "43": "surfingSports",
+  "44": "swimming",
+  "45": "tableTennis",
+  "46": "swimming",
+  "47": "tennis",
+  "48": "trackAndField",
+  "49": "traditionalStrengthTraining",
+  "50": "volleyball",
+  "51": "walking",
+  "52": "walking",
+  "53": "waterFitness",
+  "54": "waterPolo",
+  "55": "waterSports",
+  "56": "wrestling",
+  "57": "yoga",
+  "58": "barre",
+  "59": "coreTraining",
+  "60": "crossCountrySkiing",
+  "61": "downhillSkiing",
+  "62": "flexibility",
+  "63": "highIntensityIntervalTraining",
+  "64": "jumpRope",
+  "65": "kickboxing",
+  "66": "pilates",
+  "67": "snowboarding",
+  "68": "stairs",
+  "69": "stepTraining",
+  "70": "wheelchairWalkPace",
+  "71": "wheelchairRunPace",
+  "72": "taiChi",
+  "73": "mixedCardio",
+  "74": "handCycling",
+  "75": "discSports",
+  "76": "fitnessGaming",
+  "77": "cardioDance",
+  "78": "socialDance",
+  "79": "pickleball",
+  "80": "cooldown",
+};
+
+type Database = Parameters<Parameters<typeof publicProcedure.mutation>[0]>[0]["ctx"]["db"];
+
+/** Ensure the apple_health_kit provider row exists */
+async function ensureProvider(db: Database) {
+  await db.execute(
+    sql`INSERT INTO fitness.provider (id, name)
+        VALUES (${PROVIDER_ID}, 'Apple HealthKit')
+        ON CONFLICT (id) DO NOTHING`,
+  );
+}
+
+/** Extract date string (YYYY-MM-DD) from an ISO timestamp */
+function extractDate(isoString: string): string {
+  return isoString.slice(0, 10);
+}
+
+/** Route a sample to its destination category */
+function categorize(
+  type: string,
+):
+  | "bodyMeasurement"
+  | "additiveDailyMetric"
+  | "pointInTimeDailyMetric"
+  | "metricStream"
+  | "healthEvent" {
+  if (type in bodyMeasurementTypes) return "bodyMeasurement";
+  if (type in additiveDailyMetricTypes) return "additiveDailyMetric";
+  if (type in pointInTimeDailyMetricTypes) return "pointInTimeDailyMetric";
+  if (type in metricStreamTypes) return "metricStream";
+  return "healthEvent";
+}
+
+/** Process body measurement samples */
+async function processBodyMeasurements(db: Database, samples: HealthKitSample[]): Promise<number> {
+  let inserted = 0;
+  for (let i = 0; i < samples.length; i += BATCH_SIZE) {
+    const batch = samples.slice(i, i + BATCH_SIZE);
+    for (const sample of batch) {
+      const mapping = bodyMeasurementTypes[sample.type];
+      if (!mapping) continue;
+      const value = mapping.transform ? mapping.transform(sample.value) : sample.value;
+      const externalId = `hk:${sample.uuid}`;
+
+      await db.execute(
+        sql`INSERT INTO fitness.body_measurement (provider_id, external_id, recorded_at, ${sql.identifier(mapping.column)})
+            VALUES (${PROVIDER_ID}, ${externalId}, ${sample.startDate}::timestamptz, ${value})
+            ON CONFLICT (provider_id, external_id) DO UPDATE
+              SET ${sql.identifier(mapping.column)} = ${value}`,
+      );
+      inserted++;
+    }
+  }
+  return inserted;
+}
+
+/** Aggregated daily metric values for a single date */
+interface DailyMetricAccumulator {
+  steps: number;
+  activeEnergyKcal: number;
+  basalEnergyKcal: number;
+  distanceKm: number;
+  cyclingDistanceKm: number;
+  flightsClimbed: number;
+  exerciseMinutes: number;
+  restingHr: number | null;
+  hrv: number | null;
+  vo2max: number | null;
+  walkingSpeed: number | null;
+  walkingStepLength: number | null;
+  walkingDoubleSupportPct: number | null;
+  walkingAsymmetryPct: number | null;
+}
+
+function createEmptyAccumulator(): DailyMetricAccumulator {
+  return {
+    steps: 0,
+    activeEnergyKcal: 0,
+    basalEnergyKcal: 0,
+    distanceKm: 0,
+    cyclingDistanceKm: 0,
+    flightsClimbed: 0,
+    exerciseMinutes: 0,
+    restingHr: null,
+    hrv: null,
+    vo2max: null,
+    walkingSpeed: null,
+    walkingStepLength: null,
+    walkingDoubleSupportPct: null,
+    walkingAsymmetryPct: null,
+  };
+}
+
+/** Column name to accumulator key mapping */
+const columnToAccumulatorKey: Record<string, keyof DailyMetricAccumulator> = {
+  steps: "steps",
+  active_energy_kcal: "activeEnergyKcal",
+  basal_energy_kcal: "basalEnergyKcal",
+  distance_km: "distanceKm",
+  cycling_distance_km: "cyclingDistanceKm",
+  flights_climbed: "flightsClimbed",
+  exercise_minutes: "exerciseMinutes",
+  resting_hr: "restingHr",
+  hrv: "hrv",
+  vo2max: "vo2max",
+  walking_speed: "walkingSpeed",
+  walking_step_length: "walkingStepLength",
+  walking_double_support_pct: "walkingDoubleSupportPct",
+  walking_asymmetry_pct: "walkingAsymmetryPct",
+};
+
+/** Process daily metric samples (both additive and point-in-time) */
+async function processDailyMetrics(db: Database, samples: HealthKitSample[]): Promise<number> {
+  // Group by date
+  const byDate = new Map<string, DailyMetricAccumulator>();
+
+  for (const sample of samples) {
+    const dateStr = extractDate(sample.startDate);
+    if (!byDate.has(dateStr)) {
+      byDate.set(dateStr, createEmptyAccumulator());
+    }
+    const accumulator = byDate.get(dateStr)!;
+
+    const additiveMapping = additiveDailyMetricTypes[sample.type];
+    if (additiveMapping) {
+      const value = additiveMapping.transform
+        ? additiveMapping.transform(sample.value)
+        : sample.value;
+      const key = columnToAccumulatorKey[additiveMapping.column];
+      if (key) {
+        (accumulator[key] as number) += value;
+      }
+      continue;
+    }
+
+    const pointMapping = pointInTimeDailyMetricTypes[sample.type];
+    if (pointMapping) {
+      const key = columnToAccumulatorKey[pointMapping.column];
+      if (key) {
+        (accumulator[key] as number | null) = sample.value;
+      }
+    }
+  }
+
+  // Upsert each date
+  for (const [dateStr, accumulator] of byDate) {
+    const setClauses: ReturnType<typeof sql>[] = [];
+    const insertColumns: ReturnType<typeof sql>[] = [];
+    const insertValues: ReturnType<typeof sql>[] = [];
+
+    insertColumns.push(sql`date`);
+    insertValues.push(sql`${dateStr}::date`);
+    insertColumns.push(sql`provider_id`);
+    insertValues.push(sql`${PROVIDER_ID}`);
+
+    // Additive fields: use COALESCE + EXCLUDED for summing
+    const additiveFields: Array<{ column: string; key: keyof DailyMetricAccumulator }> = [
+      { column: "steps", key: "steps" },
+      { column: "active_energy_kcal", key: "activeEnergyKcal" },
+      { column: "basal_energy_kcal", key: "basalEnergyKcal" },
+      { column: "distance_km", key: "distanceKm" },
+      { column: "cycling_distance_km", key: "cyclingDistanceKm" },
+      { column: "flights_climbed", key: "flightsClimbed" },
+      { column: "exercise_minutes", key: "exerciseMinutes" },
+    ];
+
+    for (const { column, key } of additiveFields) {
+      const value = accumulator[key] as number;
+      if (value > 0) {
+        insertColumns.push(sql`${sql.identifier(column)}`);
+        insertValues.push(sql`${value}`);
+        setClauses.push(
+          sql`${sql.identifier(column)} = COALESCE(fitness.daily_metrics.${sql.identifier(column)}, 0) + EXCLUDED.${sql.identifier(column)}`,
+        );
+      }
+    }
+
+    // Point-in-time fields: overwrite with latest
+    const pointFields: Array<{ column: string; key: keyof DailyMetricAccumulator }> = [
+      { column: "resting_hr", key: "restingHr" },
+      { column: "hrv", key: "hrv" },
+      { column: "vo2max", key: "vo2max" },
+      { column: "walking_speed", key: "walkingSpeed" },
+      { column: "walking_step_length", key: "walkingStepLength" },
+      { column: "walking_double_support_pct", key: "walkingDoubleSupportPct" },
+      { column: "walking_asymmetry_pct", key: "walkingAsymmetryPct" },
+    ];
+
+    for (const { column, key } of pointFields) {
+      const value = accumulator[key];
+      if (value !== null) {
+        insertColumns.push(sql`${sql.identifier(column)}`);
+        insertValues.push(sql`${value}`);
+        setClauses.push(sql`${sql.identifier(column)} = EXCLUDED.${sql.identifier(column)}`);
+      }
+    }
+
+    if (setClauses.length === 0) continue;
+
+    const columnsSql = sql.join(insertColumns, sql`, `);
+    const valuesSql = sql.join(insertValues, sql`, `);
+    const setSql = sql.join(setClauses, sql`, `);
+
+    await db.execute(
+      sql`INSERT INTO fitness.daily_metrics (${columnsSql})
+          VALUES (${valuesSql})
+          ON CONFLICT (date, provider_id) DO UPDATE SET ${setSql}`,
+    );
+  }
+
+  return samples.length;
+}
+
+/** Process metric stream samples */
+async function processMetricStream(db: Database, samples: HealthKitSample[]): Promise<number> {
+  let inserted = 0;
+  for (let i = 0; i < samples.length; i += BATCH_SIZE) {
+    const batch = samples.slice(i, i + BATCH_SIZE);
+    for (const sample of batch) {
+      const mapping = metricStreamTypes[sample.type];
+      if (!mapping) continue;
+
+      await db.execute(
+        sql`INSERT INTO fitness.metric_stream (provider_id, recorded_at, ${sql.identifier(mapping.column)}, raw)
+            VALUES (
+              ${PROVIDER_ID},
+              ${sample.startDate}::timestamptz,
+              ${sample.value},
+              ${JSON.stringify({ uuid: sample.uuid, type: sample.type, sourceName: sample.sourceName })}::jsonb
+            )`,
+      );
+      inserted++;
+    }
+  }
+  return inserted;
+}
+
+/** Process health event samples (catch-all) */
+async function processHealthEvents(db: Database, samples: HealthKitSample[]): Promise<number> {
+  let inserted = 0;
+  for (let i = 0; i < samples.length; i += BATCH_SIZE) {
+    const batch = samples.slice(i, i + BATCH_SIZE);
+    for (const sample of batch) {
+      const externalId = `hk:${sample.uuid}`;
+      await db.execute(
+        sql`INSERT INTO fitness.health_event (provider_id, external_id, type, value, unit, source_name, start_date, end_date)
+            VALUES (${PROVIDER_ID}, ${externalId}, ${sample.type}, ${sample.value}, ${sample.unit}, ${sample.sourceName}, ${sample.startDate}::timestamptz, ${sample.endDate}::timestamptz)
+            ON CONFLICT (provider_id, external_id) DO NOTHING`,
+      );
+      inserted++;
+    }
+  }
+  return inserted;
+}
+
+/** Process workout samples */
+async function processWorkouts(db: Database, workouts: WorkoutSample[]): Promise<number> {
+  let inserted = 0;
+  for (let i = 0; i < workouts.length; i += BATCH_SIZE) {
+    const batch = workouts.slice(i, i + BATCH_SIZE);
+    for (const workout of batch) {
+      const externalId = `hk:workout:${workout.uuid}`;
+      const activityType = workoutActivityTypeMap[workout.workoutType] ?? "other";
+
+      const rawData = JSON.stringify({
+        duration: workout.duration,
+        totalEnergyBurned: workout.totalEnergyBurned,
+        totalDistance: workout.totalDistance,
+        sourceName: workout.sourceName,
+        workoutType: workout.workoutType,
+      });
+
+      await db.execute(
+        sql`INSERT INTO fitness.activity (provider_id, external_id, activity_type, started_at, ended_at, raw)
+            VALUES (
+              ${PROVIDER_ID},
+              ${externalId},
+              ${activityType},
+              ${workout.startDate}::timestamptz,
+              ${workout.endDate}::timestamptz,
+              ${rawData}::jsonb
+            )
+            ON CONFLICT (provider_id, external_id) DO UPDATE SET
+              activity_type = ${activityType},
+              started_at = ${workout.startDate}::timestamptz,
+              ended_at = ${workout.endDate}::timestamptz`,
+      );
+      inserted++;
+    }
+  }
+  return inserted;
+}
+
+/** Process sleep samples, grouping by inBed boundaries */
+async function processSleepSamples(db: Database, samples: SleepSample[]): Promise<number> {
+  const inBedSamples = samples.filter((s) => s.value === "inBed");
+  const stageSamples = samples.filter((s) => s.value !== "inBed");
+
+  if (inBedSamples.length === 0) return 0;
+
+  let inserted = 0;
+  for (const session of inBedSamples) {
+    const sessionStart = new Date(session.startDate).getTime();
+    const sessionEnd = new Date(session.endDate).getTime();
+
+    let deepMinutes = 0;
+    let remMinutes = 0;
+    let lightMinutes = 0;
+    let awakeMinutes = 0;
+
+    for (const stage of stageSamples) {
+      const stageStart = new Date(stage.startDate).getTime();
+      const stageEnd = new Date(stage.endDate).getTime();
+
+      if (stageStart >= sessionStart && stageEnd <= sessionEnd) {
+        const durationMinutes = Math.round((stageEnd - stageStart) / (1000 * 60));
+        switch (stage.value) {
+          case "asleepDeep":
+            deepMinutes += durationMinutes;
+            break;
+          case "asleepREM":
+            remMinutes += durationMinutes;
+            break;
+          case "asleepCore":
+            lightMinutes += durationMinutes;
+            break;
+          case "awake":
+            awakeMinutes += durationMinutes;
+            break;
+        }
+      }
+    }
+
+    const externalId = `hk:sleep:${session.uuid}`;
+    await db.execute(
+      sql`INSERT INTO fitness.sleep_session (provider_id, external_id, started_at, ended_at, deep_minutes, rem_minutes, light_minutes, awake_minutes)
+          VALUES (
+            ${PROVIDER_ID},
+            ${externalId},
+            ${session.startDate}::timestamptz,
+            ${session.endDate}::timestamptz,
+            ${deepMinutes},
+            ${remMinutes},
+            ${lightMinutes},
+            ${awakeMinutes}
+          )
+          ON CONFLICT (provider_id, external_id) DO UPDATE SET
+            started_at = ${session.startDate}::timestamptz,
+            ended_at = ${session.endDate}::timestamptz,
+            deep_minutes = ${deepMinutes},
+            rem_minutes = ${remMinutes},
+            light_minutes = ${lightMinutes},
+            awake_minutes = ${awakeMinutes}`,
+    );
+    inserted++;
+  }
+
+  return inserted;
+}
+
+// ── Router ──
+
+export const healthKitSyncRouter = router({
+  pushQuantitySamples: publicProcedure
+    .input(z.object({ samples: z.array(healthKitSampleSchema) }))
+    .mutation(async ({ ctx, input }) => {
+      await ensureProvider(ctx.db);
+
+      const bodyMeasurements: HealthKitSample[] = [];
+      const dailyMetricSamples: HealthKitSample[] = [];
+      const metricStreamSamples: HealthKitSample[] = [];
+      const healthEventSamples: HealthKitSample[] = [];
+
+      for (const sample of input.samples) {
+        const category = categorize(sample.type);
+        switch (category) {
+          case "bodyMeasurement":
+            bodyMeasurements.push(sample);
+            break;
+          case "additiveDailyMetric":
+          case "pointInTimeDailyMetric":
+            dailyMetricSamples.push(sample);
+            break;
+          case "metricStream":
+            metricStreamSamples.push(sample);
+            break;
+          case "healthEvent":
+            healthEventSamples.push(sample);
+            break;
+        }
+      }
+
+      let inserted = 0;
+      const errors: string[] = [];
+
+      try {
+        inserted += await processBodyMeasurements(ctx.db, bodyMeasurements);
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        errors.push(`Body measurements: ${message}`);
+      }
+
+      try {
+        inserted += await processDailyMetrics(ctx.db, dailyMetricSamples);
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        errors.push(`Daily metrics: ${message}`);
+      }
+
+      try {
+        inserted += await processMetricStream(ctx.db, metricStreamSamples);
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        errors.push(`Metric stream: ${message}`);
+      }
+
+      try {
+        inserted += await processHealthEvents(ctx.db, healthEventSamples);
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        errors.push(`Health events: ${message}`);
+      }
+
+      return { inserted, errors };
+    }),
+
+  pushWorkouts: publicProcedure
+    .input(z.object({ workouts: z.array(workoutSampleSchema) }))
+    .mutation(async ({ ctx, input }) => {
+      await ensureProvider(ctx.db);
+      const inserted = await processWorkouts(ctx.db, input.workouts);
+      return { inserted };
+    }),
+
+  pushSleepSamples: publicProcedure
+    .input(z.object({ samples: z.array(sleepSampleSchema) }))
+    .mutation(async ({ ctx, input }) => {
+      await ensureProvider(ctx.db);
+      const inserted = await processSleepSamples(ctx.db, input.samples);
+      return { inserted };
+    }),
+});

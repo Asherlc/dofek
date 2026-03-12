@@ -5,6 +5,7 @@ import { cyclingAdvancedRouter } from "./routers/cycling-advanced.ts";
 import { dailyMetricsRouter } from "./routers/daily-metrics.ts";
 import { efficiencyRouter } from "./routers/efficiency.ts";
 import { foodRouter } from "./routers/food.ts";
+import { healthKitSyncRouter } from "./routers/health-kit-sync.ts";
 import { hikingRouter } from "./routers/hiking.ts";
 import { insightsRouter } from "./routers/insights.ts";
 import { lifeEventsRouter } from "./routers/life-events.ts";
@@ -37,6 +38,7 @@ export const appRouter = router({
   power: powerRouter,
   efficiency: efficiencyRouter,
   food: foodRouter,
+  healthKitSync: healthKitSyncRouter,
   whoopAuth: whoopAuthRouter,
   strength: strengthRouter,
   cyclingAdvanced: cyclingAdvancedRouter,
