@@ -2,9 +2,6 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { publicProcedure, router } from "../trpc.ts";
 
-/** Standard durations for the power duration curve (in seconds). */
-const STANDARD_DURATIONS = [5, 15, 30, 60, 120, 300, 600, 1200, 1800, 3600, 5400, 7200] as const;
-
 /** Human-readable labels for each duration. */
 const DURATION_LABELS: Record<number, string> = {
   5: "5s",
@@ -20,6 +17,12 @@ const DURATION_LABELS: Record<number, string> = {
   5400: "90min",
   7200: "120min",
 };
+
+interface PowerCurveRow {
+  duration_seconds: number;
+  best_power: number;
+  activity_date: string;
+}
 
 interface EftpRow {
   activity_date: string;
@@ -87,64 +90,75 @@ function fitCriticalPower(
   };
 }
 
+/**
+ * Single query that computes best average power for all standard durations.
+ *
+ * Uses cumulative sums to avoid per-duration window functions:
+ *   rolling_avg(i, d) = (cumsum[i] - cumsum[i - d]) / d
+ *
+ * Returns one row per duration with the best power and the activity date it came from.
+ */
+function powerCurveQuery(days: number) {
+  return sql`
+    WITH activity_power AS (
+      SELECT ms.activity_id, ms.recorded_at, ms.power,
+             a.started_at::date AS activity_date,
+             ROW_NUMBER() OVER (
+               PARTITION BY ms.activity_id ORDER BY ms.recorded_at
+             ) AS rn,
+             SUM(ms.power) OVER (
+               PARTITION BY ms.activity_id ORDER BY ms.recorded_at
+               ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+             ) AS cumsum
+      FROM fitness.metric_stream ms
+      JOIN fitness.v_activity a ON a.id = ms.activity_id
+      WHERE ms.power > 0
+        AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
+    ),
+    durations AS (
+      SELECT unnest(ARRAY[5,15,30,60,120,300,600,1200,1800,3600,5400,7200]) AS duration_s
+    ),
+    best_per_duration AS (
+      SELECT
+        d.duration_s AS duration_seconds,
+        MAX(
+          (ap.cumsum - COALESCE(prev.cumsum, 0))::numeric / d.duration_s
+        )::int AS best_power,
+        (ARRAY_AGG(
+          ap.activity_date::text ORDER BY
+          (ap.cumsum - COALESCE(prev.cumsum, 0))::numeric / d.duration_s DESC
+        ))[1] AS activity_date
+      FROM durations d
+      CROSS JOIN activity_power ap
+      LEFT JOIN activity_power prev
+        ON prev.activity_id = ap.activity_id
+        AND prev.rn = ap.rn - d.duration_s
+      WHERE ap.rn >= d.duration_s
+      GROUP BY d.duration_s
+    )
+    SELECT duration_seconds, best_power, activity_date
+    FROM best_per_duration
+    WHERE best_power > 0
+    ORDER BY duration_seconds
+  `;
+}
+
 export const powerRouter = router({
   /**
    * Power Duration Curve: best average power for standard durations.
-   * For each duration, finds the best rolling average power across all
-   * activities in the time range.
+   * Single query computes all durations via cumulative sums.
    */
   powerCurve: publicProcedure
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
-      const results: Array<{
-        durationSeconds: number;
-        label: string;
-        bestPower: number;
-        activityDate: string;
-      }> = [];
+      const rows = await ctx.db.execute(powerCurveQuery(input.days));
 
-      for (const duration of STANDARD_DURATIONS) {
-        const rows = await ctx.db.execute(sql`
-          WITH activity_power AS (
-            SELECT ms.activity_id, ms.recorded_at, ms.power,
-                   a.started_at::date AS activity_date
-            FROM fitness.metric_stream ms
-            JOIN fitness.v_activity a ON a.id = ms.activity_id
-            WHERE ms.power > 0
-              AND a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
-          )
-          SELECT
-            ${duration}::int AS duration_seconds,
-            MAX(avg_power)::int AS best_power,
-            activity_date::text AS activity_date
-          FROM (
-            SELECT activity_id, activity_date,
-                   AVG(power) OVER (
-                     PARTITION BY activity_id ORDER BY recorded_at
-                     ROWS BETWEEN ${duration - 1} PRECEDING AND CURRENT ROW
-                   ) AS avg_power,
-                   COUNT(*) OVER (
-                     PARTITION BY activity_id ORDER BY recorded_at
-                     ROWS BETWEEN ${duration - 1} PRECEDING AND CURRENT ROW
-                   ) AS window_size
-            FROM activity_power
-          ) sub
-          WHERE window_size >= ${duration}
-          GROUP BY duration_seconds, activity_date
-          ORDER BY best_power DESC
-          LIMIT 1
-        `);
-
-        const row = rows[0] as Record<string, unknown> | undefined;
-        if (row) {
-          results.push({
-            durationSeconds: Number(row.duration_seconds),
-            label: DURATION_LABELS[duration] ?? `${duration}s`,
-            bestPower: Number(row.best_power),
-            activityDate: String(row.activity_date),
-          });
-        }
-      }
+      const results = (rows as unknown as PowerCurveRow[]).map((r) => ({
+        durationSeconds: Number(r.duration_seconds),
+        label: DURATION_LABELS[Number(r.duration_seconds)] ?? `${r.duration_seconds}s`,
+        bestPower: Number(r.best_power),
+        activityDate: String(r.activity_date),
+      }));
 
       return {
         points: results,
@@ -164,33 +178,30 @@ export const powerRouter = router({
         WITH activity_power AS (
           SELECT ms.activity_id, ms.recorded_at, ms.power,
                  a.started_at::date AS activity_date,
-                 a.name AS activity_name
+                 a.name AS activity_name,
+                 ROW_NUMBER() OVER (
+                   PARTITION BY ms.activity_id ORDER BY ms.recorded_at
+                 ) AS rn,
+                 SUM(ms.power) OVER (
+                   PARTITION BY ms.activity_id ORDER BY ms.recorded_at
+                   ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                 ) AS cumsum
           FROM fitness.metric_stream ms
           JOIN fitness.v_activity a ON a.id = ms.activity_id
           WHERE ms.power > 0
             AND a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
-        ),
-        rolling AS (
-          SELECT activity_id, activity_date, activity_name,
-                 AVG(power) OVER (
-                   PARTITION BY activity_id ORDER BY recorded_at
-                   ROWS BETWEEN 1199 PRECEDING AND CURRENT ROW
-                 ) AS avg_power,
-                 COUNT(*) OVER (
-                   PARTITION BY activity_id ORDER BY recorded_at
-                   ROWS BETWEEN 1199 PRECEDING AND CURRENT ROW
-                 ) AS window_size
-          FROM activity_power
         )
         SELECT
-          activity_date::text AS activity_date,
-          activity_name,
-          MAX(avg_power)::int AS best_20min_power
-        FROM rolling
-        WHERE window_size >= 1200
-        GROUP BY activity_id, activity_date, activity_name
-        HAVING MAX(avg_power) > 0
-        ORDER BY activity_date
+          ap.activity_date::text AS activity_date,
+          ap.activity_name,
+          MAX((ap.cumsum - prev.cumsum)::numeric / 1200)::int AS best_20min_power
+        FROM activity_power ap
+        JOIN activity_power prev
+          ON prev.activity_id = ap.activity_id
+          AND prev.rn = ap.rn - 1200
+        GROUP BY ap.activity_id, ap.activity_date, ap.activity_name
+        HAVING MAX((ap.cumsum - prev.cumsum)::numeric / 1200) > 0
+        ORDER BY ap.activity_date
       `);
 
       const trend = (rows as unknown as EftpRow[]).map((r) => ({
@@ -199,39 +210,12 @@ export const powerRouter = router({
         activityName: r.activity_name,
       }));
 
-      // Compute current eFTP via CP model from last 90 days' power curve
-      // Query best power at standard durations for the last 90 days
-      const cpPoints: { durationSeconds: number; bestPower: number }[] = [];
-      for (const duration of STANDARD_DURATIONS) {
-        const cpRows = await ctx.db.execute(sql`
-          WITH activity_power AS (
-            SELECT ms.activity_id, ms.recorded_at, ms.power
-            FROM fitness.metric_stream ms
-            JOIN fitness.v_activity a ON a.id = ms.activity_id
-            WHERE ms.power > 0
-              AND a.started_at > NOW() - 90 * INTERVAL '1 day'
-          )
-          SELECT MAX(avg_power)::int AS best_power
-          FROM (
-            SELECT
-              AVG(power) OVER (
-                PARTITION BY activity_id ORDER BY recorded_at
-                ROWS BETWEEN ${duration - 1} PRECEDING AND CURRENT ROW
-              ) AS avg_power,
-              COUNT(*) OVER (
-                PARTITION BY activity_id ORDER BY recorded_at
-                ROWS BETWEEN ${duration - 1} PRECEDING AND CURRENT ROW
-              ) AS window_size
-            FROM activity_power
-          ) sub
-          WHERE window_size >= ${duration}
-        `);
-        const cpRow = cpRows[0] as Record<string, unknown> | undefined;
-        const bestPower = Number(cpRow?.best_power ?? 0);
-        if (bestPower > 0) {
-          cpPoints.push({ durationSeconds: duration, bestPower });
-        }
-      }
+      // Compute current eFTP via CP model from last 90 days' power curve (single query)
+      const cpRows = await ctx.db.execute(powerCurveQuery(90));
+      const cpPoints = (cpRows as unknown as PowerCurveRow[]).map((r) => ({
+        durationSeconds: Number(r.duration_seconds),
+        bestPower: Number(r.best_power),
+      }));
 
       const model = fitCriticalPower(cpPoints);
       // Fall back to 95% of best recent 20-min power if CP model can't fit

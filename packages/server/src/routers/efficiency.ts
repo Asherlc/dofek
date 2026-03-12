@@ -11,17 +11,8 @@ export const efficiencyRouter = router({
   aerobicEfficiency: publicProcedure
     .input(z.object({ days: z.number().default(180) }))
     .query(async ({ ctx, input }) => {
-      // Get max observed HR
-      const maxHrResult = await ctx.db.execute(
-        sql`SELECT MAX(heart_rate) AS max_hr
-            FROM fitness.metric_stream
-            WHERE heart_rate IS NOT NULL
-              AND activity_id IS NOT NULL`,
-      );
-      const maxHr = (maxHrResult as Record<string, unknown>[])[0]?.max_hr as number | null;
-      if (!maxHr) return { maxHr: null, activities: [] };
-
       const rows = await ctx.db.execute<{
+        max_hr: number;
         date: string;
         activity_type: string;
         name: string;
@@ -30,7 +21,14 @@ export const efficiencyRouter = router({
         efficiency_factor: number;
         z2_samples: number;
       }>(
-        sql`SELECT
+        sql`WITH max_hr AS (
+              SELECT MAX(heart_rate) AS val
+              FROM fitness.metric_stream
+              WHERE heart_rate IS NOT NULL
+                AND activity_id IS NOT NULL
+            )
+            SELECT
+              (SELECT val FROM max_hr) AS max_hr,
               a.started_at::date AS date,
               a.activity_type,
               a.name,
@@ -39,15 +37,19 @@ export const efficiencyRouter = router({
               ROUND((AVG(ms.power)::numeric / NULLIF(AVG(ms.heart_rate), 0))::numeric, 3) AS efficiency_factor,
               COUNT(*)::int AS z2_samples
             FROM fitness.v_activity a
+            CROSS JOIN max_hr
             JOIN fitness.metric_stream ms ON ms.activity_id = a.id
-            WHERE a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
-              AND ms.heart_rate >= ${maxHr} * 0.6
-              AND ms.heart_rate < ${maxHr} * 0.7
+            WHERE max_hr.val IS NOT NULL
+              AND a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+              AND ms.heart_rate >= max_hr.val * 0.6
+              AND ms.heart_rate < max_hr.val * 0.7
               AND ms.power > 0
-            GROUP BY a.id, a.started_at, a.activity_type, a.name
+            GROUP BY a.id, a.started_at, a.activity_type, a.name, max_hr.val
             HAVING COUNT(*) >= 300
             ORDER BY a.started_at`,
       );
+
+      const maxHr = rows.length > 0 ? Number(rows[0].max_hr) : null;
 
       return {
         maxHr,
@@ -144,34 +146,36 @@ export const efficiencyRouter = router({
   polarizationTrend: publicProcedure
     .input(z.object({ days: z.number().default(180) }))
     .query(async ({ ctx, input }) => {
-      // Get max observed HR
-      const maxHrResult = await ctx.db.execute(
-        sql`SELECT MAX(heart_rate) AS max_hr
-            FROM fitness.metric_stream
-            WHERE heart_rate IS NOT NULL
-              AND activity_id IS NOT NULL`,
-      );
-      const maxHr = (maxHrResult as Record<string, unknown>[])[0]?.max_hr as number | null;
-      if (!maxHr) return { maxHr: null, weeks: [] };
-
       const rows = await ctx.db.execute<{
+        max_hr: number;
         week: string;
         z1_seconds: number;
         z2_seconds: number;
         z3_seconds: number;
       }>(
-        sql`SELECT
+        sql`WITH max_hr AS (
+              SELECT MAX(heart_rate) AS val
+              FROM fitness.metric_stream
+              WHERE heart_rate IS NOT NULL
+                AND activity_id IS NOT NULL
+            )
+            SELECT
+              (SELECT val FROM max_hr) AS max_hr,
               date_trunc('week', ms.recorded_at)::date AS week,
-              COUNT(*) FILTER (WHERE ms.heart_rate < ${maxHr} * 0.80)::int AS z1_seconds,
-              COUNT(*) FILTER (WHERE ms.heart_rate >= ${maxHr} * 0.80 AND ms.heart_rate < ${maxHr} * 0.875)::int AS z2_seconds,
-              COUNT(*) FILTER (WHERE ms.heart_rate >= ${maxHr} * 0.875)::int AS z3_seconds
+              COUNT(*) FILTER (WHERE ms.heart_rate < max_hr.val * 0.80)::int AS z1_seconds,
+              COUNT(*) FILTER (WHERE ms.heart_rate >= max_hr.val * 0.80 AND ms.heart_rate < max_hr.val * 0.875)::int AS z2_seconds,
+              COUNT(*) FILTER (WHERE ms.heart_rate >= max_hr.val * 0.875)::int AS z3_seconds
             FROM fitness.metric_stream ms
+            CROSS JOIN max_hr
             WHERE ms.heart_rate IS NOT NULL
               AND ms.activity_id IS NOT NULL
               AND ms.recorded_at > NOW() - ${input.days}::int * INTERVAL '1 day'
-            GROUP BY date_trunc('week', ms.recorded_at)
+              AND max_hr.val IS NOT NULL
+            GROUP BY date_trunc('week', ms.recorded_at), max_hr.val
             ORDER BY week`,
       );
+
+      const maxHr = rows.length > 0 ? Number(rows[0].max_hr) : null;
 
       const weeks = rows.map((r) => {
         const z1 = Number(r.z1_seconds);

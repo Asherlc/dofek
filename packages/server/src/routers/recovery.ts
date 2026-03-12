@@ -267,48 +267,30 @@ export const recoveryRouter = router({
     .query(async ({ ctx, input }): Promise<ReadinessRow[]> => {
       const queryDays = input.days + 60;
 
-      // Fetch HRV + resting HR with 60d baselines
-      const metricsRows = await ctx.db.execute(
-        sql`SELECT
-              date::text AS date,
-              hrv,
-              resting_hr,
-              AVG(hrv) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS hrv_mean_60d,
-              STDDEV_POP(hrv) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS hrv_sd_60d,
-              AVG(resting_hr) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS rhr_mean_60d,
-              STDDEV_POP(resting_hr) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS rhr_sd_60d
-            FROM fitness.v_daily_metrics
-            WHERE date > CURRENT_DATE - ${queryDays}::int
-            ORDER BY date ASC`,
-      );
-      const metrics = metricsRows as unknown as {
-        date: string;
-        hrv: number | null;
-        resting_hr: number | null;
-        hrv_mean_60d: number | null;
-        hrv_sd_60d: number | null;
-        rhr_mean_60d: number | null;
-        rhr_sd_60d: number | null;
-      }[];
-
-      // Fetch sleep efficiency by date
-      const sleepRows = await ctx.db.execute(
-        sql`SELECT
-              started_at::date::text AS date,
-              efficiency_pct
-            FROM fitness.v_sleep
-            WHERE is_nap = false
-              AND started_at > NOW() - ${queryDays}::int * INTERVAL '1 day'
-            ORDER BY started_at ASC`,
-      );
-      const sleepByDate = new Map<string, number>();
-      for (const row of sleepRows as unknown as { date: string; efficiency_pct: number }[]) {
-        sleepByDate.set(row.date, Number(row.efficiency_pct));
-      }
-
-      // Fetch daily ACWR
-      const acwrRows = await ctx.db.execute(
-        sql`WITH date_series AS (
+      // Fetch HRV + resting HR baselines, sleep efficiency, and ACWR in one query
+      const combinedRows = await ctx.db.execute(
+        sql`WITH metrics_with_baselines AS (
+              SELECT
+                date::text AS date,
+                hrv,
+                resting_hr,
+                AVG(hrv) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS hrv_mean_60d,
+                STDDEV_POP(hrv) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS hrv_sd_60d,
+                AVG(resting_hr) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS rhr_mean_60d,
+                STDDEV_POP(resting_hr) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS rhr_sd_60d
+              FROM fitness.v_daily_metrics
+              WHERE date > CURRENT_DATE - ${queryDays}::int
+            ),
+            sleep_eff AS (
+              SELECT DISTINCT ON (started_at::date)
+                started_at::date::text AS date,
+                efficiency_pct
+              FROM fitness.v_sleep
+              WHERE is_nap = false
+                AND started_at > NOW() - ${queryDays}::int * INTERVAL '1 day'
+              ORDER BY started_at::date, started_at DESC
+            ),
+            date_series AS (
               SELECT generate_series(
                 CURRENT_DATE - ${queryDays}::int,
                 CURRENT_DATE,
@@ -336,22 +318,44 @@ export const recoveryRouter = router({
                 COALESCE(al.daily_load, 0) AS daily_load
               FROM date_series ds
               LEFT JOIN activity_load al ON al.date = ds.date
+            ),
+            acwr_daily AS (
+              SELECT
+                date::text AS date,
+                CASE
+                  WHEN AVG(daily_load) OVER (ORDER BY date ROWS BETWEEN 27 PRECEDING AND CURRENT ROW) * 7 > 0
+                  THEN SUM(daily_load) OVER (ORDER BY date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW)
+                       / (AVG(daily_load) OVER (ORDER BY date ROWS BETWEEN 27 PRECEDING AND CURRENT ROW) * 7)
+                  ELSE NULL
+                END AS acwr
+              FROM daily
             )
             SELECT
-              date::text AS date,
-              CASE
-                WHEN AVG(daily_load) OVER (ORDER BY date ROWS BETWEEN 27 PRECEDING AND CURRENT ROW) * 7 > 0
-                THEN SUM(daily_load) OVER (ORDER BY date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW)
-                     / (AVG(daily_load) OVER (ORDER BY date ROWS BETWEEN 27 PRECEDING AND CURRENT ROW) * 7)
-                ELSE NULL
-              END AS acwr
-            FROM daily
-            ORDER BY date ASC`,
+              m.date,
+              m.hrv,
+              m.resting_hr,
+              m.hrv_mean_60d,
+              m.hrv_sd_60d,
+              m.rhr_mean_60d,
+              m.rhr_sd_60d,
+              s.efficiency_pct,
+              ac.acwr
+            FROM metrics_with_baselines m
+            LEFT JOIN sleep_eff s ON s.date = m.date
+            LEFT JOIN acwr_daily ac ON ac.date = m.date
+            ORDER BY m.date ASC`,
       );
-      const acwrByDate = new Map<string, number | null>();
-      for (const row of acwrRows as unknown as { date: string; acwr: number | null }[]) {
-        acwrByDate.set(row.date, row.acwr != null ? Number(row.acwr) : null);
-      }
+      const combined = combinedRows as unknown as {
+        date: string;
+        hrv: number | null;
+        resting_hr: number | null;
+        hrv_mean_60d: number | null;
+        hrv_sd_60d: number | null;
+        rhr_mean_60d: number | null;
+        rhr_sd_60d: number | null;
+        efficiency_pct: number | null;
+        acwr: number | null;
+      }[];
 
       // Map z-score to 0-100 (z=0 -> 50, clamped)
       function zScoreToScore(zScore: number): number {
@@ -373,7 +377,7 @@ export const recoveryRouter = router({
 
       const results: ReadinessRow[] = [];
 
-      for (const m of metrics) {
+      for (const m of combined) {
         if (m.date <= cutoffStr) continue;
 
         // HRV score: higher HRV = better (positive z = good)
@@ -401,13 +405,13 @@ export const recoveryRouter = router({
         }
 
         // Sleep efficiency score: direct mapping (0-100 already)
-        const efficiency = sleepByDate.get(m.date);
+        const efficiency = m.efficiency_pct != null ? Number(m.efficiency_pct) : null;
         const sleepScore =
           efficiency != null ? Math.max(0, Math.min(100, Math.round(efficiency))) : 50;
 
         // Load balance score from ACWR
-        const acwr = acwrByDate.get(m.date);
-        const loadBalanceScore = acwrToScore(acwr ?? null);
+        const acwr = m.acwr != null ? Number(m.acwr) : null;
+        const loadBalanceScore = acwrToScore(acwr);
 
         const readinessScore = Math.round(
           hrvScore * 0.4 + restingHrScore * 0.2 + sleepScore * 0.2 + loadBalanceScore * 0.2,

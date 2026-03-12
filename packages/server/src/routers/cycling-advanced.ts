@@ -59,34 +59,30 @@ export const cyclingAdvancedRouter = router({
   rampRate: publicProcedure
     .input(daysInput)
     .query(async ({ ctx, input }): Promise<RampRateResult> => {
-      // Get max observed HR
-      const maxHrResult = await ctx.db.execute(
-        sql`SELECT MAX(heart_rate) AS max_hr
-            FROM fitness.metric_stream
-            WHERE heart_rate IS NOT NULL
-              AND activity_id IS NOT NULL`,
-      );
-      const maxHr = (maxHrResult as unknown as Record<string, unknown>[])[0]?.max_hr as
-        | number
-        | null;
-      if (!maxHr) return { weeks: [], currentRampRate: 0, recommendation: "No data" };
-
-      // Get daily TRIMP loads
+      // Get max observed HR and daily TRIMP loads in a single query
       const dailyLoads = await ctx.db.execute(
-        sql`SELECT
+        sql`WITH max_hr AS (
+              SELECT MAX(heart_rate) AS val
+              FROM fitness.metric_stream
+              WHERE heart_rate IS NOT NULL
+                AND activity_id IS NOT NULL
+            )
+            SELECT
               a.started_at::date AS day,
               SUM(
                 EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 60.0
-                * sub.avg_hr / ${maxHr}::float
+                * sub.avg_hr / (SELECT val FROM max_hr)::float
               ) AS trimp
             FROM fitness.v_activity a
+            CROSS JOIN max_hr
             JOIN LATERAL (
               SELECT AVG(ms.heart_rate) AS avg_hr
               FROM fitness.metric_stream ms
               WHERE ms.activity_id = a.id
                 AND ms.heart_rate IS NOT NULL
             ) sub ON sub.avg_hr IS NOT NULL AND sub.avg_hr > 0
-            WHERE a.started_at > NOW() - (${input.days} + 42)::int * INTERVAL '1 day'
+            WHERE max_hr.val IS NOT NULL
+              AND a.started_at > NOW() - (${input.days} + 42)::int * INTERVAL '1 day'
               AND a.ended_at IS NOT NULL
             GROUP BY a.started_at::date
             ORDER BY day`,
@@ -178,33 +174,30 @@ export const cyclingAdvancedRouter = router({
   trainingMonotony: publicProcedure
     .input(daysInput)
     .query(async ({ ctx, input }): Promise<TrainingMonotonyWeek[]> => {
-      const maxHrResult = await ctx.db.execute(
-        sql`SELECT MAX(heart_rate) AS max_hr
-            FROM fitness.metric_stream
-            WHERE heart_rate IS NOT NULL
-              AND activity_id IS NOT NULL`,
-      );
-      const maxHr = (maxHrResult as unknown as Record<string, unknown>[])[0]?.max_hr as
-        | number
-        | null;
-      if (!maxHr) return [];
-
       const rows = await ctx.db.execute(
-        sql`WITH daily_loads AS (
+        sql`WITH max_hr AS (
+              SELECT MAX(heart_rate) AS val
+              FROM fitness.metric_stream
+              WHERE heart_rate IS NOT NULL
+                AND activity_id IS NOT NULL
+            ),
+            daily_loads AS (
               SELECT
                 a.started_at::date AS day,
                 SUM(
                   EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 60.0
-                  * sub.avg_hr / ${maxHr}::float
+                  * sub.avg_hr / (SELECT val FROM max_hr)::float
                 ) AS trimp
               FROM fitness.v_activity a
+              CROSS JOIN max_hr
               JOIN LATERAL (
                 SELECT AVG(ms.heart_rate) AS avg_hr
                 FROM fitness.metric_stream ms
                 WHERE ms.activity_id = a.id
                   AND ms.heart_rate IS NOT NULL
               ) sub ON sub.avg_hr IS NOT NULL AND sub.avg_hr > 0
-              WHERE a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+              WHERE max_hr.val IS NOT NULL
+                AND a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
                 AND a.ended_at IS NOT NULL
               GROUP BY a.started_at::date
             ),
@@ -269,70 +262,45 @@ export const cyclingAdvancedRouter = router({
       const ftp = (ftpResult as unknown as { ftp: number }[])[0]?.ftp ?? null;
       if (!ftp) return [];
 
-      // Get power samples per activity for NP calculation
-      const activities = await ctx.db.execute(
-        sql`SELECT
-              a.id AS activity_id,
+      // Compute NP, avg power per activity in a single query using SQL window functions
+      const rows = await ctx.db.execute(
+        sql`WITH rolling AS (
+              SELECT
+                ms.activity_id,
+                AVG(ms.power) OVER (
+                  PARTITION BY ms.activity_id
+                  ORDER BY ms.recorded_at
+                  ROWS BETWEEN 29 PRECEDING AND CURRENT ROW
+                ) AS rolling_30s_power
+              FROM fitness.metric_stream ms
+              JOIN fitness.v_activity a ON a.id = ms.activity_id
+              WHERE a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+                AND ms.power > 0
+            )
+            SELECT
               a.started_at::date AS date,
               a.name,
-              ROUND(AVG(ms.power)::numeric, 1) AS avg_power
-            FROM fitness.v_activity a
-            JOIN fitness.metric_stream ms ON ms.activity_id = a.id
-            WHERE a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
-              AND ms.power > 0
+              ROUND(POWER(AVG(POWER(r.rolling_30s_power, 4)), 0.25)::numeric, 1) AS np,
+              ROUND(AVG(r.rolling_30s_power)::numeric, 1) AS avg_power
+            FROM rolling r
+            JOIN fitness.v_activity a ON a.id = r.activity_id
             GROUP BY a.id, a.started_at, a.name
             HAVING COUNT(*) >= 60
             ORDER BY a.started_at`,
       );
 
-      const results: ActivityVariabilityRow[] = [];
-
-      for (const activity of activities) {
-        // Fetch power samples for this activity
-        const samples = await ctx.db.execute(
-          sql`SELECT ms.power
-              FROM fitness.metric_stream ms
-              WHERE ms.activity_id = ${activity.activity_id}::uuid
-                AND ms.power > 0
-              ORDER BY ms.recorded_at`,
-        );
-
-        const powerValues = (samples as unknown as { power: number }[]).map((s) => Number(s.power));
-        if (powerValues.length < 30) continue;
-
-        // Compute 30s rolling average
-        const rolling: number[] = [];
-        let windowSum = 0;
-        for (let i = 0; i < powerValues.length; i++) {
-          windowSum += powerValues[i];
-          if (i >= 30) {
-            windowSum -= powerValues[i - 30];
-          }
-          const windowSize = Math.min(i + 1, 30);
-          rolling.push(windowSum / windowSize);
-        }
-
-        // NP = 4th root of mean of 4th powers of rolling averages
-        let sumFourthPower = 0;
-        for (const val of rolling) {
-          sumFourthPower += val ** 4;
-        }
-        const normalizedPower = Math.round((sumFourthPower / rolling.length) ** 0.25 * 10) / 10;
-        const averagePower = Number(activity.avg_power);
-        const variabilityIndex = Math.round((normalizedPower / averagePower) * 1000) / 1000;
-        const intensityFactor = Math.round((normalizedPower / ftp) * 1000) / 1000;
-
-        results.push({
-          date: String(activity.date),
-          activityName: String(activity.name),
+      return rows.map((r) => {
+        const normalizedPower = Number(r.np);
+        const averagePower = Number(r.avg_power);
+        return {
+          date: String(r.date),
+          activityName: String(r.name),
           normalizedPower,
           averagePower,
-          variabilityIndex,
-          intensityFactor,
-        });
-      }
-
-      return results;
+          variabilityIndex: Math.round((normalizedPower / averagePower) * 1000) / 1000,
+          intensityFactor: Math.round((normalizedPower / ftp) * 1000) / 1000,
+        };
+      });
     }),
 
   /**

@@ -13,10 +13,6 @@ interface ActivityRow {
   hr_samples: number;
 }
 
-interface RestingHrRow {
-  resting_hr: number | null;
-}
-
 export interface PmcDataPoint {
   date: string;
   load: number;
@@ -157,37 +153,27 @@ export const pmcRouter = router({
   chart: publicProcedure
     .input(z.object({ days: z.number().default(180) }))
     .query(async ({ ctx, input }): Promise<PmcChartResult> => {
-      // Get max observed HR across all activities
-      const maxHrResult = await ctx.db.execute(
-        sql`SELECT MAX(heart_rate) AS max_hr
-            FROM fitness.metric_stream
-            WHERE heart_rate IS NOT NULL
-              AND activity_id IS NOT NULL`,
-      );
-      const globalMaxHr = (maxHrResult as Record<string, unknown>[])[0]?.max_hr as number | null;
-      if (!globalMaxHr) {
-        return {
-          data: [],
-          model: { type: "generic", pairedActivities: 0, r2: null, ftp: null },
-        };
-      }
-
-      // Get latest resting HR from daily metrics
-      const restingHrResult = await ctx.db.execute(
-        sql`SELECT resting_hr
-            FROM fitness.v_daily_metrics
-            WHERE resting_hr IS NOT NULL
-            ORDER BY date DESC
-            LIMIT 1`,
-      );
-      const restingHr = (restingHrResult as unknown as RestingHrRow[])[0]?.resting_hr ?? 60;
-
       // Fetch extra history for EWMA warm-up (42 days for CTL)
       const queryDays = input.days + 42;
 
-      // Get per-activity HR + power stats
+      // Get max HR, resting HR, and per-activity stats in one query
       const activityRows = await ctx.db.execute(
-        sql`SELECT
+        sql`WITH max_hr AS (
+              SELECT MAX(heart_rate) AS val
+              FROM fitness.metric_stream
+              WHERE heart_rate IS NOT NULL
+                AND activity_id IS NOT NULL
+            ),
+            resting AS (
+              SELECT resting_hr AS val
+              FROM fitness.v_daily_metrics
+              WHERE resting_hr IS NOT NULL
+              ORDER BY date DESC
+              LIMIT 1
+            )
+            SELECT
+              (SELECT val FROM max_hr) AS global_max_hr,
+              COALESCE((SELECT val FROM resting), 60) AS resting_hr,
               a.id,
               a.started_at::date AS date,
               EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 60 AS duration_min,
@@ -197,13 +183,31 @@ export const pmcRouter = router({
               COUNT(*) FILTER (WHERE ms.power > 0) AS power_samples,
               COUNT(*) FILTER (WHERE ms.heart_rate IS NOT NULL) AS hr_samples
             FROM fitness.v_activity a
+            CROSS JOIN max_hr
             JOIN fitness.metric_stream ms ON ms.activity_id = a.id
-            WHERE a.started_at > NOW() - ${queryDays}::int * INTERVAL '1 day'
+            WHERE max_hr.val IS NOT NULL
+              AND a.started_at > NOW() - ${queryDays}::int * INTERVAL '1 day'
               AND a.ended_at IS NOT NULL
               AND ms.heart_rate IS NOT NULL
-            GROUP BY a.id, a.started_at, a.ended_at`,
+            GROUP BY a.id, a.started_at, a.ended_at, max_hr.val`,
       );
-      const activities = activityRows as unknown as ActivityRow[];
+
+      interface CombinedActivityRow extends ActivityRow {
+        global_max_hr: number | null;
+        resting_hr: number;
+      }
+      const allRows = activityRows as unknown as CombinedActivityRow[];
+
+      const globalMaxHr = allRows.length > 0 ? Number(allRows[0].global_max_hr) : null;
+      if (!globalMaxHr) {
+        return {
+          data: [],
+          model: { type: "generic", pairedActivities: 0, r2: null, ftp: null },
+        };
+      }
+
+      const restingHr = allRows.length > 0 ? Number(allRows[0].resting_hr) : 60;
+      const activities = allRows as unknown as ActivityRow[];
 
       // Estimate FTP from the data
       const ftp = estimateFtp(activities);
