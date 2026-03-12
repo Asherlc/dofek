@@ -1,4 +1,4 @@
-import { collectDefaultMetrics, Counter, Histogram, Registry } from "prom-client";
+import { Counter, collectDefaultMetrics, Histogram, Registry } from "prom-client";
 
 export const registry = new Registry();
 
