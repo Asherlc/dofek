@@ -1,5 +1,4 @@
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { createGroq } from "@ai-sdk/groq";
 import { createMistral } from "@ai-sdk/mistral";
 import type { LanguageModel } from "ai";
 import { generateText, Output } from "ai";
@@ -74,16 +73,6 @@ function getConfiguredProviders(): ProviderConfig[] {
     });
   }
 
-  if (process.env.GROQ_API_KEY) {
-    providers.push({
-      name: "groq",
-      createModel: () => {
-        const groq = createGroq({ apiKey: process.env.GROQ_API_KEY });
-        return groq("llama-3.3-70b-versatile");
-      },
-    });
-  }
-
   if (process.env.MISTRAL_API_KEY) {
     providers.push({
       name: "mistral",
@@ -119,14 +108,14 @@ export interface AnalyzeResult {
 
 /**
  * Analyze a food description using AI, cascading through configured providers
- * on rate limit errors: Gemini → Groq → Mistral.
+ * on rate limit errors: Gemini → Mistral.
  */
 export async function analyzeNutrition(description: string): Promise<AnalyzeResult> {
   const providers = getConfiguredProviders();
 
   if (providers.length === 0) {
     throw new Error(
-      "No AI providers configured. Set at least one of: GEMINI_API_KEY, GROQ_API_KEY, MISTRAL_API_KEY",
+      "No AI providers configured. Set at least one of: GEMINI_API_KEY, MISTRAL_API_KEY",
     );
   }
 

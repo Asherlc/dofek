@@ -12,10 +12,6 @@ vi.mock("@ai-sdk/google", () => ({
   createGoogleGenerativeAI: vi.fn(() => vi.fn(() => "google-model")),
 }));
 
-vi.mock("@ai-sdk/groq", () => ({
-  createGroq: vi.fn(() => vi.fn(() => "groq-model")),
-}));
-
 vi.mock("@ai-sdk/mistral", () => ({
   createMistral: vi.fn(() => vi.fn(() => "mistral-model")),
 }));
@@ -50,7 +46,6 @@ describe("analyzeNutrition", () => {
 
   afterEach(() => {
     delete process.env.GEMINI_API_KEY;
-    delete process.env.GROQ_API_KEY;
     delete process.env.MISTRAL_API_KEY;
   });
 
@@ -78,7 +73,7 @@ describe("analyzeNutrition", () => {
 
   it("cascades to next provider on rate limit error", async () => {
     process.env.GEMINI_API_KEY = "test-key";
-    process.env.GROQ_API_KEY = "test-key";
+    process.env.MISTRAL_API_KEY = "test-key";
 
     mockGenerateText
       .mockRejectedValueOnce(new Error("429 Too Many Requests: rate limit exceeded"))
@@ -86,30 +81,14 @@ describe("analyzeNutrition", () => {
 
     const result = await analyzeNutrition("a banana");
 
-    expect(result.provider).toBe("groq");
+    expect(result.provider).toBe("mistral");
     expect(result.nutrition).toEqual(sampleResult);
     expect(mockGenerateText).toHaveBeenCalledTimes(2);
   });
 
-  it("cascades through all providers if all rate-limited except last", async () => {
-    process.env.GEMINI_API_KEY = "test-key";
-    process.env.GROQ_API_KEY = "test-key";
-    process.env.MISTRAL_API_KEY = "test-key";
-
-    mockGenerateText
-      .mockRejectedValueOnce(new Error("quota exceeded"))
-      .mockRejectedValueOnce(new Error("resource_exhausted"))
-      .mockResolvedValueOnce(mockSuccessResponse());
-
-    const result = await analyzeNutrition("a banana");
-
-    expect(result.provider).toBe("mistral");
-    expect(mockGenerateText).toHaveBeenCalledTimes(3);
-  });
-
   it("throws when all providers are rate-limited", async () => {
     process.env.GEMINI_API_KEY = "test-key";
-    process.env.GROQ_API_KEY = "test-key";
+    process.env.MISTRAL_API_KEY = "test-key";
 
     mockGenerateText
       .mockRejectedValueOnce(new Error("rate limit exceeded"))
@@ -120,7 +99,7 @@ describe("analyzeNutrition", () => {
 
   it("does NOT cascade on non-rate-limit errors", async () => {
     process.env.GEMINI_API_KEY = "test-key";
-    process.env.GROQ_API_KEY = "test-key";
+    process.env.MISTRAL_API_KEY = "test-key";
 
     mockGenerateText.mockRejectedValueOnce(new Error("Invalid API key"));
 
@@ -128,10 +107,9 @@ describe("analyzeNutrition", () => {
     expect(mockGenerateText).toHaveBeenCalledOnce();
   });
 
-  it("respects provider priority order: gemini → groq → mistral", async () => {
+  it("respects provider priority order: gemini → mistral", async () => {
     process.env.MISTRAL_API_KEY = "test-key";
     process.env.GEMINI_API_KEY = "test-key";
-    process.env.GROQ_API_KEY = "test-key";
 
     mockGenerateText.mockResolvedValueOnce(mockSuccessResponse());
 
@@ -142,13 +120,13 @@ describe("analyzeNutrition", () => {
   });
 
   it("skips providers without API keys", async () => {
-    process.env.GROQ_API_KEY = "test-key";
+    process.env.MISTRAL_API_KEY = "test-key";
 
     mockGenerateText.mockResolvedValueOnce(mockSuccessResponse());
 
     const result = await analyzeNutrition("a banana");
 
-    expect(result.provider).toBe("groq");
+    expect(result.provider).toBe("mistral");
     expect(mockGenerateText).toHaveBeenCalledOnce();
   });
 });

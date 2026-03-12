@@ -11,7 +11,6 @@
   },
   "dependencies": {
     "@ai-sdk/google": "^3.0.43",
-    "@ai-sdk/groq": "^3.0.29",
     "@ai-sdk/mistral": "^3.0.24",
     "@stdlib/stats-pcorrtest": "^0.2.3",
     "@stdlib/stats-ranks": "^0.2.3",
