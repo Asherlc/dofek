@@ -1,11 +1,14 @@
 import { useMemo, useState } from "react";
 import { ActivityList } from "../components/ActivityList.tsx";
+import { AnomalyAlertBanner } from "../components/AnomalyAlertBanner.tsx";
 import { AppHeader } from "../components/AppHeader.tsx";
+import { BodyRecompositionChart } from "../components/BodyRecompositionChart.tsx";
 import { CorrelationCard, type Insight } from "../components/CorrelationCard.tsx";
 import { HealthStatusBar } from "../components/HealthStatusBar.tsx";
 import { HrvBaselineChart } from "../components/HrvBaselineChart.tsx";
 import { NutritionChart } from "../components/NutritionChart.tsx";
 import { SleepChart } from "../components/SleepChart.tsx";
+import { SmoothedWeightChart } from "../components/SmoothedWeightChart.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { TimeSeriesChart } from "../components/TimeSeriesChart.tsx";
 import { trpc } from "../lib/trpc.ts";
@@ -32,9 +35,11 @@ export function Dashboard() {
   const activities = trpc.activity.list.useQuery({ days });
   const sleepData = trpc.sleep.list.useQuery({ days });
   const hrvBaseline = trpc.dailyMetrics.hrvBaseline.useQuery({ days });
-  const bodyData = trpc.body.list.useQuery({ days: Math.max(days, 90) });
   const nutritionData = trpc.nutrition.daily.useQuery({ days });
   const insightsQuery = trpc.insights.compute.useQuery({ days });
+  const anomalyCheck = trpc.anomalyDetection.check.useQuery({});
+  const smoothedWeight = trpc.bodyAnalytics.smoothedWeight.useQuery({ days: Math.max(days, 90) });
+  const bodyRecomp = trpc.bodyAnalytics.recomposition.useQuery({ days: Math.max(days, 180) });
   // biome-ignore lint/suspicious/noExplicitAny: tRPC return type from raw SQL — proper typing is a separate effort
   const trendData = trends.data as Record<string, any> | undefined;
 
@@ -133,34 +138,6 @@ export function Dashboard() {
     [metrics],
   );
 
-  // biome-ignore lint/suspicious/noExplicitAny: tRPC return type from raw SQL — proper typing is a separate effort
-  const body = (bodyData.data ?? []) as any[];
-  const weightSeries = useMemo(
-    () => ({
-      name: "Weight",
-      data: body
-        .filter((d) => d.weight_kg != null)
-        .map(
-          (d) => [new Date(d.recorded_at).toISOString(), d.weight_kg] as [string, number | null],
-        ),
-      color: "#06b6d4",
-    }),
-    [body],
-  );
-  const bodyFatSeries = useMemo(
-    () => ({
-      name: "Body Fat",
-      data: body
-        .filter((d) => d.body_fat_pct != null)
-        .map(
-          (d) => [new Date(d.recorded_at).toISOString(), d.body_fat_pct] as [string, number | null],
-        ),
-      color: "#f97316",
-      yAxisIndex: 1,
-    }),
-    [body],
-  );
-
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 overflow-x-hidden">
       <AppHeader>
@@ -175,6 +152,12 @@ export function Dashboard() {
       </AppHeader>
 
       <main className="mx-auto max-w-7xl px-3 sm:px-6 py-4 sm:py-6 space-y-6 sm:space-y-8">
+        {/* Anomaly Alert */}
+        <AnomalyAlertBanner
+          anomalies={anomalyCheck.data?.anomalies ?? []}
+          loading={anomalyCheck.isLoading}
+        />
+
         {/* Health Monitor */}
         <CollapsibleSection
           id="healthMonitor"
@@ -313,21 +296,26 @@ export function Dashboard() {
           </div>
         </CollapsibleSection>
 
-        {/* Body Composition */}
+        {/* Body Composition — Smoothed Weight + Recomposition */}
         <CollapsibleSection
           id="bodyComp"
           title="Body Composition"
-          subtitle={`${Math.max(days, 90)}-day trend`}
+          subtitle="Smoothed weight trend and fat/lean mass recomposition"
           collapsed={collapsed.bodyComp}
           onToggle={() => toggle("bodyComp")}
         >
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
-            <TimeSeriesChart
-              series={[weightSeries, bodyFatSeries]}
-              height={200}
-              yAxis={[{ name: "kg", min: "dataMin" }, { name: "% fat" }]}
-              loading={bodyData.isLoading}
-            />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
+              <h3 className="text-xs font-medium text-zinc-500 uppercase mb-2">Weight Trend</h3>
+              <SmoothedWeightChart
+                data={smoothedWeight.data ?? []}
+                loading={smoothedWeight.isLoading}
+              />
+            </div>
+            <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
+              <h3 className="text-xs font-medium text-zinc-500 uppercase mb-2">Recomposition</h3>
+              <BodyRecompositionChart data={bodyRecomp.data ?? []} loading={bodyRecomp.isLoading} />
+            </div>
           </div>
         </CollapsibleSection>
 

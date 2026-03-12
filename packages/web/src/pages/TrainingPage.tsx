@@ -16,6 +16,7 @@ import { ProgressiveOverloadCards } from "../components/ProgressiveOverloadCards
 import { RampRateChart } from "../components/RampRateChart.tsx";
 import { ReadinessScoreCard } from "../components/ReadinessScoreCard.tsx";
 import { SleepAnalyticsChart } from "../components/SleepAnalyticsChart.tsx";
+import { SleepConsistencyChart } from "../components/SleepConsistencyChart.tsx";
 import { StrengthVolumeChart } from "../components/StrengthVolumeChart.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { TrainingCalendar } from "../components/TrainingCalendar.tsx";
@@ -60,6 +61,7 @@ export function TrainingPage() {
   const workloadRatio = trpc.recovery.workloadRatio.useQuery({ days });
   const sleepData = trpc.recovery.sleepAnalytics.useQuery({ days });
   const readiness = trpc.recovery.readinessScore.useQuery({ days });
+  const sleepConsistency = trpc.recovery.sleepConsistency.useQuery({ days });
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 overflow-x-hidden">
@@ -103,6 +105,16 @@ export function TrainingPage() {
             />
           </Section>
         </div>
+
+        <Section
+          title="Sleep Schedule Consistency"
+          subtitle="14-day rolling bedtime/wake time variability and consistency score"
+        >
+          <SleepConsistencyChart
+            data={sleepConsistency.data ?? []}
+            loading={sleepConsistency.isLoading}
+          />
+        </Section>
 
         {/* ── Performance Management ─────────────────────────── */}
         <Section

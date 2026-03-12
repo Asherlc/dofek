@@ -1,5 +1,7 @@
 import { activityRouter } from "./routers/activity.ts";
+import { anomalyDetectionRouter } from "./routers/anomaly-detection.ts";
 import { bodyRouter } from "./routers/body.ts";
+import { bodyAnalyticsRouter } from "./routers/body-analytics.ts";
 import { calendarRouter } from "./routers/calendar.ts";
 import { cyclingAdvancedRouter } from "./routers/cycling-advanced.ts";
 import { dailyMetricsRouter } from "./routers/daily-metrics.ts";
@@ -10,6 +12,7 @@ import { hikingRouter } from "./routers/hiking.ts";
 import { insightsRouter } from "./routers/insights.ts";
 import { lifeEventsRouter } from "./routers/life-events.ts";
 import { nutritionRouter } from "./routers/nutrition.ts";
+import { nutritionAnalyticsRouter } from "./routers/nutrition-analytics.ts";
 import { pmcRouter } from "./routers/pmc.ts";
 import { powerRouter } from "./routers/power.ts";
 import { predictionsRouter } from "./routers/predictions.ts";
@@ -25,10 +28,13 @@ import { router } from "./trpc.ts";
 
 export const appRouter = router({
   activity: activityRouter,
+  anomalyDetection: anomalyDetectionRouter,
   sleep: sleepRouter,
   dailyMetrics: dailyMetricsRouter,
   body: bodyRouter,
+  bodyAnalytics: bodyAnalyticsRouter,
   nutrition: nutritionRouter,
+  nutritionAnalytics: nutritionAnalyticsRouter,
   insights: insightsRouter,
   lifeEvents: lifeEventsRouter,
   supplements: supplementsRouter,
