@@ -4,12 +4,12 @@ export type MealType = "breakfast" | "lunch" | "dinner" | "snack" | "other";
 
 export interface FoodFormData {
   foodName: string;
-  mealType: MealType;
+  meal: MealType;
   calories: number;
-  proteinGrams: number | null;
-  carbsGrams: number | null;
-  fatGrams: number | null;
-  servingDescription: string;
+  proteinG: number | null;
+  carbsG: number | null;
+  fatG: number | null;
+  foodDescription: string;
 }
 
 interface AddFoodModalProps {
@@ -70,12 +70,12 @@ export function AddFoodModal({
 
     onSubmit({
       foodName: foodName.trim(),
-      mealType,
+      meal: mealType,
       calories: parsedCalories,
-      proteinGrams: proteinGrams ? Number.parseFloat(proteinGrams) : null,
-      carbsGrams: carbsGrams ? Number.parseFloat(carbsGrams) : null,
-      fatGrams: fatGrams ? Number.parseFloat(fatGrams) : null,
-      servingDescription: servingDescription.trim(),
+      proteinG: proteinGrams ? Number.parseFloat(proteinGrams) : null,
+      carbsG: carbsGrams ? Number.parseFloat(carbsGrams) : null,
+      fatG: fatGrams ? Number.parseFloat(fatGrams) : null,
+      foodDescription: servingDescription.trim(),
     });
     resetForm();
   }

@@ -9,18 +9,18 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from "./routes/__root";
-import { Route as TrainingRouteImport } from "./routes/training";
-import { Route as SettingsRouteImport } from "./routes/settings";
-import { Route as ProvidersRouteImport } from "./routes/providers";
-import { Route as NutritionRouteImport } from "./routes/nutrition";
-import { Route as InsightsRouteImport } from "./routes/insights";
 import { Route as DashboardRouteImport } from "./routes/dashboard";
 import { Route as IndexRouteImport } from "./routes/index";
-import { Route as TrainingIndexRouteImport } from "./routes/training/index";
-import { Route as TrainingStrengthRouteImport } from "./routes/training/strength";
-import { Route as TrainingRecoveryRouteImport } from "./routes/training/recovery";
-import { Route as TrainingHikingRouteImport } from "./routes/training/hiking";
+import { Route as InsightsRouteImport } from "./routes/insights";
+import { Route as NutritionRouteImport } from "./routes/nutrition";
+import { Route as ProvidersRouteImport } from "./routes/providers";
+import { Route as SettingsRouteImport } from "./routes/settings";
+import { Route as TrainingRouteImport } from "./routes/training";
 import { Route as TrainingEnduranceRouteImport } from "./routes/training/endurance";
+import { Route as TrainingHikingRouteImport } from "./routes/training/hiking";
+import { Route as TrainingIndexRouteImport } from "./routes/training/index";
+import { Route as TrainingRecoveryRouteImport } from "./routes/training/recovery";
+import { Route as TrainingStrengthRouteImport } from "./routes/training/strength";
 
 const TrainingRoute = TrainingRouteImport.update({
   id: "/training",

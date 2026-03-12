@@ -21,13 +21,13 @@ const MEAL_LABELS: Record<MealType, string> = {
 
 interface FoodEntry {
   id: string;
-  foodName: string;
-  mealType: string;
+  food_name: string;
+  meal: string;
   calories: number;
-  proteinGrams: number | null;
-  carbsGrams: number | null;
-  fatGrams: number | null;
-  servingDescription: string | null;
+  protein_g: number | null;
+  carbs_g: number | null;
+  fat_g: number | null;
+  food_description: string | null;
 }
 
 function formatDateForDisplay(date: Date): string {
@@ -76,7 +76,7 @@ export function NutritionPage() {
     },
   });
 
-  const entries = (foodQuery.data ?? []) as FoodEntry[];
+  const entries = (foodQuery.data ?? []) as unknown as FoodEntry[];
 
   const dailyTotals = useMemo(() => {
     let totalCalories = 0;
@@ -86,9 +86,9 @@ export function NutritionPage() {
 
     for (const entry of entries) {
       totalCalories += entry.calories;
-      totalProtein += entry.proteinGrams ?? 0;
-      totalCarbs += entry.carbsGrams ?? 0;
-      totalFat += entry.fatGrams ?? 0;
+      totalProtein += entry.protein_g ?? 0;
+      totalCarbs += entry.carbs_g ?? 0;
+      totalFat += entry.fat_g ?? 0;
     }
 
     return { totalCalories, totalProtein, totalCarbs, totalFat };
@@ -97,7 +97,7 @@ export function NutritionPage() {
   const mealGroups = useMemo(() => {
     const groups = new Map<string, FoodEntry[]>();
     for (const entry of entries) {
-      const meal = entry.mealType || "other";
+      const meal = entry.meal || "other";
       const existing = groups.get(meal) ?? [];
       existing.push(entry);
       groups.set(meal, existing);
@@ -134,12 +134,12 @@ export function NutritionPage() {
     createMutation.mutate({
       date: dateString,
       foodName: data.foodName,
-      mealType: data.mealType,
+      meal: data.meal,
       calories: data.calories,
-      proteinGrams: data.proteinGrams,
-      carbsGrams: data.carbsGrams,
-      fatGrams: data.fatGrams,
-      servingDescription: data.servingDescription || null,
+      proteinG: data.proteinG,
+      carbsG: data.carbsG,
+      fatG: data.fatG,
+      foodDescription: data.foodDescription || null,
     });
   }
 
@@ -332,8 +332,8 @@ export function NutritionPage() {
                         {mealEntries.map((entry) => (
                           <FoodEntryRow
                             key={entry.id}
-                            foodName={entry.foodName}
-                            servingDescription={entry.servingDescription}
+                            foodName={entry.food_name}
+                            servingDescription={entry.food_description}
                             calories={entry.calories}
                             onDelete={() => handleDeleteFood(entry.id)}
                             deleting={deleteMutation.isPending}
