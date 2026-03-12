@@ -5,9 +5,25 @@ import { AppHeader } from "../components/AppHeader.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { trpc } from "../lib/trpc.ts";
 
+const TARGET_DESCRIPTIONS: Record<string, string> = {
+  hrv: "Heart rate variability measures how well your nervous system recovers. Higher is generally better.",
+  resting_hr: "Your resting heart rate reflects cardiovascular fitness. Lower is generally better.",
+  sleep_efficiency:
+    "Sleep efficiency is the percentage of time in bed you actually spend asleep. Higher is better.",
+};
+
+const TARGET_FRIENDLY_LABELS: Record<string, string> = {
+  hrv: "HRV",
+  resting_hr: "Resting HR",
+  sleep_efficiency: "Sleep Quality",
+};
+
 export function PredictionsPage() {
   const [days, setDays] = useState(365);
-  const prediction = trpc.predictions.hrvPrediction.useQuery({ days });
+  const [targetId, setTargetId] = useState("hrv");
+
+  const targets = trpc.predictions.targets.useQuery();
+  const prediction = trpc.predictions.predict.useQuery({ target: targetId, days });
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 overflow-x-hidden">
@@ -17,30 +33,71 @@ export function PredictionsPage() {
       <main className="mx-auto max-w-7xl px-3 sm:px-6 py-4 sm:py-6 space-y-6">
         <div>
           <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider">
-            HRV Prediction
+            What Drives Your Health?
           </h2>
           <p className="text-xs text-zinc-600 mt-0.5">
-            Two models learn from your sleep, exercise, and nutrition to predict tomorrow's HRV.
+            Machine learning models analyze your sleep, exercise, and nutrition data to find what
+            actually moves the needle on key health metrics.
           </p>
         </div>
+
+        {targets.data && (
+          <div className="flex gap-2">
+            {targets.data.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setTargetId(t.id)}
+                className={`px-4 py-2 rounded-lg border transition-colors text-left ${
+                  targetId === t.id
+                    ? "border-emerald-700 bg-emerald-950/50 text-zinc-100"
+                    : "border-zinc-800 bg-zinc-900 text-zinc-500 hover:text-zinc-300 hover:border-zinc-700"
+                }`}
+              >
+                <span className="text-xs font-medium block">
+                  {TARGET_FRIENDLY_LABELS[t.id] ?? t.label}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {TARGET_DESCRIPTIONS[targetId] && (
+          <p className="text-xs text-zinc-500 -mt-3">{TARGET_DESCRIPTIONS[targetId]}</p>
+        )}
 
         {prediction.isLoading && <LoadingSkeleton />}
 
         {prediction.data === null && !prediction.isLoading && (
           <div className="flex items-center justify-center h-32 text-zinc-600 text-sm">
-            Not enough data to train models. Need at least 20 days with HRV readings.
+            Not enough data yet. Need at least 20 days of readings to find patterns.
           </div>
         )}
 
         {prediction.data && (
           <>
-            <TomorrowCard prediction={prediction.data.tomorrowPrediction} />
-            <DiagnosticsBar diagnostics={prediction.data.diagnostics} />
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <FeatureImportanceChart importances={prediction.data.featureImportances} />
-              <PredictionVsActualChart predictions={prediction.data.predictions} />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <TomorrowCard
+                prediction={prediction.data.tomorrowPrediction}
+                label={prediction.data.targetLabel}
+                unit={prediction.data.targetUnit}
+              />
+              <KeyTakeaway
+                importances={prediction.data.featureImportances}
+                targetLabel={prediction.data.targetLabel}
+                diagnostics={prediction.data.diagnostics}
+              />
             </div>
-            <ResidualTimelineChart predictions={prediction.data.predictions} />
+            <FeatureImportanceChart
+              importances={prediction.data.featureImportances}
+              targetLabel={prediction.data.targetLabel}
+            />
+            <TimelineChart
+              predictions={prediction.data.predictions}
+              targetLabel={prediction.data.targetLabel}
+              unit={prediction.data.targetUnit}
+            />
+            <ModelConfidence diagnostics={prediction.data.diagnostics} />
           </>
         )}
       </main>
@@ -48,46 +105,14 @@ export function PredictionsPage() {
   );
 }
 
-// ── Tomorrow's prediction card ─────────────────────────────────────────────
+// ── Key takeaway card ──────────────────────────────────────────────────────
 
-interface TomorrowPrediction {
-  linear: number;
-  tree: number;
+interface FeatureImportance {
+  name: string;
+  linearImportance: number;
+  treeImportance: number;
+  linearCoefficient: number;
 }
-
-function TomorrowCard({ prediction }: { prediction: TomorrowPrediction | null }) {
-  if (!prediction) return null;
-
-  const avg = (prediction.linear + prediction.tree) / 2;
-
-  return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-      <p className="text-xs text-zinc-500 uppercase tracking-wider mb-2">
-        Tomorrow's HRV Prediction
-      </p>
-      <div className="flex items-baseline gap-6">
-        <div>
-          <span className="text-3xl font-bold text-emerald-400">{avg.toFixed(0)}</span>
-          <span className="text-sm text-zinc-500 ml-1">ms</span>
-        </div>
-        <div className="flex gap-4 text-xs text-zinc-500">
-          <span>
-            Simple model: <span className="text-zinc-300">{prediction.linear.toFixed(1)}</span>
-          </span>
-          <span>
-            Advanced model: <span className="text-zinc-300">{prediction.tree.toFixed(1)}</span>
-          </span>
-        </div>
-      </div>
-      <p className="text-[10px] text-zinc-600 mt-2">
-        Average of two models — one captures straightforward trends, the other captures complex
-        interactions between factors.
-      </p>
-    </div>
-  );
-}
-
-// ── Model diagnostics bar ──────────────────────────────────────────────────
 
 interface Diagnostics {
   linearRSquared: number;
@@ -98,72 +123,108 @@ interface Diagnostics {
   featureCount: number;
 }
 
-function formatAccuracy(r2: number): string {
-  const pct = Math.max(0, r2 * 100);
-  return `${pct.toFixed(0)}%`;
-}
-
-function DiagnosticsBar({ diagnostics }: { diagnostics: Diagnostics }) {
-  const items = [
-    {
-      label: "Simple model accuracy",
-      value: formatAccuracy(diagnostics.linearRSquared),
-      tooltip: "How much of the day-to-day HRV variation the simple (linear) model explains",
-    },
-    {
-      label: "Advanced model accuracy",
-      value: formatAccuracy(diagnostics.treeRSquared),
-      tooltip: "How much the advanced (tree) model explains on training data",
-    },
-    {
-      label: "Real-world accuracy",
-      value: formatAccuracy(diagnostics.crossValidatedRSquared),
-      highlight: true,
-      tooltip:
-        "Tested on data the model hasn't seen — this is the most honest measure of how well it will predict future HRV",
-    },
-    {
-      label: "Days of data",
-      value: diagnostics.sampleCount.toString(),
-    },
-    {
-      label: "Factors used",
-      value: diagnostics.featureCount.toString(),
-    },
-  ];
+function KeyTakeaway({
+  importances,
+  targetLabel,
+  diagnostics,
+}: {
+  importances: FeatureImportance[];
+  targetLabel: string;
+  diagnostics: Diagnostics;
+}) {
+  const top3 = importances.slice(0, 3).map((f) => friendlyFeatureName(f.name).toLowerCase());
+  const confidenceLevel = getConfidenceLevel(diagnostics.crossValidatedRSquared);
 
   return (
-    <div className="flex flex-wrap gap-3">
-      {items.map((item) => (
-        <div
-          key={item.label}
-          className="rounded-md border border-zinc-800 bg-zinc-900 px-3 py-2"
-          title={item.tooltip}
-        >
-          <p className="text-[10px] text-zinc-500 uppercase tracking-wider">{item.label}</p>
-          <p
-            className={`text-sm font-mono ${item.highlight ? "text-emerald-400" : "text-zinc-200"}`}
-          >
-            {item.value}
-          </p>
-        </div>
-      ))}
+    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4 flex flex-col justify-between">
+      <div>
+        <p className="text-xs text-zinc-500 uppercase tracking-wider mb-2">Key Finding</p>
+        <p className="text-sm text-zinc-200 leading-relaxed">
+          Your <span className="text-emerald-400 font-medium">{top3[0]}</span> has the biggest
+          impact on tomorrow's {targetLabel.toLowerCase()}
+          {top3.length > 1 && (
+            <>
+              , followed by <span className="text-emerald-400/70 font-medium">{top3[1]}</span>
+              {top3.length > 2 && (
+                <>
+                  {" "}
+                  and <span className="text-emerald-400/50 font-medium">{top3[2]}</span>
+                </>
+              )}
+            </>
+          )}
+          .
+        </p>
+      </div>
+      <p className="text-[10px] text-zinc-600 mt-3">
+        Based on {diagnostics.sampleCount} days of data.{" "}
+        {confidenceLevel === "strong"
+          ? "The models found clear patterns in your data."
+          : confidenceLevel === "moderate"
+            ? "The models found some patterns, but day-to-day variation is high."
+            : "Your data is quite variable — take these patterns as directional, not definitive."}
+      </p>
+    </div>
+  );
+}
+
+function getConfidenceLevel(cvR2: number): "strong" | "moderate" | "weak" {
+  if (cvR2 >= 0.3) return "strong";
+  if (cvR2 >= 0.1) return "moderate";
+  return "weak";
+}
+
+// ── Tomorrow's prediction card ─────────────────────────────────────────────
+
+interface TomorrowPrediction {
+  linear: number;
+  tree: number;
+}
+
+function TomorrowCard({
+  prediction,
+  label,
+  unit,
+}: {
+  prediction: TomorrowPrediction | null;
+  label: string;
+  unit: string;
+}) {
+  if (!prediction) return null;
+
+  const avg = (prediction.linear + prediction.tree) / 2;
+  const spread = Math.abs(prediction.linear - prediction.tree);
+  const agreement = spread < avg * 0.05 ? "high" : spread < avg * 0.15 ? "moderate" : "low";
+
+  return (
+    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+      <p className="text-xs text-zinc-500 uppercase tracking-wider mb-2">
+        Tomorrow's Predicted {label}
+      </p>
+      <div className="flex items-baseline gap-3">
+        <span className="text-3xl font-bold text-emerald-400">{avg.toFixed(0)}</span>
+        <span className="text-sm text-zinc-500">{unit}</span>
+        {agreement === "high" && (
+          <span className="text-[10px] text-emerald-600 bg-emerald-950/50 px-2 py-0.5 rounded-full">
+            Both models agree
+          </span>
+        )}
+      </div>
+      <p className="text-[10px] text-zinc-600 mt-2">
+        {agreement === "high"
+          ? "Two independent models arrived at nearly the same prediction — this gives us more confidence."
+          : agreement === "moderate"
+            ? `The two models predict ${prediction.linear.toFixed(0)} and ${prediction.tree.toFixed(0)} — reasonably close.`
+            : `The models disagree (${prediction.linear.toFixed(0)} vs ${prediction.tree.toFixed(0)}) — tomorrow may be hard to predict.`}
+      </p>
     </div>
   );
 }
 
 // ── Feature importance chart ───────────────────────────────────────────────
 
-interface FeatureImportance {
-  name: string;
-  linearImportance: number;
-  treeImportance: number;
-  linearCoefficient: number;
-}
-
 const FRIENDLY_FEATURE_NAMES: Record<string, string> = {
-  hrv_today: "Today's HRV",
-  hrv_delta: "HRV trend (day-over-day change)",
+  hrv: "HRV",
   resting_hr: "Resting heart rate",
   sleep_duration: "Sleep duration",
   deep_sleep: "Deep sleep",
@@ -171,14 +232,14 @@ const FRIENDLY_FEATURE_NAMES: Record<string, string> = {
   sleep_efficiency: "Sleep efficiency",
   exercise_minutes: "Exercise duration",
   cardio_minutes: "Cardio duration",
-  strength_minutes: "Strength training duration",
-  active_kcal: "Active calories burned",
+  strength_minutes: "Strength training",
+  active_kcal: "Active calories",
   steps: "Daily steps",
-  calories: "Caloric intake",
-  protein_g: "Protein intake",
-  carbs_g: "Carb intake",
-  fat_g: "Fat intake",
-  fiber_g: "Fiber intake",
+  calories: "Calorie intake",
+  protein_g: "Protein",
+  carbs_g: "Carbs",
+  fat_g: "Fat",
+  fiber_g: "Fiber",
   skin_temp: "Skin temperature",
 };
 
@@ -186,14 +247,26 @@ function friendlyFeatureName(name: string): string {
   return FRIENDLY_FEATURE_NAMES[name] ?? formatFeatureNameFallback(name);
 }
 
-function FeatureImportanceChart({ importances }: { importances: FeatureImportance[] }) {
-  const top = importances.slice(0, 12);
+function FeatureImportanceChart({
+  importances,
+  targetLabel,
+}: {
+  importances: FeatureImportance[];
+  targetLabel: string;
+}) {
+  // Show only meaningful features (>1% importance) up to 10
+  const meaningful = importances.filter((f) => f.treeImportance > 0.01);
+  const top = meaningful.slice(0, 10);
   const labels = top.map((f) => friendlyFeatureName(f.name));
+  // Normalize to percentage for readability
+  const maxImportance = Math.max(...top.map((f) => Math.max(f.treeImportance, f.linearImportance)));
 
   const option: EChartsOption = {
     title: {
-      text: "What Matters Most for Your HRV",
-      textStyle: { color: "#a1a1aa", fontSize: 12, fontWeight: "normal" },
+      text: `What Influences Your ${targetLabel} Most`,
+      subtext: "Ranked by impact — longer bars mean bigger effect",
+      textStyle: { color: "#a1a1aa", fontSize: 13, fontWeight: "normal" },
+      subtextStyle: { color: "#52525b", fontSize: 10 },
       left: 0,
       top: 0,
     },
@@ -202,30 +275,29 @@ function FeatureImportanceChart({ importances }: { importances: FeatureImportanc
       backgroundColor: "#18181b",
       borderColor: "#3f3f46",
       textStyle: { color: "#e4e4e7", fontSize: 11 },
+      formatter: (params: unknown) => {
+        const items = params as Array<{ seriesName: string; value: number; name: string }>;
+        if (!Array.isArray(items) || items.length === 0) return "";
+        const label = items[0]!.name;
+        return `<strong>${label}</strong><br/>${items
+          .map(
+            (item) =>
+              `${item.seriesName}: ${maxImportance > 0 ? ((item.value / maxImportance) * 100).toFixed(0) : 0}%`,
+          )
+          .join("<br/>")}`;
+      },
     },
-    legend: {
-      data: ["Advanced model", "Simple model"],
-      textStyle: { color: "#71717a", fontSize: 10 },
-      right: 0,
-      top: 0,
-    },
-    grid: { left: 8, right: 16, top: 40, bottom: 8, containLabel: true },
+    grid: { left: 8, right: 16, top: 50, bottom: 8, containLabel: true },
     xAxis: {
       type: "value",
-      name: "Relative importance",
-      nameLocation: "middle",
-      nameGap: 16,
-      nameTextStyle: { color: "#52525b", fontSize: 9 },
-      axisLabel: { color: "#52525b", fontSize: 9 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
-      splitLine: { lineStyle: { color: "#27272a" } },
+      show: false,
     },
     yAxis: {
       type: "category",
-      data: labels.reverse(),
+      data: labels.slice().reverse(),
       axisLabel: {
         color: "#a1a1aa",
-        fontSize: 10,
+        fontSize: 11,
         width: 160,
         overflow: "truncate",
       },
@@ -234,137 +306,53 @@ function FeatureImportanceChart({ importances }: { importances: FeatureImportanc
     },
     series: [
       {
-        name: "Advanced model",
+        name: "Impact",
         type: "bar",
-        data: [...top].reverse().map((f) => f.treeImportance),
-        itemStyle: { color: "#34d399" },
-        barWidth: 8,
-      },
-      {
-        name: "Simple model",
-        type: "bar",
-        data: [...top].reverse().map((f) => f.linearImportance),
-        itemStyle: { color: "#818cf8" },
-        barWidth: 8,
+        data: top
+          .slice()
+          .reverse()
+          .map((f) => f.treeImportance),
+        itemStyle: {
+          color: "#34d399",
+          borderRadius: [0, 4, 4, 0],
+        },
+        barWidth: 14,
       },
     ],
   };
 
-  const height = Math.max(300, top.length * 35 + 60);
+  const height = Math.max(250, top.length * 36 + 70);
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
       <ReactECharts option={option} style={{ height }} opts={{ renderer: "svg" }} />
-      <p className="text-[10px] text-zinc-600 mt-2">
-        Longer bars = bigger influence on your predicted HRV. The two models weigh factors
-        differently — the advanced model can detect complex patterns the simple one can't.
-      </p>
     </div>
   );
 }
 
-// ── Prediction vs actual scatter ───────────────────────────────────────────
+// ── Timeline chart ─────────────────────────────────────────────────────────
 
 interface PredictionPoint {
   date: string;
-  actualHrv: number;
+  actual: number;
   linearPrediction: number;
   treePrediction: number;
 }
 
-function PredictionVsActualChart({ predictions }: { predictions: PredictionPoint[] }) {
-  const allVals = predictions.flatMap((p) => [p.actualHrv, p.linearPrediction, p.treePrediction]);
-  const min = Math.floor(Math.min(...allVals) * 0.9);
-  const max = Math.ceil(Math.max(...allVals) * 1.1);
-
+function TimelineChart({
+  predictions,
+  targetLabel,
+  unit,
+}: {
+  predictions: PredictionPoint[];
+  targetLabel: string;
+  unit: string;
+}) {
   const option: EChartsOption = {
     title: {
-      text: "How Close Are the Predictions?",
-      textStyle: { color: "#a1a1aa", fontSize: 12, fontWeight: "normal" },
-      left: 0,
-      top: 0,
-    },
-    tooltip: {
-      trigger: "item",
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 11 },
-    },
-    legend: {
-      data: ["Advanced model", "Simple model", "Perfect prediction"],
-      textStyle: { color: "#71717a", fontSize: 10 },
-      right: 0,
-      top: 0,
-    },
-    grid: { left: 8, right: 16, top: 40, bottom: 24, containLabel: true },
-    xAxis: {
-      type: "value",
-      name: "What actually happened (HRV)",
-      nameLocation: "middle",
-      nameGap: 20,
-      nameTextStyle: { color: "#71717a", fontSize: 10 },
-      min,
-      max,
-      axisLabel: { color: "#52525b", fontSize: 9 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
-      splitLine: { lineStyle: { color: "#27272a" } },
-    },
-    yAxis: {
-      type: "value",
-      name: "What the model predicted",
-      nameTextStyle: { color: "#71717a", fontSize: 10 },
-      min,
-      max,
-      axisLabel: { color: "#52525b", fontSize: 9 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
-      splitLine: { lineStyle: { color: "#27272a" } },
-    },
-    series: [
-      {
-        name: "Advanced model",
-        type: "scatter",
-        data: predictions.map((p) => [p.actualHrv, p.treePrediction]),
-        symbolSize: 4,
-        itemStyle: { color: "#34d399", opacity: 0.5 },
-      },
-      {
-        name: "Simple model",
-        type: "scatter",
-        data: predictions.map((p) => [p.actualHrv, p.linearPrediction]),
-        symbolSize: 4,
-        itemStyle: { color: "#818cf8", opacity: 0.3 },
-      },
-      {
-        name: "Perfect prediction",
-        type: "line",
-        data: [
-          [min, min],
-          [max, max],
-        ],
-        lineStyle: { color: "#52525b", width: 1, type: "dashed" },
-        symbol: "none",
-        silent: true,
-      },
-    ],
-  };
-
-  return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-      <ReactECharts option={option} style={{ height: 350 }} opts={{ renderer: "svg" }} />
-      <p className="text-[10px] text-zinc-600 mt-2">
-        Each dot is one day. Dots closer to the dashed line = the model got it right. Dots far from
-        the line = the model was surprised.
-      </p>
-    </div>
-  );
-}
-
-// ── Residual timeline ──────────────────────────────────────────────────────
-
-function ResidualTimelineChart({ predictions }: { predictions: PredictionPoint[] }) {
-  const option: EChartsOption = {
-    title: {
-      text: "Your HRV Over Time — Actual vs Predicted",
-      textStyle: { color: "#a1a1aa", fontSize: 12, fontWeight: "normal" },
+      text: `Your ${targetLabel} Over Time`,
+      subtext: "White = actual, green dashed = what the model expected",
+      textStyle: { color: "#a1a1aa", fontSize: 13, fontWeight: "normal" },
+      subtextStyle: { color: "#52525b", fontSize: 10 },
       left: 0,
       top: 0,
     },
@@ -375,12 +363,12 @@ function ResidualTimelineChart({ predictions }: { predictions: PredictionPoint[]
       textStyle: { color: "#e4e4e7", fontSize: 11 },
     },
     legend: {
-      data: ["Actual HRV", "Advanced model", "Simple model"],
+      data: [`Actual`, "Model prediction"],
       textStyle: { color: "#71717a", fontSize: 10 },
       right: 0,
       top: 0,
     },
-    grid: { left: 8, right: 16, top: 40, bottom: 24, containLabel: true },
+    grid: { left: 8, right: 16, top: 50, bottom: 24, containLabel: true },
     xAxis: {
       type: "category",
       data: predictions.map((p) => p.date),
@@ -389,7 +377,7 @@ function ResidualTimelineChart({ predictions }: { predictions: PredictionPoint[]
     },
     yAxis: {
       type: "value",
-      name: "HRV (ms)",
+      name: `${targetLabel} (${unit})`,
       nameTextStyle: { color: "#71717a", fontSize: 10 },
       axisLabel: { color: "#52525b", fontSize: 9 },
       axisLine: { lineStyle: { color: "#3f3f46" } },
@@ -410,27 +398,19 @@ function ResidualTimelineChart({ predictions }: { predictions: PredictionPoint[]
     ],
     series: [
       {
-        name: "Actual HRV",
+        name: "Actual",
         type: "line",
-        data: predictions.map((p) => p.actualHrv),
+        data: predictions.map((p) => p.actual),
         lineStyle: { color: "#e4e4e7", width: 1.5 },
         itemStyle: { color: "#e4e4e7" },
         symbol: "none",
       },
       {
-        name: "Advanced model",
+        name: "Model prediction",
         type: "line",
         data: predictions.map((p) => p.treePrediction),
         lineStyle: { color: "#34d399", width: 1, type: "dashed" },
         itemStyle: { color: "#34d399" },
-        symbol: "none",
-      },
-      {
-        name: "Simple model",
-        type: "line",
-        data: predictions.map((p) => p.linearPrediction),
-        lineStyle: { color: "#818cf8", width: 1, type: "dashed" },
-        itemStyle: { color: "#818cf8" },
         symbol: "none",
       },
     ],
@@ -440,8 +420,51 @@ function ResidualTimelineChart({ predictions }: { predictions: PredictionPoint[]
     <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
       <ReactECharts option={option} style={{ height: 300 }} opts={{ renderer: "svg" }} />
       <p className="text-[10px] text-zinc-600 mt-2">
-        The white line is what actually happened. Dashed lines are what the models predicted. Where
-        they diverge, something unexpected happened that day.
+        When the lines move together, the model understands what's driving your{" "}
+        {targetLabel.toLowerCase()}. Big gaps mean something unusual happened that day.
+      </p>
+    </div>
+  );
+}
+
+// ── Model confidence (replaces diagnostics bar) ────────────────────────────
+
+function ModelConfidence({ diagnostics }: { diagnostics: Diagnostics }) {
+  const cvR2 = diagnostics.crossValidatedRSquared;
+  const confidence = getConfidenceLevel(cvR2);
+
+  const confidenceLabels = {
+    strong: { text: "High confidence", color: "text-emerald-400", bg: "bg-emerald-950/50" },
+    moderate: { text: "Moderate confidence", color: "text-yellow-400", bg: "bg-yellow-950/50" },
+    weak: { text: "Low confidence", color: "text-orange-400", bg: "bg-orange-950/50" },
+  };
+
+  const { text, color, bg } = confidenceLabels[confidence];
+
+  return (
+    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-xs text-zinc-500 uppercase tracking-wider">
+          How Much Can We Trust This?
+        </p>
+        <span className={`text-xs font-medium ${color} ${bg} px-2 py-0.5 rounded-full`}>
+          {text}
+        </span>
+      </div>
+      <div className="flex gap-6 text-xs text-zinc-500">
+        <span>
+          Based on <span className="text-zinc-300">{diagnostics.sampleCount}</span> days
+        </span>
+        <span>
+          Using <span className="text-zinc-300">{diagnostics.featureCount}</span> factors
+        </span>
+      </div>
+      <p className="text-[10px] text-zinc-600 mt-2">
+        {confidence === "strong"
+          ? "The model was tested on data it hadn't seen before and still predicted well. These patterns are reliable."
+          : confidence === "moderate"
+            ? "The model captures some real patterns, but health metrics are inherently variable. Use these as general guidance."
+            : "Health is complex and many factors aren't captured here (stress, illness, etc). These patterns are suggestive but not definitive."}
       </p>
     </div>
   );
@@ -452,16 +475,12 @@ function ResidualTimelineChart({ predictions }: { predictions: PredictionPoint[]
 function LoadingSkeleton() {
   return (
     <div className="space-y-4">
-      <div className="h-20 rounded-lg bg-zinc-800 animate-pulse" />
-      <div className="flex gap-3">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <div key={i} className="h-14 w-28 rounded-md bg-zinc-800 animate-pulse" />
-        ))}
-      </div>
       <div className="grid grid-cols-2 gap-4">
-        <div className="h-80 rounded-lg bg-zinc-800 animate-pulse" />
-        <div className="h-80 rounded-lg bg-zinc-800 animate-pulse" />
+        <div className="h-28 rounded-lg bg-zinc-800 animate-pulse" />
+        <div className="h-28 rounded-lg bg-zinc-800 animate-pulse" />
       </div>
+      <div className="h-80 rounded-lg bg-zinc-800 animate-pulse" />
+      <div className="h-64 rounded-lg bg-zinc-800 animate-pulse" />
     </div>
   );
 }

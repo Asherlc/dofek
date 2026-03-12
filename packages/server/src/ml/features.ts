@@ -1,15 +1,15 @@
 /**
  * Feature extraction for ML models.
  *
- * Transforms joined daily health data into feature vectors suitable for
- * regression and gradient-boosted trees. Handles missing values via
- * mean imputation and tracks which features are available.
+ * Defines all available features and prediction targets. Each target
+ * specifies which features to exclude (the target itself + correlated metrics)
+ * so the model surfaces genuinely controllable factors.
  */
 
 export interface FeatureDefinition {
   name: string;
   description: string;
-  extract: (day: DailyFeatureRow, prev: DailyFeatureRow | null) => number | null;
+  extract: (day: DailyFeatureRow) => number | null;
 }
 
 /** Minimal row shape needed for feature extraction — mirrors JoinedDay from insights/engine */
@@ -43,17 +43,23 @@ export interface ExtractedDataset {
   dates: string[];
 }
 
-/**
- * All features used to predict next-day HRV.
- * Each feature extracts from the current day's data;
- * the target (next-day HRV) is handled by the dataset builder.
- */
-export function getHrvPredictionFeatures(): FeatureDefinition[] {
+export interface PredictionTarget {
+  id: string;
+  label: string;
+  unit: string;
+  /** Extract the target value from next day's data */
+  extractTarget: (day: DailyFeatureRow) => number | null;
+  /** Feature names to exclude (the target itself + trivially correlated metrics) */
+  excludeFeatures: string[];
+}
+
+/** All available features that can be used as predictors */
+export function getAllFeatures(): FeatureDefinition[] {
   return [
-    // Autoregressive: today's HRV predicts tomorrow's
+    // Vitals
     {
-      name: "hrv_today",
-      description: "Today's HRV (autoregressive)",
+      name: "hrv",
+      description: "Heart rate variability (ms)",
       extract: (d) => d.hrv,
     },
     {
@@ -61,11 +67,10 @@ export function getHrvPredictionFeatures(): FeatureDefinition[] {
       description: "Resting heart rate",
       extract: (d) => d.resting_hr,
     },
-    // HRV day-over-day delta (momentum)
     {
-      name: "hrv_delta",
-      description: "HRV change from previous day",
-      extract: (d, prev) => (d.hrv != null && prev?.hrv != null ? d.hrv - prev.hrv : null),
+      name: "skin_temp",
+      description: "Skin temperature (°C)",
+      extract: (d) => d.skin_temp_c,
     },
     // Sleep
     {
@@ -140,49 +145,73 @@ export function getHrvPredictionFeatures(): FeatureDefinition[] {
       description: "Fiber intake (g)",
       extract: (d) => d.fiber_g,
     },
-    // Other vitals
-    {
-      name: "skin_temp",
-      description: "Skin temperature (°C)",
-      extract: (d) => d.skin_temp_c,
-    },
   ];
 }
 
+export const PREDICTION_TARGETS: PredictionTarget[] = [
+  {
+    id: "hrv",
+    label: "HRV",
+    unit: "ms",
+    extractTarget: (d) => d.hrv,
+    // Exclude HRV itself + resting HR (bidirectionally correlated via autonomic nervous system)
+    excludeFeatures: ["hrv", "resting_hr"],
+  },
+  {
+    id: "resting_hr",
+    label: "Resting Heart Rate",
+    unit: "bpm",
+    extractTarget: (d) => d.resting_hr,
+    excludeFeatures: ["resting_hr", "hrv"],
+  },
+  {
+    id: "sleep_efficiency",
+    label: "Sleep Efficiency",
+    unit: "%",
+    extractTarget: (d) => d.sleep_efficiency,
+    // Exclude all sleep metrics — they're outputs of the same sleep session
+    excludeFeatures: ["sleep_efficiency", "sleep_duration", "deep_sleep", "rem_sleep"],
+  },
+];
+
+export function getPredictionTarget(id: string): PredictionTarget | undefined {
+  return PREDICTION_TARGETS.find((t) => t.id === id);
+}
+
 /**
- * Build a dataset for next-day HRV prediction.
+ * Build a dataset for next-day prediction of the given target.
  *
- * For each day i where both features and next-day HRV are available,
+ * For each day i where both features and next-day target are available,
  * creates a feature vector from day i and target from day i+1.
  *
  * Features with >50% missing values are dropped entirely.
  * Remaining missing values are imputed with the feature's column mean.
  */
-export function buildHrvDataset(
+export function buildDataset(
   days: DailyFeatureRow[],
+  target: PredictionTarget,
   minCompleteness: number = 0.5,
 ): ExtractedDataset | null {
-  const featureDefs = getHrvPredictionFeatures();
+  const excludeSet = new Set(target.excludeFeatures);
+  const featureDefs = getAllFeatures().filter((f) => !excludeSet.has(f.name));
 
-  // Extract raw features and target (next-day HRV)
   const rawRows: { features: (number | null)[]; target: number; date: string }[] = [];
 
   for (let i = 0; i < days.length - 1; i++) {
     const today = days[i]!;
     const tomorrow = days[i + 1]!;
-    if (tomorrow.hrv == null) continue;
+    const targetValue = target.extractTarget(tomorrow);
+    if (targetValue == null) continue;
 
-    const prev = i > 0 ? days[i - 1]! : null;
-    const features = featureDefs.map((f) => f.extract(today, prev));
-    rawRows.push({ features, target: tomorrow.hrv, date: today.date });
+    const features = featureDefs.map((f) => f.extract(today));
+    rawRows.push({ features, target: targetValue, date: today.date });
   }
 
-  if (rawRows.length < 20) return null; // Not enough data
+  if (rawRows.length < 20) return null;
 
   // Determine which features to keep (>minCompleteness non-null)
   const nRows = rawRows.length;
   const nFeatures = featureDefs.length;
-  const keepFeature: boolean[] = [];
   const keptIndices: number[] = [];
   const keptNames: string[] = [];
 
@@ -191,9 +220,7 @@ export function buildHrvDataset(
     for (const row of rawRows) {
       if (row.features[f] != null) nonNull++;
     }
-    const complete = nonNull / nRows >= minCompleteness;
-    keepFeature.push(complete);
-    if (complete) {
+    if (nonNull / nRows >= minCompleteness) {
       keptIndices.push(f);
       keptNames.push(featureDefs[f]!.name);
     }

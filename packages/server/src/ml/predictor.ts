@@ -1,13 +1,13 @@
 /**
- * HRV prediction orchestrator.
+ * Prediction orchestrator.
  *
  * Trains both a linear regression and gradient-boosted tree model
- * on daily health data, then returns predictions, feature importances,
- * and model diagnostics.
+ * on daily health data for a given target, then returns predictions,
+ * feature importances, and model diagnostics.
  */
 
-import type { DailyFeatureRow } from "./features.ts";
-import { buildHrvDataset } from "./features.ts";
+import type { DailyFeatureRow, PredictionTarget } from "./features.ts";
+import { buildDataset, PREDICTION_TARGETS } from "./features.ts";
 import { GradientBoostedTrees } from "./gradient-boost.ts";
 import { LinearRegression } from "./regression.ts";
 
@@ -20,7 +20,7 @@ export interface FeatureImportance {
 
 export interface PredictionPoint {
   date: string;
-  actualHrv: number;
+  actual: number;
   linearPrediction: number;
   treePrediction: number;
 }
@@ -34,7 +34,10 @@ export interface ModelDiagnostics {
   featureCount: number;
 }
 
-export interface HrvPredictionResult {
+export interface PredictionResult {
+  targetId: string;
+  targetLabel: string;
+  targetUnit: string;
   featureImportances: FeatureImportance[];
   predictions: PredictionPoint[];
   diagnostics: ModelDiagnostics;
@@ -45,13 +48,16 @@ export interface HrvPredictionResult {
 }
 
 /**
- * Train both models and return predictions + importances.
+ * Train both models for a given target and return predictions + importances.
  *
  * Uses 5-fold cross-validation for the tree model to estimate
  * out-of-sample performance (guards against overfitting).
  */
-export function trainHrvPredictor(days: DailyFeatureRow[]): HrvPredictionResult | null {
-  const dataset = buildHrvDataset(days);
+export function trainPredictor(
+  days: DailyFeatureRow[],
+  target: PredictionTarget,
+): PredictionResult | null {
+  const dataset = buildDataset(days, target);
   if (!dataset) return null;
 
   const { featureNames, X, y, dates } = dataset;
@@ -84,13 +90,13 @@ export function trainHrvPredictor(days: DailyFeatureRow[]): HrvPredictionResult 
   // Generate predictions for each data point
   const predictions: PredictionPoint[] = X.map((features, i) => ({
     date: dates[i]!,
-    actualHrv: y[i]!,
+    actual: y[i]!,
     linearPrediction: round2(linear.predict(features)),
     treePrediction: round2(tree.predict(features)),
   }));
 
   // Predict tomorrow using today's data (last row of input)
-  let tomorrowPrediction: HrvPredictionResult["tomorrowPrediction"] = null;
+  let tomorrowPrediction: PredictionResult["tomorrowPrediction"] = null;
   if (X.length > 0) {
     const lastFeatures = X[X.length - 1]!;
     tomorrowPrediction = {
@@ -100,6 +106,9 @@ export function trainHrvPredictor(days: DailyFeatureRow[]): HrvPredictionResult 
   }
 
   return {
+    targetId: target.id,
+    targetLabel: target.label,
+    targetUnit: target.unit,
     featureImportances: importances,
     predictions,
     diagnostics: {
@@ -112,6 +121,13 @@ export function trainHrvPredictor(days: DailyFeatureRow[]): HrvPredictionResult 
     },
     tomorrowPrediction,
   };
+}
+
+/** Convenience wrapper: train HRV predictor (default target) */
+export function trainHrvPredictor(days: DailyFeatureRow[]): PredictionResult | null {
+  const target = PREDICTION_TARGETS.find((t) => t.id === "hrv");
+  if (!target) return null;
+  return trainPredictor(days, target);
 }
 
 /**
