@@ -32,7 +32,10 @@ export async function runMigrations(databaseUrl: string, migrationsDir?: string)
       if (appliedSet.has(file)) continue;
       console.log(`[migrate] Applying: ${file}`);
       const content = readFileSync(join(dir, file), "utf-8");
-      const statements = content.split("--> statement-breakpoint").map((s) => s.trim()).filter(Boolean);
+      const statements = content
+        .split("--> statement-breakpoint")
+        .map((s) => s.trim())
+        .filter(Boolean);
       for (const stmt of statements) {
         await sql.unsafe(stmt);
       }
