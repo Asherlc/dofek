@@ -1,12 +1,5 @@
+import type { PolarizationWeek } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
-
-interface PolarizationWeek {
-  week: string;
-  z1Seconds: number;
-  z2Seconds: number;
-  z3Seconds: number;
-  polarizationIndex: number | null;
-}
 
 interface PolarizationTrendChartProps {
   weeks: PolarizationWeek[];
@@ -48,8 +41,8 @@ export function PolarizationTrendChart({ weeks, maxHr, loading }: PolarizationTr
   const yMin = Math.floor(Math.min(piMin, 0) * 10) / 10;
   const yMax = Math.ceil(Math.max(piMax, 2.5) * 10) / 10;
 
-  const firstDate = validWeeks[0].week;
-  const lastDate = validWeeks[validWeeks.length - 1].week;
+  const firstDate = validWeeks[0]?.week ?? "";
+  const lastDate = validWeeks[validWeeks.length - 1]?.week ?? "";
 
   const option = {
     backgroundColor: "transparent",

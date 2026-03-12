@@ -1,13 +1,8 @@
+import type { VolumeOverTimeRow } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
 
-export interface StrengthVolumeData {
-  week: string;
-  totalVolumeKg: number;
-  setCount: number;
-}
-
 interface StrengthVolumeChartProps {
-  data: StrengthVolumeData[];
+  data: VolumeOverTimeRow[];
   loading?: boolean;
 }
 
@@ -37,13 +32,17 @@ export function StrengthVolumeChart({ data, loading }: StrengthVolumeChartProps)
       borderColor: "#3f3f46",
       textStyle: { color: "#e4e4e7", fontSize: 12 },
       formatter(params: { dataIndex: number }[]) {
-        const d = data[params[0].dataIndex];
+        const first = params[0];
+        if (!first) return "";
+        const index = first.dataIndex;
+        const d = data[index];
+        if (!d) return "";
         const dateLabel = new Date(d.week).toLocaleDateString("en-US", {
           month: "short",
           day: "numeric",
           year: "numeric",
         });
-        return `<strong>${dateLabel}</strong><br/>
+        return `<strong>${dateLabel ?? ""}</strong><br/>
           Volume: ${Math.round(d.totalVolumeKg).toLocaleString()} kg<br/>
           Sets: ${d.setCount}`;
       },

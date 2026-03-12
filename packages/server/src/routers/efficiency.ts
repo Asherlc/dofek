@@ -3,6 +3,44 @@ import { z } from "zod";
 import { enduranceTypeFilter } from "../lib/endurance-types.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
+export interface AerobicEfficiencyActivity {
+  date: string;
+  activityType: string;
+  name: string;
+  avgPowerZ2: number;
+  avgHrZ2: number;
+  efficiencyFactor: number;
+  z2Samples: number;
+}
+
+export interface AerobicEfficiencyResult {
+  maxHr: number | null;
+  activities: AerobicEfficiencyActivity[];
+}
+
+export interface AerobicDecouplingActivity {
+  date: string;
+  activityType: string;
+  name: string;
+  firstHalfRatio: number;
+  secondHalfRatio: number;
+  decouplingPct: number;
+  totalSamples: number;
+}
+
+export interface PolarizationWeek {
+  week: string;
+  z1Seconds: number;
+  z2Seconds: number;
+  z3Seconds: number;
+  polarizationIndex: number | null;
+}
+
+export interface PolarizationTrendResult {
+  maxHr: number | null;
+  weeks: PolarizationWeek[];
+}
+
 export const efficiencyRouter = router({
   /**
    * Aerobic Efficiency (Efficiency Factor) per activity.
@@ -15,7 +53,7 @@ export const efficiencyRouter = router({
    */
   aerobicEfficiency: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(180) }))
-    .query(async ({ ctx, input }) => {
+    .query(async ({ ctx, input }): Promise<AerobicEfficiencyResult> => {
       const rows = await ctx.db.execute<{
         max_hr: number;
         date: string;
@@ -51,7 +89,7 @@ export const efficiencyRouter = router({
             ORDER BY a.started_at`,
       );
 
-      const maxHr = rows.length > 0 ? Number(rows[0].max_hr) : null;
+      const maxHr = rows.length > 0 ? Number(rows[0]?.max_hr) : null;
 
       return {
         maxHr,
@@ -74,7 +112,7 @@ export const efficiencyRouter = router({
    */
   aerobicDecoupling: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(180) }))
-    .query(async ({ ctx, input }) => {
+    .query(async ({ ctx, input }): Promise<AerobicDecouplingActivity[]> => {
       const rows = await ctx.db.execute<{
         date: string;
         activity_type: string;
@@ -155,7 +193,7 @@ export const efficiencyRouter = router({
    */
   polarizationTrend: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(180) }))
-    .query(async ({ ctx, input }) => {
+    .query(async ({ ctx, input }): Promise<PolarizationTrendResult> => {
       const rows = await ctx.db.execute<{
         max_hr: number;
         week: string;
@@ -183,7 +221,7 @@ export const efficiencyRouter = router({
             ORDER BY week`,
       );
 
-      const maxHr = rows.length > 0 ? Number(rows[0].max_hr) : null;
+      const maxHr = rows.length > 0 ? Number(rows[0]?.max_hr) : null;
 
       const weeks = rows.map((row) => {
         const z1 = Number(row.z1_seconds);

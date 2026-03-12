@@ -1,17 +1,8 @@
+import type { EstimatedOneRepMaxRow } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
 
-export interface EstimatedMaxHistoryPoint {
-  date: string;
-  estimatedMax: number;
-}
-
-export interface EstimatedMaxExercise {
-  exerciseName: string;
-  history: EstimatedMaxHistoryPoint[];
-}
-
 interface EstimatedMaxChartProps {
-  exercises: EstimatedMaxExercise[];
+  exercises: EstimatedOneRepMaxRow[];
   loading?: boolean;
 }
 

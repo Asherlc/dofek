@@ -382,7 +382,7 @@ export const recoveryRouter = router({
 
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - input.days);
-      const cutoffStr = cutoffDate.toISOString().split("T")[0];
+      const cutoffStr = cutoffDate.toISOString().split("T")[0] ?? "";
 
       const results: ReadinessRow[] = [];
 

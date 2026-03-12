@@ -19,18 +19,25 @@
     "rules": {
       "recommended": true,
       "suspicious": {
-        "noExplicitAny": "off",
-        "noArrayIndexKey": "off"
+        "noExplicitAny": "error",
+        "noArrayIndexKey": "off",
+        "noTsIgnore": "error"
       },
       "a11y": {
         "noLabelWithoutControl": "off",
         "useSemanticElements": "off"
       },
       "style": {
-        "noNonNullAssertion": "off"
+        "noNonNullAssertion": "warn"
       }
     }
   },
+  "overrides": [
+    {
+      "includes": ["**/routeTree.gen.ts"],
+      "linter": { "enabled": false }
+    }
+  ],
   "css": {
     "parser": {
       "cssModules": false,

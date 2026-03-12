@@ -62,7 +62,9 @@ export function HrvBaselineChart({ data, loading }: HrvBaselineChartProps) {
       textStyle: { color: "#e4e4e7", fontSize: 12 },
       formatter: (params: { seriesName: string; data: [string, number]; color: string }[]) => {
         if (!params || params.length === 0) return "";
-        const date = new Date(params[0].data[0]).toLocaleDateString("en-US", {
+        const firstParam = params[0];
+        if (!firstParam) return "";
+        const date = new Date(firstParam.data[0]).toLocaleDateString("en-US", {
           month: "short",
           day: "numeric",
         });

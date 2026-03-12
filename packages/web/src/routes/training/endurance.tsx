@@ -26,34 +26,6 @@ function EnduranceTab() {
   const variability = trpc.cyclingAdvanced.activityVariability.useQuery({ days });
   const verticalAscent = trpc.cyclingAdvanced.verticalAscentRate.useQuery({ days });
 
-  const effData = efficiency.data as
-    | {
-        maxHr: number | null;
-        activities: Array<{
-          date: string;
-          activityType: string;
-          name: string;
-          avgPowerZ2: number;
-          avgHrZ2: number;
-          efficiencyFactor: number;
-          z2Samples: number;
-        }>;
-      }
-    | undefined;
-
-  const polData = polarization.data as
-    | {
-        maxHr: number | null;
-        weeks: Array<{
-          week: string;
-          z1Seconds: number;
-          z2Seconds: number;
-          z3Seconds: number;
-          polarizationIndex: number | null;
-        }>;
-      }
-    | undefined;
-
   return (
     <>
       {/* eFTP + Power Curve side by side */}
@@ -82,8 +54,8 @@ function EnduranceTab() {
           subtitle="Power output per heartbeat at easy effort — higher means fitter"
         >
           <AerobicEfficiencyChart
-            activities={effData?.activities ?? []}
-            maxHr={effData?.maxHr ?? null}
+            activities={efficiency.data?.activities ?? []}
+            maxHr={efficiency.data?.maxHr ?? null}
             loading={efficiency.isLoading}
           />
         </Section>
@@ -93,8 +65,8 @@ function EnduranceTab() {
           subtitle="Weekly training distribution — above 2.0 means mostly easy and hard, little moderate"
         >
           <PolarizationTrendChart
-            weeks={polData?.weeks ?? []}
-            maxHr={polData?.maxHr ?? null}
+            weeks={polarization.data?.weeks ?? []}
+            maxHr={polarization.data?.maxHr ?? null}
             loading={polarization.isLoading}
           />
         </Section>
@@ -105,13 +77,9 @@ function EnduranceTab() {
         subtitle="How quickly your fitness load is building week over week"
       >
         <RampRateChart
-          data={((rampRate.data as Record<string, unknown> | undefined)?.weeks ?? []) as never[]}
-          currentRampRate={
-            ((rampRate.data as Record<string, unknown> | undefined)?.currentRampRate as number) ?? 0
-          }
-          recommendation={
-            ((rampRate.data as Record<string, unknown> | undefined)?.recommendation as string) ?? ""
-          }
+          data={rampRate.data?.weeks ?? []}
+          currentRampRate={rampRate.data?.currentRampRate ?? 0}
+          recommendation={rampRate.data?.recommendation ?? ""}
           loading={rampRate.isLoading}
         />
       </Section>
@@ -119,15 +87,12 @@ function EnduranceTab() {
       {/* Monotony + Vertical Ascent */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Section title="Training Monotony & Strain" subtitle="Weekly training load variability">
-          <TrainingMonotonyChart
-            data={(monotony.data ?? []) as never[]}
-            loading={monotony.isLoading}
-          />
+          <TrainingMonotonyChart data={monotony.data ?? []} loading={monotony.isLoading} />
         </Section>
 
         <Section title="Vertical Ascent Rate" subtitle="Climbing speed on grade >3% segments">
           <VerticalAscentChart
-            data={(verticalAscent.data ?? []) as never[]}
+            data={verticalAscent.data ?? []}
             loading={verticalAscent.isLoading}
           />
         </Section>
@@ -137,10 +102,7 @@ function EnduranceTab() {
         title="Activity Variability Index"
         subtitle="Normalized power vs average power ratio per activity"
       >
-        <ActivityVariabilityTable
-          data={(variability.data ?? []) as never[]}
-          loading={variability.isLoading}
-        />
+        <ActivityVariabilityTable data={variability.data ?? []} loading={variability.isLoading} />
       </Section>
     </>
   );

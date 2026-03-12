@@ -1,5 +1,15 @@
+interface Activity {
+  id: string;
+  started_at: string;
+  ended_at: string | null;
+  activity_type: string;
+  name: string | null;
+  provider_id: string;
+  source_providers: string[] | null;
+}
+
 interface ActivityListProps {
-  activities: any[];
+  activities: Activity[];
   loading?: boolean;
 }
 
@@ -26,7 +36,7 @@ export function ActivityList({ activities, loading }: ActivityListProps) {
           </tr>
         </thead>
         <tbody>
-          {activities.map((a: any) => {
+          {activities.map((a) => {
             const duration =
               a.started_at && a.ended_at
                 ? Math.round(

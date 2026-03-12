@@ -25,27 +25,21 @@ function RecoveryTab() {
           title="Readiness Score"
           subtitle="Composite score from HRV, resting HR, sleep, load balance"
         >
-          <ReadinessScoreCard
-            data={(readiness.data ?? []) as never[]}
-            loading={readiness.isLoading}
-          />
+          <ReadinessScoreCard data={readiness.data ?? []} loading={readiness.isLoading} />
         </Section>
 
         <Section
           title="Acute:Chronic Workload Ratio"
           subtitle="7-day vs 28-day training load ratio — stay between 0.8 and 1.3"
         >
-          <WorkloadRatioChart
-            data={(workloadRatio.data ?? []) as never[]}
-            loading={workloadRatio.isLoading}
-          />
+          <WorkloadRatioChart data={workloadRatio.data ?? []} loading={workloadRatio.isLoading} />
         </Section>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Section title="HRV Coefficient of Variation" subtitle="7-day rolling HRV variability">
           <HrvVariabilityChart
-            data={(hrvVariability.data ?? []) as never[]}
+            data={hrvVariability.data ?? []}
             loading={hrvVariability.isLoading}
           />
         </Section>
@@ -55,12 +49,8 @@ function RecoveryTab() {
           subtitle="Nightly sleep stages, efficiency, and sleep debt"
         >
           <SleepAnalyticsChart
-            nightly={
-              ((sleepData.data as Record<string, unknown> | undefined)?.nightly ?? []) as never[]
-            }
-            sleepDebt={
-              ((sleepData.data as Record<string, unknown> | undefined)?.sleepDebt as number) ?? 0
-            }
+            nightly={sleepData.data?.nightly ?? []}
+            sleepDebt={sleepData.data?.sleepDebt ?? 0}
             loading={sleepData.isLoading}
           />
         </Section>

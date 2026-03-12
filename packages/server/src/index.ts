@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import { mkdir, readdir, rm, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -8,6 +9,7 @@ import cookieParser from "cookie-parser";
 import { createDatabaseFromEnv } from "dofek/db";
 import { runMigrations } from "dofek/db/migrate";
 import { DEFAULT_USER_ID } from "dofek/db/schema";
+import type { SyncResult } from "dofek/providers/types";
 import { sql } from "drizzle-orm";
 import express from "express";
 import {
@@ -32,6 +34,13 @@ import { logger } from "./logger.ts";
 import { appRouter } from "./router.ts";
 import { startSlackBot } from "./slack/bot.ts";
 import type { Context } from "./trpc.ts";
+
+/** Max upload size: 2 GB */
+const MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024;
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
 
 /** Fire common queries sequentially to populate cache without overwhelming the DB.
  *  Uses DEFAULT_USER_ID for backwards compatibility — only warms for the primary user. */
@@ -68,10 +77,23 @@ async function warmCache(db: import("dofek/db").Database) {
 
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
 
-/** Stream a request body to a file on disk. */
-function streamToFile(req: import("express").Request, filePath: string): Promise<void> {
+/** Stream a request body to a file on disk, enforcing a max size. */
+function streamToFile(
+  req: import("express").Request,
+  filePath: string,
+  maxBytes = MAX_UPLOAD_BYTES,
+): Promise<void> {
   return new Promise((resolve, reject) => {
+    let bytesReceived = 0;
     const ws = createWriteStream(filePath);
+
+    req.on("data", (chunk: Buffer) => {
+      bytesReceived += chunk.length;
+      if (bytesReceived > maxBytes) {
+        req.destroy(new Error(`Upload exceeds maximum size of ${maxBytes} bytes`));
+      }
+    });
+
     req.pipe(ws);
     ws.on("finish", resolve);
     ws.on("error", reject);
@@ -138,7 +160,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
     status: "uploading" | "assembling" | "processing" | "done" | "error";
     progress?: number;
     message?: string;
-    result?: any;
+    result?: SyncResult;
   }
   const activeUploads = new Map<string, UploadChunks>();
   const jobStatuses = new Map<string, JobStatus>();
@@ -189,15 +211,16 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
           status: result.errors?.length ? "error" : "success",
           recordCount: result.recordsSynced,
           errorMessage: result.errors?.length
-            ? result.errors.map((e: any) => e.message).join("; ")
+            ? result.errors.map((e) => e.message).join("; ")
             : undefined,
           durationMs: Date.now() - importStart,
         });
-      } catch (err: any) {
-        logger.error(`[upload] Background import failed: ${err}`);
+      } catch (err: unknown) {
+        const message = errorMessage(err);
+        logger.error(`[upload] Background import failed: ${message}`);
         setJobStatus(jobId, {
           status: "error",
-          message: err.message ?? "Import failed",
+          message,
         });
         try {
           const { logSync } = await import("dofek/db/sync-log");
@@ -205,10 +228,12 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
             providerId: "apple_health",
             dataType: "import",
             status: "error",
-            errorMessage: err.message ?? "Import failed",
+            errorMessage: message,
             durationMs: Date.now() - importStart,
           });
-        } catch {}
+        } catch (logErr) {
+          logger.error(`[upload] Failed to log sync error: ${logErr}`);
+        }
       } finally {
         await unlink(filePath).catch(() => {});
       }
@@ -243,9 +268,9 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
         await streamToFile(req, tmpFile);
         startBackgroundImport(jobId, tmpFile, since);
         res.json({ status: "processing", jobId });
-      } catch (err: any) {
+      } catch (err: unknown) {
         logger.error(`[upload] Apple Health upload failed: ${err}`);
-        res.status(500).json({ error: err.message ?? "Upload failed" });
+        res.status(500).json({ error: "Upload failed" });
       }
       return;
     }
@@ -308,19 +333,21 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
 
       startBackgroundImport(uploadId, assembledFile, since);
       res.json({ status: "processing", jobId: uploadId });
-    } catch (err: any) {
+    } catch (err: unknown) {
       logger.error(`[upload] Chunked upload failed: ${err}`);
       const upload = activeUploads.get(uploadId);
       if (upload) {
         activeUploads.delete(uploadId);
         await rm(upload.dir, { recursive: true, force: true }).catch(() => {});
       }
-      setJobStatus(uploadId, { status: "error", message: err.message ?? "Upload failed" });
-      res.status(500).json({ error: err.message ?? "Upload failed" });
+      setJobStatus(uploadId, { status: "error", message: "Upload failed" });
+      res.status(500).json({ error: "Upload failed" });
     }
   });
 
   // ── OAuth state ──
+  // Maps random state tokens to provider IDs for CSRF protection
+  const oauthStateMap = new Map<string, string>();
   // OAuth 1.0 request token secrets (keyed by oauth_token)
   const oauth1Secrets = new Map<string, { providerId: string; tokenSecret: string }>();
 
@@ -556,10 +583,9 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       }
 
       // OAuth 1.0 providers (e.g. FatSecret) — get request token first
-      if ((setup as any).oauth1Flow) {
-        const oauth1 = (setup as any).oauth1Flow;
+      if (setup.oauth1Flow) {
         const callbackUrl = `${process.env.OAUTH_REDIRECT_URI ?? "https://dofek.asherlc.com/callback"}`;
-        const result = await oauth1.getRequestToken(callbackUrl);
+        const result = await setup.oauth1Flow.getRequestToken(callbackUrl);
         oauth1Secrets.set(result.oauthToken, {
           providerId,
           tokenSecret: result.oauthTokenSecret,
@@ -572,13 +598,16 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
 
       const { buildAuthorizationUrl } = await import("dofek/auth/oauth");
       const url = buildAuthorizationUrl(setup.oauthConfig);
-      // Append state so the callback knows which provider this is for
+      // Generate random state for CSRF protection, map it to the provider ID
+      const stateToken = randomBytes(16).toString("hex");
+      oauthStateMap.set(stateToken, providerId);
+      setTimeout(() => oauthStateMap.delete(stateToken), 10 * 60 * 1000);
       const authUrl = new URL(url);
-      authUrl.searchParams.set("state", providerId);
+      authUrl.searchParams.set("state", stateToken);
       res.redirect(authUrl.toString());
-    } catch (err: any) {
+    } catch (err: unknown) {
       logger.error(`[auth] Failed to start OAuth flow: ${err}`);
-      res.status(500).send(`Auth error: ${err.message}`);
+      res.status(500).send("Auth error: failed to start OAuth flow");
     }
   });
 
@@ -621,14 +650,13 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
         }
 
         const setup = provider.authSetup?.();
-        const oauth1Flow = (setup as any)?.oauth1Flow;
-        if (!oauth1Flow) {
+        if (!setup?.oauth1Flow) {
           res.status(400).send(`Provider ${stored.providerId} does not support OAuth 1.0`);
           return;
         }
 
         logger.info(`[auth] Exchanging OAuth 1.0 tokens for ${stored.providerId}...`);
-        const { token, tokenSecret } = await oauth1Flow.exchangeForAccessToken(
+        const { token, tokenSecret } = await setup.oauth1Flow.exchangeForAccessToken(
           oauthToken,
           stored.tokenSecret,
           oauthVerifier,
@@ -729,23 +757,31 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
         return;
       }
 
+      // Resolve provider from random state token
+      const providerId = oauthStateMap.get(state);
+      if (!providerId) {
+        res.status(400).send("Unknown or expired OAuth state");
+        return;
+      }
+      oauthStateMap.delete(state);
+
       const { getAllProviders } = await import("dofek/providers/registry");
       const { ensureProvidersRegistered } = await import("./routers/sync.ts");
       await ensureProvidersRegistered();
 
-      const provider = getAllProviders().find((p) => p.id === state);
+      const provider = getAllProviders().find((p) => p.id === providerId);
       if (!provider) {
-        res.status(404).send(`Unknown provider: ${state}`);
+        res.status(404).send(`Unknown provider: ${providerId}`);
         return;
       }
 
       const setup = provider.authSetup?.();
       if (!setup?.oauthConfig || !setup.exchangeCode) {
-        res.status(400).send(`Provider ${state} does not support OAuth code exchange`);
+        res.status(400).send(`Provider ${providerId} does not support OAuth code exchange`);
         return;
       }
 
-      logger.info(`[auth] Exchanging code for ${state} tokens...`);
+      logger.info(`[auth] Exchanging code for ${providerId} tokens...`);
       const tokens = await setup.exchangeCode(code);
 
       const { ensureProvider } = await import("dofek/db/tokens");
@@ -753,13 +789,13 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       await ensureProvider(db, provider.id, provider.name, setup.apiBaseUrl);
       await saveTokens(db, provider.id, tokens);
 
-      logger.info(`[auth] ${state} tokens saved. Expires: ${tokens.expiresAt.toISOString()}`);
+      logger.info(`[auth] ${providerId} tokens saved. Expires: ${tokens.expiresAt.toISOString()}`);
       res.send(
         `<html><body style="font-family:system-ui;background:#111;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center"><h1>Authorized!</h1><p>${provider.name} connected successfully.</p><p>Token expires: ${tokens.expiresAt.toISOString()}</p><p><a href="/" style="color:#10b981">Return to dashboard</a></p></div></body></html>`,
       );
-    } catch (err: any) {
+    } catch (err: unknown) {
       logger.error(`[auth] OAuth callback failed: ${err}`);
-      res.status(500).send(`Token exchange failed: ${err.message}`);
+      res.status(500).send("Token exchange failed");
     }
   });
 
@@ -779,8 +815,12 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
 }
 
 async function main() {
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) {
+    throw new Error("DATABASE_URL environment variable is required");
+  }
   // Auto-run pending migrations on startup
-  await runMigrations(process.env.DATABASE_URL!);
+  await runMigrations(databaseUrl);
 
   const db = createDatabaseFromEnv();
   const app = createApp(db);

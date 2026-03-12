@@ -178,8 +178,11 @@ export function DataSourcesPanel() {
           setUploadState({ status: "syncing", progress: 50, message: "Processing import..." });
           await pollUploadStatus(jobId);
         }
-      } catch (err: any) {
-        setUploadState({ status: "error", message: err.message ?? "Upload failed" });
+      } catch (err: unknown) {
+        setUploadState({
+          status: "error",
+          message: err instanceof Error ? err.message : "Upload failed",
+        });
       }
     },
     [pollUploadStatus],

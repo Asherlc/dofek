@@ -28,6 +28,13 @@ interface AnalysisMetric {
   avg_body_fat?: number;
 }
 
+interface EventAnalysisData {
+  event: LifeEvent;
+  metrics: AnalysisMetric[];
+  sleep: AnalysisMetric[];
+  bodyComp: AnalysisMetric[];
+}
+
 const CATEGORIES = ["diet", "supplement", "injury", "lifestyle", "training", "other"] as const;
 
 export function LifeEventsPanel() {
@@ -50,7 +57,7 @@ export function LifeEventsPanel() {
     },
   });
   const analysis = trpc.lifeEvents.analyze.useQuery(
-    { id: selectedEvent!, windowDays },
+    { id: selectedEvent ?? "", windowDays },
     { enabled: !!selectedEvent },
   );
 
@@ -102,8 +109,8 @@ export function LifeEventsPanel() {
       {/* Analysis */}
       {selectedEvent && (
         <EventAnalysis
-          event={eventList.find((e) => e.id === selectedEvent)!}
-          analysis={analysis.data as any}
+          event={(eventList.find((e) => e.id === selectedEvent) ?? eventList[0]) as LifeEvent}
+          analysis={analysis.data as EventAnalysisData | null}
           loading={analysis.isLoading}
           windowDays={windowDays}
           onWindowChange={setWindowDays}
@@ -260,12 +267,7 @@ function EventAnalysis({
   onDelete,
 }: {
   event: LifeEvent;
-  analysis: {
-    event: any;
-    metrics: AnalysisMetric[];
-    sleep: AnalysisMetric[];
-    bodyComp: AnalysisMetric[];
-  } | null;
+  analysis: EventAnalysisData | null;
   loading: boolean;
   windowDays: number;
   onWindowChange: (days: number) => void;
@@ -277,25 +279,25 @@ function EventAnalysis({
   if (!analysis) return null;
 
   // API returns numeric columns as strings — coerce to numbers
-  const numify = (row: any): AnalysisMetric | undefined => {
+  const numify = (row: AnalysisMetric | undefined): AnalysisMetric | undefined => {
     if (!row) return undefined;
-    const out: any = { period: row.period };
+    const out: Record<string, string | number | null> = { period: row.period };
     for (const [k, v] of Object.entries(row)) {
       if (k === "period") continue;
       out[k] = v != null ? Number(v) : null;
     }
-    return out as AnalysisMetric;
+    return out as unknown as AnalysisMetric;
   };
 
   const before = {
-    metrics: numify(analysis.metrics.find((m: any) => m.period === "before")),
-    sleep: numify(analysis.sleep.find((m: any) => m.period === "before")),
-    body: numify(analysis.bodyComp.find((m: any) => m.period === "before")),
+    metrics: numify(analysis.metrics.find((m) => m.period === "before")),
+    sleep: numify(analysis.sleep.find((m) => m.period === "before")),
+    body: numify(analysis.bodyComp.find((m) => m.period === "before")),
   };
   const after = {
-    metrics: numify(analysis.metrics.find((m: any) => m.period === "after")),
-    sleep: numify(analysis.sleep.find((m: any) => m.period === "after")),
-    body: numify(analysis.bodyComp.find((m: any) => m.period === "after")),
+    metrics: numify(analysis.metrics.find((m) => m.period === "after")),
+    sleep: numify(analysis.sleep.find((m) => m.period === "after")),
+    body: numify(analysis.bodyComp.find((m) => m.period === "after")),
   };
 
   const periodLabel = event.ended_at ? "During" : event.ongoing ? "Since" : "After";
@@ -437,7 +439,8 @@ function CompareCard({
   if (before == null && after == null) return null;
 
   const diff = before != null && after != null ? after - before : null;
-  const pctDiff = diff != null && before !== 0 ? (diff / Math.abs(before!)) * 100 : null;
+  const pctDiff =
+    diff != null && before != null && before !== 0 ? (diff / Math.abs(before)) * 100 : null;
   const improved = diff != null ? (lowerBetter ? diff < 0 : diff > 0) : null;
 
   return (

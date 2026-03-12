@@ -1,3 +1,4 @@
+import type { AerobicEfficiencyActivity } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
 
 const ACTIVITY_COLORS: Record<string, string> = {
@@ -14,18 +15,8 @@ function getActivityColor(type: string): string {
   return ACTIVITY_COLORS[type.toLowerCase()] ?? "#71717a";
 }
 
-interface EfficiencyActivity {
-  date: string;
-  activityType: string;
-  name: string;
-  avgPowerZ2: number;
-  avgHrZ2: number;
-  efficiencyFactor: number;
-  z2Samples: number;
-}
-
 interface AerobicEfficiencyChartProps {
-  activities: EfficiencyActivity[];
+  activities: AerobicEfficiencyActivity[];
   maxHr: number | null;
   loading?: boolean;
 }

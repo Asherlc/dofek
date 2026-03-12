@@ -15,14 +15,14 @@ export const insightsRouter = router({
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
       const [metrics, sleep, activities, nutrition, bodyComp] = await Promise.all([
-        ctx.db.execute(
+        ctx.db.execute<DailyRow>(
           sql`SELECT date, resting_hr, hrv, spo2_avg, steps, active_energy_kcal, skin_temp_c
               FROM fitness.v_daily_metrics
               WHERE user_id = ${ctx.userId}
                 AND date > CURRENT_DATE - ${input.days}::int
               ORDER BY date ASC`,
         ),
-        ctx.db.execute(
+        ctx.db.execute<SleepRow>(
           sql`SELECT started_at, duration_minutes, deep_minutes, rem_minutes,
                      light_minutes, awake_minutes, efficiency_pct, is_nap
               FROM fitness.v_sleep
@@ -30,21 +30,21 @@ export const insightsRouter = router({
                 AND started_at > CURRENT_DATE - ${input.days}::int
               ORDER BY started_at ASC`,
         ),
-        ctx.db.execute(
+        ctx.db.execute<ActivityRow>(
           sql`SELECT started_at, ended_at, activity_type
               FROM fitness.v_activity
               WHERE user_id = ${ctx.userId}
                 AND started_at > CURRENT_DATE - ${input.days}::int
               ORDER BY started_at ASC`,
         ),
-        ctx.db.execute(
+        ctx.db.execute<NutritionRow>(
           sql`SELECT date, calories, protein_g, carbs_g, fat_g, fiber_g, water_ml
               FROM fitness.nutrition_daily
               WHERE user_id = ${ctx.userId}
                 AND date > CURRENT_DATE - ${input.days}::int
               ORDER BY date ASC`,
         ),
-        ctx.db.execute(
+        ctx.db.execute<BodyCompRow>(
           sql`SELECT recorded_at, weight_kg, body_fat_pct
               FROM fitness.v_body_measurement
               WHERE user_id = ${ctx.userId}
@@ -53,12 +53,6 @@ export const insightsRouter = router({
         ),
       ]);
 
-      return computeInsights(
-        metrics as unknown as DailyRow[],
-        sleep as unknown as SleepRow[],
-        activities as unknown as ActivityRow[],
-        nutrition as unknown as NutritionRow[],
-        bodyComp as unknown as BodyCompRow[],
-      );
+      return computeInsights(metrics, sleep, activities, nutrition, bodyComp);
     }),
 });

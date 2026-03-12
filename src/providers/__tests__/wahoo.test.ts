@@ -154,29 +154,29 @@ describe("Wahoo Provider", () => {
       const rows = fitRecordsToMetricStream(fakeRecords, "wahoo", "activity-uuid-123");
       expect(rows).toHaveLength(2);
 
-      expect(rows[0].providerId).toBe("wahoo");
-      expect(rows[0].activityId).toBe("activity-uuid-123");
-      expect(rows[0].recordedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
-      expect(rows[0].heartRate).toBe(130);
-      expect(rows[0].power).toBe(200);
-      expect(rows[0].cadence).toBe(85);
-      expect(rows[0].speed).toBe(8.5);
-      expect(rows[0].lat).toBe(40.7128);
-      expect(rows[0].lng).toBe(-74.006);
-      expect(rows[0].altitude).toBe(15.2);
-      expect(rows[0].temperature).toBe(22);
-      expect(rows[0].distance).toBe(100);
+      expect(rows[0]?.providerId).toBe("wahoo");
+      expect(rows[0]?.activityId).toBe("activity-uuid-123");
+      expect(rows[0]?.recordedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
+      expect(rows[0]?.heartRate).toBe(130);
+      expect(rows[0]?.power).toBe(200);
+      expect(rows[0]?.cadence).toBe(85);
+      expect(rows[0]?.speed).toBe(8.5);
+      expect(rows[0]?.lat).toBe(40.7128);
+      expect(rows[0]?.lng).toBe(-74.006);
+      expect(rows[0]?.altitude).toBe(15.2);
+      expect(rows[0]?.temperature).toBe(22);
+      expect(rows[0]?.distance).toBe(100);
     });
 
     it("includes running dynamics when present", () => {
       const rows = fitRecordsToMetricStream(fakeRecords, "wahoo", "activity-uuid-123");
-      expect(rows[1].verticalOscillation).toBe(9.2);
-      expect(rows[1].stanceTime).toBe(240);
+      expect(rows[1]?.verticalOscillation).toBe(9.2);
+      expect(rows[1]?.stanceTime).toBe(240);
     });
 
     it("includes raw JSONB for every record", () => {
       const rows = fitRecordsToMetricStream(fakeRecords, "wahoo", "activity-uuid-123");
-      expect(rows[0].raw).toEqual({
+      expect(rows[0]?.raw).toEqual({
         timestamp: "2026-03-01T10:00:00Z",
         heart_rate: 130,
         power: 200,

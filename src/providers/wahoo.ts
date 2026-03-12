@@ -349,7 +349,9 @@ export class WahooProvider implements Provider {
             try {
               const fitBuffer = await client.downloadFitFile(workout.fitFileUrl);
               const fitData = await parseFitFile(fitBuffer);
-              const metricRows = fitRecordsToMetricStream(fitData.records, this.id, row.id);
+              const activityId = row?.id;
+              if (!activityId) continue;
+              const metricRows = fitRecordsToMetricStream(fitData.records, this.id, activityId);
 
               if (metricRows.length > 0) {
                 // Insert in batches of 500

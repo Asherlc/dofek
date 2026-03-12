@@ -1,12 +1,6 @@
+import type { CalendarDay } from "dofek-server/types";
 import type { EChartsOption } from "echarts";
 import ReactECharts from "echarts-for-react";
-
-interface CalendarDay {
-  date: string;
-  activityCount: number;
-  totalMinutes: number;
-  activityTypes: string[];
-}
 
 interface TrainingCalendarProps {
   data: CalendarDay[];
@@ -30,11 +24,11 @@ export function TrainingCalendar({ data, height = 180 }: TrainingCalendarProps) 
 
   // Determine date range from data, capping to 1 year for calendar readability
   const dates = data.map((d) => d.date).sort();
-  const endDate = dates[dates.length - 1];
+  const endDate = dates[dates.length - 1] ?? "";
   const oneYearBefore = new Date(endDate);
   oneYearBefore.setFullYear(oneYearBefore.getFullYear() - 1);
-  const minDate = oneYearBefore.toISOString().split("T")[0];
-  const startDate = dates[0] > minDate ? dates[0] : minDate;
+  const minDate = oneYearBefore.toISOString().split("T")[0] ?? "";
+  const startDate = (dates[0] ?? "") > minDate ? (dates[0] ?? "") : minDate;
 
   // Series data: [date, totalMinutes] — only include dates within the display range
   const seriesData: [string, number][] = data

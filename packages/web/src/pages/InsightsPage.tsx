@@ -76,10 +76,16 @@ export function InsightsPage() {
     ...CATEGORIES.filter((c) => groups.has(c.key)).map((c) => ({
       key: c.key,
       label: c.label,
-      insights: groups.get(c.key)!.sort(sortByStrength),
+      insights: (groups.get(c.key) ?? []).sort(sortByStrength),
     })),
     ...(groups.has("other")
-      ? [{ key: "other", label: "Other", insights: groups.get("other")!.sort(sortByStrength) }]
+      ? [
+          {
+            key: "other",
+            label: "Other",
+            insights: (groups.get("other") ?? []).sort(sortByStrength),
+          },
+        ]
       : []),
   ];
 

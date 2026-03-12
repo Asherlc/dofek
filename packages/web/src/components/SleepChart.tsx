@@ -35,7 +35,9 @@ export function SleepChart({ data, loading }: SleepChartProps) {
         params: { seriesName: string; value: [string, number | null]; color: string }[],
       ) => {
         if (!params.length) return "";
-        const date = new Date(params[0].value[0]).toLocaleDateString("en-US", {
+        const firstParam = params[0];
+        if (!firstParam) return "";
+        const date = new Date(firstParam.value[0]).toLocaleDateString("en-US", {
           month: "short",
           day: "numeric",
           year: "numeric",

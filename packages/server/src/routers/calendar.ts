@@ -2,6 +2,13 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
+export interface CalendarDay {
+  date: string;
+  activityCount: number;
+  totalMinutes: number;
+  activityTypes: string[];
+}
+
 export const calendarRouter = router({
   calendarData: cachedProtectedQuery(CacheTTL.LONG)
     .input(
@@ -9,7 +16,7 @@ export const calendarRouter = router({
         days: z.number().default(365),
       }),
     )
-    .query(async ({ ctx, input }) => {
+    .query(async ({ ctx, input }): Promise<CalendarDay[]> => {
       const rows = await ctx.db.execute<{
         date: string;
         activity_count: number;

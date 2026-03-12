@@ -37,7 +37,7 @@ export function buildOAuth1Header(
   const allParams = { ...params, ...oauthParams };
   const sortedKeys = Object.keys(allParams).sort();
   const paramString = sortedKeys
-    .map((k) => `${encodeRFC3986(k)}=${encodeRFC3986(allParams[k])}`)
+    .map((k) => `${encodeRFC3986(k)}=${encodeRFC3986(allParams[k] ?? "")}`)
     .join("&");
 
   // Parse URL to get base URL without query string
@@ -57,7 +57,7 @@ export function buildOAuth1Header(
 
   const headerParts = Object.keys(oauthParams)
     .sort()
-    .map((k) => `${k}="${encodeRFC3986(oauthParams[k])}"`)
+    .map((k) => `${k}="${encodeRFC3986(oauthParams[k] ?? "")}"`)
     .join(", ");
 
   return `OAuth ${headerParts}`;
@@ -151,7 +151,7 @@ export interface ParsedFoodEntry {
 function dateIntToIso(dateInt: string): string {
   const days = parseInt(dateInt, 10);
   const ms = days * 86400000; // days * 24h * 60m * 60s * 1000ms
-  return new Date(ms).toISOString().split("T")[0];
+  return new Date(ms).toISOString().split("T")[0] ?? "";
 }
 
 /**
@@ -340,7 +340,7 @@ async function getRequestToken(
 
   const sortedKeys = Object.keys(oauthParams).sort();
   const paramString = sortedKeys
-    .map((k) => `${encodeRFC3986(k)}=${encodeRFC3986(oauthParams[k])}`)
+    .map((k) => `${encodeRFC3986(k)}=${encodeRFC3986(oauthParams[k] ?? "")}`)
     .join("&");
 
   const baseString = ["POST", encodeRFC3986(REQUEST_TOKEN_URL), encodeRFC3986(paramString)].join(
@@ -355,7 +355,7 @@ async function getRequestToken(
   // FatSecret expects OAuth params as POST body
   const bodyString = Object.keys(oauthParams)
     .sort()
-    .map((k) => `${encodeRFC3986(k)}=${encodeRFC3986(oauthParams[k])}`)
+    .map((k) => `${encodeRFC3986(k)}=${encodeRFC3986(oauthParams[k] ?? "")}`)
     .join("&");
 
   const response = await fetchFn(REQUEST_TOKEN_URL, {
@@ -410,7 +410,7 @@ async function exchangeForAccessToken(
 
   const sortedKeys = Object.keys(oauthParams).sort();
   const paramString = sortedKeys
-    .map((k) => `${encodeRFC3986(k)}=${encodeRFC3986(oauthParams[k])}`)
+    .map((k) => `${encodeRFC3986(k)}=${encodeRFC3986(oauthParams[k] ?? "")}`)
     .join("&");
 
   const baseString = ["POST", encodeRFC3986(ACCESS_TOKEN_URL), encodeRFC3986(paramString)].join(
@@ -425,7 +425,7 @@ async function exchangeForAccessToken(
   // FatSecret expects OAuth params as POST body, not Authorization header
   const bodyString = Object.keys(oauthParams)
     .sort()
-    .map((k) => `${encodeRFC3986(k)}=${encodeRFC3986(oauthParams[k])}`)
+    .map((k) => `${encodeRFC3986(k)}=${encodeRFC3986(oauthParams[k] ?? "")}`)
     .join("&");
 
   const response = await fetchFn(ACCESS_TOKEN_URL, {

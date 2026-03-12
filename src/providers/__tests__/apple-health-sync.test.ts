@@ -372,8 +372,8 @@ describe("Apple Health streaming import (integration)", () => {
     });
 
     expect(workouts.length).toBe(1);
-    expect(workouts[0].avgHeartRate).toBe(148);
-    expect(workouts[0].maxHeartRate).toBe(175);
+    expect(workouts[0]?.avgHeartRate).toBe(148);
+    expect(workouts[0]?.maxHeartRate).toBe(175);
   });
 
   it("parses WorkoutRoute GPS locations and attaches to workout", async () => {
@@ -389,19 +389,19 @@ describe("Apple Health streaming import (integration)", () => {
     });
 
     expect(workouts.length).toBe(1);
-    expect(workouts[0].routeLocations).toBeDefined();
-    expect(workouts[0].routeLocations!.length).toBe(3);
+    expect(workouts[0]?.routeLocations).toBeDefined();
+    expect(workouts[0]?.routeLocations!.length).toBe(3);
 
-    const first = workouts[0].routeLocations![0];
-    expect(first.lat).toBeCloseTo(40.7128);
-    expect(first.lng).toBeCloseTo(-74.006);
-    expect(first.altitude).toBeCloseTo(10.5);
-    expect(first.speed).toBeCloseTo(3.5);
-    expect(first.date).toBeInstanceOf(Date);
+    const first = workouts[0]?.routeLocations?.[0];
+    expect(first?.lat).toBeCloseTo(40.7128);
+    expect(first?.lng).toBeCloseTo(-74.006);
+    expect(first?.altitude).toBeCloseTo(10.5);
+    expect(first?.speed).toBeCloseTo(3.5);
+    expect(first?.date).toBeInstanceOf(Date);
 
-    const last = workouts[0].routeLocations![2];
-    expect(last.lat).toBeCloseTo(40.713);
-    expect(last.speed).toBeCloseTo(3.7);
+    const last = workouts[0]?.routeLocations?.[2];
+    expect(last?.lat).toBeCloseTo(40.713);
+    expect(last?.speed).toBeCloseTo(3.7);
   });
 
   it("parses blood glucose into record batch", async () => {
@@ -421,7 +421,7 @@ describe("Apple Health streaming import (integration)", () => {
     });
 
     expect(bgRecords).toHaveLength(1);
-    expect(bgRecords[0].value).toBeCloseTo(5.4);
+    expect(bgRecords[0]?.value).toBeCloseTo(5.4);
   });
 
   it("parses nutrition records", async () => {
@@ -483,9 +483,9 @@ describe("Apple Health streaming import (integration)", () => {
     });
 
     expect(distanceRecords).toHaveLength(1);
-    expect(distanceRecords[0].value).toBeCloseTo(523.7);
+    expect(distanceRecords[0]?.value).toBeCloseTo(523.7);
     expect(flightRecords).toHaveLength(1);
-    expect(flightRecords[0].value).toBe(3);
+    expect(flightRecords[0]?.value).toBe(3);
   });
 
   it("parses ActivitySummary as active energy records", async () => {
@@ -523,14 +523,14 @@ describe("Apple Health streaming import (integration)", () => {
 
     expect(progressUpdates.length).toBeGreaterThan(0);
     // Should reach 100%
-    expect(progressUpdates[progressUpdates.length - 1].pct).toBe(100);
+    expect(progressUpdates[progressUpdates.length - 1]?.pct).toBe(100);
     // Percentages should be non-decreasing
     for (let i = 1; i < progressUpdates.length; i++) {
-      expect(progressUpdates[i].pct).toBeGreaterThanOrEqual(progressUpdates[i - 1].pct);
+      expect(progressUpdates[i]?.pct).toBeGreaterThanOrEqual(progressUpdates[i - 1]?.pct ?? 0);
     }
     // Should report file size and bytes read
     const last = progressUpdates[progressUpdates.length - 1];
-    expect(last.totalBytes).toBeGreaterThan(0);
-    expect(last.bytesRead).toBe(last.totalBytes);
+    expect(last?.totalBytes).toBeGreaterThan(0);
+    expect(last?.bytesRead).toBe(last?.totalBytes);
   });
 });

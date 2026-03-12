@@ -51,7 +51,7 @@ export interface HealthRecord {
 
 export function parseRecord(attrs: Record<string, string>): HealthRecord | null {
   const type = attrs.type;
-  const value = parseFloat(attrs.value);
+  const value = parseFloat(attrs.value ?? "");
   if (!type || Number.isNaN(value)) return null;
 
   return {
@@ -59,9 +59,9 @@ export function parseRecord(attrs: Record<string, string>): HealthRecord | null 
     sourceName: attrs.sourceName ?? null,
     unit: attrs.unit ?? null,
     value,
-    startDate: parseHealthDate(attrs.startDate),
-    endDate: parseHealthDate(attrs.endDate),
-    creationDate: parseHealthDate(attrs.creationDate),
+    startDate: parseHealthDate(attrs.startDate ?? ""),
+    endDate: parseHealthDate(attrs.endDate ?? ""),
+    creationDate: parseHealthDate(attrs.creationDate ?? ""),
   };
 }
 
@@ -82,8 +82,8 @@ export function parseCategoryRecord(attrs: Record<string, string>): CategoryReco
     type,
     sourceName: attrs.sourceName ?? null,
     value: attrs.value ?? null,
-    startDate: parseHealthDate(attrs.startDate),
-    endDate: parseHealthDate(attrs.endDate),
+    startDate: parseHealthDate(attrs.startDate ?? ""),
+    endDate: parseHealthDate(attrs.endDate ?? ""),
   };
 }
 
@@ -115,11 +115,13 @@ const SLEEP_STAGE_MAP: Record<string, SleepStage> = {
 };
 
 export function parseSleepAnalysis(attrs: Record<string, string>): SleepAnalysisRecord | null {
-  const stage = SLEEP_STAGE_MAP[attrs.value];
+  const value = attrs.value;
+  if (!value) return null;
+  const stage = SLEEP_STAGE_MAP[value];
   if (!stage) return null;
 
-  const startDate = parseHealthDate(attrs.startDate);
-  const endDate = parseHealthDate(attrs.endDate);
+  const startDate = parseHealthDate(attrs.startDate ?? "");
+  const endDate = parseHealthDate(attrs.endDate ?? "");
   const durationMinutes = Math.round((endDate.getTime() - startDate.getTime()) / 60000);
 
   return {
@@ -284,8 +286,8 @@ export function parseWorkout(attrs: Record<string, string>): HealthWorkout {
     durationSeconds,
     distanceMeters,
     calories,
-    startDate: parseHealthDate(attrs.startDate),
-    endDate: parseHealthDate(attrs.endDate),
+    startDate: parseHealthDate(attrs.startDate ?? ""),
+    endDate: parseHealthDate(attrs.endDate ?? ""),
   };
 }
 
@@ -305,17 +307,17 @@ export interface RouteLocation {
 }
 
 export function parseRouteLocation(attrs: Record<string, string>): RouteLocation | null {
-  const lat = parseFloat(attrs.latitude);
-  const lng = parseFloat(attrs.longitude);
+  const lat = parseFloat(attrs.latitude ?? "");
+  const lng = parseFloat(attrs.longitude ?? "");
   if (Number.isNaN(lat) || Number.isNaN(lng)) return null;
 
   const optNum = (key: string): number | undefined => {
-    const v = parseFloat(attrs[key]);
+    const v = parseFloat(attrs[key] ?? "");
     return Number.isNaN(v) ? undefined : v;
   };
 
   return {
-    date: parseHealthDate(attrs.date),
+    date: parseHealthDate(attrs.date ?? ""),
     lat,
     lng,
     altitude: optNum("altitude"),
@@ -780,6 +782,7 @@ async function upsertBodyMeasurementBatch(
   const rows: (typeof bodyMeasurement.$inferInsert)[] = [];
   for (const [, group] of byTime) {
     const first = group[0];
+    if (!first) continue;
     const externalId = `ah:body:${first.startDate.toISOString()}`;
     const row: Record<string, unknown> = {
       providerId,
@@ -1101,7 +1104,11 @@ async function upsertWorkoutBatch(
       .returning({ id: activity.id });
 
     for (let j = 0; j < returned.length; j++) {
-      activityResults.push({ activityId: returned[j].id, workout: batch[j] });
+      const ret = returned[j];
+      const work = batch[j];
+      if (ret && work) {
+        activityResults.push({ activityId: ret.id, workout: work });
+      }
     }
   }
 
@@ -1645,7 +1652,8 @@ export class AppleHealthProvider implements Provider {
         .map((f) => ({ name: f, mtime: statSync(join(dir, f)).mtimeMs }))
         .sort((a, b) => b.mtime - a.mtime);
 
-      return files.length > 0 ? join(dir, files[0].name) : null;
+      const latest = files[0];
+      return latest ? join(dir, latest.name) : null;
     } catch {
       return null;
     }

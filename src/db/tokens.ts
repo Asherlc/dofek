@@ -62,6 +62,7 @@ export async function loadTokens(db: Database, providerId: string): Promise<Toke
   if (rows.length === 0) return null;
 
   const row = rows[0];
+  if (!row) return null;
   return {
     accessToken: row.accessToken,
     refreshToken: row.refreshToken,

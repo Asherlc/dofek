@@ -88,8 +88,12 @@ export const cyclingAdvancedRouter = router({
         loadMap.set(String(row.day), Number(row.trimp));
       }
 
-      const startDate = new Date(String(dailyLoads[0].day));
-      const endDate = new Date(String(dailyLoads[dailyLoads.length - 1].day));
+      const firstLoad = dailyLoads[0];
+      const lastLoad = dailyLoads[dailyLoads.length - 1];
+      if (!firstLoad || !lastLoad)
+        return { weeks: [], currentRampRate: 0, recommendation: "No data" };
+      const startDate = new Date(String(firstLoad.day));
+      const endDate = new Date(String(lastLoad.day));
       const ctlByDate = new Map<string, number>();
       const alpha = 2 / (42 + 1);
       let ctl = 0;
@@ -137,20 +141,23 @@ export const cyclingAdvancedRouter = router({
       const weeks: RampRateWeek[] = [];
       const weekKeys = [...weekMap.keys()].sort();
       for (let idx = 1; idx < weekKeys.length; idx++) {
-        const prevWeek = weekMap.get(weekKeys[idx - 1]);
-        const currWeek = weekMap.get(weekKeys[idx]);
+        const prevKey = weekKeys[idx - 1];
+        const currKey = weekKeys[idx];
+        if (!prevKey || !currKey) continue;
+        const prevWeek = weekMap.get(prevKey);
+        const currWeek = weekMap.get(currKey);
         if (!prevWeek || !currWeek) continue;
 
         const rampRate = Math.round((currWeek.last - prevWeek.last) * 100) / 100;
         weeks.push({
-          week: weekKeys[idx],
+          week: currKey,
           ctlStart: Math.round(prevWeek.last * 100) / 100,
           ctlEnd: Math.round(currWeek.last * 100) / 100,
           rampRate,
         });
       }
 
-      const currentRampRate = weeks.length > 0 ? weeks[weeks.length - 1].rampRate : 0;
+      const currentRampRate = weeks.length > 0 ? (weeks[weeks.length - 1]?.rampRate ?? 0) : 0;
 
       let recommendation: string;
       if (Math.abs(currentRampRate) < 5) {

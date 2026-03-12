@@ -1,12 +1,8 @@
+import type { RampRateWeek } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
 
-export interface RampRateDataPoint {
-  week: string;
-  rampRate: number;
-}
-
-export interface RampRateChartProps {
-  data: RampRateDataPoint[];
+interface RampRateChartProps {
+  data: RampRateWeek[];
   currentRampRate: number;
   recommendation: string;
   loading?: boolean;
@@ -51,7 +47,11 @@ export function RampRateChart({
       textStyle: { color: "#e4e4e7", fontSize: 12 },
       formatter(params: Array<{ dataIndex: number; value: [string, number]; marker: string }>) {
         if (!params.length) return "";
-        const d = data[params[0].dataIndex];
+        const first = params[0];
+        if (!first) return "";
+        const idx = first.dataIndex;
+        const d = data[idx];
+        if (!d) return "";
         const color = getRampColor(d.rampRate);
         const dateLabel = new Date(d.week).toLocaleDateString("en-US", {
           month: "short",

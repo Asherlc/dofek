@@ -1,14 +1,8 @@
+import type { VerticalAscentRow } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
 
-export interface VerticalAscentDataPoint {
-  date: string;
-  activityName: string;
-  verticalAscentRate: number;
-  elevationGainMeters: number;
-}
-
-export interface VerticalAscentChartProps {
-  data: VerticalAscentDataPoint[];
+interface VerticalAscentChartProps {
+  data: VerticalAscentRow[];
   loading?: boolean;
 }
 
@@ -92,7 +86,7 @@ export function VerticalAscentChart({ data, loading }: VerticalAscentChartProps)
           elevationGain: d.elevationGain,
           symbolSize: d.symbolSize,
         })),
-        symbolSize: (val: unknown, params: Record<string, unknown>) => {
+        symbolSize: (_val: unknown, params: Record<string, unknown>) => {
           const itemData = params.data as { symbolSize: number } | undefined;
           return itemData?.symbolSize ?? minSize;
         },

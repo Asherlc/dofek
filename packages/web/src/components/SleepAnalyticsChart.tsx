@@ -1,17 +1,8 @@
+import type { SleepNightlyRow } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
 
-export interface SleepNightlyDataPoint {
-  date: string;
-  durationMinutes: number;
-  deepPct: number;
-  remPct: number;
-  lightPct: number;
-  awakePct: number;
-  rollingAvgDuration: number | null;
-}
-
 interface SleepAnalyticsChartProps {
-  nightly: SleepNightlyDataPoint[];
+  nightly: SleepNightlyRow[];
   sleepDebt: number;
   loading?: boolean;
 }
@@ -55,8 +46,11 @@ export function SleepAnalyticsChart({ nightly, sleepDebt, loading }: SleepAnalyt
         }[],
       ) => {
         if (!params || params.length === 0) return "";
-        const idx = params[0].dataIndex;
+        const firstParam = params[0];
+        if (!firstParam) return "";
+        const idx = firstParam.dataIndex;
         const night = nightly[idx];
+        if (!night) return "";
         const totalHr = Math.floor(night.durationMinutes / 60);
         const totalMin = night.durationMinutes % 60;
         const dateLabel = new Date(night.date).toLocaleDateString("en-US", {

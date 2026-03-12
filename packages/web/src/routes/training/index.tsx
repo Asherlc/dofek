@@ -23,16 +23,7 @@ function TrainingOverview() {
             <span className="text-zinc-600 text-sm">Loading...</span>
           </div>
         ) : (
-          <TrainingCalendar
-            data={
-              (calendarData.data ?? []) as unknown as Array<{
-                date: string;
-                activityCount: number;
-                totalMinutes: number;
-                activityTypes: string[];
-              }>
-            }
-          />
+          <TrainingCalendar data={calendarData.data ?? []} />
         )}
       </Section>
 

@@ -1,13 +1,8 @@
+import type { TrainingMonotonyWeek } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
 
-export interface TrainingMonotonyDataPoint {
-  week: string;
-  monotony: number;
-  strain: number;
-}
-
-export interface TrainingMonotonyChartProps {
-  data: TrainingMonotonyDataPoint[];
+interface TrainingMonotonyChartProps {
+  data: TrainingMonotonyWeek[];
   loading?: boolean;
 }
 
@@ -45,7 +40,11 @@ export function TrainingMonotonyChart({ data, loading }: TrainingMonotonyChartPr
         }>,
       ) {
         if (!params.length) return "";
-        const d = data[params[0].dataIndex];
+        const first = params[0];
+        if (!first) return "";
+        const idx = first.dataIndex;
+        const d = data[idx];
+        if (!d) return "";
         const dateLabel = new Date(d.week).toLocaleDateString("en-US", {
           month: "short",
           day: "numeric",

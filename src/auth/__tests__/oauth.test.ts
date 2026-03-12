@@ -55,11 +55,12 @@ describe("OAuth", () => {
       const result = await exchangeCodeForTokens(config, "auth-code-789", mockFetch);
 
       expect(mockFetch).toHaveBeenCalledOnce();
-      const [url, options] = mockFetch.mock.calls[0];
+      const call = mockFetch.mock.calls[0];
+      const [url, options] = call ?? [];
       expect(url).toBe("https://api.example.com/oauth/token");
-      expect(options.method).toBe("POST");
+      expect(options?.method).toBe("POST");
 
-      const body = new URLSearchParams(options.body);
+      const body = new URLSearchParams(options?.body);
       expect(body.get("grant_type")).toBe("authorization_code");
       expect(body.get("code")).toBe("auth-code-789");
       expect(body.get("client_id")).toBe("test-client-id");
@@ -99,10 +100,11 @@ describe("OAuth", () => {
 
       const result = await refreshAccessToken(config, "old-refresh-token", mockFetch);
 
-      const [url, options] = mockFetch.mock.calls[0];
+      const refreshCall = mockFetch.mock.calls[0];
+      const [url, options] = refreshCall ?? [];
       expect(url).toBe("https://api.example.com/oauth/token");
 
-      const body = new URLSearchParams(options.body);
+      const body = new URLSearchParams(options?.body);
       expect(body.get("grant_type")).toBe("refresh_token");
       expect(body.get("refresh_token")).toBe("old-refresh-token");
 
@@ -194,8 +196,9 @@ describe("OAuth", () => {
         codeVerifier: "my-verifier",
       });
 
-      const [, options] = mockFetch.mock.calls[0];
-      const body = new URLSearchParams(options.body);
+      const pkceCall = mockFetch.mock.calls[0] ?? [];
+      const [, options] = pkceCall;
+      const body = new URLSearchParams(options?.body);
       expect(body.get("code_verifier")).toBe("my-verifier");
       expect(body.get("client_secret")).toBeNull();
     });

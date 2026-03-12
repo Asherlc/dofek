@@ -19,26 +19,21 @@ export function ensureProvidersRegistered(): Promise<void> {
 }
 
 async function doRegisterProviders() {
-  try {
-    const { WahooProvider } = await import("dofek/providers/wahoo");
-    registerProvider(new WahooProvider());
-  } catch {}
-  try {
-    const { WithingsProvider } = await import("dofek/providers/withings");
-    registerProvider(new WithingsProvider());
-  } catch {}
-  try {
-    const { PelotonProvider } = await import("dofek/providers/peloton");
-    registerProvider(new PelotonProvider());
-  } catch {}
-  try {
-    const { FatSecretProvider } = await import("dofek/providers/fatsecret");
-    registerProvider(new FatSecretProvider());
-  } catch {}
-  try {
-    const { WhoopProvider } = await import("dofek/providers/whoop");
-    registerProvider(new WhoopProvider());
-  } catch {}
+  const providers = [
+    ["wahoo", () => import("dofek/providers/wahoo").then((m) => new m.WahooProvider())],
+    ["withings", () => import("dofek/providers/withings").then((m) => new m.WithingsProvider())],
+    ["peloton", () => import("dofek/providers/peloton").then((m) => new m.PelotonProvider())],
+    ["fatsecret", () => import("dofek/providers/fatsecret").then((m) => new m.FatSecretProvider())],
+    ["whoop", () => import("dofek/providers/whoop").then((m) => new m.WhoopProvider())],
+  ] as const;
+
+  for (const [name, loadProvider] of providers) {
+    try {
+      registerProvider(await loadProvider());
+    } catch (err) {
+      logger.warn(`[sync] Failed to register ${name} provider: ${err}`);
+    }
+  }
 }
 
 // ── Background sync job tracking ──
@@ -143,7 +138,8 @@ export const syncRouter = router({
       (async () => {
         try {
           for (const provider of providers) {
-            const job = syncJobs.get(jobId)!;
+            const job = syncJobs.get(jobId);
+            if (!job) break;
             job.providers[provider.id] = { status: "running" };
 
             await ensureProvider(ctx.db, provider.id, provider.name);
@@ -169,16 +165,17 @@ export const syncRouter = router({
                   : undefined,
                 durationMs: Date.now() - syncStart,
               });
-            } catch (err: any) {
+            } catch (err: unknown) {
+              const message = err instanceof Error ? err.message : String(err);
               job.providers[provider.id] = {
                 status: "error",
-                message: err.message ?? "Sync failed",
+                message,
               };
               await logSync(ctx.db, {
                 providerId: provider.id,
                 dataType: "sync",
                 status: "error",
-                errorMessage: err.message ?? "Sync failed",
+                errorMessage: message,
                 durationMs: Date.now() - syncStart,
               });
             }
@@ -203,15 +200,16 @@ export const syncRouter = router({
           // Invalidate all server-side caches
           await queryCache.invalidateAll();
 
-          const job = syncJobs.get(jobId)!;
+          const job = syncJobs.get(jobId);
+          if (!job) return;
           job.status = "done";
           job.message = "Sync complete";
           cleanupJob(jobId);
-        } catch (err: any) {
+        } catch (err: unknown) {
           const job = syncJobs.get(jobId);
           if (job) {
             job.status = "error";
-            job.message = err.message ?? "Sync failed";
+            job.message = err instanceof Error ? err.message : String(err);
             cleanupJob(jobId);
           }
         }

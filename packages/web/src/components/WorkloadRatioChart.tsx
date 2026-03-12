@@ -1,14 +1,8 @@
+import type { WorkloadRatioRow } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
 
-export interface WorkloadRatioDataPoint {
-  date: string;
-  acuteLoad: number;
-  chronicLoad: number;
-  workloadRatio: number | null;
-}
-
 interface WorkloadRatioChartProps {
-  data: WorkloadRatioDataPoint[];
+  data: WorkloadRatioRow[];
   loading?: boolean;
 }
 
@@ -47,7 +41,9 @@ export function WorkloadRatioChart({ data, loading }: WorkloadRatioChartProps) {
         }[],
       ) => {
         if (!params || params.length === 0) return "";
-        const date = new Date(params[0].data[0]).toLocaleDateString("en-US", {
+        const firstParam = params[0];
+        if (!firstParam) return "";
+        const date = new Date(firstParam.data[0]).toLocaleDateString("en-US", {
           month: "short",
           day: "numeric",
         });

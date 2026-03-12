@@ -145,7 +145,7 @@ export function SupplementStackPanel() {
   const handleReorder = (from: number, to: number) => {
     const updated = [...supplements];
     const [moved] = updated.splice(from, 1);
-    updated.splice(to, 0, moved);
+    if (moved) updated.splice(to, 0, moved);
     handleSave(updated);
   };
 
@@ -309,8 +309,8 @@ function SupplementForm({
 
   const handleSubmit = () => {
     const supp: Supplement = { name: name.trim() };
-    if (hasAmount) {
-      supp.amount = amountNum!;
+    if (hasAmount && amountNum != null) {
+      supp.amount = amountNum;
       supp.unit = unit;
     }
     if (form) supp.form = form;

@@ -1,12 +1,5 @@
+import type { WalkingBiomechanicsRow } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
-
-export interface WalkingBiomechanicsRow {
-  date: string;
-  walkingSpeedKmh: number | null;
-  stepLengthCm: number | null;
-  doubleSupportPct: number | null;
-  asymmetryPct: number | null;
-}
 
 interface WalkingBiomechanicsChartProps {
   data: WalkingBiomechanicsRow[];

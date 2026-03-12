@@ -1,17 +1,8 @@
+import type { ActivityComparisonRow } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
 
-export interface ActivityComparisonInstance {
-  date: string;
-  averagePaceMinPerKm: number;
-}
-
-export interface ActivityComparisonData {
-  activityName: string;
-  instances: ActivityComparisonInstance[];
-}
-
 interface ActivityComparisonChartProps {
-  data: ActivityComparisonData[];
+  data: ActivityComparisonRow[];
   loading?: boolean;
 }
 

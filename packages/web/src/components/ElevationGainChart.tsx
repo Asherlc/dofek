@@ -1,14 +1,8 @@
+import type { ElevationProfileRow } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
 
-export interface ElevationGainChartRow {
-  week: string;
-  elevationGainMeters: number;
-  activityCount: number;
-  totalDistanceKm: number;
-}
-
 interface ElevationGainChartProps {
-  data: ElevationGainChartRow[];
+  data: ElevationProfileRow[];
   loading?: boolean;
 }
 
@@ -44,6 +38,7 @@ export function ElevationGainChart({ data, loading }: ElevationGainChartProps) {
           dataIndex: number;
         };
         const row = data[param.dataIndex];
+        if (!row) return "";
         const dateLabel = new Date(row.week).toLocaleDateString("en-US", {
           month: "short",
           day: "numeric",

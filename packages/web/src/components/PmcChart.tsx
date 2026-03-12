@@ -1,19 +1,5 @@
+import type { PmcDataPoint, TssModelInfo } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
-
-interface PmcDataPoint {
-  date: string;
-  load: number;
-  ctl: number;
-  atl: number;
-  tsb: number;
-}
-
-interface TssModelInfo {
-  type: "learned" | "generic";
-  pairedActivities: number;
-  r2: number | null;
-  ftp: number | null;
-}
 
 interface PmcChartProps {
   data: PmcDataPoint[];
@@ -75,6 +61,7 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
         if (!params.length) return "";
         const idx = (params[0] as unknown as { dataIndex: number }).dataIndex;
         const d = data[idx];
+        if (!d) return "";
         const label = new Date(d.date).toLocaleDateString("en-US", {
           month: "short",
           day: "numeric",
