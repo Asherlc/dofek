@@ -104,6 +104,43 @@ describe("tRPC API", () => {
     });
   });
 
+  describe("Prometheus metrics", () => {
+    it("exposes /metrics endpoint with Prometheus format", async () => {
+      const res = await fetch(`${baseUrl}/metrics`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("text/plain");
+      const body = await res.text();
+      // Should contain standard prom-client metrics
+      expect(body).toContain("# HELP");
+      expect(body).toContain("# TYPE");
+    });
+
+    it("records HTTP request duration histogram", async () => {
+      // Fire a request first to generate a metric
+      await fetch(`${baseUrl}/api/trpc/sync.providers?batch=1`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ "0": {} }),
+      });
+
+      const res = await fetch(`${baseUrl}/metrics`);
+      const body = await res.text();
+      expect(body).toContain("http_request_duration_seconds");
+    });
+
+    it("records tRPC procedure duration histogram", async () => {
+      await fetch(`${baseUrl}/api/trpc/sync.providers?batch=1`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ "0": {} }),
+      });
+
+      const res = await fetch(`${baseUrl}/metrics`);
+      const body = await res.text();
+      expect(body).toContain("trpc_procedure_duration_seconds");
+    });
+  });
+
   describe("countProviderRecords uses schema-qualified tables", () => {
     it("triggerSync does not fail with 'relation does not exist'", async () => {
       // This catches the bug where raw SQL used unqualified table names

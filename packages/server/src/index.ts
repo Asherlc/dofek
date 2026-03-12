@@ -7,6 +7,7 @@ import compression from "compression";
 import { createDatabaseFromEnv } from "dofek/db";
 import { runMigrations } from "dofek/db/migrate";
 import express from "express";
+import { httpRequestDuration, registry } from "./lib/metrics.ts";
 import { logger } from "./logger.ts";
 import { appRouter } from "./router.ts";
 import type { Context } from "./trpc.ts";
@@ -83,12 +84,23 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
   // ── Compression ──
   app.use(compression());
 
-  // ── Request logging ──
+  // ── Prometheus metrics endpoint ──
+  app.get("/metrics", async (_req, res) => {
+    res.set("Content-Type", registry.contentType);
+    res.end(await registry.metrics());
+  });
+
+  // ── Request logging + metrics ──
   app.use((req, res, next) => {
     const start = Date.now();
     res.on("finish", () => {
-      const duration = Date.now() - start;
-      logger.info(`[web] ${req.method} ${req.originalUrl} ${res.statusCode} ${duration}ms`);
+      const durationMs = Date.now() - start;
+      const route = req.route?.path ?? req.originalUrl.split("?")[0];
+      httpRequestDuration.observe(
+        { method: req.method, route, status_code: res.statusCode },
+        durationMs / 1000,
+      );
+      logger.info(`[web] ${req.method} ${req.originalUrl} ${res.statusCode} ${durationMs}ms`);
     });
     next();
   });
