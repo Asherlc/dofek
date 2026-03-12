@@ -91,9 +91,8 @@ function ConditionalChart({ insight }: { insight: Insight }) {
   const { whenTrue, whenFalse, action } = insight;
   const diff = whenTrue.mean - whenFalse.mean;
   const baselineNearZero = Math.abs(whenFalse.mean) < 1;
-  const pctDiff = !baselineNearZero && whenFalse.mean !== 0
-    ? (diff / Math.abs(whenFalse.mean)) * 100
-    : null;
+  const pctDiff =
+    !baselineNearZero && whenFalse.mean !== 0 ? (diff / Math.abs(whenFalse.mean)) * 100 : null;
   const sign = diff > 0 ? "+" : "";
 
   const maxVal = Math.max(Math.abs(whenTrue.mean), Math.abs(whenFalse.mean));

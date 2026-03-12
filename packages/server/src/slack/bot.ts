@@ -1,6 +1,8 @@
 import type { App as AppType } from "@slack/bolt";
 import bolt from "@slack/bolt";
+
 const { App, ExpressReceiver } = bolt;
+
 import type { GenericMessageEvent } from "@slack/types";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";

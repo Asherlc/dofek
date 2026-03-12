@@ -1776,9 +1776,8 @@ export function computeInsights(
 
     const diff = trueStats.mean - falseStats.mean;
     const baselineNearZero = Math.abs(falseStats.mean) < 1;
-    const pctDiff = !baselineNearZero && falseStats.mean !== 0
-      ? (diff / Math.abs(falseStats.mean)) * 100
-      : 0;
+    const pctDiff =
+      !baselineNearZero && falseStats.mean !== 0 ? (diff / Math.abs(falseStats.mean)) * 100 : 0;
     const direction = diff > 0 ? "higher" : "lower";
 
     const scopePhrase = test.scope === "month" ? "during months with" : "on days with";
