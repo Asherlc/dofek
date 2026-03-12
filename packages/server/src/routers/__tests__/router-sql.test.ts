@@ -35,7 +35,7 @@ describe("Router SQL validity", () => {
       server?.close(() => resolve());
     });
     await testCtx?.cleanup();
-  });
+  }, 30_000);
 
   /** Helper: POST a tRPC query and return parsed response */
   async function query(path: string, input: Record<string, unknown> = {}) {

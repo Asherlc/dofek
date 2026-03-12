@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { drizzle } from "drizzle-orm/postgres-js";
@@ -15,15 +16,26 @@ export interface TestContext {
 
 /**
  * Spin up a TimescaleDB container (or use TEST_DATABASE_URL), create schema, run migrations.
- * Call cleanup() in afterAll to tear down.
+ * When TEST_DATABASE_URL is set, creates an isolated database per test file to avoid
+ * concurrent migration collisions. Call cleanup() in afterAll to tear down.
  */
 export async function setupTestDatabase(): Promise<TestContext> {
   let connectionString: string;
   let container: Awaited<ReturnType<GenericContainer["start"]>> | null = null;
+  let adminUrl: string | null = null;
+  let dbName: string | null = null;
 
   if (process.env.TEST_DATABASE_URL) {
-    // CI: use the service container provided by GitHub Actions
-    connectionString = process.env.TEST_DATABASE_URL;
+    // CI: create an isolated database per test file on the shared Postgres instance
+    adminUrl = process.env.TEST_DATABASE_URL;
+    dbName = `test_${randomBytes(6).toString("hex")}`;
+    const admin = postgres(adminUrl, { max: 1 });
+    await admin.unsafe(`CREATE DATABASE ${dbName}`);
+    await admin.end();
+
+    const url = new URL(adminUrl);
+    url.pathname = `/${dbName}`;
+    connectionString = url.toString();
   } else {
     // Local: spin up a testcontainer
     container = await new GenericContainer("timescale/timescaledb:latest-pg16")
@@ -79,7 +91,13 @@ export async function setupTestDatabase(): Promise<TestContext> {
     connectionString,
     cleanup: async () => {
       await client.end();
-      if (container) await container.stop();
+      if (container) {
+        await container.stop();
+      } else if (adminUrl && dbName) {
+        const admin = postgres(adminUrl, { max: 1 });
+        await admin.unsafe(`DROP DATABASE ${dbName} WITH (FORCE)`);
+        await admin.end();
+      }
     },
   };
 }
