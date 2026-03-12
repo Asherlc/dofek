@@ -11,11 +11,6 @@ export interface FoodFormData {
   carbsG: number | null;
   fatG: number | null;
   foodDescription: string;
-  fiberG?: number | null;
-  saturatedFatG?: number | null;
-  sugarG?: number | null;
-  sodiumMg?: number | null;
-  category?: string | null;
 }
 
 interface AddFoodModalProps {
@@ -34,8 +29,6 @@ const mealOptions: { value: MealType; label: string }[] = [
   { value: "other", label: "Other" },
 ];
 
-type InputMode = "ai" | "manual";
-
 export function AddFoodModal({
   isOpen,
   onClose,
@@ -43,7 +36,6 @@ export function AddFoodModal({
   defaultMealType = "breakfast",
   submitting = false,
 }: AddFoodModalProps) {
-  const [inputMode, setInputMode] = useState<InputMode>("ai");
   const [foodName, setFoodName] = useState("");
   const [mealType, setMealType] = useState<MealType>(defaultMealType);
   const [calories, setCalories] = useState("");
@@ -52,19 +44,13 @@ export function AddFoodModal({
   const [fatGrams, setFatGrams] = useState("");
   const [servingDescription, setServingDescription] = useState("");
   const [showMacros, setShowMacros] = useState(false);
-
-  // AI mode state
-  const [aiDescription, setAiDescription] = useState("");
-  const [aiAnalyzed, setAiAnalyzed] = useState(false);
-  const [aiProvider, setAiProvider] = useState<string | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
 
   const nameInputRef = useRef<HTMLInputElement>(null);
-  const aiInputRef = useRef<HTMLTextAreaElement>(null);
 
   const analyzeMutation = trpc.food.analyzeWithAi.useMutation({
     onSuccess: (data) => {
-      const { nutrition, provider } = data;
+      const { nutrition } = data;
       setFoodName(nutrition.foodName);
       setServingDescription(nutrition.foodDescription);
       setCalories(String(nutrition.calories));
@@ -72,8 +58,6 @@ export function AddFoodModal({
       setCarbsGrams(String(nutrition.carbsG));
       setFatGrams(String(nutrition.fatG));
       setShowMacros(true);
-      setAiAnalyzed(true);
-      setAiProvider(provider);
       setAiError(null);
     },
     onError: (error) => {
@@ -84,13 +68,9 @@ export function AddFoodModal({
   useEffect(() => {
     if (isOpen) {
       setMealType(defaultMealType);
-      if (inputMode === "ai") {
-        aiInputRef.current?.focus();
-      } else {
-        nameInputRef.current?.focus();
-      }
+      nameInputRef.current?.focus();
     }
-  }, [isOpen, defaultMealType, inputMode]);
+  }, [isOpen, defaultMealType]);
 
   function resetForm() {
     setFoodName("");
@@ -100,9 +80,6 @@ export function AddFoodModal({
     setFatGrams("");
     setServingDescription("");
     setShowMacros(false);
-    setAiDescription("");
-    setAiAnalyzed(false);
-    setAiProvider(null);
     setAiError(null);
   }
 
@@ -129,9 +106,9 @@ export function AddFoodModal({
   }
 
   function handleAnalyze() {
-    if (!aiDescription.trim()) return;
+    if (!foodName.trim()) return;
     setAiError(null);
-    analyzeMutation.mutate({ description: aiDescription.trim() });
+    analyzeMutation.mutate({ description: foodName.trim() });
   }
 
   if (!isOpen) return null;
@@ -175,280 +152,201 @@ export function AddFoodModal({
           </button>
         </div>
 
-        {/* Mode tabs */}
-        <div className="flex border-b border-zinc-800">
-          <button
-            type="button"
-            onClick={() => setInputMode("ai")}
-            className={`flex-1 px-4 py-2.5 text-sm font-medium transition-colors ${
-              inputMode === "ai"
-                ? "text-emerald-400 border-b-2 border-emerald-400"
-                : "text-zinc-500 hover:text-zinc-300"
-            }`}
-          >
-            AI Describe
-          </button>
-          <button
-            type="button"
-            onClick={() => setInputMode("manual")}
-            className={`flex-1 px-4 py-2.5 text-sm font-medium transition-colors ${
-              inputMode === "manual"
-                ? "text-emerald-400 border-b-2 border-emerald-400"
-                : "text-zinc-500 hover:text-zinc-300"
-            }`}
-          >
-            Manual
-          </button>
-        </div>
-
         <form onSubmit={handleSubmit} className="px-5 py-4 space-y-4">
-          {/* AI description input */}
-          {inputMode === "ai" && !aiAnalyzed && (
-            <div className="space-y-3">
-              <div>
-                <label
-                  htmlFor="ai-description"
-                  className="block text-sm font-medium text-zinc-400 mb-1"
-                >
-                  Describe what you ate
-                </label>
-                <textarea
-                  ref={aiInputRef}
-                  id="ai-description"
-                  rows={3}
-                  value={aiDescription}
-                  onChange={(e) => setAiDescription(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                      e.preventDefault();
-                      handleAnalyze();
-                    }
-                  }}
-                  placeholder='e.g. "a big plate of roasted vegetables with olive oil" or "two eggs, toast with butter, and a coffee with milk"'
-                  className={`${inputClass} resize-none`}
-                />
-              </div>
-
-              {aiError && (
-                <div className="rounded-lg bg-red-950/50 border border-red-800 px-3 py-2 text-sm text-red-300">
-                  {aiError}
-                </div>
-              )}
-
+          {/* Food name + AI analyze */}
+          <div>
+            <label htmlFor="food-name" className="block text-sm font-medium text-zinc-400 mb-1">
+              What did you eat? *
+            </label>
+            <div className="flex gap-2">
+              <input
+                ref={nameInputRef}
+                id="food-name"
+                type="text"
+                required
+                value={foodName}
+                onChange={(e) => setFoodName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                    e.preventDefault();
+                    handleAnalyze();
+                  }
+                }}
+                placeholder='e.g. "big plate of roasted vegetables"'
+                className={inputClass}
+              />
               <button
                 type="button"
                 onClick={handleAnalyze}
-                disabled={analyzeMutation.isPending || !aiDescription.trim()}
-                className="w-full rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-violet-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                disabled={analyzeMutation.isPending || !foodName.trim()}
+                className="shrink-0 rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Estimate nutrition with AI (Cmd+Enter)"
               >
                 {analyzeMutation.isPending ? (
-                  <>
-                    <svg
-                      className="animate-spin h-4 w-4"
-                      xmlns="http://www.w3.org/2000/svg"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                    >
-                      <title>Loading</title>
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                      />
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                      />
-                    </svg>
-                    Analyzing...
-                  </>
+                  <svg
+                    className="animate-spin h-4 w-4"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <title>Analyzing</title>
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    />
+                  </svg>
                 ) : (
-                  "Analyze with AI"
+                  "AI"
                 )}
               </button>
+            </div>
+          </div>
 
-              <p className="text-xs text-zinc-600 text-center">Cmd+Enter to analyze</p>
+          {aiError && (
+            <div className="rounded-lg bg-red-950/50 border border-red-800 px-3 py-2 text-sm text-red-300">
+              {aiError}
             </div>
           )}
 
-          {/* AI result banner */}
-          {inputMode === "ai" && aiAnalyzed && (
-            <div className="rounded-lg bg-violet-950/30 border border-violet-800/50 px-3 py-2 flex items-center justify-between">
-              <span className="text-xs text-violet-300">
-                AI estimate{aiProvider ? ` via ${aiProvider}` : ""} — review and adjust below
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  setAiAnalyzed(false);
-                  resetForm();
-                }}
-                className="text-xs text-violet-400 hover:text-violet-300 transition-colors"
-              >
-                Try again
-              </button>
-            </div>
+          {/* Meal type */}
+          <div>
+            <label htmlFor="meal-type" className="block text-sm font-medium text-zinc-400 mb-1">
+              Meal
+            </label>
+            <select
+              id="meal-type"
+              value={mealType}
+              onChange={(e) => setMealType(e.target.value as MealType)}
+              className={inputClass}
+            >
+              {mealOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Calories */}
+          <div>
+            <label htmlFor="calories" className="block text-sm font-medium text-zinc-400 mb-1">
+              Calories *
+            </label>
+            <input
+              id="calories"
+              type="number"
+              required
+              min="0"
+              value={calories}
+              onChange={(e) => setCalories(e.target.value)}
+              placeholder="e.g. 250"
+              className={inputClass}
+            />
+          </div>
+
+          {/* Serving description */}
+          <div>
+            <label
+              htmlFor="serving-description"
+              className="block text-sm font-medium text-zinc-400 mb-1"
+            >
+              Serving description
+            </label>
+            <input
+              id="serving-description"
+              type="text"
+              value={servingDescription}
+              onChange={(e) => setServingDescription(e.target.value)}
+              placeholder="e.g. 6 oz grilled"
+              className={inputClass}
+            />
+          </div>
+
+          {/* Toggle macros */}
+          {!showMacros && (
+            <button
+              type="button"
+              onClick={() => setShowMacros(true)}
+              className="text-sm text-emerald-400 hover:text-emerald-300 transition-colors"
+            >
+              + Add macros (protein, carbs, fat)
+            </button>
           )}
 
-          {/* Manual form fields (shown in manual mode, or after AI analysis) */}
-          {(inputMode === "manual" || aiAnalyzed) && (
-            <>
-              {/* Food name */}
+          {/* Macro fields */}
+          {showMacros && (
+            <div className="grid grid-cols-3 gap-3">
               <div>
-                <label htmlFor="food-name" className="block text-sm font-medium text-zinc-400 mb-1">
-                  Food name *
+                <label htmlFor="protein" className="block text-sm font-medium text-zinc-400 mb-1">
+                  Protein (g)
                 </label>
                 <input
-                  ref={nameInputRef}
-                  id="food-name"
-                  type="text"
-                  required
-                  value={foodName}
-                  onChange={(e) => setFoodName(e.target.value)}
-                  placeholder="e.g. Chicken breast"
-                  className={inputClass}
-                />
-              </div>
-
-              {/* Meal type */}
-              <div>
-                <label htmlFor="meal-type" className="block text-sm font-medium text-zinc-400 mb-1">
-                  Meal
-                </label>
-                <select
-                  id="meal-type"
-                  value={mealType}
-                  onChange={(e) => setMealType(e.target.value as MealType)}
-                  className={inputClass}
-                >
-                  {mealOptions.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Calories */}
-              <div>
-                <label htmlFor="calories" className="block text-sm font-medium text-zinc-400 mb-1">
-                  Calories *
-                </label>
-                <input
-                  id="calories"
+                  id="protein"
                   type="number"
-                  required
                   min="0"
-                  value={calories}
-                  onChange={(e) => setCalories(e.target.value)}
-                  placeholder="e.g. 250"
+                  step="0.1"
+                  value={proteinGrams}
+                  onChange={(e) => setProteinGrams(e.target.value)}
                   className={inputClass}
                 />
               </div>
-
-              {/* Serving description */}
               <div>
-                <label
-                  htmlFor="serving-description"
-                  className="block text-sm font-medium text-zinc-400 mb-1"
-                >
-                  Serving description
+                <label htmlFor="carbs" className="block text-sm font-medium text-zinc-400 mb-1">
+                  Carbs (g)
                 </label>
                 <input
-                  id="serving-description"
-                  type="text"
-                  value={servingDescription}
-                  onChange={(e) => setServingDescription(e.target.value)}
-                  placeholder="e.g. 6 oz grilled"
+                  id="carbs"
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={carbsGrams}
+                  onChange={(e) => setCarbsGrams(e.target.value)}
                   className={inputClass}
                 />
               </div>
-
-              {/* Toggle macros */}
-              {!showMacros && (
-                <button
-                  type="button"
-                  onClick={() => setShowMacros(true)}
-                  className="text-sm text-emerald-400 hover:text-emerald-300 transition-colors"
-                >
-                  + Add macros (protein, carbs, fat)
-                </button>
-              )}
-
-              {/* Macro fields */}
-              {showMacros && (
-                <div className="grid grid-cols-3 gap-3">
-                  <div>
-                    <label
-                      htmlFor="protein"
-                      className="block text-sm font-medium text-zinc-400 mb-1"
-                    >
-                      Protein (g)
-                    </label>
-                    <input
-                      id="protein"
-                      type="number"
-                      min="0"
-                      step="0.1"
-                      value={proteinGrams}
-                      onChange={(e) => setProteinGrams(e.target.value)}
-                      className={inputClass}
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="carbs" className="block text-sm font-medium text-zinc-400 mb-1">
-                      Carbs (g)
-                    </label>
-                    <input
-                      id="carbs"
-                      type="number"
-                      min="0"
-                      step="0.1"
-                      value={carbsGrams}
-                      onChange={(e) => setCarbsGrams(e.target.value)}
-                      className={inputClass}
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="fat" className="block text-sm font-medium text-zinc-400 mb-1">
-                      Fat (g)
-                    </label>
-                    <input
-                      id="fat"
-                      type="number"
-                      min="0"
-                      step="0.1"
-                      value={fatGrams}
-                      onChange={(e) => setFatGrams(e.target.value)}
-                      className={inputClass}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Actions */}
-              <div className="flex justify-end gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={handleClose}
-                  className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-400 hover:text-zinc-200 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting || !foodName.trim() || !calories}
-                  className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {submitting ? "Saving..." : "Add Food"}
-                </button>
+              <div>
+                <label htmlFor="fat" className="block text-sm font-medium text-zinc-400 mb-1">
+                  Fat (g)
+                </label>
+                <input
+                  id="fat"
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={fatGrams}
+                  onChange={(e) => setFatGrams(e.target.value)}
+                  className={inputClass}
+                />
               </div>
-            </>
+            </div>
           )}
+
+          {/* Actions */}
+          <div className="flex justify-end gap-3 pt-2">
+            <button
+              type="button"
+              onClick={handleClose}
+              className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-400 hover:text-zinc-200 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={submitting || !foodName.trim() || !calories}
+              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {submitting ? "Saving..." : "Add Food"}
+            </button>
+          </div>
         </form>
       </div>
     </div>
