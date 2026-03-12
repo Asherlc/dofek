@@ -35,10 +35,10 @@ export function ActivityVariabilityTable({ data, loading }: ActivityVariabilityT
           <tr className="border-b border-zinc-800">
             <th className="text-left py-2 px-3 text-zinc-400 font-medium">Date</th>
             <th className="text-left py-2 px-3 text-zinc-400 font-medium">Activity</th>
-            <th className="text-right py-2 px-3 text-zinc-400 font-medium">NP (W)</th>
-            <th className="text-right py-2 px-3 text-zinc-400 font-medium">AP (W)</th>
-            <th className="text-right py-2 px-3 text-zinc-400 font-medium">VI</th>
-            <th className="text-right py-2 px-3 text-zinc-400 font-medium">IF</th>
+            <th className="text-right py-2 px-3 text-zinc-400 font-medium">Normalized Power (W)</th>
+            <th className="text-right py-2 px-3 text-zinc-400 font-medium">Avg Power (W)</th>
+            <th className="text-right py-2 px-3 text-zinc-400 font-medium">Variability</th>
+            <th className="text-right py-2 px-3 text-zinc-400 font-medium">Intensity</th>
           </tr>
         </thead>
         <tbody>
@@ -71,7 +71,7 @@ export function ActivityVariabilityTable({ data, loading }: ActivityVariabilityT
         </tbody>
       </table>
       <p className="text-xs text-zinc-600 mt-2">
-        VI color: <span className="text-green-400">&lt;1.05 steady</span> /{" "}
+        Variability: <span className="text-green-400">&lt;1.05 steady</span> /{" "}
         <span className="text-yellow-400">1.05-1.1 moderate</span> /{" "}
         <span className="text-red-400">&gt;1.1 variable</span>
       </p>

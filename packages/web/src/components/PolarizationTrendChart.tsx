@@ -77,10 +77,10 @@ export function PolarizationTrendChart({ weeks, maxHr, loading }: PolarizationTr
             : '<span style="color:#ef4444">Not polarized</span>';
         return [
           `<strong>Week of ${dateLabel}</strong>`,
-          `PI: ${piStr} ${status}`,
-          `Z1 (easy, <80%): ${formatMinutes(w.z1Seconds)}`,
-          `Z2 (threshold, 80-87.5%): ${formatMinutes(w.z2Seconds)}`,
-          `Z3 (high, >87.5%): ${formatMinutes(w.z3Seconds)}`,
+          `Polarization Index: ${piStr} ${status}`,
+          `Zone 1 (easy, <80%): ${formatMinutes(w.z1Seconds)}`,
+          `Zone 2 (threshold, 80-87.5%): ${formatMinutes(w.z2Seconds)}`,
+          `Zone 3 (high, >87.5%): ${formatMinutes(w.z3Seconds)}`,
         ].join("<br/>");
       },
     },
@@ -107,7 +107,7 @@ export function PolarizationTrendChart({ weeks, maxHr, loading }: PolarizationTr
       ],
     },
     series: [
-      // Shaded green area above PI = 2.0
+      // Shaded green area above Threshold = 2.0
       {
         name: "Polarized zone",
         type: "line",
@@ -121,7 +121,7 @@ export function PolarizationTrendChart({ weeks, maxHr, loading }: PolarizationTr
         silent: true,
         z: 0,
       },
-      // Shaded red area below PI = 2.0
+      // Shaded red area below Threshold = 2.0
       {
         name: "Non-polarized zone",
         type: "line",
@@ -135,9 +135,9 @@ export function PolarizationTrendChart({ weeks, maxHr, loading }: PolarizationTr
         silent: true,
         z: 0,
       },
-      // Reference line at PI = 2.0
+      // Reference line at Threshold = 2.0
       {
-        name: "PI = 2.0",
+        name: "Threshold = 2.0",
         type: "line",
         markLine: {
           silent: true,
@@ -145,7 +145,7 @@ export function PolarizationTrendChart({ weeks, maxHr, loading }: PolarizationTr
           lineStyle: { color: "#a1a1aa", type: "dashed", width: 1 },
           data: [{ yAxis: 2.0 }],
           label: {
-            formatter: "PI = 2.0",
+            formatter: "Threshold = 2.0",
             color: "#a1a1aa",
             fontSize: 10,
           },
@@ -173,13 +173,13 @@ export function PolarizationTrendChart({ weeks, maxHr, loading }: PolarizationTr
   return (
     <div>
       <h3 className="text-xs font-medium text-zinc-500 mb-2">
-        Polarization Index (Treff 3-Zone Model)
-        {maxHr && <span className="text-zinc-700 ml-2">(max HR: {maxHr} bpm)</span>}
+        Polarization Index (3-Zone Model)
+        {maxHr && <span className="text-zinc-700 ml-2">(max heart rate: {maxHr} bpm)</span>}
       </h3>
       <ReactECharts option={option} style={{ height: 280 }} notMerge={true} />
       <p className="text-xs text-zinc-700 mt-1">
-        PI above 2.0 = well-polarized training. Z1 = easy (&lt;80%), Z2 = threshold (80-87.5%), Z3 =
-        high intensity (&gt;87.5%).
+        Index above 2.0 = well-polarized training. Zone 1 = easy (&lt;80% max heart rate), Zone 2 = threshold
+        (80-87.5%), Zone 3 = high intensity (&gt;87.5%).
       </p>
     </div>
   );

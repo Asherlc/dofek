@@ -18,7 +18,7 @@ export function HrvVariabilityChart({ data, loading }: HrvVariabilityChartProps)
   if (data.length === 0) {
     return (
       <div className="flex items-center justify-center h-[300px]">
-        <span className="text-zinc-600 text-sm">No HRV variability data</span>
+        <span className="text-zinc-600 text-sm">No heart rate variability data</span>
       </div>
     );
   }
@@ -60,7 +60,7 @@ export function HrvVariabilityChart({ data, loading }: HrvVariabilityChartProps)
         let html = `<div style="font-weight:600;margin-bottom:4px">${date}</div>`;
         for (const p of params) {
           if (p.data[1] == null) continue;
-          const unit = p.seriesName === "Rolling CV" ? "%" : " ms";
+          const unit = p.seriesName === "Rolling Variability" ? "%" : " ms";
           html += `<div style="display:flex;align-items:center;gap:6px">`;
           html += `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color}"></span>`;
           html += `<span>${p.seriesName}: <b>${p.data[1].toFixed(1)}${unit}</b></span>`;
@@ -70,7 +70,7 @@ export function HrvVariabilityChart({ data, loading }: HrvVariabilityChartProps)
       },
     },
     legend: {
-      data: ["HRV", "Rolling CV"],
+      data: ["Heart Rate Variability", "Rolling Variability"],
       textStyle: { color: "#a1a1aa", fontSize: 11 },
       top: 0,
     },
@@ -83,7 +83,7 @@ export function HrvVariabilityChart({ data, loading }: HrvVariabilityChartProps)
     yAxis: [
       {
         type: "value" as const,
-        name: "HRV (ms)",
+        name: "Heart Rate Variability (ms)",
         splitLine: { lineStyle: { color: "#27272a" } },
         axisLabel: { color: "#71717a", fontSize: 11 },
         axisLine: { show: true, lineStyle: { color: "#3f3f46" } },
@@ -92,7 +92,7 @@ export function HrvVariabilityChart({ data, loading }: HrvVariabilityChartProps)
       },
       {
         type: "value" as const,
-        name: "CV (%)",
+        name: "Variability (%)",
         min: 0,
         max: Math.ceil(maxCv),
         splitLine: { show: false },
@@ -162,7 +162,7 @@ export function HrvVariabilityChart({ data, loading }: HrvVariabilityChartProps)
       },
       // Daily HRV dots
       {
-        name: "HRV",
+        name: "Heart Rate Variability",
         type: "scatter",
         data: hrvValues,
         symbolSize: 5,
@@ -170,9 +170,9 @@ export function HrvVariabilityChart({ data, loading }: HrvVariabilityChartProps)
         yAxisIndex: 0,
         z: 3,
       },
-      // Rolling CV line
+      // Rolling Variability line
       {
-        name: "Rolling CV",
+        name: "Rolling Variability",
         type: "line",
         data: cvValues,
         smooth: true,

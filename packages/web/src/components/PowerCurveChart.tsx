@@ -84,7 +84,7 @@ export function PowerCurveChart({ data, comparisonData, model, loading }: PowerC
 
   if (modelCurveData.length > 0 && model) {
     series.push({
-      name: `CP Model (${model.cp}W, W'=${Math.round(model.wPrime / 1000)}kJ)`,
+      name: `Threshold Model (${model.cp}W, reserve=${Math.round(model.wPrime / 1000)}kJ)`,
       type: "line",
       data: modelCurveData,
       smooth: true,
