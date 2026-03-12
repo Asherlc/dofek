@@ -14,8 +14,8 @@ interface WalkingBiomechanicsChartProps {
 }
 
 function buildLineOption(
-  dates: string[],
-  values: (number | null)[],
+  data: WalkingBiomechanicsRow[],
+  valueAccessor: (d: WalkingBiomechanicsRow) => number | null,
   name: string,
   unit: string,
   color: string,
@@ -30,9 +30,8 @@ function buildLineOption(
       textStyle: { color: "#e4e4e7", fontSize: 12 },
     },
     xAxis: {
-      type: "category",
-      data: dates,
-      axisLabel: { color: "#71717a", fontSize: 10, rotate: 30 },
+      type: "time" as const,
+      axisLabel: { color: "#71717a", fontSize: 10 },
       axisLine: { lineStyle: { color: "#3f3f46" } },
       splitLine: { show: false },
     },
@@ -47,7 +46,7 @@ function buildLineOption(
     series: [
       {
         type: "line",
-        data: values,
+        data: data.map((d) => [d.date, valueAccessor(d)]),
         smooth: true,
         symbol: "none",
         lineStyle: { color, width: 2 },
@@ -75,33 +74,21 @@ export function WalkingBiomechanicsChart({ data, loading }: WalkingBiomechanicsC
     );
   }
 
-  const dates = data.map((d) => d.date);
-
-  const charts: { name: string; unit: string; color: string; values: (number | null)[] }[] = [
-    {
-      name: "Walking Speed",
-      unit: "km/h",
-      color: "#22c55e",
-      values: data.map((d) => d.walkingSpeedKmh),
-    },
-    {
-      name: "Step Length",
-      unit: "cm",
-      color: "#3b82f6",
-      values: data.map((d) => d.stepLengthCm),
-    },
+  const charts: {
+    name: string;
+    unit: string;
+    color: string;
+    accessor: (d: WalkingBiomechanicsRow) => number | null;
+  }[] = [
+    { name: "Walking Speed", unit: "km/h", color: "#22c55e", accessor: (d) => d.walkingSpeedKmh },
+    { name: "Step Length", unit: "cm", color: "#3b82f6", accessor: (d) => d.stepLengthCm },
     {
       name: "Double Support",
       unit: "%",
       color: "#f59e0b",
-      values: data.map((d) => d.doubleSupportPct),
+      accessor: (d) => d.doubleSupportPct,
     },
-    {
-      name: "Asymmetry",
-      unit: "%",
-      color: "#ef4444",
-      values: data.map((d) => d.asymmetryPct),
-    },
+    { name: "Asymmetry", unit: "%", color: "#ef4444", accessor: (d) => d.asymmetryPct },
   ];
 
   return (
@@ -111,7 +98,7 @@ export function WalkingBiomechanicsChart({ data, loading }: WalkingBiomechanicsC
         {charts.map((chart) => (
           <div key={chart.name} className="bg-zinc-900 rounded-lg p-2">
             <ReactECharts
-              option={buildLineOption(dates, chart.values, chart.name, chart.unit, chart.color)}
+              option={buildLineOption(data, chart.accessor, chart.name, chart.unit, chart.color)}
               style={{ height: 200 }}
               notMerge={true}
             />

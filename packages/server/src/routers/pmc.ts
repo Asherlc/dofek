@@ -289,6 +289,12 @@ export const pmcRouter = router({
         current.setDate(current.getDate() + 1);
       }
 
+      // Trim leading days with no cumulative load — avoids sending thousands
+      // of zeros when the user selects "All" but only has recent data.
+      let firstLoadIndex = result.findIndex((d) => d.load > 0);
+      if (firstLoadIndex < 0) firstLoadIndex = 0;
+      const trimmedResult = result.slice(firstLoadIndex);
+
       const modelInfo: TssModelInfo =
         tssModel != null
           ? {
@@ -304,6 +310,6 @@ export const pmcRouter = router({
               ftp,
             };
 
-      return { data: result, model: modelInfo };
+      return { data: trimmedResult, model: modelInfo };
     }),
 });

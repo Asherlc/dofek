@@ -53,9 +53,6 @@ export function MuscleGroupVolumeChart({ data, loading }: MuscleGroupVolumeChart
     }
   }
   const sortedWeeks = Array.from(allWeeks).sort();
-  const weekLabels = sortedWeeks.map((w) =>
-    new Date(w).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-  );
 
   const series = data.map((group, index) => {
     const weekMap = new Map(group.weeklyData.map((w) => [w.week, w.sets]));
@@ -63,7 +60,7 @@ export function MuscleGroupVolumeChart({ data, loading }: MuscleGroupVolumeChart
       name: group.muscleGroup,
       type: "bar" as const,
       stack: "total",
-      data: sortedWeeks.map((w) => weekMap.get(w) ?? 0),
+      data: sortedWeeks.map((w) => [w, weekMap.get(w) ?? 0]),
       itemStyle: {
         color: COLORS[index % COLORS.length],
       },
@@ -92,9 +89,8 @@ export function MuscleGroupVolumeChart({ data, loading }: MuscleGroupVolumeChart
       pageIconInactiveColor: "#3f3f46",
     },
     xAxis: {
-      type: "category",
-      data: weekLabels,
-      axisLabel: { color: "#71717a", fontSize: 11, rotate: 45 },
+      type: "time" as const,
+      axisLabel: { color: "#71717a", fontSize: 11 },
       axisLine: { lineStyle: { color: "#3f3f46" } },
     },
     yAxis: {

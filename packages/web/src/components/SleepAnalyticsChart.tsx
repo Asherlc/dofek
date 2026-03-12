@@ -33,10 +33,6 @@ export function SleepAnalyticsChart({ nightly, sleepDebt, loading }: SleepAnalyt
     );
   }
 
-  const dates = nightly.map((d) =>
-    new Date(d.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-  );
-
   const debtHours = Math.round((sleepDebt / 60) * 10) / 10;
   const debtLabel = sleepDebt > 0 ? `${debtHours}h deficit` : `${Math.abs(debtHours)}h surplus`;
   const debtColor = sleepDebt > 120 ? "#ef4444" : sleepDebt > 0 ? "#eab308" : "#22c55e";
@@ -50,26 +46,37 @@ export function SleepAnalyticsChart({ nightly, sleepDebt, loading }: SleepAnalyt
       borderColor: "#3f3f46",
       textStyle: { color: "#e4e4e7", fontSize: 12 },
       formatter: (
-        params: { seriesName: string; value: number | null; color: string; marker: string }[],
+        params: {
+          seriesName: string;
+          value: [string, number | null];
+          color: string;
+          marker: string;
+          dataIndex: number;
+        }[],
       ) => {
         if (!params || params.length === 0) return "";
-        const idx = (params[0] as unknown as { dataIndex: number }).dataIndex;
+        const idx = params[0].dataIndex;
         const night = nightly[idx];
         const totalHr = Math.floor(night.durationMinutes / 60);
         const totalMin = night.durationMinutes % 60;
-        let html = `<div style="font-weight:600;margin-bottom:4px">${dates[idx]} (${totalHr}h ${totalMin}m)</div>`;
+        const dateLabel = new Date(night.date).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        });
+        let html = `<div style="font-weight:600;margin-bottom:4px">${dateLabel} (${totalHr}h ${totalMin}m)</div>`;
         for (const p of params) {
           if (p.seriesName === "7d Avg") {
-            if (p.value != null) {
-              const avgHr = Math.floor(p.value / 60);
-              const avgMin = Math.round(p.value % 60);
+            if (p.value[1] != null) {
+              const avgHr = Math.floor(p.value[1] / 60);
+              const avgMin = Math.round(p.value[1] % 60);
               html += `<div>${p.marker} ${p.seriesName}: <b>${avgHr}h ${avgMin}m</b></div>`;
             }
             continue;
           }
-          if (p.value == null) continue;
-          const mins = Math.round((p.value / 100) * night.durationMinutes);
-          html += `<div>${p.marker} ${p.seriesName}: <b>${p.value.toFixed(1)}%</b> (${mins}m)</div>`;
+          if (p.value[1] == null) continue;
+          const mins = Math.round((p.value[1] / 100) * night.durationMinutes);
+          html += `<div>${p.marker} ${p.seriesName}: <b>${p.value[1].toFixed(1)}%</b> (${mins}m)</div>`;
         }
         return html;
       },
@@ -93,9 +100,8 @@ export function SleepAnalyticsChart({ nightly, sleepDebt, loading }: SleepAnalyt
       },
     ],
     xAxis: {
-      type: "category" as const,
-      data: dates,
-      axisLabel: { color: "#71717a", fontSize: 11, rotate: 45 },
+      type: "time" as const,
+      axisLabel: { color: "#71717a", fontSize: 11 },
       axisLine: { lineStyle: { color: "#3f3f46" } },
     },
     yAxis: [
@@ -127,7 +133,7 @@ export function SleepAnalyticsChart({ nightly, sleepDebt, loading }: SleepAnalyt
         name: "Deep",
         type: "bar",
         stack: "sleep",
-        data: nightly.map((d) => d.deepPct),
+        data: nightly.map((d) => [d.date, d.deepPct]),
         itemStyle: { color: "#4f46e5" },
         yAxisIndex: 0,
       },
@@ -135,7 +141,7 @@ export function SleepAnalyticsChart({ nightly, sleepDebt, loading }: SleepAnalyt
         name: "REM",
         type: "bar",
         stack: "sleep",
-        data: nightly.map((d) => d.remPct),
+        data: nightly.map((d) => [d.date, d.remPct]),
         itemStyle: { color: "#7c3aed" },
         yAxisIndex: 0,
       },
@@ -143,7 +149,7 @@ export function SleepAnalyticsChart({ nightly, sleepDebt, loading }: SleepAnalyt
         name: "Light",
         type: "bar",
         stack: "sleep",
-        data: nightly.map((d) => d.lightPct),
+        data: nightly.map((d) => [d.date, d.lightPct]),
         itemStyle: { color: "#3b82f6" },
         yAxisIndex: 0,
       },
@@ -151,14 +157,14 @@ export function SleepAnalyticsChart({ nightly, sleepDebt, loading }: SleepAnalyt
         name: "Awake",
         type: "bar",
         stack: "sleep",
-        data: nightly.map((d) => d.awakePct),
+        data: nightly.map((d) => [d.date, d.awakePct]),
         itemStyle: { color: "#ef4444" },
         yAxisIndex: 0,
       },
       {
         name: "7d Avg",
         type: "line",
-        data: nightly.map((d) => d.rollingAvgDuration),
+        data: nightly.map((d) => [d.date, d.rollingAvgDuration]),
         smooth: true,
         symbol: "none",
         lineStyle: { color: "#22c55e", width: 2.5 },
