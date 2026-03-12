@@ -29,7 +29,7 @@ function TrainingOverview() {
 
       <Section
         title="Fitness / Fatigue / Form"
-        subtitle="Performance Management Chart (CTL/ATL/TSB)"
+        subtitle="Long-term fitness, short-term fatigue, and training form over time"
       >
         <PmcChart
           data={pmcData.data?.data ?? []}

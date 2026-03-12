@@ -1,9 +1,9 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { CacheTTL, cachedQuery, router } from "../trpc.ts";
+import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export const nutritionRouter = router({
-  daily: cachedQuery(CacheTTL.MEDIUM)
+  daily: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(
       z.object({
         days: z.number().default(30),
@@ -12,7 +12,8 @@ export const nutritionRouter = router({
     .query(async ({ ctx, input }) => {
       const rows = await ctx.db.execute(
         sql`SELECT * FROM fitness.nutrition_daily
-            WHERE date > CURRENT_DATE - ${input.days}::int
+            WHERE user_id = ${ctx.userId}
+              AND date > CURRENT_DATE - ${input.days}::int
             ORDER BY date ASC`,
       );
       return rows;

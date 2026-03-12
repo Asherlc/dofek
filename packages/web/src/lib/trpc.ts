@@ -11,6 +11,13 @@ export function createTRPCClient() {
       httpBatchLink({
         url: "/api/trpc",
         methodOverride: "POST",
+        fetch: async (url, options) => {
+          const response = await fetch(url, { ...options, credentials: "include" });
+          if (response.status === 401) {
+            window.location.href = "/login";
+          }
+          return response;
+        },
       }),
     ],
   });

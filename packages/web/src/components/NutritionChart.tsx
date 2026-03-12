@@ -30,10 +30,6 @@ export function NutritionChart({ data, loading }: NutritionChartProps) {
     );
   }
 
-  const dates = data.map((d) =>
-    new Date(d.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-  );
-
   const option = {
     backgroundColor: "transparent",
     grid: { top: 30, right: 60, bottom: 40, left: 50 },
@@ -44,9 +40,8 @@ export function NutritionChart({ data, loading }: NutritionChartProps) {
       textStyle: { color: "#e4e4e7", fontSize: 12 },
     },
     xAxis: {
-      type: "category",
-      data: dates,
-      axisLabel: { color: "#71717a", fontSize: 11, rotate: 45 },
+      type: "time" as const,
+      axisLabel: { color: "#71717a", fontSize: 11 },
       axisLine: { lineStyle: { color: "#3f3f46" } },
     },
     yAxis: [
@@ -76,14 +71,14 @@ export function NutritionChart({ data, loading }: NutritionChartProps) {
       {
         name: "Calories",
         type: "bar",
-        data: data.map((d) => d.calories),
+        data: data.map((d) => [d.date, d.calories]),
         itemStyle: { color: "#f59e0b", opacity: 0.6 },
         yAxisIndex: 0,
       },
       {
         name: "Protein",
         type: "line",
-        data: data.map((d) => d.protein_g),
+        data: data.map((d) => [d.date, d.protein_g]),
         smooth: true,
         symbol: "none",
         lineStyle: { color: "#ef4444", width: 2 },
@@ -93,7 +88,7 @@ export function NutritionChart({ data, loading }: NutritionChartProps) {
       {
         name: "Carbs",
         type: "line",
-        data: data.map((d) => d.carbs_g),
+        data: data.map((d) => [d.date, d.carbs_g]),
         smooth: true,
         symbol: "none",
         lineStyle: { color: "#3b82f6", width: 2 },
@@ -103,7 +98,7 @@ export function NutritionChart({ data, loading }: NutritionChartProps) {
       {
         name: "Fat",
         type: "line",
-        data: data.map((d) => d.fat_g),
+        data: data.map((d) => [d.date, d.fat_g]),
         smooth: true,
         symbol: "none",
         lineStyle: { color: "#a855f7", width: 2 },

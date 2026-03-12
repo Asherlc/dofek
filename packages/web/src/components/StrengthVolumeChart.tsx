@@ -23,10 +23,6 @@ export function StrengthVolumeChart({ data, loading }: StrengthVolumeChartProps)
     );
   }
 
-  const weeks = data.map((d) =>
-    new Date(d.week).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-  );
-
   const option = {
     backgroundColor: "transparent",
     grid: { top: 30, right: 20, bottom: 40, left: 60 },
@@ -41,15 +37,19 @@ export function StrengthVolumeChart({ data, loading }: StrengthVolumeChartProps)
         const index = first.dataIndex;
         const d = data[index];
         if (!d) return "";
-        return `<strong>${weeks[index] ?? ""}</strong><br/>
+        const dateLabel = new Date(d.week).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        });
+        return `<strong>${dateLabel ?? ""}</strong><br/>
           Volume: ${Math.round(d.totalVolumeKg).toLocaleString()} kg<br/>
           Sets: ${d.setCount}`;
       },
     },
     xAxis: {
-      type: "category",
-      data: weeks,
-      axisLabel: { color: "#71717a", fontSize: 11, rotate: 45 },
+      type: "time" as const,
+      axisLabel: { color: "#71717a", fontSize: 11 },
       axisLine: { lineStyle: { color: "#3f3f46" } },
     },
     yAxis: {
@@ -69,7 +69,7 @@ export function StrengthVolumeChart({ data, loading }: StrengthVolumeChartProps)
       {
         name: "Volume",
         type: "bar",
-        data: data.map((d) => d.totalVolumeKg),
+        data: data.map((d) => [d.week, d.totalVolumeKg]),
         itemStyle: {
           color: "#10b981",
           borderRadius: [4, 4, 0, 0],

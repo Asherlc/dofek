@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { publicProcedure, router } from "../trpc.ts";
+import { protectedProcedure, router } from "../trpc.ts";
 
 const PROVIDER_ID = "apple_health_kit";
 const BATCH_SIZE = 500;
@@ -182,7 +182,7 @@ const workoutActivityTypeMap: Record<string, string> = {
   "80": "cooldown",
 };
 
-type Database = Parameters<Parameters<typeof publicProcedure.mutation>[0]>[0]["ctx"]["db"];
+type Database = Parameters<Parameters<typeof protectedProcedure.mutation>[0]>[0]["ctx"]["db"];
 
 /** Ensure the apple_health_kit provider row exists */
 async function ensureProvider(db: Database) {
@@ -215,7 +215,11 @@ function categorize(
 }
 
 /** Process body measurement samples */
-async function processBodyMeasurements(db: Database, samples: HealthKitSample[]): Promise<number> {
+async function processBodyMeasurements(
+  db: Database,
+  userId: string,
+  samples: HealthKitSample[],
+): Promise<number> {
   let inserted = 0;
   for (let i = 0; i < samples.length; i += BATCH_SIZE) {
     const batch = samples.slice(i, i + BATCH_SIZE);
@@ -226,8 +230,8 @@ async function processBodyMeasurements(db: Database, samples: HealthKitSample[])
       const externalId = `hk:${sample.uuid}`;
 
       await db.execute(
-        sql`INSERT INTO fitness.body_measurement (provider_id, external_id, recorded_at, ${sql.identifier(mapping.column)})
-            VALUES (${PROVIDER_ID}, ${externalId}, ${sample.startDate}::timestamptz, ${value})
+        sql`INSERT INTO fitness.body_measurement (user_id, provider_id, external_id, recorded_at, ${sql.identifier(mapping.column)})
+            VALUES (${userId}, ${PROVIDER_ID}, ${externalId}, ${sample.startDate}::timestamptz, ${value})
             ON CONFLICT (provider_id, external_id) DO UPDATE
               SET ${sql.identifier(mapping.column)} = ${value}`,
       );
@@ -293,7 +297,11 @@ const columnToAccumulatorKey: Record<string, keyof DailyMetricAccumulator> = {
 };
 
 /** Process daily metric samples (both additive and point-in-time) */
-async function processDailyMetrics(db: Database, samples: HealthKitSample[]): Promise<number> {
+async function processDailyMetrics(
+  db: Database,
+  userId: string,
+  samples: HealthKitSample[],
+): Promise<number> {
   // Group by date
   const byDate = new Map<string, DailyMetricAccumulator>();
 
@@ -336,6 +344,8 @@ async function processDailyMetrics(db: Database, samples: HealthKitSample[]): Pr
     insertValues.push(sql`${dateStr}::date`);
     insertColumns.push(sql`provider_id`);
     insertValues.push(sql`${PROVIDER_ID}`);
+    insertColumns.push(sql`user_id`);
+    insertValues.push(sql`${userId}`);
 
     // Additive fields: use COALESCE + EXCLUDED for summing
     const additiveFields: Array<{ column: string; key: keyof DailyMetricAccumulator }> = [
@@ -396,7 +406,11 @@ async function processDailyMetrics(db: Database, samples: HealthKitSample[]): Pr
 }
 
 /** Process metric stream samples */
-async function processMetricStream(db: Database, samples: HealthKitSample[]): Promise<number> {
+async function processMetricStream(
+  db: Database,
+  userId: string,
+  samples: HealthKitSample[],
+): Promise<number> {
   let inserted = 0;
   for (let i = 0; i < samples.length; i += BATCH_SIZE) {
     const batch = samples.slice(i, i + BATCH_SIZE);
@@ -405,8 +419,9 @@ async function processMetricStream(db: Database, samples: HealthKitSample[]): Pr
       if (!mapping) continue;
 
       await db.execute(
-        sql`INSERT INTO fitness.metric_stream (provider_id, recorded_at, ${sql.identifier(mapping.column)}, raw)
+        sql`INSERT INTO fitness.metric_stream (user_id, provider_id, recorded_at, ${sql.identifier(mapping.column)}, raw)
             VALUES (
+              ${userId},
               ${PROVIDER_ID},
               ${sample.startDate}::timestamptz,
               ${sample.value},
@@ -420,15 +435,19 @@ async function processMetricStream(db: Database, samples: HealthKitSample[]): Pr
 }
 
 /** Process health event samples (catch-all) */
-async function processHealthEvents(db: Database, samples: HealthKitSample[]): Promise<number> {
+async function processHealthEvents(
+  db: Database,
+  userId: string,
+  samples: HealthKitSample[],
+): Promise<number> {
   let inserted = 0;
   for (let i = 0; i < samples.length; i += BATCH_SIZE) {
     const batch = samples.slice(i, i + BATCH_SIZE);
     for (const sample of batch) {
       const externalId = `hk:${sample.uuid}`;
       await db.execute(
-        sql`INSERT INTO fitness.health_event (provider_id, external_id, type, value, unit, source_name, start_date, end_date)
-            VALUES (${PROVIDER_ID}, ${externalId}, ${sample.type}, ${sample.value}, ${sample.unit}, ${sample.sourceName}, ${sample.startDate}::timestamptz, ${sample.endDate}::timestamptz)
+        sql`INSERT INTO fitness.health_event (user_id, provider_id, external_id, type, value, unit, source_name, start_date, end_date)
+            VALUES (${userId}, ${PROVIDER_ID}, ${externalId}, ${sample.type}, ${sample.value}, ${sample.unit}, ${sample.sourceName}, ${sample.startDate}::timestamptz, ${sample.endDate}::timestamptz)
             ON CONFLICT (provider_id, external_id) DO NOTHING`,
       );
       inserted++;
@@ -438,7 +457,11 @@ async function processHealthEvents(db: Database, samples: HealthKitSample[]): Pr
 }
 
 /** Process workout samples */
-async function processWorkouts(db: Database, workouts: WorkoutSample[]): Promise<number> {
+async function processWorkouts(
+  db: Database,
+  userId: string,
+  workouts: WorkoutSample[],
+): Promise<number> {
   let inserted = 0;
   for (let i = 0; i < workouts.length; i += BATCH_SIZE) {
     const batch = workouts.slice(i, i + BATCH_SIZE);
@@ -455,8 +478,9 @@ async function processWorkouts(db: Database, workouts: WorkoutSample[]): Promise
       });
 
       await db.execute(
-        sql`INSERT INTO fitness.activity (provider_id, external_id, activity_type, started_at, ended_at, raw)
+        sql`INSERT INTO fitness.activity (user_id, provider_id, external_id, activity_type, started_at, ended_at, raw)
             VALUES (
+              ${userId},
               ${PROVIDER_ID},
               ${externalId},
               ${activityType},
@@ -476,7 +500,11 @@ async function processWorkouts(db: Database, workouts: WorkoutSample[]): Promise
 }
 
 /** Process sleep samples, grouping by inBed boundaries */
-async function processSleepSamples(db: Database, samples: SleepSample[]): Promise<number> {
+async function processSleepSamples(
+  db: Database,
+  userId: string,
+  samples: SleepSample[],
+): Promise<number> {
   const inBedSamples = samples.filter((s) => s.value === "inBed");
   const stageSamples = samples.filter((s) => s.value !== "inBed");
 
@@ -517,8 +545,9 @@ async function processSleepSamples(db: Database, samples: SleepSample[]): Promis
 
     const externalId = `hk:sleep:${session.uuid}`;
     await db.execute(
-      sql`INSERT INTO fitness.sleep_session (provider_id, external_id, started_at, ended_at, deep_minutes, rem_minutes, light_minutes, awake_minutes)
+      sql`INSERT INTO fitness.sleep_session (user_id, provider_id, external_id, started_at, ended_at, deep_minutes, rem_minutes, light_minutes, awake_minutes)
           VALUES (
+            ${userId},
             ${PROVIDER_ID},
             ${externalId},
             ${session.startDate}::timestamptz,
@@ -545,7 +574,7 @@ async function processSleepSamples(db: Database, samples: SleepSample[]): Promis
 // ── Router ──
 
 export const healthKitSyncRouter = router({
-  pushQuantitySamples: publicProcedure
+  pushQuantitySamples: protectedProcedure
     .input(z.object({ samples: z.array(healthKitSampleSchema) }))
     .mutation(async ({ ctx, input }) => {
       await ensureProvider(ctx.db);
@@ -578,28 +607,28 @@ export const healthKitSyncRouter = router({
       const errors: string[] = [];
 
       try {
-        inserted += await processBodyMeasurements(ctx.db, bodyMeasurements);
+        inserted += await processBodyMeasurements(ctx.db, ctx.userId, bodyMeasurements);
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         errors.push(`Body measurements: ${message}`);
       }
 
       try {
-        inserted += await processDailyMetrics(ctx.db, dailyMetricSamples);
+        inserted += await processDailyMetrics(ctx.db, ctx.userId, dailyMetricSamples);
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         errors.push(`Daily metrics: ${message}`);
       }
 
       try {
-        inserted += await processMetricStream(ctx.db, metricStreamSamples);
+        inserted += await processMetricStream(ctx.db, ctx.userId, metricStreamSamples);
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         errors.push(`Metric stream: ${message}`);
       }
 
       try {
-        inserted += await processHealthEvents(ctx.db, healthEventSamples);
+        inserted += await processHealthEvents(ctx.db, ctx.userId, healthEventSamples);
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         errors.push(`Health events: ${message}`);
@@ -608,19 +637,19 @@ export const healthKitSyncRouter = router({
       return { inserted, errors };
     }),
 
-  pushWorkouts: publicProcedure
+  pushWorkouts: protectedProcedure
     .input(z.object({ workouts: z.array(workoutSampleSchema) }))
     .mutation(async ({ ctx, input }) => {
       await ensureProvider(ctx.db);
-      const inserted = await processWorkouts(ctx.db, input.workouts);
+      const inserted = await processWorkouts(ctx.db, ctx.userId, input.workouts);
       return { inserted };
     }),
 
-  pushSleepSamples: publicProcedure
+  pushSleepSamples: protectedProcedure
     .input(z.object({ samples: z.array(sleepSampleSchema) }))
     .mutation(async ({ ctx, input }) => {
       await ensureProvider(ctx.db);
-      const inserted = await processSleepSamples(ctx.db, input.samples);
+      const inserted = await processSleepSamples(ctx.db, ctx.userId, input.samples);
       return { inserted };
     }),
 });

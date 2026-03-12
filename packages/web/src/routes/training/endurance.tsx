@@ -49,7 +49,10 @@ function EnduranceTab() {
 
       {/* Aerobic Efficiency + Polarization */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Section title="Aerobic Efficiency" subtitle="Power/HR ratio in Z2 over time">
+        <Section
+          title="Aerobic Efficiency"
+          subtitle="Power output per heartbeat at easy effort — higher means fitter"
+        >
           <AerobicEfficiencyChart
             activities={efficiency.data?.activities ?? []}
             maxHr={efficiency.data?.maxHr ?? null}
@@ -57,7 +60,10 @@ function EnduranceTab() {
           />
         </Section>
 
-        <Section title="Polarization Index" subtitle="Weekly PI trend (>2.0 = polarized training)">
+        <Section
+          title="Polarization Index"
+          subtitle="Weekly training distribution — above 2.0 means mostly easy and hard, little moderate"
+        >
           <PolarizationTrendChart
             weeks={polarization.data?.weeks ?? []}
             maxHr={polarization.data?.maxHr ?? null}
@@ -66,7 +72,10 @@ function EnduranceTab() {
         </Section>
       </div>
 
-      <Section title="Ramp Rate" subtitle="Weekly CTL ramp rate with training recommendations">
+      <Section
+        title="Ramp Rate"
+        subtitle="How quickly your fitness load is building week over week"
+      >
         <RampRateChart
           data={rampRate.data?.weeks ?? []}
           currentRampRate={rampRate.data?.currentRampRate ?? 0}

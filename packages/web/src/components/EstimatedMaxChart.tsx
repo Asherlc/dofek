@@ -34,31 +34,17 @@ export function EstimatedMaxChart({ exercises, loading }: EstimatedMaxChartProps
     );
   }
 
-  const allDates = new Set<string>();
-  for (const exercise of exercises) {
-    for (const point of exercise.history) {
-      allDates.add(point.date);
-    }
-  }
-  const sortedDates = Array.from(allDates).sort();
-  const dateLabels = sortedDates.map((d) =>
-    new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-  );
-
-  const series = exercises.map((exercise, index) => {
-    const dateMap = new Map(exercise.history.map((h) => [h.date, h.estimatedMax]));
-    return {
-      name: exercise.exerciseName,
-      type: "line" as const,
-      data: sortedDates.map((d) => dateMap.get(d) ?? null),
-      smooth: 0.3,
-      symbol: "circle",
-      symbolSize: 5,
-      lineStyle: { width: 2, color: COLORS[index % COLORS.length] },
-      itemStyle: { color: COLORS[index % COLORS.length] },
-      connectNulls: true,
-    };
-  });
+  const series = exercises.map((exercise, index) => ({
+    name: exercise.exerciseName,
+    type: "line" as const,
+    data: exercise.history.map((h) => [h.date, h.estimatedMax]),
+    smooth: 0.3,
+    symbol: "circle",
+    symbolSize: 5,
+    lineStyle: { width: 2, color: COLORS[index % COLORS.length] },
+    itemStyle: { color: COLORS[index % COLORS.length] },
+    connectNulls: true,
+  }));
 
   const option = {
     backgroundColor: "transparent",
@@ -78,9 +64,8 @@ export function EstimatedMaxChart({ exercises, loading }: EstimatedMaxChartProps
       pageIconInactiveColor: "#3f3f46",
     },
     xAxis: {
-      type: "category",
-      data: dateLabels,
-      axisLabel: { color: "#71717a", fontSize: 11, rotate: 45 },
+      type: "time" as const,
+      axisLabel: { color: "#71717a", fontSize: 11 },
       axisLine: { lineStyle: { color: "#3f3f46" } },
     },
     yAxis: {

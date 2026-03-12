@@ -37,13 +37,6 @@ export function RampRateChart({
     );
   }
 
-  const weeks = data.map((d) =>
-    new Date(d.week).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-    }),
-  );
-
   const option = {
     backgroundColor: "transparent",
     grid: { top: 50, right: 20, bottom: 50, left: 55 },
@@ -52,7 +45,7 @@ export function RampRateChart({
       backgroundColor: "#18181b",
       borderColor: "#3f3f46",
       textStyle: { color: "#e4e4e7", fontSize: 12 },
-      formatter(params: Array<{ dataIndex: number; value: number; marker: string }>) {
+      formatter(params: Array<{ dataIndex: number; value: [string, number]; marker: string }>) {
         if (!params.length) return "";
         const first = params[0];
         if (!first) return "";
@@ -60,16 +53,20 @@ export function RampRateChart({
         const d = data[idx];
         if (!d) return "";
         const color = getRampColor(d.rampRate);
+        const dateLabel = new Date(d.week).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        });
         return [
-          `<strong>${weeks[idx] ?? ""}</strong>`,
+          `<strong>${dateLabel}</strong>`,
           `Ramp Rate: <span style="color:${color}">${d.rampRate.toFixed(2)}</span>`,
         ].join("<br/>");
       },
     },
     xAxis: {
-      type: "category" as const,
-      data: weeks,
-      axisLabel: { color: "#71717a", fontSize: 11, rotate: 45 },
+      type: "time" as const,
+      axisLabel: { color: "#71717a", fontSize: 11 },
       axisLine: { lineStyle: { color: "#3f3f46" } },
     },
     yAxis: {
@@ -85,7 +82,7 @@ export function RampRateChart({
         name: "Ramp Rate",
         type: "bar",
         data: data.map((d) => ({
-          value: d.rampRate,
+          value: [d.week, d.rampRate],
           itemStyle: { color: getRampColor(d.rampRate) },
         })),
       },

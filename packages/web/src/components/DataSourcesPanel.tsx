@@ -37,7 +37,7 @@ export function DataSourcesPanel() {
       pollSyncJob({
         jobId,
         providerIds,
-        fetchStatus: (id) => trpcUtils.sync.syncStatus.fetch({ jobId: id }),
+        fetchStatus: (id) => trpcUtils.sync.syncStatus.fetch({ jobId: id }, { staleTime: 0 }),
         updateState,
         onComplete: () => trpcUtils.sync.providers.invalidate(),
       }),

@@ -243,6 +243,7 @@ export function Dashboard() {
             <CollapsibleSection
               id="spo2Temp"
               title="SpO2 & Skin Temperature"
+              subtitle="Blood oxygen saturation and wrist skin temperature over time"
               collapsed={collapsed.spo2Temp}
               onToggle={() => toggle("spo2Temp")}
             >
@@ -263,6 +264,7 @@ export function Dashboard() {
           <CollapsibleSection
             id="steps"
             title="Daily Steps"
+            subtitle="Total daily step count over time"
             collapsed={collapsed.steps}
             onToggle={() => toggle("steps")}
           >

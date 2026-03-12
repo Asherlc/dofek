@@ -6,7 +6,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { queryCache } from "../lib/cache.ts";
 import { getSystemLogs, logger } from "../logger.ts";
-import { CacheTTL, cachedQuery, publicProcedure, router } from "../trpc.ts";
+import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
 // ── Provider registration (race-safe) ──
 let registrationPromise: Promise<void> | null = null;
@@ -52,18 +52,22 @@ function cleanupJob(jobId: string) {
 
 export const syncRouter = router({
   /** List all providers and whether they're enabled (have valid config) */
-  providers: cachedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
+  providers: cachedProtectedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
     await ensureProvidersRegistered();
     const all = getAllProviders();
 
     // Batch: load all tokens + last sync times in 2 queries instead of 2N
     const [allTokens, lastSyncs] = await Promise.all([
       ctx.db.execute<{ provider_id: string }>(
-        sql`SELECT DISTINCT provider_id FROM fitness.oauth_token`,
+        sql`SELECT DISTINCT ot.provider_id
+            FROM fitness.oauth_token ot
+            JOIN fitness.provider p ON p.id = ot.provider_id
+            WHERE p.user_id = ${ctx.userId}`,
       ),
       ctx.db.execute<{ provider_id: string; last_synced: string }>(sql`
         SELECT provider_id, MAX(synced_at) AS last_synced
         FROM fitness.sync_log
+        WHERE user_id = ${ctx.userId}
         GROUP BY provider_id
       `),
     ]);
@@ -72,7 +76,12 @@ export const syncRouter = router({
     const lastSyncMap = new Map(lastSyncs.map((r) => [r.provider_id, r.last_synced]));
 
     return all.map((p) => {
-      const setup = p.authSetup?.();
+      let setup: ReturnType<NonNullable<typeof p.authSetup>> | undefined;
+      try {
+        setup = p.authSetup?.();
+      } catch {
+        /* credentials not configured */
+      }
       const needsOAuth = !!setup?.oauthConfig;
       const needsCustomAuth = p.id === "whoop";
       const needsAuth = needsOAuth || needsCustomAuth;
@@ -94,7 +103,7 @@ export const syncRouter = router({
   }),
 
   /** Trigger sync — returns immediately with a jobId, processes in the background */
-  triggerSync: publicProcedure
+  triggerSync: protectedProcedure
     .input(
       z.object({
         providerId: z.string().optional(),
@@ -210,14 +219,14 @@ export const syncRouter = router({
     }),
 
   /** Poll sync job status */
-  syncStatus: publicProcedure.input(z.object({ jobId: z.string() })).query(({ input }) => {
+  syncStatus: protectedProcedure.input(z.object({ jobId: z.string() })).query(({ input }) => {
     const job = syncJobs.get(input.jobId);
     if (!job) return null;
     return job;
   }),
 
   /** Get sync log history */
-  logs: cachedQuery(CacheTTL.SHORT)
+  logs: cachedProtectedQuery(CacheTTL.SHORT)
     .input(z.object({ limit: z.number().default(100) }))
     .query(async ({ ctx, input }) => {
       const { syncLog } = await import("dofek/db/schema");
@@ -227,14 +236,14 @@ export const syncRouter = router({
     }),
 
   /** Get recent system logs (console output) */
-  systemLogs: publicProcedure
+  systemLogs: protectedProcedure
     .input(z.object({ limit: z.number().default(200) }))
     .query(({ input }) => {
       return getSystemLogs(input.limit);
     }),
 
   /** Per-provider record counts broken down by table */
-  providerStats: cachedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
+  providerStats: cachedProtectedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
     const rows = await ctx.db.execute<{
       provider_id: string;
       activities: string;
@@ -261,16 +270,16 @@ export const syncRouter = router({
         COALESCE(lr.cnt, 0)::text AS lab_results,
         COALESCE(je.cnt, 0)::text AS journal_entries
       FROM fitness.provider p
-      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.activity GROUP BY provider_id) a ON a.provider_id = p.id
-      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.daily_metrics GROUP BY provider_id) dm ON dm.provider_id = p.id
-      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.sleep_session GROUP BY provider_id) ss ON ss.provider_id = p.id
-      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.body_measurement GROUP BY provider_id) bm ON bm.provider_id = p.id
-      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.food_entry GROUP BY provider_id) fe ON fe.provider_id = p.id
-      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.health_event GROUP BY provider_id) he ON he.provider_id = p.id
-      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.metric_stream GROUP BY provider_id) ms ON ms.provider_id = p.id
-      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.nutrition_daily GROUP BY provider_id) nd ON nd.provider_id = p.id
-      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.lab_result GROUP BY provider_id) lr ON lr.provider_id = p.id
-      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.journal_entry GROUP BY provider_id) je ON je.provider_id = p.id
+      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.activity WHERE user_id = ${ctx.userId} GROUP BY provider_id) a ON a.provider_id = p.id
+      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.daily_metrics WHERE user_id = ${ctx.userId} GROUP BY provider_id) dm ON dm.provider_id = p.id
+      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.sleep_session WHERE user_id = ${ctx.userId} GROUP BY provider_id) ss ON ss.provider_id = p.id
+      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.body_measurement WHERE user_id = ${ctx.userId} GROUP BY provider_id) bm ON bm.provider_id = p.id
+      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.food_entry WHERE user_id = ${ctx.userId} GROUP BY provider_id) fe ON fe.provider_id = p.id
+      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.health_event WHERE user_id = ${ctx.userId} GROUP BY provider_id) he ON he.provider_id = p.id
+      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.metric_stream WHERE user_id = ${ctx.userId} GROUP BY provider_id) ms ON ms.provider_id = p.id
+      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.nutrition_daily WHERE user_id = ${ctx.userId} GROUP BY provider_id) nd ON nd.provider_id = p.id
+      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.lab_result WHERE user_id = ${ctx.userId} GROUP BY provider_id) lr ON lr.provider_id = p.id
+      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.journal_entry WHERE user_id = ${ctx.userId} GROUP BY provider_id) je ON je.provider_id = p.id
       ORDER BY p.id
     `);
     return mapProviderStats(rows);

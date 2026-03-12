@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { CacheTTL, cachedQuery, router } from "../trpc.ts";
+import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 interface ActivityRow {
   id: string;
@@ -154,7 +154,7 @@ export const pmcRouter = router({
    * when available, falling back to generic Bannister TRIMP normalization.
    * Derives CTL (42d), ATL (7d), TSB from daily TSS.
    */
-  chart: cachedQuery(CacheTTL.LONG)
+  chart: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(180) }))
     .query(async ({ ctx, input }): Promise<PmcChartResult> => {
       // Fetch extra history for EWMA warm-up (42 days for CTL)
@@ -166,7 +166,7 @@ export const pmcRouter = router({
               up.max_hr AS global_max_hr,
               COALESCE(up.resting_hr, (
                 SELECT resting_hr FROM fitness.v_daily_metrics
-                WHERE resting_hr IS NOT NULL ORDER BY date DESC LIMIT 1
+                WHERE user_id = ${ctx.userId} AND resting_hr IS NOT NULL ORDER BY date DESC LIMIT 1
               ), 60) AS resting_hr,
               asum.activity_id AS id,
               asum.started_at::date AS date,
@@ -178,7 +178,8 @@ export const pmcRouter = router({
               asum.hr_sample_count AS hr_samples
             FROM fitness.activity_summary asum
             JOIN fitness.user_profile up ON up.id = asum.user_id
-            WHERE up.max_hr IS NOT NULL
+            WHERE up.id = ${ctx.userId}
+              AND up.max_hr IS NOT NULL
               AND asum.started_at > NOW() - ${queryDays}::int * INTERVAL '1 day'
               AND asum.ended_at IS NOT NULL
               AND asum.hr_sample_count > 0`,
@@ -289,6 +290,12 @@ export const pmcRouter = router({
         current.setDate(current.getDate() + 1);
       }
 
+      // Trim leading days with no cumulative load — avoids sending thousands
+      // of zeros when the user selects "All" but only has recent data.
+      let firstLoadIndex = result.findIndex((d) => d.load > 0);
+      if (firstLoadIndex < 0) firstLoadIndex = 0;
+      const trimmedResult = result.slice(firstLoadIndex);
+
       const modelInfo: TssModelInfo =
         tssModel != null
           ? {
@@ -304,6 +311,6 @@ export const pmcRouter = router({
               ftp,
             };
 
-      return { data: result, model: modelInfo };
+      return { data: trimmedResult, model: modelInfo };
     }),
 });

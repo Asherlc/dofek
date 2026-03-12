@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { CacheTTL, cachedQuery, router } from "../trpc.ts";
+import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export interface HrvVariabilityRow {
   date: string;
@@ -51,7 +51,7 @@ export const recoveryRouter = router({
    * Rolling 7-day coefficient of variation of HRV (stddev/mean * 100).
    * Fetches extra warmup rows to ensure window functions have data from day 1.
    */
-  hrvVariability: cachedQuery(CacheTTL.MEDIUM)
+  hrvVariability: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }): Promise<HrvVariabilityRow[]> => {
       const queryDays = input.days + 7;
@@ -61,7 +61,8 @@ export const recoveryRouter = router({
                 date,
                 hrv
               FROM fitness.v_daily_metrics
-              WHERE date > CURRENT_DATE - ${queryDays}::int
+              WHERE user_id = ${ctx.userId}
+                AND date > CURRENT_DATE - ${queryDays}::int
                 AND hrv IS NOT NULL
               ORDER BY date ASC
             )
@@ -104,7 +105,7 @@ export const recoveryRouter = router({
    * Daily load = sum of (duration_min * avg_hr / max_hr) per activity.
    * Acute = 7-day sum, Chronic = 28-day average of daily load.
    */
-  workloadRatio: cachedQuery(CacheTTL.MEDIUM)
+  workloadRatio: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }): Promise<WorkloadRatioRow[]> => {
       const queryDays = input.days + 28;
@@ -123,7 +124,8 @@ export const recoveryRouter = router({
                   * asum.avg_hr
                   / NULLIF(asum.max_hr, 0) AS load
               FROM fitness.activity_summary asum
-              WHERE asum.started_at::date >= CURRENT_DATE - ${queryDays}::int
+              WHERE asum.user_id = ${ctx.userId}
+                AND asum.started_at::date >= CURRENT_DATE - ${queryDays}::int
                 AND asum.ended_at IS NOT NULL
                 AND asum.avg_hr IS NOT NULL
             ),
@@ -185,7 +187,7 @@ export const recoveryRouter = router({
    * Sleep analytics: stage percentages, rolling avg duration, sleep debt.
    * Excludes naps. Sleep debt = cumulative deficit vs 8hr target over 14 days.
    */
-  sleepAnalytics: cachedQuery(CacheTTL.MEDIUM)
+  sleepAnalytics: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }): Promise<SleepAnalyticsResult> => {
       const rows = await ctx.db.execute(
@@ -203,7 +205,8 @@ export const recoveryRouter = router({
                 CASE WHEN duration_minutes > 0 THEN light_minutes::real / duration_minutes * 100 ELSE 0 END AS light_pct,
                 CASE WHEN duration_minutes > 0 THEN awake_minutes::real / duration_minutes * 100 ELSE 0 END AS awake_pct
               FROM fitness.v_sleep
-              WHERE is_nap = false
+              WHERE user_id = ${ctx.userId}
+                AND is_nap = false
                 AND started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
               ORDER BY started_at ASC
             )
@@ -264,7 +267,7 @@ export const recoveryRouter = router({
    *   sleep efficiency (20%), ACWR balance (20%).
    * Reads ACWR from activity_summary rollup instead of raw metric_stream.
    */
-  readinessScore: cachedQuery(CacheTTL.MEDIUM)
+  readinessScore: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({ days: z.number().default(30) }))
     .query(async ({ ctx, input }): Promise<ReadinessRow[]> => {
       const queryDays = input.days + 60;
@@ -281,14 +284,16 @@ export const recoveryRouter = router({
                 AVG(resting_hr) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS rhr_mean_60d,
                 STDDEV_POP(resting_hr) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS rhr_sd_60d
               FROM fitness.v_daily_metrics
-              WHERE date > CURRENT_DATE - ${queryDays}::int
+              WHERE user_id = ${ctx.userId}
+                AND date > CURRENT_DATE - ${queryDays}::int
             ),
             sleep_eff AS (
               SELECT DISTINCT ON (started_at::date)
                 started_at::date::text AS date,
                 efficiency_pct
               FROM fitness.v_sleep
-              WHERE is_nap = false
+              WHERE user_id = ${ctx.userId}
+                AND is_nap = false
                 AND started_at > NOW() - ${queryDays}::int * INTERVAL '1 day'
               ORDER BY started_at::date, started_at DESC
             ),
@@ -306,7 +311,8 @@ export const recoveryRouter = router({
                   * asum.avg_hr
                   / NULLIF(asum.max_hr, 0) AS load
               FROM fitness.activity_summary asum
-              WHERE asum.started_at::date >= CURRENT_DATE - ${queryDays}::int
+              WHERE asum.user_id = ${ctx.userId}
+                AND asum.started_at::date >= CURRENT_DATE - ${queryDays}::int
                 AND asum.ended_at IS NOT NULL
                 AND asum.avg_hr IS NOT NULL
             ),

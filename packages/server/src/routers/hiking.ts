@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { CacheTTL, cachedQuery, router } from "../trpc.ts";
+import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export interface GradeAdjustedPaceRow {
   date: string;
@@ -48,7 +48,7 @@ export const hikingRouter = router({
    * Grade-adjusted pace for walking, hiking, and trail running activities.
    * Uses the Minetti cost factor model to normalize pace for grade.
    */
-  gradeAdjustedPace: cachedQuery(CacheTTL.LONG)
+  gradeAdjustedPace: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
       interface GradeRow {
@@ -74,7 +74,8 @@ export const hikingRouter = router({
                 LAG(ms.altitude) OVER (PARTITION BY a.id ORDER BY ms.recorded_at) AS prev_altitude
               FROM fitness.v_activity a
               JOIN fitness.metric_stream ms ON ms.activity_id = a.id
-              WHERE a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+              WHERE a.user_id = ${ctx.userId}
+                AND a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
                 AND a.activity_type IN ('walking', 'hiking', 'trail_running')
                 AND ms.altitude IS NOT NULL
               GROUP BY a.id, a.started_at, a.ended_at, a.name, a.activity_type,
@@ -146,7 +147,7 @@ export const hikingRouter = router({
   /**
    * Weekly cumulative elevation gain from hiking and walking activities.
    */
-  elevationProfile: cachedQuery(CacheTTL.LONG)
+  elevationProfile: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(365) }))
     .query(async ({ ctx, input }) => {
       interface ElevRow {
@@ -165,7 +166,8 @@ export const hikingRouter = router({
                 MAX(ms.distance) OVER (PARTITION BY a.id) AS max_distance
               FROM fitness.v_activity a
               JOIN fitness.metric_stream ms ON ms.activity_id = a.id
-              WHERE a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+              WHERE a.user_id = ${ctx.userId}
+                AND a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
                 AND a.activity_type IN ('walking', 'hiking')
                 AND ms.altitude IS NOT NULL
             ),
@@ -200,7 +202,7 @@ export const hikingRouter = router({
   /**
    * Walking biomechanics from daily health metrics.
    */
-  walkingBiomechanics: cachedQuery(CacheTTL.LONG)
+  walkingBiomechanics: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
       interface WalkRow {
@@ -220,7 +222,8 @@ export const hikingRouter = router({
               walking_asymmetry_pct AS asymmetry_pct,
               walking_steadiness AS steadiness
             FROM fitness.daily_metrics
-            WHERE date > NOW() - ${input.days}::int * INTERVAL '1 day'
+            WHERE user_id = ${ctx.userId}
+              AND date > NOW() - ${input.days}::int * INTERVAL '1 day'
               AND (walking_speed IS NOT NULL
                 OR walking_step_length IS NOT NULL
                 OR walking_double_support_pct IS NOT NULL
@@ -243,7 +246,7 @@ export const hikingRouter = router({
   /**
    * Compare repeated activities (same name, 2+ instances) over time.
    */
-  activityComparison: cachedQuery(CacheTTL.LONG)
+  activityComparison: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(365) }))
     .query(async ({ ctx, input }) => {
       interface CompRow {
@@ -267,7 +270,8 @@ export const hikingRouter = router({
                 ms.heart_rate
               FROM fitness.v_activity a
               JOIN fitness.metric_stream ms ON ms.activity_id = a.id
-              WHERE a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+              WHERE a.user_id = ${ctx.userId}
+                AND a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
                 AND a.activity_type IN ('walking', 'hiking', 'trail_running')
                 AND a.name IS NOT NULL
             ),

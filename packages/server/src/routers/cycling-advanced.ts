@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { CacheTTL, cachedQuery, router } from "../trpc.ts";
+import { enduranceTypeFilter } from "../lib/endurance-types.ts";
+import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export interface RampRateWeek {
   week: string;
@@ -54,7 +55,7 @@ export const cyclingAdvancedRouter = router({
    * Ramp Rate: week-over-week CTL change based on HR TRIMP load.
    * Reads from activity_summary rollup + user_profile.max_hr.
    */
-  rampRate: cachedQuery(CacheTTL.LONG)
+  rampRate: cachedProtectedQuery(CacheTTL.LONG)
     .input(daysInput)
     .query(async ({ ctx, input }): Promise<RampRateResult> => {
       // Get daily TRIMP loads from activity_summary
@@ -67,8 +68,10 @@ export const cyclingAdvancedRouter = router({
               ) AS trimp
             FROM fitness.activity_summary asum
             JOIN fitness.user_profile up ON up.id = asum.user_id
-            WHERE up.max_hr IS NOT NULL
+            WHERE up.id = ${ctx.userId}
+              AND up.max_hr IS NOT NULL
               AND asum.started_at > NOW() - (${input.days} + 42)::int * INTERVAL '1 day'
+              AND ${enduranceTypeFilter("asum")}
               AND asum.ended_at IS NOT NULL
               AND asum.avg_hr IS NOT NULL
               AND asum.avg_hr > 0
@@ -173,7 +176,7 @@ export const cyclingAdvancedRouter = router({
    * Reads from activity_summary rollup + user_profile.max_hr.
    * High monotony (>2.0) with high load = elevated illness/overtraining risk.
    */
-  trainingMonotony: cachedQuery(CacheTTL.LONG)
+  trainingMonotony: cachedProtectedQuery(CacheTTL.LONG)
     .input(daysInput)
     .query(async ({ ctx, input }): Promise<TrainingMonotonyWeek[]> => {
       const rows = await ctx.db.execute(
@@ -186,8 +189,10 @@ export const cyclingAdvancedRouter = router({
                 ) AS trimp
               FROM fitness.activity_summary asum
               JOIN fitness.user_profile up ON up.id = asum.user_id
-              WHERE up.max_hr IS NOT NULL
+              WHERE up.id = ${ctx.userId}
+                AND up.max_hr IS NOT NULL
                 AND asum.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+                AND ${enduranceTypeFilter("asum")}
                 AND asum.ended_at IS NOT NULL
                 AND asum.avg_hr IS NOT NULL
                 AND asum.avg_hr > 0
@@ -225,7 +230,7 @@ export const cyclingAdvancedRouter = router({
    * NP computed from 30s rolling average of power samples.
    * MUST hit raw metric_stream for sequential window functions.
    */
-  activityVariability: cachedQuery(CacheTTL.LONG)
+  activityVariability: cachedProtectedQuery(CacheTTL.LONG)
     .input(daysInput)
     .query(async ({ ctx, input }): Promise<ActivityVariabilityRow[]> => {
       // Estimate FTP as 95% of best 20-minute average power
@@ -244,7 +249,9 @@ export const cyclingAdvancedRouter = router({
                 ) AS rn
               FROM fitness.metric_stream ms
               JOIN fitness.v_activity a ON a.id = ms.activity_id
-              WHERE a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+              WHERE a.user_id = ${ctx.userId}
+                AND a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+                AND ${enduranceTypeFilter("a")}
                 AND ms.power > 0
             )
             SELECT ROUND((MAX(avg_20min) * 0.95)::numeric, 1) AS ftp
@@ -266,7 +273,9 @@ export const cyclingAdvancedRouter = router({
                 ) AS rolling_30s_power
               FROM fitness.metric_stream ms
               JOIN fitness.v_activity a ON a.id = ms.activity_id
-              WHERE a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+              WHERE a.user_id = ${ctx.userId}
+                AND a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+                AND ${enduranceTypeFilter("a")}
                 AND ms.power > 0
             )
             SELECT
@@ -299,7 +308,7 @@ export const cyclingAdvancedRouter = router({
    * Vertical Ascent Rate (VAM) for segments where grade > 3%.
    * MUST hit raw metric_stream for LAG() over sequential altitude.
    */
-  verticalAscentRate: cachedQuery(CacheTTL.LONG)
+  verticalAscentRate: cachedProtectedQuery(CacheTTL.LONG)
     .input(daysInput)
     .query(async ({ ctx, input }): Promise<VerticalAscentRow[]> => {
       const rows = await ctx.db.execute(
@@ -317,7 +326,9 @@ export const cyclingAdvancedRouter = router({
                 ) AS prev_recorded_at
               FROM fitness.metric_stream ms
               JOIN fitness.v_activity a ON a.id = ms.activity_id
-              WHERE a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+              WHERE a.user_id = ${ctx.userId}
+                AND a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+                AND ${enduranceTypeFilter("a")}
                 AND ms.altitude IS NOT NULL
                 AND ms.grade IS NOT NULL
                 AND ms.grade > 3
@@ -363,7 +374,7 @@ export const cyclingAdvancedRouter = router({
    * Pedal Dynamics: left/right balance, torque effectiveness, pedal smoothness.
    * Reads from activity_summary rollup view.
    */
-  pedalDynamics: cachedQuery(CacheTTL.LONG)
+  pedalDynamics: cachedProtectedQuery(CacheTTL.LONG)
     .input(daysInput)
     .query(async ({ ctx, input }): Promise<PedalDynamicsRow[]> => {
       const rows = await ctx.db.execute(
@@ -378,7 +389,9 @@ export const cyclingAdvancedRouter = router({
                 ((asum.avg_left_pedal_smooth + asum.avg_right_pedal_smooth) / 2)::numeric, 1
               ) AS avg_pedal_smoothness
             FROM fitness.activity_summary asum
-            WHERE asum.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+            WHERE asum.user_id = ${ctx.userId}
+              AND asum.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+              AND ${enduranceTypeFilter("asum")}
               AND asum.avg_left_balance IS NOT NULL
             ORDER BY asum.started_at`,
       );

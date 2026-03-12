@@ -23,13 +23,6 @@ export function TrainingMonotonyChart({ data, loading }: TrainingMonotonyChartPr
     );
   }
 
-  const weeks = data.map((d) =>
-    new Date(d.week).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-    }),
-  );
-
   const option = {
     backgroundColor: "transparent",
     grid: { top: 50, right: 70, bottom: 50, left: 55 },
@@ -41,7 +34,7 @@ export function TrainingMonotonyChart({ data, loading }: TrainingMonotonyChartPr
       formatter(
         params: Array<{
           seriesName: string;
-          value: number;
+          value: [string, number];
           marker: string;
           dataIndex: number;
         }>,
@@ -52,9 +45,14 @@ export function TrainingMonotonyChart({ data, loading }: TrainingMonotonyChartPr
         const idx = first.dataIndex;
         const d = data[idx];
         if (!d) return "";
+        const dateLabel = new Date(d.week).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        });
         const monotonyColor = d.monotony > 2.0 ? "#ef4444" : "#3b82f6";
         return [
-          `<strong>${weeks[idx] ?? ""}</strong>`,
+          `<strong>${dateLabel}</strong>`,
           `Monotony: <span style="color:${monotonyColor}">${d.monotony.toFixed(2)}</span>${d.monotony > 2.0 ? " (high!)" : ""}`,
           `Strain: ${d.strain.toFixed(1)}`,
         ].join("<br/>");
@@ -66,9 +64,8 @@ export function TrainingMonotonyChart({ data, loading }: TrainingMonotonyChartPr
       top: 0,
     },
     xAxis: {
-      type: "category" as const,
-      data: weeks,
-      axisLabel: { color: "#71717a", fontSize: 11, rotate: 45 },
+      type: "time" as const,
+      axisLabel: { color: "#71717a", fontSize: 11 },
       axisLine: { lineStyle: { color: "#3f3f46" } },
     },
     yAxis: [
@@ -95,7 +92,7 @@ export function TrainingMonotonyChart({ data, loading }: TrainingMonotonyChartPr
         name: "Monotony",
         type: "bar",
         data: data.map((d) => ({
-          value: d.monotony,
+          value: [d.week, d.monotony],
           itemStyle: {
             color: d.monotony > 2.0 ? "#ef4444" : "#3b82f6",
           },
@@ -105,7 +102,7 @@ export function TrainingMonotonyChart({ data, loading }: TrainingMonotonyChartPr
       {
         name: "Strain",
         type: "line",
-        data: data.map((d) => d.strain),
+        data: data.map((d) => [d.week, d.strain]),
         smooth: true,
         symbol: "circle",
         symbolSize: 6,

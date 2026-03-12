@@ -23,10 +23,6 @@ export function SleepChart({ data, loading }: SleepChartProps) {
     );
   }
 
-  const dates = data.map((d) =>
-    new Date(d.started_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-  );
-
   const option = {
     backgroundColor: "transparent",
     grid: { top: 30, right: 20, bottom: 40, left: 50 },
@@ -36,21 +32,28 @@ export function SleepChart({ data, loading }: SleepChartProps) {
       borderColor: "#3f3f46",
       textStyle: { color: "#e4e4e7", fontSize: 12 },
       formatter: (
-        params: Array<{ axisValue?: string; color: string; seriesName: string; value?: number }>,
+        params: { seriesName: string; value: [string, number | null]; color: string }[],
       ) => {
-        const date = params[0]?.axisValue ?? "";
+        if (!params.length) return "";
+        const firstParam = params[0];
+        if (!firstParam) return "";
+        const date = new Date(firstParam.value[0]).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        });
         let total = 0;
         const lines = params.map((p) => {
-          total += p.value ?? 0;
-          return `<span style="color:${p.color}">\u25CF</span> ${p.seriesName}: ${p.value ?? 0}m`;
+          const val = p.value[1] ?? 0;
+          total += val;
+          return `<span style="color:${p.color}">\u25CF</span> ${p.seriesName}: ${val}m`;
         });
         return `<strong>${date}</strong> (${Math.floor(total / 60)}h ${total % 60}m)<br/>${lines.join("<br/>")}`;
       },
     },
     xAxis: {
-      type: "category",
-      data: dates,
-      axisLabel: { color: "#71717a", fontSize: 11, rotate: 45 },
+      type: "time" as const,
+      axisLabel: { color: "#71717a", fontSize: 11 },
       axisLine: { lineStyle: { color: "#3f3f46" } },
     },
     yAxis: {
@@ -70,28 +73,28 @@ export function SleepChart({ data, loading }: SleepChartProps) {
         name: "Deep",
         type: "bar",
         stack: "sleep",
-        data: data.map((d) => d.deep_minutes),
+        data: data.map((d) => [d.started_at, d.deep_minutes]),
         itemStyle: { color: "#6366f1" },
       },
       {
         name: "REM",
         type: "bar",
         stack: "sleep",
-        data: data.map((d) => d.rem_minutes),
+        data: data.map((d) => [d.started_at, d.rem_minutes]),
         itemStyle: { color: "#8b5cf6" },
       },
       {
         name: "Light",
         type: "bar",
         stack: "sleep",
-        data: data.map((d) => d.light_minutes),
+        data: data.map((d) => [d.started_at, d.light_minutes]),
         itemStyle: { color: "#a78bfa" },
       },
       {
         name: "Awake",
         type: "bar",
         stack: "sleep",
-        data: data.map((d) => d.awake_minutes),
+        data: data.map((d) => [d.started_at, d.awake_minutes]),
         itemStyle: { color: "#f87171" },
       },
     ],

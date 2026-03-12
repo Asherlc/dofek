@@ -1,13 +1,14 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { CacheTTL, cachedQuery, router } from "../trpc.ts";
+import { enduranceTypeFilter } from "../lib/endurance-types.ts";
+import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export const trainingRouter = router({
   /**
    * Weekly training volume grouped by activity type.
    * Returns hours and count per activity type per ISO week.
    */
-  weeklyVolume: cachedQuery(CacheTTL.LONG)
+  weeklyVolume: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
       const rows = await ctx.db.execute(
@@ -17,7 +18,8 @@ export const trainingRouter = router({
               COUNT(*)::int AS count,
               ROUND(SUM(EXTRACT(EPOCH FROM (ended_at - started_at)) / 3600)::numeric, 2) AS hours
             FROM fitness.v_activity
-            WHERE started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+            WHERE user_id = ${ctx.userId}
+              AND started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
               AND ended_at IS NOT NULL
             GROUP BY date_trunc('week', started_at), activity_type
             ORDER BY week`,
@@ -30,7 +32,7 @@ export const trainingRouter = router({
    * Reads from pre-computed activity_hr_zones rollup view + user_profile.max_hr.
    * Each sample ≈ 1 second of recording time.
    */
-  hrZones: cachedQuery(CacheTTL.LONG)
+  hrZones: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
       const rows = await ctx.db.execute<{
@@ -53,7 +55,9 @@ export const trainingRouter = router({
             FROM fitness.activity_hr_zones hz
             JOIN fitness.activity_summary asum ON asum.activity_id = hz.activity_id
             JOIN fitness.user_profile up ON up.id = hz.user_id
-            WHERE asum.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+            WHERE up.id = ${ctx.userId}
+              AND asum.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+              AND ${enduranceTypeFilter("asum")}
               AND up.max_hr IS NOT NULL
             GROUP BY up.max_hr, date_trunc('week', asum.started_at)
             ORDER BY week`,
@@ -67,7 +71,7 @@ export const trainingRouter = router({
    * Per-activity summary with HR and power stats.
    * Reads from pre-computed activity_summary rollup view.
    */
-  activityStats: cachedQuery(CacheTTL.LONG)
+  activityStats: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
       const rows = await ctx.db.execute(
@@ -85,7 +89,8 @@ export const trainingRouter = router({
               asum.hr_sample_count AS hr_samples,
               asum.power_sample_count AS power_samples
             FROM fitness.activity_summary asum
-            WHERE asum.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+            WHERE asum.user_id = ${ctx.userId}
+              AND asum.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
             ORDER BY asum.started_at DESC`,
       );
       return rows;

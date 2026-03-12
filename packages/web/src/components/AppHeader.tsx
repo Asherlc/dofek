@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import { useAuth } from "../lib/auth-context.tsx";
 
 const navItems = [
   { to: "/dashboard", label: "Dashboard" },
@@ -10,6 +11,8 @@ const navItems = [
 ] as const;
 
 export function AppHeader({ children }: { children?: React.ReactNode }) {
+  const { user, logout } = useAuth();
+
   return (
     <header className="border-b border-zinc-800 px-3 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-2 min-w-0">
       <div className="flex items-center gap-2 sm:gap-3 min-w-0">
@@ -32,7 +35,21 @@ export function AppHeader({ children }: { children?: React.ReactNode }) {
           ))}
         </nav>
       </div>
-      {children}
+      <div className="flex items-center gap-3 shrink-0">
+        {children}
+        {user && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-zinc-400 hidden sm:inline">{user.name}</span>
+            <button
+              type="button"
+              onClick={logout}
+              className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+            >
+              Sign out
+            </button>
+          </div>
+        )}
+      </div>
     </header>
   );
 }

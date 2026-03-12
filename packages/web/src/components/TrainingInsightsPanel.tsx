@@ -1,7 +1,7 @@
 import ReactECharts from "echarts-for-react";
 import { trpc } from "../lib/trpc.ts";
 
-// HR zone colors (blue→green→yellow→orange→red)
+// HR zone colors (blue->green->yellow->orange->red)
 const ZONE_COLORS = {
   zone1: "#3b82f6", // Recovery (blue)
   zone2: "#22c55e", // Aerobic (green)
@@ -102,11 +102,7 @@ function WeeklyVolumeChart({ data }: { data: WeeklyVolumeRow[] }) {
   const weekSet = [...new Set(data.map((r) => r.week))].sort();
   const typeSet = [...new Set(data.map((r) => r.activity_type))];
 
-  const weekLabels = weekSet.map((w) =>
-    new Date(w).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-  );
-
-  // Build lookup: week → type → hours
+  // Build lookup: week -> type -> hours
   const lookup = new Map<string, Map<string, number>>();
   for (const row of data) {
     if (!lookup.has(row.week)) lookup.set(row.week, new Map());
@@ -118,7 +114,7 @@ function WeeklyVolumeChart({ data }: { data: WeeklyVolumeRow[] }) {
     name: type,
     type: "bar" as const,
     stack: "volume",
-    data: weekSet.map((w) => lookup.get(w)?.get(type) ?? 0),
+    data: weekSet.map((w) => [w, lookup.get(w)?.get(type) ?? 0]),
     itemStyle: { color: getActivityColor(type) },
     emphasis: { focus: "series" as const },
   }));
@@ -131,22 +127,30 @@ function WeeklyVolumeChart({ data }: { data: WeeklyVolumeRow[] }) {
       backgroundColor: "#18181b",
       borderColor: "#3f3f46",
       textStyle: { color: "#e4e4e7", fontSize: 12 },
-      formatter: (params: Array<{ seriesName: string; value: number; color: string }>) => {
-        const weekLabel = (params[0] as Record<string, unknown>)?.axisValue ?? "";
+      formatter: (
+        params: Array<{ seriesName: string; value: [string, number]; color: string }>,
+      ) => {
+        if (!params.length) return "";
+        const firstParam = params[0];
+        if (!firstParam) return "";
+        const dateLabel = new Date(firstParam.value[0]).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        });
         let total = 0;
         const lines = params
-          .filter((p) => p.value > 0)
+          .filter((p) => p.value[1] > 0)
           .map((p) => {
-            total += p.value;
-            return `<span style="color:${p.color}">\u25CF</span> ${p.seriesName}: ${p.value.toFixed(1)}h`;
+            total += p.value[1];
+            return `<span style="color:${p.color}">\u25CF</span> ${p.seriesName}: ${p.value[1].toFixed(1)}h`;
           });
-        return `<strong>${weekLabel}</strong> (${total.toFixed(1)}h total)<br/>${lines.join("<br/>")}`;
+        return `<strong>${dateLabel}</strong> (${total.toFixed(1)}h total)<br/>${lines.join("<br/>")}`;
       },
     },
     xAxis: {
-      type: "category",
-      data: weekLabels,
-      axisLabel: { color: "#71717a", fontSize: 11, rotate: 45 },
+      type: "time" as const,
+      axisLabel: { color: "#71717a", fontSize: 11 },
       axisLine: { lineStyle: { color: "#3f3f46" } },
     },
     yAxis: {
@@ -174,10 +178,6 @@ function WeeklyVolumeChart({ data }: { data: WeeklyVolumeRow[] }) {
 
 /** Stacked bar chart: HR zone distribution per week (percentage view) */
 function HrZoneChart({ weeks, maxHr }: { weeks: HrZoneWeek[]; maxHr: number }) {
-  const weekLabels = weeks.map((w) =>
-    new Date(w.week).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-  );
-
   // Convert seconds to percentages per week
   const zonePcts = weeks.map((w) => {
     const total = w.zone1 + w.zone2 + w.zone3 + w.zone4 + w.zone5;
@@ -197,7 +197,7 @@ function HrZoneChart({ weeks, maxHr }: { weeks: HrZoneWeek[]; maxHr: number }) {
     name: ZONE_LABELS[zone],
     type: "bar" as const,
     stack: "zones",
-    data: zonePcts.map((w) => Math.round(w[zone] * 10) / 10),
+    data: weeks.map((w, i) => [w.week, Math.round((zonePcts[i]?.[zone] ?? 0) * 10) / 10]),
     itemStyle: { color: ZONE_COLORS[zone] },
     emphasis: { focus: "series" as const },
   }));
@@ -210,26 +210,39 @@ function HrZoneChart({ weeks, maxHr }: { weeks: HrZoneWeek[]; maxHr: number }) {
       backgroundColor: "#18181b",
       borderColor: "#3f3f46",
       textStyle: { color: "#e4e4e7", fontSize: 12 },
-      formatter: (params: Array<{ seriesName: string; value: number; color: string }>) => {
-        const weekLabel = (params[0] as Record<string, unknown>)?.axisValue ?? "";
-        // Find original data to show minutes
-        const idx = weekLabels.indexOf(weekLabel as string);
-        const raw = idx >= 0 ? weeks[idx] : null;
+      formatter: (
+        params: Array<{
+          seriesName: string;
+          value: [string, number];
+          color: string;
+          dataIndex: number;
+        }>,
+      ) => {
+        if (!params.length) return "";
+        const firstParam = params[0];
+        if (!firstParam) return "";
+        const idx = firstParam.dataIndex;
+        const raw = weeks[idx];
+        if (!raw) return "";
+        const dateLabel = new Date(raw.week).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        });
         const lines = params
-          .filter((p) => p.value > 0)
+          .filter((p) => p.value[1] > 0)
           .map((p) => {
             const zoneKey = zoneKeys[params.indexOf(p)];
             const secs = raw && zoneKey ? (raw[zoneKey] ?? 0) : 0;
             const mins = Math.round(secs / 60);
-            return `<span style="color:${p.color}">\u25CF</span> ${p.seriesName}: ${p.value.toFixed(1)}% (${mins}m)`;
+            return `<span style="color:${p.color}">\u25CF</span> ${p.seriesName}: ${p.value[1].toFixed(1)}% (${mins}m)`;
           });
-        return `<strong>${weekLabel}</strong><br/>${lines.join("<br/>")}`;
+        return `<strong>${dateLabel}</strong><br/>${lines.join("<br/>")}`;
       },
     },
     xAxis: {
-      type: "category",
-      data: weekLabels,
-      axisLabel: { color: "#71717a", fontSize: 11, rotate: 45 },
+      type: "time" as const,
+      axisLabel: { color: "#71717a", fontSize: 11 },
       axisLine: { lineStyle: { color: "#3f3f46" } },
     },
     yAxis: {

@@ -1,7 +1,7 @@
 import { createReadStream, createWriteStream, mkdirSync, readdirSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { sql } from "drizzle-orm";
+import { and, eq, gte, sql } from "drizzle-orm";
 import sax from "sax";
 import yauzl from "yauzl";
 import type { Database } from "../db/index.ts";
@@ -41,8 +41,8 @@ export function parseHealthDate(dateStr: string): Date {
 
 export interface HealthRecord {
   type: string;
-  sourceName: string;
-  unit: string;
+  sourceName: string | null;
+  unit: string | null;
   value: number;
   startDate: Date;
   endDate: Date;
@@ -56,8 +56,8 @@ export function parseRecord(attrs: Record<string, string>): HealthRecord | null 
 
   return {
     type,
-    sourceName: attrs.sourceName ?? "",
-    unit: attrs.unit ?? "",
+    sourceName: attrs.sourceName ?? null,
+    unit: attrs.unit ?? null,
     value,
     startDate: parseHealthDate(attrs.startDate ?? ""),
     endDate: parseHealthDate(attrs.endDate ?? ""),
@@ -68,8 +68,8 @@ export function parseRecord(attrs: Record<string, string>): HealthRecord | null 
 // Category records have string values (e.g., MindfulSession, SexualActivity)
 export interface CategoryRecord {
   type: string;
-  sourceName: string;
-  value: string;
+  sourceName: string | null;
+  value: string | null;
   startDate: Date;
   endDate: Date;
 }
@@ -80,8 +80,8 @@ export function parseCategoryRecord(attrs: Record<string, string>): CategoryReco
 
   return {
     type,
-    sourceName: attrs.sourceName ?? "",
-    value: attrs.value ?? "",
+    sourceName: attrs.sourceName ?? null,
+    value: attrs.value ?? null,
     startDate: parseHealthDate(attrs.startDate ?? ""),
     endDate: parseHealthDate(attrs.endDate ?? ""),
   };
@@ -95,7 +95,7 @@ export type SleepStage = "inBed" | "core" | "deep" | "rem" | "awake" | "asleep";
 
 export interface SleepAnalysisRecord {
   stage: SleepStage;
-  sourceName: string;
+  sourceName: string | null;
   startDate: Date;
   endDate: Date;
   durationMinutes: number;
@@ -126,7 +126,7 @@ export function parseSleepAnalysis(attrs: Record<string, string>): SleepAnalysis
 
   return {
     stage,
-    sourceName: attrs.sourceName ?? "",
+    sourceName: attrs.sourceName ?? null,
     startDate,
     endDate,
     durationMinutes,
@@ -139,7 +139,7 @@ export function parseSleepAnalysis(attrs: Record<string, string>): SleepAnalysis
 
 export interface HealthWorkout {
   activityType: string;
-  sourceName: string;
+  sourceName: string | null;
   durationSeconds: number;
   distanceMeters?: number;
   calories?: number;
@@ -282,7 +282,7 @@ export function parseWorkout(attrs: Record<string, string>): HealthWorkout {
 
   return {
     activityType,
-    sourceName: attrs.sourceName ?? "",
+    sourceName: attrs.sourceName ?? null,
     durationSeconds,
     distanceMeters,
     calories,
@@ -360,9 +360,10 @@ export interface WorkoutStatistics {
   unit?: string;
 }
 
-export function parseWorkoutStatistics(attrs: Record<string, string>): WorkoutStatistics {
+export function parseWorkoutStatistics(attrs: Record<string, string>): WorkoutStatistics | null {
+  if (!attrs.type) return null;
   return {
-    type: attrs.type ?? "",
+    type: attrs.type,
     sum: attrs.sum ? parseFloat(attrs.sum) : undefined,
     average: attrs.average ? parseFloat(attrs.average) : undefined,
     minimum: attrs.minimum ? parseFloat(attrs.minimum) : undefined,
@@ -433,6 +434,7 @@ export function streamHealthExport(
     let sleepCount = 0;
     let categoryCount = 0;
     let pendingFlushes = 0;
+    let drainResolve: (() => void) | null = null;
 
     // Progress tracking
     const totalBytes = statSync(filePath).size;
@@ -474,6 +476,10 @@ export function streamHealthExport(
           pendingFlushes--;
           if (pendingFlushes < MAX_PENDING) {
             fileStream.resume();
+          }
+          if (pendingFlushes === 0 && drainResolve) {
+            drainResolve();
+            drainResolve = null;
           }
         })
         .catch((err) => {
@@ -553,7 +559,8 @@ export function streamHealthExport(
           currentWorkoutStats = [];
         }
       } else if (node.name === "WorkoutStatistics" && currentWorkout) {
-        currentWorkoutStats.push(parseWorkoutStatistics(attrs));
+        const stat = parseWorkoutStatistics(attrs);
+        if (stat) currentWorkoutStats.push(stat);
       } else if (node.name === "WorkoutRoute" && currentWorkout) {
         insideWorkoutRoute = true;
         currentRouteLocations = [];
@@ -609,15 +616,15 @@ export function streamHealthExport(
         finalFlushes.push(callbacks.onCategoryBatch(categoryBatch));
       }
 
-      // Wait for all pending + final flushes
-      const waitForPending = (): Promise<void> => {
-        if (pendingFlushes > 0) {
-          return new Promise<void>((res) => setTimeout(res, 50)).then(waitForPending);
-        }
-        return Promise.resolve();
+      // Wait for all pending flushes to drain, then run final flushes
+      const waitForDrain = (): Promise<void> => {
+        if (pendingFlushes === 0) return Promise.resolve();
+        return new Promise<void>((res) => {
+          drainResolve = res;
+        });
       };
 
-      waitForPending()
+      waitForDrain()
         .then(() => Promise.all(finalFlushes))
         .then(() => resolve({ recordCount, workoutCount, sleepCount, categoryCount }))
         .catch(reject);
@@ -751,8 +758,8 @@ async function upsertMetricStreamBatch(
     rows.push(row as typeof metricStream.$inferInsert);
   }
 
-  if (rows.length > 0) {
-    await db.insert(metricStream).values(rows);
+  for (let i = 0; i < rows.length; i += 1000) {
+    await db.insert(metricStream).values(rows.slice(i, i + 1000));
   }
   return rows.length;
 }
@@ -1308,14 +1315,28 @@ async function runImport(
   let recordsSynced = 0;
 
   try {
+    // Delete existing metric_stream rows for this provider/time range so re-imports
+    // don't create duplicates (metric_stream has no unique constraint).
+    await db
+      .delete(metricStream)
+      .where(and(eq(metricStream.providerId, providerId), gte(metricStream.recordedAt, since)));
+
     const counts = await streamHealthExport(xmlPath, since, {
       onProgress,
       onRecordBatch: async (records) => {
-        const metricRecords = records.filter((r) => METRIC_STREAM_TYPES[r.type]);
-        const bodyRecords = records.filter((r) => BODY_MEASUREMENT_TYPES.has(r.type));
-        const dailyRecords = records.filter((r) => DAILY_METRIC_TYPES.has(r.type));
-        const nutritionRecords = records.filter((r) => NUTRITION_TYPES[r.type]);
-        const unrouted = records.filter((r) => !ALL_ROUTED_TYPES.has(r.type));
+        // Single-pass classification instead of 5 separate .filter() calls
+        const metricRecords: HealthRecord[] = [];
+        const bodyRecords: HealthRecord[] = [];
+        const dailyRecords: HealthRecord[] = [];
+        const nutritionRecords: HealthRecord[] = [];
+        const unrouted: HealthRecord[] = [];
+        for (const r of records) {
+          if (METRIC_STREAM_TYPES[r.type]) metricRecords.push(r);
+          else if (BODY_MEASUREMENT_TYPES.has(r.type)) bodyRecords.push(r);
+          else if (DAILY_METRIC_TYPES.has(r.type)) dailyRecords.push(r);
+          else if (NUTRITION_TYPES[r.type]) nutritionRecords.push(r);
+          else if (!ALL_ROUTED_TYPES.has(r.type)) unrouted.push(r);
+        }
 
         // Run all table inserts in parallel — they target independent tables
         const results = await Promise.all([
@@ -1755,7 +1776,12 @@ export function parseFhirObservation(obs: FhirObservation, sourceName: string): 
         ? (obs.status as LabResultStatus)
         : undefined,
     sourceName,
-    recordedAt: new Date(obs.effectiveDateTime ?? obs.issued ?? ""),
+    recordedAt: (() => {
+      const dateStr = obs.effectiveDateTime ?? obs.issued;
+      if (!dateStr)
+        throw new Error(`FHIR Observation ${obs.id} missing both effectiveDateTime and issued`);
+      return new Date(dateStr);
+    })(),
     issuedAt: obs.issued ? new Date(obs.issued) : undefined,
     raw: obs as unknown as Record<string, unknown>,
   };
