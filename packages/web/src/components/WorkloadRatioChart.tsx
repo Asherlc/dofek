@@ -61,7 +61,7 @@ export function WorkloadRatioChart({ data, loading }: WorkloadRatioChartProps) {
     },
     axisPointer: { link: [{ xAxisIndex: "all" }] },
     legend: {
-      data: ["ACWR", "Acute Load", "Chronic Load"],
+      data: ["Workload Ratio", "Acute Load", "Chronic Load"],
       textStyle: { color: "#a1a1aa", fontSize: 11 },
       top: 0,
     },
@@ -88,7 +88,7 @@ export function WorkloadRatioChart({ data, loading }: WorkloadRatioChartProps) {
     yAxis: [
       {
         type: "value" as const,
-        name: "ACWR",
+        name: "Workload Ratio",
         gridIndex: 0,
         min: 0,
         splitLine: { lineStyle: { color: "#27272a" } },
@@ -107,7 +107,7 @@ export function WorkloadRatioChart({ data, loading }: WorkloadRatioChartProps) {
       },
     ],
     series: [
-      // Risk zones for ACWR (top grid)
+      // Risk zones for Workload Ratio (top grid)
       // Green zone: 0.8-1.3
       {
         name: "_zoneGreen",
@@ -186,9 +186,9 @@ export function WorkloadRatioChart({ data, loading }: WorkloadRatioChartProps) {
         z: 0,
         silent: true,
       },
-      // ACWR ratio line (top grid)
+      // Workload Ratio line (top grid)
       {
-        name: "ACWR",
+        name: "Workload Ratio",
         type: "line",
         xAxisIndex: 0,
         yAxisIndex: 0,
