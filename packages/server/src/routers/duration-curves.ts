@@ -1,23 +1,9 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { DURATION_LABELS } from "../lib/duration-labels.ts";
 import { enduranceTypeFilter } from "../lib/endurance-types.ts";
+import { linearRegression } from "../lib/math.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
-
-/** Human-readable labels for each duration. */
-const DURATION_LABELS: Record<number, string> = {
-  5: "5s",
-  15: "15s",
-  30: "30s",
-  60: "1min",
-  120: "2min",
-  300: "5min",
-  600: "10min",
-  1200: "20min",
-  1800: "30min",
-  3600: "60min",
-  5400: "90min",
-  7200: "120min",
-};
 
 interface HrCurveRow {
   duration_seconds: number;
@@ -29,31 +15,6 @@ interface PaceCurveRow {
   duration_seconds: number;
   best_pace: number;
   activity_date: string;
-}
-
-/** Simple linear regression: y = slope * x + intercept */
-function linearRegression(
-  xs: number[],
-  ys: number[],
-): { slope: number; intercept: number; r2: number } {
-  const n = xs.length;
-  const sumX = xs.reduce((a, b) => a + b, 0);
-  const sumY = ys.reduce((a, b) => a + b, 0);
-  const sumXY = xs.reduce((a, x, i) => a + x * (ys[i] ?? 0), 0);
-  const sumX2 = xs.reduce((a, x) => a + x * x, 0);
-
-  const denom = n * sumX2 - sumX * sumX;
-  if (denom === 0) return { slope: 0, intercept: 0, r2: 0 };
-
-  const slope = (n * sumXY - sumX * sumY) / denom;
-  const intercept = (sumY - slope * sumX) / n;
-
-  const yMean = sumY / n;
-  const ssTotal = ys.reduce((a, y) => a + (y - yMean) ** 2, 0);
-  const ssResidual = ys.reduce((a, y, i) => a + (y - (slope * (xs[i] ?? 0) + intercept)) ** 2, 0);
-  const r2 = ssTotal > 0 ? 1 - ssResidual / ssTotal : 0;
-
-  return { slope, intercept, r2 };
 }
 
 export interface CriticalHeartRateModel {
@@ -186,7 +147,7 @@ export const durationCurvesRouter = router({
             AND ms.speed > 0
             AND a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
             AND ms.recorded_at > NOW() - (${input.days} + 1)::int * INTERVAL '1 day'
-            AND a.activity_type IN ('running', 'swimming')
+            AND ${enduranceTypeFilter("a")}
         ),
         durations AS (
           SELECT unnest(ARRAY[5,15,30,60,120,300,600,1200,1800,3600,5400,7200]) AS duration_s
