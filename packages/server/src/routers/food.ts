@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { analyzeNutrition } from "../lib/ai-nutrition.ts";
 import { CacheTTL, cachedQuery, publicProcedure, router } from "../trpc.ts";
 
 const mealValues = ["breakfast", "lunch", "dinner", "snack", "other"] as const;
@@ -319,6 +320,13 @@ export const foodRouter = router({
     .mutation(async ({ ctx, input }) => {
       await ctx.db.execute(sql`DELETE FROM fitness.food_entry WHERE id = ${input.id}`);
       return { success: true };
+    }),
+
+  /** Analyze a food description with AI and return estimated nutrition data */
+  analyzeWithAi: publicProcedure
+    .input(z.object({ description: z.string().min(1).max(500) }))
+    .mutation(async ({ input }) => {
+      return analyzeNutrition(input.description);
     }),
 
   /** Quick-add a food entry with minimal details */

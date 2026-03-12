@@ -10,11 +10,15 @@
     "dev": "../../scripts/with-env.sh tsx src/index.ts"
   },
   "dependencies": {
+    "@ai-sdk/google": "^3.0.43",
+    "@ai-sdk/groq": "^3.0.29",
+    "@ai-sdk/mistral": "^3.0.24",
     "@stdlib/stats-pcorrtest": "^0.2.3",
     "@stdlib/stats-ranks": "^0.2.3",
     "@stdlib/stats-ttest": "^0.2.3",
     "@stdlib/stats-wilcoxon": "^0.2.3",
     "@trpc/server": "^11.0.0",
+    "ai": "^6.0.116",
     "compression": "^1.8.1",
     "dofek": "workspace:*",
     "express": "^5.0.0",
