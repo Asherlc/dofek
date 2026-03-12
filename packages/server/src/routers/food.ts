@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { analyzeNutrition } from "../lib/ai-nutrition.ts";
-import { CacheTTL, cachedQuery, publicProcedure, router } from "../trpc.ts";
+import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
 const mealValues = ["breakfast", "lunch", "dinner", "snack", "other"] as const;
 
@@ -98,7 +98,7 @@ const DOFEK_PROVIDER_ID = "dofek";
 
 /** Ensure the 'dofek' provider row exists (for self-created entries) */
 async function ensureDofekProvider(
-  db: Parameters<Parameters<typeof publicProcedure.mutation>[0]>[0]["ctx"]["db"],
+  db: Parameters<Parameters<typeof protectedProcedure.mutation>[0]>[0]["ctx"]["db"],
 ) {
   await db.execute(
     sql`INSERT INTO fitness.provider (id, name)
@@ -156,7 +156,7 @@ const fieldColumnMap: Record<string, string> = {
 
 export const foodRouter = router({
   /** List food entries for a date range, optionally filtered by meal */
-  list: cachedQuery(CacheTTL.SHORT)
+  list: cachedProtectedQuery(CacheTTL.SHORT)
     .input(
       z.object({
         startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -168,7 +168,8 @@ export const foodRouter = router({
       if (input.meal) {
         const rows = await ctx.db.execute(
           sql`SELECT * FROM fitness.food_entry
-              WHERE date >= ${input.startDate}::date
+              WHERE user_id = ${ctx.userId}
+                AND date >= ${input.startDate}::date
                 AND date <= ${input.endDate}::date
                 AND meal = ${input.meal}
               ORDER BY date ASC, meal ASC, food_name ASC`,
@@ -177,7 +178,8 @@ export const foodRouter = router({
       }
       const rows = await ctx.db.execute(
         sql`SELECT * FROM fitness.food_entry
-            WHERE date >= ${input.startDate}::date
+            WHERE user_id = ${ctx.userId}
+              AND date >= ${input.startDate}::date
               AND date <= ${input.endDate}::date
             ORDER BY date ASC, meal ASC, food_name ASC`,
       );
@@ -185,19 +187,20 @@ export const foodRouter = router({
     }),
 
   /** Get all food entries for a specific date, ordered by meal */
-  byDate: cachedQuery(CacheTTL.SHORT)
+  byDate: cachedProtectedQuery(CacheTTL.SHORT)
     .input(z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }))
     .query(async ({ ctx, input }) => {
       const rows = await ctx.db.execute(
         sql`SELECT * FROM fitness.food_entry
-            WHERE date = ${input.date}::date
+            WHERE user_id = ${ctx.userId}
+              AND date = ${input.date}::date
             ORDER BY meal ASC, food_name ASC`,
       );
       return rows;
     }),
 
   /** Get daily calorie/macro totals aggregated by day */
-  dailyTotals: cachedQuery(CacheTTL.SHORT)
+  dailyTotals: cachedProtectedQuery(CacheTTL.SHORT)
     .input(z.object({ days: z.number().default(30) }))
     .query(async ({ ctx, input }) => {
       const rows = await ctx.db.execute(
@@ -209,7 +212,8 @@ export const foodRouter = router({
               SUM(fat_g)::numeric(10,1) as fat_g,
               SUM(fiber_g)::numeric(10,1) as fiber_g
             FROM fitness.food_entry
-            WHERE date > CURRENT_DATE - ${input.days}::int
+            WHERE user_id = ${ctx.userId}
+              AND date > CURRENT_DATE - ${input.days}::int
             GROUP BY date
             ORDER BY date ASC`,
       );
@@ -217,7 +221,7 @@ export const foodRouter = router({
     }),
 
   /** Search food entries by name for quick re-logging */
-  search: cachedQuery(CacheTTL.MEDIUM)
+  search: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(
       z.object({
         query: z.string().min(1),
@@ -231,7 +235,8 @@ export const foodRouter = router({
               food_name, food_description, category, calories,
               protein_g, carbs_g, fat_g, fiber_g, number_of_units
             FROM fitness.food_entry
-            WHERE food_name ILIKE ${searchPattern}
+            WHERE user_id = ${ctx.userId}
+              AND food_name ILIKE ${searchPattern}
             ORDER BY food_name ASC
             LIMIT ${input.limit}`,
       );
@@ -239,12 +244,12 @@ export const foodRouter = router({
     }),
 
   /** Create a new food entry */
-  create: publicProcedure.input(createFoodEntrySchema).mutation(async ({ ctx, input }) => {
+  create: protectedProcedure.input(createFoodEntrySchema).mutation(async ({ ctx, input }) => {
     await ensureDofekProvider(ctx.db);
 
     const rows = await ctx.db.execute(
       sql`INSERT INTO fitness.food_entry (
-            provider_id, date, meal, food_name, food_description, category, number_of_units,
+            user_id, provider_id, date, meal, food_name, food_description, category, number_of_units,
             calories, protein_g, carbs_g, fat_g,
             saturated_fat_g, polyunsaturated_fat_g, monounsaturated_fat_g, trans_fat_g,
             cholesterol_mg, sodium_mg, potassium_mg, fiber_g, sugar_g,
@@ -255,7 +260,7 @@ export const foodRouter = router({
             copper_mg, manganese_mg, chromium_mcg, iodine_mcg,
             omega3_mg, omega6_mg
           ) VALUES (
-            ${DOFEK_PROVIDER_ID}, ${input.date}::date,
+            ${ctx.userId}, ${DOFEK_PROVIDER_ID}, ${input.date}::date,
             ${input.meal ?? null}, ${input.foodName}, ${input.foodDescription ?? null},
             ${input.category ?? null}, ${input.numberOfUnits ?? null},
             ${input.calories ?? null}, ${input.proteinG ?? null},
@@ -284,7 +289,7 @@ export const foodRouter = router({
   }),
 
   /** Update an existing food entry by id */
-  update: publicProcedure.input(updateFoodEntrySchema).mutation(async ({ ctx, input }) => {
+  update: protectedProcedure.input(updateFoodEntrySchema).mutation(async ({ ctx, input }) => {
     const { id, ...fields } = input;
     const setClauses: ReturnType<typeof sql>[] = [];
 
@@ -309,28 +314,30 @@ export const foodRouter = router({
 
     const setExpression = sql.join(setClauses, sql`, `);
     const rows = await ctx.db.execute(
-      sql`UPDATE fitness.food_entry SET ${setExpression} WHERE id = ${id} RETURNING *`,
+      sql`UPDATE fitness.food_entry SET ${setExpression} WHERE user_id = ${ctx.userId} AND id = ${id} RETURNING *`,
     );
     return rows[0] ?? null;
   }),
 
   /** Delete a food entry by id */
-  delete: publicProcedure
+  delete: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
-      await ctx.db.execute(sql`DELETE FROM fitness.food_entry WHERE id = ${input.id}`);
+      await ctx.db.execute(
+        sql`DELETE FROM fitness.food_entry WHERE user_id = ${ctx.userId} AND id = ${input.id}`,
+      );
       return { success: true };
     }),
 
   /** Analyze a food description with AI and return estimated nutrition data */
-  analyzeWithAi: publicProcedure
+  analyzeWithAi: protectedProcedure
     .input(z.object({ description: z.string().min(1).max(500) }))
     .mutation(async ({ input }) => {
       return analyzeNutrition(input.description);
     }),
 
   /** Quick-add a food entry with minimal details */
-  quickAdd: publicProcedure
+  quickAdd: protectedProcedure
     .input(
       z.object({
         date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -347,10 +354,10 @@ export const foodRouter = router({
 
       const rows = await ctx.db.execute(
         sql`INSERT INTO fitness.food_entry (
-              provider_id, date, meal, food_name,
+              user_id, provider_id, date, meal, food_name,
               calories, protein_g, carbs_g, fat_g
             ) VALUES (
-              ${DOFEK_PROVIDER_ID}, ${input.date}::date,
+              ${ctx.userId}, ${DOFEK_PROVIDER_ID}, ${input.date}::date,
               ${input.meal}, ${input.foodName},
               ${input.calories}, ${input.proteinG ?? null},
               ${input.carbsG ?? null}, ${input.fatG ?? null}

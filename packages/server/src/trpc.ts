@@ -1,4 +1,4 @@
-import { initTRPC } from "@trpc/server";
+import { initTRPC, TRPCError } from "@trpc/server";
 import { middlewareMarker } from "@trpc/server/unstable-core-do-not-import";
 import type { Database } from "dofek/db";
 import { queryCache } from "./lib/cache.ts";
@@ -12,12 +12,28 @@ import {
 
 export interface Context {
   db: Database;
+  userId: string | null;
+}
+
+/** Context after auth middleware — userId is guaranteed non-null. */
+export interface AuthenticatedContext extends Context {
+  userId: string;
 }
 
 const t = initTRPC.context<Context>().create();
 
 export const router = t.router;
 export const publicProcedure = t.procedure;
+
+// Auth middleware — rejects unauthenticated requests
+const isAuthenticated = t.middleware(({ ctx, next }) => {
+  if (!ctx.userId) {
+    throw new TRPCError({ code: "UNAUTHORIZED", message: "Not authenticated" });
+  }
+  return next({ ctx: { ...ctx, userId: ctx.userId } as AuthenticatedContext });
+});
+
+export const protectedProcedure = t.procedure.use(isAuthenticated);
 
 export const CacheTTL = {
   SHORT: 2 * 60 * 1000, // 2 min
@@ -26,10 +42,11 @@ export const CacheTTL = {
 } as const;
 
 function cached(ttlMs: number) {
-  return t.middleware(async ({ path, type, getRawInput, next }) => {
+  return t.middleware(async ({ ctx, path, type, getRawInput, next }) => {
     const start = performance.now();
     const rawInput = await getRawInput();
-    const key = `${path}:${JSON.stringify(rawInput)}`;
+    // Include userId in cache key to prevent cross-user data leaks
+    const key = `${ctx.userId ?? "anon"}:${path}:${JSON.stringify(rawInput)}`;
 
     // Cache lookup
     const cacheLookupStart = performance.now();
@@ -66,4 +83,8 @@ function cached(ttlMs: number) {
   });
 }
 
+/** Cached public query (no auth required). */
 export const cachedQuery = (ttl: number) => publicProcedure.use(cached(ttl));
+
+/** Cached protected query (requires auth, cache scoped by userId). */
+export const cachedProtectedQuery = (ttl: number) => protectedProcedure.use(cached(ttl));

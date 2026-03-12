@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { z } from "zod";
-import { publicProcedure, router } from "../trpc.ts";
+import { protectedProcedure, router } from "../trpc.ts";
 
 // Config file lives at project root (alongside supplements.config.ts)
 const CONFIG_PATH = resolve(import.meta.dirname, "../../../../supplements.json");
@@ -74,11 +74,11 @@ async function writeConfig(supplements: Supplement[]): Promise<void> {
 }
 
 export const supplementsRouter = router({
-  list: publicProcedure.query(async () => {
+  list: protectedProcedure.query(async () => {
     return readConfig();
   }),
 
-  save: publicProcedure
+  save: protectedProcedure
     .input(z.object({ supplements: z.array(supplementSchema) }))
     .mutation(async ({ input }) => {
       await writeConfig(input.supplements);
