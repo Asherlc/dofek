@@ -481,6 +481,16 @@ export const healthEvent = fitness.table(
 );
 
 // ============================================================
+// User settings (key-value store)
+// ============================================================
+
+export const userSettings = fitness.table("user_settings", {
+  key: text("key").primaryKey(),
+  value: jsonb("value").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ============================================================
 // Sync log — tracks reliability per provider per data type
 // ============================================================
 
