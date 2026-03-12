@@ -7,7 +7,6 @@ const MATERIALIZED_VIEWS = [
   "fitness.v_body_measurement",
   "fitness.v_daily_metrics",
   "fitness.v_metric_stream",
-  "fitness.max_metrics",
 ] as const;
 
 /**
