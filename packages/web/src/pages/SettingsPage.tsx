@@ -5,7 +5,7 @@ import { SupplementStackPanel } from "../components/SupplementStackPanel.tsx";
 export function SettingsPage() {
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
-      <AppHeader activePage="settings" />
+      <AppHeader />
       <main className="mx-auto max-w-7xl p-6 space-y-8">
         <section>
           <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-1">

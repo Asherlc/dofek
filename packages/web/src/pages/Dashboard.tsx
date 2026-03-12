@@ -152,7 +152,7 @@ export function Dashboard() {
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
-      <AppHeader activePage="dashboard">
+      <AppHeader>
         <div className="flex items-center gap-4">
           <p className="text-xs text-zinc-500">
             {trendData?.latest_date

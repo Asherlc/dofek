@@ -67,15 +67,19 @@ export function InsightsPage() {
     groups.set(cat, arr);
   }
 
+  // Sort insights by strength of correlation (|effectSize| desc, pValue asc)
+  const sortByStrength = (a: Insight, b: Insight) =>
+    Math.abs(b.effectSize) - Math.abs(a.effectSize) || a.pValue - b.pValue;
+
   // Order: defined categories first, then "other"
   const orderedGroups = [
     ...CATEGORIES.filter((c) => groups.has(c.key)).map((c) => ({
       key: c.key,
       label: c.label,
-      insights: groups.get(c.key)!,
+      insights: groups.get(c.key)!.sort(sortByStrength),
     })),
     ...(groups.has("other")
-      ? [{ key: "other", label: "Other", insights: groups.get("other")! }]
+      ? [{ key: "other", label: "Other", insights: groups.get("other")!.sort(sortByStrength) }]
       : []),
   ];
 
@@ -97,7 +101,7 @@ export function InsightsPage() {
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
-      <AppHeader activePage="insights">
+      <AppHeader>
         <TimeRangeSelector days={days} onChange={setDays} />
       </AppHeader>
       <main className="mx-auto max-w-7xl p-6 space-y-6">

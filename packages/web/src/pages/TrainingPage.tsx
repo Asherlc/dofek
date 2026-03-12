@@ -90,7 +90,7 @@ export function TrainingPage() {
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
-      <AppHeader activePage="training">
+      <AppHeader>
         <TimeRangeSelector days={days} onChange={setDays} />
       </AppHeader>
       <main className="mx-auto max-w-7xl p-6 space-y-8">

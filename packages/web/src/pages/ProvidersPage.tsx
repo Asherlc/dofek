@@ -68,7 +68,7 @@ export function ProvidersPage() {
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
-      <AppHeader activePage="providers" />
+      <AppHeader />
       <main className="mx-auto max-w-7xl p-6 space-y-8">
         {/* Sync Controls */}
         <section>
@@ -390,12 +390,20 @@ function ProviderCard({
         <span className="text-xs text-zinc-500">{healthLabel[health]}</span>
       </div>
 
-      {/* Total Records */}
+      {/* Total Records + Activities */}
       <div className="mb-3">
         <div className="text-2xl font-bold text-zinc-100 tabular-nums">
           {totalRecords.toLocaleString()}
         </div>
         <div className="text-xs text-zinc-500">total records</div>
+        {stats && stats.activities > 0 && (
+          <div className="mt-1">
+            <span className="text-lg font-semibold text-emerald-400 tabular-nums">
+              {stats.activities.toLocaleString()}
+            </span>
+            <span className="text-xs text-zinc-400 ml-1.5">activities</span>
+          </div>
+        )}
       </div>
 
       {/* Data breakdown */}
