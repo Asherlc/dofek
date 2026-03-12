@@ -361,6 +361,10 @@ export const foodEntry = fitness.table(
     providerFoodId: text("provider_food_id"), // provider's food DB ID
     providerServingId: text("provider_serving_id"), // provider's serving ID
     numberOfUnits: real("number_of_units"),
+    loggedAt: timestamp("logged_at", { withTimezone: true }),
+    barcode: text("barcode"),
+    servingUnit: text("serving_unit"),
+    servingWeightGrams: real("serving_weight_grams"),
     // Macronutrients
     calories: integer("calories"),
     proteinG: real("protein_g"),
