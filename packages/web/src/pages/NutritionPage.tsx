@@ -5,8 +5,6 @@ import { FoodEntryRow } from "../components/FoodEntryRow.tsx";
 import { MacroBar } from "../components/MacroBar.tsx";
 import { trpc } from "../lib/trpc.ts";
 
-const CALORIE_GOAL = 2000;
-
 const CALORIES_PER_GRAM = { protein: 4, carbs: 4, fat: 9 } as const;
 
 const MEAL_ORDER: MealType[] = ["breakfast", "lunch", "dinner", "snack", "other"];
@@ -60,6 +58,9 @@ export function NutritionPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMealType, setModalMealType] = useState<MealType>("breakfast");
   const [collapsedMeals, setCollapsedMeals] = useState<Set<string>>(new Set());
+
+  const calorieGoalQuery = trpc.settings.get.useQuery({ key: "calorieGoal" });
+  const calorieGoal = (calorieGoalQuery.data?.value as number) ?? 2000;
 
   const dateString = formatDateForQuery(selectedDate);
 
@@ -156,8 +157,8 @@ export function NutritionPage() {
     });
   }
 
-  const calorieProgress = Math.min((dailyTotals.totalCalories / CALORIE_GOAL) * 100, 100);
-  const calorieColor = dailyTotals.totalCalories > CALORIE_GOAL ? "bg-red-500" : "bg-emerald-500";
+  const calorieProgress = Math.min((dailyTotals.totalCalories / calorieGoal) * 100, 100);
+  const calorieColor = dailyTotals.totalCalories > calorieGoal ? "bg-red-500" : "bg-emerald-500";
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 overflow-x-hidden">
@@ -229,7 +230,7 @@ export function NutritionPage() {
                 <span className="text-xl font-semibold text-zinc-100">
                   {dailyTotals.totalCalories}
                 </span>
-                <span className="ml-1">/ {CALORIE_GOAL} kcal</span>
+                <span className="ml-1">/ {calorieGoal} kcal</span>
               </span>
             </div>
             <div className="h-3 rounded-full bg-zinc-800 overflow-hidden">
@@ -239,9 +240,9 @@ export function NutritionPage() {
               />
             </div>
             <div className="text-xs text-zinc-500 tabular-nums">
-              {CALORIE_GOAL - dailyTotals.totalCalories > 0
-                ? `${CALORIE_GOAL - dailyTotals.totalCalories} kcal remaining`
-                : `${dailyTotals.totalCalories - CALORIE_GOAL} kcal over goal`}
+              {calorieGoal - dailyTotals.totalCalories > 0
+                ? `${calorieGoal - dailyTotals.totalCalories} kcal remaining`
+                : `${dailyTotals.totalCalories - calorieGoal} kcal over goal`}
             </div>
           </div>
 

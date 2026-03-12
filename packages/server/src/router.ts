@@ -12,6 +12,7 @@ import { nutritionRouter } from "./routers/nutrition.ts";
 import { pmcRouter } from "./routers/pmc.ts";
 import { powerRouter } from "./routers/power.ts";
 import { recoveryRouter } from "./routers/recovery.ts";
+import { settingsRouter } from "./routers/settings.ts";
 import { sleepRouter } from "./routers/sleep.ts";
 import { strengthRouter } from "./routers/strength.ts";
 import { supplementsRouter } from "./routers/supplements.ts";
@@ -41,6 +42,7 @@ export const appRouter = router({
   cyclingAdvanced: cyclingAdvancedRouter,
   hiking: hikingRouter,
   recovery: recoveryRouter,
+  settings: settingsRouter,
 });
 
 export type AppRouter = typeof appRouter;
