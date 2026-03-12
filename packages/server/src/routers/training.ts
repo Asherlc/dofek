@@ -27,13 +27,12 @@ export const trainingRouter = router({
 
   /**
    * HR zone distribution per week.
-   * Uses max observed HR to define 5 zones (60/70/80/90% thresholds).
-   * Each record in metric_stream ≈ 1 second of recording time.
+   * Reads from pre-computed activity_hr_zones rollup view + user_profile.max_hr.
+   * Each sample ≈ 1 second of recording time.
    */
   hrZones: cachedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
-      // Single query: CTE computes max HR, then zone distribution in one scan
       const rows = await ctx.db.execute<{
         max_hr: number | null;
         week: string;
@@ -43,25 +42,20 @@ export const trainingRouter = router({
         zone4: number;
         zone5: number;
       }>(
-        sql`WITH max_hr_cte AS (
-              SELECT MAX(heart_rate) AS max_hr
-              FROM fitness.metric_stream
-              WHERE heart_rate IS NOT NULL AND activity_id IS NOT NULL
-            )
-            SELECT
-              mh.max_hr,
-              date_trunc('week', ms.recorded_at)::date AS week,
-              COUNT(*) FILTER (WHERE ms.heart_rate < mh.max_hr * 0.6)::int AS zone1,
-              COUNT(*) FILTER (WHERE ms.heart_rate >= mh.max_hr * 0.6 AND ms.heart_rate < mh.max_hr * 0.7)::int AS zone2,
-              COUNT(*) FILTER (WHERE ms.heart_rate >= mh.max_hr * 0.7 AND ms.heart_rate < mh.max_hr * 0.8)::int AS zone3,
-              COUNT(*) FILTER (WHERE ms.heart_rate >= mh.max_hr * 0.8 AND ms.heart_rate < mh.max_hr * 0.9)::int AS zone4,
-              COUNT(*) FILTER (WHERE ms.heart_rate >= mh.max_hr * 0.9)::int AS zone5
-            FROM fitness.metric_stream ms
-            CROSS JOIN max_hr_cte mh
-            WHERE ms.heart_rate IS NOT NULL
-              AND ms.activity_id IS NOT NULL
-              AND ms.recorded_at > NOW() - ${input.days}::int * INTERVAL '1 day'
-            GROUP BY mh.max_hr, date_trunc('week', ms.recorded_at)
+        sql`SELECT
+              up.max_hr,
+              date_trunc('week', asum.started_at)::date AS week,
+              SUM(hz.zone1_count)::int AS zone1,
+              SUM(hz.zone2_count)::int AS zone2,
+              SUM(hz.zone3_count)::int AS zone3,
+              SUM(hz.zone4_count)::int AS zone4,
+              SUM(hz.zone5_count)::int AS zone5
+            FROM fitness.activity_hr_zones hz
+            JOIN fitness.activity_summary asum ON asum.activity_id = hz.activity_id
+            JOIN fitness.user_profile up ON up.id = hz.user_id
+            WHERE asum.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+              AND up.max_hr IS NOT NULL
+            GROUP BY up.max_hr, date_trunc('week', asum.started_at)
             ORDER BY week`,
       );
       const maxHr = (rows[0]?.max_hr as number | null) ?? null;
@@ -71,30 +65,28 @@ export const trainingRouter = router({
 
   /**
    * Per-activity summary with HR and power stats.
-   * Useful for activity-level analysis and eFTP estimation.
+   * Reads from pre-computed activity_summary rollup view.
    */
   activityStats: cachedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
       const rows = await ctx.db.execute(
         sql`SELECT
-              a.id,
-              a.activity_type,
-              a.name,
-              a.started_at,
-              a.ended_at,
-              ROUND(AVG(ms.heart_rate)::numeric, 1) AS avg_hr,
-              MAX(ms.heart_rate) AS max_hr,
-              ROUND(AVG(ms.power) FILTER (WHERE ms.power > 0)::numeric, 1) AS avg_power,
-              MAX(ms.power) FILTER (WHERE ms.power > 0) AS max_power,
-              ROUND(AVG(ms.cadence) FILTER (WHERE ms.cadence > 0)::numeric, 1) AS avg_cadence,
-              COUNT(ms.heart_rate)::int AS hr_samples,
-              COUNT(ms.power) FILTER (WHERE ms.power > 0)::int AS power_samples
-            FROM fitness.v_activity a
-            LEFT JOIN fitness.metric_stream ms ON ms.activity_id = a.id
-            WHERE a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
-            GROUP BY a.id, a.activity_type, a.name, a.started_at, a.ended_at
-            ORDER BY a.started_at DESC`,
+              asum.activity_id AS id,
+              asum.activity_type,
+              asum.name,
+              asum.started_at,
+              asum.ended_at,
+              ROUND(asum.avg_hr::numeric, 1) AS avg_hr,
+              asum.max_hr,
+              ROUND(asum.avg_power::numeric, 1) AS avg_power,
+              asum.max_power,
+              ROUND(asum.avg_cadence::numeric, 1) AS avg_cadence,
+              asum.hr_sample_count AS hr_samples,
+              asum.power_sample_count AS power_samples
+            FROM fitness.activity_summary asum
+            WHERE asum.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+            ORDER BY asum.started_at DESC`,
       );
       return rows;
     }),

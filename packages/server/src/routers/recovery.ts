@@ -88,17 +88,19 @@ export const recoveryRouter = router({
           rolling_mean: number | null;
           rolling_cv: number | null;
         }[]
-      ).map((r) => ({
-        date: r.date,
-        hrv: r.hrv != null ? Math.round(Number(r.hrv) * 10) / 10 : null,
+      ).map((row) => ({
+        date: row.date,
+        hrv: row.hrv != null ? Math.round(Number(row.hrv) * 10) / 10 : null,
         rollingCoefficientOfVariation:
-          r.rolling_cv != null ? Math.round(Number(r.rolling_cv) * 100) / 100 : null,
-        rollingMean: r.rolling_mean != null ? Math.round(Number(r.rolling_mean) * 10) / 10 : null,
+          row.rolling_cv != null ? Math.round(Number(row.rolling_cv) * 100) / 100 : null,
+        rollingMean:
+          row.rolling_mean != null ? Math.round(Number(row.rolling_mean) * 10) / 10 : null,
       }));
     }),
 
   /**
    * Acute:Chronic Workload Ratio.
+   * Reads from activity_summary rollup for per-activity load.
    * Daily load = sum of (duration_min * avg_hr / max_hr) per activity.
    * Acute = 7-day sum, Chronic = 28-day average of daily load.
    */
@@ -116,16 +118,14 @@ export const recoveryRouter = router({
             ),
             per_activity AS (
               SELECT
-                a.started_at::date AS date,
-                EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 60.0
-                  * AVG(ms.heart_rate)
-                  / NULLIF(MAX(ms.heart_rate), 0) AS load
-              FROM fitness.v_activity a
-              JOIN fitness.metric_stream ms ON ms.activity_id = a.id
-              WHERE a.started_at::date >= CURRENT_DATE - ${queryDays}::int
-                AND a.ended_at IS NOT NULL
-                AND ms.heart_rate IS NOT NULL
-              GROUP BY a.id, a.started_at, a.ended_at
+                asum.started_at::date AS date,
+                EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0
+                  * asum.avg_hr
+                  / NULLIF(asum.max_hr, 0) AS load
+              FROM fitness.activity_summary asum
+              WHERE asum.started_at::date >= CURRENT_DATE - ${queryDays}::int
+                AND asum.ended_at IS NOT NULL
+                AND asum.avg_hr IS NOT NULL
             ),
             activity_load AS (
               SELECT date, SUM(load) AS daily_load
@@ -171,13 +171,13 @@ export const recoveryRouter = router({
           chronic_load: number;
           workload_ratio: number | null;
         }[]
-      ).map((r) => ({
-        date: r.date,
-        dailyLoad: Math.round(Number(r.daily_load) * 10) / 10,
-        acuteLoad: Math.round(Number(r.acute_load) * 10) / 10,
-        chronicLoad: Math.round(Number(r.chronic_load) * 10) / 10,
+      ).map((row) => ({
+        date: row.date,
+        dailyLoad: Math.round(Number(row.daily_load) * 10) / 10,
+        acuteLoad: Math.round(Number(row.acute_load) * 10) / 10,
+        chronicLoad: Math.round(Number(row.chronic_load) * 10) / 10,
         workloadRatio:
-          r.workload_ratio != null ? Math.round(Number(r.workload_ratio) * 100) / 100 : null,
+          row.workload_ratio != null ? Math.round(Number(row.workload_ratio) * 100) / 100 : null,
       }));
     }),
 
@@ -231,17 +231,17 @@ export const recoveryRouter = router({
           efficiency: number;
           rolling_avg_duration: number | null;
         }[]
-      ).map((r) => ({
-        date: r.date,
-        durationMinutes: Number(r.duration_minutes),
-        deepPct: Math.round(Number(r.deep_pct) * 10) / 10,
-        remPct: Math.round(Number(r.rem_pct) * 10) / 10,
-        lightPct: Math.round(Number(r.light_pct) * 10) / 10,
-        awakePct: Math.round(Number(r.awake_pct) * 10) / 10,
-        efficiency: Math.round(Number(r.efficiency) * 10) / 10,
+      ).map((row) => ({
+        date: row.date,
+        durationMinutes: Number(row.duration_minutes),
+        deepPct: Math.round(Number(row.deep_pct) * 10) / 10,
+        remPct: Math.round(Number(row.rem_pct) * 10) / 10,
+        lightPct: Math.round(Number(row.light_pct) * 10) / 10,
+        awakePct: Math.round(Number(row.awake_pct) * 10) / 10,
+        efficiency: Math.round(Number(row.efficiency) * 10) / 10,
         rollingAvgDuration:
-          r.rolling_avg_duration != null
-            ? Math.round(Number(r.rolling_avg_duration) * 10) / 10
+          row.rolling_avg_duration != null
+            ? Math.round(Number(row.rolling_avg_duration) * 10) / 10
             : null,
       }));
 
@@ -262,7 +262,7 @@ export const recoveryRouter = router({
    * Composite readiness score 0-100 from:
    *   HRV vs 60d baseline (40%), resting HR vs baseline (20%),
    *   sleep efficiency (20%), ACWR balance (20%).
-   * Each component is a z-score mapped to 0-100.
+   * Reads ACWR from activity_summary rollup instead of raw metric_stream.
    */
   readinessScore: cachedQuery(CacheTTL.MEDIUM)
     .input(z.object({ days: z.number().default(30) }))
@@ -301,16 +301,14 @@ export const recoveryRouter = router({
             ),
             per_activity AS (
               SELECT
-                a.started_at::date AS date,
-                EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 60.0
-                  * AVG(ms.heart_rate)
-                  / NULLIF(MAX(ms.heart_rate), 0) AS load
-              FROM fitness.v_activity a
-              JOIN fitness.metric_stream ms ON ms.activity_id = a.id
-              WHERE a.started_at::date >= CURRENT_DATE - ${queryDays}::int
-                AND a.ended_at IS NOT NULL
-                AND ms.heart_rate IS NOT NULL
-              GROUP BY a.id, a.started_at, a.ended_at
+                asum.started_at::date AS date,
+                EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0
+                  * asum.avg_hr
+                  / NULLIF(asum.max_hr, 0) AS load
+              FROM fitness.activity_summary asum
+              WHERE asum.started_at::date >= CURRENT_DATE - ${queryDays}::int
+                AND asum.ended_at IS NOT NULL
+                AND asum.avg_hr IS NOT NULL
             ),
             activity_load AS (
               SELECT date, SUM(load) AS daily_load
@@ -382,40 +380,43 @@ export const recoveryRouter = router({
 
       const results: ReadinessRow[] = [];
 
-      for (const m of combined) {
-        if (m.date <= cutoffStr) continue;
+      for (const metrics of combined) {
+        if (metrics.date <= cutoffStr) continue;
 
         // HRV score: higher HRV = better (positive z = good)
         let hrvScore = 50;
         if (
-          m.hrv != null &&
-          m.hrv_mean_60d != null &&
-          m.hrv_sd_60d != null &&
-          Number(m.hrv_sd_60d) > 0
+          metrics.hrv != null &&
+          metrics.hrv_mean_60d != null &&
+          metrics.hrv_sd_60d != null &&
+          Number(metrics.hrv_sd_60d) > 0
         ) {
-          const zHrv = (Number(m.hrv) - Number(m.hrv_mean_60d)) / Number(m.hrv_sd_60d);
+          const zHrv =
+            (Number(metrics.hrv) - Number(metrics.hrv_mean_60d)) / Number(metrics.hrv_sd_60d);
           hrvScore = zScoreToScore(zHrv);
         }
 
         // Resting HR score: lower HR = better (negative z = good, so invert)
         let restingHrScore = 50;
         if (
-          m.resting_hr != null &&
-          m.rhr_mean_60d != null &&
-          m.rhr_sd_60d != null &&
-          Number(m.rhr_sd_60d) > 0
+          metrics.resting_hr != null &&
+          metrics.rhr_mean_60d != null &&
+          metrics.rhr_sd_60d != null &&
+          Number(metrics.rhr_sd_60d) > 0
         ) {
-          const zRhr = (Number(m.resting_hr) - Number(m.rhr_mean_60d)) / Number(m.rhr_sd_60d);
+          const zRhr =
+            (Number(metrics.resting_hr) - Number(metrics.rhr_mean_60d)) /
+            Number(metrics.rhr_sd_60d);
           restingHrScore = zScoreToScore(-zRhr);
         }
 
         // Sleep efficiency score: direct mapping (0-100 already)
-        const efficiency = m.efficiency_pct != null ? Number(m.efficiency_pct) : null;
+        const efficiency = metrics.efficiency_pct != null ? Number(metrics.efficiency_pct) : null;
         const sleepScore =
           efficiency != null ? Math.max(0, Math.min(100, Math.round(efficiency))) : 50;
 
         // Load balance score from ACWR
-        const acwr = m.acwr != null ? Number(m.acwr) : null;
+        const acwr = metrics.acwr != null ? Number(metrics.acwr) : null;
         const loadBalanceScore = acwrToScore(acwr);
 
         const readinessScore = Math.round(
@@ -423,7 +424,7 @@ export const recoveryRouter = router({
         );
 
         results.push({
-          date: m.date,
+          date: metrics.date,
           readinessScore: Math.max(0, Math.min(100, readinessScore)),
           components: {
             hrvScore: Math.round(hrvScore),
