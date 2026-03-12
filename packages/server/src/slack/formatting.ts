@@ -14,16 +14,39 @@ type MicroKey = keyof NutritionItemWithMeal & string;
 
 /** Micronutrient display definitions: field key, label, unit */
 const MICRO_DISPLAY: Array<{ key: MicroKey; label: string; unit: string }> = [
-  { key: "vitaminDMcg", label: "Vit D", unit: "mcg" },
-  { key: "vitaminB12Mcg", label: "B12", unit: "mcg" },
-  { key: "ironMg", label: "Iron", unit: "mg" },
+  // Fat breakdown
+  { key: "polyunsaturatedFatG", label: "Poly Fat", unit: "g" },
+  { key: "monounsaturatedFatG", label: "Mono Fat", unit: "g" },
+  { key: "transFatG", label: "Trans Fat", unit: "g" },
+  { key: "cholesterolMg", label: "Chol", unit: "mg" },
+  // Minerals
+  { key: "potassiumMg", label: "K", unit: "mg" },
   { key: "calciumMg", label: "Ca", unit: "mg" },
+  { key: "ironMg", label: "Iron", unit: "mg" },
   { key: "magnesiumMg", label: "Mg", unit: "mg" },
   { key: "zincMg", label: "Zn", unit: "mg" },
-  { key: "potassiumMg", label: "K", unit: "mg" },
-  { key: "omega3Mg", label: "Ω3", unit: "mg" },
+  { key: "seleniumMcg", label: "Se", unit: "mcg" },
+  { key: "copperMg", label: "Cu", unit: "mg" },
+  { key: "manganeseMg", label: "Mn", unit: "mg" },
+  { key: "chromiumMcg", label: "Cr", unit: "mcg" },
+  { key: "iodineMcg", label: "I", unit: "mcg" },
+  // Vitamins
   { key: "vitaminAMcg", label: "Vit A", unit: "mcg" },
   { key: "vitaminCMg", label: "Vit C", unit: "mg" },
+  { key: "vitaminDMcg", label: "Vit D", unit: "mcg" },
+  { key: "vitaminEMg", label: "Vit E", unit: "mg" },
+  { key: "vitaminKMcg", label: "Vit K", unit: "mcg" },
+  { key: "vitaminB1Mg", label: "B1", unit: "mg" },
+  { key: "vitaminB2Mg", label: "B2", unit: "mg" },
+  { key: "vitaminB3Mg", label: "B3", unit: "mg" },
+  { key: "vitaminB5Mg", label: "B5", unit: "mg" },
+  { key: "vitaminB6Mg", label: "B6", unit: "mg" },
+  { key: "vitaminB7Mcg", label: "B7", unit: "mcg" },
+  { key: "vitaminB9Mcg", label: "B9", unit: "mcg" },
+  { key: "vitaminB12Mcg", label: "B12", unit: "mcg" },
+  // Fatty acids
+  { key: "omega3Mg", label: "Ω3", unit: "mg" },
+  { key: "omega6Mg", label: "Ω6", unit: "mg" },
 ];
 
 function formatMacroLine(item: NutritionItemWithMeal): string {
