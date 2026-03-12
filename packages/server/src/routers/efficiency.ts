@@ -80,6 +80,7 @@ export const efficiencyRouter = router({
             JOIN fitness.v_activity a ON a.user_id = uh.id
             JOIN fitness.metric_stream ms ON ms.activity_id = a.id
             WHERE a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+              AND ms.recorded_at > NOW() - (${input.days} + 1)::int * INTERVAL '1 day'
               AND ${enduranceTypeFilter("a")}
               AND ms.heart_rate >= uh.max_hr * 0.6
               AND ms.heart_rate < uh.max_hr * 0.7
@@ -132,6 +133,7 @@ export const efficiencyRouter = router({
               JOIN fitness.v_activity a ON a.id = ms.activity_id
               WHERE a.user_id = ${ctx.userId}
                 AND a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+                AND ms.recorded_at > NOW() - (${input.days} + 1)::int * INTERVAL '1 day'
                 AND ${enduranceTypeFilter("a")}
                 AND ms.power > 0
                 AND ms.heart_rate > 0

@@ -116,6 +116,7 @@ function powerCurveQuery(days: number, userId: string) {
       WHERE a.user_id = ${userId}
         AND ms.power > 0
         AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
+        AND ms.recorded_at > NOW() - (${days} + 1)::int * INTERVAL '1 day'
         AND ${enduranceTypeFilter("a")}
     ),
     durations AS (
@@ -194,6 +195,7 @@ export const powerRouter = router({
           WHERE a.user_id = ${ctx.userId}
             AND ms.power > 0
             AND a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+            AND ms.recorded_at > NOW() - (${input.days} + 1)::int * INTERVAL '1 day'
             AND ${enduranceTypeFilter("a")}
         )
         SELECT
