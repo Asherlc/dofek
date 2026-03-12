@@ -345,6 +345,75 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
     }
   });
 
+  // ── Strong CSV upload ──
+  app.get("/api/upload/strong-csv/status/:jobId", (req, res) => {
+    const status = jobStatuses.get(req.params.jobId);
+    if (!status) {
+      res.status(404).json({ error: "Unknown job" });
+      return;
+    }
+    res.json(status);
+  });
+
+  app.post("/api/upload/strong-csv", async (req, res) => {
+    const weightUnit = req.query.units === "lbs" ? "lbs" : "kg";
+    const jobId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const tmpFile = join(tmpdir(), `strong-csv-${jobId}.csv`);
+
+    try {
+      await streamToFile(req, tmpFile);
+      setJobStatus(jobId, {
+        status: "processing",
+        progress: 0,
+        message: "Importing Strong CSV...",
+      });
+      res.json({ status: "processing", jobId });
+
+      // Fire-and-forget background import
+      (async () => {
+        const importStart = Date.now();
+        try {
+          const { readFile } = await import("node:fs/promises");
+          const csvText = await readFile(tmpFile, "utf-8");
+          const { importStrongCsv } = await import("dofek/providers/strong-csv");
+          const { DEFAULT_USER_ID } = await import("dofek/db/schema");
+          const result = await importStrongCsv(
+            db,
+            csvText,
+            DEFAULT_USER_ID,
+            weightUnit as "kg" | "lbs",
+          );
+
+          const durationSec = ((Date.now() - importStart) / 1000).toFixed(1);
+          const msg = `${result.recordsSynced} workouts imported, ${result.errors.length} errors in ${durationSec}s`;
+          logger.info(`[strong-csv] Import complete: ${msg}`);
+          setJobStatus(jobId, { status: "done", progress: 100, message: msg, result });
+
+          const { logSync } = await import("dofek/db/sync-log");
+          await logSync(db, {
+            providerId: "strong-csv",
+            dataType: "import",
+            status: result.errors.length ? "error" : "success",
+            recordCount: result.recordsSynced,
+            errorMessage: result.errors.length
+              ? result.errors.map((e) => e.message).join("; ")
+              : undefined,
+            durationMs: Date.now() - importStart,
+          });
+        } catch (err: unknown) {
+          const message = errorMessage(err);
+          logger.error(`[strong-csv] Import failed: ${message}`);
+          setJobStatus(jobId, { status: "error", message });
+        } finally {
+          await unlink(tmpFile).catch(() => {});
+        }
+      })();
+    } catch (err: unknown) {
+      logger.error(`[strong-csv] Upload failed: ${err}`);
+      res.status(500).json({ error: "Upload failed" });
+    }
+  });
+
   // ── OAuth state ──
   // Maps random state tokens to provider IDs for CSRF protection
   const oauthStateMap = new Map<string, string>();
