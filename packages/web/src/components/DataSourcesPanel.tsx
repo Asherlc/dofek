@@ -86,9 +86,8 @@ export function DataSourcesPanel() {
     [providers.data, syncMutation, updateState, doPollSyncJob],
   );
 
-  // Syncable providers: enabled, not import-only (those use file upload zones)
-  const syncableProviders = (providers.data ?? []).filter((p) => !p.importOnly);
-  const enabledSyncable = syncableProviders.filter((p) => p.enabled);
+  const allProviders = providers.data ?? [];
+  const enabledSyncable = allProviders.filter((p) => p.enabled && !p.importOnly);
 
   const handleProviderClick = useCallback(
     (
@@ -108,115 +107,160 @@ export function DataSourcesPanel() {
     [handleSync],
   );
 
-  return (
-    <div className="space-y-6">
-      {/* Provider Sync */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-medium text-zinc-300">Providers</h3>
-          {enabledSyncable.length > 1 && (
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => handleSyncAll()}
-                disabled={syncMutation.isPending}
-                className={`text-xs px-3 py-1 rounded transition-colors ${
-                  syncAllMode === "sync"
-                    ? "bg-emerald-600 text-white"
-                    : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50"
-                }`}
-              >
-                {syncAllMode === "sync" ? "Syncing..." : "Sync All"}
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSyncAll(true)}
-                disabled={syncMutation.isPending}
-                className={`text-xs px-3 py-1 rounded transition-colors ${
-                  syncAllMode === "full"
-                    ? "bg-emerald-600 text-white"
-                    : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700 disabled:opacity-50"
-                }`}
-              >
-                {syncAllMode === "full" ? "Full Syncing..." : "Full Sync All"}
-              </button>
-            </div>
-          )}
-        </div>
+  // File-import config for import-only providers + Apple Health (not a registered sync provider)
+  const fileImportConfigs: Record<string, FileImportZoneProps> = {
+    "apple-health": {
+      title: "Apple Health",
+      description: ".zip or .xml from Health app export",
+      accept: ".zip,.xml",
+      uploadUrl: "/api/upload/apple-health?fullSync=true",
+      statusUrl: "/api/upload/apple-health/status",
+      chunked: true,
+    },
+    "strong-csv": {
+      title: "Strong",
+      description: ".csv export from Strong app",
+      accept: ".csv",
+      uploadUrl: "/api/upload/strong-csv?units=kg",
+      statusUrl: "/api/upload/strong-csv/status",
+    },
+    "cronometer-csv": {
+      title: "Cronometer",
+      description: ".csv servings export from Cronometer",
+      accept: ".csv",
+      uploadUrl: "/api/upload/cronometer-csv",
+      statusUrl: "/api/upload/cronometer-csv/status",
+    },
+  };
 
-        {providers.isLoading ? (
-          <div className="text-xs text-zinc-500">Loading providers...</div>
-        ) : syncableProviders.length === 0 ? (
-          <div className="text-xs text-zinc-500">
-            No providers configured. Set API keys in .env to enable providers.
-          </div>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {syncableProviders.map((p) => {
-              const state = providerStates[p.id] ?? { status: "idle" };
-              const needsAuth = (p.needsOAuth || p.needsCustomAuth) && !p.authorized;
-              const notConfigured = !p.enabled;
-              return (
-                <div
-                  key={p.id}
-                  className={`flex flex-col items-start rounded-lg border px-4 py-2.5 transition-colors ${
-                    notConfigured
-                      ? "border-zinc-800/50 bg-zinc-900/20 opacity-60"
-                      : "border-zinc-800 bg-zinc-900/50"
-                  }`}
-                >
-                  <button
-                    type="button"
-                    onClick={() => !notConfigured && handleProviderClick(p)}
-                    disabled={notConfigured || state.status === "syncing"}
-                    className="flex items-center gap-2 hover:opacity-80 disabled:opacity-50"
-                    title={
-                      notConfigured
-                        ? (p.error ?? "Not configured")
-                        : needsAuth
-                          ? "Click to connect"
-                          : "Sync last 7 days"
-                    }
-                  >
-                    {notConfigured ? (
-                      <span className="inline-block w-2 h-2 rounded-full bg-zinc-700" />
-                    ) : needsAuth ? (
-                      <span className="inline-block w-2 h-2 rounded-full bg-blue-400" />
-                    ) : (
-                      <StatusDot status={state.status} />
-                    )}
-                    <span className="text-sm font-medium text-zinc-200">{p.name}</span>
-                    {notConfigured && <span className="text-xs text-zinc-600">Not configured</span>}
-                    {!notConfigured && needsAuth && (
-                      <span className="text-xs text-blue-400">Connect</span>
-                    )}
-                    {state.status === "syncing" && (
-                      <span className="text-xs text-zinc-500">...</span>
-                    )}
-                  </button>
-                  {state.message && state.status !== "syncing" && (
-                    <span className="text-xs text-zinc-500 mt-0.5">{state.message}</span>
-                  )}
-                  {!notConfigured && !state.message && p.lastSyncedAt && (
-                    <span className="text-xs text-zinc-600 mt-0.5">
-                      Last sync: {formatRelativeTime(p.lastSyncedAt)}
-                    </span>
-                  )}
-                  {!notConfigured && !needsAuth && state.status !== "syncing" && (
-                    <button
-                      type="button"
-                      onClick={() => handleProviderClick(p, true)}
-                      className="text-xs text-zinc-600 hover:text-zinc-400 mt-0.5 transition-colors"
-                    >
-                      Full sync
-                    </button>
-                  )}
-                </div>
-              );
-            })}
+  // Build unified list: server providers + Apple Health (file-import-only, not registered on server)
+  const unifiedProviders: Array<
+    | { kind: "sync"; provider: (typeof allProviders)[number] }
+    | { kind: "import"; id: string; config: FileImportZoneProps }
+  > = [];
+
+  // Add Apple Health first (always available, not in server provider list)
+  unifiedProviders.push({
+    kind: "import",
+    id: "apple-health",
+    config: fileImportConfigs["apple-health"]!,
+  });
+
+  for (const p of allProviders) {
+    const importConfig = fileImportConfigs[p.id];
+    if (importConfig) {
+      unifiedProviders.push({ kind: "import", id: p.id, config: importConfig });
+    } else {
+      unifiedProviders.push({ kind: "sync", provider: p });
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-medium text-zinc-300">Data Sources</h3>
+        {enabledSyncable.length > 1 && (
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => handleSyncAll()}
+              disabled={syncMutation.isPending}
+              className={`text-xs px-3 py-1 rounded transition-colors ${
+                syncAllMode === "sync"
+                  ? "bg-emerald-600 text-white"
+                  : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50"
+              }`}
+            >
+              {syncAllMode === "sync" ? "Syncing..." : "Sync All"}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSyncAll(true)}
+              disabled={syncMutation.isPending}
+              className={`text-xs px-3 py-1 rounded transition-colors ${
+                syncAllMode === "full"
+                  ? "bg-emerald-600 text-white"
+                  : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700 disabled:opacity-50"
+              }`}
+            >
+              {syncAllMode === "full" ? "Full Syncing..." : "Full Sync All"}
+            </button>
           </div>
         )}
       </div>
+
+      {providers.isLoading ? (
+        <div className="text-xs text-zinc-500">Loading providers...</div>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {unifiedProviders.map((entry) => {
+            if (entry.kind === "import") {
+              return <FileImportZone key={entry.id} {...entry.config} />;
+            }
+
+            const p = entry.provider;
+            const state = providerStates[p.id] ?? { status: "idle" };
+            const needsAuth = (p.needsOAuth || p.needsCustomAuth) && !p.authorized;
+            const notConfigured = !p.enabled;
+
+            return (
+              <div
+                key={p.id}
+                className={`flex flex-col rounded-lg border px-4 py-3 transition-colors ${
+                  notConfigured
+                    ? "border-zinc-800/50 bg-zinc-900/20 opacity-60"
+                    : "border-zinc-800 bg-zinc-900/50"
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => !notConfigured && handleProviderClick(p)}
+                  disabled={notConfigured || state.status === "syncing"}
+                  className="flex items-center gap-2 hover:opacity-80 disabled:opacity-50"
+                  title={
+                    notConfigured
+                      ? (p.error ?? "Not configured")
+                      : needsAuth
+                        ? "Click to connect"
+                        : "Sync last 7 days"
+                  }
+                >
+                  {notConfigured ? (
+                    <span className="inline-block w-2 h-2 rounded-full bg-zinc-700" />
+                  ) : needsAuth ? (
+                    <span className="inline-block w-2 h-2 rounded-full bg-blue-400" />
+                  ) : (
+                    <StatusDot status={state.status} />
+                  )}
+                  <span className="text-sm font-medium text-zinc-200">{p.name}</span>
+                  {notConfigured && <span className="text-xs text-zinc-600">Not configured</span>}
+                  {!notConfigured && needsAuth && (
+                    <span className="text-xs text-blue-400">Connect</span>
+                  )}
+                  {state.status === "syncing" && <span className="text-xs text-zinc-500">...</span>}
+                </button>
+                {state.message && state.status !== "syncing" && (
+                  <span className="text-xs text-zinc-500 mt-1">{state.message}</span>
+                )}
+                {!notConfigured && !state.message && p.lastSyncedAt && (
+                  <span className="text-xs text-zinc-600 mt-1">
+                    Last sync: {formatRelativeTime(p.lastSyncedAt)}
+                  </span>
+                )}
+                {!notConfigured && !needsAuth && state.status !== "syncing" && (
+                  <button
+                    type="button"
+                    onClick={() => handleProviderClick(p, true)}
+                    className="text-xs text-zinc-600 hover:text-zinc-400 mt-1 transition-colors self-start"
+                  >
+                    Full sync
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* WHOOP Auth Modal */}
       {whoopAuthOpen && (
@@ -228,35 +272,6 @@ export function DataSourcesPanel() {
           }}
         />
       )}
-
-      {/* File Imports */}
-      <div>
-        <h3 className="text-sm font-medium text-zinc-300 mb-3">File Imports</h3>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <FileImportZone
-            title="Apple Health"
-            description=".zip or .xml from Health app export"
-            accept=".zip,.xml"
-            uploadUrl="/api/upload/apple-health?fullSync=true"
-            statusUrl="/api/upload/apple-health/status"
-            chunked
-          />
-          <FileImportZone
-            title="Strong"
-            description=".csv export from Strong app"
-            accept=".csv"
-            uploadUrl="/api/upload/strong-csv?units=kg"
-            statusUrl="/api/upload/strong-csv/status"
-          />
-          <FileImportZone
-            title="Cronometer"
-            description=".csv servings export from Cronometer"
-            accept=".csv"
-            uploadUrl="/api/upload/cronometer-csv"
-            statusUrl="/api/upload/cronometer-csv/status"
-          />
-        </div>
-      </div>
     </div>
   );
 }
@@ -598,7 +613,11 @@ function FileImportZone({
   );
 
   return (
-    <div>
+    <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-3">
+      <div className="flex items-center gap-2 mb-2">
+        <StatusDot status={state.status} />
+        <span className="text-sm font-medium text-zinc-200">{title}</span>
+      </div>
       <div
         role="button"
         tabIndex={0}
@@ -615,7 +634,7 @@ function FileImportZone({
             fileInputRef.current?.click();
           }
         }}
-        className={`rounded-lg border-2 border-dashed p-6 text-center cursor-pointer transition-colors ${
+        className={`rounded border-2 border-dashed p-3 text-center cursor-pointer transition-colors ${
           dragOver
             ? "border-blue-500 bg-blue-500/10"
             : "border-zinc-700 hover:border-zinc-600 bg-zinc-900/30"
@@ -630,10 +649,9 @@ function FileImportZone({
         />
         {state.status === "syncing" ? (
           <div>
-            <div className="text-sm text-zinc-300 mb-1">Importing...</div>
             <div className="text-xs text-zinc-500">{state.message}</div>
             {state.progress != null && (
-              <div className="mt-2 w-36 mx-auto h-1.5 rounded-full bg-zinc-800 overflow-hidden">
+              <div className="mt-2 w-full h-1.5 rounded-full bg-zinc-800 overflow-hidden">
                 <div
                   className="h-full rounded-full bg-emerald-500 transition-all duration-300"
                   style={{ width: `${state.progress}%` }}
@@ -642,15 +660,12 @@ function FileImportZone({
             )}
           </div>
         ) : (
-          <div>
-            <div className="text-sm text-zinc-400 mb-1">{title}</div>
-            <div className="text-xs text-zinc-600">{description}</div>
-          </div>
+          <div className="text-xs text-zinc-600">{description}</div>
         )}
       </div>
       {state.status !== "idle" && state.status !== "syncing" && (
         <div
-          className={`mt-2 text-xs ${state.status === "error" ? "text-red-400" : "text-emerald-400"}`}
+          className={`mt-1.5 text-xs ${state.status === "error" ? "text-red-400" : "text-emerald-400"}`}
         >
           {state.message}
         </div>
