@@ -1,0 +1,26 @@
+{
+  "expo": {
+    "name": "Dofek",
+    "slug": "dofek",
+    "scheme": "dofek",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.dofek.app"
+    },
+    "plugins": [
+      "expo-router"
+    ],
+    "_comments": {
+      "healthKit": "HealthKit entitlement and background modes will need to be added via app.json plugins or app.config.ts. See: https://docs.expo.dev/versions/latest/sdk/apple-healthkit/"
+    }
+  }
+}

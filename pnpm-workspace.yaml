@@ -2,6 +2,7 @@ packages:
   - .
   - packages/server
   - packages/web
+  - packages/ios
 
 ignoredBuiltDependencies:
   - cpu-features
