@@ -17,6 +17,7 @@
     "./providers/hevy": "./src/providers/hevy.ts",
     "./providers/ride-with-gps": "./src/providers/ride-with-gps.ts",
     "./providers/strong-csv": "./src/providers/strong-csv.ts",
+    "./providers/cronometer-csv": "./src/providers/cronometer-csv.ts",
     "./sync/runner": "./src/sync/runner.ts",
     "./db/migrate": "./src/db/migrate.ts",
     "./db/tokens": "./src/db/tokens.ts",

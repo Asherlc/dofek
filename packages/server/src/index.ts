@@ -9,7 +9,7 @@ import cookieParser from "cookie-parser";
 import { createDatabaseFromEnv } from "dofek/db";
 import { runMigrations } from "dofek/db/migrate";
 import { DEFAULT_USER_ID } from "dofek/db/schema";
-import type { SyncResult } from "dofek/providers/types";
+import type { SyncError, SyncResult } from "dofek/providers/types";
 import { sql } from "drizzle-orm";
 import express from "express";
 import {
@@ -410,6 +410,68 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       })();
     } catch (err: unknown) {
       logger.error(`[strong-csv] Upload failed: ${err}`);
+      res.status(500).json({ error: "Upload failed" });
+    }
+  });
+
+  // ── Cronometer CSV upload ──
+  app.get("/api/upload/cronometer-csv/status/:jobId", (req, res) => {
+    const status = jobStatuses.get(req.params.jobId);
+    if (!status) {
+      res.status(404).json({ error: "Unknown job" });
+      return;
+    }
+    res.json(status);
+  });
+
+  app.post("/api/upload/cronometer-csv", async (req, res) => {
+    const jobId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const tmpFile = join(tmpdir(), `cronometer-csv-${jobId}.csv`);
+
+    try {
+      await streamToFile(req, tmpFile);
+      setJobStatus(jobId, {
+        status: "processing",
+        progress: 0,
+        message: "Importing Cronometer CSV...",
+      });
+      res.json({ status: "processing", jobId });
+
+      // Fire-and-forget background import
+      (async () => {
+        const importStart = Date.now();
+        try {
+          const { readFile } = await import("node:fs/promises");
+          const csvText = await readFile(tmpFile, "utf-8");
+          const { importCronometerCsv } = await import("dofek/providers/cronometer-csv");
+          const result = await importCronometerCsv(db, csvText, DEFAULT_USER_ID);
+
+          const durationSec = ((Date.now() - importStart) / 1000).toFixed(1);
+          const msg = `${result.recordsSynced} food entries imported, ${result.errors.length} errors in ${durationSec}s`;
+          logger.info(`[cronometer-csv] Import complete: ${msg}`);
+          setJobStatus(jobId, { status: "done", progress: 100, message: msg, result });
+
+          const { logSync } = await import("dofek/db/sync-log");
+          await logSync(db, {
+            providerId: "cronometer-csv",
+            dataType: "import",
+            status: result.errors.length ? "error" : "success",
+            recordCount: result.recordsSynced,
+            errorMessage: result.errors.length
+              ? result.errors.map((e: SyncError) => e.message).join("; ")
+              : undefined,
+            durationMs: Date.now() - importStart,
+          });
+        } catch (err: unknown) {
+          const message = errorMessage(err);
+          logger.error(`[cronometer-csv] Import failed: ${message}`);
+          setJobStatus(jobId, { status: "error", message });
+        } finally {
+          await unlink(tmpFile).catch(() => {});
+        }
+      })();
+    } catch (err: unknown) {
+      logger.error(`[cronometer-csv] Upload failed: ${err}`);
       res.status(500).json({ error: "Upload failed" });
     }
   });
