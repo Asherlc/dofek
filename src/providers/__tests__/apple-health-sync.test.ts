@@ -390,7 +390,7 @@ describe("Apple Health streaming import (integration)", () => {
 
     expect(workouts.length).toBe(1);
     expect(workouts[0]?.routeLocations).toBeDefined();
-    expect(workouts[0]?.routeLocations!.length).toBe(3);
+    expect(workouts[0]?.routeLocations).toHaveLength(3);
 
     const first = workouts[0]?.routeLocations?.[0];
     expect(first?.lat).toBeCloseTo(40.7128);
