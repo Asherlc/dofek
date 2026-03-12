@@ -7,7 +7,10 @@ import { trpc } from "../lib/trpc.ts";
 
 export function PredictionsPage() {
   const [days, setDays] = useState(365);
-  const prediction = trpc.predictions.hrvPrediction.useQuery({ days });
+  const [targetId, setTargetId] = useState("hrv");
+
+  const targets = trpc.predictions.targets.useQuery();
+  const prediction = trpc.predictions.predict.useQuery({ target: targetId, days });
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 overflow-x-hidden">
@@ -15,32 +18,67 @@ export function PredictionsPage() {
         <TimeRangeSelector days={days} onChange={setDays} />
       </AppHeader>
       <main className="mx-auto max-w-7xl px-3 sm:px-6 py-4 sm:py-6 space-y-6">
-        <div>
-          <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider">
-            HRV Prediction
-          </h2>
-          <p className="text-xs text-zinc-600 mt-0.5">
-            What controllable factors — sleep, exercise, nutrition — actually drive your HRV?
-          </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider">
+              ML Predictions
+            </h2>
+            <p className="text-xs text-zinc-600 mt-0.5">
+              What controllable factors actually drive your health metrics?
+            </p>
+          </div>
+          {targets.data && (
+            <div className="flex gap-1 bg-zinc-900 rounded-lg p-0.5 border border-zinc-800">
+              {targets.data.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setTargetId(t.id)}
+                  className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
+                    targetId === t.id
+                      ? "bg-zinc-700 text-zinc-100"
+                      : "text-zinc-500 hover:text-zinc-300"
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {prediction.isLoading && <LoadingSkeleton />}
 
         {prediction.data === null && !prediction.isLoading && (
           <div className="flex items-center justify-center h-32 text-zinc-600 text-sm">
-            Not enough data to train models. Need at least 20 days with HRV readings.
+            Not enough data to train models. Need at least 20 days of readings.
           </div>
         )}
 
         {prediction.data && (
           <>
-            <TomorrowCard prediction={prediction.data.tomorrowPrediction} />
+            <TomorrowCard
+              prediction={prediction.data.tomorrowPrediction}
+              label={prediction.data.targetLabel}
+              unit={prediction.data.targetUnit}
+            />
             <DiagnosticsBar diagnostics={prediction.data.diagnostics} />
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <FeatureImportanceChart importances={prediction.data.featureImportances} />
-              <PredictionVsActualChart predictions={prediction.data.predictions} />
+              <FeatureImportanceChart
+                importances={prediction.data.featureImportances}
+                targetLabel={prediction.data.targetLabel}
+              />
+              <PredictionVsActualChart
+                predictions={prediction.data.predictions}
+                targetLabel={prediction.data.targetLabel}
+                unit={prediction.data.targetUnit}
+              />
             </div>
-            <ResidualTimelineChart predictions={prediction.data.predictions} />
+            <ResidualTimelineChart
+              predictions={prediction.data.predictions}
+              targetLabel={prediction.data.targetLabel}
+              unit={prediction.data.targetUnit}
+            />
           </>
         )}
       </main>
@@ -55,7 +93,15 @@ interface TomorrowPrediction {
   tree: number;
 }
 
-function TomorrowCard({ prediction }: { prediction: TomorrowPrediction | null }) {
+function TomorrowCard({
+  prediction,
+  label,
+  unit,
+}: {
+  prediction: TomorrowPrediction | null;
+  label: string;
+  unit: string;
+}) {
   if (!prediction) return null;
 
   const avg = (prediction.linear + prediction.tree) / 2;
@@ -63,12 +109,12 @@ function TomorrowCard({ prediction }: { prediction: TomorrowPrediction | null })
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
       <p className="text-xs text-zinc-500 uppercase tracking-wider mb-2">
-        Tomorrow's HRV Prediction
+        Tomorrow's {label} Prediction
       </p>
       <div className="flex items-baseline gap-6">
         <div>
           <span className="text-3xl font-bold text-emerald-400">{avg.toFixed(0)}</span>
-          <span className="text-sm text-zinc-500 ml-1">ms</span>
+          <span className="text-sm text-zinc-500 ml-1">{unit}</span>
         </div>
         <div className="flex gap-4 text-xs text-zinc-500">
           <span>
@@ -108,7 +154,7 @@ function DiagnosticsBar({ diagnostics }: { diagnostics: Diagnostics }) {
     {
       label: "Simple model accuracy",
       value: formatAccuracy(diagnostics.linearRSquared),
-      tooltip: "How much of the day-to-day HRV variation the simple (linear) model explains",
+      tooltip: "How much of the day-to-day variation the simple (linear) model explains",
     },
     {
       label: "Advanced model accuracy",
@@ -120,7 +166,7 @@ function DiagnosticsBar({ diagnostics }: { diagnostics: Diagnostics }) {
       value: formatAccuracy(diagnostics.crossValidatedRSquared),
       highlight: true,
       tooltip:
-        "Tested on data the model hasn't seen — this is the most honest measure of how well it will predict future HRV",
+        "Tested on data the model hasn't seen — this is the most honest measure of prediction quality",
     },
     {
       label: "Days of data",
@@ -162,6 +208,7 @@ interface FeatureImportance {
 }
 
 const FRIENDLY_FEATURE_NAMES: Record<string, string> = {
+  hrv: "HRV",
   resting_hr: "Resting heart rate",
   sleep_duration: "Sleep duration",
   deep_sleep: "Deep sleep",
@@ -184,13 +231,19 @@ function friendlyFeatureName(name: string): string {
   return FRIENDLY_FEATURE_NAMES[name] ?? formatFeatureNameFallback(name);
 }
 
-function FeatureImportanceChart({ importances }: { importances: FeatureImportance[] }) {
+function FeatureImportanceChart({
+  importances,
+  targetLabel,
+}: {
+  importances: FeatureImportance[];
+  targetLabel: string;
+}) {
   const top = importances.slice(0, 12);
   const labels = top.map((f) => friendlyFeatureName(f.name));
 
   const option: EChartsOption = {
     title: {
-      text: "What Matters Most for Your HRV",
+      text: `What Matters Most for Your ${targetLabel}`,
       textStyle: { color: "#a1a1aa", fontSize: 12, fontWeight: "normal" },
       left: 0,
       top: 0,
@@ -253,8 +306,9 @@ function FeatureImportanceChart({ importances }: { importances: FeatureImportanc
     <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
       <ReactECharts option={option} style={{ height }} opts={{ renderer: "svg" }} />
       <p className="text-[10px] text-zinc-600 mt-2">
-        Longer bars = bigger influence on your predicted HRV. The two models weigh factors
-        differently — the advanced model can detect complex patterns the simple one can't.
+        Longer bars = bigger influence on your predicted {targetLabel.toLowerCase()}. The two models
+        weigh factors differently — the advanced model can detect complex patterns the simple one
+        can't.
       </p>
     </div>
   );
@@ -264,13 +318,21 @@ function FeatureImportanceChart({ importances }: { importances: FeatureImportanc
 
 interface PredictionPoint {
   date: string;
-  actualHrv: number;
+  actual: number;
   linearPrediction: number;
   treePrediction: number;
 }
 
-function PredictionVsActualChart({ predictions }: { predictions: PredictionPoint[] }) {
-  const allVals = predictions.flatMap((p) => [p.actualHrv, p.linearPrediction, p.treePrediction]);
+function PredictionVsActualChart({
+  predictions,
+  targetLabel,
+  unit,
+}: {
+  predictions: PredictionPoint[];
+  targetLabel: string;
+  unit: string;
+}) {
+  const allVals = predictions.flatMap((p) => [p.actual, p.linearPrediction, p.treePrediction]);
   const min = Math.floor(Math.min(...allVals) * 0.9);
   const max = Math.ceil(Math.max(...allVals) * 1.1);
 
@@ -296,7 +358,7 @@ function PredictionVsActualChart({ predictions }: { predictions: PredictionPoint
     grid: { left: 8, right: 16, top: 40, bottom: 24, containLabel: true },
     xAxis: {
       type: "value",
-      name: "What actually happened (HRV)",
+      name: `Actual ${targetLabel} (${unit})`,
       nameLocation: "middle",
       nameGap: 20,
       nameTextStyle: { color: "#71717a", fontSize: 10 },
@@ -308,7 +370,7 @@ function PredictionVsActualChart({ predictions }: { predictions: PredictionPoint
     },
     yAxis: {
       type: "value",
-      name: "What the model predicted",
+      name: "Predicted",
       nameTextStyle: { color: "#71717a", fontSize: 10 },
       min,
       max,
@@ -320,14 +382,14 @@ function PredictionVsActualChart({ predictions }: { predictions: PredictionPoint
       {
         name: "Advanced model",
         type: "scatter",
-        data: predictions.map((p) => [p.actualHrv, p.treePrediction]),
+        data: predictions.map((p) => [p.actual, p.treePrediction]),
         symbolSize: 4,
         itemStyle: { color: "#34d399", opacity: 0.5 },
       },
       {
         name: "Simple model",
         type: "scatter",
-        data: predictions.map((p) => [p.actualHrv, p.linearPrediction]),
+        data: predictions.map((p) => [p.actual, p.linearPrediction]),
         symbolSize: 4,
         itemStyle: { color: "#818cf8", opacity: 0.3 },
       },
@@ -358,10 +420,18 @@ function PredictionVsActualChart({ predictions }: { predictions: PredictionPoint
 
 // ── Residual timeline ──────────────────────────────────────────────────────
 
-function ResidualTimelineChart({ predictions }: { predictions: PredictionPoint[] }) {
+function ResidualTimelineChart({
+  predictions,
+  targetLabel,
+  unit,
+}: {
+  predictions: PredictionPoint[];
+  targetLabel: string;
+  unit: string;
+}) {
   const option: EChartsOption = {
     title: {
-      text: "Your HRV Over Time — Actual vs Predicted",
+      text: `Your ${targetLabel} Over Time — Actual vs Predicted`,
       textStyle: { color: "#a1a1aa", fontSize: 12, fontWeight: "normal" },
       left: 0,
       top: 0,
@@ -373,7 +443,7 @@ function ResidualTimelineChart({ predictions }: { predictions: PredictionPoint[]
       textStyle: { color: "#e4e4e7", fontSize: 11 },
     },
     legend: {
-      data: ["Actual HRV", "Advanced model", "Simple model"],
+      data: [`Actual ${targetLabel}`, "Advanced model", "Simple model"],
       textStyle: { color: "#71717a", fontSize: 10 },
       right: 0,
       top: 0,
@@ -387,7 +457,7 @@ function ResidualTimelineChart({ predictions }: { predictions: PredictionPoint[]
     },
     yAxis: {
       type: "value",
-      name: "HRV (ms)",
+      name: `${targetLabel} (${unit})`,
       nameTextStyle: { color: "#71717a", fontSize: 10 },
       axisLabel: { color: "#52525b", fontSize: 9 },
       axisLine: { lineStyle: { color: "#3f3f46" } },
@@ -408,9 +478,9 @@ function ResidualTimelineChart({ predictions }: { predictions: PredictionPoint[]
     ],
     series: [
       {
-        name: "Actual HRV",
+        name: `Actual ${targetLabel}`,
         type: "line",
-        data: predictions.map((p) => p.actualHrv),
+        data: predictions.map((p) => p.actual),
         lineStyle: { color: "#e4e4e7", width: 1.5 },
         itemStyle: { color: "#e4e4e7" },
         symbol: "none",

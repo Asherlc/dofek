@@ -8,18 +8,32 @@ import type {
   SleepRow,
 } from "../insights/engine.ts";
 import { joinByDate } from "../insights/engine.ts";
-import { trainHrvPredictor } from "../ml/predictor.ts";
+import { getPredictionTarget, PREDICTION_TARGETS } from "../ml/features.ts";
+import { trainPredictor } from "../ml/predictor.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export const predictionsRouter = router({
+  /** Available prediction targets */
+  targets: cachedProtectedQuery(CacheTTL.LONG).query(() =>
+    PREDICTION_TARGETS.map((t) => ({ id: t.id, label: t.label, unit: t.unit })),
+  ),
+
   /**
    * Train linear regression + gradient-boosted tree models on daily health data
-   * to predict next-day HRV. Returns feature importances, predictions vs actuals,
+   * for the given target. Returns feature importances, predictions vs actuals,
    * model diagnostics, and tomorrow's prediction.
    */
-  hrvPrediction: cachedProtectedQuery(CacheTTL.LONG)
-    .input(z.object({ days: z.number().default(365) }))
+  predict: cachedProtectedQuery(CacheTTL.LONG)
+    .input(
+      z.object({
+        target: z.string().default("hrv"),
+        days: z.number().default(365),
+      }),
+    )
     .query(async ({ ctx, input }) => {
+      const target = getPredictionTarget(input.target);
+      if (!target) return null;
+
       const [metrics, sleep, activities, nutrition, bodyComp] = await Promise.all([
         ctx.db.execute<DailyRow>(
           sql`SELECT date, resting_hr, hrv, spo2_avg, steps, active_energy_kcal, skin_temp_c
@@ -63,6 +77,6 @@ export const predictionsRouter = router({
         minDailyCalories: 1200,
       });
 
-      return trainHrvPredictor(joined);
+      return trainPredictor(joined, target);
     }),
 });
