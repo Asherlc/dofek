@@ -69,7 +69,7 @@ describe("Sync Runner", () => {
     expect(result.results).toHaveLength(2);
     expect(result.totalRecords).toBe(10);
     expect(result.totalErrors).toBe(1);
-    expect(result.results[1]!.errors[0]!.message).toContain("API down");
+    expect(result.results[1]?.errors[0]?.message).toContain("API down");
   });
 
   it("returns zero results for empty provider list", async () => {
