@@ -514,7 +514,8 @@ export function streamHealthExport(
       if (categoryBatch.length >= BATCH_SIZE) {
         const batch = categoryBatch;
         categoryBatch = [];
-        trackFlush(() => callbacks.onCategoryBatch!(batch));
+        const onBatch = callbacks.onCategoryBatch;
+        if (onBatch) trackFlush(() => onBatch(batch));
       }
     }
 
@@ -859,7 +860,7 @@ async function upsertDailyMetricsBatch(
     if (!DAILY_METRIC_TYPES.has(r.type)) continue;
     const dateKey = dateToString(r.startDate);
     if (!byDate.has(dateKey)) byDate.set(dateKey, new Map());
-    const day = byDate.get(dateKey)!;
+    const day = byDate.get(dateKey) ?? new Map();
 
     if (ADDITIVE_DAILY_TYPES.has(r.type)) {
       day.set(r.type, (day.get(r.type) ?? 0) + r.value);
@@ -982,7 +983,7 @@ async function upsertNutritionBatch(
     if (!field) continue;
     const dateKey = dateToString(r.startDate);
     if (!byDate.has(dateKey)) byDate.set(dateKey, new Map());
-    const day = byDate.get(dateKey)!;
+    const day = byDate.get(dateKey) ?? new Map();
     day.set(field, (day.get(field) ?? 0) + r.value);
   }
 
