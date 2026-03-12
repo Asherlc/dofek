@@ -161,10 +161,10 @@ export function Dashboard() {
   );
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100">
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 overflow-x-hidden">
       <AppHeader>
-        <div className="flex items-center gap-4">
-          <p className="text-xs text-zinc-500">
+        <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+          <p className="text-xs text-zinc-500 hidden sm:block">
             {trendData?.latest_date
               ? `Latest: ${new Date(trendData.latest_date).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}`
               : ""}
@@ -173,7 +173,7 @@ export function Dashboard() {
         </div>
       </AppHeader>
 
-      <main className="mx-auto max-w-7xl p-6 space-y-8">
+      <main className="mx-auto max-w-7xl px-3 sm:px-6 py-4 sm:py-6 space-y-6 sm:space-y-8">
         {/* Health Monitor */}
         <CollapsibleSection
           id="healthMonitor"
@@ -219,7 +219,7 @@ export function Dashboard() {
           collapsed={collapsed.hrvRhr}
           onToggle={() => toggle("hrvRhr")}
         >
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
             <HrvBaselineChart
               data={
                 (hrvBaseline.data ?? []) as {
@@ -245,7 +245,7 @@ export function Dashboard() {
               collapsed={collapsed.spo2Temp}
               onToggle={() => toggle("spo2Temp")}
             >
-              <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+              <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
                 <TimeSeriesChart
                   series={[
                     ...(hasSpO2 ? [spo2Series] : []),
@@ -265,7 +265,7 @@ export function Dashboard() {
             collapsed={collapsed.steps}
             onToggle={() => toggle("steps")}
           >
-            <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+            <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
               <TimeSeriesChart
                 series={[stepsSeries]}
                 height={200}
@@ -284,7 +284,7 @@ export function Dashboard() {
           collapsed={collapsed.sleep}
           onToggle={() => toggle("sleep")}
         >
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
             <SleepChart data={(sleepData.data ?? []) as any[]} loading={sleepData.isLoading} />
           </div>
         </CollapsibleSection>
@@ -297,7 +297,7 @@ export function Dashboard() {
           collapsed={collapsed.nutrition}
           onToggle={() => toggle("nutrition")}
         >
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
             <NutritionChart
               data={(nutritionData.data ?? []) as any[]}
               loading={nutritionData.isLoading}
@@ -313,7 +313,7 @@ export function Dashboard() {
           collapsed={collapsed.bodyComp}
           onToggle={() => toggle("bodyComp")}
         >
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
             <TimeSeriesChart
               series={[weightSeries, bodyFatSeries]}
               height={200}
@@ -331,7 +331,7 @@ export function Dashboard() {
           collapsed={collapsed.activities}
           onToggle={() => toggle("activities")}
         >
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
             <ActivityList
               activities={(activities.data ?? []) as any[]}
               loading={activities.isLoading}
@@ -362,7 +362,7 @@ function CollapsibleSection({
       <button
         type="button"
         onClick={onToggle}
-        className="mb-3 flex items-center gap-2 group cursor-pointer w-full text-left"
+        className="mb-3 flex items-center gap-2 group cursor-pointer w-full text-left min-h-[44px]"
       >
         <span
           className={`text-zinc-600 text-xs transition-transform ${collapsed ? "" : "rotate-90"}`}

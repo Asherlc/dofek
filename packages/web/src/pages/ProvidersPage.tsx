@@ -67,9 +67,9 @@ export function ProvidersPage() {
   );
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100">
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 overflow-x-hidden">
       <AppHeader />
-      <main className="mx-auto max-w-7xl p-6 space-y-8">
+      <main className="mx-auto max-w-7xl px-3 sm:px-6 py-4 sm:py-6 space-y-6 sm:space-y-8">
         {/* Sync Controls */}
         <section>
           <DataSourcesPanel />

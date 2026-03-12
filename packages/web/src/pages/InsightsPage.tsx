@@ -100,13 +100,13 @@ export function InsightsPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100">
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 overflow-x-hidden">
       <AppHeader>
         <TimeRangeSelector days={days} onChange={setDays} />
       </AppHeader>
-      <main className="mx-auto max-w-7xl p-6 space-y-6">
+      <main className="mx-auto max-w-7xl px-3 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
         {/* Header + filters */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider">
               Correlations & Outcomes
@@ -121,7 +121,7 @@ export function InsightsPage() {
                 key={f.value}
                 type="button"
                 onClick={() => setFilter(f.value)}
-                className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
+                className={`px-2.5 py-1.5 text-xs rounded-md transition-colors ${
                   filter === f.value
                     ? "bg-zinc-700 text-zinc-100"
                     : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800"

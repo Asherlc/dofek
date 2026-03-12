@@ -89,11 +89,11 @@ export function TrainingPage() {
     | undefined;
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100">
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 overflow-x-hidden">
       <AppHeader>
         <TimeRangeSelector days={days} onChange={setDays} />
       </AppHeader>
-      <main className="mx-auto max-w-7xl p-6 space-y-8">
+      <main className="mx-auto max-w-7xl px-3 sm:px-6 py-4 sm:py-6 space-y-6 sm:space-y-8">
         {/* ── Recovery & Readiness ────────────────────────────── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <Section
@@ -354,7 +354,7 @@ function Section({
     <section>
       <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-1">{title}</h2>
       {subtitle && <p className="text-xs text-zinc-600 mb-4">{subtitle}</p>}
-      <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">{children}</div>
+      <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">{children}</div>
     </section>
   );
 }

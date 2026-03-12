@@ -10,19 +10,19 @@ const navItems = [
 
 export function AppHeader({ children }: { children?: React.ReactNode }) {
   return (
-    <header className="border-b border-zinc-800 px-6 py-4 flex items-center justify-between">
-      <div className="flex items-center gap-3">
+    <header className="border-b border-zinc-800 px-3 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-2 min-w-0">
+      <div className="flex items-center gap-2 sm:gap-3 min-w-0">
         <DofekLogo />
-        <h1 className="text-xl font-semibold tracking-tight">Dofek</h1>
-        <nav className="flex gap-1 ml-4">
+        <h1 className="text-lg sm:text-xl font-semibold tracking-tight shrink-0">Dofek</h1>
+        <nav className="flex gap-1 ml-2 sm:ml-4 overflow-x-auto scrollbar-hide">
           {navItems.map(({ to, label }) => (
             <Link
               key={to}
               to={to}
-              className="px-3 py-1 text-xs rounded-md transition-colors text-zinc-500 hover:text-zinc-300"
+              className="px-3 py-2 text-xs rounded-md transition-colors text-zinc-500 hover:text-zinc-300 whitespace-nowrap"
               activeProps={{
                 className:
-                  "px-3 py-1 text-xs rounded-md transition-colors bg-zinc-700 text-zinc-100",
+                  "px-3 py-2 text-xs rounded-md transition-colors bg-zinc-700 text-zinc-100 whitespace-nowrap",
               }}
               activeOptions={{ exact: to === "/dashboard" }}
             >

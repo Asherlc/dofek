@@ -15,13 +15,13 @@ export function TimeRangeSelector({
   onChange: (days: number) => void;
 }) {
   return (
-    <div className="flex gap-1 bg-zinc-900 rounded-lg p-1 border border-zinc-800">
+    <div className="flex gap-0.5 sm:gap-1 bg-zinc-900 rounded-lg p-1 border border-zinc-800">
       {TIME_RANGES.map((r) => (
         <button
           key={r.label}
           type="button"
           onClick={() => onChange(r.days)}
-          className={`px-3 py-1 text-xs rounded-md transition-colors ${
+          className={`px-2 sm:px-3 py-1.5 text-xs rounded-md transition-colors ${
             days === r.days ? "bg-zinc-700 text-zinc-100" : "text-zinc-500 hover:text-zinc-300"
           }`}
         >

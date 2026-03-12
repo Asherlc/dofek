@@ -38,7 +38,7 @@ export function TimeSeriesChart({ series, height = 200, yAxis, loading }: TimeSe
 
   const option = {
     backgroundColor: "transparent",
-    grid: { top: 30, right: yAxisConfig.length > 1 ? 60 : 20, bottom: 30, left: 50 },
+    grid: { top: 30, right: yAxisConfig.length > 1 ? 50 : 12, bottom: 30, left: 40 },
     tooltip: {
       trigger: "axis",
       backgroundColor: "#18181b",
@@ -70,5 +70,5 @@ export function TimeSeriesChart({ series, height = 200, yAxis, loading }: TimeSe
     },
   };
 
-  return <ReactECharts option={option} style={{ height }} notMerge={true} />;
+  return <ReactECharts option={option} style={{ height, width: "100%" }} notMerge={true} />;
 }
