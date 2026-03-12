@@ -60,7 +60,9 @@ export function DataSourcesPanel() {
   const handleSyncAll = useCallback(
     async (fullSync = false) => {
       setSyncAllMode(fullSync ? "full" : "sync");
-      const enabled = (providers.data ?? []).filter((p) => p.enabled && p.authorized);
+      const enabled = (providers.data ?? []).filter(
+        (p) => p.enabled && p.authorized && !p.importOnly,
+      );
       const ids = enabled.map((p) => p.id);
       for (const p of enabled) {
         updateState(p.id, { status: "syncing" });
@@ -84,7 +86,9 @@ export function DataSourcesPanel() {
     [providers.data, syncMutation, updateState, doPollSyncJob],
   );
 
-  const enabledProviders = (providers.data ?? []).filter((p) => p.enabled);
+  // Syncable providers: enabled, not import-only (those use file upload zones)
+  const syncableProviders = (providers.data ?? []).filter((p) => !p.importOnly);
+  const enabledSyncable = syncableProviders.filter((p) => p.enabled);
 
   const handleProviderClick = useCallback(
     (
@@ -109,8 +113,8 @@ export function DataSourcesPanel() {
       {/* Provider Sync */}
       <div>
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-medium text-zinc-300">Connected Providers</h3>
-          {enabledProviders.length > 1 && (
+          <h3 className="text-sm font-medium text-zinc-300">Providers</h3>
+          {enabledSyncable.length > 1 && (
             <div className="flex gap-2">
               <button
                 type="button"
@@ -142,34 +146,50 @@ export function DataSourcesPanel() {
 
         {providers.isLoading ? (
           <div className="text-xs text-zinc-500">Loading providers...</div>
-        ) : enabledProviders.length === 0 ? (
+        ) : syncableProviders.length === 0 ? (
           <div className="text-xs text-zinc-500">
             No providers configured. Set API keys in .env to enable providers.
           </div>
         ) : (
           <div className="flex flex-wrap gap-2">
-            {enabledProviders.map((p) => {
+            {syncableProviders.map((p) => {
               const state = providerStates[p.id] ?? { status: "idle" };
               const needsAuth = (p.needsOAuth || p.needsCustomAuth) && !p.authorized;
+              const notConfigured = !p.enabled;
               return (
                 <div
                   key={p.id}
-                  className="flex flex-col items-start rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-2.5 transition-colors"
+                  className={`flex flex-col items-start rounded-lg border px-4 py-2.5 transition-colors ${
+                    notConfigured
+                      ? "border-zinc-800/50 bg-zinc-900/20 opacity-60"
+                      : "border-zinc-800 bg-zinc-900/50"
+                  }`}
                 >
                   <button
                     type="button"
-                    onClick={() => handleProviderClick(p)}
-                    disabled={state.status === "syncing"}
+                    onClick={() => !notConfigured && handleProviderClick(p)}
+                    disabled={notConfigured || state.status === "syncing"}
                     className="flex items-center gap-2 hover:opacity-80 disabled:opacity-50"
-                    title={needsAuth ? "Click to connect" : "Sync last 7 days"}
+                    title={
+                      notConfigured
+                        ? (p.error ?? "Not configured")
+                        : needsAuth
+                          ? "Click to connect"
+                          : "Sync last 7 days"
+                    }
                   >
-                    {needsAuth ? (
+                    {notConfigured ? (
+                      <span className="inline-block w-2 h-2 rounded-full bg-zinc-700" />
+                    ) : needsAuth ? (
                       <span className="inline-block w-2 h-2 rounded-full bg-blue-400" />
                     ) : (
                       <StatusDot status={state.status} />
                     )}
                     <span className="text-sm font-medium text-zinc-200">{p.name}</span>
-                    {needsAuth && <span className="text-xs text-blue-400">Connect</span>}
+                    {notConfigured && <span className="text-xs text-zinc-600">Not configured</span>}
+                    {!notConfigured && needsAuth && (
+                      <span className="text-xs text-blue-400">Connect</span>
+                    )}
                     {state.status === "syncing" && (
                       <span className="text-xs text-zinc-500">...</span>
                     )}
@@ -177,12 +197,12 @@ export function DataSourcesPanel() {
                   {state.message && state.status !== "syncing" && (
                     <span className="text-xs text-zinc-500 mt-0.5">{state.message}</span>
                   )}
-                  {!state.message && p.lastSyncedAt && (
+                  {!notConfigured && !state.message && p.lastSyncedAt && (
                     <span className="text-xs text-zinc-600 mt-0.5">
                       Last sync: {formatRelativeTime(p.lastSyncedAt)}
                     </span>
                   )}
-                  {!needsAuth && state.status !== "syncing" && (
+                  {!notConfigured && !needsAuth && state.status !== "syncing" && (
                     <button
                       type="button"
                       onClick={() => handleProviderClick(p, true)}
