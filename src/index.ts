@@ -5,8 +5,11 @@ import { createDatabaseFromEnv } from "./db/index.ts";
 import { ensureProvider, saveTokens } from "./db/tokens.ts";
 import { AutoSupplementsProvider } from "./providers/auto-supplements.ts";
 import { FatSecretProvider } from "./providers/fatsecret.ts";
+import { HevyProvider } from "./providers/hevy.ts";
 import { getAllProviders, getEnabledProviders, registerProvider } from "./providers/index.ts";
 import { PelotonProvider } from "./providers/peloton.ts";
+import { RideWithGpsProvider } from "./providers/ride-with-gps.ts";
+import { StrongCsvProvider } from "./providers/strong-csv.ts";
 import { WahooProvider } from "./providers/wahoo.ts";
 import { WhoopProvider } from "./providers/whoop.ts";
 import { WithingsProvider } from "./providers/withings.ts";
@@ -34,6 +37,9 @@ registerProvider(new WithingsProvider());
 registerProvider(new PelotonProvider());
 registerProvider(new FatSecretProvider());
 registerProvider(new WhoopProvider());
+registerProvider(new HevyProvider());
+registerProvider(new RideWithGpsProvider());
+registerProvider(new StrongCsvProvider());
 if (supplementConfig) {
   registerProvider(new AutoSupplementsProvider(supplementConfig));
 }
