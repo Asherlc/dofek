@@ -2,21 +2,21 @@
 -- These speed up power curve, NP/FTP, HR zone, TRIMP, and max-HR queries.
 
 -- Power queries (power curve, NP, FTP)
-CREATE INDEX CONCURRENTLY IF NOT EXISTS metric_stream_power_idx
+CREATE INDEX IF NOT EXISTS metric_stream_power_idx
   ON fitness.metric_stream (activity_id, recorded_at)
   WHERE power > 0;
 
 -- Heart rate queries (HR zones, TRIMP, max HR)
-CREATE INDEX CONCURRENTLY IF NOT EXISTS metric_stream_hr_idx
+CREATE INDEX IF NOT EXISTS metric_stream_hr_idx
   ON fitness.metric_stream (activity_id, recorded_at)
   WHERE heart_rate IS NOT NULL;
 
 -- Same partial indexes on the dedup materialized view
-CREATE INDEX CONCURRENTLY IF NOT EXISTS v_metric_stream_power_idx
+CREATE INDEX IF NOT EXISTS v_metric_stream_power_idx
   ON fitness.v_metric_stream (activity_id, recorded_at)
   WHERE power > 0;
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS v_metric_stream_hr_idx
+CREATE INDEX IF NOT EXISTS v_metric_stream_hr_idx
   ON fitness.v_metric_stream (activity_id, recorded_at)
   WHERE heart_rate IS NOT NULL;
 
