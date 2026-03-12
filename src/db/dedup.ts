@@ -8,7 +8,7 @@ const DEDUP_VIEWS = [
   "fitness.v_daily_metrics",
 ] as const;
 
-const ROLLUP_VIEWS = ["fitness.activity_summary", "fitness.activity_hr_zones"] as const;
+const ROLLUP_VIEWS = ["fitness.activity_summary"] as const;
 
 /**
  * Refresh all deduplication materialized views.

@@ -1,4 +1,8 @@
-import { App, ExpressReceiver } from "@slack/bolt";
+import type { App as AppType } from "@slack/bolt";
+import bolt from "@slack/bolt";
+
+const { App, ExpressReceiver } = bolt;
+
 import type { GenericMessageEvent } from "@slack/types";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
@@ -27,7 +31,8 @@ async function lookupOrCreateUserId(
         WHERE auth_provider = 'slack' AND provider_account_id = ${slackUserId}
         LIMIT 1`,
   );
-  if (existing.length > 0) return existing[0].user_id;
+  const existingRow = existing[0];
+  if (existing.length > 0 && existingRow) return existingRow.user_id;
 
   // Fetch Slack profile for name/email
   let name = "Slack User";
@@ -46,7 +51,9 @@ async function lookupOrCreateUserId(
         VALUES (${name}, ${email})
         RETURNING id`,
   );
-  const userId = newUser[0].id;
+  const newUserRow = newUser[0];
+  if (!newUserRow) throw new Error("Failed to create user profile for Slack user");
+  const userId = newUserRow.id;
 
   // Link Slack account
   await db.execute(
@@ -99,7 +106,7 @@ function todayDate(): string {
 }
 
 /** Register message and action handlers on a Bolt app */
-function registerHandlers(app: App, db: Database) {
+function registerHandlers(app: AppType, db: Database) {
   // Handle direct messages
   app.message(async ({ message, say, client }) => {
     const msg = message as GenericMessageEvent;
@@ -234,7 +241,7 @@ function registerHandlers(app: App, db: Database) {
 }
 
 interface SlackBotResult {
-  app: App;
+  app: AppType;
   mode: "socket" | "http";
   /** Express router for HTTP mode — mount on your Express app at /slack */
   router?: express.Router;
@@ -258,6 +265,8 @@ export function createSlackBot(db: Database): SlackBotResult | null {
   if (signingSecret) {
     const receiver = new ExpressReceiver({
       signingSecret,
+      // Router is mounted at /slack, so use /events here → full path /slack/events
+      endpoints: "/events",
       // No clientId/clientSecret — OAuth is handled by the main auth routes
       processBeforeResponse: true,
     });
@@ -276,13 +285,14 @@ export function createSlackBot(db: Database): SlackBotResult | null {
               WHERE team_id = ${teamId}
               LIMIT 1`,
         );
-        if (rows.length === 0) {
+        const row = rows[0];
+        if (rows.length === 0 || !row) {
           throw new Error(`No Slack installation found for team ${teamId}`);
         }
         return {
-          botToken: rows[0].bot_token,
-          botId: rows[0].bot_id ?? undefined,
-          botUserId: rows[0].bot_user_id ?? undefined,
+          botToken: row.bot_token,
+          botId: row.bot_id ?? undefined,
+          botUserId: row.bot_user_id ?? undefined,
         };
       },
     });

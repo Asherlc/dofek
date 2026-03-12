@@ -47,48 +47,49 @@ export const hikingRouter = router({
   /**
    * Grade-adjusted pace for walking, hiking, and trail running activities.
    * Uses the Minetti cost factor model to normalize pace for grade.
-   * Reads from activity_summary rollup view.
+   * Reads from pre-computed activity_summary rollup view.
    */
   gradeAdjustedPace: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
-      interface SummaryRow {
+      interface GradeRow {
         date: string;
         activity_name: string;
         activity_type: string;
-        total_distance: number;
+        distance_m: number;
         duration_seconds: number;
-        elevation_gain: number | null;
-        elevation_loss: number | null;
+        elevation_gain_m: number;
+        elevation_loss_m: number;
+        avg_grade: number;
       }
       const rows = await ctx.db.execute(
         sql`SELECT
-              asum.started_at::date::text AS date,
-              asum.name AS activity_name,
-              asum.activity_type,
-              COALESCE(asum.total_distance, 0)::numeric AS total_distance,
-              EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) AS duration_seconds,
-              asum.elevation_gain,
-              asum.elevation_loss
-            FROM fitness.activity_summary asum
-            WHERE asum.user_id = ${ctx.userId}
-              AND asum.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
-              AND asum.activity_type IN ('walking', 'hiking', 'trail_running')
-              AND asum.ended_at IS NOT NULL
+              a.started_at::date::text AS date,
+              a.name AS activity_name,
+              a.activity_type,
+              ROUND(asum.total_distance::numeric, 1) AS distance_m,
+              ROUND(EXTRACT(EPOCH FROM (a.ended_at - a.started_at))::numeric, 1) AS duration_seconds,
+              ROUND(asum.elevation_gain_m::numeric, 1) AS elevation_gain_m,
+              ROUND(asum.elevation_loss_m::numeric, 1) AS elevation_loss_m,
+              CASE WHEN asum.total_distance > 0
+                THEN ROUND(((asum.elevation_gain_m - asum.elevation_loss_m) / asum.total_distance * 100)::numeric, 4)
+                ELSE 0
+              END AS avg_grade
+            FROM fitness.v_activity a
+            JOIN fitness.activity_summary asum ON asum.activity_id = a.id
+            WHERE a.user_id = ${ctx.userId}
+              AND a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+              AND a.activity_type IN ('walking', 'hiking', 'trail_running')
               AND asum.total_distance > 0
-            ORDER BY asum.started_at`,
+              AND EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) > 0
+            ORDER BY a.started_at`,
       );
 
-      return (rows as unknown as SummaryRow[]).map((r) => {
-        const distanceKm = Number(r.total_distance) / 1000;
+      return (rows as unknown as GradeRow[]).map((r) => {
+        const distanceKm = Number(r.distance_m) / 1000;
         const durationMinutes = Number(r.duration_seconds) / 60;
         const averagePaceMinPerKm = distanceKm > 0 ? durationMinutes / distanceKm : 0;
-        const elevationGain = Number(r.elevation_gain ?? 0);
-        const elevationLoss = Number(r.elevation_loss ?? 0);
-        const avgGrade =
-          Number(r.total_distance) > 0
-            ? (elevationGain - elevationLoss) / Number(r.total_distance)
-            : 0;
+        const avgGrade = Number(r.avg_grade) / 100;
 
         let costFactor: number;
         if (avgGrade >= 0) {
@@ -107,15 +108,15 @@ export const hikingRouter = router({
           durationMinutes: Math.round(durationMinutes * 10) / 10,
           averagePaceMinPerKm: Math.round(averagePaceMinPerKm * 100) / 100,
           gradeAdjustedPaceMinPerKm: Math.round(gradeAdjustedPaceMinPerKm * 100) / 100,
-          elevationGainMeters: Math.round(elevationGain),
-          elevationLossMeters: Math.round(elevationLoss),
+          elevationGainMeters: Math.round(Number(r.elevation_gain_m)),
+          elevationLossMeters: Math.round(Number(r.elevation_loss_m)),
         } satisfies GradeAdjustedPaceRow;
       });
     }),
 
   /**
    * Weekly cumulative elevation gain from hiking and walking activities.
-   * Reads from activity_summary rollup view.
+   * Reads from pre-computed activity_summary rollup view.
    */
   elevationProfile: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(365) }))
@@ -128,15 +129,16 @@ export const hikingRouter = router({
       }
       const rows = await ctx.db.execute(
         sql`SELECT
-              date_trunc('week', asum.started_at)::date::text AS week,
-              ROUND(SUM(COALESCE(asum.elevation_gain, 0))::numeric, 1) AS elevation_gain_m,
+              date_trunc('week', a.started_at)::date::text AS week,
+              ROUND(SUM(asum.elevation_gain_m)::numeric, 1) AS elevation_gain_m,
               COUNT(*)::int AS activity_count,
-              ROUND(SUM(COALESCE(asum.total_distance, 0))::numeric / 1000.0, 2) AS total_distance_km
-            FROM fitness.activity_summary asum
-            WHERE asum.user_id = ${ctx.userId}
-              AND asum.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
-              AND asum.activity_type IN ('walking', 'hiking')
-            GROUP BY date_trunc('week', asum.started_at)
+              ROUND(SUM(asum.total_distance / 1000.0)::numeric, 2) AS total_distance_km
+            FROM fitness.v_activity a
+            JOIN fitness.activity_summary asum ON asum.activity_id = a.id
+            WHERE a.user_id = ${ctx.userId}
+              AND a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+              AND a.activity_type IN ('walking', 'hiking')
+            GROUP BY date_trunc('week', a.started_at)
             ORDER BY week`,
       );
 
@@ -194,7 +196,7 @@ export const hikingRouter = router({
 
   /**
    * Compare repeated activities (same name, 2+ instances) over time.
-   * Reads from activity_summary rollup view.
+   * Reads from pre-computed activity_summary rollup view.
    */
   activityComparison: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(365) }))
@@ -210,24 +212,21 @@ export const hikingRouter = router({
       const rows = await ctx.db.execute(
         sql`WITH activity_data AS (
               SELECT
-                asum.name AS activity_name,
-                asum.started_at::date AS date,
-                ROUND((EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0)::numeric, 1) AS duration_minutes,
-                CASE WHEN COALESCE(asum.total_distance, 0) > 0
-                  THEN ROUND(
-                    ((EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0)
-                     / (asum.total_distance / 1000.0))::numeric, 2
-                  )
+                a.name AS activity_name,
+                a.started_at::date AS date,
+                ROUND((EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 60.0)::numeric, 1) AS duration_minutes,
+                CASE WHEN asum.total_distance > 0
+                  THEN ROUND(((EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 60.0) / (asum.total_distance / 1000.0))::numeric, 2)
                   ELSE 0
                 END AS average_pace_min_per_km,
                 ROUND(asum.avg_hr::numeric, 1) AS avg_heart_rate,
-                ROUND(COALESCE(asum.elevation_gain, 0)::numeric, 1) AS elevation_gain_m
-              FROM fitness.activity_summary asum
-              WHERE asum.user_id = ${ctx.userId}
-                AND asum.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
-                AND asum.activity_type IN ('walking', 'hiking', 'trail_running')
-                AND asum.name IS NOT NULL
-                AND asum.ended_at IS NOT NULL
+                ROUND(asum.elevation_gain_m::numeric, 1) AS elevation_gain_m
+              FROM fitness.v_activity a
+              JOIN fitness.activity_summary asum ON asum.activity_id = a.id
+              WHERE a.user_id = ${ctx.userId}
+                AND a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+                AND a.activity_type IN ('walking', 'hiking', 'trail_running')
+                AND a.name IS NOT NULL
             ),
             repeated_names AS (
               SELECT activity_name

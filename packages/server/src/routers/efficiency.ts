@@ -44,12 +44,9 @@ export interface PolarizationTrendResult {
 export const efficiencyRouter = router({
   /**
    * Aerobic Efficiency (Efficiency Factor) per activity.
-   * EF = avg power in Z2 / avg HR in Z2, where Z2 = 60-70% of max HR.
+   * EF = avg power in Z2 / avg HR in Z2, where Z2 = 60-70% HRR (Karvonen).
+   * Uses nearest resting HR from daily metrics for each activity's date.
    * Only includes activities with at least 5 minutes (300 samples) of Z2 data.
-   *
-   * NOTE: This still hits raw metric_stream because we need per-sample Z2 filtering
-   * that isn't captured in activity_summary. However, the query is scoped by
-   * activity_id from activity_summary, limiting the scan.
    */
   aerobicEfficiency: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(180) }))
@@ -64,11 +61,8 @@ export const efficiencyRouter = router({
         efficiency_factor: number;
         z2_samples: number;
       }>(
-        sql`WITH user_hr AS (
-              SELECT id, max_hr FROM fitness.user_profile WHERE id = ${ctx.userId} AND max_hr IS NOT NULL LIMIT 1
-            )
-            SELECT
-              uh.max_hr,
+        sql`SELECT
+              up.max_hr,
               a.started_at::date AS date,
               a.activity_type,
               a.name,
@@ -76,16 +70,27 @@ export const efficiencyRouter = router({
               ROUND(AVG(ms.heart_rate)::numeric, 1) AS avg_hr_z2,
               ROUND((AVG(ms.power)::numeric / NULLIF(AVG(ms.heart_rate), 0))::numeric, 3) AS efficiency_factor,
               COUNT(*)::int AS z2_samples
-            FROM user_hr uh
-            JOIN fitness.v_activity a ON a.user_id = uh.id
+            FROM fitness.user_profile up
+            JOIN fitness.v_activity a ON a.user_id = up.id
             JOIN fitness.metric_stream ms ON ms.activity_id = a.id
-            WHERE a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+            JOIN LATERAL (
+              SELECT dm.resting_hr
+              FROM fitness.v_daily_metrics dm
+              WHERE dm.user_id = up.id
+                AND dm.date <= a.started_at::date
+                AND dm.resting_hr IS NOT NULL
+              ORDER BY dm.date DESC
+              LIMIT 1
+            ) rhr ON true
+            WHERE up.id = ${ctx.userId}
+              AND a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
               AND ms.recorded_at > NOW() - (${input.days} + 1)::int * INTERVAL '1 day'
               AND ${enduranceTypeFilter("a")}
-              AND ms.heart_rate >= uh.max_hr * 0.6
-              AND ms.heart_rate < uh.max_hr * 0.7
+              AND up.max_hr IS NOT NULL
+              AND ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * 0.6
+              AND ms.heart_rate <  rhr.resting_hr + (up.max_hr - rhr.resting_hr) * 0.7
               AND ms.power > 0
-            GROUP BY a.id, a.started_at, a.activity_type, a.name, uh.max_hr
+            GROUP BY a.id, a.started_at, a.activity_type, a.name, up.max_hr
             HAVING COUNT(*) >= 300
             ORDER BY a.started_at`,
       );
@@ -183,12 +188,12 @@ export const efficiencyRouter = router({
 
   /**
    * Polarization Index trend per week using Treff 3-zone model.
-   * Reads from activity_hr_zones rollup view + user_profile.max_hr.
+   * Computes Karvonen zones at query time from metric_stream + v_daily_metrics.
    *
-   * Uses a 3-zone re-bucketing of the 5-zone data:
-   *   Z1 (easy) = zones 1-3 (< 80% max HR)
-   *   Z2 (threshold) = zone 4 part (80-87.5% max HR) — approximated as zone4
-   *   Z3 (high intensity) = zone 4 part + zone 5 (≥87.5% max HR) — approximated as zone5
+   * Uses a 3-zone re-bucketing:
+   *   Z1 (easy) = < 80% HRR (Karvonen zones 1-3)
+   *   Z2 (threshold) = 80-90% HRR (Karvonen zone 4)
+   *   Z3 (high intensity) = ≥ 90% HRR (Karvonen zone 5)
    *
    * PI = log10((Z1_time / (Z2_time * Z3_time)) * 100)
    * PI > 2.0 indicates a well-polarized training distribution.
@@ -205,21 +210,33 @@ export const efficiencyRouter = router({
       }>(
         sql`SELECT
               up.max_hr,
-              date_trunc('week', asum.started_at)::date AS week,
-              -- Z1 (easy): < 80% max HR = zone1 + zone2 + zone3
-              SUM(hz.zone1_count + hz.zone2_count + hz.zone3_count)::int AS z1_seconds,
-              -- Z2 (threshold): 80-90% max HR = zone4
-              SUM(hz.zone4_count)::int AS z2_seconds,
-              -- Z3 (high intensity): >= 90% max HR = zone5
-              SUM(hz.zone5_count)::int AS z3_seconds
-            FROM fitness.activity_hr_zones hz
-            JOIN fitness.activity_summary asum ON asum.activity_id = hz.activity_id
-            JOIN fitness.user_profile up ON up.id = hz.user_id
+              date_trunc('week', a.started_at)::date AS week,
+              -- Z1 (easy): < 80% HRR
+              COUNT(*) FILTER (WHERE ms.heart_rate < rhr.resting_hr + (up.max_hr - rhr.resting_hr) * 0.8)::int AS z1_seconds,
+              -- Z2 (threshold): 80-90% HRR
+              COUNT(*) FILTER (WHERE ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * 0.8
+                                AND ms.heart_rate <  rhr.resting_hr + (up.max_hr - rhr.resting_hr) * 0.9)::int AS z2_seconds,
+              -- Z3 (high intensity): >= 90% HRR
+              COUNT(*) FILTER (WHERE ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * 0.9)::int AS z3_seconds
+            FROM fitness.user_profile up
+            JOIN fitness.v_activity a ON a.user_id = up.id
+            JOIN fitness.metric_stream ms ON ms.activity_id = a.id
+            JOIN LATERAL (
+              SELECT dm.resting_hr
+              FROM fitness.v_daily_metrics dm
+              WHERE dm.user_id = up.id
+                AND dm.date <= a.started_at::date
+                AND dm.resting_hr IS NOT NULL
+              ORDER BY dm.date DESC
+              LIMIT 1
+            ) rhr ON true
             WHERE up.id = ${ctx.userId}
-              AND asum.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
-              AND ${enduranceTypeFilter("asum")}
+              AND a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+              AND ms.recorded_at > NOW() - (${input.days} + 1)::int * INTERVAL '1 day'
+              AND ${enduranceTypeFilter("a")}
               AND up.max_hr IS NOT NULL
-            GROUP BY up.max_hr, date_trunc('week', asum.started_at)
+              AND ms.heart_rate IS NOT NULL
+            GROUP BY up.max_hr, date_trunc('week', a.started_at)
             ORDER BY week`,
       );
 

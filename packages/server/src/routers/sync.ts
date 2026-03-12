@@ -230,9 +230,14 @@ export const syncRouter = router({
     .input(z.object({ limit: z.number().default(100) }))
     .query(async ({ ctx, input }) => {
       const { syncLog } = await import("dofek/db/schema");
-      const { desc } = await import("drizzle-orm");
+      const { desc, eq } = await import("drizzle-orm");
 
-      return ctx.db.select().from(syncLog).orderBy(desc(syncLog.syncedAt)).limit(input.limit);
+      return ctx.db
+        .select()
+        .from(syncLog)
+        .where(eq(syncLog.userId, ctx.userId))
+        .orderBy(desc(syncLog.syncedAt))
+        .limit(input.limit);
     }),
 
   /** Get recent system logs (console output) */
