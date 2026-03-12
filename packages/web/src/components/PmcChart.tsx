@@ -1,19 +1,5 @@
+import type { PmcDataPoint, TssModelInfo } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
-
-interface PmcDataPoint {
-  date: string;
-  load: number;
-  ctl: number;
-  atl: number;
-  tsb: number;
-}
-
-interface TssModelInfo {
-  type: "learned" | "generic";
-  pairedActivities: number;
-  r2: number | null;
-  ftp: number | null;
-}
 
 interface PmcChartProps {
   data: PmcDataPoint[];

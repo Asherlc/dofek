@@ -1,17 +1,8 @@
+import type { SleepNightlyRow } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
 
-export interface SleepNightlyDataPoint {
-  date: string;
-  durationMinutes: number;
-  deepPct: number;
-  remPct: number;
-  lightPct: number;
-  awakePct: number;
-  rollingAvgDuration: number | null;
-}
-
 interface SleepAnalyticsChartProps {
-  nightly: SleepNightlyDataPoint[];
+  nightly: SleepNightlyRow[];
   sleepDebt: number;
   loading?: boolean;
 }

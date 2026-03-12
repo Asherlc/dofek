@@ -20,7 +20,8 @@
       "recommended": true,
       "suspicious": {
         "noExplicitAny": "error",
-        "noArrayIndexKey": "off"
+        "noArrayIndexKey": "off",
+        "noTsIgnore": "error"
       },
       "a11y": {
         "noLabelWithoutControl": "off",

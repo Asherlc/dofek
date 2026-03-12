@@ -1,12 +1,8 @@
+import type { RampRateWeek } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
 
-export interface RampRateDataPoint {
-  week: string;
-  rampRate: number;
-}
-
-export interface RampRateChartProps {
-  data: RampRateDataPoint[];
+interface RampRateChartProps {
+  data: RampRateWeek[];
   currentRampRate: number;
   recommendation: string;
   loading?: boolean;

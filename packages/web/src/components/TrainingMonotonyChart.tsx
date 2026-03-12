@@ -1,13 +1,8 @@
+import type { TrainingMonotonyWeek } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
 
-export interface TrainingMonotonyDataPoint {
-  week: string;
-  monotony: number;
-  strain: number;
-}
-
-export interface TrainingMonotonyChartProps {
-  data: TrainingMonotonyDataPoint[];
+interface TrainingMonotonyChartProps {
+  data: TrainingMonotonyWeek[];
   loading?: boolean;
 }
 

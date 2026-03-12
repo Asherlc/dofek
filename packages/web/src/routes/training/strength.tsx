@@ -23,32 +23,23 @@ function StrengthTab() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Section title="Strength Volume" subtitle="Weekly volume load over time">
           <StrengthVolumeChart
-            data={(strengthVolume.data ?? []) as never[]}
+            data={strengthVolume.data ?? []}
             loading={strengthVolume.isLoading}
           />
         </Section>
 
         <Section title="Estimated 1-Rep Max" subtitle="Epley-formula e1RM trends per exercise">
-          <EstimatedMaxChart
-            exercises={(estimatedMax.data ?? []) as never[]}
-            loading={estimatedMax.isLoading}
-          />
+          <EstimatedMaxChart exercises={estimatedMax.data ?? []} loading={estimatedMax.isLoading} />
         </Section>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Section title="Muscle Group Volume" subtitle="Volume distribution by muscle group">
-          <MuscleGroupVolumeChart
-            data={(muscleVolume.data ?? []) as never[]}
-            loading={muscleVolume.isLoading}
-          />
+          <MuscleGroupVolumeChart data={muscleVolume.data ?? []} loading={muscleVolume.isLoading} />
         </Section>
 
         <Section title="Progressive Overload" subtitle="Exercise-level overload trends">
-          <ProgressiveOverloadCards
-            exercises={(overload.data ?? []) as never[]}
-            loading={overload.isLoading}
-          />
+          <ProgressiveOverloadCards exercises={overload.data ?? []} loading={overload.isLoading} />
         </Section>
       </div>
     </>

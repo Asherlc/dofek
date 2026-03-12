@@ -61,33 +61,6 @@ export function TrainingPage() {
   const sleepData = trpc.recovery.sleepAnalytics.useQuery({ days });
   const readiness = trpc.recovery.readinessScore.useQuery({ days });
 
-  const effData = efficiency.data as
-    | {
-        maxHr: number | null;
-        activities: Array<{
-          date: string;
-          activityType: string;
-          name: string;
-          avgPowerZ2: number;
-          avgHrZ2: number;
-          efficiencyFactor: number;
-          z2Samples: number;
-        }>;
-      }
-    | undefined;
-  const polData = polarization.data as
-    | {
-        maxHr: number | null;
-        weeks: Array<{
-          week: string;
-          z1Seconds: number;
-          z2Seconds: number;
-          z3Seconds: number;
-          polarizationIndex: number | null;
-        }>;
-      }
-    | undefined;
-
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 overflow-x-hidden">
       <AppHeader>
@@ -100,27 +73,21 @@ export function TrainingPage() {
             title="Readiness Score"
             subtitle="Composite score from HRV, resting HR, sleep, load balance"
           >
-            <ReadinessScoreCard
-              data={(readiness.data ?? []) as never[]}
-              loading={readiness.isLoading}
-            />
+            <ReadinessScoreCard data={readiness.data ?? []} loading={readiness.isLoading} />
           </Section>
 
           <Section
             title="Acute:Chronic Workload Ratio"
             subtitle="TRIMP-based training load balance"
           >
-            <WorkloadRatioChart
-              data={(workloadRatio.data ?? []) as never[]}
-              loading={workloadRatio.isLoading}
-            />
+            <WorkloadRatioChart data={workloadRatio.data ?? []} loading={workloadRatio.isLoading} />
           </Section>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <Section title="HRV Coefficient of Variation" subtitle="7-day rolling HRV variability">
             <HrvVariabilityChart
-              data={(hrvVariability.data ?? []) as never[]}
+              data={hrvVariability.data ?? []}
               loading={hrvVariability.isLoading}
             />
           </Section>
@@ -130,12 +97,8 @@ export function TrainingPage() {
             subtitle="Nightly sleep stages, efficiency, and sleep debt"
           >
             <SleepAnalyticsChart
-              nightly={
-                ((sleepData.data as Record<string, unknown> | undefined)?.nightly ?? []) as never[]
-              }
-              sleepDebt={
-                ((sleepData.data as Record<string, unknown> | undefined)?.sleepDebt as number) ?? 0
-              }
+              nightly={sleepData.data?.nightly ?? []}
+              sleepDebt={sleepData.data?.sleepDebt ?? 0}
               loading={sleepData.isLoading}
             />
           </Section>
@@ -155,15 +118,9 @@ export function TrainingPage() {
 
         <Section title="Ramp Rate" subtitle="Weekly CTL ramp rate with training recommendations">
           <RampRateChart
-            data={((rampRate.data as Record<string, unknown> | undefined)?.weeks ?? []) as never[]}
-            currentRampRate={
-              ((rampRate.data as Record<string, unknown> | undefined)?.currentRampRate as number) ??
-              0
-            }
-            recommendation={
-              ((rampRate.data as Record<string, unknown> | undefined)?.recommendation as string) ??
-              ""
-            }
+            data={rampRate.data?.weeks ?? []}
+            currentRampRate={rampRate.data?.currentRampRate ?? 0}
+            recommendation={rampRate.data?.recommendation ?? ""}
             loading={rampRate.isLoading}
           />
         </Section>
@@ -190,15 +147,12 @@ export function TrainingPage() {
         {/* ── Cycling Advanced ───────────────────────────────── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <Section title="Training Monotony & Strain" subtitle="Weekly training load variability">
-            <TrainingMonotonyChart
-              data={(monotony.data ?? []) as never[]}
-              loading={monotony.isLoading}
-            />
+            <TrainingMonotonyChart data={monotony.data ?? []} loading={monotony.isLoading} />
           </Section>
 
           <Section title="Vertical Ascent Rate" subtitle="Climbing speed on grade >3% segments">
             <VerticalAscentChart
-              data={(verticalAscent.data ?? []) as never[]}
+              data={verticalAscent.data ?? []}
               loading={verticalAscent.isLoading}
             />
           </Section>
@@ -208,10 +162,7 @@ export function TrainingPage() {
           title="Activity Variability Index"
           subtitle="Normalized power vs average power ratio per activity"
         >
-          <ActivityVariabilityTable
-            data={(variability.data ?? []) as never[]}
-            loading={variability.isLoading}
-          />
+          <ActivityVariabilityTable data={variability.data ?? []} loading={variability.isLoading} />
         </Section>
 
         {/* ── Volume + Zones + Intensity ─────────────────────── */}
@@ -226,8 +177,8 @@ export function TrainingPage() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <Section title="Aerobic Efficiency" subtitle="Power/HR ratio in Z2 over time">
             <AerobicEfficiencyChart
-              activities={effData?.activities ?? []}
-              maxHr={effData?.maxHr ?? null}
+              activities={efficiency.data?.activities ?? []}
+              maxHr={efficiency.data?.maxHr ?? null}
               loading={efficiency.isLoading}
             />
           </Section>
@@ -237,8 +188,8 @@ export function TrainingPage() {
             subtitle="Weekly PI trend (>2.0 = polarized training)"
           >
             <PolarizationTrendChart
-              weeks={polData?.weeks ?? []}
-              maxHr={polData?.maxHr ?? null}
+              weeks={polarization.data?.weeks ?? []}
+              maxHr={polarization.data?.maxHr ?? null}
               loading={polarization.isLoading}
             />
           </Section>
@@ -248,14 +199,14 @@ export function TrainingPage() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <Section title="Strength Volume" subtitle="Weekly volume load over time">
             <StrengthVolumeChart
-              data={(strengthVolume.data ?? []) as never[]}
+              data={strengthVolume.data ?? []}
               loading={strengthVolume.isLoading}
             />
           </Section>
 
           <Section title="Estimated 1-Rep Max" subtitle="Epley-formula e1RM trends per exercise">
             <EstimatedMaxChart
-              exercises={(estimatedMax.data ?? []) as never[]}
+              exercises={estimatedMax.data ?? []}
               loading={estimatedMax.isLoading}
             />
           </Section>
@@ -264,14 +215,14 @@ export function TrainingPage() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <Section title="Muscle Group Volume" subtitle="Volume distribution by muscle group">
             <MuscleGroupVolumeChart
-              data={(muscleVolume.data ?? []) as never[]}
+              data={muscleVolume.data ?? []}
               loading={muscleVolume.isLoading}
             />
           </Section>
 
           <Section title="Progressive Overload" subtitle="Exercise-level overload trends">
             <ProgressiveOverloadCards
-              exercises={(overload.data ?? []) as never[]}
+              exercises={overload.data ?? []}
               loading={overload.isLoading}
             />
           </Section>
@@ -283,7 +234,7 @@ export function TrainingPage() {
           subtitle="Minetti-model normalized pace for walks and hikes"
         >
           <GradeAdjustedPaceTable
-            data={(gradeAdjustedPace.data ?? []) as never[]}
+            data={gradeAdjustedPace.data ?? []}
             loading={gradeAdjustedPace.isLoading}
           />
         </Section>
@@ -293,10 +244,7 @@ export function TrainingPage() {
             title="Elevation Gain"
             subtitle="Weekly cumulative elevation from hiking and walking"
           >
-            <ElevationGainChart
-              data={(elevation.data ?? []) as never[]}
-              loading={elevation.isLoading}
-            />
+            <ElevationGainChart data={elevation.data ?? []} loading={elevation.isLoading} />
           </Section>
 
           <Section
@@ -304,7 +252,7 @@ export function TrainingPage() {
             subtitle="Step length, gait symmetry, double support"
           >
             <WalkingBiomechanicsChart
-              data={(biomechanics.data ?? []) as never[]}
+              data={biomechanics.data ?? []}
               loading={biomechanics.isLoading}
             />
           </Section>
@@ -312,7 +260,7 @@ export function TrainingPage() {
 
         <Section title="Route Comparison" subtitle="Repeated routes compared over time">
           <ActivityComparisonChart
-            data={(routeComparison.data ?? []) as never[]}
+            data={routeComparison.data ?? []}
             loading={routeComparison.isLoading}
           />
         </Section>
@@ -324,16 +272,7 @@ export function TrainingPage() {
               <span className="text-zinc-600 text-sm">Loading...</span>
             </div>
           ) : (
-            <TrainingCalendar
-              data={
-                (calendarData.data ?? []) as unknown as Array<{
-                  date: string;
-                  activityCount: number;
-                  totalMinutes: number;
-                  activityTypes: string[];
-                }>
-              }
-            />
+            <TrainingCalendar data={calendarData.data ?? []} />
           )}
         </Section>
       </main>

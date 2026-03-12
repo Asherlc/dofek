@@ -1,17 +1,8 @@
+import type { MuscleGroupVolumeRow } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
 
-export interface MuscleGroupWeeklyData {
-  week: string;
-  sets: number;
-}
-
-export interface MuscleGroupData {
-  muscleGroup: string;
-  weeklyData: MuscleGroupWeeklyData[];
-}
-
 interface MuscleGroupVolumeChartProps {
-  data: MuscleGroupData[];
+  data: MuscleGroupVolumeRow[];
   loading?: boolean;
 }
 

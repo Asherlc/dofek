@@ -1,20 +1,8 @@
+import type { ReadinessRow } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
 
-export interface ReadinessComponents {
-  hrvScore: number;
-  restingHrScore: number;
-  sleepScore: number;
-  loadBalanceScore: number;
-}
-
-export interface ReadinessDataPoint {
-  date: string;
-  readinessScore: number;
-  components: ReadinessComponents;
-}
-
 interface ReadinessScoreCardProps {
-  data: ReadinessDataPoint[];
+  data: ReadinessRow[];
   loading?: boolean;
 }
 

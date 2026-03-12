@@ -1,13 +1,8 @@
+import type { VolumeOverTimeRow } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
 
-export interface StrengthVolumeData {
-  week: string;
-  totalVolumeKg: number;
-  setCount: number;
-}
-
 interface StrengthVolumeChartProps {
-  data: StrengthVolumeData[];
+  data: VolumeOverTimeRow[];
   loading?: boolean;
 }
 

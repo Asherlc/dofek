@@ -1,12 +1,5 @@
+import type { PolarizationWeek } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
-
-interface PolarizationWeek {
-  week: string;
-  z1Seconds: number;
-  z2Seconds: number;
-  z3Seconds: number;
-  polarizationIndex: number | null;
-}
 
 interface PolarizationTrendChartProps {
   weeks: PolarizationWeek[];

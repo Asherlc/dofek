@@ -1,13 +1,8 @@
+import type { HrvVariabilityRow } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
 
-export interface HrvVariabilityDataPoint {
-  date: string;
-  hrv: number | null;
-  rollingCoefficientOfVariation: number | null;
-}
-
 interface HrvVariabilityChartProps {
-  data: HrvVariabilityDataPoint[];
+  data: HrvVariabilityRow[];
   loading?: boolean;
 }
 

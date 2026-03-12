@@ -1,14 +1,8 @@
+import type { ProgressiveOverloadRow } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
 
-export interface ProgressiveOverloadExercise {
-  exerciseName: string;
-  weeklyVolumes: number[];
-  slopeKgPerWeek: number;
-  isProgressing: boolean;
-}
-
 interface ProgressiveOverloadCardsProps {
-  exercises: ProgressiveOverloadExercise[];
+  exercises: ProgressiveOverloadRow[];
   loading?: boolean;
 }
 

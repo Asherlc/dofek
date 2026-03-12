@@ -1,13 +1,6 @@
-export interface ActivityVariabilityRow {
-  date: string;
-  activityName: string;
-  normalizedPower: number;
-  averagePower: number;
-  variabilityIndex: number;
-  intensityFactor: number;
-}
+import type { ActivityVariabilityRow } from "dofek-server/types";
 
-export interface ActivityVariabilityTableProps {
+interface ActivityVariabilityTableProps {
   data: ActivityVariabilityRow[];
   loading?: boolean;
 }

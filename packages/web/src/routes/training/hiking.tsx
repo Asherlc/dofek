@@ -25,7 +25,7 @@ function HikingTab() {
         subtitle="Minetti-model normalized pace for walks and hikes"
       >
         <GradeAdjustedPaceTable
-          data={(gradeAdjustedPace.data ?? []) as never[]}
+          data={gradeAdjustedPace.data ?? []}
           loading={gradeAdjustedPace.isLoading}
         />
       </Section>
@@ -35,15 +35,12 @@ function HikingTab() {
           title="Elevation Gain"
           subtitle="Weekly cumulative elevation from hiking and walking"
         >
-          <ElevationGainChart
-            data={(elevation.data ?? []) as never[]}
-            loading={elevation.isLoading}
-          />
+          <ElevationGainChart data={elevation.data ?? []} loading={elevation.isLoading} />
         </Section>
 
         <Section title="Walking Biomechanics" subtitle="Step length, gait symmetry, double support">
           <WalkingBiomechanicsChart
-            data={(biomechanics.data ?? []) as never[]}
+            data={biomechanics.data ?? []}
             loading={biomechanics.isLoading}
           />
         </Section>
@@ -51,7 +48,7 @@ function HikingTab() {
 
       <Section title="Route Comparison" subtitle="Repeated routes compared over time">
         <ActivityComparisonChart
-          data={(routeComparison.data ?? []) as never[]}
+          data={routeComparison.data ?? []}
           loading={routeComparison.isLoading}
         />
       </Section>

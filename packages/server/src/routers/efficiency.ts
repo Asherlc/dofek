@@ -2,6 +2,44 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { CacheTTL, cachedQuery, router } from "../trpc.ts";
 
+export interface AerobicEfficiencyActivity {
+  date: string;
+  activityType: string;
+  name: string;
+  avgPowerZ2: number;
+  avgHrZ2: number;
+  efficiencyFactor: number;
+  z2Samples: number;
+}
+
+export interface AerobicEfficiencyResult {
+  maxHr: number | null;
+  activities: AerobicEfficiencyActivity[];
+}
+
+export interface AerobicDecouplingActivity {
+  date: string;
+  activityType: string;
+  name: string;
+  firstHalfRatio: number;
+  secondHalfRatio: number;
+  decouplingPct: number;
+  totalSamples: number;
+}
+
+export interface PolarizationWeek {
+  week: string;
+  z1Seconds: number;
+  z2Seconds: number;
+  z3Seconds: number;
+  polarizationIndex: number | null;
+}
+
+export interface PolarizationTrendResult {
+  maxHr: number | null;
+  weeks: PolarizationWeek[];
+}
+
 export const efficiencyRouter = router({
   /**
    * Aerobic Efficiency (Efficiency Factor) per activity.
@@ -14,7 +52,7 @@ export const efficiencyRouter = router({
    */
   aerobicEfficiency: cachedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(180) }))
-    .query(async ({ ctx, input }) => {
+    .query(async ({ ctx, input }): Promise<AerobicEfficiencyResult> => {
       const rows = await ctx.db.execute<{
         max_hr: number;
         date: string;
@@ -72,7 +110,7 @@ export const efficiencyRouter = router({
    */
   aerobicDecoupling: cachedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(180) }))
-    .query(async ({ ctx, input }) => {
+    .query(async ({ ctx, input }): Promise<AerobicDecouplingActivity[]> => {
       const rows = await ctx.db.execute<{
         date: string;
         activity_type: string;
@@ -151,7 +189,7 @@ export const efficiencyRouter = router({
    */
   polarizationTrend: cachedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(180) }))
-    .query(async ({ ctx, input }) => {
+    .query(async ({ ctx, input }): Promise<PolarizationTrendResult> => {
       const rows = await ctx.db.execute<{
         max_hr: number;
         week: string;

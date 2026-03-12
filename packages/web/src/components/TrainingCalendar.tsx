@@ -1,12 +1,6 @@
+import type { CalendarDay } from "dofek-server/types";
 import type { EChartsOption } from "echarts";
 import ReactECharts from "echarts-for-react";
-
-interface CalendarDay {
-  date: string;
-  activityCount: number;
-  totalMinutes: number;
-  activityTypes: string[];
-}
 
 interface TrainingCalendarProps {
   data: CalendarDay[];

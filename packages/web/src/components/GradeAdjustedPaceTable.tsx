@@ -1,12 +1,4 @@
-export interface GradeAdjustedPaceRow {
-  date: string;
-  activityName: string;
-  distanceKm: number;
-  durationMinutes: number;
-  averagePaceMinPerKm: number;
-  gradeAdjustedPaceMinPerKm: number;
-  elevationGainMeters: number;
-}
+import type { GradeAdjustedPaceRow } from "dofek-server/types";
 
 interface GradeAdjustedPaceTableProps {
   data: GradeAdjustedPaceRow[];

@@ -1,14 +1,8 @@
+import type { VerticalAscentRow } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
 
-export interface VerticalAscentDataPoint {
-  date: string;
-  activityName: string;
-  verticalAscentRate: number;
-  elevationGainMeters: number;
-}
-
-export interface VerticalAscentChartProps {
-  data: VerticalAscentDataPoint[];
+interface VerticalAscentChartProps {
+  data: VerticalAscentRow[];
   loading?: boolean;
 }
 
