@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { trpc } from "../lib/trpc.ts";
 
 export type MealType = "breakfast" | "lunch" | "dinner" | "snack" | "other";
 
@@ -43,8 +44,26 @@ export function AddFoodModal({
   const [fatGrams, setFatGrams] = useState("");
   const [servingDescription, setServingDescription] = useState("");
   const [showMacros, setShowMacros] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   const nameInputRef = useRef<HTMLInputElement>(null);
+
+  const analyzeMutation = trpc.food.analyzeWithAi.useMutation({
+    onSuccess: (data) => {
+      const { nutrition } = data;
+      setFoodName(nutrition.foodName);
+      setServingDescription(nutrition.foodDescription);
+      setCalories(String(nutrition.calories));
+      setProteinGrams(String(nutrition.proteinG));
+      setCarbsGrams(String(nutrition.carbsG));
+      setFatGrams(String(nutrition.fatG));
+      setShowMacros(true);
+      setAiError(null);
+    },
+    onError: (error) => {
+      setAiError(error.message);
+    },
+  });
 
   useEffect(() => {
     if (isOpen) {
@@ -61,6 +80,7 @@ export function AddFoodModal({
     setFatGrams("");
     setServingDescription("");
     setShowMacros(false);
+    setAiError(null);
   }
 
   function handleSubmit(event: React.FormEvent) {
@@ -85,7 +105,16 @@ export function AddFoodModal({
     onClose();
   }
 
+  function handleAnalyze() {
+    if (!foodName.trim()) return;
+    setAiError(null);
+    analyzeMutation.mutate({ description: foodName.trim() });
+  }
+
   if (!isOpen) return null;
+
+  const inputClass =
+    "w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -102,7 +131,7 @@ export function AddFoodModal({
       />
 
       {/* Modal */}
-      <div className="relative w-full max-w-md rounded-xl border border-zinc-800 bg-zinc-900 shadow-2xl">
+      <div className="relative w-full max-w-md rounded-xl border border-zinc-800 bg-zinc-900 shadow-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between border-b border-zinc-800 px-5 py-4">
           <h2 className="text-lg font-semibold text-zinc-100">Add Food</h2>
           <button
@@ -124,22 +153,69 @@ export function AddFoodModal({
         </div>
 
         <form onSubmit={handleSubmit} className="px-5 py-4 space-y-4">
-          {/* Food name */}
+          {/* Food name + AI analyze */}
           <div>
             <label htmlFor="food-name" className="block text-sm font-medium text-zinc-400 mb-1">
-              Food name *
+              What did you eat? *
             </label>
-            <input
-              ref={nameInputRef}
-              id="food-name"
-              type="text"
-              required
-              value={foodName}
-              onChange={(e) => setFoodName(e.target.value)}
-              placeholder="e.g. Chicken breast"
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-            />
+            <div className="flex gap-2">
+              <input
+                ref={nameInputRef}
+                id="food-name"
+                type="text"
+                required
+                value={foodName}
+                onChange={(e) => setFoodName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                    e.preventDefault();
+                    handleAnalyze();
+                  }
+                }}
+                placeholder='e.g. "big plate of roasted vegetables"'
+                className={inputClass}
+              />
+              <button
+                type="button"
+                onClick={handleAnalyze}
+                disabled={analyzeMutation.isPending || !foodName.trim()}
+                className="shrink-0 rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Estimate nutrition with AI (Cmd+Enter)"
+              >
+                {analyzeMutation.isPending ? (
+                  <svg
+                    className="animate-spin h-4 w-4"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <title>Analyzing</title>
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    />
+                  </svg>
+                ) : (
+                  "AI"
+                )}
+              </button>
+            </div>
           </div>
+
+          {aiError && (
+            <div className="rounded-lg bg-red-950/50 border border-red-800 px-3 py-2 text-sm text-red-300">
+              {aiError}
+            </div>
+          )}
 
           {/* Meal type */}
           <div>
@@ -150,7 +226,7 @@ export function AddFoodModal({
               id="meal-type"
               value={mealType}
               onChange={(e) => setMealType(e.target.value as MealType)}
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              className={inputClass}
             >
               {mealOptions.map((opt) => (
                 <option key={opt.value} value={opt.value}>
@@ -173,7 +249,7 @@ export function AddFoodModal({
               value={calories}
               onChange={(e) => setCalories(e.target.value)}
               placeholder="e.g. 250"
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              className={inputClass}
             />
           </div>
 
@@ -191,7 +267,7 @@ export function AddFoodModal({
               value={servingDescription}
               onChange={(e) => setServingDescription(e.target.value)}
               placeholder="e.g. 6 oz grilled"
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              className={inputClass}
             />
           </div>
 
@@ -220,7 +296,7 @@ export function AddFoodModal({
                   step="0.1"
                   value={proteinGrams}
                   onChange={(e) => setProteinGrams(e.target.value)}
-                  className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  className={inputClass}
                 />
               </div>
               <div>
@@ -234,7 +310,7 @@ export function AddFoodModal({
                   step="0.1"
                   value={carbsGrams}
                   onChange={(e) => setCarbsGrams(e.target.value)}
-                  className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  className={inputClass}
                 />
               </div>
               <div>
@@ -248,7 +324,7 @@ export function AddFoodModal({
                   step="0.1"
                   value={fatGrams}
                   onChange={(e) => setFatGrams(e.target.value)}
-                  className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  className={inputClass}
                 />
               </div>
             </div>
