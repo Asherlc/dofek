@@ -697,7 +697,7 @@ async function main() {
     warmCache(db).catch((err) => logger.error(`[cache] Warm failed: ${err}`));
 
     // Start Slack bot if configured (fire-and-forget)
-    startSlackBot(db).catch((err) => logger.error(`[slack] Slack bot error: ${err}`));
+    startSlackBot(db, app).catch((err) => logger.error(`[slack] Slack bot error: ${err}`));
   });
 }
 
