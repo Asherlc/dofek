@@ -33,6 +33,15 @@ export interface SleepAnalyticsResult {
   sleepDebt: number;
 }
 
+export interface SleepConsistencyRow {
+  date: string;
+  bedtimeHour: number;
+  waketimeHour: number;
+  rollingBedtimeStddev: number | null;
+  rollingWaketimeStddev: number | null;
+  consistencyScore: number | null;
+}
+
 export interface ReadinessComponents {
   hrvScore: number;
   restingHrScore: number;
@@ -47,6 +56,74 @@ export interface ReadinessRow {
 }
 
 export const recoveryRouter = router({
+  /**
+   * Sleep schedule consistency: stddev of bedtime and wake time over rolling 14-day windows.
+   * Lower stddev = more consistent schedule. Consistency score 0-100 based on how
+   * tight the schedule is (< 30 min stddev = 100, > 90 min = 0).
+   */
+  sleepConsistency: cachedProtectedQuery(CacheTTL.MEDIUM)
+    .input(z.object({ days: z.number().default(90) }))
+    .query(async ({ ctx, input }): Promise<SleepConsistencyRow[]> => {
+      const queryDays = input.days + 14;
+      const rows = await ctx.db.execute(
+        sql`WITH nightly AS (
+              SELECT
+                started_at::date AS date,
+                EXTRACT(HOUR FROM started_at) + EXTRACT(MINUTE FROM started_at) / 60.0 AS bedtime_hour,
+                EXTRACT(HOUR FROM ended_at) + EXTRACT(MINUTE FROM ended_at) / 60.0 AS waketime_hour
+              FROM fitness.v_sleep
+              WHERE user_id = ${ctx.userId}
+                AND is_nap = false
+                AND started_at > NOW() - ${queryDays}::int * INTERVAL '1 day'
+              ORDER BY started_at ASC
+            )
+            SELECT
+              date::text,
+              bedtime_hour,
+              waketime_hour,
+              STDDEV_POP(bedtime_hour) OVER (ORDER BY date ROWS BETWEEN 13 PRECEDING AND CURRENT ROW) AS rolling_bedtime_stddev,
+              STDDEV_POP(waketime_hour) OVER (ORDER BY date ROWS BETWEEN 13 PRECEDING AND CURRENT ROW) AS rolling_waketime_stddev,
+              COUNT(*) OVER (ORDER BY date ROWS BETWEEN 13 PRECEDING AND CURRENT ROW) AS window_count
+            FROM nightly
+            WHERE date > CURRENT_DATE - ${input.days}::int
+            ORDER BY date ASC`,
+      );
+
+      return (
+        rows as unknown as {
+          date: string;
+          bedtime_hour: number;
+          waketime_hour: number;
+          rolling_bedtime_stddev: number | null;
+          rolling_waketime_stddev: number | null;
+          window_count: number;
+        }[]
+      ).map((row) => {
+        const bedStddev =
+          row.rolling_bedtime_stddev != null ? Number(row.rolling_bedtime_stddev) : null;
+        const wakeStddev =
+          row.rolling_waketime_stddev != null ? Number(row.rolling_waketime_stddev) : null;
+
+        // Consistency score: average of bed/wake stddev mapped to 0-100
+        // < 0.5 hr stddev = 100, > 1.5 hr stddev = 0
+        let consistencyScore: number | null = null;
+        if (bedStddev != null && wakeStddev != null && Number(row.window_count) >= 7) {
+          const avgStddevHours = (bedStddev + wakeStddev) / 2;
+          const score = Math.max(0, Math.min(100, (1 - (avgStddevHours - 0.5) / 1.0) * 100));
+          consistencyScore = Math.round(score);
+        }
+
+        return {
+          date: row.date,
+          bedtimeHour: Math.round(Number(row.bedtime_hour) * 100) / 100,
+          waketimeHour: Math.round(Number(row.waketime_hour) * 100) / 100,
+          rollingBedtimeStddev: bedStddev != null ? Math.round(bedStddev * 100) / 100 : null,
+          rollingWaketimeStddev: wakeStddev != null ? Math.round(wakeStddev * 100) / 100 : null,
+          consistencyScore,
+        };
+      });
+    }),
+
   /**
    * Rolling 7-day coefficient of variation of HRV (stddev/mean * 100).
    * Fetches extra warmup rows to ensure window functions have data from day 1.

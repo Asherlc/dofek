@@ -209,6 +209,22 @@ export const syncRouter = router({
           // Invalidate all server-side caches
           await queryCache.invalidateAll();
 
+          // Run anomaly detection and send Slack alerts if needed
+          try {
+            const { checkAnomalies, sendAnomalyAlertToSlack } = await import(
+              "./anomaly-detection.ts"
+            );
+            const anomalyResult = await checkAnomalies(ctx.db, ctx.userId);
+            if (anomalyResult.anomalies.length > 0) {
+              logger.info(
+                `[sync] Detected ${anomalyResult.anomalies.length} anomaly(ies), sending alert`,
+              );
+              await sendAnomalyAlertToSlack(ctx.db, ctx.userId, anomalyResult.anomalies);
+            }
+          } catch (err) {
+            logger.error(`[sync] Anomaly detection failed: ${err}`);
+          }
+
           const job = syncJobs.get(jobId);
           if (!job) return;
           job.status = "done";

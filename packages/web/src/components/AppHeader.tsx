@@ -5,6 +5,7 @@ const navItems = [
   { to: "/dashboard", label: "Dashboard" },
   { to: "/training", label: "Training" },
   { to: "/nutrition", label: "Nutrition" },
+  { to: "/nutrition-analytics", label: "Nutrition Analytics" },
   { to: "/insights", label: "Insights" },
   { to: "/predictions", label: "ML" },
   { to: "/providers", label: "Providers" },
