@@ -100,13 +100,17 @@ export interface Insight {
 // ── Confidence classification ─────────────────────────────────────────────
 
 /** Classify confidence for conditional tests (Cohen's d effect size) */
-function classifyConfidence(d: number, minN: number): ConfidenceLevel {
+function classifyConfidence(d: number, minN: number, pValue?: number): ConfidenceLevel {
   const absD = Math.abs(d);
-  if (absD >= 0.8 && minN >= 30) return "strong";
+  // Require statistical significance (p < 0.05) for "strong"
+  if (absD >= 0.8 && minN >= 30 && (pValue == null || pValue < 0.05)) return "strong";
   if (absD >= 0.5 && minN >= 15) return "emerging";
   if (absD >= 0.3 && minN >= 10) return "early";
   return "insufficient";
 }
+
+/** Window size for monthly-scoped rolling analyses */
+const MONTHLY_WINDOW_SIZE = 30;
 
 /** Classify confidence for correlation-based insights (Spearman rho) */
 function classifyCorrelationConfidence(rho: number, n: number): ConfidenceLevel {
@@ -1753,25 +1757,37 @@ export function computeInsights(
       }
     }
 
-    const minN = Math.min(trueValues.length, falseValues.length);
-    if (minN < 5) continue;
+    const rawMinN = Math.min(trueValues.length, falseValues.length);
+    if (rawMinN < 5) continue;
+
+    // For monthly-scoped tests, overlapping 30-day windows inflate sample size.
+    // Use effective n (raw n / window size) for confidence classification.
+    const effectiveMinN =
+      test.scope === "month" ? Math.floor(rawMinN / MONTHLY_WINDOW_SIZE) : rawMinN;
+    if (effectiveMinN < 3) continue;
 
     const d = cohensD(trueValues, falseValues);
-    const confidence = classifyConfidence(d, minN);
+    const tResult = welchTTest(trueValues, falseValues);
+    const confidence = classifyConfidence(d, effectiveMinN, tResult.pValue);
     if (confidence === "insufficient") continue;
 
-    const tResult = welchTTest(trueValues, falseValues);
     const trueStats = describe(trueValues);
     const falseStats = describe(falseValues);
 
-    const pctDiff =
-      falseStats.mean !== 0
-        ? ((trueStats.mean - falseStats.mean) / Math.abs(falseStats.mean)) * 100
-        : 0;
-    const direction = pctDiff > 0 ? "higher" : "lower";
-    const absPct = Math.abs(pctDiff).toFixed(0);
+    const diff = trueStats.mean - falseStats.mean;
+    const baselineNearZero = Math.abs(falseStats.mean) < 1;
+    const pctDiff = !baselineNearZero && falseStats.mean !== 0
+      ? (diff / Math.abs(falseStats.mean)) * 100
+      : 0;
+    const direction = diff > 0 ? "higher" : "lower";
 
     const scopePhrase = test.scope === "month" ? "during months with" : "on days with";
+    // Format message: use absolute diff when baseline is near zero, percentage otherwise
+    const unit = metricUnits[test.metric] ?? "";
+    const diffLabel = baselineNearZero
+      ? `${Math.abs(diff).toFixed(2)}${unit ? ` ${unit}` : ""} ${direction}`
+      : `${Math.abs(pctDiff).toFixed(0)}% ${direction}`;
+
     const confounders = findConfounders(test, joined);
     conditionalCandidates.push({
       id: test.id,
@@ -1779,7 +1795,7 @@ export function computeInsights(
       confidence,
       metric: test.metric,
       action: test.action,
-      message: `Your ${test.metric} is ${absPct}% ${direction} ${scopePhrase} ${test.action}`,
+      message: `Your ${test.metric} is ${diffLabel} ${scopePhrase} ${test.action}`,
       detail: `${test.action}: avg ${trueStats.mean.toFixed(1)} vs ${falseStats.mean.toFixed(1)} without (n=${trueValues.length}/${falseValues.length})`,
       whenTrue: trueStats,
       whenFalse: falseStats,

@@ -90,7 +90,10 @@ export function CorrelationCard({ insight }: CorrelationCardProps) {
 function ConditionalChart({ insight }: { insight: Insight }) {
   const { whenTrue, whenFalse, action } = insight;
   const diff = whenTrue.mean - whenFalse.mean;
-  const pctDiff = whenFalse.mean !== 0 ? (diff / Math.abs(whenFalse.mean)) * 100 : 0;
+  const baselineNearZero = Math.abs(whenFalse.mean) < 1;
+  const pctDiff = !baselineNearZero && whenFalse.mean !== 0
+    ? (diff / Math.abs(whenFalse.mean)) * 100
+    : null;
   const sign = diff > 0 ? "+" : "";
 
   const maxVal = Math.max(Math.abs(whenTrue.mean), Math.abs(whenFalse.mean));
@@ -153,7 +156,7 @@ function ConditionalChart({ insight }: { insight: Insight }) {
       <p className="text-center text-xs text-zinc-500 mt-1">
         <span className={diff > 0 ? "text-emerald-400" : "text-rose-400"}>
           {sign}
-          {pctDiff.toFixed(0)}%
+          {pctDiff != null ? `${pctDiff.toFixed(0)}%` : formatValue(diff)}
         </span>{" "}
         difference
       </p>
