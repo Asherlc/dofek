@@ -22,6 +22,7 @@ const DEFAULT_CONFIG: InsightsConfig = {
 // ── Types ─────────────────────────────────────────────────────────────────
 
 export interface DailyRow {
+  [key: string]: string | number | Date | boolean | null | undefined;
   date: string | Date;
   resting_hr: number | null;
   hrv: number | null;
@@ -32,6 +33,7 @@ export interface DailyRow {
 }
 
 export interface SleepRow {
+  [key: string]: string | number | Date | boolean | null | undefined;
   started_at: string;
   duration_minutes: number | null;
   deep_minutes: number | null;
@@ -43,12 +45,14 @@ export interface SleepRow {
 }
 
 export interface ActivityRow {
+  [key: string]: string | number | Date | boolean | null | undefined;
   started_at: string;
   ended_at: string | null;
   activity_type: string;
 }
 
 export interface NutritionRow {
+  [key: string]: string | number | Date | boolean | null | undefined;
   date: string | Date;
   calories: number | null;
   protein_g: number | null;
@@ -59,6 +63,7 @@ export interface NutritionRow {
 }
 
 export interface BodyCompRow {
+  [key: string]: string | number | Date | boolean | null | undefined;
   recorded_at: string;
   weight_kg: number | null;
   body_fat_pct: number | null;

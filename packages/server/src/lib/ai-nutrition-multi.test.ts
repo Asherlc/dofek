@@ -71,9 +71,9 @@ describe("analyzeNutritionItems", () => {
     const result = await analyzeNutritionItems("chicken burrito and a coke for lunch");
 
     expect(result.items).toHaveLength(2);
-    expect(result.items[0].foodName).toBe("Chicken Burrito");
-    expect(result.items[0].meal).toBe("lunch");
-    expect(result.items[1].foodName).toBe("Coca-Cola");
+    expect(result.items[0]!.foodName).toBe("Chicken Burrito");
+    expect(result.items[0]!.meal).toBe("lunch");
+    expect(result.items[1]!.foodName).toBe("Coca-Cola");
     expect(result.provider).toBe("gemini");
   });
 

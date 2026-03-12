@@ -27,7 +27,8 @@ async function lookupOrCreateUserId(
         WHERE auth_provider = 'slack' AND provider_account_id = ${slackUserId}
         LIMIT 1`,
   );
-  if (existing.length > 0) return existing[0].user_id;
+  const existingRow = existing[0];
+  if (existing.length > 0 && existingRow) return existingRow.user_id;
 
   // Fetch Slack profile for name/email
   let name = "Slack User";
@@ -46,7 +47,9 @@ async function lookupOrCreateUserId(
         VALUES (${name}, ${email})
         RETURNING id`,
   );
-  const userId = newUser[0].id;
+  const newUserRow = newUser[0];
+  if (!newUserRow) throw new Error("Failed to create user profile for Slack user");
+  const userId = newUserRow.id;
 
   // Link Slack account
   await db.execute(
@@ -276,13 +279,14 @@ export function createSlackBot(db: Database): SlackBotResult | null {
               WHERE team_id = ${teamId}
               LIMIT 1`,
         );
-        if (rows.length === 0) {
+        const row = rows[0];
+        if (rows.length === 0 || !row) {
           throw new Error(`No Slack installation found for team ${teamId}`);
         }
         return {
-          botToken: rows[0].bot_token,
-          botId: rows[0].bot_id ?? undefined,
-          botUserId: rows[0].bot_user_id ?? undefined,
+          botToken: row.bot_token,
+          botId: row.bot_id ?? undefined,
+          botUserId: row.bot_user_id ?? undefined,
         };
       },
     });
