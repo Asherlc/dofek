@@ -71,23 +71,25 @@ export function InsightsPage() {
   const sortByStrength = (a: Insight, b: Insight) =>
     Math.abs(b.effectSize) - Math.abs(a.effectSize) || a.pValue - b.pValue;
 
-  // Order: defined categories first, then "other"
-  const orderedGroups = [
+  // Order groups by the strength of their strongest insight
+  const allCats = [
     ...CATEGORIES.filter((c) => groups.has(c.key)).map((c) => ({
       key: c.key,
       label: c.label,
-      insights: (groups.get(c.key) ?? []).sort(sortByStrength),
     })),
-    ...(groups.has("other")
-      ? [
-          {
-            key: "other",
-            label: "Other",
-            insights: (groups.get("other") ?? []).sort(sortByStrength),
-          },
-        ]
-      : []),
+    ...(groups.has("other") ? [{ key: "other", label: "Other" }] : []),
   ];
+
+  const orderedGroups = allCats
+    .map((c) => ({
+      ...c,
+      insights: (groups.get(c.key) ?? []).sort(sortByStrength),
+    }))
+    .sort((a, b) => {
+      const aMax = a.insights[0] ? Math.abs(a.insights[0].effectSize) : 0;
+      const bMax = b.insights[0] ? Math.abs(b.insights[0].effectSize) : 0;
+      return bMax - aMax;
+    });
 
   const toggle = (key: string) => {
     setCollapsed((prev) => {
