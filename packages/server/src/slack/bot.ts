@@ -10,14 +10,53 @@ import { createInstallationStore } from "./installation-store.ts";
 
 const DOFEK_PROVIDER_ID = "dofek";
 
-/** Look up the dofek user ID for a Slack user via auth_account */
-async function lookupUserId(db: Database, slackUserId: string): Promise<string | null> {
-  const rows = await db.execute<{ user_id: string }>(
+/** Look up the dofek user ID for a Slack user, or create a new user + link if none exists. */
+async function lookupOrCreateUserId(
+  db: Database,
+  slackUserId: string,
+  slackClient: {
+    users: {
+      info: (args: {
+        user: string;
+      }) => Promise<{ user?: { real_name?: string; profile?: { email?: string } } }>;
+    };
+  },
+): Promise<string> {
+  // Check for existing link
+  const existing = await db.execute<{ user_id: string }>(
     sql`SELECT user_id FROM fitness.auth_account
         WHERE auth_provider = 'slack' AND provider_account_id = ${slackUserId}
         LIMIT 1`,
   );
-  return rows.length > 0 ? rows[0].user_id : null;
+  if (existing.length > 0) return existing[0].user_id;
+
+  // Fetch Slack profile for name/email
+  let name = "Slack User";
+  let email: string | null = null;
+  try {
+    const info = await slackClient.users.info({ user: slackUserId });
+    if (info.user?.real_name) name = info.user.real_name;
+    if (info.user?.profile?.email) email = info.user.profile.email;
+  } catch {
+    logger.warn(`[slack] Could not fetch Slack profile for ${slackUserId}`);
+  }
+
+  // Create dofek user profile
+  const newUser = await db.execute<{ id: string }>(
+    sql`INSERT INTO fitness.user_profile (name, email)
+        VALUES (${name}, ${email})
+        RETURNING id`,
+  );
+  const userId = newUser[0].id;
+
+  // Link Slack account
+  await db.execute(
+    sql`INSERT INTO fitness.auth_account (user_id, auth_provider, provider_account_id, name, email)
+        VALUES (${userId}, 'slack', ${slackUserId}, ${name}, ${email})`,
+  );
+
+  logger.info(`[slack] Created new user ${userId} for Slack user ${slackUserId} (${name})`);
+  return userId;
 }
 
 /** Ensure the 'dofek' provider row exists (for self-created entries) */
@@ -63,17 +102,11 @@ function todayDate(): string {
 /** Register message and action handlers on a Bolt app */
 function registerHandlers(app: App, db: Database) {
   // Handle direct messages
-  app.message(async ({ message, say }) => {
+  app.message(async ({ message, say, client }) => {
     const msg = message as GenericMessageEvent;
     if (msg.subtype || !msg.text || msg.bot_id) return;
 
-    const userId = await lookupUserId(db, msg.user);
-    if (!userId) {
-      await say(
-        `I don't recognize your Slack account. Ask an admin to link your Slack ID (\`${msg.user}\`) to your dofek account.`,
-      );
-      return;
-    }
+    const userId = await lookupOrCreateUserId(db, msg.user, client);
 
     logger.info(`[slack] Parsing food from ${msg.user}: "${msg.text}"`);
 
@@ -97,11 +130,7 @@ function registerHandlers(app: App, db: Database) {
     if (body.type !== "block_actions" || !body.actions[0]) return;
 
     const slackUserId = body.user.id;
-    const userId = await lookupUserId(db, slackUserId);
-    if (!userId) {
-      logger.error(`[slack] Confirm clicked by unlinked user ${slackUserId}`);
-      return;
-    }
+    const userId = await lookupOrCreateUserId(db, slackUserId, client);
 
     const action = body.actions[0];
     if (!("value" in action) || !action.value) return;
