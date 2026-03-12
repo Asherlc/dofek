@@ -1,9 +1,9 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { CacheTTL, cachedQuery, router } from "../trpc.ts";
+import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export const activityRouter = router({
-  list: cachedQuery(CacheTTL.MEDIUM)
+  list: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(
       z.object({
         days: z.number().default(30),
@@ -12,7 +12,8 @@ export const activityRouter = router({
     .query(async ({ ctx, input }) => {
       const rows = await ctx.db.execute(
         sql`SELECT * FROM fitness.v_activity
-            WHERE started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+            WHERE user_id = ${ctx.userId}
+              AND started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
             ORDER BY started_at DESC`,
       );
       return rows;

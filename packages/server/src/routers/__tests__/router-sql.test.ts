@@ -3,6 +3,7 @@ import {
   setupTestDatabase,
   type TestContext,
 } from "../../../../../src/db/__tests__/test-helpers.ts";
+import { createSession } from "../../auth/session.ts";
 import { createApp } from "../../index.ts";
 
 /**
@@ -16,9 +17,16 @@ describe("Router SQL validity", () => {
   let server: ReturnType<import("express").Express["listen"]>;
   let baseUrl: string;
   let testCtx: TestContext;
+  let sessionCookie: string;
 
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
+
+    // Create a session for the default user so protected procedures work
+    const DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001";
+    const session = await createSession(testCtx.db, DEFAULT_USER_ID);
+    sessionCookie = `session=${session.sessionId}`;
+
     const app = createApp(testCtx.db);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
@@ -41,7 +49,7 @@ describe("Router SQL validity", () => {
   async function query(path: string, input: Record<string, unknown> = {}) {
     const res = await fetch(`${baseUrl}/api/trpc/${path}?batch=1`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Cookie: sessionCookie },
       body: JSON.stringify({ "0": input }),
     });
     const data = await res.json();

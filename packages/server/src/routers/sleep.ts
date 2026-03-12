@@ -1,9 +1,9 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { CacheTTL, cachedQuery, router } from "../trpc.ts";
+import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export const sleepRouter = router({
-  list: cachedQuery(CacheTTL.MEDIUM)
+  list: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(
       z.object({
         days: z.number().default(30),
@@ -12,16 +12,18 @@ export const sleepRouter = router({
     .query(async ({ ctx, input }) => {
       const rows = await ctx.db.execute(
         sql`SELECT * FROM fitness.v_sleep
-            WHERE started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+            WHERE user_id = ${ctx.userId}
+              AND started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
             ORDER BY started_at ASC`,
       );
       return rows;
     }),
 
-  latest: cachedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
+  latest: cachedProtectedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
     const rows = await ctx.db.execute(
       sql`SELECT * FROM fitness.v_sleep
-          WHERE is_nap = false
+          WHERE user_id = ${ctx.userId}
+            AND is_nap = false
           ORDER BY started_at DESC LIMIT 1`,
     );
     return rows[0] ?? null;

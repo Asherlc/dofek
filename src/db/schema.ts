@@ -572,14 +572,65 @@ export const healthEvent = fitness.table(
 );
 
 // ============================================================
-// User settings (key-value store)
+// Authentication — links external OAuth identities to users
 // ============================================================
 
-export const userSettings = fitness.table("user_settings", {
-  key: text("key").primaryKey(),
-  value: jsonb("value").notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const authAccount = fitness.table(
+  "auth_account",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => userProfile.id, { onDelete: "cascade" }),
+    authProvider: text("auth_provider").notNull(),
+    providerAccountId: text("provider_account_id").notNull(),
+    email: text("email"),
+    name: text("name"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("auth_account_provider_id_idx").on(table.authProvider, table.providerAccountId),
+    index("auth_account_user_idx").on(table.userId),
+  ],
+);
+
+// ============================================================
+// Sessions — database-backed session tokens
+// ============================================================
+
+export const session = fitness.table(
+  "session",
+  {
+    id: text("id").primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => userProfile.id, { onDelete: "cascade" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("session_user_idx").on(table.userId),
+    index("session_expires_idx").on(table.expiresAt),
+  ],
+);
+
+// ============================================================
+// User settings (key-value store, scoped per user)
+// ============================================================
+
+export const userSettings = fitness.table(
+  "user_settings",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .default(DEFAULT_USER_ID)
+      .references(() => userProfile.id),
+    key: text("key").notNull(),
+    value: jsonb("value").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.key] })],
+);
 
 // ============================================================
 // Sync log — tracks reliability per provider per data type

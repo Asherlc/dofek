@@ -4,17 +4,38 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import compression from "compression";
+import cookieParser from "cookie-parser";
 import { createDatabaseFromEnv } from "dofek/db";
 import { runMigrations } from "dofek/db/migrate";
+import { DEFAULT_USER_ID } from "dofek/db/schema";
+import { sql } from "drizzle-orm";
 import express from "express";
+import {
+  clearOAuthFlowCookies,
+  clearSessionCookie,
+  getOAuthFlowCookies,
+  getSessionCookie,
+  setOAuthFlowCookies,
+  setSessionCookie,
+} from "./auth/cookies.ts";
+import {
+  generateCodeVerifier,
+  generateState,
+  getConfiguredProviders,
+  getIdentityProvider,
+  type IdentityProviderName,
+  isProviderConfigured,
+} from "./auth/providers.ts";
+import { createSession, deleteSession, validateSession } from "./auth/session.ts";
 import { httpRequestDuration, registry } from "./lib/metrics.ts";
 import { logger } from "./logger.ts";
 import { appRouter } from "./router.ts";
 import type { Context } from "./trpc.ts";
 
-/** Fire common queries sequentially to populate cache without overwhelming the DB */
+/** Fire common queries sequentially to populate cache without overwhelming the DB.
+ *  Uses DEFAULT_USER_ID for backwards compatibility — only warms for the primary user. */
 async function warmCache(db: import("dofek/db").Database) {
-  const caller = appRouter.createCaller({ db });
+  const caller = appRouter.createCaller({ db, userId: DEFAULT_USER_ID });
   const queries: Array<[string, () => Promise<unknown>]> = [
     // Dashboard
     ["dailyMetrics.list(30)", () => caller.dailyMetrics.list({ days: 30 })],
@@ -81,8 +102,9 @@ export function createApp(db: import("dofek/db").Database): express.Express {
 }
 
 function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
-  // ── Compression ──
+  // ── Compression + Cookies ──
   app.use(compression());
+  app.use(cookieParser());
 
   // ── Prometheus metrics endpoint ──
   app.get("/metrics", async (_req, res) => {
@@ -301,8 +323,169 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
   // OAuth 1.0 request token secrets (keyed by oauth_token)
   const oauth1Secrets = new Map<string, { providerId: string; tokenSecret: string }>();
 
-  // ── OAuth callback for providers that need a public redirect URI ──
-  app.get("/auth/:provider", async (req, res) => {
+  // ── Identity auth routes (login with Google, Apple, Authentik) ──
+
+  const IDENTITY_PROVIDERS: IdentityProviderName[] = ["google", "apple", "authentik"];
+
+  app.get("/api/auth/providers", (_req, res) => {
+    res.json(getConfiguredProviders());
+  });
+
+  app.get("/auth/login/:provider", (req, res) => {
+    try {
+      const providerName = req.params.provider as IdentityProviderName;
+      if (!IDENTITY_PROVIDERS.includes(providerName)) {
+        res.status(404).send(`Unknown identity provider: ${providerName}`);
+        return;
+      }
+      if (!isProviderConfigured(providerName)) {
+        res.status(400).send(`Provider ${providerName} is not configured`);
+        return;
+      }
+
+      const state = generateState();
+      const codeVerifier = generateCodeVerifier();
+      const provider = getIdentityProvider(providerName);
+
+      // Encode the provider name in the state so the callback knows which provider
+      const statePayload = `${providerName}:${state}`;
+      const url = provider.createAuthorizationUrl(statePayload, codeVerifier);
+
+      setOAuthFlowCookies(res, statePayload, codeVerifier);
+      res.redirect(url.toString());
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error(`[auth] Failed to start login flow: ${message}`);
+      res.status(500).send(`Auth error: ${message}`);
+    }
+  });
+
+  app.get("/auth/callback/:provider", async (req, res) => {
+    try {
+      const providerName = req.params.provider as IdentityProviderName;
+      if (!IDENTITY_PROVIDERS.includes(providerName)) {
+        res.status(404).send(`Unknown identity provider: ${providerName}`);
+        return;
+      }
+
+      const code = req.query.code as string | undefined;
+      const stateParam = req.query.state as string | undefined;
+      const error = req.query.error as string | undefined;
+
+      if (error) {
+        res.status(400).send(`Authorization denied: ${error}`);
+        return;
+      }
+      if (!code || !stateParam) {
+        res.status(400).send("Missing code or state parameter");
+        return;
+      }
+
+      const { state: storedState, codeVerifier } = getOAuthFlowCookies(req);
+      clearOAuthFlowCookies(res);
+
+      if (!storedState || !codeVerifier || stateParam !== storedState) {
+        res.status(400).send("Invalid state — please try logging in again");
+        return;
+      }
+
+      // Validate the authorization code
+      const provider = getIdentityProvider(providerName);
+      const { user: identityUser } = await provider.validateCallback(code, codeVerifier);
+
+      // Look up or create the user
+      const existingAccount = await db.execute<{ user_id: string }>(
+        sql`SELECT user_id FROM fitness.auth_account
+            WHERE auth_provider = ${providerName} AND provider_account_id = ${identityUser.sub}
+            LIMIT 1`,
+      );
+
+      let userId: string;
+
+      if (existingAccount.length > 0) {
+        userId = existingAccount[0].user_id;
+      } else {
+        // Check if this is the very first auth account (claim DEFAULT_USER_ID data)
+        const accountCount = await db.execute<{ count: string }>(
+          sql`SELECT COUNT(*)::text AS count FROM fitness.auth_account`,
+        );
+        const isFirstUser = parseInt(accountCount[0].count, 10) === 0;
+
+        if (isFirstUser) {
+          // First user — link to the default user profile and update it
+          userId = DEFAULT_USER_ID;
+          if (identityUser.email || identityUser.name) {
+            await db.execute(
+              sql`UPDATE fitness.user_profile
+                  SET email = COALESCE(${identityUser.email}, email),
+                      name = COALESCE(${identityUser.name}, name),
+                      updated_at = NOW()
+                  WHERE id = ${DEFAULT_USER_ID}`,
+            );
+          }
+        } else {
+          // New user — create a user profile
+          const newUser = await db.execute<{ id: string }>(
+            sql`INSERT INTO fitness.user_profile (name, email)
+                VALUES (${identityUser.name ?? "User"}, ${identityUser.email})
+                RETURNING id`,
+          );
+          userId = newUser[0].id;
+        }
+
+        // Create the auth account link
+        await db.execute(
+          sql`INSERT INTO fitness.auth_account (user_id, auth_provider, provider_account_id, email, name)
+              VALUES (${userId}, ${providerName}, ${identityUser.sub}, ${identityUser.email}, ${identityUser.name})`,
+        );
+      }
+
+      // Create session
+      const sessionInfo = await createSession(db, userId);
+      setSessionCookie(res, sessionInfo.sessionId, sessionInfo.expiresAt);
+
+      logger.info(`[auth] User ${userId} logged in via ${providerName}`);
+      res.redirect("/");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error(`[auth] Identity callback failed: ${message}`);
+      res.status(500).send(`Login failed: ${message}`);
+    }
+  });
+
+  app.post("/auth/logout", async (req, res) => {
+    const sessionId = getSessionCookie(req);
+    if (sessionId) {
+      await deleteSession(db, sessionId);
+      clearSessionCookie(res);
+    }
+    res.json({ ok: true });
+  });
+
+  app.get("/api/auth/me", async (req, res) => {
+    const sessionId = getSessionCookie(req);
+    if (!sessionId) {
+      res.status(401).json({ error: "Not authenticated" });
+      return;
+    }
+    const session = await validateSession(db, sessionId);
+    if (!session) {
+      clearSessionCookie(res);
+      res.status(401).json({ error: "Session expired" });
+      return;
+    }
+    const rows = await db.execute<{ id: string; name: string; email: string | null }>(
+      sql`SELECT id, name, email FROM fitness.user_profile WHERE id = ${session.userId}`,
+    );
+    if (rows.length === 0) {
+      res.status(401).json({ error: "User not found" });
+      return;
+    }
+    res.json(rows[0]);
+  });
+
+  // ── Data-provider OAuth (Wahoo, Withings, etc.) ──
+  app.get("/auth/provider/:provider", async (req, res) => {
     try {
       const providerId = req.params.provider;
       const { getAllProviders } = await import("dofek/providers/registry");
@@ -488,7 +671,11 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
     "/api/trpc",
     createExpressMiddleware({
       router: appRouter,
-      createContext: (): Context => ({ db }),
+      createContext: async ({ req }): Promise<Context> => {
+        const sessionId = getSessionCookie(req);
+        const session = sessionId ? await validateSession(db, sessionId) : null;
+        return { db, userId: session?.userId ?? null };
+      },
       allowMethodOverride: true,
     }),
   );

@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../src/db/__tests__/test-helpers.ts";
+import { createSession } from "./auth/session.ts";
 import { createApp } from "./index.ts";
 
 /**
@@ -11,9 +12,15 @@ describe("tRPC API", () => {
   let server: ReturnType<import("express").Express["listen"]>;
   let baseUrl: string;
   let testCtx: TestContext;
+  let sessionCookie: string;
 
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
+
+    const DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001";
+    const session = await createSession(testCtx.db, DEFAULT_USER_ID);
+    sessionCookie = `session=${session.sessionId}`;
+
     const app = createApp(testCtx.db);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
@@ -37,7 +44,7 @@ describe("tRPC API", () => {
       // httpBatchLink with methodOverride: "POST" sends queries as POST
       const res = await fetch(`${baseUrl}/api/trpc/sync.providers?batch=1`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Cookie: sessionCookie },
         body: JSON.stringify({ "0": {} }),
       });
 
@@ -52,7 +59,7 @@ describe("tRPC API", () => {
       // Without allowMethodOverride on the server, this returns 405.
       const res = await fetch(`${baseUrl}/api/trpc/sync.syncStatus?batch=1`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Cookie: sessionCookie },
         body: JSON.stringify({ "0": { jobId: "nonexistent-job" } }),
       });
 
@@ -65,7 +72,7 @@ describe("tRPC API", () => {
     it("accepts POST for queries with optional input parameters", async () => {
       const res = await fetch(`${baseUrl}/api/trpc/sync.logs?batch=1`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Cookie: sessionCookie },
         body: JSON.stringify({ "0": { limit: 5 } }),
       });
 
@@ -80,7 +87,7 @@ describe("tRPC API", () => {
     it("handles triggerSync mutation with sinceDays", async () => {
       const res = await fetch(`${baseUrl}/api/trpc/sync.triggerSync?batch=1`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Cookie: sessionCookie },
         body: JSON.stringify({ "0": { sinceDays: 7 } }),
       });
 
@@ -93,7 +100,7 @@ describe("tRPC API", () => {
     it("handles triggerSync mutation without sinceDays (full sync)", async () => {
       const res = await fetch(`${baseUrl}/api/trpc/sync.triggerSync?batch=1`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Cookie: sessionCookie },
         body: JSON.stringify({ "0": {} }),
       });
 
@@ -119,7 +126,7 @@ describe("tRPC API", () => {
       // Fire a request first to generate a metric
       await fetch(`${baseUrl}/api/trpc/sync.providers?batch=1`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Cookie: sessionCookie },
         body: JSON.stringify({ "0": {} }),
       });
 
@@ -131,7 +138,7 @@ describe("tRPC API", () => {
     it("records tRPC procedure duration histogram", async () => {
       await fetch(`${baseUrl}/api/trpc/sync.providers?batch=1`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Cookie: sessionCookie },
         body: JSON.stringify({ "0": {} }),
       });
 
@@ -151,7 +158,7 @@ describe("tRPC API", () => {
       // (e.g. cardio_activity instead of health.cardio_activity)
       const res = await fetch(`${baseUrl}/api/trpc/sync.triggerSync?batch=1`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Cookie: sessionCookie },
         body: JSON.stringify({ "0": { providerId: "wahoo", sinceDays: 7 } }),
       });
 

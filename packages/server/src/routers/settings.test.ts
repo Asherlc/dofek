@@ -1,14 +1,21 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/__tests__/test-helpers.ts";
+import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
 
 describe("Settings router", () => {
   let server: ReturnType<import("express").Express["listen"]>;
   let baseUrl: string;
   let testCtx: TestContext;
+  let sessionCookie: string;
 
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
+
+    const DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001";
+    const session = await createSession(testCtx.db, DEFAULT_USER_ID);
+    sessionCookie = `session=${session.sessionId}`;
+
     const app = createApp(testCtx.db);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
@@ -31,7 +38,7 @@ describe("Settings router", () => {
   async function mutate(path: string, input: Record<string, unknown> = {}) {
     const res = await fetch(`${baseUrl}/api/trpc/${path}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Cookie: sessionCookie },
       body: JSON.stringify(input),
     });
     return res.json();
@@ -40,7 +47,9 @@ describe("Settings router", () => {
   /** Helper: GET a tRPC query and return parsed response */
   async function query(path: string, input: Record<string, unknown> = {}) {
     const encoded = encodeURIComponent(JSON.stringify(input));
-    const res = await fetch(`${baseUrl}/api/trpc/${path}?input=${encoded}`);
+    const res = await fetch(`${baseUrl}/api/trpc/${path}?input=${encoded}`, {
+      headers: { Cookie: sessionCookie },
+    });
     return res.json();
   }
 

@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { CacheTTL, cachedQuery, router } from "../trpc.ts";
+import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export interface VolumeOverTimeRow {
   week: string;
@@ -51,7 +51,7 @@ export const strengthRouter = router({
   /**
    * Weekly tonnage: SUM(weight_kg * reps) grouped by week.
    */
-  volumeOverTime: cachedQuery(CacheTTL.LONG)
+  volumeOverTime: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
       const rows = await ctx.db.execute(
@@ -62,7 +62,8 @@ export const strengthRouter = router({
               COUNT(DISTINCT sw.id)::int AS workout_count
             FROM fitness.strength_workout sw
             JOIN fitness.strength_set ss ON ss.workout_id = sw.id
-            WHERE sw.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+            WHERE sw.user_id = ${ctx.userId}
+              AND sw.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
             GROUP BY date_trunc('week', sw.started_at)
             ORDER BY week`,
       );
@@ -86,7 +87,7 @@ export const strengthRouter = router({
    * Best e1RM per workout per exercise. Only working sets, weight > 0, reps 1-12,
    * exercises with 3+ appearances.
    */
-  estimatedOneRepMax: cachedQuery(CacheTTL.LONG)
+  estimatedOneRepMax: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
       const rows = await ctx.db.execute(
@@ -104,7 +105,8 @@ export const strengthRouter = router({
               FROM fitness.strength_set ss
               JOIN fitness.strength_workout sw ON sw.id = ss.workout_id
               JOIN fitness.exercise e ON e.id = ss.exercise_id
-              WHERE sw.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+              WHERE sw.user_id = ${ctx.userId}
+                AND sw.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
                 AND ss.set_type = 'working'
                 AND ss.weight_kg > 0
                 AND ss.reps BETWEEN 1 AND 12
@@ -155,7 +157,7 @@ export const strengthRouter = router({
   /**
    * Weekly sets per muscle group.
    */
-  muscleGroupVolume: cachedQuery(CacheTTL.LONG)
+  muscleGroupVolume: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
       const rows = await ctx.db.execute(
@@ -166,7 +168,8 @@ export const strengthRouter = router({
             FROM fitness.strength_set ss
             JOIN fitness.strength_workout sw ON sw.id = ss.workout_id
             JOIN fitness.exercise e ON e.id = ss.exercise_id
-            WHERE sw.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+            WHERE sw.user_id = ${ctx.userId}
+              AND sw.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
               AND e.muscle_group IS NOT NULL
             GROUP BY e.muscle_group, date_trunc('week', sw.started_at)
             ORDER BY e.muscle_group, week`,
@@ -188,7 +191,7 @@ export const strengthRouter = router({
   /**
    * Weekly volume per exercise with linear regression slope.
    */
-  progressiveOverload: cachedQuery(CacheTTL.LONG)
+  progressiveOverload: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
       const rows = await ctx.db.execute(
@@ -199,7 +202,8 @@ export const strengthRouter = router({
             FROM fitness.strength_set ss
             JOIN fitness.strength_workout sw ON sw.id = ss.workout_id
             JOIN fitness.exercise e ON e.id = ss.exercise_id
-            WHERE sw.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+            WHERE sw.user_id = ${ctx.userId}
+              AND sw.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
               AND ss.weight_kg > 0
             GROUP BY e.name, date_trunc('week', sw.started_at)
             ORDER BY e.name, week`,
@@ -232,7 +236,7 @@ export const strengthRouter = router({
   /**
    * Recent workout summaries.
    */
-  workoutSummary: cachedQuery(CacheTTL.LONG)
+  workoutSummary: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
       const rows = await ctx.db.execute(
@@ -245,7 +249,8 @@ export const strengthRouter = router({
               ROUND(EXTRACT(EPOCH FROM (sw.ended_at - sw.started_at)) / 60)::int AS duration_minutes
             FROM fitness.strength_workout sw
             LEFT JOIN fitness.strength_set ss ON ss.workout_id = sw.id
-            WHERE sw.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+            WHERE sw.user_id = ${ctx.userId}
+              AND sw.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
               AND sw.ended_at IS NOT NULL
             GROUP BY sw.id, sw.started_at, sw.ended_at, sw.name
             ORDER BY sw.started_at DESC`,

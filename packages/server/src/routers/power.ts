@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { enduranceTypeFilter } from "../lib/endurance-types.ts";
-import { CacheTTL, cachedQuery, router } from "../trpc.ts";
+import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 /** Human-readable labels for each duration. */
 const DURATION_LABELS: Record<number, string> = {
@@ -99,7 +99,7 @@ function fitCriticalPower(
  *
  * Returns one row per duration with the best power and the activity date it came from.
  */
-function powerCurveQuery(days: number) {
+function powerCurveQuery(days: number, userId: string) {
   return sql`
     WITH activity_power AS (
       SELECT ms.activity_id, ms.recorded_at, ms.power,
@@ -113,7 +113,8 @@ function powerCurveQuery(days: number) {
              ) AS cumsum
       FROM fitness.metric_stream ms
       JOIN fitness.v_activity a ON a.id = ms.activity_id
-      WHERE ms.power > 0
+      WHERE a.user_id = ${userId}
+        AND ms.power > 0
         AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
         AND ${enduranceTypeFilter("a")}
     ),
@@ -150,10 +151,10 @@ export const powerRouter = router({
    * Power Duration Curve: best average power for standard durations.
    * Single query computes all durations via cumulative sums.
    */
-  powerCurve: cachedQuery(CacheTTL.LONG)
+  powerCurve: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
-      const rows = await ctx.db.execute(powerCurveQuery(input.days));
+      const rows = await ctx.db.execute(powerCurveQuery(input.days, ctx.userId));
 
       const results = (rows as unknown as PowerCurveRow[]).map((r) => ({
         durationSeconds: Number(r.duration_seconds),
@@ -172,7 +173,7 @@ export const powerRouter = router({
    * eFTP trend: estimated Functional Threshold Power over time.
    * eFTP = 95% of best 20-minute power for each qualifying activity.
    */
-  eftpTrend: cachedQuery(CacheTTL.LONG)
+  eftpTrend: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(365) }))
     .query(async ({ ctx, input }) => {
       // Find best 20-min (1200s) average power per activity
@@ -190,7 +191,8 @@ export const powerRouter = router({
                  ) AS cumsum
           FROM fitness.metric_stream ms
           JOIN fitness.v_activity a ON a.id = ms.activity_id
-          WHERE ms.power > 0
+          WHERE a.user_id = ${ctx.userId}
+            AND ms.power > 0
             AND a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
             AND ${enduranceTypeFilter("a")}
         )
@@ -214,7 +216,7 @@ export const powerRouter = router({
       }));
 
       // Compute current eFTP via CP model from last 90 days' power curve (single query)
-      const cpRows = await ctx.db.execute(powerCurveQuery(90));
+      const cpRows = await ctx.db.execute(powerCurveQuery(90, ctx.userId));
       const cpPoints = (cpRows as unknown as PowerCurveRow[]).map((r) => ({
         durationSeconds: Number(r.duration_seconds),
         bestPower: Number(r.best_power),

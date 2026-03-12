@@ -1,7 +1,7 @@
 import { ensureProvider, saveTokens } from "dofek/db/tokens";
 import { WhoopInternalClient } from "dofek/providers/whoop";
 import { z } from "zod";
-import { publicProcedure, router } from "../trpc.ts";
+import { protectedProcedure, router } from "../trpc.ts";
 
 // In-memory store for pending MFA challenges (keyed by a random ID)
 const pendingChallenges = new Map<
@@ -18,7 +18,7 @@ function cleanupExpired() {
 
 export const whoopAuthRouter = router({
   /** Step 1: Sign in with email + password via Cognito */
-  signIn: publicProcedure
+  signIn: protectedProcedure
     .input(z.object({ username: z.string(), password: z.string() }))
     .mutation(async ({ input }) => {
       const result = await WhoopInternalClient.signIn(input.username, input.password);
@@ -54,7 +54,7 @@ export const whoopAuthRouter = router({
     }),
 
   /** Step 2: Submit MFA verification code via Cognito RespondToAuthChallenge */
-  verifyCode: publicProcedure
+  verifyCode: protectedProcedure
     .input(z.object({ challengeId: z.string(), code: z.string() }))
     .mutation(async ({ input }) => {
       const challenge = pendingChallenges.get(input.challengeId);
@@ -84,7 +84,7 @@ export const whoopAuthRouter = router({
     }),
 
   /** Save tokens after successful auth (called by UI after signIn or verifyCode) */
-  saveTokens: publicProcedure
+  saveTokens: protectedProcedure
     .input(
       z.object({
         accessToken: z.string(),

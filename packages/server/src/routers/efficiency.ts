@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { enduranceTypeFilter } from "../lib/endurance-types.ts";
-import { CacheTTL, cachedQuery, router } from "../trpc.ts";
+import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export const efficiencyRouter = router({
   /**
@@ -13,7 +13,7 @@ export const efficiencyRouter = router({
    * that isn't captured in activity_summary. However, the query is scoped by
    * activity_id from activity_summary, limiting the scan.
    */
-  aerobicEfficiency: cachedQuery(CacheTTL.LONG)
+  aerobicEfficiency: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(180) }))
     .query(async ({ ctx, input }) => {
       const rows = await ctx.db.execute<{
@@ -27,7 +27,7 @@ export const efficiencyRouter = router({
         z2_samples: number;
       }>(
         sql`WITH user_hr AS (
-              SELECT id, max_hr FROM fitness.user_profile WHERE max_hr IS NOT NULL LIMIT 1
+              SELECT id, max_hr FROM fitness.user_profile WHERE id = ${ctx.userId} AND max_hr IS NOT NULL LIMIT 1
             )
             SELECT
               uh.max_hr,
@@ -39,7 +39,7 @@ export const efficiencyRouter = router({
               ROUND((AVG(ms.power)::numeric / NULLIF(AVG(ms.heart_rate), 0))::numeric, 3) AS efficiency_factor,
               COUNT(*)::int AS z2_samples
             FROM user_hr uh
-            JOIN fitness.v_activity a ON TRUE
+            JOIN fitness.v_activity a ON a.user_id = uh.id
             JOIN fitness.metric_stream ms ON ms.activity_id = a.id
             WHERE a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
               AND ${enduranceTypeFilter("a")}
@@ -72,7 +72,7 @@ export const efficiencyRouter = router({
    * Compares power:HR ratio in first half vs second half of each activity.
    * Decoupling < 5% indicates a strong aerobic base.
    */
-  aerobicDecoupling: cachedQuery(CacheTTL.LONG)
+  aerobicDecoupling: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(180) }))
     .query(async ({ ctx, input }) => {
       const rows = await ctx.db.execute<{
@@ -92,7 +92,8 @@ export const efficiencyRouter = router({
                 NTILE(2) OVER (PARTITION BY ms.activity_id ORDER BY ms.recorded_at) AS half
               FROM fitness.metric_stream ms
               JOIN fitness.v_activity a ON a.id = ms.activity_id
-              WHERE a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+              WHERE a.user_id = ${ctx.userId}
+                AND a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
                 AND ${enduranceTypeFilter("a")}
                 AND ms.power > 0
                 AND ms.heart_rate > 0
@@ -152,7 +153,7 @@ export const efficiencyRouter = router({
    * PI = log10((Z1_time / (Z2_time * Z3_time)) * 100)
    * PI > 2.0 indicates a well-polarized training distribution.
    */
-  polarizationTrend: cachedQuery(CacheTTL.LONG)
+  polarizationTrend: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(180) }))
     .query(async ({ ctx, input }) => {
       const rows = await ctx.db.execute<{
@@ -174,7 +175,8 @@ export const efficiencyRouter = router({
             FROM fitness.activity_hr_zones hz
             JOIN fitness.activity_summary asum ON asum.activity_id = hz.activity_id
             JOIN fitness.user_profile up ON up.id = hz.user_id
-            WHERE asum.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+            WHERE up.id = ${ctx.userId}
+              AND asum.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
               AND ${enduranceTypeFilter("asum")}
               AND up.max_hr IS NOT NULL
             GROUP BY up.max_hr, date_trunc('week', asum.started_at)

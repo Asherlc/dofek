@@ -1,18 +1,19 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { CacheTTL, cachedQuery, publicProcedure, router } from "../trpc.ts";
+import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
 export const lifeEventsRouter = router({
-  list: cachedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
+  list: cachedProtectedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
     const rows = await ctx.db.execute(
       sql`SELECT id, label, started_at, ended_at, category, ongoing, notes, created_at
           FROM fitness.life_events
+          WHERE user_id = ${ctx.userId}
           ORDER BY started_at DESC`,
     );
     return rows;
   }),
 
-  create: publicProcedure
+  create: protectedProcedure
     .input(
       z.object({
         label: z.string().min(1),
@@ -25,14 +26,14 @@ export const lifeEventsRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const rows = await ctx.db.execute(
-        sql`INSERT INTO fitness.life_events (label, started_at, ended_at, category, ongoing, notes)
-            VALUES (${input.label}, ${input.startedAt}::date, ${input.endedAt}::date, ${input.category}, ${input.ongoing}, ${input.notes})
+        sql`INSERT INTO fitness.life_events (user_id, label, started_at, ended_at, category, ongoing, notes)
+            VALUES (${ctx.userId}, ${input.label}, ${input.startedAt}::date, ${input.endedAt}::date, ${input.category}, ${input.ongoing}, ${input.notes})
             RETURNING *`,
       );
       return rows[0];
     }),
 
-  update: publicProcedure
+  update: protectedProcedure
     .input(
       z.object({
         id: z.string().uuid(),
@@ -66,20 +67,22 @@ export const lifeEventsRouter = router({
 
       const setExpr = sql.join(setClauses, sql`, `);
       const rows = await ctx.db.execute(
-        sql`UPDATE fitness.life_events SET ${setExpr} WHERE id = ${id} RETURNING *`,
+        sql`UPDATE fitness.life_events SET ${setExpr} WHERE user_id = ${ctx.userId} AND id = ${id} RETURNING *`,
       );
       return rows[0] ?? null;
     }),
 
-  delete: publicProcedure
+  delete: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
-      await ctx.db.execute(sql`DELETE FROM fitness.life_events WHERE id = ${input.id}`);
+      await ctx.db.execute(
+        sql`DELETE FROM fitness.life_events WHERE user_id = ${ctx.userId} AND id = ${input.id}`,
+      );
       return { success: true };
     }),
 
   /** Analyze: compare metrics before vs after (or during vs outside) a life event */
-  analyze: cachedQuery(CacheTTL.SHORT)
+  analyze: cachedProtectedQuery(CacheTTL.SHORT)
     .input(
       z.object({
         id: z.string().uuid(),
@@ -89,7 +92,7 @@ export const lifeEventsRouter = router({
     .query(async ({ ctx, input }) => {
       // Get the event
       const events = await ctx.db.execute(
-        sql`SELECT * FROM fitness.life_events WHERE id = ${input.id}`,
+        sql`SELECT * FROM fitness.life_events WHERE user_id = ${ctx.userId} AND id = ${input.id}`,
       );
       const event = events[0] as any;
       if (!event) return null;
@@ -100,10 +103,10 @@ export const lifeEventsRouter = router({
 
       // For point events or ongoing: compare windowDays before start vs windowDays after start
       // For ranged events: compare windowDays before start vs during the range
-      const beforeClause = sql`date BETWEEN (${startDate}::date - ${w}::int) AND (${startDate}::date - 1)`;
+      const beforeClause = sql`user_id = ${ctx.userId} AND date BETWEEN (${startDate}::date - ${w}::int) AND (${startDate}::date - 1)`;
       const afterClause = endDate
-        ? sql`date BETWEEN ${startDate}::date AND ${endDate === "NOW()" ? sql`CURRENT_DATE` : sql`${endDate}::date`}`
-        : sql`date BETWEEN ${startDate}::date AND (${startDate}::date + ${w}::int)`;
+        ? sql`user_id = ${ctx.userId} AND date BETWEEN ${startDate}::date AND ${endDate === "NOW()" ? sql`CURRENT_DATE` : sql`${endDate}::date`}`
+        : sql`user_id = ${ctx.userId} AND date BETWEEN ${startDate}::date AND (${startDate}::date + ${w}::int)`;
 
       const results = await ctx.db.execute(sql`
         WITH before_period AS (
@@ -139,19 +142,21 @@ export const lifeEventsRouter = router({
           WITH before_sleep AS (
             SELECT 'before' as period, *
             FROM fitness.v_sleep
-            WHERE started_at::date BETWEEN (${startDate}::date - ${w}::int) AND (${startDate}::date - 1)
+            WHERE user_id = ${ctx.userId}
+              AND started_at::date BETWEEN (${startDate}::date - ${w}::int) AND (${startDate}::date - 1)
               AND NOT is_nap
           ),
           after_sleep AS (
             SELECT 'after' as period, *
             FROM fitness.v_sleep
-            WHERE ${
-              endDate
-                ? endDate === "NOW()"
-                  ? sql`started_at::date BETWEEN ${startDate}::date AND CURRENT_DATE`
-                  : sql`started_at::date BETWEEN ${startDate}::date AND ${endDate}::date`
-                : sql`started_at::date BETWEEN ${startDate}::date AND (${startDate}::date + ${w}::int)`
-            }
+            WHERE user_id = ${ctx.userId}
+              AND ${
+                endDate
+                  ? endDate === "NOW()"
+                    ? sql`started_at::date BETWEEN ${startDate}::date AND CURRENT_DATE`
+                    : sql`started_at::date BETWEEN ${startDate}::date AND ${endDate}::date`
+                  : sql`started_at::date BETWEEN ${startDate}::date AND (${startDate}::date + ${w}::int)`
+              }
               AND NOT is_nap
           ),
           combined AS (
@@ -174,18 +179,20 @@ export const lifeEventsRouter = router({
           WITH before_body AS (
             SELECT 'before' as period, *
             FROM fitness.v_body_measurement
-            WHERE recorded_at::date BETWEEN (${startDate}::date - ${w}::int) AND (${startDate}::date - 1)
+            WHERE user_id = ${ctx.userId}
+              AND recorded_at::date BETWEEN (${startDate}::date - ${w}::int) AND (${startDate}::date - 1)
           ),
           after_body AS (
             SELECT 'after' as period, *
             FROM fitness.v_body_measurement
-            WHERE ${
-              endDate
-                ? endDate === "NOW()"
-                  ? sql`recorded_at::date BETWEEN ${startDate}::date AND CURRENT_DATE`
-                  : sql`recorded_at::date BETWEEN ${startDate}::date AND ${endDate}::date`
-                : sql`recorded_at::date BETWEEN ${startDate}::date AND (${startDate}::date + ${w}::int)`
-            }
+            WHERE user_id = ${ctx.userId}
+              AND ${
+                endDate
+                  ? endDate === "NOW()"
+                    ? sql`recorded_at::date BETWEEN ${startDate}::date AND CURRENT_DATE`
+                    : sql`recorded_at::date BETWEEN ${startDate}::date AND ${endDate}::date`
+                  : sql`recorded_at::date BETWEEN ${startDate}::date AND (${startDate}::date + ${w}::int)`
+              }
           ),
           combined AS (
             SELECT * FROM before_body

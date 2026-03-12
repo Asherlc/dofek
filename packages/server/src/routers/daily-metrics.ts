@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { CacheTTL, cachedQuery, router } from "../trpc.ts";
+import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export interface HrvBaselineRow {
   date: string;
@@ -12,7 +12,7 @@ export interface HrvBaselineRow {
 }
 
 export const dailyMetricsRouter = router({
-  list: cachedQuery(CacheTTL.MEDIUM)
+  list: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(
       z.object({
         days: z.number().default(30),
@@ -21,20 +21,21 @@ export const dailyMetricsRouter = router({
     .query(async ({ ctx, input }) => {
       const rows = await ctx.db.execute(
         sql`SELECT * FROM fitness.v_daily_metrics
-            WHERE date > CURRENT_DATE - ${input.days}::int
+            WHERE user_id = ${ctx.userId}
+              AND date > CURRENT_DATE - ${input.days}::int
             ORDER BY date ASC`,
       );
       return rows;
     }),
 
-  latest: cachedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
+  latest: cachedProtectedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
     const rows = await ctx.db.execute(
-      sql`SELECT * FROM fitness.v_daily_metrics ORDER BY date DESC LIMIT 1`,
+      sql`SELECT * FROM fitness.v_daily_metrics WHERE user_id = ${ctx.userId} ORDER BY date DESC LIMIT 1`,
     );
     return rows[0] ?? null;
   }),
 
-  hrvBaseline: cachedQuery(CacheTTL.MEDIUM)
+  hrvBaseline: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(
       z.object({
         days: z.number().default(30),
@@ -47,7 +48,8 @@ export const dailyMetricsRouter = router({
               STDDEV(hrv) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS sd_60d,
               AVG(hrv) OVER (ORDER BY date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS mean_7d
             FROM fitness.v_daily_metrics
-            WHERE date > CURRENT_DATE - ${input.days}::int - 60
+            WHERE user_id = ${ctx.userId}
+              AND date > CURRENT_DATE - ${input.days}::int - 60
             ORDER BY date ASC`,
       );
       // Filter to only return the requested date range (discard warmup rows)
@@ -57,7 +59,7 @@ export const dailyMetricsRouter = router({
       return (rows as unknown as HrvBaselineRow[]).filter((r) => r.date >= cutoffStr);
     }),
 
-  trends: cachedQuery(CacheTTL.MEDIUM)
+  trends: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(
       z.object({
         days: z.number().default(30),
@@ -67,7 +69,8 @@ export const dailyMetricsRouter = router({
       const rows = await ctx.db.execute(
         sql`WITH current AS (
               SELECT * FROM fitness.v_daily_metrics
-              WHERE date > CURRENT_DATE - ${input.days}::int
+              WHERE user_id = ${ctx.userId}
+                AND date > CURRENT_DATE - ${input.days}::int
             ),
             stats AS (
               SELECT
