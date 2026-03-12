@@ -85,6 +85,8 @@ describe("WahooProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
+    process.env.WAHOO_CLIENT_ID = "test-client-id";
+    process.env.WAHOO_CLIENT_SECRET = "test-client-secret";
     ctx = await setupTestDatabase();
     await ensureProvider(ctx.db, "wahoo", "Wahoo", "https://api.wahooligan.com");
   }, 60_000);

@@ -227,14 +227,15 @@ export class WahooClient {
 
 const DEFAULT_REDIRECT_URI = "https://localhost:9876/callback";
 
-export function wahooOAuthConfig(): OAuthConfig {
+export function wahooOAuthConfig(): OAuthConfig | null {
   const clientId = process.env.WAHOO_CLIENT_ID;
   const clientSecret = process.env.WAHOO_CLIENT_SECRET;
+  if (!clientId || !clientSecret) return null;
   const redirectUri = process.env.OAUTH_REDIRECT_URI ?? DEFAULT_REDIRECT_URI;
 
   return {
-    clientId: clientId ?? "",
-    clientSecret: clientSecret ?? "",
+    clientId,
+    clientSecret,
     authorizeUrl: `${WAHOO_API_BASE}/oauth/authorize`,
     tokenUrl: `${WAHOO_API_BASE}/oauth/token`,
     redirectUri,
@@ -259,6 +260,7 @@ export class WahooProvider implements Provider {
 
   authSetup(): ProviderAuthSetup {
     const config = wahooOAuthConfig();
+    if (!config) throw new Error("WAHOO_CLIENT_ID and WAHOO_CLIENT_SECRET are required");
     return {
       oauthConfig: config,
       exchangeCode: (code) => exchangeCodeForTokens(config, code),
@@ -281,6 +283,8 @@ export class WahooProvider implements Provider {
 
     console.log("[wahoo] Access token expired, refreshing...");
     const config = wahooOAuthConfig();
+    if (!config)
+      throw new Error("WAHOO_CLIENT_ID and WAHOO_CLIENT_SECRET are required to refresh tokens");
     const refreshed = await refreshAccessToken(config, tokens.refreshToken, this.fetchFn);
     await saveTokens(db, this.id, refreshed);
     return refreshed;

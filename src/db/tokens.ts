@@ -66,6 +66,6 @@ export async function loadTokens(db: Database, providerId: string): Promise<Toke
     accessToken: row.accessToken,
     refreshToken: row.refreshToken,
     expiresAt: row.expiresAt,
-    scopes: row.scopes ?? "",
+    scopes: row.scopes ?? null,
   };
 }

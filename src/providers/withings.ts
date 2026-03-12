@@ -111,10 +111,13 @@ export function parseMeasureGroup(group: WithingsMeasureGroup): ParsedBodyMeasur
 const WITHINGS_API_BASE = "https://wbsapi.withings.net";
 const WITHINGS_AUTH_BASE = "https://account.withings.com";
 
-export function withingsOAuthConfig(): OAuthConfig {
+export function withingsOAuthConfig(): OAuthConfig | null {
+  const clientId = process.env.WITHINGS_CLIENT_ID;
+  const clientSecret = process.env.WITHINGS_CLIENT_SECRET;
+  if (!clientId || !clientSecret) return null;
   return {
-    clientId: process.env.WITHINGS_CLIENT_ID ?? "",
-    clientSecret: process.env.WITHINGS_CLIENT_SECRET ?? "",
+    clientId,
+    clientSecret,
     authorizeUrl: `${WITHINGS_AUTH_BASE}/oauth2_user/authorize2`,
     tokenUrl: `${WITHINGS_API_BASE}/v2/oauth2`,
     redirectUri: process.env.OAUTH_REDIRECT_URI ?? "https://localhost:9876/callback",
@@ -286,6 +289,7 @@ export class WithingsProvider implements Provider {
 
   authSetup(): ProviderAuthSetup {
     const config = withingsOAuthConfig();
+    if (!config) throw new Error("WITHINGS_CLIENT_ID and WITHINGS_CLIENT_SECRET are required");
     return {
       oauthConfig: config,
       exchangeCode: (code) => exchangeWithingsCode(config, code),
@@ -305,6 +309,10 @@ export class WithingsProvider implements Provider {
 
     console.log("[withings] Access token expired, refreshing...");
     const config = withingsOAuthConfig();
+    if (!config)
+      throw new Error(
+        "WITHINGS_CLIENT_ID and WITHINGS_CLIENT_SECRET are required to refresh tokens",
+      );
     const refreshed = await refreshWithingsToken(config, tokens.refreshToken, this.fetchFn);
     await saveTokens(db, this.id, refreshed);
     return refreshed;

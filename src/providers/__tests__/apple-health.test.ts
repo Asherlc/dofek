@@ -423,10 +423,11 @@ describe("Apple Health Provider — parsing", () => {
         unit: "count/min",
       };
       const result = parseWorkoutStatistics(attrs);
-      expect(result.type).toBe("HKQuantityTypeIdentifierHeartRate");
-      expect(result.average).toBe(145);
-      expect(result.minimum).toBe(120);
-      expect(result.maximum).toBe(175);
+      expect(result).not.toBeNull();
+      expect(result!.type).toBe("HKQuantityTypeIdentifierHeartRate");
+      expect(result!.average).toBe(145);
+      expect(result!.minimum).toBe(120);
+      expect(result!.maximum).toBe(175);
     });
 
     it("enriches workout with HR stats", () => {

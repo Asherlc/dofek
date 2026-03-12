@@ -29,7 +29,7 @@ export interface TokenSet {
   accessToken: string;
   refreshToken: string;
   expiresAt: Date;
-  scopes: string;
+  scopes: string | null;
 }
 
 type FetchFn = typeof globalThis.fetch;
@@ -59,7 +59,7 @@ function parseTokenResponse(data: Record<string, unknown>): TokenSet {
     accessToken: data.access_token as string,
     refreshToken: data.refresh_token as string,
     expiresAt: new Date(Date.now() + expiresIn * 1000),
-    scopes: (data.scope as string) ?? "",
+    scopes: (data.scope as string) ?? null,
   };
 }
 
