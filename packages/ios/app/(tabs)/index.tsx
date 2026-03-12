@@ -1,44 +1,27 @@
 import { useRouter } from "expo-router";
+import { useMemo, useState } from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import type { FoodEntry } from "../../components/FoodEntryCard";
 import { MacroSummary } from "../../components/MacroSummary";
 import { MealSection } from "../../components/MealSection";
+import { trpc } from "../../lib/trpc";
 
-// TODO: Replace with real data from tRPC queries
-const PLACEHOLDER_SUMMARY = {
-  calories: 1850,
-  caloriesGoal: 2400,
-  proteinGrams: 120,
-  carbsGrams: 200,
-  fatGrams: 65,
-};
+const MEALS = [
+  { key: "breakfast", label: "Breakfast" },
+  { key: "lunch", label: "Lunch" },
+  { key: "dinner", label: "Dinner" },
+  { key: "snack", label: "Snack" },
+  { key: "other", label: "Other" },
+] as const;
 
-const PLACEHOLDER_MEALS = [
-  {
-    name: "Breakfast" as const,
-    entries: [
-      { id: "1", name: "Oatmeal with berries", calories: 350, proteinGrams: 12, carbsGrams: 55, fatGrams: 8 },
-      { id: "2", name: "Coffee with milk", calories: 50, proteinGrams: 2, carbsGrams: 4, fatGrams: 3 },
-    ],
-  },
-  {
-    name: "Lunch" as const,
-    entries: [
-      { id: "3", name: "Chicken salad", calories: 500, proteinGrams: 40, carbsGrams: 20, fatGrams: 28 },
-    ],
-  },
-  {
-    name: "Dinner" as const,
-    entries: [],
-  },
-  {
-    name: "Snacks" as const,
-    entries: [
-      { id: "4", name: "Protein bar", calories: 200, proteinGrams: 20, carbsGrams: 25, fatGrams: 8 },
-    ],
-  },
-];
+function formatDateForQuery(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
 
-function formatDate(date: Date): string {
+function formatDateForDisplay(date: Date): string {
   return date.toLocaleDateString("en-US", {
     weekday: "long",
     month: "long",
@@ -46,36 +29,123 @@ function formatDate(date: Date): string {
   });
 }
 
+function isToday(date: Date): boolean {
+  const now = new Date();
+  return (
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate()
+  );
+}
+
 export default function TodayScreen() {
   const router = useRouter();
-  const today = new Date();
+  const [selectedDate, setSelectedDate] = useState(() => new Date());
+  const dateString = formatDateForQuery(selectedDate);
+
+  const calorieGoalQuery = trpc.settings.get.useQuery({ key: "calorieGoal" });
+  const calorieGoal = (calorieGoalQuery.data?.value as number) ?? 2000;
+
+  const foodQuery = trpc.food.byDate.useQuery({ date: dateString });
+  const deleteMutation = trpc.food.delete.useMutation({
+    onSuccess: () => foodQuery.refetch(),
+  });
+
+  const entries = (foodQuery.data ?? []) as unknown as FoodEntry[];
+
+  const dailyTotals = useMemo(() => {
+    let totalCalories = 0;
+    let totalProtein = 0;
+    let totalCarbs = 0;
+    let totalFat = 0;
+    for (const entry of entries) {
+      totalCalories += entry.calories ?? 0;
+      totalProtein += entry.protein_g ?? 0;
+      totalCarbs += entry.carbs_g ?? 0;
+      totalFat += entry.fat_g ?? 0;
+    }
+    return { totalCalories, totalProtein, totalCarbs, totalFat };
+  }, [entries]);
+
+  const mealGroups = useMemo(() => {
+    const groups = new Map<string, FoodEntry[]>();
+    for (const entry of entries) {
+      const meal = entry.meal || "other";
+      const existing = groups.get(meal) ?? [];
+      existing.push(entry);
+      groups.set(meal, existing);
+    }
+    return groups;
+  }, [entries]);
+
+  function goToPreviousDay() {
+    setSelectedDate((prev) => {
+      const next = new Date(prev);
+      next.setDate(next.getDate() - 1);
+      return next;
+    });
+  }
+
+  function goToNextDay() {
+    setSelectedDate((prev) => {
+      const next = new Date(prev);
+      next.setDate(next.getDate() + 1);
+      return next;
+    });
+  }
+
+  function handleAddFood(mealKey: string) {
+    router.push(`/food/add?meal=${mealKey}&date=${dateString}`);
+  }
+
+  function handleDeleteFood(id: string) {
+    deleteMutation.mutate({ id });
+  }
 
   return (
     <View style={styles.container}>
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
-        <Text style={styles.dateHeader}>{formatDate(today)}</Text>
+        {/* Date navigation */}
+        <View style={styles.dateNav}>
+          <TouchableOpacity onPress={goToPreviousDay} style={styles.dateArrow}>
+            <Text style={styles.dateArrowText}>‹</Text>
+          </TouchableOpacity>
+          <Text style={styles.dateHeader}>{formatDateForDisplay(selectedDate)}</Text>
+          <TouchableOpacity onPress={goToNextDay} style={styles.dateArrow}>
+            <Text style={styles.dateArrowText}>›</Text>
+          </TouchableOpacity>
+        </View>
+
+        {!isToday(selectedDate) && (
+          <TouchableOpacity onPress={() => setSelectedDate(new Date())} style={styles.todayButton}>
+            <Text style={styles.todayButtonText}>Go to Today</Text>
+          </TouchableOpacity>
+        )}
 
         <MacroSummary
-          calories={PLACEHOLDER_SUMMARY.calories}
-          caloriesGoal={PLACEHOLDER_SUMMARY.caloriesGoal}
-          proteinGrams={PLACEHOLDER_SUMMARY.proteinGrams}
-          carbsGrams={PLACEHOLDER_SUMMARY.carbsGrams}
-          fatGrams={PLACEHOLDER_SUMMARY.fatGrams}
+          calories={dailyTotals.totalCalories}
+          caloriesGoal={calorieGoal}
+          proteinGrams={Math.round(dailyTotals.totalProtein)}
+          carbsGrams={Math.round(dailyTotals.totalCarbs)}
+          fatGrams={Math.round(dailyTotals.totalFat)}
         />
 
-        {PLACEHOLDER_MEALS.map((meal) => (
-          <MealSection key={meal.name} mealName={meal.name} entries={meal.entries} />
-        ))}
+        {foodQuery.isLoading ? (
+          <Text style={styles.loadingText}>Loading...</Text>
+        ) : (
+          MEALS.map(({ key, label }) => (
+            <MealSection
+              key={key}
+              mealName={label}
+              mealKey={key}
+              entries={mealGroups.get(key) ?? []}
+              onAddFood={handleAddFood}
+              onDeleteFood={handleDeleteFood}
+              deleting={deleteMutation.isPending}
+            />
+          ))
+        )}
       </ScrollView>
-
-      {/* TODO: Replace with proper FAB component */}
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={() => router.push("/food/add")}
-        activeOpacity={0.8}
-      >
-        <Text style={styles.fabText}>+</Text>
-      </TouchableOpacity>
     </View>
   );
 }
@@ -92,32 +162,43 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 100,
   },
-  dateHeader: {
-    fontSize: 24,
-    fontWeight: "700",
-    marginBottom: 16,
-    color: "#1a1a1a",
-  },
-  fab: {
-    position: "absolute",
-    bottom: 24,
-    right: 24,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: "#007AFF",
+  dateNav: {
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
+    marginBottom: 16,
+    gap: 16,
   },
-  fabText: {
+  dateArrow: {
+    padding: 8,
+  },
+  dateArrowText: {
     fontSize: 28,
-    color: "#fff",
-    fontWeight: "600",
-    lineHeight: 30,
+    color: "#007AFF",
+    fontWeight: "300",
+  },
+  dateHeader: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#1a1a1a",
+  },
+  todayButton: {
+    alignSelf: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#007AFF",
+    marginBottom: 12,
+  },
+  todayButtonText: {
+    fontSize: 13,
+    color: "#007AFF",
+    fontWeight: "500",
+  },
+  loadingText: {
+    textAlign: "center",
+    color: "#999",
+    paddingVertical: 24,
   },
 });

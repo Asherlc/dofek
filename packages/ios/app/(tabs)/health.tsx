@@ -1,43 +1,223 @@
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { requestPermissions } from "../../modules/health-kit";
+import { useCallback, useState } from "react";
+import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  enableBackgroundDelivery,
+  isAvailable,
+  queryQuantitySamples,
+  querySleepSamples,
+  queryWorkouts,
+  requestPermissions,
+} from "../../modules/health-kit";
+import { trpc } from "../../lib/trpc";
 
-// TODO: Implement HealthKit integration via Expo Modules API (native Swift module)
-// TODO: Show sync status, last sync time, data types being synced
-// TODO: Add toggle for background sync
-// TODO: Show count of samples synced per data type
+interface SyncStatus {
+  lastSync: Date | null;
+  syncing: boolean;
+  lastResult: string | null;
+}
+
+const QUANTITY_TYPES = [
+  "HKQuantityTypeIdentifierBodyMass",
+  "HKQuantityTypeIdentifierBodyFatPercentage",
+  "HKQuantityTypeIdentifierHeartRate",
+  "HKQuantityTypeIdentifierRestingHeartRate",
+  "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
+  "HKQuantityTypeIdentifierStepCount",
+  "HKQuantityTypeIdentifierActiveEnergyBurned",
+  "HKQuantityTypeIdentifierBasalEnergyBurned",
+  "HKQuantityTypeIdentifierDistanceWalkingRunning",
+  "HKQuantityTypeIdentifierFlightsClimbed",
+  "HKQuantityTypeIdentifierAppleExerciseTime",
+  "HKQuantityTypeIdentifierVO2Max",
+  "HKQuantityTypeIdentifierOxygenSaturation",
+  "HKQuantityTypeIdentifierRespiratoryRate",
+];
+
+function daysAgo(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return d.toISOString();
+}
 
 export default function HealthScreen() {
+  const [permissionsGranted, setPermissionsGranted] = useState(false);
+  const [status, setStatus] = useState<SyncStatus>({
+    lastSync: null,
+    syncing: false,
+    lastResult: null,
+  });
+
+  const pushQuantity = trpc.healthKitSync.pushQuantitySamples.useMutation();
+  const pushWorkouts = trpc.healthKitSync.pushWorkouts.useMutation();
+  const pushSleep = trpc.healthKitSync.pushSleepSamples.useMutation();
+
+  const available = isAvailable();
+
   async function handleRequestPermissions() {
-    const granted = await requestPermissions();
-    if (!granted) {
-      // TODO: Show alert explaining why permissions are needed
-      console.log("HealthKit permissions not granted");
+    try {
+      const granted = await requestPermissions();
+      setPermissionsGranted(granted);
+      if (!granted) {
+        Alert.alert(
+          "Permissions Required",
+          "HealthKit permissions are needed to sync your health data. You can enable them in Settings > Privacy > Health.",
+        );
+      }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      Alert.alert("Error", message);
+    }
+  }
+
+  const handleSync = useCallback(async () => {
+    setStatus((prev) => ({ ...prev, syncing: true, lastResult: null }));
+
+    try {
+      const startDate = daysAgo(7);
+      const endDate = new Date().toISOString();
+
+      // Sync quantity samples
+      const allSamples = [];
+      for (const typeId of QUANTITY_TYPES) {
+        const samples = await queryQuantitySamples(typeId, startDate, endDate);
+        allSamples.push(...samples);
+      }
+
+      let totalInserted = 0;
+      const errors: string[] = [];
+
+      if (allSamples.length > 0) {
+        // Push in batches of 500
+        for (let i = 0; i < allSamples.length; i += 500) {
+          const batch = allSamples.slice(i, i + 500);
+          const result = await pushQuantity.mutateAsync({ samples: batch });
+          totalInserted += result.inserted;
+          errors.push(...result.errors);
+        }
+      }
+
+      // Sync workouts
+      const workouts = await queryWorkouts(startDate, endDate);
+      if (workouts.length > 0) {
+        const result = await pushWorkouts.mutateAsync({ workouts });
+        totalInserted += result.inserted;
+      }
+
+      // Sync sleep
+      const sleepSamples = await querySleepSamples(startDate, endDate);
+      if (sleepSamples.length > 0) {
+        const result = await pushSleep.mutateAsync({ samples: sleepSamples });
+        totalInserted += result.inserted;
+      }
+
+      const resultMessage = errors.length > 0
+        ? `Synced ${totalInserted} records with ${errors.length} errors`
+        : `Synced ${totalInserted} records`;
+
+      setStatus({
+        lastSync: new Date(),
+        syncing: false,
+        lastResult: resultMessage,
+      });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      setStatus((prev) => ({
+        ...prev,
+        syncing: false,
+        lastResult: `Error: ${message}`,
+      }));
+    }
+  }, [pushQuantity, pushWorkouts, pushSleep]);
+
+  async function handleEnableBackground() {
+    try {
+      for (const typeId of QUANTITY_TYPES) {
+        await enableBackgroundDelivery(typeId);
+      }
+      Alert.alert("Background Sync", "Background delivery enabled for all health data types.");
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      Alert.alert("Error", message);
     }
   }
 
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.title}>HealthKit Sync</Text>
-      <Text style={styles.placeholder}>HealthKit integration coming soon.</Text>
-      <Text style={styles.hint}>
-        This screen will let you connect Apple Health to sync heart rate, HRV, steps, sleep, and
-        other health data to the Dofek server.
-      </Text>
 
-      <TouchableOpacity style={styles.button} onPress={handleRequestPermissions} activeOpacity={0.7}>
-        <Text style={styles.buttonText}>Request HealthKit Permissions</Text>
-      </TouchableOpacity>
+      {!available ? (
+        <View style={styles.card}>
+          <Text style={styles.errorText}>HealthKit is not available on this device.</Text>
+        </View>
+      ) : (
+        <>
+          {/* Permissions */}
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Permissions</Text>
+            <Text style={styles.cardDescription}>
+              {permissionsGranted
+                ? "HealthKit permissions granted."
+                : "Grant access to sync heart rate, HRV, steps, sleep, and other health data."}
+            </Text>
+            {!permissionsGranted && (
+              <TouchableOpacity style={styles.button} onPress={handleRequestPermissions} activeOpacity={0.7}>
+                <Text style={styles.buttonText}>Request Permissions</Text>
+              </TouchableOpacity>
+            )}
+          </View>
 
-      <View style={styles.statusSection}>
-        <Text style={styles.statusLabel}>Sync Status</Text>
-        <Text style={styles.statusValue}>Not configured</Text>
-      </View>
+          {/* Sync */}
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Manual Sync</Text>
+            <Text style={styles.cardDescription}>
+              Sync the last 7 days of health data to the server.
+            </Text>
+            <TouchableOpacity
+              style={[styles.button, status.syncing && styles.buttonDisabled]}
+              onPress={handleSync}
+              activeOpacity={0.7}
+              disabled={status.syncing}
+            >
+              <Text style={styles.buttonText}>
+                {status.syncing ? "Syncing..." : "Sync Now"}
+              </Text>
+            </TouchableOpacity>
+          </View>
 
-      <View style={styles.statusSection}>
-        <Text style={styles.statusLabel}>Last Sync</Text>
-        <Text style={styles.statusValue}>Never</Text>
-      </View>
-    </View>
+          {/* Status */}
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Status</Text>
+            <View style={styles.statusRow}>
+              <Text style={styles.statusLabel}>Last sync</Text>
+              <Text style={styles.statusValue}>
+                {status.lastSync
+                  ? status.lastSync.toLocaleTimeString()
+                  : "Never"}
+              </Text>
+            </View>
+            {status.lastResult && (
+              <View style={styles.statusRow}>
+                <Text style={styles.statusLabel}>Result</Text>
+                <Text style={[styles.statusValue, status.lastResult.startsWith("Error") && styles.errorText]}>
+                  {status.lastResult}
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {/* Background */}
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Background Sync</Text>
+            <Text style={styles.cardDescription}>
+              Enable background delivery so data syncs automatically.
+            </Text>
+            <TouchableOpacity style={styles.buttonSecondary} onPress={handleEnableBackground} activeOpacity={0.7}>
+              <Text style={styles.buttonSecondaryText}>Enable Background Delivery</Text>
+            </TouchableOpacity>
+          </View>
+        </>
+      )}
+    </ScrollView>
   );
 }
 
@@ -45,55 +225,85 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#f8f9fa",
-    alignItems: "center",
-    padding: 24,
-    paddingTop: 48,
+  },
+  content: {
+    padding: 16,
+    paddingTop: 24,
+    paddingBottom: 40,
   },
   title: {
     fontSize: 24,
     fontWeight: "700",
     color: "#1a1a1a",
+    marginBottom: 16,
+  },
+  card: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 16,
     marginBottom: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
-  placeholder: {
+  cardTitle: {
     fontSize: 16,
-    color: "#666",
-    textAlign: "center",
-    marginBottom: 8,
+    fontWeight: "700",
+    color: "#1a1a1a",
+    marginBottom: 4,
   },
-  hint: {
+  cardDescription: {
     fontSize: 14,
-    color: "#999",
-    textAlign: "center",
+    color: "#666",
     lineHeight: 20,
-    marginBottom: 32,
+    marginBottom: 12,
   },
   button: {
     backgroundColor: "#007AFF",
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
     paddingVertical: 12,
     borderRadius: 8,
-    marginBottom: 32,
+    alignItems: "center",
+  },
+  buttonDisabled: {
+    opacity: 0.5,
   },
   buttonText: {
     color: "#fff",
     fontSize: 16,
     fontWeight: "600",
   },
-  statusSection: {
-    width: "100%",
+  buttonSecondary: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#007AFF",
+    alignItems: "center",
+  },
+  buttonSecondaryText: {
+    color: "#007AFF",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  statusRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingVertical: 12,
+    paddingVertical: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "#ddd",
+    borderBottomColor: "#eee",
   },
   statusLabel: {
-    fontSize: 16,
+    fontSize: 15,
     color: "#333",
   },
   statusValue: {
-    fontSize: 16,
-    color: "#999",
+    fontSize: 15,
+    color: "#666",
+  },
+  errorText: {
+    color: "#FF3B30",
   },
 });

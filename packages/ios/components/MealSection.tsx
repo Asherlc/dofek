@@ -1,27 +1,37 @@
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { FoodEntryCard } from "./FoodEntryCard";
 import type { FoodEntry } from "./FoodEntryCard";
 
 interface MealSectionProps {
   mealName: string;
+  mealKey: string;
   entries: FoodEntry[];
+  onAddFood: (mealKey: string) => void;
+  onDeleteFood: (id: string) => void;
+  deleting: boolean;
 }
 
-export function MealSection({ mealName, entries }: MealSectionProps) {
-  const totalCalories = entries.reduce((sum, entry) => sum + entry.calories, 0);
+export function MealSection({ mealName, mealKey, entries, onAddFood, onDeleteFood, deleting }: MealSectionProps) {
+  const totalCalories = entries.reduce((sum, entry) => sum + (entry.calories ?? 0), 0);
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.mealName}>{mealName}</Text>
-        <Text style={styles.totalCalories}>{totalCalories} cal</Text>
+        <Text style={styles.totalCalories}>{totalCalories > 0 ? `${totalCalories} cal` : ""}</Text>
       </View>
 
       {entries.length > 0 ? (
-        entries.map((entry) => <FoodEntryCard key={entry.id} entry={entry} />)
+        entries.map((entry) => (
+          <FoodEntryCard key={entry.id} entry={entry} onDelete={onDeleteFood} deleting={deleting} />
+        ))
       ) : (
         <Text style={styles.emptyText}>No entries yet</Text>
       )}
+
+      <TouchableOpacity style={styles.addButton} onPress={() => onAddFood(mealKey)} activeOpacity={0.7}>
+        <Text style={styles.addButtonText}>+ Add food</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -59,5 +69,16 @@ const styles = StyleSheet.create({
     color: "#ccc",
     fontStyle: "italic",
     paddingVertical: 8,
+  },
+  addButton: {
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#eee",
+    marginTop: 4,
+  },
+  addButtonText: {
+    fontSize: 14,
+    color: "#007AFF",
+    fontWeight: "500",
   },
 });
