@@ -84,6 +84,7 @@ export const efficiencyRouter = router({
             ) rhr ON true
             WHERE up.id = ${ctx.userId}
               AND a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+              AND ms.recorded_at > NOW() - (${input.days} + 1)::int * INTERVAL '1 day'
               AND ${enduranceTypeFilter("a")}
               AND up.max_hr IS NOT NULL
               AND ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * 0.6
@@ -137,6 +138,7 @@ export const efficiencyRouter = router({
               JOIN fitness.v_activity a ON a.id = ms.activity_id
               WHERE a.user_id = ${ctx.userId}
                 AND a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+                AND ms.recorded_at > NOW() - (${input.days} + 1)::int * INTERVAL '1 day'
                 AND ${enduranceTypeFilter("a")}
                 AND ms.power > 0
                 AND ms.heart_rate > 0
@@ -230,6 +232,7 @@ export const efficiencyRouter = router({
             ) rhr ON true
             WHERE up.id = ${ctx.userId}
               AND a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+              AND ms.recorded_at > NOW() - (${input.days} + 1)::int * INTERVAL '1 day'
               AND ${enduranceTypeFilter("a")}
               AND up.max_hr IS NOT NULL
               AND ms.heart_rate IS NOT NULL
