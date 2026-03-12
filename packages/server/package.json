@@ -12,6 +12,8 @@
   "dependencies": {
     "@ai-sdk/google": "3.0.43",
     "@ai-sdk/mistral": "3.0.24",
+    "@slack/bolt": "^4.6.0",
+    "@slack/types": "^2.20.0",
     "@stdlib/stats-pcorrtest": "0.2.3",
     "@stdlib/stats-ranks": "0.2.3",
     "@stdlib/stats-ttest": "0.2.3",

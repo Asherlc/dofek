@@ -30,6 +30,7 @@ import { createSession, deleteSession, validateSession } from "./auth/session.ts
 import { httpRequestDuration, registry } from "./lib/metrics.ts";
 import { logger } from "./logger.ts";
 import { appRouter } from "./router.ts";
+import { startSlackBot } from "./slack/bot.ts";
 import type { Context } from "./trpc.ts";
 
 /** Fire common queries sequentially to populate cache without overwhelming the DB.
@@ -694,6 +695,9 @@ async function main() {
 
     // Warm cache with common dashboard queries (fire-and-forget)
     warmCache(db).catch((err) => logger.error(`[cache] Warm failed: ${err}`));
+
+    // Start Slack bot if configured (fire-and-forget)
+    startSlackBot(db).catch((err) => logger.error(`[slack] Slack bot error: ${err}`));
   });
 }
 
