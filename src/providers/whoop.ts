@@ -896,8 +896,10 @@ export class WhoopProvider implements Provider {
         for (const cycle of cycles) {
           if (cycle.recovery?.score_state === "SCORED" && cycle.recovery.score) {
             const parsed = parseRecovery(cycle.recovery);
-            const cycleDay =
+            const cycleDayRaw =
               cycle.days?.[0] ?? new Date(cycle.recovery.created_at).toISOString().split("T")[0];
+            if (!cycleDayRaw) throw new Error("Could not determine cycle day");
+            const cycleDay = cycleDayRaw;
 
             await db
               .insert(dailyMetrics)
@@ -1113,7 +1115,7 @@ export class WhoopProvider implements Provider {
           await db
             .insert(journalEntry)
             .values({
-              date: entry.date.toISOString().split("T")[0],
+              date: entry.date.toISOString().split("T")[0]!,
               providerId: this.id,
               question: entry.question,
               answerText: entry.answerText,
