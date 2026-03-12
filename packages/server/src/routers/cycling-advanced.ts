@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { enduranceTypeFilter } from "../lib/endurance-types.ts";
 import { CacheTTL, cachedQuery, router } from "../trpc.ts";
 
 export interface RampRateWeek {
@@ -69,6 +70,7 @@ export const cyclingAdvancedRouter = router({
             JOIN fitness.user_profile up ON up.id = asum.user_id
             WHERE up.max_hr IS NOT NULL
               AND asum.started_at > NOW() - (${input.days} + 42)::int * INTERVAL '1 day'
+              AND ${enduranceTypeFilter("asum")}
               AND asum.ended_at IS NOT NULL
               AND asum.avg_hr IS NOT NULL
               AND asum.avg_hr > 0
@@ -181,6 +183,7 @@ export const cyclingAdvancedRouter = router({
               JOIN fitness.user_profile up ON up.id = asum.user_id
               WHERE up.max_hr IS NOT NULL
                 AND asum.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+                AND ${enduranceTypeFilter("asum")}
                 AND asum.ended_at IS NOT NULL
                 AND asum.avg_hr IS NOT NULL
                 AND asum.avg_hr > 0
@@ -238,6 +241,7 @@ export const cyclingAdvancedRouter = router({
               FROM fitness.metric_stream ms
               JOIN fitness.v_activity a ON a.id = ms.activity_id
               WHERE a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+                AND ${enduranceTypeFilter("a")}
                 AND ms.power > 0
             )
             SELECT ROUND((MAX(avg_20min) * 0.95)::numeric, 1) AS ftp
@@ -260,6 +264,7 @@ export const cyclingAdvancedRouter = router({
               FROM fitness.metric_stream ms
               JOIN fitness.v_activity a ON a.id = ms.activity_id
               WHERE a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+                AND ${enduranceTypeFilter("a")}
                 AND ms.power > 0
             )
             SELECT
@@ -311,6 +316,7 @@ export const cyclingAdvancedRouter = router({
               FROM fitness.metric_stream ms
               JOIN fitness.v_activity a ON a.id = ms.activity_id
               WHERE a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+                AND ${enduranceTypeFilter("a")}
                 AND ms.altitude IS NOT NULL
                 AND ms.grade IS NOT NULL
                 AND ms.grade > 3
@@ -372,6 +378,7 @@ export const cyclingAdvancedRouter = router({
               ) AS avg_pedal_smoothness
             FROM fitness.activity_summary asum
             WHERE asum.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+              AND ${enduranceTypeFilter("asum")}
               AND asum.avg_left_balance IS NOT NULL
             ORDER BY asum.started_at`,
       );

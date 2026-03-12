@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { enduranceTypeFilter } from "../lib/endurance-types.ts";
 import { CacheTTL, cachedQuery, router } from "../trpc.ts";
 
 export const efficiencyRouter = router({
@@ -41,6 +42,7 @@ export const efficiencyRouter = router({
             JOIN fitness.v_activity a ON TRUE
             JOIN fitness.metric_stream ms ON ms.activity_id = a.id
             WHERE a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+              AND ${enduranceTypeFilter("a")}
               AND ms.heart_rate >= uh.max_hr * 0.6
               AND ms.heart_rate < uh.max_hr * 0.7
               AND ms.power > 0
@@ -91,6 +93,7 @@ export const efficiencyRouter = router({
               FROM fitness.metric_stream ms
               JOIN fitness.v_activity a ON a.id = ms.activity_id
               WHERE a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+                AND ${enduranceTypeFilter("a")}
                 AND ms.power > 0
                 AND ms.heart_rate > 0
             ),
@@ -172,6 +175,7 @@ export const efficiencyRouter = router({
             JOIN fitness.activity_summary asum ON asum.activity_id = hz.activity_id
             JOIN fitness.user_profile up ON up.id = hz.user_id
             WHERE asum.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+              AND ${enduranceTypeFilter("asum")}
               AND up.max_hr IS NOT NULL
             GROUP BY up.max_hr, date_trunc('week', asum.started_at)
             ORDER BY week`,

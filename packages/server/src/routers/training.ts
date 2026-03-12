@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { enduranceTypeFilter } from "../lib/endurance-types.ts";
 import { CacheTTL, cachedQuery, router } from "../trpc.ts";
 
 export const trainingRouter = router({
@@ -54,6 +55,7 @@ export const trainingRouter = router({
             JOIN fitness.activity_summary asum ON asum.activity_id = hz.activity_id
             JOIN fitness.user_profile up ON up.id = hz.user_id
             WHERE asum.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+              AND ${enduranceTypeFilter("asum")}
               AND up.max_hr IS NOT NULL
             GROUP BY up.max_hr, date_trunc('week', asum.started_at)
             ORDER BY week`,
