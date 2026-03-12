@@ -41,8 +41,8 @@ export function parseHealthDate(dateStr: string): Date {
 
 export interface HealthRecord {
   type: string;
-  sourceName: string;
-  unit: string;
+  sourceName: string | null;
+  unit: string | null;
   value: number;
   startDate: Date;
   endDate: Date;
@@ -56,8 +56,8 @@ export function parseRecord(attrs: Record<string, string>): HealthRecord | null 
 
   return {
     type,
-    sourceName: attrs.sourceName ?? "",
-    unit: attrs.unit ?? "",
+    sourceName: attrs.sourceName ?? null,
+    unit: attrs.unit ?? null,
     value,
     startDate: parseHealthDate(attrs.startDate),
     endDate: parseHealthDate(attrs.endDate),
@@ -68,8 +68,8 @@ export function parseRecord(attrs: Record<string, string>): HealthRecord | null 
 // Category records have string values (e.g., MindfulSession, SexualActivity)
 export interface CategoryRecord {
   type: string;
-  sourceName: string;
-  value: string;
+  sourceName: string | null;
+  value: string | null;
   startDate: Date;
   endDate: Date;
 }
@@ -80,8 +80,8 @@ export function parseCategoryRecord(attrs: Record<string, string>): CategoryReco
 
   return {
     type,
-    sourceName: attrs.sourceName ?? "",
-    value: attrs.value ?? "",
+    sourceName: attrs.sourceName ?? null,
+    value: attrs.value ?? null,
     startDate: parseHealthDate(attrs.startDate),
     endDate: parseHealthDate(attrs.endDate),
   };
@@ -95,7 +95,7 @@ export type SleepStage = "inBed" | "core" | "deep" | "rem" | "awake" | "asleep";
 
 export interface SleepAnalysisRecord {
   stage: SleepStage;
-  sourceName: string;
+  sourceName: string | null;
   startDate: Date;
   endDate: Date;
   durationMinutes: number;
@@ -124,7 +124,7 @@ export function parseSleepAnalysis(attrs: Record<string, string>): SleepAnalysis
 
   return {
     stage,
-    sourceName: attrs.sourceName ?? "",
+    sourceName: attrs.sourceName ?? null,
     startDate,
     endDate,
     durationMinutes,
@@ -137,7 +137,7 @@ export function parseSleepAnalysis(attrs: Record<string, string>): SleepAnalysis
 
 export interface HealthWorkout {
   activityType: string;
-  sourceName: string;
+  sourceName: string | null;
   durationSeconds: number;
   distanceMeters?: number;
   calories?: number;
@@ -280,7 +280,7 @@ export function parseWorkout(attrs: Record<string, string>): HealthWorkout {
 
   return {
     activityType,
-    sourceName: attrs.sourceName ?? "",
+    sourceName: attrs.sourceName ?? null,
     durationSeconds,
     distanceMeters,
     calories,
@@ -358,9 +358,10 @@ export interface WorkoutStatistics {
   unit?: string;
 }
 
-export function parseWorkoutStatistics(attrs: Record<string, string>): WorkoutStatistics {
+export function parseWorkoutStatistics(attrs: Record<string, string>): WorkoutStatistics | null {
+  if (!attrs.type) return null;
   return {
-    type: attrs.type ?? "",
+    type: attrs.type,
     sum: attrs.sum ? parseFloat(attrs.sum) : undefined,
     average: attrs.average ? parseFloat(attrs.average) : undefined,
     minimum: attrs.minimum ? parseFloat(attrs.minimum) : undefined,
@@ -556,7 +557,8 @@ export function streamHealthExport(
           currentWorkoutStats = [];
         }
       } else if (node.name === "WorkoutStatistics" && currentWorkout) {
-        currentWorkoutStats.push(parseWorkoutStatistics(attrs));
+        const stat = parseWorkoutStatistics(attrs);
+        if (stat) currentWorkoutStats.push(stat);
       } else if (node.name === "WorkoutRoute" && currentWorkout) {
         insideWorkoutRoute = true;
         currentRouteLocations = [];
@@ -1766,7 +1768,12 @@ export function parseFhirObservation(obs: FhirObservation, sourceName: string): 
         ? (obs.status as LabResultStatus)
         : undefined,
     sourceName,
-    recordedAt: new Date(obs.effectiveDateTime ?? obs.issued ?? ""),
+    recordedAt: (() => {
+      const dateStr = obs.effectiveDateTime ?? obs.issued;
+      if (!dateStr)
+        throw new Error(`FHIR Observation ${obs.id} missing both effectiveDateTime and issued`);
+      return new Date(dateStr);
+    })(),
     issuedAt: obs.issued ? new Date(obs.issued) : undefined,
     raw: obs as unknown as Record<string, unknown>,
   };

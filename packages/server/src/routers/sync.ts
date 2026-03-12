@@ -81,7 +81,12 @@ export const syncRouter = router({
     const lastSyncMap = new Map(lastSyncs.map((r) => [r.provider_id, r.last_synced]));
 
     return all.map((p) => {
-      const setup = p.authSetup?.();
+      let setup: ReturnType<NonNullable<typeof p.authSetup>> | undefined;
+      try {
+        setup = p.authSetup?.();
+      } catch {
+        /* credentials not configured */
+      }
       const needsOAuth = !!setup?.oauthConfig;
       const needsCustomAuth = p.id === "whoop";
       const needsAuth = needsOAuth || needsCustomAuth;

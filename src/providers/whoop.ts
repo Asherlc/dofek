@@ -480,7 +480,7 @@ export class WhoopInternalClient {
       type: "success",
       token: {
         accessToken: authResult.AccessToken as string,
-        refreshToken: (authResult.RefreshToken as string) ?? "",
+        refreshToken: authResult.RefreshToken as string,
         userId,
       },
     };
@@ -492,7 +492,7 @@ export class WhoopInternalClient {
   static async verifyCode(
     session: string,
     code: string,
-    username?: string,
+    username: string,
     fetchFn: typeof globalThis.fetch = globalThis.fetch,
   ): Promise<WhoopAuthToken> {
     // Try SMS_MFA first, fall back to SOFTWARE_TOKEN_MFA
@@ -505,7 +505,7 @@ export class WhoopInternalClient {
           ClientId: COGNITO_CLIENT_ID,
           Session: session,
           ChallengeResponses: {
-            USERNAME: username ?? "",
+            USERNAME: username,
             SMS_MFA_CODE: code,
           },
         },
@@ -519,7 +519,7 @@ export class WhoopInternalClient {
           ClientId: COGNITO_CLIENT_ID,
           Session: session,
           ChallengeResponses: {
-            USERNAME: username ?? "",
+            USERNAME: username,
             SOFTWARE_TOKEN_MFA_CODE: code,
           },
         },

@@ -466,14 +466,17 @@ export class FatSecretProvider implements Provider {
   private fetchFn: FetchFn;
 
   constructor(fetchFn: FetchFn = globalThis.fetch) {
-    this.consumerKey = process.env.FATSECRET_CONSUMER_KEY ?? "";
-    this.consumerSecret = process.env.FATSECRET_CONSUMER_SECRET ?? "";
+    const consumerKey = process.env.FATSECRET_CONSUMER_KEY;
+    const consumerSecret = process.env.FATSECRET_CONSUMER_SECRET;
+    if (!consumerKey || !consumerSecret) {
+      throw new Error("FATSECRET_CONSUMER_KEY and FATSECRET_CONSUMER_SECRET are required");
+    }
+    this.consumerKey = consumerKey;
+    this.consumerSecret = consumerSecret;
     this.fetchFn = fetchFn;
   }
 
   validate(): string | null {
-    if (!this.consumerKey) return "FATSECRET_CONSUMER_KEY is required";
-    if (!this.consumerSecret) return "FATSECRET_CONSUMER_SECRET is required";
     return null;
   }
 
