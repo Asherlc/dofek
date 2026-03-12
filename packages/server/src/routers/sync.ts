@@ -91,6 +91,9 @@ export const syncRouter = router({
     const tokenSet = new Set(allTokens.map((r) => r.provider_id));
     const lastSyncMap = new Map(lastSyncs.map((r) => [r.provider_id, r.last_synced]));
 
+    // Import-only providers have no real sync — they only work via file upload
+    const importOnlyIds = new Set(["strong-csv", "cronometer-csv"]);
+
     return all.map((p) => {
       let setup: ReturnType<NonNullable<typeof p.authSetup>> | undefined;
       try {
@@ -114,6 +117,7 @@ export const syncRouter = router({
         needsCustomAuth,
         authorized,
         lastSyncedAt,
+        importOnly: importOnlyIds.has(p.id),
       };
     });
   }),
