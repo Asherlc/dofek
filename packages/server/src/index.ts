@@ -458,7 +458,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
             status: result.errors.length ? "error" : "success",
             recordCount: result.recordsSynced,
             errorMessage: result.errors.length
-              ? result.errors.map((e: SyncError) => e.message).join("; ")
+              ? result.errors.map((e: { message: string }) => e.message).join("; ")
               : undefined,
             durationMs: Date.now() - importStart,
           });

@@ -178,8 +178,8 @@ export function PolarizationTrendChart({ weeks, maxHr, loading }: PolarizationTr
       </h3>
       <ReactECharts option={option} style={{ height: 280 }} notMerge={true} />
       <p className="text-xs text-zinc-700 mt-1">
-        Index above 2.0 = well-polarized training. Zone 1 = easy (&lt;80% max heart rate), Zone 2 = threshold
-        (80-87.5%), Zone 3 = high intensity (&gt;87.5%).
+        Index above 2.0 = well-polarized training. Zone 1 = easy (&lt;80% max heart rate), Zone 2 =
+        threshold (80-87.5%), Zone 3 = high intensity (&gt;87.5%).
       </p>
     </div>
   );

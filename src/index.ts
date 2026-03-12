@@ -4,6 +4,7 @@ import { buildAuthorizationUrl } from "./auth/index.ts";
 import { createDatabaseFromEnv } from "./db/index.ts";
 import { ensureProvider, saveTokens } from "./db/tokens.ts";
 import { AutoSupplementsProvider } from "./providers/auto-supplements.ts";
+import { CronometerCsvProvider } from "./providers/cronometer-csv.ts";
 import { FatSecretProvider } from "./providers/fatsecret.ts";
 import { FitbitProvider } from "./providers/fitbit.ts";
 import { GarminProvider } from "./providers/garmin.ts";
@@ -12,7 +13,6 @@ import { getAllProviders, getEnabledProviders, registerProvider } from "./provid
 import { PelotonProvider } from "./providers/peloton.ts";
 import { PolarProvider } from "./providers/polar.ts";
 import { RideWithGpsProvider } from "./providers/ride-with-gps.ts";
-import { CronometerCsvProvider } from "./providers/cronometer-csv.ts";
 import { StrongCsvProvider } from "./providers/strong-csv.ts";
 import { WahooProvider } from "./providers/wahoo.ts";
 import { WhoopProvider } from "./providers/whoop.ts";
