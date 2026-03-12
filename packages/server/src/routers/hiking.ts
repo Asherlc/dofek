@@ -219,7 +219,7 @@ export const hikingRouter = router({
               walking_double_support_pct AS double_support_pct,
               walking_asymmetry_pct AS asymmetry_pct,
               walking_steadiness AS steadiness
-            FROM fitness.v_daily_metrics
+            FROM fitness.daily_metrics
             WHERE date > NOW() - ${input.days}::int * INTERVAL '1 day'
               AND (walking_speed IS NOT NULL
                 OR walking_step_length IS NOT NULL

@@ -114,20 +114,23 @@ export const recoveryRouter = router({
                 '1 day'::interval
               )::date AS date
             ),
-            activity_load AS (
+            per_activity AS (
               SELECT
                 a.started_at::date AS date,
-                SUM(
-                  EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 60.0
+                EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 60.0
                   * AVG(ms.heart_rate)
-                  / NULLIF(MAX(ms.heart_rate), 0)
-                ) AS daily_load
+                  / NULLIF(MAX(ms.heart_rate), 0) AS load
               FROM fitness.v_activity a
               JOIN fitness.metric_stream ms ON ms.activity_id = a.id
               WHERE a.started_at::date >= CURRENT_DATE - ${queryDays}::int
                 AND a.ended_at IS NOT NULL
                 AND ms.heart_rate IS NOT NULL
-              GROUP BY a.started_at::date
+              GROUP BY a.id, a.started_at, a.ended_at
+            ),
+            activity_load AS (
+              SELECT date, SUM(load) AS daily_load
+              FROM per_activity
+              GROUP BY date
             ),
             daily AS (
               SELECT
@@ -152,8 +155,7 @@ export const recoveryRouter = router({
               chronic_load_avg * 7 AS chronic_load,
               CASE
                 WHEN chronic_load_avg > 0 AND chronic_count = 28
-                THEN (SUM(daily_load) OVER (ORDER BY date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW))
-                     / (chronic_load_avg * 7)
+                THEN acute_load / (chronic_load_avg * 7)
                 ELSE NULL
               END AS workload_ratio
             FROM with_windows
@@ -297,20 +299,23 @@ export const recoveryRouter = router({
                 '1 day'::interval
               )::date AS date
             ),
-            activity_load AS (
+            per_activity AS (
               SELECT
                 a.started_at::date AS date,
-                SUM(
-                  EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 60.0
+                EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 60.0
                   * AVG(ms.heart_rate)
-                  / NULLIF(MAX(ms.heart_rate), 0)
-                ) AS daily_load
+                  / NULLIF(MAX(ms.heart_rate), 0) AS load
               FROM fitness.v_activity a
               JOIN fitness.metric_stream ms ON ms.activity_id = a.id
               WHERE a.started_at::date >= CURRENT_DATE - ${queryDays}::int
                 AND a.ended_at IS NOT NULL
                 AND ms.heart_rate IS NOT NULL
-              GROUP BY a.started_at::date
+              GROUP BY a.id, a.started_at, a.ended_at
+            ),
+            activity_load AS (
+              SELECT date, SUM(load) AS daily_load
+              FROM per_activity
+              GROUP BY date
             ),
             daily AS (
               SELECT

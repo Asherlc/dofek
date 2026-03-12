@@ -14,22 +14,31 @@ export interface TestContext {
 }
 
 /**
- * Spin up a TimescaleDB container, create schema, run migrations.
+ * Spin up a TimescaleDB container (or use TEST_DATABASE_URL), create schema, run migrations.
  * Call cleanup() in afterAll to tear down.
  */
 export async function setupTestDatabase(): Promise<TestContext> {
-  const container = await new GenericContainer("timescale/timescaledb:latest-pg16")
-    .withEnvironment({
-      POSTGRES_DB: "test",
-      POSTGRES_USER: "test",
-      POSTGRES_PASSWORD: "test",
-    })
-    .withExposedPorts(5432)
-    .start();
+  let connectionString: string;
+  let container: Awaited<ReturnType<GenericContainer["start"]>> | null = null;
 
-  const connectionString = `postgres://test:test@${container.getHost()}:${container.getMappedPort(5432)}/test`;
+  if (process.env.TEST_DATABASE_URL) {
+    // CI: use the service container provided by GitHub Actions
+    connectionString = process.env.TEST_DATABASE_URL;
+  } else {
+    // Local: spin up a testcontainer
+    container = await new GenericContainer("timescale/timescaledb:latest-pg16")
+      .withEnvironment({
+        POSTGRES_DB: "test",
+        POSTGRES_USER: "test",
+        POSTGRES_PASSWORD: "test",
+      })
+      .withExposedPorts(5432)
+      .start();
 
-  // Wait for PostgreSQL to be ready (container port maps before DB is accepting connections)
+    connectionString = `postgres://test:test@${container.getHost()}:${container.getMappedPort(5432)}/test`;
+  }
+
+  // Wait for PostgreSQL to be ready
   for (let attempt = 0; attempt < 30; attempt++) {
     try {
       const probe = postgres(connectionString, { max: 1 });
@@ -70,7 +79,7 @@ export async function setupTestDatabase(): Promise<TestContext> {
     connectionString,
     cleanup: async () => {
       await client.end();
-      await container.stop();
+      if (container) await container.stop();
     },
   };
 }
