@@ -1,0 +1,175 @@
+/**
+ * HRV prediction orchestrator.
+ *
+ * Trains both a linear regression and gradient-boosted tree model
+ * on daily health data, then returns predictions, feature importances,
+ * and model diagnostics.
+ */
+
+import type { DailyFeatureRow } from "./features.ts";
+import { buildHrvDataset } from "./features.ts";
+import { GradientBoostedTrees } from "./gradient-boost.ts";
+import { LinearRegression } from "./regression.ts";
+
+export interface FeatureImportance {
+  name: string;
+  linearImportance: number;
+  treeImportance: number;
+  linearCoefficient: number;
+}
+
+export interface PredictionPoint {
+  date: string;
+  actualHrv: number;
+  linearPrediction: number;
+  treePrediction: number;
+}
+
+export interface ModelDiagnostics {
+  linearRSquared: number;
+  linearAdjustedRSquared: number;
+  treeRSquared: number;
+  crossValidatedRSquared: number;
+  sampleCount: number;
+  featureCount: number;
+}
+
+export interface HrvPredictionResult {
+  featureImportances: FeatureImportance[];
+  predictions: PredictionPoint[];
+  diagnostics: ModelDiagnostics;
+  tomorrowPrediction: {
+    linear: number;
+    tree: number;
+  } | null;
+}
+
+/**
+ * Train both models and return predictions + importances.
+ *
+ * Uses 5-fold cross-validation for the tree model to estimate
+ * out-of-sample performance (guards against overfitting).
+ */
+export function trainHrvPredictor(days: DailyFeatureRow[]): HrvPredictionResult | null {
+  const dataset = buildHrvDataset(days);
+  if (!dataset) return null;
+
+  const { featureNames, X, y, dates } = dataset;
+
+  // Train linear regression
+  const linear = new LinearRegression();
+  linear.fit(X, y);
+
+  // Train gradient-boosted trees
+  const tree = new GradientBoostedTrees({
+    nEstimators: 100,
+    maxDepth: 4,
+    learningRate: 0.05,
+    minSamplesLeaf: Math.max(3, Math.floor(X.length * 0.05)),
+  });
+  tree.fit(X, y);
+
+  // 5-fold cross-validation for tree model
+  const cvRSquared = crossValidate(X, y, 5);
+
+  // Feature importances (sorted by tree importance descending)
+  const importances: FeatureImportance[] = featureNames.map((name, i) => ({
+    name,
+    linearImportance: linear.featureImportances[i] ?? 0,
+    treeImportance: tree.featureImportances[i] ?? 0,
+    linearCoefficient: linear.coefficients[i] ?? 0,
+  }));
+  importances.sort((a, b) => b.treeImportance - a.treeImportance);
+
+  // Generate predictions for each data point
+  const predictions: PredictionPoint[] = X.map((features, i) => ({
+    date: dates[i]!,
+    actualHrv: y[i]!,
+    linearPrediction: round2(linear.predict(features)),
+    treePrediction: round2(tree.predict(features)),
+  }));
+
+  // Predict tomorrow using today's data (last row of input)
+  let tomorrowPrediction: HrvPredictionResult["tomorrowPrediction"] = null;
+  if (X.length > 0) {
+    const lastFeatures = X[X.length - 1]!;
+    tomorrowPrediction = {
+      linear: round2(linear.predict(lastFeatures)),
+      tree: round2(tree.predict(lastFeatures)),
+    };
+  }
+
+  return {
+    featureImportances: importances,
+    predictions,
+    diagnostics: {
+      linearRSquared: round4(linear.rSquared),
+      linearAdjustedRSquared: round4(linear.adjustedRSquared),
+      treeRSquared: round4(tree.rSquared),
+      crossValidatedRSquared: round4(cvRSquared),
+      sampleCount: X.length,
+      featureCount: featureNames.length,
+    },
+    tomorrowPrediction,
+  };
+}
+
+/**
+ * K-fold cross-validation for gradient-boosted trees.
+ * Returns average R² across folds.
+ */
+function crossValidate(X: number[][], y: number[], k: number): number {
+  const n = X.length;
+  if (n < k * 5) return 0; // Not enough data for meaningful CV
+
+  const foldSize = Math.floor(n / k);
+  let totalSsRes = 0;
+  let totalSsTot = 0;
+
+  for (let fold = 0; fold < k; fold++) {
+    const testStart = fold * foldSize;
+    const testEnd = fold === k - 1 ? n : testStart + foldSize;
+
+    const trainX: number[][] = [];
+    const trainY: number[] = [];
+    const testX: number[][] = [];
+    const testY: number[] = [];
+
+    for (let i = 0; i < n; i++) {
+      if (i >= testStart && i < testEnd) {
+        testX.push(X[i]!);
+        testY.push(y[i]!);
+      } else {
+        trainX.push(X[i]!);
+        trainY.push(y[i]!);
+      }
+    }
+
+    if (trainX.length < 10 || testX.length < 2) continue;
+
+    const model = new GradientBoostedTrees({
+      nEstimators: 100,
+      maxDepth: 4,
+      learningRate: 0.05,
+      minSamplesLeaf: Math.max(3, Math.floor(trainX.length * 0.05)),
+    });
+    model.fit(trainX, trainY);
+
+    const testMean = testY.reduce((a, b) => a + b, 0) / testY.length;
+    for (let i = 0; i < testX.length; i++) {
+      const pred = model.predict(testX[i]!);
+      totalSsRes += (testY[i]! - pred) ** 2;
+      totalSsTot += (testY[i]! - testMean) ** 2;
+    }
+  }
+
+  return totalSsTot === 0 ? 0 : 1 - totalSsRes / totalSsTot;
+}
+
+function round2(v: number): number {
+  return Math.round(v * 100) / 100;
+}
+
+function round4(v: number): number {
+  return Math.round(v * 10000) / 10000;
+}

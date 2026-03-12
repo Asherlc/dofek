@@ -14,6 +14,7 @@ import { Route as IndexRouteImport } from "./routes/index";
 import { Route as InsightsRouteImport } from "./routes/insights";
 import { Route as LoginRouteImport } from "./routes/login";
 import { Route as NutritionRouteImport } from "./routes/nutrition";
+import { Route as PredictionsRouteImport } from "./routes/predictions";
 import { Route as ProvidersRouteImport } from "./routes/providers";
 import { Route as SettingsRouteImport } from "./routes/settings";
 import { Route as TrainingRouteImport } from "./routes/training";
@@ -36,6 +37,11 @@ const SettingsRoute = SettingsRouteImport.update({
 const ProvidersRoute = ProvidersRouteImport.update({
   id: "/providers",
   path: "/providers",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const PredictionsRoute = PredictionsRouteImport.update({
+  id: "/predictions",
+  path: "/predictions",
   getParentRoute: () => rootRouteImport,
 } as any);
 const NutritionRoute = NutritionRouteImport.update({
@@ -95,6 +101,7 @@ export interface FileRoutesByFullPath {
   "/insights": typeof InsightsRoute;
   "/login": typeof LoginRoute;
   "/nutrition": typeof NutritionRoute;
+  "/predictions": typeof PredictionsRoute;
   "/providers": typeof ProvidersRoute;
   "/settings": typeof SettingsRoute;
   "/training": typeof TrainingRouteWithChildren;
@@ -110,6 +117,7 @@ export interface FileRoutesByTo {
   "/insights": typeof InsightsRoute;
   "/login": typeof LoginRoute;
   "/nutrition": typeof NutritionRoute;
+  "/predictions": typeof PredictionsRoute;
   "/providers": typeof ProvidersRoute;
   "/settings": typeof SettingsRoute;
   "/training/endurance": typeof TrainingEnduranceRoute;
@@ -125,6 +133,7 @@ export interface FileRoutesById {
   "/insights": typeof InsightsRoute;
   "/login": typeof LoginRoute;
   "/nutrition": typeof NutritionRoute;
+  "/predictions": typeof PredictionsRoute;
   "/providers": typeof ProvidersRoute;
   "/settings": typeof SettingsRoute;
   "/training": typeof TrainingRouteWithChildren;
@@ -142,6 +151,7 @@ export interface FileRouteTypes {
     | "/insights"
     | "/login"
     | "/nutrition"
+    | "/predictions"
     | "/providers"
     | "/settings"
     | "/training"
@@ -157,6 +167,7 @@ export interface FileRouteTypes {
     | "/insights"
     | "/login"
     | "/nutrition"
+    | "/predictions"
     | "/providers"
     | "/settings"
     | "/training/endurance"
@@ -171,6 +182,7 @@ export interface FileRouteTypes {
     | "/insights"
     | "/login"
     | "/nutrition"
+    | "/predictions"
     | "/providers"
     | "/settings"
     | "/training"
@@ -187,6 +199,7 @@ export interface RootRouteChildren {
   InsightsRoute: typeof InsightsRoute;
   LoginRoute: typeof LoginRoute;
   NutritionRoute: typeof NutritionRoute;
+  PredictionsRoute: typeof PredictionsRoute;
   ProvidersRoute: typeof ProvidersRoute;
   SettingsRoute: typeof SettingsRoute;
   TrainingRoute: typeof TrainingRouteWithChildren;
@@ -213,6 +226,13 @@ declare module "@tanstack/react-router" {
       path: "/providers";
       fullPath: "/providers";
       preLoaderRoute: typeof ProvidersRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/predictions": {
+      id: "/predictions";
+      path: "/predictions";
+      fullPath: "/predictions";
+      preLoaderRoute: typeof PredictionsRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/nutrition": {
@@ -312,6 +332,7 @@ const rootRouteChildren: RootRouteChildren = {
   InsightsRoute: InsightsRoute,
   LoginRoute: LoginRoute,
   NutritionRoute: NutritionRoute,
+  PredictionsRoute: PredictionsRoute,
   ProvidersRoute: ProvidersRoute,
   SettingsRoute: SettingsRoute,
   TrainingRoute: TrainingRouteWithChildren,

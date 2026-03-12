@@ -12,6 +12,7 @@ import { lifeEventsRouter } from "./routers/life-events.ts";
 import { nutritionRouter } from "./routers/nutrition.ts";
 import { pmcRouter } from "./routers/pmc.ts";
 import { powerRouter } from "./routers/power.ts";
+import { predictionsRouter } from "./routers/predictions.ts";
 import { recoveryRouter } from "./routers/recovery.ts";
 import { settingsRouter } from "./routers/settings.ts";
 import { sleepRouter } from "./routers/sleep.ts";
@@ -43,6 +44,7 @@ export const appRouter = router({
   strength: strengthRouter,
   cyclingAdvanced: cyclingAdvancedRouter,
   hiking: hikingRouter,
+  predictions: predictionsRouter,
   recovery: recoveryRouter,
   settings: settingsRouter,
 });
