@@ -1,3 +1,4 @@
+import { and as sqlAnd, eq as sqlEq } from "drizzle-orm";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import {
   buildAuthorizationUrl,
@@ -564,57 +565,10 @@ export class PelotonProvider implements Provider {
 
           const parsed = parseWorkout(workout);
 
-          // Fetch performance graph for time-series + summary enrichment
+          // Upsert the activity first so we have an ID for metric_stream
+          let activityId: string | null = null;
           try {
-            const everyN = 5;
-            const graph = await client.getPerformanceGraph(workout.id, everyN);
-            const series = parsePerformanceGraph(graph, everyN);
-
-            // Insert time-series metric_stream rows
-            const hrSeries = series.find((s) => s.slug === "heart_rate");
-            const powerSeries = series.find((s) => s.slug === "output");
-            const cadenceSeries = series.find((s) => s.slug === "cadence");
-            const speedSeries = series.find((s) => s.slug === "speed");
-
-            const sampleCount =
-              hrSeries?.values.length ??
-              powerSeries?.values.length ??
-              cadenceSeries?.values.length ??
-              0;
-
-            if (sampleCount > 0) {
-              const rows = [];
-              for (let i = 0; i < sampleCount; i++) {
-                const recordedAt = new Date(startedAt.getTime() + i * everyN * 1000);
-                rows.push({
-                  providerId: this.id,
-                  recordedAt,
-                  heartRate: hrSeries?.values[i] ?? null,
-                  power: powerSeries?.values[i] ?? null,
-                  cadence: cadenceSeries?.values[i] ?? null,
-                  speed: speedSeries?.values[i] ?? null,
-                });
-              }
-
-              for (let j = 0; j < rows.length; j += 500) {
-                const chunk = rows.slice(j, j + 500);
-                await db.insert(metricStream).values(chunk).onConflictDoNothing();
-              }
-
-              streamCount += rows.length;
-            }
-          } catch (err) {
-            // Performance graph failure is non-fatal — still save the workout
-            errors.push({
-              message: `Performance graph for ${workout.id}: ${err instanceof Error ? err.message : String(err)}`,
-              externalId: workout.id,
-              cause: err,
-            });
-          }
-
-          // Upsert the cardio_activity (enriched or not)
-          try {
-            await db
+            const [row] = await db
               .insert(activity)
               .values({
                 providerId: this.id,
@@ -634,13 +588,74 @@ export class PelotonProvider implements Provider {
                   name: parsed.name,
                   raw: parsed.raw,
                 },
-              });
+              })
+              .returning({ id: activity.id });
 
+            activityId = row.id;
             workoutCount++;
           } catch (err) {
             errors.push({
               message: err instanceof Error ? err.message : String(err),
               externalId: parsed.externalId,
+              cause: err,
+            });
+          }
+
+          // Fetch performance graph for time-series + summary enrichment
+          try {
+            const everyN = 5;
+            const graph = await client.getPerformanceGraph(workout.id, everyN);
+            const series = parsePerformanceGraph(graph, everyN);
+
+            // Insert time-series metric_stream rows linked to the activity
+            const hrSeries = series.find((s) => s.slug === "heart_rate");
+            const powerSeries = series.find((s) => s.slug === "output");
+            const cadenceSeries = series.find((s) => s.slug === "cadence");
+            const speedSeries = series.find((s) => s.slug === "speed");
+
+            const sampleCount =
+              hrSeries?.values.length ??
+              powerSeries?.values.length ??
+              cadenceSeries?.values.length ??
+              0;
+
+            if (sampleCount > 0 && activityId) {
+              // Delete existing metric_stream rows for this activity to avoid duplicates
+              await db
+                .delete(metricStream)
+                .where(
+                  sqlAnd(
+                    sqlEq(metricStream.activityId, activityId),
+                    sqlEq(metricStream.providerId, this.id),
+                  ),
+                );
+
+              const rows = [];
+              for (let i = 0; i < sampleCount; i++) {
+                const recordedAt = new Date(startedAt.getTime() + i * everyN * 1000);
+                rows.push({
+                  providerId: this.id,
+                  activityId,
+                  recordedAt,
+                  heartRate: hrSeries?.values[i] ?? null,
+                  power: powerSeries?.values[i] ?? null,
+                  cadence: cadenceSeries?.values[i] ?? null,
+                  speed: speedSeries?.values[i] ?? null,
+                });
+              }
+
+              for (let j = 0; j < rows.length; j += 500) {
+                const chunk = rows.slice(j, j + 500);
+                await db.insert(metricStream).values(chunk);
+              }
+
+              streamCount += rows.length;
+            }
+          } catch (err) {
+            // Performance graph failure is non-fatal — still save the workout
+            errors.push({
+              message: `Performance graph for ${workout.id}: ${err instanceof Error ? err.message : String(err)}`,
+              externalId: workout.id,
               cause: err,
             });
           }
