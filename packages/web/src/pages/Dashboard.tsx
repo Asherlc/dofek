@@ -3,11 +3,15 @@ import { ActivityList } from "../components/ActivityList.tsx";
 import { AppHeader } from "../components/AppHeader.tsx";
 import { CorrelationCard, type Insight } from "../components/CorrelationCard.tsx";
 import { HealthStatusBar } from "../components/HealthStatusBar.tsx";
+import { HealthspanScoreCard } from "../components/HealthspanScoreCard.tsx";
 import { HrvBaselineChart } from "../components/HrvBaselineChart.tsx";
 import { NutritionChart } from "../components/NutritionChart.tsx";
 import { SleepChart } from "../components/SleepChart.tsx";
+import { SleepNeedCard } from "../components/SleepNeedCard.tsx";
+import { StressChart } from "../components/StressChart.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { TimeSeriesChart } from "../components/TimeSeriesChart.tsx";
+import { WeeklyReportCard } from "../components/WeeklyReportCard.tsx";
 import { trpc } from "../lib/trpc.ts";
 
 type MetricEntry = {
@@ -35,6 +39,10 @@ export function Dashboard() {
   const bodyData = trpc.body.list.useQuery({ days: Math.max(days, 90) });
   const nutritionData = trpc.nutrition.daily.useQuery({ days });
   const insightsQuery = trpc.insights.compute.useQuery({ days });
+  const sleepNeed = trpc.sleepNeed.calculate.useQuery({});
+  const stressData = trpc.stress.scores.useQuery({ days });
+  const weeklyReport = trpc.weeklyReport.report.useQuery({ weeks: Math.ceil(days / 7) });
+  const healthspan = trpc.healthspan.score.useQuery({ weeks: Math.max(Math.ceil(days / 7), 4) });
   // biome-ignore lint/suspicious/noExplicitAny: tRPC return type from raw SQL — proper typing is a separate effort
   const trendData = trends.data as Record<string, any> | undefined;
 
@@ -211,6 +219,54 @@ export function Dashboard() {
             </p>
           )}
         </CollapsibleSection>
+
+        {/* Weekly Report + Sleep Need */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <CollapsibleSection
+            id="weeklyReport"
+            title="Weekly Performance"
+            subtitle="Strain balance, sleep vs average, key vitals"
+            collapsed={collapsed.weeklyReport}
+            onToggle={() => toggle("weeklyReport")}
+          >
+            <WeeklyReportCard data={weeklyReport.data} loading={weeklyReport.isLoading} />
+          </CollapsibleSection>
+
+          <CollapsibleSection
+            id="sleepNeed"
+            title="Sleep Coach"
+            subtitle="Personalized sleep need based on strain and debt"
+            collapsed={collapsed.sleepNeed}
+            onToggle={() => toggle("sleepNeed")}
+          >
+            <SleepNeedCard data={sleepNeed.data} loading={sleepNeed.isLoading} />
+          </CollapsibleSection>
+        </div>
+
+        {/* Stress + Healthspan */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <CollapsibleSection
+            id="stress"
+            title="Stress Monitor"
+            subtitle="Daily stress from HR/HRV deviation vs personal baseline"
+            collapsed={collapsed.stress}
+            onToggle={() => toggle("stress")}
+          >
+            <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
+              <StressChart data={stressData.data} loading={stressData.isLoading} />
+            </div>
+          </CollapsibleSection>
+
+          <CollapsibleSection
+            id="healthspan"
+            title="Healthspan"
+            subtitle="Composite longevity score from 9 health metrics"
+            collapsed={collapsed.healthspan}
+            onToggle={() => toggle("healthspan")}
+          >
+            <HealthspanScoreCard data={healthspan.data} loading={healthspan.isLoading} />
+          </CollapsibleSection>
+        </div>
 
         {/* HRV & Resting HR */}
         <CollapsibleSection
