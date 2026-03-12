@@ -4,6 +4,7 @@ import { calendarRouter } from "./routers/calendar.ts";
 import { cyclingAdvancedRouter } from "./routers/cycling-advanced.ts";
 import { dailyMetricsRouter } from "./routers/daily-metrics.ts";
 import { efficiencyRouter } from "./routers/efficiency.ts";
+import { foodRouter } from "./routers/food.ts";
 import { hikingRouter } from "./routers/hiking.ts";
 import { insightsRouter } from "./routers/insights.ts";
 import { lifeEventsRouter } from "./routers/life-events.ts";
@@ -34,6 +35,7 @@ export const appRouter = router({
   pmc: pmcRouter,
   power: powerRouter,
   efficiency: efficiencyRouter,
+  food: foodRouter,
   whoopAuth: whoopAuthRouter,
   strength: strengthRouter,
   cyclingAdvanced: cyclingAdvancedRouter,

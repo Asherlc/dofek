@@ -87,6 +87,15 @@ describe("Router SQL validity", () => {
     it("daily", () => expectValidSql("nutrition.daily", { days: 30 }));
   });
 
+  // ── Food ──
+  describe("food", () => {
+    it("list", () =>
+      expectValidSql("food.list", { startDate: "2025-01-01", endDate: "2025-01-31" }));
+    it("byDate", () => expectValidSql("food.byDate", { date: "2025-01-15" }));
+    it("dailyTotals", () => expectValidSql("food.dailyTotals", { days: 30 }));
+    it("search", () => expectValidSql("food.search", { query: "test" }));
+  });
+
   // ── Insights ──
   describe("insights", () => {
     it("compute", () => expectValidSql("insights.compute", { days: 30 }));
