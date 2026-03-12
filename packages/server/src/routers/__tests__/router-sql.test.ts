@@ -196,6 +196,27 @@ describe("Router SQL validity", () => {
     it("calendarData", () => expectValidSql("calendar.calendarData", { days: 30 }));
   });
 
+  // ── Weekly Report ──
+  describe("weeklyReport", () => {
+    it("report", () => expectValidSql("weeklyReport.report", { weeks: 4 }));
+  });
+
+  // ── Sleep Need ──
+  describe("sleepNeed", () => {
+    it("calculate", () =>
+      expectValidSql("sleepNeed.calculate", { targetWakeHour: 7, targetWakeMinute: 0 }));
+  });
+
+  // ── Healthspan ──
+  describe("healthspan", () => {
+    it("score", () => expectValidSql("healthspan.score", { weeks: 4 }));
+  });
+
+  // ── Stress ──
+  describe("stress", () => {
+    it("scores", () => expectValidSql("stress.scores", { days: 30 }));
+  });
+
   // ── Life Events ──
   describe("lifeEvents", () => {
     it("list", () => expectValidSql("lifeEvents.list", { days: 90 }));

@@ -67,6 +67,7 @@ export const userProfile = fitness.table("user_profile", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(),
   email: text("email").unique(),
+  birthDate: date("birth_date"),
   maxHr: smallint("max_hr"),
   restingHr: smallint("resting_hr"),
   ftp: smallint("ftp"),
