@@ -308,6 +308,83 @@ describe("computeInsights()", () => {
     }
   });
 
+  it("uses effective sample size for monthly-scoped confidence (no inflated n from overlapping windows)", () => {
+    // Create 365 days of data with a clear split: first half high protein, second half low
+    // This generates many overlapping 30-day windows per group (raw n >> 30)
+    // but effective n should be much lower (~6 per side)
+    // Confidence should NOT be "strong" even if Cohen's d is large
+    const dates = dateRange("2025-01-01", 365);
+    const metrics = dates.map((d) => makeDailyRow(d));
+
+    // First 180 days: high protein (>30% cal), last 185: low protein
+    const nutrition = dates.map((d, i) =>
+      makeNutritionRow(d, {
+        calories: 2000,
+        protein_g: i < 180 ? 200 : 60, // 40% vs 12% of calories from protein
+        carbs_g: 200,
+        fat_g: 60,
+      }),
+    );
+
+    // Weight goes up in high-protein phase, down in low-protein phase
+    // This creates a large effect size between the groups
+    const bodyComp = dates.map((d, i) =>
+      makeBodyCompRow(`${d}T08:00:00Z`, {
+        weight_kg: i < 180 ? 80 + i * 0.02 : 83.6 - (i - 180) * 0.02,
+        body_fat_pct: 15,
+      }),
+    );
+
+    const result = computeInsights(metrics, [], [], nutrition, bodyComp);
+
+    const monthlyInsights = result.filter(
+      (i) => i.id === "high-protein-pct-weight" || i.id === "high-protein-pct-bf",
+    );
+    // With effective n ≈ 6 per group (not 150+), these should not be "strong"
+    for (const insight of monthlyInsights) {
+      expect(insight.confidence).not.toBe("strong");
+    }
+  });
+
+  it("does not show percentage difference for body comp deltas near zero", () => {
+    // When the baseline mean is near zero, percentage is meaningless (e.g., 599%)
+    const dates = dateRange("2025-01-01", 180);
+    const metrics = dates.map((d) => makeDailyRow(d));
+
+    // Half the time high protein, half not — to create two groups
+    const nutrition = dates.map((d, i) =>
+      makeNutritionRow(d, {
+        calories: 2000,
+        protein_g: i % 60 < 30 ? 200 : 80, // alternating months of high/low protein
+        carbs_g: 200,
+        fat_g: 60,
+      }),
+    );
+
+    // Weight hovering around 80kg with tiny fluctuations
+    const bodyComp = dates.map((d, i) =>
+      makeBodyCompRow(`${d}T08:00:00Z`, {
+        weight_kg: 80 + Math.sin(i * 0.1) * 0.5,
+        body_fat_pct: 15,
+      }),
+    );
+
+    const result = computeInsights(metrics, [], [], nutrition, bodyComp);
+
+    // Any insight about "monthly weight change" should NOT show >100% difference
+    // because the baseline is near zero — should use absolute difference instead
+    const bodyCompInsights = result.filter(
+      (i) => i.metric.includes("weight change") || i.metric.includes("body fat change"),
+    );
+    for (const insight of bodyCompInsights) {
+      const pctMatch = insight.message.match(/(\d+)%/);
+      if (pctMatch) {
+        const pct = Number.parseInt(pctMatch[1], 10);
+        expect(pct).toBeLessThanOrEqual(100);
+      }
+    }
+  });
+
   it("detects a strong positive correlation in synthetic data", () => {
     // Create data where sleep duration perfectly predicts next-day HRV
     const dates = dateRange("2025-01-01", 90);
