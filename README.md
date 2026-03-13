@@ -183,16 +183,16 @@ See `packages/server/src/routers/life-events.ts` for the API and `packages/web/s
 - [x] WHOOP provider (sleep, recovery, workouts, 6s HR streams, journal entries via internal API)
 - [x] Withings provider (OAuth + sync for scale, BP, thermometer — awaiting credentials)
 - [x] Cross-provider deduplication via materialized views (recursive CTE overlap clustering, per-field merge by provider priority)
-- [ ] Hevy provider (strength training)
-- [ ] Strong CSV import (strength training history)
-- [ ] RideWithGPS provider (routes, rides)
+- [x] Hevy provider (strength training — API sync with exercise templates)
+- [x] Strong CSV import (strength training history — CSV upload with unit conversion)
+- [x] RideWithGPS provider (trip sync with GPS track points, activity type mapping)
 
 ### Dashboard & Insights
 - [x] Web dashboard (Vite + React + tRPC + ECharts + shadcn/ui)
 - [x] Providers page with sync controls, health status, record counts, and log history
 - [x] Life events timeline (annotate health data with arbitrary date markers, before/after analysis)
 - [x] Insights engine (training volume, HR zone distribution, 80/20 polarization analysis)
-- [ ] Additional insight categories (ACWR, TRIMP, critical power curves, overtraining detection, recovery tests)
+- [x] Additional insight categories (ACWR, TRIMP, critical power curves, training monotony/strain, ramp rate, readiness score)
 - [ ] Continuous aggregates for long-range trends
 
 ### Infrastructure
@@ -200,7 +200,7 @@ See `packages/server/src/routers/life-events.ts` for the API and `packages/web/s
 - [x] SOPS + Age encrypted secrets
 - [x] GHA CI with Docker build + push to GHCR
 - [x] Watchtower auto-deploy with Slack notifications
-- [ ] CLI for authenticating, pulling, and managing providers
+- [x] CLI for authenticating, pulling, and managing providers (`sync`, `auth`, `import` commands)
 
 ## Secrets
 
