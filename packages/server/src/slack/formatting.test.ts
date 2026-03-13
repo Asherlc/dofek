@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { NutritionItemWithMeal } from "../lib/ai-nutrition.ts";
 import { formatConfirmationMessage, formatMicroLine, formatSavedMessage } from "./formatting.ts";
-import { storePendingItems } from "./pending-items.ts";
 
 const sampleItem: NutritionItemWithMeal = {
   foodName: "Chicken Burrito",
@@ -66,9 +65,9 @@ describe("formatConfirmationMessage", () => {
     expect(text).toContain("790"); // 650 + 140 total calories
   });
 
-  it("stores pending key in button action value for confirmation", () => {
-    const pendingKey = storePendingItems([sampleItem]);
-    const result = formatConfirmationMessage([sampleItem], pendingKey);
+  it("stores button value in confirm action for entry ID lookup", () => {
+    const entryIds = "abc-123,def-456";
+    const result = formatConfirmationMessage([sampleItem], entryIds);
 
     const actionsBlock = result.blocks.find((b: Record<string, unknown>) => b.type === "actions") as
       | Record<string, unknown>
@@ -79,8 +78,8 @@ describe("formatConfirmationMessage", () => {
     const confirmButton = elements.find((e) => e.action_id === "confirm_food");
     expect(confirmButton).toBeDefined();
 
-    // Value should be the pending key UUID, not inline JSON
-    expect(confirmButton?.value).toBe(pendingKey);
+    // Value should be the entry IDs string
+    expect(confirmButton?.value).toBe(entryIds);
   });
 });
 
@@ -136,7 +135,7 @@ describe("formatMicroLine", () => {
 });
 
 describe("formatConfirmationMessage button value size", () => {
-  it("keeps button value under Slack's 2000-character limit even with many items", () => {
+  it("keeps button value under Slack's 2000-character limit with entry IDs", () => {
     const richItem: NutritionItemWithMeal = {
       foodName: "Scrambled eggs (2 large)",
       foodDescription: "Two large eggs scrambled with butter",
@@ -185,8 +184,10 @@ describe("formatConfirmationMessage button value size", () => {
       { ...richItem, foodName: "Toast with butter" },
       { ...richItem, foodName: "Coffee with milk" },
     ];
-    const pendingKey = storePendingItems(items);
-    const result = formatConfirmationMessage(items, pendingKey);
+    // Simulate 3 UUIDs joined by commas (each UUID is 36 chars)
+    const entryIds =
+      "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee,ffffffff-1111-2222-3333-444444444444,55555555-6666-7777-8888-999999999999";
+    const result = formatConfirmationMessage(items, entryIds);
     const actionsBlock = result.blocks.find((b: Record<string, unknown>) => b.type === "actions") as
       | Record<string, unknown>
       | undefined;
@@ -194,8 +195,8 @@ describe("formatConfirmationMessage button value size", () => {
     const confirmButton = elements.find((e) => e.action_id === "confirm_food");
     const value = confirmButton?.value as string;
     expect(value.length).toBeLessThanOrEqual(2000);
-    // Value should be a UUID, not serialized JSON
-    expect(value).toMatch(/^[0-9a-f-]{36}$/);
+    // Value should be comma-separated UUIDs
+    expect(value).toBe(entryIds);
   });
 });
 

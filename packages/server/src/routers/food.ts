@@ -169,6 +169,7 @@ export const foodRouter = router({
         const rows = await ctx.db.execute(
           sql`SELECT * FROM fitness.food_entry
               WHERE user_id = ${ctx.userId}
+                AND confirmed = true
                 AND date >= ${input.startDate}::date
                 AND date <= ${input.endDate}::date
                 AND meal = ${input.meal}
@@ -179,6 +180,7 @@ export const foodRouter = router({
       const rows = await ctx.db.execute(
         sql`SELECT * FROM fitness.food_entry
             WHERE user_id = ${ctx.userId}
+              AND confirmed = true
               AND date >= ${input.startDate}::date
               AND date <= ${input.endDate}::date
             ORDER BY date ASC, meal ASC, food_name ASC`,
@@ -193,6 +195,7 @@ export const foodRouter = router({
       const rows = await ctx.db.execute(
         sql`SELECT * FROM fitness.food_entry
             WHERE user_id = ${ctx.userId}
+              AND confirmed = true
               AND date = ${input.date}::date
             ORDER BY meal ASC, food_name ASC`,
       );
@@ -213,6 +216,7 @@ export const foodRouter = router({
               SUM(fiber_g)::numeric(10,1) as fiber_g
             FROM fitness.food_entry
             WHERE user_id = ${ctx.userId}
+              AND confirmed = true
               AND date > CURRENT_DATE - ${input.days}::int
             GROUP BY date
             ORDER BY date ASC`,
@@ -236,6 +240,7 @@ export const foodRouter = router({
               protein_g, carbs_g, fat_g, fiber_g, number_of_units
             FROM fitness.food_entry
             WHERE user_id = ${ctx.userId}
+              AND confirmed = true
               AND food_name ILIKE ${searchPattern}
             ORDER BY food_name ASC
             LIMIT ${input.limit}`,
@@ -314,7 +319,7 @@ export const foodRouter = router({
 
     const setExpression = sql.join(setClauses, sql`, `);
     const rows = await ctx.db.execute(
-      sql`UPDATE fitness.food_entry SET ${setExpression} WHERE user_id = ${ctx.userId} AND id = ${id} RETURNING *`,
+      sql`UPDATE fitness.food_entry SET ${setExpression} WHERE user_id = ${ctx.userId} AND confirmed = true AND id = ${id} RETURNING *`,
     );
     return rows[0] ?? null;
   }),
@@ -324,7 +329,7 @@ export const foodRouter = router({
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
       await ctx.db.execute(
-        sql`DELETE FROM fitness.food_entry WHERE user_id = ${ctx.userId} AND id = ${input.id}`,
+        sql`DELETE FROM fitness.food_entry WHERE user_id = ${ctx.userId} AND confirmed = true AND id = ${input.id}`,
       );
       return { success: true };
     }),

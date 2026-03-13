@@ -90,11 +90,10 @@ function buildMicroTotals(items: NutritionItemWithMeal[]): NutritionItemWithMeal
 }
 
 /** Format parsed nutrition items into a Slack Block Kit message with confirm/cancel buttons.
- *  The pendingKey is a short identifier stored in the confirm button value
- *  (Slack limits button values to 2000 characters, so we cannot inline the full JSON). */
+ *  The buttonValue is stored in the confirm button (e.g., comma-separated food entry IDs). */
 export function formatConfirmationMessage(
   items: NutritionItemWithMeal[],
-  pendingKey?: string,
+  buttonValue?: string,
 ): SlackMessage {
   const blocks: SlackBlock[] = [
     {
@@ -148,7 +147,7 @@ export function formatConfirmationMessage(
         text: { type: "plain_text", text: "Confirm" },
         style: "primary",
         action_id: "confirm_food",
-        value: pendingKey ?? JSON.stringify(items),
+        value: buttonValue ?? JSON.stringify(items),
       },
       {
         type: "button",

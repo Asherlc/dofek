@@ -112,6 +112,7 @@ export const nutritionAnalyticsRouter = router({
               ${dailyAggregates}
             FROM fitness.food_entry
             WHERE user_id = '${ctx.userId}'
+              AND confirmed = true
               AND date > CURRENT_DATE - ${input.days}
             GROUP BY date
           )
