@@ -225,6 +225,12 @@ describe("Router SQL validity", () => {
     it("list", () => expectValidSql("lifeEvents.list", { days: 90 }));
   });
 
+  // ── Trends (Continuous Aggregates) ──
+  describe("trends", () => {
+    it("daily", () => expectValidSql("trends.daily", { days: 365 }));
+    it("weekly", () => expectValidSql("trends.weekly", { weeks: 52 }));
+  });
+
   // ── Sync ──
   describe("sync", () => {
     it("providers", () => expectValidSql("sync.providers"));
