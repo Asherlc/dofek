@@ -1,5 +1,7 @@
 import type { ElevationProfileRow } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
+import { useUnitSystem } from "../lib/unitContext.ts";
+import { convertDistance, convertElevation, distanceLabel, elevationLabel } from "../lib/units.ts";
 
 interface ElevationGainChartProps {
   data: ElevationProfileRow[];
@@ -7,6 +9,7 @@ interface ElevationGainChartProps {
 }
 
 export function ElevationGainChart({ data, loading }: ElevationGainChartProps) {
+  const { unitSystem } = useUnitSystem();
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[280px]">
@@ -46,9 +49,9 @@ export function ElevationGainChart({ data, loading }: ElevationGainChartProps) {
         });
         return [
           `<strong>Week of ${dateLabel}</strong>`,
-          `Elevation Gain: ${row.elevationGainMeters.toFixed(0)} m`,
+          `Elevation Gain: ${convertElevation(row.elevationGainMeters, unitSystem).toFixed(0)} ${elevationLabel(unitSystem)}`,
           `Activities: ${row.activityCount}`,
-          `Distance: ${row.totalDistanceKm.toFixed(1)} km`,
+          `Distance: ${convertDistance(row.totalDistanceKm, unitSystem).toFixed(1)} ${distanceLabel(unitSystem)}`,
         ].join("<br/>");
       },
     },
@@ -60,7 +63,7 @@ export function ElevationGainChart({ data, loading }: ElevationGainChartProps) {
     },
     yAxis: {
       type: "value",
-      name: "Elevation Gain (m)",
+      name: `Elevation Gain (${elevationLabel(unitSystem)})`,
       splitLine: { lineStyle: { color: "#27272a" } },
       axisLabel: { color: "#71717a", fontSize: 11 },
       axisLine: { show: true, lineStyle: { color: "#3f3f46" } },
@@ -69,7 +72,7 @@ export function ElevationGainChart({ data, loading }: ElevationGainChartProps) {
     series: [
       {
         type: "bar",
-        data: data.map((d) => [d.week, d.elevationGainMeters]),
+        data: data.map((d) => [d.week, convertElevation(d.elevationGainMeters, unitSystem)]),
         itemStyle: { color: "#f59e0b" },
         barMaxWidth: 30,
       },

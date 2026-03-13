@@ -1,5 +1,7 @@
 import type { VerticalAscentRow } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
+import { useUnitSystem } from "../lib/unitContext.ts";
+import { convertElevation, elevationLabel } from "../lib/units.ts";
 
 interface VerticalAscentChartProps {
   data: VerticalAscentRow[];
@@ -7,6 +9,7 @@ interface VerticalAscentChartProps {
 }
 
 export function VerticalAscentChart({ data, loading }: VerticalAscentChartProps) {
+  const { unitSystem } = useUnitSystem();
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[300px]">
@@ -24,14 +27,15 @@ export function VerticalAscentChart({ data, loading }: VerticalAscentChartProps)
   }
 
   // Scale bubble size by elevation gain
-  const maxGain = Math.max(...data.map((d) => d.elevationGainMeters));
+  const maxGain = Math.max(...data.map((d) => convertElevation(d.elevationGainMeters, unitSystem)));
   const minSize = 8;
   const maxSize = 40;
 
+  const eLabel = elevationLabel(unitSystem);
   const scatterData = data.map((d) => ({
-    value: [d.date, d.verticalAscentRate],
+    value: [d.date, convertElevation(d.verticalAscentRate, unitSystem)],
     name: d.activityName,
-    elevationGain: d.elevationGainMeters,
+    elevationGain: convertElevation(d.elevationGainMeters, unitSystem),
     symbolSize:
       maxGain > 0 ? minSize + (d.elevationGainMeters / maxGain) * (maxSize - minSize) : minSize,
   }));
@@ -57,8 +61,8 @@ export function VerticalAscentChart({ data, loading }: VerticalAscentChartProps)
         return [
           `<strong>${itemData.name}</strong>`,
           `Date: ${new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`,
-          `VAM: ${vam.toFixed(0)} m/h`,
-          `Elevation Gain: ${itemData.elevationGain.toFixed(0)} m`,
+          `VAM: ${vam.toFixed(0)} ${eLabel}/h`,
+          `Elevation Gain: ${itemData.elevationGain.toFixed(0)} ${eLabel}`,
         ].join("<br/>");
       },
     },
@@ -70,7 +74,7 @@ export function VerticalAscentChart({ data, loading }: VerticalAscentChartProps)
     },
     yAxis: {
       type: "value" as const,
-      name: "VAM (m/h)",
+      name: `VAM (${eLabel}/h)`,
       splitLine: { lineStyle: { color: "#27272a" } },
       axisLabel: { color: "#71717a", fontSize: 11 },
       axisLine: { show: true, lineStyle: { color: "#3f3f46" } },

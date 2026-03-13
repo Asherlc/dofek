@@ -1,5 +1,7 @@
 import ReactECharts from "echarts-for-react";
 import type { SmoothedWeightRow } from "../../../server/src/routers/body-analytics.ts";
+import { useUnitSystem } from "../lib/unitContext.ts";
+import { convertWeight, weightLabel } from "../lib/units.ts";
 
 interface SmoothedWeightChartProps {
   data: SmoothedWeightRow[];
@@ -7,6 +9,7 @@ interface SmoothedWeightChartProps {
 }
 
 export function SmoothedWeightChart({ data, loading }: SmoothedWeightChartProps) {
+  const { unitSystem } = useUnitSystem();
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[250px]">
@@ -47,7 +50,7 @@ export function SmoothedWeightChart({ data, loading }: SmoothedWeightChartProps)
     yAxis: [
       {
         type: "value" as const,
-        name: "kg",
+        name: weightLabel(unitSystem),
         min: "dataMin" as const,
         axisLabel: { color: "#71717a", fontSize: 11 },
         splitLine: { lineStyle: { color: "#27272a" } },
@@ -55,7 +58,7 @@ export function SmoothedWeightChart({ data, loading }: SmoothedWeightChartProps)
       },
       {
         type: "value" as const,
-        name: "kg/week",
+        name: `${weightLabel(unitSystem)}/week`,
         position: "right" as const,
         axisLabel: { color: "#71717a", fontSize: 11 },
         splitLine: { show: false },
@@ -66,14 +69,14 @@ export function SmoothedWeightChart({ data, loading }: SmoothedWeightChartProps)
       {
         name: "Raw Weight",
         type: "scatter",
-        data: data.map((d) => [d.date, d.rawWeight]),
+        data: data.map((d) => [d.date, convertWeight(d.rawWeight, unitSystem)]),
         symbolSize: 4,
         itemStyle: { color: "#71717a", opacity: 0.5 },
       },
       {
         name: "Trend",
         type: "line",
-        data: data.map((d) => [d.date, d.smoothedWeight]),
+        data: data.map((d) => [d.date, convertWeight(d.smoothedWeight, unitSystem)]),
         smooth: true,
         symbol: "none",
         lineStyle: { color: "#06b6d4", width: 3 },
@@ -83,7 +86,9 @@ export function SmoothedWeightChart({ data, loading }: SmoothedWeightChartProps)
         name: "Weekly Change",
         type: "bar",
         yAxisIndex: 1,
-        data: data.filter((d) => d.weeklyChange != null).map((d) => [d.date, d.weeklyChange]),
+        data: data
+          .filter((d) => d.weeklyChange != null)
+          .map((d) => [d.date, convertWeight(d.weeklyChange!, unitSystem)]),
         itemStyle: {
           color: (params: { value: [string, number] }) =>
             params.value[1] >= 0 ? "rgba(34,197,94,0.4)" : "rgba(239,68,68,0.4)",
@@ -101,7 +106,8 @@ export function SmoothedWeightChart({ data, loading }: SmoothedWeightChartProps)
             className={`text-lg font-semibold ${latestWeeklyChange > 0 ? "text-green-400" : latestWeeklyChange < 0 ? "text-red-400" : "text-zinc-400"}`}
           >
             {latestWeeklyChange > 0 ? "+" : ""}
-            {latestWeeklyChange} kg/week
+            {convertWeight(latestWeeklyChange, unitSystem).toFixed(1)} {weightLabel(unitSystem)}
+            /week
           </span>
         </div>
       )}

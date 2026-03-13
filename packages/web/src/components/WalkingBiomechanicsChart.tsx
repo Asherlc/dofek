@@ -1,5 +1,7 @@
 import type { WalkingBiomechanicsRow } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
+import { useUnitSystem } from "../lib/unitContext.ts";
+import { convertHeight, convertSpeed, heightLabel, speedLabel } from "../lib/units.ts";
 
 interface WalkingBiomechanicsChartProps {
   data: WalkingBiomechanicsRow[];
@@ -12,6 +14,7 @@ function buildLineOption(
   name: string,
   unit: string,
   color: string,
+  convert?: (v: number) => number,
 ) {
   return {
     backgroundColor: "transparent",
@@ -39,7 +42,10 @@ function buildLineOption(
     series: [
       {
         type: "line",
-        data: data.map((d) => [d.date, valueAccessor(d)]),
+        data: data.map((d) => {
+          const v = valueAccessor(d);
+          return [d.date, v != null && convert ? convert(v) : v];
+        }),
         smooth: true,
         symbol: "none",
         lineStyle: { color, width: 2 },
@@ -51,6 +57,7 @@ function buildLineOption(
 }
 
 export function WalkingBiomechanicsChart({ data, loading }: WalkingBiomechanicsChartProps) {
+  const { unitSystem } = useUnitSystem();
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[400px]">
@@ -72,9 +79,22 @@ export function WalkingBiomechanicsChart({ data, loading }: WalkingBiomechanicsC
     unit: string;
     color: string;
     accessor: (d: WalkingBiomechanicsRow) => number | null;
+    convert?: (v: number) => number;
   }[] = [
-    { name: "Walking Speed", unit: "km/h", color: "#22c55e", accessor: (d) => d.walkingSpeedKmh },
-    { name: "Step Length", unit: "cm", color: "#3b82f6", accessor: (d) => d.stepLengthCm },
+    {
+      name: "Walking Speed",
+      unit: speedLabel(unitSystem),
+      color: "#22c55e",
+      accessor: (d) => d.walkingSpeedKmh,
+      convert: (v) => convertSpeed(v, unitSystem),
+    },
+    {
+      name: "Step Length",
+      unit: heightLabel(unitSystem),
+      color: "#3b82f6",
+      accessor: (d) => d.stepLengthCm,
+      convert: (v) => convertHeight(v, unitSystem),
+    },
     {
       name: "Double Support",
       unit: "%",
@@ -91,7 +111,14 @@ export function WalkingBiomechanicsChart({ data, loading }: WalkingBiomechanicsC
         {charts.map((chart) => (
           <div key={chart.name} className="bg-zinc-900 rounded-lg p-2">
             <ReactECharts
-              option={buildLineOption(data, chart.accessor, chart.name, chart.unit, chart.color)}
+              option={buildLineOption(
+                data,
+                chart.accessor,
+                chart.name,
+                chart.unit,
+                chart.color,
+                chart.convert,
+              )}
               style={{ height: 200 }}
               notMerge={true}
             />
