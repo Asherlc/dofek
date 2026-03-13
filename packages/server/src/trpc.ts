@@ -2,7 +2,6 @@ import { initTRPC, TRPCError } from "@trpc/server";
 import { middlewareMarker } from "@trpc/server/unstable-core-do-not-import";
 import type { Database } from "dofek/db";
 import { queryCache } from "./lib/cache.ts";
-import { dbQuerySemaphore } from "./lib/semaphore.ts";
 import {
   cacheHitsTotal,
   cacheMissesTotal,
@@ -10,6 +9,7 @@ import {
   trpcDbQueryDuration,
   trpcProcedureDuration,
 } from "./lib/metrics.ts";
+import { dbQuerySemaphore } from "./lib/semaphore.ts";
 
 export interface Context {
   db: Database;

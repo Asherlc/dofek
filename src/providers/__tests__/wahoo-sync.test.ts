@@ -166,7 +166,7 @@ describe("WahooProvider.sync() (integration)", () => {
     // Verify token was refreshed in DB
     const { loadTokens } = await import("../../db/tokens.ts");
     const tokens = await loadTokens(ctx.db, "wahoo");
-    expect(tokens!.accessToken).toBe("refreshed-token");
+    expect(tokens?.accessToken).toBe("refreshed-token");
   });
 
   it("downloads FIT files and inserts metric_stream records", async () => {

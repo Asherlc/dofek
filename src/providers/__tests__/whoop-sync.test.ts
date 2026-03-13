@@ -380,6 +380,67 @@ describe("WhoopProvider.sync() (integration)", () => {
     expect(rows).toHaveLength(1);
   });
 
+  it("uses stored userId from scopes when bootstrap returns no user ID", async () => {
+    // Save tokens with userId in scopes (as the auth flow does)
+    await saveTokens(ctx.db, "whoop", {
+      accessToken: "fake-access",
+      refreshToken: "fake-refresh",
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      scopes: "userId:10129",
+    });
+
+    // Mock fetch where bootstrap returns NO user ID — should still work
+    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+      const urlStr = input.toString();
+      if (urlStr.includes("auth-service/v3/whoop")) {
+        return Response.json({
+          AuthenticationResult: { AccessToken: "test-token", RefreshToken: "test-refresh" },
+        });
+      }
+      if (urlStr.includes("users-service/v2/bootstrap")) {
+        // Return response with no user ID fields
+        return Response.json({ profile: { name: "Test" } });
+      }
+      if (urlStr.includes("/cycles")) {
+        return Response.json([fakeCycle()]);
+      }
+      if (urlStr.includes("sleep-events") || urlStr.includes("sleep-service")) {
+        return Response.json(fakeSleepResponse);
+      }
+      if (urlStr.includes("metrics-service") || urlStr.includes("metrics/user")) {
+        return Response.json({ values: [] });
+      }
+      if (urlStr.includes("behavior-impact-service")) {
+        return Response.json([]);
+      }
+      return new Response("Not found", { status: 404 });
+    }) as typeof globalThis.fetch;
+
+    const provider = new WhoopProvider(mockFetch);
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+
+    // Should succeed using stored userId, not fail with "user 0" error
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBeGreaterThan(0);
+  });
+
+  it("preserves userId in scopes after token refresh", async () => {
+    await saveTokens(ctx.db, "whoop", {
+      accessToken: "fake-access",
+      refreshToken: "fake-refresh",
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      scopes: "userId:10129",
+    });
+
+    const provider = new WhoopProvider(createMockFetch([fakeCycle()]));
+    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+
+    // After sync, the scopes should still contain the userId
+    const { loadTokens: load } = await import("../../db/tokens.ts");
+    const tokens = await load(ctx.db, "whoop");
+    expect(tokens?.scopes).toMatch(/userId:\d+/);
+  });
+
   it("handles auth failure gracefully", async () => {
     const provider = new WhoopProvider(createMockFetch([], { authError: true }));
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));

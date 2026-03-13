@@ -29,8 +29,8 @@ export const trainingRouter = router({
 
   /**
    * HR zone distribution per week.
-   * Uses pre-computed activity_hr_zones materialized view (5-zone model at
-   * 60/70/80/90% of max HR). Much faster than scanning metric_stream directly.
+   * Computes 5-zone model at query time from metric_stream data using
+   * the user's max HR (zones at 60/70/80/90% of max HR).
    */
   hrZones: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
@@ -47,18 +47,19 @@ export const trainingRouter = router({
         sql`SELECT
               up.max_hr,
               date_trunc('week', asum.started_at)::date AS week,
-              SUM(hz.zone1_count)::int AS zone1,
-              SUM(hz.zone2_count)::int AS zone2,
-              SUM(hz.zone3_count)::int AS zone3,
-              SUM(hz.zone4_count)::int AS zone4,
-              SUM(hz.zone5_count)::int AS zone5
+              SUM(CASE WHEN ms.heart_rate < up.max_hr * 0.6 THEN 1 ELSE 0 END)::int AS zone1,
+              SUM(CASE WHEN ms.heart_rate >= up.max_hr * 0.6 AND ms.heart_rate < up.max_hr * 0.7 THEN 1 ELSE 0 END)::int AS zone2,
+              SUM(CASE WHEN ms.heart_rate >= up.max_hr * 0.7 AND ms.heart_rate < up.max_hr * 0.8 THEN 1 ELSE 0 END)::int AS zone3,
+              SUM(CASE WHEN ms.heart_rate >= up.max_hr * 0.8 AND ms.heart_rate < up.max_hr * 0.9 THEN 1 ELSE 0 END)::int AS zone4,
+              SUM(CASE WHEN ms.heart_rate >= up.max_hr * 0.9 THEN 1 ELSE 0 END)::int AS zone5
             FROM fitness.user_profile up
             JOIN fitness.activity_summary asum ON asum.user_id = up.id
-            JOIN fitness.activity_hr_zones hz ON hz.activity_id = asum.activity_id
+            JOIN fitness.metric_stream ms ON ms.activity_id = asum.activity_id
             WHERE up.id = ${ctx.userId}
               AND asum.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
               AND ${enduranceTypeFilter("asum")}
               AND up.max_hr IS NOT NULL
+              AND ms.heart_rate IS NOT NULL
             GROUP BY up.max_hr, date_trunc('week', asum.started_at)
             ORDER BY week`,
       );

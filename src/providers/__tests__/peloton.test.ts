@@ -202,17 +202,17 @@ describe("Peloton Provider", () => {
       const result = parseWorkout(sampleCyclingWorkout);
 
       expect(result.raw).toBeDefined();
-      expect(result.raw!.instructor).toBe("Matt Wilpers");
-      expect(result.raw!.classTitle).toBe("30 min Power Zone Ride");
-      expect(result.raw!.difficultyRating).toBeCloseTo(7.85);
-      expect(result.raw!.overallRating).toBeCloseTo(4.9);
+      expect(result.raw?.instructor).toBe("Matt Wilpers");
+      expect(result.raw?.classTitle).toBe("30 min Power Zone Ride");
+      expect(result.raw?.difficultyRating).toBeCloseTo(7.85);
+      expect(result.raw?.overallRating).toBeCloseTo(4.9);
     });
 
     it("extracts leaderboard info into raw metadata", () => {
       const result = parseWorkout(sampleCyclingWorkout);
 
-      expect(result.raw!.leaderboardRank).toBe(3200);
-      expect(result.raw!.totalLeaderboardUsers).toBe(15000);
+      expect(result.raw?.leaderboardRank).toBe(3200);
+      expect(result.raw?.totalLeaderboardUsers).toBe(15000);
     });
 
     it("handles workouts with no ride details", () => {
@@ -223,8 +223,8 @@ describe("Peloton Provider", () => {
 
       const result = parseWorkout(noRide);
       expect(result.externalId).toBe("abc123def456");
-      expect(result.raw!.instructor).toBeUndefined();
-      expect(result.raw!.classTitle).toBeUndefined();
+      expect(result.raw?.instructor).toBeUndefined();
+      expect(result.raw?.classTitle).toBeUndefined();
     });
 
     it("parses a strength workout", () => {
@@ -239,7 +239,7 @@ describe("Peloton Provider", () => {
 
       expect(result.externalId).toBe("run-456");
       expect(result.activityType).toBe("running");
-      expect(result.raw!.instructor).toBe("Becs Gentry");
+      expect(result.raw?.instructor).toBe("Becs Gentry");
     });
 
     it("handles missing end_time", () => {
@@ -266,9 +266,9 @@ describe("Peloton Provider", () => {
 
       const hrMetric = result.find((m) => m.slug === "heart_rate");
       expect(hrMetric).toBeDefined();
-      expect(hrMetric!.values).toEqual([130, 145, 160, 155, 140]);
-      expect(hrMetric!.averageValue).toBe(146);
-      expect(hrMetric!.maxValue).toBe(160);
+      expect(hrMetric?.values).toEqual([130, 145, 160, 155, 140]);
+      expect(hrMetric?.averageValue).toBe(146);
+      expect(hrMetric?.maxValue).toBe(160);
     });
 
     it("extracts power/output values", () => {
@@ -276,9 +276,9 @@ describe("Peloton Provider", () => {
 
       const outputMetric = result.find((m) => m.slug === "output");
       expect(outputMetric).toBeDefined();
-      expect(outputMetric!.values).toEqual([180, 200, 220, 210, 195]);
-      expect(outputMetric!.averageValue).toBe(200);
-      expect(outputMetric!.maxValue).toBe(220);
+      expect(outputMetric?.values).toEqual([180, 200, 220, 210, 195]);
+      expect(outputMetric?.averageValue).toBe(200);
+      expect(outputMetric?.maxValue).toBe(220);
     });
 
     it("extracts cadence values", () => {
@@ -286,7 +286,7 @@ describe("Peloton Provider", () => {
 
       const cadenceMetric = result.find((m) => m.slug === "cadence");
       expect(cadenceMetric).toBeDefined();
-      expect(cadenceMetric!.averageValue).toBe(85);
+      expect(cadenceMetric?.averageValue).toBe(85);
     });
 
     it("computes timestamps from interval", () => {
@@ -294,7 +294,7 @@ describe("Peloton Provider", () => {
 
       const hrMetric = result.find((m) => m.slug === "heart_rate");
       // 5 values at 5-second intervals: 0, 5, 10, 15, 20
-      expect(hrMetric!.offsetsSeconds).toEqual([0, 5, 10, 15, 20]);
+      expect(hrMetric?.offsetsSeconds).toEqual([0, 5, 10, 15, 20]);
     });
 
     it("returns all metric slugs", () => {
