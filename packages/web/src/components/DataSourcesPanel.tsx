@@ -1,5 +1,5 @@
 import type React from "react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { pollSyncJob } from "../lib/poll-sync-job.ts";
 import { trpc } from "../lib/trpc.ts";
 
@@ -12,6 +12,8 @@ interface ProviderState {
 
 export function DataSourcesPanel() {
   const providers = trpc.sync.providers.useQuery();
+  const stats = trpc.sync.providerStats.useQuery();
+  const logs = trpc.sync.logs.useQuery({ limit: 100 });
   const syncMutation = trpc.sync.triggerSync.useMutation();
   const trpcUtils = trpc.useUtils();
 
@@ -33,7 +35,11 @@ export function DataSourcesPanel() {
         providerIds,
         fetchStatus: (id) => trpcUtils.sync.syncStatus.fetch({ jobId: id }, { staleTime: 0 }),
         updateState,
-        onComplete: () => trpcUtils.sync.providers.invalidate(),
+        onComplete: () => {
+          trpcUtils.sync.providers.invalidate();
+          trpcUtils.sync.providerStats.invalidate();
+          trpcUtils.sync.logs.invalidate();
+        },
       }),
     [trpcUtils, updateState],
   );
@@ -85,6 +91,36 @@ export function DataSourcesPanel() {
     },
     [providers.data, syncMutation, updateState, doPollSyncJob],
   );
+
+  // Pre-compute stats and logs maps
+  const statsByProvider = useMemo(
+    () => new Map((stats.data ?? []).map((s) => [s.providerId, s])),
+    [stats.data],
+  );
+
+  const syncRows = (logs.data ?? []) as Array<{
+    id: string;
+    providerId: string;
+    dataType: string;
+    status: string;
+    recordCount: number | null;
+    errorMessage: string | null;
+    durationMs: number | null;
+    syncedAt: string;
+  }>;
+
+  const logsByProvider = useMemo(() => {
+    const map = new Map<string, typeof syncRows>();
+    for (const row of syncRows) {
+      let arr = map.get(row.providerId);
+      if (!arr) {
+        arr = [];
+        map.set(row.providerId, arr);
+      }
+      arr.push(row);
+    }
+    return map;
+  }, [syncRows]);
 
   const allProviders = providers.data ?? [];
   const enabledSyncable = allProviders.filter((p) => p.enabled && !p.importOnly);
@@ -195,68 +231,37 @@ export function DataSourcesPanel() {
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {unifiedProviders.map((entry) => {
             if (entry.kind === "import") {
-              return <FileImportZone key={entry.id} {...entry.config} />;
+              const providerStats = statsByProvider.get(entry.id);
+              const recentLogs = (logsByProvider.get(entry.id) ?? []).slice(0, 5);
+              return (
+                <FileImportZone
+                  key={entry.id}
+                  {...entry.config}
+                  stats={providerStats}
+                  recentLogs={recentLogs}
+                />
+              );
             }
 
             const p = entry.provider;
             const state = providerStates[p.id] ?? { status: "idle" };
             const needsAuth = (p.needsOAuth || p.needsCustomAuth) && !p.authorized;
             const notConfigured = !p.enabled;
+            const providerStats = statsByProvider.get(p.id);
+            const recentLogs = (logsByProvider.get(p.id) ?? []).slice(0, 5);
 
             return (
-              <div
+              <SyncProviderCard
                 key={p.id}
-                className={`flex flex-col rounded-lg border px-4 py-3 transition-colors ${
-                  notConfigured
-                    ? "border-zinc-800/50 bg-zinc-900/20 opacity-60"
-                    : "border-zinc-800 bg-zinc-900/50"
-                }`}
-              >
-                <button
-                  type="button"
-                  onClick={() => !notConfigured && handleProviderClick(p)}
-                  disabled={notConfigured || state.status === "syncing"}
-                  className="flex items-center gap-2 hover:opacity-80 disabled:opacity-50"
-                  title={
-                    notConfigured
-                      ? (p.error ?? "Not configured")
-                      : needsAuth
-                        ? "Click to connect"
-                        : "Sync last 7 days"
-                  }
-                >
-                  {notConfigured ? (
-                    <span className="inline-block w-2 h-2 rounded-full bg-zinc-700" />
-                  ) : needsAuth ? (
-                    <span className="inline-block w-2 h-2 rounded-full bg-blue-400" />
-                  ) : (
-                    <StatusDot status={state.status} />
-                  )}
-                  <span className="text-sm font-medium text-zinc-200">{p.name}</span>
-                  {notConfigured && <span className="text-xs text-zinc-600">Not configured</span>}
-                  {!notConfigured && needsAuth && (
-                    <span className="text-xs text-blue-400">Connect</span>
-                  )}
-                  {state.status === "syncing" && <span className="text-xs text-zinc-500">...</span>}
-                </button>
-                {state.message && state.status !== "syncing" && (
-                  <span className="text-xs text-zinc-500 mt-1">{state.message}</span>
-                )}
-                {!notConfigured && !state.message && p.lastSyncedAt && (
-                  <span className="text-xs text-zinc-600 mt-1">
-                    Last sync: {formatRelativeTime(p.lastSyncedAt)}
-                  </span>
-                )}
-                {!notConfigured && !needsAuth && state.status !== "syncing" && (
-                  <button
-                    type="button"
-                    onClick={() => handleProviderClick(p, true)}
-                    className="text-xs text-zinc-600 hover:text-zinc-400 mt-1 transition-colors self-start"
-                  >
-                    Full sync
-                  </button>
-                )}
-              </div>
+                provider={p}
+                state={state}
+                needsAuth={needsAuth}
+                notConfigured={notConfigured}
+                stats={providerStats}
+                recentLogs={recentLogs}
+                onSync={() => handleProviderClick(p)}
+                onFullSync={() => handleProviderClick(p, true)}
+              />
             );
           })}
         </div>
@@ -271,6 +276,177 @@ export function DataSourcesPanel() {
             trpcUtils.sync.providers.invalidate();
           }}
         />
+      )}
+    </div>
+  );
+}
+
+// ── Sync Provider Card (unified: controls + stats) ──
+
+interface ProviderStats {
+  activities: number;
+  dailyMetrics: number;
+  sleepSessions: number;
+  bodyMeasurements: number;
+  foodEntries: number;
+  healthEvents: number;
+  metricStream: number;
+  nutritionDaily: number;
+  labResults: number;
+  journalEntries: number;
+}
+
+interface SyncLogEntry {
+  status: string;
+  syncedAt: string;
+  recordCount: number | null;
+  durationMs: number | null;
+  errorMessage: string | null;
+}
+
+function SyncProviderCard({
+  provider,
+  state,
+  needsAuth,
+  notConfigured,
+  stats,
+  recentLogs,
+  onSync,
+  onFullSync,
+}: {
+  provider: { id: string; name: string; lastSyncedAt: string | null; authorized: boolean };
+  state: ProviderState;
+  needsAuth: boolean;
+  notConfigured: boolean;
+  stats: ProviderStats | undefined;
+  recentLogs: SyncLogEntry[];
+  onSync: () => void;
+  onFullSync: () => void;
+}) {
+  const totalRecords = stats
+    ? stats.activities +
+      stats.dailyMetrics +
+      stats.sleepSessions +
+      stats.bodyMeasurements +
+      stats.foodEntries +
+      stats.healthEvents +
+      stats.metricStream +
+      stats.nutritionDaily +
+      stats.labResults +
+      stats.journalEntries
+    : 0;
+
+  const breakdown = stats
+    ? [
+        { label: "Activities", count: stats.activities },
+        { label: "Metric Stream", count: stats.metricStream },
+        { label: "Daily Metrics", count: stats.dailyMetrics },
+        { label: "Sleep", count: stats.sleepSessions },
+        { label: "Body", count: stats.bodyMeasurements },
+        { label: "Food", count: stats.foodEntries },
+        { label: "Nutrition", count: stats.nutritionDaily },
+        { label: "Events", count: stats.healthEvents },
+        { label: "Lab Results", count: stats.labResults },
+        { label: "Journal", count: stats.journalEntries },
+      ].filter((b) => b.count > 0)
+    : [];
+
+  return (
+    <div
+      className={`flex flex-col rounded-lg border px-4 py-3 transition-colors ${
+        notConfigured
+          ? "border-zinc-800/50 bg-zinc-900/20 opacity-60"
+          : "border-zinc-800 bg-zinc-900/50"
+      }`}
+    >
+      {/* Header with sync trigger */}
+      <button
+        type="button"
+        onClick={() => !notConfigured && onSync()}
+        disabled={notConfigured || state.status === "syncing"}
+        className="flex items-center gap-2 hover:opacity-80 disabled:opacity-50"
+        title={
+          notConfigured
+            ? "Not configured"
+            : needsAuth
+              ? "Click to connect"
+              : "Sync last 7 days"
+        }
+      >
+        {notConfigured ? (
+          <span className="inline-block w-2 h-2 rounded-full bg-zinc-700" />
+        ) : needsAuth ? (
+          <span className="inline-block w-2 h-2 rounded-full bg-blue-400" />
+        ) : (
+          <StatusDot status={state.status} />
+        )}
+        <span className="text-sm font-medium text-zinc-200">{provider.name}</span>
+        {notConfigured && <span className="text-xs text-zinc-600">Not configured</span>}
+        {!notConfigured && needsAuth && (
+          <span className="text-xs text-blue-400">Connect</span>
+        )}
+        {state.status === "syncing" && <span className="text-xs text-zinc-500">...</span>}
+      </button>
+
+      {/* Status message */}
+      {state.message && state.status !== "syncing" && (
+        <span className="text-xs text-zinc-500 mt-1">{state.message}</span>
+      )}
+      {!notConfigured && !state.message && provider.lastSyncedAt && (
+        <span className="text-xs text-zinc-600 mt-1">
+          Last sync: {formatRelativeTime(provider.lastSyncedAt)}
+        </span>
+      )}
+
+      {/* Stats summary */}
+      {totalRecords > 0 && (
+        <div className="mt-2 pt-2 border-t border-zinc-800/50">
+          <div className="flex items-baseline gap-2">
+            <span className="text-lg font-bold text-zinc-100 tabular-nums">
+              {totalRecords.toLocaleString()}
+            </span>
+            <span className="text-xs text-zinc-500">records</span>
+          </div>
+          {breakdown.length > 1 && (
+            <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 mt-1">
+              {breakdown.map((b) => (
+                <div key={b.label} className="flex justify-between text-xs">
+                  <span className="text-zinc-500">{b.label}</span>
+                  <span className="text-zinc-400 tabular-nums">{b.count.toLocaleString()}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Recent sync dots + full sync button */}
+      {!notConfigured && (
+        <div className="flex items-center justify-between mt-2 pt-2 border-t border-zinc-800/50">
+          <div className="flex items-center gap-1">
+            {recentLogs.map((l, i) => (
+              <span
+                key={`${l.syncedAt}-${i}`}
+                className={`w-1.5 h-1.5 rounded-full ${
+                  l.status === "success" ? "bg-emerald-400" : "bg-red-400"
+                }`}
+                title={`${l.status} — ${formatTime(l.syncedAt)}${l.errorMessage ? `: ${l.errorMessage}` : ""}`}
+              />
+            ))}
+            {recentLogs.length === 0 && (
+              <span className="text-xs text-zinc-600">No sync history</span>
+            )}
+          </div>
+          {!needsAuth && state.status !== "syncing" && (
+            <button
+              type="button"
+              onClick={onFullSync}
+              className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+            >
+              Full sync
+            </button>
+          )}
+        </div>
       )}
     </div>
   );
@@ -453,6 +629,17 @@ function formatRelativeTime(isoString: string): string {
   return `${days}d ago`;
 }
 
+function formatTime(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
 function StatusDot({ status }: { status: SyncStatus }) {
   const colors = {
     idle: "bg-zinc-600",
@@ -472,6 +659,8 @@ interface FileImportZoneProps {
   uploadUrl: string;
   statusUrl: string;
   chunked?: boolean;
+  stats?: ProviderStats;
+  recentLogs?: SyncLogEntry[];
 }
 
 function FileImportZone({
@@ -481,12 +670,42 @@ function FileImportZone({
   uploadUrl,
   statusUrl,
   chunked,
+  stats,
+  recentLogs = [],
 }: FileImportZoneProps) {
   const [state, setState] = useState<{ status: SyncStatus; progress?: number; message?: string }>({
     status: "idle",
   });
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const totalRecords = stats
+    ? stats.activities +
+      stats.dailyMetrics +
+      stats.sleepSessions +
+      stats.bodyMeasurements +
+      stats.foodEntries +
+      stats.healthEvents +
+      stats.metricStream +
+      stats.nutritionDaily +
+      stats.labResults +
+      stats.journalEntries
+    : 0;
+
+  const breakdown = stats
+    ? [
+        { label: "Activities", count: stats.activities },
+        { label: "Metric Stream", count: stats.metricStream },
+        { label: "Daily Metrics", count: stats.dailyMetrics },
+        { label: "Sleep", count: stats.sleepSessions },
+        { label: "Body", count: stats.bodyMeasurements },
+        { label: "Food", count: stats.foodEntries },
+        { label: "Nutrition", count: stats.nutritionDaily },
+        { label: "Events", count: stats.healthEvents },
+        { label: "Lab Results", count: stats.labResults },
+        { label: "Journal", count: stats.journalEntries },
+      ].filter((b) => b.count > 0)
+    : [];
 
   const pollStatus = useCallback(
     async (jobId: string) => {
@@ -668,6 +887,43 @@ function FileImportZone({
           className={`mt-1.5 text-xs ${state.status === "error" ? "text-red-400" : "text-emerald-400"}`}
         >
           {state.message}
+        </div>
+      )}
+
+      {/* Stats summary */}
+      {totalRecords > 0 && (
+        <div className="mt-2 pt-2 border-t border-zinc-800/50">
+          <div className="flex items-baseline gap-2">
+            <span className="text-lg font-bold text-zinc-100 tabular-nums">
+              {totalRecords.toLocaleString()}
+            </span>
+            <span className="text-xs text-zinc-500">records</span>
+          </div>
+          {breakdown.length > 1 && (
+            <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 mt-1">
+              {breakdown.map((b) => (
+                <div key={b.label} className="flex justify-between text-xs">
+                  <span className="text-zinc-500">{b.label}</span>
+                  <span className="text-zinc-400 tabular-nums">{b.count.toLocaleString()}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Recent sync dots */}
+      {recentLogs.length > 0 && (
+        <div className="flex items-center gap-1 mt-2 pt-2 border-t border-zinc-800/50">
+          {recentLogs.map((l, i) => (
+            <span
+              key={`${l.syncedAt}-${i}`}
+              className={`w-1.5 h-1.5 rounded-full ${
+                l.status === "success" ? "bg-emerald-400" : "bg-red-400"
+              }`}
+              title={`${l.status} — ${formatTime(l.syncedAt)}${l.errorMessage ? `: ${l.errorMessage}` : ""}`}
+            />
+          ))}
         </div>
       )}
     </div>
