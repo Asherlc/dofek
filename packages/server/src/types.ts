@@ -1,3 +1,10 @@
+// Activity router types
+export type {
+  ActivityDetail,
+  ActivityHrZone,
+  ActivityHrZones,
+  StreamPoint,
+} from "./routers/activity.ts";
 // Recovery router types
 
 // Calendar router types
