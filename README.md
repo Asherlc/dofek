@@ -238,6 +238,12 @@ cd /opt/homelab-config/docker && sudo docker compose up -d dofek-web  # recreate
 
 **Important:** `sops exec-env` decrypted vars override Docker/compose env vars. Never put `DATABASE_URL` in the SOPS `.env` — it must come from the compose file or `/srv/appdata/dofek/.env`.
 
+### Troubleshooting
+
+**Login page says "No identity providers configured"** — this usually means the API server (`dofek-web`) is down, not that providers are misconfigured. The login page silently shows this message when it can't reach `/api/auth/providers`. Check `sudo docker ps --filter name=dofek` and `sudo docker logs dofek-web`.
+
+**Age-key mount error (`read /run/secrets/age-key: is a directory`)** — Docker created the mount point as a directory (happens if the host file didn't exist when the container was first created). `docker restart` won't fix this — you must recreate the container: `cd /opt/homelab-config/docker && sudo docker compose up -d dofek-web`.
+
 **If a provider appears grayed out** on the Data Sources page, it means its required env vars are missing. Check:
 1. Are the vars in the repo's `.env`? → `sops .env` to verify/add them
 2. Is the age key mounted in the container? → check `SOPS_AGE_KEY_FILE` in homelab compose
