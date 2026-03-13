@@ -140,6 +140,36 @@ describe("buildActivityDataset", () => {
       const dataset = buildActivityDataset(fewActivities, context, target);
       expect(dataset).toBeNull();
     });
+
+    it("skips activities with null avgPower but succeeds when enough have power data", () => {
+      // Mix of activities: some with power (cycling with meter), many without (running, hiking)
+      const mixed: CardioActivityRow[] = [];
+      let dayIdx = 3;
+      for (let i = 0; i < 80 && dayIdx < context.length; i++) {
+        const day = context[dayIdx];
+        if (!day) break;
+        const hasPower = i % 3 === 0; // ~27 out of 80 have power
+        mixed.push({
+          date: day.date,
+          activityType: hasPower ? "cycling" : "running",
+          durationMin: 45,
+          avgHr: 145,
+          avgPower: hasPower ? 180 + i : null,
+          avgSpeed: 5,
+          totalDistance: 15000,
+          elevationGain: 200,
+          avgCadence: 85,
+        });
+        dayIdx += 3;
+      }
+      const dataset = buildActivityDataset(mixed, context, target);
+      // Should succeed — enough activities have power data
+      expect(dataset).not.toBeNull();
+      // All rows in the dataset should have valid target values
+      if (dataset) {
+        expect(dataset.y.every((v) => typeof v === "number" && !Number.isNaN(v))).toBe(true);
+      }
+    });
   });
 
   describe("strength", () => {
