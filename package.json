@@ -14,7 +14,6 @@
     "./providers/peloton": "./src/providers/peloton.ts",
     "./providers/fatsecret": "./src/providers/fatsecret.ts",
     "./providers/apple-health": "./src/providers/apple-health.ts",
-    "./providers/hevy": "./src/providers/hevy.ts",
     "./providers/ride-with-gps": "./src/providers/ride-with-gps.ts",
     "./providers/strong-csv": "./src/providers/strong-csv.ts",
     "./providers/polar": "./src/providers/polar.ts",

@@ -96,10 +96,10 @@ function PrivacyPage() {
             <h2 className="text-lg font-semibold text-zinc-100 mb-3">5. Third-Party Services</h2>
             <p>
               Dofek connects to third-party fitness platforms (including but not limited to Garmin,
-              Wahoo, WHOOP, Polar, Peloton, Hevy, Withings, RideWithGPS, and FatSecret) through
-              their official APIs. When you authorize a connection, we access only the data
-              permitted by the scopes you approve. We comply with each provider's API terms of
-              service and data usage policies.
+              Wahoo, WHOOP, Polar, Peloton, Withings, RideWithGPS, and FatSecret) through their
+              official APIs. When you authorize a connection, we access only the data permitted by
+              the scopes you approve. We comply with each provider's API terms of service and data
+              usage policies.
             </p>
           </section>
 

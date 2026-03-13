@@ -1,6 +1,6 @@
 # Health Data
 
-Provider-agnostic fitness/health data pipeline. Syncs data from various providers (Hevy, Wahoo, Intervals.icu, etc.) into a TimescaleDB database for Grafana dashboards.
+Provider-agnostic fitness/health data pipeline. Syncs data from various providers (Wahoo, Intervals.icu, etc.) into a TimescaleDB database for Grafana dashboards.
 
 ## Stack
 - TypeScript + Drizzle ORM
