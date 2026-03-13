@@ -2,8 +2,10 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { DURATION_LABELS } from "../lib/duration-labels.ts";
 import { enduranceTypeFilter } from "../lib/endurance-types.ts";
-import { linearRegression } from "../lib/math.ts";
+import { type CriticalPowerModel, fitCriticalPower } from "../lib/math.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+
+export type { CriticalPowerModel };
 
 interface PowerCurveRow {
   duration_seconds: number;
@@ -15,41 +17,6 @@ interface EftpRow {
   activity_date: string;
   activity_name: string | null;
   best_20min_power: number;
-}
-
-export interface CriticalPowerModel {
-  cp: number;
-  wPrime: number;
-  r2: number;
-}
-
-/**
- * Fit Morton's 2-parameter Critical Power model (Monod-Scherrer).
- *
- * Model: P(t) = CP + W'/t
- * Linearized: Work = P*t = CP*t + W'
- * Linear regression of Work vs Time gives slope=CP, intercept=W'.
- *
- * Only uses durations >= 120s where the aerobic system dominates.
- */
-function fitCriticalPower(
-  points: { durationSeconds: number; bestPower: number }[],
-): CriticalPowerModel | null {
-  const valid = points.filter((p) => p.durationSeconds >= 120 && p.bestPower > 0);
-  if (valid.length < 3) return null;
-
-  const xs = valid.map((p) => p.durationSeconds);
-  const ys = valid.map((p) => p.bestPower * p.durationSeconds); // work in joules
-
-  const { slope: cp, intercept: wPrime, r2 } = linearRegression(xs, ys);
-
-  if (cp <= 0) return null;
-
-  return {
-    cp: Math.round(cp),
-    wPrime: Math.round(wPrime),
-    r2: Math.round(r2 * 1000) / 1000,
-  };
 }
 
 /**
@@ -96,7 +63,7 @@ function powerCurveQuery(days: number, userId: string) {
       HAVING COUNT(*) > 1
     ),
     durations AS (
-      SELECT unnest(ARRAY[5,15,30,60,120,300,600,1200,1800,3600,5400,7200]) AS duration_s
+      SELECT unnest(ARRAY[5,15,30,60,120,180,300,420,600,1200,1800,3600,5400,7200]) AS duration_s
     ),
     best_per_duration AS (
       SELECT
