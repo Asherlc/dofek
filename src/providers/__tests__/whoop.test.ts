@@ -247,6 +247,30 @@ describe("WhoopInternalClient._fetchUserId edge cases", () => {
   });
 });
 
+describe("WhoopInternalClient.refreshAccessToken — bootstrap failure", () => {
+  it("returns null userId when bootstrap endpoint fails", async () => {
+    const mockFetch = ((input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.includes("auth-service/v3/whoop")) {
+        return Promise.resolve(
+          Response.json({
+            AuthenticationResult: { AccessToken: "new-tok" },
+          }),
+        );
+      }
+      if (url.includes("users-service/v2/bootstrap")) {
+        // Bootstrap returns no user ID
+        return Promise.resolve(Response.json({ profile: {} }));
+      }
+      return Promise.resolve(new Response("Not found", { status: 404 }));
+    }) as typeof globalThis.fetch;
+
+    const token = await WhoopInternalClient.refreshAccessToken("old-ref", mockFetch);
+    expect(token.accessToken).toBe("new-tok");
+    expect(token.userId).toBeNull();
+  });
+});
+
 describe("WHOOP Provider — parsing", () => {
   describe("parseRecovery", () => {
     it("maps recovery fields to daily metrics", () => {

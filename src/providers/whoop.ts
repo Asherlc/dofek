@@ -475,6 +475,9 @@ export class WhoopInternalClient {
       authResult.AccessToken as string,
       fetchFn,
     );
+    if (!userId) {
+      throw new Error("WHOOP sign-in: could not determine user ID from bootstrap endpoint");
+    }
 
     return {
       type: "success",
@@ -536,6 +539,9 @@ export class WhoopInternalClient {
       authResult.AccessToken as string,
       fetchFn,
     );
+    if (!userId) {
+      throw new Error("WHOOP verification: could not determine user ID from bootstrap endpoint");
+    }
 
     return {
       accessToken: authResult.AccessToken as string,
@@ -550,7 +556,7 @@ export class WhoopInternalClient {
   static async refreshAccessToken(
     refreshToken: string,
     fetchFn: typeof globalThis.fetch = globalThis.fetch,
-  ): Promise<WhoopAuthToken> {
+  ): Promise<{ accessToken: string; refreshToken: string; userId: number | null }> {
     const data = await cognitoCall(
       "InitiateAuth",
       {
@@ -568,6 +574,8 @@ export class WhoopInternalClient {
       throw new Error("WHOOP token refresh: no tokens in response");
     }
 
+    // Best-effort: try to get userId from bootstrap. Returns null if it fails —
+    // caller should fall back to the stored userId from the original auth.
     const userId = await WhoopInternalClient._fetchUserId(
       authResult.AccessToken as string,
       fetchFn,
@@ -594,10 +602,14 @@ export class WhoopInternalClient {
     return result.token;
   }
 
-  private static async _fetchUserId(
+  /**
+   * Fetch user ID from the WHOOP bootstrap endpoint.
+   * Returns null if the user ID cannot be extracted (caller should fall back to stored value).
+   */
+  static async _fetchUserId(
     accessToken: string,
     fetchFn: typeof globalThis.fetch,
-  ): Promise<number> {
+  ): Promise<number | null> {
     const response = await fetchFn(
       `${WHOOP_API_BASE}/users-service/v2/bootstrap/?accountType=users&apiVersion=7&include=profile`,
       {
@@ -608,7 +620,8 @@ export class WhoopInternalClient {
     );
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch WHOOP user ID (${response.status})`);
+      console.warn(`[whoop] Failed to fetch user ID from bootstrap (${response.status})`);
+      return null;
     }
 
     const data = (await response.json()) as Record<string, unknown>;
@@ -619,9 +632,10 @@ export class WhoopInternalClient {
       (nested?.id as number | undefined) ??
       (nested?.user_id as number | undefined);
     if (!userId || typeof userId !== "number") {
-      throw new Error(
-        `Could not extract user ID from WHOOP bootstrap response (keys: ${Object.keys(data).join(", ")})`,
+      console.warn(
+        `[whoop] Could not extract user ID from bootstrap response (keys: ${Object.keys(data).join(", ")})`,
       );
+      return null;
     }
     return userId;
   }
@@ -858,18 +872,32 @@ export class WhoopProvider implements Provider {
         throw new Error("WHOOP not connected — authenticate via the web UI");
       }
 
+      // Extract stored userId from scopes (saved as "userId:12345" during auth)
+      const storedUserIdMatch = stored.scopes?.match(/userId:(\d+)/);
+      const storedUserId = storedUserIdMatch ? Number(storedUserIdMatch[1]) : null;
+
       // Refresh the access token using the stored refresh token
       const token = await WhoopInternalClient.refreshAccessToken(stored.refreshToken, this.fetchFn);
 
-      // Save the refreshed tokens back to DB
+      // Use the stored userId if available, otherwise use the one from bootstrap
+      const userId = storedUserId ?? token.userId;
+      if (!userId) {
+        throw new Error("WHOOP user ID not found — re-authenticate via the web UI");
+      }
+
+      // Save the refreshed tokens back to DB, preserving the userId in scopes
+      const scopes = `userId:${userId}`;
       await saveTokens(db, this.id, {
         accessToken: token.accessToken,
         refreshToken: token.refreshToken,
         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // assume ~24h expiry
-        scopes: "",
+        scopes,
       });
 
-      client = new WhoopInternalClient(token, this.fetchFn);
+      client = new WhoopInternalClient(
+        { accessToken: token.accessToken, refreshToken: token.refreshToken, userId },
+        this.fetchFn,
+      );
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
