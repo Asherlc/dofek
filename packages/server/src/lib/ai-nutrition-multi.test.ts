@@ -81,6 +81,33 @@ describe("analyzeNutritionItems", () => {
     await expect(analyzeNutritionItems("a banana")).rejects.toThrow("No AI providers configured");
   });
 
+  it("includes local time in AI system prompt when provided", async () => {
+    process.env.GEMINI_API_KEY = "test-key";
+
+    mockGenerateText.mockResolvedValueOnce({
+      output: { items: [{ ...sampleItems[0], meal: "breakfast" }] },
+    } as unknown as Awaited<ReturnType<typeof generateText>>);
+
+    await analyzeNutritionItems("eggs and toast", "Monday, 7:30 AM");
+
+    expect(mockGenerateText).toHaveBeenCalledOnce();
+    const callArgs = mockGenerateText.mock.calls[0]?.[0] as { system?: string } | undefined;
+    expect(callArgs?.system).toContain("Monday, 7:30 AM");
+  });
+
+  it("does not include time context when localTime is omitted", async () => {
+    process.env.GEMINI_API_KEY = "test-key";
+
+    mockGenerateText.mockResolvedValueOnce({
+      output: { items: sampleItems },
+    } as unknown as Awaited<ReturnType<typeof generateText>>);
+
+    await analyzeNutritionItems("chicken burrito and a coke");
+
+    const callArgs = mockGenerateText.mock.calls[0]?.[0] as { system?: string } | undefined;
+    expect(callArgs?.system).not.toContain("local time is");
+  });
+
   it("cascades to next provider on rate limit", async () => {
     process.env.GEMINI_API_KEY = "test-key";
     process.env.MISTRAL_API_KEY = "test-key";
