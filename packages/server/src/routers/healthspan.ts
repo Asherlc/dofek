@@ -183,12 +183,15 @@ export const healthspanRouter = router({
             ),
             hr_zone_time AS (
               SELECT
-                COALESCE(SUM(hz.zone1_count + hz.zone2_count + hz.zone3_count), 0)::real / 60.0 AS aerobic_minutes,
-                COALESCE(SUM(hz.zone4_count + hz.zone5_count), 0)::real / 60.0 AS high_intensity_minutes
-              FROM fitness.activity_hr_zones hz
-              JOIN fitness.activity_summary asum ON asum.activity_id = hz.activity_id
-              WHERE hz.user_id = ${ctx.userId}
+                COALESCE(SUM(CASE WHEN ms.heart_rate < up.max_hr * 0.8 THEN 1 ELSE 0 END), 0)::real / 60.0 AS aerobic_minutes,
+                COALESCE(SUM(CASE WHEN ms.heart_rate >= up.max_hr * 0.8 THEN 1 ELSE 0 END), 0)::real / 60.0 AS high_intensity_minutes
+              FROM fitness.user_profile up
+              JOIN fitness.activity_summary asum ON asum.user_id = up.id
+              JOIN fitness.metric_stream ms ON ms.activity_id = asum.activity_id
+              WHERE up.id = ${ctx.userId}
                 AND asum.started_at > NOW() - ${totalDays}::int * INTERVAL '1 day'
+                AND up.max_hr IS NOT NULL
+                AND ms.heart_rate IS NOT NULL
             ),
             strength_freq AS (
               SELECT COUNT(*)::real / GREATEST(${totalDays}::real / 7, 1) AS sessions_per_week

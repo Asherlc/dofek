@@ -53,7 +53,7 @@ WHERE heart_rate IS NOT NULL;
 --> statement-breakpoint
 
 -- activity_summary: queries do WHERE user_id = X AND started_at::date >= Y
--- The ::date cast prevents using the existing (user_id, started_at DESC) index efficiently
--- Adding a date-cast expression index
-CREATE INDEX IF NOT EXISTS activity_summary_user_date_idx
-ON fitness.activity_summary (user_id, (started_at::date) DESC);
+-- The existing (user_id, started_at DESC) index already supports range scans on started_at;
+-- Postgres can use it even when the query casts to date (range scan on timestamp covers date ranges).
+-- Expression index on (started_at::date) is not possible because timestamptz→date is timezone-dependent
+-- and therefore not IMMUTABLE.
