@@ -13,6 +13,7 @@ import { getAllProviders, getEnabledProviders, registerProvider } from "./provid
 import { PelotonProvider } from "./providers/peloton.ts";
 import { PolarProvider } from "./providers/polar.ts";
 import { RideWithGpsProvider } from "./providers/ride-with-gps.ts";
+import { StravaProvider } from "./providers/strava.ts";
 import { StrongCsvProvider } from "./providers/strong-csv.ts";
 import { WahooProvider } from "./providers/wahoo.ts";
 import { WhoopProvider } from "./providers/whoop.ts";
@@ -46,6 +47,7 @@ registerProvider(new PolarProvider());
 registerProvider(new WhoopProvider());
 registerProvider(new HevyProvider());
 registerProvider(new RideWithGpsProvider());
+registerProvider(new StravaProvider());
 registerProvider(new StrongCsvProvider());
 registerProvider(new CronometerCsvProvider());
 if (supplementConfig) {
