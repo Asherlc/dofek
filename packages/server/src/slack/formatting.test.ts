@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { NutritionItemWithMeal } from "../lib/ai-nutrition.ts";
 import { formatConfirmationMessage, formatMicroLine, formatSavedMessage } from "./formatting.ts";
+import { storePendingItems } from "./pending-items.ts";
 
 const sampleItem: NutritionItemWithMeal = {
   foodName: "Chicken Burrito",
@@ -65,8 +66,9 @@ describe("formatConfirmationMessage", () => {
     expect(text).toContain("790"); // 650 + 140 total calories
   });
 
-  it("stores item data in button action value for confirmation", () => {
-    const result = formatConfirmationMessage([sampleItem]);
+  it("stores pending key in button action value for confirmation", () => {
+    const pendingKey = storePendingItems([sampleItem]);
+    const result = formatConfirmationMessage([sampleItem], pendingKey);
 
     const actionsBlock = result.blocks.find((b: Record<string, unknown>) => b.type === "actions") as
       | Record<string, unknown>
@@ -77,10 +79,8 @@ describe("formatConfirmationMessage", () => {
     const confirmButton = elements.find((e) => e.action_id === "confirm_food");
     expect(confirmButton).toBeDefined();
 
-    // Value should be parseable JSON containing the items
-    const parsed = JSON.parse(confirmButton?.value as string);
-    expect(parsed).toHaveLength(1);
-    expect(parsed[0].foodName).toBe("Chicken Burrito");
+    // Value should be the pending key UUID, not inline JSON
+    expect(confirmButton?.value).toBe(pendingKey);
   });
 });
 
@@ -132,6 +132,70 @@ describe("formatMicroLine", () => {
     const line = formatMicroLine(item);
     expect(line).toContain("Ca: 251mg");
     expect(line).toContain("Iron: 3.7mg");
+  });
+});
+
+describe("formatConfirmationMessage button value size", () => {
+  it("keeps button value under Slack's 2000-character limit even with many items", () => {
+    const richItem: NutritionItemWithMeal = {
+      foodName: "Scrambled eggs (2 large)",
+      foodDescription: "Two large eggs scrambled with butter",
+      category: "eggs",
+      meal: "breakfast",
+      calories: 196,
+      proteinG: 13.5,
+      carbsG: 1.6,
+      fatG: 15.0,
+      fiberG: 0,
+      saturatedFatG: 5.3,
+      sugarG: 1.1,
+      sodiumMg: 342,
+      polyunsaturatedFatG: 2.8,
+      monounsaturatedFatG: 5.7,
+      transFatG: 0.1,
+      cholesterolMg: 372,
+      potassiumMg: 153,
+      calciumMg: 56,
+      ironMg: 1.7,
+      magnesiumMg: 12,
+      zincMg: 1.3,
+      seleniumMcg: 22.5,
+      copperMg: 0.1,
+      manganeseMg: 0.03,
+      chromiumMcg: 0.5,
+      iodineMcg: 24,
+      vitaminAMcg: 160,
+      vitaminCMg: 0,
+      vitaminDMcg: 2,
+      vitaminEMg: 1.0,
+      vitaminKMcg: 0.6,
+      vitaminB1Mg: 0.1,
+      vitaminB2Mg: 0.4,
+      vitaminB3Mg: 0.1,
+      vitaminB5Mg: 0.8,
+      vitaminB6Mg: 0.2,
+      vitaminB7Mcg: 10,
+      vitaminB9Mcg: 47,
+      vitaminB12Mcg: 0.9,
+      omega3Mg: 180,
+      omega6Mg: 1500,
+    };
+    const items = [
+      richItem,
+      { ...richItem, foodName: "Toast with butter" },
+      { ...richItem, foodName: "Coffee with milk" },
+    ];
+    const pendingKey = storePendingItems(items);
+    const result = formatConfirmationMessage(items, pendingKey);
+    const actionsBlock = result.blocks.find((b: Record<string, unknown>) => b.type === "actions") as
+      | Record<string, unknown>
+      | undefined;
+    const elements = actionsBlock?.elements as Array<Record<string, unknown>>;
+    const confirmButton = elements.find((e) => e.action_id === "confirm_food");
+    const value = confirmButton?.value as string;
+    expect(value.length).toBeLessThanOrEqual(2000);
+    // Value should be a UUID, not serialized JSON
+    expect(value).toMatch(/^[0-9a-f-]{36}$/);
   });
 });
 

@@ -14,6 +14,7 @@ import {
 } from "../lib/ai-nutrition.ts";
 import { logger } from "../logger.ts";
 import { formatConfirmationMessage, formatSavedMessage } from "./formatting.ts";
+import { removePendingItems, retrievePendingItems, storePendingItems } from "./pending-items.ts";
 
 const DOFEK_PROVIDER_ID = "dofek";
 
@@ -40,6 +41,8 @@ interface SlackUserInfo {
 /**
  * Extract food items from thread messages returned by conversations.replies.
  * Walks backwards to find the most recent bot message with a confirm button.
+ * The button value is a pending-store key (UUID); falls back to inline JSON
+ * for backwards compatibility with messages sent before the pending-store change.
  */
 function extractItemsFromThread(
   messages: Array<{ bot_id?: string; blocks?: unknown[] }>,
@@ -56,7 +59,15 @@ function extractItemsFromThread(
       if (block.type !== "actions" || !block.elements) continue;
       for (const element of block.elements) {
         if (element.action_id === "confirm_food" && element.value) {
-          return JSON.parse(element.value) as NutritionItemWithMeal[];
+          // Try pending store lookup first (value is a UUID key)
+          const fromStore = retrievePendingItems(element.value);
+          if (fromStore) return fromStore;
+          // Fall back to inline JSON for legacy messages
+          try {
+            return JSON.parse(element.value) as NutritionItemWithMeal[];
+          } catch {
+            return null;
+          }
         }
       }
     }
@@ -239,7 +250,8 @@ function registerHandlers(app: AppType, db: Database) {
           logger.info(`[slack] Refining ${previousItems.length} items with: "${msg.text}"`);
           const localTime = slackTimestampToLocalTime(msg.ts, userTimezone);
           const result = await refineNutritionItems(previousItems, msg.text, localTime);
-          const confirmation = formatConfirmationMessage(result.items);
+          const pendingKey = storePendingItems(result.items);
+          const confirmation = formatConfirmationMessage(result.items, pendingKey);
           await say({ ...confirmation, thread_ts: msg.thread_ts });
           return;
         }
@@ -260,7 +272,8 @@ function registerHandlers(app: AppType, db: Database) {
     try {
       const localTime = slackTimestampToLocalTime(msg.ts, userTimezone);
       const result = await analyzeNutritionItems(msg.text, localTime);
-      const confirmation = formatConfirmationMessage(result.items);
+      const pendingKey = storePendingItems(result.items);
+      const confirmation = formatConfirmationMessage(result.items, pendingKey);
       await say({ ...confirmation, thread_ts: msg.ts });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -284,7 +297,29 @@ function registerHandlers(app: AppType, db: Database) {
     const action = body.actions[0];
     if (!("value" in action) || !action.value) return;
 
-    const items: NutritionItemWithMeal[] = JSON.parse(action.value);
+    // Value is a pending-store key (UUID); fall back to inline JSON for legacy messages
+    let items: NutritionItemWithMeal[];
+    const fromStore = retrievePendingItems(action.value);
+    if (fromStore) {
+      items = fromStore;
+      removePendingItems(action.value);
+    } else {
+      try {
+        items = JSON.parse(action.value) as NutritionItemWithMeal[];
+      } catch {
+        logger.error(`[slack] Could not find pending items for key ${action.value}`);
+        if (body.channel?.id && body.message?.ts) {
+          await client.chat.update({
+            channel: body.channel.id,
+            ts: body.message.ts,
+            text: "This entry has expired. Please log your food again.",
+            blocks: [],
+          });
+        }
+        return;
+      }
+    }
+
     const date = body.message?.ts
       ? slackTimestampToDateString(body.message.ts, timezone)
       : todayDate(timezone);

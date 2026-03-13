@@ -89,8 +89,13 @@ function buildMicroTotals(items: NutritionItemWithMeal[]): NutritionItemWithMeal
   return totals as unknown as NutritionItemWithMeal;
 }
 
-/** Format parsed nutrition items into a Slack Block Kit message with confirm/cancel buttons */
-export function formatConfirmationMessage(items: NutritionItemWithMeal[]): SlackMessage {
+/** Format parsed nutrition items into a Slack Block Kit message with confirm/cancel buttons.
+ *  The pendingKey is a short identifier stored in the confirm button value
+ *  (Slack limits button values to 2000 characters, so we cannot inline the full JSON). */
+export function formatConfirmationMessage(
+  items: NutritionItemWithMeal[],
+  pendingKey?: string,
+): SlackMessage {
   const blocks: SlackBlock[] = [
     {
       type: "header",
@@ -143,7 +148,7 @@ export function formatConfirmationMessage(items: NutritionItemWithMeal[]): Slack
         text: { type: "plain_text", text: "Confirm" },
         style: "primary",
         action_id: "confirm_food",
-        value: JSON.stringify(items),
+        value: pendingKey ?? JSON.stringify(items),
       },
       {
         type: "button",
