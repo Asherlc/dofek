@@ -135,7 +135,7 @@ export function DataSourcesPanel() {
         return;
       }
       if (p.needsOAuth && !p.authorized) {
-        window.open(`/auth/${p.id}`, "_blank");
+        window.open(`/auth/provider/${p.id}`, "_blank");
         return;
       }
       handleSync(p.id, fullSync);
