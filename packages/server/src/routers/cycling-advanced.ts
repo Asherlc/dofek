@@ -284,7 +284,7 @@ export const cyclingAdvancedRouter = router({
                 AVG(ms.power) OVER (
                   PARTITION BY ms.activity_id
                   ORDER BY ms.recorded_at
-                  ROWS BETWEEN 29 PRECEDING AND CURRENT ROW
+                  RANGE BETWEEN INTERVAL '29 seconds' PRECEDING AND CURRENT ROW
                 ) AS rolling_30s_power
               FROM fitness.metric_stream ms
               JOIN fitness.v_activity a ON a.id = ms.activity_id
