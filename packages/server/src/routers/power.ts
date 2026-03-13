@@ -2,8 +2,10 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { DURATION_LABELS } from "../lib/duration-labels.ts";
 import { enduranceTypeFilter } from "../lib/endurance-types.ts";
-import { linearRegression } from "../lib/math.ts";
+import { type CriticalPowerModel, fitCriticalPower } from "../lib/math.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+
+export type { CriticalPowerModel };
 
 interface PowerCurveRow {
   duration_seconds: number;
@@ -14,42 +16,7 @@ interface PowerCurveRow {
 interface EftpRow {
   activity_date: string;
   activity_name: string | null;
-  best_20min_power: number;
-}
-
-export interface CriticalPowerModel {
-  cp: number;
-  wPrime: number;
-  r2: number;
-}
-
-/**
- * Fit Morton's 2-parameter Critical Power model (Monod-Scherrer).
- *
- * Model: P(t) = CP + W'/t
- * Linearized: Work = P*t = CP*t + W'
- * Linear regression of Work vs Time gives slope=CP, intercept=W'.
- *
- * Only uses durations >= 120s where the aerobic system dominates.
- */
-function fitCriticalPower(
-  points: { durationSeconds: number; bestPower: number }[],
-): CriticalPowerModel | null {
-  const valid = points.filter((p) => p.durationSeconds >= 120 && p.bestPower > 0);
-  if (valid.length < 3) return null;
-
-  const xs = valid.map((p) => p.durationSeconds);
-  const ys = valid.map((p) => p.bestPower * p.durationSeconds); // work in joules
-
-  const { slope: cp, intercept: wPrime, r2 } = linearRegression(xs, ys);
-
-  if (cp <= 0) return null;
-
-  return {
-    cp: Math.round(cp),
-    wPrime: Math.round(wPrime),
-    r2: Math.round(r2 * 1000) / 1000,
-  };
+  normalized_power: number;
 }
 
 /**
@@ -96,7 +63,7 @@ function powerCurveQuery(days: number, userId: string) {
       HAVING COUNT(*) > 1
     ),
     durations AS (
-      SELECT unnest(ARRAY[5,15,30,60,120,300,600,1200,1800,3600,5400,7200]) AS duration_s
+      SELECT unnest(ARRAY[5,15,30,60,120,180,300,420,600,1200,1800,3600,5400,7200]) AS duration_s
     ),
     best_per_duration AS (
       SELECT
@@ -149,61 +116,49 @@ export const powerRouter = router({
 
   /**
    * eFTP trend: estimated Functional Threshold Power over time.
-   * eFTP = 95% of best 20-minute power for each qualifying activity.
+   * Uses per-activity Normalized Power (NP) × 0.95.
+   *
+   * NP accounts for the metabolic cost of interval efforts via the
+   * fourth-power of 30s rolling averages. For interval-heavy training,
+   * NP is significantly higher than average power and better reflects
+   * the athlete's actual sustainable output.
    */
   eftpTrend: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(365) }))
     .query(async ({ ctx, input }) => {
-      // Find best 20-min (1200s) average power per activity.
-      // Includes zero-power samples and detects recording interval per activity.
+      // Compute per-activity Normalized Power via 30s rolling average.
+      // Requires at least 20 min of power data (1200 samples at 1s, 240 at 5s).
       const rows = await ctx.db.execute(sql`
-        WITH activity_power AS (
-          SELECT ms.activity_id, ms.recorded_at,
-                 COALESCE(ms.power, 0) AS power,
-                 a.started_at::date AS activity_date,
-                 a.name AS activity_name,
-                 ROW_NUMBER() OVER (
-                   PARTITION BY ms.activity_id ORDER BY ms.recorded_at
-                 ) AS rn,
-                 SUM(COALESCE(ms.power, 0)) OVER (
-                   PARTITION BY ms.activity_id ORDER BY ms.recorded_at
-                   ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-                 ) AS cumsum
+        WITH rolling AS (
+          SELECT
+            ms.activity_id,
+            AVG(ms.power) OVER (
+              PARTITION BY ms.activity_id
+              ORDER BY ms.recorded_at
+              RANGE BETWEEN INTERVAL '29 seconds' PRECEDING AND CURRENT ROW
+            ) AS rolling_30s_power
           FROM fitness.metric_stream ms
           JOIN fitness.v_activity a ON a.id = ms.activity_id
           WHERE a.user_id = ${ctx.userId}
-            AND ms.power IS NOT NULL
             AND a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
             AND ms.recorded_at > NOW() - (${input.days} + 1)::int * INTERVAL '1 day'
             AND ${enduranceTypeFilter("a")}
-        ),
-        sample_rate AS (
-          SELECT activity_id,
-                 GREATEST(ROUND(
-                   EXTRACT(EPOCH FROM MAX(recorded_at) - MIN(recorded_at))::numeric
-                   / NULLIF(COUNT(*) - 1, 0)
-                 )::int, 1) AS interval_s
-          FROM activity_power
-          GROUP BY activity_id
-          HAVING COUNT(*) > 1
+            AND ms.power > 0
         )
         SELECT
-          ap.activity_date::text AS activity_date,
-          ap.activity_name,
-          MAX((ap.cumsum - prev.cumsum)::numeric / ROUND(1200.0 / sr.interval_s))::int AS best_20min_power
-        FROM activity_power ap
-        JOIN sample_rate sr ON sr.activity_id = ap.activity_id
-        JOIN activity_power prev
-          ON prev.activity_id = ap.activity_id
-          AND prev.rn = ap.rn - ROUND(1200.0 / sr.interval_s)::int
-        GROUP BY ap.activity_id, ap.activity_date, ap.activity_name
-        HAVING MAX((ap.cumsum - prev.cumsum)::numeric / ROUND(1200.0 / sr.interval_s)) > 0
-        ORDER BY ap.activity_date
+          a.started_at::date::text AS activity_date,
+          a.name AS activity_name,
+          ROUND(POWER(AVG(POWER(r.rolling_30s_power, 4)), 0.25)::numeric, 1) AS normalized_power
+        FROM rolling r
+        JOIN fitness.v_activity a ON a.id = r.activity_id
+        GROUP BY a.id, a.started_at, a.name
+        HAVING COUNT(*) >= 240
+        ORDER BY a.started_at
       `);
 
       const trend = (rows as unknown as EftpRow[]).map((r) => ({
         date: String(r.activity_date),
-        eftp: Math.round(Number(r.best_20min_power) * 0.95),
+        eftp: Math.round(Number(r.normalized_power) * 0.95),
         activityName: r.activity_name,
       }));
 
