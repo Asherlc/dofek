@@ -33,7 +33,7 @@
     "auth": "./scripts/with-env.sh tsx src/index.ts auth",
     "migrate": "./scripts/with-env.sh drizzle-kit migrate",
     "generate": "drizzle-kit generate",
-    "lint": "biome check .",
+    "lint": "biome check . --max-diagnostics=500",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
     "test": "vitest",

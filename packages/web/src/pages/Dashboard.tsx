@@ -16,6 +16,8 @@ import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { TimeSeriesChart } from "../components/TimeSeriesChart.tsx";
 import { WeeklyReportCard } from "../components/WeeklyReportCard.tsx";
 import { trpc } from "../lib/trpc.ts";
+import { useUnitSystem } from "../lib/unitContext.ts";
+import { convertTemperature, temperatureLabel } from "../lib/units.ts";
 
 type MetricEntry = {
   label: string;
@@ -27,6 +29,7 @@ type MetricEntry = {
 };
 
 export function Dashboard() {
+  const { unitSystem } = useUnitSystem();
   const [days, setDays] = useState(30);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({
     bodyComp: true,
@@ -101,14 +104,17 @@ export function Dashboard() {
             },
             trendData.latest_skin_temp != null && {
               label: "Skin Temp",
-              value: trendData.latest_skin_temp,
-              avg: trendData.avg_skin_temp,
+              value: convertTemperature(trendData.latest_skin_temp, unitSystem),
+              avg:
+                trendData.avg_skin_temp != null
+                  ? convertTemperature(trendData.avg_skin_temp, unitSystem)
+                  : null,
               stddev: trendData.stddev_skin_temp,
-              unit: "°C",
+              unit: temperatureLabel(unitSystem),
             },
           ].filter((m): m is MetricEntry => Boolean(m))
         : [],
-    [trendData],
+    [trendData, unitSystem],
   );
 
   // biome-ignore lint/suspicious/noExplicitAny: tRPC return type from raw SQL — proper typing is a separate effort
@@ -130,10 +136,16 @@ export function Dashboard() {
   const skinTempSeries = useMemo(
     () => ({
       name: "Skin Temp",
-      data: metrics.map((d) => [d.date, d.skin_temp_c] as [string, number | null]),
+      data: metrics.map(
+        (d) =>
+          [
+            d.date,
+            d.skin_temp_c != null ? convertTemperature(d.skin_temp_c, unitSystem) : null,
+          ] as [string, number | null],
+      ),
       color: "#f59e0b",
     }),
-    [metrics],
+    [metrics, unitSystem],
   );
 
   const stepsSeries = useMemo(
@@ -293,7 +305,7 @@ export function Dashboard() {
                     ...(hasSkinTemp ? [skinTempSeries] : []),
                   ]}
                   height={200}
-                  yAxis={[{ name: "SpO2 (%)", min: 90 }, { name: "°C" }]}
+                  yAxis={[{ name: "SpO2 (%)", min: 90 }, { name: temperatureLabel(unitSystem) }]}
                   loading={dailyMetrics.isLoading}
                 />
               </div>

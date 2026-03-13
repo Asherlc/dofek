@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { trpc } from "../lib/trpc.ts";
+import { useUnitSystem } from "../lib/unitContext.ts";
+import { convertWeight, weightLabel } from "../lib/units.ts";
 
 interface LifeEvent {
   id: string;
@@ -273,6 +275,7 @@ function EventAnalysis({
   onWindowChange: (days: number) => void;
   onDelete: () => void;
 }) {
+  const { unitSystem } = useUnitSystem();
   if (loading) {
     return <div className="h-32 rounded-lg bg-zinc-800 animate-pulse" />;
   }
@@ -394,9 +397,17 @@ function EventAnalysis({
         />
         <CompareCard
           label="Weight"
-          unit="lbs"
-          before={before.body?.avg_weight}
-          after={after.body?.avg_weight}
+          unit={weightLabel(unitSystem)}
+          before={
+            before.body?.avg_weight != null
+              ? convertWeight(before.body.avg_weight as number, unitSystem)
+              : undefined
+          }
+          after={
+            after.body?.avg_weight != null
+              ? convertWeight(after.body.avg_weight as number, unitSystem)
+              : undefined
+          }
           periodLabel={periodLabel}
           lowerBetter
         />

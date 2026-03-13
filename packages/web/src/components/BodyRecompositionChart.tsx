@@ -1,5 +1,7 @@
 import ReactECharts from "echarts-for-react";
 import type { BodyRecompositionRow } from "../../../server/src/routers/body-analytics.ts";
+import { useUnitSystem } from "../lib/unitContext.ts";
+import { convertWeight, weightLabel } from "../lib/units.ts";
 
 interface BodyRecompositionChartProps {
   data: BodyRecompositionRow[];
@@ -7,6 +9,7 @@ interface BodyRecompositionChartProps {
 }
 
 export function BodyRecompositionChart({ data, loading }: BodyRecompositionChartProps) {
+  const { unitSystem } = useUnitSystem();
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[250px]">
@@ -52,7 +55,7 @@ export function BodyRecompositionChart({ data, loading }: BodyRecompositionChart
     },
     yAxis: {
       type: "value" as const,
-      name: "kg",
+      name: weightLabel(unitSystem),
       axisLabel: { color: "#71717a", fontSize: 11 },
       splitLine: { lineStyle: { color: "#27272a" } },
       nameTextStyle: { color: "#71717a", fontSize: 11 },
@@ -61,7 +64,7 @@ export function BodyRecompositionChart({ data, loading }: BodyRecompositionChart
       {
         name: "Fat Mass (smoothed)",
         type: "line",
-        data: data.map((d) => [d.date, d.smoothedFatMass]),
+        data: data.map((d) => [d.date, convertWeight(d.smoothedFatMass, unitSystem)]),
         smooth: true,
         symbol: "none",
         lineStyle: { color: "#f97316", width: 2 },
@@ -71,7 +74,7 @@ export function BodyRecompositionChart({ data, loading }: BodyRecompositionChart
       {
         name: "Lean Mass (smoothed)",
         type: "line",
-        data: data.map((d) => [d.date, d.smoothedLeanMass]),
+        data: data.map((d) => [d.date, convertWeight(d.smoothedLeanMass, unitSystem)]),
         smooth: true,
         symbol: "none",
         lineStyle: { color: "#3b82f6", width: 2 },
@@ -86,11 +89,11 @@ export function BodyRecompositionChart({ data, loading }: BodyRecompositionChart
       <div className="flex gap-4 text-sm">
         <span className={`font-medium ${fatChange <= 0 ? "text-green-400" : "text-red-400"}`}>
           Fat: {fatChange > 0 ? "+" : ""}
-          {fatChange.toFixed(1)} kg
+          {convertWeight(fatChange, unitSystem).toFixed(1)} {weightLabel(unitSystem)}
         </span>
         <span className={`font-medium ${leanChange >= 0 ? "text-green-400" : "text-red-400"}`}>
           Lean: {leanChange > 0 ? "+" : ""}
-          {leanChange.toFixed(1)} kg
+          {convertWeight(leanChange, unitSystem).toFixed(1)} {weightLabel(unitSystem)}
         </span>
       </div>
       <ReactECharts option={option} style={{ height: 250 }} />
