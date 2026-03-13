@@ -65,6 +65,37 @@ function extractItemsFromThread(
   return null;
 }
 
+/** Find an existing user by email, or create a new user profile. */
+async function resolveOrCreateUserId(
+  db: Database,
+  email: string | null,
+  name: string,
+): Promise<string> {
+  // Check if a user with this email already exists (e.g., from Google/Apple web login)
+  if (email) {
+    const existingByEmail = await db.execute<{ user_id: string }>(
+      sql`SELECT user_id FROM fitness.auth_account
+          WHERE email = ${email}
+          LIMIT 1`,
+    );
+    const emailRow = existingByEmail[0];
+    if (emailRow) {
+      logger.info(`[slack] Found existing user ${emailRow.user_id} via email ${email}`);
+      return emailRow.user_id;
+    }
+  }
+
+  // No existing user — create a new one
+  const newUser = await db.execute<{ id: string }>(
+    sql`INSERT INTO fitness.user_profile (name, email)
+        VALUES (${name}, ${email})
+        RETURNING id`,
+  );
+  const newUserRow = newUser[0];
+  if (!newUserRow) throw new Error("Failed to create user profile for Slack user");
+  return newUserRow.id;
+}
+
 /** Look up the dofek user ID for a Slack user, or create a new user + link if none exists.
  *  Also returns the user's IANA timezone from their Slack profile. */
 async function lookupOrCreateUserId(
@@ -100,15 +131,8 @@ async function lookupOrCreateUserId(
   const existingRow = existing[0];
   if (existing.length > 0 && existingRow) return { userId: existingRow.user_id, timezone };
 
-  // Create dofek user profile
-  const newUser = await db.execute<{ id: string }>(
-    sql`INSERT INTO fitness.user_profile (name, email)
-        VALUES (${name}, ${email})
-        RETURNING id`,
-  );
-  const newUserRow = newUser[0];
-  if (!newUserRow) throw new Error("Failed to create user profile for Slack user");
-  const userId = newUserRow.id;
+  // Try to find an existing user with the same email (e.g., from Google/Apple web login)
+  const userId = await resolveOrCreateUserId(db, email, name);
 
   // Link Slack account
   await db.execute(
@@ -116,7 +140,7 @@ async function lookupOrCreateUserId(
         VALUES (${userId}, 'slack', ${slackUserId}, ${name}, ${email})`,
   );
 
-  logger.info(`[slack] Created new user ${userId} for Slack user ${slackUserId} (${name})`);
+  logger.info(`[slack] Linked Slack user ${slackUserId} to user ${userId} (${name})`);
   return { userId, timezone };
 }
 
@@ -177,9 +201,9 @@ async function saveFoodEntries(
   }
 }
 
-/** Get today's date in YYYY-MM-DD format */
-function todayDate(): string {
-  return new Date().toISOString().slice(0, 10);
+/** Get today's date in YYYY-MM-DD format, in the given IANA timezone. */
+function todayDate(timezone: string): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: timezone });
 }
 
 /** Register message and action handlers on a Bolt app */
@@ -248,13 +272,13 @@ function registerHandlers(app: AppType, db: Database) {
     if (body.type !== "block_actions" || !body.actions[0]) return;
 
     const slackUserId = body.user.id;
-    const { userId } = await lookupOrCreateUserId(db, slackUserId, client);
+    const { userId, timezone } = await lookupOrCreateUserId(db, slackUserId, client);
 
     const action = body.actions[0];
     if (!("value" in action) || !action.value) return;
 
     const items: NutritionItemWithMeal[] = JSON.parse(action.value);
-    const date = todayDate();
+    const date = todayDate(timezone);
 
     try {
       await saveFoodEntries(db, userId, date, items);
