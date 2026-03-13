@@ -199,6 +199,78 @@ describe("WhoopInternalClient.refreshAccessToken (Cognito v3)", () => {
   });
 });
 
+describe("WhoopInternalClient._fetchUserId edge cases", () => {
+  it("throws when bootstrap response contains no user ID", async () => {
+    const mockFetch = ((input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.includes("auth-service/v3/whoop")) {
+        return Promise.resolve(
+          Response.json({
+            AuthenticationResult: { AccessToken: "tok", RefreshToken: "ref" },
+          }),
+        );
+      }
+      if (url.includes("users-service/v2/bootstrap")) {
+        // Response with no id field at all
+        return Promise.resolve(Response.json({ profile: { name: "Test" } }));
+      }
+      return Promise.resolve(new Response("Not found", { status: 404 }));
+    }) as typeof globalThis.fetch;
+
+    await expect(
+      WhoopInternalClient.signIn("user@test.com", "pass", mockFetch),
+    ).rejects.toThrow(/user ID/i);
+  });
+
+  it("extracts user ID from nested user object", async () => {
+    const mockFetch = ((input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.includes("auth-service/v3/whoop")) {
+        return Promise.resolve(
+          Response.json({
+            AuthenticationResult: { AccessToken: "tok", RefreshToken: "ref" },
+          }),
+        );
+      }
+      if (url.includes("users-service/v2/bootstrap")) {
+        // Some WHOOP API versions nest it under `user`
+        return Promise.resolve(Response.json({ user: { id: 99 } }));
+      }
+      return Promise.resolve(new Response("Not found", { status: 404 }));
+    }) as typeof globalThis.fetch;
+
+    const result = await WhoopInternalClient.signIn("user@test.com", "pass", mockFetch);
+    expect(result.type).toBe("success");
+    if (result.type === "success") {
+      expect(result.token.userId).toBe(99);
+    }
+  });
+});
+
+describe("WhoopInternalClient.refreshAccessToken — bootstrap failure", () => {
+  it("returns null userId when bootstrap endpoint fails", async () => {
+    const mockFetch = ((input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.includes("auth-service/v3/whoop")) {
+        return Promise.resolve(
+          Response.json({
+            AuthenticationResult: { AccessToken: "new-tok" },
+          }),
+        );
+      }
+      if (url.includes("users-service/v2/bootstrap")) {
+        // Bootstrap returns no user ID
+        return Promise.resolve(Response.json({ profile: {} }));
+      }
+      return Promise.resolve(new Response("Not found", { status: 404 }));
+    }) as typeof globalThis.fetch;
+
+    const token = await WhoopInternalClient.refreshAccessToken("old-ref", mockFetch);
+    expect(token.accessToken).toBe("new-tok");
+    expect(token.userId).toBeNull();
+  });
+});
+
 describe("WHOOP Provider — parsing", () => {
   describe("parseRecovery", () => {
     it("maps recovery fields to daily metrics", () => {
