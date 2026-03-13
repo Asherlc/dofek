@@ -11,3 +11,7 @@ packages/ios/ios/
 # Stryker mutation testing
 reports/
 .stryker-tmp/
+# Cypress
+cypress/videos/
+cypress/screenshots/
+cypress/downloads/
