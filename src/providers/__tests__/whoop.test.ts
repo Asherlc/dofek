@@ -217,9 +217,9 @@ describe("WhoopInternalClient._fetchUserId edge cases", () => {
       return Promise.resolve(new Response("Not found", { status: 404 }));
     }) as typeof globalThis.fetch;
 
-    await expect(
-      WhoopInternalClient.signIn("user@test.com", "pass", mockFetch),
-    ).rejects.toThrow(/user ID/i);
+    await expect(WhoopInternalClient.signIn("user@test.com", "pass", mockFetch)).rejects.toThrow(
+      /user ID/i,
+    );
   });
 
   it("extracts user ID from nested user object", async () => {

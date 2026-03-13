@@ -27,7 +27,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: cd packages/web && pnpm exec tsr generate
-      - run: pnpm biome check . --diagnostic-level=error --max-diagnostics=500
+      - run: pnpm lint
       - run: pnpm tsc --noEmit
       - run: cd packages/server && pnpm tsc --noEmit
       - run: cd packages/web && pnpm tsc --noEmit

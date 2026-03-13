@@ -189,7 +189,7 @@ describe("WahooProvider.sync() (integration)", () => {
     const activities = await ctx.db.select().from(activity).where(eq(activity.externalId, "2001"));
 
     expect(activities).toHaveLength(1);
-    const activityId = activities[0]?.id;
+    const activityId = activities[0]!.id;
 
     const metrics = await ctx.db
       .select()
