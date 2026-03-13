@@ -223,7 +223,7 @@ Each provider is enabled by adding its credentials to `.env` (SOPS-encrypted). O
 | FatSecret | OAuth 1.0 | `FATSECRET_CONSUMER_KEY`, `FATSECRET_CONSUMER_SECRET` |
 | Withings | OAuth 2.0 | `WITHINGS_CLIENT_ID`, `WITHINGS_CLIENT_SECRET` |
 | Hevy | API key | `HEVY_API_KEY` |
-| RideWithGPS | API key + credentials | `RWGPS_API_KEY`, `RWGPS_EMAIL`, `RWGPS_PASSWORD` |
+| RideWithGPS | Custom (API key + credentials) | None (entered in UI modal) |
 | Polar | OAuth 2.0 | `POLAR_CLIENT_ID`, `POLAR_CLIENT_SECRET` |
 | Garmin | SSO login | `GARMIN_EMAIL`, `GARMIN_PASSWORD` |
 | Strong | File import | None (upload `.csv` via UI) |

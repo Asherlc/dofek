@@ -20,6 +20,7 @@ import { pmcRouter } from "./routers/pmc.ts";
 import { powerRouter } from "./routers/power.ts";
 import { predictionsRouter } from "./routers/predictions.ts";
 import { recoveryRouter } from "./routers/recovery.ts";
+import { rwgpsAuthRouter } from "./routers/rwgps-auth.ts";
 import { settingsRouter } from "./routers/settings.ts";
 import { sleepRouter } from "./routers/sleep.ts";
 import { sleepNeedRouter } from "./routers/sleep-need.ts";
@@ -55,6 +56,7 @@ export const appRouter = router({
   efficiency: efficiencyRouter,
   food: foodRouter,
   healthKitSync: healthKitSyncRouter,
+  rwgpsAuth: rwgpsAuthRouter,
   whoopAuth: whoopAuthRouter,
   strength: strengthRouter,
   cyclingAdvanced: cyclingAdvancedRouter,

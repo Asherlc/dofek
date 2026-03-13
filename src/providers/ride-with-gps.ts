@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import type { Database } from "../db/index.ts";
 import { activity, DEFAULT_USER_ID, metricStream, userSettings } from "../db/schema.ts";
-import { ensureProvider } from "../db/tokens.ts";
+import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import type { Provider, SyncError, SyncResult } from "./types.ts";
 
 // ============================================================
@@ -267,9 +267,7 @@ export class RideWithGpsProvider implements Provider {
   }
 
   validate(): string | null {
-    if (!process.env.RWGPS_API_KEY) return "RWGPS_API_KEY is not set";
-    if (!process.env.RWGPS_EMAIL) return "RWGPS_EMAIL is not set";
-    if (!process.env.RWGPS_PASSWORD) return "RWGPS_PASSWORD is not set";
+    // Credentials are stored in DB via the UI auth modal — always valid
     return null;
   }
 
@@ -278,39 +276,26 @@ export class RideWithGpsProvider implements Provider {
     const errors: SyncError[] = [];
     let recordsSynced = 0;
 
-    const apiKey = process.env.RWGPS_API_KEY;
-    const email = process.env.RWGPS_EMAIL;
-    const password = process.env.RWGPS_PASSWORD;
-    if (!apiKey || !email || !password) {
+    await ensureProvider(db, this.id, this.name, RWGPS_API_BASE);
+
+    // Load stored tokens (API key stored as refreshToken, auth token as accessToken)
+    const tokens = await loadTokens(db, this.id);
+    if (!tokens) {
       return {
         provider: this.id,
         recordsSynced: 0,
-        errors: [{ message: "RWGPS_API_KEY, RWGPS_EMAIL, or RWGPS_PASSWORD is not set" }],
+        errors: [{ message: "No RWGPS credentials found. Connect via the Data Sources page." }],
         duration: Date.now() - start,
       };
     }
 
-    await ensureProvider(db, this.id, this.name, RWGPS_API_BASE);
-
-    // Exchange credentials for auth token
-    let authToken: string;
-    try {
-      authToken = await RideWithGpsClient.exchangeCredentials(
-        apiKey,
-        email,
-        password,
-        this.fetchFn,
-      );
-    } catch (err) {
+    const authToken = tokens.accessToken;
+    const apiKey = tokens.refreshToken;
+    if (!apiKey) {
       return {
         provider: this.id,
         recordsSynced: 0,
-        errors: [
-          {
-            message: `Auth failed: ${err instanceof Error ? err.message : String(err)}`,
-            cause: err,
-          },
-        ],
+        errors: [{ message: "No RWGPS API key found. Reconnect via the Data Sources page." }],
         duration: Date.now() - start,
       };
     }
