@@ -159,6 +159,19 @@ GitHub Actions builds and pushes both images on merge to main. Watchtower auto-p
 
 Migrations run automatically on startup (both `web` and `sync` modes call `runMigrations()`). Upserts make re-runs safe and idempotent.
 
+### Production secrets
+
+The repo's `.env` is SOPS-encrypted for local development (`scripts/with-env.sh` decrypts on the fly). Production containers do **not** use SOPS — they read a **plaintext** env file at `/srv/appdata/dofek/.env` on the server (referenced by `env_file` in the homelab compose file).
+
+**When adding new provider credentials:**
+
+1. Add the encrypted values to the repo's `.env` via `sops .env`.
+2. Decrypt the values: `./scripts/with-env.sh env | grep NEW_VAR`
+3. SSH to the server and append the plaintext values to `/srv/appdata/dofek/.env`.
+4. Restart the affected containers: `sudo docker restart dofek-web dofek-sync`
+
+If a provider appears grayed out on the Data Sources page, it means its required env vars are missing from the production env file.
+
 ## Supplements
 
 Supplements are fundamentally **nutrition data**, not a separate concept. The `auto-supplements` provider automates repetitive daily entry by reading a supplement stack config and inserting one `food_entry` row per supplement per day, with `category = 'supplement'`. This means:
