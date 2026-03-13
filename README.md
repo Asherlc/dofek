@@ -161,16 +161,11 @@ Migrations run automatically on startup (both `web` and `sync` modes call `runMi
 
 ### Production secrets
 
-The repo's `.env` is SOPS-encrypted for local development (`scripts/with-env.sh` decrypts on the fly). Production containers do **not** use SOPS — they read a **plaintext** env file at `/srv/appdata/dofek/.env` on the server (referenced by `env_file` in the homelab compose file).
+The SOPS-encrypted `.env` is baked into the Docker image at build time. At runtime, the entrypoint decrypts it using the age key mounted from the host (`SOPS_AGE_KEY_FILE`). This means provider credentials are managed in one place — the repo's `.env` — and automatically reach production on the next image build.
 
-**When adding new provider credentials:**
+The homelab compose also has an `env_file` for deployment-specific vars (Authentik, Google OAuth, DATABASE_URL overrides) that aren't in the dofek repo.
 
-1. Add the encrypted values to the repo's `.env` via `sops .env`.
-2. Decrypt the values: `./scripts/with-env.sh env | grep NEW_VAR`
-3. SSH to the server and append the plaintext values to `/srv/appdata/dofek/.env`.
-4. Restart the affected containers: `sudo docker restart dofek-web dofek-sync`
-
-If a provider appears grayed out on the Data Sources page, it means its required env vars are missing from the production env file.
+**Adding new provider credentials:** just `sops .env`, add the values, commit, and push. The next CI build + Watchtower pull deploys them automatically.
 
 ## Supplements
 

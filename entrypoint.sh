@@ -4,6 +4,18 @@ set -e
 # Node 22+ natively handles TypeScript — transform-types also rewrites .ts imports
 NODE="node --experimental-transform-types --disable-warning=ExperimentalWarning"
 
+# If SOPS age key is available and .env exists, decrypt secrets into the environment
+if { [ -n "$SOPS_AGE_KEY" ] || [ -n "$SOPS_AGE_KEY_FILE" ]; } && [ -f .env ]; then
+  CMD="$NODE"
+  case "${1:-sync}" in
+    web)  CMD="$CMD packages/server/src/index.ts" ;;
+    sync) CMD="$CMD src/index.ts sync" ;;
+    *)    echo "Unknown mode: $1 (expected 'web' or 'sync')" >&2; exit 1 ;;
+  esac
+  exec sops exec-env .env "$CMD"
+fi
+
+# Fallback: run directly (env vars already set via docker env/env_file)
 case "${1:-sync}" in
   web)
     exec $NODE packages/server/src/index.ts
