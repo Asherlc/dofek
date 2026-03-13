@@ -122,10 +122,12 @@ describe("WahooProvider.sync() (integration)", () => {
 
     expect(rows).toHaveLength(2);
 
-    const ride = rows.find((r) => r.externalId === "1001")!;
+    const ride = rows.find((r) => r.externalId === "1001");
+    if (!ride) throw new Error("expected workout 1001");
     expect(ride.activityType).toBe("cycling");
 
-    const run = rows.find((r) => r.externalId === "1002")!;
+    const run = rows.find((r) => r.externalId === "1002");
+    if (!run) throw new Error("expected workout 1002");
     expect(run.activityType).toBe("running");
   });
 
@@ -189,7 +191,9 @@ describe("WahooProvider.sync() (integration)", () => {
     const activities = await ctx.db.select().from(activity).where(eq(activity.externalId, "2001"));
 
     expect(activities).toHaveLength(1);
-    const activityId = activities[0]!.id;
+    const firstActivity = activities[0];
+    if (!firstActivity) throw new Error("expected activity");
+    const activityId = firstActivity.id;
 
     const metrics = await ctx.db
       .select()

@@ -29,8 +29,11 @@ export function BodyRecompositionChart({ data, loading }: BodyRecompositionChart
   }
 
   // Compute change from first to last
-  const first = data[0]!;
-  const last = data[data.length - 1]!;
+  const first = data[0];
+  const last = data[data.length - 1];
+  if (!first || !last) {
+    return null;
+  }
   const fatChange = last.smoothedFatMass - first.smoothedFatMass;
   const leanChange = last.smoothedLeanMass - first.smoothedLeanMass;
 

@@ -135,7 +135,11 @@ describe("parseTrackPoints", () => {
   it("handles missing optional fields as undefined", () => {
     const points: RideWithGpsTrackPoint[] = [{ x: -122.6, y: 45.5, d: 0, t: 1723276200 }];
     const result = parseTrackPoints(points);
-    const point = result[0]!;
+    const point = result[0];
+    if (!point) {
+      expect(point).toBeDefined();
+      return;
+    }
     expect(point.altitude).toBeUndefined();
     expect(point.heartRate).toBeUndefined();
     expect(point.power).toBeUndefined();

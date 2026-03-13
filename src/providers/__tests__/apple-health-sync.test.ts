@@ -441,9 +441,11 @@ describe("Apple Health streaming import (integration)", () => {
     });
 
     expect(nutritionRecords).toHaveLength(2);
-    const protein = nutritionRecords.find((r) => r.type.includes("Protein"))!;
+    const protein = nutritionRecords.find((r) => r.type.includes("Protein"));
+    if (!protein) throw new Error("expected protein record");
     expect(protein.value).toBeCloseTo(45.5);
-    const energy = nutritionRecords.find((r) => r.type.includes("Energy"))!;
+    const energy = nutritionRecords.find((r) => r.type.includes("Energy"));
+    if (!energy) throw new Error("expected energy record");
     expect(energy.value).toBe(650);
   });
 

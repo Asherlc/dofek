@@ -106,7 +106,8 @@ describe("FatSecret Provider", () => {
       const entries = parseFoodEntries(singleEntryResponse);
       expect(entries).toHaveLength(1);
 
-      const entry = entries[0]!;
+      const entry = entries[0];
+      if (!entry) throw new Error("expected entry");
       expect(entry.externalId).toBe("12345");
       expect(entry.foodName).toBe("Oatmeal");
       expect(entry.foodDescription).toBe("1 cup, cooked");
@@ -144,7 +145,8 @@ describe("FatSecret Provider", () => {
 
     it("handles entries with missing optional nutrients", () => {
       const entries = parseFoodEntries(multiEntryResponse);
-      const chicken = entries[1]!;
+      const chicken = entries[1];
+      if (!chicken) throw new Error("expected chicken entry");
       expect(chicken.calories).toBe(280);
       expect(chicken.proteinG).toBeCloseTo(52.0);
       expect(chicken.saturatedFatG).toBeUndefined();

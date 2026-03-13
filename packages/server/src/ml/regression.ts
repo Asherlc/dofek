@@ -53,10 +53,12 @@ export class LinearRegression {
       for (let j = i; j < cols; j++) {
         let sum = 0;
         for (let k = 0; k < n; k++) {
-          sum += (augmented[k]![i] ?? 0) * (augmented[k]![j] ?? 0);
+          sum += (augmented[k]?.[i] ?? 0) * (augmented[k]?.[j] ?? 0);
         }
-        xtx[i]![j] = sum;
-        xtx[j]![i] = sum; // symmetric
+        const xtxRow_i = xtx[i];
+        const xtxRow_j = xtx[j];
+        if (xtxRow_i) xtxRow_i[j] = sum;
+        if (xtxRow_j) xtxRow_j[i] = sum; // symmetric
       }
     }
 
@@ -65,7 +67,7 @@ export class LinearRegression {
     for (let i = 0; i < cols; i++) {
       let sum = 0;
       for (let k = 0; k < n; k++) {
-        sum += (augmented[k]![i] ?? 0) * (y[k] ?? 0);
+        sum += (augmented[k]?.[i] ?? 0) * (y[k] ?? 0);
       }
       xty[i] = sum;
     }
@@ -81,7 +83,9 @@ export class LinearRegression {
     let ssRes = 0;
     let ssTot = 0;
     for (let i = 0; i < n; i++) {
-      const predicted = this.predict(X[i]!);
+      const row = X[i];
+      if (!row) continue;
+      const predicted = this.predict(row);
       ssRes += ((y[i] ?? 0) - predicted) ** 2;
       ssTot += ((y[i] ?? 0) - yMean) ** 2;
     }
@@ -163,10 +167,10 @@ function solveLinearSystem(A: number[][], b: number[]): number[] {
   // Forward elimination
   for (let col = 0; col < n; col++) {
     // Partial pivoting: find row with largest absolute value in this column
-    let maxVal = Math.abs(A[col]![col] ?? 0);
+    let maxVal = Math.abs(A[col]?.[col] ?? 0);
     let maxRow = col;
     for (let row = col + 1; row < n; row++) {
-      const val = Math.abs(A[row]![col] ?? 0);
+      const val = Math.abs(A[row]?.[col] ?? 0);
       if (val > maxVal) {
         maxVal = val;
         maxRow = row;
@@ -175,20 +179,26 @@ function solveLinearSystem(A: number[][], b: number[]): number[] {
 
     // Swap rows
     if (maxRow !== col) {
-      [A[col], A[maxRow]] = [A[maxRow]!, A[col]!];
-      [b[col], b[maxRow]] = [b[maxRow]!, b[col]!];
+      const tmpA = A[maxRow] ?? [];
+      A[maxRow] = A[col] ?? [];
+      A[col] = tmpA;
+      const tmpB = b[maxRow] ?? 0;
+      b[maxRow] = b[col] ?? 0;
+      b[col] = tmpB;
     }
 
-    const pivot = A[col]![col] ?? 0;
+    const pivot = A[col]?.[col] ?? 0;
     if (Math.abs(pivot) < 1e-12) {
       throw new Error("Singular matrix — features may be collinear");
     }
 
     // Eliminate below
     for (let row = col + 1; row < n; row++) {
-      const factor = (A[row]![col] ?? 0) / pivot;
+      const aRow = A[row];
+      if (!aRow) continue;
+      const factor = (aRow[col] ?? 0) / pivot;
       for (let j = col; j < n; j++) {
-        A[row]![j] = (A[row]![j] ?? 0) - factor * (A[col]![j] ?? 0);
+        aRow[j] = (aRow[j] ?? 0) - factor * (A[col]?.[j] ?? 0);
       }
       b[row] = (b[row] ?? 0) - factor * (b[col] ?? 0);
     }
@@ -199,9 +209,9 @@ function solveLinearSystem(A: number[][], b: number[]): number[] {
   for (let i = n - 1; i >= 0; i--) {
     let sum = b[i] ?? 0;
     for (let j = i + 1; j < n; j++) {
-      sum -= (A[i]![j] ?? 0) * (x[j] ?? 0);
+      sum -= (A[i]?.[j] ?? 0) * (x[j] ?? 0);
     }
-    x[i] = sum / (A[i]![i] ?? 1);
+    x[i] = sum / (A[i]?.[i] ?? 1);
   }
 
   return x;

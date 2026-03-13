@@ -86,7 +86,9 @@ describe("GradientBoostedTrees", () => {
     const importances = model.featureImportances;
     expect(importances).toHaveLength(2);
     // x1 should have much higher importance than x2
-    expect(importances[0]).toBeGreaterThan(importances[1]! * 2);
+    const secondImportance = importances[1];
+    if (secondImportance === undefined) throw new Error("expected second importance");
+    expect(importances[0]).toBeGreaterThan(secondImportance * 2);
   });
 
   it("computes R² on training data", () => {

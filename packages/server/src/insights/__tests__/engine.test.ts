@@ -295,11 +295,11 @@ describe("computeInsights()", () => {
     if (result.length >= 2) {
       const confidenceOrder = { strong: 0, emerging: 1, early: 2, insufficient: 3 };
       for (let i = 1; i < result.length; i++) {
-        const prevOrder = confidenceOrder[result[i - 1]!.confidence];
-        const currOrder = confidenceOrder[result[i]!.confidence];
+        const prevOrder = confidenceOrder[result[i - 1]?.confidence ?? "insufficient"];
+        const currOrder = confidenceOrder[result[i]?.confidence ?? "insufficient"];
         if (prevOrder === currOrder) {
-          expect(Math.abs(result[i - 1]!.effectSize)).toBeGreaterThanOrEqual(
-            Math.abs(result[i]!.effectSize),
+          expect(Math.abs(result[i - 1]?.effectSize ?? 0)).toBeGreaterThanOrEqual(
+            Math.abs(result[i]?.effectSize ?? 0),
           );
         } else {
           expect(prevOrder).toBeLessThanOrEqual(currOrder);
@@ -379,7 +379,9 @@ describe("computeInsights()", () => {
     for (const insight of bodyCompInsights) {
       const pctMatch = insight.message.match(/(\d+)%/);
       if (pctMatch) {
-        const pct = Number.parseInt(pctMatch[1]!, 10);
+        const pctStr = pctMatch[1];
+        if (!pctStr) continue;
+        const pct = Number.parseInt(pctStr, 10);
         expect(pct).toBeLessThanOrEqual(100);
       }
     }

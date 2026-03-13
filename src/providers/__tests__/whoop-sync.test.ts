@@ -213,7 +213,8 @@ describe("WhoopProvider.sync() (integration)", () => {
       .where(eq(dailyMetrics.providerId, "whoop"));
 
     expect(rows.length).toBeGreaterThanOrEqual(1);
-    const day = rows.find((r) => r.date === "2026-03-01")!;
+    const day = rows.find((r) => r.date === "2026-03-01");
+    if (!day) throw new Error("expected day 2026-03-01");
     expect(day.restingHr).toBe(52);
     expect(day.hrv).toBeCloseTo(65.5);
     expect(day.spo2Avg).toBeCloseTo(97.2);
@@ -231,7 +232,8 @@ describe("WhoopProvider.sync() (integration)", () => {
       .where(eq(sleepSession.providerId, "whoop"));
 
     expect(rows.length).toBeGreaterThanOrEqual(1);
-    const session = rows.find((r) => r.externalId === "10235")!;
+    const session = rows.find((r) => r.externalId === "10235");
+    if (!session) throw new Error("expected session 10235");
     expect(session.deepMinutes).toBe(120);
     expect(session.remMinutes).toBe(90);
     expect(session.efficiencyPct).toBeCloseTo(91.7);
@@ -248,7 +250,8 @@ describe("WhoopProvider.sync() (integration)", () => {
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "whoop"));
 
     expect(rows.length).toBeGreaterThanOrEqual(1);
-    const workout = rows.find((r) => r.externalId === "1043")!;
+    const workout = rows.find((r) => r.externalId === "1043");
+    if (!workout) throw new Error("expected workout 1043");
     expect(workout.activityType).toBe("running");
     expect(workout.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
     expect(workout.endedAt).toEqual(new Date("2026-03-01T11:00:00Z"));
@@ -314,10 +317,12 @@ describe("WhoopProvider.sync() (integration)", () => {
 
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "whoop"));
 
-    const lift = rows.find((r) => r.externalId === "2001")!;
+    const lift = rows.find((r) => r.externalId === "2001");
+    if (!lift) throw new Error("expected workout 2001");
     expect(lift.activityType).toBe("weightlifting");
 
-    const ride = rows.find((r) => r.externalId === "2002")!;
+    const ride = rows.find((r) => r.externalId === "2002");
+    if (!ride) throw new Error("expected workout 2002");
     expect(ride.activityType).toBe("cycling");
   });
 

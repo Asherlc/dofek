@@ -28,7 +28,7 @@
         "useSemanticElements": "off"
       },
       "style": {
-        "noNonNullAssertion": "warn"
+        "noNonNullAssertion": "error"
       }
     }
   },

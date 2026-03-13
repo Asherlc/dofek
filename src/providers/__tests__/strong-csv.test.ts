@@ -90,7 +90,8 @@ describe("parseStrongCsv", () => {
 
     const groups = parseStrongCsv(csv);
     expect(groups).toHaveLength(1);
-    const group = groups[0]!;
+    const group = groups[0];
+    if (!group) throw new Error("expected group");
     expect(group.workoutName).toBe("Push Day");
     expect(group.date).toBe("2024-11-02 10:00:00");
     expect(group.duration).toBe("1h 3m");
@@ -119,7 +120,8 @@ describe("parseStrongCsv", () => {
     const csv = [csvHeader, '2024-11-02 10:00:00,"Cardio","30m","Running",1,,,5,1800,,'].join("\n");
 
     const groups = parseStrongCsv(csv);
-    const set = groups[0]!.sets[0]!;
+    const set = groups[0]?.sets[0];
+    if (!set) throw new Error("expected set");
     expect(set.weight).toBeNull();
     expect(set.reps).toBeNull();
     expect(set.distance).toBe(5);
