@@ -366,11 +366,7 @@ function SyncProviderCard({
         disabled={notConfigured || state.status === "syncing"}
         className="flex items-center gap-2 hover:opacity-80 disabled:opacity-50"
         title={
-          notConfigured
-            ? "Not configured"
-            : needsAuth
-              ? "Click to connect"
-              : "Sync last 7 days"
+          notConfigured ? "Not configured" : needsAuth ? "Click to connect" : "Sync last 7 days"
         }
       >
         {notConfigured ? (
@@ -382,9 +378,7 @@ function SyncProviderCard({
         )}
         <span className="text-sm font-medium text-zinc-200">{provider.name}</span>
         {notConfigured && <span className="text-xs text-zinc-600">Not configured</span>}
-        {!notConfigured && needsAuth && (
-          <span className="text-xs text-blue-400">Connect</span>
-        )}
+        {!notConfigured && needsAuth && <span className="text-xs text-blue-400">Connect</span>}
         {state.status === "syncing" && <span className="text-xs text-zinc-500">...</span>}
       </button>
 

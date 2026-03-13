@@ -296,19 +296,19 @@ describe("parseCronometerCsv", () => {
 
     const entries = parseCronometerCsv(csv);
     expect(entries).toHaveLength(3);
-    expect(entries[0]!.foodName).toBe("Apple");
-    expect(entries[0]!.meal).toBe("breakfast");
-    expect(entries[1]!.foodName).toBe("Chicken");
-    expect(entries[1]!.meal).toBe("lunch");
-    expect(entries[2]!.foodName).toBe("Salmon");
-    expect(entries[2]!.meal).toBe("dinner");
+    expect(entries[0]?.foodName).toBe("Apple");
+    expect(entries[0]?.meal).toBe("breakfast");
+    expect(entries[1]?.foodName).toBe("Chicken");
+    expect(entries[1]?.meal).toBe("lunch");
+    expect(entries[2]?.foodName).toBe("Salmon");
+    expect(entries[2]?.meal).toBe("dinner");
   });
 
   it("handles BOM character", () => {
     const csv = [`\uFEFF${csvHeader}`, makeRow()].join("\n");
     const entries = parseCronometerCsv(csv);
     expect(entries).toHaveLength(1);
-    expect(entries[0]!.date).toBe("2024-03-15");
+    expect(entries[0]?.date).toBe("2024-03-15");
   });
 
   it("handles Windows line endings", () => {
@@ -320,8 +320,8 @@ describe("parseCronometerCsv", () => {
   it("converts omega-3 and omega-6 from grams to milligrams", () => {
     const csv = [csvHeader, makeRow({ "Omega-3": "2.5", "Omega-6": "0.3" })].join("\n");
     const entries = parseCronometerCsv(csv);
-    expect(entries[0]!.omega3Mg).toBe(2500);
-    expect(entries[0]!.omega6Mg).toBe(300);
+    expect(entries[0]?.omega3Mg).toBe(2500);
+    expect(entries[0]?.omega6Mg).toBe(300);
   });
 
   it("returns empty array for empty CSV", () => {
@@ -342,18 +342,18 @@ describe("parseCronometerCsv", () => {
 
     const entries = parseCronometerCsv(csv);
     expect(entries).toHaveLength(1);
-    expect(entries[0]!.calories).toBe(200);
-    expect(entries[0]!.proteinG).toBeNull();
-    expect(entries[0]!.carbsG).toBeNull();
-    expect(entries[0]!.fatG).toBeNull();
-    expect(entries[0]!.fiberG).toBeNull();
+    expect(entries[0]?.calories).toBe(200);
+    expect(entries[0]?.proteinG).toBeNull();
+    expect(entries[0]?.carbsG).toBeNull();
+    expect(entries[0]?.fatG).toBeNull();
+    expect(entries[0]?.fiberG).toBeNull();
   });
 
   it("handles quoted food names with commas", () => {
     const csv = [csvHeader, makeRow({ "Food Name": "Pasta, Whole Wheat, Cooked" })].join("\n");
     const entries = parseCronometerCsv(csv);
     expect(entries).toHaveLength(1);
-    expect(entries[0]!.foodName).toBe("Pasta, Whole Wheat, Cooked");
+    expect(entries[0]?.foodName).toBe("Pasta, Whole Wheat, Cooked");
   });
 
   it("skips lines with too few fields", () => {
@@ -365,13 +365,13 @@ describe("parseCronometerCsv", () => {
   it("handles snack meal type", () => {
     const csv = [csvHeader, makeRow({ Meal: "Snack" })].join("\n");
     const entries = parseCronometerCsv(csv);
-    expect(entries[0]!.meal).toBe("snack");
+    expect(entries[0]?.meal).toBe("snack");
   });
 
   it("handles null omega values", () => {
     const csv = [csvHeader, makeRow({ "Omega-3": "", "Omega-6": "" })].join("\n");
     const entries = parseCronometerCsv(csv);
-    expect(entries[0]!.omega3Mg).toBeNull();
-    expect(entries[0]!.omega6Mg).toBeNull();
+    expect(entries[0]?.omega3Mg).toBeNull();
+    expect(entries[0]?.omega6Mg).toBeNull();
   });
 });

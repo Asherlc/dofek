@@ -26,8 +26,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: cd packages/web && pnpm exec tsr generate && pnpm biome check --write src/routeTree.gen.ts
-      - run: pnpm lint
+      - run: cd packages/web && pnpm exec tsr generate
+      - run: pnpm biome check . --diagnostic-level=error --max-diagnostics=500
       - run: pnpm tsc --noEmit
       - run: cd packages/server && pnpm tsc --noEmit
       - run: cd packages/web && pnpm tsc --noEmit

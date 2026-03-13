@@ -252,9 +252,9 @@ describe("WHOOP Provider — parsing", () => {
       ];
       const records = parseHeartRateValues(values);
       expect(records).toHaveLength(3);
-      expect(records[0]!.heartRate).toBe(72);
-      expect(records[0]!.recordedAt).toEqual(new Date(1709251200000));
-      expect(records[2]!.heartRate).toBe(78);
+      expect(records[0]?.heartRate).toBe(72);
+      expect(records[0]?.recordedAt).toEqual(new Date(1709251200000));
+      expect(records[2]?.heartRate).toBe(78);
     });
   });
 });

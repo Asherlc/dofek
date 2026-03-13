@@ -463,7 +463,7 @@ describe("Apple Health streaming import (integration)", () => {
     expect(categories.length).toBeGreaterThanOrEqual(1);
     const mindful = categories.find((c) => c.type === "HKCategoryTypeIdentifierMindfulSession");
     expect(mindful).toBeDefined();
-    expect(mindful!.sourceName).toBe("Headspace");
+    expect(mindful?.sourceName).toBe("Headspace");
   });
 
   it("routes walking distance and flights climbed", async () => {
