@@ -17,6 +17,26 @@ import { formatConfirmationMessage, formatSavedMessage } from "./formatting.ts";
 
 const DOFEK_PROVIDER_ID = "dofek";
 
+const FALLBACK_TIMEZONE = process.env.TIMEZONE ?? "America/Los_Angeles";
+
+/** Convert a Slack epoch timestamp to a readable local time string using the user's timezone */
+function slackTimestampToLocalTime(slackTs: string, timezone: string): string {
+  const epochSeconds = Number.parseFloat(slackTs);
+  const date = new Date(epochSeconds * 1000);
+  return date.toLocaleString("en-US", {
+    timeZone: timezone,
+    weekday: "long",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+interface SlackUserInfo {
+  userId: string;
+  timezone: string;
+}
+
 /**
  * Extract food items from thread messages returned by conversations.replies.
  * Walks backwards to find the most recent bot message with a confirm button.
@@ -45,7 +65,8 @@ function extractItemsFromThread(
   return null;
 }
 
-/** Look up the dofek user ID for a Slack user, or create a new user + link if none exists. */
+/** Look up the dofek user ID for a Slack user, or create a new user + link if none exists.
+ *  Also returns the user's IANA timezone from their Slack profile. */
 async function lookupOrCreateUserId(
   db: Database,
   slackUserId: string,
@@ -53,10 +74,23 @@ async function lookupOrCreateUserId(
     users: {
       info: (args: {
         user: string;
-      }) => Promise<{ user?: { real_name?: string; profile?: { email?: string } } }>;
+      }) => Promise<{ user?: { tz?: string; real_name?: string; profile?: { email?: string } } }>;
     };
   },
-): Promise<string> {
+): Promise<SlackUserInfo> {
+  // Fetch Slack profile — we always need the timezone, and also name/email for new users
+  let name = "Slack User";
+  let email: string | null = null;
+  let timezone = FALLBACK_TIMEZONE;
+  try {
+    const info = await slackClient.users.info({ user: slackUserId });
+    if (info.user?.real_name) name = info.user.real_name;
+    if (info.user?.profile?.email) email = info.user.profile.email;
+    if (info.user?.tz) timezone = info.user.tz;
+  } catch {
+    logger.warn(`[slack] Could not fetch Slack profile for ${slackUserId}`);
+  }
+
   // Check for existing link
   const existing = await db.execute<{ user_id: string }>(
     sql`SELECT user_id FROM fitness.auth_account
@@ -64,18 +98,7 @@ async function lookupOrCreateUserId(
         LIMIT 1`,
   );
   const existingRow = existing[0];
-  if (existing.length > 0 && existingRow) return existingRow.user_id;
-
-  // Fetch Slack profile for name/email
-  let name = "Slack User";
-  let email: string | null = null;
-  try {
-    const info = await slackClient.users.info({ user: slackUserId });
-    if (info.user?.real_name) name = info.user.real_name;
-    if (info.user?.profile?.email) email = info.user.profile.email;
-  } catch {
-    logger.warn(`[slack] Could not fetch Slack profile for ${slackUserId}`);
-  }
+  if (existing.length > 0 && existingRow) return { userId: existingRow.user_id, timezone };
 
   // Create dofek user profile
   const newUser = await db.execute<{ id: string }>(
@@ -94,7 +117,7 @@ async function lookupOrCreateUserId(
   );
 
   logger.info(`[slack] Created new user ${userId} for Slack user ${slackUserId} (${name})`);
-  return userId;
+  return { userId, timezone };
 }
 
 /** Ensure the 'dofek' provider row exists (for self-created entries) */
@@ -166,7 +189,7 @@ function registerHandlers(app: AppType, db: Database) {
     const msg = message as GenericMessageEvent;
     if (msg.subtype || !msg.text || msg.bot_id) return;
 
-    await lookupOrCreateUserId(db, msg.user, client);
+    const { timezone: userTimezone } = await lookupOrCreateUserId(db, msg.user, client);
 
     // Thread reply — look for previous items to refine
     if (msg.thread_ts && msg.thread_ts !== msg.ts) {
@@ -183,7 +206,8 @@ function registerHandlers(app: AppType, db: Database) {
 
         if (previousItems) {
           logger.info(`[slack] Refining ${previousItems.length} items with: "${msg.text}"`);
-          const result = await refineNutritionItems(previousItems, msg.text);
+          const localTime = slackTimestampToLocalTime(msg.ts, userTimezone);
+          const result = await refineNutritionItems(previousItems, msg.text, localTime);
           const confirmation = formatConfirmationMessage(result.items);
           await say({ ...confirmation, thread_ts: msg.thread_ts });
           return;
@@ -203,7 +227,8 @@ function registerHandlers(app: AppType, db: Database) {
     logger.info(`[slack] Parsing food from ${msg.user}: "${msg.text}"`);
 
     try {
-      const result = await analyzeNutritionItems(msg.text);
+      const localTime = slackTimestampToLocalTime(msg.ts, userTimezone);
+      const result = await analyzeNutritionItems(msg.text, localTime);
       const confirmation = formatConfirmationMessage(result.items);
       await say({ ...confirmation, thread_ts: msg.ts });
     } catch (error) {
@@ -223,7 +248,7 @@ function registerHandlers(app: AppType, db: Database) {
     if (body.type !== "block_actions" || !body.actions[0]) return;
 
     const slackUserId = body.user.id;
-    const userId = await lookupOrCreateUserId(db, slackUserId, client);
+    const { userId } = await lookupOrCreateUserId(db, slackUserId, client);
 
     const action = body.actions[0];
     if (!("value" in action) || !action.value) return;
