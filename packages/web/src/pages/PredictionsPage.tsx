@@ -7,8 +7,7 @@ import { trpc } from "../lib/trpc.ts";
 
 const TARGET_DESCRIPTIONS: Record<string, string> = {
   hrv: "Heart rate variability measures how well your nervous system recovers. Higher is generally better.",
-  resting_hr:
-    "Your resting heart rate reflects cardiovascular fitness. Lower is generally better.",
+  resting_hr: "Your resting heart rate reflects cardiovascular fitness. Lower is generally better.",
   sleep_efficiency:
     "Sleep efficiency is the percentage of time in bed you actually spend asleep. Higher is better.",
   weight: "Body weight predicted from nutrition, exercise, and sleep patterns.",
@@ -126,7 +125,10 @@ export function PredictionsPage() {
               targetLabel={prediction.data.targetLabel}
               unit={prediction.data.targetUnit}
             />
-            <ModelConfidence diagnostics={prediction.data.diagnostics} isActivityTarget={isActivityTarget} />
+            <ModelConfidence
+              diagnostics={prediction.data.diagnostics}
+              isActivityTarget={isActivityTarget}
+            />
           </>
         )}
       </main>
@@ -230,13 +232,13 @@ function TomorrowCard({
   const avg = (prediction.linear + prediction.tree) / 2;
   const spread = Math.abs(prediction.linear - prediction.tree);
   const agreement = spread < avg * 0.05 ? "high" : spread < avg * 0.15 ? "moderate" : "low";
-  const heading = isActivityTarget ? `Next Session's Predicted ${label}` : `Tomorrow's Predicted ${label}`;
+  const heading = isActivityTarget
+    ? `Next Session's Predicted ${label}`
+    : `Tomorrow's Predicted ${label}`;
 
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-      <p className="text-xs text-zinc-500 uppercase tracking-wider mb-2">
-        {heading}
-      </p>
+      <p className="text-xs text-zinc-500 uppercase tracking-wider mb-2">{heading}</p>
       <div className="flex items-baseline gap-3">
         <span className="text-3xl font-bold text-emerald-400">{avg.toFixed(0)}</span>
         <span className="text-sm text-zinc-500">{unit}</span>
@@ -492,7 +494,13 @@ function TimelineChart({
 
 // ── Model confidence (replaces diagnostics bar) ────────────────────────────
 
-function ModelConfidence({ diagnostics, isActivityTarget }: { diagnostics: Diagnostics; isActivityTarget: boolean }) {
+function ModelConfidence({
+  diagnostics,
+  isActivityTarget,
+}: {
+  diagnostics: Diagnostics;
+  isActivityTarget: boolean;
+}) {
   const cvR2 = diagnostics.crossValidatedRSquared;
   const confidence = getConfidenceLevel(cvR2);
 

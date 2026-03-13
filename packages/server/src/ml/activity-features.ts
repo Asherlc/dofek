@@ -236,9 +236,7 @@ export function buildActivityDataset(
 
   // Also add trailing metrics from previous sessions
   const sessionFeatures = getTrailingSessionFeatures(activities, target);
-  const featureDefs = [...allFeatures, ...sessionFeatures].filter(
-    (f) => !excludeSet.has(f.name),
-  );
+  const featureDefs = [...allFeatures, ...sessionFeatures].filter((f) => !excludeSet.has(f.name));
 
   // Build raw rows
   const rawRows: { features: (number | null)[]; target: number; date: string }[] = [];

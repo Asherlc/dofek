@@ -15,7 +15,7 @@ import {
   type DailyContext,
   type StrengthWorkoutRow,
 } from "../ml/activity-features.ts";
-import { PREDICTION_TARGETS, getPredictionTarget } from "../ml/features.ts";
+import { getPredictionTarget, PREDICTION_TARGETS } from "../ml/features.ts";
 import { trainFromDataset, trainPredictor } from "../ml/predictor.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
@@ -283,8 +283,7 @@ function buildDailyContext(
 
   const nutritionMap = new Map<string, NutritionRow>();
   for (const n of nutrition) {
-    const d =
-      typeof n.date === "string" ? n.date.slice(0, 10) : n.date.toISOString().slice(0, 10);
+    const d = typeof n.date === "string" ? n.date.slice(0, 10) : n.date.toISOString().slice(0, 10);
     nutritionMap.set(d, n);
   }
 

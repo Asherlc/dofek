@@ -52,9 +52,10 @@ function generateCardioActivities(
   for (let i = 0; i < n && dayIdx < context.length; i++) {
     const day = context[dayIdx]!;
     // Avg power is influenced by recent sleep and training
-    const recentSleep = context
-      .slice(Math.max(0, dayIdx - 3), dayIdx)
-      .reduce((sum, d) => sum + (d.sleepDurationMin ?? 0), 0) / 3;
+    const recentSleep =
+      context
+        .slice(Math.max(0, dayIdx - 3), dayIdx)
+        .reduce((sum, d) => sum + (d.sleepDurationMin ?? 0), 0) / 3;
     const avgPower = 150 + recentSleep * 0.1 + (rng() - 0.5) * 30;
 
     activities.push({
@@ -84,9 +85,10 @@ function generateStrengthWorkouts(
   for (let i = 0; i < n && dayIdx < context.length; i++) {
     const day = context[dayIdx]!;
     // Volume influenced by recent nutrition
-    const recentProtein = context
-      .slice(Math.max(0, dayIdx - 3), dayIdx)
-      .reduce((sum, d) => sum + (d.proteinG ?? 0), 0) / 3;
+    const recentProtein =
+      context
+        .slice(Math.max(0, dayIdx - 3), dayIdx)
+        .reduce((sum, d) => sum + (d.proteinG ?? 0), 0) / 3;
     const totalVolume = 5000 + recentProtein * 20 + (rng() - 0.5) * 2000;
 
     workouts.push({
