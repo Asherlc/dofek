@@ -5,8 +5,7 @@ export default defineConfig({
     globals: true,
     testTimeout: 30_000,
     hookTimeout: 120_000,
-    pool: "forks",
-    poolOptions: { forks: { maxForks: 2 } },
+    fileParallelism: false,
     include: ["src/**/*.test.ts", "packages/*/src/**/*.test.ts"],
   },
   resolve: {
