@@ -149,6 +149,7 @@ export function PolarizationTrendChart({ weeks, maxHr, loading }: PolarizationTr
             color: "#a1a1aa",
             fontSize: 10,
           },
+          tooltip: { show: false },
         },
         data: [],
       },

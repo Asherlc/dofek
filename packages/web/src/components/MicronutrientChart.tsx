@@ -91,6 +91,7 @@ export function MicronutrientChart({ data, loading }: MicronutrientChartProps) {
           lineStyle: { color: "#3f3f46", type: "dashed" as const },
           data: [{ xAxis: 100 }],
           label: { show: true, position: "end" as const, formatter: "100% RDA", color: "#71717a" },
+          tooltip: { show: false },
         },
       },
     ],

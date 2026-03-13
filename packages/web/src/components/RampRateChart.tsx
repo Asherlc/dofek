@@ -94,6 +94,7 @@ export function RampRateChart({
           symbol: "none",
           lineStyle: { color: "#eab308", type: "dashed" as const, width: 1 },
           data: [{ yAxis: 5, label: { formatter: "Safe Limit", color: "#eab308", fontSize: 10 } }],
+          tooltip: { show: false },
         },
         data: [],
       },

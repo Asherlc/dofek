@@ -43,6 +43,7 @@ export function EftpTrendChart({ data, currentEftp, loading }: EftpTrendChartPro
             fontSize: 11,
           },
           data: [{ yAxis: currentEftp }],
+          tooltip: { show: false },
         }
       : undefined;
 
