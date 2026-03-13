@@ -22,7 +22,6 @@ export function DataSourcesPanel() {
 
   // Custom auth modal state
   const [whoopAuthOpen, setWhoopAuthOpen] = useState(false);
-  const [rwgpsAuthOpen, setRwgpsAuthOpen] = useState(false);
 
   const updateState = useCallback(
     (id: string, state: ProviderState) => setProviderStates((prev) => ({ ...prev, [id]: state })),
@@ -132,11 +131,7 @@ export function DataSourcesPanel() {
       fullSync = false,
     ) => {
       if (p.needsCustomAuth && !p.authorized) {
-        if (p.id === "ride-with-gps") {
-          setRwgpsAuthOpen(true);
-        } else {
-          setWhoopAuthOpen(true);
-        }
+        setWhoopAuthOpen(true);
         return;
       }
       if (p.needsOAuth && !p.authorized) {
@@ -279,17 +274,6 @@ export function DataSourcesPanel() {
           onClose={() => setWhoopAuthOpen(false)}
           onSuccess={() => {
             setWhoopAuthOpen(false);
-            trpcUtils.sync.providers.invalidate();
-          }}
-        />
-      )}
-
-      {/* RideWithGPS Auth Modal */}
-      {rwgpsAuthOpen && (
-        <RwgpsAuthModal
-          onClose={() => setRwgpsAuthOpen(false)}
-          onSuccess={() => {
-            setRwgpsAuthOpen(false);
             trpcUtils.sync.providers.invalidate();
           }}
         />
@@ -622,120 +606,6 @@ function WhoopAuthModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
             <div className="text-sm text-zinc-300">Saving credentials...</div>
           </div>
         )}
-      </div>
-    </div>
-  );
-}
-
-// ── RideWithGPS Auth Modal ──
-
-function RwgpsAuthModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
-  const [apiKey, setApiKey] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  const signInMutation = trpc.rwgpsAuth.signIn.useMutation();
-
-  const handleSubmit = useCallback(
-    async (e: React.FormEvent<HTMLFormElement>) => {
-      e.preventDefault();
-      setError("");
-      setLoading(true);
-      try {
-        await signInMutation.mutateAsync({ apiKey, email, password });
-        onSuccess();
-      } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : "Authentication failed");
-      } finally {
-        setLoading(false);
-      }
-    },
-    [apiKey, email, password, signInMutation, onSuccess],
-  );
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 w-full max-w-sm shadow-2xl">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-semibold text-zinc-200">Connect RideWithGPS</h3>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-zinc-500 hover:text-zinc-300 text-lg leading-none"
-          >
-            &times;
-          </button>
-        </div>
-
-        {error && (
-          <div className="mb-3 text-xs text-red-400 bg-red-400/10 rounded px-3 py-2">{error}</div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <div>
-            <label htmlFor="rwgps-api-key" className="block text-xs text-zinc-400 mb-1">
-              API Key
-            </label>
-            <input
-              id="rwgps-api-key"
-              type="text"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              required
-              // biome-ignore lint/a11y/noAutofocus: modal should auto-focus first input
-              autoFocus
-              className="w-full px-3 py-2 text-sm bg-zinc-800 border border-zinc-700 rounded text-zinc-200 focus:outline-none focus:border-zinc-500"
-              placeholder="Your RWGPS API key"
-            />
-            <p className="text-xs text-zinc-600 mt-1">
-              Get your API key from your{" "}
-              <a
-                href="https://ridewithgps.com/api"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-400 hover:text-blue-300"
-              >
-                RWGPS account settings
-              </a>
-            </p>
-          </div>
-          <div>
-            <label htmlFor="rwgps-email" className="block text-xs text-zinc-400 mb-1">
-              Email
-            </label>
-            <input
-              id="rwgps-email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="w-full px-3 py-2 text-sm bg-zinc-800 border border-zinc-700 rounded text-zinc-200 focus:outline-none focus:border-zinc-500"
-              placeholder="you@example.com"
-            />
-          </div>
-          <div>
-            <label htmlFor="rwgps-password" className="block text-xs text-zinc-400 mb-1">
-              Password
-            </label>
-            <input
-              id="rwgps-password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              className="w-full px-3 py-2 text-sm bg-zinc-800 border border-zinc-700 rounded text-zinc-200 focus:outline-none focus:border-zinc-500"
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-2 text-sm font-medium rounded bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
-          >
-            {loading ? "Connecting..." : "Connect"}
-          </button>
-        </form>
       </div>
     </div>
   );
