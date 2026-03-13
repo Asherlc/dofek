@@ -164,14 +164,10 @@ export function trainFromDataset(
     treePrediction: round2(tree.predict(features)),
   }));
 
-  let tomorrowPrediction: PredictionResult["tomorrowPrediction"] = null;
-  if (X.length > 0) {
-    const lastFeatures = X[X.length - 1]!;
-    tomorrowPrediction = {
-      linear: round2(linear.predict(lastFeatures)),
-      tree: round2(tree.predict(lastFeatures)),
-    };
-  }
+  // Activity-level predictions include in-session features (e.g. duration,
+  // avg HR, set count) that are only known *during* the workout, so we cannot
+  // meaningfully predict the "next" session from the last row's feature vector.
+  const tomorrowPrediction: PredictionResult["tomorrowPrediction"] = null;
 
   return {
     targetId,

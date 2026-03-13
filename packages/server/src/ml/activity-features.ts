@@ -310,17 +310,29 @@ export function buildActivityDataset(
 /**
  * Build features from trailing sessions (e.g., days since last session,
  * trailing session count, previous session's target value).
+ *
+ * Pre-builds an identity map so lookups are O(1) instead of O(n) indexOf.
  */
 function getTrailingSessionFeatures(
   activities: ActivityRow[],
   target: ActivityPredictionTarget,
 ): ActivityFeatureDef[] {
+  // Pre-build an identity map for O(1) index lookups
+  const indexMap = new Map<ActivityRow, number>();
+  for (let i = 0; i < activities.length; i++) {
+    indexMap.set(activities[i]!, i);
+  }
+
+  // Pre-compute timestamps once for the sessions_last_14d feature
+  const timestamps = activities.map((a) => new Date(a.date).getTime());
+  const fourteenDaysMs = 14 * 24 * 60 * 60 * 1000;
+
   return [
     {
       name: "days_since_last_session",
       extract: (activity) => {
-        const idx = activities.indexOf(activity);
-        if (idx <= 0) return null;
+        const idx = indexMap.get(activity);
+        if (idx == null || idx <= 0) return null;
         const prev = activities[idx - 1]!;
         const daysDiff =
           (new Date(activity.date).getTime() - new Date(prev.date).getTime()) /
@@ -331,20 +343,23 @@ function getTrailingSessionFeatures(
     {
       name: "prev_session_target",
       extract: (activity) => {
-        const idx = activities.indexOf(activity);
-        if (idx <= 0) return null;
+        const idx = indexMap.get(activity);
+        if (idx == null || idx <= 0) return null;
         return target.extractTarget(activities[idx - 1]!);
       },
     },
     {
       name: "sessions_last_14d",
       extract: (activity) => {
-        const activityDate = new Date(activity.date).getTime();
-        const fourteenDaysMs = 14 * 24 * 60 * 60 * 1000;
+        const idx = indexMap.get(activity);
+        if (idx == null) return null;
+        const activityTime = timestamps[idx]!;
         let count = 0;
-        for (const a of activities) {
-          const d = new Date(a.date).getTime();
-          if (d < activityDate && activityDate - d <= fourteenDaysMs) count++;
+        // Walk backwards from current index (activities are sorted by date)
+        for (let i = idx - 1; i >= 0; i--) {
+          const diff = activityTime - timestamps[i]!;
+          if (diff > fourteenDaysMs) break;
+          count++;
         }
         return count;
       },

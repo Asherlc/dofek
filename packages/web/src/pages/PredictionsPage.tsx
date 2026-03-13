@@ -38,6 +38,9 @@ export function PredictionsPage() {
 
   const targets = trpc.predictions.targets.useQuery();
   const prediction = trpc.predictions.predict.useQuery({ target: targetId, days });
+  // Defaults to false (daily) while targets is loading — acceptable since
+  // targets loads near-instantly as a static list and prediction data
+  // (which uses isActivityTarget) takes longer to arrive.
   const isActivityTarget = targets.data?.find((t) => t.id === targetId)?.type === "activity";
 
   return (
@@ -196,7 +199,7 @@ function KeyTakeaway({
         {confidenceLevel === "strong"
           ? "The models found clear patterns in your data."
           : confidenceLevel === "moderate"
-            ? "The models found some patterns, but session-to-session variation is high."
+            ? `The models found some patterns, but ${isActivityTarget ? "session-to-session" : "day-to-day"} variation is high.`
             : "Your data is quite variable — take these patterns as directional, not definitive."}
       </p>
     </div>
@@ -253,7 +256,7 @@ function TomorrowCard({
           ? "Two independent models arrived at nearly the same prediction — this gives us more confidence."
           : agreement === "moderate"
             ? `The two models predict ${prediction.linear.toFixed(0)} and ${prediction.tree.toFixed(0)} — reasonably close.`
-            : `The models disagree (${prediction.linear.toFixed(0)} vs ${prediction.tree.toFixed(0)}) — tomorrow may be hard to predict.`}
+            : `The models disagree (${prediction.linear.toFixed(0)} vs ${prediction.tree.toFixed(0)}) — ${isActivityTarget ? "this metric" : "tomorrow"} may be hard to predict.`}
       </p>
     </div>
   );

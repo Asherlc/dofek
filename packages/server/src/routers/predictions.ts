@@ -1,3 +1,4 @@
+import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type {
@@ -32,6 +33,13 @@ interface ActivitySummaryRow {
   elevation_gain_m: number | null;
   avg_cadence: number | null;
   duration_min: number | null;
+}
+
+/** SQL row for per-day exercise minutes (aggregated from activity_summary) */
+interface ExerciseMinutesRow {
+  [key: string]: string | number | Date | boolean | null | undefined;
+  date: string;
+  exercise_minutes: number | null;
 }
 
 /** SQL row for strength workout volume */
@@ -95,12 +103,11 @@ export const predictionsRouter = router({
 
 /** Train daily-level predictions (existing pipeline) */
 async function trainDailyPrediction(
-  db: Parameters<typeof sql.raw>[0] extends never ? never : unknown,
+  db: Database,
   userId: string,
   days: number,
   target: (typeof PREDICTION_TARGETS)[number],
 ) {
-  // Use the same type as ctx.db
   const dbAny = db as { execute: <T>(query: ReturnType<typeof sql>) => Promise<T[]> };
   const [metrics, sleep, activities, nutrition, bodyComp] = await Promise.all([
     dbAny.execute<DailyRow>(
@@ -150,7 +157,7 @@ async function trainDailyPrediction(
 
 /** Train activity-level predictions */
 async function trainActivityPrediction(
-  db: unknown,
+  db: Database,
   userId: string,
   days: number,
   target: (typeof ACTIVITY_PREDICTION_TARGETS)[number],
@@ -158,40 +165,56 @@ async function trainActivityPrediction(
   const dbAny = db as { execute: <T>(query: ReturnType<typeof sql>) => Promise<T[]> };
 
   // Always need daily context for trailing features
-  const [dailyMetrics, sleepRows, nutritionRows, bodyCompRows] = await Promise.all([
-    dbAny.execute<DailyRow>(
-      sql`SELECT date, resting_hr, hrv, spo2_avg, steps, active_energy_kcal, skin_temp_c
-          FROM fitness.v_daily_metrics
-          WHERE user_id = ${userId}
-            AND date > CURRENT_DATE - ${days}::int
-          ORDER BY date ASC`,
-    ),
-    dbAny.execute<SleepRow>(
-      sql`SELECT started_at, duration_minutes, deep_minutes, rem_minutes,
-                 light_minutes, awake_minutes, efficiency_pct, is_nap
-          FROM fitness.v_sleep
-          WHERE user_id = ${userId}
-            AND started_at > CURRENT_DATE - ${days}::int
-          ORDER BY started_at ASC`,
-    ),
-    dbAny.execute<NutritionRow>(
-      sql`SELECT date, calories, protein_g, carbs_g, fat_g, fiber_g, water_ml
-          FROM fitness.nutrition_daily
-          WHERE user_id = ${userId}
-            AND date > CURRENT_DATE - ${days}::int
-          ORDER BY date ASC`,
-    ),
-    dbAny.execute<BodyCompRow>(
-      sql`SELECT recorded_at, weight_kg, body_fat_pct
-          FROM fitness.v_body_measurement
-          WHERE user_id = ${userId}
-            AND recorded_at > CURRENT_DATE - ${days}::int
-          ORDER BY recorded_at ASC`,
-    ),
-  ]);
+  const [dailyMetrics, sleepRows, nutritionRows, bodyCompRows, exerciseMinutesRows] =
+    await Promise.all([
+      dbAny.execute<DailyRow>(
+        sql`SELECT date, resting_hr, hrv, spo2_avg, steps, active_energy_kcal, skin_temp_c
+            FROM fitness.v_daily_metrics
+            WHERE user_id = ${userId}
+              AND date > CURRENT_DATE - ${days}::int
+            ORDER BY date ASC`,
+      ),
+      dbAny.execute<SleepRow>(
+        sql`SELECT started_at, duration_minutes, deep_minutes, rem_minutes,
+                   light_minutes, awake_minutes, efficiency_pct, is_nap
+            FROM fitness.v_sleep
+            WHERE user_id = ${userId}
+              AND started_at > CURRENT_DATE - ${days}::int
+            ORDER BY started_at ASC`,
+      ),
+      dbAny.execute<NutritionRow>(
+        sql`SELECT date, calories, protein_g, carbs_g, fat_g, fiber_g, water_ml
+            FROM fitness.nutrition_daily
+            WHERE user_id = ${userId}
+              AND date > CURRENT_DATE - ${days}::int
+            ORDER BY date ASC`,
+      ),
+      dbAny.execute<BodyCompRow>(
+        sql`SELECT recorded_at, weight_kg, body_fat_pct
+            FROM fitness.v_body_measurement
+            WHERE user_id = ${userId}
+              AND recorded_at > CURRENT_DATE - ${days}::int
+            ORDER BY recorded_at ASC`,
+      ),
+      dbAny.execute<ExerciseMinutesRow>(
+        sql`SELECT DATE(started_at) AS date,
+                   SUM(EXTRACT(EPOCH FROM (last_sample_at - first_sample_at)) / 60) AS exercise_minutes
+            FROM fitness.activity_summary
+            WHERE user_id = ${userId}
+              AND started_at > CURRENT_DATE - ${days}::int
+            GROUP BY DATE(started_at)
+            ORDER BY DATE(started_at) ASC`,
+      ),
+    ]);
 
-  // Build daily context by joining sleep + nutrition + metrics
-  const dailyContext = buildDailyContext(dailyMetrics, sleepRows, nutritionRows, bodyCompRows);
+  // Build daily context by joining sleep + nutrition + metrics + exercise
+  const dailyContext = buildDailyContext(
+    dailyMetrics,
+    sleepRows,
+    nutritionRows,
+    bodyCompRows,
+    exerciseMinutesRows,
+  );
 
   if (target.activityType === "cardio") {
     const activityRows = await dbAny.execute<ActivitySummaryRow>(
@@ -230,7 +253,7 @@ async function trainActivityPrediction(
             SUM(s.weight_kg * s.reps) FILTER (WHERE s.set_type = 'working') AS total_volume,
             COUNT(*) FILTER (WHERE s.set_type = 'working') AS working_set_count,
             MAX(s.weight_kg) FILTER (WHERE s.set_type = 'working') AS max_weight,
-            AVG(s.rpe) AS avg_rpe
+            AVG(s.rpe) FILTER (WHERE s.set_type = 'working') AS avg_rpe
           FROM fitness.strength_workout w
           JOIN fitness.strength_set s ON s.workout_id = w.id
           WHERE w.user_id = ${userId}
@@ -263,6 +286,7 @@ function buildDailyContext(
   sleep: SleepRow[],
   nutrition: NutritionRow[],
   bodyComp: BodyCompRow[],
+  exerciseMinutes: ExerciseMinutesRow[] = [],
 ): DailyContext[] {
   // Index by date
   const metricsMap = new Map<string, DailyRow>();
@@ -293,11 +317,21 @@ function buildDailyContext(
     bodyCompMap.set(d, b);
   }
 
+  const exerciseMap = new Map<string, number>();
+  for (const e of exerciseMinutes) {
+    const d =
+      typeof e.date === "string"
+        ? e.date.slice(0, 10)
+        : new Date(e.date).toISOString().slice(0, 10);
+    if (e.exercise_minutes != null) exerciseMap.set(d, e.exercise_minutes);
+  }
+
   // Get all unique dates
   const allDates = new Set<string>();
   for (const d of metricsMap.keys()) allDates.add(d);
   for (const d of sleepMap.keys()) allDates.add(d);
   for (const d of nutritionMap.keys()) allDates.add(d);
+  for (const d of bodyCompMap.keys()) allDates.add(d);
 
   const sortedDates = [...allDates].sort();
 
@@ -319,7 +353,7 @@ function buildDailyContext(
       calories: n?.calories ?? null,
       proteinG: n?.protein_g ?? null,
       weightKg: lastWeight,
-      exerciseMinutes: null, // Would need activity data to compute, but we already use it as input
+      exerciseMinutes: exerciseMap.get(date) ?? null,
       steps: m?.steps ?? null,
     };
   });
