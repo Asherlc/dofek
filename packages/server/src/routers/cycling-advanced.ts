@@ -233,31 +233,45 @@ export const cyclingAdvancedRouter = router({
   activityVariability: cachedProtectedQuery(CacheTTL.LONG)
     .input(daysInput)
     .query(async ({ ctx, input }): Promise<ActivityVariabilityRow[]> => {
-      // Estimate FTP as 95% of best 20-minute average power
+      // Estimate FTP as 95% of best 20-minute average power.
+      // Includes zero-power samples and adapts row offset to sample interval.
       const ftpResult = await ctx.db.execute(
-        sql`WITH rolling AS (
+        sql`WITH activity_power AS (
               SELECT
                 ms.activity_id,
-                AVG(ms.power) OVER (
-                  PARTITION BY ms.activity_id
-                  ORDER BY ms.recorded_at
-                  ROWS BETWEEN 1199 PRECEDING AND CURRENT ROW
-                ) AS avg_20min,
+                ms.recorded_at,
                 ROW_NUMBER() OVER (
-                  PARTITION BY ms.activity_id
-                  ORDER BY ms.recorded_at
-                ) AS rn
+                  PARTITION BY ms.activity_id ORDER BY ms.recorded_at
+                ) AS rn,
+                SUM(COALESCE(ms.power, 0)) OVER (
+                  PARTITION BY ms.activity_id ORDER BY ms.recorded_at
+                  ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                ) AS cumsum
               FROM fitness.metric_stream ms
               JOIN fitness.v_activity a ON a.id = ms.activity_id
               WHERE a.user_id = ${ctx.userId}
                 AND a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
                 AND ms.recorded_at > NOW() - (${input.days} + 1)::int * INTERVAL '1 day'
                 AND ${enduranceTypeFilter("a")}
-                AND ms.power > 0
+                AND ms.power IS NOT NULL
+            ),
+            sample_rate AS (
+              SELECT activity_id,
+                     GREATEST(ROUND(
+                       EXTRACT(EPOCH FROM MAX(recorded_at) - MIN(recorded_at))::numeric
+                       / NULLIF(COUNT(*) - 1, 0)
+                     )::int, 1) AS interval_s
+              FROM activity_power
+              GROUP BY activity_id
+              HAVING COUNT(*) > 1
             )
-            SELECT ROUND((MAX(avg_20min) * 0.95)::numeric, 1) AS ftp
-            FROM rolling
-            WHERE rn >= 1200`,
+            SELECT ROUND((MAX((ap.cumsum - prev.cumsum)::numeric / 1200) * 0.95)::numeric, 1) AS ftp
+            FROM activity_power ap
+            JOIN sample_rate sr ON sr.activity_id = ap.activity_id
+            JOIN activity_power prev
+              ON prev.activity_id = ap.activity_id
+              AND prev.rn = ap.rn - ROUND(1200.0 / sr.interval_s)::int
+            WHERE ap.rn >= ROUND(1200.0 / sr.interval_s)::int`,
       );
       const ftp = (ftpResult as unknown as { ftp: number }[])[0]?.ftp ?? null;
       if (!ftp) return [];
