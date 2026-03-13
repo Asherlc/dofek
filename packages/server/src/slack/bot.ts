@@ -518,7 +518,7 @@ function registerHandlers(app: AppType, db: Database) {
       // Invalidate cached food/nutrition queries so the UI reflects the new entries.
       // We need the user_id from the entries to scope the invalidation.
       const userRow = await db.execute<{ user_id: string }>(
-        sql`SELECT DISTINCT user_id FROM fitness.food_entry WHERE id = ANY(${entryIds}) LIMIT 1`,
+        sql`SELECT DISTINCT user_id FROM fitness.food_entry WHERE id IN (${sqlIdList(entryIds)}) LIMIT 1`,
       );
       if (userRow[0]) {
         await queryCache.invalidateByPrefix(`${userRow[0].user_id}:food.`);
