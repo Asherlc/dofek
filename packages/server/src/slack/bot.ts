@@ -217,6 +217,13 @@ function todayDate(timezone: string): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: timezone });
 }
 
+/** Convert a Slack epoch timestamp to YYYY-MM-DD date string in the user's timezone */
+function slackTimestampToDateString(slackTs: string, timezone: string): string {
+  const epochSeconds = Number.parseFloat(slackTs);
+  const date = new Date(epochSeconds * 1000);
+  return date.toLocaleDateString("en-CA", { timeZone: timezone });
+}
+
 /** Register message and action handlers on a Bolt app */
 function registerHandlers(app: AppType, db: Database) {
   // Handle direct messages (both top-level and thread replies)
@@ -313,7 +320,9 @@ function registerHandlers(app: AppType, db: Database) {
       }
     }
 
-    const date = todayDate(timezone);
+    const date = body.message?.ts
+      ? slackTimestampToDateString(body.message.ts, timezone)
+      : todayDate(timezone);
 
     try {
       await saveFoodEntries(db, userId, date, items);
