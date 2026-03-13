@@ -30,7 +30,7 @@ describe("tRPC API", () => {
         resolve();
       });
     });
-  }, 30_000);
+  });
 
   afterAll(async () => {
     if (server) {
