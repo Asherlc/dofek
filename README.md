@@ -212,6 +212,32 @@ git add .env && git commit && git push
 
 No SSH to the server needed. The credentials flow through the Docker image.
 
+### SSH access to homelab
+
+When you need to debug containers directly (check logs, restart services):
+
+```bash
+# LAN (home network)
+SSH_AUTH_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock" \
+  ssh asherlc@192.168.1.197
+
+# Remote (Tailscale)
+SSH_AUTH_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock" \
+  ssh asherlc@100.96.33.27
+```
+
+SSH uses the 1Password SSH agent. Docker commands require `sudo`.
+
+```bash
+# Common debugging commands
+sudo docker ps --filter name=dofek                    # container status
+sudo docker logs dofek-web --tail 50                  # API server logs
+sudo docker logs dofek-sync --tail 50                 # sync runner logs
+cd /opt/homelab-config/docker && sudo docker compose up -d dofek-web  # recreate container
+```
+
+**Important:** `sops exec-env` decrypted vars override Docker/compose env vars. Never put `DATABASE_URL` in the SOPS `.env` — it must come from the compose file or `/srv/appdata/dofek/.env`.
+
 **If a provider appears grayed out** on the Data Sources page, it means its required env vars are missing. Check:
 1. Are the vars in the repo's `.env`? → `sops .env` to verify/add them
 2. Is the age key mounted in the container? → check `SOPS_AGE_KEY_FILE` in homelab compose
