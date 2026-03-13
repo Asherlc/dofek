@@ -2,16 +2,19 @@ import { createRootRoute, Outlet, useLocation, useNavigate } from "@tanstack/rea
 import { useEffect } from "react";
 import { AuthProvider, useAuth } from "../lib/auth-context.tsx";
 
+const PUBLIC_PATHS = new Set(["/login", "/privacy"]);
+
 function AuthGate() {
   const { user, isLoading } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+  const isPublic = PUBLIC_PATHS.has(location.pathname);
 
   useEffect(() => {
-    if (!isLoading && !user && location.pathname !== "/login") {
+    if (!isLoading && !user && !isPublic) {
       navigate({ to: "/login" });
     }
-  }, [isLoading, user, location.pathname, navigate]);
+  }, [isLoading, user, isPublic, navigate]);
 
   if (isLoading) {
     return (
@@ -21,7 +24,7 @@ function AuthGate() {
     );
   }
 
-  if (!user && location.pathname !== "/login") {
+  if (!user && !isPublic) {
     return null;
   }
 
