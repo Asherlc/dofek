@@ -365,14 +365,14 @@ export const recoveryRouter = router({
                 AND date > CURRENT_DATE - ${queryDays}::int
             ),
             sleep_eff AS (
-              SELECT DISTINCT ON (started_at::date)
-                started_at::date::text AS date,
+              SELECT DISTINCT ON (COALESCE(ended_at, started_at + interval '8 hours')::date)
+                COALESCE(ended_at, started_at + interval '8 hours')::date::text AS date,
                 efficiency_pct
               FROM fitness.v_sleep
               WHERE user_id = ${ctx.userId}
                 AND is_nap = false
                 AND started_at > NOW() - ${queryDays}::int * INTERVAL '1 day'
-              ORDER BY started_at::date, started_at DESC
+              ORDER BY COALESCE(ended_at, started_at + interval '8 hours')::date, started_at DESC
             ),
             date_series AS (
               SELECT generate_series(
