@@ -265,7 +265,7 @@ export const cyclingAdvancedRouter = router({
               GROUP BY activity_id
               HAVING COUNT(*) > 1
             )
-            SELECT ROUND((MAX((ap.cumsum - prev.cumsum)::numeric / 1200) * 0.95)::numeric, 1) AS ftp
+            SELECT ROUND((MAX((ap.cumsum - prev.cumsum)::numeric / ROUND(1200.0 / sr.interval_s)) * 0.95)::numeric, 1) AS ftp
             FROM activity_power ap
             JOIN sample_rate sr ON sr.activity_id = ap.activity_id
             JOIN activity_power prev

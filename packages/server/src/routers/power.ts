@@ -102,11 +102,11 @@ function powerCurveQuery(days: number, userId: string) {
       SELECT
         d.duration_s AS duration_seconds,
         MAX(
-          (ap.cumsum - COALESCE(prev.cumsum, 0))::numeric / d.duration_s
+          (ap.cumsum - COALESCE(prev.cumsum, 0))::numeric / ROUND(d.duration_s::numeric / sr.interval_s)
         )::int AS best_power,
         (ARRAY_AGG(
           ap.activity_date::text ORDER BY
-          (ap.cumsum - COALESCE(prev.cumsum, 0))::numeric / d.duration_s DESC
+          (ap.cumsum - COALESCE(prev.cumsum, 0))::numeric / ROUND(d.duration_s::numeric / sr.interval_s) DESC
         ))[1] AS activity_date
       FROM durations d
       CROSS JOIN activity_power ap
@@ -190,14 +190,14 @@ export const powerRouter = router({
         SELECT
           ap.activity_date::text AS activity_date,
           ap.activity_name,
-          MAX((ap.cumsum - prev.cumsum)::numeric / 1200)::int AS best_20min_power
+          MAX((ap.cumsum - prev.cumsum)::numeric / ROUND(1200.0 / sr.interval_s))::int AS best_20min_power
         FROM activity_power ap
         JOIN sample_rate sr ON sr.activity_id = ap.activity_id
         JOIN activity_power prev
           ON prev.activity_id = ap.activity_id
           AND prev.rn = ap.rn - ROUND(1200.0 / sr.interval_s)::int
         GROUP BY ap.activity_id, ap.activity_date, ap.activity_name
-        HAVING MAX((ap.cumsum - prev.cumsum)::numeric / 1200) > 0
+        HAVING MAX((ap.cumsum - prev.cumsum)::numeric / ROUND(1200.0 / sr.interval_s)) > 0
         ORDER BY ap.activity_date
       `);
 
