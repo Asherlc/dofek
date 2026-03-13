@@ -1,6 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createRouter, RouterProvider } from "@tanstack/react-router";
 import { useState } from "react";
+import { DashboardLayoutProvider } from "./components/DashboardLayoutProvider.tsx";
+import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
 import { UnitProvider } from "./components/UnitProvider.tsx";
 import { createTRPCClient, trpc } from "./lib/trpc.ts";
 import { routeTree } from "./routeTree.gen.ts";
@@ -29,12 +31,16 @@ export function App() {
   const [trpcClient] = useState(createTRPCClient);
 
   return (
-    <trpc.Provider client={trpcClient} queryClient={queryClient}>
-      <QueryClientProvider client={queryClient}>
-        <UnitProvider>
-          <RouterProvider router={router} />
-        </UnitProvider>
-      </QueryClientProvider>
-    </trpc.Provider>
+    <ErrorBoundary>
+      <trpc.Provider client={trpcClient} queryClient={queryClient}>
+        <QueryClientProvider client={queryClient}>
+          <UnitProvider>
+            <DashboardLayoutProvider>
+              <RouterProvider router={router} />
+            </DashboardLayoutProvider>
+          </UnitProvider>
+        </QueryClientProvider>
+      </trpc.Provider>
+    </ErrorBoundary>
   );
 }

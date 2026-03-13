@@ -1,5 +1,6 @@
 import type { MuscleGroupVolumeRow } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
+import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface MuscleGroupVolumeChartProps {
   data: MuscleGroupVolumeRow[];
@@ -21,11 +22,7 @@ const COLORS = [
 
 export function MuscleGroupVolumeChart({ data, loading }: MuscleGroupVolumeChartProps) {
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-[320px]">
-        <span className="text-zinc-600 text-sm">Loading...</span>
-      </div>
-    );
+    return <ChartLoadingSkeleton height={320} />;
   }
 
   if (data.length === 0) {

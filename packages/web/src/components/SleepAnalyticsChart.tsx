@@ -1,5 +1,6 @@
 import type { SleepNightlyRow } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
+import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface SleepAnalyticsChartProps {
   nightly: SleepNightlyRow[];
@@ -9,11 +10,7 @@ interface SleepAnalyticsChartProps {
 
 export function SleepAnalyticsChart({ nightly, sleepDebt, loading }: SleepAnalyticsChartProps) {
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-[350px]">
-        <span className="text-zinc-600 text-sm">Loading...</span>
-      </div>
-    );
+    return <ChartLoadingSkeleton height={350} />;
   }
 
   if (nightly.length === 0) {

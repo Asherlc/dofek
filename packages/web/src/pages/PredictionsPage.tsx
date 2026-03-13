@@ -26,6 +26,17 @@ const TARGET_FRIENDLY_LABELS: Record<string, string> = {
   strength_volume: "Strength Volume",
 };
 
+const CONFIDENCE_THRESHOLD_STRONG = 0.3;
+const CONFIDENCE_THRESHOLD_MODERATE = 0.1;
+const AGREEMENT_THRESHOLD_HIGH = 0.05;
+const AGREEMENT_THRESHOLD_MODERATE = 0.15;
+const MIN_FEATURE_IMPORTANCE = 0.01;
+const MAX_FEATURES_SHOWN = 10;
+const CHART_BAR_HEIGHT_PX = 36;
+const CHART_PADDING_PX = 70;
+const MIN_CHART_HEIGHT_PX = 250;
+const TIMELINE_ZOOM_START = 70;
+
 const TARGET_SECTIONS: { label: string; ids: string[] }[] = [
   { label: "Recovery", ids: ["hrv", "resting_hr", "sleep_efficiency"] },
   { label: "Fitness", ids: ["cardio_power", "strength_volume"] },
@@ -218,8 +229,8 @@ function KeyTakeaway({
 }
 
 function getConfidenceLevel(cvR2: number): "strong" | "moderate" | "weak" {
-  if (cvR2 >= 0.3) return "strong";
-  if (cvR2 >= 0.1) return "moderate";
+  if (cvR2 >= CONFIDENCE_THRESHOLD_STRONG) return "strong";
+  if (cvR2 >= CONFIDENCE_THRESHOLD_MODERATE) return "moderate";
   return "weak";
 }
 
@@ -245,7 +256,12 @@ function TomorrowCard({
 
   const avg = (prediction.linear + prediction.tree) / 2;
   const spread = Math.abs(prediction.linear - prediction.tree);
-  const agreement = spread < avg * 0.05 ? "high" : spread < avg * 0.15 ? "moderate" : "low";
+  const agreement =
+    spread < avg * AGREEMENT_THRESHOLD_HIGH
+      ? "high"
+      : spread < avg * AGREEMENT_THRESHOLD_MODERATE
+        ? "moderate"
+        : "low";
   const heading = isActivityTarget
     ? `Next Session's Predicted ${label}`
     : `Tomorrow's Predicted ${label}`;
@@ -333,9 +349,8 @@ function FeatureImportanceChart({
   importances: FeatureImportance[];
   targetLabel: string;
 }) {
-  // Show only meaningful features (>1% importance) up to 10
-  const meaningful = importances.filter((f) => f.treeImportance > 0.01);
-  const top = meaningful.slice(0, 10);
+  const meaningful = importances.filter((f) => f.treeImportance > MIN_FEATURE_IMPORTANCE);
+  const top = meaningful.slice(0, MAX_FEATURES_SHOWN);
   const labels = top.map((f) => friendlyFeatureName(f.name));
   // Normalize to percentage for readability
   const maxImportance = Math.max(...top.map((f) => Math.max(f.treeImportance, f.linearImportance)));
@@ -400,7 +415,7 @@ function FeatureImportanceChart({
     ],
   };
 
-  const height = Math.max(250, top.length * 36 + 70);
+  const height = Math.max(MIN_CHART_HEIGHT_PX, top.length * CHART_BAR_HEIGHT_PX + CHART_PADDING_PX);
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
       <ReactECharts option={option} style={{ height }} opts={{ renderer: "svg" }} />
@@ -463,10 +478,10 @@ function TimelineChart({
       splitLine: { lineStyle: { color: "#27272a" } },
     },
     dataZoom: [
-      { type: "inside", start: 70, end: 100 },
+      { type: "inside", start: TIMELINE_ZOOM_START, end: 100 },
       {
         type: "slider",
-        start: 70,
+        start: TIMELINE_ZOOM_START,
         end: 100,
         height: 20,
         bottom: 0,

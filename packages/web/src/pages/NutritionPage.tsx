@@ -2,7 +2,9 @@ import { useMemo, useState } from "react";
 import { AddFoodModal, type FoodFormData, type MealType } from "../components/AddFoodModal.tsx";
 import { AppHeader } from "../components/AppHeader.tsx";
 import { FoodEntryRow } from "../components/FoodEntryRow.tsx";
+import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
 import { MacroBar } from "../components/MacroBar.tsx";
+import { formatDateForDisplay, formatDateForQuery, isToday } from "../lib/dates.ts";
 import { trpc } from "../lib/trpc.ts";
 
 const CALORIES_PER_GRAM = { protein: 4, carbs: 4, fat: 9 } as const;
@@ -26,31 +28,6 @@ interface FoodEntry {
   carbs_g: number | null;
   fat_g: number | null;
   food_description: string | null;
-}
-
-function formatDateForDisplay(date: Date): string {
-  return date.toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-function formatDateForQuery(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function isToday(date: Date): boolean {
-  const now = new Date();
-  return (
-    date.getFullYear() === now.getFullYear() &&
-    date.getMonth() === now.getMonth() &&
-    date.getDate() === now.getDate()
-  );
 }
 
 export function NutritionPage() {
@@ -273,11 +250,7 @@ export function NutritionPage() {
         </div>
 
         {/* Loading state */}
-        {foodQuery.isLoading && (
-          <div className="flex items-center justify-center py-12">
-            <span className="text-zinc-600 text-sm">Loading food entries...</span>
-          </div>
-        )}
+        {foodQuery.isLoading && <ChartLoadingSkeleton height={200} />}
 
         {/* Meal sections */}
         {!foodQuery.isLoading &&

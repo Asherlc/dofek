@@ -1,5 +1,6 @@
 import type { VolumeOverTimeRow } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
+import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface StrengthVolumeChartProps {
   data: VolumeOverTimeRow[];
@@ -8,11 +9,7 @@ interface StrengthVolumeChartProps {
 
 export function StrengthVolumeChart({ data, loading }: StrengthVolumeChartProps) {
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-[280px]">
-        <span className="text-zinc-600 text-sm">Loading...</span>
-      </div>
-    );
+    return <ChartLoadingSkeleton height={280} />;
   }
 
   if (data.length === 0) {

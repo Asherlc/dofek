@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { ChartLoadingSkeleton } from "../../components/LoadingSkeleton.tsx";
 import { PmcChart } from "../../components/PmcChart.tsx";
 import { TrainingCalendar } from "../../components/TrainingCalendar.tsx";
 import { TrainingInsightsPanel } from "../../components/TrainingInsightsPanel.tsx";
@@ -19,9 +20,7 @@ function TrainingOverview() {
     <>
       <Section title="Training Calendar" subtitle="Daily training activity heatmap">
         {calendarData.isLoading ? (
-          <div className="flex items-center justify-center h-[180px]">
-            <span className="text-zinc-600 text-sm">Loading...</span>
-          </div>
+          <ChartLoadingSkeleton height={180} />
         ) : (
           <TrainingCalendar data={calendarData.data ?? []} />
         )}

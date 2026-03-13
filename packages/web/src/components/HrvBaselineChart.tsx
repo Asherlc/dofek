@@ -1,4 +1,5 @@
 import ReactECharts from "echarts-for-react";
+import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface HrvBaselineRow {
   date: string;
@@ -16,11 +17,7 @@ interface HrvBaselineChartProps {
 
 export function HrvBaselineChart({ data, loading }: HrvBaselineChartProps) {
   if (loading) {
-    return (
-      <div className="flex items-center justify-center" style={{ height: 280 }}>
-        <span className="text-zinc-600 text-sm">Loading...</span>
-      </div>
-    );
+    return <ChartLoadingSkeleton height={280} />;
   }
 
   if (data.length === 0) {

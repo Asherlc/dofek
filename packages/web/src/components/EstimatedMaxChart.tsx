@@ -1,5 +1,6 @@
 import type { EstimatedOneRepMaxRow } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
+import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface EstimatedMaxChartProps {
   exercises: EstimatedOneRepMaxRow[];
@@ -19,11 +20,7 @@ const COLORS = [
 
 export function EstimatedMaxChart({ exercises, loading }: EstimatedMaxChartProps) {
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-[320px]">
-        <span className="text-zinc-600 text-sm">Loading...</span>
-      </div>
-    );
+    return <ChartLoadingSkeleton height={320} />;
   }
 
   if (exercises.length === 0) {

@@ -1,4 +1,5 @@
 import ReactECharts from "echarts-for-react";
+import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface NutritionData {
   date: string;
@@ -15,11 +16,7 @@ interface NutritionChartProps {
 
 export function NutritionChart({ data, loading }: NutritionChartProps) {
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-[200px]">
-        <span className="text-zinc-600 text-sm">Loading...</span>
-      </div>
-    );
+    return <ChartLoadingSkeleton height={200} />;
   }
 
   if (data.length === 0) {

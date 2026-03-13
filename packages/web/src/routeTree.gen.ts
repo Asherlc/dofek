@@ -26,6 +26,7 @@ import { Route as TrainingStrengthRouteImport } from './routes/training/strength
 import { Route as TrainingRecoveryRouteImport } from './routes/training/recovery'
 import { Route as TrainingHikingRouteImport } from './routes/training/hiking'
 import { Route as TrainingEnduranceRouteImport } from './routes/training/endurance'
+import { Route as ActivityIdRouteImport } from './routes/activity.$id'
 
 const TrainingRoute = TrainingRouteImport.update({
   id: '/training',
@@ -112,6 +113,11 @@ const TrainingEnduranceRoute = TrainingEnduranceRouteImport.update({
   path: '/endurance',
   getParentRoute: () => TrainingRoute,
 } as any)
+const ActivityIdRoute = ActivityIdRouteImport.update({
+  id: '/activity/$id',
+  path: '/activity/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -126,6 +132,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRoute
   '/tracking': typeof TrackingRoute
   '/training': typeof TrainingRouteWithChildren
+  '/activity/$id': typeof ActivityIdRoute
   '/training/endurance': typeof TrainingEnduranceRoute
   '/training/hiking': typeof TrainingHikingRoute
   '/training/recovery': typeof TrainingRecoveryRoute
@@ -144,6 +151,7 @@ export interface FileRoutesByTo {
   '/providers': typeof ProvidersRoute
   '/settings': typeof SettingsRoute
   '/tracking': typeof TrackingRoute
+  '/activity/$id': typeof ActivityIdRoute
   '/training/endurance': typeof TrainingEnduranceRoute
   '/training/hiking': typeof TrainingHikingRoute
   '/training/recovery': typeof TrainingRecoveryRoute
@@ -164,6 +172,7 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRoute
   '/tracking': typeof TrackingRoute
   '/training': typeof TrainingRouteWithChildren
+  '/activity/$id': typeof ActivityIdRoute
   '/training/endurance': typeof TrainingEnduranceRoute
   '/training/hiking': typeof TrainingHikingRoute
   '/training/recovery': typeof TrainingRecoveryRoute
@@ -185,6 +194,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/tracking'
     | '/training'
+    | '/activity/$id'
     | '/training/endurance'
     | '/training/hiking'
     | '/training/recovery'
@@ -203,6 +213,7 @@ export interface FileRouteTypes {
     | '/providers'
     | '/settings'
     | '/tracking'
+    | '/activity/$id'
     | '/training/endurance'
     | '/training/hiking'
     | '/training/recovery'
@@ -222,6 +233,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/tracking'
     | '/training'
+    | '/activity/$id'
     | '/training/endurance'
     | '/training/hiking'
     | '/training/recovery'
@@ -242,6 +254,7 @@ export interface RootRouteChildren {
   SettingsRoute: typeof SettingsRoute
   TrackingRoute: typeof TrackingRoute
   TrainingRoute: typeof TrainingRouteWithChildren
+  ActivityIdRoute: typeof ActivityIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -365,6 +378,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TrainingEnduranceRouteImport
       parentRoute: typeof TrainingRoute
     }
+    '/activity/$id': {
+      id: '/activity/$id'
+      path: '/activity/$id'
+      fullPath: '/activity/$id'
+      preLoaderRoute: typeof ActivityIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -401,6 +421,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsRoute: SettingsRoute,
   TrackingRoute: TrackingRoute,
   TrainingRoute: TrainingRouteWithChildren,
+  ActivityIdRoute: ActivityIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
