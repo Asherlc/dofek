@@ -1,0 +1,914 @@
+openapi: 3.1.0
+info:
+  title: WHOOP Internal API
+  description: |
+    Unofficial documentation of WHOOP's internal production API (api.prod.whoop.com).
+    This is NOT the public developer API (developer.whoop.com) — it's the same API
+    used by the WHOOP mobile and web apps.
+
+    **Authentication**: Cognito-based. See the auth endpoints below.
+
+    **Common parameters**: Most endpoints accept `apiVersion=7` as a query parameter.
+
+    **User-Agent**: The mobile app sends `WHOOP/4.0`.
+
+    **Last updated**: March 2026.
+  version: "7"
+
+servers:
+  - url: https://api.prod.whoop.com
+    description: WHOOP production API
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Cognito access token obtained via InitiateAuth
+
+  parameters:
+    apiVersion:
+      name: apiVersion
+      in: query
+      schema:
+        type: string
+        default: "7"
+    userId:
+      name: id
+      in: query
+      required: true
+      schema:
+        type: integer
+      description: WHOOP user ID
+
+  schemas:
+    # ── Auth ──────────────────────────────────────────────
+    CognitoInitiateAuthRequest:
+      type: object
+      required: [AuthFlow, ClientId, AuthParameters]
+      properties:
+        AuthFlow:
+          type: string
+          enum: [USER_PASSWORD_AUTH, REFRESH_TOKEN_AUTH]
+        ClientId:
+          type: string
+          example: "37365lrcda1js3fapqfe2n40eh"
+        AuthParameters:
+          type: object
+          properties:
+            USERNAME:
+              type: string
+            PASSWORD:
+              type: string
+            REFRESH_TOKEN:
+              type: string
+
+    CognitoAuthResult:
+      type: object
+      properties:
+        AuthenticationResult:
+          type: object
+          properties:
+            AccessToken:
+              type: string
+            RefreshToken:
+              type: string
+              description: Only returned on initial auth, not on refresh
+            IdToken:
+              type: string
+            ExpiresIn:
+              type: integer
+            TokenType:
+              type: string
+              example: Bearer
+        ChallengeName:
+          type: string
+          enum: [SMS_MFA, SOFTWARE_TOKEN_MFA]
+          description: Present when MFA is required
+        Session:
+          type: string
+          description: Challenge session token for MFA verification
+
+    CognitoVerifyRequest:
+      type: object
+      required: [ChallengeName, ClientId, Session, ChallengeResponses]
+      properties:
+        ChallengeName:
+          type: string
+          enum: [SMS_MFA, SOFTWARE_TOKEN_MFA]
+        ClientId:
+          type: string
+        Session:
+          type: string
+        ChallengeResponses:
+          type: object
+          properties:
+            USERNAME:
+              type: string
+            SMS_MFA_CODE:
+              type: string
+            SOFTWARE_TOKEN_MFA_CODE:
+              type: string
+
+    # ── Bootstrap ─────────────────────────────────────────
+    BootstrapResponse:
+      type: object
+      properties:
+        user:
+          type: object
+          properties:
+            id:
+              type: integer
+              example: 35557944
+            user_id:
+              type: integer
+
+    # ── Cycles ────────────────────────────────────────────
+    Cycle:
+      type: object
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+        days:
+          type: array
+          items:
+            type: string
+            format: date
+            example: "2026-03-12"
+        recovery:
+          $ref: "#/components/schemas/RecoveryRecord"
+        sleep:
+          type: object
+          properties:
+            id:
+              type: integer
+              description: Sleep ID — use to fetch full sleep detail
+        strain:
+          type: object
+          properties:
+            workouts:
+              type: array
+              items:
+                $ref: "#/components/schemas/WorkoutRecord"
+
+    # ── Recovery ──────────────────────────────────────────
+    RecoveryRecord:
+      type: object
+      properties:
+        cycle_id:
+          type: integer
+        sleep_id:
+          type: integer
+        user_id:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        score_state:
+          type: string
+          enum: [SCORED, PENDING_SCORE, UNSCORABLE]
+        score:
+          $ref: "#/components/schemas/RecoveryScore"
+
+    RecoveryScore:
+      type: object
+      properties:
+        user_calibrating:
+          type: boolean
+        recovery_score:
+          type: number
+          description: 0-100 percentage
+        resting_heart_rate:
+          type: number
+          description: BPM
+        hrv_rmssd_milli:
+          type: number
+          description: HRV in milliseconds (RMSSD)
+        spo2_percentage:
+          type: number
+          description: Blood oxygen percentage
+        skin_temp_celsius:
+          type: number
+          description: Skin temperature in Celsius
+
+    # ── Sleep ─────────────────────────────────────────────
+    SleepRecord:
+      type: object
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        start:
+          type: string
+          format: date-time
+        end:
+          type: string
+          format: date-time
+        timezone_offset:
+          type: string
+          example: "-05:00"
+        nap:
+          type: boolean
+        score_state:
+          type: string
+          enum: [SCORED, PENDING_SCORE, UNSCORABLE]
+        score:
+          $ref: "#/components/schemas/SleepScore"
+
+    SleepScore:
+      type: object
+      properties:
+        stage_summary:
+          $ref: "#/components/schemas/SleepStageSummary"
+        sleep_needed:
+          $ref: "#/components/schemas/SleepNeeded"
+        respiratory_rate:
+          type: number
+          description: Breaths per minute
+        sleep_performance_percentage:
+          type: number
+        sleep_consistency_percentage:
+          type: number
+        sleep_efficiency_percentage:
+          type: number
+
+    SleepStageSummary:
+      type: object
+      properties:
+        total_in_bed_time_milli:
+          type: integer
+        total_awake_time_milli:
+          type: integer
+        total_no_data_time_milli:
+          type: integer
+        total_light_sleep_time_milli:
+          type: integer
+        total_slow_wave_sleep_time_milli:
+          type: integer
+          description: Deep sleep
+        total_rem_sleep_time_milli:
+          type: integer
+        sleep_cycle_count:
+          type: integer
+        disturbance_count:
+          type: integer
+
+    SleepNeeded:
+      type: object
+      properties:
+        baseline_milli:
+          type: integer
+        need_from_sleep_debt_milli:
+          type: integer
+        need_from_recent_strain_milli:
+          type: integer
+        need_from_recent_nap_milli:
+          type: integer
+
+    # ── Workouts ──────────────────────────────────────────
+    WorkoutRecord:
+      type: object
+      description: |
+        Workout summary as returned in the cycles BFF response.
+        Contains aggregate metrics only — no exercise-level data.
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        start:
+          type: string
+          format: date-time
+        end:
+          type: string
+          format: date-time
+        timezone_offset:
+          type: string
+        sport_id:
+          type: integer
+          description: See Sport schema for mapping. 123 = Strength Trainer.
+        activity_id:
+          type: integer
+          description: Internal activity ID
+        activity_version:
+          type: integer
+        source:
+          type: string
+        score_state:
+          type: string
+          enum: [SCORED, PENDING_SCORE, UNSCORABLE]
+        score:
+          $ref: "#/components/schemas/WorkoutScore"
+        msk_score:
+          $ref: "#/components/schemas/MskScore"
+        raw_intensity_score:
+          type: number
+
+    WorkoutScore:
+      type: object
+      properties:
+        strain:
+          type: number
+          description: WHOOP strain score (0-21 scale)
+        average_heart_rate:
+          type: integer
+          description: BPM
+        max_heart_rate:
+          type: integer
+          description: BPM
+        kilojoule:
+          type: number
+          description: Energy expenditure. Divide by 4.184 for calories.
+        percent_recorded:
+          type: number
+          description: 0-1 recording quality
+        distance_meter:
+          type: number
+          nullable: true
+        altitude_gain_meter:
+          type: number
+          nullable: true
+        altitude_change_meter:
+          type: number
+          nullable: true
+        zone_duration:
+          $ref: "#/components/schemas/ZoneDuration"
+
+    ZoneDuration:
+      type: object
+      description: Time spent in each heart rate zone (milliseconds)
+      properties:
+        zone_zero_milli:
+          type: integer
+          description: Below zone 1
+        zone_one_milli:
+          type: integer
+        zone_two_milli:
+          type: integer
+        zone_three_milli:
+          type: integer
+        zone_four_milli:
+          type: integer
+        zone_five_milli:
+          type: integer
+          description: Max effort
+
+    MskScore:
+      type: object
+      description: |
+        Musculoskeletal (muscular load) score. Only present for workouts
+        with muscular activity (e.g., Strength Trainer, functional fitness).
+      properties:
+        raw_cardio_intensity_score:
+          type: number
+          example: 0.0000095
+        scaled_cardio_intensity_score:
+          type: number
+          example: 1.549
+        raw_msk_intensity_score:
+          type: number
+          example: 0.0288
+        scaled_msk_intensity_score:
+          type: number
+          example: 2.855
+        cardio_strain_contribution_percent:
+          type: number
+          example: 0.329
+          description: Fraction of total strain from cardio vs muscular
+
+    # ── Heart Rate ────────────────────────────────────────
+    HeartRateValue:
+      type: object
+      properties:
+        time:
+          type: integer
+          description: Unix timestamp in milliseconds
+        data:
+          type: integer
+          description: Heart rate in BPM
+
+    HeartRateResponse:
+      type: object
+      properties:
+        values:
+          type: array
+          items:
+            $ref: "#/components/schemas/HeartRateValue"
+
+    # ── Sports ────────────────────────────────────────────
+    Sport:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 123
+        name:
+          type: string
+          example: Strength Trainer
+        category:
+          type: string
+          example: muscular
+        activity_type_internal_name:
+          type: string
+          example: weightlifting_msk
+        icon_url:
+          type: string
+          format: uri
+        has_gps:
+          type: boolean
+        has_survey:
+          type: boolean
+
+    # ── Developer API Workout ─────────────────────────────
+    DeveloperWorkoutRecord:
+      type: object
+      description: Workout as returned by the developer API endpoints
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "546e0dd6-88e1-4eb2-9cd0-73aa8b729bd3"
+        v1_id:
+          type: integer
+          nullable: true
+        user_id:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        start:
+          type: string
+          format: date-time
+        end:
+          type: string
+          format: date-time
+        timezone_offset:
+          type: string
+          example: "-07:00"
+        sport_name:
+          type: string
+          example: functional-fitness
+        score_state:
+          type: string
+          enum: [SCORED, PENDING_SCORE, UNSCORABLE]
+        score:
+          type: object
+          properties:
+            strain:
+              type: number
+            average_heart_rate:
+              type: integer
+            max_heart_rate:
+              type: integer
+            kilojoule:
+              type: number
+            percent_recorded:
+              type: number
+            distance_meter:
+              type: number
+              nullable: true
+            zone_durations:
+              $ref: "#/components/schemas/ZoneDuration"
+        sport_id:
+          type: integer
+
+    DeveloperWorkoutListResponse:
+      type: object
+      properties:
+        records:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeveloperWorkoutRecord"
+        next_token:
+          type: string
+          nullable: true
+
+    # ── Performance Assessment ────────────────────────────
+    PerformanceAssessmentResponse:
+      type: object
+      properties:
+        total_count:
+          type: integer
+        offset:
+          type: integer
+        records:
+          type: array
+          items:
+            type: object
+
+    # ── Journal / Behavior Impact ─────────────────────────
+    JournalImpactResponse:
+      type: object
+      description: |
+        Response shape is not fully documented — varies and is handled
+        heuristically. May be an array or wrapped object.
+      properties:
+        impacts:
+          type: array
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+                format: date
+              answers:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                      example: caffeine
+                    value:
+                      oneOf:
+                        - type: number
+                        - type: string
+                    impact:
+                      type: number
+                      nullable: true
+
+security:
+  - bearerAuth: []
+
+paths:
+  # ── Authentication ────────────────────────────────────
+  /auth-service/v3/whoop/:
+    post:
+      operationId: cognitoAuth
+      summary: Cognito authentication proxy
+      description: |
+        Proxies AWS Cognito Identity Provider actions. The action is specified
+        via the `X-Amz-Target` header. Supports InitiateAuth (login + refresh)
+        and RespondToAuthChallenge (MFA verification).
+
+        **Client ID**: `37365lrcda1js3fapqfe2n40eh`
+      tags: [Authentication]
+      security: []
+      parameters:
+        - name: X-Amz-Target
+          in: header
+          required: true
+          schema:
+            type: string
+            enum:
+              - AWSCognitoIdentityProviderService.InitiateAuth
+              - AWSCognitoIdentityProviderService.RespondToAuthChallenge
+        - name: Content-Type
+          in: header
+          required: true
+          schema:
+            type: string
+            example: application/x-amz-json-1.1
+      requestBody:
+        required: true
+        content:
+          application/x-amz-json-1.1:
+            schema:
+              oneOf:
+                - $ref: "#/components/schemas/CognitoInitiateAuthRequest"
+                - $ref: "#/components/schemas/CognitoVerifyRequest"
+      responses:
+        "200":
+          description: Auth result or MFA challenge
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CognitoAuthResult"
+
+  # ── Bootstrap ─────────────────────────────────────────
+  /users-service/v2/bootstrap/:
+    get:
+      operationId: getBootstrap
+      summary: Get user bootstrap data (including user ID)
+      tags: [User]
+      parameters:
+        - name: accountType
+          in: query
+          schema:
+            type: string
+            default: users
+        - $ref: "#/components/parameters/apiVersion"
+        - name: include
+          in: query
+          schema:
+            type: string
+            example: profile
+      responses:
+        "200":
+          description: Bootstrap data with user info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BootstrapResponse"
+
+  # ── Cycles (main data source) ─────────────────────────
+  /core-details-bff/v0/cycles/details:
+    get:
+      operationId: getCycleDetails
+      summary: Get cycles with embedded recovery, sleep IDs, and workout summaries
+      description: |
+        Primary data endpoint. Returns daily cycles with nested recovery scores
+        and workout summaries. Maximum window of 200 days per request.
+      tags: [Cycles]
+      parameters:
+        - $ref: "#/components/parameters/userId"
+        - $ref: "#/components/parameters/apiVersion"
+        - name: startTime
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: endTime
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+          description: Must be within 200 days of startTime
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 26
+      responses:
+        "200":
+          description: Array of cycles
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Cycle"
+
+  # ── Sleep ─────────────────────────────────────────────
+  /sleep-service/v1/sleep-events:
+    get:
+      operationId: getSleepEvent
+      summary: Get detailed sleep data for a specific sleep session
+      tags: [Sleep]
+      parameters:
+        - name: activityId
+          in: query
+          required: true
+          schema:
+            type: integer
+          description: Sleep ID from the cycle response
+        - $ref: "#/components/parameters/apiVersion"
+      responses:
+        "200":
+          description: Sleep record with stage breakdown
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SleepRecord"
+
+  # ── Heart Rate ────────────────────────────────────────
+  /metrics-service/v1/metrics/user/{userId}:
+    get:
+      operationId: getHeartRate
+      summary: Get heart rate time-series data
+      tags: [Metrics]
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - $ref: "#/components/parameters/apiVersion"
+        - name: name
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [heart_rate]
+        - name: start
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: end
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: step
+          in: query
+          schema:
+            type: integer
+            default: 6
+            description: Interval in seconds between data points
+        - name: order
+          in: query
+          schema:
+            type: string
+            enum: [t]
+            description: Order by time
+      responses:
+        "200":
+          description: Heart rate values
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HeartRateResponse"
+
+  # ── Journal / Behavior Impact ─────────────────────────
+  /behavior-impact-service/v1/impact:
+    get:
+      operationId: getJournalImpact
+      summary: Get journal entries with behavior impact scores
+      description: |
+        Returns journal/behavior entries (caffeine, alcohol, melatonin, etc.)
+        with optional impact scores. Response shape varies — may be array or
+        wrapped object. Handle defensively.
+      tags: [Journal]
+      parameters:
+        - name: startTime
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: endTime
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - $ref: "#/components/parameters/apiVersion"
+      responses:
+        "200":
+          description: Journal impact data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JournalImpactResponse"
+
+  # ── Sport Catalog ─────────────────────────────────────
+  /activities-service/v1/sports/history:
+    get:
+      operationId: getSportCatalog
+      summary: Get full sport type catalog (200+ types)
+      tags: [Activities]
+      parameters:
+        - $ref: "#/components/parameters/userId"
+        - $ref: "#/components/parameters/apiVersion"
+      responses:
+        "200":
+          description: Array of sport definitions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Sport"
+
+  # ── Performance Assessment ────────────────────────────
+  /activities-service/v1/performance-assessment/{period}:
+    get:
+      operationId: getPerformanceAssessment
+      summary: Get performance assessment records
+      tags: [Activities]
+      parameters:
+        - name: period
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [WEEK, MONTH]
+        - $ref: "#/components/parameters/userId"
+        - $ref: "#/components/parameters/apiVersion"
+      responses:
+        "200":
+          description: Performance assessment records
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PerformanceAssessmentResponse"
+
+  # ── Developer API ─────────────────────────────────────
+  /developer/v2/activity/workout:
+    get:
+      operationId: listDeveloperWorkouts
+      summary: List workouts (developer API format)
+      description: |
+        Returns workouts in the developer API format with UUID IDs and
+        sport_name strings. Paginated via next_token.
+      tags: [Developer API]
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+        - name: next_token
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Paginated workout list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeveloperWorkoutListResponse"
+
+  /developer/v2/activity/workout/{workoutId}:
+    get:
+      operationId: getDeveloperWorkout
+      summary: Get a single workout by ID (developer API format)
+      tags: [Developer API]
+      parameters:
+        - name: workoutId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Single workout record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeveloperWorkoutRecord"
+
+  /developer/v2/cycle:
+    get:
+      operationId: listDeveloperCycles
+      summary: List daily cycles (developer API format)
+      tags: [Developer API]
+      responses:
+        "200":
+          description: Cycles list
+
+  /developer/v2/recovery:
+    get:
+      operationId: listDeveloperRecovery
+      summary: List recovery scores (developer API format)
+      tags: [Developer API]
+      responses:
+        "200":
+          description: Recovery list
+
+  /developer/v2/activity/sleep:
+    get:
+      operationId: listDeveloperSleep
+      summary: List sleep sessions (developer API format)
+      tags: [Developer API]
+      responses:
+        "200":
+          description: Sleep list
+
+  /developer/v1/user/profile/basic:
+    get:
+      operationId: getDeveloperUserProfile
+      summary: Get user profile
+      tags: [Developer API]
+      responses:
+        "200":
+          description: User profile
+
+  /developer/v2/user/measurement/body:
+    get:
+      operationId: getDeveloperBodyMeasurement
+      summary: Get body measurements
+      tags: [Developer API]
+      responses:
+        "200":
+          description: Body measurements
+
+  # ── Undiscovered / CORS-blocked ───────────────────────
+  # The following endpoints were observed as CORS-blocked from the browser
+  # (not 404), but returned 404 when called from Node.js. They may require
+  # mobile-app-specific credentials or only respond when strength data exists.
+  #
+  # /developer/v2/activity/strength-trainer
+  # /developer/v2/activity/weightlifting
+  # /fitness-service/v1/*
+  # /activities-service/v1/activities
+  # /developer/v1/sleep
+  # /developer/v1/workout
