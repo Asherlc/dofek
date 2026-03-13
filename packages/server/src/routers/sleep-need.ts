@@ -48,7 +48,7 @@ export const sleepNeedRouter = router({
       }),
     )
     .query(async ({ ctx, input }): Promise<SleepNeedResult> => {
-      // Fetch 90 days of sleep + next-day HRV/readiness to find optimal sleep duration
+      // Fetch 90 days of sleep + next-day HRV + yesterday's training load in one query
       const rows = await ctx.db.execute(
         sql`WITH sleep_nights AS (
               SELECT
@@ -81,15 +81,28 @@ export const sleepNeedRouter = router({
               SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY next_day_hrv) AS median_hrv
               FROM sleep_with_next_hrv
               WHERE next_day_hrv IS NOT NULL
+            ),
+            yesterday_load AS (
+              SELECT COALESCE(SUM(
+                EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0
+                * asum.avg_hr / NULLIF(asum.max_hr, 0)
+              ), 0) AS load
+              FROM fitness.activity_summary asum
+              WHERE asum.user_id = ${ctx.userId}
+                AND asum.started_at::date = CURRENT_DATE - 1
+                AND asum.ended_at IS NOT NULL
+                AND asum.avg_hr IS NOT NULL
             )
             SELECT
               s.date::text,
               s.duration_minutes,
               s.next_day_hrv,
               hm.median_hrv,
-              CASE WHEN s.next_day_hrv >= hm.median_hrv THEN true ELSE false END AS good_recovery
+              CASE WHEN s.next_day_hrv >= hm.median_hrv THEN true ELSE false END AS good_recovery,
+              yl.load AS yesterday_load
             FROM sleep_with_next_hrv s
             CROSS JOIN hrv_median hm
+            CROSS JOIN yesterday_load yl
             ORDER BY s.date ASC`,
       );
 
@@ -99,6 +112,7 @@ export const sleepNeedRouter = router({
         next_day_hrv: number | null;
         median_hrv: number | null;
         good_recovery: boolean;
+        yesterday_load: number;
       };
 
       const nights = rows as unknown as RawRow[];
@@ -113,22 +127,7 @@ export const sleepNeedRouter = router({
             )
           : 480; // default to 8 hours if insufficient data
 
-      // Fetch yesterday's training load for strain debt
-      const loadRows = await ctx.db.execute(
-        sql`SELECT COALESCE(SUM(
-              EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0
-              * asum.avg_hr / NULLIF(asum.max_hr, 0)
-            ), 0) AS yesterday_load
-            FROM fitness.activity_summary asum
-            WHERE asum.user_id = ${ctx.userId}
-              AND asum.started_at::date = CURRENT_DATE - 1
-              AND asum.ended_at IS NOT NULL
-              AND asum.avg_hr IS NOT NULL`,
-      );
-
-      const yesterdayLoad = Number(
-        (loadRows as unknown as { yesterday_load: number }[])[0]?.yesterday_load ?? 0,
-      );
+      const yesterdayLoad = Number(nights[0]?.yesterday_load ?? 0);
 
       // Strain debt: ~1 minute extra sleep per 5 units of load, capped at 60 min
       const strainDebtMinutes = Math.min(60, Math.round(yesterdayLoad / 5));
