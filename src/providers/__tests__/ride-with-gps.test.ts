@@ -85,7 +85,7 @@ describe("parseTrackPoints", () => {
     const points: RideWithGpsTrackPoint[] = [{ x: -122.6, y: 45.5, d: 0, t: 1723276200, s: 36 }];
     const result = parseTrackPoints(points);
     expect(result).toHaveLength(1);
-    expect(result[0]!.speed).toBeCloseTo(10, 5); // 36 km/h = 10 m/s
+    expect(result[0]?.speed).toBeCloseTo(10, 5); // 36 km/h = 10 m/s
   });
 
   it("maps all sensor fields", () => {
@@ -119,7 +119,7 @@ describe("parseTrackPoints", () => {
   it("uses unix epoch t for recordedAt", () => {
     const points: RideWithGpsTrackPoint[] = [{ x: -122.6, y: 45.5, d: 0, t: 1723276200 }];
     const result = parseTrackPoints(points);
-    expect(result[0]!.recordedAt).toEqual(new Date(1723276200 * 1000));
+    expect(result[0]?.recordedAt).toEqual(new Date(1723276200 * 1000));
   });
 
   it("skips points without timestamp", () => {
@@ -129,7 +129,7 @@ describe("parseTrackPoints", () => {
     ];
     const result = parseTrackPoints(points);
     expect(result).toHaveLength(1);
-    expect(result[0]!.lng).toBe(-122.7);
+    expect(result[0]?.lng).toBe(-122.7);
   });
 
   it("handles missing optional fields as undefined", () => {

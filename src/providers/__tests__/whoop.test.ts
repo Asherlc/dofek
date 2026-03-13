@@ -217,9 +217,9 @@ describe("WhoopInternalClient._fetchUserId edge cases", () => {
       return Promise.resolve(new Response("Not found", { status: 404 }));
     }) as typeof globalThis.fetch;
 
-    await expect(
-      WhoopInternalClient.signIn("user@test.com", "pass", mockFetch),
-    ).rejects.toThrow(/user ID/i);
+    await expect(WhoopInternalClient.signIn("user@test.com", "pass", mockFetch)).rejects.toThrow(
+      /user ID/i,
+    );
   });
 
   it("extracts user ID from nested user object", async () => {
@@ -324,9 +324,9 @@ describe("WHOOP Provider — parsing", () => {
       ];
       const records = parseHeartRateValues(values);
       expect(records).toHaveLength(3);
-      expect(records[0]!.heartRate).toBe(72);
-      expect(records[0]!.recordedAt).toEqual(new Date(1709251200000));
-      expect(records[2]!.heartRate).toBe(78);
+      expect(records[0]?.heartRate).toBe(72);
+      expect(records[0]?.recordedAt).toEqual(new Date(1709251200000));
+      expect(records[2]?.heartRate).toBe(78);
     });
   });
 });

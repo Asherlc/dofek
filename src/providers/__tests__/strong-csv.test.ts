@@ -95,11 +95,11 @@ describe("parseStrongCsv", () => {
     expect(group.date).toBe("2024-11-02 10:00:00");
     expect(group.duration).toBe("1h 3m");
     expect(group.sets).toHaveLength(2);
-    expect(group.sets[0]!.exerciseName).toBe("Bench Press (Barbell)");
-    expect(group.sets[0]!.weight).toBe(135);
-    expect(group.sets[0]!.reps).toBe(10);
-    expect(group.sets[1]!.weight).toBe(155);
-    expect(group.sets[1]!.reps).toBe(8);
+    expect(group.sets[0]?.exerciseName).toBe("Bench Press (Barbell)");
+    expect(group.sets[0]?.weight).toBe(135);
+    expect(group.sets[0]?.reps).toBe(10);
+    expect(group.sets[1]?.weight).toBe(155);
+    expect(group.sets[1]?.reps).toBe(8);
   });
 
   it("groups rows by date and workout name", () => {
@@ -111,8 +111,8 @@ describe("parseStrongCsv", () => {
 
     const groups = parseStrongCsv(csv);
     expect(groups).toHaveLength(2);
-    expect(groups[0]!.workoutName).toBe("Push Day");
-    expect(groups[1]!.workoutName).toBe("Pull Day");
+    expect(groups[0]?.workoutName).toBe("Push Day");
+    expect(groups[1]?.workoutName).toBe("Pull Day");
   });
 
   it("handles empty weight and reps for cardio", () => {
@@ -143,7 +143,7 @@ describe("parseStrongCsv", () => {
     ].join("\n");
 
     const groups = parseStrongCsv(csv);
-    expect(groups[0]!.sets[0]!.rpe).toBe(8.5);
+    expect(groups[0]?.sets[0]?.rpe).toBe(8.5);
   });
 
   it("captures workout notes", () => {
@@ -153,8 +153,8 @@ describe("parseStrongCsv", () => {
     ].join("\n");
 
     const groups = parseStrongCsv(csv);
-    expect(groups[0]!.workoutNotes).toBe("Felt good today");
-    expect(groups[0]!.sets[0]!.notes).toBe("set note");
+    expect(groups[0]?.workoutNotes).toBe("Felt good today");
+    expect(groups[0]?.sets[0]?.notes).toBe("set note");
   });
 
   it("handles quoted fields with commas", () => {
@@ -164,7 +164,7 @@ describe("parseStrongCsv", () => {
     ].join("\n");
 
     const groups = parseStrongCsv(csv);
-    expect(groups[0]!.workoutName).toBe("Push Day, AM");
+    expect(groups[0]?.workoutName).toBe("Push Day, AM");
   });
 
   it("returns empty array for empty CSV", () => {

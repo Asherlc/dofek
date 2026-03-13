@@ -278,7 +278,7 @@ function FeatureImportanceChart({
       formatter: (params: unknown) => {
         const items = params as Array<{ seriesName: string; value: number; name: string }>;
         if (!Array.isArray(items) || items.length === 0) return "";
-        const label = items[0]!.name;
+        const label = items[0]?.name;
         return `<strong>${label}</strong><br/>${items
           .map(
             (item) =>

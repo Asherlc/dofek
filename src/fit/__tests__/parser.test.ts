@@ -166,7 +166,7 @@ describe("FIT Parser", () => {
         (r) => r.raw.left_torque_effectiveness !== undefined,
       );
       expect(recordWithTorque).toBeDefined();
-      expect(recordWithTorque!.raw.left_torque_effectiveness).toBeTypeOf("number");
+      expect(recordWithTorque?.raw.left_torque_effectiveness).toBeTypeOf("number");
     });
   });
 });

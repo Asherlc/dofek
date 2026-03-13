@@ -212,115 +212,115 @@ describe("Apple Health Provider — parsing", () => {
     it("parses heart rate records", () => {
       const result = parseRecord(heartRateAttrs);
       expect(result).not.toBeNull();
-      expect(result!.type).toBe("HKQuantityTypeIdentifierHeartRate");
-      expect(result!.value).toBe(72);
-      expect(result!.unit).toBe("count/min");
-      expect(result!.sourceName).toBe("Apple Watch");
-      expect(result!.startDate).toBeInstanceOf(Date);
-      expect(result!.endDate).toBeInstanceOf(Date);
+      expect(result?.type).toBe("HKQuantityTypeIdentifierHeartRate");
+      expect(result?.value).toBe(72);
+      expect(result?.unit).toBe("count/min");
+      expect(result?.sourceName).toBe("Apple Watch");
+      expect(result?.startDate).toBeInstanceOf(Date);
+      expect(result?.endDate).toBeInstanceOf(Date);
     });
 
     it("parses body mass records", () => {
       const result = parseRecord(bodyMassAttrs);
-      expect(result!.type).toBe("HKQuantityTypeIdentifierBodyMass");
-      expect(result!.value).toBe(72.5);
-      expect(result!.unit).toBe("kg");
+      expect(result?.type).toBe("HKQuantityTypeIdentifierBodyMass");
+      expect(result?.value).toBe(72.5);
+      expect(result?.unit).toBe("kg");
     });
 
     it("parses body fat percentage (0-1 scale)", () => {
       const result = parseRecord(bodyFatAttrs);
-      expect(result!.value).toBe(0.215);
+      expect(result?.value).toBe(0.215);
     });
 
     it("parses resting heart rate", () => {
       const result = parseRecord(restingHrAttrs);
-      expect(result!.value).toBe(52);
+      expect(result?.value).toBe(52);
     });
 
     it("parses HRV", () => {
       const result = parseRecord(hrvAttrs);
-      expect(result!.value).toBeCloseTo(45.3);
+      expect(result?.value).toBeCloseTo(45.3);
     });
 
     it("parses VO2 max", () => {
       const result = parseRecord(vo2maxAttrs);
-      expect(result!.value).toBeCloseTo(48.2);
+      expect(result?.value).toBeCloseTo(48.2);
     });
 
     it("parses oxygen saturation", () => {
       const result = parseRecord(oxygenSatAttrs);
-      expect(result!.value).toBe(0.97);
+      expect(result?.value).toBe(0.97);
     });
 
     it("parses step count", () => {
       const result = parseRecord(stepCountAttrs);
-      expect(result!.value).toBe(1250);
+      expect(result?.value).toBe(1250);
     });
 
     it("parses active energy burned", () => {
       const result = parseRecord(activeEnergyAttrs);
-      expect(result!.value).toBeCloseTo(85.3);
+      expect(result?.value).toBeCloseTo(85.3);
     });
 
     it("parses respiratory rate", () => {
       const result = parseRecord(respiratoryRateAttrs);
-      expect(result!.value).toBeCloseTo(14.5);
+      expect(result?.value).toBeCloseTo(14.5);
     });
 
     it("parses blood pressure systolic", () => {
       const result = parseRecord(bloodPressureSysAttrs);
-      expect(result!.value).toBe(118);
+      expect(result?.value).toBe(118);
     });
 
     it("parses blood pressure diastolic", () => {
       const result = parseRecord(bloodPressureDiaAttrs);
-      expect(result!.value).toBe(78);
+      expect(result?.value).toBe(78);
     });
 
     it("parses body temperature", () => {
       const result = parseRecord(bodyTempAttrs);
-      expect(result!.value).toBeCloseTo(36.8);
+      expect(result?.value).toBeCloseTo(36.8);
     });
 
     it("parses Apple Health date format with timezone", () => {
       const result = parseRecord(heartRateAttrs);
       // "2024-03-01 10:30:00 -0500" should parse correctly
-      expect(result!.startDate.getTime()).not.toBeNaN();
+      expect(result?.startDate.getTime()).not.toBeNaN();
     });
   });
 
   describe("parseSleepAnalysis", () => {
     it("parses core sleep stage", () => {
       const result = parseSleepAnalysis(sleepAsleepCoreAttrs);
-      expect(result!.stage).toBe("core");
-      expect(result!.startDate).toBeInstanceOf(Date);
-      expect(result!.endDate).toBeInstanceOf(Date);
+      expect(result?.stage).toBe("core");
+      expect(result?.startDate).toBeInstanceOf(Date);
+      expect(result?.endDate).toBeInstanceOf(Date);
     });
 
     it("parses deep sleep stage", () => {
       const result = parseSleepAnalysis(sleepAsleepDeepAttrs);
-      expect(result!.stage).toBe("deep");
+      expect(result?.stage).toBe("deep");
     });
 
     it("parses REM sleep stage", () => {
       const result = parseSleepAnalysis(sleepAsleepRemAttrs);
-      expect(result!.stage).toBe("rem");
+      expect(result?.stage).toBe("rem");
     });
 
     it("parses awake stage", () => {
       const result = parseSleepAnalysis(sleepAwakeAttrs);
-      expect(result!.stage).toBe("awake");
+      expect(result?.stage).toBe("awake");
     });
 
     it("parses in-bed stage", () => {
       const result = parseSleepAnalysis(sleepInBedAttrs);
-      expect(result!.stage).toBe("inBed");
+      expect(result?.stage).toBe("inBed");
     });
 
     it("computes duration in minutes", () => {
       const result = parseSleepAnalysis(sleepAsleepCoreAttrs);
       // 23:30 to 00:45 = 75 minutes
-      expect(result!.durationMinutes).toBe(75);
+      expect(result?.durationMinutes).toBe(75);
     });
   });
 
@@ -393,10 +393,10 @@ describe("Apple Health Provider — parsing", () => {
       };
       const result = parseActivitySummary(attrs);
       expect(result).not.toBeNull();
-      expect(result!.date).toBe("2024-03-01");
-      expect(result!.activeEnergyBurned).toBeCloseTo(523.4);
-      expect(result!.appleExerciseMinutes).toBe(45);
-      expect(result!.appleStandHours).toBe(12);
+      expect(result?.date).toBe("2024-03-01");
+      expect(result?.activeEnergyBurned).toBeCloseTo(523.4);
+      expect(result?.appleExerciseMinutes).toBe(45);
+      expect(result?.appleStandHours).toBe(12);
     });
 
     it("returns null without dateComponents", () => {
@@ -406,8 +406,8 @@ describe("Apple Health Provider — parsing", () => {
 
     it("handles missing optional fields", () => {
       const result = parseActivitySummary({ dateComponents: "2024-03-01" });
-      expect(result!.activeEnergyBurned).toBeUndefined();
-      expect(result!.appleExerciseMinutes).toBeUndefined();
+      expect(result?.activeEnergyBurned).toBeUndefined();
+      expect(result?.appleExerciseMinutes).toBeUndefined();
     });
   });
 
@@ -424,10 +424,10 @@ describe("Apple Health Provider — parsing", () => {
       };
       const result = parseWorkoutStatistics(attrs);
       expect(result).not.toBeNull();
-      expect(result!.type).toBe("HKQuantityTypeIdentifierHeartRate");
-      expect(result!.average).toBe(145);
-      expect(result!.minimum).toBe(120);
-      expect(result!.maximum).toBe(175);
+      expect(result?.type).toBe("HKQuantityTypeIdentifierHeartRate");
+      expect(result?.average).toBe(145);
+      expect(result?.minimum).toBe(120);
+      expect(result?.maximum).toBe(175);
     });
 
     it("enriches workout with HR stats", () => {
@@ -503,14 +503,14 @@ describe("Apple Health Provider — parsing", () => {
     it("parses all Location attributes", () => {
       const result = parseRouteLocation(locationAttrs);
       expect(result).not.toBeNull();
-      expect(result!.date).toBeInstanceOf(Date);
-      expect(result!.lat).toBeCloseTo(40.7128);
-      expect(result!.lng).toBeCloseTo(-74.006);
-      expect(result!.altitude).toBeCloseTo(10.5);
-      expect(result!.horizontalAccuracy).toBeCloseTo(5.0);
-      expect(result!.verticalAccuracy).toBeCloseTo(3.0);
-      expect(result!.course).toBeCloseTo(180.5);
-      expect(result!.speed).toBeCloseTo(3.5);
+      expect(result?.date).toBeInstanceOf(Date);
+      expect(result?.lat).toBeCloseTo(40.7128);
+      expect(result?.lng).toBeCloseTo(-74.006);
+      expect(result?.altitude).toBeCloseTo(10.5);
+      expect(result?.horizontalAccuracy).toBeCloseTo(5.0);
+      expect(result?.verticalAccuracy).toBeCloseTo(3.0);
+      expect(result?.course).toBeCloseTo(180.5);
+      expect(result?.speed).toBeCloseTo(3.5);
     });
 
     it("returns null without lat/lng", () => {
@@ -531,9 +531,9 @@ describe("Apple Health Provider — parsing", () => {
       };
       const result = parseRouteLocation(minimal);
       expect(result).not.toBeNull();
-      expect(result!.altitude).toBeUndefined();
-      expect(result!.speed).toBeUndefined();
-      expect(result!.course).toBeUndefined();
+      expect(result?.altitude).toBeUndefined();
+      expect(result?.speed).toBeUndefined();
+      expect(result?.course).toBeUndefined();
     });
   });
 
@@ -549,8 +549,8 @@ describe("Apple Health Provider — parsing", () => {
         endDate: "2024-03-01 10:00:00 -0500",
       };
       const result = parseRecord(attrs);
-      expect(result!.type).toBe("HKQuantityTypeIdentifierBloodGlucose");
-      expect(result!.value).toBeCloseTo(5.4);
+      expect(result?.type).toBe("HKQuantityTypeIdentifierBloodGlucose");
+      expect(result?.value).toBeCloseTo(5.4);
     });
 
     it("parses dietary energy consumed", () => {
@@ -564,7 +564,7 @@ describe("Apple Health Provider — parsing", () => {
         endDate: "2024-03-01 20:00:00 -0500",
       };
       const result = parseRecord(attrs);
-      expect(result!.value).toBe(2100);
+      expect(result?.value).toBe(2100);
     });
 
     it("parses dietary protein", () => {
@@ -578,7 +578,7 @@ describe("Apple Health Provider — parsing", () => {
         endDate: "2024-03-01 20:00:00 -0500",
       };
       const result = parseRecord(attrs);
-      expect(result!.value).toBeCloseTo(145.5);
+      expect(result?.value).toBeCloseTo(145.5);
     });
 
     it("parses walking/running distance", () => {
@@ -592,7 +592,7 @@ describe("Apple Health Provider — parsing", () => {
         endDate: "2024-03-01 14:15:00 -0500",
       };
       const result = parseRecord(attrs);
-      expect(result!.value).toBeCloseTo(523.7);
+      expect(result?.value).toBeCloseTo(523.7);
     });
 
     it("parses flights climbed", () => {
@@ -606,7 +606,7 @@ describe("Apple Health Provider — parsing", () => {
         endDate: "2024-03-01 14:15:00 -0500",
       };
       const result = parseRecord(attrs);
-      expect(result!.value).toBe(3);
+      expect(result?.value).toBe(3);
     });
 
     it("parses environmental audio exposure", () => {
@@ -620,7 +620,7 @@ describe("Apple Health Provider — parsing", () => {
         endDate: "2024-03-01 14:30:00 -0500",
       };
       const result = parseRecord(attrs);
-      expect(result!.value).toBeCloseTo(72.5);
+      expect(result?.value).toBeCloseTo(72.5);
     });
 
     it("parses height", () => {
@@ -634,7 +634,7 @@ describe("Apple Health Provider — parsing", () => {
         endDate: "2024-03-01 08:00:00 -0500",
       };
       const result = parseRecord(attrs);
-      expect(result!.value).toBeCloseTo(180.3);
+      expect(result?.value).toBeCloseTo(180.3);
     });
   });
 
@@ -650,11 +650,11 @@ describe("Apple Health Provider — parsing", () => {
       };
       const result = parseCategoryRecord(attrs);
       expect(result).not.toBeNull();
-      expect(result!.type).toBe("HKCategoryTypeIdentifierMindfulSession");
-      expect(result!.value).toBe("1");
-      expect(result!.sourceName).toBe("Headspace");
-      expect(result!.startDate).toBeInstanceOf(Date);
-      expect(result!.endDate).toBeInstanceOf(Date);
+      expect(result?.type).toBe("HKCategoryTypeIdentifierMindfulSession");
+      expect(result?.value).toBe("1");
+      expect(result?.sourceName).toBe("Headspace");
+      expect(result?.startDate).toBeInstanceOf(Date);
+      expect(result?.endDate).toBeInstanceOf(Date);
     });
 
     it("parses menstrual flow", () => {
@@ -667,8 +667,8 @@ describe("Apple Health Provider — parsing", () => {
         endDate: "2024-03-01 08:00:00 -0500",
       };
       const result = parseCategoryRecord(attrs);
-      expect(result!.type).toBe("HKCategoryTypeIdentifierMenstrualFlow");
-      expect(result!.value).toBe("HKCategoryValueMenstrualFlowLight");
+      expect(result?.type).toBe("HKCategoryTypeIdentifierMenstrualFlow");
+      expect(result?.value).toBe("HKCategoryValueMenstrualFlowLight");
     });
 
     it("returns null without type", () => {
