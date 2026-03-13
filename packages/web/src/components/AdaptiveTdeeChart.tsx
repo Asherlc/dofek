@@ -30,6 +30,15 @@ export function AdaptiveTdeeChart({ data, loading }: AdaptiveTdeeChartProps) {
 
   const tdeePoints = data.dailyData.filter((d) => d.estimatedTdee != null);
 
+  const weightValues = data.dailyData
+    .filter((d) => d.smoothedWeight != null)
+    .map((d) => d.smoothedWeight as number);
+  const weightMin = Math.min(...weightValues);
+  const weightMax = Math.max(...weightValues);
+  const weightPadding = Math.max((weightMax - weightMin) * 0.3, 1);
+  const weightAxisMin = Math.floor(weightMin - weightPadding);
+  const weightAxisMax = Math.ceil(weightMax + weightPadding);
+
   return (
     <div className="space-y-3">
       {/* Summary stat */}
@@ -75,6 +84,8 @@ export function AdaptiveTdeeChart({ data, loading }: AdaptiveTdeeChartProps) {
               type: "value",
               name: weightLabel(unitSystem),
               position: "right",
+              min: weightValues.length > 0 ? weightAxisMin : undefined,
+              max: weightValues.length > 0 ? weightAxisMax : undefined,
               axisLabel: { color: "#71717a", fontSize: 11 },
               splitLine: { show: false },
               nameTextStyle: { color: "#71717a", fontSize: 11 },
