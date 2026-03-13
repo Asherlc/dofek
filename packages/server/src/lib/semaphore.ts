@@ -38,4 +38,4 @@ export class Semaphore {
 }
 
 /** Limit concurrent DB queries to prevent overwhelming postgres with heavy analytics queries. */
-export const dbQuerySemaphore = new Semaphore(3);
+export const dbQuerySemaphore = new Semaphore(5);

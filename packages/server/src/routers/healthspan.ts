@@ -149,7 +149,7 @@ export const healthspanRouter = router({
     .query(async ({ ctx, input }): Promise<HealthspanResult> => {
       const totalDays = input.weeks * 7;
 
-      // Fetch all needed data in one big query
+      // Fetch all needed data in one query (aggregates + weekly history via JSON)
       const rows = await ctx.db.execute(
         sql`WITH user_info AS (
               SELECT birth_date, max_hr FROM fitness.user_profile WHERE id = ${ctx.userId}
@@ -206,6 +206,18 @@ export const healthspanRouter = router({
                 AND weight_kg IS NOT NULL
               ORDER BY recorded_at DESC
               LIMIT 1
+            ),
+            weekly_metrics AS (
+              SELECT
+                date_trunc('week', date)::date AS week_start,
+                AVG(resting_hr) AS avg_rhr,
+                AVG(steps) AS avg_steps,
+                AVG(vo2max) AS avg_vo2max
+              FROM fitness.v_daily_metrics
+              WHERE user_id = ${ctx.userId}
+                AND date > CURRENT_DATE - ${totalDays}::int
+              GROUP BY date_trunc('week', date)
+              ORDER BY week_start ASC
             )
             SELECT
               ui.birth_date,
@@ -218,7 +230,13 @@ export const healthspanRouter = router({
               hz.high_intensity_minutes / GREATEST(${totalDays}::real / 7, 1) AS weekly_high_intensity_min,
               sf.sessions_per_week,
               bl.weight_kg,
-              bl.body_fat_pct
+              bl.body_fat_pct,
+              (SELECT json_agg(json_build_object(
+                'week_start', wm.week_start::text,
+                'avg_rhr', wm.avg_rhr,
+                'avg_steps', wm.avg_steps,
+                'avg_vo2max', wm.avg_vo2max
+              ) ORDER BY wm.week_start ASC) FROM weekly_metrics wm) AS weekly_history
             FROM user_info ui
             CROSS JOIN sleep_agg sa
             CROSS JOIN metrics_agg ma
@@ -226,6 +244,13 @@ export const healthspanRouter = router({
             CROSS JOIN strength_freq sf
             LEFT JOIN body_latest bl ON true`,
       );
+
+      type HistRow = {
+        week_start: string;
+        avg_rhr: number | null;
+        avg_steps: number | null;
+        avg_vo2max: number | null;
+      };
 
       type RawRow = {
         birth_date: string | null;
@@ -239,6 +264,7 @@ export const healthspanRouter = router({
         sessions_per_week: number | null;
         weight_kg: number | null;
         body_fat_pct: number | null;
+        weekly_history: HistRow[] | null;
       };
 
       const row = (rows as unknown as RawRow[])[0];
@@ -363,33 +389,9 @@ export const healthspanRouter = router({
         biologicalAge = Math.round((chronologicalAge + ageDelta) * 10) / 10;
       }
 
-      // Fetch weekly historical scores for pace of aging trend
-      const historyRows = await ctx.db.execute(
-        sql`WITH weekly_metrics AS (
-              SELECT
-                date_trunc('week', date)::date AS week_start,
-                AVG(resting_hr) AS avg_rhr,
-                AVG(steps) AS avg_steps,
-                AVG(vo2max) AS avg_vo2max
-              FROM fitness.v_daily_metrics
-              WHERE user_id = ${ctx.userId}
-                AND date > CURRENT_DATE - ${totalDays}::int
-              GROUP BY date_trunc('week', date)
-              ORDER BY week_start ASC
-            )
-            SELECT week_start::text, avg_rhr, avg_steps, avg_vo2max
-            FROM weekly_metrics`,
-      );
-
-      type HistRow = {
-        week_start: string;
-        avg_rhr: number | null;
-        avg_steps: number | null;
-        avg_vo2max: number | null;
-      };
-
       // Approximate weekly scores from the metrics we can easily aggregate weekly
-      const history = (historyRows as unknown as HistRow[]).map((h) => {
+      const weeklyHistory = row.weekly_history ?? [];
+      const history = weeklyHistory.map((h) => {
         const rhrScore = scoreRestingHr(h.avg_rhr != null ? Number(h.avg_rhr) : null);
         const stepsScore = scoreSteps(h.avg_steps != null ? Number(h.avg_steps) : null);
         const vo2Score = scoreVo2Max(h.avg_vo2max != null ? Number(h.avg_vo2max) : null);
