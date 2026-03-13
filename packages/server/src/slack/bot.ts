@@ -17,19 +17,33 @@ import { formatConfirmationMessage, formatSavedMessage } from "./formatting.ts";
 
 const DOFEK_PROVIDER_ID = "dofek";
 
-const LOCAL_TIMEZONE = process.env.TIMEZONE ?? "America/Los_Angeles";
+const FALLBACK_TIMEZONE = process.env.TIMEZONE ?? "America/Los_Angeles";
 
-/** Convert a Slack epoch timestamp (e.g. "1710000000.000000") to a readable local time string */
-function slackTimestampToLocalTime(slackTs: string): string {
+/** Convert a Slack epoch timestamp to a readable local time string using the user's timezone */
+function slackTimestampToLocalTime(slackTs: string, timezone: string): string {
   const epochSeconds = Number.parseFloat(slackTs);
   const date = new Date(epochSeconds * 1000);
   return date.toLocaleString("en-US", {
-    timeZone: LOCAL_TIMEZONE,
+    timeZone: timezone,
     weekday: "long",
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
   });
+}
+
+/** Fetch the user's IANA timezone from their Slack profile, falling back to TIMEZONE env var */
+async function getUserTimezone(
+  slackUserId: string,
+  slackClient: { users: { info: (args: { user: string }) => Promise<{ user?: { tz?: string } }> } },
+): Promise<string> {
+  try {
+    const info = await slackClient.users.info({ user: slackUserId });
+    if (info.user?.tz) return info.user.tz;
+  } catch {
+    logger.warn(`[slack] Could not fetch timezone for ${slackUserId}, using fallback`);
+  }
+  return FALLBACK_TIMEZONE;
 }
 
 /**
@@ -182,6 +196,7 @@ function registerHandlers(app: AppType, db: Database) {
     if (msg.subtype || !msg.text || msg.bot_id) return;
 
     await lookupOrCreateUserId(db, msg.user, client);
+    const userTimezone = await getUserTimezone(msg.user, client);
 
     // Thread reply — look for previous items to refine
     if (msg.thread_ts && msg.thread_ts !== msg.ts) {
@@ -198,7 +213,7 @@ function registerHandlers(app: AppType, db: Database) {
 
         if (previousItems) {
           logger.info(`[slack] Refining ${previousItems.length} items with: "${msg.text}"`);
-          const localTime = slackTimestampToLocalTime(msg.ts);
+          const localTime = slackTimestampToLocalTime(msg.ts, userTimezone);
           const result = await refineNutritionItems(previousItems, msg.text, localTime);
           const confirmation = formatConfirmationMessage(result.items);
           await say({ ...confirmation, thread_ts: msg.thread_ts });
@@ -219,7 +234,7 @@ function registerHandlers(app: AppType, db: Database) {
     logger.info(`[slack] Parsing food from ${msg.user}: "${msg.text}"`);
 
     try {
-      const localTime = slackTimestampToLocalTime(msg.ts);
+      const localTime = slackTimestampToLocalTime(msg.ts, userTimezone);
       const result = await analyzeNutritionItems(msg.text, localTime);
       const confirmation = formatConfirmationMessage(result.items);
       await say({ ...confirmation, thread_ts: msg.ts });
