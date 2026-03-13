@@ -30,6 +30,12 @@ FROM base AS server
 ENV NODE_ENV=production
 WORKDIR /app
 
+# Install SOPS for runtime .env decryption
+RUN apt-get update && apt-get install -y --no-install-recommends curl && \
+    curl -fsSL https://github.com/getsops/sops/releases/download/v3.9.4/sops-v3.9.4.linux.amd64 \
+      -o /usr/local/bin/sops && chmod +x /usr/local/bin/sops && \
+    apt-get purge -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
+
 COPY --from=build /app/src ./src
 COPY --from=build /app/drizzle ./drizzle
 COPY --from=build /app/package.json .
@@ -40,6 +46,10 @@ COPY --from=build /app/packages/server/package.json ./packages/server/
 COPY --from=prod-deps /app/node_modules ./node_modules
 # Link root workspace package so "import from 'dofek/...'" resolves
 RUN ln -s /app node_modules/dofek
+
+# SOPS-encrypted .env — decrypted at runtime via SOPS_AGE_KEY env var
+COPY --from=build /app/.env .
+COPY --from=build /app/.sops.yaml .
 
 COPY entrypoint.sh .
 ENTRYPOINT ["./entrypoint.sh"]

@@ -155,9 +155,67 @@ Both use Node 22 `--experimental-transform-types` to run TypeScript source direc
 
 Deployed at `dofek.asherlc.com` (behind Authentik) and `dofek.home` (local).
 
-GitHub Actions builds and pushes both images on merge to main. Watchtower auto-pulls (label-based, 5min poll). Homelab compose runs: `dofek-db` (TimescaleDB), `dofek-web` (API server), `dofek-client` (Nginx), `dofek-sync`, `dofek-db-backup`.
+### Pipeline
 
-Migrations run automatically on startup (both `web` and `sync` modes call `runMigrations()`). Upserts make re-runs safe and idempotent.
+```
+sops .env → commit → push → GHA builds Docker images → pushes to GHCR
+→ Watchtower polls GHCR (5min) → pulls new image → restarts containers
+```
+
+GitHub Actions builds and pushes both images on merge to main. Watchtower auto-pulls on the homelab server (label-based, 5min poll). Migrations run automatically on startup (both `web` and `sync` modes call `runMigrations()`). Upserts make re-runs safe and idempotent.
+
+### Containers
+
+The homelab compose (`homelab` repo, `docker/compose.yml`) runs:
+
+| Container | Image | Purpose |
+|-----------|-------|---------|
+| `dofek-db` | timescale/timescaledb | TimescaleDB (data at `/mnt/storage/appdata/dofek/postgresql`) |
+| `dofek-web` | ghcr.io/asherlc/dofek | Express + tRPC API server (port 3000, internal only) |
+| `dofek-client` | ghcr.io/asherlc/dofek-client | Nginx serving Vite bundle + proxying `/api` to dofek-web |
+| `dofek-sync` | ghcr.io/asherlc/dofek | Sync runner (provider data sync, cron-triggered) |
+| `dofek-db-backup` | postgres-backup-local | Daily pg_dump to `/mnt/storage/backups` |
+
+### Production secrets
+
+There are two sources of environment variables for the production containers:
+
+1. **SOPS-encrypted `.env` (this repo)** — provider credentials (API keys, OAuth client IDs/secrets). Baked into the Docker image at build time. The entrypoint decrypts it at container startup using the age key mounted from the host.
+
+2. **Plaintext env file on server (`/srv/appdata/dofek/.env`)** — deployment-specific vars that don't belong in the dofek repo: Authentik OIDC config, Google OAuth, `DATABASE_URL`, Slack tokens, etc. Loaded via `env_file` in the homelab compose.
+
+The entrypoint merges both: Docker sets the plaintext vars first, then `sops exec-env` adds the decrypted provider credentials on top.
+
+**How it works:**
+
+```
+Docker image contains:
+  .env          ← SOPS-encrypted (from this repo)
+  .sops.yaml    ← SOPS config (age recipient)
+  entrypoint.sh ← decrypts .env if age key is available
+
+Host mounts:
+  /home/asherlc/.config/sops/age/keys.txt → /run/secrets/age-key (read-only)
+
+At startup:
+  entrypoint.sh detects SOPS_AGE_KEY_FILE → runs `sops exec-env .env <node cmd>`
+  → decrypted vars merge with existing env → Node process starts
+```
+
+**Adding new provider credentials:**
+
+```bash
+sops .env          # add the new key=value pairs
+git add .env && git commit && git push
+# CI builds new image → Watchtower deploys automatically
+```
+
+No SSH to the server needed. The credentials flow through the Docker image.
+
+**If a provider appears grayed out** on the Data Sources page, it means its required env vars are missing. Check:
+1. Are the vars in the repo's `.env`? → `sops .env` to verify/add them
+2. Is the age key mounted in the container? → check `SOPS_AGE_KEY_FILE` in homelab compose
+3. Is the container running the latest image? → `docker logs dofek-web` to check for SOPS errors
 
 ## Supplements
 

@@ -252,6 +252,7 @@ function polarOAuthConfig(): OAuthConfig | null {
     tokenUrl: POLAR_TOKEN_URL,
     redirectUri: process.env.OAUTH_REDIRECT_URI ?? "https://localhost:9876/callback",
     scopes: ["accesslink.read_all"],
+    tokenAuthMethod: "basic",
   };
 }
 
