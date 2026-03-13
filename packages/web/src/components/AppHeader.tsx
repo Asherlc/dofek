@@ -9,6 +9,7 @@ const navItems = [
   { to: "/insights", label: "Insights" },
   { to: "/predictions", label: "ML" },
   { to: "/providers", label: "Providers" },
+  { to: "/tracking", label: "Tracking" },
   { to: "/settings", label: "Settings" },
 ] as const;
 
