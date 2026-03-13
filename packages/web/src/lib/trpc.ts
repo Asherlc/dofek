@@ -1,4 +1,4 @@
-import { httpBatchLink } from "@trpc/client";
+import { httpBatchStreamLink } from "@trpc/client";
 import type { CreateTRPCReact } from "@trpc/react-query";
 import { createTRPCReact } from "@trpc/react-query";
 import type { AppRouter } from "dofek-server/router";
@@ -8,7 +8,7 @@ export const trpc: CreateTRPCReact<AppRouter, unknown> = createTRPCReact<AppRout
 export function createTRPCClient() {
   return trpc.createClient({
     links: [
-      httpBatchLink({
+      httpBatchStreamLink({
         url: "/api/trpc",
         methodOverride: "POST",
         fetch: async (url, options) => {
