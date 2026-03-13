@@ -111,7 +111,7 @@ Guidelines:
   - "chicken salad with avocado and dressing" = 3 items: chicken salad, avocado, dressing.
 - The only exception is a composed dish where the components are inseparable and always eaten together (e.g. "a burrito" = 1 item, "miso soup" = 1 item). If in doubt, split it.
 - Estimate for typical serving sizes unless specified otherwise.
-- Infer the meal type (breakfast, lunch, dinner, snack) from context clues like time of day or explicit mentions. Default to "other" if unclear.
+- Infer the meal type (breakfast, lunch, dinner, snack) from context clues like time of day or explicit mentions. Use the provided local time to guide your guess when the user doesn't specify. General guidelines: before 10am → breakfast, 10am–2pm → lunch, 5pm–9pm → dinner, otherwise → snack. Default to "other" only if truly ambiguous.
 - Round calories to the nearest integer and macros to one decimal place.
 - Be conservative with calorie estimates — slightly overestimate rather than underestimate.
 - Use your knowledge of USDA food composition data.
@@ -230,6 +230,7 @@ export interface AnalyzeMultiResult {
 export async function refineNutritionItems(
   previousItems: NutritionItemWithMeal[],
   refinement: string,
+  localTime?: string,
 ): Promise<AnalyzeMultiResult> {
   const providers = getConfiguredProviders();
 
@@ -253,7 +254,7 @@ export async function refineNutritionItems(
       const result = await generateText({
         model: provider.createModel(),
         output: Output.object({ schema: aiNutritionMultiSchema }),
-        system: `${MULTI_ITEM_SYSTEM_PROMPT}\n\nThe user is refining a previous analysis. Apply their corrections to the items and return the full updated list. If they say to remove an item, omit it. If they correct a quantity or add a new item, adjust accordingly.`,
+        system: `${MULTI_ITEM_SYSTEM_PROMPT}\n\nThe user is refining a previous analysis. Apply their corrections to the items and return the full updated list. If they say to remove an item, omit it. If they correct a quantity or add a new item, adjust accordingly.${localTime ? `\n\nThe user's local time is ${localTime}.` : ""}`,
         messages: [
           { role: "user", content: "Here's what I ate: the items below" },
           { role: "assistant", content: previousSummary },
@@ -283,7 +284,10 @@ export async function refineNutritionItems(
   );
 }
 
-export async function analyzeNutritionItems(description: string): Promise<AnalyzeMultiResult> {
+export async function analyzeNutritionItems(
+  description: string,
+  localTime?: string,
+): Promise<AnalyzeMultiResult> {
   const providers = getConfiguredProviders();
 
   if (providers.length === 0) {
@@ -296,10 +300,14 @@ export async function analyzeNutritionItems(description: string): Promise<Analyz
 
   for (const provider of providers) {
     try {
+      const system = localTime
+        ? `${MULTI_ITEM_SYSTEM_PROMPT}\n\nThe user's local time is ${localTime}.`
+        : MULTI_ITEM_SYSTEM_PROMPT;
+
       const result = await generateText({
         model: provider.createModel(),
         output: Output.object({ schema: aiNutritionMultiSchema }),
-        system: MULTI_ITEM_SYSTEM_PROMPT,
+        system,
         prompt: description,
       });
 

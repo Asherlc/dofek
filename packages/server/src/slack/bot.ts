@@ -17,6 +17,21 @@ import { formatConfirmationMessage, formatSavedMessage } from "./formatting.ts";
 
 const DOFEK_PROVIDER_ID = "dofek";
 
+const LOCAL_TIMEZONE = process.env.TIMEZONE ?? "America/Los_Angeles";
+
+/** Convert a Slack epoch timestamp (e.g. "1710000000.000000") to a readable local time string */
+function slackTimestampToLocalTime(slackTs: string): string {
+  const epochSeconds = Number.parseFloat(slackTs);
+  const date = new Date(epochSeconds * 1000);
+  return date.toLocaleString("en-US", {
+    timeZone: LOCAL_TIMEZONE,
+    weekday: "long",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
 /**
  * Extract food items from thread messages returned by conversations.replies.
  * Walks backwards to find the most recent bot message with a confirm button.
@@ -183,7 +198,8 @@ function registerHandlers(app: AppType, db: Database) {
 
         if (previousItems) {
           logger.info(`[slack] Refining ${previousItems.length} items with: "${msg.text}"`);
-          const result = await refineNutritionItems(previousItems, msg.text);
+          const localTime = slackTimestampToLocalTime(msg.ts);
+          const result = await refineNutritionItems(previousItems, msg.text, localTime);
           const confirmation = formatConfirmationMessage(result.items);
           await say({ ...confirmation, thread_ts: msg.thread_ts });
           return;
@@ -203,7 +219,8 @@ function registerHandlers(app: AppType, db: Database) {
     logger.info(`[slack] Parsing food from ${msg.user}: "${msg.text}"`);
 
     try {
-      const result = await analyzeNutritionItems(msg.text);
+      const localTime = slackTimestampToLocalTime(msg.ts);
+      const result = await analyzeNutritionItems(msg.text, localTime);
       const confirmation = formatConfirmationMessage(result.items);
       await say({ ...confirmation, thread_ts: msg.ts });
     } catch (error) {
