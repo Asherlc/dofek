@@ -62,6 +62,22 @@ async function warmCache(db: import("dofek/db").Database) {
     ["pmc.chart(90)", () => caller.pmc.chart({ days: 90 })],
     ["power.powerCurve(90)", () => caller.power.powerCurve({ days: 90 })],
     ["power.eftpTrend(90)", () => caller.power.eftpTrend({ days: 90 })],
+    // Cycling analytics page — warm all endpoints to avoid cold-cache 502s
+    ["efficiency.aerobicEfficiency(180)", () => caller.efficiency.aerobicEfficiency({ days: 180 })],
+    ["efficiency.polarizationTrend(180)", () => caller.efficiency.polarizationTrend({ days: 180 })],
+    ["cyclingAdvanced.rampRate(90)", () => caller.cyclingAdvanced.rampRate({ days: 90 })],
+    [
+      "cyclingAdvanced.trainingMonotony(90)",
+      () => caller.cyclingAdvanced.trainingMonotony({ days: 90 }),
+    ],
+    [
+      "cyclingAdvanced.activityVariability(90)",
+      () => caller.cyclingAdvanced.activityVariability({ days: 90 }),
+    ],
+    [
+      "cyclingAdvanced.verticalAscentRate(90)",
+      () => caller.cyclingAdvanced.verticalAscentRate({ days: 90 }),
+    ],
   ];
   let ok = 0;
   for (const [name, fn] of queries) {

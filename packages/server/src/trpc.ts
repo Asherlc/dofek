@@ -2,6 +2,7 @@ import { initTRPC, TRPCError } from "@trpc/server";
 import { middlewareMarker } from "@trpc/server/unstable-core-do-not-import";
 import type { Database } from "dofek/db";
 import { queryCache } from "./lib/cache.ts";
+import { dbQuerySemaphore } from "./lib/semaphore.ts";
 import {
   cacheHitsTotal,
   cacheMissesTotal,
@@ -67,9 +68,10 @@ function cached(ttlMs: number) {
 
     cacheMissesTotal.inc({ procedure: path });
 
-    // DB query (everything in next())
+    // DB query (everything in next()), limited by semaphore to prevent
+    // overwhelming postgres when a batch request triggers many cache misses
     const dbStart = performance.now();
-    const result = await next();
+    const result = await dbQuerySemaphore.run(() => next());
     trpcDbQueryDuration.observe({ procedure: path }, (performance.now() - dbStart) / 1000);
 
     trpcProcedureDuration.observe(
