@@ -18,8 +18,6 @@ Provider-agnostic fitness and health data pipeline. Pulls data from various APIs
 ├─────────────┤  │
 │  Withings   │──┤
 ├─────────────┤  │
-│  Hevy       │──┤
-├─────────────┤  │
 │ RideWithGPS │──┤
 ├─────────────┤  │
 │  Polar      │──┤
@@ -191,7 +189,6 @@ See `packages/server/src/routers/life-events.ts` for the API and `packages/web/s
 - [x] WHOOP provider (sleep, recovery, workouts, 6s HR streams, journal entries via internal API)
 - [x] Withings provider (OAuth + sync for scale, BP, thermometer — awaiting credentials)
 - [x] Cross-provider deduplication via materialized views (recursive CTE overlap clustering, per-field merge by provider priority)
-- [x] Hevy provider (strength training — API sync with exercise templates)
 - [x] Strong CSV import (strength training history — CSV upload with unit conversion)
 - [x] RideWithGPS provider (trip sync with GPS track points, activity type mapping)
 
@@ -222,7 +219,6 @@ Each provider is enabled by adding its credentials to `.env` (SOPS-encrypted). O
 | Peloton | Automated login | `PELOTON_USERNAME`, `PELOTON_PASSWORD` |
 | FatSecret | OAuth 1.0 | `FATSECRET_CONSUMER_KEY`, `FATSECRET_CONSUMER_SECRET` |
 | Withings | OAuth 2.0 | `WITHINGS_CLIENT_ID`, `WITHINGS_CLIENT_SECRET` |
-| Hevy | API key | `HEVY_API_KEY` |
 | RideWithGPS | Custom (API key + credentials) | None (entered in UI modal) |
 | Polar | OAuth 2.0 | `POLAR_CLIENT_ID`, `POLAR_CLIENT_SECRET` |
 | Garmin | SSO login | `GARMIN_EMAIL`, `GARMIN_PASSWORD` |

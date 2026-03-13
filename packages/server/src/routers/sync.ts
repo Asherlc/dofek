@@ -25,7 +25,6 @@ async function doRegisterProviders() {
     ["peloton", () => import("dofek/providers/peloton").then((m) => new m.PelotonProvider())],
     ["fatsecret", () => import("dofek/providers/fatsecret").then((m) => new m.FatSecretProvider())],
     ["whoop", () => import("dofek/providers/whoop").then((m) => new m.WhoopProvider())],
-    ["hevy", () => import("dofek/providers/hevy").then((m) => new m.HevyProvider())],
     [
       "ride-with-gps",
       () => import("dofek/providers/ride-with-gps").then((m) => new m.RideWithGpsProvider()),
