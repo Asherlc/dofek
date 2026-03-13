@@ -1,0 +1,77 @@
+name: Mutation Testing
+
+on:
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly full baseline run (Sunday 3am UTC)
+    - cron: "0 3 * * 0"
+  workflow_dispatch:
+
+concurrency:
+  group: mutation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mutation:
+    name: Mutation Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # Restore incremental cache from previous runs
+      - uses: actions/cache@v4
+        with:
+          path: reports/stryker-incremental.json
+          key: stryker-incremental-${{ github.base_ref || 'main' }}-${{ github.sha }}
+          restore-keys: |
+            stryker-incremental-${{ github.base_ref || 'main' }}-
+            stryker-incremental-main-
+
+      # On PRs: only mutate files changed in the PR
+      - name: Get changed files for mutation
+        if: github.event_name == 'pull_request'
+        id: changed
+        run: |
+          FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD \
+            | grep '\.ts$' \
+            | grep -v '\.test\.ts$' \
+            | grep -v '__tests__/' \
+            | grep -v '\.d\.ts$' \
+            | tr '\n' ',' \
+            | sed 's/,$//')
+          echo "files=$FILES" >> "$GITHUB_OUTPUT"
+          echo "Mutating changed files: $FILES"
+
+      # PR run: scoped to changed files only
+      - name: Run Stryker (PR — changed files only)
+        if: github.event_name == 'pull_request' && steps.changed.outputs.files != ''
+        run: pnpm test:mutation --mutate "${{ steps.changed.outputs.files }}"
+
+      # Scheduled/manual run: full baseline
+      - name: Run Stryker (full baseline)
+        if: github.event_name != 'pull_request'
+        run: pnpm test:mutation
+
+      # Skip if PR has no mutatable file changes
+      - name: No files to mutate
+        if: github.event_name == 'pull_request' && steps.changed.outputs.files == ''
+        run: echo "No mutatable source files changed in this PR — skipping."
+
+      # Upload HTML report as artifact
+      - name: Upload mutation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-report
+          path: reports/mutation/
+          retention-days: 14

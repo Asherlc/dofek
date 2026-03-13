@@ -1,0 +1,34 @@
+{
+  "$schema": "https://raw.githubusercontent.com/stryker-mutator/stryker/master/packages/core/schema/stryker-core.schema.json",
+  "testRunner": "vitest",
+  "plugins": ["@stryker-mutator/vitest-runner"],
+  "vitest": {
+    "configFile": "vitest.config.mutation.ts"
+  },
+  "ignoreStatic": true,
+  "incremental": true,
+  "incrementalFile": "reports/stryker-incremental.json",
+  "mutate": [
+    "src/providers/*.ts",
+    "src/fit/*.ts",
+    "src/auth/*.ts",
+    "packages/web/src/lib/*.ts",
+    "!src/**/*.test.ts",
+    "!src/**/__tests__/**"
+  ],
+  "ignorePatterns": [
+    "packages/server/**",
+    "packages/ios/**",
+    "dist/**",
+    "drizzle/**"
+  ],
+  "testRunnerNodeArgs": ["--import", "tsx"],
+  "timeoutMS": 30000,
+  "thresholds": {
+    "high": 90,
+    "low": 80,
+    "break": 80
+  },
+  "reporters": ["clear-text", "html", "progress"],
+  "concurrency": 4
+}
