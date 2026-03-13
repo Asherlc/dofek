@@ -96,11 +96,30 @@ function PrivacyPage() {
             <h2 className="text-lg font-semibold text-zinc-100 mb-3">5. Third-Party Services</h2>
             <p>
               Dofek connects to third-party fitness platforms (including but not limited to Garmin,
-              Wahoo, WHOOP, Polar, Peloton, Hevy, Withings, RideWithGPS, and FatSecret) through
-              their official APIs. When you authorize a connection, we access only the data
-              permitted by the scopes you approve. We comply with each provider's API terms of
-              service and data usage policies.
+              Wahoo, WHOOP, Polar, Peloton, Withings, RideWithGPS, and FatSecret) through their
+              official APIs. When you authorize a connection, we access only the data permitted by
+              the scopes you approve. We comply with each provider's API terms of service and data
+              usage policies.
             </p>
+            <div className="mt-4 p-4 rounded-lg bg-zinc-900 border border-zinc-800">
+              <h3 className="text-sm font-semibold text-zinc-200 mb-2">Garmin Connect</h3>
+              <p>
+                When you connect your Garmin account, your activity, sleep, daily health, and body
+                composition data is transferred from Garmin to Dofek. By connecting your Garmin
+                account, you expressly consent to this data transfer. Your data is used solely to
+                power your Dofek dashboard and is never sold or shared with third parties. For
+                details on how Garmin handles your data, see the{" "}
+                <a
+                  href="https://www.garmin.com/privacy/connect"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-emerald-400 hover:text-emerald-300 underline"
+                >
+                  Garmin Connect Privacy Policy
+                </a>
+                .
+              </p>
+            </div>
           </section>
 
           <section>

@@ -14,6 +14,7 @@ import {
 } from "../lib/ai-nutrition.ts";
 import { logger } from "../logger.ts";
 import { formatConfirmationMessage, formatSavedMessage } from "./formatting.ts";
+import { removePendingItems, retrievePendingItems, storePendingItems } from "./pending-items.ts";
 
 const DOFEK_PROVIDER_ID = "dofek";
 
@@ -40,6 +41,8 @@ interface SlackUserInfo {
 /**
  * Extract food items from thread messages returned by conversations.replies.
  * Walks backwards to find the most recent bot message with a confirm button.
+ * The button value is a pending-store key (UUID); falls back to inline JSON
+ * for backwards compatibility with messages sent before the pending-store change.
  */
 function extractItemsFromThread(
   messages: Array<{ bot_id?: string; blocks?: unknown[] }>,
@@ -56,7 +59,15 @@ function extractItemsFromThread(
       if (block.type !== "actions" || !block.elements) continue;
       for (const element of block.elements) {
         if (element.action_id === "confirm_food" && element.value) {
-          return JSON.parse(element.value) as NutritionItemWithMeal[];
+          // Try pending store lookup first (value is a UUID key)
+          const fromStore = retrievePendingItems(element.value);
+          if (fromStore) return fromStore;
+          // Fall back to inline JSON for legacy messages
+          try {
+            return JSON.parse(element.value) as NutritionItemWithMeal[];
+          } catch {
+            return null;
+          }
         }
       }
     }
@@ -122,14 +133,47 @@ async function lookupOrCreateUserId(
     logger.warn(`[slack] Could not fetch Slack profile for ${slackUserId}`);
   }
 
-  // Check for existing link
+  // Check for existing Slack auth link
   const existing = await db.execute<{ user_id: string }>(
     sql`SELECT user_id FROM fitness.auth_account
         WHERE auth_provider = 'slack' AND provider_account_id = ${slackUserId}
         LIMIT 1`,
   );
   const existingRow = existing[0];
-  if (existing.length > 0 && existingRow) return { userId: existingRow.user_id, timezone };
+  if (existing.length > 0 && existingRow) {
+    // Verify this Slack account isn't orphaned: if a non-Slack auth_account exists
+    // with the same email but a different user_id, the Slack link is stale
+    // (e.g., Slack bot ran before the user logged in on the web).
+    if (email) {
+      const canonical = await db.execute<{ user_id: string }>(
+        sql`SELECT user_id FROM fitness.auth_account
+            WHERE email = ${email} AND auth_provider != 'slack'
+            LIMIT 1`,
+      );
+      const canonicalRow = canonical[0];
+      if (canonicalRow && canonicalRow.user_id !== existingRow.user_id) {
+        const orphanId = existingRow.user_id;
+        const correctId = canonicalRow.user_id;
+        logger.info(
+          `[slack] Repairing orphan: moving Slack user ${slackUserId} from ${orphanId} → ${correctId}`,
+        );
+        // Repoint the Slack auth_account to the correct user
+        await db.execute(
+          sql`UPDATE fitness.auth_account
+              SET user_id = ${correctId}
+              WHERE auth_provider = 'slack' AND provider_account_id = ${slackUserId}`,
+        );
+        // Migrate any food entries saved under the orphan user
+        await db.execute(
+          sql`UPDATE fitness.food_entry
+              SET user_id = ${correctId}
+              WHERE user_id = ${orphanId}`,
+        );
+        return { userId: correctId, timezone };
+      }
+    }
+    return { userId: existingRow.user_id, timezone };
+  }
 
   // Try to find an existing user with the same email (e.g., from Google/Apple web login)
   const userId = await resolveOrCreateUserId(db, email, name);
@@ -239,7 +283,8 @@ function registerHandlers(app: AppType, db: Database) {
           logger.info(`[slack] Refining ${previousItems.length} items with: "${msg.text}"`);
           const localTime = slackTimestampToLocalTime(msg.ts, userTimezone);
           const result = await refineNutritionItems(previousItems, msg.text, localTime);
-          const confirmation = formatConfirmationMessage(result.items);
+          const pendingKey = storePendingItems(result.items);
+          const confirmation = formatConfirmationMessage(result.items, pendingKey);
           await say({ ...confirmation, thread_ts: msg.thread_ts });
           return;
         }
@@ -260,7 +305,8 @@ function registerHandlers(app: AppType, db: Database) {
     try {
       const localTime = slackTimestampToLocalTime(msg.ts, userTimezone);
       const result = await analyzeNutritionItems(msg.text, localTime);
-      const confirmation = formatConfirmationMessage(result.items);
+      const pendingKey = storePendingItems(result.items);
+      const confirmation = formatConfirmationMessage(result.items, pendingKey);
       await say({ ...confirmation, thread_ts: msg.ts });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -284,7 +330,29 @@ function registerHandlers(app: AppType, db: Database) {
     const action = body.actions[0];
     if (!("value" in action) || !action.value) return;
 
-    const items: NutritionItemWithMeal[] = JSON.parse(action.value);
+    // Value is a pending-store key (UUID); fall back to inline JSON for legacy messages
+    let items: NutritionItemWithMeal[];
+    const fromStore = retrievePendingItems(action.value);
+    if (fromStore) {
+      items = fromStore;
+      removePendingItems(action.value);
+    } else {
+      try {
+        items = JSON.parse(action.value) as NutritionItemWithMeal[];
+      } catch {
+        logger.error(`[slack] Could not find pending items for key ${action.value}`);
+        if (body.channel?.id && body.message?.ts) {
+          await client.chat.update({
+            channel: body.channel.id,
+            ts: body.message.ts,
+            text: "This entry has expired. Please log your food again.",
+            blocks: [],
+          });
+        }
+        return;
+      }
+    }
+
     const date = body.message?.ts
       ? slackTimestampToDateString(body.message.ts, timezone)
       : todayDate(timezone);

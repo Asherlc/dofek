@@ -8,7 +8,7 @@ All tables live in the `fitness` Postgres schema. The source of truth is `src/db
 
 | Table | Purpose |
 |-------|---------|
-| `fitness.provider` | Registered data sources (hevy, wahoo, etc.) |
+| `fitness.provider` | Registered data sources (wahoo, withings, etc.) |
 | `fitness.exercise` | Canonical exercise library (provider-agnostic) |
 | `fitness.exercise_alias` | Maps provider-specific exercise names to canonical exercises |
 
