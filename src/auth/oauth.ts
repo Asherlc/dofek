@@ -15,6 +15,9 @@ export interface OAuthConfig {
    *  "body" (default): client_id/client_secret as form params
    *  "basic": HTTP Basic Auth header (base64-encoded client_id:client_secret) */
   tokenAuthMethod?: "body" | "basic";
+  /** Separator for scopes in the authorization URL. Default is " " (space, per OAuth 2.0 spec).
+   *  Some providers (e.g. Strava) require "," instead. */
+  scopeSeparator?: string;
 }
 
 // ============================================================
@@ -46,7 +49,7 @@ export function buildAuthorizationUrl(
   url.searchParams.set("client_id", config.clientId);
   url.searchParams.set("redirect_uri", config.redirectUri);
   url.searchParams.set("response_type", "code");
-  url.searchParams.set("scope", config.scopes.join(" "));
+  url.searchParams.set("scope", config.scopes.join(config.scopeSeparator ?? " "));
   if (config.audience) {
     url.searchParams.set("audience", config.audience);
   }

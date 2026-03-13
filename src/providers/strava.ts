@@ -296,6 +296,7 @@ export function stravaOAuthConfig(): OAuthConfig | null {
     tokenUrl: `${STRAVA_AUTH_BASE}/token`,
     redirectUri,
     scopes: ["read", "activity:read_all"],
+    scopeSeparator: ",",
   };
 }
 
