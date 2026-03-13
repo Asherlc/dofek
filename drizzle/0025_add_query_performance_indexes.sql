@@ -53,7 +53,5 @@ WHERE heart_rate IS NOT NULL;
 --> statement-breakpoint
 
 -- activity_summary: queries do WHERE user_id = X AND started_at::date >= Y
--- The ::date cast prevents using the existing (user_id, started_at DESC) index efficiently
--- Adding a date-cast expression index
-CREATE INDEX IF NOT EXISTS activity_summary_user_date_idx
-ON fitness.activity_summary (user_id, (started_at::date) DESC);
+-- The existing activity_summary_user_time index on (user_id, started_at DESC)
+-- already covers these queries via range scan — no expression index needed.
