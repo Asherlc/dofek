@@ -179,7 +179,8 @@ describe("PelotonProvider.sync() (integration)", () => {
 
     expect(rows).toHaveLength(2);
 
-    const ride = rows.find((r) => r.externalId === "workout-001")!;
+    const ride = rows.find((r) => r.externalId === "workout-001");
+    if (!ride) throw new Error("expected workout-001");
     expect(ride.activityType).toBe("cycling");
     expect(ride.name).toBe("30 min Power Zone Ride");
 
@@ -189,7 +190,8 @@ describe("PelotonProvider.sync() (integration)", () => {
     expect(raw.classTitle).toBe("30 min Power Zone Ride");
     expect(raw.difficultyRating).toBeCloseTo(7.85);
 
-    const run = rows.find((r) => r.externalId === "workout-002")!;
+    const run = rows.find((r) => r.externalId === "workout-002");
+    if (!run) throw new Error("expected workout-002");
     expect(run.activityType).toBe("running");
   });
 
@@ -203,7 +205,8 @@ describe("PelotonProvider.sync() (integration)", () => {
     expect(rows).toHaveLength(6);
 
     const workout1Start = new Date(1709280000 * 1000);
-    const firstRow = rows.find((r) => r.recordedAt.getTime() === workout1Start.getTime())!;
+    const firstRow = rows.find((r) => r.recordedAt.getTime() === workout1Start.getTime());
+    if (!firstRow) throw new Error("expected metric_stream row at workout start time");
     expect(firstRow.heartRate).toBe(130);
     expect(firstRow.power).toBe(180);
     expect(firstRow.cadence).toBe(80);

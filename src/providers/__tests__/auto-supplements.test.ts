@@ -113,7 +113,9 @@ describe("Auto-Supplements Provider", () => {
 
     it("maps all nutritional fields from supplement definition", () => {
       const entries = buildDailyEntries(sampleConfig.supplements, ["2024-03-15"]);
-      const fishOil = entries.find((e) => e.foodName === "Fish Oil")!;
+      const fishOil = entries.find((e) => e.foodName === "Fish Oil");
+      expect(fishOil).toBeDefined();
+      if (!fishOil) return;
       expect(fishOil.nutrients.calories).toBe(25);
       expect(fishOil.nutrients.fatG).toBeCloseTo(2.5);
       expect(fishOil.nutrients.saturatedFatG).toBeCloseTo(0.5);

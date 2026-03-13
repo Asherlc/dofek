@@ -144,15 +144,16 @@ export function DataSourcesPanel() {
   );
 
   // File-import config for import-only providers + Apple Health (not a registered sync provider)
+  const appleHealthConfig: FileImportZoneProps = {
+    title: "Apple Health",
+    description: ".zip or .xml from Health app export",
+    accept: ".zip,.xml",
+    uploadUrl: "/api/upload/apple-health?fullSync=true",
+    statusUrl: "/api/upload/apple-health/status",
+    chunked: true,
+  };
   const fileImportConfigs: Record<string, FileImportZoneProps> = {
-    "apple-health": {
-      title: "Apple Health",
-      description: ".zip or .xml from Health app export",
-      accept: ".zip,.xml",
-      uploadUrl: "/api/upload/apple-health?fullSync=true",
-      statusUrl: "/api/upload/apple-health/status",
-      chunked: true,
-    },
+    "apple-health": appleHealthConfig,
     "strong-csv": {
       title: "Strong",
       description: ".csv export from Strong app",
@@ -179,7 +180,7 @@ export function DataSourcesPanel() {
   unifiedProviders.push({
     kind: "import",
     id: "apple-health",
-    config: fileImportConfigs["apple-health"]!,
+    config: appleHealthConfig,
   });
 
   for (const p of allProviders) {

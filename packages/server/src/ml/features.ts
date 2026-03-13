@@ -212,8 +212,9 @@ export function buildDataset(
   const rawRows: { features: (number | null)[]; target: number; date: string }[] = [];
 
   for (let i = 0; i < days.length - 1; i++) {
-    const today = days[i]!;
-    const tomorrow = days[i + 1]!;
+    const today = days[i];
+    const tomorrow = days[i + 1];
+    if (!today || !tomorrow) continue;
     const targetValue = target.extractTarget(tomorrow);
     if (targetValue == null) continue;
 
@@ -236,7 +237,7 @@ export function buildDataset(
     }
     if (nonNull / nRows >= minCompleteness) {
       keptIndices.push(f);
-      keptNames.push(featureDefs[f]!.name);
+      keptNames.push(featureDefs[f]?.name ?? "");
     }
   }
 
@@ -264,7 +265,7 @@ export function buildDataset(
   for (const row of rawRows) {
     const featureVec = keptIndices.map((f, j) => {
       const val = row.features[f];
-      return val ?? columnMeans[j]!;
+      return val ?? columnMeans[j] ?? 0;
     });
     X.push(featureVec);
     y.push(row.target);

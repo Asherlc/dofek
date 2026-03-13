@@ -26,9 +26,9 @@ describe("fitCriticalHeartRate", () => {
     const model = fitCriticalHeartRate(points);
     expect(model).not.toBeNull();
     // Threshold HR should be in a physiologically reasonable range
-    expect(model!.thresholdHr).toBeGreaterThan(150);
-    expect(model!.thresholdHr).toBeLessThan(195);
-    expect(model!.r2).toBeGreaterThan(0);
+    expect(model?.thresholdHr).toBeGreaterThan(150);
+    expect(model?.thresholdHr).toBeLessThan(195);
+    expect(model?.r2).toBeGreaterThan(0);
   });
 
   it("treats flat HR as threshold HR with perfect fit", () => {
@@ -42,7 +42,7 @@ describe("fitCriticalHeartRate", () => {
 
     const model = fitCriticalHeartRate(points);
     expect(model).not.toBeNull();
-    expect(model!.thresholdHr).toBe(170);
-    expect(model!.r2).toBe(1);
+    expect(model?.thresholdHr).toBe(170);
+    expect(model?.r2).toBe(1);
   });
 });

@@ -1154,7 +1154,7 @@ export class WhoopProvider implements Provider {
           await db
             .insert(journalEntry)
             .values({
-              date: entry.date.toISOString().split("T")[0]!,
+              date: entry.date.toISOString().split("T")[0] ?? "",
               providerId: this.id,
               question: entry.question,
               answerText: entry.answerText,

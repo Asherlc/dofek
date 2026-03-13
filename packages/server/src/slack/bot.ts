@@ -25,8 +25,8 @@ function extractItemsFromThread(
   messages: Array<{ bot_id?: string; blocks?: unknown[] }>,
 ): NutritionItemWithMeal[] | null {
   for (let i = messages.length - 1; i >= 0; i--) {
-    const threadMsg = messages[i]!;
-    if (!threadMsg.bot_id || !threadMsg.blocks) continue;
+    const threadMsg = messages[i];
+    if (!threadMsg || !threadMsg.bot_id || !threadMsg.blocks) continue;
 
     for (const rawBlock of threadMsg.blocks) {
       const block = rawBlock as {
