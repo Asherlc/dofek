@@ -5,6 +5,14 @@ import { setupTestDatabase, type TestContext } from "../../../../src/db/__tests_
 const DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001";
 const DOFEK_PROVIDER_ID = "dofek";
 
+/** Build a SQL `IN (...)` clause from an array of UUID strings */
+function sqlIdList(ids: string[]) {
+  return sql.join(
+    ids.map((id) => sql`${id}::uuid`),
+    sql`, `,
+  );
+}
+
 describe("Slack food entry confirmed flag", () => {
   let testCtx: TestContext;
 
@@ -123,7 +131,7 @@ describe("Slack food entry confirmed flag", () => {
       expect(updated).toHaveLength(0);
     });
 
-    it("confirms multiple entries at once via ANY()", async () => {
+    it("confirms multiple entries at once in batch", async () => {
       const id1 = await insertEntry(false, "Item 1");
       const id2 = await insertEntry(false, "Item 2");
       const id3 = await insertEntry(false, "Item 3");
@@ -131,7 +139,7 @@ describe("Slack food entry confirmed flag", () => {
       const updated = await testCtx.db.execute<{ id: string }>(
         sql`UPDATE fitness.food_entry
             SET confirmed = true
-            WHERE id = ANY(${[id1, id2, id3]})
+            WHERE id IN (${sqlIdList([id1, id2, id3])})
               AND confirmed = false
             RETURNING id`,
       );
@@ -176,14 +184,14 @@ describe("Slack food entry confirmed flag", () => {
       expect(rows).toHaveLength(1);
     });
 
-    it("deletes multiple unconfirmed entries via ANY()", async () => {
+    it("deletes multiple unconfirmed entries in batch", async () => {
       const id1 = await insertEntry(false, "Cancel 1");
       const id2 = await insertEntry(false, "Cancel 2");
       const confirmedId = await insertEntry(true, "Keep This");
 
       await testCtx.db.execute(
         sql`DELETE FROM fitness.food_entry
-            WHERE id = ANY(${[id1, id2, confirmedId]})
+            WHERE id IN (${sqlIdList([id1, id2, confirmedId])})
               AND confirmed = false`,
       );
 
@@ -205,7 +213,7 @@ describe("Slack food entry confirmed flag", () => {
       // Refinement: delete old, save new
       await testCtx.db.execute(
         sql`DELETE FROM fitness.food_entry
-            WHERE id = ANY(${[oldId1, oldId2]})
+            WHERE id IN (${sqlIdList([oldId1, oldId2])})
               AND confirmed = false`,
       );
 
@@ -214,7 +222,7 @@ describe("Slack food entry confirmed flag", () => {
       // Old entries gone
       const oldRows = await testCtx.db.execute(
         sql`SELECT id FROM fitness.food_entry
-            WHERE id = ANY(${[oldId1, oldId2]})`,
+            WHERE id IN (${sqlIdList([oldId1, oldId2])})`,
       );
       expect(oldRows).toHaveLength(0);
 
