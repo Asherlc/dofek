@@ -20,6 +20,7 @@
     "./providers/polar": "./src/providers/polar.ts",
     "./providers/fitbit": "./src/providers/fitbit.ts",
     "./providers/garmin": "./src/providers/garmin.ts",
+    "./providers/strava": "./src/providers/strava.ts",
     "./providers/cronometer-csv": "./src/providers/cronometer-csv.ts",
     "./sync/runner": "./src/sync/runner.ts",
     "./db/migrate": "./src/db/migrate.ts",
