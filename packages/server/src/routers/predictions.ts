@@ -226,6 +226,7 @@ async function trainActivityPrediction(
           FROM fitness.activity_summary a
           WHERE a.user_id = ${userId}
             AND a.started_at > CURRENT_DATE - ${days}::int
+            AND a.avg_power IS NOT NULL
           ORDER BY a.started_at ASC`,
     );
 
@@ -266,7 +267,7 @@ async function trainActivityPrediction(
       .filter((r) => r.total_volume != null && r.total_volume > 0)
       .map((r) => ({
         date: new Date(r.started_at).toISOString().slice(0, 10),
-        totalVolume: r.total_volume!,
+        totalVolume: r.total_volume ?? 0,
         workingSetCount: r.working_set_count ?? 0,
         maxWeight: r.max_weight,
         avgRpe: r.avg_rpe,

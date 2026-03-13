@@ -77,15 +77,16 @@ describe("trainHrvPredictor (legacy wrapper)", () => {
     const result = trainHrvPredictor(days);
 
     expect(result).not.toBeNull();
-    expect(result!.targetId).toBe("hrv");
-    expect(result!.featureImportances.length).toBeGreaterThan(0);
-    expect(result!.predictions.length).toBeGreaterThan(0);
-    expect(result!.diagnostics.sampleCount).toBeGreaterThan(100);
+    expect(result?.targetId).toBe("hrv");
+    expect(result?.featureImportances.length).toBeGreaterThan(0);
+    expect(result?.predictions.length).toBeGreaterThan(0);
+    expect(result?.diagnostics.sampleCount).toBeGreaterThan(100);
   });
 
   it("produces reasonable R² values", () => {
     const days = generateSyntheticDays(200);
-    const result = trainHrvPredictor(days)!;
+    const result = trainHrvPredictor(days);
+    if (!result) throw new Error("expected result");
 
     expect(result.diagnostics.linearRSquared).toBeGreaterThan(0.01);
     expect(result.diagnostics.linearRSquared).toBeLessThanOrEqual(1);
@@ -95,7 +96,8 @@ describe("trainHrvPredictor (legacy wrapper)", () => {
 
   it("ranks sleep features highly for HRV", () => {
     const days = generateSyntheticDays(300);
-    const result = trainHrvPredictor(days)!;
+    const result = trainHrvPredictor(days);
+    if (!result) throw new Error("expected result");
 
     const topFeatures = result.featureImportances.slice(0, 5).map((f) => f.name);
     const importantFeatures = ["sleep_duration", "deep_sleep"];
@@ -105,7 +107,8 @@ describe("trainHrvPredictor (legacy wrapper)", () => {
 
   it("excludes hrv and resting_hr from HRV features", () => {
     const days = generateSyntheticDays(200);
-    const result = trainHrvPredictor(days)!;
+    const result = trainHrvPredictor(days);
+    if (!result) throw new Error("expected result");
 
     const featureNames = result.featureImportances.map((f) => f.name);
     expect(featureNames).not.toContain("hrv");
@@ -114,16 +117,18 @@ describe("trainHrvPredictor (legacy wrapper)", () => {
 
   it("generates tomorrow prediction from latest data", () => {
     const days = generateSyntheticDays(100);
-    const result = trainHrvPredictor(days)!;
+    const result = trainHrvPredictor(days);
+    if (!result) throw new Error("expected result");
 
     expect(result.tomorrowPrediction).not.toBeNull();
-    expect(result.tomorrowPrediction!.linear).toBeGreaterThan(0);
-    expect(result.tomorrowPrediction!.tree).toBeGreaterThan(0);
+    expect(result.tomorrowPrediction?.linear).toBeGreaterThan(0);
+    expect(result.tomorrowPrediction?.tree).toBeGreaterThan(0);
   });
 
   it("predictions have correct shape", () => {
     const days = generateSyntheticDays(100);
-    const result = trainHrvPredictor(days)!;
+    const result = trainHrvPredictor(days);
+    if (!result) throw new Error("expected result");
 
     for (const pred of result.predictions) {
       expect(pred.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
@@ -148,7 +153,7 @@ describe("trainHrvPredictor (legacy wrapper)", () => {
 
     const result = trainHrvPredictor(days);
     expect(result).not.toBeNull();
-    const featureNames = result!.featureImportances.map((f) => f.name);
+    const featureNames = result?.featureImportances.map((f) => f.name);
     expect(featureNames).not.toContain("calories");
     expect(featureNames).not.toContain("protein_g");
   });
@@ -156,31 +161,33 @@ describe("trainHrvPredictor (legacy wrapper)", () => {
 
 describe("trainPredictor (multi-target)", () => {
   it("trains resting HR prediction", () => {
-    const target = PREDICTION_TARGETS.find((t) => t.id === "resting_hr")!;
+    const target = PREDICTION_TARGETS.find((t) => t.id === "resting_hr");
+    if (!target) throw new Error("expected resting_hr target");
     const days = generateSyntheticDays(200);
     const result = trainPredictor(days, target);
 
     expect(result).not.toBeNull();
-    expect(result!.targetId).toBe("resting_hr");
-    expect(result!.targetLabel).toBe("Resting Heart Rate");
-    expect(result!.targetUnit).toBe("bpm");
+    expect(result?.targetId).toBe("resting_hr");
+    expect(result?.targetLabel).toBe("Resting Heart Rate");
+    expect(result?.targetUnit).toBe("bpm");
 
     // Should not include resting_hr or hrv as features
-    const featureNames = result!.featureImportances.map((f) => f.name);
+    const featureNames = result?.featureImportances.map((f) => f.name);
     expect(featureNames).not.toContain("resting_hr");
     expect(featureNames).not.toContain("hrv");
   });
 
   it("trains sleep efficiency prediction", () => {
-    const target = PREDICTION_TARGETS.find((t) => t.id === "sleep_efficiency")!;
+    const target = PREDICTION_TARGETS.find((t) => t.id === "sleep_efficiency");
+    if (!target) throw new Error("expected sleep_efficiency target");
     const days = generateSyntheticDays(200);
     const result = trainPredictor(days, target);
 
     expect(result).not.toBeNull();
-    expect(result!.targetId).toBe("sleep_efficiency");
+    expect(result?.targetId).toBe("sleep_efficiency");
 
     // Should not include any sleep metrics as features
-    const featureNames = result!.featureImportances.map((f) => f.name);
+    const featureNames = result?.featureImportances.map((f) => f.name);
     expect(featureNames).not.toContain("sleep_efficiency");
     expect(featureNames).not.toContain("sleep_duration");
     expect(featureNames).not.toContain("deep_sleep");

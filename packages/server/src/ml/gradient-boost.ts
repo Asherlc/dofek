@@ -102,7 +102,7 @@ export class GradientBoostedTrees {
       // Update predictions
       for (let i = 0; i < n; i++) {
         predictions[i] =
-          (predictions[i] ?? 0) + this.config.learningRate * predictNode(tree, X[i]!);
+          (predictions[i] ?? 0) + this.config.learningRate * predictNode(tree, X[i] ?? []);
       }
     }
 
@@ -177,7 +177,7 @@ export class GradientBoostedTrees {
     const leftIndices: number[] = [];
     const rightIndices: number[] = [];
     for (const i of indices) {
-      if ((X[i]![best.featureIndex] ?? 0) <= best.threshold) {
+      if ((X[i]?.[best.featureIndex] ?? 0) <= best.threshold) {
         leftIndices.push(i);
       } else {
         rightIndices.push(i);
@@ -212,7 +212,7 @@ export class GradientBoostedTrees {
 
     for (let f = 0; f < nFeatures; f++) {
       // Sort indices by this feature's value
-      const sorted = [...indices].sort((a, b) => (X[a]![f] ?? 0) - (X[b]![f] ?? 0));
+      const sorted = [...indices].sort((a, b) => (X[a]?.[f] ?? 0) - (X[b]?.[f] ?? 0));
 
       // Running sums for O(n) split evaluation
       let leftSum = 0;
@@ -229,7 +229,8 @@ export class GradientBoostedTrees {
       }
 
       for (let s = 0; s < n - 1; s++) {
-        const i = sorted[s]!;
+        const i = sorted[s];
+        if (i === undefined) continue;
         const val = y[i] ?? 0;
 
         leftSum += val;
@@ -240,8 +241,9 @@ export class GradientBoostedTrees {
         rightCount--;
 
         // Skip if same feature value as next (can't split here)
-        const nextI = sorted[s + 1]!;
-        if ((X[i]![f] ?? 0) === (X[nextI]![f] ?? 0)) continue;
+        const nextI = sorted[s + 1];
+        if (nextI === undefined) continue;
+        if ((X[i]?.[f] ?? 0) === (X[nextI]?.[f] ?? 0)) continue;
 
         // Skip if either side would be too small
         if (leftCount < this.config.minSamplesLeaf || rightCount < this.config.minSamplesLeaf) {
@@ -257,7 +259,7 @@ export class GradientBoostedTrees {
         if (gain > bestGain) {
           bestGain = gain;
           bestFeature = f;
-          bestThreshold = ((X[i]![f] ?? 0) + (X[nextI]![f] ?? 0)) / 2;
+          bestThreshold = ((X[i]?.[f] ?? 0) + (X[nextI]?.[f] ?? 0)) / 2;
         }
       }
     }
@@ -275,11 +277,12 @@ export class GradientBoostedTrees {
 
 function predictNode(node: TreeNode, x: number[]): number {
   if (node.value !== undefined) return node.value;
-  const featureVal = x[node.featureIndex!] ?? 0;
-  if (featureVal <= node.threshold!) {
-    return predictNode(node.left!, x);
+  if (node.featureIndex === undefined || node.threshold === undefined) return 0;
+  const featureVal = x[node.featureIndex] ?? 0;
+  if (featureVal <= node.threshold) {
+    return node.left ? predictNode(node.left, x) : 0;
   }
-  return predictNode(node.right!, x);
+  return node.right ? predictNode(node.right, x) : 0;
 }
 
 // ── Serialization ───────────────────────────────────────────────────────────

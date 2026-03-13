@@ -224,7 +224,9 @@ describe("parseCronometerCsv", () => {
     const entries = parseCronometerCsv(csv);
     expect(entries).toHaveLength(1);
 
-    const entry = entries[0]!;
+    const entry = entries[0];
+    expect(entry).toBeDefined();
+    if (!entry) return;
     expect(entry.date).toBe("2024-03-15");
     expect(entry.meal).toBe("breakfast");
     expect(entry.foodName).toBe("Test Food");
