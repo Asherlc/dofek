@@ -45,6 +45,37 @@ function extractItemsFromThread(
   return null;
 }
 
+/** Find an existing user by email, or create a new user profile. */
+async function resolveOrCreateUserId(
+  db: Database,
+  email: string | null,
+  name: string,
+): Promise<string> {
+  // Check if a user with this email already exists (e.g., from Google/Apple web login)
+  if (email) {
+    const existingByEmail = await db.execute<{ user_id: string }>(
+      sql`SELECT user_id FROM fitness.auth_account
+          WHERE email = ${email}
+          LIMIT 1`,
+    );
+    const emailRow = existingByEmail[0];
+    if (emailRow) {
+      logger.info(`[slack] Found existing user ${emailRow.user_id} via email ${email}`);
+      return emailRow.user_id;
+    }
+  }
+
+  // No existing user — create a new one
+  const newUser = await db.execute<{ id: string }>(
+    sql`INSERT INTO fitness.user_profile (name, email)
+        VALUES (${name}, ${email})
+        RETURNING id`,
+  );
+  const newUserRow = newUser[0];
+  if (!newUserRow) throw new Error("Failed to create user profile for Slack user");
+  return newUserRow.id;
+}
+
 /** Look up the dofek user ID for a Slack user, or create a new user + link if none exists. */
 async function lookupOrCreateUserId(
   db: Database,
@@ -77,15 +108,8 @@ async function lookupOrCreateUserId(
     logger.warn(`[slack] Could not fetch Slack profile for ${slackUserId}`);
   }
 
-  // Create dofek user profile
-  const newUser = await db.execute<{ id: string }>(
-    sql`INSERT INTO fitness.user_profile (name, email)
-        VALUES (${name}, ${email})
-        RETURNING id`,
-  );
-  const newUserRow = newUser[0];
-  if (!newUserRow) throw new Error("Failed to create user profile for Slack user");
-  const userId = newUserRow.id;
+  // Try to find an existing user with the same email (e.g., from Google/Apple web login)
+  const userId = await resolveOrCreateUserId(db, email, name);
 
   // Link Slack account
   await db.execute(
@@ -93,7 +117,7 @@ async function lookupOrCreateUserId(
         VALUES (${userId}, 'slack', ${slackUserId}, ${name}, ${email})`,
   );
 
-  logger.info(`[slack] Created new user ${userId} for Slack user ${slackUserId} (${name})`);
+  logger.info(`[slack] Linked Slack user ${slackUserId} to user ${userId} (${name})`);
   return userId;
 }
 
@@ -154,9 +178,9 @@ async function saveFoodEntries(
   }
 }
 
-/** Get today's date in YYYY-MM-DD format */
-function todayDate(): string {
-  return new Date().toISOString().slice(0, 10);
+/** Get today's date in YYYY-MM-DD format, in the given IANA timezone. */
+function todayDate(timezone: string): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: timezone });
 }
 
 /** Register message and action handlers on a Bolt app */
@@ -229,7 +253,16 @@ function registerHandlers(app: AppType, db: Database) {
     if (!("value" in action) || !action.value) return;
 
     const items: NutritionItemWithMeal[] = JSON.parse(action.value);
-    const date = todayDate();
+
+    // Get user's timezone from Slack profile for accurate date
+    let timezone = "America/New_York";
+    try {
+      const userInfo = await client.users.info({ user: slackUserId });
+      if (userInfo.user?.tz) timezone = userInfo.user.tz;
+    } catch {
+      logger.warn(`[slack] Could not fetch timezone for ${slackUserId}, using ${timezone}`);
+    }
+    const date = todayDate(timezone);
 
     try {
       await saveFoodEntries(db, userId, date, items);
