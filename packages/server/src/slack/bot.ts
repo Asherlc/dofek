@@ -18,6 +18,14 @@ import { formatConfirmationMessage, formatSavedMessage } from "./formatting.ts";
 
 const DOFEK_PROVIDER_ID = "dofek";
 
+/** Build a SQL `IN (...)` clause from an array of UUID strings */
+function sqlIdList(ids: string[]) {
+  return sql.join(
+    ids.map((id) => sql`${id}::uuid`),
+    sql`, `,
+  );
+}
+
 const FALLBACK_TIMEZONE = process.env.TIMEZONE ?? "America/Los_Angeles";
 
 /** Convert a Slack epoch timestamp to a readable local time string using the user's timezone */
@@ -296,7 +304,7 @@ async function confirmFoodEntries(db: Database, entryIds: string[]): Promise<num
   const result = await db.execute<{ id: string }>(
     sql`UPDATE fitness.food_entry
         SET confirmed = true
-        WHERE id = ANY(${entryIds})
+        WHERE id IN (${sqlIdList(entryIds)})
           AND confirmed = false
         RETURNING id`,
   );
@@ -308,7 +316,7 @@ async function deleteUnconfirmedEntries(db: Database, entryIds: string[]): Promi
   if (entryIds.length === 0) return;
   await db.execute(
     sql`DELETE FROM fitness.food_entry
-        WHERE id = ANY(${entryIds})
+        WHERE id IN (${sqlIdList(entryIds)})
           AND confirmed = false`,
   );
 }
@@ -369,7 +377,7 @@ function registerHandlers(app: AppType, db: Database) {
                        protein_g, carbs_g, fat_g, fiber_g,
                        saturated_fat_g, sugar_g, sodium_mg, meal
                 FROM fitness.food_entry
-                WHERE id = ANY(${previousEntryIds})`,
+                WHERE id IN (${sqlIdList(previousEntryIds)})`,
           );
 
           const previousItems: NutritionItemWithMeal[] = previousRows.map((r) => ({
@@ -479,7 +487,7 @@ function registerHandlers(app: AppType, db: Database) {
                    protein_g, carbs_g, fat_g, fiber_g,
                    saturated_fat_g, sugar_g, sodium_mg, meal
             FROM fitness.food_entry
-            WHERE id = ANY(${entryIds})`,
+            WHERE id IN (${sqlIdList(entryIds)})`,
       );
 
       const items: NutritionItemWithMeal[] = rows.map((r) => ({
@@ -510,7 +518,7 @@ function registerHandlers(app: AppType, db: Database) {
       // Invalidate cached food/nutrition queries so the UI reflects the new entries.
       // We need the user_id from the entries to scope the invalidation.
       const userRow = await db.execute<{ user_id: string }>(
-        sql`SELECT DISTINCT user_id FROM fitness.food_entry WHERE id = ANY(${entryIds}) LIMIT 1`,
+        sql`SELECT DISTINCT user_id FROM fitness.food_entry WHERE id IN (${sqlIdList(entryIds)}) LIMIT 1`,
       );
       if (userRow[0]) {
         await queryCache.invalidateByPrefix(`${userRow[0].user_id}:food.`);
