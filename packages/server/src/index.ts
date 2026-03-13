@@ -146,10 +146,13 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
   app.use(cookieParser());
 
   // ── Prometheus metrics endpoint ──
-  app.get("/metrics", async (_req, res) => {
+  // Served at both /metrics (for Prometheus scraping) and /api/metrics (accessible through nginx /api/ proxy)
+  const metricsHandler: import("express").RequestHandler = async (_req, res) => {
     res.set("Content-Type", registry.contentType);
     res.end(await registry.metrics());
-  });
+  };
+  app.get("/metrics", metricsHandler);
+  app.get("/api/metrics", metricsHandler);
 
   // ── Request logging + metrics ──
   app.use((req, res, next) => {
