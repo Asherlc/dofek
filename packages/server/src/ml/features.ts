@@ -145,6 +145,12 @@ export function getAllFeatures(): FeatureDefinition[] {
       description: "Fiber intake (g)",
       extract: (d) => d.fiber_g,
     },
+    // Body composition
+    {
+      name: "weight_kg",
+      description: "Body weight (kg)",
+      extract: (d) => d.weight_kg,
+    },
   ];
 }
 
@@ -171,6 +177,14 @@ export const PREDICTION_TARGETS: PredictionTarget[] = [
     extractTarget: (d) => d.sleep_efficiency,
     // Exclude all sleep metrics — they're outputs of the same sleep session
     excludeFeatures: ["sleep_efficiency", "sleep_duration", "deep_sleep", "rem_sleep"],
+  },
+  {
+    id: "weight",
+    label: "Body Weight",
+    unit: "kg",
+    extractTarget: (d) => d.weight_kg,
+    // Exclude weight itself — we want to know what drives weight change
+    excludeFeatures: ["weight_kg"],
   },
 ];
 
