@@ -226,6 +226,7 @@ async function trainActivityPrediction(
           FROM fitness.activity_summary a
           WHERE a.user_id = ${userId}
             AND a.started_at > CURRENT_DATE - ${days}::int
+            AND a.avg_power IS NOT NULL
           ORDER BY a.started_at ASC`,
     );
 
