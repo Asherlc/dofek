@@ -201,7 +201,7 @@ See `packages/server/src/routers/life-events.ts` for the API and `packages/web/s
 - [x] Life events timeline (annotate health data with arbitrary date markers, before/after analysis)
 - [x] Insights engine (training volume, HR zone distribution, 80/20 polarization analysis)
 - [x] Additional insight categories (ACWR, TRIMP, critical power curves, training monotony/strain, ramp rate, readiness score)
-- [ ] Continuous aggregates for long-range trends
+- [x] Continuous aggregates for long-range trends (daily + weekly caggs on metric_stream with auto-refresh policies)
 
 ### Infrastructure
 - [x] Winston structured logging with ring buffer transport for UI system logs

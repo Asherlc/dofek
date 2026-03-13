@@ -30,6 +30,7 @@ import { stressRouter } from "./routers/stress.ts";
 import { supplementsRouter } from "./routers/supplements.ts";
 import { syncRouter } from "./routers/sync.ts";
 import { trainingRouter } from "./routers/training.ts";
+import { trendsRouter } from "./routers/trends.ts";
 import { weeklyReportRouter } from "./routers/weekly-report.ts";
 import { whoopAuthRouter } from "./routers/whoop-auth.ts";
 import { router } from "./trpc.ts";
@@ -49,6 +50,7 @@ export const appRouter = router({
   supplements: supplementsRouter,
   sync: syncRouter,
   training: trainingRouter,
+  trends: trendsRouter,
   calendar: calendarRouter,
   pmc: pmcRouter,
   power: powerRouter,
