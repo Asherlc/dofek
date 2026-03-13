@@ -50,7 +50,8 @@ function generateCardioActivities(
   // Spread activities over the date range, ~1 every 2-3 days
   let dayIdx = 3;
   for (let i = 0; i < n && dayIdx < context.length; i++) {
-    const day = context[dayIdx]!;
+    const day = context[dayIdx];
+    if (!day) throw new Error("expected day");
     // Avg power is influenced by recent sleep and training
     const recentSleep =
       context
@@ -83,7 +84,8 @@ function generateStrengthWorkouts(
   const workouts: StrengthWorkoutRow[] = [];
   let dayIdx = 3;
   for (let i = 0; i < n && dayIdx < context.length; i++) {
-    const day = context[dayIdx]!;
+    const day = context[dayIdx];
+    if (!day) throw new Error("expected day");
     // Volume influenced by recent nutrition
     const recentProtein =
       context
@@ -107,26 +109,29 @@ describe("buildActivityDataset", () => {
   const context = generateDailyContext(365);
 
   describe("cardio", () => {
-    const target = ACTIVITY_PREDICTION_TARGETS.find((t) => t.id === "cardio_power")!;
+    const target = ACTIVITY_PREDICTION_TARGETS.find((t) => t.id === "cardio_power");
+    if (!target) throw new Error("expected cardio_power target");
     const activities = generateCardioActivities(80, context);
 
     it("builds a dataset from cardio activities", () => {
       const dataset = buildActivityDataset(activities, context, target);
       expect(dataset).not.toBeNull();
-      expect(dataset!.X.length).toBeGreaterThan(20);
-      expect(dataset!.y.length).toBe(dataset!.X.length);
-      expect(dataset!.dates.length).toBe(dataset!.X.length);
-      expect(dataset!.featureNames.length).toBeGreaterThan(3);
+      expect(dataset?.X.length).toBeGreaterThan(20);
+      expect(dataset?.y.length).toBe(dataset?.X.length);
+      expect(dataset?.dates.length).toBe(dataset?.X.length);
+      expect(dataset?.featureNames.length).toBeGreaterThan(3);
     });
 
     it("includes trailing context features", () => {
-      const dataset = buildActivityDataset(activities, context, target)!;
+      const dataset = buildActivityDataset(activities, context, target);
+      if (!dataset) throw new Error("expected dataset");
       const hasTrailingFeature = dataset.featureNames.some((n) => n.includes("3d"));
       expect(hasTrailingFeature).toBe(true);
     });
 
     it("does not include the target metric as a feature", () => {
-      const dataset = buildActivityDataset(activities, context, target)!;
+      const dataset = buildActivityDataset(activities, context, target);
+      if (!dataset) throw new Error("expected dataset");
       expect(dataset.featureNames).not.toContain("avg_power");
     });
 
@@ -135,21 +140,53 @@ describe("buildActivityDataset", () => {
       const dataset = buildActivityDataset(fewActivities, context, target);
       expect(dataset).toBeNull();
     });
+
+    it("skips activities with null avgPower but succeeds when enough have power data", () => {
+      // Mix of activities: some with power (cycling with meter), many without (running, hiking)
+      const mixed: CardioActivityRow[] = [];
+      let dayIdx = 3;
+      for (let i = 0; i < 80 && dayIdx < context.length; i++) {
+        const day = context[dayIdx];
+        if (!day) break;
+        const hasPower = i % 3 === 0; // ~27 out of 80 have power
+        mixed.push({
+          date: day.date,
+          activityType: hasPower ? "cycling" : "running",
+          durationMin: 45,
+          avgHr: 145,
+          avgPower: hasPower ? 180 + i : null,
+          avgSpeed: 5,
+          totalDistance: 15000,
+          elevationGain: 200,
+          avgCadence: 85,
+        });
+        dayIdx += 3;
+      }
+      const dataset = buildActivityDataset(mixed, context, target);
+      // Should succeed — enough activities have power data
+      expect(dataset).not.toBeNull();
+      // All rows in the dataset should have valid target values
+      if (dataset) {
+        expect(dataset.y.every((v) => typeof v === "number" && !Number.isNaN(v))).toBe(true);
+      }
+    });
   });
 
   describe("strength", () => {
-    const target = ACTIVITY_PREDICTION_TARGETS.find((t) => t.id === "strength_volume")!;
+    const target = ACTIVITY_PREDICTION_TARGETS.find((t) => t.id === "strength_volume");
+    if (!target) throw new Error("expected strength_volume target");
     const workouts = generateStrengthWorkouts(80, context);
 
     it("builds a dataset from strength workouts", () => {
       const dataset = buildActivityDataset(workouts, context, target);
       expect(dataset).not.toBeNull();
-      expect(dataset!.X.length).toBeGreaterThan(20);
-      expect(dataset!.featureNames.length).toBeGreaterThan(3);
+      expect(dataset?.X.length).toBeGreaterThan(20);
+      expect(dataset?.featureNames.length).toBeGreaterThan(3);
     });
 
     it("does not include the target as a feature", () => {
-      const dataset = buildActivityDataset(workouts, context, target)!;
+      const dataset = buildActivityDataset(workouts, context, target);
+      if (!dataset) throw new Error("expected dataset");
       expect(dataset.featureNames).not.toContain("total_volume");
     });
 

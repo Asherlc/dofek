@@ -268,7 +268,8 @@ describe("Deduplication materialized views", () => {
         endedAt: new Date("2026-03-05T11:00:00Z"),
       })
       .returning({ id: activity.id });
-    const wahooActivity = wahooActivityRows[0]!;
+    const wahooActivity = wahooActivityRows[0];
+    if (!wahooActivity) throw new Error("Expected wahoo activity row");
 
     // Wahoo stream — has power data
     await ctx.db.insert(metricStream).values([

@@ -99,9 +99,18 @@ export function PredictionsPage() {
 
         {prediction.isLoading && <LoadingSkeleton />}
 
-        {prediction.data === null && !prediction.isLoading && (
+        {prediction.isError && (
+          <div className="flex items-center justify-center h-32 text-red-400/70 text-sm">
+            Something went wrong loading predictions. Try refreshing the page.
+          </div>
+        )}
+
+        {prediction.data === null && !prediction.isLoading && !prediction.isError && (
           <div className="flex items-center justify-center h-32 text-zinc-600 text-sm">
-            Not enough data yet. Need at least 20 days of readings to find patterns.
+            Not enough data yet.{" "}
+            {isActivityTarget
+              ? "Need at least 20 sessions with recorded data to find patterns."
+              : "Need at least 20 days of readings to find patterns."}
           </div>
         )}
 

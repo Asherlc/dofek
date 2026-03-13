@@ -88,7 +88,7 @@ export function SmoothedWeightChart({ data, loading }: SmoothedWeightChartProps)
         yAxisIndex: 1,
         data: data
           .filter((d) => d.weeklyChange != null)
-          .map((d) => [d.date, convertWeight(d.weeklyChange!, unitSystem)]),
+          .map((d) => [d.date, convertWeight(d.weeklyChange ?? 0, unitSystem)]),
         itemStyle: {
           color: (params: { value: [string, number] }) =>
             params.value[1] >= 0 ? "rgba(34,197,94,0.4)" : "rgba(239,68,68,0.4)",

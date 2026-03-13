@@ -89,8 +89,8 @@ export function trainPredictor(
 
   // Generate predictions for each data point
   const predictions: PredictionPoint[] = X.map((features, i) => ({
-    date: dates[i]!,
-    actual: y[i]!,
+    date: dates[i] ?? "",
+    actual: y[i] ?? 0,
     linearPrediction: round2(linear.predict(features)),
     treePrediction: round2(tree.predict(features)),
   }));
@@ -98,7 +98,8 @@ export function trainPredictor(
   // Predict tomorrow using today's data (last row of input)
   let tomorrowPrediction: PredictionResult["tomorrowPrediction"] = null;
   if (X.length > 0) {
-    const lastFeatures = X[X.length - 1]!;
+    const lastFeatures = X[X.length - 1];
+    if (!lastFeatures) return null;
     tomorrowPrediction = {
       linear: round2(linear.predict(lastFeatures)),
       tree: round2(tree.predict(lastFeatures)),
@@ -158,8 +159,8 @@ export function trainFromDataset(
   importances.sort((a, b) => b.treeImportance - a.treeImportance);
 
   const predictions: PredictionPoint[] = X.map((features, i) => ({
-    date: dates[i]!,
-    actual: y[i]!,
+    date: dates[i] ?? "",
+    actual: y[i] ?? 0,
     linearPrediction: round2(linear.predict(features)),
     treePrediction: round2(tree.predict(features)),
   }));
@@ -216,12 +217,15 @@ function crossValidate(X: number[][], y: number[], k: number): number {
     const testY: number[] = [];
 
     for (let i = 0; i < n; i++) {
+      const xi = X[i];
+      const yi = y[i];
+      if (xi === undefined || yi === undefined) continue;
       if (i >= testStart && i < testEnd) {
-        testX.push(X[i]!);
-        testY.push(y[i]!);
+        testX.push(xi);
+        testY.push(yi);
       } else {
-        trainX.push(X[i]!);
-        trainY.push(y[i]!);
+        trainX.push(xi);
+        trainY.push(yi);
       }
     }
 
@@ -237,9 +241,12 @@ function crossValidate(X: number[][], y: number[], k: number): number {
 
     const testMean = testY.reduce((a, b) => a + b, 0) / testY.length;
     for (let i = 0; i < testX.length; i++) {
-      const pred = model.predict(testX[i]!);
-      totalSsRes += (testY[i]! - pred) ** 2;
-      totalSsTot += (testY[i]! - testMean) ** 2;
+      const testXi = testX[i];
+      const testYi = testY[i];
+      if (testXi === undefined || testYi === undefined) continue;
+      const pred = model.predict(testXi);
+      totalSsRes += (testYi - pred) ** 2;
+      totalSsTot += (testYi - testMean) ** 2;
     }
   }
 

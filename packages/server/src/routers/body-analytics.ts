@@ -59,11 +59,13 @@ export const bodyAnalyticsRouter = router({
       // EWMA smoothing (alpha = 0.1 — heavy smoothing for daily weigh-ins)
       const alpha = 0.1;
       const result: SmoothedWeightRow[] = [];
-      // biome-ignore lint/style/noNonNullAssertion: guarded by early return above
-      let smoothed = data[0]!.rawWeight;
+      const firstDay = data[0];
+      if (!firstDay) return [];
+      let smoothed = firstDay.rawWeight;
 
       for (let i = 0; i < data.length; i++) {
-        const day = data[i]!;
+        const day = data[i];
+        if (!day) continue;
         if (i === 0) {
           smoothed = day.rawWeight;
         } else {
@@ -123,13 +125,14 @@ export const bodyAnalyticsRouter = router({
 
       const alpha = 0.15;
       const result: BodyRecompositionRow[] = [];
-      // biome-ignore lint/style/noNonNullAssertion: guarded by early return above
-      let smoothedFat = data[0]!.weightKg * (data[0]!.bodyFatPct / 100);
-      // biome-ignore lint/style/noNonNullAssertion: guarded by early return above
-      let smoothedLean = data[0]!.weightKg - smoothedFat;
+      const firstRecomp = data[0];
+      if (!firstRecomp) return [];
+      let smoothedFat = firstRecomp.weightKg * (firstRecomp.bodyFatPct / 100);
+      let smoothedLean = firstRecomp.weightKg - smoothedFat;
 
       for (let i = 0; i < data.length; i++) {
-        const day = data[i]!;
+        const day = data[i];
+        if (!day) continue;
         const fatMass = day.weightKg * (day.bodyFatPct / 100);
         const leanMass = day.weightKg - fatMass;
 
@@ -189,16 +192,19 @@ export const bodyAnalyticsRouter = router({
       // EWMA-smooth the data
       const alpha = 0.1;
       const smoothed: number[] = [];
-      // biome-ignore lint/style/noNonNullAssertion: guarded by early return above
-      let s = data[0]!.weight;
+      const firstWeight = data[0];
+      if (!firstWeight) return { currentWeekly: null, current4Week: null, trend: "insufficient" };
+      let s = firstWeight.weight;
       for (const d of data) {
         s = alpha * d.weight + (1 - alpha) * s;
         smoothed.push(s);
       }
 
-      const latest = smoothed[smoothed.length - 1]!;
-      const oneWeekAgo = smoothed.length >= 8 ? smoothed[smoothed.length - 8]! : null;
-      const fourWeeksAgo = smoothed.length >= 29 ? smoothed[smoothed.length - 29]! : null;
+      const latest = smoothed[smoothed.length - 1];
+      if (latest === undefined)
+        return { currentWeekly: null, current4Week: null, trend: "insufficient" };
+      const oneWeekAgo = smoothed.length >= 8 ? (smoothed[smoothed.length - 8] ?? null) : null;
+      const fourWeeksAgo = smoothed.length >= 29 ? (smoothed[smoothed.length - 29] ?? null) : null;
 
       const currentWeekly =
         oneWeekAgo != null ? Math.round((latest - oneWeekAgo) * 100) / 100 : null;

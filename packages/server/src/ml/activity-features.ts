@@ -223,7 +223,8 @@ export function buildActivityDataset(
   // Build date → index map for quick context lookup
   const dateIndex = new Map<string, number>();
   for (let i = 0; i < dailyContext.length; i++) {
-    dateIndex.set(dailyContext[i]!.date, i);
+    const ctx = dailyContext[i];
+    if (ctx) dateIndex.set(ctx.date, i);
   }
 
   // Select feature definitions based on activity type
@@ -242,7 +243,8 @@ export function buildActivityDataset(
   const rawRows: { features: (number | null)[]; target: number; date: string }[] = [];
 
   for (let i = 0; i < activities.length; i++) {
-    const activity = activities[i]!;
+    const activity = activities[i];
+    if (!activity) continue;
     const targetValue = target.extractTarget(activity);
     if (targetValue == null) continue;
 
@@ -269,7 +271,8 @@ export function buildActivityDataset(
     }
     if (nonNull / nRows >= minCompleteness) {
       keptIndices.push(f);
-      keptNames.push(featureDefs[f]!.name);
+      const featureDef = featureDefs[f];
+      if (featureDef) keptNames.push(featureDef.name);
     }
   }
 
@@ -297,7 +300,7 @@ export function buildActivityDataset(
   for (const row of rawRows) {
     const featureVec = keptIndices.map((f, j) => {
       const val = row.features[f];
-      return val ?? columnMeans[j]!;
+      return val ?? columnMeans[j] ?? 0;
     });
     X.push(featureVec);
     y.push(row.target);
@@ -320,7 +323,8 @@ function getTrailingSessionFeatures(
   // Pre-build an identity map for O(1) index lookups
   const indexMap = new Map<ActivityRow, number>();
   for (let i = 0; i < activities.length; i++) {
-    indexMap.set(activities[i]!, i);
+    const act = activities[i];
+    if (act) indexMap.set(act, i);
   }
 
   // Pre-compute timestamps once for the sessions_last_14d feature
@@ -333,7 +337,8 @@ function getTrailingSessionFeatures(
       extract: (activity) => {
         const idx = indexMap.get(activity);
         if (idx == null || idx <= 0) return null;
-        const prev = activities[idx - 1]!;
+        const prev = activities[idx - 1];
+        if (!prev) return null;
         const daysDiff =
           (new Date(activity.date).getTime() - new Date(prev.date).getTime()) /
           (1000 * 60 * 60 * 24);
@@ -345,7 +350,9 @@ function getTrailingSessionFeatures(
       extract: (activity) => {
         const idx = indexMap.get(activity);
         if (idx == null || idx <= 0) return null;
-        return target.extractTarget(activities[idx - 1]!);
+        const prevActivity = activities[idx - 1];
+        if (!prevActivity) return null;
+        return target.extractTarget(prevActivity);
       },
     },
     {
@@ -353,11 +360,14 @@ function getTrailingSessionFeatures(
       extract: (activity) => {
         const idx = indexMap.get(activity);
         if (idx == null) return null;
-        const activityTime = timestamps[idx]!;
+        const activityTime = timestamps[idx];
+        if (activityTime == null) return null;
         let count = 0;
         // Walk backwards from current index (activities are sorted by date)
         for (let i = idx - 1; i >= 0; i--) {
-          const diff = activityTime - timestamps[i]!;
+          const ts = timestamps[i];
+          if (ts == null) break;
+          const diff = activityTime - ts;
           if (diff > fourteenDaysMs) break;
           count++;
         }

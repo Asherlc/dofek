@@ -47,6 +47,10 @@ const sampleCyclingWorkout: PelotonWorkout = {
   fitness_discipline: "cycling",
 };
 
+// sampleWorkout.ride is defined in the fixture above; guard for type safety
+const sampleRide = sampleWorkout.ride;
+if (!sampleRide) throw new Error("sampleWorkout.ride must be defined");
+
 const sampleStrengthWorkout: PelotonWorkout = {
   ...sampleWorkout,
   id: "str-789",
@@ -54,7 +58,7 @@ const sampleStrengthWorkout: PelotonWorkout = {
   title: "20 min Full Body Strength",
   total_work: 0,
   ride: {
-    ...sampleWorkout.ride!,
+    ...sampleRide,
     title: "20 min Full Body Strength",
     difficulty_rating_avg: 6.5,
     duration: 1200,
@@ -67,7 +71,7 @@ const sampleRunningWorkout: PelotonWorkout = {
   fitness_discipline: "running",
   title: "45 min Endurance Run",
   ride: {
-    ...sampleWorkout.ride!,
+    ...sampleRide,
     title: "45 min Endurance Run",
     difficulty_rating_avg: 8.2,
     instructor: {
