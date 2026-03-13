@@ -58,27 +58,42 @@ function fitCriticalPower(
  * Uses cumulative sums to avoid per-duration window functions:
  *   rolling_avg(i, d) = (cumsum[i] - cumsum[i - d]) / d
  *
+ * Includes zero-power (coasting) samples and detects the recording interval
+ * per activity so it works with both 1-second FIT data and multi-second
+ * sources like Peloton (5-second intervals).
+ *
  * Returns one row per duration with the best power and the activity date it came from.
  */
 function powerCurveQuery(days: number, userId: string) {
   return sql`
     WITH activity_power AS (
-      SELECT ms.activity_id, ms.recorded_at, ms.power,
+      SELECT ms.activity_id, ms.recorded_at,
+             COALESCE(ms.power, 0) AS power,
              a.started_at::date AS activity_date,
              ROW_NUMBER() OVER (
                PARTITION BY ms.activity_id ORDER BY ms.recorded_at
              ) AS rn,
-             SUM(ms.power) OVER (
+             SUM(COALESCE(ms.power, 0)) OVER (
                PARTITION BY ms.activity_id ORDER BY ms.recorded_at
                ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
              ) AS cumsum
       FROM fitness.metric_stream ms
       JOIN fitness.v_activity a ON a.id = ms.activity_id
       WHERE a.user_id = ${userId}
-        AND ms.power > 0
+        AND ms.power IS NOT NULL
         AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
         AND ms.recorded_at > NOW() - (${days} + 1)::int * INTERVAL '1 day'
         AND ${enduranceTypeFilter("a")}
+    ),
+    sample_rate AS (
+      SELECT activity_id,
+             GREATEST(ROUND(
+               EXTRACT(EPOCH FROM MAX(recorded_at) - MIN(recorded_at))::numeric
+               / NULLIF(COUNT(*) - 1, 0)
+             )::int, 1) AS interval_s
+      FROM activity_power
+      GROUP BY activity_id
+      HAVING COUNT(*) > 1
     ),
     durations AS (
       SELECT unnest(ARRAY[5,15,30,60,120,300,600,1200,1800,3600,5400,7200]) AS duration_s
@@ -95,10 +110,11 @@ function powerCurveQuery(days: number, userId: string) {
         ))[1] AS activity_date
       FROM durations d
       CROSS JOIN activity_power ap
+      JOIN sample_rate sr ON sr.activity_id = ap.activity_id
       LEFT JOIN activity_power prev
         ON prev.activity_id = ap.activity_id
-        AND prev.rn = ap.rn - d.duration_s
-      WHERE ap.rn >= d.duration_s
+        AND prev.rn = ap.rn - ROUND(d.duration_s::numeric / sr.interval_s)::int
+      WHERE ap.rn >= ROUND(d.duration_s::numeric / sr.interval_s)::int
       GROUP BY d.duration_s
     )
     SELECT duration_seconds, best_power, activity_date
@@ -138,35 +154,48 @@ export const powerRouter = router({
   eftpTrend: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(365) }))
     .query(async ({ ctx, input }) => {
-      // Find best 20-min (1200s) average power per activity
+      // Find best 20-min (1200s) average power per activity.
+      // Includes zero-power samples and detects recording interval per activity.
       const rows = await ctx.db.execute(sql`
         WITH activity_power AS (
-          SELECT ms.activity_id, ms.recorded_at, ms.power,
+          SELECT ms.activity_id, ms.recorded_at,
+                 COALESCE(ms.power, 0) AS power,
                  a.started_at::date AS activity_date,
                  a.name AS activity_name,
                  ROW_NUMBER() OVER (
                    PARTITION BY ms.activity_id ORDER BY ms.recorded_at
                  ) AS rn,
-                 SUM(ms.power) OVER (
+                 SUM(COALESCE(ms.power, 0)) OVER (
                    PARTITION BY ms.activity_id ORDER BY ms.recorded_at
                    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
                  ) AS cumsum
           FROM fitness.metric_stream ms
           JOIN fitness.v_activity a ON a.id = ms.activity_id
           WHERE a.user_id = ${ctx.userId}
-            AND ms.power > 0
+            AND ms.power IS NOT NULL
             AND a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
             AND ms.recorded_at > NOW() - (${input.days} + 1)::int * INTERVAL '1 day'
             AND ${enduranceTypeFilter("a")}
+        ),
+        sample_rate AS (
+          SELECT activity_id,
+                 GREATEST(ROUND(
+                   EXTRACT(EPOCH FROM MAX(recorded_at) - MIN(recorded_at))::numeric
+                   / NULLIF(COUNT(*) - 1, 0)
+                 )::int, 1) AS interval_s
+          FROM activity_power
+          GROUP BY activity_id
+          HAVING COUNT(*) > 1
         )
         SELECT
           ap.activity_date::text AS activity_date,
           ap.activity_name,
           MAX((ap.cumsum - prev.cumsum)::numeric / 1200)::int AS best_20min_power
         FROM activity_power ap
+        JOIN sample_rate sr ON sr.activity_id = ap.activity_id
         JOIN activity_power prev
           ON prev.activity_id = ap.activity_id
-          AND prev.rn = ap.rn - 1200
+          AND prev.rn = ap.rn - ROUND(1200.0 / sr.interval_s)::int
         GROUP BY ap.activity_id, ap.activity_date, ap.activity_name
         HAVING MAX((ap.cumsum - prev.cumsum)::numeric / 1200) > 0
         ORDER BY ap.activity_date
