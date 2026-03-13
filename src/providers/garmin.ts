@@ -1,4 +1,6 @@
 import { and, eq } from "drizzle-orm";
+import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
+import { exchangeCodeForTokens, refreshAccessToken } from "../auth/oauth.ts";
 import type { Database } from "../db/index.ts";
 import {
   activity,
@@ -9,60 +11,62 @@ import {
   userSettings,
 } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
-import { ensureProvider } from "../db/tokens.ts";
-import type { Provider, SyncError, SyncResult } from "./types.ts";
+import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
 
 // ============================================================
-// Garmin Connect API types
+// Garmin Health API types (official REST API response shapes)
 // ============================================================
 
-export interface GarminActivity {
+export interface GarminActivitySummary {
   activityId: number;
   activityName: string;
-  activityType: { typeKey: string; typeId: number };
-  startTimeLocal: string; // "2024-06-15 10:30:00"
-  startTimeGMT: string; // "2024-06-15 14:30:00"
-  duration: number; // seconds
-  distance: number; // meters
-  averageHR?: number;
-  maxHR?: number;
-  averageSpeed?: number; // m/s
-  calories: number;
-  elevationGain?: number;
-  elevationLoss?: number;
-  averageBikeCadence?: number;
-  averageRunCadence?: number;
-  averagePower?: number;
-  normalizedPower?: number;
-  maxPower?: number;
-  description?: string;
+  activityType: string; // "RUNNING", "CYCLING", etc.
+  startTimeInSeconds: number; // UTC epoch seconds
+  startTimeOffsetInSeconds: number;
+  durationInSeconds: number;
+  distanceInMeters: number;
+  averageHeartRateInBeatsPerMinute?: number;
+  maxHeartRateInBeatsPerMinute?: number;
+  averageSpeedInMetersPerSecond?: number;
+  activeKilocalories?: number;
+  averageBikeCadenceInRoundsPerMinute?: number;
+  averageRunCadenceInStepsPerMinute?: number;
+  averagePowerInWatts?: number;
+  maxPowerInWatts?: number;
+  normalizedPowerInWatts?: number;
+  totalElevationGainInMeters?: number;
+  totalElevationLossInMeters?: number;
+  deviceName?: string;
+  manual?: boolean;
 }
 
-export interface GarminSleepResponse {
-  dailySleepDTO: {
-    calendarDate: string; // "2024-06-15"
-    sleepStartTimestampGMT: number; // ms epoch
-    sleepEndTimestampGMT: number;
-    sleepTimeSeconds: number;
-    deepSleepSeconds: number;
-    lightSleepSeconds: number;
-    remSleepSeconds: number;
-    awakeSleepSeconds: number;
-    averageSpO2Value?: number;
-    lowestSpO2Value?: number;
-    averageRespirationValue?: number;
-    sleepScores?: { overall: { value: number } };
-  };
+export interface GarminSleepSummary {
+  calendarDate: string;
+  startTimeInSeconds: number; // UTC epoch seconds
+  startTimeOffsetInSeconds: number;
+  durationInSeconds: number;
+  deepSleepDurationInSeconds: number;
+  lightSleepDurationInSeconds: number;
+  remSleepInSeconds: number;
+  awakeDurationInSeconds: number;
+  averageSpO2Value?: number;
+  lowestSpO2Value?: number;
+  averageRespirationValue?: number;
+  overallSleepScore?: number;
 }
 
 export interface GarminDailySummary {
   calendarDate: string;
-  totalSteps: number;
-  totalDistanceMeters: number;
+  startTimeInSeconds: number;
+  startTimeOffsetInSeconds: number;
+  durationInSeconds: number;
+  steps: number;
+  distanceInMeters: number;
   activeKilocalories: number;
   bmrKilocalories: number;
-  restingHeartRate?: number;
-  maxHeartRate?: number;
+  restingHeartRateInBeatsPerMinute?: number;
+  maxHeartRateInBeatsPerMinute?: number;
   averageStressLevel?: number;
   maxStressLevel?: number;
   bodyBatteryChargedValue?: number;
@@ -70,21 +74,20 @@ export interface GarminDailySummary {
   averageSpo2?: number;
   lowestSpo2?: number;
   respirationAvg?: number;
-  floorsAscended?: number;
-  moderateIntensityMinutes?: number;
-  vigorousIntensityMinutes?: number;
+  floorsClimbed?: number;
+  moderateIntensityDurationInSeconds?: number;
+  vigorousIntensityDurationInSeconds?: number;
 }
 
-export interface GarminWeightEntry {
-  samplePk: number;
-  date: number; // ms epoch
-  calendarDate: string;
-  weight: number; // grams
+export interface GarminBodyComposition {
+  measurementTimeInSeconds: number; // UTC epoch seconds
+  measurementTimeOffsetInSeconds?: number;
+  weightInGrams: number;
   bmi?: number;
-  bodyFat?: number; // percentage
-  muscleMass?: number; // grams
-  boneMass?: number; // grams
-  bodyWater?: number; // percentage
+  bodyFatInPercent?: number;
+  muscleMassInGrams?: number;
+  boneMassInGrams?: number;
+  bodyWaterInPercent?: number;
 }
 
 // ============================================================
@@ -97,8 +100,7 @@ export interface ParsedGarminActivity {
   name: string;
   startedAt: Date;
   endedAt: Date;
-  notes: string | undefined;
-  raw: GarminActivity;
+  raw: GarminActivitySummary;
 }
 
 export interface ParsedGarminSleep {
@@ -142,246 +144,134 @@ export interface ParsedGarminBodyMeasurement {
 
 const GARMIN_ACTIVITY_TYPE_MAP: Record<string, string> = {
   // Running
-  running: "running",
-  trail_running: "running",
-  treadmill_running: "running",
-  track_running: "running",
+  RUNNING: "running",
+  TRAIL_RUNNING: "running",
+  TREADMILL_RUNNING: "running",
+  TRACK_RUNNING: "running",
   // Cycling
-  cycling: "cycling",
-  mountain_biking: "cycling",
-  road_biking: "cycling",
-  indoor_cycling: "cycling",
-  gravel_cycling: "cycling",
-  virtual_ride: "cycling",
+  CYCLING: "cycling",
+  MOUNTAIN_BIKING: "cycling",
+  ROAD_BIKING: "cycling",
+  INDOOR_CYCLING: "cycling",
+  GRAVEL_CYCLING: "cycling",
+  VIRTUAL_RIDE: "cycling",
   // Swimming
-  swimming: "swimming",
-  lap_swimming: "swimming",
-  open_water_swimming: "swimming",
+  SWIMMING: "swimming",
+  LAP_SWIMMING: "swimming",
+  OPEN_WATER_SWIMMING: "swimming",
   // Walking / Hiking
-  walking: "walking",
-  hiking: "hiking",
+  WALKING: "walking",
+  HIKING: "hiking",
   // Strength / Cardio
-  strength_training: "strength",
-  indoor_cardio: "cardio",
+  STRENGTH_TRAINING: "strength",
+  INDOOR_CARDIO: "cardio",
   // Other fitness
-  yoga: "yoga",
-  pilates: "pilates",
-  elliptical: "elliptical",
-  rowing: "rowing",
+  YOGA: "yoga",
+  PILATES: "pilates",
+  ELLIPTICAL: "elliptical",
+  ROWING: "rowing",
 };
 
-export function mapGarminActivityType(typeKey: string): string {
-  return GARMIN_ACTIVITY_TYPE_MAP[typeKey] ?? "other";
+export function mapGarminActivityType(activityType: string): string {
+  return GARMIN_ACTIVITY_TYPE_MAP[activityType] ?? "other";
 }
 
 // ============================================================
 // Pure parsing functions
 // ============================================================
 
-/**
- * Parse Garmin's GMT time string ("2024-06-15 14:30:00") into a Date.
- * Garmin omits the 'T' and timezone indicator, so we normalize it.
- */
-function parseGarminGmtTime(timeString: string): Date {
-  // "2024-06-15 14:30:00" → "2024-06-15T14:30:00Z"
-  return new Date(`${timeString.replace(" ", "T")}Z`);
-}
-
-export function parseGarminActivity(raw: GarminActivity): ParsedGarminActivity {
-  const startedAt = parseGarminGmtTime(raw.startTimeGMT);
-  const endedAt = new Date(startedAt.getTime() + raw.duration * 1000);
+export function parseGarminActivity(raw: GarminActivitySummary): ParsedGarminActivity {
+  const startedAt = new Date(raw.startTimeInSeconds * 1000);
+  const endedAt = new Date((raw.startTimeInSeconds + raw.durationInSeconds) * 1000);
 
   return {
     externalId: String(raw.activityId),
-    activityType: mapGarminActivityType(raw.activityType.typeKey),
+    activityType: mapGarminActivityType(raw.activityType),
     name: raw.activityName,
     startedAt,
     endedAt,
-    notes: raw.description,
     raw,
   };
 }
 
-export function parseGarminSleep(sleep: GarminSleepResponse): ParsedGarminSleep {
-  const dto = sleep.dailySleepDTO;
+export function parseGarminSleep(sleep: GarminSleepSummary): ParsedGarminSleep {
   return {
-    externalId: dto.calendarDate,
-    startedAt: new Date(dto.sleepStartTimestampGMT),
-    endedAt: new Date(dto.sleepEndTimestampGMT),
-    durationMinutes: Math.round(dto.sleepTimeSeconds / 60),
-    deepMinutes: Math.round(dto.deepSleepSeconds / 60),
-    lightMinutes: Math.round(dto.lightSleepSeconds / 60),
-    remMinutes: Math.round(dto.remSleepSeconds / 60),
-    awakeMinutes: Math.round(dto.awakeSleepSeconds / 60),
+    externalId: sleep.calendarDate,
+    startedAt: new Date(sleep.startTimeInSeconds * 1000),
+    endedAt: new Date((sleep.startTimeInSeconds + sleep.durationInSeconds) * 1000),
+    durationMinutes: Math.round(sleep.durationInSeconds / 60),
+    deepMinutes: Math.round(sleep.deepSleepDurationInSeconds / 60),
+    lightMinutes: Math.round(sleep.lightSleepDurationInSeconds / 60),
+    remMinutes: Math.round(sleep.remSleepInSeconds / 60),
+    awakeMinutes: Math.round(sleep.awakeDurationInSeconds / 60),
   };
 }
 
 export function parseGarminDailySummary(summary: GarminDailySummary): ParsedGarminDailyMetrics {
-  const moderate = summary.moderateIntensityMinutes;
-  const vigorous = summary.vigorousIntensityMinutes;
+  const moderateSec = summary.moderateIntensityDurationInSeconds;
+  const vigorousSec = summary.vigorousIntensityDurationInSeconds;
   let exerciseMinutes: number | undefined;
-  if (moderate !== undefined || vigorous !== undefined) {
-    exerciseMinutes = (moderate ?? 0) + (vigorous ?? 0);
+  if (moderateSec !== undefined || vigorousSec !== undefined) {
+    exerciseMinutes = Math.round(((moderateSec ?? 0) + (vigorousSec ?? 0)) / 60);
   }
 
   return {
     date: summary.calendarDate,
-    steps: summary.totalSteps,
-    distanceKm: summary.totalDistanceMeters / 1000,
+    steps: summary.steps,
+    distanceKm: summary.distanceInMeters / 1000,
     activeEnergyKcal: summary.activeKilocalories,
     basalEnergyKcal: summary.bmrKilocalories,
-    restingHr: summary.restingHeartRate,
+    restingHr: summary.restingHeartRateInBeatsPerMinute,
     spo2Avg: summary.averageSpo2,
     respiratoryRateAvg: summary.respirationAvg,
-    flightsClimbed: summary.floorsAscended,
+    flightsClimbed: summary.floorsClimbed,
     exerciseMinutes,
   };
 }
 
-export function parseGarminWeight(entry: GarminWeightEntry): ParsedGarminBodyMeasurement {
+export function parseGarminBodyComposition(
+  entry: GarminBodyComposition,
+): ParsedGarminBodyMeasurement {
   return {
-    externalId: String(entry.samplePk),
-    recordedAt: new Date(entry.date),
-    weightKg: entry.weight / 1000,
+    externalId: String(entry.measurementTimeInSeconds),
+    recordedAt: new Date(entry.measurementTimeInSeconds * 1000),
+    weightKg: entry.weightInGrams / 1000,
     bmi: entry.bmi,
-    bodyFatPct: entry.bodyFat,
-    muscleMassKg: entry.muscleMass !== undefined ? entry.muscleMass / 1000 : undefined,
-    boneMassKg: entry.boneMass !== undefined ? entry.boneMass / 1000 : undefined,
-    waterPct: entry.bodyWater,
+    bodyFatPct: entry.bodyFatInPercent,
+    muscleMassKg:
+      entry.muscleMassInGrams !== undefined ? entry.muscleMassInGrams / 1000 : undefined,
+    boneMassKg: entry.boneMassInGrams !== undefined ? entry.boneMassInGrams / 1000 : undefined,
+    waterPct: entry.bodyWaterInPercent,
   };
 }
 
 // ============================================================
-// Garmin Connect SSO Client
+// Garmin Health API Client (official OAuth 2.0 + Bearer token)
 // ============================================================
 
-const GARMIN_SSO_BASE = "https://sso.garmin.com";
-const GARMIN_CONNECT_BASE = "https://connect.garmin.com";
-const GARMIN_SSO_EMBED_URL = `${GARMIN_SSO_BASE}/sso/embed`;
-const GARMIN_SSO_SIGNIN_URL = `${GARMIN_SSO_BASE}/sso/signin`;
-
-interface GarminClientOptions {
-  fetchFn?: typeof globalThis.fetch;
-}
+const GARMIN_HEALTH_API_BASE = "https://apis.garmin.com/wellness-api/rest";
 
 export class GarminClient {
-  private sessionCookies: string | null = null;
+  private accessToken: string;
   private fetchFn: typeof globalThis.fetch;
 
-  constructor(options: GarminClientOptions = {}) {
-    this.fetchFn = options.fetchFn ?? globalThis.fetch;
+  constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
+    this.accessToken = accessToken;
+    this.fetchFn = fetchFn;
   }
 
-  /**
-   * Authenticate via Garmin Connect SSO.
-   *
-   * The flow:
-   * 1. GET the SSO signin page to obtain CSRF token and initial cookies
-   * 2. POST credentials to the SSO signin endpoint
-   * 3. Extract the service ticket from the response
-   * 4. Exchange the ticket at connect.garmin.com to establish a session
-   */
-  async authenticate(email: string, password: string): Promise<string> {
-    // Step 1: GET the SSO login page to get CSRF token and cookies
-    const params = new URLSearchParams({
-      id: "gauth-widget",
-      embedWidget: "true",
-      gauthHost: GARMIN_SSO_EMBED_URL,
-    });
-
-    const loginPageUrl = `${GARMIN_SSO_SIGNIN_URL}?${params.toString()}`;
-    const loginPageResponse = await this.fetchFn(loginPageUrl, {
-      method: "GET",
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        Accept: "text/html",
-      },
-      redirect: "manual",
-    });
-
-    const loginPageHtml = await loginPageResponse.text();
-    const setCookieHeaders = loginPageResponse.headers.getSetCookie?.() ?? [];
-    const cookies = setCookieHeaders.map((c) => c.split(";")[0]).join("; ");
-
-    // Extract CSRF token from the HTML
-    const csrfMatch = loginPageHtml.match(/name="_csrf"\s+value="([^"]+)"/);
-    const csrfToken = csrfMatch?.[1] ?? "";
-
-    // Step 2: POST credentials
-    const signinFormData = new URLSearchParams({
-      username: email,
-      password: password,
-      embed: "true",
-      _csrf: csrfToken,
-    });
-
-    const signinResponse = await this.fetchFn(`${GARMIN_SSO_SIGNIN_URL}?${params.toString()}`, {
-      method: "POST",
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Content-Type": "application/x-www-form-urlencoded",
-        Cookie: cookies,
-        Origin: GARMIN_SSO_BASE,
-        Referer: loginPageUrl,
-      },
-      body: signinFormData.toString(),
-      redirect: "manual",
-    });
-
-    const signinHtml = await signinResponse.text();
-
-    // Step 3: Extract the ticket from the response
-    // The response contains a redirect URL with a ticket parameter
-    const ticketMatch = signinHtml.match(/ticket=([A-Za-z0-9-]+)/);
-    if (!ticketMatch?.[1]) {
-      throw new Error("Garmin SSO: Failed to extract service ticket. Check credentials.");
-    }
-    const ticket = ticketMatch[1];
-
-    // Step 4: Exchange ticket for session cookies
-    const ticketUrl = `${GARMIN_CONNECT_BASE}/modern/?ticket=${ticket}`;
-    const ticketResponse = await this.fetchFn(ticketUrl, {
-      method: "GET",
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      },
-      redirect: "manual",
-    });
-
-    const sessionSetCookies = ticketResponse.headers.getSetCookie?.() ?? [];
-    this.sessionCookies = sessionSetCookies.map((c) => c.split(";")[0]).join("; ");
-
-    if (!this.sessionCookies) {
-      throw new Error("Garmin SSO: No session cookies received after ticket exchange");
+  private async get<T>(path: string, params?: Record<string, string>): Promise<T> {
+    const url = new URL(`${GARMIN_HEALTH_API_BASE}${path}`);
+    if (params) {
+      for (const [key, value] of Object.entries(params)) {
+        url.searchParams.set(key, value);
+      }
     }
 
-    return this.sessionCookies;
-  }
-
-  /**
-   * Set session cookies directly (e.g., from stored tokens).
-   */
-  setSessionCookies(cookies: string): void {
-    this.sessionCookies = cookies;
-  }
-
-  private async get<T>(path: string): Promise<T> {
-    if (!this.sessionCookies) {
-      throw new Error("Garmin client not authenticated — call authenticate() first");
-    }
-
-    const url = `${GARMIN_CONNECT_BASE}${path}`;
-    const response = await this.fetchFn(url, {
-      method: "GET",
+    const response = await this.fetchFn(url.toString(), {
       headers: {
-        "User-Agent":
-          "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        Cookie: this.sessionCookies,
+        Authorization: `Bearer ${this.accessToken}`,
         Accept: "application/json",
-        NK: "NT",
       },
     });
 
@@ -393,50 +283,70 @@ export class GarminClient {
     return response.json() as Promise<T>;
   }
 
-  async getActivities(start: number, limit: number): Promise<GarminActivity[]> {
-    return this.get<GarminActivity[]>(
-      `/activitylist-service/activities/search/activities?start=${start}&limit=${limit}`,
-    );
+  async getActivities(
+    uploadStartTimeInSeconds: number,
+    uploadEndTimeInSeconds: number,
+  ): Promise<GarminActivitySummary[]> {
+    return this.get<GarminActivitySummary[]>("/activities", {
+      uploadStartTimeInSeconds: String(uploadStartTimeInSeconds),
+      uploadEndTimeInSeconds: String(uploadEndTimeInSeconds),
+    });
   }
 
-  async getSleep(date: string): Promise<GarminSleepResponse> {
-    return this.get<GarminSleepResponse>(`/wellness-service/wellness/dailySleepData/${date}`);
+  async getSleep(
+    uploadStartTimeInSeconds: number,
+    uploadEndTimeInSeconds: number,
+  ): Promise<GarminSleepSummary[]> {
+    return this.get<GarminSleepSummary[]>("/sleep", {
+      uploadStartTimeInSeconds: String(uploadStartTimeInSeconds),
+      uploadEndTimeInSeconds: String(uploadEndTimeInSeconds),
+    });
   }
 
-  async getDailySummary(date: string): Promise<GarminDailySummary> {
-    return this.get<GarminDailySummary>(`/usersummary-service/usersummary/daily/${date}`);
+  async getDailySummaries(
+    uploadStartTimeInSeconds: number,
+    uploadEndTimeInSeconds: number,
+  ): Promise<GarminDailySummary[]> {
+    return this.get<GarminDailySummary[]>("/dailies", {
+      uploadStartTimeInSeconds: String(uploadStartTimeInSeconds),
+      uploadEndTimeInSeconds: String(uploadEndTimeInSeconds),
+    });
   }
 
-  async getWeightRange(
-    startDate: string,
-    endDate: string,
-  ): Promise<{ dailyWeightSummaries: GarminWeightEntry[] }> {
-    return this.get<{ dailyWeightSummaries: GarminWeightEntry[] }>(
-      `/weight-service/weight/dateRange?startDate=${startDate}&endDate=${endDate}`,
-    );
+  async getBodyComposition(
+    uploadStartTimeInSeconds: number,
+    uploadEndTimeInSeconds: number,
+  ): Promise<GarminBodyComposition[]> {
+    return this.get<GarminBodyComposition[]>("/bodyComposition", {
+      uploadStartTimeInSeconds: String(uploadStartTimeInSeconds),
+      uploadEndTimeInSeconds: String(uploadEndTimeInSeconds),
+    });
   }
 }
 
 // ============================================================
-// Date helpers
+// OAuth 2.0 configuration
 // ============================================================
 
-function formatDate(date: Date): string {
-  return date.toISOString().split("T")[0] ?? "";
-}
+const GARMIN_OAUTH_AUTHORIZE_URL = "https://connect.garmin.com/oauth2/authorize";
+const GARMIN_OAUTH_TOKEN_URL = "https://diauth.garmin.com/di-oauth2-service/oauth/token";
 
-function eachDay(start: Date, end: Date): string[] {
-  const dates: string[] = [];
-  const current = new Date(start);
-  current.setUTCHours(0, 0, 0, 0);
-  const endDay = new Date(end);
-  endDay.setUTCHours(0, 0, 0, 0);
+export function garminOAuthConfig(): OAuthConfig | null {
+  const clientId = process.env.GARMIN_CLIENT_ID;
+  if (!clientId) return null;
 
-  while (current <= endDay) {
-    dates.push(formatDate(current));
-    current.setUTCDate(current.getUTCDate() + 1);
-  }
-  return dates;
+  const clientSecret = process.env.GARMIN_CLIENT_SECRET;
+  const redirectUri = process.env.OAUTH_REDIRECT_URI ?? "https://dofek.asherlc.com/callback";
+
+  return {
+    clientId,
+    clientSecret: clientSecret ?? undefined,
+    authorizeUrl: GARMIN_OAUTH_AUTHORIZE_URL,
+    tokenUrl: GARMIN_OAUTH_TOKEN_URL,
+    redirectUri,
+    scopes: [],
+    usePkce: true,
+  };
 }
 
 // ============================================================
@@ -475,8 +385,6 @@ async function saveSyncCursor(db: Database, cursor: string): Promise<void> {
 // Provider
 // ============================================================
 
-const ACTIVITY_PAGE_SIZE = 20;
-
 export class GarminProvider implements Provider {
   readonly id = "garmin";
   readonly name = "Garmin Connect";
@@ -487,9 +395,42 @@ export class GarminProvider implements Provider {
   }
 
   validate(): string | null {
-    if (!process.env.GARMIN_EMAIL) return "GARMIN_EMAIL is not set";
-    if (!process.env.GARMIN_PASSWORD) return "GARMIN_PASSWORD is not set";
+    if (!process.env.GARMIN_CLIENT_ID) return "GARMIN_CLIENT_ID is not set";
     return null;
+  }
+
+  authSetup(): ProviderAuthSetup {
+    const config = garminOAuthConfig();
+    if (!config) throw new Error("GARMIN_CLIENT_ID is required");
+    return {
+      oauthConfig: config,
+      exchangeCode: (code, codeVerifier) =>
+        exchangeCodeForTokens(
+          config,
+          code,
+          this.fetchFn,
+          codeVerifier ? { codeVerifier } : undefined,
+        ),
+      apiBaseUrl: GARMIN_HEALTH_API_BASE,
+    };
+  }
+
+  private async resolveTokens(db: Database): Promise<TokenSet> {
+    const tokens = await loadTokens(db, this.id);
+    if (!tokens) {
+      throw new Error("No OAuth tokens found for Garmin. Authorize via the dashboard first.");
+    }
+
+    if (tokens.expiresAt > new Date()) {
+      return tokens;
+    }
+
+    console.log("[garmin] Access token expired, refreshing...");
+    const config = garminOAuthConfig();
+    if (!config) throw new Error("GARMIN_CLIENT_ID is required to refresh tokens");
+    const refreshed = await refreshAccessToken(config, tokens.refreshToken, this.fetchFn);
+    await saveTokens(db, this.id, refreshed);
+    return refreshed;
   }
 
   async sync(db: Database, since: Date): Promise<SyncResult> {
@@ -497,45 +438,34 @@ export class GarminProvider implements Provider {
     const errors: SyncError[] = [];
     let recordsSynced = 0;
 
-    const email = process.env.GARMIN_EMAIL;
-    const password = process.env.GARMIN_PASSWORD;
-    if (!email || !password) {
-      return {
-        provider: this.id,
-        recordsSynced: 0,
-        errors: [{ message: "GARMIN_EMAIL or GARMIN_PASSWORD is not set" }],
-        duration: Date.now() - start,
-      };
-    }
-
-    await ensureProvider(db, this.id, this.name, GARMIN_CONNECT_BASE);
-
-    // Authenticate
-    const client = new GarminClient({ fetchFn: this.fetchFn });
+    let tokens: TokenSet;
     try {
-      await client.authenticate(email, password);
+      tokens = await this.resolveTokens(db);
     } catch (err) {
       return {
         provider: this.id,
         recordsSynced: 0,
-        errors: [
-          {
-            message: `Auth failed: ${err instanceof Error ? err.message : String(err)}`,
-            cause: err,
-          },
-        ],
+        errors: [{ message: err instanceof Error ? err.message : String(err), cause: err }],
         duration: Date.now() - start,
       };
     }
+
+    await ensureProvider(db, this.id, this.name, GARMIN_HEALTH_API_BASE);
+
+    const client = new GarminClient(tokens.accessToken, this.fetchFn);
 
     // Use sync cursor if available, otherwise fall back to `since` param
     const cursor = await loadSyncCursor(db);
     const effectiveSince = cursor ? new Date(cursor) : since;
 
+    const now = new Date();
+    const sinceEpochSeconds = Math.floor(effectiveSince.getTime() / 1000);
+    const nowEpochSeconds = Math.floor(now.getTime() / 1000);
+
     // Sync activities
     try {
       const activityCount = await withSyncLog(db, this.id, "activities", async () => {
-        const count = await this.syncActivities(db, client, effectiveSince);
+        const count = await this.syncActivities(db, client, sinceEpochSeconds, nowEpochSeconds);
         return { recordCount: count, result: count };
       });
       recordsSynced += activityCount;
@@ -546,13 +476,10 @@ export class GarminProvider implements Provider {
       });
     }
 
-    const now = new Date();
-    const dates = eachDay(effectiveSince, now);
-
     // Sync sleep
     try {
       const sleepCount = await withSyncLog(db, this.id, "sleep", async () => {
-        const count = await this.syncSleep(db, client, dates);
+        const count = await this.syncSleep(db, client, sinceEpochSeconds, nowEpochSeconds);
         return { recordCount: count, result: count };
       });
       recordsSynced += sleepCount;
@@ -566,7 +493,7 @@ export class GarminProvider implements Provider {
     // Sync daily summaries
     try {
       const dailyCount = await withSyncLog(db, this.id, "daily_metrics", async () => {
-        const count = await this.syncDailyMetrics(db, client, dates);
+        const count = await this.syncDailyMetrics(db, client, sinceEpochSeconds, nowEpochSeconds);
         return { recordCount: count, result: count };
       });
       recordsSynced += dailyCount;
@@ -580,7 +507,12 @@ export class GarminProvider implements Provider {
     // Sync body composition
     try {
       const weightCount = await withSyncLog(db, this.id, "body_composition", async () => {
-        const count = await this.syncBodyComposition(db, client, since, now);
+        const count = await this.syncBodyComposition(
+          db,
+          client,
+          sinceEpochSeconds,
+          nowEpochSeconds,
+        );
         return { recordCount: count, result: count };
       });
       recordsSynced += weightCount;
@@ -597,75 +529,76 @@ export class GarminProvider implements Provider {
     return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
   }
 
-  private async syncActivities(db: Database, client: GarminClient, since: Date): Promise<number> {
+  private async syncActivities(
+    db: Database,
+    client: GarminClient,
+    sinceEpochSeconds: number,
+    untilEpochSeconds: number,
+  ): Promise<number> {
+    const activities = await client.getActivities(sinceEpochSeconds, untilEpochSeconds);
     let count = 0;
-    let offset = 0;
-    let hasMore = true;
 
-    while (hasMore) {
-      const activities = await client.getActivities(offset, ACTIVITY_PAGE_SIZE);
+    for (const raw of activities) {
+      const parsed = parseGarminActivity(raw);
 
-      if (activities.length === 0) break;
-
-      for (const raw of activities) {
-        const startTime = parseGarminGmtTime(raw.startTimeGMT);
-        // Stop paginating once we reach activities before `since`
-        if (startTime < since) {
-          hasMore = false;
-          break;
-        }
-
-        const parsed = parseGarminActivity(raw);
-
-        await db
-          .insert(activity)
-          .values({
-            providerId: this.id,
-            externalId: parsed.externalId,
+      await db
+        .insert(activity)
+        .values({
+          providerId: this.id,
+          externalId: parsed.externalId,
+          activityType: parsed.activityType,
+          startedAt: parsed.startedAt,
+          endedAt: parsed.endedAt,
+          name: parsed.name,
+          raw: parsed.raw,
+        })
+        .onConflictDoUpdate({
+          target: [activity.providerId, activity.externalId],
+          set: {
             activityType: parsed.activityType,
             startedAt: parsed.startedAt,
             endedAt: parsed.endedAt,
             name: parsed.name,
-            notes: parsed.notes,
             raw: parsed.raw,
-          })
-          .onConflictDoUpdate({
-            target: [activity.providerId, activity.externalId],
-            set: {
-              activityType: parsed.activityType,
-              startedAt: parsed.startedAt,
-              endedAt: parsed.endedAt,
-              name: parsed.name,
-              notes: parsed.notes,
-              raw: parsed.raw,
-            },
-          });
+          },
+        });
 
-        count++;
-      }
-
-      if (activities.length < ACTIVITY_PAGE_SIZE) break;
-      offset += ACTIVITY_PAGE_SIZE;
+      count++;
     }
 
     return count;
   }
 
-  private async syncSleep(db: Database, client: GarminClient, dates: string[]): Promise<number> {
+  private async syncSleep(
+    db: Database,
+    client: GarminClient,
+    sinceEpochSeconds: number,
+    untilEpochSeconds: number,
+  ): Promise<number> {
+    const sleepRecords = await client.getSleep(sinceEpochSeconds, untilEpochSeconds);
     let count = 0;
 
-    for (const date of dates) {
-      try {
-        const sleepData = await client.getSleep(date);
-        if (!sleepData?.dailySleepDTO?.sleepStartTimestampGMT) continue;
+    for (const raw of sleepRecords) {
+      if (!raw.startTimeInSeconds) continue;
 
-        const parsed = parseGarminSleep(sleepData);
+      const parsed = parseGarminSleep(raw);
 
-        await db
-          .insert(sleepSession)
-          .values({
-            providerId: this.id,
-            externalId: parsed.externalId,
+      await db
+        .insert(sleepSession)
+        .values({
+          providerId: this.id,
+          externalId: parsed.externalId,
+          startedAt: parsed.startedAt,
+          endedAt: parsed.endedAt,
+          durationMinutes: parsed.durationMinutes,
+          deepMinutes: parsed.deepMinutes,
+          lightMinutes: parsed.lightMinutes,
+          remMinutes: parsed.remMinutes,
+          awakeMinutes: parsed.awakeMinutes,
+        })
+        .onConflictDoUpdate({
+          target: [sleepSession.providerId, sleepSession.externalId],
+          set: {
             startedAt: parsed.startedAt,
             endedAt: parsed.endedAt,
             durationMinutes: parsed.durationMinutes,
@@ -673,24 +606,10 @@ export class GarminProvider implements Provider {
             lightMinutes: parsed.lightMinutes,
             remMinutes: parsed.remMinutes,
             awakeMinutes: parsed.awakeMinutes,
-          })
-          .onConflictDoUpdate({
-            target: [sleepSession.providerId, sleepSession.externalId],
-            set: {
-              startedAt: parsed.startedAt,
-              endedAt: parsed.endedAt,
-              durationMinutes: parsed.durationMinutes,
-              deepMinutes: parsed.deepMinutes,
-              lightMinutes: parsed.lightMinutes,
-              remMinutes: parsed.remMinutes,
-              awakeMinutes: parsed.awakeMinutes,
-            },
-          });
+          },
+        });
 
-        count++;
-      } catch {
-        // Individual date failures are non-fatal — skip and continue
-      }
+      count++;
     }
 
     return count;
@@ -699,22 +618,35 @@ export class GarminProvider implements Provider {
   private async syncDailyMetrics(
     db: Database,
     client: GarminClient,
-    dates: string[],
+    sinceEpochSeconds: number,
+    untilEpochSeconds: number,
   ): Promise<number> {
+    const summaries = await client.getDailySummaries(sinceEpochSeconds, untilEpochSeconds);
     let count = 0;
 
-    for (const date of dates) {
-      try {
-        const summary = await client.getDailySummary(date);
-        if (!summary?.calendarDate) continue;
+    for (const raw of summaries) {
+      if (!raw.calendarDate) continue;
 
-        const parsed = parseGarminDailySummary(summary);
+      const parsed = parseGarminDailySummary(raw);
 
-        await db
-          .insert(dailyMetrics)
-          .values({
-            date: parsed.date,
-            providerId: this.id,
+      await db
+        .insert(dailyMetrics)
+        .values({
+          date: parsed.date,
+          providerId: this.id,
+          steps: parsed.steps,
+          distanceKm: parsed.distanceKm,
+          activeEnergyKcal: parsed.activeEnergyKcal,
+          basalEnergyKcal: parsed.basalEnergyKcal,
+          restingHr: parsed.restingHr,
+          spo2Avg: parsed.spo2Avg,
+          respiratoryRateAvg: parsed.respiratoryRateAvg,
+          flightsClimbed: parsed.flightsClimbed,
+          exerciseMinutes: parsed.exerciseMinutes,
+        })
+        .onConflictDoUpdate({
+          target: [dailyMetrics.date, dailyMetrics.providerId],
+          set: {
             steps: parsed.steps,
             distanceKm: parsed.distanceKm,
             activeEnergyKcal: parsed.activeEnergyKcal,
@@ -724,26 +656,10 @@ export class GarminProvider implements Provider {
             respiratoryRateAvg: parsed.respiratoryRateAvg,
             flightsClimbed: parsed.flightsClimbed,
             exerciseMinutes: parsed.exerciseMinutes,
-          })
-          .onConflictDoUpdate({
-            target: [dailyMetrics.date, dailyMetrics.providerId],
-            set: {
-              steps: parsed.steps,
-              distanceKm: parsed.distanceKm,
-              activeEnergyKcal: parsed.activeEnergyKcal,
-              basalEnergyKcal: parsed.basalEnergyKcal,
-              restingHr: parsed.restingHr,
-              spo2Avg: parsed.spo2Avg,
-              respiratoryRateAvg: parsed.respiratoryRateAvg,
-              flightsClimbed: parsed.flightsClimbed,
-              exerciseMinutes: parsed.exerciseMinutes,
-            },
-          });
+          },
+        });
 
-        count++;
-      } catch {
-        // Individual date failures are non-fatal — skip and continue
-      }
+      count++;
     }
 
     return count;
@@ -752,21 +668,16 @@ export class GarminProvider implements Provider {
   private async syncBodyComposition(
     db: Database,
     client: GarminClient,
-    since: Date,
-    until: Date,
+    sinceEpochSeconds: number,
+    untilEpochSeconds: number,
   ): Promise<number> {
+    const entries = await client.getBodyComposition(sinceEpochSeconds, untilEpochSeconds);
     let count = 0;
 
-    const startDate = formatDate(since);
-    const endDate = formatDate(until);
+    for (const raw of entries) {
+      if (!raw.weightInGrams) continue;
 
-    const weightData = await client.getWeightRange(startDate, endDate);
-    const entries = weightData?.dailyWeightSummaries ?? [];
-
-    for (const entry of entries) {
-      if (!entry.weight) continue;
-
-      const parsed = parseGarminWeight(entry);
+      const parsed = parseGarminBodyComposition(raw);
 
       await db
         .insert(bodyMeasurement)

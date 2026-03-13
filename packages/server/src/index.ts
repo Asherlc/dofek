@@ -496,8 +496,8 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
   });
 
   // ── OAuth state ──
-  // Maps random state tokens to provider IDs for CSRF protection
-  const oauthStateMap = new Map<string, string>();
+  // Maps random state tokens to provider IDs (+ optional PKCE verifier) for CSRF protection
+  const oauthStateMap = new Map<string, { providerId: string; codeVerifier?: string }>();
   // OAuth 1.0 request token secrets (keyed by oauth_token)
   const oauth1Secrets = new Map<string, { providerId: string; tokenSecret: string }>();
 
@@ -751,11 +751,24 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
         return;
       }
 
-      const { buildAuthorizationUrl } = await import("dofek/auth/oauth");
-      const url = buildAuthorizationUrl(setup.oauthConfig);
-      // Generate random state for CSRF protection, map it to the provider ID
+      const {
+        buildAuthorizationUrl,
+        generateCodeVerifier: genVerifier,
+        generateCodeChallenge,
+      } = await import("dofek/auth/oauth");
+
+      // Generate PKCE challenge if the provider requires it
+      let pkceVerifier: string | undefined;
+      let pkceParam: { codeChallenge: string } | undefined;
+      if (setup.oauthConfig.usePkce) {
+        pkceVerifier = genVerifier();
+        pkceParam = { codeChallenge: generateCodeChallenge(pkceVerifier) };
+      }
+
+      const url = buildAuthorizationUrl(setup.oauthConfig, pkceParam);
+      // Generate random state for CSRF protection, map it to the provider ID + PKCE verifier
       const stateToken = randomBytes(16).toString("hex");
-      oauthStateMap.set(stateToken, providerId);
+      oauthStateMap.set(stateToken, { providerId, codeVerifier: pkceVerifier });
       setTimeout(() => oauthStateMap.delete(stateToken), 10 * 60 * 1000);
       const authUrl = new URL(url);
       authUrl.searchParams.set("state", stateToken);
@@ -913,12 +926,14 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       }
 
       // Resolve provider from random state token
-      const providerId = oauthStateMap.get(state);
-      if (!providerId) {
+      const stateEntry = oauthStateMap.get(state);
+      if (!stateEntry) {
         res.status(400).send("Unknown or expired OAuth state");
         return;
       }
       oauthStateMap.delete(state);
+
+      const { providerId, codeVerifier: storedCodeVerifier } = stateEntry;
 
       const { getAllProviders } = await import("dofek/providers/registry");
       const { ensureProvidersRegistered } = await import("./routers/sync.ts");
@@ -937,7 +952,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       }
 
       logger.info(`[auth] Exchanging code for ${providerId} tokens...`);
-      const tokens = await setup.exchangeCode(code);
+      const tokens = await setup.exchangeCode(code, storedCodeVerifier);
 
       const { ensureProvider } = await import("dofek/db/tokens");
       const { saveTokens } = await import("dofek/db/tokens");
