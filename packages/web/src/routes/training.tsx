@@ -17,7 +17,7 @@ export const Route = createFileRoute("/training")({
 });
 
 function TrainingLayout() {
-  const [days, setDays] = useState(180);
+  const [days, setDays] = useState(90);
 
   return (
     <TrainingDaysContext.Provider value={{ days, setDays }}>
