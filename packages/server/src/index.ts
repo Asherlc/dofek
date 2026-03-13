@@ -9,7 +9,7 @@ import cookieParser from "cookie-parser";
 import { createDatabaseFromEnv } from "dofek/db";
 import { runMigrations } from "dofek/db/migrate";
 import { DEFAULT_USER_ID } from "dofek/db/schema";
-import type { SyncError, SyncResult } from "dofek/providers/types";
+import type { SyncResult } from "dofek/providers/types";
 import { sql } from "drizzle-orm";
 import express from "express";
 import {

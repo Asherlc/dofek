@@ -10,7 +10,7 @@ describe("Token storage (integration)", () => {
   }, 60_000);
 
   afterAll(async () => {
-    await ctx.cleanup();
+    if (ctx) await ctx.cleanup();
   });
 
   it("ensureProvider inserts a provider row if missing", async () => {
