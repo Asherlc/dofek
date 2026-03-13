@@ -170,10 +170,11 @@ export const activityRouter = router({
         distance: number | null;
       }>(
         sql`WITH numbered AS (
-              SELECT *, ROW_NUMBER() OVER (ORDER BY recorded_at) AS rn,
+              SELECT ms.*, ROW_NUMBER() OVER (ORDER BY ms.recorded_at) AS rn,
                      COUNT(*) OVER () AS total
-              FROM fitness.v_metric_stream
-              WHERE activity_id = ${input.id} AND user_id = ${ctx.userId}
+              FROM fitness.metric_stream ms
+              JOIN fitness.v_activity a ON a.id = ms.activity_id AND a.user_id = ${ctx.userId}
+              WHERE ms.activity_id = ${input.id}
             )
             SELECT recorded_at::text AS recorded_at,
                    heart_rate, power, speed, cadence, altitude, lat, lng, distance
@@ -237,10 +238,9 @@ export const activityRouter = router({
             ),
             hr_samples AS (
               SELECT ms.heart_rate
-              FROM fitness.v_metric_stream ms
-              JOIN fitness.v_activity a ON a.id = ms.activity_id
+              FROM fitness.metric_stream ms
+              JOIN fitness.v_activity a ON a.id = ms.activity_id AND a.user_id = ${ctx.userId}
               WHERE ms.activity_id = ${input.id}
-                AND a.user_id = ${ctx.userId}
                 AND ms.heart_rate IS NOT NULL
             )
             SELECT
