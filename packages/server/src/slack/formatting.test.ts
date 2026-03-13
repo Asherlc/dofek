@@ -73,12 +73,12 @@ describe("formatConfirmationMessage", () => {
       | undefined;
     expect(actionsBlock).toBeDefined();
 
-    const elements = actionsBlock!.elements as Array<Record<string, unknown>>;
+    const elements = actionsBlock?.elements as Array<Record<string, unknown>>;
     const confirmButton = elements.find((e) => e.action_id === "confirm_food");
     expect(confirmButton).toBeDefined();
 
     // Value should be parseable JSON containing the items
-    const parsed = JSON.parse(confirmButton!.value as string);
+    const parsed = JSON.parse(confirmButton?.value as string);
     expect(parsed).toHaveLength(1);
     expect(parsed[0].foodName).toBe("Chicken Burrito");
   });

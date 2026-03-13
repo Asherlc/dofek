@@ -52,6 +52,9 @@ WHERE heart_rate IS NOT NULL;
 
 --> statement-breakpoint
 
--- activity_summary: queries do WHERE user_id = X AND started_at::date >= Y
--- The existing activity_summary_user_time index on (user_id, started_at DESC)
--- already covers these queries via range scan — no expression index needed.
+-- activity_summary: queries do WHERE user_id = X AND started_at >= Y
+-- Existing activity_summary_user_time index covers (user_id, started_at DESC)
+-- but queries that cast started_at::date should be rewritten to use timestamp range instead
+-- (timestamptz::date is STABLE not IMMUTABLE, so cannot be used in index expressions)
+CREATE INDEX IF NOT EXISTS activity_summary_user_date_idx
+ON fitness.activity_summary (user_id, started_at DESC);

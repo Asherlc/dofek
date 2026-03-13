@@ -33,9 +33,11 @@ describe("tRPC API", () => {
   }, 30_000);
 
   afterAll(async () => {
-    await new Promise<void>((resolve) => {
-      server?.close(() => resolve());
-    });
+    if (server) {
+      await new Promise<void>((resolve) => {
+        server.close(() => resolve());
+      });
+    }
     await testCtx?.cleanup();
   }, 30_000);
 

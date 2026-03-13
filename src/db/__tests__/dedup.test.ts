@@ -18,7 +18,7 @@ describe("Deduplication materialized views", () => {
   }, 60_000);
 
   afterAll(async () => {
-    await ctx.cleanup();
+    await ctx?.cleanup();
   });
 
   it("v_activity merges overlapping activities by provider priority", async () => {

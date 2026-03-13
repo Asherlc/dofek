@@ -59,6 +59,7 @@ export const bodyAnalyticsRouter = router({
       // EWMA smoothing (alpha = 0.1 — heavy smoothing for daily weigh-ins)
       const alpha = 0.1;
       const result: SmoothedWeightRow[] = [];
+      // biome-ignore lint/style/noNonNullAssertion: guarded by early return above
       let smoothed = data[0]!.rawWeight;
 
       for (let i = 0; i < data.length; i++) {
@@ -122,7 +123,9 @@ export const bodyAnalyticsRouter = router({
 
       const alpha = 0.15;
       const result: BodyRecompositionRow[] = [];
+      // biome-ignore lint/style/noNonNullAssertion: guarded by early return above
       let smoothedFat = data[0]!.weightKg * (data[0]!.bodyFatPct / 100);
+      // biome-ignore lint/style/noNonNullAssertion: guarded by early return above
       let smoothedLean = data[0]!.weightKg - smoothedFat;
 
       for (let i = 0; i < data.length; i++) {
@@ -186,6 +189,7 @@ export const bodyAnalyticsRouter = router({
       // EWMA-smooth the data
       const alpha = 0.1;
       const smoothed: number[] = [];
+      // biome-ignore lint/style/noNonNullAssertion: guarded by early return above
       let s = data[0]!.weight;
       for (const d of data) {
         s = alpha * d.weight + (1 - alpha) * s;
