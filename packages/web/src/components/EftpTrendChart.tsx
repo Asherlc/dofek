@@ -1,4 +1,5 @@
 import ReactECharts from "echarts-for-react";
+import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface EftpPoint {
   date: string;
@@ -14,11 +15,7 @@ interface EftpTrendChartProps {
 
 export function EftpTrendChart({ data, currentEftp, loading }: EftpTrendChartProps) {
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-[240px]">
-        <span className="text-zinc-600 text-sm">Loading...</span>
-      </div>
-    );
+    return <ChartLoadingSkeleton height={240} />;
   }
 
   if (data.length === 0) {

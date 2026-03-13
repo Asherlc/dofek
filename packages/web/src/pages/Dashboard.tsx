@@ -18,15 +18,75 @@ import { WeeklyReportCard } from "../components/WeeklyReportCard.tsx";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitSystem } from "../lib/unitContext.ts";
 import { convertTemperature, temperatureLabel } from "../lib/units.ts";
+import { assertRows } from "../lib/utils.ts";
 
 type MetricEntry = {
   label: string;
-  value: number | null | undefined;
-  avg: number | null | undefined;
-  stddev: number | null | undefined;
+  value: number | null;
+  avg: number | null;
+  stddev: number | null;
   unit: string;
   lowerBetter?: boolean;
 };
+
+interface TrendRow {
+  avg_resting_hr: number | null;
+  avg_hrv: number | null;
+  avg_spo2: number | null;
+  avg_steps: number | null;
+  avg_active_energy: number | null;
+  avg_skin_temp: number | null;
+  stddev_resting_hr: number | null;
+  stddev_hrv: number | null;
+  stddev_spo2: number | null;
+  stddev_skin_temp: number | null;
+  latest_resting_hr: number | null;
+  latest_hrv: number | null;
+  latest_spo2: number | null;
+  latest_steps: number | null;
+  latest_active_energy: number | null;
+  latest_skin_temp: number | null;
+  latest_date: string | null;
+}
+
+interface DailyMetricRow {
+  date: string;
+  resting_hr: number | null;
+  hrv: number | null;
+  spo2_avg: number | null;
+  skin_temp_c: number | null;
+  steps: number | null;
+  active_energy_kcal: number | null;
+}
+
+interface SleepRow {
+  started_at: string;
+  duration_minutes: number | null;
+  deep_minutes: number | null;
+  rem_minutes: number | null;
+  light_minutes: number | null;
+  awake_minutes: number | null;
+  efficiency_pct: number | null;
+}
+
+interface NutritionDailyRow {
+  date: string;
+  calories: number | null;
+  protein_g: number | null;
+  carbs_g: number | null;
+  fat_g: number | null;
+  fiber_g: number | null;
+}
+
+interface ActivityRow {
+  id: string;
+  started_at: string;
+  ended_at: string | null;
+  activity_type: string;
+  name: string | null;
+  provider_id: string;
+  source_providers: string[] | null;
+}
 
 export function Dashboard() {
   const { unitSystem } = useUnitSystem();
@@ -51,8 +111,8 @@ export function Dashboard() {
   const anomalyCheck = trpc.anomalyDetection.check.useQuery({});
   const smoothedWeight = trpc.bodyAnalytics.smoothedWeight.useQuery({ days: Math.max(days, 90) });
   const bodyRecomp = trpc.bodyAnalytics.recomposition.useQuery({ days: Math.max(days, 180) });
-  // biome-ignore lint/suspicious/noExplicitAny: tRPC return type from raw SQL — proper typing is a separate effort
-  const trendData = trends.data as Record<string, any> | undefined;
+  // tRPC raw SQL result — typed assertion pending server-side typing
+  const trendData = (trends.data ?? undefined) as TrendRow | undefined;
 
   const topInsights = useMemo(() => {
     const all = (insightsQuery.data ?? []) as Insight[];
@@ -65,7 +125,7 @@ export function Dashboard() {
   const healthMetrics = useMemo(
     () =>
       trendData
-        ? [
+        ? ([
             {
               label: "Resting HR",
               value: trendData.latest_resting_hr,
@@ -112,13 +172,12 @@ export function Dashboard() {
               stddev: trendData.stddev_skin_temp,
               unit: temperatureLabel(unitSystem),
             },
-          ].filter((m): m is MetricEntry => Boolean(m))
+          ].filter(Boolean) as MetricEntry[])
         : [],
     [trendData, unitSystem],
   );
 
-  // biome-ignore lint/suspicious/noExplicitAny: tRPC return type from raw SQL — proper typing is a separate effort
-  const metrics = (dailyMetrics.data ?? []) as any[];
+  const metrics = assertRows<DailyMetricRow>(dailyMetrics.data);
 
   const hasSpO2 = metrics.some((d) => d.spo2_avg != null);
   const hasSkinTemp = metrics.some((d) => d.skin_temp_c != null);
@@ -339,11 +398,7 @@ export function Dashboard() {
           onToggle={() => toggle("sleep")}
         >
           <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
-            <SleepChart
-              // biome-ignore lint/suspicious/noExplicitAny: tRPC return type from raw SQL
-              data={(sleepData.data ?? []) as any[]}
-              loading={sleepData.isLoading}
-            />
+            <SleepChart data={assertRows<SleepRow>(sleepData.data)} loading={sleepData.isLoading} />
           </div>
         </CollapsibleSection>
 
@@ -357,8 +412,7 @@ export function Dashboard() {
         >
           <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
             <NutritionChart
-              // biome-ignore lint/suspicious/noExplicitAny: tRPC return type from raw SQL
-              data={(nutritionData.data ?? []) as any[]}
+              data={assertRows<NutritionDailyRow>(nutritionData.data)}
               loading={nutritionData.isLoading}
             />
           </div>
@@ -397,8 +451,7 @@ export function Dashboard() {
         >
           <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
             <ActivityList
-              // biome-ignore lint/suspicious/noExplicitAny: tRPC return type from raw SQL
-              activities={(activities.data ?? []) as any[]}
+              activities={assertRows<ActivityRow>(activities.data)}
               loading={activities.isLoading}
             />
           </div>

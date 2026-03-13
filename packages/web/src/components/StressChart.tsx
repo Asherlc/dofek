@@ -1,5 +1,6 @@
 import type { StressResult } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
+import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface StressChartProps {
   data: StressResult | undefined;
@@ -34,11 +35,7 @@ function trendColor(trend: StressResult["trend"]): string {
 
 export function StressChart({ data, loading }: StressChartProps) {
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-[350px]">
-        <span className="text-zinc-600 text-sm">Loading...</span>
-      </div>
-    );
+    return <ChartLoadingSkeleton height={350} />;
   }
 
   if (!data || data.daily.length === 0) {

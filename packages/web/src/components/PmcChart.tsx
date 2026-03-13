@@ -1,5 +1,6 @@
 import type { PmcDataPoint, TssModelInfo } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
+import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface PmcChartProps {
   data: PmcDataPoint[];
@@ -30,11 +31,7 @@ function ModelBadge({ model }: { model: TssModelInfo }) {
 
 export function PmcChart({ data, model, loading }: PmcChartProps) {
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-[300px]">
-        <span className="text-zinc-600 text-sm">Loading...</span>
-      </div>
-    );
+    return <ChartLoadingSkeleton height={300} />;
   }
 
   if (data.length === 0) {

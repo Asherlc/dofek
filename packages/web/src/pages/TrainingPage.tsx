@@ -8,6 +8,7 @@ import { ElevationGainChart } from "../components/ElevationGainChart.tsx";
 import { EstimatedMaxChart } from "../components/EstimatedMaxChart.tsx";
 import { GradeAdjustedPaceTable } from "../components/GradeAdjustedPaceTable.tsx";
 import { HrvVariabilityChart } from "../components/HrvVariabilityChart.tsx";
+import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
 import { MuscleGroupVolumeChart } from "../components/MuscleGroupVolumeChart.tsx";
 import { PmcChart } from "../components/PmcChart.tsx";
 import { PolarizationTrendChart } from "../components/PolarizationTrendChart.tsx";
@@ -289,9 +290,7 @@ export function TrainingPage() {
         {/* ── Calendar Heatmap ───────────────────────────────── */}
         <Section title="Training Calendar" subtitle="Daily training activity heatmap">
           {calendarData.isLoading ? (
-            <div className="flex items-center justify-center h-[180px]">
-              <span className="text-zinc-600 text-sm">Loading...</span>
-            </div>
+            <ChartLoadingSkeleton height={180} />
           ) : (
             <TrainingCalendar data={calendarData.data ?? []} />
           )}

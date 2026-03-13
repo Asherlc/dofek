@@ -1,5 +1,6 @@
 import type { ProgressiveOverloadRow } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
+import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface ProgressiveOverloadCardsProps {
   exercises: ProgressiveOverloadRow[];
@@ -38,11 +39,7 @@ function SparklineChart({ values, isProgressing }: { values: number[]; isProgres
 
 export function ProgressiveOverloadCards({ exercises, loading }: ProgressiveOverloadCardsProps) {
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-[200px]">
-        <span className="text-zinc-600 text-sm">Loading...</span>
-      </div>
-    );
+    return <ChartLoadingSkeleton height={200} />;
   }
 
   if (exercises.length === 0) {
