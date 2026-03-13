@@ -18,10 +18,14 @@ const providerIcons: Record<IdentityProviderName, string> = {
 function LoginPage() {
   const [providers, setProviders] = useState<IdentityProviderName[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchConfiguredProviders()
       .then(setProviders)
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : "Failed to load providers");
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -34,6 +38,11 @@ function LoginPage() {
         {loading ? (
           <div className="flex justify-center py-8">
             <div className="w-6 h-6 border-2 border-zinc-600 border-t-emerald-500 rounded-full animate-spin" />
+          </div>
+        ) : error ? (
+          <div className="text-center">
+            <p className="text-red-400 text-sm mb-2">Unable to connect to server</p>
+            <p className="text-zinc-500 text-xs">{error}</p>
           </div>
         ) : providers.length === 0 ? (
           <p className="text-zinc-500 text-center text-sm">No identity providers configured.</p>

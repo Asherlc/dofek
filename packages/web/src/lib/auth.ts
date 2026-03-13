@@ -16,7 +16,9 @@ export async function fetchCurrentUser(): Promise<AuthUser | null> {
 /** Fetch the list of configured identity providers. */
 export async function fetchConfiguredProviders(): Promise<IdentityProviderName[]> {
   const res = await fetch("/api/auth/providers");
-  if (!res.ok) return [];
+  if (!res.ok) {
+    throw new Error(`Failed to fetch providers: ${res.status} ${res.statusText}`);
+  }
   return res.json();
 }
 
