@@ -12,6 +12,7 @@ import {
   type NutritionItemWithMeal,
   refineNutritionItems,
 } from "../lib/ai-nutrition.ts";
+import { queryCache } from "../lib/cache.ts";
 import { logger } from "../logger.ts";
 import { formatConfirmationMessage, formatSavedMessage } from "./formatting.ts";
 
@@ -73,21 +74,50 @@ async function resolveOrCreateUserId(
   email: string | null,
   name: string,
 ): Promise<string> {
-  // Check if a user with this email already exists (e.g., from Google/Apple web login)
   if (email) {
-    const existingByEmail = await db.execute<{ user_id: string }>(
+    // Check auth_account first (Google/Apple login creates these)
+    const existingByAuthEmail = await db.execute<{ user_id: string }>(
       sql`SELECT user_id FROM fitness.auth_account
           WHERE email = ${email}
           LIMIT 1`,
     );
-    const emailRow = existingByEmail[0];
-    if (emailRow) {
-      logger.info(`[slack] Found existing user ${emailRow.user_id} via email ${email}`);
-      return emailRow.user_id;
+    const authRow = existingByAuthEmail[0];
+    if (authRow) {
+      logger.info(`[slack] Found existing user ${authRow.user_id} via auth_account email ${email}`);
+      return authRow.user_id;
+    }
+
+    // Also check user_profile.email (web login updates this for DEFAULT_USER_ID)
+    const existingByProfileEmail = await db.execute<{ id: string }>(
+      sql`SELECT id FROM fitness.user_profile
+          WHERE email = ${email}
+          LIMIT 1`,
+    );
+    const profileRow = existingByProfileEmail[0];
+    if (profileRow) {
+      logger.info(`[slack] Found existing user ${profileRow.id} via user_profile email ${email}`);
+      return profileRow.id;
     }
   }
 
-  // No existing user — create a new one
+  // Fallback: if there's exactly one user in the system, use that user.
+  // This handles the common case where the Slack API doesn't return an email
+  // but only one person uses the app.
+  const userCount = await db.execute<{ count: string; id: string }>(
+    sql`SELECT COUNT(*)::text AS count, MIN(id) AS id FROM fitness.user_profile`,
+  );
+  const countRow = userCount[0];
+  if (countRow && parseInt(countRow.count, 10) === 1) {
+    logger.info(
+      `[slack] No email match — falling back to sole user ${countRow.id} (single-user mode)`,
+    );
+    return countRow.id;
+  }
+
+  // No match and multiple users — create a new one
+  logger.warn(
+    `[slack] Could not match Slack user to existing account (email=${email ?? "null"}), creating new user`,
+  );
   const newUser = await db.execute<{ id: string }>(
     sql`INSERT INTO fitness.user_profile (name, email)
         VALUES (${name}, ${email})
@@ -135,6 +165,8 @@ async function lookupOrCreateUserId(
     // Verify this Slack account isn't orphaned: if a non-Slack auth_account exists
     // with the same email but a different user_id, the Slack link is stale
     // (e.g., Slack bot ran before the user logged in on the web).
+    let correctId: string | null = null;
+
     if (email) {
       const canonical = await db.execute<{ user_id: string }>(
         sql`SELECT user_id FROM fitness.auth_account
@@ -143,26 +175,42 @@ async function lookupOrCreateUserId(
       );
       const canonicalRow = canonical[0];
       if (canonicalRow && canonicalRow.user_id !== existingRow.user_id) {
-        const orphanId = existingRow.user_id;
-        const correctId = canonicalRow.user_id;
-        logger.info(
-          `[slack] Repairing orphan: moving Slack user ${slackUserId} from ${orphanId} → ${correctId}`,
-        );
-        // Repoint the Slack auth_account to the correct user
-        await db.execute(
-          sql`UPDATE fitness.auth_account
-              SET user_id = ${correctId}
-              WHERE auth_provider = 'slack' AND provider_account_id = ${slackUserId}`,
-        );
-        // Migrate any food entries saved under the orphan user
-        await db.execute(
-          sql`UPDATE fitness.food_entry
-              SET user_id = ${correctId}
-              WHERE user_id = ${orphanId}`,
-        );
-        return { userId: correctId, timezone };
+        correctId = canonicalRow.user_id;
       }
     }
+
+    // Single-user fallback: if no email match found, but there's exactly one user
+    // with a non-slack auth_account, the Slack link likely points to a bot-created orphan
+    if (!correctId) {
+      const realUsers = await db.execute<{ user_id: string }>(
+        sql`SELECT DISTINCT user_id FROM fitness.auth_account
+            WHERE auth_provider != 'slack'`,
+      );
+      if (realUsers.length === 1 && realUsers[0] && realUsers[0].user_id !== existingRow.user_id) {
+        correctId = realUsers[0].user_id;
+      }
+    }
+
+    if (correctId) {
+      const orphanId = existingRow.user_id;
+      logger.info(
+        `[slack] Repairing orphan: moving Slack user ${slackUserId} from ${orphanId} → ${correctId}`,
+      );
+      // Repoint the Slack auth_account to the correct user
+      await db.execute(
+        sql`UPDATE fitness.auth_account
+            SET user_id = ${correctId}
+            WHERE auth_provider = 'slack' AND provider_account_id = ${slackUserId}`,
+      );
+      // Migrate any food entries saved under the orphan user
+      await db.execute(
+        sql`UPDATE fitness.food_entry
+            SET user_id = ${correctId}
+            WHERE user_id = ${orphanId}`,
+      );
+      return { userId: correctId, timezone };
+    }
+
     return { userId: existingRow.user_id, timezone };
   }
 
@@ -457,6 +505,16 @@ function registerHandlers(app: AppType, db: Database) {
           ts: body.message.ts,
           ...savedMessage,
         });
+      }
+
+      // Invalidate cached food/nutrition queries so the UI reflects the new entries.
+      // We need the user_id from the entries to scope the invalidation.
+      const userRow = await db.execute<{ user_id: string }>(
+        sql`SELECT DISTINCT user_id FROM fitness.food_entry WHERE id = ANY(${entryIds}) LIMIT 1`,
+      );
+      if (userRow[0]) {
+        await queryCache.invalidateByPrefix(`${userRow[0].user_id}:food.`);
+        await queryCache.invalidateByPrefix(`${userRow[0].user_id}:nutrition.`);
       }
 
       logger.info(`[slack] Confirmed ${confirmedCount} food entries`);

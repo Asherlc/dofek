@@ -2,6 +2,7 @@
 export interface CacheStore {
   get<T>(key: string): Promise<T | undefined>;
   set<T>(key: string, data: T, ttlMs: number): Promise<void>;
+  invalidateByPrefix(prefix: string): Promise<void>;
   invalidateAll(): Promise<void>;
 }
 
@@ -27,6 +28,12 @@ class MemoryCacheStore implements CacheStore {
 
   async set<T>(key: string, data: T, ttlMs: number): Promise<void> {
     this.store.set(key, { data, expiresAt: Date.now() + ttlMs });
+  }
+
+  async invalidateByPrefix(prefix: string): Promise<void> {
+    for (const key of this.store.keys()) {
+      if (key.startsWith(prefix)) this.store.delete(key);
+    }
   }
 
   async invalidateAll(): Promise<void> {
