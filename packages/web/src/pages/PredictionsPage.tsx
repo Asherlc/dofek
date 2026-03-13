@@ -60,31 +60,33 @@ export function PredictionsPage() {
         </div>
 
         {targets.data && (
-          <div className="flex flex-wrap gap-4">
+          <div className="flex flex-wrap gap-6">
             {TARGET_SECTIONS.map((section) => {
               const sectionTargets = targets.data.filter((t) => section.ids.includes(t.id));
               if (sectionTargets.length === 0) return null;
               return (
-                <div key={section.label} className="flex items-center gap-2">
-                  <span className="text-[10px] text-zinc-600 uppercase tracking-wider mr-1">
+                <div key={section.label} className="flex flex-col gap-1.5">
+                  <span className="text-[10px] text-zinc-600 uppercase tracking-wider">
                     {section.label}
                   </span>
-                  {sectionTargets.map((t) => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => setTargetId(t.id)}
-                      className={`px-3 py-1.5 rounded-lg border transition-colors text-left ${
-                        targetId === t.id
-                          ? "border-emerald-700 bg-emerald-950/50 text-zinc-100"
-                          : "border-zinc-800 bg-zinc-900 text-zinc-500 hover:text-zinc-300 hover:border-zinc-700"
-                      }`}
-                    >
-                      <span className="text-xs font-medium block">
-                        {TARGET_FRIENDLY_LABELS[t.id] ?? t.label}
-                      </span>
-                    </button>
-                  ))}
+                  <div className="flex gap-2">
+                    {sectionTargets.map((t) => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => setTargetId(t.id)}
+                        className={`px-3 py-1.5 rounded-lg border transition-colors text-left ${
+                          targetId === t.id
+                            ? "border-emerald-700 bg-emerald-950/50 text-zinc-100"
+                            : "border-zinc-800 bg-zinc-900 text-zinc-500 hover:text-zinc-300 hover:border-zinc-700"
+                        }`}
+                      >
+                        <span className="text-xs font-medium block">
+                          {TARGET_FRIENDLY_LABELS[t.id] ?? t.label}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               );
             })}
