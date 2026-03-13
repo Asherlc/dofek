@@ -29,12 +29,13 @@ describe("Food router", () => {
 
   afterAll(async () => {
     if (server) {
+      server.closeAllConnections();
       await new Promise<void>((resolve) => {
         server.close(() => resolve());
       });
     }
     await testCtx?.cleanup();
-  }, 30_000);
+  });
 
   /** Helper: POST a tRPC mutation and return parsed response */
   async function mutate(path: string, input: Record<string, unknown> = {}) {

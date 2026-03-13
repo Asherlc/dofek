@@ -40,12 +40,13 @@ describe("Router SQL validity", () => {
 
   afterAll(async () => {
     if (server) {
+      server.closeAllConnections();
       await new Promise<void>((resolve) => {
         server.close(() => resolve());
       });
     }
     await testCtx?.cleanup();
-  }, 30_000);
+  });
 
   /** Helper: POST a tRPC query and return parsed response */
   async function query(path: string, input: Record<string, unknown> = {}) {

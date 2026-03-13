@@ -30,12 +30,13 @@ describe("HealthKit sync router", () => {
 
   afterAll(async () => {
     if (server) {
+      server.closeAllConnections();
       await new Promise<void>((resolve) => {
         server.close(() => resolve());
       });
     }
     await testCtx?.cleanup();
-  }, 30_000);
+  });
 
   async function mutate(path: string, input: Record<string, unknown> = {}) {
     const res = await fetch(`${baseUrl}/api/trpc/${path}`, {

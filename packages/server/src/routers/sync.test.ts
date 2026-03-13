@@ -15,7 +15,7 @@ describe("countProviderRecords SQL", () => {
     // Reset search_path to only 'public' — simulates production where
     // the default search_path may not include 'fitness'
     await testCtx.db.execute(sql`SET search_path TO public`);
-  }, 30_000);
+  });
 
   afterAll(async () => {
     await testCtx?.cleanup();

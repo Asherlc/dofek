@@ -30,16 +30,17 @@ describe("tRPC API", () => {
         resolve();
       });
     });
-  }, 30_000);
+  });
 
   afterAll(async () => {
     if (server) {
+      server.closeAllConnections();
       await new Promise<void>((resolve) => {
         server.close(() => resolve());
       });
     }
     await testCtx?.cleanup();
-  }, 30_000);
+  });
 
   describe("methodOverride: POST for queries", () => {
     it("accepts POST for queries without input", async () => {
