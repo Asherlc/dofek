@@ -16,7 +16,15 @@ Provider-agnostic fitness and health data pipeline. Pulls data from various APIs
 ├─────────────┤  │         plugins)                               │  tRPC)    │
 │  FatSecret  │──┤                                                └───────────┘
 ├─────────────┤  │
-│  Withings   │──┘
+│  Withings   │──┤
+├─────────────┤  │
+│  Hevy       │──┤
+├─────────────┤  │
+│ RideWithGPS │──┤
+├─────────────┤  │
+│  Polar      │──┤
+├─────────────┤  │
+│  Garmin     │──┘
 └─────────────┘
 ```
 
@@ -201,6 +209,29 @@ See `packages/server/src/routers/life-events.ts` for the API and `packages/web/s
 - [x] GHA CI with Docker build + push to GHCR
 - [x] Watchtower auto-deploy with Slack notifications
 - [x] CLI for authenticating, pulling, and managing providers (`sync`, `auth`, `import` commands)
+
+## Provider Configuration
+
+Each provider is enabled by adding its credentials to `.env` (SOPS-encrypted). OAuth providers also require a one-time browser authorization via the Data Sources page.
+
+| Provider | Auth Type | Required `.env` Variables |
+|----------|-----------|--------------------------|
+| Apple Health | File import | None (upload `.zip`/`.xml` via UI) |
+| Wahoo | OAuth 2.0 | `WAHOO_CLIENT_ID`, `WAHOO_CLIENT_SECRET` |
+| WHOOP | Custom (email/password + MFA) | None (credentials entered in UI modal) |
+| Peloton | Automated login | `PELOTON_USERNAME`, `PELOTON_PASSWORD` |
+| FatSecret | OAuth 1.0 | `FATSECRET_CONSUMER_KEY`, `FATSECRET_CONSUMER_SECRET` |
+| Withings | OAuth 2.0 | `WITHINGS_CLIENT_ID`, `WITHINGS_CLIENT_SECRET` |
+| Hevy | API key | `HEVY_API_KEY` |
+| RideWithGPS | API key + credentials | `RWGPS_API_KEY`, `RWGPS_EMAIL`, `RWGPS_PASSWORD` |
+| Polar | OAuth 2.0 | `POLAR_CLIENT_ID`, `POLAR_CLIENT_SECRET` |
+| Garmin | SSO login | `GARMIN_EMAIL`, `GARMIN_PASSWORD` |
+| Strong | File import | None (upload `.csv` via UI) |
+| Cronometer | File import | None (upload `.csv` via UI) |
+
+OAuth providers (Wahoo, Withings, Polar, FatSecret) also need `OAUTH_REDIRECT_URI` set to your deployment's callback URL (e.g. `https://dofek.asherlc.com/callback`). After adding credentials, click the provider tile on the Data Sources page to complete the OAuth flow.
+
+**Not supported:** Fitbit (requires a Fitbit device), standalone FIT file import (FIT parsing exists but is only used internally by the Wahoo provider).
 
 ## Secrets
 
