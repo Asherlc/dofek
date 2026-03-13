@@ -6,7 +6,7 @@
  * feature importances, and model diagnostics.
  */
 
-import type { DailyFeatureRow, PredictionTarget } from "./features.ts";
+import type { DailyFeatureRow, ExtractedDataset, PredictionTarget } from "./features.ts";
 import { buildDataset, PREDICTION_TARGETS } from "./features.ts";
 import { GradientBoostedTrees } from "./gradient-boost.ts";
 import { LinearRegression } from "./regression.ts";
@@ -109,6 +109,70 @@ export function trainPredictor(
     targetId: target.id,
     targetLabel: target.label,
     targetUnit: target.unit,
+    featureImportances: importances,
+    predictions,
+    diagnostics: {
+      linearRSquared: round4(linear.rSquared),
+      linearAdjustedRSquared: round4(linear.adjustedRSquared),
+      treeRSquared: round4(tree.rSquared),
+      crossValidatedRSquared: round4(cvRSquared),
+      sampleCount: X.length,
+      featureCount: featureNames.length,
+    },
+    tomorrowPrediction,
+  };
+}
+
+/**
+ * Train both models from a pre-built dataset.
+ * Used by activity-level predictions where the dataset is built by a
+ * different pipeline than the daily feature builder.
+ */
+export function trainFromDataset(
+  dataset: ExtractedDataset,
+  targetId: string,
+  targetLabel: string,
+  targetUnit: string,
+): PredictionResult {
+  const { featureNames, X, y, dates } = dataset;
+
+  const linear = new LinearRegression();
+  linear.fit(X, y);
+
+  const tree = new GradientBoostedTrees({
+    nEstimators: 100,
+    maxDepth: 4,
+    learningRate: 0.05,
+    minSamplesLeaf: Math.max(3, Math.floor(X.length * 0.05)),
+  });
+  tree.fit(X, y);
+
+  const cvRSquared = crossValidate(X, y, 5);
+
+  const importances: FeatureImportance[] = featureNames.map((name, i) => ({
+    name,
+    linearImportance: linear.featureImportances[i] ?? 0,
+    treeImportance: tree.featureImportances[i] ?? 0,
+    linearCoefficient: linear.coefficients[i] ?? 0,
+  }));
+  importances.sort((a, b) => b.treeImportance - a.treeImportance);
+
+  const predictions: PredictionPoint[] = X.map((features, i) => ({
+    date: dates[i]!,
+    actual: y[i]!,
+    linearPrediction: round2(linear.predict(features)),
+    treePrediction: round2(tree.predict(features)),
+  }));
+
+  // Activity-level predictions include in-session features (e.g. duration,
+  // avg HR, set count) that are only known *during* the workout, so we cannot
+  // meaningfully predict the "next" session from the last row's feature vector.
+  const tomorrowPrediction: PredictionResult["tomorrowPrediction"] = null;
+
+  return {
+    targetId,
+    targetLabel,
+    targetUnit,
     featureImportances: importances,
     predictions,
     diagnostics: {

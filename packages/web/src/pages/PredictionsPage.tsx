@@ -10,13 +10,27 @@ const TARGET_DESCRIPTIONS: Record<string, string> = {
   resting_hr: "Your resting heart rate reflects cardiovascular fitness. Lower is generally better.",
   sleep_efficiency:
     "Sleep efficiency is the percentage of time in bed you actually spend asleep. Higher is better.",
+  weight: "Body weight predicted from nutrition, exercise, and sleep patterns.",
+  cardio_power:
+    "Predicts your average power output for your next cardio session based on recent recovery, training load, and nutrition.",
+  strength_volume:
+    "Predicts your total training volume (weight x reps) for your next strength session based on recovery and recent training.",
 };
 
 const TARGET_FRIENDLY_LABELS: Record<string, string> = {
   hrv: "HRV",
   resting_hr: "Resting HR",
   sleep_efficiency: "Sleep Quality",
+  weight: "Weight",
+  cardio_power: "Cardio Power",
+  strength_volume: "Strength Volume",
 };
+
+const TARGET_SECTIONS: { label: string; ids: string[] }[] = [
+  { label: "Recovery", ids: ["hrv", "resting_hr", "sleep_efficiency"] },
+  { label: "Fitness", ids: ["cardio_power", "strength_volume"] },
+  { label: "Body", ids: ["weight"] },
+];
 
 export function PredictionsPage() {
   const [days, setDays] = useState(365);
@@ -24,6 +38,10 @@ export function PredictionsPage() {
 
   const targets = trpc.predictions.targets.useQuery();
   const prediction = trpc.predictions.predict.useQuery({ target: targetId, days });
+  // Defaults to false (daily) while targets is loading — acceptable since
+  // targets loads near-instantly as a static list and prediction data
+  // (which uses isActivityTarget) takes longer to arrive.
+  const isActivityTarget = targets.data?.find((t) => t.id === targetId)?.type === "activity";
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 overflow-x-hidden">
@@ -42,23 +60,34 @@ export function PredictionsPage() {
         </div>
 
         {targets.data && (
-          <div className="flex gap-2">
-            {targets.data.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => setTargetId(t.id)}
-                className={`px-4 py-2 rounded-lg border transition-colors text-left ${
-                  targetId === t.id
-                    ? "border-emerald-700 bg-emerald-950/50 text-zinc-100"
-                    : "border-zinc-800 bg-zinc-900 text-zinc-500 hover:text-zinc-300 hover:border-zinc-700"
-                }`}
-              >
-                <span className="text-xs font-medium block">
-                  {TARGET_FRIENDLY_LABELS[t.id] ?? t.label}
-                </span>
-              </button>
-            ))}
+          <div className="flex flex-wrap gap-4">
+            {TARGET_SECTIONS.map((section) => {
+              const sectionTargets = targets.data.filter((t) => section.ids.includes(t.id));
+              if (sectionTargets.length === 0) return null;
+              return (
+                <div key={section.label} className="flex items-center gap-2">
+                  <span className="text-[10px] text-zinc-600 uppercase tracking-wider mr-1">
+                    {section.label}
+                  </span>
+                  {sectionTargets.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => setTargetId(t.id)}
+                      className={`px-3 py-1.5 rounded-lg border transition-colors text-left ${
+                        targetId === t.id
+                          ? "border-emerald-700 bg-emerald-950/50 text-zinc-100"
+                          : "border-zinc-800 bg-zinc-900 text-zinc-500 hover:text-zinc-300 hover:border-zinc-700"
+                      }`}
+                    >
+                      <span className="text-xs font-medium block">
+                        {TARGET_FRIENDLY_LABELS[t.id] ?? t.label}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              );
+            })}
           </div>
         )}
 
@@ -81,11 +110,13 @@ export function PredictionsPage() {
                 prediction={prediction.data.tomorrowPrediction}
                 label={prediction.data.targetLabel}
                 unit={prediction.data.targetUnit}
+                isActivityTarget={isActivityTarget}
               />
               <KeyTakeaway
                 importances={prediction.data.featureImportances}
                 targetLabel={prediction.data.targetLabel}
                 diagnostics={prediction.data.diagnostics}
+                isActivityTarget={isActivityTarget}
               />
             </div>
             <FeatureImportanceChart
@@ -97,7 +128,10 @@ export function PredictionsPage() {
               targetLabel={prediction.data.targetLabel}
               unit={prediction.data.targetUnit}
             />
-            <ModelConfidence diagnostics={prediction.data.diagnostics} />
+            <ModelConfidence
+              diagnostics={prediction.data.diagnostics}
+              isActivityTarget={isActivityTarget}
+            />
           </>
         )}
       </main>
@@ -127,13 +161,17 @@ function KeyTakeaway({
   importances,
   targetLabel,
   diagnostics,
+  isActivityTarget,
 }: {
   importances: FeatureImportance[];
   targetLabel: string;
   diagnostics: Diagnostics;
+  isActivityTarget: boolean;
 }) {
   const top3 = importances.slice(0, 3).map((f) => friendlyFeatureName(f.name).toLowerCase());
   const confidenceLevel = getConfidenceLevel(diagnostics.crossValidatedRSquared);
+  const timeframe = isActivityTarget ? "your next session's" : "tomorrow's";
+  const sampleUnit = isActivityTarget ? "sessions" : "days";
 
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4 flex flex-col justify-between">
@@ -141,7 +179,7 @@ function KeyTakeaway({
         <p className="text-xs text-zinc-500 uppercase tracking-wider mb-2">Key Finding</p>
         <p className="text-sm text-zinc-200 leading-relaxed">
           Your <span className="text-emerald-400 font-medium">{top3[0]}</span> has the biggest
-          impact on tomorrow's {targetLabel.toLowerCase()}
+          impact on {timeframe} {targetLabel.toLowerCase()}
           {top3.length > 1 && (
             <>
               , followed by <span className="text-emerald-400/70 font-medium">{top3[1]}</span>
@@ -157,11 +195,11 @@ function KeyTakeaway({
         </p>
       </div>
       <p className="text-[10px] text-zinc-600 mt-3">
-        Based on {diagnostics.sampleCount} days of data.{" "}
+        Based on {diagnostics.sampleCount} {sampleUnit} of data.{" "}
         {confidenceLevel === "strong"
           ? "The models found clear patterns in your data."
           : confidenceLevel === "moderate"
-            ? "The models found some patterns, but day-to-day variation is high."
+            ? `The models found some patterns, but ${isActivityTarget ? "session-to-session" : "day-to-day"} variation is high.`
             : "Your data is quite variable — take these patterns as directional, not definitive."}
       </p>
     </div>
@@ -185,22 +223,25 @@ function TomorrowCard({
   prediction,
   label,
   unit,
+  isActivityTarget,
 }: {
   prediction: TomorrowPrediction | null;
   label: string;
   unit: string;
+  isActivityTarget: boolean;
 }) {
   if (!prediction) return null;
 
   const avg = (prediction.linear + prediction.tree) / 2;
   const spread = Math.abs(prediction.linear - prediction.tree);
   const agreement = spread < avg * 0.05 ? "high" : spread < avg * 0.15 ? "moderate" : "low";
+  const heading = isActivityTarget
+    ? `Next Session's Predicted ${label}`
+    : `Tomorrow's Predicted ${label}`;
 
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-      <p className="text-xs text-zinc-500 uppercase tracking-wider mb-2">
-        Tomorrow's Predicted {label}
-      </p>
+      <p className="text-xs text-zinc-500 uppercase tracking-wider mb-2">{heading}</p>
       <div className="flex items-baseline gap-3">
         <span className="text-3xl font-bold text-emerald-400">{avg.toFixed(0)}</span>
         <span className="text-sm text-zinc-500">{unit}</span>
@@ -215,7 +256,7 @@ function TomorrowCard({
           ? "Two independent models arrived at nearly the same prediction — this gives us more confidence."
           : agreement === "moderate"
             ? `The two models predict ${prediction.linear.toFixed(0)} and ${prediction.tree.toFixed(0)} — reasonably close.`
-            : `The models disagree (${prediction.linear.toFixed(0)} vs ${prediction.tree.toFixed(0)}) — tomorrow may be hard to predict.`}
+            : `The models disagree (${prediction.linear.toFixed(0)} vs ${prediction.tree.toFixed(0)}) — ${isActivityTarget ? "this metric" : "tomorrow"} may be hard to predict.`}
       </p>
     </div>
   );
@@ -224,6 +265,7 @@ function TomorrowCard({
 // ── Feature importance chart ───────────────────────────────────────────────
 
 const FRIENDLY_FEATURE_NAMES: Record<string, string> = {
+  // Daily features
   hrv: "HRV",
   resting_hr: "Resting heart rate",
   sleep_duration: "Sleep duration",
@@ -241,6 +283,32 @@ const FRIENDLY_FEATURE_NAMES: Record<string, string> = {
   fat_g: "Fat",
   fiber_g: "Fiber",
   skin_temp: "Skin temperature",
+  // Activity trailing context features
+  hrv_3d: "Recent HRV (3-day avg)",
+  resting_hr_3d: "Recent resting HR (3-day avg)",
+  sleep_duration_3d: "Recent sleep (3-day avg)",
+  deep_sleep_3d: "Recent deep sleep (3-day avg)",
+  sleep_efficiency_3d: "Recent sleep quality (3-day avg)",
+  calories_3d: "Recent calorie intake (3-day avg)",
+  protein_3d: "Recent protein intake (3-day avg)",
+  weight_kg: "Body weight",
+  exercise_minutes_7d: "Exercise level (7-day avg)",
+  steps_7d: "Daily steps (7-day avg)",
+  // Cardio features
+  duration_min: "Session duration",
+  avg_hr: "Average heart rate",
+  avg_speed: "Average speed",
+  total_distance: "Total distance",
+  elevation_gain: "Elevation gain",
+  avg_cadence: "Cadence",
+  // Strength features
+  working_set_count: "Number of working sets",
+  max_weight: "Heaviest weight used",
+  avg_rpe: "Average effort (RPE)",
+  // Trailing session features
+  days_since_last_session: "Days since last session",
+  prev_session_target: "Previous session result",
+  sessions_last_14d: "Sessions in last 2 weeks",
 };
 
 function friendlyFeatureName(name: string): string {
@@ -429,7 +497,13 @@ function TimelineChart({
 
 // ── Model confidence (replaces diagnostics bar) ────────────────────────────
 
-function ModelConfidence({ diagnostics }: { diagnostics: Diagnostics }) {
+function ModelConfidence({
+  diagnostics,
+  isActivityTarget,
+}: {
+  diagnostics: Diagnostics;
+  isActivityTarget: boolean;
+}) {
   const cvR2 = diagnostics.crossValidatedRSquared;
   const confidence = getConfidenceLevel(cvR2);
 
@@ -453,7 +527,8 @@ function ModelConfidence({ diagnostics }: { diagnostics: Diagnostics }) {
       </div>
       <div className="flex gap-6 text-xs text-zinc-500">
         <span>
-          Based on <span className="text-zinc-300">{diagnostics.sampleCount}</span> days
+          Based on <span className="text-zinc-300">{diagnostics.sampleCount}</span>{" "}
+          {isActivityTarget ? "sessions" : "days"}
         </span>
         <span>
           Using <span className="text-zinc-300">{diagnostics.featureCount}</span> factors
