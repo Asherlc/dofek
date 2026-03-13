@@ -1,4 +1,5 @@
 import ReactECharts from "echarts-for-react";
+import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface Series {
   name: string;
@@ -17,11 +18,7 @@ interface TimeSeriesChartProps {
 
 export function TimeSeriesChart({ series, height = 200, yAxis, loading }: TimeSeriesChartProps) {
   if (loading) {
-    return (
-      <div className="flex items-center justify-center" style={{ height }}>
-        <span className="text-zinc-600 text-sm">Loading...</span>
-      </div>
-    );
+    return <ChartLoadingSkeleton height={height} />;
   }
 
   const yAxisConfig = (yAxis ?? [{}]).map((axis, i) => ({

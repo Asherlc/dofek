@@ -1,5 +1,6 @@
 import ReactECharts from "echarts-for-react";
 import type { MicronutrientAdequacyRow } from "../../../server/src/routers/nutrition-analytics.ts";
+import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface MicronutrientChartProps {
   data: MicronutrientAdequacyRow[];
@@ -8,11 +9,7 @@ interface MicronutrientChartProps {
 
 export function MicronutrientChart({ data, loading }: MicronutrientChartProps) {
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-[300px]">
-        <span className="text-zinc-600 text-sm">Loading...</span>
-      </div>
-    );
+    return <ChartLoadingSkeleton height={300} />;
   }
 
   if (data.length === 0) {

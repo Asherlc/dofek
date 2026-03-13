@@ -1,5 +1,6 @@
 import ReactECharts from "echarts-for-react";
 import type { SleepConsistencyRow } from "../../../server/src/routers/recovery.ts";
+import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface SleepConsistencyChartProps {
   data: SleepConsistencyRow[];
@@ -16,11 +17,7 @@ function formatHour(h: number): string {
 
 export function SleepConsistencyChart({ data, loading }: SleepConsistencyChartProps) {
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-[250px]">
-        <span className="text-zinc-600 text-sm">Loading...</span>
-      </div>
-    );
+    return <ChartLoadingSkeleton height={250} />;
   }
 
   if (data.length === 0) {

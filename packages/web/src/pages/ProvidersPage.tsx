@@ -74,13 +74,27 @@ export function ProvidersPage() {
               <table className="w-full text-xs">
                 <thead className="sticky top-0 bg-zinc-900 z-10">
                   <tr className="border-b border-zinc-800 text-zinc-500">
-                    <th className="text-left px-4 py-2 font-medium">Time</th>
-                    <th className="text-left px-4 py-2 font-medium">Provider</th>
-                    <th className="text-left px-4 py-2 font-medium">Type</th>
-                    <th className="text-left px-4 py-2 font-medium">Status</th>
-                    <th className="text-right px-4 py-2 font-medium">Records</th>
-                    <th className="text-right px-4 py-2 font-medium">Duration</th>
-                    <th className="text-left px-4 py-2 font-medium">Error</th>
+                    <th scope="col" className="text-left px-4 py-2 font-medium">
+                      Time
+                    </th>
+                    <th scope="col" className="text-left px-4 py-2 font-medium">
+                      Provider
+                    </th>
+                    <th scope="col" className="text-left px-4 py-2 font-medium">
+                      Type
+                    </th>
+                    <th scope="col" className="text-left px-4 py-2 font-medium">
+                      Status
+                    </th>
+                    <th scope="col" className="text-right px-4 py-2 font-medium">
+                      Records
+                    </th>
+                    <th scope="col" className="text-right px-4 py-2 font-medium">
+                      Duration
+                    </th>
+                    <th scope="col" className="text-left px-4 py-2 font-medium">
+                      Error
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -153,9 +167,15 @@ export function ProvidersPage() {
               <table className="w-full text-xs">
                 <thead className="sticky top-0 bg-zinc-900 z-10">
                   <tr className="border-b border-zinc-800 text-zinc-500">
-                    <th className="text-left px-4 py-2 font-medium w-40">Time</th>
-                    <th className="text-left px-4 py-2 font-medium w-16">Level</th>
-                    <th className="text-left px-4 py-2 font-medium">Message</th>
+                    <th scope="col" className="text-left px-4 py-2 font-medium w-40">
+                      Time
+                    </th>
+                    <th scope="col" className="text-left px-4 py-2 font-medium w-16">
+                      Level
+                    </th>
+                    <th scope="col" className="text-left px-4 py-2 font-medium">
+                      Message
+                    </th>
                   </tr>
                 </thead>
                 <tbody>

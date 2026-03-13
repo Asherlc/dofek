@@ -1,5 +1,6 @@
 import type React from "react";
 import { useCallback, useMemo, useRef, useState } from "react";
+import { formatRelativeTime, formatTime } from "../lib/dates.ts";
 import { pollSyncJob } from "../lib/poll-sync-job.ts";
 import { trpc } from "../lib/trpc.ts";
 
@@ -227,7 +228,11 @@ export function DataSourcesPanel() {
       </div>
 
       {providers.isLoading ? (
-        <div className="text-xs text-zinc-500">Loading providers...</div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="h-24 rounded-lg bg-zinc-800/50 animate-pulse" />
+          ))}
+        </div>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {unifiedProviders.map((entry) => {
@@ -517,7 +522,8 @@ function WhoopAuthModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
           <button
             type="button"
             onClick={onClose}
-            className="text-zinc-500 hover:text-zinc-300 text-lg leading-none"
+            className="text-zinc-500 hover:text-zinc-300 text-lg leading-none p-1"
+            aria-label="Close"
           >
             &times;
           </button>
@@ -613,28 +619,6 @@ function WhoopAuthModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
 
 // ── Helpers ──
 
-function formatRelativeTime(isoString: string): string {
-  const diff = Date.now() - new Date(isoString).getTime();
-  const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
-
-function formatTime(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
-}
-
 function StatusDot({ status }: { status: SyncStatus }) {
   const colors = {
     idle: "bg-zinc-600",
@@ -642,7 +626,19 @@ function StatusDot({ status }: { status: SyncStatus }) {
     done: "bg-emerald-400",
     error: "bg-red-400",
   };
-  return <span className={`inline-block w-2 h-2 rounded-full ${colors[status]}`} />;
+  const labels: Record<SyncStatus, string> = {
+    idle: "Idle",
+    syncing: "Syncing",
+    done: "Synced",
+    error: "Error",
+  };
+  return (
+    <span
+      className={`inline-block w-2 h-2 rounded-full ${colors[status]}`}
+      role="status"
+      aria-label={labels[status]}
+    />
+  );
 }
 
 // ── File Import Zone (reusable for Apple Health, Strong CSV, Cronometer CSV) ──

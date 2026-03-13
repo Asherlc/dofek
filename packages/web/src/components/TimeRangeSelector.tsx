@@ -15,7 +15,11 @@ export function TimeRangeSelector({
   onChange: (days: number) => void;
 }) {
   return (
-    <div className="flex shrink-0 gap-0.5 sm:gap-1 bg-zinc-900 rounded-lg p-1 border border-zinc-800">
+    <div
+      className="flex shrink-0 gap-0.5 sm:gap-1 bg-zinc-900 rounded-lg p-1 border border-zinc-800"
+      role="group"
+      aria-label="Time range"
+    >
       {TIME_RANGES.map((r) => (
         <button
           key={r.label}

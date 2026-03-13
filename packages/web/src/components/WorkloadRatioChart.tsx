@@ -1,5 +1,6 @@
 import type { WorkloadRatioRow } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
+import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface WorkloadRatioChartProps {
   data: WorkloadRatioRow[];
@@ -8,11 +9,7 @@ interface WorkloadRatioChartProps {
 
 export function WorkloadRatioChart({ data, loading }: WorkloadRatioChartProps) {
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-[400px]">
-        <span className="text-zinc-600 text-sm">Loading...</span>
-      </div>
-    );
+    return <ChartLoadingSkeleton height={400} />;
   }
 
   if (data.length === 0) {

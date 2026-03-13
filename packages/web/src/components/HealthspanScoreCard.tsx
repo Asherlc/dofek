@@ -1,5 +1,6 @@
 import type { HealthspanMetric, HealthspanResult } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
+import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface HealthspanScoreCardProps {
   data: HealthspanResult | undefined;
@@ -29,11 +30,7 @@ function paceLabel(pace: number): string {
 
 export function HealthspanScoreCard({ data, loading }: HealthspanScoreCardProps) {
   if (loading) {
-    return (
-      <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-6 flex items-center justify-center h-[400px]">
-        <span className="text-zinc-600 text-sm">Loading...</span>
-      </div>
-    );
+    return <ChartLoadingSkeleton height={400} />;
   }
 
   if (!data || data.metrics.length === 0) {

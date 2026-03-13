@@ -265,7 +265,7 @@ export const cyclingAdvancedRouter = router({
               GROUP BY activity_id
               HAVING COUNT(*) > 1
             )
-            SELECT ROUND((MAX((ap.cumsum - prev.cumsum)::numeric / 1200) * 0.95)::numeric, 1) AS ftp
+            SELECT ROUND((MAX((ap.cumsum - prev.cumsum)::numeric / ROUND(1200.0 / sr.interval_s)) * 0.95)::numeric, 1) AS ftp
             FROM activity_power ap
             JOIN sample_rate sr ON sr.activity_id = ap.activity_id
             JOIN activity_power prev
@@ -284,7 +284,7 @@ export const cyclingAdvancedRouter = router({
                 AVG(ms.power) OVER (
                   PARTITION BY ms.activity_id
                   ORDER BY ms.recorded_at
-                  ROWS BETWEEN 29 PRECEDING AND CURRENT ROW
+                  RANGE BETWEEN INTERVAL '29 seconds' PRECEDING AND CURRENT ROW
                 ) AS rolling_30s_power
               FROM fitness.metric_stream ms
               JOIN fitness.v_activity a ON a.id = ms.activity_id

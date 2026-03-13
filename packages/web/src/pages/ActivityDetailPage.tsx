@@ -1,0 +1,569 @@
+import { Link, useParams } from "@tanstack/react-router";
+import ReactECharts from "echarts-for-react";
+import { useEffect, useRef } from "react";
+import type {
+  ActivityDetail,
+  ActivityHrZone,
+  StreamPoint,
+} from "../../../server/src/routers/activity.ts";
+import { AppHeader } from "../components/AppHeader.tsx";
+import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
+import { trpc } from "../lib/trpc.ts";
+
+const CHART_COLORS = {
+  heartRate: "#ef4444",
+  power: "#f59e0b",
+  speed: "#3b82f6",
+  cadence: "#8b5cf6",
+  altitude: "#6b7280",
+};
+
+const ZONE_COLORS = ["#22c55e", "#84cc16", "#eab308", "#f97316", "#ef4444"];
+
+export function ActivityDetailPage() {
+  const { id } = useParams({ from: "/activity/$id" });
+
+  const detail = trpc.activity.byId.useQuery({ id });
+  const stream = trpc.activity.stream.useQuery({ id, maxPoints: 500 });
+  const hrZones = trpc.activity.hrZones.useQuery({ id });
+
+  if (detail.isLoading) {
+    return (
+      <div className="min-h-screen bg-zinc-950 text-zinc-100">
+        <AppHeader />
+        <main className="mx-auto max-w-7xl px-3 sm:px-6 py-4 sm:py-6">
+          <ChartLoadingSkeleton height={400} />
+        </main>
+      </div>
+    );
+  }
+
+  if (detail.error || !detail.data) {
+    return (
+      <div className="min-h-screen bg-zinc-950 text-zinc-100">
+        <AppHeader />
+        <main className="mx-auto max-w-7xl px-3 sm:px-6 py-8 text-center">
+          <p className="text-zinc-400 mb-4">Activity not found</p>
+          <Link to="/dashboard" className="text-emerald-500 hover:text-emerald-400 text-sm">
+            Back to dashboard
+          </Link>
+        </main>
+      </div>
+    );
+  }
+
+  const activity = detail.data;
+  const points = stream.data ?? [];
+  const zones = hrZones.data ?? [];
+  const hasGps = points.some((p) => p.lat != null && p.lng != null);
+  const hasHr = points.some((p) => p.heartRate != null);
+  const hasPower = points.some((p) => p.power != null);
+  const hasSpeed = points.some((p) => p.speed != null);
+  const hasCadence = points.some((p) => p.cadence != null);
+  const hasAltitude = points.some((p) => p.altitude != null);
+
+  return (
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 overflow-x-hidden">
+      <AppHeader />
+      <main className="mx-auto max-w-7xl px-3 sm:px-6 py-4 sm:py-6 space-y-6">
+        <div className="flex items-center gap-2 text-xs text-zinc-500">
+          <Link to="/dashboard" className="hover:text-zinc-300">
+            Dashboard
+          </Link>
+          <span>/</span>
+          <span className="text-zinc-300">{activity.name ?? activity.activityType}</span>
+        </div>
+
+        <ActivityHeader activity={activity} />
+
+        {hasGps && (
+          <Section title="Route Map">
+            <RouteMap points={points} />
+          </Section>
+        )}
+
+        {(hasHr || hasPower || hasSpeed || hasCadence) && (
+          <Section title="Performance">
+            <MetricsChart
+              points={points}
+              hasHr={hasHr}
+              hasPower={hasPower}
+              hasSpeed={hasSpeed}
+              hasCadence={hasCadence}
+              loading={stream.isLoading}
+            />
+          </Section>
+        )}
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {hasAltitude && (
+            <Section title="Elevation Profile">
+              <ElevationChart points={points} loading={stream.isLoading} />
+            </Section>
+          )}
+
+          {zones.length > 0 && (
+            <Section title="Heart Rate Zones">
+              <HrZonesChart zones={zones} loading={hrZones.isLoading} />
+            </Section>
+          )}
+        </div>
+      </main>
+    </div>
+  );
+}
+
+function ActivityHeader({ activity }: { activity: ActivityDetail }) {
+  const durationMin =
+    activity.startedAt && activity.endedAt
+      ? Math.round(
+          (new Date(activity.endedAt).getTime() - new Date(activity.startedAt).getTime()) / 60000,
+        )
+      : null;
+
+  const formatDuration = (mins: number) => {
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+  };
+
+  const stats: Array<{ label: string; value: string }> = [];
+
+  if (durationMin != null) stats.push({ label: "Duration", value: formatDuration(durationMin) });
+  if (activity.totalDistance != null)
+    stats.push({ label: "Distance", value: `${(activity.totalDistance / 1000).toFixed(1)} km` });
+  if (activity.elevationGain != null)
+    stats.push({ label: "Elevation Gain", value: `${Math.round(activity.elevationGain)} m` });
+  if (activity.avgHr != null)
+    stats.push({ label: "Avg Heart Rate", value: `${Math.round(activity.avgHr)} bpm` });
+  if (activity.maxHr != null)
+    stats.push({ label: "Max Heart Rate", value: `${Math.round(activity.maxHr)} bpm` });
+  if (activity.avgPower != null)
+    stats.push({ label: "Avg Power", value: `${Math.round(activity.avgPower)} W` });
+  if (activity.maxPower != null)
+    stats.push({ label: "Max Power", value: `${Math.round(activity.maxPower)} W` });
+  if (activity.avgSpeed != null)
+    stats.push({ label: "Avg Speed", value: `${(activity.avgSpeed * 3.6).toFixed(1)} km/h` });
+  if (activity.avgCadence != null)
+    stats.push({ label: "Avg Cadence", value: `${Math.round(activity.avgCadence)} rpm` });
+
+  return (
+    <div>
+      <div className="flex items-baseline gap-3 mb-1">
+        <h1 className="text-xl font-semibold text-zinc-100">
+          {activity.name ?? activity.activityType}
+        </h1>
+        <span className="text-xs text-zinc-500 capitalize">{activity.activityType}</span>
+      </div>
+      <p className="text-sm text-zinc-500 mb-4">
+        {new Date(activity.startedAt).toLocaleDateString(undefined, {
+          weekday: "long",
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+        })}
+        {" at "}
+        {new Date(activity.startedAt).toLocaleTimeString(undefined, {
+          hour: "2-digit",
+          minute: "2-digit",
+        })}
+      </p>
+
+      {stats.length > 0 && (
+        <div className="flex flex-wrap gap-4">
+          {stats.map((s) => (
+            <div key={s.label} className="bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3">
+              <div className="text-xs text-zinc-500 mb-0.5">{s.label}</div>
+              <div className="text-lg font-medium tabular-nums">{s.value}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RouteMap({ points }: { points: StreamPoint[] }) {
+  const mapRef = useRef<HTMLDivElement>(null);
+  const mapInstanceRef = useRef<ReturnType<typeof import("leaflet")["map"]> | null>(null);
+
+  useEffect(() => {
+    const container = mapRef.current;
+    if (!container) return;
+
+    const gpsPoints = points.filter(
+      (p): p is StreamPoint & { lat: number; lng: number } => p.lat != null && p.lng != null,
+    );
+    if (gpsPoints.length === 0) return;
+
+    let cancelled = false;
+
+    import("leaflet").then((L) => {
+      if (cancelled || !container) return;
+
+      // Clean up any existing map instance
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.remove();
+        mapInstanceRef.current = null;
+      }
+
+      const map = L.map(container, { zoomControl: true, attributionControl: false });
+      mapInstanceRef.current = map;
+
+      L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+        maxZoom: 19,
+      }).addTo(map);
+
+      const latLngs = gpsPoints.map((p) => L.latLng(p.lat, p.lng));
+
+      L.polyline(latLngs, {
+        color: "#22c55e",
+        weight: 3,
+        opacity: 0.8,
+      }).addTo(map);
+
+      // Start and end markers
+      const startLatLng = latLngs[0];
+      const endLatLng = latLngs[latLngs.length - 1];
+      if (startLatLng) {
+        L.circleMarker(startLatLng, {
+          radius: 6,
+          color: "#22c55e",
+          fillColor: "#22c55e",
+          fillOpacity: 1,
+        }).addTo(map);
+      }
+      if (endLatLng) {
+        L.circleMarker(endLatLng, {
+          radius: 6,
+          color: "#ef4444",
+          fillColor: "#ef4444",
+          fillOpacity: 1,
+        }).addTo(map);
+      }
+
+      const bounds = L.latLngBounds(latLngs);
+      map.fitBounds(bounds, { padding: [30, 30] });
+    });
+
+    return () => {
+      cancelled = true;
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.remove();
+        mapInstanceRef.current = null;
+      }
+    };
+  }, [points]);
+
+  return <div ref={mapRef} className="w-full h-[400px] rounded-lg" />;
+}
+
+function MetricsChart({
+  points,
+  hasHr,
+  hasPower,
+  hasSpeed,
+  hasCadence,
+  loading,
+}: {
+  points: StreamPoint[];
+  hasHr: boolean;
+  hasPower: boolean;
+  hasSpeed: boolean;
+  hasCadence: boolean;
+  loading: boolean;
+}) {
+  if (loading) return <ChartLoadingSkeleton height={300} />;
+  if (points.length === 0) return null;
+
+  const times = points.map((p) => p.recordedAt);
+  const yAxes: Array<Record<string, unknown>> = [];
+  const series: Array<Record<string, unknown>> = [];
+  let axisIndex = 0;
+
+  if (hasHr) {
+    yAxes.push({
+      type: "value",
+      name: "Heart Rate (bpm)",
+      position: "left",
+      axisLabel: { color: CHART_COLORS.heartRate, fontSize: 11 },
+      nameTextStyle: { color: CHART_COLORS.heartRate, fontSize: 10 },
+      splitLine: { show: axisIndex === 0, lineStyle: { color: "#27272a" } },
+    });
+    series.push({
+      name: "Heart Rate",
+      type: "line",
+      yAxisIndex: axisIndex,
+      data: points.map((p) => p.heartRate),
+      showSymbol: false,
+      lineStyle: { width: 1.5, color: CHART_COLORS.heartRate },
+      itemStyle: { color: CHART_COLORS.heartRate },
+    });
+    axisIndex++;
+  }
+
+  if (hasPower) {
+    yAxes.push({
+      type: "value",
+      name: "Power (W)",
+      position: axisIndex === 0 ? "left" : "right",
+      axisLabel: { color: CHART_COLORS.power, fontSize: 11 },
+      nameTextStyle: { color: CHART_COLORS.power, fontSize: 10 },
+      splitLine: { show: axisIndex === 0, lineStyle: { color: "#27272a" } },
+    });
+    series.push({
+      name: "Power",
+      type: "line",
+      yAxisIndex: axisIndex,
+      data: points.map((p) => p.power),
+      showSymbol: false,
+      lineStyle: { width: 1.5, color: CHART_COLORS.power },
+      itemStyle: { color: CHART_COLORS.power },
+    });
+    axisIndex++;
+  }
+
+  if (hasSpeed) {
+    yAxes.push({
+      type: "value",
+      name: "Speed (km/h)",
+      position: axisIndex === 0 ? "left" : "right",
+      offset: axisIndex > 1 ? (axisIndex - 1) * 60 : 0,
+      axisLabel: { color: CHART_COLORS.speed, fontSize: 11 },
+      nameTextStyle: { color: CHART_COLORS.speed, fontSize: 10 },
+      splitLine: { show: axisIndex === 0, lineStyle: { color: "#27272a" } },
+    });
+    series.push({
+      name: "Speed",
+      type: "line",
+      yAxisIndex: axisIndex,
+      data: points.map((p) => (p.speed != null ? +(p.speed * 3.6).toFixed(1) : null)),
+      showSymbol: false,
+      lineStyle: { width: 1.5, color: CHART_COLORS.speed },
+      itemStyle: { color: CHART_COLORS.speed },
+    });
+    axisIndex++;
+  }
+
+  if (hasCadence) {
+    yAxes.push({
+      type: "value",
+      name: "Cadence (rpm)",
+      position: axisIndex === 0 ? "left" : "right",
+      offset: axisIndex > 1 ? (axisIndex - 1) * 60 : 0,
+      axisLabel: { color: CHART_COLORS.cadence, fontSize: 11 },
+      nameTextStyle: { color: CHART_COLORS.cadence, fontSize: 10 },
+      splitLine: { show: axisIndex === 0, lineStyle: { color: "#27272a" } },
+    });
+    series.push({
+      name: "Cadence",
+      type: "line",
+      yAxisIndex: axisIndex,
+      data: points.map((p) => p.cadence),
+      showSymbol: false,
+      lineStyle: { width: 1.5, color: CHART_COLORS.cadence },
+      itemStyle: { color: CHART_COLORS.cadence },
+    });
+    axisIndex++;
+  }
+
+  const rightAxisCount = yAxes.filter((_, i) => i > 0).length;
+
+  const option = {
+    backgroundColor: "transparent",
+    grid: { top: 40, right: 60 + Math.max(0, rightAxisCount - 1) * 60, bottom: 60, left: 60 },
+    tooltip: {
+      trigger: "axis",
+      backgroundColor: "#18181b",
+      borderColor: "#3f3f46",
+      textStyle: { color: "#e4e4e7", fontSize: 12 },
+    },
+    legend: {
+      top: 0,
+      textStyle: { color: "#a1a1aa", fontSize: 11 },
+    },
+    dataZoom: [
+      { type: "inside", xAxisIndex: 0, start: 0, end: 100 },
+      {
+        type: "slider",
+        xAxisIndex: 0,
+        start: 0,
+        end: 100,
+        height: 20,
+        bottom: 10,
+        borderColor: "#3f3f46",
+        backgroundColor: "#18181b",
+        fillerColor: "rgba(34,197,94,0.15)",
+        handleStyle: { color: "#22c55e" },
+        textStyle: { color: "#71717a" },
+      },
+    ],
+    xAxis: {
+      type: "category",
+      data: times,
+      axisLabel: {
+        color: "#71717a",
+        fontSize: 11,
+        formatter: (v: string) => {
+          const d = new Date(v);
+          return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
+        },
+      },
+      axisLine: { lineStyle: { color: "#3f3f46" } },
+    },
+    yAxis: yAxes,
+    series,
+  };
+
+  return <ReactECharts option={option} style={{ height: 350 }} />;
+}
+
+function ElevationChart({ points, loading }: { points: StreamPoint[]; loading: boolean }) {
+  if (loading) return <ChartLoadingSkeleton height={200} />;
+
+  const elevPoints = points.filter((p) => p.altitude != null);
+  if (elevPoints.length === 0) return null;
+
+  const option = {
+    backgroundColor: "transparent",
+    grid: { top: 10, right: 20, bottom: 30, left: 50 },
+    tooltip: {
+      trigger: "axis",
+      backgroundColor: "#18181b",
+      borderColor: "#3f3f46",
+      textStyle: { color: "#e4e4e7", fontSize: 12 },
+      formatter: (params: Array<{ value: number; dataIndex: number }>) => {
+        const p = params[0];
+        if (!p) return "";
+        return `Elevation: ${p.value} m`;
+      },
+    },
+    xAxis: {
+      type: "category",
+      data: elevPoints.map((p) => p.recordedAt),
+      axisLabel: {
+        color: "#71717a",
+        fontSize: 11,
+        formatter: (v: string) => {
+          const d = new Date(v);
+          return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
+        },
+      },
+      axisLine: { lineStyle: { color: "#3f3f46" } },
+    },
+    yAxis: {
+      type: "value",
+      axisLabel: { color: "#71717a", fontSize: 11 },
+      splitLine: { lineStyle: { color: "#27272a" } },
+    },
+    series: [
+      {
+        type: "line",
+        data: elevPoints.map((p) => (p.altitude != null ? Math.round(p.altitude) : null)),
+        showSymbol: false,
+        lineStyle: { width: 1.5, color: CHART_COLORS.altitude },
+        areaStyle: {
+          color: {
+            type: "linear",
+            x: 0,
+            y: 0,
+            x2: 0,
+            y2: 1,
+            colorStops: [
+              { offset: 0, color: "rgba(107,114,128,0.3)" },
+              { offset: 1, color: "rgba(107,114,128,0.05)" },
+            ],
+          },
+        },
+      },
+    ],
+  };
+
+  return <ReactECharts option={option} style={{ height: 200 }} />;
+}
+
+function HrZonesChart({ zones, loading }: { zones: ActivityHrZone[]; loading: boolean }) {
+  if (loading) return <ChartLoadingSkeleton height={200} />;
+
+  const totalSeconds = zones.reduce((sum, z) => sum + z.seconds, 0);
+  if (totalSeconds === 0) {
+    return (
+      <div className="flex items-center justify-center h-[200px]">
+        <span className="text-zinc-600 text-sm">No heart rate zone data</span>
+      </div>
+    );
+  }
+
+  const formatTime = (secs: number) => {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return m > 0 ? `${m}m ${s}s` : `${s}s`;
+  };
+
+  const option = {
+    backgroundColor: "transparent",
+    grid: { top: 10, right: 80, bottom: 30, left: 100 },
+    tooltip: {
+      trigger: "axis",
+      axisPointer: { type: "shadow" },
+      backgroundColor: "#18181b",
+      borderColor: "#3f3f46",
+      textStyle: { color: "#e4e4e7", fontSize: 12 },
+      formatter: (params: Array<{ name: string; value: number; dataIndex: number }>) => {
+        const p = params[0];
+        if (!p) return "";
+        const zone = zones[p.dataIndex];
+        if (!zone) return "";
+        const pct = totalSeconds > 0 ? ((zone.seconds / totalSeconds) * 100).toFixed(1) : "0";
+        return `<b>${zone.label}</b> (${zone.minPct}–${zone.maxPct}% HRR)<br/>
+          ${formatTime(zone.seconds)} (${pct}%)`;
+      },
+    },
+    xAxis: {
+      type: "value",
+      axisLabel: {
+        color: "#71717a",
+        fontSize: 11,
+        formatter: (v: number) => formatTime(v),
+      },
+      splitLine: { lineStyle: { color: "#27272a" } },
+    },
+    yAxis: {
+      type: "category",
+      data: zones.map((z) => `Z${z.zone} ${z.label}`),
+      axisLabel: { color: "#a1a1aa", fontSize: 11 },
+      axisLine: { lineStyle: { color: "#3f3f46" } },
+    },
+    series: [
+      {
+        type: "bar",
+        data: zones.map((z, i) => ({
+          value: z.seconds,
+          itemStyle: { color: ZONE_COLORS[i] ?? "#71717a" },
+        })),
+        barWidth: "60%",
+        label: {
+          show: true,
+          position: "right",
+          color: "#a1a1aa",
+          fontSize: 11,
+          formatter: (p: { value: number }) => {
+            const pct = totalSeconds > 0 ? ((p.value / totalSeconds) * 100).toFixed(0) : "0";
+            return `${pct}%`;
+          },
+        },
+      },
+    ],
+  };
+
+  return <ReactECharts option={option} style={{ height: 200 }} />;
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section>
+      <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-2">{title}</h2>
+      <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">{children}</div>
+    </section>
+  );
+}

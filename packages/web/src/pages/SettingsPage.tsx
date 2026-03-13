@@ -1,8 +1,13 @@
 import { AppHeader } from "../components/AppHeader.tsx";
 import { SlackIntegrationPanel } from "../components/SlackIntegrationPanel.tsx";
 import { UnitSystemToggle } from "../components/UnitSystemToggle.tsx";
+import { SECTION_LABELS, useDashboardLayout } from "../lib/dashboardLayoutContext.ts";
 
 export function SettingsPage() {
+  const { layout, toggleHidden, resetLayout } = useDashboardLayout();
+
+  const hiddenSections = layout.hidden;
+
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 overflow-x-hidden">
       <AppHeader />
@@ -12,6 +17,49 @@ export function SettingsPage() {
           <p className="text-xs text-zinc-600 mb-4">Choose how measurements are displayed</p>
           <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
             <UnitSystemToggle />
+          </div>
+        </section>
+
+        <section>
+          <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-1">
+            Dashboard Layout
+          </h2>
+          <p className="text-xs text-zinc-600 mb-4">
+            Manage hidden sections and reset layout to defaults
+          </p>
+          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4 space-y-4">
+            {hiddenSections.length > 0 ? (
+              <div className="space-y-2">
+                <h3 className="text-xs font-medium text-zinc-500 uppercase">Hidden Sections</h3>
+                <ul className="space-y-1">
+                  {hiddenSections.map((id) => (
+                    <li
+                      key={id}
+                      className="flex items-center justify-between py-1.5 px-2 rounded bg-zinc-800/50"
+                    >
+                      <span className="text-sm text-zinc-300">{SECTION_LABELS[id] ?? id}</span>
+                      <button
+                        type="button"
+                        onClick={() => toggleHidden(id)}
+                        className="text-xs text-blue-400 hover:text-blue-300 transition-colors cursor-pointer"
+                      >
+                        Show
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : (
+              <p className="text-sm text-zinc-500">No hidden sections</p>
+            )}
+
+            <button
+              type="button"
+              onClick={resetLayout}
+              className="text-xs text-zinc-400 hover:text-zinc-200 border border-zinc-700 rounded px-3 py-1.5 transition-colors cursor-pointer"
+            >
+              Reset to Default
+            </button>
           </div>
         </section>
 

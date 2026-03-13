@@ -1,5 +1,6 @@
 import ReactECharts from "echarts-for-react";
 import type { CaloricBalanceRow } from "../../../server/src/routers/nutrition-analytics.ts";
+import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface CaloricBalanceChartProps {
   data: CaloricBalanceRow[];
@@ -8,11 +9,7 @@ interface CaloricBalanceChartProps {
 
 export function CaloricBalanceChart({ data, loading }: CaloricBalanceChartProps) {
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-[250px]">
-        <span className="text-zinc-600 text-sm">Loading...</span>
-      </div>
-    );
+    return <ChartLoadingSkeleton height={250} />;
   }
 
   if (data.length === 0) {

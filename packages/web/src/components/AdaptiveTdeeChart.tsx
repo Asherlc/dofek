@@ -2,6 +2,7 @@ import ReactECharts from "echarts-for-react";
 import type { AdaptiveTdeeResult } from "../../../server/src/routers/nutrition-analytics.ts";
 import { useUnitSystem } from "../lib/unitContext.ts";
 import { convertWeight, weightLabel } from "../lib/units.ts";
+import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface AdaptiveTdeeChartProps {
   data: AdaptiveTdeeResult | undefined;
@@ -11,11 +12,7 @@ interface AdaptiveTdeeChartProps {
 export function AdaptiveTdeeChart({ data, loading }: AdaptiveTdeeChartProps) {
   const { unitSystem } = useUnitSystem();
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-[250px]">
-        <span className="text-zinc-600 text-sm">Loading...</span>
-      </div>
-    );
+    return <ChartLoadingSkeleton height={250} />;
   }
 
   if (!data || data.dailyData.length === 0) {
