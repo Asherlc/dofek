@@ -612,7 +612,18 @@ export class WhoopInternalClient {
     }
 
     const data = (await response.json()) as Record<string, unknown>;
-    return (data.id as number) ?? (data.user_id as number) ?? 0;
+    const nested = data.user as Record<string, unknown> | undefined;
+    const userId =
+      (data.id as number | undefined) ??
+      (data.user_id as number | undefined) ??
+      (nested?.id as number | undefined) ??
+      (nested?.user_id as number | undefined);
+    if (!userId || typeof userId !== "number") {
+      throw new Error(
+        `Could not extract user ID from WHOOP bootstrap response (keys: ${Object.keys(data).join(", ")})`,
+      );
+    }
+    return userId;
   }
 
   private async get<T>(url: string, params?: Record<string, string>): Promise<T> {
