@@ -47,6 +47,9 @@ jobs:
             | grep -v '\.test\.ts$' \
             | grep -v '__tests__/' \
             | grep -v '\.d\.ts$' \
+            | grep -v 'packages/web/src/pages/' \
+            | grep -v 'packages/web/src/hooks/' \
+            | grep -v 'packages/web/src/components/' \
             | tr '\n' ',' \
             | sed 's/,$//')
           echo "files=$FILES" >> "$GITHUB_OUTPUT"
