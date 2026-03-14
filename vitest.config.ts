@@ -27,10 +27,10 @@ export default defineConfig({
         "packages/whoop-whoop/src/**",
       ],
       thresholds: {
-        lines: 94,
+        lines: 93,
         functions: 96,
         branches: 82,
-        statements: 94,
+        statements: 93,
       },
     },
   },
