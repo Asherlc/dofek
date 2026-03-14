@@ -42,7 +42,7 @@ export const CacheTTL = {
   LONG: 60 * 60 * 1000, // 1 hour
 } as const;
 
-function cached(ttlMs: number) {
+function cached(ttlMs: number, { lightweight = false } = {}) {
   return t.middleware(async ({ ctx, path, type, getRawInput, next }) => {
     const start = performance.now();
     const rawInput = await getRawInput();
@@ -69,9 +69,11 @@ function cached(ttlMs: number) {
     cacheMissesTotal.inc({ procedure: path });
 
     // DB query (everything in next()), limited by semaphore to prevent
-    // overwhelming postgres when a batch request triggers many cache misses
+    // overwhelming postgres when a batch request triggers many cache misses.
+    // Lightweight queries (simple PK lookups like settings) skip the semaphore
+    // so they aren't blocked behind heavy analytics queries.
     const dbStart = performance.now();
-    const result = await dbQuerySemaphore.run(() => next());
+    const result = lightweight ? await next() : await dbQuerySemaphore.run(() => next());
     trpcDbQueryDuration.observe({ procedure: path }, (performance.now() - dbStart) / 1000);
 
     trpcProcedureDuration.observe(
@@ -90,3 +92,9 @@ export const cachedQuery = (ttl: number) => publicProcedure.use(cached(ttl));
 
 /** Cached protected query (requires auth, cache scoped by userId). */
 export const cachedProtectedQuery = (ttl: number) => protectedProcedure.use(cached(ttl));
+
+/** Lightweight cached protected query — bypasses the DB semaphore.
+ *  Use for simple, fast queries (PK lookups, settings) that shouldn't
+ *  be queued behind heavy analytics queries. */
+export const cachedProtectedQueryLight = (ttl: number) =>
+  protectedProcedure.use(cached(ttl, { lightweight: true }));

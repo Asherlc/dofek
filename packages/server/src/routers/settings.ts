@@ -1,9 +1,9 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
+import { CacheTTL, cachedProtectedQueryLight, protectedProcedure, router } from "../trpc.ts";
 
 export const settingsRouter = router({
-  get: cachedProtectedQuery(CacheTTL.LONG)
+  get: cachedProtectedQueryLight(CacheTTL.LONG)
     .input(z.object({ key: z.string() }))
     .query(async ({ ctx, input }) => {
       const rows = await ctx.db.execute<{ key: string; value: unknown }>(
@@ -14,7 +14,7 @@ export const settingsRouter = router({
       return { key: row.key, value: row.value };
     }),
 
-  getAll: cachedProtectedQuery(CacheTTL.LONG).query(async ({ ctx }) => {
+  getAll: cachedProtectedQueryLight(CacheTTL.LONG).query(async ({ ctx }) => {
     const rows = await ctx.db.execute<{ key: string; value: unknown }>(
       sql`SELECT key, value FROM fitness.user_settings WHERE user_id = ${ctx.userId} ORDER BY key`,
     );
@@ -35,7 +35,7 @@ export const settingsRouter = router({
       return { key: result.key, value: result.value };
     }),
 
-  slackStatus: cachedProtectedQuery(CacheTTL.MEDIUM).query(async ({ ctx }) => {
+  slackStatus: cachedProtectedQueryLight(CacheTTL.MEDIUM).query(async ({ ctx }) => {
     const rows = await ctx.db.execute<{ provider_account_id: string }>(
       sql`SELECT provider_account_id FROM fitness.auth_account
           WHERE user_id = ${ctx.userId} AND auth_provider = 'slack'
