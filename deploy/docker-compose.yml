@@ -20,6 +20,7 @@ services:
 
   web:
     image: ghcr.io/asherlc/dofek:latest
+    hostname: dofek-web
     command: web
     restart: unless-stopped
     env_file: .env
