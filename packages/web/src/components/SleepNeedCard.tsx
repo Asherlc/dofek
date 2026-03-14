@@ -7,11 +7,6 @@ interface SleepNeedCardProps {
   loading?: boolean;
 }
 
-function formatTime(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-}
-
 function formatHoursMinutes(minutes: number): string {
   const h = Math.floor(minutes / 60);
   const m = Math.round(minutes % 60);
@@ -125,14 +120,6 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
             <span className="text-zinc-500 text-sm">recommended</span>
           </div>
         </div>
-        {data.suggestedBedtime && (
-          <div className="text-right">
-            <p className="text-zinc-500 text-xs">Bedtime</p>
-            <p className="text-zinc-200 text-lg font-semibold">
-              {formatTime(data.suggestedBedtime)}
-            </p>
-          </div>
-        )}
       </div>
 
       {/* Breakdown */}
