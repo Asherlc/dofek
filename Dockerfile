@@ -30,9 +30,10 @@ FROM base AS server
 ENV NODE_ENV=production
 WORKDIR /app
 
-# Install SOPS for runtime .env decryption
+# Install SOPS for runtime .env decryption (supports both amd64 and arm64)
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && \
-    curl -fsSL https://github.com/getsops/sops/releases/download/v3.9.4/sops-v3.9.4.linux.amd64 \
+    ARCH=$(dpkg --print-architecture) && \
+    curl -fsSL "https://github.com/getsops/sops/releases/download/v3.9.4/sops-v3.9.4.linux.${ARCH}" \
       -o /usr/local/bin/sops && chmod +x /usr/local/bin/sops && \
     apt-get purge -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 
