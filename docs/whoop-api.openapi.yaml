@@ -517,12 +517,20 @@ components:
           items:
             type: object
 
-    # ── Weightlifting Service ───────────────────────────────
+    # ── Weightlifting Service (discovered via APK decompilation) ──
+    # Source: com.whoop.weightlifting.data.WeightliftingApi (Retrofit interface)
+    # DTOs: com.whoop.weightlifting.data.dto.*
+
+    # -- Response from GET /weightlifting-service/v2/weightlifting-workout/{activityId}
+    # Note: this endpoint is NOT in the Retrofit interface (WeightliftingApi) —
+    # it may be called from a different module. The response is a superset of
+    # WeightliftingWorkoutDto with additional read-only fields.
     WeightliftingWorkoutResponse:
       type: object
       description: |
-        Full exercise-level data for a strength workout. Returned by the
-        weightlifting-service, discovered via APK decompilation.
+        Full exercise-level data for a strength workout. Returned by
+        GET /weightlifting-service/v2/weightlifting-workout/{activityId}.
+        Superset of WeightliftingWorkoutDto with additional read-only fields.
       properties:
         user_id:
           type: integer
@@ -538,9 +546,15 @@ components:
           nullable: true
         name:
           type: string
+          nullable: true
           example: "Mar 12, 2026"
+        during:
+          type: string
+          description: "PostgreSQL-style time range for the workout: ['start','end')"
+          example: "['2026-03-12T21:37:00.000Z','2026-03-12T21:56:00.000Z')"
         pushcore_version:
           type: string
+          nullable: true
           example: whoop_3.13.1
         total_effective_volume_kg:
           type: number
@@ -558,6 +572,9 @@ components:
         cardio_strain_score:
           type: number
           example: 1.549
+        raw_cardio_intensity_score:
+          type: number
+          example: 0.000009565
         max_heart_rate:
           type: integer
           example: 105
@@ -570,12 +587,19 @@ components:
         total_strain_score:
           type: number
           example: 3.634
+        raw_total_strain_score:
+          type: number
+          example: 0.000029085
         cardio_strain_contribution_percent:
           type: number
           example: 0.329
         msk_strain_contribution_percent:
           type: number
           example: 0.671
+        total_active_time_seconds:
+          type: number
+        total_rest_time_seconds:
+          type: number
         zone_durations:
           $ref: "#/components/schemas/WeightliftingZoneDurations"
         workout_groups:
@@ -583,9 +607,62 @@ components:
           items:
             $ref: "#/components/schemas/WeightliftingWorkoutGroup"
 
+    # -- Request body for POST /weightlifting-service/v2/weightlifting-workout/activity
+    # Source: WeightliftingWorkoutDto.java (Kotlin data class)
+    WeightliftingWorkoutDto:
+      type: object
+      description: |
+        Request body for creating/saving a weightlifting workout.
+        From decompiled WeightliftingWorkoutDto Kotlin data class.
+      required: [during, timezone]
+      properties:
+        source:
+          type: string
+          default: "user"
+          description: Source of workout data
+        during:
+          type: string
+          description: "PostgreSQL-style time range: ['start','end')"
+        timezone:
+          type: string
+          description: IANA timezone string
+          example: "America/New_York"
+        name:
+          type: string
+          nullable: true
+        msk_total_volume_kg:
+          type: number
+          nullable: true
+        raw_msk_strain_score:
+          type: number
+        msk_intensity_percent:
+          type: number
+        scaled_msk_strain_score:
+          type: number
+        pushcore_version:
+          type: string
+          nullable: true
+        workout_template_id:
+          type: integer
+          format: int64
+          nullable: true
+        rpe:
+          type: integer
+          nullable: true
+          description: Rate of Perceived Exertion
+        workout_groups:
+          type: array
+          nullable: true
+          items:
+            $ref: "#/components/schemas/WeightliftingWorkoutGroupDto"
+        type:
+          type: string
+          default: "weightlifting_workout"
+          description: Activity type constant
+
     WeightliftingZoneDurations:
       type: object
-      description: Time spent in each intensity zone (seconds or count)
+      description: Time spent in each intensity zone (seconds)
       properties:
         zone90_to100_duration:
           type: number
@@ -602,70 +679,158 @@ components:
 
     WeightliftingWorkoutGroup:
       type: object
+      description: Group of exercises in a workout (read response)
       properties:
         workout_exercises:
           type: array
           items:
             $ref: "#/components/schemas/WeightliftingWorkoutExercise"
 
+    WeightliftingWorkoutGroupDto:
+      type: object
+      description: Group of exercises in a workout (write request)
+      properties:
+        workout_exercises:
+          type: array
+          items:
+            $ref: "#/components/schemas/WeightliftingWorkoutExerciseDto"
+
     WeightliftingWorkoutExercise:
       type: object
+      description: Exercise with sets in a workout (read response)
       properties:
         exercise_details:
-          $ref: "#/components/schemas/ExerciseDetails"
+          $ref: "#/components/schemas/WeightliftingExerciseDto"
         sets:
           type: array
           items:
             $ref: "#/components/schemas/WeightliftingSet"
 
-    ExerciseDetails:
+    WeightliftingWorkoutExerciseDto:
       type: object
+      description: Exercise with sets in a workout (write request)
+      properties:
+        exercise_details:
+          $ref: "#/components/schemas/WeightliftingExerciseDto"
+        sets:
+          type: array
+          items:
+            $ref: "#/components/schemas/WeightliftingSetDto"
+
+    # -- WeightliftingExerciseDto (exercise catalog entry)
+    # Source: WeightliftingExerciseDto.java
+    WeightliftingExerciseDto:
+      type: object
+      description: |
+        Full exercise definition from the WHOOP exercise catalog.
+        From decompiled WeightliftingExerciseDto Kotlin data class.
       properties:
         exercise_id:
           type: string
           example: FRONTPLANKELBOW
+          description: Unique identifier (uppercase snake_case)
         name:
           type: string
           example: Front Plank
+        push_core_name:
+          type: string
+          description: Internal PushCore identifier (matches exercise_id)
         equipment:
           type: string
-          example: BODY
-          description: "Equipment type: BODY, BARBELL, DUMBBELL, CABLE, MACHINE, etc."
+          description: Equipment enum value
+          enum: [BODY, BARBELL, DUMBBELL, CABLE, MACHINE, KETTLEBELL, BAND, PLATE, SMITH_MACHINE, OTHER]
+        translated_equipment:
+          type: string
+          description: Human-readable equipment name
+          example: Bodyweight
         exercise_type:
           type: string
           example: STRENGTH
         laterality:
           type: string
-          enum: [BILATERAL, UNILATERAL]
+          description: Exercise laterality
+          enum: [BILATERAL, UNILATERAL, LEFT, RIGHT]
         movement_pattern:
           type: string
-          example: OTHER
-          description: "Movement pattern: PUSH, PULL, SQUAT, HINGE, LUNGE, CARRY, OTHER"
+          description: Movement pattern classification
+          enum: [PUSH, PULL, SQUAT, HINGE, LUNGE, CARRY, OTHER]
+        translated_movement_pattern:
+          type: string
+          example: Other
         muscle_groups:
           type: array
           items:
             type: string
           example: ["CORE"]
-          description: "Target muscle groups: CORE, CHEST, BACK, SHOULDERS, BICEPS, TRICEPS, QUADS, HAMSTRINGS, GLUTES, CALVES, etc."
+          description: "Target muscle groups: CORE, CHEST, BACK, SHOULDERS, BICEPS, TRICEPS, LEGS, etc."
+        translated_muscle_groups:
+          type: string
+          description: Human-readable muscle group name
+          example: Core
+        training_types:
+          type: array
+          items:
+            type: string
+          description: Training type tags (often empty)
+        instructions:
+          type: array
+          items:
+            type: string
+          description: Step-by-step exercise instructions
         volume_input_format:
           type: string
-          enum: [REPS, TIME]
-          description: Whether this exercise tracks reps or time (e.g., planks use TIME)
+          description: How volume is tracked for this exercise
+          enum: [WEIGHT, TIME, REPS, DISTANCE]
+        volume_input_value:
+          type: string
+          nullable: true
+          description: Default volume value (e.g., "0:45" for timed exercises)
+        volume_input_units:
+          type: string
+          nullable: true
+          description: Units for volume_input_value (e.g., "min")
         trackable:
           type: boolean
+          description: Whether the exercise supports PushCore strap tracking
         custom_exercise:
+          type: boolean
+          description: Whether this is a user-created custom exercise
+        custom_exercise_info:
+          $ref: "#/components/schemas/CustomExerciseInfo"
+        deleted:
           type: boolean
         image_url:
           type: string
           format: uri
           nullable: true
+          example: "https://dh6o7n168ts9.cloudfront.net/exercises/FRONTPLANKELBOW.jpg"
         video_url:
           type: string
           format: uri
           nullable: true
+          example: "https://dh6o7n168ts9.cloudfront.net/exercise-videos-temp/FRONTPLANKELBOW.mp4"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
 
+    CustomExerciseInfo:
+      type: object
+      nullable: true
+      description: Present only for user-created custom exercises
+      properties:
+        user_id:
+          type: integer
+        original_exercise_id:
+          type: string
+          nullable: true
+
+    # -- WeightliftingSet (read response) — includes server-computed fields
     WeightliftingSet:
       type: object
+      description: A single set in a workout (read response, includes server-computed fields)
       properties:
         weightlifting_workout_set_id:
           type: string
@@ -675,16 +840,20 @@ components:
           description: Weight used in kg (0 for bodyweight exercises)
         number_of_reps:
           type: integer
-          description: Number of reps (0 for time-based exercises)
+          nullable: true
+          description: Number of reps (0 or null for time-based exercises)
         time_in_seconds:
-          type: number
+          type: integer
+          nullable: true
           description: Duration of set in seconds
         msk_total_volume_kg:
           type: number
+          nullable: true
           description: Computed MSK volume for this set in kg
           example: 255.876
         during:
           type: string
+          nullable: true
           description: "PostgreSQL-style time range: ['start','end')"
           example: "['2026-03-12T21:37:00.000Z','2026-03-12T21:37:00.001Z')"
         complete:
@@ -694,48 +863,54 @@ components:
         strap_location:
           type: string
           nullable: true
+          description: PushCore strap body location
+        strap_location_laterality:
+          type: string
+          nullable: true
+          description: Left/right for strap placement
+        protobuf_file_path:
+          type: string
+          nullable: true
+          description: S3 path to raw PushCore protobuf data
+
+    # -- WeightliftingSetDto (write request) — from decompiled WeightliftingWorkoutSetDto
+    WeightliftingSetDto:
+      type: object
+      description: |
+        A single set in a workout (write request).
+        From decompiled WeightliftingWorkoutSetDto Kotlin data class.
+        Note: uses "weight" (not "weight_kg") in the request DTO.
+      properties:
+        number_of_reps:
+          type: integer
+          nullable: true
+        time_in_seconds:
+          type: integer
+          nullable: true
+        weight:
+          type: number
+          nullable: true
+          description: Weight in kg (field name is "weight" in write DTO, "weight_kg" in read response)
+        weightlifting_workout_set_id:
+          type: string
+          format: uuid
+          nullable: true
+        is_exercise_trackable:
+          type: boolean
+        during:
+          type: string
+          nullable: true
+        strap_location:
+          type: string
+          nullable: true
         strap_location_laterality:
           type: string
           nullable: true
         protobuf_file_path:
           type: string
           nullable: true
-
-    ExerciseCatalogEntry:
-      type: object
-      description: An exercise from the WHOOP exercise catalog
-      properties:
-        exercise_id:
-          type: string
-          example: BENCHPRESSBARBELL
-        name:
-          type: string
-          example: Bench Press
-        equipment:
-          type: string
-        exercise_type:
-          type: string
-        laterality:
-          type: string
-        movement_pattern:
-          type: string
-        muscle_groups:
-          type: array
-          items:
-            type: string
-        volume_input_format:
-          type: string
-        trackable:
-          type: boolean
-        custom_exercise:
-          type: boolean
-        image_url:
-          type: string
-          format: uri
-          nullable: true
-        video_url:
-          type: string
-          format: uri
+        msk_total_volume_kg:
+          type: number
           nullable: true
 
     ExerciseCatalogV2Response:
@@ -744,20 +919,167 @@ components:
         exercises:
           type: array
           items:
-            $ref: "#/components/schemas/ExerciseCatalogEntry"
+            $ref: "#/components/schemas/WeightliftingExerciseDto"
 
-    WorkoutTemplate:
+    # -- WorkoutTemplateDto — from decompiled WorkoutTemplateDto
+    WorkoutTemplateDto:
       type: object
-      description: A workout template with planned exercises and sets
+      description: |
+        Workout template with planned exercises and sets.
+        Used for both request (POST/PUT) and response (GET).
       properties:
-        workout_template_id:
+        workout_template_key:
           type: integer
+          format: int64
+          description: Template ID (called "key" in the DTO)
+        parent_template_key:
+          type: integer
+          format: int64
+          nullable: true
+          description: Parent template ID if this is a copy
         name:
           type: string
+          example: "Mar 12, 2026"
         workout_groups:
           type: array
           items:
+            $ref: "#/components/schemas/WorkoutTemplateGroupDto"
+
+    WorkoutTemplateGroupDto:
+      type: object
+      properties:
+        workout_exercises:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkoutTemplateExerciseDto"
+
+    WorkoutTemplateExerciseDto:
+      type: object
+      properties:
+        exercise_details:
+          $ref: "#/components/schemas/WeightliftingExerciseDto"
+        sets:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkoutTemplateSetDto"
+
+    WorkoutTemplateSetDto:
+      type: object
+      properties:
+        number_of_reps:
+          type: integer
+        weight:
+          type: number
+          description: Weight in kg
+        time_in_seconds:
+          type: integer
+
+    # -- LinkWorkoutRequest/Response
+    LinkWorkoutRequest:
+      type: object
+      description: Request body for linking a cardio workout to a weightlifting workout
+
+    LinkWorkoutResponse:
+      type: object
+      description: Response from linking a workout
+
+    # -- CustomExerciseDto
+    CustomExerciseDto:
+      type: object
+      description: Request body for creating/updating a custom exercise
+
+    # -- PerformanceProfileDto
+    PerformanceProfileDto:
+      type: object
+      description: Performance profile data for an exercise
+
+    PerformanceProfileForWorkoutTemplateDto:
+      type: object
+      description: Performance profiles for all exercises in a workout template
+
+    # -- ShareableWorkoutLinkResponse
+    ShareableWorkoutLinkResponse:
+      type: object
+      description: Response containing a shareable workout link
+
+    SharedWorkoutResponse:
+      type: object
+      description: Response with shared workout data
+
+    # -- UploadedProtobufInfo
+    UploadedProtobufInfo:
+      type: object
+      description: Response from uploading raw PushCore protobuf data
+
+    # -- WorkoutLibraryModel
+    WorkoutLibraryModel:
+      type: object
+      description: Workout library with pre-built and user workout templates
+      properties:
+        workout_library_title:
+          type: string
+          example: "STRENGTH TRAINER"
+        whoop_workouts_title:
+          type: string
+        my_workouts_title:
+          type: string
+        my_workouts_ctatext:
+          type: string
+          nullable: true
+        whoop_workouts_list:
+          type: array
+          items:
             type: object
+            properties:
+              id:
+                type: string
+              title:
+                type: string
+              image_url:
+                type: string
+                format: uri
+              paragraph:
+                type: string
+                description: Duration text (e.g., "60 min")
+              tag:
+                type: string
+                enum: [BEGINNER, INTERMEDIATE, ADVANCED]
+
+    # -- LinkWorkoutModel (response from GET /v1/link-workout)
+    LinkWorkoutModel:
+      type: object
+      description: UI configuration for the link-workout screen
+      properties:
+        title:
+          type: string
+        content:
+          type: object
+          properties:
+            headline:
+              type: string
+            subtext:
+              type: string
+            templates:
+              type: array
+              items:
+                type: object
+                properties:
+                  template_id:
+                    type: integer
+                  name:
+                    type: string
+
+    # -- WorkoutDetailsModel (response from GET prebuilt-workout-template)
+    WorkoutDetailsModel:
+      type: object
+      description: Detailed view of a pre-built workout template
+
+    # -- Enums from decompiled source
+    # ExerciseEquipment: BODY, BARBELL, DUMBBELL, CABLE, MACHINE, KETTLEBELL, BAND, PLATE, SMITH_MACHINE, OTHER
+    # ExerciseLaterality: BILATERAL, UNILATERAL, LEFT, RIGHT
+    # VolumeInputFormat: WEIGHT, TIME, REPS, DISTANCE
+    # StrapLocation: various body positions for PushCore strap
+    # StrapLaterality: LEFT, RIGHT
 
     # ── Journal / Behavior Impact ─────────────────────────
     JournalImpactResponse:
@@ -1145,6 +1467,10 @@ paths:
 
   # ── Weightlifting Service (discovered via APK decompilation) ──
 
+  # ── Weightlifting Service (from decompiled WeightliftingApi Retrofit interface) ──
+  # Retrofit annotations mapped: @GET→get, @POST→post, @PUT→put, @DELETE→delete
+  # @Path→path param, @Query→query param, @Body→requestBody
+
   /weightlifting-service/v2/weightlifting-workout/{activityId}:
     get:
       operationId: getWeightliftingWorkout
@@ -1153,6 +1479,10 @@ paths:
         Returns the complete exercise breakdown for a Strength Trainer workout,
         including exercises, sets, reps, weight, and MSK strain metrics.
         The activityId is the UUID activity ID from the cycles BFF workout response.
+
+        Note: This endpoint is NOT in the decompiled WeightliftingApi Retrofit
+        interface — it may be called from a different module (e.g., core-details-bff).
+        Confirmed working via live probing.
       tags: [Weightlifting]
       parameters:
         - name: activityId
@@ -1169,7 +1499,11 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/WeightliftingWorkoutResponse"
+        "404":
+          description: No weightlifting data linked to this activity
 
+  # @GET("weightlifting-service/v1/exercise")
+  # Object getExerciseList(Continuation<List<WeightliftingExerciseDto>>)
   /weightlifting-service/v1/exercise:
     get:
       operationId: getExerciseCatalogV1
@@ -1186,14 +1520,15 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/ExerciseCatalogEntry"
+                  $ref: "#/components/schemas/WeightliftingExerciseDto"
 
+  # @GET("weightlifting-service/v2/exercise")
+  # Object getExerciseListV2(Continuation<ExerciseData>)
   /weightlifting-service/v2/exercise:
     get:
       operationId: getExerciseCatalogV2
       summary: Get full exercise catalog (v2, wrapped)
-      description: |
-        Same exercise catalog as v1 but wrapped in an object with an "exercises" key.
+      description: Same catalog as v1 but wrapped in {"exercises": [...]}.
       tags: [Weightlifting]
       responses:
         "200":
@@ -1203,36 +1538,113 @@ paths:
               schema:
                 $ref: "#/components/schemas/ExerciseCatalogV2Response"
 
-  /weightlifting-service/v1/link-workout:
+  # @GET("weightlifting-service/v1/exercise/{exerciseId}")
+  # Object getExerciseDetailsById(@Path exerciseId, Continuation<WeightliftingExerciseDto>)
+  /weightlifting-service/v1/exercise/{exerciseId}:
     get:
-      operationId: getLinkWorkout
-      summary: Get link-workout UI data
-      description: Returns UI configuration data for linking workouts (templates, AI chat config).
+      operationId: getExerciseDetailsById
+      summary: Get a single exercise by ID
       tags: [Weightlifting]
+      parameters:
+        - name: exerciseId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Exercise ID (e.g., "BENCHPRESSBARBELL")
       responses:
         "200":
-          description: Link workout data
+          description: Exercise details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WeightliftingExerciseDto"
 
-  /weightlifting-service/v2/workout-template/{templateId}:
+  # @GET("weightlifting-service/v1/link-workout")
+  # Object getLinkWorkoutBFFData(@Query activityId, Continuation<LinkWorkoutModel>)
+  /weightlifting-service/v1/link-workout:
+    get:
+      operationId: getLinkWorkoutBFFData
+      summary: Get link-workout UI data
+      description: Returns UI config for linking workouts (templates, AI chat integration).
+      tags: [Weightlifting]
+      parameters:
+        - name: activityId
+          in: query
+          schema:
+            type: string
+          description: Activity ID to link (optional)
+      responses:
+        "200":
+          description: Link workout BFF data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LinkWorkoutModel"
+
+  # @GET("weightlifting-service/v2/workout-template/{workoutTemplateKey}")
+  # Object getWorkoutTemplate(@Path workoutTemplateKey, Continuation<WorkoutTemplateDto>)
+  /weightlifting-service/v2/workout-template/{workoutTemplateKey}:
     get:
       operationId: getWorkoutTemplate
-      summary: Get a workout template by ID
+      summary: Get a workout template by key
       description: Returns a workout template with planned exercises and sets.
       tags: [Weightlifting]
       parameters:
-        - name: templateId
+        - name: workoutTemplateKey
           in: path
           required: true
           schema:
             type: integer
+            format: int64
       responses:
         "200":
           description: Workout template
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/WorkoutTemplate"
+                $ref: "#/components/schemas/WorkoutTemplateDto"
+    # @PUT("weightlifting-service/v2/workout-template/{workoutTemplateKey}")
+    # Object updateWorkoutTemplate(@Path key, @Body WorkoutTemplateDto, Continuation<void>)
+    put:
+      operationId: updateWorkoutTemplate
+      summary: Update a workout template
+      tags: [Weightlifting]
+      parameters:
+        - name: workoutTemplateKey
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkoutTemplateDto"
+      responses:
+        "200":
+          description: Template updated
+    # @DELETE("weightlifting-service/v2/workout-template/{workoutTemplateId}")
+    # Object deleteWorkoutTemplate(@Path workoutTemplateId, Continuation<void>)
+    delete:
+      operationId: deleteWorkoutTemplate
+      summary: Delete a workout template
+      tags: [Weightlifting]
+      parameters:
+        - name: workoutTemplateKey
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: Template deleted
 
+  # @GET("weightlifting-service/v2/workout-library")
+  # Object getWorkoutLibrary(Continuation<WorkoutLibraryModel>)
   /weightlifting-service/v2/workout-library:
     get:
       operationId: getWorkoutLibraryV2
@@ -1241,7 +1653,13 @@ paths:
       responses:
         "200":
           description: Workout library
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkoutLibraryModel"
 
+  # @GET("weightlifting-service/v3/workout-library")
+  # Object getWorkoutLibraryV3(Continuation<WorkoutLibraryModel>)
   /weightlifting-service/v3/workout-library:
     get:
       operationId: getWorkoutLibraryV3
@@ -1250,6 +1668,10 @@ paths:
       responses:
         "200":
           description: Workout library
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkoutLibraryModel"
 
   /weightlifting-service/v3/prs:
     get:
@@ -1260,63 +1682,238 @@ paths:
         "200":
           description: Personal records
 
-  # ── Weightlifting Service — Write Endpoints ──────────
-  # These endpoints return 405 on GET and 422 on POST with wrong body,
-  # confirming they exist but require proper request bodies.
+  # @GET("weightlifting-service/v2/prebuilt-workout-template/{workoutTemplateId}")
+  # Object getWorkoutDetails(@Path workoutTemplateId, Continuation<WorkoutDetailsModel>)
+  /weightlifting-service/v2/prebuilt-workout-template/{workoutTemplateId}:
+    get:
+      operationId: getPrebuiltWorkoutDetails
+      summary: Get a pre-built workout template
+      tags: [Weightlifting]
+      parameters:
+        - name: workoutTemplateId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Pre-built template details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkoutDetailsModel"
 
+  # @GET("weightlifting-service/v1/share/{sharedWorkoutId}")
+  # Object getSharedWorkout(@Path sharedWorkoutId, Continuation<SharedWorkoutResponse>)
+  /weightlifting-service/v1/share/{sharedWorkoutId}:
+    get:
+      operationId: getSharedWorkout
+      summary: Get a shared workout by ID
+      tags: [Weightlifting]
+      parameters:
+        - name: sharedWorkoutId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Shared workout data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SharedWorkoutResponse"
+
+  # @POST("weightlifting-service/v1/share/{workoutTemplateId}")
+  # Object createShareableWorkoutLink(@Path workoutTemplateId, Continuation<ShareableWorkoutLinkResponse>)
+  /weightlifting-service/v1/share/{workoutTemplateId}:
+    post:
+      operationId: createShareableWorkoutLink
+      summary: Create a shareable link for a workout template
+      tags: [Weightlifting]
+      parameters:
+        - name: workoutTemplateId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: Shareable link
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShareableWorkoutLinkResponse"
+
+  # ── Weightlifting Service — Write Endpoints ──────────
+
+  # @POST("weightlifting-service/v2/weightlifting-workout/activity")
+  # Object saveWeightliftingWorkout(@Body WeightliftingWorkoutDto, Continuation<void>)
   /weightlifting-service/v2/weightlifting-workout/activity:
     post:
-      operationId: createWeightliftingWorkout
-      summary: Create or link a weightlifting workout to an activity
+      operationId: saveWeightliftingWorkout
+      summary: Save a weightlifting workout linked to an activity
       tags: [Weightlifting]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WeightliftingWorkoutDto"
       responses:
         "200":
-          description: Created workout
+          description: Workout saved
 
+  # @POST("weightlifting-service/v2/custom-exercise")
+  # Object upsertCustomExercise(@Body CustomExerciseDto, Continuation<WeightliftingExerciseDto>)
   /weightlifting-service/v2/custom-exercise:
     post:
-      operationId: createCustomExercise
-      summary: Create a custom exercise
+      operationId: upsertCustomExercise
+      summary: Create or update a custom exercise
       tags: [Weightlifting]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomExerciseDto"
       responses:
         "200":
-          description: Created exercise
+          description: Created/updated exercise
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WeightliftingExerciseDto"
 
+  # @DELETE("weightlifting-service/v2/custom-exercise/{exerciseId}")
+  # Object deleteCustomExercise(@Path exerciseId, Continuation<void>)
+  /weightlifting-service/v2/custom-exercise/{exerciseId}:
+    delete:
+      operationId: deleteCustomExercise
+      summary: Delete a custom exercise
+      tags: [Weightlifting]
+      parameters:
+        - name: exerciseId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Exercise deleted
+
+  # @POST("weightlifting-service/v3/workout-template")
+  # Object upsertWorkoutTemplate(@Body WorkoutTemplateDto, Continuation<WorkoutTemplateDto>)
   /weightlifting-service/v3/workout-template:
     post:
-      operationId: createWorkoutTemplate
-      summary: Create a workout template
+      operationId: upsertWorkoutTemplate
+      summary: Create or update a workout template
       tags: [Weightlifting]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkoutTemplateDto"
       responses:
         "200":
-          description: Created template
+          description: Created/updated template
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkoutTemplateDto"
 
+  # @PUT("weightlifting-service/v2/performance-profile")
+  # Object savePerformanceProfiles(@Body List<PerformanceProfileDto>, Continuation<void>)
   /weightlifting-service/v2/performance-profile:
-    post:
-      operationId: writePerformanceProfile
-      summary: Write performance profile data
+    put:
+      operationId: savePerformanceProfiles
+      summary: Save performance profiles
       tags: [Weightlifting]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "#/components/schemas/PerformanceProfileDto"
       responses:
         "200":
-          description: Performance profile
+          description: Profiles saved
 
+  # @POST("weightlifting-service/v2/performance-profile/template")
+  # Object retrievePerformanceProfiles(@Body WorkoutTemplateDto, Continuation<PerformanceProfileForWorkoutTemplateDto>)
+  /weightlifting-service/v2/performance-profile/template:
+    post:
+      operationId: retrievePerformanceProfiles
+      summary: Retrieve performance profiles for a workout template
+      description: |
+        POST with a WorkoutTemplateDto body to get performance profiles
+        for all exercises in the template. Despite being POST, this is a
+        read operation (body is used as a complex query).
+      tags: [Weightlifting]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkoutTemplateDto"
+      responses:
+        "200":
+          description: Performance profiles for template
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PerformanceProfileForWorkoutTemplateDto"
+
+  # @POST("weightlifting-service/v2/weightlifting-workout/link-cardio-workout")
+  # Object linkWorkoutToActivity(@Body LinkWorkoutRequest, Continuation<LinkWorkoutResponse>)
   /weightlifting-service/v2/weightlifting-workout/link-cardio-workout:
     post:
-      operationId: linkCardioWorkout
+      operationId: linkWorkoutToActivity
       summary: Link a cardio workout to a weightlifting workout
       tags: [Weightlifting]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LinkWorkoutRequest"
       responses:
         "200":
-          description: Linked workout
+          description: Link result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LinkWorkoutResponse"
 
+  # @POST("weightlifting-service/v1/raw-data/protobuf")
+  # Object uploadWeightliftingProtobufFile(@Body multipart, @HeaderMap headers, @Query setStartTimeMS, Continuation<UploadedProtobufInfo>)
   /weightlifting-service/v1/raw-data/protobuf:
     post:
-      operationId: uploadRawProtobuf
-      summary: Upload raw strap protobuf data
+      operationId: uploadWeightliftingProtobufFile
+      summary: Upload raw PushCore strap protobuf data
+      description: |
+        Uploads raw sensor data from the PushCore strap. Multipart body
+        with custom headers and a setStartTimeMS query parameter.
       tags: [Weightlifting]
+      parameters:
+        - name: setStartTimeMS
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Set start time in milliseconds
       responses:
         "200":
           description: Upload result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadedProtobufInfo"
 
   # ── Previously Undiscovered / CORS-blocked ───────────
   # The following endpoints were observed as CORS-blocked from the browser
