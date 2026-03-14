@@ -6,7 +6,7 @@
  * so the model surfaces genuinely controllable factors.
  */
 
-export interface FeatureDefinition {
+interface FeatureDefinition {
   name: string;
   description: string;
   extract: (day: DailyFeatureRow) => number | null;
@@ -54,7 +54,7 @@ export interface PredictionTarget {
 }
 
 /** All available features that can be used as predictors */
-export function getAllFeatures(): FeatureDefinition[] {
+function getAllFeatures(): FeatureDefinition[] {
   return [
     // Vitals
     {

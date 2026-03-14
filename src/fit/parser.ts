@@ -4,7 +4,7 @@ import FitParser from "fit-file-parser";
 // Types
 // ============================================================
 
-export interface ParsedFitSession {
+interface ParsedFitSession {
   sport: string;
   subSport?: string;
   startTime: Date;
@@ -72,7 +72,7 @@ export interface ParsedFitRecord {
   raw: Record<string, unknown>;
 }
 
-export interface ParsedFitActivity {
+interface ParsedFitActivity {
   session: ParsedFitSession;
   records: ParsedFitRecord[];
   laps: Record<string, unknown>[];

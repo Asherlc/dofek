@@ -25,7 +25,7 @@ interface TreeNodeJSON {
   v?: number; // value
 }
 
-export interface GradientBoostedTreesConfig {
+interface GradientBoostedTreesConfig {
   nEstimators: number;
   maxDepth: number;
   learningRate: number;
@@ -33,7 +33,7 @@ export interface GradientBoostedTreesConfig {
   subsampleRatio?: number;
 }
 
-export interface GradientBoostedTreesJSON {
+interface GradientBoostedTreesJSON {
   config: GradientBoostedTreesConfig;
   basePrediction: number;
   trees: TreeNodeJSON[];

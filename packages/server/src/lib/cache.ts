@@ -1,5 +1,5 @@
 /** Abstract cache store — swap MemoryCacheStore for Redis later */
-export interface CacheStore {
+interface CacheStore {
   get<T>(key: string): Promise<T | undefined>;
   set<T>(key: string, data: T, ttlMs: number): Promise<void>;
   invalidateByPrefix(prefix: string): Promise<void>;

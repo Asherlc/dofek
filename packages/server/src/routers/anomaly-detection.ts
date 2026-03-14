@@ -16,7 +16,7 @@ export interface AnomalyRow {
   severity: "warning" | "alert";
 }
 
-export interface AnomalyCheckResult {
+interface AnomalyCheckResult {
   anomalies: AnomalyRow[];
   checkedMetrics: string[];
 }

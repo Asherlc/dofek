@@ -3,7 +3,7 @@ import TransportStream from "winston-transport";
 
 // ── Ring buffer transport for UI consumption ──
 
-export interface LogEntry {
+interface LogEntry {
   timestamp: string;
   level: string;
   message: string;

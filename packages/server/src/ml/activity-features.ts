@@ -30,7 +30,7 @@ export interface StrengthWorkoutRow {
   avgRpe: number | null;
 }
 
-export type ActivityRow = CardioActivityRow | StrengthWorkoutRow;
+type ActivityRow = CardioActivityRow | StrengthWorkoutRow;
 
 /** Daily context data used to build trailing features for each activity */
 export interface DailyContext {
@@ -174,7 +174,7 @@ function getStrengthFeatures(): ActivityFeatureDef[] {
 
 // ── Targets ──────────────────────────────────────────────────────────────
 
-export interface ActivityPredictionTarget {
+interface ActivityPredictionTarget {
   id: string;
   label: string;
   unit: string;

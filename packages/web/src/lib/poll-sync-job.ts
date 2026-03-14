@@ -1,4 +1,4 @@
-export interface ProviderStatus {
+interface ProviderStatus {
   status: "pending" | "running" | "done" | "error";
   message?: string;
 }
@@ -9,7 +9,7 @@ export interface SyncJobStatus {
   message?: string;
 }
 
-export interface PollSyncJobOptions {
+interface PollSyncJobOptions {
   jobId: string;
   providerIds: string[];
   fetchStatus: (jobId: string) => Promise<SyncJobStatus | null>;

@@ -1,10 +1,3 @@
-import { type ClassValue, clsx } from "clsx";
-import { twMerge } from "tailwind-merge";
-
-export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
-}
-
 /**
  * Type assertion for tRPC raw SQL query results.
  * Raw SQL queries return Record<string, unknown>[] — this helper asserts the

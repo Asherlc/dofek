@@ -33,7 +33,7 @@ export interface SleepAnalyticsResult {
   sleepDebt: number;
 }
 
-export interface SleepConsistencyRow {
+interface SleepConsistencyRow {
   date: string;
   bedtimeHour: number;
   waketimeHour: number;

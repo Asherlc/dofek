@@ -7,25 +7,25 @@
  */
 
 import type { DailyFeatureRow, ExtractedDataset, PredictionTarget } from "./features.ts";
-import { buildDataset, PREDICTION_TARGETS } from "./features.ts";
+import { buildDataset } from "./features.ts";
 import { GradientBoostedTrees } from "./gradient-boost.ts";
 import { LinearRegression } from "./regression.ts";
 
-export interface FeatureImportance {
+interface FeatureImportance {
   name: string;
   linearImportance: number;
   treeImportance: number;
   linearCoefficient: number;
 }
 
-export interface PredictionPoint {
+interface PredictionPoint {
   date: string;
   actual: number;
   linearPrediction: number;
   treePrediction: number;
 }
 
-export interface ModelDiagnostics {
+interface ModelDiagnostics {
   linearRSquared: number;
   linearAdjustedRSquared: number;
   treeRSquared: number;
@@ -34,7 +34,7 @@ export interface ModelDiagnostics {
   featureCount: number;
 }
 
-export interface PredictionResult {
+interface PredictionResult {
   targetId: string;
   targetLabel: string;
   targetUnit: string;
@@ -186,13 +186,6 @@ export function trainFromDataset(
     },
     tomorrowPrediction,
   };
-}
-
-/** Convenience wrapper: train HRV predictor (default target) */
-export function trainHrvPredictor(days: DailyFeatureRow[]): PredictionResult | null {
-  const target = PREDICTION_TARGETS.find((t) => t.id === "hrv");
-  if (!target) return null;
-  return trainPredictor(days, target);
 }
 
 /**

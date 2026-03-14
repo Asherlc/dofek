@@ -74,7 +74,7 @@ export interface AdaptiveTdeeRow {
   estimatedTdee: number | null;
 }
 
-export interface MacroRatioRow {
+interface MacroRatioRow {
   date: string;
   proteinPct: number;
   carbsPct: number;

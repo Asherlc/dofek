@@ -12,7 +12,7 @@ import {
 
 export type IdentityProviderName = "google" | "apple" | "authentik";
 
-export interface IdentityUser {
+interface IdentityUser {
   sub: string;
   email: string | null;
   name: string | null;

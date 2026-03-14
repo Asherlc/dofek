@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
-export interface DailyTrendRow {
+interface DailyTrendRow {
   date: string;
   avgHr: number | null;
   maxHr: number | null;
@@ -16,7 +16,7 @@ export interface DailyTrendRow {
   activityCount: number;
 }
 
-export interface WeeklyTrendRow {
+interface WeeklyTrendRow {
   week: string;
   avgHr: number | null;
   maxHr: number | null;

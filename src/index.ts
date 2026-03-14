@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { waitForAuthCode } from "./auth/callback-server.ts";
-import { buildAuthorizationUrl } from "./auth/index.ts";
+import { buildAuthorizationUrl } from "./auth/oauth.ts";
 import { createDatabaseFromEnv } from "./db/index.ts";
 import { ensureProvider, saveTokens } from "./db/tokens.ts";
 import { AutoSupplementsProvider } from "./providers/auto-supplements.ts";

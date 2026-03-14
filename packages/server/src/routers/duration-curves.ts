@@ -17,7 +17,7 @@ interface PaceCurveRow {
   activity_date: string;
 }
 
-export interface CriticalHeartRateModel {
+interface CriticalHeartRateModel {
   thresholdHr: number;
   r2: number;
 }
@@ -32,7 +32,7 @@ export interface CriticalHeartRateModel {
  *
  * Only uses durations >= 120s where the aerobic system dominates.
  */
-export function fitCriticalHeartRate(
+function fitCriticalHeartRate(
   points: { durationSeconds: number; bestHeartRate: number }[],
 ): CriticalHeartRateModel | null {
   const valid = points.filter((p) => p.durationSeconds >= 120 && p.bestHeartRate > 0);

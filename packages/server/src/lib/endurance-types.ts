@@ -5,13 +5,7 @@ import { sql } from "drizzle-orm";
  * Used to filter endurance-tab queries (HR zones, polarization, ramp rate, etc.)
  * so that strength training, yoga, etc. don't skew intensity metrics.
  */
-export const ENDURANCE_ACTIVITY_TYPES = [
-  "cycling",
-  "running",
-  "swimming",
-  "walking",
-  "hiking",
-] as const;
+const ENDURANCE_ACTIVITY_TYPES = ["cycling", "running", "swimming", "walking", "hiking"] as const;
 
 /**
  * SQL fragment: AND <alias>.activity_type IN ('cycling', 'running', ...)

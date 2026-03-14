@@ -52,7 +52,7 @@ const supplementSchema = z.object({
   omega6Mg: z.number().optional(),
 });
 
-export type Supplement = z.infer<typeof supplementSchema>;
+type Supplement = z.infer<typeof supplementSchema>;
 
 let cachedSupplements: Supplement[] | null = null;
 

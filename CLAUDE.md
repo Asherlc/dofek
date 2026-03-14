@@ -20,7 +20,7 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 - **Ask about trade-offs**: When there are design decisions with multiple valid approaches (e.g., completeness vs simplicity, stability vs features), always ask the user rather than making assumptions. Don't cut corners without asking first.
 - **Commit regularly**: Commit at regular intervals — after each meaningful chunk of work (new feature, passing tests, refactor). Don't let changes accumulate.
 - **Always push after commit**: Push to remote after every commit so CI runs and changes are backed up.
-- **Pre-push checks**: Before every push, run `pnpm lint`, `pnpm test`, and typecheck all packages (`pnpm tsc --noEmit`, `cd packages/server && pnpm tsc --noEmit`, `cd packages/web && pnpm tsc --noEmit`). Never push code that fails lint, tests, or type checking.
+- **Pre-push checks**: Before every push, run `pnpm knip`, `pnpm lint`, `pnpm test`, and typecheck all packages (`pnpm tsc --noEmit`, `cd packages/server && pnpm tsc --noEmit`, `cd packages/web && pnpm tsc --noEmit`). Never push code that fails knip, lint, tests, or type checking.
 - **Test Docker changes locally end-to-end**: Before pushing Dockerfile or entrypoint changes, do a full local test — not just image builds. Run the server container against a real database and verify it starts, runs migrations, and serves API responses. Run the client container and verify it serves HTML and the SPA fallback works:
   ```bash
   # Build both targets
@@ -56,6 +56,7 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 - `pnpm migrate` — apply migrations
 - `cd packages/web && pnpm dev` — run Vite dev server (proxies /api to Express)
 - `cd packages/server && pnpm dev` — run Express API server
+- `pnpm knip` — find unused files, exports, and dependencies
 - `pnpm lint` — run Biome linter
 - `pnpm lint:fix` — auto-fix lint issues
 - `pnpm format` — format code with Biome

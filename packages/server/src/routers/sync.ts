@@ -53,7 +53,7 @@ async function doRegisterProviders() {
 }
 
 // ── Background sync job tracking ──
-export interface SyncJob {
+interface SyncJob {
   status: "running" | "done" | "error";
   providers: Record<string, { status: "pending" | "running" | "done" | "error"; message?: string }>;
   message?: string;

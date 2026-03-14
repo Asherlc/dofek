@@ -10,7 +10,7 @@ import {
 
 // ── Configuration ─────────────────────────────────────────────────────────
 
-export interface InsightsConfig {
+interface InsightsConfig {
   /** Minimum daily calories to consider a nutrition day "complete". Days below this are excluded. */
   minDailyCalories: number;
 }
@@ -69,9 +69,9 @@ export interface BodyCompRow {
   body_fat_pct: number | null;
 }
 
-export type ConfidenceLevel = "strong" | "emerging" | "early" | "insufficient";
+type ConfidenceLevel = "strong" | "emerging" | "early" | "insufficient";
 
-export interface Insight {
+interface Insight {
   id: string;
   type: "conditional" | "correlation" | "discovery";
   confidence: ConfidenceLevel;
@@ -143,7 +143,7 @@ function toDateStr(d: string | Date): string {
 
 // ── Join data by date ─────────────────────────────────────────────────────
 
-export interface JoinedDay {
+interface JoinedDay {
   date: string;
   // metrics
   resting_hr: number | null;

@@ -17,14 +17,13 @@ export interface Context {
 }
 
 /** Context after auth middleware — userId is guaranteed non-null. */
-export interface AuthenticatedContext extends Context {
+interface AuthenticatedContext extends Context {
   userId: string;
 }
 
 const t = initTRPC.context<Context>().create();
 
 export const router = t.router;
-export const publicProcedure = t.procedure;
 
 // Auth middleware — rejects unauthenticated requests
 const isAuthenticated = t.middleware(({ ctx, next }) => {
@@ -84,9 +83,6 @@ function cached(ttlMs: number) {
     return result;
   });
 }
-
-/** Cached public query (no auth required). */
-export const cachedQuery = (ttl: number) => publicProcedure.use(cached(ttl));
 
 /** Cached protected query (requires auth, cache scoped by userId). */
 export const cachedProtectedQuery = (ttl: number) => protectedProcedure.use(cached(ttl));

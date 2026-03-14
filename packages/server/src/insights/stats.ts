@@ -30,7 +30,7 @@ export function describe(values: number[]): DescriptiveStats {
 
 // ── Welch's t-test (unequal variance two-sample) ──────────────────────────
 
-export interface TTestResult {
+interface TTestResult {
   t: number;
   pValue: number;
   df: number;

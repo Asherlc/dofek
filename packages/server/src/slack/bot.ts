@@ -321,11 +321,6 @@ async function deleteUnconfirmedEntries(db: Database, entryIds: string[]): Promi
   );
 }
 
-/** Get today's date in YYYY-MM-DD format, in the given IANA timezone. */
-function todayDate(timezone: string): string {
-  return new Date().toLocaleDateString("en-CA", { timeZone: timezone });
-}
-
 /** Convert a Slack epoch timestamp to YYYY-MM-DD date string in the user's timezone */
 function slackTimestampToDateString(slackTs: string, timezone: string): string {
   const epochSeconds = Number.parseFloat(slackTs);
@@ -646,7 +641,7 @@ interface SlackBotResult {
  *   (/auth/provider/slack → /callback), not by Bolt's built-in installer.
  *   Mount the returned router on your Express app.
  */
-export function createSlackBot(db: Database): SlackBotResult | null {
+function createSlackBot(db: Database): SlackBotResult | null {
   const signingSecret = process.env.SLACK_SIGNING_SECRET;
 
   // HTTP mode (multi-workspace) — OAuth handled externally via /auth/provider/slack

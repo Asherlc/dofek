@@ -2,7 +2,7 @@
  * Simple counting semaphore for limiting concurrent async operations.
  * Used to prevent overwhelming the database with too many heavy queries at once.
  */
-export class Semaphore {
+class Semaphore {
   private running = 0;
   private waiting: Array<() => void> = [];
 

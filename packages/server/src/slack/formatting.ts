@@ -54,7 +54,7 @@ function formatMacroLine(item: NutritionItemWithMeal): string {
 }
 
 /** Format a condensed micronutrient line showing only non-zero values */
-export function formatMicroLine(item: NutritionItemWithMeal): string {
+function formatMicroLine(item: NutritionItemWithMeal): string {
   const parts: string[] = [];
   for (const { key, label, unit } of MICRO_DISPLAY) {
     const value = item[key] as number | undefined;

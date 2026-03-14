@@ -126,7 +126,7 @@ const NUTRIENT_KEYS = [
   "omega6Mg",
 ] as const;
 
-export interface DailySupplementEntry {
+interface DailySupplementEntry {
   providerId: string;
   externalId: string;
   date: string;

@@ -5,7 +5,7 @@
  * Pure TypeScript, no external dependencies.
  */
 
-export interface LinearRegressionJSON {
+interface LinearRegressionJSON {
   coefficients: number[];
   intercept: number;
   rSquared: number;

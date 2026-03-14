@@ -21,7 +21,7 @@ export interface BodyRecompositionRow {
   smoothedLeanMass: number;
 }
 
-export interface WeightRateOfChange {
+interface WeightRateOfChange {
   currentWeekly: number | null;
   current4Week: number | null;
   trend: "gaining" | "losing" | "stable" | "insufficient";

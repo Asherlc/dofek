@@ -14,18 +14,9 @@ importers:
       fit-file-parser:
         specifier: 2.3.3
         version: 2.3.3
-      prom-client:
-        specifier: 15.1.3
-        version: 15.1.3
       sax:
         specifier: 1.5.0
         version: 1.5.0
-      winston:
-        specifier: 3.19.0
-        version: 3.19.0
-      winston-transport:
-        specifier: 4.9.0
-        version: 4.9.0
       yauzl:
         specifier: 3.2.0
         version: 3.2.0
@@ -57,6 +48,9 @@ importers:
       drizzle-kit:
         specifier: 0.30.6
         version: 0.30.6
+      knip:
+        specifier: ^5.86.0
+        version: 5.86.0(@types/node@22.19.15)(typescript@5.9.3)
       postgres:
         specifier: 3.4.8
         version: 3.4.8
@@ -142,12 +136,6 @@ importers:
       '@stdlib/stats-ranks':
         specifier: 0.2.3
         version: 0.2.3
-      '@stdlib/stats-ttest':
-        specifier: 0.2.3
-        version: 0.2.3
-      '@stdlib/stats-wilcoxon':
-        specifier: 0.2.3
-        version: 0.2.3
       '@trpc/server':
         specifier: 11.12.0
         version: 11.12.0(typescript@5.9.3)
@@ -166,12 +154,24 @@ importers:
       dofek:
         specifier: workspace:*
         version: link:../..
+      drizzle-orm:
+        specifier: 0.38.4
+        version: 0.38.4(@opentelemetry/api@1.9.0)(@types/react@19.2.14)(postgres@3.4.8)(react@19.2.4)
       express:
         specifier: 5.2.1
         version: 5.2.1
+      prom-client:
+        specifier: 15.1.3
+        version: 15.1.3
       simple-statistics:
         specifier: 7.8.9
         version: 7.8.9
+      winston:
+        specifier: 3.19.0
+        version: 3.19.0
+      winston-transport:
+        specifier: 4.9.0
+        version: 4.9.0
       zod:
         specifier: 3.25.76
         version: 3.25.76
@@ -209,9 +209,6 @@ importers:
       '@trpc/react-query':
         specifier: 11.12.0
         version: 11.12.0(@tanstack/react-query@5.90.21(react@19.2.4))(@trpc/client@11.12.0(@trpc/server@11.12.0(typescript@5.9.3))(typescript@5.9.3))(@trpc/server@11.12.0(typescript@5.9.3))(react@19.2.4)(typescript@5.9.3)
-      clsx:
-        specifier: 2.1.1
-        version: 2.1.1
       dofek-server:
         specifier: workspace:*
         version: link:../server
@@ -230,9 +227,6 @@ importers:
       react-dom:
         specifier: 19.2.4
         version: 19.2.4(react@19.2.4)
-      tailwind-merge:
-        specifier: 3.5.0
-        version: 3.5.0
       tailwindcss:
         specifier: 4.2.1
         version: 4.2.1
@@ -867,6 +861,15 @@ packages:
 
   '@drizzle-team/brocli@0.10.2':
     resolution: {integrity: sha512-z33Il7l5dKjUgGULTqBsQBQwckHh5AbIuxhdsIxDDiZAzBOrZO6q9ogcWC65kU382AfynTfgNumVcNIjuIua6w==}
+
+  '@emnapi/core@1.9.0':
+    resolution: {integrity: sha512-0DQ98G9ZQZOxfUcQn1waV2yS8aWdZ6kJMbYCJB3oUBecjWYO1fqJ+a1DRfPF3O5JEkwqwP1A9QEN/9mYm2Yd0w==}
+
+  '@emnapi/runtime@1.9.0':
+    resolution: {integrity: sha512-QN75eB0IH2ywSpRpNddCRfQIhmJYBCJ1x5Lb3IscKAL8bMnVAKnRg8dCoXbHzVLLH7P38N2Z3mtulB7W0J0FKw==}
+
+  '@emnapi/wasi-threads@1.2.0':
+    resolution: {integrity: sha512-N10dEJNSsUx41Z6pZsXU8FjPjpBEplgH24sfkmITrBED1/U2Esum9F3lfLrMjKHHjmi557zQn7kR9R+XWXu5Rg==}
 
   '@esbuild-kit/core-utils@3.3.2':
     resolution: {integrity: sha512-sPRAnw9CdSsRmEtnsl2WXWdyquogVpB3yZ3dgwJfe8zrOzTsV7cJvmwrKVa+0ma5BoiGJ+BoqkMvawbayKUsqQ==}
@@ -1875,6 +1878,21 @@ packages:
   '@js-sdsl/ordered-map@4.4.2':
     resolution: {integrity: sha512-iUKgm52T8HOE/makSxjqoWhe95ZJA1/G1sYsGev2JDKUSS14KAgg1LHb+Ba+IPow0xflbnSkOsZcO08C7w1gYw==}
 
+  '@napi-rs/wasm-runtime@1.1.1':
+    resolution: {integrity: sha512-p64ah1M1ld8xjWv3qbvFwHiFVWrq1yFvV4f7w+mzaqiR4IlSgkqhcRdHwsGgomwzBH51sRY4NEowLxnaBjcW/A==}
+
+  '@nodelib/fs.scandir@2.1.5':
+    resolution: {integrity: sha512-vq24Bq3ym5HEQm2NKCr3yXDwjc7vTsEThRDnkp2DK9p1uqLR+DHurm/NOTo0KG7HYHU7eppKZj3MyqYuMBf62g==}
+    engines: {node: '>= 8'}
+
+  '@nodelib/fs.stat@2.0.5':
+    resolution: {integrity: sha512-RkhPPp2zrqDAQA/2jNhnztcPAlv64XdhIp7a7454A5ovI7Bukxgt7MX7udwAu3zg1DcpPU0rz3VV1SeaqvY4+A==}
+    engines: {node: '>= 8'}
+
+  '@nodelib/fs.walk@1.2.8':
+    resolution: {integrity: sha512-oGB+UxlgWcgQkgwo8GcEGwemoTFt3FIO9ababBmaGwXIoBKZ+GTy0pP185beGg7Llih/NSHSV2XAs1lnznocSg==}
+    engines: {node: '>= 8'}
+
   '@opentelemetry/api@1.9.0':
     resolution: {integrity: sha512-3giAOQvZiH5F9bMlMiv8+GSPMeqg0dbaeo58/0SlA9sxSqZhnUtxzX9/2FzyhS9sWQf5S0GJE0AKBrFqjpeYcg==}
     engines: {node: '>=8.0.0'}
@@ -1896,6 +1914,106 @@ packages:
 
   '@oslojs/jwt@0.2.0':
     resolution: {integrity: sha512-bLE7BtHrURedCn4Mco3ma9L4Y1GR2SMBuIvjWr7rmQ4/W/4Jy70TIAgZ+0nIlk0xHz1vNP8x8DCns45Sb2XRbg==}
+
+  '@oxc-resolver/binding-android-arm-eabi@11.19.1':
+    resolution: {integrity: sha512-aUs47y+xyXHUKlbhqHUjBABjvycq6YSD7bpxSW7vplUmdzAlJ93yXY6ZR0c1o1x5A/QKbENCvs3+NlY8IpIVzg==}
+    cpu: [arm]
+    os: [android]
+
+  '@oxc-resolver/binding-android-arm64@11.19.1':
+    resolution: {integrity: sha512-oolbkRX+m7Pq2LNjr/kKgYeC7bRDMVTWPgxBGMjSpZi/+UskVo4jsMU3MLheZV55jL6c3rNelPl4oD60ggYmqA==}
+    cpu: [arm64]
+    os: [android]
+
+  '@oxc-resolver/binding-darwin-arm64@11.19.1':
+    resolution: {integrity: sha512-nUC6d2i3R5B12sUW4O646qD5cnMXf2oBGPLIIeaRfU9doJRORAbE2SGv4eW6rMqhD+G7nf2Y8TTJTLiiO3Q/dQ==}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@oxc-resolver/binding-darwin-x64@11.19.1':
+    resolution: {integrity: sha512-cV50vE5+uAgNcFa3QY1JOeKDSkM/9ReIcc/9wn4TavhW/itkDGrXhw9jaKnkQnGbjJ198Yh5nbX/Gr2mr4Z5jQ==}
+    cpu: [x64]
+    os: [darwin]
+
+  '@oxc-resolver/binding-freebsd-x64@11.19.1':
+    resolution: {integrity: sha512-xZOQiYGFxtk48PBKff+Zwoym7ScPAIVp4c14lfLxizO2LTTTJe5sx9vQNGrBymrf/vatSPNMD4FgsaaRigPkqw==}
+    cpu: [x64]
+    os: [freebsd]
+
+  '@oxc-resolver/binding-linux-arm-gnueabihf@11.19.1':
+    resolution: {integrity: sha512-lXZYWAC6kaGe/ky2su94e9jN9t6M0/6c+GrSlCqL//XO1cxi5lpAhnJYdyrKfm0ZEr/c7RNyAx3P7FSBcBd5+A==}
+    cpu: [arm]
+    os: [linux]
+
+  '@oxc-resolver/binding-linux-arm-musleabihf@11.19.1':
+    resolution: {integrity: sha512-veG1kKsuK5+t2IsO9q0DErYVSw2azvCVvWHnfTOS73WE0STdLLB7Q1bB9WR+yHPQM76ASkFyRbogWo1GR1+WbQ==}
+    cpu: [arm]
+    os: [linux]
+
+  '@oxc-resolver/binding-linux-arm64-gnu@11.19.1':
+    resolution: {integrity: sha512-heV2+jmXyYnUrpUXSPugqWDRpnsQcDm2AX4wzTuvgdlZfoNYO0O3W2AVpJYaDn9AG4JdM6Kxom8+foE7/BcSig==}
+    cpu: [arm64]
+    os: [linux]
+
+  '@oxc-resolver/binding-linux-arm64-musl@11.19.1':
+    resolution: {integrity: sha512-jvo2Pjs1c9KPxMuMPIeQsgu0mOJF9rEb3y3TdpsrqwxRM+AN6/nDDwv45n5ZrUnQMsdBy5gIabioMKnQfWo9ew==}
+    cpu: [arm64]
+    os: [linux]
+
+  '@oxc-resolver/binding-linux-ppc64-gnu@11.19.1':
+    resolution: {integrity: sha512-vLmdNxWCdN7Uo5suays6A/+ywBby2PWBBPXctWPg5V0+eVuzsJxgAn6MMB4mPlshskYbppjpN2Zg83ArHze9gQ==}
+    cpu: [ppc64]
+    os: [linux]
+
+  '@oxc-resolver/binding-linux-riscv64-gnu@11.19.1':
+    resolution: {integrity: sha512-/b+WgR+VTSBxzgOhDO7TlMXC1ufPIMR6Vj1zN+/x+MnyXGW7prTLzU9eW85Aj7Th7CCEG9ArCbTeqxCzFWdg2w==}
+    cpu: [riscv64]
+    os: [linux]
+
+  '@oxc-resolver/binding-linux-riscv64-musl@11.19.1':
+    resolution: {integrity: sha512-YlRdeWb9j42p29ROh+h4eg/OQ3dTJlpHSa+84pUM9+p6i3djtPz1q55yLJhgW9XfDch7FN1pQ/Vd6YP+xfRIuw==}
+    cpu: [riscv64]
+    os: [linux]
+
+  '@oxc-resolver/binding-linux-s390x-gnu@11.19.1':
+    resolution: {integrity: sha512-EDpafVOQWF8/MJynsjOGFThcqhRHy417sRyLfQmeiamJ8qVhSKAn2Dn2VVKUGCjVB9C46VGjhNo7nOPUi1x6uA==}
+    cpu: [s390x]
+    os: [linux]
+
+  '@oxc-resolver/binding-linux-x64-gnu@11.19.1':
+    resolution: {integrity: sha512-NxjZe+rqWhr+RT8/Ik+5ptA3oz7tUw361Wa5RWQXKnfqwSSHdHyrw6IdcTfYuml9dM856AlKWZIUXDmA9kkiBQ==}
+    cpu: [x64]
+    os: [linux]
+
+  '@oxc-resolver/binding-linux-x64-musl@11.19.1':
+    resolution: {integrity: sha512-cM/hQwsO3ReJg5kR+SpI69DMfvNCp+A/eVR4b4YClE5bVZwz8rh2Nh05InhwI5HR/9cArbEkzMjcKgTHS6UaNw==}
+    cpu: [x64]
+    os: [linux]
+
+  '@oxc-resolver/binding-openharmony-arm64@11.19.1':
+    resolution: {integrity: sha512-QF080IowFB0+9Rh6RcD19bdgh49BpQHUW5TajG1qvWHvmrQznTZZjYlgE2ltLXyKY+qs4F/v5xuX1XS7Is+3qA==}
+    cpu: [arm64]
+    os: [openharmony]
+
+  '@oxc-resolver/binding-wasm32-wasi@11.19.1':
+    resolution: {integrity: sha512-w8UCKhX826cP/ZLokXDS6+milN8y4X7zidsAttEdWlVoamTNf6lhBJldaWr3ukTDiye7s4HRcuPEPOXNC432Vg==}
+    engines: {node: '>=14.0.0'}
+    cpu: [wasm32]
+
+  '@oxc-resolver/binding-win32-arm64-msvc@11.19.1':
+    resolution: {integrity: sha512-nJ4AsUVZrVKwnU/QRdzPCCrO0TrabBqgJ8pJhXITdZGYOV28TIYystV1VFLbQ7DtAcaBHpocT5/ZJnF78YJPtQ==}
+    cpu: [arm64]
+    os: [win32]
+
+  '@oxc-resolver/binding-win32-ia32-msvc@11.19.1':
+    resolution: {integrity: sha512-EW+ND5q2Tl+a3pH81l1QbfgbF3HmqgwLfDfVithRFheac8OTcnbXt/JxqD2GbDkb7xYEqy1zNaVFRr3oeG8npA==}
+    cpu: [ia32]
+    os: [win32]
+
+  '@oxc-resolver/binding-win32-x64-msvc@11.19.1':
+    resolution: {integrity: sha512-6hIU3RQu45B+VNTY4Ru8ppFwjVS/S5qwYyGhBotmjxfEKk41I2DlGtRfGJndZ5+6lneE2pwloqunlOyZuX/XAw==}
+    cpu: [x64]
+    os: [win32]
 
   '@petamoriken/float16@3.9.3':
     resolution: {integrity: sha512-8awtpHXCx/bNpFt4mt2xdkgtgVvKqty8VbjHI/WWWQuEw+KLzFot3f4+LkQY9YmOtq7A5GdOnqoIC8Pdygjk2g==}
@@ -2689,11 +2807,6 @@ packages:
     engines: {node: '>=0.10.0', npm: '>2.7.0'}
     os: [aix, darwin, freebsd, linux, macos, openbsd, sunos, win32, windows]
 
-  '@stdlib/blas-base-gcopy@0.2.3':
-    resolution: {integrity: sha512-W1vwLtEIfty7iCJZZ3OhcpNw6o0HwGMXdLWLEDlhYpQ+eBKPBpa8FQducrGSbYDI0sys+ZBMq/oRv9dGIyH2IA==}
-    engines: {node: '>=0.10.0', npm: '>2.7.0'}
-    os: [aix, darwin, freebsd, linux, macos, openbsd, sunos, win32, windows]
-
   '@stdlib/blas-ext-base-gapxsumpw@0.3.1':
     resolution: {integrity: sha512-PAe5tuC7LtUdCpa3w2Up7n8axhavCsRjrgB+GUcpyW5CwhjahTqqve4QAkcdZt6Y530dlh31q50I5IQG80RDiw==}
     engines: {node: '>=0.10.0', npm: '>2.7.0'}
@@ -2824,11 +2937,6 @@ packages:
     engines: {node: '>=0.10.0', npm: '>2.7.0'}
     os: [aix, darwin, freebsd, linux, macos, openbsd, sunos, win32, windows]
 
-  '@stdlib/constants-float32-max@0.2.3':
-    resolution: {integrity: sha512-b+G9qRNbN4/Ke1BKK3fP7+nWahbWJhcCpbieaiAsbdJyucx7oIaHyzcnNDSmPYhVP57iGEqL9RzhVRd0u4+u4w==}
-    engines: {node: '>=0.10.0', npm: '>2.7.0'}
-    os: [aix, darwin, freebsd, linux, macos, openbsd, sunos, win32, windows]
-
   '@stdlib/constants-float32-ninf@0.2.3':
     resolution: {integrity: sha512-X0t2gw6UKfzDRRjYH8k8dqRv2C6iI2sn3UrunRIzCL4WYYR+QWn1UwjZWG4fviIE+QuEGTyoKKb4wG6gTiS8yw==}
     engines: {node: '>=0.10.0', npm: '>2.7.0'}
@@ -2919,11 +3027,6 @@ packages:
     engines: {node: '>=0.10.0', npm: '>2.7.0'}
     os: [aix, darwin, freebsd, linux, macos, openbsd, sunos, win32, windows]
 
-  '@stdlib/constants-float64-ln-sqrt-two-pi@0.2.3':
-    resolution: {integrity: sha512-+VE4Z3OoPmyVzYJ7mbQUkKdkT7+uHeSG821U0hZLtUQAD2AmPWQNUzKk+G6IF8FUQv03Ly6U4lLL9aoXxXjz0A==}
-    engines: {node: '>=0.10.0', npm: '>2.7.0'}
-    os: [aix, darwin, freebsd, linux, macos, openbsd, sunos, win32, windows]
-
   '@stdlib/constants-float64-ln-two@0.2.3':
     resolution: {integrity: sha512-pCNVc7Cmr56sg+jOrN2yLSWNHdN0UECAZIJ79sDaLBpF2FqeL6EI52EJesLmD64oGSNUC4yZNdGBe+DpKc1ZXw==}
     engines: {node: '>=0.10.0', npm: '>2.7.0'}
@@ -3011,11 +3114,6 @@ packages:
 
   '@stdlib/constants-float64-smallest-normal@0.2.3':
     resolution: {integrity: sha512-z2IDWJD7s6QwrfzI5o4q3OnZ7mEzUIs1V1PdTuHDofyWkpFGEr7GgwGI/0cZbuhW3aY3xydvM3rZ5SxT+6KQoQ==}
-    engines: {node: '>=0.10.0', npm: '>2.7.0'}
-    os: [aix, darwin, freebsd, linux, macos, openbsd, sunos, win32, windows]
-
-  '@stdlib/constants-float64-smallest-subnormal@0.2.3':
-    resolution: {integrity: sha512-NcXOJRA9vuhWcPPvwQf+c86Oab8UtJ3P8Y2DwKt9eRzjRdFFMw73pDmYXEOHSwczn/mGaTHG4HxmVBTugh/ezw==}
     engines: {node: '>=0.10.0', npm: '>2.7.0'}
     os: [aix, darwin, freebsd, linux, macos, openbsd, sunos, win32, windows]
 
@@ -3149,11 +3247,6 @@ packages:
     engines: {node: '>=0.10.0', npm: '>2.7.0'}
     os: [aix, darwin, freebsd, linux, macos, openbsd, sunos, win32, windows]
 
-  '@stdlib/math-base-assert-is-positive-integer@0.3.2':
-    resolution: {integrity: sha512-+FLU8JowmOzk2wiUI/PJzKXXPj2F2BFiNhJihpYv7mm3SCoSyCgRgPG3wzVmPieOY1T3TFBF0ITZy1eqQQCC1Q==}
-    engines: {node: '>=0.10.0', npm: '>2.7.0'}
-    os: [aix, darwin, freebsd, linux, macos, openbsd, sunos, win32, windows]
-
   '@stdlib/math-base-assert-is-positive-zero@0.2.3':
     resolution: {integrity: sha512-V+f8enSK2dEk2V/nHMezyJaUfSC0QJNUD8+mQYON7JtFaxq/+xURnPMllF9h84cFqQ9SAuxWXP+Y7MoE+ENORw==}
     engines: {node: '>=0.10.0', npm: '>2.7.0'}
@@ -3181,11 +3274,6 @@ packages:
 
   '@stdlib/math-base-special-absf@0.2.3':
     resolution: {integrity: sha512-lUEEnIo6jpR397bn4mphlihPBMncdgKYQQYZ8nwnL/wGNE9InwqLqrO6otM+CO2nkG/kOyt0dSAhSSffqBZU6g==}
-    engines: {node: '>=0.10.0', npm: '>2.7.0'}
-    os: [aix, darwin, freebsd, linux, macos, openbsd, sunos, win32, windows]
-
-  '@stdlib/math-base-special-acos@0.2.4':
-    resolution: {integrity: sha512-lidI9Q1No+jYM7glXFXMPzxQKwrzqV/QuAp4hVDmidDTL1d6NW0jPBAiaRL7RLcqXqd8oYVirTrQIga8RhMatQ==}
     engines: {node: '>=0.10.0', npm: '>2.7.0'}
     os: [aix, darwin, freebsd, linux, macos, openbsd, sunos, win32, windows]
 
@@ -3231,11 +3319,6 @@ packages:
 
   '@stdlib/math-base-special-erfc@0.2.5':
     resolution: {integrity: sha512-qA2iPLKr8SjYpI9TCT7LoQCbUrbx17kmiRidDewWk/aHL0pcpSm8KITCjBUtsmletSEUNUS+8MyAPqisXT3N1g==}
-    engines: {node: '>=0.10.0', npm: '>2.7.0'}
-    os: [aix, darwin, freebsd, linux, macos, openbsd, sunos, win32, windows]
-
-  '@stdlib/math-base-special-erfcinv@0.2.4':
-    resolution: {integrity: sha512-oF/3UXs2zZFAOKe19rRcWg2SFZFHQbnFJ4ucbSzYykM79pDnvVtSP/dRPtDy3uevUix6BzeloFyK0dLbQsYt+w==}
     engines: {node: '>=0.10.0', npm: '>2.7.0'}
     os: [aix, darwin, freebsd, linux, macos, openbsd, sunos, win32, windows]
 
@@ -3299,11 +3382,6 @@ packages:
     engines: {node: '>=0.10.0', npm: '>2.7.0'}
     os: [aix, darwin, freebsd, linux, macos, openbsd, sunos, win32, windows]
 
-  '@stdlib/math-base-special-gammaincinv@0.2.3':
-    resolution: {integrity: sha512-eH3TCXZdH4WvtgKc+jI3ATeaYq87eKcActfSpV0ZZE6Otc326vmNzhv7dXnjVxgSY81bKgKeBzfaTW/fGyXT7w==}
-    engines: {node: '>=0.10.0', npm: '>2.7.0'}
-    os: [aix, darwin, freebsd, linux, macos, openbsd, sunos, win32, windows]
-
   '@stdlib/math-base-special-gammaln@0.3.1':
     resolution: {integrity: sha512-ptzVz18xkfxzgekgAbk6ytMoDc7MYAUY4xZuAW/SyFGO6sCPVbwU4GH1/1IQAGLrDKYizKeVoTsO5NGK5Zpvyw==}
     engines: {node: '>=0.10.0', npm: '>2.7.0'}
@@ -3316,11 +3394,6 @@ packages:
 
   '@stdlib/math-base-special-kernel-betainc@0.2.3':
     resolution: {integrity: sha512-ho7hVn2GAnHsoj+SKJxrgo5rvftmIinE2H2J9/NWXYU6ubjQJ1EmJAzZ6fMSED++lK+eARS1kUl8hUeKRuIbDQ==}
-    engines: {node: '>=0.10.0', npm: '>2.7.0'}
-    os: [aix, darwin, freebsd, linux, macos, openbsd, sunos, win32, windows]
-
-  '@stdlib/math-base-special-kernel-betaincinv@0.2.3':
-    resolution: {integrity: sha512-k93/sg4xC/eIsUUw1OD3Rwb8Y2Bl5moTMuOoKeSo5aogqpP6mFwSKOkoW9VS4iAHFUHkjPLgpaN7eRStm1/Deg==}
     engines: {node: '>=0.10.0', npm: '>2.7.0'}
     os: [aix, darwin, freebsd, linux, macos, openbsd, sunos, win32, windows]
 
@@ -3396,11 +3469,6 @@ packages:
 
   '@stdlib/math-base-special-roundn@0.2.3':
     resolution: {integrity: sha512-u3G0ZUNJJzG8BFHmy+YhJpBFklTzF7I+Jz502bhv84GBjfwaaFOaJP1/RADmjcZsWU+ZuH/5G/kmFSwMFtKc8A==}
-    engines: {node: '>=0.10.0', npm: '>2.7.0'}
-    os: [aix, darwin, freebsd, linux, macos, openbsd, sunos, win32, windows]
-
-  '@stdlib/math-base-special-signum@0.2.3':
-    resolution: {integrity: sha512-a4Ar0QsFqsie6dOAvJQyb7OWpIZKIbaa6EVn/ZF+B/CPfczQvqrv7UujeH5tfwZYOXqFbKXAOXv//nQm8/4yHQ==}
     engines: {node: '>=0.10.0', npm: '>2.7.0'}
     os: [aix, darwin, freebsd, linux, macos, openbsd, sunos, win32, windows]
 
@@ -3634,18 +3702,8 @@ packages:
     engines: {node: '>=0.10.0', npm: '>2.7.0'}
     os: [aix, darwin, freebsd, linux, macos, openbsd, sunos, win32, windows]
 
-  '@stdlib/stats-base-dists-signrank-cdf@0.2.3':
-    resolution: {integrity: sha512-i6XUeuXXjCw9WIabx1wouBJ4RDxmkH85hYT3JrQWJwUxvDRUypYaI4V5abjeNYwlFByo2wiKhhjYe4nCXKg6hg==}
-    engines: {node: '>=0.10.0', npm: '>2.7.0'}
-    os: [aix, darwin, freebsd, linux, macos, openbsd, sunos, win32, windows]
-
   '@stdlib/stats-base-dists-t-cdf@0.2.3':
     resolution: {integrity: sha512-Y6LUuwknLaewhjnJgMwcZuiD4adx1hzEkbnnrwlqh7Qz+CFyh1D5Ov7ZoyHkcs5djAZcOTaVbn8Ktc+EQ6A7mA==}
-    engines: {node: '>=0.10.0', npm: '>2.7.0'}
-    os: [aix, darwin, freebsd, linux, macos, openbsd, sunos, win32, windows]
-
-  '@stdlib/stats-base-dists-t-quantile@0.2.3':
-    resolution: {integrity: sha512-HT6cfDL8EKt7H5rpA5x4YHOfXNAOyxToijTBiQSEvHoGnRoULcc0RFm+KF3kI85HP55AVkg6/KIuukdpRICxUg==}
     engines: {node: '>=0.10.0', npm: '>2.7.0'}
     os: [aix, darwin, freebsd, linux, macos, openbsd, sunos, win32, windows]
 
@@ -3676,16 +3734,6 @@ packages:
 
   '@stdlib/stats-strided-variancepn@0.1.1':
     resolution: {integrity: sha512-F2GPQSda5jxsZ0kZhYXLc/RJ4uMknWJqYx420/Ed5Du1NIDMLxy4mCleJxgJ/zVLS9t8AgAq/EOAx/QOY78l2g==}
-    engines: {node: '>=0.10.0', npm: '>2.7.0'}
-    os: [aix, darwin, freebsd, linux, macos, openbsd, sunos, win32, windows]
-
-  '@stdlib/stats-ttest@0.2.3':
-    resolution: {integrity: sha512-sbwGkIvLNTi77qJ2fwscQH+wT7XGv5gM2MmE6HTJsDk4XTmhyPTlSsE4mbuGKz5UXlnVCrL2qAp5KaW+TlTHlg==}
-    engines: {node: '>=0.10.0', npm: '>2.7.0'}
-    os: [aix, darwin, freebsd, linux, macos, openbsd, sunos, win32, windows]
-
-  '@stdlib/stats-wilcoxon@0.2.3':
-    resolution: {integrity: sha512-w0+WZ8TDbM9jW1ASnjDSYFHSO3xJZuGkr1ojt/DUufB0KMNjhrsoiQmljPN4QhKI4d/DRHU+ZR9MrxSBn123XQ==}
     engines: {node: '>=0.10.0', npm: '>2.7.0'}
     os: [aix, darwin, freebsd, linux, macos, openbsd, sunos, win32, windows]
 
@@ -3819,11 +3867,6 @@ packages:
     engines: {node: '>=0.10.0', npm: '>2.7.0'}
     os: [aix, darwin, freebsd, linux, macos, openbsd, sunos, win32, windows]
 
-  '@stdlib/utils-identity-function@0.2.3':
-    resolution: {integrity: sha512-XZNW1j/mWbRTP8WeIVCQX9o/2HOudrCIgRjte5EJsDjZp2fKW6mTjm96s3P9NGd4YQi3jzDm36VWPjLRQziJRg==}
-    engines: {node: '>=0.10.0', npm: '>2.7.0'}
-    os: [aix, darwin, freebsd, linux, macos, openbsd, sunos, win32, windows]
-
   '@stdlib/utils-index-of@0.2.3':
     resolution: {integrity: sha512-R5lBztlvTWiH0CFFSYsSDGDexQH5y9UVIAHNevp/uS3jE0+nMHREWEkIwCHxkAsYlbi1Dlbyq8+vapswxgBSNw==}
     engines: {node: '>=0.10.0', npm: '>2.7.0'}
@@ -3834,18 +3877,8 @@ packages:
     engines: {node: '>=0.10.0', npm: '>2.7.0'}
     os: [aix, darwin, freebsd, linux, macos, openbsd, sunos, win32, windows]
 
-  '@stdlib/utils-memoize@0.2.3':
-    resolution: {integrity: sha512-H8OGqss0lsbTAFKxbaQ+xywRgtcn9WV4w6p59tjMVmsDqQNGGrwvf6TuljUJY3Wc21E5VK4Vcs2O/MxBIAJsZw==}
-    engines: {node: '>=0.10.0', npm: '>2.7.0'}
-    os: [aix, darwin, freebsd, linux, macos, openbsd, sunos, win32, windows]
-
   '@stdlib/utils-native-class@0.2.3':
     resolution: {integrity: sha512-UGXCPhgmOjwMpEQ5fFiifcqrhUnP8ICyWzEkHphUrh2/0pHyK0zilZvcODfROgzoy6L9ivUUuR6NjrAI+j14hA==}
-    engines: {node: '>=0.10.0', npm: '>2.7.0'}
-    os: [aix, darwin, freebsd, linux, macos, openbsd, sunos, win32, windows]
-
-  '@stdlib/utils-tabulate@0.2.3':
-    resolution: {integrity: sha512-00HL6s5KPcAqwobAjmaTlsGK7i6FVb1IFqivaKoIhn8rGPuFTYmeo4Kc2ZyXGitteQJjXABl0qjF+yei813OVQ==}
     engines: {node: '>=0.10.0', npm: '>2.7.0'}
     os: [aix, darwin, freebsd, linux, macos, openbsd, sunos, win32, windows]
 
@@ -4056,6 +4089,9 @@ packages:
     resolution: {integrity: sha512-rpZnf5FUjNndE/AjGIy+FvEHR52iBd0u0wySqWCwXj67wraj3qCuBr5Opcf0Te/g67C/YztqceFkLoG0r4mp4Q==}
     peerDependencies:
       typescript: '>=5.7.2'
+
+  '@tybys/wasm-util@0.10.1':
+    resolution: {integrity: sha512-9tTaPJLSiejZKx+Bmog4uSubteqTvFrVrURwkmHixBo0G4seD0zUxp98E1DzUBJxLQ3NPwXrGKDiVjwx/DpPsg==}
 
   '@types/babel__core@7.20.5':
     resolution: {integrity: sha512-qoQprZvz5wQFJwMDqeseRXWv3rqMvhgpbXFfVyWhbx9X47POIA6i/+dXefEmZKoAgOaTdaIgNSMqMIU61yRyzA==}
@@ -4774,10 +4810,6 @@ packages:
     resolution: {integrity: sha512-JQHZ2QMW6l3aH/j6xCqQThY/9OH4D/9ls34cgkUBiEeocRTU04tHfKPBsUK1PqZCUQM7GiA0IIXJSuXHI64Kbg==}
     engines: {node: '>=0.8'}
 
-  clsx@2.1.1:
-    resolution: {integrity: sha512-eYm0QWBtUrBWZWG0d386OGAw16Z995PiOVo2B7bjWSbHedGl5e0ZWaq65kOGgUSNesEIDkB9ISbTg/JK9dhCZA==}
-    engines: {node: '>=6'}
-
   color-convert@1.9.3:
     resolution: {integrity: sha512-QfAUtd+vFdAtFQcC8CCyYt1fYWxSqAiK2cSD6zDB8N3cpsEBAvRxp9zOGg6G/SHHJYAT88/az/IuDGALsNVbGg==}
 
@@ -5447,6 +5479,10 @@ packages:
   fast-fifo@1.3.2:
     resolution: {integrity: sha512-/d9sfos4yxzpwkDkuN7k2SqFKtYNmCTzgfEpz82x34IM9/zc8KGxQoXg1liNC/izpRM/MBdt44Nmx41ZWqk+FQ==}
 
+  fast-glob@3.3.3:
+    resolution: {integrity: sha512-7MptL8U0cqcFdzIzwOTHoilX9x5BrNqye7Z/LuC7kCMRio1EMSyqRK3BEAUD7sXRq4iT4AzTVuZdhgQ2TCvYLg==}
+    engines: {node: '>=8.6.0'}
+
   fast-json-stable-stringify@2.1.0:
     resolution: {integrity: sha512-lhd/wF+Lk98HZoTCtlVraHtfh5XYijIjalXck7saUtuanSDyLMxnHhSXEDJqHxD7msR8D0uCmqlkwjCV8xvwHw==}
 
@@ -5462,6 +5498,9 @@ packages:
   fast-wrap-ansi@0.2.0:
     resolution: {integrity: sha512-rLV8JHxTyhVmFYhBJuMujcrHqOT2cnO5Zxj37qROj23CP39GXubJRBUFF0z8KFK77Uc0SukZUf7JZhsVEQ6n8w==}
 
+  fastq@1.20.1:
+    resolution: {integrity: sha512-GGToxJ/w1x32s/D2EKND7kTil4n8OVk/9mycTc4VDza13lOvpUZTGX3mFSCtV9ksdGBVzvsyAVLM6mHFThxXxw==}
+
   fb-dotslash@0.5.8:
     resolution: {integrity: sha512-XHYLKk9J4BupDxi9bSEhkfss0m+Vr9ChTrjhf9l2iw3jB5C7BnY4GVPoMcqbrTutsKJso6yj2nAB6BI/F2oZaA==}
     engines: {node: '>=20'}
@@ -5469,6 +5508,9 @@ packages:
 
   fb-watchman@2.0.2:
     resolution: {integrity: sha512-p5161BqbuCaSnB8jIbzQHOlpgsPmK5rJVDfDKO91Axs5NC1uu3HRQm6wt9cd9/+GtQQIO53JdGXXoyDpTAsgYA==}
+
+  fd-package-json@2.0.0:
+    resolution: {integrity: sha512-jKmm9YtsNXN789RS/0mSzOC1NUq9mkVd65vbSSVsKdjGvYXBuE4oWe2QOEoFeRmJg+lPuZxpmrfFclNhoRMneQ==}
 
   fd-slicer@1.1.0:
     resolution: {integrity: sha512-cE1qsB/VwyQozZ+q1dGxR8LBYNZeofhEdUNGSMbQD3Gw2lAzX9Zb3uIU6Ebc/Fmyjo9AWWfnn0AUCHqtevs/8g==}
@@ -5547,6 +5589,11 @@ packages:
   form-data@4.0.5:
     resolution: {integrity: sha512-8RipRLol37bNs2bhoV67fiTEvdTrbMUYcFTiy3+wuuOnUog2QBHCZWXDRijWQfAkhBj2Uf5UnVaiWwA5vdd82w==}
     engines: {node: '>= 6'}
+
+  formatly@0.3.0:
+    resolution: {integrity: sha512-9XNj/o4wrRFyhSMJOvsuyMwy8aUfBaZ1VrqHVfohyXf0Sw0e+yfKG+xZaY3arGCOMdwFsqObtzVOc1gU9KiT9w==}
+    engines: {node: '>=18.3.0'}
+    hasBin: true
 
   forwarded@0.2.0:
     resolution: {integrity: sha512-buRG0fpBtRHSTCOASe6hD258tEubFoRLb4ZNA6NxMVHNw2gOcwHo9wyablzMzOA5z9xA9L1KNjk/Nt6MT9aYow==}
@@ -5976,6 +6023,14 @@ packages:
     resolution: {integrity: sha512-eTIzlVOSUR+JxdDFepEYcBMtZ9Qqdef+rnzWdRZuMbOywu5tO2w2N7rqjoANZ5k9vywhL6Br1VRjUIgTQx4E8w==}
     engines: {node: '>=6'}
 
+  knip@5.86.0:
+    resolution: {integrity: sha512-tGpRCbP+L+VysXnAp1bHTLQ0k/SdC3M3oX18+Cpiqax1qdS25iuCPzpK8LVmAKARZv0Ijri81Wq09Rzk0JTl+Q==}
+    engines: {node: '>=18.18.0'}
+    hasBin: true
+    peerDependencies:
+      '@types/node': '>=18'
+      typescript: '>=5.0.4 <7'
+
   kuler@2.0.0:
     resolution: {integrity: sha512-Xq9nH7KlWZmXAtodXDDRE7vs6DU1gTU8zYDHDiWLSip45Egwq3plLHzPn27NgvzL2r1LMPC1vdqh98sQxtqj4A==}
 
@@ -6181,6 +6236,10 @@ packages:
 
   merge-stream@2.0.0:
     resolution: {integrity: sha512-abv/qOcuPfk3URPfDzmZU1LKmuw8kT+0nIHvKrKgFrwifol/doWcdA4ZqsWQ8ENrFKkd67Mfpo/LovbIUsbt3w==}
+
+  merge2@1.4.1:
+    resolution: {integrity: sha512-8q7VEgMJW4J8tcfVPy8g09NcQwZdbwFEqhe/WZkoIzjn/3TGDwtOCYtXGxA3O8tPzpczCCDgv+P2P5y00ZJOOg==}
+    engines: {node: '>= 8'}
 
   metro-babel-transformer@0.83.3:
     resolution: {integrity: sha512-1vxlvj2yY24ES1O5RsSIvg4a4WeL7PFXgKOHvXTXiW0deLvQr28ExXj6LjwCCDZ4YZLhq6HddLpZnX4dEdSq5g==}
@@ -6437,6 +6496,9 @@ packages:
   ospath@1.2.2:
     resolution: {integrity: sha512-o6E5qJV5zkAbIDNhGSIlyOhScKXgQrSRMilfph0clDfM0nEnBOlKlH4sWDmG95BW/CvwNz0vmm7dJVtU2KlMiA==}
 
+  oxc-resolver@11.19.1:
+    resolution: {integrity: sha512-qE/CIg/spwrTBFt5aKmwe3ifeDdLfA2NESN30E42X/lII5ClF8V7Wt6WIJhcGZjp0/Q+nQ+9vgxGk//xZNX2hg==}
+
   p-finally@1.0.0:
     resolution: {integrity: sha512-LICb2p9CB7FS+0eR1oqWnHhp0FljGLZCWBE9aix0Uye9W8LTQPwMTYVGWQWIw9RdQiDg4+epXQODwIYJtSJaow==}
     engines: {node: '>=4'}
@@ -6645,6 +6707,9 @@ packages:
     resolution: {integrity: sha512-hh2WYhq4fi8+b+/2Kg9CEge4fDPvHS534aOOvOZeQ3+Vf2mCFsaFBYj0i+iXcAq6I9Vzp5fjMFBlONvayDC1qg==}
     engines: {node: '>=6'}
 
+  queue-microtask@1.2.3:
+    resolution: {integrity: sha512-NuaNSa6flKT5JaSYQzJok04JzTL1CA6aGhv5rfLW3PgqA+M2ChpZQnAC8h8i4ZFkBS8X5RqkDBHA7r4hej3K9A==}
+
   queue@6.0.2:
     resolution: {integrity: sha512-iHZWu+q3IdFZFX36ro/lKBkSvfkztY5Y7HMiPlOUjhupPcG2JMfst2KKEpu5XndviX/3UhFbRngUPNKtgvtZiA==}
 
@@ -6811,6 +6876,10 @@ packages:
     resolution: {integrity: sha512-XQBQ3I8W1Cge0Seh+6gjj03LbmRFWuoszgK9ooCpwYIrhhoO80pfq4cUkU5DkknwfOfFteRwlZ56PYOGYyFWdg==}
     engines: {node: '>= 4'}
 
+  reusify@1.1.0:
+    resolution: {integrity: sha512-g6QUff04oZpHs0eG5p83rFLhHeV00ug/Yf9nZM6fLeUrPguBTkTQOdpAWWspMh55TZfVQDPaN3NQJfbVRAxdIw==}
+    engines: {iojs: '>=1.0.0', node: '>=0.10.0'}
+
   rfdc@1.4.1:
     resolution: {integrity: sha512-q1b3N5QkRUWUl7iyylaaj3kOpIT0N2i9MqIEQXP73GVsN9cw3fdx8X63cEmWhJGi2PPCF23Ijp7ktmd39rawIA==}
 
@@ -6827,6 +6896,9 @@ packages:
   router@2.2.0:
     resolution: {integrity: sha512-nLTrUKm2UyiL7rlhapu/Zl45FwNgkZGaCpZbIHajDYgwlJCOzLSk+cIPAnsEqV955GjILJnKbdQC1nVPz+gAYQ==}
     engines: {node: '>= 18'}
+
+  run-parallel@1.2.0:
+    resolution: {integrity: sha512-5l4VyZR86LZ/lDxZTR6jqL8AFE2S0IFLMP26AbjsLVADxHdhB/c0GUsH+y39UfCi3dzz8OlQuPmnaJOMoDHQBA==}
 
   rxjs@7.8.2:
     resolution: {integrity: sha512-dhKf903U/PQZY6boNNtAGdWbG85WAbjT/1xYoZIC7FAY0yWapOBQVsVrDl58W86//e1VpMNBtRV4MaXfdMySFA==}
@@ -6981,6 +7053,10 @@ packages:
     resolution: {integrity: sha512-h+z7HKHYXj6wJU+AnS/+IH8Uh9fdcX1Lrhg1/VMdf9PwoBQXFcXiAdsy2tSK0P6gKwJLXp02r90ahUCqHk9rrw==}
     engines: {node: '>=8.0.0'}
 
+  smol-toml@1.6.0:
+    resolution: {integrity: sha512-4zemZi0HvTnYwLfrpk/CF9LOd9Lt87kAt50GnqhMpyF9U3poDAP2+iukq2bZsO/ufegbYehBkqINbsWxj4l4cw==}
+    engines: {node: '>= 18'}
+
   source-map-js@1.2.1:
     resolution: {integrity: sha512-UXWMKhLOwVKb728IUtQPXxfYU+usdybtUrK/8uGE8CQMvrhOpwvzDBwj0QhSL7MQc7vIsISBG8VQ8+IDQxpfQA==}
     engines: {node: '>=0.10.0'}
@@ -7095,6 +7171,10 @@ packages:
     resolution: {integrity: sha512-aulFJcD6YK8V1G7iRB5tigAP4TsHBZZrOV8pjV++zdUwmeV8uzbY7yn6h9MswN62adStNZFuCIx4haBnRuMDaw==}
     engines: {node: '>=18'}
 
+  strip-json-comments@5.0.3:
+    resolution: {integrity: sha512-1tB5mhVo7U+ETBKNf92xT4hrQa3pm0MZ0PQvuDnWgAAGHDsfp4lPSpiS6psrSiet87wyGPh9ft6wmhOMQ0hDiw==}
+    engines: {node: '>=14.16'}
+
   strip-literal@3.1.0:
     resolution: {integrity: sha512-8r3mkIM/2+PpjHoOtiAW8Rg3jJLHaV7xPwG+YRGrv6FP0wwk/toTpATxWYOW0BKdWwl82VT2tFYi5DlROa0Mxg==}
 
@@ -7135,9 +7215,6 @@ packages:
   tagged-tag@1.0.0:
     resolution: {integrity: sha512-yEFYrVhod+hdNyx7g5Bnkkb0G6si8HJurOoOEgC8B/O0uXLHlaey/65KRv6cuWBNhBgHKAROVpc7QyYqE5gFng==}
     engines: {node: '>=20'}
-
-  tailwind-merge@3.5.0:
-    resolution: {integrity: sha512-I8K9wewnVDkL1NTGoqWmVEIlUcB9gFriAEkXkfCjX5ib8ezGxtR3xD7iZIxrfArjEsH7F1CHD4RFUtxefdqV/A==}
 
   tailwindcss@4.2.1:
     resolution: {integrity: sha512-/tBrSQ36vCleJkAOsy9kbNTgaxvGbyOamC30PRePTQe/o1MFwEKHQk4Cn7BNGaPtjp+PuUrByJehM1hgxfq4sw==}
@@ -7336,6 +7413,10 @@ packages:
     engines: {node: '>=14.17'}
     hasBin: true
 
+  unbash@2.2.0:
+    resolution: {integrity: sha512-X2wH19RAPZE3+ldGicOkoj/SIA83OIxcJ6Cuaw23hf8Xc6fQpvZXY0SftE2JgS0QhYLUG4uwodSI3R53keyh7w==}
+    engines: {node: '>=14'}
+
   underscore@1.13.8:
     resolution: {integrity: sha512-DXtD3ZtEQzc7M8m4cXotyHR+FAS18C64asBYY5vqZexfYryNNnDc02W4hKg3rdQuqOYas1jkseX0+nZXjTXnvQ==}
 
@@ -7516,6 +7597,10 @@ packages:
     resolution: {integrity: sha512-k8qrgfwrPVJXTeFY8tl6BxVHiclK11u72DVKhpybHfUL/K6KM4bdyK9EhIVYGytB5MJe/3lq4Tf0hrjM+pvJZQ==}
     engines: {node: '>=20.0.0'}
     hasBin: true
+
+  walk-up-path@4.0.0:
+    resolution: {integrity: sha512-3hu+tD8YzSLGuFYtPRb48vdhKMi0KQV5sn+uWr8+7dMEq/2G/dtLrdDinkLjqq5TIbIBjYJ4Ax/n3YiaW7QM8A==}
+    engines: {node: 20 || >=22}
 
   walker@1.0.8:
     resolution: {integrity: sha512-ts/8E8l5b7kY0vlWLewOkDXMmPdLcVV4GmOQLyxuSswIJsweeFZtAsMF7k1Nszz+TYBQrlYRmzOnr398y1JemQ==}
@@ -7733,7 +7818,7 @@ snapshots:
       '@babel/types': 7.29.0
       '@jridgewell/remapping': 2.3.5
       convert-source-map: 2.0.0
-      debug: 4.4.3(supports-color@8.1.1)
+      debug: 4.4.3
       gensync: 1.0.0-beta.2
       json5: 2.2.3
       semver: 6.3.1
@@ -8312,7 +8397,7 @@ snapshots:
       '@babel/parser': 7.29.0
       '@babel/template': 7.28.6
       '@babel/types': 7.29.0
-      debug: 4.4.3(supports-color@8.1.1)
+      debug: 4.4.3
     transitivePeerDependencies:
       - supports-color
 
@@ -8395,6 +8480,22 @@ snapshots:
       kuler: 2.0.0
 
   '@drizzle-team/brocli@0.10.2': {}
+
+  '@emnapi/core@1.9.0':
+    dependencies:
+      '@emnapi/wasi-threads': 1.2.0
+      tslib: 2.8.1
+    optional: true
+
+  '@emnapi/runtime@1.9.0':
+    dependencies:
+      tslib: 2.8.1
+    optional: true
+
+  '@emnapi/wasi-threads@1.2.0':
+    dependencies:
+      tslib: 2.8.1
+    optional: true
 
   '@esbuild-kit/core-utils@3.3.2':
     dependencies:
@@ -9359,6 +9460,25 @@ snapshots:
 
   '@js-sdsl/ordered-map@4.4.2': {}
 
+  '@napi-rs/wasm-runtime@1.1.1':
+    dependencies:
+      '@emnapi/core': 1.9.0
+      '@emnapi/runtime': 1.9.0
+      '@tybys/wasm-util': 0.10.1
+    optional: true
+
+  '@nodelib/fs.scandir@2.1.5':
+    dependencies:
+      '@nodelib/fs.stat': 2.0.5
+      run-parallel: 1.2.0
+
+  '@nodelib/fs.stat@2.0.5': {}
+
+  '@nodelib/fs.walk@1.2.8':
+    dependencies:
+      '@nodelib/fs.scandir': 2.1.5
+      fastq: 1.20.1
+
   '@opentelemetry/api@1.9.0': {}
 
   '@oslojs/asn1@1.0.0':
@@ -9379,6 +9499,68 @@ snapshots:
   '@oslojs/jwt@0.2.0':
     dependencies:
       '@oslojs/encoding': 0.4.1
+
+  '@oxc-resolver/binding-android-arm-eabi@11.19.1':
+    optional: true
+
+  '@oxc-resolver/binding-android-arm64@11.19.1':
+    optional: true
+
+  '@oxc-resolver/binding-darwin-arm64@11.19.1':
+    optional: true
+
+  '@oxc-resolver/binding-darwin-x64@11.19.1':
+    optional: true
+
+  '@oxc-resolver/binding-freebsd-x64@11.19.1':
+    optional: true
+
+  '@oxc-resolver/binding-linux-arm-gnueabihf@11.19.1':
+    optional: true
+
+  '@oxc-resolver/binding-linux-arm-musleabihf@11.19.1':
+    optional: true
+
+  '@oxc-resolver/binding-linux-arm64-gnu@11.19.1':
+    optional: true
+
+  '@oxc-resolver/binding-linux-arm64-musl@11.19.1':
+    optional: true
+
+  '@oxc-resolver/binding-linux-ppc64-gnu@11.19.1':
+    optional: true
+
+  '@oxc-resolver/binding-linux-riscv64-gnu@11.19.1':
+    optional: true
+
+  '@oxc-resolver/binding-linux-riscv64-musl@11.19.1':
+    optional: true
+
+  '@oxc-resolver/binding-linux-s390x-gnu@11.19.1':
+    optional: true
+
+  '@oxc-resolver/binding-linux-x64-gnu@11.19.1':
+    optional: true
+
+  '@oxc-resolver/binding-linux-x64-musl@11.19.1':
+    optional: true
+
+  '@oxc-resolver/binding-openharmony-arm64@11.19.1':
+    optional: true
+
+  '@oxc-resolver/binding-wasm32-wasi@11.19.1':
+    dependencies:
+      '@napi-rs/wasm-runtime': 1.1.1
+    optional: true
+
+  '@oxc-resolver/binding-win32-arm64-msvc@11.19.1':
+    optional: true
+
+  '@oxc-resolver/binding-win32-ia32-msvc@11.19.1':
+    optional: true
+
+  '@oxc-resolver/binding-win32-x64-msvc@11.19.1':
+    optional: true
 
   '@petamoriken/float16@3.9.3': {}
 
@@ -10353,13 +10535,6 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@stdlib/blas-base-gcopy@0.2.3':
-    dependencies:
-      '@stdlib/array-base-arraylike2object': 0.2.2
-      '@stdlib/utils-define-nonenumerable-read-only-property': 0.2.3
-    transitivePeerDependencies:
-      - supports-color
-
   '@stdlib/blas-ext-base-gapxsumpw@0.3.1':
     dependencies:
       '@stdlib/blas-ext-base-gsumpw': 0.3.1
@@ -10461,8 +10636,6 @@ snapshots:
 
   '@stdlib/constants-float32-exponent-mask@0.2.3': {}
 
-  '@stdlib/constants-float32-max@0.2.3': {}
-
   '@stdlib/constants-float32-ninf@0.2.3':
     dependencies:
       '@stdlib/array-float32': 0.2.3
@@ -10505,8 +10678,6 @@ snapshots:
 
   '@stdlib/constants-float64-high-word-significand-mask@0.2.3': {}
 
-  '@stdlib/constants-float64-ln-sqrt-two-pi@0.2.3': {}
-
   '@stdlib/constants-float64-ln-two@0.2.3': {}
 
   '@stdlib/constants-float64-max-base10-exponent@0.2.3': {}
@@ -10544,8 +10715,6 @@ snapshots:
   '@stdlib/constants-float64-pinf@0.2.3': {}
 
   '@stdlib/constants-float64-smallest-normal@0.2.3': {}
-
-  '@stdlib/constants-float64-smallest-subnormal@0.2.3': {}
 
   '@stdlib/constants-float64-sqrt-eps@0.2.3': {}
 
@@ -10681,13 +10850,6 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@stdlib/math-base-assert-is-positive-integer@0.3.2':
-    dependencies:
-      '@stdlib/math-base-special-floor': 0.2.4
-      '@stdlib/utils-library-manifest': 0.2.4
-    transitivePeerDependencies:
-      - supports-color
-
   '@stdlib/math-base-assert-is-positive-zero@0.2.3':
     dependencies:
       '@stdlib/constants-float64-pinf': 0.2.3
@@ -10742,17 +10904,6 @@ snapshots:
       '@stdlib/constants-float32-abs-mask': 0.2.3
       '@stdlib/math-base-napi-unary': 0.2.7
       '@stdlib/number-float32-base-to-word': 0.2.3
-      '@stdlib/utils-library-manifest': 0.2.4
-    transitivePeerDependencies:
-      - supports-color
-
-  '@stdlib/math-base-special-acos@0.2.4':
-    dependencies:
-      '@stdlib/constants-float64-fourth-pi': 0.2.3
-      '@stdlib/math-base-assert-is-nan': 0.2.3
-      '@stdlib/math-base-napi-unary': 0.2.7
-      '@stdlib/math-base-special-asin': 0.2.4
-      '@stdlib/math-base-special-sqrt': 0.2.3
       '@stdlib/utils-library-manifest': 0.2.4
     transitivePeerDependencies:
       - supports-color
@@ -10853,18 +11004,6 @@ snapshots:
       '@stdlib/math-base-napi-unary': 0.2.7
       '@stdlib/math-base-special-exp': 0.2.5
       '@stdlib/number-float64-base-set-low-word': 0.2.3
-      '@stdlib/utils-library-manifest': 0.2.4
-    transitivePeerDependencies:
-      - supports-color
-
-  '@stdlib/math-base-special-erfcinv@0.2.4':
-    dependencies:
-      '@stdlib/constants-float64-ninf': 0.2.3
-      '@stdlib/constants-float64-pinf': 0.2.3
-      '@stdlib/math-base-assert-is-nan': 0.2.3
-      '@stdlib/math-base-napi-unary': 0.2.7
-      '@stdlib/math-base-special-ln': 0.2.5
-      '@stdlib/math-base-special-sqrt': 0.2.3
       '@stdlib/utils-library-manifest': 0.2.4
     transitivePeerDependencies:
       - supports-color
@@ -11051,30 +11190,6 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@stdlib/math-base-special-gammaincinv@0.2.3':
-    dependencies:
-      '@stdlib/constants-float32-max': 0.2.3
-      '@stdlib/constants-float32-smallest-normal': 0.2.3
-      '@stdlib/constants-float64-ln-sqrt-two-pi': 0.2.3
-      '@stdlib/constants-float64-pinf': 0.2.3
-      '@stdlib/constants-float64-sqrt-two-pi': 0.2.3
-      '@stdlib/constants-float64-two-pi': 0.2.3
-      '@stdlib/math-base-assert-is-nan': 0.2.3
-      '@stdlib/math-base-special-abs': 0.2.3
-      '@stdlib/math-base-special-erfcinv': 0.2.4
-      '@stdlib/math-base-special-exp': 0.2.5
-      '@stdlib/math-base-special-gamma': 0.3.1
-      '@stdlib/math-base-special-gammainc': 0.3.1
-      '@stdlib/math-base-special-gammaln': 0.3.1
-      '@stdlib/math-base-special-ln': 0.2.5
-      '@stdlib/math-base-special-min': 0.2.4
-      '@stdlib/math-base-special-pow': 0.3.1
-      '@stdlib/math-base-special-sqrt': 0.2.3
-      '@stdlib/math-base-tools-evalpoly': 0.2.3
-      debug: 2.6.9
-    transitivePeerDependencies:
-      - supports-color
-
   '@stdlib/math-base-special-gammaln@0.3.1':
     dependencies:
       '@stdlib/constants-float64-pi': 0.2.3
@@ -11140,42 +11255,6 @@ snapshots:
       '@stdlib/math-base-tools-continued-fraction': 0.2.3
       '@stdlib/math-base-tools-sum-series': 0.2.3
       '@stdlib/utils-define-nonenumerable-read-only-property': 0.2.3
-    transitivePeerDependencies:
-      - supports-color
-
-  '@stdlib/math-base-special-kernel-betaincinv@0.2.3':
-    dependencies:
-      '@stdlib/constants-float64-eps': 0.2.3
-      '@stdlib/constants-float64-half-pi': 0.2.3
-      '@stdlib/constants-float64-max': 0.2.3
-      '@stdlib/constants-float64-pi': 0.2.3
-      '@stdlib/constants-float64-smallest-normal': 0.2.3
-      '@stdlib/constants-float64-smallest-subnormal': 0.2.3
-      '@stdlib/constants-float64-sqrt-two': 0.2.3
-      '@stdlib/math-base-special-abs': 0.2.3
-      '@stdlib/math-base-special-acos': 0.2.4
-      '@stdlib/math-base-special-asin': 0.2.4
-      '@stdlib/math-base-special-beta': 0.3.1
-      '@stdlib/math-base-special-betainc': 0.2.3
-      '@stdlib/math-base-special-cos': 0.3.1
-      '@stdlib/math-base-special-erfcinv': 0.2.4
-      '@stdlib/math-base-special-exp': 0.2.5
-      '@stdlib/math-base-special-expm1': 0.2.4
-      '@stdlib/math-base-special-floor': 0.2.4
-      '@stdlib/math-base-special-gamma-delta-ratio': 0.3.1
-      '@stdlib/math-base-special-gammaincinv': 0.2.3
-      '@stdlib/math-base-special-kernel-betainc': 0.2.3
-      '@stdlib/math-base-special-ldexp': 0.2.5
-      '@stdlib/math-base-special-ln': 0.2.5
-      '@stdlib/math-base-special-log1p': 0.2.4
-      '@stdlib/math-base-special-max': 0.3.1
-      '@stdlib/math-base-special-min': 0.2.4
-      '@stdlib/math-base-special-pow': 0.3.1
-      '@stdlib/math-base-special-round': 0.3.1
-      '@stdlib/math-base-special-signum': 0.2.3
-      '@stdlib/math-base-special-sin': 0.3.1
-      '@stdlib/math-base-special-sqrt': 0.2.3
-      '@stdlib/math-base-tools-evalpoly': 0.2.3
     transitivePeerDependencies:
       - supports-color
 
@@ -11372,14 +11451,6 @@ snapshots:
       '@stdlib/math-base-special-abs': 0.2.3
       '@stdlib/math-base-special-pow': 0.3.1
       '@stdlib/math-base-special-round': 0.3.1
-      '@stdlib/utils-library-manifest': 0.2.4
-    transitivePeerDependencies:
-      - supports-color
-
-  '@stdlib/math-base-special-signum@0.2.3':
-    dependencies:
-      '@stdlib/math-base-assert-is-nan': 0.2.3
-      '@stdlib/math-base-napi-unary': 0.2.7
       '@stdlib/utils-library-manifest': 0.2.4
     transitivePeerDependencies:
       - supports-color
@@ -11789,36 +11860,11 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@stdlib/stats-base-dists-signrank-cdf@0.2.3':
-    dependencies:
-      '@stdlib/constants-float64-ln-two': 0.2.3
-      '@stdlib/math-base-assert-is-finite': 0.2.3
-      '@stdlib/math-base-assert-is-nan': 0.2.3
-      '@stdlib/math-base-assert-is-positive-integer': 0.3.2
-      '@stdlib/math-base-special-exp': 0.2.5
-      '@stdlib/math-base-special-round': 0.3.1
-      '@stdlib/utils-constant-function': 0.2.3
-      '@stdlib/utils-define-nonenumerable-read-only-property': 0.2.3
-      '@stdlib/utils-memoize': 0.2.3
-    transitivePeerDependencies:
-      - supports-color
-
   '@stdlib/stats-base-dists-t-cdf@0.2.3':
     dependencies:
       '@stdlib/math-base-assert-is-nan': 0.2.3
       '@stdlib/math-base-special-betainc': 0.2.3
       '@stdlib/math-base-special-pow': 0.3.1
-      '@stdlib/utils-constant-function': 0.2.3
-      '@stdlib/utils-define-nonenumerable-read-only-property': 0.2.3
-    transitivePeerDependencies:
-      - supports-color
-
-  '@stdlib/stats-base-dists-t-quantile@0.2.3':
-    dependencies:
-      '@stdlib/math-base-assert-is-nan': 0.2.3
-      '@stdlib/math-base-special-kernel-betaincinv': 0.2.3
-      '@stdlib/math-base-special-signum': 0.2.3
-      '@stdlib/math-base-special-sqrt': 0.2.3
       '@stdlib/utils-constant-function': 0.2.3
       '@stdlib/utils-define-nonenumerable-read-only-property': 0.2.3
     transitivePeerDependencies:
@@ -11898,62 +11944,6 @@ snapshots:
       '@stdlib/blas-ext-base-gsumpw': 0.3.1
       '@stdlib/strided-base-stride2offset': 0.1.1
       '@stdlib/utils-define-nonenumerable-read-only-property': 0.2.3
-    transitivePeerDependencies:
-      - supports-color
-
-  '@stdlib/stats-ttest@0.2.3':
-    dependencies:
-      '@stdlib/array-float64': 0.2.3
-      '@stdlib/assert-contains': 0.3.1
-      '@stdlib/assert-has-own-property': 0.2.3
-      '@stdlib/assert-is-boolean': 0.2.3
-      '@stdlib/assert-is-number': 0.2.3
-      '@stdlib/assert-is-number-array': 0.2.3
-      '@stdlib/assert-is-plain-object': 0.2.3
-      '@stdlib/assert-is-positive-integer': 0.2.3
-      '@stdlib/assert-is-string': 0.2.3
-      '@stdlib/assert-is-typed-array-like': 0.2.3
-      '@stdlib/blas-base-gcopy': 0.2.3
-      '@stdlib/constants-float64-ninf': 0.2.3
-      '@stdlib/constants-float64-pinf': 0.2.3
-      '@stdlib/error-tools-fmtprodmsg': 0.2.3
-      '@stdlib/math-base-assert-is-nan': 0.2.3
-      '@stdlib/math-base-special-abs': 0.2.3
-      '@stdlib/math-base-special-roundn': 0.2.3
-      '@stdlib/math-base-special-sqrt': 0.2.3
-      '@stdlib/stats-base-dists-t-cdf': 0.2.3
-      '@stdlib/stats-base-dists-t-quantile': 0.2.3
-      '@stdlib/stats-strided-mean': 0.1.1
-      '@stdlib/stats-strided-variance': 0.1.1
-      '@stdlib/string-format': 0.2.3
-      '@stdlib/utils-define-read-only-property': 0.2.3
-    transitivePeerDependencies:
-      - supports-color
-
-  '@stdlib/stats-wilcoxon@0.2.3':
-    dependencies:
-      '@stdlib/array-base-assert-contains': 0.2.3
-      '@stdlib/array-float64': 0.2.3
-      '@stdlib/assert-has-own-property': 0.2.3
-      '@stdlib/assert-is-boolean': 0.2.3
-      '@stdlib/assert-is-nan': 0.2.3
-      '@stdlib/assert-is-number': 0.2.3
-      '@stdlib/assert-is-number-array': 0.2.3
-      '@stdlib/assert-is-plain-object': 0.2.3
-      '@stdlib/assert-is-positive-integer': 0.2.3
-      '@stdlib/assert-is-string': 0.2.3
-      '@stdlib/assert-is-typed-array-like': 0.2.3
-      '@stdlib/error-tools-fmtprodmsg': 0.2.3
-      '@stdlib/math-base-special-abs': 0.2.3
-      '@stdlib/math-base-special-roundn': 0.2.3
-      '@stdlib/math-base-special-signum': 0.2.3
-      '@stdlib/math-base-special-sqrt': 0.2.3
-      '@stdlib/stats-base-dists-normal-cdf': 0.3.1
-      '@stdlib/stats-base-dists-signrank-cdf': 0.2.3
-      '@stdlib/stats-ranks': 0.2.3
-      '@stdlib/string-format': 0.2.3
-      '@stdlib/utils-define-read-only-property': 0.2.3
-      '@stdlib/utils-tabulate': 0.2.3
     transitivePeerDependencies:
       - supports-color
 
@@ -12072,8 +12062,6 @@ snapshots:
       '@stdlib/error-tools-fmtprodmsg': 0.2.3
       '@stdlib/string-format': 0.2.3
 
-  '@stdlib/utils-identity-function@0.2.3': {}
-
   '@stdlib/utils-index-of@0.2.3':
     dependencies:
       '@stdlib/assert-is-collection': 0.2.3
@@ -12094,29 +12082,11 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@stdlib/utils-memoize@0.2.3':
-    dependencies:
-      '@stdlib/assert-has-own-property': 0.2.3
-      '@stdlib/assert-is-function': 0.2.3
-      '@stdlib/error-tools-fmtprodmsg': 0.2.3
-      '@stdlib/string-format': 0.2.3
-      '@stdlib/utils-define-nonenumerable-read-only-property': 0.2.3
-      '@stdlib/utils-identity-function': 0.2.3
-
   '@stdlib/utils-native-class@0.2.3':
     dependencies:
       '@stdlib/assert-has-own-property': 0.2.3
       '@stdlib/assert-has-tostringtag-support': 0.2.3
       '@stdlib/symbol-ctor': 0.2.3
-
-  '@stdlib/utils-tabulate@0.2.3':
-    dependencies:
-      '@stdlib/assert-is-collection': 0.2.3
-      '@stdlib/error-tools-fmtprodmsg': 0.2.3
-      '@stdlib/string-format': 0.2.3
-      '@stdlib/utils-index-of': 0.2.3
-    transitivePeerDependencies:
-      - supports-color
 
   '@stdlib/utils-type-of@0.2.3':
     dependencies:
@@ -12370,6 +12340,11 @@ snapshots:
   '@trpc/server@11.12.0(typescript@5.9.3)':
     dependencies:
       typescript: 5.9.3
+
+  '@tybys/wasm-util@0.10.1':
+    dependencies:
+      tslib: 2.8.1
+    optional: true
 
   '@types/babel__core@7.20.5':
     dependencies:
@@ -13186,8 +13161,6 @@ snapshots:
 
   clone@1.0.4: {}
 
-  clsx@2.1.1: {}
-
   color-convert@1.9.3:
     dependencies:
       color-name: 1.1.3
@@ -13392,6 +13365,10 @@ snapshots:
       ms: 2.1.3
     optionalDependencies:
       supports-color: 8.1.1
+
+  debug@4.4.3:
+    dependencies:
+      ms: 2.1.3
 
   debug@4.4.3(supports-color@8.1.1):
     dependencies:
@@ -13957,6 +13934,14 @@ snapshots:
 
   fast-fifo@1.3.2: {}
 
+  fast-glob@3.3.3:
+    dependencies:
+      '@nodelib/fs.stat': 2.0.5
+      '@nodelib/fs.walk': 1.2.8
+      glob-parent: 5.1.2
+      merge2: 1.4.1
+      micromatch: 4.0.8
+
   fast-json-stable-stringify@2.1.0: {}
 
   fast-string-truncated-width@3.0.3: {}
@@ -13971,11 +13956,19 @@ snapshots:
     dependencies:
       fast-string-width: 3.0.2
 
+  fastq@1.20.1:
+    dependencies:
+      reusify: 1.1.0
+
   fb-dotslash@0.5.8: {}
 
   fb-watchman@2.0.2:
     dependencies:
       bser: 2.1.1
+
+  fd-package-json@2.0.0:
+    dependencies:
+      walk-up-path: 4.0.0
 
   fd-slicer@1.1.0:
     dependencies:
@@ -14057,6 +14050,10 @@ snapshots:
       es-set-tostringtag: 2.1.0
       hasown: 2.0.2
       mime-types: 2.1.35
+
+  formatly@0.3.0:
+    dependencies:
+      fd-package-json: 2.0.0
 
   forwarded@0.2.0: {}
 
@@ -14500,6 +14497,24 @@ snapshots:
 
   kleur@3.0.3: {}
 
+  knip@5.86.0(@types/node@22.19.15)(typescript@5.9.3):
+    dependencies:
+      '@nodelib/fs.walk': 1.2.8
+      '@types/node': 22.19.15
+      fast-glob: 3.3.3
+      formatly: 0.3.0
+      jiti: 2.6.1
+      minimist: 1.2.8
+      oxc-resolver: 11.19.1
+      picocolors: 1.1.1
+      picomatch: 4.0.3
+      smol-toml: 1.6.0
+      strip-json-comments: 5.0.3
+      typescript: 5.9.3
+      unbash: 2.2.0
+      yaml: 2.8.2
+      zod: 4.3.6
+
   kuler@2.0.0: {}
 
   lan-network@0.2.0: {}
@@ -14671,6 +14686,8 @@ snapshots:
   merge-descriptors@2.0.0: {}
 
   merge-stream@2.0.0: {}
+
+  merge2@1.4.1: {}
 
   metro-babel-transformer@0.83.3:
     dependencies:
@@ -15015,6 +15032,29 @@ snapshots:
 
   ospath@1.2.2: {}
 
+  oxc-resolver@11.19.1:
+    optionalDependencies:
+      '@oxc-resolver/binding-android-arm-eabi': 11.19.1
+      '@oxc-resolver/binding-android-arm64': 11.19.1
+      '@oxc-resolver/binding-darwin-arm64': 11.19.1
+      '@oxc-resolver/binding-darwin-x64': 11.19.1
+      '@oxc-resolver/binding-freebsd-x64': 11.19.1
+      '@oxc-resolver/binding-linux-arm-gnueabihf': 11.19.1
+      '@oxc-resolver/binding-linux-arm-musleabihf': 11.19.1
+      '@oxc-resolver/binding-linux-arm64-gnu': 11.19.1
+      '@oxc-resolver/binding-linux-arm64-musl': 11.19.1
+      '@oxc-resolver/binding-linux-ppc64-gnu': 11.19.1
+      '@oxc-resolver/binding-linux-riscv64-gnu': 11.19.1
+      '@oxc-resolver/binding-linux-riscv64-musl': 11.19.1
+      '@oxc-resolver/binding-linux-s390x-gnu': 11.19.1
+      '@oxc-resolver/binding-linux-x64-gnu': 11.19.1
+      '@oxc-resolver/binding-linux-x64-musl': 11.19.1
+      '@oxc-resolver/binding-openharmony-arm64': 11.19.1
+      '@oxc-resolver/binding-wasm32-wasi': 11.19.1
+      '@oxc-resolver/binding-win32-arm64-msvc': 11.19.1
+      '@oxc-resolver/binding-win32-ia32-msvc': 11.19.1
+      '@oxc-resolver/binding-win32-x64-msvc': 11.19.1
+
   p-finally@1.0.0: {}
 
   p-limit@2.3.0:
@@ -15206,6 +15246,8 @@ snapshots:
       filter-obj: 1.1.0
       split-on-first: 1.1.0
       strict-uri-encode: 2.0.0
+
+  queue-microtask@1.2.3: {}
 
   queue@6.0.2:
     dependencies:
@@ -15417,6 +15459,8 @@ snapshots:
 
   retry@0.13.1: {}
 
+  reusify@1.1.0: {}
+
   rfdc@1.4.1: {}
 
   rimraf@3.0.2:
@@ -15463,6 +15507,10 @@ snapshots:
       path-to-regexp: 8.3.0
     transitivePeerDependencies:
       - supports-color
+
+  run-parallel@1.2.0:
+    dependencies:
+      queue-microtask: 1.2.3
 
   rxjs@7.8.2:
     dependencies:
@@ -15635,6 +15683,8 @@ snapshots:
 
   slugify@1.6.6: {}
 
+  smol-toml@1.6.0: {}
+
   source-map-js@1.2.1: {}
 
   source-map-support@0.5.21:
@@ -15748,6 +15798,8 @@ snapshots:
 
   strip-final-newline@4.0.0: {}
 
+  strip-json-comments@5.0.3: {}
+
   strip-literal@3.1.0:
     dependencies:
       js-tokens: 9.0.1
@@ -15786,8 +15838,6 @@ snapshots:
   systeminformation@5.31.4: {}
 
   tagged-tag@1.0.0: {}
-
-  tailwind-merge@3.5.0: {}
 
   tailwindcss@4.2.1: {}
 
@@ -16005,6 +16055,8 @@ snapshots:
 
   typescript@5.9.3: {}
 
+  unbash@2.2.0: {}
+
   underscore@1.13.8: {}
 
   undici-types@5.26.5: {}
@@ -16167,6 +16219,8 @@ snapshots:
       rxjs: 7.8.2
     transitivePeerDependencies:
       - debug
+
+  walk-up-path@4.0.0: {}
 
   walker@1.0.8:
     dependencies:

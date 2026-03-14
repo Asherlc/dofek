@@ -5,7 +5,7 @@ import { generateText, Output } from "ai";
 import { z } from "zod";
 
 /** Schema for the nutrition breakdown returned by AI */
-export const aiNutritionSchema = z.object({
+const aiNutritionSchema = z.object({
   foodName: z.string().describe("A concise name for the food/meal described"),
   foodDescription: z
     .string()
@@ -76,7 +76,7 @@ export const aiNutritionSchema = z.object({
   omega6Mg: z.number().nonnegative().optional().describe("Omega-6 fatty acids in milligrams"),
 });
 
-export type AiNutritionResult = z.infer<typeof aiNutritionSchema>;
+type AiNutritionResult = z.infer<typeof aiNutritionSchema>;
 
 const mealValues = ["breakfast", "lunch", "dinner", "snack", "other"] as const;
 
@@ -163,7 +163,7 @@ function isRateLimitError(error: unknown): boolean {
   return false;
 }
 
-export interface AnalyzeResult {
+interface AnalyzeResult {
   nutrition: AiNutritionResult;
   provider: string;
 }
@@ -214,7 +214,7 @@ export async function analyzeNutrition(description: string): Promise<AnalyzeResu
   );
 }
 
-export interface AnalyzeMultiResult {
+interface AnalyzeMultiResult {
   items: NutritionItemWithMeal[];
   provider: string;
 }

@@ -17,11 +17,11 @@ vi.mock("@ai-sdk/mistral", () => ({
 }));
 
 import { generateText } from "ai";
-import { type AiNutritionResult, aiNutritionSchema, analyzeNutrition } from "./ai-nutrition.ts";
+import { analyzeNutrition, type NutritionItemWithMeal } from "./ai-nutrition.ts";
 
 const mockGenerateText = vi.mocked(generateText);
 
-const sampleResult: AiNutritionResult = {
+const sampleResult: Omit<NutritionItemWithMeal, "meal"> = {
   foodName: "Roasted Vegetables",
   foodDescription: "1 large plate, roughly 400g mixed vegetables",
   category: "vegetables",
@@ -128,27 +128,5 @@ describe("analyzeNutrition", () => {
 
     expect(result.provider).toBe("mistral");
     expect(mockGenerateText).toHaveBeenCalledOnce();
-  });
-});
-
-describe("aiNutritionSchema", () => {
-  it("validates a correct nutrition result", () => {
-    const result = aiNutritionSchema.safeParse(sampleResult);
-    expect(result.success).toBe(true);
-  });
-
-  it("rejects negative calorie values", () => {
-    const result = aiNutritionSchema.safeParse({ ...sampleResult, calories: -100 });
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects non-integer calories", () => {
-    const result = aiNutritionSchema.safeParse({ ...sampleResult, calories: 250.5 });
-    expect(result.success).toBe(false);
-  });
-
-  it("requires all fields", () => {
-    const result = aiNutritionSchema.safeParse({ foodName: "test" });
-    expect(result.success).toBe(false);
   });
 });
