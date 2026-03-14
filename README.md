@@ -196,7 +196,7 @@ Internet → Caddy (auto-HTTPS :443)
 ### CI/CD pipeline
 
 ```
-sops .env → commit → push → GHA builds multi-arch Docker images (amd64 + arm64)
+sops .env → commit → push → GHA builds ARM Docker images
 → pushes to GHCR → Watchtower polls (5min) → pulls new image → restarts containers
 ```
 
@@ -204,48 +204,17 @@ Migrations run automatically on startup (both `web` and `sync` modes call `runMi
 
 ### Deploying from scratch
 
-1. **Provision the server** (Terraform or manually via Hetzner Cloud console):
+Cloud-init handles everything — Docker install, GHCR login, compose file setup, and starting the stack.
 
 ```bash
 cd deploy
 cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars with your Hetzner API token and SSH key
+# Edit terraform.tfvars with your Hetzner API token, SSH key, SOPS age key, and GHCR token
 terraform init
 terraform apply
 ```
 
-2. **SSH into the server** and set up the app directory:
-
-```bash
-ssh root@<SERVER_IP>
-mkdir -p /opt/dofek && cd /opt/dofek
-```
-
-3. **Copy deployment files** to the server:
-
-```bash
-# From your local machine
-scp deploy/docker-compose.yml deploy/Caddyfile root@<SERVER_IP>:/opt/dofek/
-```
-
-4. **Create the `.env` file** on the server with the SOPS age key and deployment vars:
-
-```bash
-# On the server
-cat > /opt/dofek/.env << 'EOF'
-SOPS_AGE_KEY=AGE-SECRET-KEY-...
-EOF
-chmod 600 /opt/dofek/.env
-```
-
-5. **Start everything:**
-
-```bash
-cd /opt/dofek
-docker compose up -d
-```
-
-6. **Point DNS** — create an A record for `dofek.asherlc.com` → `<SERVER_IP>`. Caddy will auto-provision the TLS certificate.
+Then point DNS — create an A record for `dofek.asherlc.com` → the output `server_ip`. Caddy will auto-provision the TLS certificate.
 
 ### Updating the domain
 
