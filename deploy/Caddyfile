@@ -1,0 +1,3 @@
+dofek.asherlc.com {
+    reverse_proxy client:80
+}
