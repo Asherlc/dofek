@@ -6,10 +6,23 @@ packages:
   - ca-certificates
   - curl
 
-runcmd:
-  # Install Docker
-  - curl -fsSL https://get.docker.com | sh
+write_files:
+  - path: /opt/dofek/docker-compose.yml
+    permissions: "0644"
+    content: |
+      ${indent(6, compose_content)}
 
-  # Create app directory and deploy compose stack
-  - mkdir -p /opt/dofek
-  - echo "Docker installed. Server ready for deployment." > /opt/dofek/ready
+  - path: /opt/dofek/Caddyfile
+    permissions: "0644"
+    content: |
+      ${indent(6, caddy_content)}
+
+  - path: /opt/dofek/.env
+    permissions: "0600"
+    content: |
+      SOPS_AGE_KEY=${sops_age_key}
+
+runcmd:
+  - curl -fsSL https://get.docker.com | sh
+  - echo '${ghcr_token}' | docker login ghcr.io -u asherlc --password-stdin
+  - cd /opt/dofek && docker compose up -d

@@ -22,6 +22,18 @@ variable "domain" {
   default     = "dofek.asherlc.com"
 }
 
+variable "sops_age_key" {
+  description = "SOPS age secret key for decrypting provider credentials"
+  type        = string
+  sensitive   = true
+}
+
+variable "ghcr_token" {
+  description = "GitHub PAT with read:packages scope for pulling GHCR images"
+  type        = string
+  sensitive   = true
+}
+
 provider "hcloud" {
   token = var.hcloud_token
 }
@@ -60,12 +72,16 @@ resource "hcloud_server" "dofek" {
   name         = "dofek"
   image        = "ubuntu-24.04"
   server_type  = "cax11"
-  location     = "ash"
+  location     = "nbg1"
   ssh_keys     = [hcloud_ssh_key.default.id]
   firewall_ids = [hcloud_firewall.dofek.id]
 
   user_data = templatefile("${path.module}/cloud-init.yml", {
-    domain = var.domain
+    domain          = var.domain
+    sops_age_key    = var.sops_age_key
+    ghcr_token      = var.ghcr_token
+    compose_content = file("${path.module}/docker-compose.yml")
+    caddy_content   = replace(file("${path.module}/Caddyfile"), "$${domain}", var.domain)
   })
 }
 

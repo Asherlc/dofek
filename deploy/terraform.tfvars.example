@@ -1,3 +1,4 @@
 hcloud_token   = "your-hetzner-api-token"
 ssh_public_key = "ssh-ed25519 AAAA..."
 domain         = "dofek.asherlc.com"
+sops_age_key   = "AGE-SECRET-KEY-..."
