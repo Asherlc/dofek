@@ -24,6 +24,7 @@ export default defineConfig({
         "src/db/schema.ts",
         "packages/server/src/index.ts",
         "packages/web/src/**",
+        "packages/whoop-whoop/src/**",
       ],
       thresholds: {
         lines: 94,
