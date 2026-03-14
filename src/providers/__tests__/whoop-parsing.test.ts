@@ -185,19 +185,14 @@ describe("parseSleep — edge cases", () => {
 describe("parseWorkout — edge cases", () => {
   it("handles workout without score", () => {
     const record: WhoopWorkoutRecord = {
-      id: 400,
-      user_id: 10129,
-      created_at: "2026-03-01T10:00:00Z",
-      updated_at: "2026-03-01T11:00:00Z",
-      start: "2026-03-01T10:00:00Z",
-      end: "2026-03-01T11:00:00Z",
+      activity_id: "act-400",
+      during: "['2026-03-01T10:00:00Z','2026-03-01T11:00:00Z')",
       timezone_offset: "-05:00",
       sport_id: 0,
-      score_state: "PENDING",
     };
 
     const parsed = parseWorkout(record);
-    expect(parsed.externalId).toBe("400");
+    expect(parsed.externalId).toBe("act-400");
     expect(parsed.activityType).toBe("running");
     expect(parsed.durationSeconds).toBe(3600);
     expect(parsed.distanceMeters).toBeUndefined();
@@ -209,23 +204,14 @@ describe("parseWorkout — edge cases", () => {
 
   it("maps unknown sport ID to other", () => {
     const record: WhoopWorkoutRecord = {
-      id: 401,
-      user_id: 10129,
-      created_at: "2026-03-01T10:00:00Z",
-      updated_at: "2026-03-01T11:00:00Z",
-      start: "2026-03-01T10:00:00Z",
-      end: "2026-03-01T11:00:00Z",
+      activity_id: "act-401",
+      during: "['2026-03-01T10:00:00Z','2026-03-01T11:00:00Z')",
       timezone_offset: "-05:00",
       sport_id: 9999,
-      score_state: "SCORED",
-      score: {
-        strain: 5,
-        average_heart_rate: 120,
-        max_heart_rate: 140,
-        kilojoule: 500,
-        percent_recorded: 100,
-        zone_duration: {},
-      },
+      score: 5,
+      average_heart_rate: 120,
+      max_heart_rate: 140,
+      kilojoules: 500,
     };
 
     const parsed = parseWorkout(record);
@@ -234,23 +220,13 @@ describe("parseWorkout — edge cases", () => {
 
   it("converts kilojoules to calories", () => {
     const record: WhoopWorkoutRecord = {
-      id: 402,
-      user_id: 10129,
-      created_at: "2026-03-01T10:00:00Z",
-      updated_at: "2026-03-01T10:30:00Z",
-      start: "2026-03-01T10:00:00Z",
-      end: "2026-03-01T10:30:00Z",
+      activity_id: "act-402",
+      during: "['2026-03-01T10:00:00Z','2026-03-01T10:30:00Z')",
       timezone_offset: "-05:00",
       sport_id: 44, // yoga
-      score_state: "SCORED",
-      score: {
-        strain: 3,
-        average_heart_rate: 100,
-        max_heart_rate: 120,
-        kilojoule: 418.4,
-        percent_recorded: 100,
-        zone_duration: {},
-      },
+      kilojoules: 418.4,
+      average_heart_rate: 100,
+      max_heart_rate: 120,
     };
 
     const parsed = parseWorkout(record);
@@ -260,23 +236,13 @@ describe("parseWorkout — edge cases", () => {
 
   it("handles score with zero kilojoule", () => {
     const record: WhoopWorkoutRecord = {
-      id: 403,
-      user_id: 10129,
-      created_at: "2026-03-01T10:00:00Z",
-      updated_at: "2026-03-01T10:30:00Z",
-      start: "2026-03-01T10:00:00Z",
-      end: "2026-03-01T10:30:00Z",
+      activity_id: "act-403",
+      during: "['2026-03-01T10:00:00Z','2026-03-01T10:30:00Z')",
       timezone_offset: "-05:00",
       sport_id: 70, // meditation
-      score_state: "SCORED",
-      score: {
-        strain: 0,
-        average_heart_rate: 60,
-        max_heart_rate: 70,
-        kilojoule: 0,
-        percent_recorded: 100,
-        zone_duration: {},
-      },
+      kilojoules: 0,
+      average_heart_rate: 60,
+      max_heart_rate: 70,
     };
 
     const parsed = parseWorkout(record);
@@ -286,23 +252,14 @@ describe("parseWorkout — edge cases", () => {
 
   it("maps various sport IDs correctly", () => {
     const makeRecord = (sportId: number): WhoopWorkoutRecord => ({
-      id: sportId + 1000,
-      user_id: 10129,
-      created_at: "2026-03-01T10:00:00Z",
-      updated_at: "2026-03-01T11:00:00Z",
-      start: "2026-03-01T10:00:00Z",
-      end: "2026-03-01T11:00:00Z",
+      activity_id: `act-${sportId}`,
+      during: "['2026-03-01T10:00:00Z','2026-03-01T11:00:00Z')",
       timezone_offset: "-05:00",
       sport_id: sportId,
-      score_state: "SCORED",
-      score: {
-        strain: 5,
-        average_heart_rate: 130,
-        max_heart_rate: 160,
-        kilojoule: 1000,
-        percent_recorded: 100,
-        zone_duration: {},
-      },
+      score: 5,
+      average_heart_rate: 130,
+      max_heart_rate: 160,
+      kilojoules: 1000,
     });
 
     expect(parseWorkout(makeRecord(1)).activityType).toBe("cycling");

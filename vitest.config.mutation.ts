@@ -10,6 +10,7 @@ export default defineConfig({
     exclude: [
       // Integration tests that require a database
       "src/providers/__tests__/*-sync.test.ts",
+      "src/providers/__tests__/whoop-coverage.test.ts",
       "src/db/__tests__/dedup.test.ts",
       "src/db/__tests__/tokens.test.ts",
       "src/sync/__tests__/runner.test.ts",
