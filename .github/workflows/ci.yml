@@ -74,9 +74,54 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: cd packages/web && pnpm run build
 
+  e2e:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker images
+        run: |
+          docker compose -f docker-compose.e2e.yml build
+
+      - name: Start e2e stack
+        run: docker compose -f docker-compose.e2e.yml up -d --wait
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Cache Cypress binary
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/Cypress
+          key: cypress-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install Cypress binary
+        run: pnpm exec cypress install
+
+      - name: Run Cypress tests
+        run: pnpm e2e:run
+
+      - name: Upload screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cypress-screenshots
+          path: cypress/screenshots/
+
+      - name: Teardown
+        if: always()
+        run: docker compose -f docker-compose.e2e.yml down -v
+
   docker:
     name: Docker (${{ matrix.target }})
-    needs: [check, test, build-web]
+    needs: [check, test, build-web, e2e]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:

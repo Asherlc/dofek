@@ -1,5 +1,5 @@
 import type React from "react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatRelativeTime, formatTime } from "../lib/dates.ts";
 import { pollSyncJob } from "../lib/poll-sync-job.ts";
 import { trpc } from "../lib/trpc.ts";
@@ -126,6 +126,20 @@ export function DataSourcesPanel() {
   const allProviders = providers.data ?? [];
   const enabledSyncable = allProviders.filter((p) => p.enabled && !p.importOnly);
 
+  // Track whether an OAuth window is open so we can refetch on focus
+  const oauthPendingRef = useRef(false);
+
+  useEffect(() => {
+    const onFocus = () => {
+      if (oauthPendingRef.current) {
+        oauthPendingRef.current = false;
+        trpcUtils.sync.providers.invalidate();
+      }
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [trpcUtils]);
+
   const handleProviderClick = useCallback(
     (
       p: { id: string; needsOAuth: boolean; needsCustomAuth?: boolean; authorized: boolean },
@@ -136,6 +150,7 @@ export function DataSourcesPanel() {
         return;
       }
       if (p.needsOAuth && !p.authorized) {
+        oauthPendingRef.current = true;
         window.open(`/auth/provider/${p.id}`, "_blank");
         return;
       }

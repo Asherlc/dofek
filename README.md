@@ -182,7 +182,7 @@ There are two sources of environment variables for the production containers:
 
 1. **SOPS-encrypted `.env` (this repo)** — provider credentials (API keys, OAuth client IDs/secrets). Baked into the Docker image at build time. The entrypoint decrypts it at container startup using the age key mounted from the host.
 
-2. **Plaintext env file on server (`/srv/appdata/dofek/.env`)** — deployment-specific vars that don't belong in the dofek repo: Authentik OIDC config, Google OAuth, `DATABASE_URL`, Slack tokens, etc. Loaded via `env_file` in the homelab compose.
+2. **Plaintext env file on server (`/srv/appdata/dofek/.env`)** — deployment-specific vars that don't belong in the dofek repo: `DATABASE_URL`, etc. Loaded via `env_file` in the homelab compose.
 
 The entrypoint merges both: Docker sets the plaintext vars first, then `sops exec-env` adds the decrypted provider credentials on top.
 
@@ -211,6 +211,38 @@ git add .env && git commit && git push
 ```
 
 No SSH to the server needed. The credentials flow through the Docker image.
+
+### SSH access to homelab
+
+When you need to debug containers directly (check logs, restart services):
+
+```bash
+# LAN (home network)
+SSH_AUTH_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock" \
+  ssh asherlc@192.168.1.197
+
+# Remote (Tailscale)
+SSH_AUTH_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock" \
+  ssh asherlc@100.96.33.27
+```
+
+SSH uses the 1Password SSH agent. Docker commands require `sudo`.
+
+```bash
+# Common debugging commands
+sudo docker ps --filter name=dofek                    # container status
+sudo docker logs dofek-web --tail 50                  # API server logs
+sudo docker logs dofek-sync --tail 50                 # sync runner logs
+cd /opt/homelab-config/docker && sudo docker compose up -d dofek-web  # recreate container
+```
+
+**Important:** `sops exec-env` decrypted vars override Docker/compose env vars. Never put `DATABASE_URL` in the SOPS `.env` — it must come from the compose file or `/srv/appdata/dofek/.env`.
+
+### Troubleshooting
+
+**Login page says "No identity providers configured"** — this usually means the API server (`dofek-web`) is down, not that providers are misconfigured. The login page silently shows this message when it can't reach `/api/auth/providers`. Check `sudo docker ps --filter name=dofek` and `sudo docker logs dofek-web`.
+
+**Age-key mount error (`read /run/secrets/age-key: is a directory`)** — Docker created the mount point as a directory (happens if the host file didn't exist when the container was first created). `docker restart` won't fix this — you must recreate the container: `cd /opt/homelab-config/docker && sudo docker compose up -d dofek-web`.
 
 **If a provider appears grayed out** on the Data Sources page, it means its required env vars are missing. Check:
 1. Are the vars in the repo's `.env`? → `sops .env` to verify/add them
@@ -264,6 +296,22 @@ See `packages/server/src/routers/life-events.ts` for the API and `packages/web/s
 - [x] GHA CI with Docker build + push to GHCR
 - [x] Watchtower auto-deploy with Slack notifications
 - [x] CLI for authenticating, pulling, and managing providers (`sync`, `auth`, `import` commands)
+
+## Authentication
+
+The web UI requires sign-in via an identity provider (OIDC). Supported providers:
+
+| Provider | Required `.env` Variables |
+|----------|--------------------------|
+| Authentik | `AUTHENTIK_BASE_URL`, `AUTHENTIK_CLIENT_ID`, `AUTHENTIK_CLIENT_SECRET`, `AUTHENTIK_REDIRECT_URI` |
+| Google | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` |
+| Apple | `APPLE_CLIENT_ID`, `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY`, `APPLE_REDIRECT_URI` |
+
+All credentials go in the SOPS-encrypted `.env`. The login page auto-discovers which providers are configured and shows buttons accordingly. If no provider env vars are set, the login page shows "No identity providers configured."
+
+### Current setup
+
+Authentik is the primary identity provider, using the Dofek OIDC application configured in Terraform (`homelab` repo, `terraform/authentik.tf`). The redirect URI is `https://dofek.asherlc.com/auth/callback/authentik`.
 
 ## Provider Configuration
 

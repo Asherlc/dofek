@@ -206,8 +206,7 @@ describe("Router SQL validity", () => {
 
   // ── Sleep Need ──
   describe("sleepNeed", () => {
-    it("calculate", () =>
-      expectValidSql("sleepNeed.calculate", { targetWakeHour: 7, targetWakeMinute: 0 }));
+    it("calculate", () => expectValidSql("sleepNeed.calculate"));
   });
 
   // ── Healthspan ──

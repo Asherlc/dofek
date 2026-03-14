@@ -1,0 +1,38 @@
+services:
+  db:
+    image: timescale/timescaledb:latest-pg16
+    environment:
+      POSTGRES_DB: health
+      POSTGRES_USER: health
+      POSTGRES_PASSWORD: health
+    ports:
+      - "5436:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U health -d health"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+  server:
+    build:
+      context: .
+      target: server
+    environment:
+      DATABASE_URL: postgres://health:health@db:5432/health
+      PORT: "3000"
+      NODE_ENV: test
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["web"]
+    # The nginx upstream expects hostname "dofek-web"
+    hostname: dofek-web
+
+  client:
+    build:
+      context: .
+      target: client
+    ports:
+      - "3100:80"
+    depends_on:
+      - server
