@@ -1,8 +1,10 @@
 import { and, eq } from "drizzle-orm";
+import type { OAuthConfig } from "../auth/oauth.ts";
+import { exchangeCodeForTokens } from "../auth/oauth.ts";
 import type { Database } from "../db/index.ts";
 import { activity, DEFAULT_USER_ID, metricStream, userSettings } from "../db/schema.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
-import type { Provider, SyncError, SyncResult } from "./types.ts";
+import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
 
 // ============================================================
 // RideWithGPS API types
@@ -52,10 +54,24 @@ export interface RideWithGpsSyncResponse {
   meta: { rwgps_datetime: string };
 }
 
-interface RideWithGpsAuthTokenResponse {
-  auth_token: {
-    auth_token: string;
-    user: { id: number; email: string };
+// ============================================================
+// OAuth configuration
+// ============================================================
+
+const RWGPS_OAUTH_AUTHORIZE_URL = "https://ridewithgps.com/oauth/authorize";
+const RWGPS_OAUTH_TOKEN_URL = "https://ridewithgps.com/oauth/token.json";
+
+export function rideWithGpsOAuthConfig(): OAuthConfig | null {
+  const clientId = process.env.RWGPS_CLIENT_ID;
+  if (!clientId) return null;
+
+  return {
+    clientId,
+    clientSecret: process.env.RWGPS_CLIENT_SECRET ?? undefined,
+    authorizeUrl: RWGPS_OAUTH_AUTHORIZE_URL,
+    tokenUrl: RWGPS_OAUTH_TOKEN_URL,
+    redirectUri: process.env.OAUTH_REDIRECT_URI ?? "https://dofek.asherlc.com/callback",
+    scopes: ["user"],
   };
 }
 
@@ -153,58 +169,32 @@ export function parseTrackPoints(points: RideWithGpsTrackPoint[]): ParsedTrackPo
 const RWGPS_API_BASE = "https://ridewithgps.com";
 
 export class RideWithGpsClient {
-  private apiKey: string;
-  private authToken: string;
+  private accessToken: string;
   private fetchFn: typeof globalThis.fetch;
 
-  constructor(
-    apiKey: string,
-    authToken: string,
-    fetchFn: typeof globalThis.fetch = globalThis.fetch,
-  ) {
-    this.apiKey = apiKey;
-    this.authToken = authToken;
+  constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
+    this.accessToken = accessToken;
     this.fetchFn = fetchFn;
   }
 
   private async get<T>(path: string, params?: Record<string, string>): Promise<T> {
     const url = new URL(path, RWGPS_API_BASE);
-    url.searchParams.set("apikey", this.apiKey);
-    url.searchParams.set("auth_token", this.authToken);
     if (params) {
       for (const [key, value] of Object.entries(params)) {
         url.searchParams.set(key, value);
       }
     }
     const response = await this.fetchFn(url.toString(), {
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.accessToken}`,
+      },
     });
     if (!response.ok) {
       const text = await response.text();
       throw new Error(`RWGPS API error (${response.status}): ${text}`);
     }
     return response.json() as Promise<T>;
-  }
-
-  static async exchangeCredentials(
-    apiKey: string,
-    email: string,
-    password: string,
-    fetchFn: typeof globalThis.fetch = globalThis.fetch,
-  ): Promise<string> {
-    const url = new URL("/api/v1/auth_tokens.json", RWGPS_API_BASE);
-    url.searchParams.set("apikey", apiKey);
-    const response = await fetchFn(url.toString(), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ user: { email, password } }),
-    });
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`RWGPS auth failed (${response.status}): ${text}`);
-    }
-    const data = (await response.json()) as RideWithGpsAuthTokenResponse;
-    return data.auth_token.auth_token;
   }
 
   async sync(since: string): Promise<RideWithGpsSyncResponse> {
@@ -267,8 +257,26 @@ export class RideWithGpsProvider implements Provider {
   }
 
   validate(): string | null {
-    // Credentials are stored in DB via the UI auth modal — always valid
+    const config = rideWithGpsOAuthConfig();
+    if (!config) return "RWGPS_CLIENT_ID is not set";
     return null;
+  }
+
+  authSetup(): ProviderAuthSetup {
+    const config = rideWithGpsOAuthConfig();
+    if (!config) throw new Error("RWGPS_CLIENT_ID is required");
+
+    return {
+      oauthConfig: config,
+      exchangeCode: (code: string, codeVerifier?: string) =>
+        exchangeCodeForTokens(
+          config,
+          code,
+          this.fetchFn,
+          codeVerifier ? { codeVerifier } : undefined,
+        ),
+      apiBaseUrl: RWGPS_API_BASE,
+    };
   }
 
   async sync(db: Database, since: Date): Promise<SyncResult> {
@@ -278,7 +286,6 @@ export class RideWithGpsProvider implements Provider {
 
     await ensureProvider(db, this.id, this.name, RWGPS_API_BASE);
 
-    // Load stored tokens (API key stored as refreshToken, auth token as accessToken)
     const tokens = await loadTokens(db, this.id);
     if (!tokens) {
       return {
@@ -289,18 +296,7 @@ export class RideWithGpsProvider implements Provider {
       };
     }
 
-    const authToken = tokens.accessToken;
-    const apiKey = tokens.refreshToken;
-    if (!apiKey) {
-      return {
-        provider: this.id,
-        recordsSynced: 0,
-        errors: [{ message: "No RWGPS API key found. Reconnect via the Data Sources page." }],
-        duration: Date.now() - start,
-      };
-    }
-
-    const client = new RideWithGpsClient(apiKey, authToken, this.fetchFn);
+    const client = new RideWithGpsClient(tokens.accessToken, this.fetchFn);
 
     // Load sync cursor or fall back to since param
     const cursor = (await loadSyncCursor(db)) ?? since.toISOString();

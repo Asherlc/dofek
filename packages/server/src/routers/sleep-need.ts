@@ -1,5 +1,4 @@
 import { sql } from "drizzle-orm";
-import { z } from "zod";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export interface SleepNeedResult {
@@ -11,10 +10,6 @@ export interface SleepNeedResult {
   accumulatedDebtMinutes: number;
   /** Total recommended sleep tonight (minutes) */
   totalNeedMinutes: number;
-  /** Suggested bedtime (ISO string) given a target wake time */
-  suggestedBedtime: string | null;
-  /** Suggested wake time (ISO string) */
-  suggestedWakeTime: string | null;
   /** Last 7 nights: actual vs needed */
   recentNights: SleepNight[];
 }
@@ -38,16 +33,10 @@ export interface SleepNight {
 export const sleepNeedRouter = router({
   /**
    * Sleep Need Calculator — like Whoop's Sleep Coach.
-   * Computes personalized sleep need, accumulated debt, and recommended bed/wake times.
+   * Computes personalized sleep need and accumulated debt.
    */
-  calculate: cachedProtectedQuery(CacheTTL.SHORT)
-    .input(
-      z.object({
-        targetWakeHour: z.number().min(0).max(23).default(7),
-        targetWakeMinute: z.number().min(0).max(59).default(0),
-      }),
-    )
-    .query(async ({ ctx, input }): Promise<SleepNeedResult> => {
+  calculate: cachedProtectedQuery(CacheTTL.SHORT).query(
+    async ({ ctx }): Promise<SleepNeedResult> => {
       // Fetch 90 days of sleep + next-day HRV + yesterday's training load in one query
       const rows = await ctx.db.execute(
         sql`WITH sleep_nights AS (
@@ -145,18 +134,6 @@ export const sleepNeedRouter = router({
 
       const totalNeedMinutes = baselineMinutes + strainDebtMinutes + debtRecoveryMinutes;
 
-      // Calculate suggested bed/wake times
-      const now = new Date();
-      const tomorrow = new Date(now);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      tomorrow.setHours(input.targetWakeHour, input.targetWakeMinute, 0, 0);
-
-      // Add 15 min for sleep latency
-      const sleepLatencyMinutes = 15;
-      const bedtime = new Date(
-        tomorrow.getTime() - (totalNeedMinutes + sleepLatencyMinutes) * 60 * 1000,
-      );
-
       // Recent nights with debt tracking
       const last7 = nights.slice(-7);
       const recentNights: SleepNight[] = last7.map((n) => {
@@ -175,9 +152,8 @@ export const sleepNeedRouter = router({
         strainDebtMinutes,
         accumulatedDebtMinutes: Math.round(accumulatedDebt),
         totalNeedMinutes,
-        suggestedBedtime: bedtime.toISOString(),
-        suggestedWakeTime: tomorrow.toISOString(),
         recentNights,
       };
-    }),
+    },
+  ),
 });

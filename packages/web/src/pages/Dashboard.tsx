@@ -115,7 +115,7 @@ export function Dashboard() {
   const hrvBaseline = trpc.dailyMetrics.hrvBaseline.useQuery({ days });
   const nutritionData = trpc.nutrition.daily.useQuery({ days });
   const insightsQuery = trpc.insights.compute.useQuery({ days });
-  const sleepNeed = trpc.sleepNeed.calculate.useQuery({});
+  const sleepNeed = trpc.sleepNeed.calculate.useQuery();
   const stressData = trpc.stress.scores.useQuery({ days });
   const weeklyReport = trpc.weeklyReport.report.useQuery({ weeks: Math.ceil(days / 7) });
   const healthspan = trpc.healthspan.score.useQuery({ weeks: Math.max(Math.ceil(days / 7), 4) });

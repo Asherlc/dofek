@@ -102,7 +102,7 @@ export const syncRouter = router({
         /* credentials not configured */
       }
       const needsOAuth = !!setup?.oauthConfig;
-      const needsCustomAuth = p.id === "whoop" || p.id === "ride-with-gps";
+      const needsCustomAuth = p.id === "whoop";
       const needsAuth = needsOAuth || needsCustomAuth;
       const authorized = needsAuth ? tokenSet.has(p.id) : true;
       const lastSyncedAt = lastSyncMap.get(p.id) ?? null;
@@ -315,7 +315,7 @@ export const syncRouter = router({
       LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.daily_metrics WHERE user_id = ${ctx.userId} GROUP BY provider_id) dm ON dm.provider_id = p.id
       LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.sleep_session WHERE user_id = ${ctx.userId} GROUP BY provider_id) ss ON ss.provider_id = p.id
       LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.body_measurement WHERE user_id = ${ctx.userId} GROUP BY provider_id) bm ON bm.provider_id = p.id
-      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.food_entry WHERE user_id = ${ctx.userId} GROUP BY provider_id) fe ON fe.provider_id = p.id
+      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.food_entry WHERE user_id = ${ctx.userId} AND confirmed = true GROUP BY provider_id) fe ON fe.provider_id = p.id
       LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.health_event WHERE user_id = ${ctx.userId} GROUP BY provider_id) he ON he.provider_id = p.id
       LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.metric_stream WHERE user_id = ${ctx.userId} GROUP BY provider_id) ms ON ms.provider_id = p.id
       LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.nutrition_daily WHERE user_id = ${ctx.userId} GROUP BY provider_id) nd ON nd.provider_id = p.id

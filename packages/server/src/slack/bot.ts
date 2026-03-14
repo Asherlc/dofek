@@ -12,11 +12,19 @@ import {
   type NutritionItemWithMeal,
   refineNutritionItems,
 } from "../lib/ai-nutrition.ts";
+import { queryCache } from "../lib/cache.ts";
 import { logger } from "../logger.ts";
 import { formatConfirmationMessage, formatSavedMessage } from "./formatting.ts";
-import { removePendingItems, retrievePendingItems, storePendingItems } from "./pending-items.ts";
 
 const DOFEK_PROVIDER_ID = "dofek";
+
+/** Build a SQL `IN (...)` clause from an array of UUID strings */
+function sqlIdList(ids: string[]) {
+  return sql.join(
+    ids.map((id) => sql`${id}::uuid`),
+    sql`, `,
+  );
+}
 
 const FALLBACK_TIMEZONE = process.env.TIMEZONE ?? "America/Los_Angeles";
 
@@ -39,14 +47,13 @@ interface SlackUserInfo {
 }
 
 /**
- * Extract food items from thread messages returned by conversations.replies.
+ * Extract food entry IDs from thread messages returned by conversations.replies.
  * Walks backwards to find the most recent bot message with a confirm button.
- * The button value is a pending-store key (UUID); falls back to inline JSON
- * for backwards compatibility with messages sent before the pending-store change.
+ * The button value contains comma-separated food_entry UUIDs.
  */
-function extractItemsFromThread(
+function extractEntryIdsFromThread(
   messages: Array<{ bot_id?: string; blocks?: unknown[] }>,
-): NutritionItemWithMeal[] | null {
+): string[] | null {
   for (let i = messages.length - 1; i >= 0; i--) {
     const threadMsg = messages[i];
     if (!threadMsg || !threadMsg.bot_id || !threadMsg.blocks) continue;
@@ -59,15 +66,8 @@ function extractItemsFromThread(
       if (block.type !== "actions" || !block.elements) continue;
       for (const element of block.elements) {
         if (element.action_id === "confirm_food" && element.value) {
-          // Try pending store lookup first (value is a UUID key)
-          const fromStore = retrievePendingItems(element.value);
-          if (fromStore) return fromStore;
-          // Fall back to inline JSON for legacy messages
-          try {
-            return JSON.parse(element.value) as NutritionItemWithMeal[];
-          } catch {
-            return null;
-          }
+          const ids = element.value.split(",").filter(Boolean);
+          if (ids.length > 0) return ids;
         }
       }
     }
@@ -82,21 +82,50 @@ async function resolveOrCreateUserId(
   email: string | null,
   name: string,
 ): Promise<string> {
-  // Check if a user with this email already exists (e.g., from Google/Apple web login)
   if (email) {
-    const existingByEmail = await db.execute<{ user_id: string }>(
+    // Check auth_account first (Google/Apple login creates these)
+    const existingByAuthEmail = await db.execute<{ user_id: string }>(
       sql`SELECT user_id FROM fitness.auth_account
           WHERE email = ${email}
           LIMIT 1`,
     );
-    const emailRow = existingByEmail[0];
-    if (emailRow) {
-      logger.info(`[slack] Found existing user ${emailRow.user_id} via email ${email}`);
-      return emailRow.user_id;
+    const authRow = existingByAuthEmail[0];
+    if (authRow) {
+      logger.info(`[slack] Found existing user ${authRow.user_id} via auth_account email ${email}`);
+      return authRow.user_id;
+    }
+
+    // Also check user_profile.email (web login updates this for DEFAULT_USER_ID)
+    const existingByProfileEmail = await db.execute<{ id: string }>(
+      sql`SELECT id FROM fitness.user_profile
+          WHERE email = ${email}
+          LIMIT 1`,
+    );
+    const profileRow = existingByProfileEmail[0];
+    if (profileRow) {
+      logger.info(`[slack] Found existing user ${profileRow.id} via user_profile email ${email}`);
+      return profileRow.id;
     }
   }
 
-  // No existing user — create a new one
+  // Fallback: if there's exactly one user in the system, use that user.
+  // This handles the common case where the Slack API doesn't return an email
+  // but only one person uses the app.
+  const userCount = await db.execute<{ count: string; id: string }>(
+    sql`SELECT COUNT(*)::text AS count, MIN(id) AS id FROM fitness.user_profile`,
+  );
+  const countRow = userCount[0];
+  if (countRow && parseInt(countRow.count, 10) === 1) {
+    logger.info(
+      `[slack] No email match — falling back to sole user ${countRow.id} (single-user mode)`,
+    );
+    return countRow.id;
+  }
+
+  // No match and multiple users — create a new one
+  logger.warn(
+    `[slack] Could not match Slack user to existing account (email=${email ?? "null"}), creating new user`,
+  );
   const newUser = await db.execute<{ id: string }>(
     sql`INSERT INTO fitness.user_profile (name, email)
         VALUES (${name}, ${email})
@@ -144,6 +173,8 @@ async function lookupOrCreateUserId(
     // Verify this Slack account isn't orphaned: if a non-Slack auth_account exists
     // with the same email but a different user_id, the Slack link is stale
     // (e.g., Slack bot ran before the user logged in on the web).
+    let correctId: string | null = null;
+
     if (email) {
       const canonical = await db.execute<{ user_id: string }>(
         sql`SELECT user_id FROM fitness.auth_account
@@ -152,26 +183,42 @@ async function lookupOrCreateUserId(
       );
       const canonicalRow = canonical[0];
       if (canonicalRow && canonicalRow.user_id !== existingRow.user_id) {
-        const orphanId = existingRow.user_id;
-        const correctId = canonicalRow.user_id;
-        logger.info(
-          `[slack] Repairing orphan: moving Slack user ${slackUserId} from ${orphanId} → ${correctId}`,
-        );
-        // Repoint the Slack auth_account to the correct user
-        await db.execute(
-          sql`UPDATE fitness.auth_account
-              SET user_id = ${correctId}
-              WHERE auth_provider = 'slack' AND provider_account_id = ${slackUserId}`,
-        );
-        // Migrate any food entries saved under the orphan user
-        await db.execute(
-          sql`UPDATE fitness.food_entry
-              SET user_id = ${correctId}
-              WHERE user_id = ${orphanId}`,
-        );
-        return { userId: correctId, timezone };
+        correctId = canonicalRow.user_id;
       }
     }
+
+    // Single-user fallback: if no email match found, but there's exactly one user
+    // with a non-slack auth_account, the Slack link likely points to a bot-created orphan
+    if (!correctId) {
+      const realUsers = await db.execute<{ user_id: string }>(
+        sql`SELECT DISTINCT user_id FROM fitness.auth_account
+            WHERE auth_provider != 'slack'`,
+      );
+      if (realUsers.length === 1 && realUsers[0] && realUsers[0].user_id !== existingRow.user_id) {
+        correctId = realUsers[0].user_id;
+      }
+    }
+
+    if (correctId) {
+      const orphanId = existingRow.user_id;
+      logger.info(
+        `[slack] Repairing orphan: moving Slack user ${slackUserId} from ${orphanId} → ${correctId}`,
+      );
+      // Repoint the Slack auth_account to the correct user
+      await db.execute(
+        sql`UPDATE fitness.auth_account
+            SET user_id = ${correctId}
+            WHERE auth_provider = 'slack' AND provider_account_id = ${slackUserId}`,
+      );
+      // Migrate any food entries saved under the orphan user
+      await db.execute(
+        sql`UPDATE fitness.food_entry
+            SET user_id = ${correctId}
+            WHERE user_id = ${orphanId}`,
+      );
+      return { userId: correctId, timezone };
+    }
+
     return { userId: existingRow.user_id, timezone };
   }
 
@@ -197,17 +244,18 @@ async function ensureDofekProvider(db: Database) {
   );
 }
 
-/** Save parsed food items to the database */
-async function saveFoodEntries(
+/** Save parsed food items to the database as unconfirmed. Returns the entry IDs. */
+async function saveUnconfirmedFoodEntries(
   db: Database,
   userId: string,
   date: string,
   items: NutritionItemWithMeal[],
-) {
+): Promise<string[]> {
   await ensureDofekProvider(db);
 
+  const ids: string[] = [];
   for (const item of items) {
-    await db.execute(
+    const rows = await db.execute<{ id: string }>(
       sql`INSERT INTO fitness.food_entry (
             user_id, provider_id, date, meal, food_name, food_description, category,
             calories, protein_g, carbs_g, fat_g, fiber_g,
@@ -218,7 +266,8 @@ async function saveFoodEntries(
             vitamin_a_mcg, vitamin_c_mg, vitamin_d_mcg, vitamin_e_mg, vitamin_k_mcg,
             vitamin_b1_mg, vitamin_b2_mg, vitamin_b3_mg, vitamin_b5_mg,
             vitamin_b6_mg, vitamin_b7_mcg, vitamin_b9_mcg, vitamin_b12_mcg,
-            omega3_mg, omega6_mg
+            omega3_mg, omega6_mg,
+            confirmed
           ) VALUES (
             ${userId}, ${DOFEK_PROVIDER_ID}, ${date}::date,
             ${item.meal}, ${item.foodName}, ${item.foodDescription},
@@ -239,14 +288,41 @@ async function saveFoodEntries(
             ${item.vitaminB5Mg ?? null}, ${item.vitaminB6Mg ?? null},
             ${item.vitaminB7Mcg ?? null}, ${item.vitaminB9Mcg ?? null},
             ${item.vitaminB12Mcg ?? null}, ${item.omega3Mg ?? null},
-            ${item.omega6Mg ?? null}
-          )`,
+            ${item.omega6Mg ?? null},
+            false
+          ) RETURNING id`,
     );
+    const row = rows[0];
+    if (row) ids.push(row.id);
   }
+  return ids;
+}
+
+/** Confirm food entries by setting confirmed = true */
+async function confirmFoodEntries(db: Database, entryIds: string[]): Promise<number> {
+  if (entryIds.length === 0) return 0;
+  const result = await db.execute<{ id: string }>(
+    sql`UPDATE fitness.food_entry
+        SET confirmed = true
+        WHERE id IN (${sqlIdList(entryIds)})
+          AND confirmed = false
+        RETURNING id`,
+  );
+  return result.length;
+}
+
+/** Delete unconfirmed food entries */
+async function deleteUnconfirmedEntries(db: Database, entryIds: string[]): Promise<void> {
+  if (entryIds.length === 0) return;
+  await db.execute(
+    sql`DELETE FROM fitness.food_entry
+        WHERE id IN (${sqlIdList(entryIds)})
+          AND confirmed = false`,
+  );
 }
 
 /** Get today's date in YYYY-MM-DD format, in the given IANA timezone. */
-function todayDate(timezone: string): string {
+function _todayDate(timezone: string): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: timezone });
 }
 
@@ -264,7 +340,9 @@ function registerHandlers(app: AppType, db: Database) {
     const msg = message as GenericMessageEvent;
     if (msg.subtype || !msg.text || msg.bot_id) return;
 
-    const { timezone: userTimezone } = await lookupOrCreateUserId(db, msg.user, client);
+    const { userId, timezone: userTimezone } = await lookupOrCreateUserId(db, msg.user, client);
+
+    const date = slackTimestampToDateString(msg.ts, userTimezone);
 
     // Thread reply — look for previous items to refine
     if (msg.thread_ts && msg.thread_ts !== msg.ts) {
@@ -275,18 +353,62 @@ function registerHandlers(app: AppType, db: Database) {
           channel: msg.channel,
           ts: msg.thread_ts,
         });
-        const previousItems = extractItemsFromThread(
+        const previousEntryIds = extractEntryIdsFromThread(
           (thread.messages ?? []) as Array<{ bot_id?: string; blocks?: unknown[] }>,
         );
 
-        if (previousItems) {
-          logger.info(`[slack] Refining ${previousItems.length} items with: "${msg.text}"`);
-          const localTime = slackTimestampToLocalTime(msg.ts, userTimezone);
-          const result = await refineNutritionItems(previousItems, msg.text, localTime);
-          const pendingKey = storePendingItems(result.items);
-          const confirmation = formatConfirmationMessage(result.items, pendingKey);
-          await say({ ...confirmation, thread_ts: msg.thread_ts });
-          return;
+        if (previousEntryIds) {
+          // Load the previous items from the database for refinement context
+          const previousRows = await db.execute<{
+            food_name: string;
+            food_description: string | null;
+            category: string | null;
+            calories: number | null;
+            protein_g: number | null;
+            carbs_g: number | null;
+            fat_g: number | null;
+            fiber_g: number | null;
+            saturated_fat_g: number | null;
+            sugar_g: number | null;
+            sodium_mg: number | null;
+            meal: string | null;
+          }>(
+            sql`SELECT food_name, food_description, category, calories,
+                       protein_g, carbs_g, fat_g, fiber_g,
+                       saturated_fat_g, sugar_g, sodium_mg, meal
+                FROM fitness.food_entry
+                WHERE id IN (${sqlIdList(previousEntryIds)})`,
+          );
+
+          const previousItems: NutritionItemWithMeal[] = previousRows.map((r) => ({
+            foodName: r.food_name,
+            foodDescription: r.food_description ?? "",
+            category: (r.category ?? "other") as NutritionItemWithMeal["category"],
+            calories: r.calories ?? 0,
+            proteinG: r.protein_g ?? 0,
+            carbsG: r.carbs_g ?? 0,
+            fatG: r.fat_g ?? 0,
+            fiberG: r.fiber_g ?? 0,
+            saturatedFatG: r.saturated_fat_g ?? 0,
+            sugarG: r.sugar_g ?? 0,
+            sodiumMg: r.sodium_mg ?? 0,
+            meal: (r.meal ?? "other") as NutritionItemWithMeal["meal"],
+          }));
+
+          if (previousItems.length > 0) {
+            logger.info(`[slack] Refining ${previousItems.length} items with: "${msg.text}"`);
+            const localTime = slackTimestampToLocalTime(msg.ts, userTimezone);
+            const result = await refineNutritionItems(previousItems, msg.text, localTime);
+
+            // Delete old unconfirmed entries and save new refined ones
+            await deleteUnconfirmedEntries(db, previousEntryIds);
+            const newEntryIds = await saveUnconfirmedFoodEntries(db, userId, date, result.items);
+
+            const entryIdsValue = newEntryIds.join(",");
+            const confirmation = formatConfirmationMessage(result.items, entryIdsValue);
+            await say({ ...confirmation, thread_ts: msg.thread_ts });
+            return;
+          }
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
@@ -305,8 +427,9 @@ function registerHandlers(app: AppType, db: Database) {
     try {
       const localTime = slackTimestampToLocalTime(msg.ts, userTimezone);
       const result = await analyzeNutritionItems(msg.text, localTime);
-      const pendingKey = storePendingItems(result.items);
-      const confirmation = formatConfirmationMessage(result.items, pendingKey);
+      const entryIds = await saveUnconfirmedFoodEntries(db, userId, date, result.items);
+      const entryIdsValue = entryIds.join(",");
+      const confirmation = formatConfirmationMessage(result.items, entryIdsValue);
       await say({ ...confirmation, thread_ts: msg.ts });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -324,41 +447,64 @@ function registerHandlers(app: AppType, db: Database) {
 
     if (body.type !== "block_actions" || !body.actions[0]) return;
 
-    const slackUserId = body.user.id;
-    const { userId, timezone } = await lookupOrCreateUserId(db, slackUserId, client);
-
     const action = body.actions[0];
     if (!("value" in action) || !action.value) return;
 
-    // Value is a pending-store key (UUID); fall back to inline JSON for legacy messages
-    let items: NutritionItemWithMeal[];
-    const fromStore = retrievePendingItems(action.value);
-    if (fromStore) {
-      items = fromStore;
-      removePendingItems(action.value);
-    } else {
-      try {
-        items = JSON.parse(action.value) as NutritionItemWithMeal[];
-      } catch {
-        logger.error(`[slack] Could not find pending items for key ${action.value}`);
+    const entryIds = action.value.split(",").filter(Boolean);
+
+    try {
+      const confirmedCount = await confirmFoodEntries(db, entryIds);
+
+      if (confirmedCount === 0) {
+        // Entries were already confirmed or deleted
         if (body.channel?.id && body.message?.ts) {
           await client.chat.update({
             channel: body.channel.id,
             ts: body.message.ts,
-            text: "This entry has expired. Please log your food again.",
+            text: "These entries were already saved.",
             blocks: [],
           });
         }
         return;
       }
-    }
 
-    const date = body.message?.ts
-      ? slackTimestampToDateString(body.message.ts, timezone)
-      : todayDate(timezone);
+      // Load items for the saved message display
+      const rows = await db.execute<{
+        food_name: string;
+        food_description: string | null;
+        category: string | null;
+        calories: number | null;
+        protein_g: number | null;
+        carbs_g: number | null;
+        fat_g: number | null;
+        fiber_g: number | null;
+        saturated_fat_g: number | null;
+        sugar_g: number | null;
+        sodium_mg: number | null;
+        meal: string | null;
+      }>(
+        sql`SELECT food_name, food_description, category, calories,
+                   protein_g, carbs_g, fat_g, fiber_g,
+                   saturated_fat_g, sugar_g, sodium_mg, meal
+            FROM fitness.food_entry
+            WHERE id IN (${sqlIdList(entryIds)})`,
+      );
 
-    try {
-      await saveFoodEntries(db, userId, date, items);
+      const items: NutritionItemWithMeal[] = rows.map((r) => ({
+        foodName: r.food_name,
+        foodDescription: r.food_description ?? "",
+        category: (r.category ?? "other") as NutritionItemWithMeal["category"],
+        calories: r.calories ?? 0,
+        proteinG: r.protein_g ?? 0,
+        carbsG: r.carbs_g ?? 0,
+        fatG: r.fat_g ?? 0,
+        fiberG: r.fiber_g ?? 0,
+        saturatedFatG: r.saturated_fat_g ?? 0,
+        sugarG: r.sugar_g ?? 0,
+        sodiumMg: r.sodium_mg ?? 0,
+        meal: (r.meal ?? "other") as NutritionItemWithMeal["meal"],
+      }));
+
       const savedMessage = formatSavedMessage(items);
 
       if (body.channel?.id && body.message?.ts) {
@@ -369,10 +515,20 @@ function registerHandlers(app: AppType, db: Database) {
         });
       }
 
-      logger.info(`[slack] Saved ${items.length} food entries for user ${userId}`);
+      // Invalidate cached food/nutrition queries so the UI reflects the new entries.
+      // We need the user_id from the entries to scope the invalidation.
+      const userRow = await db.execute<{ user_id: string }>(
+        sql`SELECT DISTINCT user_id FROM fitness.food_entry WHERE id IN (${sqlIdList(entryIds)}) LIMIT 1`,
+      );
+      if (userRow[0]) {
+        await queryCache.invalidateByPrefix(`${userRow[0].user_id}:food.`);
+        await queryCache.invalidateByPrefix(`${userRow[0].user_id}:nutrition.`);
+      }
+
+      logger.info(`[slack] Confirmed ${confirmedCount} food entries`);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.error(`[slack] Failed to save food entries: ${errorMessage}`);
+      logger.error(`[slack] Failed to confirm food entries: ${errorMessage}`);
 
       if (body.channel?.id && body.message?.ts) {
         await client.chat.update({
@@ -438,11 +594,30 @@ function registerHandlers(app: AppType, db: Database) {
     }
   });
 
-  // Handle "Cancel" button click
+  // Handle "Cancel" button click — delete unconfirmed entries
   app.action("cancel_food", async ({ ack, body, client }) => {
     await ack();
 
-    if (body.channel?.id && body.type === "block_actions" && body.message?.ts) {
+    if (body.type !== "block_actions") return;
+
+    // Find the confirm button's value to get entry IDs
+    if (body.message?.blocks) {
+      for (const rawBlock of body.message.blocks as Array<{
+        type?: string;
+        elements?: Array<{ action_id?: string; value?: string }>;
+      }>) {
+        if (rawBlock.type !== "actions" || !rawBlock.elements) continue;
+        for (const element of rawBlock.elements) {
+          if (element.action_id === "confirm_food" && element.value) {
+            const entryIds = element.value.split(",").filter(Boolean);
+            await deleteUnconfirmedEntries(db, entryIds);
+            break;
+          }
+        }
+      }
+    }
+
+    if (body.channel?.id && body.message?.ts) {
       await client.chat.update({
         channel: body.channel.id,
         ts: body.message.ts,

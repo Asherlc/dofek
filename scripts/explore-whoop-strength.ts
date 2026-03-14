@@ -55,6 +55,7 @@ interface EndpointConfig {
   description?: string;
 }
 
+
 async function main() {
   const rt = process.env.WHOOP_REFRESH_TOKEN;
   if (!rt) {

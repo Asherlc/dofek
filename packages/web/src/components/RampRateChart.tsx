@@ -15,29 +15,13 @@ function getRampColor(rate: number): string {
   return "#ef4444";
 }
 
-export function RampRateChart({
-  data,
-  currentRampRate,
-  recommendation,
-  loading,
-}: RampRateChartProps) {
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-[300px]">
-        <span className="text-zinc-600 text-sm">Loading ramp rate data...</span>
-      </div>
-    );
-  }
+interface RampRateWeekData {
+  week: string;
+  rampRate: number;
+}
 
-  if (data.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-[300px]">
-        <span className="text-zinc-600 text-sm">No ramp rate data available</span>
-      </div>
-    );
-  }
-
-  const option = {
+export function buildRampRateOption(data: RampRateWeekData[]) {
+  return {
     backgroundColor: "transparent",
     grid: { top: 50, right: 20, bottom: 50, left: 55 },
     tooltip: {
@@ -97,9 +81,35 @@ export function RampRateChart({
           tooltip: { show: false },
         },
         data: [],
+        tooltip: { show: false },
       },
     ],
   };
+}
+
+export function RampRateChart({
+  data,
+  currentRampRate,
+  recommendation,
+  loading,
+}: RampRateChartProps) {
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-[300px]">
+        <span className="text-zinc-600 text-sm">Loading ramp rate data...</span>
+      </div>
+    );
+  }
+
+  if (data.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-[300px]">
+        <span className="text-zinc-600 text-sm">No ramp rate data available</span>
+      </div>
+    );
+  }
+
+  const option = buildRampRateOption(data);
 
   const badgeColor = getRampColor(currentRampRate);
 

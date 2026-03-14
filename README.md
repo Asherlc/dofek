@@ -153,11 +153,153 @@ Both use Node 22 `--experimental-transform-types` to run TypeScript source direc
 
 ## Deployment
 
-Deployed at `dofek.asherlc.com` (behind Authentik) and `dofek.home` (local).
+Deployed on a Hetzner Cloud CAX11 (ARM) server at `dofek.asherlc.com`.
 
-GitHub Actions builds and pushes both images on merge to main. Watchtower auto-pulls (label-based, 5min poll). Homelab compose runs: `dofek-db` (TimescaleDB), `dofek-web` (API server), `dofek-client` (Nginx), `dofek-sync`, `dofek-db-backup`.
+### Infrastructure
+
+The `deploy/` directory contains everything needed to provision and run the production stack:
+
+```
+deploy/
+├── main.tf                  # Terraform — Hetzner server, firewall, SSH key
+├── cloud-init.yml           # Auto-installs Docker on first boot
+├── docker-compose.yml       # Production stack (all services)
+├── Caddyfile                # Auto-HTTPS via Let's Encrypt
+├── terraform.tfvars.example # Example config
+└── .gitignore               # Excludes secrets and state
+```
+
+### Production architecture
+
+```
+Internet → Caddy (auto-HTTPS :443)
+             └── dofek-client (Nginx :80)
+                   ├── /assets/*    → static files (1yr cache)
+                   ├── /api/*       → proxy_pass dofek-web:3000
+                   ├── /auth/*      → proxy_pass dofek-web:3000
+                   ├── /callback    → proxy_pass dofek-web:3000
+                   └── /*           → index.html (SPA fallback)
+```
+
+### Services
+
+| Container | Image | Purpose |
+|-----------|-------|---------|
+| `caddy` | caddy:2-alpine | TLS termination + reverse proxy to nginx |
+| `client` | ghcr.io/asherlc/dofek-client | Nginx serving Vite bundle + proxying API routes |
+| `web` | ghcr.io/asherlc/dofek | Express + tRPC API server (port 3000, internal only) |
+| `sync` | ghcr.io/asherlc/dofek | Sync runner (provider data sync) |
+| `db` | timescale/timescaledb | TimescaleDB (persistent volume) |
+| `db-backup` | postgres-backup-local | Daily pg_dump (7 daily, 4 weekly, 6 monthly) |
+| `watchtower` | containrrr/watchtower | Auto-pulls new images from GHCR every 5min |
+
+### CI/CD pipeline
+
+```
+sops .env → commit → push → GHA builds multi-arch Docker images (amd64 + arm64)
+→ pushes to GHCR → Watchtower polls (5min) → pulls new image → restarts containers
+```
 
 Migrations run automatically on startup (both `web` and `sync` modes call `runMigrations()`). Upserts make re-runs safe and idempotent.
+
+### Deploying from scratch
+
+1. **Provision the server** (Terraform or manually via Hetzner Cloud console):
+
+```bash
+cd deploy
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars with your Hetzner API token and SSH key
+terraform init
+terraform apply
+```
+
+2. **SSH into the server** and set up the app directory:
+
+```bash
+ssh root@<SERVER_IP>
+mkdir -p /opt/dofek && cd /opt/dofek
+```
+
+3. **Copy deployment files** to the server:
+
+```bash
+# From your local machine
+scp deploy/docker-compose.yml deploy/Caddyfile root@<SERVER_IP>:/opt/dofek/
+```
+
+4. **Create the `.env` file** on the server with the SOPS age key and deployment vars:
+
+```bash
+# On the server
+cat > /opt/dofek/.env << 'EOF'
+SOPS_AGE_KEY=AGE-SECRET-KEY-...
+EOF
+chmod 600 /opt/dofek/.env
+```
+
+5. **Start everything:**
+
+```bash
+cd /opt/dofek
+docker compose up -d
+```
+
+6. **Point DNS** — create an A record for `dofek.asherlc.com` → `<SERVER_IP>`. Caddy will auto-provision the TLS certificate.
+
+### Updating the domain
+
+Edit `deploy/Caddyfile` with the new domain, copy it to the server, and restart Caddy:
+
+```bash
+scp deploy/Caddyfile root@<SERVER_IP>:/opt/dofek/
+ssh root@<SERVER_IP> "cd /opt/dofek && docker compose restart caddy"
+```
+
+### SSH access
+
+```bash
+ssh root@<SERVER_IP>
+```
+
+```bash
+# Common debugging commands
+docker ps                                    # container status
+docker logs web --tail 50                    # API server logs
+docker logs sync --tail 50                   # sync runner logs
+cd /opt/dofek && docker compose up -d web    # recreate container
+```
+
+### Production secrets
+
+There are two sources of environment variables for the production containers:
+
+1. **SOPS-encrypted `.env` (this repo)** — provider credentials (API keys, OAuth client IDs/secrets). Baked into the Docker image at build time. The entrypoint decrypts it at container startup using the age key.
+
+2. **`.env` on server (`/opt/dofek/.env`)** — deployment-specific vars: `SOPS_AGE_KEY`, plus any overrides. Loaded via `env_file` in the compose.
+
+The entrypoint merges both: compose `env_file` sets vars first, then `sops exec-env` adds decrypted provider credentials on top.
+
+**Adding new provider credentials:**
+
+```bash
+sops .env          # add the new key=value pairs
+git add .env && git commit && git push
+# CI builds new image → Watchtower deploys automatically
+```
+
+No SSH to the server needed. The credentials flow through the Docker image.
+
+**Important:** `sops exec-env` decrypted vars override Docker/compose env vars. Never put `DATABASE_URL` in the SOPS `.env` — it must come from the compose file.
+
+### Troubleshooting
+
+**Login page says "No identity providers configured"** — this usually means the API server (`web`) is down, not that providers are misconfigured. The login page silently shows this message when it can't reach `/api/auth/providers`. Check `docker ps` and `docker logs web`.
+
+**If a provider appears grayed out** on the Data Sources page, it means its required env vars are missing. Check:
+1. Are the vars in the repo's `.env`? → `sops .env` to verify/add them
+2. Is the age key set on the server? → check `/opt/dofek/.env`
+3. Is the container running the latest image? → `docker logs web` to check for SOPS errors
 
 ## Supplements
 
@@ -208,6 +350,22 @@ See `packages/server/src/routers/life-events.ts` for the API and `packages/web/s
 - [x] GHA CI with Docker build + push to GHCR
 - [x] Watchtower auto-deploy with Slack notifications
 - [x] CLI for authenticating, pulling, and managing providers (`sync`, `auth`, `import` commands)
+
+## Authentication
+
+The web UI requires sign-in via an identity provider (OIDC). Supported providers:
+
+| Provider | Required `.env` Variables |
+|----------|--------------------------|
+| Authentik | `AUTHENTIK_BASE_URL`, `AUTHENTIK_CLIENT_ID`, `AUTHENTIK_CLIENT_SECRET`, `AUTHENTIK_REDIRECT_URI` |
+| Google | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` |
+| Apple | `APPLE_CLIENT_ID`, `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY`, `APPLE_REDIRECT_URI` |
+
+All credentials go in the SOPS-encrypted `.env`. The login page auto-discovers which providers are configured and shows buttons accordingly. If no provider env vars are set, the login page shows "No identity providers configured."
+
+### Current setup
+
+Authentik is the primary identity provider, using the Dofek OIDC application configured in Terraform (`homelab` repo, `terraform/authentik.tf`). The redirect URI is `https://dofek.asherlc.com/auth/callback/authentik`.
 
 ## Provider Configuration
 

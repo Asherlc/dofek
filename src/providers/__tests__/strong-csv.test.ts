@@ -173,4 +173,53 @@ describe("parseStrongCsv", () => {
     expect(parseStrongCsv("")).toEqual([]);
     expect(parseStrongCsv(csvHeader)).toEqual([]);
   });
+
+  it("handles escaped double quotes in CSV fields", () => {
+    const csv = [
+      csvHeader,
+      '2024-11-02 10:00:00,"Push Day","1h","Bench Press (Barbell)",1,135,10,,,"Note with ""quotes""","",',
+    ].join("\n");
+
+    const groups = parseStrongCsv(csv);
+    expect(groups[0]?.sets[0]?.notes).toBe('Note with "quotes"');
+  });
+
+  it("skips rows with fewer than 7 fields", () => {
+    const csv = [csvHeader, "2024-11-02,Push Day,1h,Bench,1,135"].join("\n");
+    expect(parseStrongCsv(csv)).toEqual([]);
+  });
+
+  it("carries workout notes from later row when first row lacks them", () => {
+    const csv = [
+      csvHeader,
+      '2024-11-02 10:00:00,"Day","1h","Bench (Barbell)",1,135,10,,,,"",',
+      '2024-11-02 10:00:00,"Day","1h","Bench (Barbell)",2,155,8,,,,"Good session",',
+    ].join("\n");
+
+    const groups = parseStrongCsv(csv);
+    expect(groups[0]?.workoutNotes).toBe("Good session");
+  });
+
+  it("handles NaN values in numeric fields", () => {
+    const csv = [
+      csvHeader,
+      '2024-11-02 10:00:00,"Day","1h","Bench (Barbell)",1,abc,xyz,,,,,,',
+    ].join("\n");
+
+    const groups = parseStrongCsv(csv);
+    expect(groups[0]?.sets[0]?.weight).toBeNull();
+    expect(groups[0]?.sets[0]?.reps).toBeNull();
+  });
+
+  it("handles \\r\\n line endings", () => {
+    const csv = `${csvHeader}\r\n2024-11-02 10:00:00,"Day","1h","Bench (Barbell)",1,135,10,,,,,,\r\n`;
+    expect(parseStrongCsv(csv)).toHaveLength(1);
+  });
+
+  it("handles exercise name with empty parens", () => {
+    expect(parseStrongExerciseName("Squat ()")).toEqual({
+      exerciseName: "Squat ()",
+      equipment: null,
+    });
+  });
 });

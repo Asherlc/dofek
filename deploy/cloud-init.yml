@@ -1,0 +1,15 @@
+#cloud-config
+
+package_update: true
+
+packages:
+  - ca-certificates
+  - curl
+
+runcmd:
+  # Install Docker
+  - curl -fsSL https://get.docker.com | sh
+
+  # Create app directory and deploy compose stack
+  - mkdir -p /opt/dofek
+  - echo "Docker installed. Server ready for deployment." > /opt/dofek/ready

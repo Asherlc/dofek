@@ -38,14 +38,20 @@
     "format": "biome format --write .",
     "test": "vitest",
     "test:watch": "vitest --watch",
+    "test:coverage": "vitest run --coverage",
+    "test:mutation": "stryker run",
     "server": "./scripts/with-env.sh tsx src/server.ts",
     "build": "tsc",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "e2e:up": "docker compose -f docker-compose.e2e.yml up -d --build --wait",
+    "e2e:down": "docker compose -f docker-compose.e2e.yml down -v",
+    "e2e:run": "pnpm exec cypress run",
+    "e2e:open": "pnpm exec cypress open",
+    "e2e": "pnpm e2e:up && pnpm e2e:run; pnpm e2e:down"
   },
   "dependencies": {
     "drizzle-orm": "0.38.4",
     "fit-file-parser": "2.3.3",
-    "postgres": "3.4.8",
     "prom-client": "15.1.3",
     "sax": "1.5.0",
     "winston": "3.19.0",
@@ -55,14 +61,25 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.6",
+    "@stryker-mutator/core": "^9.6.0",
+    "@stryker-mutator/vitest-runner": "^9.6.0",
     "@types/node": "22.19.15",
     "@types/sax": "1.2.7",
     "@types/yauzl": "2.10.3",
+    "@vitest/coverage-v8": "^3.2.4",
+    "cypress": "^15.12.0",
     "drizzle-kit": "0.30.6",
+    "postgres": "3.4.8",
     "testcontainers": "10.28.0",
     "tsx": "4.21.0",
     "typescript": "5.9.3",
-    "vitest": "3.2.4"
+    "vitest": "3.2.4",
+    "wait-on": "^9.0.4"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "cypress"
+    ]
   },
   "packageManager": "pnpm@10.28.0+sha512.05df71d1421f21399e053fde567cea34d446fa02c76571441bfc1c7956e98e363088982d940465fd34480d4d90a0668bc12362f8aa88000a64e83d0b0e47be48"
 }

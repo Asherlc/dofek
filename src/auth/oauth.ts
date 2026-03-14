@@ -11,6 +11,13 @@ export interface OAuthConfig {
   usePkce?: boolean;
   /** Auth0 audience parameter */
   audience?: string;
+  /** How to send client credentials to the token endpoint.
+   *  "body" (default): client_id/client_secret as form params
+   *  "basic": HTTP Basic Auth header (base64-encoded client_id:client_secret) */
+  tokenAuthMethod?: "body" | "basic";
+  /** Separator for scopes in the authorization URL. Default is " " (space, per OAuth 2.0 spec).
+   *  Some providers (e.g. Strava) require "," instead. */
+  scopeSeparator?: string;
 }
 
 // ============================================================
@@ -42,7 +49,7 @@ export function buildAuthorizationUrl(
   url.searchParams.set("client_id", config.clientId);
   url.searchParams.set("redirect_uri", config.redirectUri);
   url.searchParams.set("response_type", "code");
-  url.searchParams.set("scope", config.scopes.join(" "));
+  url.searchParams.set("scope", config.scopes.join(config.scopeSeparator ?? " "));
   if (config.audience) {
     url.searchParams.set("audience", config.audience);
   }
@@ -69,20 +76,29 @@ export async function exchangeCodeForTokens(
   fetchFn: FetchFn = globalThis.fetch,
   pkce?: { codeVerifier: string },
 ): Promise<TokenSet> {
+  const useBasicAuth = config.tokenAuthMethod === "basic";
   const params: Record<string, string> = {
     grant_type: "authorization_code",
     code,
-    client_id: config.clientId,
     redirect_uri: config.redirectUri,
   };
-  if (config.clientSecret) params.client_secret = config.clientSecret;
+  if (!useBasicAuth) {
+    params.client_id = config.clientId;
+    if (config.clientSecret) params.client_secret = config.clientSecret;
+  }
   if (pkce) params.code_verifier = pkce.codeVerifier;
 
   const body = new URLSearchParams(params);
+  const headers: Record<string, string> = {
+    "Content-Type": "application/x-www-form-urlencoded",
+  };
+  if (useBasicAuth && config.clientSecret) {
+    headers.Authorization = `Basic ${btoa(`${config.clientId}:${config.clientSecret}`)}`;
+  }
 
   const response = await fetchFn(config.tokenUrl, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    headers,
     body: body.toString(),
   });
 
@@ -100,18 +116,27 @@ export async function refreshAccessToken(
   refreshToken: string,
   fetchFn: FetchFn = globalThis.fetch,
 ): Promise<TokenSet> {
+  const useBasicAuth = config.tokenAuthMethod === "basic";
   const params: Record<string, string> = {
     grant_type: "refresh_token",
     refresh_token: refreshToken,
-    client_id: config.clientId,
   };
-  if (config.clientSecret) params.client_secret = config.clientSecret;
+  if (!useBasicAuth) {
+    params.client_id = config.clientId;
+    if (config.clientSecret) params.client_secret = config.clientSecret;
+  }
 
   const body = new URLSearchParams(params);
+  const headers: Record<string, string> = {
+    "Content-Type": "application/x-www-form-urlencoded",
+  };
+  if (useBasicAuth && config.clientSecret) {
+    headers.Authorization = `Basic ${btoa(`${config.clientId}:${config.clientSecret}`)}`;
+  }
 
   const response = await fetchFn(config.tokenUrl, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    headers,
     body: body.toString(),
   });
 

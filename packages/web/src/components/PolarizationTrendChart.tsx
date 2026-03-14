@@ -14,27 +14,15 @@ function formatMinutes(seconds: number): string {
   return `${mins}m`;
 }
 
-export function PolarizationTrendChart({ weeks, maxHr, loading }: PolarizationTrendChartProps) {
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-[280px]">
-        <span className="text-zinc-600 text-sm">Loading polarization data...</span>
-      </div>
-    );
-  }
+interface PolarizationWeekData {
+  week: string;
+  polarizationIndex: number | null;
+  z1Seconds: number;
+  z2Seconds: number;
+  z3Seconds: number;
+}
 
-  const validWeeks = weeks.filter((w) => w.polarizationIndex !== null);
-
-  if (validWeeks.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-[100px]">
-        <span className="text-zinc-600 text-sm">
-          Not enough HR data to compute polarization index
-        </span>
-      </div>
-    );
-  }
-
+export function buildPolarizationTrendOption(validWeeks: PolarizationWeekData[]) {
   const piValues = validWeeks.map((w) => w.polarizationIndex as number);
   const piMin = Math.min(...piValues);
   const piMax = Math.max(...piValues);
@@ -44,7 +32,7 @@ export function PolarizationTrendChart({ weeks, maxHr, loading }: PolarizationTr
   const firstDate = validWeeks[0]?.week ?? "";
   const lastDate = validWeeks[validWeeks.length - 1]?.week ?? "";
 
-  const option = {
+  return {
     backgroundColor: "transparent",
     grid: { top: 40, right: 20, bottom: 40, left: 55 },
     tooltip: {
@@ -60,6 +48,7 @@ export function PolarizationTrendChart({ weeks, maxHr, loading }: PolarizationTr
           color: string;
         }>,
       ) => {
+        if (!params.length) return "";
         const param = params[0];
         if (!param) return "";
         const w = validWeeks[param.dataIndex];
@@ -119,6 +108,7 @@ export function PolarizationTrendChart({ weeks, maxHr, loading }: PolarizationTr
         lineStyle: { width: 0 },
         areaStyle: { color: "#22c55e", opacity: 0.05, origin: 2.0 },
         silent: true,
+        tooltip: { show: false },
         z: 0,
       },
       // Shaded red area below Threshold = 2.0
@@ -133,6 +123,7 @@ export function PolarizationTrendChart({ weeks, maxHr, loading }: PolarizationTr
         lineStyle: { width: 0 },
         areaStyle: { color: "#ef4444", opacity: 0.05, origin: 2.0 },
         silent: true,
+        tooltip: { show: false },
         z: 0,
       },
       // Reference line at Threshold = 2.0
@@ -152,6 +143,7 @@ export function PolarizationTrendChart({ weeks, maxHr, loading }: PolarizationTr
           tooltip: { show: false },
         },
         data: [],
+        tooltip: { show: false },
       },
       // Actual PI line
       {
@@ -170,6 +162,30 @@ export function PolarizationTrendChart({ weeks, maxHr, loading }: PolarizationTr
       show: false,
     },
   };
+}
+
+export function PolarizationTrendChart({ weeks, maxHr, loading }: PolarizationTrendChartProps) {
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-[280px]">
+        <span className="text-zinc-600 text-sm">Loading polarization data...</span>
+      </div>
+    );
+  }
+
+  const validWeeks = weeks.filter((w) => w.polarizationIndex !== null);
+
+  if (validWeeks.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-[100px]">
+        <span className="text-zinc-600 text-sm">
+          Not enough HR data to compute polarization index
+        </span>
+      </div>
+    );
+  }
+
+  const option = buildPolarizationTrendOption(validWeeks);
 
   return (
     <div>

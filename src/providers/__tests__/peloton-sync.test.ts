@@ -267,6 +267,121 @@ describe("PelotonProvider.sync() (integration)", () => {
     });
   });
 
+  it("refreshes expired tokens before syncing", async () => {
+    // Seed expired tokens
+    await saveTokens(ctx.db, "peloton", {
+      accessToken: "expired-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2025-01-01T00:00:00Z"), // expired
+      scopes: "offline_access openid peloton-api.members:default",
+    });
+
+    const workouts = [
+      fakeWorkout({ id: "workout-refresh-test", start_time: 1709625600, end_time: 1709627400 }),
+    ];
+
+    const provider = new PelotonProvider(createMockFetch(workouts));
+    const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"));
+
+    expect(result.errors).toHaveLength(0);
+
+    // Verify the activity was still synced despite token refresh
+    const rows = await ctx.db
+      .select()
+      .from(activity)
+      .where(eq(activity.externalId, "workout-refresh-test"));
+    expect(rows).toHaveLength(1);
+
+    // Verify token was refreshed in DB
+    const { loadTokens } = await import("../../db/tokens.ts");
+    const tokens = await loadTokens(ctx.db, "peloton");
+    expect(tokens?.accessToken).toBe("refreshed-token");
+
+    // Restore valid tokens for other tests
+    await saveTokens(ctx.db, "peloton", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "offline_access openid peloton-api.members:default",
+    });
+  });
+
+  it("paginates through multiple pages of workouts", async () => {
+    await saveTokens(ctx.db, "peloton", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "offline_access openid peloton-api.members:default",
+    });
+
+    let pageRequested = 0;
+    const paginatedFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+      const urlStr = input.toString();
+
+      if (urlStr.includes("/api/me")) {
+        return Response.json({ id: "user-123" });
+      }
+
+      if (urlStr.includes("/performance_graph")) {
+        return Response.json(fakePerformanceGraph());
+      }
+
+      if (urlStr.includes("/workouts")) {
+        const url = new URL(urlStr);
+        const page = Number(url.searchParams.get("page") ?? "0");
+        pageRequested = Math.max(pageRequested, page);
+
+        if (page === 0) {
+          return Response.json({
+            data: [
+              fakeWorkout({ id: "page0-workout", start_time: 1709712000, end_time: 1709713800 }),
+            ],
+            total: 2,
+            count: 1,
+            page: 0,
+            limit: 1,
+            page_count: 2,
+            sort_by: "-created_at",
+            show_next: true,
+            show_previous: false,
+          });
+        }
+        return Response.json({
+          data: [
+            fakeWorkout({ id: "page1-workout", start_time: 1709625600, end_time: 1709627400 }),
+          ],
+          total: 2,
+          count: 1,
+          page: 1,
+          limit: 1,
+          page_count: 2,
+          sort_by: "-created_at",
+          show_next: false,
+          show_previous: true,
+        });
+      }
+
+      return new Response("Not found", { status: 404 });
+    }) as typeof globalThis.fetch;
+
+    const provider = new PelotonProvider(paginatedFetch);
+    const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"));
+
+    expect(result.errors).toHaveLength(0);
+    expect(pageRequested).toBeGreaterThanOrEqual(1);
+
+    const page0 = await ctx.db
+      .select()
+      .from(activity)
+      .where(eq(activity.externalId, "page0-workout"));
+    const page1 = await ctx.db
+      .select()
+      .from(activity)
+      .where(eq(activity.externalId, "page1-workout"));
+    expect(page0).toHaveLength(1);
+    expect(page1).toHaveLength(1);
+  });
+
   it("continues syncing workouts even if performance graph fails", async () => {
     const workouts = [
       fakeWorkout({ id: "workout-graph-fail", start_time: 1709539200, end_time: 1709541000 }),

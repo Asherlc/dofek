@@ -3,5 +3,4 @@ dist
 web/dist
 web/node_modules
 .git
-.env
 *.md

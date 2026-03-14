@@ -568,6 +568,7 @@ export const foodEntry = fitness.table(
     omega6Mg: real("omega6_mg"),
     // Raw API response
     raw: jsonb("raw"),
+    confirmed: boolean("confirmed").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
