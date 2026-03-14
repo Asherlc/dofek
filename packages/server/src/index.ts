@@ -497,9 +497,15 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
 
   // ── OAuth state ──
   // Maps random state tokens to provider IDs (+ optional PKCE verifier) for CSRF protection
-  const oauthStateMap = new Map<string, { providerId: string; codeVerifier?: string }>();
+  const oauthStateMap = new Map<
+    string,
+    { providerId: string; codeVerifier?: string; userId: string }
+  >();
   // OAuth 1.0 request token secrets (keyed by oauth_token)
-  const oauth1Secrets = new Map<string, { providerId: string; tokenSecret: string }>();
+  const oauth1Secrets = new Map<
+    string,
+    { providerId: string; tokenSecret: string; userId: string }
+  >();
 
   // ── Identity auth routes (login with Google, Apple, Authentik) ──
 
@@ -695,6 +701,11 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
   // ── Data-provider OAuth (Wahoo, Withings, etc.) ──
   app.get("/auth/provider/:provider", async (req, res) => {
     try {
+      // Resolve the logged-in user so the provider record is linked to them
+      const sessionId = getSessionCookie(req);
+      const session = sessionId ? await validateSession(db, sessionId) : null;
+      const userId = session?.userId ?? DEFAULT_USER_ID;
+
       const providerId = req.params.provider;
       const { getAllProviders } = await import("dofek/providers/registry");
       const { ensureProvidersRegistered } = await import("./routers/sync.ts");
@@ -725,7 +736,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
         logger.info(`[auth] Running automated login for ${providerId}...`);
         const tokens = await setup.automatedLogin(email, password);
         const { ensureProvider, saveTokens } = await import("dofek/db/tokens");
-        await ensureProvider(db, provider.id, provider.name, setup.apiBaseUrl);
+        await ensureProvider(db, provider.id, provider.name, setup.apiBaseUrl, userId);
         await saveTokens(db, provider.id, tokens);
 
         logger.info(
@@ -744,6 +755,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
         oauth1Secrets.set(result.oauthToken, {
           providerId,
           tokenSecret: result.oauthTokenSecret,
+          userId,
         });
         // Clean up after 10 minutes
         setTimeout(() => oauth1Secrets.delete(result.oauthToken), 10 * 60 * 1000);
@@ -768,7 +780,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       const url = buildAuthorizationUrl(setup.oauthConfig, pkceParam);
       // Generate random state for CSRF protection, map it to the provider ID + PKCE verifier
       const stateToken = randomBytes(16).toString("hex");
-      oauthStateMap.set(stateToken, { providerId, codeVerifier: pkceVerifier });
+      oauthStateMap.set(stateToken, { providerId, codeVerifier: pkceVerifier, userId });
       setTimeout(() => oauthStateMap.delete(stateToken), 10 * 60 * 1000);
       const authUrl = new URL(url);
       authUrl.searchParams.set("state", stateToken);
@@ -831,7 +843,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
         );
 
         const { ensureProvider, saveTokens } = await import("dofek/db/tokens");
-        await ensureProvider(db, provider.id, provider.name);
+        await ensureProvider(db, provider.id, provider.name, undefined, stored.userId);
         // Store OAuth 1.0 tokens — token as accessToken, tokenSecret as refreshToken
         // OAuth 1.0 tokens don't expire
         await saveTokens(db, provider.id, {
@@ -933,7 +945,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       }
       oauthStateMap.delete(state);
 
-      const { providerId, codeVerifier: storedCodeVerifier } = stateEntry;
+      const { providerId, codeVerifier: storedCodeVerifier, userId: stateUserId } = stateEntry;
 
       const { getAllProviders } = await import("dofek/providers/registry");
       const { ensureProvidersRegistered } = await import("./routers/sync.ts");
@@ -956,7 +968,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
 
       const { ensureProvider } = await import("dofek/db/tokens");
       const { saveTokens } = await import("dofek/db/tokens");
-      await ensureProvider(db, provider.id, provider.name, setup.apiBaseUrl);
+      await ensureProvider(db, provider.id, provider.name, setup.apiBaseUrl, stateUserId);
       await saveTokens(db, provider.id, tokens);
 
       logger.info(`[auth] ${providerId} tokens saved. Expires: ${tokens.expiresAt.toISOString()}`);
