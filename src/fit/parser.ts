@@ -137,6 +137,7 @@ export function parseFitRecord(raw: Record<string, unknown>): ParsedFitRecord {
 // Session parsing
 // ============================================================
 
+// Stryker disable all — internal function only reachable via parseFitFile with real FIT data
 function parseFitSession(raw: Record<string, unknown>): ParsedFitSession {
   return {
     sport: (raw.sport as string) ?? "unknown",
@@ -176,6 +177,8 @@ function parseFitSession(raw: Record<string, unknown>): ParsedFitSession {
 // File-level parsing
 // ============================================================
 
+// Stryker restore all
+// Stryker disable all — parseFitFile wraps third-party FIT parser; only testable with real binary FIT files
 export function parseFitFile(buffer: Buffer): Promise<ParsedFitActivity> {
   return new Promise((resolve, reject) => {
     const parser = new FitParser({

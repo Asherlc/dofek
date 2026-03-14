@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { waitForAuthCode } from "../callback-server.ts";
 
 describe("waitForAuthCode", () => {
@@ -119,6 +119,70 @@ describe("waitForAuthCode", () => {
     const authResult = await promise;
     expect(authResult.code).toBe("https-test-code");
     cleanup = authResult.cleanup;
+  });
+
+  it("error response contains the error message in body", async () => {
+    const port = 19883;
+    const promise = waitForAuthCode(port, { https: false });
+    const caught = promise.catch((e: Error) => e);
+
+    await new Promise((r) => setTimeout(r, 200));
+
+    const response = await fetch(`http://localhost:${port}/callback?error=invalid_scope`);
+    const body = await response.text();
+    expect(body).toContain("invalid_scope");
+    expect(body).toContain("Authorization failed");
+    expect(response.headers.get("Content-Type")).toContain("text/html");
+
+    await caught;
+  });
+
+  it("success response has text/html Content-Type", async () => {
+    const port = 19884;
+    const promise = waitForAuthCode(port, { https: false });
+
+    await new Promise((r) => setTimeout(r, 200));
+
+    const response = await fetch(`http://localhost:${port}/callback?code=ct-test`);
+    expect(response.headers.get("Content-Type")).toContain("text/html");
+    const body = await response.text();
+    expect(body).toContain("You can close this tab");
+
+    const result = await promise;
+    cleanup = result.cleanup;
+  });
+
+  it("404 response body is 'Not found'", async () => {
+    const port = 19885;
+    const promise = waitForAuthCode(port, { https: false });
+
+    await new Promise((r) => setTimeout(r, 200));
+
+    const response = await fetch(`http://localhost:${port}/other`);
+    expect(response.status).toBe(404);
+    const body = await response.text();
+    expect(body).toBe("Not found");
+
+    await fetch(`http://localhost:${port}/callback?code=cleanup`);
+    const result = await promise;
+    cleanup = result.cleanup;
+  });
+
+  it("logs server startup message", async () => {
+    const port = 19886;
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const promise = waitForAuthCode(port, { https: false });
+    await new Promise((r) => setTimeout(r, 200));
+
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining(`http://localhost:${port}/callback`),
+    );
+
+    await fetch(`http://localhost:${port}/callback?code=cleanup`);
+    const result = await promise;
+    cleanup = result.cleanup;
+    logSpy.mockRestore();
   });
 
   it("defaults to HTTPS when no options provided", async () => {

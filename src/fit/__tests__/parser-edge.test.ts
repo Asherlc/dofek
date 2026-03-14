@@ -51,6 +51,15 @@ describe("FIT Parser — edge cases", () => {
       expect(result.power).toBeUndefined();
     });
 
+    it("extracts left_right_balance from object with valid numeric value", () => {
+      const raw = {
+        timestamp: "2026-01-19T12:58:55.000Z",
+        left_right_balance: { value: 52.5, right: true },
+      };
+      const result = parseFitRecord(raw);
+      expect(result.leftRightBalance).toBe(52.5);
+    });
+
     it("extracts left_right_balance from a plain number", () => {
       const raw = {
         timestamp: "2026-01-19T12:58:55.000Z",
@@ -148,6 +157,82 @@ describe("FIT Parser — edge cases", () => {
       };
       const result = parseFitRecord(raw);
       expect(result.calories).toBe(151); // intOrUndef rounds
+    });
+
+    it("prefers enhanced_speed over speed when both present", () => {
+      const raw = {
+        timestamp: "2026-01-19T12:58:55.000Z",
+        enhanced_speed: 5.5,
+        speed: 3.0,
+      };
+      const result = parseFitRecord(raw);
+      expect(result.speed).toBe(5.5);
+    });
+
+    it("prefers enhanced_altitude over altitude when both present", () => {
+      const raw = {
+        timestamp: "2026-01-19T12:58:55.000Z",
+        enhanced_altitude: 1200,
+        altitude: 800,
+      };
+      const result = parseFitRecord(raw);
+      expect(result.altitude).toBe(1200);
+    });
+
+    it("returns undefined speed when neither enhanced nor regular present", () => {
+      const raw = { timestamp: "2026-01-19T12:58:55.000Z" };
+      const result = parseFitRecord(raw);
+      expect(result.speed).toBeUndefined();
+      expect(result.altitude).toBeUndefined();
+    });
+
+    it("returns undefined for string values passed to numeric fields", () => {
+      const raw = {
+        timestamp: "2026-01-19T12:58:55.000Z",
+        heart_rate: "not-a-number",
+        power: "string",
+      };
+      const result = parseFitRecord(raw);
+      expect(result.heartRate).toBeUndefined();
+      expect(result.power).toBeUndefined();
+    });
+
+    it("extractLeftRightBalance returns undefined for non-object non-number", () => {
+      const raw = {
+        timestamp: "2026-01-19T12:58:55.000Z",
+        left_right_balance: "invalid",
+      };
+      const result = parseFitRecord(raw);
+      expect(result.leftRightBalance).toBeUndefined();
+    });
+
+    it("extractLeftRightBalance handles object without value key", () => {
+      const raw = {
+        timestamp: "2026-01-19T12:58:55.000Z",
+        left_right_balance: { right: true },
+      };
+      const result = parseFitRecord(raw);
+      expect(result.leftRightBalance).toBeUndefined();
+    });
+
+    it("intOrUndef rounds correctly", () => {
+      const raw = {
+        timestamp: "2026-01-19T12:58:55.000Z",
+        heart_rate: 72.4,
+        accumulated_power: 1500.6,
+      };
+      const result = parseFitRecord(raw);
+      expect(result.heartRate).toBe(72);
+      expect(result.accumulatedPower).toBe(1501);
+    });
+
+    it("extracts distance field", () => {
+      const raw = {
+        timestamp: "2026-01-19T12:58:55.000Z",
+        distance: 1234.56,
+      };
+      const result = parseFitRecord(raw);
+      expect(result.distance).toBe(1234.56);
     });
   });
 });

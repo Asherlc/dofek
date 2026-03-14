@@ -251,6 +251,118 @@ describe("OAuth", () => {
       expect(result.scopes).toBeNull(); // No scope in response
     });
 
+    it("does not include audience when not configured", () => {
+      const url = buildAuthorizationUrl(config);
+      const parsed = new URL(url);
+      expect(parsed.searchParams.has("audience")).toBe(false);
+    });
+
+    it("does not include code_challenge when no pkce param", () => {
+      const url = buildAuthorizationUrl(config);
+      const parsed = new URL(url);
+      expect(parsed.searchParams.has("code_challenge")).toBe(false);
+      expect(parsed.searchParams.has("code_challenge_method")).toBe(false);
+    });
+
+    it("uses space as default scope separator", () => {
+      const url = buildAuthorizationUrl(config);
+      const parsed = new URL(url);
+      expect(parsed.searchParams.get("scope")).toBe("user_read workouts_read");
+    });
+
+    it("includes client_id in body when not using basic auth", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ access_token: "a", refresh_token: "r", expires_in: 3600 }),
+      });
+
+      await exchangeCodeForTokens(config, "code", mockFetch);
+      const body = new URLSearchParams(mockFetch.mock.calls[0]?.[1]?.body);
+      expect(body.get("client_id")).toBe("test-client-id");
+      expect(body.get("client_secret")).toBe("test-client-secret");
+    });
+
+    it("omits client_secret from body when not provided", async () => {
+      const noSecretConfig: OAuthConfig = { ...config, clientSecret: undefined };
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ access_token: "a", refresh_token: "r" }),
+      });
+
+      await exchangeCodeForTokens(noSecretConfig, "code", mockFetch);
+      const body = new URLSearchParams(mockFetch.mock.calls[0]?.[1]?.body);
+      expect(body.get("client_id")).toBe("test-client-id");
+      expect(body.has("client_secret")).toBe(false);
+    });
+
+    it("Basic auth header has correct base64 encoding", async () => {
+      const basicConfig: OAuthConfig = { ...config, tokenAuthMethod: "basic" };
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ access_token: "a", refresh_token: "r" }),
+      });
+
+      await exchangeCodeForTokens(basicConfig, "code", mockFetch);
+      const headers = mockFetch.mock.calls[0]?.[1]?.headers;
+      const expected = `Basic ${btoa("test-client-id:test-client-secret")}`;
+      expect(headers?.Authorization).toBe(expected);
+    });
+
+    it("Basic auth without clientSecret omits Authorization header", async () => {
+      const basicNoSecret: OAuthConfig = {
+        ...config,
+        tokenAuthMethod: "basic",
+        clientSecret: undefined,
+      };
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ access_token: "a", refresh_token: "r" }),
+      });
+
+      await exchangeCodeForTokens(basicNoSecret, "code", mockFetch);
+      const headers = mockFetch.mock.calls[0]?.[1]?.headers;
+      expect(headers?.Authorization).toBeUndefined();
+    });
+
+    it("refreshAccessToken sends correct grant_type and refresh_token", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ access_token: "a", refresh_token: "r", expires_in: 3600 }),
+      });
+
+      await refreshAccessToken(config, "my-refresh-tok", mockFetch);
+      const body = new URLSearchParams(mockFetch.mock.calls[0]?.[1]?.body);
+      expect(body.get("grant_type")).toBe("refresh_token");
+      expect(body.get("refresh_token")).toBe("my-refresh-tok");
+      expect(body.get("client_id")).toBe("test-client-id");
+      expect(body.get("client_secret")).toBe("test-client-secret");
+    });
+
+    it("refreshAccessToken with basic auth omits client_id from body", async () => {
+      const basicConfig: OAuthConfig = { ...config, tokenAuthMethod: "basic" };
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ access_token: "a", refresh_token: "r" }),
+      });
+
+      await refreshAccessToken(basicConfig, "tok", mockFetch);
+      const body = new URLSearchParams(mockFetch.mock.calls[0]?.[1]?.body);
+      expect(body.has("client_id")).toBe(false);
+      expect(body.has("client_secret")).toBe(false);
+    });
+
+    it("Content-Type header is always application/x-www-form-urlencoded", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ access_token: "a", refresh_token: "r" }),
+      });
+
+      await exchangeCodeForTokens(config, "code", mockFetch);
+      expect(mockFetch.mock.calls[0]?.[1]?.headers?.["Content-Type"]).toBe(
+        "application/x-www-form-urlencoded",
+      );
+    });
+
     it("sends code_verifier instead of client_secret in token exchange", async () => {
       const pkceConfig: OAuthConfig = {
         ...config,
