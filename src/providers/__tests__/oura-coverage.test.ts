@@ -1,7 +1,6 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../../db/tokens.ts";
-import type { OuraDailyActivity, OuraSleepDocument } from "../oura.ts";
 import { OuraProvider } from "../oura.ts";
 
 // ============================================================
@@ -43,6 +42,16 @@ function createMockFetchForErrors(opts: {
 
     // Daily activity — empty
     if (urlStr.includes("/v2/usercollection/daily_activity")) {
+      return Response.json({ data: [], next_token: null });
+    }
+
+    // Daily SpO2 — empty
+    if (urlStr.includes("/v2/usercollection/daily_spo2")) {
+      return Response.json({ data: [], next_token: null });
+    }
+
+    // VO2 max — empty
+    if (urlStr.includes("/v2/usercollection/vO2_max")) {
       return Response.json({ data: [], next_token: null });
     }
 
