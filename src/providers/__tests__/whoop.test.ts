@@ -67,33 +67,15 @@ const sampleSleep: WhoopSleepRecord = {
 };
 
 const sampleWorkout: WhoopWorkoutRecord = {
-  id: 1043,
-  user_id: 9012,
-  created_at: "2026-03-01T10:00:00Z",
-  updated_at: "2026-03-01T11:00:00Z",
-  start: "2026-03-01T10:00:00Z",
-  end: "2026-03-01T11:00:00Z",
+  activity_id: "abc12345-6789-0def-1234-567890abcdef",
+  during: "['2026-03-01T10:00:00Z','2026-03-01T11:00:00Z')",
   timezone_offset: "-05:00",
   sport_id: 0,
-  score_state: "SCORED",
-  score: {
-    strain: 12.5,
-    average_heart_rate: 155,
-    max_heart_rate: 185,
-    kilojoule: 2500.5,
-    percent_recorded: 100,
-    distance_meter: 10000,
-    altitude_gain_meter: 150.5,
-    altitude_change_meter: -5.2,
-    zone_duration: {
-      zone_zero_milli: 60000,
-      zone_one_milli: 300000,
-      zone_two_milli: 900000,
-      zone_three_milli: 1200000,
-      zone_four_milli: 600000,
-      zone_five_milli: 300000,
-    },
-  },
+  average_heart_rate: 155,
+  max_heart_rate: 185,
+  kilojoules: 2500.5,
+  percent_recorded: 100,
+  score: 12.5,
 };
 
 /** Helper: mock fetch that routes Cognito calls and user bootstrap */
@@ -305,13 +287,14 @@ describe("WHOOP Provider — parsing", () => {
   describe("parseWorkout", () => {
     it("maps workout fields to cardio activity", () => {
       const result = parseWorkout(sampleWorkout);
-      expect(result.externalId).toBe("1043");
+      expect(result.externalId).toBe("abc12345-6789-0def-1234-567890abcdef");
       expect(result.activityType).toBe("running");
       expect(result.avgHeartRate).toBe(155);
       expect(result.maxHeartRate).toBe(185);
-      expect(result.distanceMeters).toBe(10000);
-      expect(result.totalElevationGain).toBeCloseTo(150.5);
       expect(result.calories).toBe(598); // 2500.5 kJ / 4.184
+      expect(result.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
+      expect(result.endedAt).toEqual(new Date("2026-03-01T11:00:00Z"));
+      expect(result.durationSeconds).toBe(3600);
     });
   });
 
