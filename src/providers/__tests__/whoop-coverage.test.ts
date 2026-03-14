@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
 import { journalEntry } from "../../db/schema.ts";
 import { ensureProvider, saveTokens } from "../../db/tokens.ts";
-import { WhoopInternalClient, WhoopProvider, type WhoopSleepRecord } from "../whoop.ts";
+import { WhoopClient, WhoopProvider, type WhoopSleepRecord } from "../whoop.ts";
 
 // ============================================================
 // Coverage tests for uncovered paths:
@@ -11,7 +11,7 @@ import { WhoopInternalClient, WhoopProvider, type WhoopSleepRecord } from "../wh
 // - Journal error (lines ~1178-1182)
 // - cognitoCall error paths
 // - parseJournalResponse edge cases
-// - WhoopInternalClient.verifyCode
+// - WhoopClient.verifyCode
 // - getCycles response shape handling
 // ============================================================
 
@@ -146,7 +146,7 @@ describe("WhoopProvider — HR stream error path", () => {
   });
 });
 
-describe("WhoopInternalClient — verifyCode", () => {
+describe("WhoopClient — verifyCode", () => {
   it("verifies code via SMS_MFA challenge", async () => {
     let _attempts = 0;
     const mockFetch = ((input: RequestInfo | URL, init?: RequestInit) => {
@@ -174,12 +174,7 @@ describe("WhoopInternalClient — verifyCode", () => {
       return Promise.resolve(new Response("Not found", { status: 404 }));
     }) as typeof globalThis.fetch;
 
-    const token = await WhoopInternalClient.verifyCode(
-      "session-xyz",
-      "123456",
-      "user@test.com",
-      mockFetch,
-    );
+    const token = await WhoopClient.verifyCode("session-xyz", "123456", "user@test.com", mockFetch);
     expect(token.accessToken).toBe("verified-tok");
     expect(token.userId).toBe(55);
   });
@@ -212,12 +207,7 @@ describe("WhoopInternalClient — verifyCode", () => {
       return Promise.resolve(new Response("Not found", { status: 404 }));
     }) as typeof globalThis.fetch;
 
-    const token = await WhoopInternalClient.verifyCode(
-      "session-xyz",
-      "654321",
-      "user@test.com",
-      mockFetch,
-    );
+    const token = await WhoopClient.verifyCode("session-xyz", "654321", "user@test.com", mockFetch);
     expect(challengeNames).toContain("SMS_MFA");
     expect(challengeNames).toContain("SOFTWARE_TOKEN_MFA");
     expect(token.accessToken).toBe("totp-tok");
@@ -234,7 +224,7 @@ describe("WhoopInternalClient — verifyCode", () => {
     }) as typeof globalThis.fetch;
 
     await expect(
-      WhoopInternalClient.verifyCode("session", "123456", "user@test.com", mockFetch),
+      WhoopClient.verifyCode("session", "123456", "user@test.com", mockFetch),
     ).rejects.toThrow(/no tokens/i);
   });
 
@@ -255,12 +245,12 @@ describe("WhoopInternalClient — verifyCode", () => {
     }) as typeof globalThis.fetch;
 
     await expect(
-      WhoopInternalClient.verifyCode("session", "123456", "user@test.com", mockFetch),
+      WhoopClient.verifyCode("session", "123456", "user@test.com", mockFetch),
     ).rejects.toThrow(/user ID/i);
   });
 });
 
-describe("WhoopInternalClient — cognitoCall error paths", () => {
+describe("WhoopClient — cognitoCall error paths", () => {
   it("throws on non-JSON Cognito response", async () => {
     const mockFetch = ((input: RequestInfo | URL) => {
       const url = input.toString();
@@ -270,7 +260,7 @@ describe("WhoopInternalClient — cognitoCall error paths", () => {
       return Promise.resolve(new Response("Not found", { status: 404 }));
     }) as typeof globalThis.fetch;
 
-    await expect(WhoopInternalClient.signIn("user@test.com", "pass", mockFetch)).rejects.toThrow(
+    await expect(WhoopClient.signIn("user@test.com", "pass", mockFetch)).rejects.toThrow(
       /WHOOP auth failed/,
     );
   });
@@ -292,7 +282,7 @@ describe("WhoopInternalClient — cognitoCall error paths", () => {
       return Promise.resolve(new Response("Not found", { status: 404 }));
     }) as typeof globalThis.fetch;
 
-    await expect(WhoopInternalClient.signIn("nobody@test.com", "pass", mockFetch)).rejects.toThrow(
+    await expect(WhoopClient.signIn("nobody@test.com", "pass", mockFetch)).rejects.toThrow(
       /UserNotFoundException/,
     );
   });
@@ -306,7 +296,7 @@ describe("WhoopInternalClient — cognitoCall error paths", () => {
       return Promise.resolve(new Response("Not found", { status: 404 }));
     }) as typeof globalThis.fetch;
 
-    await expect(WhoopInternalClient.signIn("user@test.com", "pass", mockFetch)).rejects.toThrow(
+    await expect(WhoopClient.signIn("user@test.com", "pass", mockFetch)).rejects.toThrow(
       /no tokens/i,
     );
   });
@@ -320,13 +310,13 @@ describe("WhoopInternalClient — cognitoCall error paths", () => {
       return Promise.resolve(new Response("Not found", { status: 404 }));
     }) as typeof globalThis.fetch;
 
-    await expect(WhoopInternalClient.refreshAccessToken("old-ref", mockFetch)).rejects.toThrow(
+    await expect(WhoopClient.refreshAccessToken("old-ref", mockFetch)).rejects.toThrow(
       /no tokens/i,
     );
   });
 });
 
-describe("WhoopInternalClient — signIn SOFTWARE_TOKEN_MFA", () => {
+describe("WhoopClient — signIn SOFTWARE_TOKEN_MFA", () => {
   it("returns totp method for SOFTWARE_TOKEN_MFA challenge", async () => {
     const mockFetch = ((input: RequestInfo | URL) => {
       const url = input.toString();
@@ -341,7 +331,7 @@ describe("WhoopInternalClient — signIn SOFTWARE_TOKEN_MFA", () => {
       return Promise.resolve(new Response("Not found", { status: 404 }));
     }) as typeof globalThis.fetch;
 
-    const result = await WhoopInternalClient.signIn("user@test.com", "pass", mockFetch);
+    const result = await WhoopClient.signIn("user@test.com", "pass", mockFetch);
     expect(result.type).toBe("verification_required");
     if (result.type === "verification_required") {
       expect(result.method).toBe("totp");
@@ -350,7 +340,7 @@ describe("WhoopInternalClient — signIn SOFTWARE_TOKEN_MFA", () => {
   });
 });
 
-describe("WhoopInternalClient._fetchUserId — bootstrap HTTP failure", () => {
+describe("WhoopClient._fetchUserId — bootstrap HTTP failure", () => {
   it("returns null when bootstrap returns non-200", async () => {
     const mockFetch = ((input: RequestInfo | URL) => {
       const url = input.toString();
@@ -360,12 +350,12 @@ describe("WhoopInternalClient._fetchUserId — bootstrap HTTP failure", () => {
       return Promise.resolve(new Response("Not found", { status: 404 }));
     }) as typeof globalThis.fetch;
 
-    const userId = await WhoopInternalClient._fetchUserId("bad-token", mockFetch);
+    const userId = await WhoopClient._fetchUserId("bad-token", mockFetch);
     expect(userId).toBeNull();
   });
 });
 
-describe("WhoopInternalClient — getCycles response shapes", () => {
+describe("WhoopClient — getCycles response shapes", () => {
   it("handles wrapped object with 'records' key", async () => {
     const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
       const urlStr = input.toString();
@@ -375,7 +365,7 @@ describe("WhoopInternalClient — getCycles response shapes", () => {
       return new Response("Not found", { status: 404 });
     }) as typeof globalThis.fetch;
 
-    const client = new WhoopInternalClient(
+    const client = new WhoopClient(
       { accessToken: "tok", refreshToken: "ref", userId: 10 },
       mockFetch,
     );
@@ -392,7 +382,7 @@ describe("WhoopInternalClient — getCycles response shapes", () => {
       return new Response("Not found", { status: 404 });
     }) as typeof globalThis.fetch;
 
-    const client = new WhoopInternalClient(
+    const client = new WhoopClient(
       { accessToken: "tok", refreshToken: "ref", userId: 10 },
       mockFetch,
     );
@@ -409,7 +399,7 @@ describe("WhoopInternalClient — getCycles response shapes", () => {
       return new Response("Not found", { status: 404 });
     }) as typeof globalThis.fetch;
 
-    const client = new WhoopInternalClient(
+    const client = new WhoopClient(
       { accessToken: "tok", refreshToken: "ref", userId: 10 },
       mockFetch,
     );
@@ -426,7 +416,7 @@ describe("WhoopInternalClient — getCycles response shapes", () => {
       return new Response("Not found", { status: 404 });
     }) as typeof globalThis.fetch;
 
-    const client = new WhoopInternalClient(
+    const client = new WhoopClient(
       { accessToken: "tok", refreshToken: "ref", userId: 10 },
       mockFetch,
     );
@@ -443,7 +433,7 @@ describe("WhoopInternalClient — getCycles response shapes", () => {
       return new Response("Not found", { status: 404 });
     }) as typeof globalThis.fetch;
 
-    const client = new WhoopInternalClient(
+    const client = new WhoopClient(
       { accessToken: "tok", refreshToken: "ref", userId: 10 },
       mockFetch,
     );
@@ -452,7 +442,7 @@ describe("WhoopInternalClient — getCycles response shapes", () => {
   });
 });
 
-describe("WhoopInternalClient — API error handling", () => {
+describe("WhoopClient — API error handling", () => {
   it("throws on non-200 API response", async () => {
     const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
       const urlStr = input.toString();
@@ -462,7 +452,7 @@ describe("WhoopInternalClient — API error handling", () => {
       return new Response("Not found", { status: 404 });
     }) as typeof globalThis.fetch;
 
-    const client = new WhoopInternalClient(
+    const client = new WhoopClient(
       { accessToken: "tok", refreshToken: "ref", userId: 10 },
       mockFetch,
     );

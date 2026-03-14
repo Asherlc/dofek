@@ -1,0 +1,348 @@
+import type {
+  WhoopAuthToken,
+  WhoopCycle,
+  WhoopHrResponse,
+  WhoopHrValue,
+  WhoopSignInResult,
+  WhoopSleepRecord,
+  WhoopWeightliftingWorkoutResponse,
+} from "./types.ts";
+
+const WHOOP_API_BASE = "https://api.prod.whoop.com";
+const WHOOP_API_VERSION = "7";
+
+// Cognito auth config (from id.whoop.com web app)
+const COGNITO_ENDPOINT = `${WHOOP_API_BASE}/auth-service/v3/whoop/`;
+const COGNITO_CLIENT_ID = "37365lrcda1js3fapqfe2n40eh";
+
+/** Make a Cognito API call through WHOOP's proxy endpoint */
+async function cognitoCall(
+  action: string,
+  body: Record<string, unknown>,
+  fetchFn: typeof globalThis.fetch,
+): Promise<Record<string, unknown>> {
+  const response = await fetchFn(COGNITO_ENDPOINT, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-amz-json-1.1",
+      "X-Amz-Target": `AWSCognitoIdentityProviderService.${action}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  // Read body as text first — the proxy may return non-JSON errors
+  const bodyText = await response.text();
+  let data: Record<string, unknown>;
+  try {
+    data = JSON.parse(bodyText) as Record<string, unknown>;
+  } catch {
+    throw new Error(`WHOOP auth failed (${response.status}): ${bodyText || response.statusText}`);
+  }
+
+  if (!response.ok) {
+    const errorType = (data.__type as string)?.split("#").pop() ?? "UnknownError";
+    const errorMessage = (data.message as string) ?? (data.Message as string) ?? "Auth failed";
+    throw new Error(`WHOOP Cognito ${errorType}: ${errorMessage}`);
+  }
+
+  return data;
+}
+
+export class WhoopClient {
+  private accessToken: string;
+  private userId: number;
+  private fetchFn: typeof globalThis.fetch;
+
+  constructor(token: WhoopAuthToken, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
+    this.accessToken = token.accessToken;
+    this.userId = token.userId;
+    this.fetchFn = fetchFn;
+  }
+
+  /**
+   * Step 1: Sign in with email + password via Cognito USER_PASSWORD_AUTH.
+   * Returns either tokens (no MFA) or an MFA challenge session.
+   */
+  static async signIn(
+    username: string,
+    password: string,
+    fetchFn: typeof globalThis.fetch = globalThis.fetch,
+  ): Promise<WhoopSignInResult> {
+    const data = await cognitoCall(
+      "InitiateAuth",
+      {
+        AuthFlow: "USER_PASSWORD_AUTH",
+        ClientId: COGNITO_CLIENT_ID,
+        AuthParameters: {
+          USERNAME: username,
+          PASSWORD: password,
+        },
+      },
+      fetchFn,
+    );
+
+    // MFA challenge — Cognito returns ChallengeName + Session
+    const challengeName = data.ChallengeName as string | undefined;
+    if (challengeName) {
+      return {
+        type: "verification_required",
+        session: data.Session as string,
+        method: challengeName === "SOFTWARE_TOKEN_MFA" ? "totp" : "sms",
+      };
+    }
+
+    // No MFA — tokens returned directly
+    const authResult = data.AuthenticationResult as Record<string, unknown>;
+    if (!authResult?.AccessToken) {
+      throw new Error("WHOOP sign-in: no tokens in response");
+    }
+
+    const userId = await WhoopClient._fetchUserId(authResult.AccessToken as string, fetchFn);
+    if (!userId) {
+      throw new Error("WHOOP sign-in: could not determine user ID from bootstrap endpoint");
+    }
+
+    return {
+      type: "success",
+      token: {
+        accessToken: authResult.AccessToken as string,
+        refreshToken: authResult.RefreshToken as string,
+        userId,
+      },
+    };
+  }
+
+  /**
+   * Step 2: Submit MFA code via Cognito RespondToAuthChallenge.
+   */
+  static async verifyCode(
+    session: string,
+    code: string,
+    username: string,
+    fetchFn: typeof globalThis.fetch = globalThis.fetch,
+  ): Promise<WhoopAuthToken> {
+    // Try SMS_MFA first, fall back to SOFTWARE_TOKEN_MFA
+    let data: Record<string, unknown>;
+    try {
+      data = await cognitoCall(
+        "RespondToAuthChallenge",
+        {
+          ChallengeName: "SMS_MFA",
+          ClientId: COGNITO_CLIENT_ID,
+          Session: session,
+          ChallengeResponses: {
+            USERNAME: username,
+            SMS_MFA_CODE: code,
+          },
+        },
+        fetchFn,
+      );
+    } catch {
+      data = await cognitoCall(
+        "RespondToAuthChallenge",
+        {
+          ChallengeName: "SOFTWARE_TOKEN_MFA",
+          ClientId: COGNITO_CLIENT_ID,
+          Session: session,
+          ChallengeResponses: {
+            USERNAME: username,
+            SOFTWARE_TOKEN_MFA_CODE: code,
+          },
+        },
+        fetchFn,
+      );
+    }
+
+    const authResult = data.AuthenticationResult as Record<string, unknown>;
+    if (!authResult?.AccessToken) {
+      throw new Error("WHOOP verification: no tokens in response");
+    }
+
+    const userId = await WhoopClient._fetchUserId(authResult.AccessToken as string, fetchFn);
+    if (!userId) {
+      throw new Error("WHOOP verification: could not determine user ID from bootstrap endpoint");
+    }
+
+    return {
+      accessToken: authResult.AccessToken as string,
+      refreshToken: (authResult.RefreshToken as string) ?? "",
+      userId,
+    };
+  }
+
+  /**
+   * Refresh an expired access token using a Cognito refresh token.
+   */
+  static async refreshAccessToken(
+    refreshToken: string,
+    fetchFn: typeof globalThis.fetch = globalThis.fetch,
+  ): Promise<{ accessToken: string; refreshToken: string; userId: number | null }> {
+    const data = await cognitoCall(
+      "InitiateAuth",
+      {
+        AuthFlow: "REFRESH_TOKEN_AUTH",
+        ClientId: COGNITO_CLIENT_ID,
+        AuthParameters: {
+          REFRESH_TOKEN: refreshToken,
+        },
+      },
+      fetchFn,
+    );
+
+    const authResult = data.AuthenticationResult as Record<string, unknown>;
+    if (!authResult?.AccessToken) {
+      throw new Error("WHOOP token refresh: no tokens in response");
+    }
+
+    // Best-effort: try to get userId from bootstrap. Returns null if it fails —
+    // caller should fall back to the stored userId from the original auth.
+    const userId = await WhoopClient._fetchUserId(authResult.AccessToken as string, fetchFn);
+
+    return {
+      accessToken: authResult.AccessToken as string,
+      // Cognito REFRESH_TOKEN_AUTH doesn't return a new refresh token — reuse the old one
+      refreshToken: (authResult.RefreshToken as string) ?? refreshToken,
+      userId,
+    };
+  }
+
+  /** Backwards-compatible authenticate — works for accounts WITHOUT MFA */
+  static async authenticate(
+    username: string,
+    password: string,
+    fetchFn: typeof globalThis.fetch = globalThis.fetch,
+  ): Promise<WhoopAuthToken> {
+    const result = await WhoopClient.signIn(username, password, fetchFn);
+    if (result.type === "verification_required") {
+      throw new Error("WHOOP account requires MFA — use the web UI to authenticate");
+    }
+    return result.token;
+  }
+
+  /**
+   * Fetch user ID from the WHOOP bootstrap endpoint.
+   * Returns null if the user ID cannot be extracted (caller should fall back to stored value).
+   */
+  static async _fetchUserId(
+    accessToken: string,
+    fetchFn: typeof globalThis.fetch,
+  ): Promise<number | null> {
+    const response = await fetchFn(
+      `${WHOOP_API_BASE}/users-service/v2/bootstrap/?accountType=users&apiVersion=7&include=profile`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      },
+    );
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = (await response.json()) as Record<string, unknown>;
+    const nested = data.user as Record<string, unknown> | undefined;
+    const userId =
+      (data.id as number | undefined) ??
+      (data.user_id as number | undefined) ??
+      (nested?.id as number | undefined) ??
+      (nested?.user_id as number | undefined);
+    if (!userId || typeof userId !== "number") {
+      return null;
+    }
+    return userId;
+  }
+
+  private async get<T>(url: string, params?: Record<string, string>): Promise<T> {
+    const u = new URL(url);
+    if (params) {
+      for (const [key, value] of Object.entries(params)) {
+        u.searchParams.set(key, value);
+      }
+    }
+    u.searchParams.set("apiVersion", WHOOP_API_VERSION);
+
+    const response = await this.fetchFn(u.toString(), {
+      headers: {
+        Authorization: `Bearer ${this.accessToken}`,
+        "User-Agent": "WHOOP/4.0",
+      },
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`WHOOP API error (${response.status}): ${text}`);
+    }
+
+    return response.json() as Promise<T>;
+  }
+
+  async getHeartRate(start: string, end: string, step = 6): Promise<WhoopHrValue[]> {
+    const response = await this.get<WhoopHrResponse>(
+      `${WHOOP_API_BASE}/metrics-service/v1/metrics/user/${this.userId}`,
+      { start, end, step: String(step), name: "heart_rate" },
+    );
+    return response.values ?? [];
+  }
+
+  async getCycles(start: string, end: string, limit = 26): Promise<WhoopCycle[]> {
+    const raw = await this.get<unknown>(`${WHOOP_API_BASE}/core-details-bff/v0/cycles/details`, {
+      id: String(this.userId),
+      startTime: start,
+      endTime: end,
+      limit: String(limit),
+    });
+    // BFF may return bare array or wrapped object — normalize
+    if (Array.isArray(raw)) return raw as WhoopCycle[];
+    if (raw && typeof raw === "object") {
+      // Try common wrapper keys
+      for (const key of ["cycles", "records", "data", "results"]) {
+        const val = (raw as Record<string, unknown>)[key];
+        if (Array.isArray(val)) return val as WhoopCycle[];
+      }
+    }
+    return [];
+  }
+
+  async getSleep(sleepId: number): Promise<WhoopSleepRecord> {
+    return this.get<WhoopSleepRecord>(`${WHOOP_API_BASE}/sleep-service/v1/sleep-events`, {
+      activityId: String(sleepId),
+    });
+  }
+
+  async getJournal(start: string, end: string): Promise<unknown> {
+    return this.get<unknown>(`${WHOOP_API_BASE}/behavior-impact-service/v1/impact`, {
+      startTime: start,
+      endTime: end,
+    });
+  }
+
+  /**
+   * Fetch exercise-level strength data for a workout activity.
+   * Returns null if the activity has no linked exercises (404).
+   */
+  async getWeightliftingWorkout(
+    activityId: string,
+  ): Promise<WhoopWeightliftingWorkoutResponse | null> {
+    const u = new URL(
+      `${WHOOP_API_BASE}/weightlifting-service/v2/weightlifting-workout/${activityId}`,
+    );
+    u.searchParams.set("apiVersion", WHOOP_API_VERSION);
+
+    const response = await this.fetchFn(u.toString(), {
+      headers: {
+        Authorization: `Bearer ${this.accessToken}`,
+        "User-Agent": "WHOOP/4.0",
+      },
+    });
+
+    if (response.status === 404) return null;
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`WHOOP weightlifting API error (${response.status}): ${text}`);
+    }
+
+    return response.json() as Promise<WhoopWeightliftingWorkoutResponse>;
+  }
+}

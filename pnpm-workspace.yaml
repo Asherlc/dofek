@@ -3,6 +3,7 @@ packages:
   - packages/server
   - packages/web
   - packages/ios
+  - packages/omni-whoop
 
 ignoredBuiltDependencies:
   - cpu-features

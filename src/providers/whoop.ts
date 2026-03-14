@@ -1,4 +1,15 @@
 import { and, eq } from "drizzle-orm";
+import {
+  mapSportId,
+  parseDuringRange,
+  WhoopClient,
+  type WhoopCycle,
+  type WhoopHrValue,
+  type WhoopRecoveryRecord,
+  type WhoopSleepRecord,
+  type WhoopWeightliftingWorkoutResponse,
+  type WhoopWorkoutRecord,
+} from "omni-whoop";
 import type { Database } from "../db/index.ts";
 import {
   activity,
@@ -15,318 +26,35 @@ import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import type { Provider, SyncError, SyncResult } from "./types.ts";
 
-// ============================================================
-// WHOOP internal API types
-// ============================================================
-
-export interface WhoopHrValue {
-  time: number; // Unix millis
-  data: number; // BPM
-}
-
-interface WhoopHrResponse {
-  values: WhoopHrValue[];
-}
-
-export interface WhoopRecoveryScore {
-  user_calibrating: boolean;
-  recovery_score: number;
-  resting_heart_rate: number;
-  hrv_rmssd_milli: number;
-  spo2_percentage?: number;
-  skin_temp_celsius?: number;
-}
-
-export interface WhoopRecoveryRecord {
-  cycle_id: number;
-  sleep_id: number;
-  user_id: number;
-  created_at: string;
-  updated_at: string;
-  score_state: string;
-  score?: WhoopRecoveryScore;
-}
-
-export interface WhoopSleepStageSummary {
-  total_in_bed_time_milli: number;
-  total_awake_time_milli: number;
-  total_no_data_time_milli: number;
-  total_light_sleep_time_milli: number;
-  total_slow_wave_sleep_time_milli: number;
-  total_rem_sleep_time_milli: number;
-  sleep_cycle_count: number;
-  disturbance_count: number;
-}
-
-export interface WhoopSleepNeeded {
-  baseline_milli: number;
-  need_from_sleep_debt_milli: number;
-  need_from_recent_strain_milli: number;
-  need_from_recent_nap_milli: number;
-}
-
-export interface WhoopSleepScore {
-  stage_summary: WhoopSleepStageSummary;
-  sleep_needed: WhoopSleepNeeded;
-  respiratory_rate: number;
-  sleep_performance_percentage: number;
-  sleep_consistency_percentage: number;
-  sleep_efficiency_percentage: number;
-}
-
-export interface WhoopSleepRecord {
-  id: number;
-  user_id: number;
-  created_at: string;
-  updated_at: string;
-  start: string;
-  end: string;
-  timezone_offset: string;
-  nap: boolean;
-  score_state: string;
-  score?: WhoopSleepScore;
-}
-
-export interface WhoopZoneDuration {
-  zone_zero_milli?: number;
-  zone_one_milli?: number;
-  zone_two_milli?: number;
-  zone_three_milli?: number;
-  zone_four_milli?: number;
-  zone_five_milli?: number;
-}
-
-export interface WhoopWorkoutScore {
-  strain: number;
-  average_heart_rate: number;
-  max_heart_rate: number;
-  kilojoule: number;
-  percent_recorded: number;
-  distance_meter?: number;
-  altitude_gain_meter?: number;
-  altitude_change_meter?: number;
-  zone_duration: WhoopZoneDuration;
-}
-
-export interface WhoopWorkoutRecord {
-  // BFF v0 uses `during` (Postgres range) + `activity_id` (UUID)
-  activity_id: string; // UUID
-  during: string; // Postgres range format: "['start','end')"
-  timezone_offset: string;
-  sport_id: number;
-  average_heart_rate?: number;
-  max_heart_rate?: number;
-  kilojoules?: number;
-  percent_recorded?: number;
-  score?: number; // strain score
-  // Legacy fields from older API versions / test fixtures
-  id?: number;
-  user_id?: number;
-  created_at?: string;
-  updated_at?: string;
-  start?: string;
-  end?: string;
-  score_state?: string;
-}
+export type {
+  WhoopAuthToken,
+  WhoopCycle,
+  WhoopExerciseDetails,
+  WhoopHrValue,
+  WhoopRecoveryRecord,
+  WhoopRecoveryScore,
+  WhoopSignInResult,
+  WhoopSleepRecord,
+  WhoopSleepScore,
+  WhoopSleepStageSummary,
+  WhoopV2Activity,
+  WhoopWeightliftingExercise,
+  WhoopWeightliftingGroup,
+  WhoopWeightliftingSet,
+  WhoopWeightliftingWorkoutResponse,
+  WhoopWorkoutRecord,
+  WhoopWorkoutScore,
+  WhoopZoneDuration,
+} from "omni-whoop";
+// Re-export omni-whoop types and client for dofek consumers
+export { parseDuringRange, WhoopClient } from "omni-whoop";
 
 // ============================================================
-// WHOOP weightlifting-service types
-// ============================================================
-
-export interface WhoopWeightliftingSet {
-  weight_kg: number;
-  number_of_reps: number;
-  msk_total_volume_kg: number;
-  time_in_seconds: number;
-  during: string;
-  complete: boolean;
-}
-
-export interface WhoopExerciseDetails {
-  exercise_id: string;
-  name: string;
-  equipment: string;
-  exercise_type: string;
-  muscle_groups: string[];
-  volume_input_format: string; // "REPS_AND_WEIGHT" | "TIME" | "REPS"
-}
-
-export interface WhoopWeightliftingExercise {
-  sets: WhoopWeightliftingSet[];
-  exercise_details: WhoopExerciseDetails;
-}
-
-export interface WhoopWeightliftingGroup {
-  workout_exercises: WhoopWeightliftingExercise[];
-}
-
-export interface WhoopWeightliftingWorkoutResponse {
-  activity_id: string;
-  user_id?: number;
-  during?: string; // Postgres range format
-  name?: string; // workout name
-  zone_durations: Record<string, number>;
-  workout_groups: WhoopWeightliftingGroup[];
-  total_effective_volume_kg: number;
-  raw_msk_strain_score: number;
-  scaled_msk_strain_score: number;
-  cardio_strain_score: number;
-  cardio_strain_contribution_percent: number;
-  msk_strain_contribution_percent: number;
-}
-
-// ============================================================
-// Sport ID mapping — complete list from WHOOP developer docs
-// ============================================================
-
-/* eslint-disable @typescript-eslint/no-duplicate-enum-members */
-const WHOOP_SPORT_MAP: Record<number, string> = {
-  [-1]: "other",
-  0: "running",
-  1: "cycling",
-  16: "baseball",
-  17: "basketball",
-  18: "rowing",
-  19: "fencing",
-  20: "field hockey",
-  21: "football",
-  22: "golf",
-  24: "ice hockey",
-  25: "lacrosse",
-  27: "rugby",
-  28: "sailing",
-  29: "skiing",
-  30: "soccer",
-  31: "softball",
-  32: "squash",
-  33: "swimming",
-  34: "tennis",
-  35: "track & field",
-  36: "volleyball",
-  37: "water polo",
-  38: "wrestling",
-  39: "boxing",
-  42: "dance",
-  43: "pilates",
-  44: "yoga",
-  45: "weightlifting",
-  47: "cross country skiing",
-  48: "functional fitness",
-  49: "duathlon",
-  51: "gymnastics",
-  52: "hiking",
-  53: "horseback riding",
-  55: "kayaking",
-  56: "martial arts",
-  57: "mountain biking",
-  59: "powerlifting",
-  60: "rock climbing",
-  61: "paddleboarding",
-  62: "triathlon",
-  63: "walking",
-  64: "surfing",
-  65: "elliptical",
-  66: "stairmaster",
-  70: "meditation",
-  71: "other",
-  73: "diving",
-  74: "operations - tactical",
-  75: "operations - medical",
-  76: "operations - flying",
-  77: "operations - water",
-  82: "ultimate",
-  83: "climber",
-  84: "jumping rope",
-  85: "australian football",
-  86: "skateboarding",
-  87: "coaching",
-  88: "ice bath",
-  89: "commuting",
-  90: "gaming",
-  91: "snowboarding",
-  92: "motocross",
-  93: "caddying",
-  94: "obstacle course racing",
-  95: "motor racing",
-  96: "hiit",
-  97: "spin",
-  98: "jiu jitsu",
-  99: "manual labor",
-  100: "cricket",
-  101: "paddle ball",
-  102: "inline skating",
-  103: "box fitness",
-  104: "spikeball",
-  105: "wheelchair pushing",
-  106: "paddle tennis",
-  107: "barre",
-  108: "stage performance",
-  109: "high stress work",
-  110: "parkour",
-  111: "gaelic football",
-  112: "hurling",
-  113: "circus arts",
-  121: "massage therapy",
-  123: "strength trainer",
-  125: "watching sports",
-  126: "assault bike",
-  127: "kickboxing",
-  128: "stretching",
-  230: "table tennis",
-  231: "badminton",
-  232: "netball",
-  233: "sauna",
-  234: "disc golf",
-  235: "yard work",
-  236: "air compression",
-  237: "percussive massage",
-  238: "paintball",
-  239: "ice skating",
-  240: "handball",
-  248: "f45 training",
-  249: "padel",
-  250: "barry's",
-  251: "dedicated parenting",
-  252: "stroller walking",
-  253: "stroller jogging",
-  254: "toddlerwearing",
-  255: "babywearing",
-  258: "barre3",
-  259: "hot yoga",
-  261: "stadium steps",
-  262: "polo",
-  263: "musical performance",
-  264: "kite boarding",
-  266: "dog walking",
-  267: "water skiing",
-  268: "wakeboarding",
-  269: "cooking",
-  270: "cleaning",
-  272: "public speaking",
-};
-
-function mapSportId(sportId: number): string {
-  return WHOOP_SPORT_MAP[sportId] ?? "other";
-}
-
-// ============================================================
-// Parsing — pure functions
+// Parsing — pure functions (dofek-specific shapes)
 // ============================================================
 
 function milliToMinutes(milli: number): number {
   return Math.round(milli / 60000);
-}
-
-/**
- * Parse a Postgres range string like "['2026-03-12T21:37:00.000Z','2026-03-12T21:56:00.000Z')"
- * into start/end Date objects.
- */
-export function parseDuringRange(during: string): { start: Date; end: Date } {
-  const match = during.match(/[[(]'([^']+)','([^']+)'/);
-  if (!match?.[1] || !match?.[2]) {
-    throw new Error(`Could not parse 'during' range: ${during}`);
-  }
-  return { start: new Date(match[1]), end: new Date(match[2]) };
 }
 
 export interface ParsedRecovery {
@@ -496,412 +224,6 @@ export function parseWeightliftingWorkout(
 }
 
 // ============================================================
-// Cycle — aggregated response from internal API
-// ============================================================
-
-/** BFF v0 activity record (v2_activities array) */
-export interface WhoopV2Activity {
-  id: string; // UUID activity_id
-  type: string; // "sleep", "spin", "functional-fitness", etc.
-  during: string; // Postgres range
-  score_state: string;
-  score_type: string; // "CARDIO", "SLEEP", "RECOVERY"
-  sport_id?: number;
-}
-
-export interface WhoopCycle {
-  id?: number;
-  user_id?: number;
-  cycle?: Record<string, unknown>;
-  days?: string[];
-  recovery?: WhoopRecoveryRecord;
-  sleep?: { id: number };
-  sleeps?: unknown[];
-  // BFF v0 shape
-  workouts?: WhoopWorkoutRecord[];
-  v2_activities?: WhoopV2Activity[];
-  // Legacy shape
-  strain?: {
-    workouts: WhoopWorkoutRecord[];
-  };
-}
-
-// ============================================================
-// WHOOP internal API client (api.prod.whoop.com)
-// ============================================================
-
-const WHOOP_API_BASE = "https://api.prod.whoop.com";
-const WHOOP_API_VERSION = "7";
-
-// Cognito auth config (from id.whoop.com web app)
-const COGNITO_ENDPOINT = `${WHOOP_API_BASE}/auth-service/v3/whoop/`;
-const COGNITO_CLIENT_ID = "37365lrcda1js3fapqfe2n40eh";
-
-export interface WhoopAuthToken {
-  accessToken: string;
-  refreshToken: string;
-  userId: number;
-}
-
-/** Result of the initial sign-in — either success or 2FA challenge */
-export type WhoopSignInResult =
-  | { type: "success"; token: WhoopAuthToken }
-  | { type: "verification_required"; session: string; method: string };
-
-/** Make a Cognito API call through WHOOP's proxy endpoint */
-async function cognitoCall(
-  action: string,
-  body: Record<string, unknown>,
-  fetchFn: typeof globalThis.fetch,
-): Promise<Record<string, unknown>> {
-  console.log(`[whoop] Cognito ${action} → ${COGNITO_ENDPOINT}`);
-
-  const response = await fetchFn(COGNITO_ENDPOINT, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-amz-json-1.1",
-      "X-Amz-Target": `AWSCognitoIdentityProviderService.${action}`,
-    },
-    body: JSON.stringify(body),
-  });
-
-  // Read body as text first — the proxy may return non-JSON errors
-  const bodyText = await response.text();
-  let data: Record<string, unknown>;
-  try {
-    data = JSON.parse(bodyText) as Record<string, unknown>;
-  } catch {
-    console.error(`[whoop] Cognito ${action} returned non-JSON (${response.status}): ${bodyText}`);
-    throw new Error(`WHOOP auth failed (${response.status}): ${bodyText || response.statusText}`);
-  }
-
-  if (!response.ok) {
-    const errorType = (data.__type as string)?.split("#").pop() ?? "UnknownError";
-    const errorMessage = (data.message as string) ?? (data.Message as string) ?? "Auth failed";
-    console.error(`[whoop] Cognito ${action} error: ${errorType}: ${errorMessage}`);
-    throw new Error(`WHOOP Cognito ${errorType}: ${errorMessage}`);
-  }
-
-  console.log(`[whoop] Cognito ${action} succeeded`);
-  return data;
-}
-
-export class WhoopInternalClient {
-  private accessToken: string;
-  private userId: number;
-  private fetchFn: typeof globalThis.fetch;
-
-  constructor(token: WhoopAuthToken, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.accessToken = token.accessToken;
-    this.userId = token.userId;
-    this.fetchFn = fetchFn;
-  }
-
-  /**
-   * Step 1: Sign in with email + password via Cognito USER_PASSWORD_AUTH.
-   * Returns either tokens (no MFA) or an MFA challenge session.
-   */
-  static async signIn(
-    username: string,
-    password: string,
-    fetchFn: typeof globalThis.fetch = globalThis.fetch,
-  ): Promise<WhoopSignInResult> {
-    const data = await cognitoCall(
-      "InitiateAuth",
-      {
-        AuthFlow: "USER_PASSWORD_AUTH",
-        ClientId: COGNITO_CLIENT_ID,
-        AuthParameters: {
-          USERNAME: username,
-          PASSWORD: password,
-        },
-      },
-      fetchFn,
-    );
-
-    // MFA challenge — Cognito returns ChallengeName + Session
-    const challengeName = data.ChallengeName as string | undefined;
-    if (challengeName) {
-      return {
-        type: "verification_required",
-        session: data.Session as string,
-        method: challengeName === "SOFTWARE_TOKEN_MFA" ? "totp" : "sms",
-      };
-    }
-
-    // No MFA — tokens returned directly
-    const authResult = data.AuthenticationResult as Record<string, unknown>;
-    if (!authResult?.AccessToken) {
-      throw new Error("WHOOP sign-in: no tokens in response");
-    }
-
-    const userId = await WhoopInternalClient._fetchUserId(
-      authResult.AccessToken as string,
-      fetchFn,
-    );
-    if (!userId) {
-      throw new Error("WHOOP sign-in: could not determine user ID from bootstrap endpoint");
-    }
-
-    return {
-      type: "success",
-      token: {
-        accessToken: authResult.AccessToken as string,
-        refreshToken: authResult.RefreshToken as string,
-        userId,
-      },
-    };
-  }
-
-  /**
-   * Step 2: Submit MFA code via Cognito RespondToAuthChallenge.
-   */
-  static async verifyCode(
-    session: string,
-    code: string,
-    username: string,
-    fetchFn: typeof globalThis.fetch = globalThis.fetch,
-  ): Promise<WhoopAuthToken> {
-    // Try SMS_MFA first, fall back to SOFTWARE_TOKEN_MFA
-    let data: Record<string, unknown>;
-    try {
-      data = await cognitoCall(
-        "RespondToAuthChallenge",
-        {
-          ChallengeName: "SMS_MFA",
-          ClientId: COGNITO_CLIENT_ID,
-          Session: session,
-          ChallengeResponses: {
-            USERNAME: username,
-            SMS_MFA_CODE: code,
-          },
-        },
-        fetchFn,
-      );
-    } catch {
-      data = await cognitoCall(
-        "RespondToAuthChallenge",
-        {
-          ChallengeName: "SOFTWARE_TOKEN_MFA",
-          ClientId: COGNITO_CLIENT_ID,
-          Session: session,
-          ChallengeResponses: {
-            USERNAME: username,
-            SOFTWARE_TOKEN_MFA_CODE: code,
-          },
-        },
-        fetchFn,
-      );
-    }
-
-    const authResult = data.AuthenticationResult as Record<string, unknown>;
-    if (!authResult?.AccessToken) {
-      throw new Error("WHOOP verification: no tokens in response");
-    }
-
-    const userId = await WhoopInternalClient._fetchUserId(
-      authResult.AccessToken as string,
-      fetchFn,
-    );
-    if (!userId) {
-      throw new Error("WHOOP verification: could not determine user ID from bootstrap endpoint");
-    }
-
-    return {
-      accessToken: authResult.AccessToken as string,
-      refreshToken: (authResult.RefreshToken as string) ?? "",
-      userId,
-    };
-  }
-
-  /**
-   * Refresh an expired access token using a Cognito refresh token.
-   */
-  static async refreshAccessToken(
-    refreshToken: string,
-    fetchFn: typeof globalThis.fetch = globalThis.fetch,
-  ): Promise<{ accessToken: string; refreshToken: string; userId: number | null }> {
-    const data = await cognitoCall(
-      "InitiateAuth",
-      {
-        AuthFlow: "REFRESH_TOKEN_AUTH",
-        ClientId: COGNITO_CLIENT_ID,
-        AuthParameters: {
-          REFRESH_TOKEN: refreshToken,
-        },
-      },
-      fetchFn,
-    );
-
-    const authResult = data.AuthenticationResult as Record<string, unknown>;
-    if (!authResult?.AccessToken) {
-      throw new Error("WHOOP token refresh: no tokens in response");
-    }
-
-    // Best-effort: try to get userId from bootstrap. Returns null if it fails —
-    // caller should fall back to the stored userId from the original auth.
-    const userId = await WhoopInternalClient._fetchUserId(
-      authResult.AccessToken as string,
-      fetchFn,
-    );
-
-    return {
-      accessToken: authResult.AccessToken as string,
-      // Cognito REFRESH_TOKEN_AUTH doesn't return a new refresh token — reuse the old one
-      refreshToken: (authResult.RefreshToken as string) ?? refreshToken,
-      userId,
-    };
-  }
-
-  /** Backwards-compatible authenticate — works for accounts WITHOUT MFA */
-  static async authenticate(
-    username: string,
-    password: string,
-    fetchFn: typeof globalThis.fetch = globalThis.fetch,
-  ): Promise<WhoopAuthToken> {
-    const result = await WhoopInternalClient.signIn(username, password, fetchFn);
-    if (result.type === "verification_required") {
-      throw new Error("WHOOP account requires MFA — use the web UI to authenticate");
-    }
-    return result.token;
-  }
-
-  /**
-   * Fetch user ID from the WHOOP bootstrap endpoint.
-   * Returns null if the user ID cannot be extracted (caller should fall back to stored value).
-   */
-  static async _fetchUserId(
-    accessToken: string,
-    fetchFn: typeof globalThis.fetch,
-  ): Promise<number | null> {
-    const response = await fetchFn(
-      `${WHOOP_API_BASE}/users-service/v2/bootstrap/?accountType=users&apiVersion=7&include=profile`,
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      },
-    );
-
-    if (!response.ok) {
-      console.warn(`[whoop] Failed to fetch user ID from bootstrap (${response.status})`);
-      return null;
-    }
-
-    const data = (await response.json()) as Record<string, unknown>;
-    const nested = data.user as Record<string, unknown> | undefined;
-    const userId =
-      (data.id as number | undefined) ??
-      (data.user_id as number | undefined) ??
-      (nested?.id as number | undefined) ??
-      (nested?.user_id as number | undefined);
-    if (!userId || typeof userId !== "number") {
-      console.warn(
-        `[whoop] Could not extract user ID from bootstrap response (keys: ${Object.keys(data).join(", ")})`,
-      );
-      return null;
-    }
-    return userId;
-  }
-
-  private async get<T>(url: string, params?: Record<string, string>): Promise<T> {
-    const u = new URL(url);
-    if (params) {
-      for (const [key, value] of Object.entries(params)) {
-        u.searchParams.set(key, value);
-      }
-    }
-    u.searchParams.set("apiVersion", WHOOP_API_VERSION);
-
-    const response = await this.fetchFn(u.toString(), {
-      headers: {
-        Authorization: `Bearer ${this.accessToken}`,
-        "User-Agent": "WHOOP/4.0",
-      },
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`WHOOP API error (${response.status}): ${text}`);
-    }
-
-    return response.json() as Promise<T>;
-  }
-
-  async getHeartRate(start: string, end: string, step = 6): Promise<WhoopHrValue[]> {
-    const response = await this.get<WhoopHrResponse>(
-      `${WHOOP_API_BASE}/metrics-service/v1/metrics/user/${this.userId}`,
-      { start, end, step: String(step), name: "heart_rate" },
-    );
-    return response.values ?? [];
-  }
-
-  async getCycles(start: string, end: string, limit = 26): Promise<WhoopCycle[]> {
-    const raw = await this.get<unknown>(`${WHOOP_API_BASE}/core-details-bff/v0/cycles/details`, {
-      id: String(this.userId),
-      startTime: start,
-      endTime: end,
-      limit: String(limit),
-    });
-    // BFF may return bare array or wrapped object — normalize
-    if (Array.isArray(raw)) return raw as WhoopCycle[];
-    if (raw && typeof raw === "object") {
-      // Try common wrapper keys
-      for (const key of ["cycles", "records", "data", "results"]) {
-        const val = (raw as Record<string, unknown>)[key];
-        if (Array.isArray(val)) return val as WhoopCycle[];
-      }
-      console.log(
-        `[whoop] getCycles unexpected response shape: ${JSON.stringify(Object.keys(raw as object))}`,
-      );
-    }
-    return [];
-  }
-
-  async getSleep(sleepId: number): Promise<WhoopSleepRecord> {
-    return this.get<WhoopSleepRecord>(`${WHOOP_API_BASE}/sleep-service/v1/sleep-events`, {
-      activityId: String(sleepId),
-    });
-  }
-
-  async getJournal(start: string, end: string): Promise<unknown> {
-    return this.get<unknown>(`${WHOOP_API_BASE}/behavior-impact-service/v1/impact`, {
-      startTime: start,
-      endTime: end,
-    });
-  }
-
-  /**
-   * Fetch exercise-level strength data for a workout activity.
-   * Returns null if the activity has no linked exercises (404).
-   */
-  async getWeightliftingWorkout(
-    activityId: string,
-  ): Promise<WhoopWeightliftingWorkoutResponse | null> {
-    const u = new URL(
-      `${WHOOP_API_BASE}/weightlifting-service/v2/weightlifting-workout/${activityId}`,
-    );
-    u.searchParams.set("apiVersion", WHOOP_API_VERSION);
-
-    const response = await this.fetchFn(u.toString(), {
-      headers: {
-        Authorization: `Bearer ${this.accessToken}`,
-        "User-Agent": "WHOOP/4.0",
-      },
-    });
-
-    if (response.status === 404) return null;
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`WHOOP weightlifting API error (${response.status}): ${text}`);
-    }
-
-    return response.json() as Promise<WhoopWeightliftingWorkoutResponse>;
-  }
-}
-
-// ============================================================
 // Journal parsing — response shape discovered empirically
 // ============================================================
 
@@ -1057,7 +379,7 @@ export class WhoopProvider implements Provider {
 
     await ensureProvider(db, this.id, this.name);
 
-    let client: WhoopInternalClient;
+    let client: WhoopClient;
     try {
       // Try loading stored tokens from DB
       const stored = await loadTokens(db, this.id);
@@ -1070,7 +392,7 @@ export class WhoopProvider implements Provider {
       const storedUserId = storedUserIdMatch ? Number(storedUserIdMatch[1]) : null;
 
       // Refresh the access token using the stored refresh token
-      const token = await WhoopInternalClient.refreshAccessToken(stored.refreshToken, this.fetchFn);
+      const token = await WhoopClient.refreshAccessToken(stored.refreshToken, this.fetchFn);
 
       // Use the stored userId if available, otherwise use the one from bootstrap
       const userId = storedUserId ?? token.userId;
@@ -1087,7 +409,7 @@ export class WhoopProvider implements Provider {
         scopes,
       });
 
-      client = new WhoopInternalClient(
+      client = new WhoopClient(
         { accessToken: token.accessToken, refreshToken: token.refreshToken, userId },
         this.fetchFn,
       );
