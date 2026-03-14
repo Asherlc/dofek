@@ -3,8 +3,10 @@ import {
   OuraClient,
   type OuraDailyActivity,
   type OuraDailyReadiness,
+  type OuraDailySpO2,
   OuraProvider,
   type OuraSleepDocument,
+  type OuraVO2Max,
   ouraOAuthConfig,
   parseOuraDailyMetrics,
   parseOuraSleep,
@@ -86,6 +88,20 @@ const sampleActivity: OuraDailyActivity = {
   total_calories: 2300,
 };
 
+const sampleSpO2: OuraDailySpO2 = {
+  id: "spo2-abc123",
+  day: "2026-03-01",
+  spo2_percentage: { average: 97.5 },
+  breathing_disturbance_index: 12,
+};
+
+const sampleVO2Max: OuraVO2Max = {
+  id: "vo2max-abc123",
+  day: "2026-03-01",
+  timestamp: "2026-03-01T08:00:00",
+  vo2_max: 42.5,
+};
+
 // ============================================================
 // Parsing tests
 // ============================================================
@@ -160,7 +176,7 @@ describe("Oura Provider", () => {
 
   describe("parseOuraDailyMetrics", () => {
     it("maps daily readiness and activity fields", () => {
-      const result = parseOuraDailyMetrics(sampleReadiness, sampleActivity);
+      const result = parseOuraDailyMetrics(sampleReadiness, sampleActivity, null, null);
 
       expect(result.date).toBe("2026-03-01");
       expect(result.steps).toBe(9500);
@@ -171,8 +187,44 @@ describe("Oura Provider", () => {
       expect(result.skinTempC).toBe(-0.15);
     });
 
+    it("includes SpO2 when provided", () => {
+      const result = parseOuraDailyMetrics(sampleReadiness, sampleActivity, sampleSpO2, null);
+
+      expect(result.spo2Avg).toBe(97.5);
+    });
+
+    it("includes VO2 max when provided", () => {
+      const result = parseOuraDailyMetrics(sampleReadiness, sampleActivity, null, sampleVO2Max);
+
+      expect(result.vo2max).toBe(42.5);
+    });
+
+    it("includes both SpO2 and VO2 max", () => {
+      const result = parseOuraDailyMetrics(
+        sampleReadiness,
+        sampleActivity,
+        sampleSpO2,
+        sampleVO2Max,
+      );
+
+      expect(result.spo2Avg).toBe(97.5);
+      expect(result.vo2max).toBe(42.5);
+    });
+
+    it("handles null spo2_percentage", () => {
+      const noPercentage: OuraDailySpO2 = { ...sampleSpO2, spo2_percentage: null };
+      const result = parseOuraDailyMetrics(null, null, noPercentage, null);
+      expect(result.spo2Avg).toBeUndefined();
+    });
+
+    it("handles null vo2_max value", () => {
+      const noValue: OuraVO2Max = { ...sampleVO2Max, vo2_max: null };
+      const result = parseOuraDailyMetrics(null, null, null, noValue);
+      expect(result.vo2max).toBeUndefined();
+    });
+
     it("handles null readiness", () => {
-      const result = parseOuraDailyMetrics(null, sampleActivity);
+      const result = parseOuraDailyMetrics(null, sampleActivity, null, null);
 
       expect(result.steps).toBe(9500);
       expect(result.activeEnergyKcal).toBe(450);
@@ -182,7 +234,7 @@ describe("Oura Provider", () => {
     });
 
     it("handles null activity", () => {
-      const result = parseOuraDailyMetrics(sampleReadiness, null);
+      const result = parseOuraDailyMetrics(sampleReadiness, null, null, null);
 
       expect(result.steps).toBeUndefined();
       expect(result.activeEnergyKcal).toBeUndefined();
@@ -206,19 +258,29 @@ describe("Oura Provider", () => {
         },
       };
 
-      const result = parseOuraDailyMetrics(noContributors, sampleActivity);
+      const result = parseOuraDailyMetrics(noContributors, sampleActivity, null, null);
       expect(result.hrv).toBeUndefined();
       expect(result.restingHr).toBeUndefined();
     });
 
     it("uses activity day when readiness is null", () => {
-      const result = parseOuraDailyMetrics(null, sampleActivity);
+      const result = parseOuraDailyMetrics(null, sampleActivity, null, null);
       expect(result.date).toBe("2026-03-01");
     });
 
-    it("returns empty date when both are null", () => {
-      const result = parseOuraDailyMetrics(null, null);
+    it("returns empty date when all are null", () => {
+      const result = parseOuraDailyMetrics(null, null, null, null);
       expect(result.date).toBe("");
+    });
+
+    it("uses spo2 day when readiness and activity are null", () => {
+      const result = parseOuraDailyMetrics(null, null, sampleSpO2, null);
+      expect(result.date).toBe("2026-03-01");
+    });
+
+    it("uses vo2max day when others are null", () => {
+      const result = parseOuraDailyMetrics(null, null, null, sampleVO2Max);
+      expect(result.date).toBe("2026-03-01");
     });
 
     it("rounds exercise minutes from seconds", () => {
@@ -227,7 +289,7 @@ describe("Oura Provider", () => {
         high_activity_time: 100, // 1.67 min
         medium_activity_time: 100, // 1.67 min
       };
-      const result = parseOuraDailyMetrics(null, activity);
+      const result = parseOuraDailyMetrics(null, activity, null, null);
       expect(result.exerciseMinutes).toBe(3); // Math.round(200/60)
     });
   });
@@ -296,18 +358,9 @@ describe("OuraProvider.validate()", () => {
     process.env = { ...originalEnv };
   });
 
-  it("returns null when personal access token is set", () => {
-    delete process.env.OURA_CLIENT_ID;
-    delete process.env.OURA_CLIENT_SECRET;
-    process.env.OURA_PERSONAL_ACCESS_TOKEN = "test-pat";
-    const provider = new OuraProvider();
-    expect(provider.validate()).toBeNull();
-  });
-
   it("returns error when OURA_CLIENT_ID is missing", () => {
     delete process.env.OURA_CLIENT_ID;
     delete process.env.OURA_CLIENT_SECRET;
-    delete process.env.OURA_PERSONAL_ACCESS_TOKEN;
     const provider = new OuraProvider();
     expect(provider.validate()).toContain("OURA_CLIENT_ID");
   });
@@ -315,7 +368,6 @@ describe("OuraProvider.validate()", () => {
   it("returns error when OURA_CLIENT_SECRET is missing", () => {
     process.env.OURA_CLIENT_ID = "test-id";
     delete process.env.OURA_CLIENT_SECRET;
-    delete process.env.OURA_PERSONAL_ACCESS_TOKEN;
     const provider = new OuraProvider();
     expect(provider.validate()).toContain("OURA_CLIENT_SECRET");
   });
@@ -323,7 +375,6 @@ describe("OuraProvider.validate()", () => {
   it("returns null when both OAuth vars are set", () => {
     process.env.OURA_CLIENT_ID = "test-id";
     process.env.OURA_CLIENT_SECRET = "test-secret";
-    delete process.env.OURA_PERSONAL_ACCESS_TOKEN;
     const provider = new OuraProvider();
     expect(provider.validate()).toBeNull();
   });
@@ -504,6 +555,86 @@ describe("OuraClient", () => {
     const client = new OuraClient("bad-token", mockFetch);
     await expect(client.getSleep("2026-03-01", "2026-03-02")).rejects.toThrow(
       "Invalid API key provided",
+    );
+  });
+
+  it("fetches daily SpO2 data successfully", async () => {
+    let capturedUrl = "";
+    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+      capturedUrl = input.toString();
+      return Response.json({ data: [sampleSpO2], next_token: null });
+    }) as typeof globalThis.fetch;
+
+    const client = new OuraClient("test-token", mockFetch);
+    const result = await client.getDailySpO2("2026-03-01", "2026-03-02");
+
+    expect(capturedUrl).toContain("/v2/usercollection/daily_spo2");
+    expect(capturedUrl).toContain("start_date=2026-03-01");
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]?.spo2_percentage?.average).toBe(97.5);
+  });
+
+  it("passes next_token for SpO2 pagination", async () => {
+    let capturedUrl = "";
+    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+      capturedUrl = input.toString();
+      return Response.json({ data: [], next_token: null });
+    }) as typeof globalThis.fetch;
+
+    const client = new OuraClient("test-token", mockFetch);
+    await client.getDailySpO2("2026-03-01", "2026-03-02", "spo2page");
+
+    expect(capturedUrl).toContain("next_token=spo2page");
+  });
+
+  it("throws on non-OK response for SpO2", async () => {
+    const mockFetch = (async (): Promise<Response> => {
+      return new Response("Forbidden", { status: 403 });
+    }) as typeof globalThis.fetch;
+
+    const client = new OuraClient("token", mockFetch);
+    await expect(client.getDailySpO2("2026-03-01", "2026-03-02")).rejects.toThrow(
+      "Oura API error (403)",
+    );
+  });
+
+  it("fetches VO2 max data successfully", async () => {
+    let capturedUrl = "";
+    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+      capturedUrl = input.toString();
+      return Response.json({ data: [sampleVO2Max], next_token: null });
+    }) as typeof globalThis.fetch;
+
+    const client = new OuraClient("test-token", mockFetch);
+    const result = await client.getVO2Max("2026-03-01", "2026-03-02");
+
+    expect(capturedUrl).toContain("/v2/usercollection/vO2_max");
+    expect(capturedUrl).toContain("start_date=2026-03-01");
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]?.vo2_max).toBe(42.5);
+  });
+
+  it("passes next_token for VO2 max pagination", async () => {
+    let capturedUrl = "";
+    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+      capturedUrl = input.toString();
+      return Response.json({ data: [], next_token: null });
+    }) as typeof globalThis.fetch;
+
+    const client = new OuraClient("test-token", mockFetch);
+    await client.getVO2Max("2026-03-01", "2026-03-02", "vo2page");
+
+    expect(capturedUrl).toContain("next_token=vo2page");
+  });
+
+  it("throws on non-OK response for VO2 max", async () => {
+    const mockFetch = (async (): Promise<Response> => {
+      return new Response("Server Error", { status: 500 });
+    }) as typeof globalThis.fetch;
+
+    const client = new OuraClient("token", mockFetch);
+    await expect(client.getVO2Max("2026-03-01", "2026-03-02")).rejects.toThrow(
+      "Oura API error (500)",
     );
   });
 });
