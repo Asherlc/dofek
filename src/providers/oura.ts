@@ -62,6 +62,20 @@ export interface OuraDailyActivity {
   total_calories: number;
 }
 
+export interface OuraDailySpO2 {
+  id: string;
+  day: string;
+  spo2_percentage: { average: number } | null;
+  breathing_disturbance_index: number | null;
+}
+
+export interface OuraVO2Max {
+  id: string;
+  day: string;
+  timestamp: string;
+  vo2_max: number | null;
+}
+
 interface OuraListResponse<T> {
   data: T[];
   next_token: string | null;
@@ -92,6 +106,8 @@ export interface ParsedOuraDailyMetrics {
   restingHr?: number;
   exerciseMinutes?: number;
   skinTempC?: number;
+  spo2Avg?: number;
+  vo2max?: number;
 }
 
 // ============================================================
@@ -121,8 +137,10 @@ export function parseOuraSleep(sleep: OuraSleepDocument): ParsedOuraSleep {
 export function parseOuraDailyMetrics(
   readiness: OuraDailyReadiness | null,
   activity: OuraDailyActivity | null,
+  spo2: OuraDailySpO2 | null,
+  vo2max: OuraVO2Max | null,
 ): ParsedOuraDailyMetrics {
-  const day = readiness?.day ?? activity?.day ?? "";
+  const day = readiness?.day ?? activity?.day ?? spo2?.day ?? vo2max?.day ?? "";
 
   let exerciseMinutes: number | undefined;
   if (activity) {
@@ -139,6 +157,8 @@ export function parseOuraDailyMetrics(
     restingHr: readiness?.contributors.resting_heart_rate ?? undefined,
     exerciseMinutes,
     skinTempC: readiness?.temperature_deviation ?? undefined,
+    spo2Avg: spo2?.spo2_percentage?.average ?? undefined,
+    vo2max: vo2max?.vo2_max ?? undefined,
   };
 }
 
@@ -198,6 +218,26 @@ export class OuraClient {
     nextToken?: string,
   ): Promise<OuraListResponse<OuraDailyActivity>> {
     let path = `/v2/usercollection/daily_activity?start_date=${startDate}&end_date=${endDate}`;
+    if (nextToken) path += `&next_token=${nextToken}`;
+    return this.get(path);
+  }
+
+  async getDailySpO2(
+    startDate: string,
+    endDate: string,
+    nextToken?: string,
+  ): Promise<OuraListResponse<OuraDailySpO2>> {
+    let path = `/v2/usercollection/daily_spo2?start_date=${startDate}&end_date=${endDate}`;
+    if (nextToken) path += `&next_token=${nextToken}`;
+    return this.get(path);
+  }
+
+  async getVO2Max(
+    startDate: string,
+    endDate: string,
+    nextToken?: string,
+  ): Promise<OuraListResponse<OuraVO2Max>> {
+    let path = `/v2/usercollection/vO2_max?start_date=${startDate}&end_date=${endDate}`;
     if (nextToken) path += `&next_token=${nextToken}`;
     return this.get(path);
   }
@@ -265,8 +305,6 @@ export class OuraProvider implements Provider {
   }
 
   validate(): string | null {
-    // Support personal access token as alternative to OAuth
-    if (process.env.OURA_PERSONAL_ACCESS_TOKEN) return null;
     if (!process.env.OURA_CLIENT_ID) return "OURA_CLIENT_ID is not set";
     if (!process.env.OURA_CLIENT_SECRET) return "OURA_CLIENT_SECRET is not set";
     return null;
@@ -285,10 +323,6 @@ export class OuraProvider implements Provider {
   }
 
   private async resolveAccessToken(db: Database): Promise<string> {
-    // Personal access token takes priority
-    const pat = process.env.OURA_PERSONAL_ACCESS_TOKEN;
-    if (pat) return pat;
-
     const tokens = await loadTokens(db, this.id);
     if (!tokens) {
       throw new Error("No OAuth tokens found for Oura. Run: health-data auth oura");
@@ -387,14 +421,16 @@ export class OuraProvider implements Provider {
       });
     }
 
-    // 2. Sync daily metrics (readiness + activity merged by day)
+    // 2. Sync daily metrics (readiness + activity + SpO2 + VO2 max merged by day)
     try {
       const dailyCount = await withSyncLog(db, this.id, "daily_metrics", async () => {
         let count = 0;
 
-        const [allReadiness, allActivity] = await Promise.all([
+        const [allReadiness, allActivity, allSpO2, allVO2Max] = await Promise.all([
           fetchAllPages((nextToken) => client.getDailyReadiness(sinceDate, todayDate, nextToken)),
           fetchAllPages((nextToken) => client.getDailyActivity(sinceDate, todayDate, nextToken)),
+          fetchAllPages((nextToken) => client.getDailySpO2(sinceDate, todayDate, nextToken)),
+          fetchAllPages((nextToken) => client.getVO2Max(sinceDate, todayDate, nextToken)),
         ]);
 
         // Index by day for merging
@@ -404,13 +440,26 @@ export class OuraProvider implements Provider {
         const activityByDay = new Map<string, OuraDailyActivity>();
         for (const a of allActivity) activityByDay.set(a.day, a);
 
+        const spo2ByDay = new Map<string, OuraDailySpO2>();
+        for (const s of allSpO2) spo2ByDay.set(s.day, s);
+
+        const vo2maxByDay = new Map<string, OuraVO2Max>();
+        for (const v of allVO2Max) vo2maxByDay.set(v.day, v);
+
         // Union of all days
-        const allDays = new Set([...readinessByDay.keys(), ...activityByDay.keys()]);
+        const allDays = new Set([
+          ...readinessByDay.keys(),
+          ...activityByDay.keys(),
+          ...spo2ByDay.keys(),
+          ...vo2maxByDay.keys(),
+        ]);
 
         for (const day of allDays) {
           const readiness = readinessByDay.get(day) ?? null;
           const activity = activityByDay.get(day) ?? null;
-          const parsed = parseOuraDailyMetrics(readiness, activity);
+          const spo2 = spo2ByDay.get(day) ?? null;
+          const vo2max = vo2maxByDay.get(day) ?? null;
+          const parsed = parseOuraDailyMetrics(readiness, activity, spo2, vo2max);
 
           try {
             await db
@@ -424,6 +473,8 @@ export class OuraProvider implements Provider {
                 activeEnergyKcal: parsed.activeEnergyKcal,
                 exerciseMinutes: parsed.exerciseMinutes,
                 skinTempC: parsed.skinTempC,
+                spo2Avg: parsed.spo2Avg,
+                vo2max: parsed.vo2max,
               })
               .onConflictDoUpdate({
                 target: [dailyMetrics.date, dailyMetrics.providerId],
@@ -434,6 +485,8 @@ export class OuraProvider implements Provider {
                   activeEnergyKcal: parsed.activeEnergyKcal,
                   exerciseMinutes: parsed.exerciseMinutes,
                   skinTempC: parsed.skinTempC,
+                  spo2Avg: parsed.spo2Avg,
+                  vo2max: parsed.vo2max,
                 },
               });
             count++;

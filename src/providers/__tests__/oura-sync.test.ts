@@ -3,7 +3,13 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
 import { dailyMetrics, sleepSession } from "../../db/schema.ts";
 import { ensureProvider, saveTokens } from "../../db/tokens.ts";
-import type { OuraDailyActivity, OuraDailyReadiness, OuraSleepDocument } from "../oura.ts";
+import type {
+  OuraDailyActivity,
+  OuraDailyReadiness,
+  OuraDailySpO2,
+  OuraSleepDocument,
+  OuraVO2Max,
+} from "../oura.ts";
 import { OuraProvider } from "../oura.ts";
 
 function fakeSleepDoc(overrides: Partial<OuraSleepDocument> = {}): OuraSleepDocument {
@@ -65,14 +71,36 @@ function fakeActivity(): OuraDailyActivity {
   };
 }
 
+function fakeSpO2(): OuraDailySpO2 {
+  return {
+    id: "spo2-001",
+    day: "2026-03-01",
+    spo2_percentage: { average: 97.5 },
+    breathing_disturbance_index: 12,
+  };
+}
+
+function fakeVO2Max(): OuraVO2Max {
+  return {
+    id: "vo2max-001",
+    day: "2026-03-01",
+    timestamp: "2026-03-01T08:00:00",
+    vo2_max: 42.5,
+  };
+}
+
 function createMockFetch(opts?: {
   sleepDocs?: OuraSleepDocument[];
   readinessDocs?: OuraDailyReadiness[];
   activityDocs?: OuraDailyActivity[];
+  spo2Docs?: OuraDailySpO2[];
+  vo2MaxDocs?: OuraVO2Max[];
 }): typeof globalThis.fetch {
   const sleepDocs = opts?.sleepDocs ?? [];
   const readinessDocs = opts?.readinessDocs ?? [];
   const activityDocs = opts?.activityDocs ?? [];
+  const spo2Docs = opts?.spo2Docs ?? [];
+  const vo2MaxDocs = opts?.vo2MaxDocs ?? [];
 
   return (async (input: RequestInfo | URL): Promise<Response> => {
     const urlStr = input.toString();
@@ -100,6 +128,16 @@ function createMockFetch(opts?: {
     // Daily activity
     if (urlStr.includes("/v2/usercollection/daily_activity")) {
       return Response.json({ data: activityDocs, next_token: null });
+    }
+
+    // Daily SpO2
+    if (urlStr.includes("/v2/usercollection/daily_spo2")) {
+      return Response.json({ data: spo2Docs, next_token: null });
+    }
+
+    // VO2 max
+    if (urlStr.includes("/v2/usercollection/vO2_max")) {
+      return Response.json({ data: vo2MaxDocs, next_token: null });
     }
 
     return new Response("Not found", { status: 404 });
@@ -137,6 +175,8 @@ describe("OuraProvider.sync() (integration)", () => {
         ],
         readinessDocs: [fakeReadiness()],
         activityDocs: [fakeActivity()],
+        spo2Docs: [fakeSpO2()],
+        vo2MaxDocs: [fakeVO2Max()],
       }),
     );
 
@@ -163,7 +203,7 @@ describe("OuraProvider.sync() (integration)", () => {
     if (!nap) throw new Error("expected sleep-nap-001");
     expect(nap.isNap).toBe(true);
 
-    // Verify daily metrics
+    // Verify daily metrics including SpO2 and VO2 max
     const dailyRows = await ctx.db
       .select()
       .from(dailyMetrics)
@@ -178,6 +218,8 @@ describe("OuraProvider.sync() (integration)", () => {
     expect(daily.activeEnergyKcal).toBe(450);
     expect(daily.exerciseMinutes).toBe(75);
     expect(daily.skinTempC).toBeCloseTo(-0.15);
+    expect(daily.spo2Avg).toBeCloseTo(97.5);
+    expect(daily.vo2max).toBeCloseTo(42.5);
   });
 
   it("upserts on re-sync (no duplicates)", async () => {
@@ -225,9 +267,6 @@ describe("OuraProvider.sync() (integration)", () => {
   });
 
   it("returns error when no tokens exist", async () => {
-    // Remove PAT if set
-    delete process.env.OURA_PERSONAL_ACCESS_TOKEN;
-
     const { oauthToken } = await import("../../db/schema.ts");
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "oura"));
 
@@ -237,23 +276,5 @@ describe("OuraProvider.sync() (integration)", () => {
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No OAuth tokens found");
     expect(result.recordsSynced).toBe(0);
-  });
-
-  it("uses personal access token when set", async () => {
-    process.env.OURA_PERSONAL_ACCESS_TOKEN = "pat-test-token";
-
-    const provider = new OuraProvider(
-      createMockFetch({
-        sleepDocs: [fakeSleepDoc({ id: "sleep-pat-001" })],
-        readinessDocs: [],
-        activityDocs: [],
-      }),
-    );
-
-    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
-    expect(result.errors).toHaveLength(0);
-    expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
-
-    delete process.env.OURA_PERSONAL_ACCESS_TOKEN;
   });
 });
