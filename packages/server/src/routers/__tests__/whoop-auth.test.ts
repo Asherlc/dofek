@@ -8,14 +8,14 @@ import { createSession } from "../../auth/session.ts";
 import { createApp } from "../../index.ts";
 
 // Mock the WhoopClient static methods
-vi.mock("omni-whoop", () => ({
+vi.mock("whoop-whoop", () => ({
   WhoopClient: {
     signIn: vi.fn(),
     verifyCode: vi.fn(),
   },
 }));
 
-import { WhoopClient } from "omni-whoop";
+import { WhoopClient } from "whoop-whoop";
 
 const DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001";
 

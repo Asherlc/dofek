@@ -1,5 +1,5 @@
 import { ensureProvider, saveTokens } from "dofek/db/tokens";
-import { WhoopClient } from "omni-whoop";
+import { WhoopClient } from "whoop-whoop";
 import { z } from "zod";
 import { protectedProcedure, router } from "../trpc.ts";
 

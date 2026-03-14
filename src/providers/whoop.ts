@@ -9,7 +9,7 @@ import {
   type WhoopSleepRecord,
   type WhoopWeightliftingWorkoutResponse,
   type WhoopWorkoutRecord,
-} from "omni-whoop";
+} from "whoop-whoop";
 import type { Database } from "../db/index.ts";
 import {
   activity,
@@ -45,9 +45,9 @@ export type {
   WhoopWorkoutRecord,
   WhoopWorkoutScore,
   WhoopZoneDuration,
-} from "omni-whoop";
-// Re-export omni-whoop types and client for dofek consumers
-export { parseDuringRange, WhoopClient } from "omni-whoop";
+} from "whoop-whoop";
+// Re-export whoop-whoop types and client for dofek consumers
+export { parseDuringRange, WhoopClient } from "whoop-whoop";
 
 // ============================================================
 // Parsing — pure functions (dofek-specific shapes)

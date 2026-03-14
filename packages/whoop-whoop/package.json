@@ -1,5 +1,5 @@
 {
-  "name": "omni-whoop",
+  "name": "whoop-whoop",
   "version": "0.1.0",
   "description": "Unofficial WHOOP API client using the internal Cognito-based authentication",
   "type": "module",
