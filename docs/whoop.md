@@ -139,9 +139,32 @@ SELECT refresh_token FROM fitness.oauth_token WHERE provider_id = 'whoop';
 
 ### Next steps
 
-1. Add a `getStrengthWorkout()` method to `WhoopInternalClient` that calls `GET /weightlifting-service/v2/weightlifting-workout/{activityId}`
-2. Sync exercise-level data into the existing `strength_workout` / `strength_set` tables
+1. ~~Add a `getStrengthWorkout()` method to `WhoopInternalClient`~~ ✅ Done
+2. ~~Sync exercise-level data into the existing `strength_workout` / `strength_set` tables~~ ✅ Done
 3. Consider syncing the exercise catalog (`GET /weightlifting-service/v2/exercise`) for exercise metadata
+
+### Future: Raw IMU/accelerometer data (protobuf)
+
+Each set in the weightlifting response has a `protobuf_file_path` field pointing to raw accelerometer/gyroscope data from the WHOOP strap. This is the rawest data WHOOP captures for strength training — the MSK strain scores are derived from it.
+
+**Current status (March 2026):** All sets in the user's workouts have `protobuf_file_path: null`. This is because the workouts were logged with exercises entered manually in the app, NOT tracked live with the strap worn on a specific body part (bicep, forearm, etc.). The related fields `strap_location` and `strap_location_laterality` are also null.
+
+**To investigate this, you need:**
+1. A workout where the user wore the WHOOP strap on a body part and used "Strength Trainer" mode (sport_id=123) with live tracking
+2. After the workout, fetch the weightlifting response and check for non-null `protobuf_file_path` values
+3. The path is likely an S3 key or presigned URL — try downloading it with the same auth token
+4. The upload endpoint is `POST /weightlifting-service/v1/raw-data/protobuf` (confirmed to exist via 405 response) — the protobuf schema may be inferrable from the decompiled APK
+
+**Decompiled DTO fields (from `WeightliftingWorkoutSetDto.java`):**
+- `protobuf_file_path: String` — path to raw IMU data
+- `strap_location: String` — where on the body the strap was (e.g., "BICEP")
+- `strap_location_laterality: String` — "LEFT" or "RIGHT"
+- `is_exercise_trackable: Boolean` — whether the exercise supports IMU tracking
+
+**APK decompilation location:** `/tmp/whoop-apk/jadx-output/` (WHOOP Android v5.439.0, decompiled with `jadx --deobf`). Key files:
+- `sources/com/whoop/weightlifting/data/WeightliftingApi.java` — Retrofit interface with all 20 endpoints
+- `sources/com/whoop/weightlifting/data/dto/WeightliftingWorkoutSetDto.java` — Set DTO with protobuf fields
+- Search for `protobuf` or `ProtobufParser` in the decompiled sources to find the protobuf schema definition
 
 ### Investigation history
 

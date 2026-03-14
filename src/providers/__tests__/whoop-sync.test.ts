@@ -18,11 +18,12 @@ import {
 // ============================================================
 
 interface FakeCycle {
-  id: number;
-  user_id: number;
+  id?: number;
+  user_id?: number;
   days: string[];
   recovery?: WhoopRecoveryRecord;
   sleep?: { id: number };
+  workouts?: WhoopWorkoutRecord[];
   strain?: {
     workouts: WhoopWorkoutRecord[];
   };
@@ -50,39 +51,19 @@ function fakeCycle(overrides: Partial<FakeCycle> = {}): FakeCycle {
       },
     },
     sleep: { id: 10235 },
-    strain: {
-      workouts: [
-        {
-          id: 1043,
-          user_id: 10129,
-          created_at: "2026-03-01T10:00:00Z",
-          updated_at: "2026-03-01T11:00:00Z",
-          start: "2026-03-01T10:00:00Z",
-          end: "2026-03-01T11:00:00Z",
-          timezone_offset: "-05:00",
-          sport_id: 0, // running
-          score_state: "SCORED",
-          score: {
-            strain: 12.5,
-            average_heart_rate: 155,
-            max_heart_rate: 185,
-            kilojoule: 2500.5,
-            percent_recorded: 100,
-            distance_meter: 10000,
-            altitude_gain_meter: 150.5,
-            altitude_change_meter: -5.2,
-            zone_duration: {
-              zone_zero_milli: 60000,
-              zone_one_milli: 300000,
-              zone_two_milli: 900000,
-              zone_three_milli: 1200000,
-              zone_four_milli: 600000,
-              zone_five_milli: 300000,
-            },
-          },
-        },
-      ],
-    },
+    workouts: [
+      {
+        activity_id: "abc12345-6789-0def-1234-567890abcdef",
+        during: "['2026-03-01T10:00:00Z','2026-03-01T11:00:00Z')",
+        timezone_offset: "-05:00",
+        sport_id: 0, // running
+        average_heart_rate: 155,
+        max_heart_rate: 185,
+        kilojoules: 2500.5,
+        percent_recorded: 100,
+        score: 12.5,
+      },
+    ],
     ...overrides,
   };
 }
@@ -156,9 +137,14 @@ function createMockFetch(
       return Response.json({ id: 10129 });
     }
 
-    // Cycles (BFF endpoint)
+    // Cycles (BFF endpoint) — wrapped in { records: [...] } like the real API
     if (urlStr.includes("/cycles")) {
-      return Response.json(cycles);
+      return Response.json({ records: cycles });
+    }
+
+    // Weightlifting-service — return 404 unless overridden
+    if (urlStr.includes("weightlifting-service")) {
+      return new Response("Not found", { status: 404 });
     }
 
     // Sleep events
@@ -250,66 +236,44 @@ describe("WhoopProvider.sync() (integration)", () => {
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "whoop"));
 
     expect(rows.length).toBeGreaterThanOrEqual(1);
-    const workout = rows.find((r) => r.externalId === "1043");
-    if (!workout) throw new Error("expected workout 1043");
+    const workout = rows.find((r) => r.externalId === "abc12345-6789-0def-1234-567890abcdef");
+    if (!workout) throw new Error("expected workout abc12345-...");
     expect(workout.activityType).toBe("running");
     expect(workout.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
     expect(workout.endedAt).toEqual(new Date("2026-03-01T11:00:00Z"));
     // Summary data stored in raw JSONB
     expect((workout.raw as Record<string, unknown>).avgHeartRate).toBe(155);
     expect((workout.raw as Record<string, unknown>).maxHeartRate).toBe(185);
-    expect((workout.raw as Record<string, unknown>).distanceMeters).toBe(10000);
   });
 
   it("syncs multiple workouts from a single cycle", async () => {
     const twoWorkoutCycle = fakeCycle({
       id: 200,
       days: ["2026-03-05"],
-      strain: {
-        workouts: [
-          {
-            id: 2001,
-            user_id: 10129,
-            created_at: "2026-03-05T08:00:00Z",
-            updated_at: "2026-03-05T09:00:00Z",
-            start: "2026-03-05T08:00:00Z",
-            end: "2026-03-05T09:00:00Z",
-            timezone_offset: "-05:00",
-            sport_id: 45, // weightlifting
-            score_state: "SCORED",
-            score: {
-              strain: 8.5,
-              average_heart_rate: 130,
-              max_heart_rate: 160,
-              kilojoule: 1200,
-              percent_recorded: 100,
-              zone_duration: {},
-            },
-          },
-          {
-            id: 2002,
-            user_id: 10129,
-            created_at: "2026-03-05T17:00:00Z",
-            updated_at: "2026-03-05T18:00:00Z",
-            start: "2026-03-05T17:00:00Z",
-            end: "2026-03-05T18:00:00Z",
-            timezone_offset: "-05:00",
-            sport_id: 1, // cycling
-            score_state: "SCORED",
-            score: {
-              strain: 14.2,
-              average_heart_rate: 160,
-              max_heart_rate: 190,
-              kilojoule: 3000,
-              percent_recorded: 98,
-              distance_meter: 25000,
-              altitude_gain_meter: 300,
-              altitude_change_meter: 10,
-              zone_duration: {},
-            },
-          },
-        ],
-      },
+      workouts: [
+        {
+          activity_id: "wl-2001-uuid",
+          during: "['2026-03-05T08:00:00Z','2026-03-05T09:00:00Z')",
+          timezone_offset: "-05:00",
+          sport_id: 45, // weightlifting
+          average_heart_rate: 130,
+          max_heart_rate: 160,
+          kilojoules: 1200,
+          percent_recorded: 100,
+          score: 8.5,
+        },
+        {
+          activity_id: "cy-2002-uuid",
+          during: "['2026-03-05T17:00:00Z','2026-03-05T18:00:00Z')",
+          timezone_offset: "-05:00",
+          sport_id: 1, // cycling
+          average_heart_rate: 160,
+          max_heart_rate: 190,
+          kilojoules: 3000,
+          percent_recorded: 98,
+          score: 14.2,
+        },
+      ],
     });
 
     const provider = new WhoopProvider(createMockFetch([twoWorkoutCycle]));
@@ -317,12 +281,12 @@ describe("WhoopProvider.sync() (integration)", () => {
 
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "whoop"));
 
-    const lift = rows.find((r) => r.externalId === "2001");
-    if (!lift) throw new Error("expected workout 2001");
+    const lift = rows.find((r) => r.externalId === "wl-2001-uuid");
+    if (!lift) throw new Error("expected workout wl-2001-uuid");
     expect(lift.activityType).toBe("weightlifting");
 
-    const ride = rows.find((r) => r.externalId === "2002");
-    if (!ride) throw new Error("expected workout 2002");
+    const ride = rows.find((r) => r.externalId === "cy-2002-uuid");
+    if (!ride) throw new Error("expected workout cy-2002-uuid");
     expect(ride.activityType).toBe("cycling");
   });
 
@@ -347,29 +311,19 @@ describe("WhoopProvider.sync() (integration)", () => {
     const cycles = [
       fakeCycle({
         id: 300,
-        strain: {
-          workouts: [
-            {
-              id: 5001,
-              user_id: 10129,
-              created_at: "2026-03-08T10:00:00Z",
-              updated_at: "2026-03-08T11:00:00Z",
-              start: "2026-03-08T10:00:00Z",
-              end: "2026-03-08T11:00:00Z",
-              timezone_offset: "-05:00",
-              sport_id: 0,
-              score_state: "SCORED",
-              score: {
-                strain: 10,
-                average_heart_rate: 145,
-                max_heart_rate: 175,
-                kilojoule: 2000,
-                percent_recorded: 100,
-                zone_duration: {},
-              },
-            },
-          ],
-        },
+        workouts: [
+          {
+            activity_id: "upsert-test-5001-uuid",
+            during: "['2026-03-08T10:00:00Z','2026-03-08T11:00:00Z')",
+            timezone_offset: "-05:00",
+            sport_id: 0,
+            average_heart_rate: 145,
+            max_heart_rate: 175,
+            kilojoules: 2000,
+            percent_recorded: 100,
+            score: 10,
+          },
+        ],
       }),
     ];
 
@@ -380,7 +334,9 @@ describe("WhoopProvider.sync() (integration)", () => {
     const rows = await ctx.db
       .select()
       .from(activity)
-      .where(and(eq(activity.providerId, "whoop"), eq(activity.externalId, "5001")));
+      .where(
+        and(eq(activity.providerId, "whoop"), eq(activity.externalId, "upsert-test-5001-uuid")),
+      );
 
     expect(rows).toHaveLength(1);
   });
@@ -407,7 +363,10 @@ describe("WhoopProvider.sync() (integration)", () => {
         return Response.json({ profile: { name: "Test" } });
       }
       if (urlStr.includes("/cycles")) {
-        return Response.json([fakeCycle()]);
+        return Response.json({ records: [fakeCycle()] });
+      }
+      if (urlStr.includes("weightlifting-service")) {
+        return new Response("Not found", { status: 404 });
       }
       if (urlStr.includes("sleep-events") || urlStr.includes("sleep-service")) {
         return Response.json(fakeSleepResponse);
@@ -455,31 +414,17 @@ describe("WhoopProvider.sync() (integration)", () => {
   });
 
   it("continues syncing other data types if workout sync fails", async () => {
-    // Cycle with invalid workout that will cause an error
+    // Cycle with invalid workout (bad during range) that will cause an error
     const cycle = fakeCycle({
-      strain: {
-        workouts: [
-          {
-            id: 9999,
-            user_id: 10129,
-            created_at: "invalid-date",
-            updated_at: "invalid-date",
-            start: "invalid-date",
-            end: "invalid-date",
-            timezone_offset: "-05:00",
-            sport_id: 0,
-            score_state: "SCORED",
-            score: {
-              strain: 10,
-              average_heart_rate: 145,
-              max_heart_rate: 175,
-              kilojoule: 2000,
-              percent_recorded: 100,
-              zone_duration: {},
-            },
-          },
-        ],
-      },
+      workouts: [
+        {
+          activity_id: "bad-workout-uuid",
+          during: "invalid-range",
+          timezone_offset: "-05:00",
+          sport_id: 0,
+          score: 10,
+        },
+      ],
     });
 
     const provider = new WhoopProvider(createMockFetch([cycle]));

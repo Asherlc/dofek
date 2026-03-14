@@ -1,5 +1,16 @@
+import { and, eq } from "drizzle-orm";
 import type { Database } from "../db/index.ts";
-import { activity, dailyMetrics, journalEntry, metricStream, sleepSession } from "../db/schema.ts";
+import {
+  activity,
+  dailyMetrics,
+  exercise,
+  exerciseAlias,
+  journalEntry,
+  metricStream,
+  sleepSession,
+  strengthSet,
+  strengthWorkout,
+} from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import type { Provider, SyncError, SyncResult } from "./types.ts";
@@ -98,16 +109,70 @@ export interface WhoopWorkoutScore {
 }
 
 export interface WhoopWorkoutRecord {
-  id: number;
-  user_id: number;
-  created_at: string;
-  updated_at: string;
-  start: string;
-  end: string;
+  // BFF v0 uses `during` (Postgres range) + `activity_id` (UUID)
+  activity_id: string; // UUID
+  during: string; // Postgres range format: "['start','end')"
   timezone_offset: string;
   sport_id: number;
-  score_state: string;
-  score?: WhoopWorkoutScore;
+  average_heart_rate?: number;
+  max_heart_rate?: number;
+  kilojoules?: number;
+  percent_recorded?: number;
+  score?: number; // strain score
+  // Legacy fields from older API versions / test fixtures
+  id?: number;
+  user_id?: number;
+  created_at?: string;
+  updated_at?: string;
+  start?: string;
+  end?: string;
+  score_state?: string;
+}
+
+// ============================================================
+// WHOOP weightlifting-service types
+// ============================================================
+
+export interface WhoopWeightliftingSet {
+  weight_kg: number;
+  number_of_reps: number;
+  msk_total_volume_kg: number;
+  time_in_seconds: number;
+  during: string;
+  complete: boolean;
+}
+
+export interface WhoopExerciseDetails {
+  exercise_id: string;
+  name: string;
+  equipment: string;
+  exercise_type: string;
+  muscle_groups: string[];
+  volume_input_format: string; // "REPS_AND_WEIGHT" | "TIME" | "REPS"
+}
+
+export interface WhoopWeightliftingExercise {
+  sets: WhoopWeightliftingSet[];
+  exercise_details: WhoopExerciseDetails;
+}
+
+export interface WhoopWeightliftingGroup {
+  workout_exercises: WhoopWeightliftingExercise[];
+}
+
+export interface WhoopWeightliftingWorkoutResponse {
+  activity_id: string;
+  user_id?: number;
+  during?: string; // Postgres range format
+  name?: string; // workout name
+  zone_durations: Record<string, number>;
+  workout_groups: WhoopWeightliftingGroup[];
+  total_effective_volume_kg: number;
+  raw_msk_strain_score: number;
+  scaled_msk_strain_score: number;
+  cardio_strain_score: number;
+  cardio_strain_contribution_percent: number;
+  msk_strain_contribution_percent: number;
 }
 
 // ============================================================
@@ -252,6 +317,18 @@ function milliToMinutes(milli: number): number {
   return Math.round(milli / 60000);
 }
 
+/**
+ * Parse a Postgres range string like "['2026-03-12T21:37:00.000Z','2026-03-12T21:56:00.000Z')"
+ * into start/end Date objects.
+ */
+export function parseDuringRange(during: string): { start: Date; end: Date } {
+  const match = during.match(/[[(]'([^']+)','([^']+)'/);
+  if (!match?.[1] || !match?.[2]) {
+    throw new Error(`Could not parse 'during' range: ${during}`);
+  }
+  return { start: new Date(match[1]), end: new Date(match[2]) };
+}
+
 export interface ParsedRecovery {
   cycleId: number;
   restingHr?: number;
@@ -317,21 +394,29 @@ export interface ParsedWorkout {
 }
 
 export function parseWorkout(record: WhoopWorkoutRecord): ParsedWorkout {
-  const score = record.score;
-  const startedAt = new Date(record.start);
-  const endedAt = new Date(record.end);
+  // BFF v0 uses `during` range; fall back to legacy `start`/`end`
+  let startedAt: Date;
+  let endedAt: Date;
+  if (record.during) {
+    const range = parseDuringRange(record.during);
+    startedAt = range.start;
+    endedAt = range.end;
+  } else {
+    startedAt = new Date(record.start ?? record.created_at ?? "");
+    endedAt = new Date(record.end ?? record.updated_at ?? "");
+  }
 
   return {
-    externalId: String(record.id),
+    externalId: record.activity_id ?? String(record.id ?? ""),
     activityType: mapSportId(record.sport_id),
     startedAt,
     endedAt,
     durationSeconds: Math.round((endedAt.getTime() - startedAt.getTime()) / 1000),
-    distanceMeters: score?.distance_meter,
-    calories: score?.kilojoule ? Math.round(score.kilojoule / 4.184) : undefined,
-    avgHeartRate: score?.average_heart_rate,
-    maxHeartRate: score?.max_heart_rate,
-    totalElevationGain: score?.altitude_gain_meter,
+    distanceMeters: undefined, // BFF v0 doesn't include distance at top level
+    calories: record.kilojoules ? Math.round(record.kilojoules / 4.184) : undefined,
+    avgHeartRate: record.average_heart_rate,
+    maxHeartRate: record.max_heart_rate,
+    totalElevationGain: undefined,
   };
 }
 
@@ -348,15 +433,94 @@ export function parseHeartRateValues(values: WhoopHrValue[]): ParsedHrRecord[] {
 }
 
 // ============================================================
+// Weightlifting parsing
+// ============================================================
+
+export interface ParsedStrengthExercise {
+  exerciseName: string;
+  equipment: string | null;
+  providerExerciseId: string;
+  exerciseIndex: number;
+  sets: ParsedStrengthSet[];
+}
+
+export interface ParsedStrengthSet {
+  setIndex: number;
+  weightKg: number | null;
+  reps: number | null;
+  durationSeconds: number | null;
+}
+
+export interface ParsedWeightliftingWorkout {
+  activityId: string;
+  exercises: ParsedStrengthExercise[];
+}
+
+export function parseWeightliftingWorkout(
+  response: WhoopWeightliftingWorkoutResponse,
+): ParsedWeightliftingWorkout {
+  const exercises: ParsedStrengthExercise[] = [];
+  let exerciseIndex = 0;
+
+  for (const group of response.workout_groups) {
+    for (const workoutExercise of group.workout_exercises) {
+      const details = workoutExercise.exercise_details;
+      const isTimeFormat = details.volume_input_format === "TIME";
+
+      const sets: ParsedStrengthSet[] = [];
+      let setIndex = 0;
+      for (const set of workoutExercise.sets) {
+        if (!set.complete) continue;
+
+        sets.push({
+          setIndex,
+          weightKg: set.weight_kg > 0 ? set.weight_kg : null,
+          reps: set.number_of_reps > 0 ? set.number_of_reps : null,
+          durationSeconds: isTimeFormat && set.time_in_seconds > 0 ? set.time_in_seconds : null,
+        });
+        setIndex++;
+      }
+
+      exercises.push({
+        exerciseName: details.name,
+        equipment: details.equipment || null,
+        providerExerciseId: details.exercise_id,
+        exerciseIndex,
+        sets,
+      });
+      exerciseIndex++;
+    }
+  }
+
+  return { activityId: response.activity_id, exercises };
+}
+
+// ============================================================
 // Cycle — aggregated response from internal API
 // ============================================================
 
+/** BFF v0 activity record (v2_activities array) */
+export interface WhoopV2Activity {
+  id: string; // UUID activity_id
+  type: string; // "sleep", "spin", "functional-fitness", etc.
+  during: string; // Postgres range
+  score_state: string;
+  score_type: string; // "CARDIO", "SLEEP", "RECOVERY"
+  sport_id?: number;
+}
+
 export interface WhoopCycle {
-  id: number;
-  user_id: number;
+  id?: number;
+  user_id?: number;
+  cycle?: Record<string, unknown>;
   days?: string[];
   recovery?: WhoopRecoveryRecord;
   sleep?: { id: number };
+  sleeps?: unknown[];
+  // BFF v0 shape
+  workouts?: WhoopWorkoutRecord[];
+  v2_activities?: WhoopV2Activity[];
+  // Legacy shape
   strain?: {
     workouts: WhoopWorkoutRecord[];
   };
@@ -706,6 +870,35 @@ export class WhoopInternalClient {
       endTime: end,
     });
   }
+
+  /**
+   * Fetch exercise-level strength data for a workout activity.
+   * Returns null if the activity has no linked exercises (404).
+   */
+  async getWeightliftingWorkout(
+    activityId: string,
+  ): Promise<WhoopWeightliftingWorkoutResponse | null> {
+    const u = new URL(
+      `${WHOOP_API_BASE}/weightlifting-service/v2/weightlifting-workout/${activityId}`,
+    );
+    u.searchParams.set("apiVersion", WHOOP_API_VERSION);
+
+    const response = await this.fetchFn(u.toString(), {
+      headers: {
+        Authorization: `Bearer ${this.accessToken}`,
+        "User-Agent": "WHOOP/4.0",
+      },
+    });
+
+    if (response.status === 404) return null;
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`WHOOP weightlifting API error (${response.status}): ${text}`);
+    }
+
+    return response.json() as Promise<WhoopWeightliftingWorkoutResponse>;
+  }
 }
 
 // ============================================================
@@ -1030,61 +1223,59 @@ export class WhoopProvider implements Provider {
       });
     }
 
+    // --- Collect all workouts from cycles (BFF v0 or legacy shape) ---
+    const allWorkouts: WhoopWorkoutRecord[] = [];
+    for (const cycle of cycles) {
+      const workouts = cycle.workouts ?? cycle.strain?.workouts ?? [];
+      allWorkouts.push(...workouts);
+    }
+
     // --- Sync workouts from cycles ---
     try {
       const workoutCount = await withSyncLog(db, this.id, "workouts", async () => {
         let count = 0;
-        for (const cycle of cycles) {
-          const workouts = cycle.strain?.workouts ?? [];
-          for (const workoutRecord of workouts) {
-            try {
-              const parsed = parseWorkout(workoutRecord);
+        for (const workoutRecord of allWorkouts) {
+          try {
+            const parsed = parseWorkout(workoutRecord);
 
-              await db
-                .insert(activity)
-                .values({
-                  providerId: this.id,
-                  externalId: parsed.externalId,
+            await db
+              .insert(activity)
+              .values({
+                providerId: this.id,
+                externalId: parsed.externalId,
+                activityType: parsed.activityType,
+                startedAt: parsed.startedAt,
+                endedAt: parsed.endedAt,
+                raw: {
+                  strain: workoutRecord.score,
+                  avgHeartRate: parsed.avgHeartRate,
+                  maxHeartRate: parsed.maxHeartRate,
+                  calories: parsed.calories,
+                  durationSeconds: parsed.durationSeconds,
+                },
+              })
+              .onConflictDoUpdate({
+                target: [activity.providerId, activity.externalId],
+                set: {
                   activityType: parsed.activityType,
                   startedAt: parsed.startedAt,
                   endedAt: parsed.endedAt,
                   raw: {
-                    strain: workoutRecord.score?.strain,
+                    strain: workoutRecord.score,
                     avgHeartRate: parsed.avgHeartRate,
                     maxHeartRate: parsed.maxHeartRate,
                     calories: parsed.calories,
-                    distanceMeters: parsed.distanceMeters,
-                    totalElevationGain: parsed.totalElevationGain,
                     durationSeconds: parsed.durationSeconds,
-                    zoneDuration: workoutRecord.score?.zone_duration,
                   },
-                })
-                .onConflictDoUpdate({
-                  target: [activity.providerId, activity.externalId],
-                  set: {
-                    activityType: parsed.activityType,
-                    startedAt: parsed.startedAt,
-                    endedAt: parsed.endedAt,
-                    raw: {
-                      strain: workoutRecord.score?.strain,
-                      avgHeartRate: parsed.avgHeartRate,
-                      maxHeartRate: parsed.maxHeartRate,
-                      calories: parsed.calories,
-                      distanceMeters: parsed.distanceMeters,
-                      totalElevationGain: parsed.totalElevationGain,
-                      durationSeconds: parsed.durationSeconds,
-                      zoneDuration: workoutRecord.score?.zone_duration,
-                    },
-                  },
-                });
-              count++;
-            } catch (err) {
-              errors.push({
-                message: `Workout ${workoutRecord.id}: ${err instanceof Error ? err.message : String(err)}`,
-                externalId: String(workoutRecord.id),
-                cause: err,
+                },
               });
-            }
+            count++;
+          } catch (err) {
+            errors.push({
+              message: `Workout ${workoutRecord.activity_id}: ${err instanceof Error ? err.message : String(err)}`,
+              externalId: workoutRecord.activity_id,
+              cause: err,
+            });
           }
         }
         return { recordCount: count, result: count };
@@ -1093,6 +1284,141 @@ export class WhoopProvider implements Provider {
     } catch (err) {
       errors.push({
         message: `workouts: ${err instanceof Error ? err.message : String(err)}`,
+        cause: err,
+      });
+    }
+
+    // --- Sync strength workouts (exercise-level data) ---
+    try {
+      const strengthCount = await withSyncLog(db, this.id, "strength", async () => {
+        let count = 0;
+        const exerciseCache = new Map<string, string>(); // providerExerciseId → exercise UUID
+
+        for (const workoutRecord of allWorkouts) {
+          const activityId = workoutRecord.activity_id;
+          if (!activityId) continue;
+
+          try {
+            const weightliftingData = await client.getWeightliftingWorkout(activityId);
+            if (!weightliftingData) continue; // 404 = no exercises for this workout
+
+            const parsed = parseWeightliftingWorkout(weightliftingData);
+            if (parsed.exercises.length === 0) continue;
+
+            // Parse workout times from the weightlifting response or fall back to workout record
+            const workoutDuring = weightliftingData.during ?? workoutRecord.during;
+            const { start: startedAt, end: endedAt } = parseDuringRange(workoutDuring);
+
+            // Upsert strength_workout
+            const [row] = await db
+              .insert(strengthWorkout)
+              .values({
+                providerId: this.id,
+                externalId: activityId,
+                startedAt,
+                endedAt,
+                name: weightliftingData.name ?? null,
+              })
+              .onConflictDoUpdate({
+                target: [strengthWorkout.providerId, strengthWorkout.externalId],
+                set: {
+                  startedAt,
+                  endedAt,
+                  name: weightliftingData.name ?? null,
+                },
+              })
+              .returning({ id: strengthWorkout.id });
+
+            const workoutId = row?.id;
+            if (!workoutId) continue;
+
+            // Delete old sets, re-insert (same pattern as Strong CSV)
+            await db.delete(strengthSet).where(eq(strengthSet.workoutId, workoutId));
+
+            const setRows: (typeof strengthSet.$inferInsert)[] = [];
+
+            for (const ex of parsed.exercises) {
+              const cacheKey = ex.providerExerciseId;
+              let exerciseId = exerciseCache.get(cacheKey);
+
+              if (!exerciseId) {
+                // Upsert exercise
+                await db
+                  .insert(exercise)
+                  .values({
+                    name: ex.exerciseName,
+                    equipment: ex.equipment,
+                  })
+                  .onConflictDoNothing();
+
+                const whereClause = ex.equipment
+                  ? and(eq(exercise.name, ex.exerciseName), eq(exercise.equipment, ex.equipment))
+                  : eq(exercise.name, ex.exerciseName);
+
+                const exerciseRows = await db
+                  .select({ id: exercise.id })
+                  .from(exercise)
+                  .where(whereClause)
+                  .limit(1);
+
+                exerciseId = exerciseRows[0]?.id;
+                if (exerciseId) {
+                  exerciseCache.set(cacheKey, exerciseId);
+
+                  // Upsert alias
+                  await db
+                    .insert(exerciseAlias)
+                    .values({
+                      exerciseId,
+                      providerId: this.id,
+                      providerExerciseId: ex.providerExerciseId,
+                      providerExerciseName: ex.exerciseName,
+                    })
+                    .onConflictDoNothing();
+                }
+              }
+
+              if (!exerciseId) {
+                errors.push({
+                  message: `Could not resolve exercise: ${ex.exerciseName}`,
+                  externalId: activityId,
+                });
+                continue;
+              }
+
+              for (const set of ex.sets) {
+                setRows.push({
+                  workoutId,
+                  exerciseId,
+                  exerciseIndex: ex.exerciseIndex,
+                  setIndex: set.setIndex,
+                  setType: "working",
+                  weightKg: set.weightKg,
+                  reps: set.reps,
+                  durationSeconds: set.durationSeconds,
+                });
+              }
+            }
+
+            if (setRows.length > 0) {
+              await db.insert(strengthSet).values(setRows);
+            }
+            count++;
+          } catch (err) {
+            errors.push({
+              message: `Strength ${activityId}: ${err instanceof Error ? err.message : String(err)}`,
+              externalId: activityId,
+              cause: err,
+            });
+          }
+        }
+
+        return { recordCount: count, result: count };
+      });
+      recordsSynced += strengthCount;
+    } catch (err) {
+      errors.push({
+        message: `strength: ${err instanceof Error ? err.message : String(err)}`,
         cause: err,
       });
     }

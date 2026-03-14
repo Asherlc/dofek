@@ -187,10 +187,12 @@ See `packages/server/src/routers/life-events.ts` for the API and `packages/web/s
 - [x] Peloton direct provider (automated Auth0 login, workouts + performance metrics)
 - [x] Wahoo provider (OAuth + FIT file parsing → GPS/power/HR/cadence/running dynamics)
 - [x] WHOOP provider (sleep, recovery, workouts, 6s HR streams, journal entries via internal API)
+- [x] WHOOP strength trainer sync (exercise-level sets/reps/weight from `weightlifting-service` internal API)
 - [x] Withings provider (OAuth + sync for scale, BP, thermometer — awaiting credentials)
 - [x] Cross-provider deduplication via materialized views (recursive CTE overlap clustering, per-field merge by provider priority)
 - [x] Strong CSV import (strength training history — CSV upload with unit conversion)
 - [x] RideWithGPS provider (trip sync with GPS track points, activity type mapping)
+- [ ] WHOOP raw IMU/accelerometer data from strength strap (protobuf download — see `docs/whoop.md`)
 
 ### Dashboard & Insights
 - [x] Web dashboard (Vite + React + tRPC + ECharts + shadcn/ui)
