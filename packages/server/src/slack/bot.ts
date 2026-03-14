@@ -322,7 +322,7 @@ async function deleteUnconfirmedEntries(db: Database, entryIds: string[]): Promi
 }
 
 /** Get today's date in YYYY-MM-DD format, in the given IANA timezone. */
-function todayDate(timezone: string): string {
+function _todayDate(timezone: string): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: timezone });
 }
 

@@ -1,12 +1,15 @@
 {
   "supplements": [
     {
-      "name": "Creatine Monohydrate",
-      "amount": 5,
-      "unit": "g",
-      "form": "powder",
-      "description": "5g powder",
-      "meal": "other"
+      "name": "Vitamin D3",
+      "amount": 5000,
+      "unit": "IU",
+      "form": "softgel"
+    },
+    {
+      "name": "Magnesium Glycinate",
+      "amount": 400,
+      "unit": "mg"
     }
   ]
 }

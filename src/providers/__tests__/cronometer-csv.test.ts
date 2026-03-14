@@ -376,4 +376,27 @@ describe("parseCronometerCsv", () => {
     expect(entries[0]?.omega3Mg).toBeNull();
     expect(entries[0]?.omega6Mg).toBeNull();
   });
+
+  it("converts empty unit and category to null", () => {
+    const csv = [csvHeader, makeRow({ Unit: "", Category: "" })].join("\n");
+    const entries = parseCronometerCsv(csv);
+    expect(entries[0]?.unit).toBeNull();
+    expect(entries[0]?.category).toBeNull();
+  });
+
+  it("handles escaped double quotes in CSV fields", () => {
+    // Test the parseCsvLine function's escaped-quote handling
+    const csv = [
+      csvHeader,
+      '2024-03-15,Breakfast,"Food ""Deluxe""",100,g,Other,200,10,25,8,3,2,1.5,3,0.1,15,100,300,5,50,10,2,1.5,20,0.2,0.3,2,0.5,0.3,5,40,1.2,120,2,30,1.5,10,0.2,0.5,5,15,0.5,1.2,70,0,0',
+    ].join("\n");
+    const entries = parseCronometerCsv(csv);
+    expect(entries[0]?.foodName).toBe('Food "Deluxe"');
+  });
+
+  it("handles amount as null when empty", () => {
+    const csv = [csvHeader, makeRow({ Amount: "" })].join("\n");
+    const entries = parseCronometerCsv(csv);
+    expect(entries[0]?.amount).toBeNull();
+  });
 });

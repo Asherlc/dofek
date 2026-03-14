@@ -446,6 +446,88 @@ describe("WhoopProvider.sync() (integration)", () => {
     expect(tokens?.scopes).toMatch(/userId:\d+/);
   });
 
+  it("returns error when no tokens exist at all", async () => {
+    // Remove all tokens for whoop
+    const { oauthToken } = await import("../../db/schema.ts");
+    await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "whoop"));
+
+    const provider = new WhoopProvider(createMockFetch([]));
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain("not connected");
+    expect(result.recordsSynced).toBe(0);
+
+    // Restore tokens for other tests
+    await saveTokens(ctx.db, "whoop", {
+      accessToken: "fake-access",
+      refreshToken: "fake-refresh",
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      scopes: "userId:10129",
+    });
+  });
+
+  it("syncs journal entries from behavior-impact-service", async () => {
+    await saveTokens(ctx.db, "whoop", {
+      accessToken: "fake-access",
+      refreshToken: "fake-refresh",
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      scopes: "userId:10129",
+    });
+
+    const journalMockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+      const urlStr = input.toString();
+
+      if (urlStr.includes("auth-service/v3/whoop")) {
+        return Response.json({
+          AuthenticationResult: {
+            AccessToken: "test-token",
+            RefreshToken: "test-refresh",
+          },
+        });
+      }
+      if (urlStr.includes("users-service/v2/bootstrap")) {
+        return Response.json({ id: 10129 });
+      }
+      if (urlStr.includes("/cycles")) {
+        return Response.json([]);
+      }
+      if (urlStr.includes("metrics-service") || urlStr.includes("metrics/user")) {
+        return Response.json({ values: [] });
+      }
+      if (urlStr.includes("behavior-impact-service")) {
+        return Response.json([
+          {
+            date: "2026-03-01T00:00:00Z",
+            answers: [
+              { name: "caffeine", value: 2, impact: 0.5 },
+              { name: "alcohol", value: 0, impact: -0.1 },
+              { name: "melatonin", answer: "yes", impact: 0.3 },
+            ],
+          },
+        ]);
+      }
+      return new Response("Not found", { status: 404 });
+    }) as typeof globalThis.fetch;
+
+    const provider = new WhoopProvider(journalMockFetch);
+    const result = await provider.sync(ctx.db, new Date("2026-02-28T00:00:00Z"));
+
+    expect(result.errors).toHaveLength(0);
+
+    const { journalEntry } = await import("../../db/schema.ts");
+    const rows = await ctx.db
+      .select()
+      .from(journalEntry)
+      .where(eq(journalEntry.providerId, "whoop"));
+
+    expect(rows.length).toBeGreaterThanOrEqual(3);
+    const caffeine = rows.find((r) => r.question === "caffeine");
+    expect(caffeine).toBeDefined();
+    expect(caffeine?.answerNumeric).toBe(2);
+    expect(caffeine?.impactScore).toBe(0.5);
+  });
+
   it("handles auth failure gracefully", async () => {
     const provider = new WhoopProvider(createMockFetch([], { authError: true }));
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));

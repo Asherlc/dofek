@@ -87,9 +87,6 @@ function cached(ttlMs: number, { lightweight = false } = {}) {
   });
 }
 
-/** Cached public query (no auth required). */
-export const cachedQuery = (ttl: number) => publicProcedure.use(cached(ttl));
-
 /** Cached protected query (requires auth, cache scoped by userId). */
 export const cachedProtectedQuery = (ttl: number) => protectedProcedure.use(cached(ttl));
 

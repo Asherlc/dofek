@@ -174,6 +174,83 @@ describe("OAuth", () => {
       expect(parsed.searchParams.get("audience")).toBe("https://api.example.com/");
     });
 
+    it("uses custom scope separator", () => {
+      const stravaConfig: OAuthConfig = {
+        ...config,
+        scopeSeparator: ",",
+      };
+      const url = buildAuthorizationUrl(stravaConfig);
+      const parsed = new URL(url);
+      expect(parsed.searchParams.get("scope")).toBe("user_read,workouts_read");
+    });
+
+    it("uses Basic auth when tokenAuthMethod is basic", async () => {
+      const basicConfig: OAuthConfig = {
+        ...config,
+        tokenAuthMethod: "basic",
+      };
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            access_token: "basic-access",
+            refresh_token: "basic-refresh",
+          }),
+      });
+
+      await exchangeCodeForTokens(basicConfig, "code", mockFetch);
+
+      const [, options] = mockFetch.mock.calls[0] ?? [];
+      // Should have Authorization header
+      expect(options?.headers?.Authorization).toMatch(/^Basic /);
+      // Should NOT have client_id/client_secret in body
+      const body = new URLSearchParams(options?.body);
+      expect(body.get("client_id")).toBeNull();
+      expect(body.get("client_secret")).toBeNull();
+    });
+
+    it("uses Basic auth for refresh when tokenAuthMethod is basic", async () => {
+      const basicConfig: OAuthConfig = {
+        ...config,
+        tokenAuthMethod: "basic",
+      };
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            access_token: "basic-access",
+            refresh_token: "basic-refresh",
+          }),
+      });
+
+      await refreshAccessToken(basicConfig, "refresh-tok", mockFetch);
+
+      const [, options] = mockFetch.mock.calls[0] ?? [];
+      expect(options?.headers?.Authorization).toMatch(/^Basic /);
+    });
+
+    it("defaults expires_in to 7200 when not in response", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            access_token: "access",
+            refresh_token: "refresh",
+            // No expires_in
+          }),
+      });
+
+      const result = await exchangeCodeForTokens(config, "code", mockFetch);
+      // Should default to 7200s (2 hours) from now
+      const expectedMin = Date.now() + 7100 * 1000;
+      const expectedMax = Date.now() + 7300 * 1000;
+      expect(result.expiresAt.getTime()).toBeGreaterThan(expectedMin);
+      expect(result.expiresAt.getTime()).toBeLessThan(expectedMax);
+      expect(result.scopes).toBeNull(); // No scope in response
+    });
+
     it("sends code_verifier instead of client_secret in token exchange", async () => {
       const pkceConfig: OAuthConfig = {
         ...config,
