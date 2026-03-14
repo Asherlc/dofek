@@ -14,6 +14,7 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/server/package.json ./packages/server/
 COPY packages/web/package.json ./packages/web/
+COPY packages/whoop-whoop/package.json ./packages/whoop-whoop/
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile --prod --node-linker=hoisted
 
@@ -23,6 +24,7 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/server/package.json ./packages/server/
 COPY packages/web/package.json ./packages/web/
+COPY packages/whoop-whoop/package.json ./packages/whoop-whoop/
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile
 COPY . .
@@ -47,6 +49,8 @@ COPY --from=source /app/pnpm-workspace.yaml .
 COPY --from=source /app/supplements.json .
 COPY --from=source /app/packages/server/src ./packages/server/src
 COPY --from=source /app/packages/server/package.json ./packages/server/
+COPY --from=source /app/packages/whoop-whoop/src ./packages/whoop-whoop/src
+COPY --from=source /app/packages/whoop-whoop/package.json ./packages/whoop-whoop/
 COPY --from=prod-deps /app/node_modules ./node_modules
 # Link root workspace package so "import from 'dofek/...'" resolves
 RUN ln -s /app node_modules/dofek

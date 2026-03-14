@@ -20,6 +20,9 @@ importers:
       sax:
         specifier: 1.5.0
         version: 1.5.0
+      whoop-whoop:
+        specifier: workspace:*
+        version: link:packages/whoop-whoop
       winston:
         specifier: 3.19.0
         version: 3.19.0
@@ -175,6 +178,9 @@ importers:
       simple-statistics:
         specifier: 7.8.9
         version: 7.8.9
+      whoop-whoop:
+        specifier: workspace:*
+        version: link:../whoop-whoop
       zod:
         specifier: 3.25.76
         version: 3.25.76
@@ -264,6 +270,15 @@ importers:
       vite:
         specifier: 6.4.1
         version: 6.4.1(@types/node@22.19.15)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
+
+  packages/whoop-whoop:
+    devDependencies:
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 3.2.4
+        version: 3.2.4(@types/node@22.19.15)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
 
 packages:
 

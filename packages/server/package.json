@@ -25,6 +25,7 @@
     "compression": "1.8.1",
     "cookie-parser": "^1.4.7",
     "dofek": "workspace:*",
+    "whoop-whoop": "workspace:*",
     "express": "5.2.1",
     "simple-statistics": "7.8.9",
     "zod": "3.25.76"
