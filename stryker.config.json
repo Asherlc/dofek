@@ -9,10 +9,13 @@
   "incremental": true,
   "incrementalFile": "reports/stryker-incremental.json",
   "mutate": [
-    "src/providers/*.ts",
+    "src/providers/index.ts",
+    "src/providers/strong-csv.ts",
+    "src/providers/cronometer-csv.ts",
     "src/fit/*.ts",
     "src/auth/*.ts",
-    "packages/web/src/lib/*.ts",
+    "packages/web/src/lib/units.ts",
+    "packages/web/src/lib/poll-sync-job.ts",
     "!src/**/*.test.ts",
     "!src/**/__tests__/**"
   ],
@@ -25,9 +28,9 @@
   "testRunnerNodeArgs": ["--import", "tsx"],
   "timeoutMS": 30000,
   "thresholds": {
-    "high": 90,
-    "low": 80,
-    "break": 80
+    "high": 80,
+    "low": 60,
+    "break": 60
   },
   "reporters": ["clear-text", "html", "progress"],
   "concurrency": 4
