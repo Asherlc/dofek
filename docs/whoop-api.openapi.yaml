@@ -517,6 +517,248 @@ components:
           items:
             type: object
 
+    # ── Weightlifting Service ───────────────────────────────
+    WeightliftingWorkoutResponse:
+      type: object
+      description: |
+        Full exercise-level data for a strength workout. Returned by the
+        weightlifting-service, discovered via APK decompilation.
+      properties:
+        user_id:
+          type: integer
+          example: 35557944
+        activity_id:
+          type: string
+          format: uuid
+        weightlifting_workout_id:
+          type: string
+          format: uuid
+        workout_template_id:
+          type: integer
+          nullable: true
+        name:
+          type: string
+          example: "Mar 12, 2026"
+        pushcore_version:
+          type: string
+          example: whoop_3.13.1
+        total_effective_volume_kg:
+          type: number
+          description: Total effective training volume in kg
+          example: 2047.008
+        raw_msk_strain_score:
+          type: number
+          example: 0.0288
+        msk_intensity_percent:
+          type: number
+          example: 0.3
+        scaled_msk_strain_score:
+          type: number
+          example: 2.85552
+        cardio_strain_score:
+          type: number
+          example: 1.549
+        max_heart_rate:
+          type: integer
+          example: 105
+        average_heart_rate:
+          type: integer
+          example: 83
+        kilojoules:
+          type: number
+          example: 104.789
+        total_strain_score:
+          type: number
+          example: 3.634
+        cardio_strain_contribution_percent:
+          type: number
+          example: 0.329
+        msk_strain_contribution_percent:
+          type: number
+          example: 0.671
+        zone_durations:
+          $ref: "#/components/schemas/WeightliftingZoneDurations"
+        workout_groups:
+          type: array
+          items:
+            $ref: "#/components/schemas/WeightliftingWorkoutGroup"
+
+    WeightliftingZoneDurations:
+      type: object
+      description: Time spent in each intensity zone (seconds or count)
+      properties:
+        zone90_to100_duration:
+          type: number
+        zone80_to90_duration:
+          type: number
+        zone70_to80_duration:
+          type: number
+        zone60_to70_duration:
+          type: number
+        zone50_to60_duration:
+          type: number
+        zone0_to50_duration:
+          type: number
+
+    WeightliftingWorkoutGroup:
+      type: object
+      properties:
+        workout_exercises:
+          type: array
+          items:
+            $ref: "#/components/schemas/WeightliftingWorkoutExercise"
+
+    WeightliftingWorkoutExercise:
+      type: object
+      properties:
+        exercise_details:
+          $ref: "#/components/schemas/ExerciseDetails"
+        sets:
+          type: array
+          items:
+            $ref: "#/components/schemas/WeightliftingSet"
+
+    ExerciseDetails:
+      type: object
+      properties:
+        exercise_id:
+          type: string
+          example: FRONTPLANKELBOW
+        name:
+          type: string
+          example: Front Plank
+        equipment:
+          type: string
+          example: BODY
+          description: "Equipment type: BODY, BARBELL, DUMBBELL, CABLE, MACHINE, etc."
+        exercise_type:
+          type: string
+          example: STRENGTH
+        laterality:
+          type: string
+          enum: [BILATERAL, UNILATERAL]
+        movement_pattern:
+          type: string
+          example: OTHER
+          description: "Movement pattern: PUSH, PULL, SQUAT, HINGE, LUNGE, CARRY, OTHER"
+        muscle_groups:
+          type: array
+          items:
+            type: string
+          example: ["CORE"]
+          description: "Target muscle groups: CORE, CHEST, BACK, SHOULDERS, BICEPS, TRICEPS, QUADS, HAMSTRINGS, GLUTES, CALVES, etc."
+        volume_input_format:
+          type: string
+          enum: [REPS, TIME]
+          description: Whether this exercise tracks reps or time (e.g., planks use TIME)
+        trackable:
+          type: boolean
+        custom_exercise:
+          type: boolean
+        image_url:
+          type: string
+          format: uri
+          nullable: true
+        video_url:
+          type: string
+          format: uri
+          nullable: true
+
+    WeightliftingSet:
+      type: object
+      properties:
+        weightlifting_workout_set_id:
+          type: string
+          format: uuid
+        weight_kg:
+          type: number
+          description: Weight used in kg (0 for bodyweight exercises)
+        number_of_reps:
+          type: integer
+          description: Number of reps (0 for time-based exercises)
+        time_in_seconds:
+          type: number
+          description: Duration of set in seconds
+        msk_total_volume_kg:
+          type: number
+          description: Computed MSK volume for this set in kg
+          example: 255.876
+        during:
+          type: string
+          description: "PostgreSQL-style time range: ['start','end')"
+          example: "['2026-03-12T21:37:00.000Z','2026-03-12T21:37:00.001Z')"
+        complete:
+          type: boolean
+        is_exercise_trackable:
+          type: boolean
+        strap_location:
+          type: string
+          nullable: true
+        strap_location_laterality:
+          type: string
+          nullable: true
+        protobuf_file_path:
+          type: string
+          nullable: true
+
+    ExerciseCatalogEntry:
+      type: object
+      description: An exercise from the WHOOP exercise catalog
+      properties:
+        exercise_id:
+          type: string
+          example: BENCHPRESSBARBELL
+        name:
+          type: string
+          example: Bench Press
+        equipment:
+          type: string
+        exercise_type:
+          type: string
+        laterality:
+          type: string
+        movement_pattern:
+          type: string
+        muscle_groups:
+          type: array
+          items:
+            type: string
+        volume_input_format:
+          type: string
+        trackable:
+          type: boolean
+        custom_exercise:
+          type: boolean
+        image_url:
+          type: string
+          format: uri
+          nullable: true
+        video_url:
+          type: string
+          format: uri
+          nullable: true
+
+    ExerciseCatalogV2Response:
+      type: object
+      properties:
+        exercises:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExerciseCatalogEntry"
+
+    WorkoutTemplate:
+      type: object
+      description: A workout template with planned exercises and sets
+      properties:
+        workout_template_id:
+          type: integer
+        name:
+          type: string
+        workout_groups:
+          type: array
+          items:
+            type: object
+
     # ── Journal / Behavior Impact ─────────────────────────
     JournalImpactResponse:
       type: object
@@ -901,14 +1143,188 @@ paths:
         "200":
           description: Body measurements
 
-  # ── Undiscovered / CORS-blocked ───────────────────────
+  # ── Weightlifting Service (discovered via APK decompilation) ──
+
+  /weightlifting-service/v2/weightlifting-workout/{activityId}:
+    get:
+      operationId: getWeightliftingWorkout
+      summary: Get full exercise-level data for a strength workout
+      description: |
+        Returns the complete exercise breakdown for a Strength Trainer workout,
+        including exercises, sets, reps, weight, and MSK strain metrics.
+        The activityId is the UUID activity ID from the cycles BFF workout response.
+      tags: [Weightlifting]
+      parameters:
+        - name: activityId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Activity ID (UUID) from the workout record
+      responses:
+        "200":
+          description: Full weightlifting workout with exercise-level data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WeightliftingWorkoutResponse"
+
+  /weightlifting-service/v1/exercise:
+    get:
+      operationId: getExerciseCatalogV1
+      summary: Get full exercise catalog (v1, flat array)
+      description: |
+        Returns the complete WHOOP exercise catalog (~500+ exercises) as a flat
+        JSON array. Response is large (~320K chars).
+      tags: [Weightlifting]
+      responses:
+        "200":
+          description: Array of exercise definitions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ExerciseCatalogEntry"
+
+  /weightlifting-service/v2/exercise:
+    get:
+      operationId: getExerciseCatalogV2
+      summary: Get full exercise catalog (v2, wrapped)
+      description: |
+        Same exercise catalog as v1 but wrapped in an object with an "exercises" key.
+      tags: [Weightlifting]
+      responses:
+        "200":
+          description: Exercise catalog
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExerciseCatalogV2Response"
+
+  /weightlifting-service/v1/link-workout:
+    get:
+      operationId: getLinkWorkout
+      summary: Get link-workout UI data
+      description: Returns UI configuration data for linking workouts (templates, AI chat config).
+      tags: [Weightlifting]
+      responses:
+        "200":
+          description: Link workout data
+
+  /weightlifting-service/v2/workout-template/{templateId}:
+    get:
+      operationId: getWorkoutTemplate
+      summary: Get a workout template by ID
+      description: Returns a workout template with planned exercises and sets.
+      tags: [Weightlifting]
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Workout template
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkoutTemplate"
+
+  /weightlifting-service/v2/workout-library:
+    get:
+      operationId: getWorkoutLibraryV2
+      summary: Get WHOOP pre-built workout templates (v2)
+      tags: [Weightlifting]
+      responses:
+        "200":
+          description: Workout library
+
+  /weightlifting-service/v3/workout-library:
+    get:
+      operationId: getWorkoutLibraryV3
+      summary: Get WHOOP pre-built workout templates (v3)
+      tags: [Weightlifting]
+      responses:
+        "200":
+          description: Workout library
+
+  /weightlifting-service/v3/prs:
+    get:
+      operationId: getPersonalRecords
+      summary: Get personal records
+      tags: [Weightlifting]
+      responses:
+        "200":
+          description: Personal records
+
+  # ── Weightlifting Service — Write Endpoints ──────────
+  # These endpoints return 405 on GET and 422 on POST with wrong body,
+  # confirming they exist but require proper request bodies.
+
+  /weightlifting-service/v2/weightlifting-workout/activity:
+    post:
+      operationId: createWeightliftingWorkout
+      summary: Create or link a weightlifting workout to an activity
+      tags: [Weightlifting]
+      responses:
+        "200":
+          description: Created workout
+
+  /weightlifting-service/v2/custom-exercise:
+    post:
+      operationId: createCustomExercise
+      summary: Create a custom exercise
+      tags: [Weightlifting]
+      responses:
+        "200":
+          description: Created exercise
+
+  /weightlifting-service/v3/workout-template:
+    post:
+      operationId: createWorkoutTemplate
+      summary: Create a workout template
+      tags: [Weightlifting]
+      responses:
+        "200":
+          description: Created template
+
+  /weightlifting-service/v2/performance-profile:
+    post:
+      operationId: writePerformanceProfile
+      summary: Write performance profile data
+      tags: [Weightlifting]
+      responses:
+        "200":
+          description: Performance profile
+
+  /weightlifting-service/v2/weightlifting-workout/link-cardio-workout:
+    post:
+      operationId: linkCardioWorkout
+      summary: Link a cardio workout to a weightlifting workout
+      tags: [Weightlifting]
+      responses:
+        "200":
+          description: Linked workout
+
+  /weightlifting-service/v1/raw-data/protobuf:
+    post:
+      operationId: uploadRawProtobuf
+      summary: Upload raw strap protobuf data
+      tags: [Weightlifting]
+      responses:
+        "200":
+          description: Upload result
+
+  # ── Previously Undiscovered / CORS-blocked ───────────
   # The following endpoints were observed as CORS-blocked from the browser
-  # (not 404), but returned 404 when called from Node.js. They may require
-  # mobile-app-specific credentials or only respond when strength data exists.
+  # (not 404), but returned 404 when called from Node.js. Now understood:
+  # the actual service name is "weightlifting-service", not any of the
+  # guessed names below.
   #
-  # /developer/v2/activity/strength-trainer
-  # /developer/v2/activity/weightlifting
-  # /fitness-service/v1/*
-  # /activities-service/v1/activities
-  # /developer/v1/sleep
-  # /developer/v1/workout
+  # /developer/v2/activity/strength-trainer  (404 — wrong service name)
+  # /developer/v2/activity/weightlifting     (404 — wrong service name)
+  # /fitness-service/v1/*                    (404 — wrong service name)
+  # /activities-service/v1/activities        (404 — wrong service name)

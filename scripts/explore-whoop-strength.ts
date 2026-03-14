@@ -3,14 +3,22 @@
  *
  * Usage: WHOOP_REFRESH_TOKEN=xxx pnpm tsx scripts/explore-whoop-strength.ts
  *
- * Get your refresh token from the provider_token table in the DB.
+ * Get your refresh token from the DB:
+ *   SELECT refresh_token FROM fitness.oauth_token WHERE provider_id = 'whoop';
+ *
+ * Endpoints discovered via APK decompilation (WHOOP Android v5.439.0).
  */
 
 const WHOOP_API_BASE = "https://api.prod.whoop.com";
 const COGNITO_ENDPOINT = `${WHOOP_API_BASE}/auth-service/v3/whoop/`;
 const COGNITO_CLIENT_ID = "37365lrcda1js3fapqfe2n40eh";
 
-async function refreshToken(refreshToken: string): Promise<{ accessToken: string; userId: number }> {
+interface AuthResult {
+  accessToken: string;
+  userId: number;
+}
+
+async function refreshAccessToken(rt: string): Promise<AuthResult> {
   const response = await fetch(COGNITO_ENDPOINT, {
     method: "POST",
     headers: {
@@ -20,7 +28,7 @@ async function refreshToken(refreshToken: string): Promise<{ accessToken: string
     body: JSON.stringify({
       AuthFlow: "REFRESH_TOKEN_AUTH",
       ClientId: COGNITO_CLIENT_ID,
-      AuthParameters: { REFRESH_TOKEN: refreshToken },
+      AuthParameters: { REFRESH_TOKEN: rt },
     }),
   });
 
@@ -40,6 +48,13 @@ async function refreshToken(refreshToken: string): Promise<{ accessToken: string
   return { accessToken, userId };
 }
 
+interface EndpointConfig {
+  path: string;
+  noApiVersion?: boolean;
+  method?: string;
+  description?: string;
+}
+
 async function main() {
   const rt = process.env.WHOOP_REFRESH_TOKEN;
   if (!rt) {
@@ -48,79 +63,88 @@ async function main() {
   }
 
   console.log("Refreshing access token...");
-  const { accessToken, userId } = await refreshToken(rt);
+  const { accessToken, userId } = await refreshAccessToken(rt);
   console.log(`User ID: ${userId}`);
 
-  // First, get a list of workout IDs (especially strength trainer ones)
-  console.log("\n--- Fetching workouts to find strength trainer activity IDs ---");
+  // First, get a list of workout activity IDs
+  console.log("\n--- Fetching workouts to find activity IDs ---");
   const cyclesResp = await fetch(
     `${WHOOP_API_BASE}/core-details-bff/v0/cycles/details?id=${userId}&startTime=2026-01-01T00:00:00Z&endTime=2026-04-01T00:00:00Z&limit=100&apiVersion=7`,
     { headers: { Authorization: `Bearer ${accessToken}`, "User-Agent": "WHOOP/4.0" } },
   );
-  const cyclesData = await cyclesResp.json() as unknown[];
-  const cycles = Array.isArray(cyclesData) ? cyclesData : [];
-  const workoutIds: string[] = [];
-  for (const cycle of cycles) {
-    const c = cycle as Record<string, unknown>;
-    const strain = c.strain as Record<string, unknown> | undefined;
-    const workouts = strain?.workouts as Record<string, unknown>[] | undefined;
-    if (workouts) {
-      for (const w of workouts) {
-        const sportId = w.sport_id as number;
-        const activityId = w.activity_id as number | undefined;
-        const id = w.id as number | undefined;
-        console.log(`  Workout: sport_id=${sportId} activity_id=${activityId} id=${id}`);
-        if (activityId) workoutIds.push(String(activityId));
-        if (id) workoutIds.push(String(id));
-      }
+  const cyclesRaw = await cyclesResp.text();
+
+  let cyclesData: unknown;
+  try { cyclesData = JSON.parse(cyclesRaw); } catch { cyclesData = null; }
+
+  // Extract workout IDs from cycles response
+  const workouts: Array<{ activityId: string; sportId: number }> = [];
+  function extractWorkouts(obj: unknown, depth = 0): void {
+    if (depth > 5 || !obj || typeof obj !== "object") return;
+    if (Array.isArray(obj)) {
+      for (const item of obj) extractWorkouts(item, depth + 1);
+      return;
+    }
+    const rec = obj as Record<string, unknown>;
+    if ("sport_id" in rec) {
+      const sportId = rec.sport_id as number;
+      const activityId = String(rec.activity_id ?? rec.id ?? "");
+      console.log(`  Workout: sport_id=${sportId} activity_id=${activityId}`);
+      if (activityId) workouts.push({ activityId, sportId });
+    }
+    for (const val of Object.values(rec)) {
+      if (val && typeof val === "object") extractWorkouts(val, depth + 1);
     }
   }
-  console.log(`Found ${workoutIds.length} workout IDs`);
+  extractWorkouts(cyclesData);
+  console.log(`Found ${workouts.length} workouts`);
 
-  // Use first workout ID for detail probes
-  const sampleWorkoutId = workoutIds[0] ?? "0";
+  // Use first workout for probes
+  const sampleActivityId = workouts[0]?.activityId ?? "0";
+  console.log(`Using sample activity ID: ${sampleActivityId}`);
 
-  const endpoints = [
-    // Try without apiVersion param (mobile app may not send it for some services)
-    { path: `/developer/v2/activity/strength-trainer`, noApiVersion: true },
-    { path: `/developer/v2/activity/strength-trainer?limit=10`, noApiVersion: true },
-    // Workout detail endpoints with a real workout ID
-    { path: `/activities-service/v1/activities/${sampleWorkoutId}` },
-    { path: `/activities-service/v1/activities/${sampleWorkoutId}/exercises` },
-    { path: `/activities-service/v1/workout/${sampleWorkoutId}` },
-    { path: `/activities-service/v1/workout/${sampleWorkoutId}/exercises` },
-    { path: `/activities-service/v1/workout/${sampleWorkoutId}/details` },
-    // Strength trainer with workout ID
-    { path: `/strength-trainer/v1/workout/${sampleWorkoutId}` },
-    { path: `/strength-trainer/v1/activity/${sampleWorkoutId}` },
-    // MSK / muscular load
-    { path: `/msk/v1/workout/${sampleWorkoutId}` },
-    { path: `/msk-service/v1/workout/${sampleWorkoutId}` },
-    // Fitness service with workout ID
-    { path: `/fitness-service/v1/workout/${sampleWorkoutId}` },
-    { path: `/fitness-service/v1/activity/${sampleWorkoutId}` },
-    { path: `/fitness-service/v1/workout/${sampleWorkoutId}/exercises` },
-    // User-scoped fitness
-    { path: `/fitness-service/v1/users/${userId}/workouts` },
-    { path: `/fitness-service/v1/users/${userId}/exercises` },
-    // Training service
-    { path: `/training-service/v1/workouts` },
-    { path: `/training-service/v1/user/${userId}/workouts` },
-    // Workout BFF
-    { path: `/workout-bff/v1/workout/${sampleWorkoutId}` },
-    { path: `/workout-details-bff/v1/workout/${sampleWorkoutId}` },
-    // Coach / AI workout builder
-    { path: `/coach-service/v1/workouts` },
-    { path: `/coach-service/v1/user/${userId}/workouts` },
-    // Try the activities endpoint that was CORS-blocked
-    { path: `/activities-service/v1/activities?id=${userId}` },
-    { path: `/activities-service/v1/activities?userId=${userId}` },
+  // =====================================================================
+  // Endpoints from APK decompilation (WHOOP Android v5.439.0)
+  // =====================================================================
+  const endpoints: EndpointConfig[] = [
+    // --- weightlifting-service (discovered from DEX strings) ---
+    { path: `/weightlifting-service/v1/exercise`, description: "Exercise catalog v1" },
+    { path: `/weightlifting-service/v2/exercise`, description: "Exercise catalog v2" },
+    { path: `/weightlifting-service/v2/custom-exercise`, description: "Custom exercises" },
+    { path: `/weightlifting-service/v2/weightlifting-workout/activity`, description: "Workout by activity (likely needs query param)" },
+    { path: `/weightlifting-service/v2/weightlifting-workout/activity?activityId=${sampleActivityId}`, description: "Workout by activity ID param" },
+    { path: `/weightlifting-service/v2/weightlifting-workout/activity/${sampleActivityId}`, description: "Workout by activity ID path" },
+    { path: `/weightlifting-service/v1/link-workout`, description: "Link workout" },
+    { path: `/weightlifting-service/v2/weightlifting-workout/link-cardio-workout`, description: "Link cardio workout" },
+    { path: `/weightlifting-service/v2/performance-profile`, description: "Performance profile" },
+    { path: `/weightlifting-service/v2/performance-profile/template`, description: "Performance profile template" },
+    { path: `/weightlifting-service/v2/workout-library`, description: "Workout library v2" },
+    { path: `/weightlifting-service/v3/workout-library`, description: "Workout library v3" },
+    { path: `/weightlifting-service/v3/workout-template`, description: "Workout template v3" },
+    { path: `/weightlifting-service/v1/raw-data/protobuf`, description: "Raw sensor data (protobuf)" },
+    { path: `/weightlifting-service/v3/prs`, description: "Personal records" },
+    { path: `/weightlifting-service/v1/share/test`, description: "Share workout (placeholder ID)" },
+    // Try without apiVersion (mobile app might not send it for this service)
+    { path: `/weightlifting-service/v1/exercise`, noApiVersion: true, description: "Exercise catalog v1 (no apiVersion)" },
+    { path: `/weightlifting-service/v2/exercise`, noApiVersion: true, description: "Exercise catalog v2 (no apiVersion)" },
+    { path: `/weightlifting-service/v2/weightlifting-workout/activity`, noApiVersion: true, description: "Workout by activity (no apiVersion)" },
+
+    // --- Also try each workout's activity ID against the workout endpoint ---
+    ...workouts.map(w => ({
+      path: `/weightlifting-service/v2/weightlifting-workout/activity?activityId=${w.activityId}`,
+      description: `Workout for activity ${w.activityId} (sport_id=${w.sportId})`,
+    })),
+
+    // --- Developer API strength trainer (CORS-blocked from browser) ---
+    { path: `/developer/v2/activity/strength-trainer`, noApiVersion: true, description: "Developer API strength trainer" },
+    { path: `/developer/v2/activity/strength-trainer?limit=10`, noApiVersion: true, description: "Developer API strength trainer with limit" },
   ];
 
+  console.log(`\n--- Probing ${endpoints.length} endpoints ---\n`);
+
   for (const ep of endpoints) {
-    const endpoint = typeof ep === "string" ? { path: ep } : ep;
-    const apiVersionSuffix = endpoint.noApiVersion ? "" : `${endpoint.path.includes("?") ? "&" : "?"}apiVersion=7`;
-    const url = `${WHOOP_API_BASE}${endpoint.path}${apiVersionSuffix}`;
+    const apiVersionSuffix = ep.noApiVersion ? "" : `${ep.path.includes("?") ? "&" : "?"}apiVersion=7`;
+    const url = `${WHOOP_API_BASE}${ep.path}${apiVersionSuffix}`;
     try {
       const response = await fetch(url, {
         headers: {
@@ -131,19 +155,20 @@ async function main() {
 
       const text = await response.text();
       const status = response.status;
-      const preview = text.slice(0, 800);
+      const preview = text.slice(0, 1500);
 
       if (status === 200) {
-        console.log(`\n✅ ${status} ${endpoint.path}`);
+        console.log(`\n✅ ${status} ${ep.description ?? ep.path}`);
+        console.log(`   URL: ${ep.path}`);
         console.log(preview);
-        if (text.length > 800) console.log(`... (${text.length} chars total)`);
+        if (text.length > 1500) console.log(`... (${text.length} chars total)`);
       } else if (status === 404) {
-        console.log(`❌ ${status} ${endpoint.path}`);
+        console.log(`❌ ${status} ${ep.description ?? ep.path}`);
       } else {
-        console.log(`⚠️  ${status} ${endpoint.path}: ${preview.slice(0, 200)}`);
+        console.log(`⚠️  ${status} ${ep.description ?? ep.path}: ${preview.slice(0, 300)}`);
       }
     } catch (err) {
-      console.log(`💥 ${endpoint.path}: ${err instanceof Error ? err.message : String(err)}`);
+      console.log(`💥 ${ep.description ?? ep.path}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
