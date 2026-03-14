@@ -4,6 +4,7 @@ import { AppHeader } from "../components/AppHeader.tsx";
 import { FoodEntryRow } from "../components/FoodEntryRow.tsx";
 import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
 import { MacroBar } from "../components/MacroBar.tsx";
+import { SlackInstallBanner } from "../components/SlackInstallBanner.tsx";
 import { formatDateForDisplay, formatDateForQuery, isToday } from "../lib/dates.ts";
 import { trpc } from "../lib/trpc.ts";
 
@@ -197,6 +198,8 @@ export function NutritionPage() {
             </button>
           )}
         </div>
+
+        <SlackInstallBanner />
 
         {/* Daily summary */}
         <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5 space-y-5">
