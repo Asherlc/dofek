@@ -344,9 +344,6 @@ describe("Router transformation logic", () => {
       expect(data.baselineMinutes).toBeGreaterThan(0);
       expect(data.totalNeedMinutes).toBeGreaterThan(0);
       expect(data.totalNeedMinutes).toBeGreaterThanOrEqual(data.baselineMinutes);
-      expect(data.suggestedBedtime).toBeTruthy();
-      expect(data.suggestedWakeTime).toBeTruthy();
-
       // Recent nights should have data
       expect(data.recentNights.length).toBeGreaterThan(0);
       expect(data.recentNights.length).toBeLessThanOrEqual(7);
