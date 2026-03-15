@@ -93,10 +93,20 @@ jobs:
       - attach-deps
       - run:
           name: Wait for Postgres
-          command: dockerize -wait tcp://localhost:5432 -timeout 60s
+          command: |
+            for i in $(seq 1 30); do
+              nc -z localhost 5432 && exit 0
+              sleep 2
+            done
+            echo "Postgres did not start" && exit 1
       - run:
           name: Wait for Redis
-          command: dockerize -wait tcp://localhost:6379 -timeout 30s
+          command: |
+            for i in $(seq 1 30); do
+              nc -z localhost 6379 && exit 0
+              sleep 1
+            done
+            echo "Redis did not start" && exit 1
       - run: pnpm test:coverage
       - store_artifacts:
           path: coverage
@@ -167,6 +177,9 @@ jobs:
     executor: node
     steps:
       - checkout
+      - run:
+          name: Fetch main for diff
+          command: git fetch origin main
       - attach-deps
       - restore_cache:
           keys:
