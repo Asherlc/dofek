@@ -130,9 +130,18 @@ jobs:
               docker load -i /tmp/docker-cache/images.tar || true
             fi
       - run:
-          name: Build e2e stack (background)
+          name: Build and start e2e stack
           command: docker compose -f docker-compose.e2e.yml up -d --build --wait
-          background: true
+      - run:
+          name: Save Docker images to cache
+          command: |
+            mkdir -p /tmp/docker-cache
+            docker save $(docker images --format '{{.Repository}}:{{.Tag}}' | grep -v '<none>') \
+              -o /tmp/docker-cache/images.tar || true
+      - save_cache:
+          key: docker-e2e-v1-{{ checksum "Dockerfile" }}-{{ checksum "docker-compose.e2e.yml" }}
+          paths:
+            - /tmp/docker-cache
       - run:
           name: Install Node.js 22
           command: |
@@ -158,24 +167,6 @@ jobs:
           key: cypress-v1-{{ checksum "pnpm-lock.yaml" }}
           paths:
             - ~/.cache/Cypress
-      - run:
-          name: Wait for e2e stack
-          command: |
-            for i in $(seq 1 60); do
-              curl -sf http://localhost:3100/ > /dev/null 2>&1 && exit 0
-              sleep 3
-            done
-            echo "e2e stack did not become ready" && exit 1
-      - run:
-          name: Save Docker images to cache
-          command: |
-            mkdir -p /tmp/docker-cache
-            docker save $(docker images --format '{{.Repository}}:{{.Tag}}' | grep -v '<none>') \
-              -o /tmp/docker-cache/images.tar || true
-      - save_cache:
-          key: docker-e2e-v1-{{ checksum "Dockerfile" }}-{{ checksum "docker-compose.e2e.yml" }}
-          paths:
-            - /tmp/docker-cache
       - run: pnpm e2e:run
       - store_artifacts:
           path: cypress/screenshots
