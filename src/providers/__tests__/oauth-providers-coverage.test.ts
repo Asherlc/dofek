@@ -2,7 +2,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import { Concept2Provider, concept2OAuthConfig, mapConcept2Type } from "../concept2.ts";
 import { CorosProvider, corosOAuthConfig, mapCorosSportType } from "../coros.ts";
 import { CyclingAnalyticsProvider, cyclingAnalyticsOAuthConfig } from "../cycling-analytics.ts";
-import { DecathlonProvider, decathlonOAuthConfig, mapDecathlonSport, parseDecathlonActivity } from "../decathlon.ts";
+import {
+  DecathlonProvider,
+  decathlonOAuthConfig,
+  mapDecathlonSport,
+  parseDecathlonActivity,
+} from "../decathlon.ts";
 import { KomootProvider, komootOAuthConfig, mapKomootSport } from "../komoot.ts";
 
 // ============================================================
