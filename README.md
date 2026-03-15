@@ -230,13 +230,21 @@ terraform init                              # first time only
 terraform apply -var="server_ip=<SERVER_IP>" # copies changed files and restarts containers
 ```
 
-The `deploy-config` module is intentionally separate from the main `deploy/main.tf` (which provisions the Hetzner server). This lets you push config updates without needing the Hetzner API token or other provisioning secrets.
+The `deploy-config` module is intentionally separate from the main `deploy/main.tf` (which provisions the Hetzner server). This lets you push config updates without needing the Hetzner API token or other provisioning secrets. The main module uses `user_data` (cloud-init) to place files at provisioning time, but changing `user_data` forces a server rebuild — `deploy-config` avoids that by using SSH provisioners instead.
 
-**SSH agent requirement:** The deploy uses `agent = true` for SSH auth. Your SSH key must be available in the SSH agent. If you use 1Password for SSH keys, set `SSH_AUTH_SOCK` to the 1Password agent socket before running terraform:
+**SSH agent requirement:** Terraform's Go SSH client does **not** read `~/.ssh/config` — it only uses the standard `SSH_AUTH_SOCK` agent. If your SSH keys are in 1Password, you must point `SSH_AUTH_SOCK` at the 1Password agent socket:
 
 ```bash
 export SSH_AUTH_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
+cd deploy/deploy-config
+terraform apply -var="server_ip=159.69.3.40"
 ```
+
+Note: Terraform's SSH client also cannot use passphrase-protected keys from `~/.ssh/` without the agent, and `private_key` in the connection block doesn't work with keys stored in 1Password. The `agent = true` approach is the only reliable option.
+
+**Finding the server IP:** The domain is behind Cloudflare so you need the direct Hetzner IP:
+- `~/.ssh/known_hosts` — grep for Hetzner ranges (`159.69.*`, `116.203.*`, `49.12.*`)
+- Hetzner Cloud console → Servers → `dofek`
 
 Cloud-init handles the initial provisioning; `deploy-config` handles all subsequent config updates.
 
