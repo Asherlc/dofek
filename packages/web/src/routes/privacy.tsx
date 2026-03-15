@@ -11,9 +11,9 @@ function PrivacyPage() {
           <section>
             <h2 className="text-lg font-semibold text-zinc-100 mb-3">1. Introduction</h2>
             <p>
-              Dofek ("we", "our", "the platform") is a fitness and health data aggregation platform
-              operated by Asher Cohen. This policy describes how we collect, use, store, and protect
-              your personal and health data when you use our service at dofek.asherlc.com.
+              Dofek ("we", "our", "the platform") is a fitness and health data aggregation platform.
+              This policy describes how we collect, use, store, and protect your personal and health
+              data when you use our service.
             </p>
           </section>
 
@@ -158,14 +158,8 @@ function PrivacyPage() {
           <section>
             <h2 className="text-lg font-semibold text-zinc-100 mb-3">9. Contact</h2>
             <p>
-              For questions about this privacy policy or to exercise your data rights, contact us
-              at:{" "}
-              <a
-                href="mailto:asherlc@asherlc.com"
-                className="text-emerald-400 hover:text-emerald-300 underline"
-              >
-                asherlc@asherlc.com
-              </a>
+              For questions about this privacy policy or to exercise your data rights, contact the
+              administrator of this instance.
             </p>
           </section>
         </div>

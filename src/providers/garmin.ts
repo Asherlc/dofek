@@ -336,7 +336,7 @@ export function garminOAuthConfig(): OAuthConfig | null {
   if (!clientId) return null;
 
   const clientSecret = process.env.GARMIN_CLIENT_SECRET;
-  const redirectUri = process.env.OAUTH_REDIRECT_URI ?? "https://dofek.asherlc.com/callback";
+  const redirectUri = process.env.OAUTH_REDIRECT_URI ?? "";
 
   return {
     clientId,

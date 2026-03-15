@@ -503,11 +503,11 @@ describe("tRPC API", () => {
   });
 
   describe("Slack OAuth callback", () => {
-    it("GET /callback with state=slack returns 400 without env vars", async () => {
+    it("GET /callback with state=slack (no random token) returns 400 as unknown state", async () => {
       const res = await fetch(`${baseUrl}/callback?code=test&state=slack`);
       expect(res.status).toBe(400);
       const body = await res.text();
-      expect(body).toContain("SLACK_CLIENT_ID");
+      expect(body).toContain("Unknown or expired OAuth state");
     });
   });
 

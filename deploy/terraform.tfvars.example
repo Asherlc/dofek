@@ -1,4 +1,7 @@
-hcloud_token   = "your-hetzner-api-token"
-ssh_public_key = "ssh-ed25519 AAAA..."
-domain         = "dofek.asherlc.com"
-sops_age_key   = "AGE-SECRET-KEY-..."
+hcloud_token    = "your-hetzner-api-token"
+ssh_public_key  = "ssh-ed25519 AAAA..."
+domain          = "dofek.example.com"
+ghcr_username   = "your-github-username"
+ghcr_token      = "ghp_..."
+sops_age_key    = "AGE-SECRET-KEY-..."
+# ssh_allowed_ips = ["1.2.3.4/32"]  # Restrict SSH to your IP (recommended)

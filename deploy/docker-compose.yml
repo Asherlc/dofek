@@ -13,19 +13,19 @@ services:
       - client
 
   client:
-    image: ghcr.io/asherlc/dofek-client:latest
+    image: ${DOFEK_CLIENT_IMAGE:-ghcr.io/your-org/dofek-client:latest}
     restart: unless-stopped
     depends_on:
       - web
 
   web:
-    image: ghcr.io/asherlc/dofek:latest
+    image: ${DOFEK_IMAGE:-ghcr.io/your-org/dofek:latest}
     hostname: dofek-web
     command: web
     restart: unless-stopped
     env_file: .env
     environment:
-      - DATABASE_URL=postgres://health:health@db:5432/health
+      - DATABASE_URL=postgres://health:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/health
       - PORT=3000
       - NODE_ENV=production
     depends_on:
@@ -33,12 +33,12 @@ services:
         condition: service_healthy
 
   sync:
-    image: ghcr.io/asherlc/dofek:latest
+    image: ${DOFEK_IMAGE:-ghcr.io/your-org/dofek:latest}
     command: sync
     restart: "no"
     env_file: .env
     environment:
-      - DATABASE_URL=postgres://health:health@db:5432/health
+      - DATABASE_URL=postgres://health:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/health
       - NODE_ENV=production
     depends_on:
       db:
@@ -50,7 +50,7 @@ services:
     environment:
       POSTGRES_DB: health
       POSTGRES_USER: health
-      POSTGRES_PASSWORD: health
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
@@ -66,7 +66,7 @@ services:
       POSTGRES_HOST: db
       POSTGRES_DB: health
       POSTGRES_USER: health
-      POSTGRES_PASSWORD: health
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       SCHEDULE: "@daily"
       BACKUP_KEEP_DAYS: 7
       BACKUP_KEEP_WEEKS: 4

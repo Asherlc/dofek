@@ -65,11 +65,11 @@ describe("garminOAuthConfig", () => {
     expect(config?.redirectUri).toBe("https://example.com/callback");
   });
 
-  it("uses default redirect URI when OAUTH_REDIRECT_URI is not set", () => {
+  it("uses empty redirect URI when OAUTH_REDIRECT_URI is not set", () => {
     process.env.GARMIN_CLIENT_ID = "test-id";
     delete process.env.OAUTH_REDIRECT_URI;
     const config = garminOAuthConfig();
-    expect(config?.redirectUri).toContain("dofek");
+    expect(config?.redirectUri).toBe("");
   });
 });
 

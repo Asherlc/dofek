@@ -346,7 +346,7 @@ describe("FatSecretProvider — custom fetch", () => {
     process.env.FATSECRET_CONSUMER_KEY = "test-key";
     process.env.FATSECRET_CONSUMER_SECRET = "test-secret";
 
-    const customFetch = (() => {}) as unknown as typeof globalThis.fetch;
+    const customFetch = (() => Promise.resolve(new Response())) as typeof globalThis.fetch;
     const provider = new FatSecretProvider(customFetch);
     expect(provider.id).toBe("fatsecret");
   });

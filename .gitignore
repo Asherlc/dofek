@@ -1,6 +1,14 @@
 node_modules/
 dist/
 .claude/
+.context/
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/
+.env.local
+.env.*.local
 # .env is SOPS-encrypted and safe to commit
 # .env.plain is the decrypted version — never commit
 .env.plain

@@ -20,6 +20,13 @@ import { type NutritionItemWithMeal, refineNutritionItems } from "./ai-nutrition
 
 const mockGenerateText = vi.mocked(generateText);
 
+type GenerateTextReturn = Awaited<ReturnType<typeof generateText>>;
+
+/** Build a mock generateText result with only the `output` field populated */
+function mockGenerateTextResult(output: unknown): GenerateTextReturn {
+  return { output } as GenerateTextReturn;
+}
+
 const previousItems: NutritionItemWithMeal[] = [
   {
     foodName: "Scrambled Eggs",
@@ -88,9 +95,7 @@ describe("refineNutritionItems", () => {
       },
     ];
 
-    mockGenerateText.mockResolvedValueOnce({
-      output: { items: refinedItems },
-    } as unknown as Awaited<ReturnType<typeof generateText>>);
+    mockGenerateText.mockResolvedValueOnce(mockGenerateTextResult({ items: refinedItems }));
 
     const result = await refineNutritionItems(previousItems, "add butter to the toast");
 
@@ -102,9 +107,7 @@ describe("refineNutritionItems", () => {
   it("includes local time in the system prompt when provided", async () => {
     process.env.GEMINI_API_KEY = "test-key";
 
-    mockGenerateText.mockResolvedValueOnce({
-      output: { items: previousItems },
-    } as unknown as Awaited<ReturnType<typeof generateText>>);
+    mockGenerateText.mockResolvedValueOnce(mockGenerateTextResult({ items: previousItems }));
 
     await refineNutritionItems(previousItems, "that's all", "Tuesday, 8:15 AM");
 
@@ -115,9 +118,7 @@ describe("refineNutritionItems", () => {
   it("does not include local time when not provided", async () => {
     process.env.GEMINI_API_KEY = "test-key";
 
-    mockGenerateText.mockResolvedValueOnce({
-      output: { items: previousItems },
-    } as unknown as Awaited<ReturnType<typeof generateText>>);
+    mockGenerateText.mockResolvedValueOnce(mockGenerateTextResult({ items: previousItems }));
 
     await refineNutritionItems(previousItems, "that's correct");
 
@@ -128,9 +129,7 @@ describe("refineNutritionItems", () => {
   it("sends previous items as assistant context in messages", async () => {
     process.env.GEMINI_API_KEY = "test-key";
 
-    mockGenerateText.mockResolvedValueOnce({
-      output: { items: previousItems },
-    } as unknown as Awaited<ReturnType<typeof generateText>>);
+    mockGenerateText.mockResolvedValueOnce(mockGenerateTextResult({ items: previousItems }));
 
     await refineNutritionItems(previousItems, "remove the toast");
 
@@ -161,9 +160,7 @@ describe("refineNutritionItems", () => {
 
     mockGenerateText
       .mockRejectedValueOnce(new Error("429 Too Many Requests"))
-      .mockResolvedValueOnce({
-        output: { items: previousItems },
-      } as unknown as Awaited<ReturnType<typeof generateText>>);
+      .mockResolvedValueOnce(mockGenerateTextResult({ items: previousItems }));
 
     const result = await refineNutritionItems(previousItems, "looks good");
 
@@ -186,9 +183,7 @@ describe("refineNutritionItems", () => {
   it("throws when provider returns no output", async () => {
     process.env.GEMINI_API_KEY = "test-key";
 
-    mockGenerateText.mockResolvedValueOnce({
-      output: null,
-    } as unknown as Awaited<ReturnType<typeof generateText>>);
+    mockGenerateText.mockResolvedValueOnce(mockGenerateTextResult(null));
 
     await expect(refineNutritionItems(previousItems, "test")).rejects.toThrow(
       "returned no structured output",
