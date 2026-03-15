@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { Concept2Provider, concept2OAuthConfig } from "../concept2.ts";
-import { CorosProvider, corosOAuthConfig } from "../coros.ts";
+import { Concept2Provider, concept2OAuthConfig, mapConcept2Type } from "../concept2.ts";
+import { CorosProvider, corosOAuthConfig, mapCorosSportType } from "../coros.ts";
 import { CyclingAnalyticsProvider, cyclingAnalyticsOAuthConfig } from "../cycling-analytics.ts";
-import { DecathlonProvider, decathlonOAuthConfig } from "../decathlon.ts";
-import { KomootProvider, komootOAuthConfig } from "../komoot.ts";
+import { DecathlonProvider, decathlonOAuthConfig, mapDecathlonSport, parseDecathlonActivity } from "../decathlon.ts";
+import { KomootProvider, komootOAuthConfig, mapKomootSport } from "../komoot.ts";
 
 // ============================================================
 // Concept2
@@ -532,8 +532,6 @@ describe("KomootProvider.authSetup()", () => {
 // ============================================================
 
 describe("mapKomootSport — additional mappings", () => {
-  const { mapKomootSport } = require("../komoot.ts");
-
   it("maps e-bike variants to cycling", () => {
     expect(mapKomootSport("E_BIKING")).toBe("cycling");
     expect(mapKomootSport("ROAD_CYCLING")).toBe("cycling");
@@ -564,8 +562,6 @@ describe("mapKomootSport — additional mappings", () => {
 // ============================================================
 
 describe("mapDecathlonSport — additional mappings", () => {
-  const { mapDecathlonSport } = require("../decathlon.ts");
-
   it("maps mountain biking", () => {
     expect(mapDecathlonSport("/v2/sports/153")).toBe("mountain_biking");
   });
@@ -606,8 +602,6 @@ describe("mapDecathlonSport — additional mappings", () => {
 // ============================================================
 
 describe("mapCorosSportType — additional mappings", () => {
-  const { mapCorosSportType } = require("../coros.ts");
-
   it("maps walking and hiking", () => {
     expect(mapCorosSportType(14)).toBe("walking");
     expect(mapCorosSportType(15)).toBe("hiking");
@@ -637,8 +631,6 @@ describe("mapCorosSportType — additional mappings", () => {
 // ============================================================
 
 describe("mapConcept2Type — case insensitivity", () => {
-  const { mapConcept2Type } = require("../concept2.ts");
-
   it("handles uppercase input", () => {
     expect(mapConcept2Type("ROWER")).toBe("rowing");
     expect(mapConcept2Type("SKIERG")).toBe("skiing");
@@ -657,8 +649,6 @@ describe("mapConcept2Type — case insensitivity", () => {
 // ============================================================
 
 describe("parseDecathlonActivity — edge cases", () => {
-  const { parseDecathlonActivity } = require("../decathlon.ts");
-
   it("handles empty dataSummaries array", () => {
     const act = {
       id: "act-empty",
