@@ -29,6 +29,9 @@ importers:
       trainerroad-client:
         specifier: workspace:*
         version: link:packages/trainerroad-client
+      trainingpeaks-connect:
+        specifier: workspace:*
+        version: link:packages/trainingpeaks-connect
       velohero-client:
         specifier: workspace:*
         version: link:packages/velohero-client
@@ -235,6 +238,15 @@ importers:
         version: 5.9.3
 
   packages/trainerroad-client:
+    devDependencies:
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 3.2.4
+        version: 3.2.4(@types/node@22.19.15)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
+
+  packages/trainingpeaks-connect:
     devDependencies:
       typescript:
         specifier: 5.9.3

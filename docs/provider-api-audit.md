@@ -54,6 +54,16 @@ Last updated: 2026-03-14
 - **Source:** Based on [tapiriik](https://github.com/cpfair/tapiriik)
 - **Verdict:** ONLY OPTION — SSO API is the only programmatic access
 
+### TrainingPeaks
+- **Package:** `packages/trainingpeaks-connect`
+- **Official API:** Partner-only (requires approval, personal use blocked). Metrics are write-only. No CTL/ATL/TSB.
+- **Internal API:** Cookie-based auth (`Production_tpAuth` → Bearer token exchange), REST at `tpapi.trainingpeaks.com`
+- **Gaps filled:** Performance Management Chart (CTL/ATL/TSB), read metrics, personal records, workout analysis with time-series channels
+- **Auth limitation:** No programmatic login — user must provide cookie from browser session. Cookie refreshable via `home.trainingpeaks.com/refresh`.
+- **Key quirk:** `totalTime` in decimal hours (1.25 = 1h15m), 90-day max query range
+- **Source:** Based on [freekode/tp2intervals](https://github.com/freekode/tp2intervals) and [JamsusMaximus/trainingpeaks-mcp](https://github.com/JamsusMaximus/trainingpeaks-mcp)
+- **Verdict:** HIGH VALUE — PMC data and readable metrics unavailable through partner API
+
 ---
 
 ## Not worth reverse engineering
@@ -101,6 +111,7 @@ Last updated: 2026-03-14
 | Zwift | None | Easy (Keycloak) | Essential | Done |
 | TrainerRoad | None | Medium (CSRF cookies) | Essential | Done |
 | VeloHero | None | Easy (SSO) | Essential | Done |
+| TrainingPeaks | Partner-only | Easy (cookie → Bearer) | High | Done |
 | Fitbit | Excellent | N/A (no internal API) | None | Skip |
 | Polar | Good | Low (server-rendered) | Low | Skip |
 | Oura | Good | Unknown (undocumented) | Low | Skip |

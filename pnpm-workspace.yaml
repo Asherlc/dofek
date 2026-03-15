@@ -9,6 +9,7 @@ packages:
   - packages/trainerroad-client
   - packages/velohero-client
   - packages/garmin-connect
+  - packages/trainingpeaks-connect
 
 ignoredBuiltDependencies:
   - cpu-features

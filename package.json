@@ -54,6 +54,7 @@
     "eight-sleep-client": "workspace:*",
     "garmin-connect": "workspace:*",
     "trainerroad-client": "workspace:*",
+    "trainingpeaks-connect": "workspace:*",
     "velohero-client": "workspace:*",
     "whoop-whoop": "workspace:*",
     "zwift-client": "workspace:*",
