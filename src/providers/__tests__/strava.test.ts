@@ -252,6 +252,33 @@ describe("Strava Provider", () => {
       expect(rows).toHaveLength(0);
     });
 
+    it("returns empty array when time stream has empty data", () => {
+      const emptyTime: StravaStreamSet = {
+        time: { data: [], series_type: "time", resolution: "high", original_size: 0 },
+      };
+      const rows = stravaStreamsToMetricStream(emptyTime, "strava", "act-uuid", startedAt);
+      expect(rows).toHaveLength(0);
+    });
+
+    it("omits heartrate from raw when heartrate stream is absent", () => {
+      const noHr: StravaStreamSet = {
+        time: { data: [0], series_type: "time", resolution: "high", original_size: 1 },
+      };
+      const rows = stravaStreamsToMetricStream(noHr, "strava", "act-uuid", startedAt);
+      expect(rows[0]?.heartRate).toBeUndefined();
+      expect(rows[0]?.raw).not.toHaveProperty("heartrate");
+    });
+
+    it("omits latlng from raw when latlng stream is absent", () => {
+      const noLatLng: StravaStreamSet = {
+        time: { data: [0], series_type: "time", resolution: "high", original_size: 1 },
+        heartrate: { data: [130], series_type: "time", resolution: "high", original_size: 1 },
+      };
+      const rows = stravaStreamsToMetricStream(noLatLng, "strava", "act-uuid", startedAt);
+      expect(rows[0]?.lat).toBeUndefined();
+      expect(rows[0]?.raw).not.toHaveProperty("latlng");
+    });
+
     it("includes raw JSONB for every record", () => {
       const rows = stravaStreamsToMetricStream(sampleStreams, "strava", "act-uuid", startedAt);
 
