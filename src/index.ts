@@ -9,6 +9,7 @@ import { FatSecretProvider } from "./providers/fatsecret.ts";
 import { FitbitProvider } from "./providers/fitbit.ts";
 import { GarminProvider } from "./providers/garmin.ts";
 import { getAllProviders, getEnabledProviders, registerProvider } from "./providers/index.ts";
+import { OuraProvider } from "./providers/oura.ts";
 import { PelotonProvider } from "./providers/peloton.ts";
 import { PolarProvider } from "./providers/polar.ts";
 import { RideWithGpsProvider } from "./providers/ride-with-gps.ts";
@@ -46,6 +47,7 @@ registerProvider(new PolarProvider());
 registerProvider(new WhoopProvider());
 registerProvider(new RideWithGpsProvider());
 registerProvider(new StravaProvider());
+registerProvider(new OuraProvider());
 registerProvider(new StrongCsvProvider());
 registerProvider(new CronometerCsvProvider());
 if (supplementConfig) {

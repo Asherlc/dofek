@@ -1,4 +1,5 @@
 import { AppHeader } from "../components/AppHeader.tsx";
+import { ExportPanel } from "../components/ExportPanel.tsx";
 import { LinkedAccountsPanel } from "../components/LinkedAccountsPanel.tsx";
 import { SlackIntegrationPanel } from "../components/SlackIntegrationPanel.tsx";
 import { UnitSystemToggle } from "../components/UnitSystemToggle.tsx";
@@ -81,6 +82,15 @@ export function SettingsPage() {
           <p className="text-xs text-zinc-600 mb-4">Connect external services</p>
           <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
             <SlackIntegrationPanel />
+          </div>
+        </section>
+        <section>
+          <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-1">
+            Data Export
+          </h2>
+          <p className="text-xs text-zinc-600 mb-4">Download all your data</p>
+          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+            <ExportPanel />
           </div>
         </section>
       </main>

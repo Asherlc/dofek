@@ -137,7 +137,7 @@ export const oauthToken = fitness.table("oauth_token", {
     .primaryKey()
     .references(() => provider.id),
   accessToken: text("access_token").notNull(),
-  refreshToken: text("refresh_token").notNull(),
+  refreshToken: text("refresh_token"),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   scopes: text("scopes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

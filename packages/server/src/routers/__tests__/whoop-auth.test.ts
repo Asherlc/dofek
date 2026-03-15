@@ -7,20 +7,20 @@ import {
 import { createSession } from "../../auth/session.ts";
 import { createApp } from "../../index.ts";
 
-// Mock the WhoopInternalClient static methods
-vi.mock("dofek/providers/whoop", () => ({
-  WhoopInternalClient: {
+// Mock the WhoopClient static methods
+vi.mock("whoop-whoop", () => ({
+  WhoopClient: {
     signIn: vi.fn(),
     verifyCode: vi.fn(),
   },
 }));
 
-import { WhoopInternalClient } from "dofek/providers/whoop";
+import { WhoopClient } from "whoop-whoop";
 
 const DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001";
 
-const mockSignIn = vi.mocked(WhoopInternalClient.signIn);
-const mockVerifyCode = vi.mocked(WhoopInternalClient.verifyCode);
+const mockSignIn = vi.mocked(WhoopClient.signIn);
+const mockVerifyCode = vi.mocked(WhoopClient.verifyCode);
 
 describe("whoopAuth router", () => {
   let server: ReturnType<import("express").Express["listen"]>;

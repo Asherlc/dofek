@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { mkdir, readdir, rm, unlink } from "node:fs/promises";
+import { mkdir, readdir, rm, stat, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
@@ -32,6 +32,7 @@ import {
   isProviderConfigured,
 } from "./auth/providers.ts";
 import { createSession, deleteSession, validateSession } from "./auth/session.ts";
+import { queryCache } from "./lib/cache.ts";
 import { httpRequestDuration, registry } from "./lib/metrics.ts";
 import { logger } from "./logger.ts";
 import { appRouter } from "./router.ts";
@@ -498,6 +499,118 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
     }
   });
 
+  // ── Data Export ──
+  // Stores userId for each export job so we can verify ownership on download
+  const exportJobOwners = new Map<string, string>();
+
+  app.post("/api/export", async (req, res) => {
+    const sessionId = getSessionCookie(req);
+    if (!sessionId) {
+      res.status(401).json({ error: "Not authenticated" });
+      return;
+    }
+    const session = await validateSession(db, sessionId);
+    if (!session) {
+      res.status(401).json({ error: "Session expired" });
+      return;
+    }
+
+    const jobId = `export-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const tmpFile = join(tmpdir(), `dofek-export-${jobId}.zip`);
+
+    setJobStatus(jobId, { status: "processing", progress: 0, message: "Starting export..." });
+    exportJobOwners.set(jobId, session.userId);
+
+    // Fire-and-forget background export
+    (async () => {
+      const exportStart = Date.now();
+      try {
+        const { generateExport } = await import("./export.ts");
+        const result = await generateExport(db, session.userId, tmpFile, (info) => {
+          setJobStatus(jobId, {
+            status: "processing",
+            progress: info.pct,
+            message: info.message,
+          });
+        });
+
+        const durationSec = ((Date.now() - exportStart) / 1000).toFixed(1);
+        const msg = `Exported ${result.totalRecords} records across ${result.tableCount} tables in ${durationSec}s`;
+        logger.info(`[export] ${msg}`);
+        setJobStatus(jobId, { status: "done", progress: 100, message: msg });
+      } catch (err: unknown) {
+        const message = errorMessage(err);
+        logger.error(`[export] Export failed: ${message}`);
+        setJobStatus(jobId, { status: "error", message });
+        await unlink(tmpFile).catch(() => {});
+      }
+    })();
+
+    res.json({ status: "processing", jobId });
+  });
+
+  app.get("/api/export/status/:jobId", (req, res) => {
+    const status = jobStatuses.get(req.params.jobId);
+    if (!status) {
+      res.status(404).json({ error: "Unknown job" });
+      return;
+    }
+    const response: Record<string, unknown> = { ...status };
+    if (status.status === "done") {
+      response.downloadUrl = `/api/export/download/${req.params.jobId}`;
+    }
+    res.json(response);
+  });
+
+  app.get("/api/export/download/:jobId", async (req, res) => {
+    const sessionId = getSessionCookie(req);
+    if (!sessionId) {
+      res.status(401).json({ error: "Not authenticated" });
+      return;
+    }
+    const session = await validateSession(db, sessionId);
+    if (!session) {
+      res.status(401).json({ error: "Session expired" });
+      return;
+    }
+
+    const { jobId } = req.params;
+    const status = jobStatuses.get(jobId);
+    if (!status) {
+      res.status(404).json({ error: "Unknown job" });
+      return;
+    }
+
+    // Verify the export belongs to this user
+    const ownerId = exportJobOwners.get(jobId);
+    if (ownerId !== session.userId) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+
+    if (status.status !== "done") {
+      res.status(400).json({ error: "Export not ready" });
+      return;
+    }
+
+    const filePath = join(tmpdir(), `dofek-export-${jobId}.zip`);
+    try {
+      await stat(filePath);
+    } catch {
+      res.status(404).json({ error: "Export file not found" });
+      return;
+    }
+
+    res.download(filePath, "dofek-export.zip", (err) => {
+      if (err) {
+        logger.error(`[export] Download failed: ${err}`);
+      }
+      // Clean up the temp file after download
+      unlink(filePath).catch(() => {});
+      exportJobOwners.delete(jobId);
+    });
+  });
+
   // ── OAuth state ──
   // Maps random state tokens to provider IDs (+ optional PKCE verifier) for CSRF protection
   interface OAuthStateEntry {
@@ -505,10 +618,14 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
     codeVerifier?: string;
     intent: "data" | "login" | "link";
     linkUserId?: string;
+    userId: string;
   }
   const oauthStateMap = new Map<string, OAuthStateEntry>();
   // OAuth 1.0 request token secrets (keyed by oauth_token)
-  const oauth1Secrets = new Map<string, { providerId: string; tokenSecret: string }>();
+  const oauth1Secrets = new Map<
+    string,
+    { providerId: string; tokenSecret: string; userId: string }
+  >();
 
   // ── Identity auth routes (login with Google, Apple, Authentik) ──
 
@@ -766,8 +883,9 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       logger.info(`[auth] Running automated login for ${providerId}...`);
       const tokens = await setup.automatedLogin(email, password);
       const { ensureProvider, saveTokens } = await import("dofek/db/tokens");
-      await ensureProvider(db, provider.id, provider.name, setup.apiBaseUrl);
+      await ensureProvider(db, provider.id, provider.name, setup.apiBaseUrl, stateEntry.userId);
       await saveTokens(db, provider.id, tokens);
+      await queryCache.invalidateByPrefix(`${stateEntry.userId}:sync.providers`);
 
       logger.info(`[auth] ${providerId} tokens saved. Expires: ${tokens.expiresAt.toISOString()}`);
       res.send(
@@ -783,6 +901,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       oauth1Secrets.set(result.oauthToken, {
         providerId,
         tokenSecret: result.oauthTokenSecret,
+        userId: stateEntry.userId,
       });
       setTimeout(() => oauth1Secrets.delete(result.oauthToken), 10 * 60 * 1000);
       res.redirect(result.authorizeUrl);
@@ -817,6 +936,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       await startDataProviderOAuth(res, req.params.provider, {
         providerId: req.params.provider,
         intent: "login",
+        userId: DEFAULT_USER_ID,
       });
     } catch (err: unknown) {
       logger.error(`[auth] Failed to start data provider login: ${err}`);
@@ -842,6 +962,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
         providerId: req.params.provider,
         intent: "link",
         linkUserId: session.userId,
+        userId: session.userId,
       });
     } catch (err: unknown) {
       logger.error(`[auth] Failed to start data provider link: ${err}`);
@@ -852,9 +973,15 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
   // ── Data-provider OAuth for data sync (Wahoo, Withings, etc.) ──
   app.get("/auth/provider/:provider", async (req, res) => {
     try {
+      // Resolve the logged-in user so the provider record is linked to them
+      const sessionId = getSessionCookie(req);
+      const session = sessionId ? await validateSession(db, sessionId) : null;
+      const userId = session?.userId ?? DEFAULT_USER_ID;
+
       await startDataProviderOAuth(res, req.params.provider, {
         providerId: req.params.provider,
         intent: "data",
+        userId,
       });
     } catch (err: unknown) {
       logger.error(`[auth] Failed to start OAuth flow: ${err}`);
@@ -914,7 +1041,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
         );
 
         const { ensureProvider, saveTokens } = await import("dofek/db/tokens");
-        await ensureProvider(db, provider.id, provider.name);
+        await ensureProvider(db, provider.id, provider.name, undefined, stored.userId);
         // Store OAuth 1.0 tokens — token as accessToken, tokenSecret as refreshToken
         // OAuth 1.0 tokens don't expire
         await saveTokens(db, provider.id, {
@@ -923,6 +1050,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
           expiresAt: new Date("2099-12-31"),
           scopes: "",
         });
+        await queryCache.invalidateByPrefix(`${stored.userId}:sync.providers`);
 
         logger.info(`[auth] ${stored.providerId} OAuth 1.0 tokens saved.`);
         res.send(
@@ -1016,7 +1144,13 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       }
       oauthStateMap.delete(state);
 
-      const { providerId, codeVerifier: storedCodeVerifier, intent, linkUserId } = stateEntry;
+      const {
+        providerId,
+        codeVerifier: storedCodeVerifier,
+        intent,
+        linkUserId,
+        userId: stateUserId,
+      } = stateEntry;
 
       const { getAllProviders } = await import("dofek/providers/registry");
       const { ensureProvidersRegistered } = await import("./routers/sync.ts");
@@ -1039,8 +1173,9 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
 
       const { ensureProvider } = await import("dofek/db/tokens");
       const { saveTokens } = await import("dofek/db/tokens");
-      await ensureProvider(db, provider.id, provider.name, setup.apiBaseUrl);
+      await ensureProvider(db, provider.id, provider.name, setup.apiBaseUrl, stateUserId);
       await saveTokens(db, provider.id, tokens);
+      await queryCache.invalidateByPrefix(`${stateUserId}:sync.providers`);
 
       logger.info(`[auth] ${providerId} tokens saved. Expires: ${tokens.expiresAt.toISOString()}`);
 

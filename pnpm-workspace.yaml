@@ -3,6 +3,7 @@ packages:
   - packages/server
   - packages/web
   - packages/ios
+  - packages/whoop-whoop
 
 ignoredBuiltDependencies:
   - cpu-features

@@ -11,11 +11,16 @@ export async function ensureProvider(
   id: string,
   name: string,
   apiBaseUrl?: string,
+  userId?: string,
 ): Promise<string> {
+  const values = { id, name, apiBaseUrl, ...(userId ? { userId } : {}) };
   await db
     .insert(provider)
-    .values({ id, name, apiBaseUrl })
-    .onConflictDoNothing({ target: provider.id });
+    .values(values)
+    .onConflictDoUpdate({
+      target: provider.id,
+      set: { name, apiBaseUrl, ...(userId ? { userId } : {}) },
+    });
   return id;
 }
 

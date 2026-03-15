@@ -1,5 +1,5 @@
 import { ensureProvider, saveTokens } from "dofek/db/tokens";
-import { WhoopInternalClient } from "dofek/providers/whoop";
+import { WhoopClient } from "whoop-whoop";
 import { z } from "zod";
 import { protectedProcedure, router } from "../trpc.ts";
 
@@ -21,7 +21,7 @@ export const whoopAuthRouter = router({
   signIn: protectedProcedure
     .input(z.object({ username: z.string(), password: z.string() }))
     .mutation(async ({ input }) => {
-      const result = await WhoopInternalClient.signIn(input.username, input.password);
+      const result = await WhoopClient.signIn(input.username, input.password);
 
       if (result.type === "verification_required") {
         // Store Cognito session for step 2
@@ -66,11 +66,7 @@ export const whoopAuthRouter = router({
         throw new Error("Verification session expired — please sign in again");
       }
 
-      const token = await WhoopInternalClient.verifyCode(
-        challenge.session,
-        input.code,
-        challenge.username,
-      );
+      const token = await WhoopClient.verifyCode(challenge.session, input.code, challenge.username);
       pendingChallenges.delete(input.challengeId);
 
       return {

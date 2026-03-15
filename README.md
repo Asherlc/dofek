@@ -227,17 +227,39 @@ ssh root@<SERVER_IP> "cd /opt/dofek && docker compose restart caddy"
 
 ### SSH access
 
+The domain (`dofek.asherlc.com`) is behind Cloudflare, so you need the **direct Hetzner IP** to SSH. Find it via:
+- Hetzner Cloud console → Servers → `dofek` → IP address
+- `~/.ssh/known_hosts` (grep for Hetzner IP ranges like `159.69.*`, `116.203.*`, `49.12.*`)
+- Terraform state if available: `cd deploy && terraform output server_ip`
+
 ```bash
 ssh root@<SERVER_IP>
 ```
 
+### Accessing logs
+
+**In-browser (easiest):** The Data Sources page has a "System Logs" panel that shows recent server logs from an in-memory ring buffer (last 500 entries). This is the fastest way to check OAuth errors, sync failures, etc.
+
+**Docker container logs (SSH):** The compose project is at `/opt/dofek`. Container names are prefixed with `dofek-`:
+
 ```bash
-# Common debugging commands
-docker ps                                    # container status
-docker logs web --tail 50                    # API server logs
-docker logs sync --tail 50                   # sync runner logs
-cd /opt/dofek && docker compose up -d web    # recreate container
+ssh root@<SERVER_IP>
+
+docker ps                                         # container status
+docker logs dofek-web-1 --tail 100                # API server logs (OAuth, tRPC, sync)
+docker logs dofek-web-1 --tail 100 | grep error   # filter for errors
+docker logs dofek-sync-1 --tail 100               # sync runner logs (one-shot container)
+docker logs dofek-client-1 --tail 50              # nginx access logs
+docker logs dofek-caddy-1 --tail 50               # TLS/reverse proxy logs
+
+# Follow logs in real-time
+docker logs dofek-web-1 -f
+
+# Recreate a container
+cd /opt/dofek && docker compose up -d web
 ```
+
+**Note:** There is no centralized log aggregation (Loki, CloudWatch, etc.). Logs only exist in Docker container stdout/stderr and the in-memory ring buffer. If a container restarts, its Docker logs reset. The ring buffer also resets on restart.
 
 ### Production secrets
 
@@ -263,12 +285,12 @@ No SSH to the server needed. The credentials flow through the Docker image.
 
 ### Troubleshooting
 
-**Login page says "No identity providers configured"** — this usually means the API server (`web`) is down, not that providers are misconfigured. The login page silently shows this message when it can't reach `/api/auth/providers`. Check `docker ps` and `docker logs web`.
+**Login page says "No identity providers configured"** — this usually means the API server (`web`) is down, not that providers are misconfigured. The login page silently shows this message when it can't reach `/api/auth/providers`. Check `docker ps` and `docker logs dofek-web-1`.
 
 **If a provider appears grayed out** on the Data Sources page, it means its required env vars are missing. Check:
 1. Are the vars in the repo's `.env`? → `sops .env` to verify/add them
 2. Is the age key set on the server? → check `/opt/dofek/.env`
-3. Is the container running the latest image? → `docker logs web` to check for SOPS errors
+3. Is the container running the latest image? → `docker logs dofek-web-1` to check for SOPS errors
 
 ## Supplements
 

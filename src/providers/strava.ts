@@ -227,8 +227,18 @@ export class StravaClient {
     }
 
     if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`Strava API error (${response.status}): ${text}`);
+      const contentType = response.headers.get("content-type") ?? "";
+      let detail: string;
+      if (contentType.includes("application/json")) {
+        const json = await response.json();
+        detail = JSON.stringify(json);
+      } else if (contentType.includes("text/html")) {
+        detail = "(HTML error page)";
+      } else {
+        const text = await response.text();
+        detail = text.length > 200 ? `${text.slice(0, 200)}…` : text;
+      }
+      throw new Error(`Strava API error (${response.status}): ${detail}`);
     }
 
     return response.json() as Promise<T>;
@@ -366,6 +376,7 @@ export class StravaProvider implements Provider {
     const config = stravaOAuthConfig();
     if (!config)
       throw new Error("STRAVA_CLIENT_ID and STRAVA_CLIENT_SECRET are required to refresh tokens");
+    if (!tokens.refreshToken) throw new Error("No refresh token for Strava");
     const refreshed = await refreshAccessToken(config, tokens.refreshToken, this.fetchFn);
     await saveTokens(db, this.id, refreshed);
     return refreshed;

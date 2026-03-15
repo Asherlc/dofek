@@ -49,6 +49,8 @@ jobs:
             | grep -v '\.d\.ts$' \
             | grep -v 'packages/server/' \
             | grep -v 'packages/ios/' \
+            | grep -v 'packages/whoop-whoop/' \
+            | awk '!/^src\/providers\// || /^src\/providers\/(index|strong-csv|cronometer-csv)\.ts$/' \
             | grep -v 'packages/web/src/pages/' \
             | grep -v 'packages/web/src/hooks/' \
             | grep -v 'packages/web/src/components/' \

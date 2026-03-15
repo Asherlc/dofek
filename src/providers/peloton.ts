@@ -531,6 +531,7 @@ export class PelotonProvider implements Provider {
 
     console.log("[peloton] Access token expired, refreshing...");
     const config = pelotonOAuthConfig();
+    if (!tokens.refreshToken) throw new Error("No refresh token for Peloton");
     const refreshed = await refreshAccessToken(config, tokens.refreshToken, this.fetchFn);
     await saveTokens(db, this.id, refreshed);
     return refreshed;

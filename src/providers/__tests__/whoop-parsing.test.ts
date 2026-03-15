@@ -4,7 +4,7 @@ import {
   parseRecovery,
   parseSleep,
   parseWorkout,
-  WhoopInternalClient,
+  WhoopClient,
   type WhoopRecoveryRecord,
   type WhoopSleepRecord,
   type WhoopWorkoutRecord,
@@ -16,9 +16,9 @@ import {
 // - parseSleep without score (no stage_summary)
 // - parseWorkout without score (no distance, calories, etc.)
 // - parseHeartRateValues with empty/large arrays
-// - WhoopInternalClient.authenticate MFA required path
-// - WhoopInternalClient._fetchUserId nested user object shapes
-// - WhoopInternalClient.refreshAccessToken success path
+// - WhoopClient.authenticate MFA required path
+// - WhoopClient._fetchUserId nested user object shapes
+// - WhoopClient.refreshAccessToken success path
 // ============================================================
 
 describe("parseRecovery — edge cases", () => {
@@ -185,14 +185,14 @@ describe("parseSleep — edge cases", () => {
 describe("parseWorkout — edge cases", () => {
   it("handles workout without score", () => {
     const record: WhoopWorkoutRecord = {
-      activity_id: "act-400",
+      activity_id: "uuid-400",
       during: "['2026-03-01T10:00:00Z','2026-03-01T11:00:00Z')",
       timezone_offset: "-05:00",
       sport_id: 0,
     };
 
     const parsed = parseWorkout(record);
-    expect(parsed.externalId).toBe("act-400");
+    expect(parsed.externalId).toBe("uuid-400");
     expect(parsed.activityType).toBe("running");
     expect(parsed.durationSeconds).toBe(3600);
     expect(parsed.distanceMeters).toBeUndefined();
@@ -204,7 +204,7 @@ describe("parseWorkout — edge cases", () => {
 
   it("maps unknown sport ID to other", () => {
     const record: WhoopWorkoutRecord = {
-      activity_id: "act-401",
+      activity_id: "uuid-401",
       during: "['2026-03-01T10:00:00Z','2026-03-01T11:00:00Z')",
       timezone_offset: "-05:00",
       sport_id: 9999,
@@ -220,13 +220,14 @@ describe("parseWorkout — edge cases", () => {
 
   it("converts kilojoules to calories", () => {
     const record: WhoopWorkoutRecord = {
-      activity_id: "act-402",
+      activity_id: "uuid-402",
       during: "['2026-03-01T10:00:00Z','2026-03-01T10:30:00Z')",
       timezone_offset: "-05:00",
       sport_id: 44, // yoga
-      kilojoules: 418.4,
+      score: 3,
       average_heart_rate: 100,
       max_heart_rate: 120,
+      kilojoules: 418.4,
     };
 
     const parsed = parseWorkout(record);
@@ -236,13 +237,14 @@ describe("parseWorkout — edge cases", () => {
 
   it("handles score with zero kilojoule", () => {
     const record: WhoopWorkoutRecord = {
-      activity_id: "act-403",
+      activity_id: "uuid-403",
       during: "['2026-03-01T10:00:00Z','2026-03-01T10:30:00Z')",
       timezone_offset: "-05:00",
       sport_id: 70, // meditation
-      kilojoules: 0,
+      score: 0,
       average_heart_rate: 60,
       max_heart_rate: 70,
+      kilojoules: 0,
     };
 
     const parsed = parseWorkout(record);
@@ -252,7 +254,7 @@ describe("parseWorkout — edge cases", () => {
 
   it("maps various sport IDs correctly", () => {
     const makeRecord = (sportId: number): WhoopWorkoutRecord => ({
-      activity_id: `act-${sportId}`,
+      activity_id: `uuid-${sportId + 1000}`,
       during: "['2026-03-01T10:00:00Z','2026-03-01T11:00:00Z')",
       timezone_offset: "-05:00",
       sport_id: sportId,
@@ -293,7 +295,7 @@ describe("parseHeartRateValues — edge cases", () => {
   });
 });
 
-describe("WhoopInternalClient.authenticate — MFA required path", () => {
+describe("WhoopClient.authenticate — MFA required path", () => {
   it("throws when MFA is required", async () => {
     const mockFetch = ((input: RequestInfo | URL) => {
       const url = input.toString();
@@ -308,9 +310,9 @@ describe("WhoopInternalClient.authenticate — MFA required path", () => {
       return Promise.resolve(new Response("Not found", { status: 404 }));
     }) as typeof globalThis.fetch;
 
-    await expect(
-      WhoopInternalClient.authenticate("user@test.com", "pass", mockFetch),
-    ).rejects.toThrow(/MFA/);
+    await expect(WhoopClient.authenticate("user@test.com", "pass", mockFetch)).rejects.toThrow(
+      /MFA/,
+    );
   });
 
   it("returns token when no MFA required", async () => {
@@ -329,7 +331,7 @@ describe("WhoopInternalClient.authenticate — MFA required path", () => {
       return Promise.resolve(new Response("Not found", { status: 404 }));
     }) as typeof globalThis.fetch;
 
-    const token = await WhoopInternalClient.authenticate("user@test.com", "pass", mockFetch);
+    const token = await WhoopClient.authenticate("user@test.com", "pass", mockFetch);
     expect(token.accessToken).toBe("my-tok");
     expect(token.refreshToken).toBe("my-ref");
     expect(token.userId).toBe(42);
@@ -351,13 +353,13 @@ describe("WhoopInternalClient.authenticate — MFA required path", () => {
       return Promise.resolve(new Response("Not found", { status: 404 }));
     }) as typeof globalThis.fetch;
 
-    await expect(
-      WhoopInternalClient.authenticate("user@test.com", "pass", mockFetch),
-    ).rejects.toThrow(/user ID/i);
+    await expect(WhoopClient.authenticate("user@test.com", "pass", mockFetch)).rejects.toThrow(
+      /user ID/i,
+    );
   });
 });
 
-describe("WhoopInternalClient._fetchUserId — various response shapes", () => {
+describe("WhoopClient._fetchUserId — various response shapes", () => {
   it("extracts user_id from top level", async () => {
     const mockFetch = ((input: RequestInfo | URL) => {
       const url = input.toString();
@@ -367,7 +369,7 @@ describe("WhoopInternalClient._fetchUserId — various response shapes", () => {
       return Promise.resolve(new Response("Not found", { status: 404 }));
     }) as typeof globalThis.fetch;
 
-    const userId = await WhoopInternalClient._fetchUserId("token", mockFetch);
+    const userId = await WhoopClient._fetchUserId("token", mockFetch);
     expect(userId).toBe(123);
   });
 
@@ -380,7 +382,7 @@ describe("WhoopInternalClient._fetchUserId — various response shapes", () => {
       return Promise.resolve(new Response("Not found", { status: 404 }));
     }) as typeof globalThis.fetch;
 
-    const userId = await WhoopInternalClient._fetchUserId("token", mockFetch);
+    const userId = await WhoopClient._fetchUserId("token", mockFetch);
     expect(userId).toBe(456);
   });
 
@@ -393,7 +395,7 @@ describe("WhoopInternalClient._fetchUserId — various response shapes", () => {
       return Promise.resolve(new Response("Not found", { status: 404 }));
     }) as typeof globalThis.fetch;
 
-    const userId = await WhoopInternalClient._fetchUserId("token", mockFetch);
+    const userId = await WhoopClient._fetchUserId("token", mockFetch);
     expect(userId).toBe(789);
   });
 
@@ -406,12 +408,12 @@ describe("WhoopInternalClient._fetchUserId — various response shapes", () => {
       return Promise.resolve(new Response("Not found", { status: 404 }));
     }) as typeof globalThis.fetch;
 
-    const userId = await WhoopInternalClient._fetchUserId("token", mockFetch);
+    const userId = await WhoopClient._fetchUserId("token", mockFetch);
     expect(userId).toBeNull();
   });
 });
 
-describe("WhoopInternalClient.refreshAccessToken — success path", () => {
+describe("WhoopClient.refreshAccessToken — success path", () => {
   it("returns new access token and reuses old refresh token", async () => {
     const mockFetch = ((input: RequestInfo | URL) => {
       const url = input.toString();
@@ -428,7 +430,7 @@ describe("WhoopInternalClient.refreshAccessToken — success path", () => {
       return Promise.resolve(new Response("Not found", { status: 404 }));
     }) as typeof globalThis.fetch;
 
-    const result = await WhoopInternalClient.refreshAccessToken("old-refresh", mockFetch);
+    const result = await WhoopClient.refreshAccessToken("old-refresh", mockFetch);
     expect(result.accessToken).toBe("new-access");
     // Should reuse old refresh token since Cognito doesn't return a new one
     expect(result.refreshToken).toBe("old-refresh");
@@ -451,7 +453,7 @@ describe("WhoopInternalClient.refreshAccessToken — success path", () => {
       return Promise.resolve(new Response("Not found", { status: 404 }));
     }) as typeof globalThis.fetch;
 
-    const result = await WhoopInternalClient.refreshAccessToken("old-refresh", mockFetch);
+    const result = await WhoopClient.refreshAccessToken("old-refresh", mockFetch);
     expect(result.refreshToken).toBe("new-refresh");
   });
 });
