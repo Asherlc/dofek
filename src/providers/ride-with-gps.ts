@@ -72,6 +72,7 @@ export function rideWithGpsOAuthConfig(): OAuthConfig | null {
     tokenUrl: RWGPS_OAUTH_TOKEN_URL,
     redirectUri: process.env.OAUTH_REDIRECT_URI ?? "https://dofek.asherlc.com/callback",
     scopes: ["user"],
+    tokenAuthMethod: "basic",
   };
 }
 
