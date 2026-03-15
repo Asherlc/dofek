@@ -3,21 +3,22 @@ import { z } from "zod";
 import { DURATION_LABELS } from "../lib/duration-labels.ts";
 import { enduranceTypeFilter } from "../lib/endurance-types.ts";
 import { type CriticalPowerModel, fitCriticalPower } from "../lib/math.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export type { CriticalPowerModel };
 
-type PowerCurveRow = {
-  duration_seconds: number;
-  best_power: number;
-  activity_date: string;
-};
+const powerCurveRowSchema = z.object({
+  duration_seconds: z.coerce.number(),
+  best_power: z.coerce.number(),
+  activity_date: z.string(),
+});
 
-type EftpRow = {
-  activity_date: string;
-  activity_name: string | null;
-  normalized_power: number;
-};
+const eftpRowSchema = z.object({
+  activity_date: z.string(),
+  activity_name: z.string().nullable(),
+  normalized_power: z.coerce.number(),
+});
 
 /**
  * Single query that computes best average power for all standard durations.
@@ -99,7 +100,11 @@ export const powerRouter = router({
   powerCurve: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
-      const rows = await ctx.db.execute<PowerCurveRow>(powerCurveQuery(input.days, ctx.userId));
+      const rows = await executeWithSchema(
+        ctx.db,
+        powerCurveRowSchema,
+        powerCurveQuery(input.days, ctx.userId),
+      );
 
       const results = rows.map((r) => ({
         durationSeconds: Number(r.duration_seconds),
@@ -128,7 +133,10 @@ export const powerRouter = router({
     .query(async ({ ctx, input }) => {
       // Compute per-activity Normalized Power via 30s rolling average.
       // Requires at least 20 min of power data (1200 samples at 1s, 240 at 5s).
-      const rows = await ctx.db.execute<EftpRow>(sql`
+      const rows = await executeWithSchema(
+        ctx.db,
+        eftpRowSchema,
+        sql`
         WITH rolling AS (
           SELECT
             ms.activity_id,
@@ -154,7 +162,8 @@ export const powerRouter = router({
         GROUP BY a.id, a.started_at, a.name
         HAVING COUNT(*) >= 240
         ORDER BY a.started_at
-      `);
+      `,
+      );
 
       const trend = rows.map((r) => ({
         date: String(r.activity_date),
@@ -163,7 +172,11 @@ export const powerRouter = router({
       }));
 
       // Compute current eFTP via CP model from last 90 days' power curve (single query)
-      const cpRows = await ctx.db.execute<PowerCurveRow>(powerCurveQuery(90, ctx.userId));
+      const cpRows = await executeWithSchema(
+        ctx.db,
+        powerCurveRowSchema,
+        powerCurveQuery(90, ctx.userId),
+      );
       const cpPoints = cpRows.map((r) => ({
         durationSeconds: Number(r.duration_seconds),
         bestPower: Number(r.best_power),

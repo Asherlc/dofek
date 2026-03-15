@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export interface DailyTrendRow {
@@ -45,19 +46,22 @@ export const trendsRouter = router({
   daily: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(365) }))
     .query(async ({ ctx, input }): Promise<DailyTrendRow[]> => {
-      const rows = await ctx.db.execute<{
-        date: string;
-        avg_hr: number | null;
-        max_hr: number | null;
-        avg_power: number | null;
-        max_power: number | null;
-        avg_cadence: number | null;
-        avg_speed: number | null;
-        total_samples: number;
-        hr_samples: number;
-        power_samples: number;
-        activity_count: number;
-      }>(
+      const dailyTrendRowSchema = z.object({
+        date: z.string(),
+        avg_hr: z.coerce.number().nullable(),
+        max_hr: z.coerce.number().nullable(),
+        avg_power: z.coerce.number().nullable(),
+        max_power: z.coerce.number().nullable(),
+        avg_cadence: z.coerce.number().nullable(),
+        avg_speed: z.coerce.number().nullable(),
+        total_samples: z.coerce.number(),
+        hr_samples: z.coerce.number(),
+        power_samples: z.coerce.number(),
+        activity_count: z.coerce.number(),
+      });
+      const rows = await executeWithSchema(
+        ctx.db,
+        dailyTrendRowSchema,
         sql`SELECT
               bucket::date::text AS date,
               avg_hr,
@@ -100,19 +104,22 @@ export const trendsRouter = router({
     .input(z.object({ weeks: z.number().default(52) }))
     .query(async ({ ctx, input }): Promise<WeeklyTrendRow[]> => {
       const days = input.weeks * 7;
-      const rows = await ctx.db.execute<{
-        week: string;
-        avg_hr: number | null;
-        max_hr: number | null;
-        avg_power: number | null;
-        max_power: number | null;
-        avg_cadence: number | null;
-        avg_speed: number | null;
-        total_samples: number;
-        hr_samples: number;
-        power_samples: number;
-        activity_count: number;
-      }>(
+      const weeklyTrendRowSchema = z.object({
+        week: z.string(),
+        avg_hr: z.coerce.number().nullable(),
+        max_hr: z.coerce.number().nullable(),
+        avg_power: z.coerce.number().nullable(),
+        max_power: z.coerce.number().nullable(),
+        avg_cadence: z.coerce.number().nullable(),
+        avg_speed: z.coerce.number().nullable(),
+        total_samples: z.coerce.number(),
+        hr_samples: z.coerce.number(),
+        power_samples: z.coerce.number(),
+        activity_count: z.coerce.number(),
+      });
+      const rows = await executeWithSchema(
+        ctx.db,
+        weeklyTrendRowSchema,
         sql`SELECT
               bucket::date::text AS week,
               avg_hr,

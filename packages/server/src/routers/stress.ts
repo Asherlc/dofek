@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 /**
@@ -58,7 +59,19 @@ export const stressRouter = router({
     .query(async ({ ctx, input }): Promise<StressResult> => {
       const queryDays = input.days + 60; // extra for baseline windows
 
-      const rows = await ctx.db.execute<RawRow>(
+      const rawRowSchema = z.object({
+        date: z.string(),
+        hrv: z.coerce.number().nullable(),
+        resting_hr: z.coerce.number().nullable(),
+        hrv_mean_60d: z.coerce.number().nullable(),
+        hrv_sd_60d: z.coerce.number().nullable(),
+        rhr_mean_60d: z.coerce.number().nullable(),
+        rhr_sd_60d: z.coerce.number().nullable(),
+        efficiency_pct: z.coerce.number().nullable(),
+      });
+      const rows = await executeWithSchema(
+        ctx.db,
+        rawRowSchema,
         sql`WITH metrics AS (
               SELECT
                 date,
@@ -97,17 +110,6 @@ export const stressRouter = router({
             WHERE m.date > CURRENT_DATE - ${input.days}::int
             ORDER BY m.date ASC`,
       );
-
-      type RawRow = {
-        date: string;
-        hrv: number | null;
-        resting_hr: number | null;
-        hrv_mean_60d: number | null;
-        hrv_sd_60d: number | null;
-        rhr_mean_60d: number | null;
-        rhr_sd_60d: number | null;
-        efficiency_pct: number | null;
-      };
 
       const daily: DailyStressRow[] = rows.map((row) => {
         // HRV deviation: negative z-score = below baseline = stressed

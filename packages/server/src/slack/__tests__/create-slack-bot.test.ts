@@ -41,11 +41,16 @@ vi.mock("../../lib/cache.ts", () => ({
 
 import { createSlackBot, startSlackBot } from "../bot.ts";
 
-// Create a minimal mock DB
-function createMockDb() {
-  return {
-    execute: vi.fn().mockResolvedValue([]),
-  } as unknown as import("dofek/db").Database;
+/**
+ * Type-narrowing helper for test mocks: accepts a partial object and returns it
+ * typed as `T`. Uses `Partial<T>` so the single `as T` assertion is valid.
+ */
+function mockAs<T extends object>(partial: Partial<T>): T {
+  return partial as T;
+}
+
+function createMockDb(): import("dofek/db").Database {
+  return mockAs<import("dofek/db").Database>({ execute: vi.fn().mockResolvedValue([]) });
 }
 
 describe("createSlackBot", () => {
@@ -125,9 +130,7 @@ describe("startSlackBot", () => {
     process.env.SLACK_SIGNING_SECRET = "test-signing-secret";
 
     const db = createMockDb();
-    const mockExpress = {
-      use: vi.fn(),
-    } as unknown as import("express").Express;
+    const mockExpress = mockAs<import("express").Express>({ use: vi.fn() });
 
     await startSlackBot(db, mockExpress);
 

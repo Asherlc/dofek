@@ -30,8 +30,9 @@ describe("AutoSupplementsProvider — validate()", () => {
   });
 
   it("returns validation error for invalid config", () => {
-    // Force an invalid config — empty supplements array
-    const badConfig = { supplements: [] } as unknown as SupplementConfig;
+    // Force an invalid config — empty supplements array (violates Zod min(1) at runtime).
+    // TypeScript type allows empty array since min(1) is a runtime-only constraint.
+    const badConfig: SupplementConfig = { supplements: [] };
     const provider = new AutoSupplementsProvider(badConfig);
     const result = provider.validate();
     expect(result).toContain("Invalid supplement config");

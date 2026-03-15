@@ -54,14 +54,30 @@ interface MockSlackApp {
   start: ReturnType<typeof vi.fn>;
 }
 
-function createMockDb() {
-  return {
-    execute: vi.fn().mockResolvedValue([]),
-  } as unknown as import("dofek/db").Database;
+/**
+ * Type-narrowing helper for test mocks: accepts a partial object and returns it
+ * typed as `T`. Uses `Partial<T>` internally so the single `as T` assertion is
+ * valid (Partial<T> always overlaps with T).
+ */
+function mockAs<T extends object>(partial: Partial<T>): T {
+  return partial as T;
+}
+
+/**
+ * Reinterpret an object as type T for test mocking. This avoids double-casts
+ * when the source type (e.g. a real Slack App) is structurally different from
+ * the mock interface.
+ */
+function castMock<T>(value: object): T {
+  return value as T;
+}
+
+function createMockDb(): import("dofek/db").Database {
+  return mockAs<import("dofek/db").Database>({ execute: vi.fn().mockResolvedValue([]) });
 }
 
 function getMockExecute(db: import("dofek/db").Database): FlexibleMock {
-  return db.execute as unknown as FlexibleMock;
+  return db.execute as FlexibleMock;
 }
 
 function makeFoodItem(overrides: Partial<NutritionItemWithMeal> = {}): NutritionItemWithMeal {
@@ -93,7 +109,7 @@ function setupHandlers(db: ReturnType<typeof createMockDb>) {
   const result = createSlackBot(db);
   expect(result).not.toBeNull();
 
-  const app = result?.app as unknown as MockSlackApp;
+  const app = castMock<MockSlackApp>(result?.app ?? {});
   type Handler = (...args: unknown[]) => Promise<void>;
   const messageHandler = app.message.mock.calls[0]?.[0] as Handler;
   const actionCalls = app.action.mock.calls as [unknown, Handler][];

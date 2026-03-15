@@ -1,6 +1,7 @@
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
@@ -35,8 +36,26 @@ export interface AnomalyCheckResult {
  * A combination of elevated resting HR + depressed HRV + poor sleep is a
  * known early indicator of illness (WHOOP / Welltory research).
  */
+const anomalyCheckRowSchema = z.object({
+  date: z.string().nullable(),
+  resting_hr: z.coerce.number().nullable(),
+  rhr_mean: z.coerce.number().nullable(),
+  rhr_sd: z.coerce.number().nullable(),
+  rhr_count: z.coerce.number().nullable(),
+  hrv: z.coerce.number().nullable(),
+  hrv_mean: z.coerce.number().nullable(),
+  hrv_sd: z.coerce.number().nullable(),
+  hrv_count: z.coerce.number().nullable(),
+  duration_minutes: z.coerce.number().nullable(),
+  sleep_mean: z.coerce.number().nullable(),
+  sleep_sd: z.coerce.number().nullable(),
+  sleep_count: z.coerce.number().nullable(),
+});
+
 export async function checkAnomalies(db: Database, userId: string): Promise<AnomalyCheckResult> {
-  const rows = await db.execute(
+  const rows = await executeWithSchema(
+    db,
+    anomalyCheckRowSchema,
     sql`WITH baseline AS (
           SELECT
             date,
@@ -80,7 +99,7 @@ export async function checkAnomalies(db: Database, userId: string): Promise<Anom
   const anomalies: AnomalyRow[] = [];
   const checkedMetrics: string[] = [];
 
-  const row = rows[0] as Record<string, number | null> | undefined;
+  const row = rows[0];
   if (!row || !row.date) return { anomalies, checkedMetrics };
 
   const date = String(row.date);
@@ -171,7 +190,9 @@ export async function sendAnomalyAlertToSlack(
   if (anomalies.length === 0) return false;
 
   // Look up Slack credentials and user link
-  const slackRows = await db.execute<{ bot_token: string }>(
+  const slackRows = await executeWithSchema(
+    db,
+    z.object({ bot_token: z.string() }),
     sql`SELECT bot_token FROM fitness.slack_installation LIMIT 1`,
   );
   const slackRow = slackRows[0];
@@ -180,7 +201,9 @@ export async function sendAnomalyAlertToSlack(
     return false;
   }
 
-  const accountRows = await db.execute<{ provider_account_id: string }>(
+  const accountRows = await executeWithSchema(
+    db,
+    z.object({ provider_account_id: z.string() }),
     sql`SELECT provider_account_id FROM fitness.auth_account
         WHERE user_id = ${userId} AND auth_provider = 'slack'
         LIMIT 1`,
@@ -283,7 +306,20 @@ export const anomalyDetectionRouter = router({
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }): Promise<AnomalyRow[]> => {
       const queryDays = input.days + 30;
-      const rows = await ctx.db.execute<Record<string, number | null>>(
+      const anomalyHistoryRowSchema = z.object({
+        date: z.string().nullable(),
+        resting_hr: z.coerce.number().nullable(),
+        rhr_mean: z.coerce.number().nullable(),
+        rhr_sd: z.coerce.number().nullable(),
+        rhr_count: z.coerce.number().nullable(),
+        hrv: z.coerce.number().nullable(),
+        hrv_mean: z.coerce.number().nullable(),
+        hrv_sd: z.coerce.number().nullable(),
+        hrv_count: z.coerce.number().nullable(),
+      });
+      const rows = await executeWithSchema(
+        ctx.db,
+        anomalyHistoryRowSchema,
         sql`WITH baseline AS (
               SELECT
                 date,

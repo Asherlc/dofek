@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export interface HrvBaselineRow {
@@ -42,14 +43,17 @@ export const dailyMetricsRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const rows = await ctx.db.execute<{
-        date: string;
-        hrv: number | null;
-        resting_hr: number | null;
-        mean_60d: number | null;
-        sd_60d: number | null;
-        mean_7d: number | null;
-      }>(
+      const hrvBaselineRowSchema = z.object({
+        date: z.string(),
+        hrv: z.coerce.number().nullable(),
+        resting_hr: z.coerce.number().nullable(),
+        mean_60d: z.coerce.number().nullable(),
+        sd_60d: z.coerce.number().nullable(),
+        mean_7d: z.coerce.number().nullable(),
+      });
+      const rows = await executeWithSchema(
+        ctx.db,
+        hrvBaselineRowSchema,
         sql`SELECT date, hrv, resting_hr,
               AVG(hrv) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS mean_60d,
               STDDEV(hrv) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS sd_60d,

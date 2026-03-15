@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 /**
@@ -149,30 +150,32 @@ export const healthspanRouter = router({
     .query(async ({ ctx, input }): Promise<HealthspanResult> => {
       const totalDays = input.weeks * 7;
 
-      type HistRow = {
-        week_start: string;
-        avg_rhr: number | null;
-        avg_steps: number | null;
-        avg_vo2max: number | null;
-      };
+      const histRowSchema = z.object({
+        week_start: z.string(),
+        avg_rhr: z.coerce.number().nullable(),
+        avg_steps: z.coerce.number().nullable(),
+        avg_vo2max: z.coerce.number().nullable(),
+      });
 
-      type RawRow = {
-        birth_date: string | null;
-        avg_sleep_min: number | null;
-        bedtime_stddev_min: number | null;
-        avg_resting_hr: number | null;
-        avg_steps: number | null;
-        latest_vo2max: number | null;
-        weekly_aerobic_min: number | null;
-        weekly_high_intensity_min: number | null;
-        sessions_per_week: number | null;
-        weight_kg: number | null;
-        body_fat_pct: number | null;
-        weekly_history: HistRow[] | null;
-      };
+      const rawRowSchema = z.object({
+        birth_date: z.string().nullable(),
+        avg_sleep_min: z.coerce.number().nullable(),
+        bedtime_stddev_min: z.coerce.number().nullable(),
+        avg_resting_hr: z.coerce.number().nullable(),
+        avg_steps: z.coerce.number().nullable(),
+        latest_vo2max: z.coerce.number().nullable(),
+        weekly_aerobic_min: z.coerce.number().nullable(),
+        weekly_high_intensity_min: z.coerce.number().nullable(),
+        sessions_per_week: z.coerce.number().nullable(),
+        weight_kg: z.coerce.number().nullable(),
+        body_fat_pct: z.coerce.number().nullable(),
+        weekly_history: z.array(histRowSchema).nullable(),
+      });
 
       // Fetch all needed data in one query (aggregates + weekly history via JSON)
-      const rows = await ctx.db.execute<RawRow>(
+      const rows = await executeWithSchema(
+        ctx.db,
+        rawRowSchema,
         sql`WITH user_info AS (
               SELECT birth_date, max_hr FROM fitness.user_profile WHERE id = ${ctx.userId}
             ),
