@@ -37,8 +37,17 @@ export const sleepNeedRouter = router({
    */
   calculate: cachedProtectedQuery(CacheTTL.SHORT).query(
     async ({ ctx }): Promise<SleepNeedResult> => {
+      type RawRow = {
+        date: string;
+        duration_minutes: number;
+        next_day_hrv: number | null;
+        median_hrv: number | null;
+        good_recovery: boolean;
+        yesterday_load: number;
+      };
+
       // Fetch 90 days of sleep + next-day HRV + yesterday's training load in one query
-      const rows = await ctx.db.execute(
+      const rows = await ctx.db.execute<RawRow>(
         sql`WITH sleep_nights AS (
               SELECT
                 started_at::date AS date,
@@ -95,16 +104,7 @@ export const sleepNeedRouter = router({
             ORDER BY s.date ASC`,
       );
 
-      type RawRow = {
-        date: string;
-        duration_minutes: number;
-        next_day_hrv: number | null;
-        median_hrv: number | null;
-        good_recovery: boolean;
-        yesterday_load: number;
-      };
-
-      const nights = rows as unknown as RawRow[];
+      const nights = rows;
 
       // Calculate personalized baseline from nights that preceded good recovery
       const goodNights = nights.filter((n) => n.good_recovery && n.duration_minutes > 0);

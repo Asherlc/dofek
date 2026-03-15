@@ -54,7 +54,12 @@ export const strengthRouter = router({
   volumeOverTime: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
-      const rows = await ctx.db.execute(
+      const rows = await ctx.db.execute<{
+        week: string;
+        total_volume_kg: number;
+        set_count: number;
+        workout_count: number;
+      }>(
         sql`SELECT
               date_trunc('week', sw.started_at)::date::text AS week,
               COALESCE(SUM(ss.weight_kg * ss.reps), 0)::real AS total_volume_kg,
@@ -67,14 +72,7 @@ export const strengthRouter = router({
             GROUP BY date_trunc('week', sw.started_at)
             ORDER BY week`,
       );
-      return (
-        rows as unknown as {
-          week: string;
-          total_volume_kg: number;
-          set_count: number;
-          workout_count: number;
-        }[]
-      ).map((r) => ({
+      return rows.map((r) => ({
         week: r.week,
         totalVolumeKg: r.total_volume_kg,
         setCount: r.set_count,
@@ -90,7 +88,13 @@ export const strengthRouter = router({
   estimatedOneRepMax: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
-      const rows = await ctx.db.execute(
+      const rows = await ctx.db.execute<{
+        exercise_name: string;
+        workout_date: string;
+        estimated_max: number;
+        actual_weight: number;
+        actual_reps: number;
+      }>(
         sql`WITH best_per_workout AS (
               SELECT
                 e.name AS exercise_name,
@@ -131,13 +135,7 @@ export const strengthRouter = router({
       );
 
       const exerciseMap = new Map<string, EstimatedOneRepMaxEntry[]>();
-      for (const r of rows as unknown as {
-        exercise_name: string;
-        workout_date: string;
-        estimated_max: number;
-        actual_weight: number;
-        actual_reps: number;
-      }[]) {
+      for (const r of rows) {
         const entries = exerciseMap.get(r.exercise_name) ?? [];
         entries.push({
           date: r.workout_date,
@@ -160,7 +158,7 @@ export const strengthRouter = router({
   muscleGroupVolume: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
-      const rows = await ctx.db.execute(
+      const rows = await ctx.db.execute<{ muscle_group: string; week: string; sets: number }>(
         sql`SELECT
               e.muscle_group,
               date_trunc('week', sw.started_at)::date::text AS week,
@@ -176,7 +174,7 @@ export const strengthRouter = router({
       );
 
       const groupMap = new Map<string, MuscleGroupWeek[]>();
-      for (const r of rows as unknown as { muscle_group: string; week: string; sets: number }[]) {
+      for (const r of rows) {
         const weeks = groupMap.get(r.muscle_group) ?? [];
         weeks.push({ week: r.week, sets: r.sets });
         groupMap.set(r.muscle_group, weeks);
@@ -194,7 +192,11 @@ export const strengthRouter = router({
   progressiveOverload: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
-      const rows = await ctx.db.execute(
+      const rows = await ctx.db.execute<{
+        exercise_name: string;
+        week: string;
+        weekly_volume: number;
+      }>(
         sql`SELECT
               e.name AS exercise_name,
               date_trunc('week', sw.started_at)::date::text AS week,
@@ -210,11 +212,7 @@ export const strengthRouter = router({
       );
 
       const exerciseMap = new Map<string, number[]>();
-      for (const r of rows as unknown as {
-        exercise_name: string;
-        week: string;
-        weekly_volume: number;
-      }[]) {
+      for (const r of rows) {
         const volumes = exerciseMap.get(r.exercise_name) ?? [];
         volumes.push(r.weekly_volume);
         exerciseMap.set(r.exercise_name, volumes);
@@ -239,7 +237,14 @@ export const strengthRouter = router({
   workoutSummary: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
-      const rows = await ctx.db.execute(
+      const rows = await ctx.db.execute<{
+        date: string;
+        name: string;
+        exercise_count: number;
+        total_sets: number;
+        total_volume_kg: number;
+        duration_minutes: number;
+      }>(
         sql`SELECT
               sw.started_at::date::text AS date,
               sw.name,
@@ -256,16 +261,7 @@ export const strengthRouter = router({
             ORDER BY sw.started_at DESC`,
       );
 
-      return (
-        rows as unknown as {
-          date: string;
-          name: string;
-          exercise_count: number;
-          total_sets: number;
-          total_volume_kg: number;
-          duration_minutes: number;
-        }[]
-      ).map((r) => ({
+      return rows.map((r) => ({
         date: r.date,
         name: r.name,
         exerciseCount: r.exercise_count,

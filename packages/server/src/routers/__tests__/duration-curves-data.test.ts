@@ -32,7 +32,7 @@ describe("Duration curves router — data tests", () => {
     );
 
     // Insert a running activity (60 minutes)
-    const actResult = await testCtx.db.execute(
+    const actResult = await testCtx.db.execute<{ id: string }>(
       sql`INSERT INTO fitness.activity (
             provider_id, user_id, activity_type, started_at, ended_at, name
           ) VALUES (
@@ -42,7 +42,7 @@ describe("Duration curves router — data tests", () => {
             'Test Run'
           ) RETURNING id`,
     );
-    const runId = (actResult as unknown as { id: string }[])[0]?.id;
+    const runId = actResult[0]?.id;
 
     if (runId) {
       // Insert 3600 samples (1 per second for 60 minutes)
@@ -67,7 +67,7 @@ describe("Duration curves router — data tests", () => {
     }
 
     // Insert a cycling activity (45 minutes) with HR and power
-    const cycleResult = await testCtx.db.execute(
+    const cycleResult = await testCtx.db.execute<{ id: string }>(
       sql`INSERT INTO fitness.activity (
             provider_id, user_id, activity_type, started_at, ended_at, name
           ) VALUES (
@@ -77,7 +77,7 @@ describe("Duration curves router — data tests", () => {
             'Test Ride'
           ) RETURNING id`,
     );
-    const cycleId = (cycleResult as unknown as { id: string }[])[0]?.id;
+    const cycleId = cycleResult[0]?.id;
 
     if (cycleId) {
       const batchSize = 300;

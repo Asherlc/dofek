@@ -45,17 +45,23 @@ import { createSlackBot } from "../bot.ts";
 const mockAnalyze = vi.mocked(analyzeNutritionItems);
 const mockRefine = vi.mocked(refineNutritionItems);
 
-// biome-ignore lint/suspicious/noExplicitAny: simplified mock for test
-type AnyMock = ReturnType<typeof vi.fn<any>>;
+type FlexibleMock = ReturnType<typeof vi.fn>;
+
+interface MockSlackApp {
+  message: ReturnType<typeof vi.fn>;
+  action: ReturnType<typeof vi.fn>;
+  event: ReturnType<typeof vi.fn>;
+  start: ReturnType<typeof vi.fn>;
+}
 
 function createMockDb() {
   return {
-    execute: vi.fn<AnyMock>().mockResolvedValue([]),
+    execute: vi.fn().mockResolvedValue([]),
   } as unknown as import("dofek/db").Database;
 }
 
-function getMockExecute(db: import("dofek/db").Database): AnyMock {
-  return db.execute as unknown as AnyMock;
+function getMockExecute(db: import("dofek/db").Database): FlexibleMock {
+  return db.execute as unknown as FlexibleMock;
 }
 
 function makeFoodItem(overrides: Partial<NutritionItemWithMeal> = {}): NutritionItemWithMeal {
@@ -87,8 +93,7 @@ function setupHandlers(db: ReturnType<typeof createMockDb>) {
   const result = createSlackBot(db);
   expect(result).not.toBeNull();
 
-  // biome-ignore lint/suspicious/noExplicitAny: test mock access
-  const app = result?.app as any;
+  const app = result?.app as unknown as MockSlackApp;
   type Handler = (...args: unknown[]) => Promise<void>;
   const messageHandler = app.message.mock.calls[0]?.[0] as Handler;
   const actionCalls = app.action.mock.calls as [unknown, Handler][];

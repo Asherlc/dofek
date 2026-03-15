@@ -28,6 +28,23 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: cd packages/web && pnpm exec tsr generate
       - run: pnpm lint
+      - name: Ban double type assertions (as unknown as)
+        run: |
+          # Find all .ts/.tsx files with double casts, excluding auto-generated and test files
+          # Test files are allowed to use double casts for creating partial mocks
+          VIOLATIONS=$(find src packages/server/src packages/web/src \( -name '*.ts' -o -name '*.tsx' \) \
+            | grep -v 'routeTree.gen.ts' \
+            | grep -v '\.test\.ts' \
+            | grep -v '__tests__' \
+            | xargs grep -n 'as unknown as' 2>/dev/null || true)
+          if [ -n "$VIOLATIONS" ]; then
+            echo "::error::Found banned 'as unknown as' double type assertions:"
+            echo "$VIOLATIONS"
+            echo ""
+            echo "Use type guards, Zod parsing, or proper generics instead of double casts."
+            echo "See CLAUDE.md: 'Never use as unknown as X (double-cast) — these are strictly banned.'"
+            exit 1
+          fi
       - run: pnpm tsc --noEmit
       - run: cd packages/server && pnpm tsc --noEmit
       - run: cd packages/web && pnpm tsc --noEmit

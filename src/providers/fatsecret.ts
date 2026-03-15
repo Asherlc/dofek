@@ -596,7 +596,7 @@ export class FatSecretProvider implements Provider {
             vitaminCMg: e.vitaminCMg,
             calciumMg: e.calciumMg,
             ironMg: e.ironMg,
-            raw: e as unknown as Record<string, unknown>,
+            raw: { ...e } as Record<string, unknown>,
           }));
 
           await db.insert(foodEntry).values(rows).onConflictDoNothing();

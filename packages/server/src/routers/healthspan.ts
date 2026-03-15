@@ -149,8 +149,30 @@ export const healthspanRouter = router({
     .query(async ({ ctx, input }): Promise<HealthspanResult> => {
       const totalDays = input.weeks * 7;
 
+      type HistRow = {
+        week_start: string;
+        avg_rhr: number | null;
+        avg_steps: number | null;
+        avg_vo2max: number | null;
+      };
+
+      type RawRow = {
+        birth_date: string | null;
+        avg_sleep_min: number | null;
+        bedtime_stddev_min: number | null;
+        avg_resting_hr: number | null;
+        avg_steps: number | null;
+        latest_vo2max: number | null;
+        weekly_aerobic_min: number | null;
+        weekly_high_intensity_min: number | null;
+        sessions_per_week: number | null;
+        weight_kg: number | null;
+        body_fat_pct: number | null;
+        weekly_history: HistRow[] | null;
+      };
+
       // Fetch all needed data in one query (aggregates + weekly history via JSON)
-      const rows = await ctx.db.execute(
+      const rows = await ctx.db.execute<RawRow>(
         sql`WITH user_info AS (
               SELECT birth_date, max_hr FROM fitness.user_profile WHERE id = ${ctx.userId}
             ),
@@ -258,29 +280,7 @@ export const healthspanRouter = router({
             LEFT JOIN body_latest bl ON true`,
       );
 
-      type HistRow = {
-        week_start: string;
-        avg_rhr: number | null;
-        avg_steps: number | null;
-        avg_vo2max: number | null;
-      };
-
-      type RawRow = {
-        birth_date: string | null;
-        avg_sleep_min: number | null;
-        bedtime_stddev_min: number | null;
-        avg_resting_hr: number | null;
-        avg_steps: number | null;
-        latest_vo2max: number | null;
-        weekly_aerobic_min: number | null;
-        weekly_high_intensity_min: number | null;
-        sessions_per_week: number | null;
-        weight_kg: number | null;
-        body_fat_pct: number | null;
-        weekly_history: HistRow[] | null;
-      };
-
-      const row = (rows as unknown as RawRow[])[0];
+      const row = rows[0];
       if (!row) {
         return {
           healthspanScore: 50,

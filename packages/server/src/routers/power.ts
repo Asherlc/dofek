@@ -7,17 +7,17 @@ import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export type { CriticalPowerModel };
 
-interface PowerCurveRow {
+type PowerCurveRow = {
   duration_seconds: number;
   best_power: number;
   activity_date: string;
-}
+};
 
-interface EftpRow {
+type EftpRow = {
   activity_date: string;
   activity_name: string | null;
   normalized_power: number;
-}
+};
 
 /**
  * Single query that computes best average power for all standard durations.
@@ -99,9 +99,9 @@ export const powerRouter = router({
   powerCurve: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
-      const rows = await ctx.db.execute(powerCurveQuery(input.days, ctx.userId));
+      const rows = await ctx.db.execute<PowerCurveRow>(powerCurveQuery(input.days, ctx.userId));
 
-      const results = (rows as unknown as PowerCurveRow[]).map((r) => ({
+      const results = rows.map((r) => ({
         durationSeconds: Number(r.duration_seconds),
         label: DURATION_LABELS[Number(r.duration_seconds)] ?? `${r.duration_seconds}s`,
         bestPower: Number(r.best_power),
@@ -128,7 +128,7 @@ export const powerRouter = router({
     .query(async ({ ctx, input }) => {
       // Compute per-activity Normalized Power via 30s rolling average.
       // Requires at least 20 min of power data (1200 samples at 1s, 240 at 5s).
-      const rows = await ctx.db.execute(sql`
+      const rows = await ctx.db.execute<EftpRow>(sql`
         WITH rolling AS (
           SELECT
             ms.activity_id,
@@ -156,15 +156,15 @@ export const powerRouter = router({
         ORDER BY a.started_at
       `);
 
-      const trend = (rows as unknown as EftpRow[]).map((r) => ({
+      const trend = rows.map((r) => ({
         date: String(r.activity_date),
         eftp: Math.round(Number(r.normalized_power) * 0.95),
         activityName: r.activity_name,
       }));
 
       // Compute current eFTP via CP model from last 90 days' power curve (single query)
-      const cpRows = await ctx.db.execute(powerCurveQuery(90, ctx.userId));
-      const cpPoints = (cpRows as unknown as PowerCurveRow[]).map((r) => ({
+      const cpRows = await ctx.db.execute<PowerCurveRow>(powerCurveQuery(90, ctx.userId));
+      const cpPoints = cpRows.map((r) => ({
         durationSeconds: Number(r.duration_seconds),
         bestPower: Number(r.best_power),
       }));

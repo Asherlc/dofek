@@ -272,11 +272,35 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
 
   // Chunked upload endpoint
   app.post("/api/upload/apple-health", async (req, res) => {
+    const contentType = req.headers["content-type"]?.split(";")[0]?.trim().toLowerCase();
+    if (
+      contentType &&
+      !["application/octet-stream", "application/zip", "application/xml", "text/xml"].includes(
+        contentType,
+      )
+    ) {
+      res.status(415).json({
+        error:
+          "Unsupported Content-Type. Expected application/octet-stream, application/zip, application/xml, or text/xml",
+      });
+      return;
+    }
+
     const uploadId = req.headers["x-upload-id"] as string | undefined;
     const chunkIndex = parseInt(req.headers["x-chunk-index"] as string, 10);
     const chunkTotal = parseInt(req.headers["x-chunk-total"] as string, 10);
     const fileExt = (req.headers["x-file-ext"] as string) || ".zip";
     const fullSync = req.query.fullSync === "true";
+
+    // Validate uploadId and fileExt to prevent path traversal
+    if (uploadId && !/^[a-zA-Z0-9_-]+$/.test(uploadId)) {
+      res.status(400).json({ error: "Invalid upload ID" });
+      return;
+    }
+    if (![".zip", ".xml"].includes(fileExt)) {
+      res.status(400).json({ error: "Invalid file extension" });
+      return;
+    }
     const since = fullSync ? new Date(0) : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
     // Non-chunked upload (single small file) — still processes in background
@@ -376,6 +400,18 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
   });
 
   app.post("/api/upload/strong-csv", async (req, res) => {
+    const contentType = req.headers["content-type"]?.split(";")[0]?.trim().toLowerCase();
+    if (
+      contentType &&
+      !["text/csv", "application/octet-stream", "text/plain"].includes(contentType)
+    ) {
+      res.status(415).json({
+        error:
+          "Unsupported Content-Type. Expected text/csv, application/octet-stream, or text/plain",
+      });
+      return;
+    }
+
     const weightUnit = req.query.units === "lbs" ? "lbs" : "kg";
     const jobId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const tmpFile = join(tmpdir(), `strong-csv-${jobId}.csv`);
@@ -445,6 +481,18 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
   });
 
   app.post("/api/upload/cronometer-csv", async (req, res) => {
+    const contentType = req.headers["content-type"]?.split(";")[0]?.trim().toLowerCase();
+    if (
+      contentType &&
+      !["text/csv", "application/octet-stream", "text/plain"].includes(contentType)
+    ) {
+      res.status(415).json({
+        error:
+          "Unsupported Content-Type. Expected text/csv, application/octet-stream, or text/plain",
+      });
+      return;
+    }
+
     const jobId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const tmpFile = join(tmpdir(), `cronometer-csv-${jobId}.csv`);
 
@@ -653,7 +701,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       logger.error(`[auth] Failed to start login flow: ${message}`);
-      res.status(500).send(`Auth error: ${message}`);
+      res.status(500).send("Auth error: failed to start login flow");
     }
   });
 
@@ -751,7 +799,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       logger.error(`[auth] Identity callback failed: ${message}`);
-      res.status(500).send(`Login failed: ${message}`);
+      res.status(500).send("Login failed — please try again");
     }
   });
 
@@ -802,12 +850,19 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       res.status(400).send("SLACK_CLIENT_ID is not configured");
       return;
     }
-    const redirectUri = `${process.env.OAUTH_REDIRECT_URI ?? "https://dofek.asherlc.com/callback"}`;
+    const redirectUri = `${process.env.OAUTH_REDIRECT_URI ?? ""}`;
+    if (!redirectUri) {
+      res.status(500).send("OAUTH_REDIRECT_URI must be configured");
+      return;
+    }
+    const stateToken = `slack:${randomBytes(16).toString("hex")}`;
+    oauthStateMap.set(stateToken, { providerId: "slack" });
+    setTimeout(() => oauthStateMap.delete(stateToken), 10 * 60 * 1000);
     const url = new URL("https://slack.com/oauth/v2/authorize");
     url.searchParams.set("client_id", clientId);
     url.searchParams.set("scope", SLACK_SCOPES.join(","));
     url.searchParams.set("redirect_uri", redirectUri);
-    url.searchParams.set("state", "slack");
+    url.searchParams.set("state", stateToken);
     res.redirect(url.toString());
   });
 
@@ -864,7 +919,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
 
       // OAuth 1.0 providers (e.g. FatSecret) — get request token first
       if (setup.oauth1Flow) {
-        const callbackUrl = `${process.env.OAUTH_REDIRECT_URI ?? "https://dofek.asherlc.com/callback"}`;
+        const callbackUrl = `${process.env.OAUTH_REDIRECT_URI ?? ""}`;
         const result = await setup.oauth1Flow.getRequestToken(callbackUrl);
         oauth1Secrets.set(result.oauthToken, {
           providerId,
@@ -982,7 +1037,8 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       }
 
       // ── Slack OAuth callback (Add to Slack) ──
-      if (state === "slack") {
+      if (state.startsWith("slack:") && oauthStateMap.has(state)) {
+        oauthStateMap.delete(state);
         const clientId = process.env.SLACK_CLIENT_ID;
         const clientSecret = process.env.SLACK_CLIENT_SECRET;
         if (!clientId || !clientSecret) {
@@ -990,7 +1046,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
           return;
         }
 
-        const redirectUri = `${process.env.OAUTH_REDIRECT_URI ?? "https://dofek.asherlc.com/callback"}`;
+        const redirectUri = `${process.env.OAUTH_REDIRECT_URI ?? ""}`;
         logger.info("[auth] Exchanging Slack OAuth code for bot token...");
 
         // Exchange code for access token via Slack's oauth.v2.access

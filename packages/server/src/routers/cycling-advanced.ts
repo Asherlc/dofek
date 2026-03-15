@@ -235,7 +235,7 @@ export const cyclingAdvancedRouter = router({
     .query(async ({ ctx, input }): Promise<ActivityVariabilityRow[]> => {
       // Estimate FTP as 95% of best 20-minute average power.
       // Includes zero-power samples and adapts row offset to sample interval.
-      const ftpResult = await ctx.db.execute(
+      const ftpResult = await ctx.db.execute<{ ftp: number }>(
         sql`WITH activity_power AS (
               SELECT
                 ms.activity_id,
@@ -273,7 +273,7 @@ export const cyclingAdvancedRouter = router({
               AND prev.rn = ap.rn - ROUND(1200.0 / sr.interval_s)::int
             WHERE ap.rn >= ROUND(1200.0 / sr.interval_s)::int`,
       );
-      const ftp = (ftpResult as unknown as { ftp: number }[])[0]?.ftp ?? null;
+      const ftp = ftpResult[0]?.ftp ?? null;
       if (!ftp) return [];
 
       // Compute NP, avg power per activity in a single query using SQL window functions

@@ -6,6 +6,11 @@ import { MacroSummary } from "../../components/MacroSummary";
 import { MealSection } from "../../components/MealSection";
 import { trpc } from "../../lib/trpc";
 
+/** Narrow loosely-typed tRPC raw-SQL results to a known shape without double-casting. */
+function typedData<T>(data: unknown): T {
+  return data as T;
+}
+
 const MEALS = [
   { key: "breakfast", label: "Breakfast" },
   { key: "lunch", label: "Lunch" },
@@ -51,7 +56,7 @@ export default function TodayScreen() {
     onSuccess: () => foodQuery.refetch(),
   });
 
-  const entries = (foodQuery.data ?? []) as unknown as FoodEntry[];
+  const entries = typedData<FoodEntry[]>(foodQuery.data ?? []);
 
   const dailyTotals = useMemo(() => {
     let totalCalories = 0;

@@ -86,7 +86,7 @@ describe("Predictions router (integration)", () => {
       const avgHr = 148 + Math.round(Math.sin(i * 0.5) * 8);
       const avgPower = 190 + Math.round(Math.cos(i * 0.3) * 25);
 
-      const actResult = await testCtx.db.execute(
+      const actResult = await testCtx.db.execute<{ id: string }>(
         sql`INSERT INTO fitness.activity (
               provider_id, user_id, activity_type, started_at, ended_at, name
             ) VALUES (
@@ -96,7 +96,7 @@ describe("Predictions router (integration)", () => {
               'Training Ride'
             ) RETURNING id`,
       );
-      const actId = (actResult as unknown as { id: string }[])[0]?.id;
+      const actId = actResult[0]?.id;
 
       if (actId) {
         // Insert metric stream samples (1 per minute)
@@ -116,17 +116,17 @@ describe("Predictions router (integration)", () => {
     }
 
     // Insert strength workouts (for activity predictions)
-    const exerciseResult = await testCtx.db.execute(
+    const exerciseResult = await testCtx.db.execute<{ id: string }>(
       sql`INSERT INTO fitness.exercise (name, muscle_group)
           VALUES ('Bench Press', 'chest')
           RETURNING id`,
     );
-    const exerciseId = (exerciseResult as unknown as { id: string }[])[0]?.id;
+    const exerciseId = exerciseResult[0]?.id;
 
     for (let i = 60; i >= 1; i--) {
       if (i % 3 !== 0) continue;
 
-      const workoutResult = await testCtx.db.execute(
+      const workoutResult = await testCtx.db.execute<{ id: string }>(
         sql`INSERT INTO fitness.strength_workout (
               provider_id, user_id, started_at, ended_at, name
             ) VALUES (
@@ -136,7 +136,7 @@ describe("Predictions router (integration)", () => {
               'Upper Body'
             ) RETURNING id`,
       );
-      const workoutId = (workoutResult as unknown as { id: string }[])[0]?.id;
+      const workoutId = workoutResult[0]?.id;
 
       if (workoutId && exerciseId) {
         const weight = 70 + (60 - i) * 0.5;

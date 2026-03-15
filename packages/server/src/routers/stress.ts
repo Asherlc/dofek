@@ -58,7 +58,7 @@ export const stressRouter = router({
     .query(async ({ ctx, input }): Promise<StressResult> => {
       const queryDays = input.days + 60; // extra for baseline windows
 
-      const rows = await ctx.db.execute(
+      const rows = await ctx.db.execute<RawRow>(
         sql`WITH metrics AS (
               SELECT
                 date,
@@ -109,7 +109,7 @@ export const stressRouter = router({
         efficiency_pct: number | null;
       };
 
-      const daily: DailyStressRow[] = (rows as unknown as RawRow[]).map((row) => {
+      const daily: DailyStressRow[] = rows.map((row) => {
         // HRV deviation: negative z-score = below baseline = stressed
         let hrvDeviation: number | null = null;
         let hrvStress = 0;

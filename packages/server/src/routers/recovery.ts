@@ -65,7 +65,14 @@ export const recoveryRouter = router({
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }): Promise<SleepConsistencyRow[]> => {
       const queryDays = input.days + 14;
-      const rows = await ctx.db.execute(
+      const rows = await ctx.db.execute<{
+        date: string;
+        bedtime_hour: number;
+        waketime_hour: number;
+        rolling_bedtime_stddev: number | null;
+        rolling_waketime_stddev: number | null;
+        window_count: number;
+      }>(
         sql`WITH nightly AS (
               SELECT
                 started_at::date AS date,
@@ -89,16 +96,7 @@ export const recoveryRouter = router({
             ORDER BY date ASC`,
       );
 
-      return (
-        rows as unknown as {
-          date: string;
-          bedtime_hour: number;
-          waketime_hour: number;
-          rolling_bedtime_stddev: number | null;
-          rolling_waketime_stddev: number | null;
-          window_count: number;
-        }[]
-      ).map((row) => {
+      return rows.map((row) => {
         const bedStddev =
           row.rolling_bedtime_stddev != null ? Number(row.rolling_bedtime_stddev) : null;
         const wakeStddev =
@@ -132,7 +130,12 @@ export const recoveryRouter = router({
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }): Promise<HrvVariabilityRow[]> => {
       const queryDays = input.days + 7;
-      const rows = await ctx.db.execute(
+      const rows = await ctx.db.execute<{
+        date: string;
+        hrv: number | null;
+        rolling_mean: number | null;
+        rolling_cv: number | null;
+      }>(
         sql`WITH daily AS (
               SELECT
                 date,
@@ -159,14 +162,7 @@ export const recoveryRouter = router({
             ORDER BY date ASC`,
       );
 
-      return (
-        rows as unknown as {
-          date: string;
-          hrv: number | null;
-          rolling_mean: number | null;
-          rolling_cv: number | null;
-        }[]
-      ).map((row) => ({
+      return rows.map((row) => ({
         date: row.date,
         hrv: row.hrv != null ? Math.round(Number(row.hrv) * 10) / 10 : null,
         rollingCoefficientOfVariation:
@@ -186,7 +182,13 @@ export const recoveryRouter = router({
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }): Promise<WorkloadRatioRow[]> => {
       const queryDays = input.days + 28;
-      const rows = await ctx.db.execute(
+      const rows = await ctx.db.execute<{
+        date: string;
+        daily_load: number;
+        acute_load: number;
+        chronic_load: number;
+        workload_ratio: number | null;
+      }>(
         sql`WITH date_series AS (
               SELECT generate_series(
                 CURRENT_DATE - ${queryDays}::int,
@@ -242,15 +244,7 @@ export const recoveryRouter = router({
             ORDER BY date ASC`,
       );
 
-      return (
-        rows as unknown as {
-          date: string;
-          daily_load: number;
-          acute_load: number;
-          chronic_load: number;
-          workload_ratio: number | null;
-        }[]
-      ).map((row) => ({
+      return rows.map((row) => ({
         date: row.date,
         dailyLoad: Math.round(Number(row.daily_load) * 10) / 10,
         acuteLoad: Math.round(Number(row.acute_load) * 10) / 10,
@@ -267,7 +261,16 @@ export const recoveryRouter = router({
   sleepAnalytics: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }): Promise<SleepAnalyticsResult> => {
-      const rows = await ctx.db.execute(
+      const rows = await ctx.db.execute<{
+        date: string;
+        duration_minutes: number;
+        deep_pct: number;
+        rem_pct: number;
+        light_pct: number;
+        awake_pct: number;
+        efficiency: number;
+        rolling_avg_duration: number | null;
+      }>(
         sql`WITH nightly AS (
               SELECT
                 started_at::date AS date,
@@ -300,18 +303,7 @@ export const recoveryRouter = router({
             ORDER BY date ASC`,
       );
 
-      const nightly = (
-        rows as unknown as {
-          date: string;
-          duration_minutes: number;
-          deep_pct: number;
-          rem_pct: number;
-          light_pct: number;
-          awake_pct: number;
-          efficiency: number;
-          rolling_avg_duration: number | null;
-        }[]
-      ).map((row) => ({
+      const nightly = rows.map((row) => ({
         date: row.date,
         durationMinutes: Number(row.duration_minutes),
         deepPct: Math.round(Number(row.deep_pct) * 10) / 10,
@@ -350,7 +342,17 @@ export const recoveryRouter = router({
       const queryDays = input.days + 60;
 
       // Fetch HRV + resting HR baselines, sleep efficiency, and ACWR in one query
-      const combinedRows = await ctx.db.execute(
+      const combinedRows = await ctx.db.execute<{
+        date: string;
+        hrv: number | null;
+        resting_hr: number | null;
+        hrv_mean_60d: number | null;
+        hrv_sd_60d: number | null;
+        rhr_mean_60d: number | null;
+        rhr_sd_60d: number | null;
+        efficiency_pct: number | null;
+        acwr: number | null;
+      }>(
         sql`WITH metrics_with_baselines AS (
               SELECT
                 date::text AS date,
@@ -431,17 +433,7 @@ export const recoveryRouter = router({
             LEFT JOIN acwr_daily ac ON ac.date = m.date
             ORDER BY m.date ASC`,
       );
-      const combined = combinedRows as unknown as {
-        date: string;
-        hrv: number | null;
-        resting_hr: number | null;
-        hrv_mean_60d: number | null;
-        hrv_sd_60d: number | null;
-        rhr_mean_60d: number | null;
-        rhr_sd_60d: number | null;
-        efficiency_pct: number | null;
-        acwr: number | null;
-      }[];
+      const combined = combinedRows;
 
       // Map z-score to 0-100 (z=0 -> 50, clamped)
       function zScoreToScore(zScore: number): number {

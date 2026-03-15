@@ -52,7 +52,7 @@ export const hikingRouter = router({
   gradeAdjustedPace: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
-      interface GradeRow {
+      type GradeRow = {
         date: string;
         activity_name: string;
         activity_type: string;
@@ -61,8 +61,8 @@ export const hikingRouter = router({
         elevation_gain_m: number;
         elevation_loss_m: number;
         avg_grade: number;
-      }
-      const rows = await ctx.db.execute(
+      };
+      const rows = await ctx.db.execute<GradeRow>(
         sql`SELECT
               a.started_at::date::text AS date,
               a.name AS activity_name,
@@ -85,7 +85,7 @@ export const hikingRouter = router({
             ORDER BY a.started_at`,
       );
 
-      return (rows as unknown as GradeRow[]).map((r) => {
+      return rows.map((r) => {
         const distanceKm = Number(r.distance_m) / 1000;
         const durationMinutes = Number(r.duration_seconds) / 60;
         const averagePaceMinPerKm = distanceKm > 0 ? durationMinutes / distanceKm : 0;
@@ -121,13 +121,13 @@ export const hikingRouter = router({
   elevationProfile: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(365) }))
     .query(async ({ ctx, input }) => {
-      interface ElevRow {
+      type ElevRow = {
         week: string;
         elevation_gain_m: number;
         activity_count: number;
         total_distance_km: number;
-      }
-      const rows = await ctx.db.execute(
+      };
+      const rows = await ctx.db.execute<ElevRow>(
         sql`SELECT
               date_trunc('week', a.started_at)::date::text AS week,
               ROUND(SUM(asum.elevation_gain_m)::numeric, 1) AS elevation_gain_m,
@@ -142,7 +142,7 @@ export const hikingRouter = router({
             ORDER BY week`,
       );
 
-      return (rows as unknown as ElevRow[]).map((r) => ({
+      return rows.map((r) => ({
         week: String(r.week),
         elevationGainMeters: Number(r.elevation_gain_m),
         activityCount: Number(r.activity_count),
@@ -156,15 +156,15 @@ export const hikingRouter = router({
   walkingBiomechanics: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
-      interface WalkRow {
+      type WalkRow = {
         date: string;
         walking_speed: number | null;
         step_length: number | null;
         double_support_pct: number | null;
         asymmetry_pct: number | null;
         steadiness: number | null;
-      }
-      const rows = await ctx.db.execute(
+      };
+      const rows = await ctx.db.execute<WalkRow>(
         sql`SELECT
               date::text,
               walking_speed,
@@ -183,7 +183,7 @@ export const hikingRouter = router({
             ORDER BY date`,
       );
 
-      return (rows as unknown as WalkRow[]).map((r) => ({
+      return rows.map((r) => ({
         date: String(r.date),
         walkingSpeedKmh:
           r.walking_speed != null ? Math.round(Number(r.walking_speed) * 3.6 * 100) / 100 : null,
@@ -201,15 +201,15 @@ export const hikingRouter = router({
   activityComparison: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(365) }))
     .query(async ({ ctx, input }) => {
-      interface CompRow {
+      type CompRow = {
         activity_name: string;
         date: string;
         duration_minutes: number;
         average_pace_min_per_km: number;
         avg_heart_rate: number | null;
         elevation_gain_m: number;
-      }
-      const rows = await ctx.db.execute(
+      };
+      const rows = await ctx.db.execute<CompRow>(
         sql`WITH activity_data AS (
               SELECT
                 a.name AS activity_name,
@@ -247,7 +247,7 @@ export const hikingRouter = router({
       );
 
       const grouped = new Map<string, ActivityComparisonInstance[]>();
-      for (const r of rows as unknown as CompRow[]) {
+      for (const r of rows) {
         const name = String(r.activity_name);
         if (!grouped.has(name)) {
           grouped.set(name, []);

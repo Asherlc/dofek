@@ -42,7 +42,14 @@ export const dailyMetricsRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const rows = await ctx.db.execute(
+      const rows = await ctx.db.execute<{
+        date: string;
+        hrv: number | null;
+        resting_hr: number | null;
+        mean_60d: number | null;
+        sd_60d: number | null;
+        mean_7d: number | null;
+      }>(
         sql`SELECT date, hrv, resting_hr,
               AVG(hrv) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS mean_60d,
               STDDEV(hrv) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS sd_60d,
@@ -56,7 +63,7 @@ export const dailyMetricsRouter = router({
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - input.days);
       const cutoffStr = cutoff.toISOString().slice(0, 10);
-      return (rows as unknown as HrvBaselineRow[]).filter((r) => r.date >= cutoffStr);
+      return rows.filter((r) => r.date >= cutoffStr);
     }),
 
   trends: cachedProtectedQuery(CacheTTL.MEDIUM)

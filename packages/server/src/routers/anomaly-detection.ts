@@ -283,7 +283,7 @@ export const anomalyDetectionRouter = router({
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }): Promise<AnomalyRow[]> => {
       const queryDays = input.days + 30;
-      const rows = await ctx.db.execute(
+      const rows = await ctx.db.execute<Record<string, number | null>>(
         sql`WITH baseline AS (
               SELECT
                 date,
@@ -311,7 +311,7 @@ export const anomalyDetectionRouter = router({
 
       const anomalies: AnomalyRow[] = [];
 
-      for (const row of rows as unknown as Record<string, number | null>[]) {
+      for (const row of rows) {
         if (!row.date) continue;
         const date = String(row.date);
 

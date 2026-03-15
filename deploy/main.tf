@@ -19,7 +19,17 @@ variable "ssh_public_key" {
 variable "domain" {
   description = "Domain name for the server (used in Caddy config)"
   type        = string
-  default     = "dofek.asherlc.com"
+}
+
+variable "ghcr_username" {
+  description = "GitHub username for GHCR image pulls"
+  type        = string
+}
+
+variable "ssh_allowed_ips" {
+  description = "CIDR blocks allowed to SSH (e.g. [\"1.2.3.4/32\"]). Defaults to all."
+  type        = list(string)
+  default     = ["0.0.0.0/0", "::/0"]
 }
 
 variable "sops_age_key" {
@@ -50,7 +60,7 @@ resource "hcloud_firewall" "dofek" {
     direction  = "in"
     protocol   = "tcp"
     port       = "22"
-    source_ips = ["0.0.0.0/0", "::/0"]
+    source_ips = var.ssh_allowed_ips
   }
 
   rule {
@@ -80,6 +90,7 @@ resource "hcloud_server" "dofek" {
     domain          = var.domain
     sops_age_key    = var.sops_age_key
     ghcr_token      = var.ghcr_token
+    ghcr_username   = var.ghcr_username
     compose_content = file("${path.module}/docker-compose.yml")
     caddy_content   = replace(file("${path.module}/Caddyfile"), "$${domain}", var.domain)
   })
