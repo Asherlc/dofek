@@ -24,8 +24,6 @@ export interface AuthenticatedContext extends Context {
 const t = initTRPC.context<Context>().create();
 
 export const router = t.router;
-export const publicProcedure = t.procedure;
-
 // Auth middleware — rejects unauthenticated requests
 const isAuthenticated = t.middleware(({ ctx, next }) => {
   if (!ctx.userId) {

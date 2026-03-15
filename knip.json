@@ -1,0 +1,27 @@
+{
+  "workspaces": {
+    ".": {
+      "entry": [
+        "src/index.ts",
+        "src/server.ts",
+        "src/jobs/worker.ts",
+        "vitest.config.mutation.ts"
+      ],
+      "project": ["src/**/*.ts", "*.config.{ts,js,json}"],
+      "ignoreDependencies": ["tsx"]
+    },
+    "packages/server": {},
+    "packages/web": {},
+    "packages/ios": {
+      "ignore": ["**/*"]
+    },
+    "packages/whoop-whoop": {},
+    "packages/eight-sleep": {},
+    "packages/zwift-client": {},
+    "packages/trainerroad-client": {},
+    "packages/velohero-client": {},
+    "packages/garmin-connect": {},
+    "packages/trainingpeaks-connect": {}
+  },
+  "ignoreExportsUsedInFile": true
+}
