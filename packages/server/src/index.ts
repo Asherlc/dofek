@@ -856,7 +856,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       return;
     }
     const stateToken = `slack:${randomBytes(16).toString("hex")}`;
-    oauthStateMap.set(stateToken, { providerId: "slack" });
+    oauthStateMap.set(stateToken, { providerId: "slack", userId: DEFAULT_USER_ID });
     setTimeout(() => oauthStateMap.delete(stateToken), 10 * 60 * 1000);
     const url = new URL("https://slack.com/oauth/v2/authorize");
     url.searchParams.set("client_id", clientId);
