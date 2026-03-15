@@ -185,14 +185,14 @@ describe("parseSleep — edge cases", () => {
 describe("parseWorkout — edge cases", () => {
   it("handles workout without score", () => {
     const record: WhoopWorkoutRecord = {
-      activity_id: "act-400",
+      activity_id: "uuid-400",
       during: "['2026-03-01T10:00:00Z','2026-03-01T11:00:00Z')",
       timezone_offset: "-05:00",
       sport_id: 0,
     };
 
     const parsed = parseWorkout(record);
-    expect(parsed.externalId).toBe("act-400");
+    expect(parsed.externalId).toBe("uuid-400");
     expect(parsed.activityType).toBe("running");
     expect(parsed.durationSeconds).toBe(3600);
     expect(parsed.distanceMeters).toBeUndefined();
@@ -204,7 +204,7 @@ describe("parseWorkout — edge cases", () => {
 
   it("maps unknown sport ID to other", () => {
     const record: WhoopWorkoutRecord = {
-      activity_id: "act-401",
+      activity_id: "uuid-401",
       during: "['2026-03-01T10:00:00Z','2026-03-01T11:00:00Z')",
       timezone_offset: "-05:00",
       sport_id: 9999,
@@ -220,13 +220,14 @@ describe("parseWorkout — edge cases", () => {
 
   it("converts kilojoules to calories", () => {
     const record: WhoopWorkoutRecord = {
-      activity_id: "act-402",
+      activity_id: "uuid-402",
       during: "['2026-03-01T10:00:00Z','2026-03-01T10:30:00Z')",
       timezone_offset: "-05:00",
       sport_id: 44, // yoga
-      kilojoules: 418.4,
+      score: 3,
       average_heart_rate: 100,
       max_heart_rate: 120,
+      kilojoules: 418.4,
     };
 
     const parsed = parseWorkout(record);
@@ -236,13 +237,14 @@ describe("parseWorkout — edge cases", () => {
 
   it("handles score with zero kilojoule", () => {
     const record: WhoopWorkoutRecord = {
-      activity_id: "act-403",
+      activity_id: "uuid-403",
       during: "['2026-03-01T10:00:00Z','2026-03-01T10:30:00Z')",
       timezone_offset: "-05:00",
       sport_id: 70, // meditation
-      kilojoules: 0,
+      score: 0,
       average_heart_rate: 60,
       max_heart_rate: 70,
+      kilojoules: 0,
     };
 
     const parsed = parseWorkout(record);
@@ -252,7 +254,7 @@ describe("parseWorkout — edge cases", () => {
 
   it("maps various sport IDs correctly", () => {
     const makeRecord = (sportId: number): WhoopWorkoutRecord => ({
-      activity_id: `act-${sportId}`,
+      activity_id: `uuid-${sportId + 1000}`,
       during: "['2026-03-01T10:00:00Z','2026-03-01T11:00:00Z')",
       timezone_offset: "-05:00",
       sport_id: sportId,
