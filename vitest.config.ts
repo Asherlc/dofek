@@ -6,6 +6,7 @@ export default defineConfig({
     testTimeout: 30_000,
     hookTimeout: 120_000,
     fileParallelism: true,
+    pool: "forks",
     include: ["src/**/*.test.ts", "packages/*/src/**/*.test.ts"],
     coverage: {
       provider: "v8",
