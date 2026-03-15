@@ -52,6 +52,7 @@
   "dependencies": {
     "drizzle-orm": "0.38.4",
     "eight-sleep-client": "workspace:*",
+    "garmin-connect": "workspace:*",
     "trainerroad-client": "workspace:*",
     "velohero-client": "workspace:*",
     "whoop-whoop": "workspace:*",
