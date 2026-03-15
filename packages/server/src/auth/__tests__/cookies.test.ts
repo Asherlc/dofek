@@ -150,14 +150,17 @@ describe("Auth cookies", () => {
   });
 
   describe("clearOAuthFlowCookies", () => {
-    it("clears both state and code_verifier cookies", () => {
+    it("clears state, code_verifier, and link_user cookies", () => {
       const res = mockResponse();
 
       clearOAuthFlowCookies(res);
 
-      expect(res.clearCookie).toHaveBeenCalledTimes(2);
+      expect(res.clearCookie).toHaveBeenCalledTimes(3);
       expect(res.clearCookie).toHaveBeenCalledWith("auth_state", { path: "/" });
       expect(res.clearCookie).toHaveBeenCalledWith("auth_code_verifier", {
+        path: "/",
+      });
+      expect(res.clearCookie).toHaveBeenCalledWith("auth_link_user", {
         path: "/",
       });
     });

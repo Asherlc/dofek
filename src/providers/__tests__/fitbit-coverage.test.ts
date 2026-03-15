@@ -465,3 +465,44 @@ describe("FitbitProvider.sync() — weight error paths (integration)", () => {
     expect(weightError).toBeDefined();
   });
 });
+
+describe("FitbitProvider.getUserIdentity()", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it("returns identity from profile API", async () => {
+    process.env.FITBIT_CLIENT_ID = "test-id";
+    process.env.FITBIT_CLIENT_SECRET = "test-secret";
+
+    const mockFetch = (async (): Promise<Response> => {
+      return Response.json({ user: { encodedId: "ABC123", displayName: "Fit User" } });
+    }) as typeof globalThis.fetch;
+
+    const provider = new FitbitProvider(mockFetch);
+    const setup = provider.authSetup();
+    if (!setup.getUserIdentity) throw new Error("getUserIdentity not defined");
+    const identity = await setup.getUserIdentity("test-token");
+    expect(identity.providerAccountId).toBe("ABC123");
+    expect(identity.email).toBeNull();
+    expect(identity.name).toBe("Fit User");
+  });
+
+  it("throws on API error", async () => {
+    process.env.FITBIT_CLIENT_ID = "test-id";
+    process.env.FITBIT_CLIENT_SECRET = "test-secret";
+
+    const mockFetch = (async (): Promise<Response> => {
+      return new Response("Too Many Requests", { status: 429 });
+    }) as typeof globalThis.fetch;
+
+    const provider = new FitbitProvider(mockFetch);
+    const setup = provider.authSetup();
+    if (!setup.getUserIdentity) throw new Error("getUserIdentity not defined");
+    await expect(setup.getUserIdentity("bad-token")).rejects.toThrow(
+      "Fitbit profile API error (429)",
+    );
+  });
+});

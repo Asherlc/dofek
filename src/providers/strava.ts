@@ -3,7 +3,13 @@ import { exchangeCodeForTokens, getOAuthRedirectUri, refreshAccessToken } from "
 import type { Database } from "../db/index.ts";
 import { activity, metricStream } from "../db/schema.ts";
 import { loadTokens, saveTokens } from "../db/tokens.ts";
-import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
+import type {
+  Provider,
+  ProviderAuthSetup,
+  ProviderIdentity,
+  SyncError,
+  SyncResult,
+} from "./types.ts";
 
 // ============================================================
 // Strava API types
@@ -329,6 +335,27 @@ export class StravaProvider implements Provider {
       oauthConfig: config,
       exchangeCode: (code) => exchangeCodeForTokens(config, code),
       apiBaseUrl: STRAVA_API_BASE,
+      getUserIdentity: async (accessToken: string): Promise<ProviderIdentity> => {
+        const response = await this.fetchFn(`${STRAVA_API_BASE}/athlete`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Strava athlete API error (${response.status}): ${text}`);
+        }
+        const athlete = (await response.json()) as {
+          id: number;
+          email?: string | null;
+          firstname?: string | null;
+          lastname?: string | null;
+        };
+        const nameParts = [athlete.firstname, athlete.lastname].filter(Boolean);
+        return {
+          providerAccountId: String(athlete.id),
+          email: athlete.email ?? null,
+          name: nameParts.length > 0 ? nameParts.join(" ") : null,
+        };
+      },
     };
   }
 

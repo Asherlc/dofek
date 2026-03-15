@@ -242,3 +242,64 @@ describe("parseWorkoutSummary — additional type mappings", () => {
     );
   });
 });
+
+describe("WahooProvider.getUserIdentity()", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it("returns identity from user API", async () => {
+    process.env.WAHOO_CLIENT_ID = "test-id";
+    process.env.WAHOO_CLIENT_SECRET = "test-secret";
+
+    const mockFetch = (async (): Promise<Response> => {
+      return Response.json({
+        id: 42,
+        email: "user@wahoo.com",
+        first_name: "John",
+        last_name: "Smith",
+      });
+    }) as typeof globalThis.fetch;
+
+    const provider = new WahooProvider(mockFetch);
+    const setup = provider.authSetup();
+    if (!setup.getUserIdentity) throw new Error("getUserIdentity not defined");
+    const identity = await setup.getUserIdentity("test-token");
+    expect(identity.providerAccountId).toBe("42");
+    expect(identity.email).toBe("user@wahoo.com");
+    expect(identity.name).toBe("John Smith");
+  });
+
+  it("handles missing name/email", async () => {
+    process.env.WAHOO_CLIENT_ID = "test-id";
+    process.env.WAHOO_CLIENT_SECRET = "test-secret";
+
+    const mockFetch = (async (): Promise<Response> => {
+      return Response.json({ id: 7 });
+    }) as typeof globalThis.fetch;
+
+    const provider = new WahooProvider(mockFetch);
+    const setup = provider.authSetup();
+    if (!setup.getUserIdentity) throw new Error("getUserIdentity not defined");
+    const identity = await setup.getUserIdentity("test-token");
+    expect(identity.providerAccountId).toBe("7");
+    expect(identity.email).toBeNull();
+    expect(identity.name).toBeNull();
+  });
+
+  it("throws on API error", async () => {
+    process.env.WAHOO_CLIENT_ID = "test-id";
+    process.env.WAHOO_CLIENT_SECRET = "test-secret";
+
+    const mockFetch = (async (): Promise<Response> => {
+      return new Response("Unauthorized", { status: 401 });
+    }) as typeof globalThis.fetch;
+
+    const provider = new WahooProvider(mockFetch);
+    const setup = provider.authSetup();
+    if (!setup.getUserIdentity) throw new Error("getUserIdentity not defined");
+    await expect(setup.getUserIdentity("bad-token")).rejects.toThrow("Wahoo user API error (401)");
+  });
+});

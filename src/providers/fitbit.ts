@@ -11,7 +11,13 @@ import type { Database } from "../db/index.ts";
 import { activity, bodyMeasurement, dailyMetrics, sleepSession } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
-import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
+import type {
+  Provider,
+  ProviderAuthSetup,
+  ProviderIdentity,
+  SyncError,
+  SyncResult,
+} from "./types.ts";
 
 // ============================================================
 // Fitbit API types
@@ -361,6 +367,23 @@ export class FitbitProvider implements Provider {
       authUrl: buildAuthorizationUrl(config, { codeChallenge }),
       exchangeCode: (code) => exchangeCodeForTokens(config, code, fetchFn, { codeVerifier }),
       apiBaseUrl: FITBIT_API_BASE,
+      getUserIdentity: async (accessToken: string): Promise<ProviderIdentity> => {
+        const response = await fetchFn(`${FITBIT_API_BASE}/1/user/-/profile.json`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Fitbit profile API error (${response.status}): ${text}`);
+        }
+        const data = (await response.json()) as {
+          user: { encodedId: string; displayName?: string | null };
+        };
+        return {
+          providerAccountId: data.user.encodedId,
+          email: null,
+          name: data.user.displayName ?? null,
+        };
+      },
     };
   }
 

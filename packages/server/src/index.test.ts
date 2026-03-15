@@ -178,8 +178,11 @@ describe("tRPC API", () => {
       const res = await fetch(`${baseUrl}/api/auth/providers`);
       expect(res.status).toBe(200);
       const data = await res.json();
-      // Should return an array (may be empty if no providers configured in test)
-      expect(Array.isArray(data)).toBe(true);
+      // Should return { identity: [...], data: [...] }
+      expect(data).toHaveProperty("identity");
+      expect(data).toHaveProperty("data");
+      expect(Array.isArray(data.identity)).toBe(true);
+      expect(Array.isArray(data.data)).toBe(true);
     });
 
     it("GET /api/auth/me returns user info with valid session", async () => {
