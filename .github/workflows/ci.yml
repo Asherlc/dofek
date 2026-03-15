@@ -1,13 +1,11 @@
-name: CI
+name: Docker Build & Push
 
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: docker-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -15,116 +13,67 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  check:
-    name: Lint & Type Check
+  wait-for-ci:
+    name: Wait for CircleCI
     runs-on: ubuntu-latest
+    permissions:
+      statuses: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: cd packages/web && pnpm exec tsr generate
-      - run: pnpm knip
-      - run: pnpm lint
-      - run: pnpm tsc --noEmit
-      - run: cd packages/server && pnpm tsc --noEmit
-      - run: cd packages/web && pnpm tsc --noEmit
-
-  test:
-    name: Tests
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: timescale/timescaledb:latest-pg16
+      - name: Wait for CircleCI checks to pass
         env:
-          POSTGRES_DB: test
-          POSTGRES_USER: test
-          POSTGRES_PASSWORD: test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U test -d test"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-    env:
-      TEST_DATABASE_URL: postgres://test:test@localhost:5432/test
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm test
-
-  build-web:
-    name: Build Web
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: cd packages/web && pnpm run build
-
-  e2e:
-    name: E2E Tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: docker/setup-buildx-action@v3
-
-      - name: Build Docker images
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          docker compose -f docker-compose.e2e.yml build
+          SHA="${{ github.sha }}"
+          REPO="${{ github.repository }}"
+          PATTERN="^ci/circleci:"
+          MAX_WAIT=1800  # 30 minutes
+          INTERVAL=30
+          elapsed=0
 
-      - name: Start e2e stack
-        run: docker compose -f docker-compose.e2e.yml up -d --wait
+          echo "Waiting for CircleCI statuses matching '$PATTERN' on $SHA"
 
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+          while [ $elapsed -lt $MAX_WAIT ]; do
+            # Get all commit statuses (CircleCI reports via status API, not checks API)
+            statuses=$(gh api "repos/$REPO/commits/$SHA/status" --jq '
+              .statuses | map(select(.context | test("^ci/circleci:")))
+            ')
 
-      - name: Cache Cypress binary
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/Cypress
-          key: cypress-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+            count=$(echo "$statuses" | jq 'length')
+            if [ "$count" -eq 0 ]; then
+              echo "No CircleCI statuses found yet, waiting ${INTERVAL}s... (${elapsed}s elapsed)"
+              sleep $INTERVAL
+              elapsed=$((elapsed + INTERVAL))
+              continue
+            fi
 
-      - name: Install Cypress binary
-        run: pnpm exec cypress install
+            pending=$(echo "$statuses" | jq '[.[] | select(.state == "pending")] | length')
+            failed=$(echo "$statuses" | jq '[.[] | select(.state == "failure" or .state == "error")] | length')
+            success=$(echo "$statuses" | jq '[.[] | select(.state == "success")] | length')
 
-      - name: Run Cypress tests
-        run: pnpm e2e:run
+            echo "CircleCI statuses: $success success, $pending pending, $failed failed (of $count total)"
 
-      - name: Upload screenshots on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: cypress-screenshots
-          path: cypress/screenshots/
+            if [ "$failed" -gt 0 ]; then
+              echo "::error::CircleCI checks failed"
+              echo "$statuses" | jq '.[] | select(.state == "failure" or .state == "error") | "\(.context): \(.state)"'
+              exit 1
+            fi
 
-      - name: Teardown
-        if: always()
-        run: docker compose -f docker-compose.e2e.yml down -v
+            if [ "$pending" -eq 0 ]; then
+              echo "All $count CircleCI checks passed!"
+              exit 0
+            fi
+
+            sleep $INTERVAL
+            elapsed=$((elapsed + INTERVAL))
+          done
+
+          echo "::error::Timed out waiting for CircleCI checks after ${MAX_WAIT}s"
+          exit 1
 
   docker:
     name: Docker (${{ matrix.target }})
-    needs: [check, test, build-web, e2e]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    runs-on: ubuntu-latest
+    needs: [wait-for-ci]
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
     permissions:
       contents: read
       packages: write
@@ -136,7 +85,9 @@ jobs:
           - target: client
             suffix: "-client"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-qemu-action@v3
 
       - uses: docker/setup-buildx-action@v3
 
@@ -158,6 +109,7 @@ jobs:
         with:
           context: .
           target: ${{ matrix.target }}
+          platforms: linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

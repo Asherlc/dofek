@@ -1,0 +1,280 @@
+version: 2.1
+
+executors:
+  node:
+    docker:
+      - image: cimg/node:22.14
+    resource_class: medium
+
+  node-with-services:
+    docker:
+      - image: cimg/node:22.14
+      - image: timescale/timescaledb:latest-pg16
+        environment:
+          POSTGRES_DB: test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+      - image: redis:7-alpine
+    resource_class: large
+
+  machine:
+    machine:
+      image: ubuntu-2404:current
+    resource_class: medium
+
+commands:
+  setup-pnpm:
+    description: Enable pnpm via corepack (no install)
+    steps:
+      - run:
+          name: Install pnpm
+          command: corepack enable && corepack prepare pnpm@latest --activate
+
+  attach-deps:
+    description: Attach workspace and link node_modules from shared install
+    steps:
+      - setup-pnpm
+      - attach_workspace:
+          at: /tmp/workspace
+      - run:
+          name: Restore node_modules from workspace
+          command: |
+            mv /tmp/workspace/node_modules ./node_modules
+            mv /tmp/workspace/packages/server/node_modules ./packages/server/node_modules
+            mv /tmp/workspace/packages/web/node_modules ./packages/web/node_modules
+            # Restore any other workspace package node_modules
+            for dir in /tmp/workspace/packages/*/node_modules; do
+              pkg=$(basename "$(dirname "$dir")")
+              if [ -d "$dir" ] && [ ! -d "./packages/$pkg/node_modules" ]; then
+                mv "$dir" "./packages/$pkg/node_modules"
+              fi
+            done
+
+jobs:
+  install:
+    executor: node
+    steps:
+      - checkout
+      - setup-pnpm
+      - restore_cache:
+          keys:
+            - pnpm-store-v1-{{ checksum "pnpm-lock.yaml" }}
+            - pnpm-store-v1-
+      - run: pnpm install --frozen-lockfile
+      - save_cache:
+          key: pnpm-store-v1-{{ checksum "pnpm-lock.yaml" }}
+          paths:
+            - ~/.local/share/pnpm/store
+      - persist_to_workspace:
+          root: .
+          paths:
+            - node_modules
+            - packages/*/node_modules
+
+  check:
+    executor: node
+    steps:
+      - checkout
+      - attach-deps
+      - run: cd packages/web && pnpm exec tsr generate
+      - run:
+          name: Lint + typecheck (parallel)
+          command: |
+            pnpm knip &
+            pid0=$!
+            pnpm lint &
+            pid1=$!
+            pnpm tsc --noEmit &
+            pid2=$!
+            (cd packages/server && pnpm tsc --noEmit) &
+            pid3=$!
+            (cd packages/web && pnpm tsc --noEmit) &
+            pid4=$!
+            fail=0
+            wait $pid0 || fail=1
+            wait $pid1 || fail=1
+            wait $pid2 || fail=1
+            wait $pid3 || fail=1
+            wait $pid4 || fail=1
+            exit $fail
+      - run: cd packages/web && pnpm run build
+
+  test:
+    executor: node-with-services
+    environment:
+      TEST_DATABASE_URL: postgres://test:test@localhost:5432/test
+      REDIS_URL: redis://localhost:6379
+    steps:
+      - checkout
+      - attach-deps
+      - run:
+          name: Wait for Postgres
+          command: |
+            for i in $(seq 1 30); do
+              nc -z localhost 5432 && exit 0
+              sleep 2
+            done
+            echo "Postgres did not start" && exit 1
+      - run:
+          name: Wait for Redis
+          command: |
+            for i in $(seq 1 30); do
+              nc -z localhost 6379 && exit 0
+              sleep 1
+            done
+            echo "Redis did not start" && exit 1
+      - run:
+          name: Run tests with coverage
+          command: pnpm exec vitest run --coverage
+          environment:
+            NODE_OPTIONS: --max-old-space-size=3072
+      - store_artifacts:
+          path: coverage
+
+  e2e:
+    executor: machine
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - docker-e2e-v1-{{ checksum "Dockerfile" }}-{{ checksum "docker-compose.e2e.yml" }}
+            - docker-e2e-v1-
+      - run:
+          name: Load cached Docker images
+          command: |
+            if [ -f /tmp/docker-cache/images.tar ]; then
+              docker load -i /tmp/docker-cache/images.tar || true
+            fi
+      - run:
+          name: Build and start e2e stack
+          command: docker compose -f docker-compose.e2e.yml up -d --build --wait
+      - run:
+          name: Save Docker images to cache
+          command: |
+            mkdir -p /tmp/docker-cache
+            docker save $(docker images --format '{{.Repository}}:{{.Tag}}' | grep -v '<none>') \
+              -o /tmp/docker-cache/images.tar || true
+      - save_cache:
+          key: docker-e2e-v1-{{ checksum "Dockerfile" }}-{{ checksum "docker-compose.e2e.yml" }}
+          paths:
+            - /tmp/docker-cache
+      - run:
+          name: Install Node.js 22
+          command: |
+            curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+            sudo apt-get install -y nodejs
+      - run:
+          name: Install pnpm
+          command: corepack enable && corepack prepare pnpm@latest --activate
+      - restore_cache:
+          keys:
+            - pnpm-store-machine-v1-{{ checksum "pnpm-lock.yaml" }}
+            - pnpm-store-machine-v1-
+      - run: pnpm install --frozen-lockfile
+      - save_cache:
+          key: pnpm-store-machine-v1-{{ checksum "pnpm-lock.yaml" }}
+          paths:
+            - ~/.local/share/pnpm/store
+      - restore_cache:
+          keys:
+            - cypress-v1-{{ checksum "pnpm-lock.yaml" }}
+      - run: pnpm exec cypress install
+      - save_cache:
+          key: cypress-v1-{{ checksum "pnpm-lock.yaml" }}
+          paths:
+            - ~/.cache/Cypress
+      - run: pnpm e2e:run
+      - store_artifacts:
+          path: cypress/screenshots
+          destination: cypress-screenshots
+      - run:
+          name: Teardown
+          command: docker compose -f docker-compose.e2e.yml down -v
+          when: always
+
+  mutation:
+    executor: node
+    environment:
+      NODE_OPTIONS: --max-old-space-size=3072
+    steps:
+      - checkout
+      - run:
+          name: Fetch full history for diff
+          command: git fetch origin main
+      - attach-deps
+      - restore_cache:
+          keys:
+            - stryker-v1-{{ .Branch }}-
+            - stryker-v1-main-
+      - run:
+          name: Get changed files
+          command: |
+            if [ -n "$CIRCLE_PULL_REQUEST" ]; then
+              FILES=$(git diff --name-only origin/main...HEAD \
+                | { grep '\.ts$' || true; } \
+                | { grep -v '\.test\.ts$' || true; } \
+                | { grep -v '__tests__/' || true; } \
+                | { grep -v '\.d\.ts$' || true; } \
+                | { grep -v 'packages/server/' || true; } \
+                | { grep -v 'packages/ios/' || true; } \
+                | { grep -v 'packages/whoop-whoop/' || true; } \
+                | awk '!/^src\/providers\// || /^src\/providers\/(index|strong-csv|cronometer-csv)\.ts$/' \
+                | { grep -v 'packages/web/src/pages/' || true; } \
+                | { grep -v 'packages/web/src/hooks/' || true; } \
+                | { grep -v 'packages/web/src/components/' || true; } \
+                | { grep -v 'drizzle/' || true; } \
+                | { grep -v 'scripts/' || true; } \
+                | { grep -v '\.config\.' || true; } \
+                | tr '\n' ',' \
+                | sed 's/,$//')
+              echo "export MUTATE_FILES=$FILES" >> "$BASH_ENV"
+              echo "Mutating changed files: $FILES"
+            fi
+      - run:
+          name: Run Stryker
+          command: |
+            if [ -n "$CIRCLE_PULL_REQUEST" ] && [ -n "$MUTATE_FILES" ]; then
+              pnpm test:mutation --mutate "$MUTATE_FILES"
+            elif [ -z "$CIRCLE_PULL_REQUEST" ]; then
+              pnpm test:mutation
+            else
+              echo "No mutatable source files changed — skipping."
+            fi
+      - save_cache:
+          key: stryker-v1-{{ .Branch }}-{{ .Revision }}
+          paths:
+            - reports/stryker-incremental.json
+      - store_artifacts:
+          path: reports/mutation
+          destination: mutation-report
+
+workflows:
+  ci:
+    jobs:
+      - install
+      - check:
+          requires:
+            - install
+      - test:
+          requires:
+            - install
+      - e2e
+      - mutation:
+          requires:
+            - install
+          filters:
+            branches:
+              ignore: main
+
+  weekly-mutation:
+    triggers:
+      - schedule:
+          cron: "0 3 * * 0"
+          filters:
+            branches:
+              only: main
+    jobs:
+      - install
+      - mutation:
+          requires:
+            - install

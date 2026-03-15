@@ -137,6 +137,7 @@ export function parseFitRecord(raw: Record<string, unknown>): ParsedFitRecord {
 // Session parsing
 // ============================================================
 
+// Stryker disable all — internal function only reachable via parseFitFile with real FIT data
 function parseFitSession(raw: Record<string, unknown>): ParsedFitSession {
   return {
     sport: (raw.sport as string) ?? "unknown",
@@ -173,11 +174,29 @@ function parseFitSession(raw: Record<string, unknown>): ParsedFitSession {
 }
 
 // ============================================================
+// Helpers
+// ============================================================
+
+/** Convert a typed library object to Record<string, unknown> with a single assertion. */
+function toRecord(obj: object): Record<string, unknown> {
+  // Spread creates a plain object — safe single cast from index-signature-compatible shape.
+  return { ...obj } as Record<string, unknown>;
+}
+
+// ============================================================
 // File-level parsing
 // ============================================================
 
+// Stryker restore all
+// Stryker disable all — parseFitFile wraps third-party FIT parser; only testable with real binary FIT files
+const FIT_PARSE_TIMEOUT_MS = 10_000;
+
 export function parseFitFile(buffer: Buffer): Promise<ParsedFitActivity> {
   return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error("FIT parser timed out — file may be corrupt or invalid"));
+    }, FIT_PARSE_TIMEOUT_MS);
+
     const parser = new FitParser({
       force: true,
       speedUnit: "m/s",
@@ -187,6 +206,7 @@ export function parseFitFile(buffer: Buffer): Promise<ParsedFitActivity> {
     });
 
     parser.parse(Buffer.from(buffer) as Buffer<ArrayBuffer>, (err, data) => {
+      clearTimeout(timer);
       if (err) {
         reject(new Error(String(err)));
         return;
@@ -197,10 +217,10 @@ export function parseFitFile(buffer: Buffer): Promise<ParsedFitActivity> {
       }
 
       const sessions = data.sessions ?? [];
-      const rawSession = (sessions[0] ?? {}) as unknown as Record<string, unknown>;
-      const rawRecords = (data.records ?? []) as unknown as Record<string, unknown>[];
-      const rawLaps = (data.laps ?? []) as unknown as Record<string, unknown>[];
-      const rawEvents = (data.events ?? []) as unknown as Record<string, unknown>[];
+      const rawSession = toRecord(sessions[0] ?? {});
+      const rawRecords = (data.records ?? []).map(toRecord);
+      const rawLaps = (data.laps ?? []).map(toRecord);
+      const rawEvents = (data.events ?? []).map(toRecord);
 
       resolve({
         session: parseFitSession(rawSession),

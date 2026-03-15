@@ -1,5 +1,16 @@
 import { createHash, randomBytes } from "node:crypto";
 
+const DEFAULT_REDIRECT_URI = "https://dofek.asherlc.com/callback";
+
+/**
+ * Returns the OAuth redirect URI from OAUTH_REDIRECT_URI_unencrypted env var,
+ * falling back to the production default. All providers that use our callback
+ * endpoint should call this instead of reading the env var themselves.
+ */
+export function getOAuthRedirectUri(): string {
+  return process.env.OAUTH_REDIRECT_URI_unencrypted ?? DEFAULT_REDIRECT_URI;
+}
+
 export interface OAuthConfig {
   clientId: string;
   clientSecret?: string;
@@ -34,7 +45,7 @@ export function generateCodeChallenge(verifier: string): string {
 
 export interface TokenSet {
   accessToken: string;
-  refreshToken: string;
+  refreshToken: string | null;
   expiresAt: Date;
   scopes: string | null;
 }
@@ -64,7 +75,7 @@ function parseTokenResponse(data: Record<string, unknown>): TokenSet {
   const expiresIn = (data.expires_in as number) ?? 7200;
   return {
     accessToken: data.access_token as string,
-    refreshToken: data.refresh_token as string,
+    refreshToken: (data.refresh_token as string) ?? null,
     expiresAt: new Date(Date.now() + expiresIn * 1000),
     scopes: (data.scope as string) ?? null,
   };

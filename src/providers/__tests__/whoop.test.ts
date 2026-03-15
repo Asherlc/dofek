@@ -4,8 +4,8 @@ import {
   parseRecovery,
   parseSleep,
   parseWorkout,
+  WhoopClient,
   type WhoopHrValue,
-  WhoopInternalClient,
   type WhoopRecoveryRecord,
   type WhoopSleepRecord,
   type WhoopWorkoutRecord,
@@ -67,33 +67,15 @@ const sampleSleep: WhoopSleepRecord = {
 };
 
 const sampleWorkout: WhoopWorkoutRecord = {
-  id: 1043,
-  user_id: 9012,
-  created_at: "2026-03-01T10:00:00Z",
-  updated_at: "2026-03-01T11:00:00Z",
-  start: "2026-03-01T10:00:00Z",
-  end: "2026-03-01T11:00:00Z",
+  activity_id: "abc12345-6789-0def-1234-567890abcdef",
+  during: "['2026-03-01T10:00:00Z','2026-03-01T11:00:00Z')",
   timezone_offset: "-05:00",
   sport_id: 0,
-  score_state: "SCORED",
-  score: {
-    strain: 12.5,
-    average_heart_rate: 155,
-    max_heart_rate: 185,
-    kilojoule: 2500.5,
-    percent_recorded: 100,
-    distance_meter: 10000,
-    altitude_gain_meter: 150.5,
-    altitude_change_meter: -5.2,
-    zone_duration: {
-      zone_zero_milli: 60000,
-      zone_one_milli: 300000,
-      zone_two_milli: 900000,
-      zone_three_milli: 1200000,
-      zone_four_milli: 600000,
-      zone_five_milli: 300000,
-    },
-  },
+  average_heart_rate: 155,
+  max_heart_rate: 185,
+  kilojoules: 2500.5,
+  percent_recorded: 100,
+  score: 12.5,
 };
 
 /** Helper: mock fetch that routes Cognito calls and user bootstrap */
@@ -120,7 +102,7 @@ function makeCognitoMockFetch(
   }) as typeof globalThis.fetch;
 }
 
-describe("WhoopInternalClient.signIn (Cognito v3)", () => {
+describe("WhoopClient.signIn (Cognito v3)", () => {
   it("calls Cognito InitiateAuth with USER_PASSWORD_AUTH", async () => {
     let capturedBody: Record<string, unknown> = {};
     let capturedTarget = "";
@@ -135,7 +117,7 @@ describe("WhoopInternalClient.signIn (Cognito v3)", () => {
       };
     });
 
-    await WhoopInternalClient.signIn("user@test.com", "pass", mockFetch);
+    await WhoopClient.signIn("user@test.com", "pass", mockFetch);
     expect(capturedTarget).toBe("AWSCognitoIdentityProviderService.InitiateAuth");
     expect(capturedBody.AuthFlow).toBe("USER_PASSWORD_AUTH");
     expect((capturedBody.AuthParameters as Record<string, string>).USERNAME).toBe("user@test.com");
@@ -147,7 +129,7 @@ describe("WhoopInternalClient.signIn (Cognito v3)", () => {
       AuthenticationResult: { AccessToken: "tok", RefreshToken: "ref" },
     }));
 
-    const result = await WhoopInternalClient.signIn("user@test.com", "pass", mockFetch);
+    const result = await WhoopClient.signIn("user@test.com", "pass", mockFetch);
     expect(result.type).toBe("success");
     if (result.type === "success") {
       expect(result.token.userId).toBe(42);
@@ -160,7 +142,7 @@ describe("WhoopInternalClient.signIn (Cognito v3)", () => {
       Session: "session-abc",
     }));
 
-    const result = await WhoopInternalClient.signIn("user@test.com", "pass", mockFetch);
+    const result = await WhoopClient.signIn("user@test.com", "pass", mockFetch);
     expect(result.type).toBe("verification_required");
     if (result.type === "verification_required") {
       expect(result.session).toBe("session-abc");
@@ -174,13 +156,13 @@ describe("WhoopInternalClient.signIn (Cognito v3)", () => {
       Session: "session-abc",
     }));
 
-    await expect(
-      WhoopInternalClient.authenticate("user@test.com", "pass", mockFetch),
-    ).rejects.toThrow("MFA");
+    await expect(WhoopClient.authenticate("user@test.com", "pass", mockFetch)).rejects.toThrow(
+      "MFA",
+    );
   });
 });
 
-describe("WhoopInternalClient.refreshAccessToken (Cognito v3)", () => {
+describe("WhoopClient.refreshAccessToken (Cognito v3)", () => {
   it("calls Cognito InitiateAuth with REFRESH_TOKEN_AUTH", async () => {
     let capturedBody: Record<string, unknown> = {};
     const mockFetch = makeCognitoMockFetch((body) => {
@@ -190,7 +172,7 @@ describe("WhoopInternalClient.refreshAccessToken (Cognito v3)", () => {
       };
     });
 
-    const token = await WhoopInternalClient.refreshAccessToken("old-ref", mockFetch);
+    const token = await WhoopClient.refreshAccessToken("old-ref", mockFetch);
     expect(capturedBody.AuthFlow).toBe("REFRESH_TOKEN_AUTH");
     expect((capturedBody.AuthParameters as Record<string, string>).REFRESH_TOKEN).toBe("old-ref");
     expect(token.accessToken).toBe("new-tok");
@@ -199,7 +181,7 @@ describe("WhoopInternalClient.refreshAccessToken (Cognito v3)", () => {
   });
 });
 
-describe("WhoopInternalClient._fetchUserId edge cases", () => {
+describe("WhoopClient._fetchUserId edge cases", () => {
   it("throws when bootstrap response contains no user ID", async () => {
     const mockFetch = ((input: RequestInfo | URL) => {
       const url = input.toString();
@@ -217,7 +199,7 @@ describe("WhoopInternalClient._fetchUserId edge cases", () => {
       return Promise.resolve(new Response("Not found", { status: 404 }));
     }) as typeof globalThis.fetch;
 
-    await expect(WhoopInternalClient.signIn("user@test.com", "pass", mockFetch)).rejects.toThrow(
+    await expect(WhoopClient.signIn("user@test.com", "pass", mockFetch)).rejects.toThrow(
       /user ID/i,
     );
   });
@@ -239,7 +221,7 @@ describe("WhoopInternalClient._fetchUserId edge cases", () => {
       return Promise.resolve(new Response("Not found", { status: 404 }));
     }) as typeof globalThis.fetch;
 
-    const result = await WhoopInternalClient.signIn("user@test.com", "pass", mockFetch);
+    const result = await WhoopClient.signIn("user@test.com", "pass", mockFetch);
     expect(result.type).toBe("success");
     if (result.type === "success") {
       expect(result.token.userId).toBe(99);
@@ -247,7 +229,7 @@ describe("WhoopInternalClient._fetchUserId edge cases", () => {
   });
 });
 
-describe("WhoopInternalClient.refreshAccessToken — bootstrap failure", () => {
+describe("WhoopClient.refreshAccessToken — bootstrap failure", () => {
   it("returns null userId when bootstrap endpoint fails", async () => {
     const mockFetch = ((input: RequestInfo | URL) => {
       const url = input.toString();
@@ -265,7 +247,7 @@ describe("WhoopInternalClient.refreshAccessToken — bootstrap failure", () => {
       return Promise.resolve(new Response("Not found", { status: 404 }));
     }) as typeof globalThis.fetch;
 
-    const token = await WhoopInternalClient.refreshAccessToken("old-ref", mockFetch);
+    const token = await WhoopClient.refreshAccessToken("old-ref", mockFetch);
     expect(token.accessToken).toBe("new-tok");
     expect(token.userId).toBeNull();
   });
@@ -305,13 +287,14 @@ describe("WHOOP Provider — parsing", () => {
   describe("parseWorkout", () => {
     it("maps workout fields to cardio activity", () => {
       const result = parseWorkout(sampleWorkout);
-      expect(result.externalId).toBe("1043");
+      expect(result.externalId).toBe("abc12345-6789-0def-1234-567890abcdef");
       expect(result.activityType).toBe("running");
       expect(result.avgHeartRate).toBe(155);
       expect(result.maxHeartRate).toBe(185);
-      expect(result.distanceMeters).toBe(10000);
-      expect(result.totalElevationGain).toBeCloseTo(150.5);
       expect(result.calories).toBe(598); // 2500.5 kJ / 4.184
+      expect(result.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
+      expect(result.endedAt).toEqual(new Date("2026-03-01T11:00:00Z"));
+      expect(result.durationSeconds).toBe(3600);
     });
   });
 

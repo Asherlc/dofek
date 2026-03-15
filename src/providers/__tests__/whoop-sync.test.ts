@@ -18,11 +18,12 @@ import {
 // ============================================================
 
 interface FakeCycle {
-  id: number;
-  user_id: number;
+  id?: number;
+  user_id?: number;
   days: string[];
   recovery?: WhoopRecoveryRecord;
   sleep?: { id: number };
+  workouts?: WhoopWorkoutRecord[];
   strain?: {
     workouts: WhoopWorkoutRecord[];
   };
@@ -50,39 +51,19 @@ function fakeCycle(overrides: Partial<FakeCycle> = {}): FakeCycle {
       },
     },
     sleep: { id: 10235 },
-    strain: {
-      workouts: [
-        {
-          id: 1043,
-          user_id: 10129,
-          created_at: "2026-03-01T10:00:00Z",
-          updated_at: "2026-03-01T11:00:00Z",
-          start: "2026-03-01T10:00:00Z",
-          end: "2026-03-01T11:00:00Z",
-          timezone_offset: "-05:00",
-          sport_id: 0, // running
-          score_state: "SCORED",
-          score: {
-            strain: 12.5,
-            average_heart_rate: 155,
-            max_heart_rate: 185,
-            kilojoule: 2500.5,
-            percent_recorded: 100,
-            distance_meter: 10000,
-            altitude_gain_meter: 150.5,
-            altitude_change_meter: -5.2,
-            zone_duration: {
-              zone_zero_milli: 60000,
-              zone_one_milli: 300000,
-              zone_two_milli: 900000,
-              zone_three_milli: 1200000,
-              zone_four_milli: 600000,
-              zone_five_milli: 300000,
-            },
-          },
-        },
-      ],
-    },
+    workouts: [
+      {
+        activity_id: "abc12345-6789-0def-1234-567890abcdef",
+        during: "['2026-03-01T10:00:00Z','2026-03-01T11:00:00Z')",
+        timezone_offset: "-05:00",
+        sport_id: 0, // running
+        average_heart_rate: 155,
+        max_heart_rate: 185,
+        kilojoules: 2500.5,
+        percent_recorded: 100,
+        score: 12.5,
+      },
+    ],
     ...overrides,
   };
 }
@@ -156,9 +137,14 @@ function createMockFetch(
       return Response.json({ id: 10129 });
     }
 
-    // Cycles (BFF endpoint)
+    // Cycles (BFF endpoint) — wrapped in { records: [...] } like the real API
     if (urlStr.includes("/cycles")) {
-      return Response.json(cycles);
+      return Response.json({ records: cycles });
+    }
+
+    // Weightlifting-service — return 404 unless overridden
+    if (urlStr.includes("weightlifting-service")) {
+      return new Response("Not found", { status: 404 });
     }
 
     // Sleep events
@@ -250,66 +236,44 @@ describe("WhoopProvider.sync() (integration)", () => {
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "whoop"));
 
     expect(rows.length).toBeGreaterThanOrEqual(1);
-    const workout = rows.find((r) => r.externalId === "1043");
-    if (!workout) throw new Error("expected workout 1043");
+    const workout = rows.find((r) => r.externalId === "abc12345-6789-0def-1234-567890abcdef");
+    if (!workout) throw new Error("expected workout abc12345-...");
     expect(workout.activityType).toBe("running");
     expect(workout.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
     expect(workout.endedAt).toEqual(new Date("2026-03-01T11:00:00Z"));
     // Summary data stored in raw JSONB
     expect((workout.raw as Record<string, unknown>).avgHeartRate).toBe(155);
     expect((workout.raw as Record<string, unknown>).maxHeartRate).toBe(185);
-    expect((workout.raw as Record<string, unknown>).distanceMeters).toBe(10000);
   });
 
   it("syncs multiple workouts from a single cycle", async () => {
     const twoWorkoutCycle = fakeCycle({
       id: 200,
       days: ["2026-03-05"],
-      strain: {
-        workouts: [
-          {
-            id: 2001,
-            user_id: 10129,
-            created_at: "2026-03-05T08:00:00Z",
-            updated_at: "2026-03-05T09:00:00Z",
-            start: "2026-03-05T08:00:00Z",
-            end: "2026-03-05T09:00:00Z",
-            timezone_offset: "-05:00",
-            sport_id: 45, // weightlifting
-            score_state: "SCORED",
-            score: {
-              strain: 8.5,
-              average_heart_rate: 130,
-              max_heart_rate: 160,
-              kilojoule: 1200,
-              percent_recorded: 100,
-              zone_duration: {},
-            },
-          },
-          {
-            id: 2002,
-            user_id: 10129,
-            created_at: "2026-03-05T17:00:00Z",
-            updated_at: "2026-03-05T18:00:00Z",
-            start: "2026-03-05T17:00:00Z",
-            end: "2026-03-05T18:00:00Z",
-            timezone_offset: "-05:00",
-            sport_id: 1, // cycling
-            score_state: "SCORED",
-            score: {
-              strain: 14.2,
-              average_heart_rate: 160,
-              max_heart_rate: 190,
-              kilojoule: 3000,
-              percent_recorded: 98,
-              distance_meter: 25000,
-              altitude_gain_meter: 300,
-              altitude_change_meter: 10,
-              zone_duration: {},
-            },
-          },
-        ],
-      },
+      workouts: [
+        {
+          activity_id: "wl-2001-uuid",
+          during: "['2026-03-05T08:00:00Z','2026-03-05T09:00:00Z')",
+          timezone_offset: "-05:00",
+          sport_id: 45, // weightlifting
+          average_heart_rate: 130,
+          max_heart_rate: 160,
+          kilojoules: 1200,
+          percent_recorded: 100,
+          score: 8.5,
+        },
+        {
+          activity_id: "cy-2002-uuid",
+          during: "['2026-03-05T17:00:00Z','2026-03-05T18:00:00Z')",
+          timezone_offset: "-05:00",
+          sport_id: 1, // cycling
+          average_heart_rate: 160,
+          max_heart_rate: 190,
+          kilojoules: 3000,
+          percent_recorded: 98,
+          score: 14.2,
+        },
+      ],
     });
 
     const provider = new WhoopProvider(createMockFetch([twoWorkoutCycle]));
@@ -317,12 +281,12 @@ describe("WhoopProvider.sync() (integration)", () => {
 
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "whoop"));
 
-    const lift = rows.find((r) => r.externalId === "2001");
-    if (!lift) throw new Error("expected workout 2001");
+    const lift = rows.find((r) => r.externalId === "wl-2001-uuid");
+    if (!lift) throw new Error("expected workout wl-2001-uuid");
     expect(lift.activityType).toBe("weightlifting");
 
-    const ride = rows.find((r) => r.externalId === "2002");
-    if (!ride) throw new Error("expected workout 2002");
+    const ride = rows.find((r) => r.externalId === "cy-2002-uuid");
+    if (!ride) throw new Error("expected workout cy-2002-uuid");
     expect(ride.activityType).toBe("cycling");
   });
 
@@ -347,29 +311,19 @@ describe("WhoopProvider.sync() (integration)", () => {
     const cycles = [
       fakeCycle({
         id: 300,
-        strain: {
-          workouts: [
-            {
-              id: 5001,
-              user_id: 10129,
-              created_at: "2026-03-08T10:00:00Z",
-              updated_at: "2026-03-08T11:00:00Z",
-              start: "2026-03-08T10:00:00Z",
-              end: "2026-03-08T11:00:00Z",
-              timezone_offset: "-05:00",
-              sport_id: 0,
-              score_state: "SCORED",
-              score: {
-                strain: 10,
-                average_heart_rate: 145,
-                max_heart_rate: 175,
-                kilojoule: 2000,
-                percent_recorded: 100,
-                zone_duration: {},
-              },
-            },
-          ],
-        },
+        workouts: [
+          {
+            activity_id: "upsert-test-5001-uuid",
+            during: "['2026-03-08T10:00:00Z','2026-03-08T11:00:00Z')",
+            timezone_offset: "-05:00",
+            sport_id: 0,
+            average_heart_rate: 145,
+            max_heart_rate: 175,
+            kilojoules: 2000,
+            percent_recorded: 100,
+            score: 10,
+          },
+        ],
       }),
     ];
 
@@ -380,7 +334,9 @@ describe("WhoopProvider.sync() (integration)", () => {
     const rows = await ctx.db
       .select()
       .from(activity)
-      .where(and(eq(activity.providerId, "whoop"), eq(activity.externalId, "5001")));
+      .where(
+        and(eq(activity.providerId, "whoop"), eq(activity.externalId, "upsert-test-5001-uuid")),
+      );
 
     expect(rows).toHaveLength(1);
   });
@@ -407,7 +363,10 @@ describe("WhoopProvider.sync() (integration)", () => {
         return Response.json({ profile: { name: "Test" } });
       }
       if (urlStr.includes("/cycles")) {
-        return Response.json([fakeCycle()]);
+        return Response.json({ records: [fakeCycle()] });
+      }
+      if (urlStr.includes("weightlifting-service")) {
+        return new Response("Not found", { status: 404 });
       }
       if (urlStr.includes("sleep-events") || urlStr.includes("sleep-service")) {
         return Response.json(fakeSleepResponse);
@@ -446,6 +405,88 @@ describe("WhoopProvider.sync() (integration)", () => {
     expect(tokens?.scopes).toMatch(/userId:\d+/);
   });
 
+  it("returns error when no tokens exist at all", async () => {
+    // Remove all tokens for whoop
+    const { oauthToken } = await import("../../db/schema.ts");
+    await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "whoop"));
+
+    const provider = new WhoopProvider(createMockFetch([]));
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain("not connected");
+    expect(result.recordsSynced).toBe(0);
+
+    // Restore tokens for other tests
+    await saveTokens(ctx.db, "whoop", {
+      accessToken: "fake-access",
+      refreshToken: "fake-refresh",
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      scopes: "userId:10129",
+    });
+  });
+
+  it("syncs journal entries from behavior-impact-service", async () => {
+    await saveTokens(ctx.db, "whoop", {
+      accessToken: "fake-access",
+      refreshToken: "fake-refresh",
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      scopes: "userId:10129",
+    });
+
+    const journalMockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+      const urlStr = input.toString();
+
+      if (urlStr.includes("auth-service/v3/whoop")) {
+        return Response.json({
+          AuthenticationResult: {
+            AccessToken: "test-token",
+            RefreshToken: "test-refresh",
+          },
+        });
+      }
+      if (urlStr.includes("users-service/v2/bootstrap")) {
+        return Response.json({ id: 10129 });
+      }
+      if (urlStr.includes("/cycles")) {
+        return Response.json([]);
+      }
+      if (urlStr.includes("metrics-service") || urlStr.includes("metrics/user")) {
+        return Response.json({ values: [] });
+      }
+      if (urlStr.includes("behavior-impact-service")) {
+        return Response.json([
+          {
+            date: "2026-03-01T00:00:00Z",
+            answers: [
+              { name: "caffeine", value: 2, impact: 0.5 },
+              { name: "alcohol", value: 0, impact: -0.1 },
+              { name: "melatonin", answer: "yes", impact: 0.3 },
+            ],
+          },
+        ]);
+      }
+      return new Response("Not found", { status: 404 });
+    }) as typeof globalThis.fetch;
+
+    const provider = new WhoopProvider(journalMockFetch);
+    const result = await provider.sync(ctx.db, new Date("2026-02-28T00:00:00Z"));
+
+    expect(result.errors).toHaveLength(0);
+
+    const { journalEntry } = await import("../../db/schema.ts");
+    const rows = await ctx.db
+      .select()
+      .from(journalEntry)
+      .where(eq(journalEntry.providerId, "whoop"));
+
+    expect(rows.length).toBeGreaterThanOrEqual(3);
+    const caffeine = rows.find((r) => r.question === "caffeine");
+    expect(caffeine).toBeDefined();
+    expect(caffeine?.answerNumeric).toBe(2);
+    expect(caffeine?.impactScore).toBe(0.5);
+  });
+
   it("handles auth failure gracefully", async () => {
     const provider = new WhoopProvider(createMockFetch([], { authError: true }));
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
@@ -455,31 +496,17 @@ describe("WhoopProvider.sync() (integration)", () => {
   });
 
   it("continues syncing other data types if workout sync fails", async () => {
-    // Cycle with invalid workout that will cause an error
+    // Cycle with invalid workout (bad during range) that will cause an error
     const cycle = fakeCycle({
-      strain: {
-        workouts: [
-          {
-            id: 9999,
-            user_id: 10129,
-            created_at: "invalid-date",
-            updated_at: "invalid-date",
-            start: "invalid-date",
-            end: "invalid-date",
-            timezone_offset: "-05:00",
-            sport_id: 0,
-            score_state: "SCORED",
-            score: {
-              strain: 10,
-              average_heart_rate: 145,
-              max_heart_rate: 175,
-              kilojoule: 2000,
-              percent_recorded: 100,
-              zone_duration: {},
-            },
-          },
-        ],
-      },
+      workouts: [
+        {
+          activity_id: "bad-workout-uuid",
+          during: "invalid-range",
+          timezone_offset: "-05:00",
+          sport_id: 0,
+          score: 10,
+        },
+      ],
     });
 
     const provider = new WhoopProvider(createMockFetch([cycle]));

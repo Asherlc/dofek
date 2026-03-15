@@ -376,4 +376,100 @@ describe("parseCronometerCsv", () => {
     expect(entries[0]?.omega3Mg).toBeNull();
     expect(entries[0]?.omega6Mg).toBeNull();
   });
+
+  it("converts empty unit and category to null", () => {
+    const csv = [csvHeader, makeRow({ Unit: "", Category: "" })].join("\n");
+    const entries = parseCronometerCsv(csv);
+    expect(entries[0]?.unit).toBeNull();
+    expect(entries[0]?.category).toBeNull();
+  });
+
+  it("handles escaped double quotes in CSV fields", () => {
+    // Test the parseCsvLine function's escaped-quote handling
+    const csv = [
+      csvHeader,
+      '2024-03-15,Breakfast,"Food ""Deluxe""",100,g,Other,200,10,25,8,3,2,1.5,3,0.1,15,100,300,5,50,10,2,1.5,20,0.2,0.3,2,0.5,0.3,5,40,1.2,120,2,30,1.5,10,0.2,0.5,5,15,0.5,1.2,70,0,0',
+    ].join("\n");
+    const entries = parseCronometerCsv(csv);
+    expect(entries[0]?.foodName).toBe('Food "Deluxe"');
+  });
+
+  it("handles amount as null when empty", () => {
+    const csv = [csvHeader, makeRow({ Amount: "" })].join("\n");
+    const entries = parseCronometerCsv(csv);
+    expect(entries[0]?.amount).toBeNull();
+  });
+
+  it("parses row with exactly 6 fields (MIN_FIELDS boundary)", () => {
+    const csv = [csvHeader, "2024-03-15,Lunch,Rice,150,g,Grains"].join("\n");
+    const entries = parseCronometerCsv(csv);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.date).toBe("2024-03-15");
+    expect(entries[0]?.meal).toBe("lunch");
+    expect(entries[0]?.foodName).toBe("Rice");
+    expect(entries[0]?.calories).toBeNull();
+  });
+
+  it("skips row with only 5 fields (below MIN_FIELDS)", () => {
+    const csv = [csvHeader, "2024-03-15,Lunch,Rice,150,g"].join("\n");
+    const entries = parseCronometerCsv(csv);
+    expect(entries).toHaveLength(0);
+  });
+
+  it("empty unit is strictly null not empty string", () => {
+    const csv = [csvHeader, makeRow({ Unit: "" })].join("\n");
+    const entries = parseCronometerCsv(csv);
+    expect(entries[0]?.unit).toStrictEqual(null);
+    expect(entries[0]?.unit).not.toBe("");
+  });
+
+  it("empty category is strictly null not empty string", () => {
+    const csv = [csvHeader, makeRow({ Category: "" })].join("\n");
+    const entries = parseCronometerCsv(csv);
+    expect(entries[0]?.category).toStrictEqual(null);
+  });
+
+  it("gramsToMg rounds to 2 decimal places", () => {
+    // 0.12345g -> 123.45mg
+    const csv = [csvHeader, makeRow({ "Omega-3": "0.12345" })].join("\n");
+    const entries = parseCronometerCsv(csv);
+    expect(entries[0]?.omega3Mg).toBe(123.45);
+  });
+
+  it("gramsToMg converts 0g to 0mg not null", () => {
+    const csv = [csvHeader, makeRow({ "Omega-3": "0", "Omega-6": "0" })].join("\n");
+    const entries = parseCronometerCsv(csv);
+    expect(entries[0]?.omega3Mg).toBe(0);
+    expect(entries[0]?.omega6Mg).toBe(0);
+  });
+
+  it("gramsToMg with small value", () => {
+    // 0.001g -> 1mg
+    const csv = [csvHeader, makeRow({ "Omega-3": "0.001" })].join("\n");
+    const entries = parseCronometerCsv(csv);
+    expect(entries[0]?.omega3Mg).toBe(1);
+  });
+});
+
+describe("parseOptionalNumber — mutation-killing edge cases", () => {
+  it("returns null for tab-only input", () => {
+    expect(parseOptionalNumber("\t")).toBeNull();
+  });
+
+  it("returns null for NaN string", () => {
+    expect(parseOptionalNumber("NaN")).toBeNull();
+  });
+
+  it("parses string with leading whitespace", () => {
+    expect(parseOptionalNumber("  42")).toBe(42);
+  });
+
+  it("distinguishes empty string from zero", () => {
+    expect(parseOptionalNumber("")).toBeNull();
+    expect(parseOptionalNumber("0")).toBe(0);
+  });
+
+  it("returns null for mixed whitespace", () => {
+    expect(parseOptionalNumber("  \t  ")).toBeNull();
+  });
 });

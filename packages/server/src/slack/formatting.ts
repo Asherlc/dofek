@@ -12,6 +12,9 @@ interface SlackMessage {
 
 type MicroKey = keyof NutritionItemWithMeal & string;
 
+/** Object containing only micronutrient values, used for summing totals */
+type MicroTotals = Partial<Record<MicroKey, number | undefined>>;
+
 /** Micronutrient display definitions: field key, label, unit */
 const MICRO_DISPLAY: Array<{ key: MicroKey; label: string; unit: string }> = [
   // Fat breakdown
@@ -54,7 +57,7 @@ function formatMacroLine(item: NutritionItemWithMeal): string {
 }
 
 /** Format a condensed micronutrient line showing only non-zero values */
-function formatMicroLine(item: NutritionItemWithMeal): string {
+function formatMicroLine(item: NutritionItemWithMeal | MicroTotals): string {
   const parts: string[] = [];
   for (const { key, label, unit } of MICRO_DISPLAY) {
     const value = item[key] as number | undefined;
@@ -80,13 +83,13 @@ function sumMicro(items: NutritionItemWithMeal[], key: MicroKey): number | undef
   return hasValue ? total : undefined;
 }
 
-/** Build a NutritionItemWithMeal-like object with summed micros for total display */
-function buildMicroTotals(items: NutritionItemWithMeal[]): NutritionItemWithMeal {
-  const totals: Record<string, unknown> = {};
+/** Build an object with summed micros for total display */
+function buildMicroTotals(items: NutritionItemWithMeal[]): MicroTotals {
+  const totals: Partial<Record<MicroKey, number | undefined>> = {};
   for (const { key } of MICRO_DISPLAY) {
     totals[key] = sumMicro(items, key);
   }
-  return totals as unknown as NutritionItemWithMeal;
+  return totals;
 }
 
 /** Format parsed nutrition items into a Slack Block Kit message with confirm/cancel buttons.

@@ -6,6 +6,11 @@ export interface AuthUser {
 
 export type IdentityProviderName = "google" | "apple" | "authentik";
 
+export interface ConfiguredProviders {
+  identity: IdentityProviderName[];
+  data: string[];
+}
+
 /** Fetch the currently authenticated user, or null if not logged in. */
 export async function fetchCurrentUser(): Promise<AuthUser | null> {
   const res = await fetch("/api/auth/me", { credentials: "include" });
@@ -13,10 +18,12 @@ export async function fetchCurrentUser(): Promise<AuthUser | null> {
   return res.json();
 }
 
-/** Fetch the list of configured identity providers. */
-export async function fetchConfiguredProviders(): Promise<IdentityProviderName[]> {
+/** Fetch the list of configured login providers (identity + data). */
+export async function fetchConfiguredProviders(): Promise<ConfiguredProviders> {
   const res = await fetch("/api/auth/providers");
-  if (!res.ok) return [];
+  if (!res.ok) {
+    throw new Error(`Failed to fetch providers: ${res.status} ${res.statusText}`);
+  }
   return res.json();
 }
 

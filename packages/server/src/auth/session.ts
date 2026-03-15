@@ -49,3 +49,8 @@ export async function validateSession(
 export async function deleteSession(db: Database, sessionId: string): Promise<void> {
   await db.execute(sql`DELETE FROM fitness.session WHERE id = ${sessionId}`);
 }
+
+/** Delete all expired sessions. */
+export async function deleteExpiredSessions(db: Database): Promise<void> {
+  await db.execute(sql`DELETE FROM fitness.session WHERE expires_at <= NOW()`);
+}

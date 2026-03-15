@@ -392,6 +392,14 @@ function registerHandlers(app: AppType, db: Database) {
 
           if (previousItems.length > 0) {
             logger.info(`[slack] Refining ${previousItems.length} items with: "${msg.text}"`);
+
+            // Post a temporary "thinking" message so the user knows we're working
+            const thinkingMsg = await client.chat.postMessage({
+              channel: msg.channel,
+              thread_ts: msg.thread_ts,
+              text: "Updating your entries...",
+            });
+
             const localTime = slackTimestampToLocalTime(msg.ts, userTimezone);
             const result = await refineNutritionItems(previousItems, msg.text, localTime);
 
@@ -401,7 +409,17 @@ function registerHandlers(app: AppType, db: Database) {
 
             const entryIdsValue = newEntryIds.join(",");
             const confirmation = formatConfirmationMessage(result.items, entryIdsValue);
-            await say({ ...confirmation, thread_ts: msg.thread_ts });
+
+            // Replace the "thinking" message with the actual result
+            if (thinkingMsg.ts) {
+              await client.chat.update({
+                channel: msg.channel,
+                ts: thinkingMsg.ts,
+                ...confirmation,
+              });
+            } else {
+              await say({ ...confirmation, thread_ts: msg.thread_ts });
+            }
             return;
           }
         }
@@ -419,20 +437,46 @@ function registerHandlers(app: AppType, db: Database) {
     // Top-level message — fresh analysis (reply in thread so user can refine)
     logger.info(`[slack] Parsing food from ${msg.user}: "${msg.text}"`);
 
+    // Post a temporary "thinking" message so the user knows we're working
+    const thinkingMsg = await client.chat.postMessage({
+      channel: msg.channel,
+      thread_ts: msg.ts,
+      text: "Analyzing what you ate...",
+    });
+
     try {
       const localTime = slackTimestampToLocalTime(msg.ts, userTimezone);
       const result = await analyzeNutritionItems(msg.text, localTime);
       const entryIds = await saveUnconfirmedFoodEntries(db, userId, date, result.items);
       const entryIdsValue = entryIds.join(",");
       const confirmation = formatConfirmationMessage(result.items, entryIdsValue);
-      await say({ ...confirmation, thread_ts: msg.ts });
+
+      // Replace the "thinking" message with the actual result
+      if (thinkingMsg.ts) {
+        await client.chat.update({
+          channel: msg.channel,
+          ts: thinkingMsg.ts,
+          ...confirmation,
+        });
+      } else {
+        await say({ ...confirmation, thread_ts: msg.ts });
+      }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       logger.error(`[slack] AI analysis failed: ${errorMessage}`);
-      await say({
-        text: `Sorry, I couldn't parse that. Try describing what you ate more specifically.\n\`${errorMessage}\``,
-        thread_ts: msg.ts,
-      });
+
+      // Replace "thinking" message with error, or post new one
+      const errorText = `Sorry, I couldn't parse that. Try describing what you ate more specifically.\n\`${errorMessage}\``;
+      if (thinkingMsg.ts) {
+        await client.chat.update({
+          channel: msg.channel,
+          ts: thinkingMsg.ts,
+          text: errorText,
+          blocks: [],
+        });
+      } else {
+        await say({ text: errorText, thread_ts: msg.ts });
+      }
     }
   });
 
@@ -641,7 +685,7 @@ interface SlackBotResult {
  *   (/auth/provider/slack → /callback), not by Bolt's built-in installer.
  *   Mount the returned router on your Express app.
  */
-function createSlackBot(db: Database): SlackBotResult | null {
+export function createSlackBot(db: Database): SlackBotResult | null {
   const signingSecret = process.env.SLACK_SIGNING_SECRET;
 
   // HTTP mode (multi-workspace) — OAuth handled externally via /auth/provider/slack
@@ -651,7 +695,7 @@ function createSlackBot(db: Database): SlackBotResult | null {
       // Router is mounted at /slack, so use /events here → full path /slack/events
       endpoints: "/events",
       // No clientId/clientSecret — OAuth is handled by the main auth routes
-      processBeforeResponse: true,
+      processBeforeResponse: false,
     });
 
     const app = new App({

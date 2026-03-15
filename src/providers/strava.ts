@@ -1,9 +1,15 @@
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
-import { exchangeCodeForTokens, refreshAccessToken } from "../auth/oauth.ts";
+import { exchangeCodeForTokens, getOAuthRedirectUri, refreshAccessToken } from "../auth/oauth.ts";
 import type { Database } from "../db/index.ts";
 import { activity, metricStream } from "../db/schema.ts";
 import { loadTokens, saveTokens } from "../db/tokens.ts";
-import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
+import type {
+  Provider,
+  ProviderAuthSetup,
+  ProviderIdentity,
+  SyncError,
+  SyncResult,
+} from "./types.ts";
 
 // ============================================================
 // Strava API types
@@ -221,8 +227,18 @@ export class StravaClient {
     }
 
     if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`Strava API error (${response.status}): ${text}`);
+      const contentType = response.headers.get("content-type") ?? "";
+      let detail: string;
+      if (contentType.includes("application/json")) {
+        const json = await response.json();
+        detail = JSON.stringify(json);
+      } else if (contentType.includes("text/html")) {
+        detail = "(HTML error page)";
+      } else {
+        const text = await response.text();
+        detail = text.length > 200 ? `${text.slice(0, 200)}…` : text;
+      }
+      throw new Error(`Strava API error (${response.status}): ${detail}`);
     }
 
     return response.json() as Promise<T>;
@@ -280,21 +296,18 @@ export class StravaRateLimitError extends Error {
 // Provider implementation
 // ============================================================
 
-const DEFAULT_REDIRECT_URI = "https://localhost:9876/callback";
 const STRAVA_AUTH_BASE = "https://www.strava.com/oauth";
 
 export function stravaOAuthConfig(): OAuthConfig | null {
   const clientId = process.env.STRAVA_CLIENT_ID;
   const clientSecret = process.env.STRAVA_CLIENT_SECRET;
   if (!clientId || !clientSecret) return null;
-  const redirectUri = process.env.OAUTH_REDIRECT_URI ?? DEFAULT_REDIRECT_URI;
-
   return {
     clientId,
     clientSecret,
     authorizeUrl: `${STRAVA_AUTH_BASE}/authorize`,
     tokenUrl: `${STRAVA_AUTH_BASE}/token`,
-    redirectUri,
+    redirectUri: getOAuthRedirectUri(),
     scopes: ["read", "activity:read_all"],
     scopeSeparator: ",",
   };
@@ -322,6 +335,27 @@ export class StravaProvider implements Provider {
       oauthConfig: config,
       exchangeCode: (code) => exchangeCodeForTokens(config, code),
       apiBaseUrl: STRAVA_API_BASE,
+      getUserIdentity: async (accessToken: string): Promise<ProviderIdentity> => {
+        const response = await this.fetchFn(`${STRAVA_API_BASE}/athlete`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Strava athlete API error (${response.status}): ${text}`);
+        }
+        const athlete = (await response.json()) as {
+          id: number;
+          email?: string | null;
+          firstname?: string | null;
+          lastname?: string | null;
+        };
+        const nameParts = [athlete.firstname, athlete.lastname].filter(Boolean);
+        return {
+          providerAccountId: String(athlete.id),
+          email: athlete.email ?? null,
+          name: nameParts.length > 0 ? nameParts.join(" ") : null,
+        };
+      },
     };
   }
 
@@ -339,6 +373,7 @@ export class StravaProvider implements Provider {
     const config = stravaOAuthConfig();
     if (!config)
       throw new Error("STRAVA_CLIENT_ID and STRAVA_CLIENT_SECRET are required to refresh tokens");
+    if (!tokens.refreshToken) throw new Error("No refresh token for Strava");
     const refreshed = await refreshAccessToken(config, tokens.refreshToken, this.fetchFn);
     await saveTokens(db, this.id, refreshed);
     return refreshed;

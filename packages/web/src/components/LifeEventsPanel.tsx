@@ -3,6 +3,11 @@ import { trpc } from "../lib/trpc.ts";
 import { useUnitSystem } from "../lib/unitContext.ts";
 import { convertWeight, weightLabel } from "../lib/units.ts";
 
+/** Narrow loosely-typed tRPC raw-SQL results to a known shape without double-casting. */
+function typedData<T>(data: unknown): T {
+  return data as T;
+}
+
 interface LifeEvent {
   id: string;
   label: string;
@@ -63,7 +68,7 @@ export function LifeEventsPanel() {
     { enabled: !!selectedEvent },
   );
 
-  const eventList = (events.data ?? []) as unknown as LifeEvent[];
+  const eventList = typedData<LifeEvent[]>(events.data ?? []);
 
   return (
     <div className="space-y-4">
@@ -289,7 +294,7 @@ function EventAnalysis({
       if (k === "period") continue;
       out[k] = v != null ? Number(v) : null;
     }
-    return out as unknown as AnalysisMetric;
+    return typedData<AnalysisMetric>(out);
   };
 
   const before = {

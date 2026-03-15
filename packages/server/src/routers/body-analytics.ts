@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -38,7 +39,13 @@ export const bodyAnalyticsRouter = router({
   smoothedWeight: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }): Promise<SmoothedWeightRow[]> => {
-      const rows = await ctx.db.execute(
+      const weightRowSchema = z.object({
+        date: z.string(),
+        weight_kg: z.coerce.number(),
+      });
+      const rows = await executeWithSchema(
+        ctx.db,
+        weightRowSchema,
         sql`SELECT DISTINCT ON (recorded_at::date)
               recorded_at::date::text AS date,
               weight_kg
@@ -49,7 +56,7 @@ export const bodyAnalyticsRouter = router({
             ORDER BY recorded_at::date, recorded_at DESC`,
       );
 
-      const data = (rows as unknown as { date: string; weight_kg: number }[]).map((r) => ({
+      const data = rows.map((r) => ({
         date: r.date,
         rawWeight: Number(r.weight_kg),
       }));
@@ -100,7 +107,14 @@ export const bodyAnalyticsRouter = router({
   recomposition: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({ days: z.number().default(180) }))
     .query(async ({ ctx, input }): Promise<BodyRecompositionRow[]> => {
-      const rows = await ctx.db.execute(
+      const recompRowSchema = z.object({
+        date: z.string(),
+        weight_kg: z.coerce.number(),
+        body_fat_pct: z.coerce.number(),
+      });
+      const rows = await executeWithSchema(
+        ctx.db,
+        recompRowSchema,
         sql`SELECT DISTINCT ON (recorded_at::date)
               recorded_at::date::text AS date,
               weight_kg,
@@ -113,9 +127,7 @@ export const bodyAnalyticsRouter = router({
             ORDER BY recorded_at::date, recorded_at DESC`,
       );
 
-      const data = (
-        rows as unknown as { date: string; weight_kg: number; body_fat_pct: number }[]
-      ).map((r) => ({
+      const data = rows.map((r) => ({
         date: r.date,
         weightKg: Number(r.weight_kg),
         bodyFatPct: Number(r.body_fat_pct),
@@ -165,7 +177,13 @@ export const bodyAnalyticsRouter = router({
   weightTrend: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({}).default({}))
     .query(async ({ ctx }): Promise<WeightRateOfChange> => {
-      const rows = await ctx.db.execute(
+      const weightRowSchema = z.object({
+        date: z.string(),
+        weight_kg: z.coerce.number(),
+      });
+      const rows = await executeWithSchema(
+        ctx.db,
+        weightRowSchema,
         sql`SELECT DISTINCT ON (recorded_at::date)
               recorded_at::date::text AS date,
               weight_kg
@@ -176,7 +194,7 @@ export const bodyAnalyticsRouter = router({
             ORDER BY recorded_at::date, recorded_at DESC`,
       );
 
-      const data = (rows as unknown as { date: string; weight_kg: number }[]).map((r) => ({
+      const data = rows.map((r) => ({
         date: r.date,
         weight: Number(r.weight_kg),
       }));

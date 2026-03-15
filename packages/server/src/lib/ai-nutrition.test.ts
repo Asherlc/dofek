@@ -21,6 +21,13 @@ import { analyzeNutrition, type NutritionItemWithMeal } from "./ai-nutrition.ts"
 
 const mockGenerateText = vi.mocked(generateText);
 
+type GenerateTextReturn = Awaited<ReturnType<typeof generateText>>;
+
+/** Build a mock generateText result with only the `output` field populated */
+function mockGenerateTextResult(output: unknown): GenerateTextReturn {
+  return { output } as GenerateTextReturn;
+}
+
 const sampleResult: Omit<NutritionItemWithMeal, "meal"> = {
   foodName: "Roasted Vegetables",
   foodDescription: "1 large plate, roughly 400g mixed vegetables",
@@ -36,7 +43,7 @@ const sampleResult: Omit<NutritionItemWithMeal, "meal"> = {
 };
 
 function mockSuccessResponse() {
-  return { output: sampleResult } as unknown as Awaited<ReturnType<typeof generateText>>;
+  return mockGenerateTextResult(sampleResult);
 }
 
 describe("analyzeNutrition", () => {

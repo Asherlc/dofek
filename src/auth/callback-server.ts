@@ -57,6 +57,7 @@ export function waitForAuthCode(
       res: import("node:http").ServerResponse,
     ) => {
       const proto = useHttps ? "https" : "http";
+      // Stryker disable next-line all — defensive fallback for req.url; always present in practice
       const url = new URL(req.url ?? "/", `${proto}://localhost:${port}`);
 
       if (url.pathname === "/callback") {

@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 // ── RDA Reference Data ───────────────────────────────────────────────
@@ -74,7 +75,7 @@ export interface AdaptiveTdeeRow {
   estimatedTdee: number | null;
 }
 
-interface MacroRatioRow {
+export interface MacroRatioRow {
   date: string;
   proteinPct: number;
   carbsPct: number;
@@ -93,7 +94,17 @@ export const nutritionAnalyticsRouter = router({
   micronutrientAdequacy: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(30) }))
     .query(async ({ ctx, input }): Promise<MicronutrientAdequacyRow[]> => {
-      // Build dynamic SQL to average each micronutrient column per day, then average across days
+      // Build dynamic SQL to average each micronutrient column per day, then average across days.
+      // Column names come from the hardcoded RECOMMENDED_DAILY_ALLOWANCES array (not user input),
+      // but we validate them against an allowlist to be safe. User-controlled values (userId, days)
+      // are passed as parameterized placeholders via drizzle's sql`` tagged template.
+      const VALID_COLUMNS = new Set(RECOMMENDED_DAILY_ALLOWANCES.map((r) => r.column));
+      for (const rda of RECOMMENDED_DAILY_ALLOWANCES) {
+        if (!VALID_COLUMNS.has(rda.column) || !/^[a-z0-9_]+$/.test(rda.column)) {
+          throw new Error(`Invalid column name in RDA config: ${rda.column}`);
+        }
+      }
+
       const columnAverages = RECOMMENDED_DAILY_ALLOWANCES.map(
         (rda) =>
           `AVG(daily_${rda.column}) AS avg_${rda.column},
@@ -104,24 +115,26 @@ export const nutritionAnalyticsRouter = router({
         (rda) => `SUM(${rda.column}) AS daily_${rda.column}`,
       ).join(",\n");
 
-      const rows = await ctx.db.execute(
-        sql.raw(`
-          WITH daily_totals AS (
-            SELECT
-              date,
-              ${dailyAggregates}
-            FROM fitness.food_entry
-            WHERE user_id = '${ctx.userId}'
-              AND confirmed = true
-              AND date > CURRENT_DATE - ${input.days}
-            GROUP BY date
-          )
-          SELECT ${columnAverages}
-          FROM daily_totals
-        `),
+      // Use sql`` tagged template for user-controlled values (userId, days) to prevent injection.
+      // The column name fragments are safe because they come from the validated allowlist above.
+      const rows = await executeWithSchema(
+        ctx.db,
+        z.record(z.string(), z.coerce.number().nullable()),
+        sql`WITH daily_totals AS (
+              SELECT
+                date,
+                ${sql.raw(dailyAggregates)}
+              FROM fitness.food_entry
+              WHERE user_id = ${ctx.userId}
+                AND confirmed = true
+                AND date > CURRENT_DATE - ${input.days}::int
+              GROUP BY date
+            )
+            SELECT ${sql.raw(columnAverages)}
+            FROM daily_totals`,
       );
 
-      const row = rows[0] as Record<string, number | null> | undefined;
+      const row = rows[0];
       if (!row) return [];
 
       return RECOMMENDED_DAILY_ALLOWANCES.map((rda) => {
@@ -147,7 +160,18 @@ export const nutritionAnalyticsRouter = router({
     .query(async ({ ctx, input }): Promise<CaloricBalanceRow[]> => {
       const queryDays = input.days + 7; // extra for rolling average warmup
 
-      const rows = await ctx.db.execute(
+      const caloricBalanceRowSchema = z.object({
+        date: z.string(),
+        calories_in: z.coerce.number(),
+        active_energy: z.coerce.number(),
+        basal_energy: z.coerce.number(),
+        total_expenditure: z.coerce.number(),
+        balance: z.coerce.number(),
+        rolling_avg_balance: z.coerce.number().nullable(),
+      });
+      const rows = await executeWithSchema(
+        ctx.db,
+        caloricBalanceRowSchema,
         sql`WITH nutrition AS (
               SELECT date, SUM(calories) AS calories_in
               FROM fitness.nutrition_daily
@@ -189,17 +213,7 @@ export const nutritionAnalyticsRouter = router({
             ORDER BY date ASC`,
       );
 
-      return (
-        rows as unknown as {
-          date: string;
-          calories_in: number;
-          active_energy: number;
-          basal_energy: number;
-          total_expenditure: number;
-          balance: number;
-          rolling_avg_balance: number | null;
-        }[]
-      ).map((row) => ({
+      return rows.map((row) => ({
         date: row.date,
         caloriesIn: Math.round(Number(row.calories_in)),
         activeEnergy: Math.round(Number(row.active_energy)),
@@ -225,7 +239,14 @@ export const nutritionAnalyticsRouter = router({
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }): Promise<AdaptiveTdeeResult> => {
       // Get daily calorie intake and weight measurements
-      const rows = await ctx.db.execute(
+      const adaptiveTdeeRowSchema = z.object({
+        date: z.string(),
+        calories_in: z.coerce.number(),
+        weight_kg: z.coerce.number().nullable(),
+      });
+      const rows = await executeWithSchema(
+        ctx.db,
+        adaptiveTdeeRowSchema,
         sql`WITH nutrition AS (
               SELECT date, SUM(calories) AS calories_in
               FROM fitness.nutrition_daily
@@ -252,13 +273,7 @@ export const nutritionAnalyticsRouter = router({
             ORDER BY n.date ASC`,
       );
 
-      const data = (
-        rows as unknown as {
-          date: string;
-          calories_in: number;
-          weight_kg: number | null;
-        }[]
-      ).map((row) => ({
+      const data = rows.map((row) => ({
         date: row.date,
         caloriesIn: Math.round(Number(row.calories_in)),
         weightKg: row.weight_kg != null ? Number(row.weight_kg) : null,
@@ -348,7 +363,17 @@ export const nutritionAnalyticsRouter = router({
   macroRatios: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({ days: z.number().default(30) }))
     .query(async ({ ctx, input }): Promise<MacroRatioRow[]> => {
-      const rows = await ctx.db.execute(
+      const macroRatioRowSchema = z.object({
+        date: z.string(),
+        protein_g: z.coerce.number(),
+        carbs_g: z.coerce.number(),
+        fat_g: z.coerce.number(),
+        calories: z.coerce.number(),
+        weight_kg: z.coerce.number().nullable(),
+      });
+      const rows = await executeWithSchema(
+        ctx.db,
+        macroRatioRowSchema,
         sql`WITH daily AS (
               SELECT
                 nd.date,
@@ -381,16 +406,7 @@ export const nutritionAnalyticsRouter = router({
             ORDER BY d.date ASC`,
       );
 
-      return (
-        rows as unknown as {
-          date: string;
-          protein_g: number;
-          carbs_g: number;
-          fat_g: number;
-          calories: number;
-          weight_kg: number | null;
-        }[]
-      ).map((row) => {
+      return rows.map((row) => {
         const proteinCal = Number(row.protein_g) * 4;
         const carbsCal = Number(row.carbs_g) * 4;
         const fatCal = Number(row.fat_g) * 9;

@@ -4,13 +4,20 @@ import {
   exchangeCodeForTokens,
   generateCodeChallenge,
   generateCodeVerifier,
+  getOAuthRedirectUri,
   refreshAccessToken,
 } from "../auth/oauth.ts";
 import type { Database } from "../db/index.ts";
 import { activity, bodyMeasurement, dailyMetrics, sleepSession } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
-import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
+import type {
+  Provider,
+  ProviderAuthSetup,
+  ProviderIdentity,
+  SyncError,
+  SyncResult,
+} from "./types.ts";
 
 // ============================================================
 // Fitbit API types
@@ -297,20 +304,16 @@ export class FitbitClient {
 // OAuth configuration
 // ============================================================
 
-const DEFAULT_REDIRECT_URI = "https://localhost:9876/callback";
-
 export function fitbitOAuthConfig(): OAuthConfig | null {
   const clientId = process.env.FITBIT_CLIENT_ID;
   const clientSecret = process.env.FITBIT_CLIENT_SECRET;
   if (!clientId || !clientSecret) return null;
-  const redirectUri = process.env.OAUTH_REDIRECT_URI ?? DEFAULT_REDIRECT_URI;
-
   return {
     clientId,
     clientSecret,
     authorizeUrl: "https://www.fitbit.com/oauth2/authorize",
     tokenUrl: `${FITBIT_API_BASE}/oauth2/token`,
-    redirectUri,
+    redirectUri: getOAuthRedirectUri(),
     scopes: [
       "activity",
       "heartrate",
@@ -364,6 +367,23 @@ export class FitbitProvider implements Provider {
       authUrl: buildAuthorizationUrl(config, { codeChallenge }),
       exchangeCode: (code) => exchangeCodeForTokens(config, code, fetchFn, { codeVerifier }),
       apiBaseUrl: FITBIT_API_BASE,
+      getUserIdentity: async (accessToken: string): Promise<ProviderIdentity> => {
+        const response = await fetchFn(`${FITBIT_API_BASE}/1/user/-/profile.json`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Fitbit profile API error (${response.status}): ${text}`);
+        }
+        const data = (await response.json()) as {
+          user: { encodedId: string; displayName?: string | null };
+        };
+        return {
+          providerAccountId: data.user.encodedId,
+          email: null,
+          name: data.user.displayName ?? null,
+        };
+      },
     };
   }
 
@@ -381,6 +401,9 @@ export class FitbitProvider implements Provider {
     const config = fitbitOAuthConfig();
     if (!config) {
       throw new Error("FITBIT_CLIENT_ID and FITBIT_CLIENT_SECRET are required to refresh tokens");
+    }
+    if (!tokens.refreshToken) {
+      throw new Error("No refresh token for FitBit");
     }
     const refreshed = await refreshAccessToken(config, tokens.refreshToken, this.fetchFn);
     await saveTokens(db, this.id, refreshed);

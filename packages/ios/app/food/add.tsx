@@ -13,6 +13,8 @@ import {
   View,
 } from "react-native";
 import { BarcodeScanner } from "../../components/BarcodeScanner";
+
+const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000/api/trpc";
 import { lookupBarcode, searchFoods } from "../../lib/food-database";
 import { trpc } from "../../lib/trpc";
 
@@ -91,12 +93,12 @@ export default function AddFoodScreen() {
     const yStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, "0")}-${String(yesterday.getDate()).padStart(2, "0")}`;
 
     Promise.all([
-      fetch(`https://dofek.asherlc.com/api/trpc/food.byDate?batch=1`, {
+      fetch(`${API_URL}/food.byDate?batch=1`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ "0": { date } }),
       }).then((r) => r.json()).catch(() => null),
-      fetch(`https://dofek.asherlc.com/api/trpc/food.byDate?batch=1`, {
+      fetch(`${API_URL}/food.byDate?batch=1`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ "0": { date: yStr } }),
@@ -152,7 +154,7 @@ export default function AddFoodScreen() {
     // Search our history and Open Food Facts in parallel
     const [historyResults, offResults] = await Promise.all([
       // Our DB search via tRPC - we call it directly
-      fetch(`https://dofek.asherlc.com/api/trpc/food.search?batch=1`, {
+      fetch(`${API_URL}/food.search?batch=1`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ "0": { query, limit: 5 } }),

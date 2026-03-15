@@ -174,6 +174,211 @@ describe("OAuth", () => {
       expect(parsed.searchParams.get("audience")).toBe("https://api.example.com/");
     });
 
+    it("uses custom scope separator", () => {
+      const stravaConfig: OAuthConfig = {
+        ...config,
+        scopeSeparator: ",",
+      };
+      const url = buildAuthorizationUrl(stravaConfig);
+      const parsed = new URL(url);
+      expect(parsed.searchParams.get("scope")).toBe("user_read,workouts_read");
+    });
+
+    it("uses Basic auth when tokenAuthMethod is basic", async () => {
+      const basicConfig: OAuthConfig = {
+        ...config,
+        tokenAuthMethod: "basic",
+      };
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            access_token: "basic-access",
+            refresh_token: "basic-refresh",
+          }),
+      });
+
+      await exchangeCodeForTokens(basicConfig, "code", mockFetch);
+
+      const [, options] = mockFetch.mock.calls[0] ?? [];
+      // Should have Authorization header
+      expect(options?.headers?.Authorization).toMatch(/^Basic /);
+      // Should NOT have client_id/client_secret in body
+      const body = new URLSearchParams(options?.body);
+      expect(body.get("client_id")).toBeNull();
+      expect(body.get("client_secret")).toBeNull();
+    });
+
+    it("uses Basic auth for refresh when tokenAuthMethod is basic", async () => {
+      const basicConfig: OAuthConfig = {
+        ...config,
+        tokenAuthMethod: "basic",
+      };
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            access_token: "basic-access",
+            refresh_token: "basic-refresh",
+          }),
+      });
+
+      await refreshAccessToken(basicConfig, "refresh-tok", mockFetch);
+
+      const [, options] = mockFetch.mock.calls[0] ?? [];
+      expect(options?.headers?.Authorization).toMatch(/^Basic /);
+    });
+
+    it("defaults expires_in to 7200 when not in response", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            access_token: "access",
+            refresh_token: "refresh",
+            // No expires_in
+          }),
+      });
+
+      const result = await exchangeCodeForTokens(config, "code", mockFetch);
+      // Should default to 7200s (2 hours) from now
+      const expectedMin = Date.now() + 7100 * 1000;
+      const expectedMax = Date.now() + 7300 * 1000;
+      expect(result.expiresAt.getTime()).toBeGreaterThan(expectedMin);
+      expect(result.expiresAt.getTime()).toBeLessThan(expectedMax);
+      expect(result.scopes).toBeNull(); // No scope in response
+    });
+
+    it("does not include audience when not configured", () => {
+      const url = buildAuthorizationUrl(config);
+      const parsed = new URL(url);
+      expect(parsed.searchParams.has("audience")).toBe(false);
+    });
+
+    it("does not include code_challenge when no pkce param", () => {
+      const url = buildAuthorizationUrl(config);
+      const parsed = new URL(url);
+      expect(parsed.searchParams.has("code_challenge")).toBe(false);
+      expect(parsed.searchParams.has("code_challenge_method")).toBe(false);
+    });
+
+    it("uses space as default scope separator", () => {
+      const url = buildAuthorizationUrl(config);
+      const parsed = new URL(url);
+      expect(parsed.searchParams.get("scope")).toBe("user_read workouts_read");
+    });
+
+    it("includes client_id in body when not using basic auth", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ access_token: "a", refresh_token: "r", expires_in: 3600 }),
+      });
+
+      await exchangeCodeForTokens(config, "code", mockFetch);
+      const body = new URLSearchParams(mockFetch.mock.calls[0]?.[1]?.body);
+      expect(body.get("client_id")).toBe("test-client-id");
+      expect(body.get("client_secret")).toBe("test-client-secret");
+    });
+
+    it("omits client_secret from body when not provided", async () => {
+      const noSecretConfig: OAuthConfig = { ...config, clientSecret: undefined };
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ access_token: "a", refresh_token: "r" }),
+      });
+
+      await exchangeCodeForTokens(noSecretConfig, "code", mockFetch);
+      const body = new URLSearchParams(mockFetch.mock.calls[0]?.[1]?.body);
+      expect(body.get("client_id")).toBe("test-client-id");
+      expect(body.has("client_secret")).toBe(false);
+    });
+
+    it("Basic auth header has correct base64 encoding", async () => {
+      const basicConfig: OAuthConfig = { ...config, tokenAuthMethod: "basic" };
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ access_token: "a", refresh_token: "r" }),
+      });
+
+      await exchangeCodeForTokens(basicConfig, "code", mockFetch);
+      const headers = mockFetch.mock.calls[0]?.[1]?.headers;
+      const expected = `Basic ${btoa("test-client-id:test-client-secret")}`;
+      expect(headers?.Authorization).toBe(expected);
+    });
+
+    it("Basic auth without clientSecret omits Authorization header", async () => {
+      const basicNoSecret: OAuthConfig = {
+        ...config,
+        tokenAuthMethod: "basic",
+        clientSecret: undefined,
+      };
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ access_token: "a", refresh_token: "r" }),
+      });
+
+      await exchangeCodeForTokens(basicNoSecret, "code", mockFetch);
+      const headers = mockFetch.mock.calls[0]?.[1]?.headers;
+      expect(headers?.Authorization).toBeUndefined();
+    });
+
+    it("refreshAccessToken sends correct grant_type and refresh_token", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ access_token: "a", refresh_token: "r", expires_in: 3600 }),
+      });
+
+      await refreshAccessToken(config, "my-refresh-tok", mockFetch);
+      const body = new URLSearchParams(mockFetch.mock.calls[0]?.[1]?.body);
+      expect(body.get("grant_type")).toBe("refresh_token");
+      expect(body.get("refresh_token")).toBe("my-refresh-tok");
+      expect(body.get("client_id")).toBe("test-client-id");
+      expect(body.get("client_secret")).toBe("test-client-secret");
+    });
+
+    it("refreshAccessToken with basic auth omits client_id from body", async () => {
+      const basicConfig: OAuthConfig = { ...config, tokenAuthMethod: "basic" };
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ access_token: "a", refresh_token: "r" }),
+      });
+
+      await refreshAccessToken(basicConfig, "tok", mockFetch);
+      const body = new URLSearchParams(mockFetch.mock.calls[0]?.[1]?.body);
+      expect(body.has("client_id")).toBe(false);
+      expect(body.has("client_secret")).toBe(false);
+    });
+
+    it("Content-Type header is always application/x-www-form-urlencoded", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ access_token: "a", refresh_token: "r" }),
+      });
+
+      await exchangeCodeForTokens(config, "code", mockFetch);
+      expect(mockFetch.mock.calls[0]?.[1]?.headers?.["Content-Type"]).toBe(
+        "application/x-www-form-urlencoded",
+      );
+    });
+
+    it("returns null refreshToken when provider omits refresh_token", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            access_token: "polar-access",
+            expires_in: 999999,
+            scope: "accesslink.read_all",
+          }),
+      });
+
+      const result = await exchangeCodeForTokens(config, "code", mockFetch);
+      expect(result.accessToken).toBe("polar-access");
+      expect(result.refreshToken).toBeNull();
+    });
+
     it("sends code_verifier instead of client_secret in token exchange", async () => {
       const pkceConfig: OAuthConfig = {
         ...config,

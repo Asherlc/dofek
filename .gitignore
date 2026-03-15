@@ -1,6 +1,16 @@
 node_modules/
 dist/
-.claude/
+# Track .claude/skills (custom skills), ignore everything else
+.claude/*
+!.claude/skills/
+.context/
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/
+.env.local
+.env.*.local
 # .env is SOPS-encrypted and safe to commit
 # .env.plain is the decrypted version — never commit
 .env.plain

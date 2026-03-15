@@ -1,10 +1,16 @@
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
-import { exchangeCodeForTokens, refreshAccessToken } from "../auth/oauth.ts";
+import { exchangeCodeForTokens, getOAuthRedirectUri, refreshAccessToken } from "../auth/oauth.ts";
 import type { Database } from "../db/index.ts";
 import { activity, metricStream } from "../db/schema.ts";
 import { loadTokens, saveTokens } from "../db/tokens.ts";
 import { type ParsedFitRecord, parseFitFile } from "../fit/parser.ts";
-import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
+import type {
+  Provider,
+  ProviderAuthSetup,
+  ProviderIdentity,
+  SyncError,
+  SyncResult,
+} from "./types.ts";
 
 // ============================================================
 // Wahoo API types
@@ -225,20 +231,16 @@ export class WahooClient {
 // Provider implementation
 // ============================================================
 
-const DEFAULT_REDIRECT_URI = "https://localhost:9876/callback";
-
 export function wahooOAuthConfig(): OAuthConfig | null {
   const clientId = process.env.WAHOO_CLIENT_ID;
   const clientSecret = process.env.WAHOO_CLIENT_SECRET;
   if (!clientId || !clientSecret) return null;
-  const redirectUri = process.env.OAUTH_REDIRECT_URI ?? DEFAULT_REDIRECT_URI;
-
   return {
     clientId,
     clientSecret,
     authorizeUrl: `${WAHOO_API_BASE}/oauth/authorize`,
     tokenUrl: `${WAHOO_API_BASE}/oauth/token`,
-    redirectUri,
+    redirectUri: getOAuthRedirectUri(),
     scopes: ["user_read", "workouts_read", "offline_data"],
   };
 }
@@ -265,6 +267,27 @@ export class WahooProvider implements Provider {
       oauthConfig: config,
       exchangeCode: (code) => exchangeCodeForTokens(config, code),
       apiBaseUrl: WAHOO_API_BASE,
+      getUserIdentity: async (accessToken: string): Promise<ProviderIdentity> => {
+        const response = await this.fetchFn(`${WAHOO_API_BASE}/v1/user`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Wahoo user API error (${response.status}): ${text}`);
+        }
+        const user = (await response.json()) as {
+          id: number;
+          email?: string | null;
+          first_name?: string | null;
+          last_name?: string | null;
+        };
+        const nameParts = [user.first_name, user.last_name].filter(Boolean);
+        return {
+          providerAccountId: String(user.id),
+          email: user.email ?? null,
+          name: nameParts.length > 0 ? nameParts.join(" ") : null,
+        };
+      },
     };
   }
 
@@ -285,6 +308,7 @@ export class WahooProvider implements Provider {
     const config = wahooOAuthConfig();
     if (!config)
       throw new Error("WAHOO_CLIENT_ID and WAHOO_CLIENT_SECRET are required to refresh tokens");
+    if (!tokens.refreshToken) throw new Error("No refresh token for Wahoo");
     const refreshed = await refreshAccessToken(config, tokens.refreshToken, this.fetchFn);
     await saveTokens(db, this.id, refreshed);
     return refreshed;

@@ -4,7 +4,7 @@ Pod::Spec.new do |s|
   s.name           = 'ExpoHealthKit'
   s.version        = '0.1.0'
   s.summary        = 'Expo module for HealthKit access'
-  s.homepage       = 'https://github.com/Asherlc/dofek'
+  s.homepage       = 'https://github.com/asherlc/dofek'
   s.license        = 'MIT'
   s.author         = 'Asher Cohen'
   s.source         = { git: '' }

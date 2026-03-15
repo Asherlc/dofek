@@ -1,7 +1,15 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
-  "ignoreWorkspaces": ["packages/ios"],
-  "ignoreBinaries": ["tsr"],
+  "ignoreWorkspaces": [
+    "packages/ios",
+    "packages/eight-sleep",
+    "packages/garmin-connect",
+    "packages/trainerroad-client",
+    "packages/trainingpeaks-connect",
+    "packages/velohero-client",
+    "packages/whoop-whoop",
+    "packages/zwift-client"
+  ],
   "ignoreDependencies": ["tsx", "wait-on"],
   "workspaces": {
     ".": {
