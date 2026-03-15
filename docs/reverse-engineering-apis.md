@@ -9,18 +9,53 @@ Use this approach when a platform:
 - Has a partner-only API with no realistic path to access
 - Has a deprecated or limited public API that doesn't expose the data you need
 
-We've successfully reverse engineered: **WHOOP**, **Eight Sleep**, **Zwift**, **TrainerRoad**, and **VeloHero**.
+We've successfully reverse engineered: **WHOOP**, **Eight Sleep**, **Zwift**, **TrainerRoad**, **VeloHero**, and **Garmin Connect** (internal API).
 
 ## Discovery methods
 
 ### 1. Mobile app decompilation (Android APK)
 
-The most powerful method. Android APKs are essentially ZIP files containing Java bytecode that can be decompiled back to readable source.
+The most powerful method. Android APKs are essentially ZIP files containing Java bytecode that can be decompiled back to readable source. This is how we discovered WHOOP's weightlifting endpoints, Eight Sleep's hardcoded credentials, and confirmed Garmin Connect's SSO flow.
 
 **Tools:**
-- [jadx](https://github.com/skylot/jadx) — decompile APK to Java source
-- [apktool](https://github.com/iBotPeaches/Apktool) — extract resources and smali code
-- APK download: [APKMirror](https://www.apkmirror.com/), [APKPure](https://apkpure.com/)
+- [jadx](https://github.com/skylot/jadx) — decompile APK to Java source (best for reading code)
+- [jadx-gui](https://github.com/skylot/jadx) — GUI version with search, cross-references, and code navigation
+- [apktool](https://github.com/iBotPeaches/Apktool) — extract resources, smali code, AndroidManifest.xml
+- [dex2jar](https://github.com/pxb1988/dex2jar) — convert DEX to JAR for use with Java decompilers
+- APK download: [APKMirror](https://www.apkmirror.com/), [APKPure](https://apkpure.com/), [APKCombo](https://apkcombo.com/)
+
+**Step-by-step APK decompilation:**
+
+```bash
+# 1. Install jadx (macOS)
+brew install jadx
+
+# 2. Download APK from APKMirror/APKPure
+# (search for the app, download the latest version)
+
+# 3. Decompile to Java source
+jadx -d output_dir/ app.apk
+
+# 4. Search for API endpoints
+grep -r "https://api\." output_dir/
+grep -r "base_url\|baseUrl\|BASE_URL" output_dir/
+grep -r "\.com/v[0-9]" output_dir/
+
+# 5. Search for auth credentials
+grep -r "client_id\|clientId\|CLIENT_ID" output_dir/
+grep -r "client_secret\|clientSecret" output_dir/
+grep -r "api_key\|apiKey\|API_KEY" output_dir/
+
+# 6. Search for auth endpoints
+grep -r "oauth\|cognito\|auth.*token\|login\|signin" output_dir/
+
+# 7. Search for data models (Kotlin data classes / Java POJOs)
+grep -r "data class\|@SerializedName\|@JsonProperty" output_dir/
+
+# 8. Use jadx-gui for interactive exploration
+jadx-gui app.apk
+# Then use Edit > Search (Ctrl+Shift+F) for text/code/class search
+```
 
 **What to look for:**
 - **API base URLs** — search for `https://api.` or `base_url` in decompiled source
@@ -28,6 +63,21 @@ The most powerful method. Android APKs are essentially ZIP files containing Java
 - **Auth endpoints** — search for `oauth`, `token`, `auth`, `login`, `cognito`
 - **Hidden endpoints** — services not exposed in the web app (e.g., WHOOP's weightlifting service was only discoverable via APK)
 - **Request/response models** — Java/Kotlin data classes show exact field names and types
+- **Retrofit/OkHttp interceptors** — often contain auth header injection, base URLs, and custom headers
+- **BuildConfig constants** — compile-time config like API keys and environment URLs
+- **Proguard/R8 mappings** — if the app is obfuscated, look for `mapping.txt` or string constants that aren't obfuscated
+
+**Dealing with obfuscation:**
+- Most health/fitness apps use light obfuscation (ProGuard) — class names are mangled but strings (URLs, keys) remain readable
+- Search for string literals first: API URLs, "Bearer", "Authorization", "Content-Type"
+- Follow string references back to their containing classes to understand the API layer
+- Retrofit interface annotations (`@GET`, `@POST`, `@Path`, `@Query`) are usually preserved
+- Kotlin data classes with `@Serializable` or `@JsonProperty` annotations often survive obfuscation
+
+**Dealing with app bundles (AAB/split APKs):**
+- Modern apps use Android App Bundles — APKMirror provides these as `.apks` (XAPK) bundles
+- Use [SAI](https://github.com/nicejjin/SAI) or `bundletool` to merge split APKs
+- Or just download the universal APK variant when available
 
 **Example — Eight Sleep:**
 ```
@@ -37,6 +87,19 @@ CLIENT_SECRET = "f0954a3ed5763ba3d06834c73731a32f15f168f47d4f164751275def86db0c7
 AUTH_BASE = "https://auth-api.8slp.net/v1"
 API_BASE = "https://client-api.8slp.net/v1"
 ```
+
+**Example — WHOOP (discovered weightlifting endpoints):**
+```
+# Found in decompiled APK that web app doesn't expose:
+/weightlifting-service/v2/weightlifting-workout/{activityId}
+# Returns exercise-level data: sets, reps, weight per exercise
+```
+
+**Priority targets for APK decompilation:**
+- **Fitbit** — official API deprecated, internal API has much richer data (intraday HR, stress, SpO2 time series)
+- **Polar** — official API lacks HRV, recovery, and training load
+- **Samsung Health** — no public API, all data is in the app
+- **Oura** — official API is limited, app shows detailed readiness/sleep breakdown
 
 ### 2. Browser network inspection
 
@@ -200,6 +263,46 @@ const data = await response.json();
 // Use data.session as cookie: VeloHero_session=<token>
 ```
 
+### Pattern 6: Multi-step SSO with OAuth1→OAuth2 exchange (Garmin Connect)
+
+The most complex auth flow we've encountered. Garmin's SSO involves CSRF tokens, session cookies, an OAuth1 ticket exchange, and a final OAuth2 token swap.
+
+```typescript
+// Step 1: GET /sso/embed — initialize session cookies
+// Step 2: GET /sso/signin — extract CSRF token from HTML
+const csrfToken = html.match(/name="_csrf"\s+value="([^"]+)"/)?.[1];
+
+// Step 3: POST /sso/signin — submit credentials
+const loginResponse = await fetch(`${SSO_BASE}/signin?${params}`, {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/x-www-form-urlencoded",
+    Cookie: sessionCookies,
+    Referer: `${SSO_BASE}/signin`,
+  },
+  body: new URLSearchParams({
+    username, password, embed: "true", _csrf: csrfToken,
+  }),
+  redirect: "manual",
+});
+// Parse response HTML for: embed?ticket=([^"]+)"
+
+// Step 4: Exchange ticket for OAuth1 token
+const oauth1Response = await fetch(
+  `${OAUTH_BASE}/preauthorized?ticket=${ticket}&login-url=...&accepts-mfa-tokens=true`
+);
+// Returns URL-encoded: oauth_token, oauth_token_secret, mfa_token
+
+// Step 5: Exchange OAuth1 for OAuth2
+const oauth2Response = await fetch(`${OAUTH_BASE}/exchange/user/2.0`, {
+  method: "POST",
+  body: new URLSearchParams({ mfa_token: mfaToken }),
+});
+// Returns JSON: access_token, refresh_token, expires_in
+```
+
+**Key details:** Cookie jar must persist across all 5 steps. User-Agent must be `com.garmin.android.apps.connectmobile`. MFA is supported (SMS + TOTP).
+
 ## Common tricks and gotchas
 
 ### JWT decoding for user IDs
@@ -221,6 +324,7 @@ APIs often use unexpected units:
 - **TrainerRoad:** `Duration` is in seconds but `workoutData.seconds` is actually milliseconds
 - **Concept2:** time in tenths of a second
 - **WHOOP:** sleep times in Postgres range format `[start,end)`
+- **Garmin Connect:** weight in grams, body battery as charge/drain integers, HR time series as `[timestamp, value|null]` tuples
 
 ### Custom User-Agent headers
 
@@ -285,6 +389,8 @@ The provider file (`src/providers/<service>.ts`) then imports from the package a
 - Respect ToS — some services explicitly prohibit reverse engineering
 
 ## Adding a new reverse-engineered provider
+
+See [reverse-engineering-walkthrough.md](./reverse-engineering-walkthrough.md) for a complete end-to-end guide. The short version:
 
 1. **Research** — Try all discovery methods above. Document findings in `docs/<service>.md`
 2. **Create package** — Set up `packages/<service>/` with client, types, sports mapping

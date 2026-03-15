@@ -1,10 +1,18 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
-import { activity, healthEvent, metricStream, sleepSession } from "../../db/schema.ts";
+import {
+  activity,
+  dailyMetrics,
+  healthEvent,
+  metricStream,
+  sleepSession,
+} from "../../db/schema.ts";
 import { ensureProvider, saveTokens } from "../../db/tokens.ts";
 import type {
+  OuraDailyActivity,
   OuraDailyCardiovascularAge,
+  OuraDailyReadiness,
   OuraDailyResilience,
   OuraDailySpO2,
   OuraDailyStress,
@@ -161,6 +169,65 @@ function fakeSleepTime(): OuraSleepTime {
   };
 }
 
+function fakeReadiness(): OuraDailyReadiness {
+  return {
+    id: "readiness-001",
+    day: "2026-03-01",
+    score: 82,
+    temperature_deviation: -0.15,
+    temperature_trend_deviation: 0.05,
+    contributors: {
+      resting_heart_rate: 85,
+      hrv_balance: 78,
+      body_temperature: 90,
+      recovery_index: 72,
+      sleep_balance: 80,
+      previous_night: 88,
+      previous_day_activity: 75,
+      activity_balance: 82,
+    },
+  };
+}
+
+function fakeActivity(): OuraDailyActivity {
+  return {
+    id: "activity-001",
+    day: "2026-03-01",
+    steps: 9500,
+    active_calories: 450,
+    equivalent_walking_distance: 8200,
+    high_activity_time: 2700,
+    medium_activity_time: 1800,
+    low_activity_time: 7200,
+    resting_time: 50400,
+    sedentary_time: 28800,
+    total_calories: 2300,
+  };
+}
+
+function fakeStress(): OuraDailyStress {
+  return {
+    id: "stress-dm-001",
+    day: "2026-03-01",
+    stress_high: 5400, // 90 min
+    recovery_high: 10800, // 180 min
+    day_summary: "restored",
+  };
+}
+
+function fakeResilience(): OuraDailyResilience {
+  return {
+    id: "resilience-dm-001",
+    day: "2026-03-01",
+    level: "solid",
+    contributors: {
+      sleep_recovery: 85,
+      daytime_recovery: 72,
+      stress: 68,
+    },
+  };
+}
+
 interface MockFetchOptions {
   sleepDocs?: OuraSleepDocument[];
   spo2Docs?: OuraDailySpO2[];
@@ -175,6 +242,8 @@ interface MockFetchOptions {
   enhancedTagDocs?: OuraEnhancedTag[];
   restModeDocs?: OuraRestModePeriod[];
   sleepTimeDocs?: OuraSleepTime[];
+  readinessDocs?: OuraDailyReadiness[];
+  activityDocs?: OuraDailyActivity[];
 }
 
 function createMockFetch(opts?: MockFetchOptions): typeof globalThis.fetch {
@@ -197,6 +266,10 @@ function createMockFetch(opts?: MockFetchOptions): typeof globalThis.fetch {
       return Response.json({ data: o.sleepTimeDocs ?? [], next_token: null });
     if (urlStr.includes("/v2/usercollection/sleep"))
       return Response.json({ data: o.sleepDocs ?? [], next_token: null });
+    if (urlStr.includes("/v2/usercollection/daily_readiness"))
+      return Response.json({ data: o.readinessDocs ?? [], next_token: null });
+    if (urlStr.includes("/v2/usercollection/daily_activity"))
+      return Response.json({ data: o.activityDocs ?? [], next_token: null });
     if (urlStr.includes("/v2/usercollection/daily_spo2"))
       return Response.json({ data: o.spo2Docs ?? [], next_token: null });
     if (urlStr.includes("/v2/usercollection/vO2_max"))
@@ -340,6 +413,40 @@ describe("OuraProvider.sync() (integration)", () => {
     const sleepTimeEvent = eventRows.find((e) => e.type === "oura_sleep_time");
     expect(sleepTimeEvent).toBeDefined();
     expect(sleepTimeEvent?.valueText).toBe("follow_optimal_bedtime");
+  });
+
+  it("syncs stress and resilience data into daily metrics", async () => {
+    await saveTokens(ctx.db, "oura", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "daily heartrate personal session spo2 workout",
+    });
+
+    const since = new Date("2026-03-01T00:00:00Z");
+    const provider = new OuraProvider(
+      createMockFetch({
+        readinessDocs: [fakeReadiness()],
+        activityDocs: [fakeActivity()],
+        stressDocs: [fakeStress()],
+        resilienceDocs: [fakeResilience()],
+      }),
+    );
+
+    const result = await provider.sync(ctx.db, since);
+
+    expect(result.errors).toHaveLength(0);
+
+    const dailyRows = await ctx.db
+      .select()
+      .from(dailyMetrics)
+      .where(eq(dailyMetrics.providerId, "oura"));
+
+    const daily = dailyRows.find((r) => r.date === "2026-03-01");
+    if (!daily) throw new Error("expected daily metrics for 2026-03-01");
+    expect(daily.stressHighMinutes).toBe(90);
+    expect(daily.recoveryHighMinutes).toBe(180);
+    expect(daily.resilienceLevel).toBe("solid");
   });
 
   it("upserts on re-sync (no duplicates)", async () => {

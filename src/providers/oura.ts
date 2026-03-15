@@ -1,7 +1,7 @@
 import type { OAuthConfig } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri, refreshAccessToken } from "../auth/oauth.ts";
 import type { Database } from "../db/index.ts";
-import { activity, healthEvent, metricStream, sleepSession } from "../db/schema.ts";
+import { activity, dailyMetrics, healthEvent, metricStream, sleepSession } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
@@ -28,6 +28,38 @@ export interface OuraSleepDocument {
   time_in_bed: number; // seconds
   readiness_score_delta: number | null;
   latency: number | null; // seconds
+}
+
+export interface OuraDailyReadiness {
+  id: string;
+  day: string;
+  score: number | null;
+  temperature_deviation: number | null; // celsius deviation from baseline
+  temperature_trend_deviation: number | null;
+  contributors: {
+    resting_heart_rate: number | null;
+    hrv_balance: number | null;
+    body_temperature: number | null;
+    recovery_index: number | null;
+    sleep_balance: number | null;
+    previous_night: number | null;
+    previous_day_activity: number | null;
+    activity_balance: number | null;
+  };
+}
+
+export interface OuraDailyActivity {
+  id: string;
+  day: string;
+  steps: number;
+  active_calories: number;
+  equivalent_walking_distance: number; // meters
+  high_activity_time: number; // seconds
+  medium_activity_time: number; // seconds
+  low_activity_time: number; // seconds
+  resting_time: number; // seconds
+  sedentary_time: number; // seconds
+  total_calories: number;
 }
 
 export interface OuraDailySpO2 {
@@ -170,6 +202,21 @@ export interface ParsedOuraSleep {
   isNap: boolean;
 }
 
+export interface ParsedOuraDailyMetrics {
+  date: string;
+  steps?: number;
+  activeEnergyKcal?: number;
+  hrv?: number;
+  restingHr?: number;
+  exerciseMinutes?: number;
+  skinTempC?: number;
+  spo2Avg?: number;
+  vo2max?: number;
+  stressHighMinutes?: number;
+  recoveryHighMinutes?: number;
+  resilienceLevel?: string;
+}
+
 // ============================================================
 // Parsing — pure functions
 // ============================================================
@@ -191,6 +238,46 @@ export function parseOuraSleep(sleep: OuraSleepDocument): ParsedOuraSleep {
     awakeMinutes: secondsToMinutes(sleep.awake_time),
     efficiencyPct: sleep.efficiency,
     isNap: sleep.type !== "long_sleep" && sleep.type !== "sleep",
+  };
+}
+
+export function parseOuraDailyMetrics(
+  readiness: OuraDailyReadiness | null,
+  activity: OuraDailyActivity | null,
+  spo2: OuraDailySpO2 | null,
+  vo2max: OuraVO2Max | null,
+  stress: OuraDailyStress | null,
+  resilience: OuraDailyResilience | null,
+): ParsedOuraDailyMetrics {
+  const day =
+    readiness?.day ??
+    activity?.day ??
+    spo2?.day ??
+    vo2max?.day ??
+    stress?.day ??
+    resilience?.day ??
+    "";
+
+  let exerciseMinutes: number | undefined;
+  if (activity) {
+    exerciseMinutes = Math.round(
+      (activity.high_activity_time + activity.medium_activity_time) / 60,
+    );
+  }
+
+  return {
+    date: day,
+    steps: activity?.steps,
+    activeEnergyKcal: activity?.active_calories,
+    hrv: readiness?.contributors.hrv_balance ?? undefined,
+    restingHr: readiness?.contributors.resting_heart_rate ?? undefined,
+    exerciseMinutes,
+    skinTempC: readiness?.temperature_deviation ?? undefined,
+    spo2Avg: spo2?.spo2_percentage?.average ?? undefined,
+    vo2max: vo2max?.vo2_max ?? undefined,
+    stressHighMinutes: secondsToMinutes(stress?.stress_high ?? null),
+    recoveryHighMinutes: secondsToMinutes(stress?.recovery_high ?? null),
+    resilienceLevel: resilience?.level ?? undefined,
   };
 }
 
@@ -258,6 +345,26 @@ export class OuraClient {
     nextToken?: string,
   ): Promise<OuraListResponse<OuraSleepDocument>> {
     return this.get(`/v2/usercollection/sleep?${this.dateQuery(startDate, endDate, nextToken)}`);
+  }
+
+  async getDailyReadiness(
+    startDate: string,
+    endDate: string,
+    nextToken?: string,
+  ): Promise<OuraListResponse<OuraDailyReadiness>> {
+    return this.get(
+      `/v2/usercollection/daily_readiness?${this.dateQuery(startDate, endDate, nextToken)}`,
+    );
+  }
+
+  async getDailyActivity(
+    startDate: string,
+    endDate: string,
+    nextToken?: string,
+  ): Promise<OuraListResponse<OuraDailyActivity>> {
+    return this.get(
+      `/v2/usercollection/daily_activity?${this.dateQuery(startDate, endDate, nextToken)}`,
+    );
   }
 
   async getDailySpO2(
@@ -953,6 +1060,121 @@ export class OuraProvider implements Provider {
     } catch (err) {
       errors.push({
         message: `sleep_time: ${err instanceof Error ? err.message : String(err)}`,
+        cause: err,
+      });
+    }
+
+    // 12. Sync daily metrics (readiness + activity + SpO2 + VO2 max + stress + resilience merged by day)
+    try {
+      const dailyCount = await withSyncLog(db, this.id, "daily_metrics", async () => {
+        let count = 0;
+
+        const [allReadiness, allActivity, allSpO2, allVO2Max, allStress, allResilience] =
+          await Promise.all([
+            fetchAllPages((nextToken) => client.getDailyReadiness(sinceDate, todayDate, nextToken)),
+            fetchAllPages((nextToken) => client.getDailyActivity(sinceDate, todayDate, nextToken)),
+            fetchAllPages((nextToken) => client.getDailySpO2(sinceDate, todayDate, nextToken)),
+            fetchAllPages((nextToken) => client.getVO2Max(sinceDate, todayDate, nextToken)),
+            fetchAllPages((nextToken) => client.getDailyStress(sinceDate, todayDate, nextToken)),
+            fetchAllPages((nextToken) =>
+              client.getDailyResilience(sinceDate, todayDate, nextToken),
+            ),
+          ]);
+
+        // Index by day for merging
+        const readinessByDay = new Map<string, OuraDailyReadiness>();
+        for (const r of allReadiness) readinessByDay.set(r.day, r);
+
+        const activityByDay = new Map<string, OuraDailyActivity>();
+        for (const a of allActivity) activityByDay.set(a.day, a);
+
+        const spo2ByDay = new Map<string, OuraDailySpO2>();
+        for (const s of allSpO2) spo2ByDay.set(s.day, s);
+
+        const vo2maxByDay = new Map<string, OuraVO2Max>();
+        for (const v of allVO2Max) vo2maxByDay.set(v.day, v);
+
+        const stressByDay = new Map<string, OuraDailyStress>();
+        for (const s of allStress) stressByDay.set(s.day, s);
+
+        const resilienceByDay = new Map<string, OuraDailyResilience>();
+        for (const r of allResilience) resilienceByDay.set(r.day, r);
+
+        // Union of all days
+        const allDays = new Set([
+          ...readinessByDay.keys(),
+          ...activityByDay.keys(),
+          ...spo2ByDay.keys(),
+          ...vo2maxByDay.keys(),
+          ...stressByDay.keys(),
+          ...resilienceByDay.keys(),
+        ]);
+
+        for (const day of allDays) {
+          const readiness = readinessByDay.get(day) ?? null;
+          const activityDoc = activityByDay.get(day) ?? null;
+          const spo2 = spo2ByDay.get(day) ?? null;
+          const vo2max = vo2maxByDay.get(day) ?? null;
+          const stress = stressByDay.get(day) ?? null;
+          const resilience = resilienceByDay.get(day) ?? null;
+          const parsed = parseOuraDailyMetrics(
+            readiness,
+            activityDoc,
+            spo2,
+            vo2max,
+            stress,
+            resilience,
+          );
+
+          try {
+            await db
+              .insert(dailyMetrics)
+              .values({
+                date: parsed.date,
+                providerId: this.id,
+                steps: parsed.steps,
+                restingHr: parsed.restingHr,
+                hrv: parsed.hrv,
+                activeEnergyKcal: parsed.activeEnergyKcal,
+                exerciseMinutes: parsed.exerciseMinutes,
+                skinTempC: parsed.skinTempC,
+                spo2Avg: parsed.spo2Avg,
+                vo2max: parsed.vo2max,
+                stressHighMinutes: parsed.stressHighMinutes,
+                recoveryHighMinutes: parsed.recoveryHighMinutes,
+                resilienceLevel: parsed.resilienceLevel,
+              })
+              .onConflictDoUpdate({
+                target: [dailyMetrics.date, dailyMetrics.providerId],
+                set: {
+                  steps: parsed.steps,
+                  restingHr: parsed.restingHr,
+                  hrv: parsed.hrv,
+                  activeEnergyKcal: parsed.activeEnergyKcal,
+                  exerciseMinutes: parsed.exerciseMinutes,
+                  skinTempC: parsed.skinTempC,
+                  spo2Avg: parsed.spo2Avg,
+                  vo2max: parsed.vo2max,
+                  stressHighMinutes: parsed.stressHighMinutes,
+                  recoveryHighMinutes: parsed.recoveryHighMinutes,
+                  resilienceLevel: parsed.resilienceLevel,
+                },
+              });
+            count++;
+          } catch (err) {
+            errors.push({
+              message: `daily_metrics ${day}: ${err instanceof Error ? err.message : String(err)}`,
+              cause: err,
+            });
+          }
+        }
+
+        return { recordCount: count, result: count };
+      });
+      recordsSynced += dailyCount;
+    } catch (err) {
+      errors.push({
+        message: `daily_metrics: ${err instanceof Error ? err.message : String(err)}`,
         cause: err,
       });
     }

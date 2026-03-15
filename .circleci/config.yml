@@ -15,7 +15,7 @@ executors:
           POSTGRES_USER: test
           POSTGRES_PASSWORD: test
       - image: redis:7-alpine
-    resource_class: medium
+    resource_class: large
 
   machine:
     machine:
@@ -39,14 +39,14 @@ commands:
       - run:
           name: Restore node_modules from workspace
           command: |
-            cp -a /tmp/workspace/node_modules ./node_modules
-            cp -a /tmp/workspace/packages/server/node_modules ./packages/server/node_modules
-            cp -a /tmp/workspace/packages/web/node_modules ./packages/web/node_modules
+            mv /tmp/workspace/node_modules ./node_modules
+            mv /tmp/workspace/packages/server/node_modules ./packages/server/node_modules
+            mv /tmp/workspace/packages/web/node_modules ./packages/web/node_modules
             # Restore any other workspace package node_modules
             for dir in /tmp/workspace/packages/*/node_modules; do
               pkg=$(basename "$(dirname "$dir")")
               if [ -d "$dir" ] && [ ! -d "./packages/$pkg/node_modules" ]; then
-                cp -a "$dir" "./packages/$pkg/node_modules"
+                mv "$dir" "./packages/$pkg/node_modules"
               fi
             done
 
@@ -77,10 +77,14 @@ jobs:
       - checkout
       - attach-deps
       - run: cd packages/web && pnpm exec tsr generate
-      - run: pnpm lint
-      - run: pnpm tsc --noEmit
-      - run: cd packages/server && pnpm tsc --noEmit
-      - run: cd packages/web && pnpm tsc --noEmit
+      - run:
+          name: Lint + typecheck (parallel)
+          command: |
+            pnpm lint &
+            pnpm tsc --noEmit &
+            (cd packages/server && pnpm tsc --noEmit) &
+            (cd packages/web && pnpm tsc --noEmit) &
+            wait
       - run: cd packages/web && pnpm run build
 
   test:
@@ -107,7 +111,11 @@ jobs:
               sleep 1
             done
             echo "Redis did not start" && exit 1
-      - run: pnpm test:coverage
+      - run:
+          name: Run tests with coverage
+          command: pnpm exec vitest run --coverage
+          environment:
+            NODE_OPTIONS: --max-old-space-size=3072
       - store_artifacts:
           path: coverage
 
@@ -115,7 +123,6 @@ jobs:
     executor: machine
     steps:
       - checkout
-      # Cache Docker images so repeated pulls are fast
       - restore_cache:
           keys:
             - docker-e2e-v1-{{ checksum "Dockerfile" }}-{{ checksum "docker-compose.e2e.yml" }}
@@ -175,6 +182,8 @@ jobs:
 
   mutation:
     executor: node
+    environment:
+      NODE_OPTIONS: --max-old-space-size=3072
     steps:
       - checkout
       - run:

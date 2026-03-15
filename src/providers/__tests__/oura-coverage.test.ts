@@ -39,6 +39,16 @@ function createMockFetchForErrors(opts: { sleepError?: boolean }): typeof global
       return Response.json({ data: [], next_token: null });
     }
 
+    // Daily readiness — empty
+    if (urlStr.includes("/v2/usercollection/daily_readiness")) {
+      return Response.json({ data: [], next_token: null });
+    }
+
+    // Daily activity — empty
+    if (urlStr.includes("/v2/usercollection/daily_activity")) {
+      return Response.json({ data: [], next_token: null });
+    }
+
     // Daily stress — empty
     if (urlStr.includes("/v2/usercollection/daily_stress")) {
       return Response.json({ data: [], next_token: null });
