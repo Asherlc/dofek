@@ -17,19 +17,19 @@ jobs:
     name: Mutation Tests
     runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
 
       # Restore incremental cache from previous runs
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: reports/stryker-incremental.json
           key: stryker-incremental-${{ github.base_ref || 'main' }}-${{ github.sha }}
@@ -80,7 +80,7 @@ jobs:
       # Upload HTML report as artifact
       - name: Upload mutation report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: mutation-report
           path: reports/mutation/
