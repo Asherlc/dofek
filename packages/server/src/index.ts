@@ -482,8 +482,14 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
   });
 
   // ── Data Export ──
-  // Stores userId for each export job so we can verify ownership on download
-  const exportJobOwners = new Map<string, string>();
+  // Export jobs run in-process (not via BullMQ) since they produce local temp files for download
+  interface ExportJobStatus {
+    status: string;
+    progress: number;
+    message: string;
+    userId: string;
+  }
+  const exportJobs = new Map<string, ExportJobStatus>();
 
   app.post("/api/export", async (req, res) => {
     const sessionId = getSessionCookie(req);
@@ -500,8 +506,12 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
     const jobId = `export-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const tmpFile = join(tmpdir(), `dofek-export-${jobId}.zip`);
 
-    setJobStatus(jobId, { status: "processing", progress: 0, message: "Starting export..." });
-    exportJobOwners.set(jobId, session.userId);
+    exportJobs.set(jobId, {
+      status: "processing",
+      progress: 0,
+      message: "Starting export...",
+      userId: session.userId,
+    });
 
     // Fire-and-forget background export
     (async () => {
@@ -509,21 +519,32 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       try {
         const { generateExport } = await import("./export.ts");
         const result = await generateExport(db, session.userId, tmpFile, (info) => {
-          setJobStatus(jobId, {
+          exportJobs.set(jobId, {
             status: "processing",
             progress: info.pct,
             message: info.message,
+            userId: session.userId,
           });
         });
 
         const durationSec = ((Date.now() - exportStart) / 1000).toFixed(1);
         const msg = `Exported ${result.totalRecords} records across ${result.tableCount} tables in ${durationSec}s`;
         logger.info(`[export] ${msg}`);
-        setJobStatus(jobId, { status: "done", progress: 100, message: msg });
+        exportJobs.set(jobId, {
+          status: "done",
+          progress: 100,
+          message: msg,
+          userId: session.userId,
+        });
       } catch (err: unknown) {
         const message = errorMessage(err);
         logger.error(`[export] Export failed: ${message}`);
-        setJobStatus(jobId, { status: "error", message });
+        exportJobs.set(jobId, {
+          status: "error",
+          progress: 0,
+          message,
+          userId: session.userId,
+        });
         await unlink(tmpFile).catch(() => {});
       }
     })();
@@ -532,13 +553,17 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
   });
 
   app.get("/api/export/status/:jobId", (req, res) => {
-    const status = jobStatuses.get(req.params.jobId);
-    if (!status) {
+    const job = exportJobs.get(req.params.jobId);
+    if (!job) {
       res.status(404).json({ error: "Unknown job" });
       return;
     }
-    const response: Record<string, unknown> = { ...status };
-    if (status.status === "done") {
+    const response: Record<string, unknown> = {
+      status: job.status,
+      progress: job.progress,
+      message: job.message,
+    };
+    if (job.status === "done") {
       response.downloadUrl = `/api/export/download/${req.params.jobId}`;
     }
     res.json(response);
@@ -557,20 +582,19 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
     }
 
     const { jobId } = req.params;
-    const status = jobStatuses.get(jobId);
-    if (!status) {
+    const job = exportJobs.get(jobId);
+    if (!job) {
       res.status(404).json({ error: "Unknown job" });
       return;
     }
 
     // Verify the export belongs to this user
-    const ownerId = exportJobOwners.get(jobId);
-    if (ownerId !== session.userId) {
+    if (job.userId !== session.userId) {
       res.status(403).json({ error: "Forbidden" });
       return;
     }
 
-    if (status.status !== "done") {
+    if (job.status !== "done") {
       res.status(400).json({ error: "Export not ready" });
       return;
     }
@@ -589,7 +613,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       }
       // Clean up the temp file after download
       unlink(filePath).catch(() => {});
-      exportJobOwners.delete(jobId);
+      exportJobs.delete(jobId);
     });
   });
 
