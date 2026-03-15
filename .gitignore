@@ -1,6 +1,8 @@
 node_modules/
 dist/
-.claude/
+# Track .claude/skills (custom skills), ignore everything else
+.claude/*
+!.claude/skills/
 .context/
 .DS_Store
 *.swp
