@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+    paths-ignore:
+      - "*.md"
+      - "docs/**"
+      - "LICENSE"
+      - ".vscode/**"
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -16,8 +21,8 @@ env:
 
 jobs:
   check:
-    name: Lint & Type Check
-    runs-on: ubuntu-latest
+    name: Lint, Type Check & Build
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -31,10 +36,11 @@ jobs:
       - run: pnpm tsc --noEmit
       - run: cd packages/server && pnpm tsc --noEmit
       - run: cd packages/web && pnpm tsc --noEmit
+      - run: cd packages/web && pnpm run build
 
   test:
     name: Tests
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     services:
       postgres:
         image: timescale/timescaledb:latest-pg16
@@ -61,30 +67,22 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:coverage
 
-  build-web:
-    name: Build Web
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: cd packages/web && pnpm run build
-
   e2e:
     name: E2E Tests
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
 
       - uses: docker/setup-buildx-action@v3
 
       - name: Build Docker images
-        run: |
-          docker compose -f docker-compose.e2e.yml build
+        uses: docker/bake-action@v6
+        with:
+          files: docker-compose.e2e.yml
+          load: true
+          set: |
+            *.cache-from=type=gha,scope=e2e
+            *.cache-to=type=gha,mode=max,scope=e2e
 
       - name: Start e2e stack
         run: docker compose -f docker-compose.e2e.yml up -d --wait
@@ -121,9 +119,9 @@ jobs:
 
   docker:
     name: Docker (${{ matrix.target }})
-    needs: [check, test, build-web, e2e]
+    needs: [check, test, e2e]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     permissions:
       contents: read
       packages: write
