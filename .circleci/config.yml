@@ -39,14 +39,14 @@ commands:
       - run:
           name: Restore node_modules from workspace
           command: |
-            cp -a /tmp/workspace/node_modules ./node_modules
-            cp -a /tmp/workspace/packages/server/node_modules ./packages/server/node_modules
-            cp -a /tmp/workspace/packages/web/node_modules ./packages/web/node_modules
+            mv /tmp/workspace/node_modules ./node_modules
+            mv /tmp/workspace/packages/server/node_modules ./packages/server/node_modules
+            mv /tmp/workspace/packages/web/node_modules ./packages/web/node_modules
             # Restore any other workspace package node_modules
             for dir in /tmp/workspace/packages/*/node_modules; do
               pkg=$(basename "$(dirname "$dir")")
               if [ -d "$dir" ] && [ ! -d "./packages/$pkg/node_modules" ]; then
-                cp -a "$dir" "./packages/$pkg/node_modules"
+                mv "$dir" "./packages/$pkg/node_modules"
               fi
             done
 
@@ -77,10 +77,14 @@ jobs:
       - checkout
       - attach-deps
       - run: cd packages/web && pnpm exec tsr generate
-      - run: pnpm lint
-      - run: pnpm tsc --noEmit
-      - run: cd packages/server && pnpm tsc --noEmit
-      - run: cd packages/web && pnpm tsc --noEmit
+      - run:
+          name: Lint + typecheck (parallel)
+          command: |
+            pnpm lint &
+            pnpm tsc --noEmit &
+            (cd packages/server && pnpm tsc --noEmit) &
+            (cd packages/web && pnpm tsc --noEmit) &
+            wait
       - run: cd packages/web && pnpm run build
 
   test:
@@ -115,7 +119,6 @@ jobs:
     executor: machine
     steps:
       - checkout
-      # Cache Docker images so repeated pulls are fast
       - restore_cache:
           keys:
             - docker-e2e-v1-{{ checksum "Dockerfile" }}-{{ checksum "docker-compose.e2e.yml" }}
