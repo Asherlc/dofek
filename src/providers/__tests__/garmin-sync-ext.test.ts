@@ -453,8 +453,9 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
   it("syncs sleep via Connect internal API day-by-day", async () => {
     await saveTokens(ctx.db, "garmin", makeInternalTokenSet());
 
-    // Clear existing sleep
+    // Clear existing sleep and sync cursor so date range starts from `since`
     await ctx.db.delete(sleepSession).where(eq(sleepSession.providerId, "garmin"));
+    await ctx.db.delete(userSettings).where(eq(userSettings.key, "garmin_sync_cursor"));
 
     const provider = new GarminProvider(
       createConnectMockFetch({
@@ -489,8 +490,9 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
   it("syncs daily metrics with HRV and training status enrichment", async () => {
     await saveTokens(ctx.db, "garmin", makeInternalTokenSet());
 
-    // Clear existing daily metrics
+    // Clear existing daily metrics and sync cursor so date range starts from `since`
     await ctx.db.delete(dailyMetrics).where(eq(dailyMetrics.providerId, "garmin"));
+    await ctx.db.delete(userSettings).where(eq(userSettings.key, "garmin_sync_cursor"));
 
     const provider = new GarminProvider(
       createConnectMockFetch({
@@ -529,6 +531,7 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
   it("syncs daily metrics without HRV when HRV endpoint fails", async () => {
     await saveTokens(ctx.db, "garmin", makeInternalTokenSet());
     await ctx.db.delete(dailyMetrics).where(eq(dailyMetrics.providerId, "garmin"));
+    await ctx.db.delete(userSettings).where(eq(userSettings.key, "garmin_sync_cursor"));
 
     const provider = new GarminProvider(
       createConnectMockFetch({
@@ -562,8 +565,9 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
   it("syncs stress time-series into metric_stream", async () => {
     await saveTokens(ctx.db, "garmin", makeInternalTokenSet());
 
-    // Clear metric_stream
+    // Clear metric_stream and sync cursor so date range starts from `since`
     await ctx.db.delete(metricStream).where(eq(metricStream.providerId, "garmin"));
+    await ctx.db.delete(userSettings).where(eq(userSettings.key, "garmin_sync_cursor"));
 
     const provider = new GarminProvider(
       createConnectMockFetch({
@@ -590,6 +594,7 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
   it("syncs heart rate time-series into metric_stream", async () => {
     await saveTokens(ctx.db, "garmin", makeInternalTokenSet());
     await ctx.db.delete(metricStream).where(eq(metricStream.providerId, "garmin"));
+    await ctx.db.delete(userSettings).where(eq(userSettings.key, "garmin_sync_cursor"));
 
     const provider = new GarminProvider(
       createConnectMockFetch({
