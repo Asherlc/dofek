@@ -13,13 +13,13 @@ services:
       - client
 
   client:
-    image: ${DOFEK_CLIENT_IMAGE:-ghcr.io/your-org/dofek-client:latest}
+    image: ${DOFEK_CLIENT_IMAGE:-ghcr.io/eastbaysoftware/dofek-client:latest}
     restart: unless-stopped
     depends_on:
       - web
 
   web:
-    image: ${DOFEK_IMAGE:-ghcr.io/your-org/dofek:latest}
+    image: ${DOFEK_IMAGE:-ghcr.io/eastbaysoftware/dofek:latest}
     hostname: dofek-web
     command: web
     restart: unless-stopped
@@ -33,7 +33,7 @@ services:
         condition: service_healthy
 
   sync:
-    image: ${DOFEK_IMAGE:-ghcr.io/your-org/dofek:latest}
+    image: ${DOFEK_IMAGE:-ghcr.io/eastbaysoftware/dofek:latest}
     command: sync
     restart: "no"
     env_file: .env
