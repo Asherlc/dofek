@@ -1,4 +1,5 @@
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
+import { getOAuthRedirectUri } from "../auth/oauth.ts";
 import type { Database } from "../db/index.ts";
 import { bodyMeasurement } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
@@ -120,7 +121,7 @@ export function withingsOAuthConfig(): OAuthConfig | null {
     clientSecret,
     authorizeUrl: `${WITHINGS_AUTH_BASE}/oauth2_user/authorize2`,
     tokenUrl: `${WITHINGS_API_BASE}/v2/oauth2`,
-    redirectUri: process.env.OAUTH_REDIRECT_URI ?? "https://localhost:9876/callback",
+    redirectUri: getOAuthRedirectUri(),
     scopes: ["user.metrics"],
   };
 }

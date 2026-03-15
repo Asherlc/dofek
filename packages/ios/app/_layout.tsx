@@ -4,8 +4,7 @@ import { useState } from "react";
 import { Stack } from "expo-router";
 import { trpc } from "../lib/trpc";
 
-// TODO: Make this configurable via environment variable or settings screen
-const API_URL = "https://dofek.asherlc.com/api/trpc";
+const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000/api/trpc";
 
 export default function RootLayout() {
   const [queryClient] = useState(() => new QueryClient());

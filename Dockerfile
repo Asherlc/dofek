@@ -60,6 +60,11 @@ COPY --from=source /app/.env .
 COPY --from=source /app/.sops.yaml .
 
 COPY entrypoint.sh .
+
+# Run as non-root user (node user is built into node:22-slim, uid 1000)
+RUN chown -R node:node /app
+USER node
+
 ENTRYPOINT ["./entrypoint.sh"]
 CMD ["sync"]
 

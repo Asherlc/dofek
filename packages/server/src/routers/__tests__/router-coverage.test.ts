@@ -97,7 +97,7 @@ describe("Router coverage", () => {
       const avgHr = 145 + actIdx * 5;
       const avgPower = 190 + actIdx * 15;
 
-      const actResult = await testCtx.db.execute(
+      const actResult = await testCtx.db.execute<{ id: string }>(
         sql`INSERT INTO fitness.activity (
               provider_id, user_id, activity_type, started_at, ended_at, name
             ) VALUES (
@@ -107,7 +107,7 @@ describe("Router coverage", () => {
               ${`Training Ride ${actIdx}`}
             ) RETURNING id`,
       );
-      const actId = (actResult as unknown as { id: string }[])[0]?.id;
+      const actId = actResult[0]?.id;
 
       if (actId) {
         for (let batchStart = 0; batchStart < durationSec; batchStart += 100) {
@@ -141,14 +141,14 @@ describe("Router coverage", () => {
       ["Squat", "legs"],
       ["Deadlift", "back"],
     ]) {
-      const result = await testCtx.db.execute(
+      const result = await testCtx.db.execute<{ id: string }>(
         sql`INSERT INTO fitness.exercise (name, muscle_group, equipment)
             VALUES (${name}, ${group}, 'barbell')
             ON CONFLICT (name, equipment) DO UPDATE SET muscle_group = EXCLUDED.muscle_group
             RETURNING id`,
       );
       exerciseResults.push({
-        id: (result as unknown as { id: string }[])[0]?.id,
+        id: result[0]?.id,
         name,
       });
     }
@@ -157,7 +157,7 @@ describe("Router coverage", () => {
     for (let weekIdx = 0; weekIdx < 6; weekIdx++) {
       for (let dayIdx = 0; dayIdx < 2; dayIdx++) {
         const daysAgo = weekIdx * 7 + dayIdx * 3 + 1;
-        const workoutResult = await testCtx.db.execute(
+        const workoutResult = await testCtx.db.execute<{ id: string }>(
           sql`INSERT INTO fitness.strength_workout (
                 provider_id, user_id, external_id, started_at, ended_at, name
               ) VALUES (
@@ -169,7 +169,7 @@ describe("Router coverage", () => {
               ) ON CONFLICT DO NOTHING
               RETURNING id`,
         );
-        const workoutId = (workoutResult as unknown as { id: string }[])[0]?.id;
+        const workoutId = workoutResult[0]?.id;
         if (!workoutId) continue;
 
         // Insert sets for each exercise

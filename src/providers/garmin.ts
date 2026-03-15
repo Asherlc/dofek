@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
-import { exchangeCodeForTokens, refreshAccessToken } from "../auth/oauth.ts";
+import { exchangeCodeForTokens, getOAuthRedirectUri, refreshAccessToken } from "../auth/oauth.ts";
 import type { Database } from "../db/index.ts";
 import {
   activity,
@@ -336,14 +336,12 @@ export function garminOAuthConfig(): OAuthConfig | null {
   if (!clientId) return null;
 
   const clientSecret = process.env.GARMIN_CLIENT_SECRET;
-  const redirectUri = process.env.OAUTH_REDIRECT_URI ?? "https://dofek.asherlc.com/callback";
-
   return {
     clientId,
     clientSecret: clientSecret ?? undefined,
     authorizeUrl: GARMIN_OAUTH_AUTHORIZE_URL,
     tokenUrl: GARMIN_OAUTH_TOKEN_URL,
-    redirectUri,
+    redirectUri: getOAuthRedirectUri(),
     scopes: [],
     usePkce: true,
   };

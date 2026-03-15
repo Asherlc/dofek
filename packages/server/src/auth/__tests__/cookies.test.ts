@@ -1,3 +1,4 @@
+import type { Request, Response } from "express";
 import { describe, expect, it, vi } from "vitest";
 import {
   clearOAuthFlowCookies,
@@ -9,17 +10,20 @@ import {
 } from "../cookies.ts";
 
 /** Create a mock Express Request with optional cookies */
-function mockRequest(cookies: Record<string, string> = {}) {
-  return { cookies } as unknown as import("express").Request;
+function mockRequest(cookies?: Record<string, string | undefined>): Request {
+  return { cookies } satisfies Partial<Request> as Request;
 }
 
 /** Create a mock Express Response that tracks cookie operations */
-function mockResponse() {
+function mockResponse(): Response & {
+  cookie: ReturnType<typeof vi.fn>;
+  clearCookie: ReturnType<typeof vi.fn>;
+} {
   const res = {
     cookie: vi.fn().mockReturnThis(),
     clearCookie: vi.fn().mockReturnThis(),
-  };
-  return res as unknown as import("express").Response & {
+  } satisfies Partial<Response>;
+  return res as Response & {
     cookie: ReturnType<typeof vi.fn>;
     clearCookie: ReturnType<typeof vi.fn>;
   };
@@ -64,7 +68,7 @@ describe("Auth cookies", () => {
     });
 
     it("returns undefined when req.cookies is undefined", () => {
-      const req = { cookies: undefined } as unknown as import("express").Request;
+      const req = mockRequest(undefined);
       expect(getSessionCookie(req)).toBeUndefined();
     });
   });

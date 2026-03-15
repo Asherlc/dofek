@@ -1,6 +1,11 @@
 import ReactECharts from "echarts-for-react";
 import { trpc } from "../lib/trpc.ts";
 
+/** Narrow loosely-typed tRPC raw-SQL results to a known shape without double-casting. */
+function typedData<T>(data: unknown): T {
+  return data as T;
+}
+
 // HR zone colors (blue->green->yellow->orange->red)
 const ZONE_COLORS = {
   zone1: "#3b82f6", // Recovery (blue)
@@ -57,10 +62,12 @@ export function TrainingInsightsPanel({ days }: TrainingInsightsPanelProps) {
   const volume = trpc.training.weeklyVolume.useQuery({ days });
   const hrZones = trpc.training.hrZones.useQuery({ days });
 
-  const volumeRows = (volume.data ?? []) as unknown as WeeklyVolumeRow[];
-  const zoneData = hrZones.data as unknown as
-    | { maxHr: number | null; weeks: HrZoneWeek[] }
-    | undefined;
+  // tRPC infers raw SQL result types as Record<string, unknown>;
+  // narrow to known row shapes via typed identity function
+  const volumeRows = typedData<WeeklyVolumeRow[]>(volume.data ?? []);
+  const zoneData = typedData<{ maxHr: number | null; weeks: HrZoneWeek[] } | undefined>(
+    hrZones.data,
+  );
   const zoneWeeks = zoneData?.weeks ?? [];
 
   const loading = volume.isLoading || hrZones.isLoading;

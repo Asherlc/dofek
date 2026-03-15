@@ -1784,7 +1784,7 @@ export function parseFhirObservation(obs: FhirObservation, sourceName: string): 
       return new Date(dateStr);
     })(),
     issuedAt: obs.issued ? new Date(obs.issued) : undefined,
-    raw: obs as unknown as Record<string, unknown>,
+    raw: { ...obs } as Record<string, unknown>,
   };
 
   // Value: numeric or text

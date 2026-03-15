@@ -1,5 +1,16 @@
 import { createHash, randomBytes } from "node:crypto";
 
+const DEFAULT_REDIRECT_URI = "https://dofek.asherlc.com/callback";
+
+/**
+ * Returns the OAuth redirect URI from OAUTH_REDIRECT_URI_unencrypted env var,
+ * falling back to the production default. All providers that use our callback
+ * endpoint should call this instead of reading the env var themselves.
+ */
+export function getOAuthRedirectUri(): string {
+  return process.env.OAUTH_REDIRECT_URI_unencrypted ?? DEFAULT_REDIRECT_URI;
+}
+
 export interface OAuthConfig {
   clientId: string;
   clientSecret?: string;

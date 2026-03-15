@@ -41,7 +41,7 @@ describe("Trends router — continuous aggregate data tests", () => {
       const avgHr = 150 + Math.round(Math.sin(day * 0.3) * 10);
       const avgPower = 200 + Math.round(Math.cos(day * 0.2) * 30);
 
-      const actResult = await testCtx.db.execute(
+      const actResult = await testCtx.db.execute<{ id: string }>(
         sql`INSERT INTO fitness.activity (
               provider_id, user_id, activity_type, started_at, ended_at, name
             ) VALUES (
@@ -51,7 +51,7 @@ describe("Trends router — continuous aggregate data tests", () => {
               'Daily Ride'
             ) RETURNING id`,
       );
-      const actId = (actResult as unknown as { id: string }[])[0]?.id;
+      const actId = actResult[0]?.id;
 
       if (actId) {
         // Insert metric_stream samples (1 per minute)

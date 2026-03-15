@@ -176,10 +176,10 @@ describe("ouraOAuthConfig", () => {
     expect(config?.tokenUrl).toContain("api.ouraring.com");
   });
 
-  it("uses custom OAUTH_REDIRECT_URI when set", () => {
+  it("uses custom OAUTH_REDIRECT_URI_unencrypted when set", () => {
     process.env.OURA_CLIENT_ID = "test-id";
     process.env.OURA_CLIENT_SECRET = "test-secret";
-    process.env.OAUTH_REDIRECT_URI = "https://example.com/callback";
+    process.env.OAUTH_REDIRECT_URI_unencrypted = "https://example.com/callback";
     const config = ouraOAuthConfig();
     expect(config?.redirectUri).toBe("https://example.com/callback");
   });
@@ -187,9 +187,9 @@ describe("ouraOAuthConfig", () => {
   it("uses default redirect URI when not set", () => {
     process.env.OURA_CLIENT_ID = "test-id";
     process.env.OURA_CLIENT_SECRET = "test-secret";
-    delete process.env.OAUTH_REDIRECT_URI;
+    delete process.env.OAUTH_REDIRECT_URI_unencrypted;
     const config = ouraOAuthConfig();
-    expect(config?.redirectUri).toContain("localhost");
+    expect(config?.redirectUri).toContain("dofek");
   });
 });
 

@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 /** Strain balance category based on ACWR-like load distribution */
@@ -58,7 +59,21 @@ export const weeklyReportRouter = router({
       const totalDays = input.weeks * 7 + 28; // extra for chronic baseline
 
       // Fetch weekly aggregates: training load, sleep, readiness, vitals
-      const rows = await ctx.db.execute(
+      const weeklyReportRowSchema = z.object({
+        week_start: z.string(),
+        total_hours: z.coerce.number(),
+        activity_count: z.coerce.number(),
+        avg_daily_load: z.coerce.number(),
+        avg_sleep_min: z.coerce.number().nullable(),
+        avg_resting_hr: z.coerce.number().nullable(),
+        avg_hrv: z.coerce.number().nullable(),
+        chronic_avg_load: z.coerce.number(),
+        prev_3wk_avg_sleep: z.coerce.number().nullable(),
+      });
+
+      const rows = await executeWithSchema(
+        ctx.db,
+        weeklyReportRowSchema,
         sql`WITH date_series AS (
               SELECT generate_series(
                 CURRENT_DATE - ${totalDays}::int,
@@ -138,19 +153,7 @@ export const weeklyReportRouter = router({
             FROM weekly`,
       );
 
-      type RawRow = {
-        week_start: string;
-        total_hours: number;
-        activity_count: number;
-        avg_daily_load: number;
-        avg_sleep_min: number | null;
-        avg_resting_hr: number | null;
-        avg_hrv: number | null;
-        chronic_avg_load: number;
-        prev_3wk_avg_sleep: number | null;
-      };
-
-      const parsed = (rows as unknown as RawRow[]).map((row) => {
+      const parsed = rows.map((row) => {
         const avgDailyLoad = Number(row.avg_daily_load) || 0;
         const chronicAvgLoad = Number(row.chronic_avg_load) || 0;
         const avgSleepMin = row.avg_sleep_min != null ? Number(row.avg_sleep_min) : 0;
