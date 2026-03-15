@@ -4,3 +4,7 @@ terraform.tfvars
 .terraform/
 .terraform.lock.hcl
 .env
+deploy-config/.terraform/
+deploy-config/.terraform.lock.hcl
+deploy-config/*.tfstate
+deploy-config/*.tfstate.backup

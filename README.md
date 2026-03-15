@@ -165,6 +165,7 @@ deploy/
 ├── cloud-init.yml           # Auto-installs Docker on first boot
 ├── docker-compose.yml       # Production stack (all services)
 ├── Caddyfile                # Auto-HTTPS via Let's Encrypt
+├── deploy-config/main.tf    # Terraform — pushes config updates to server via SSH
 ├── terraform.tfvars.example # Example config
 └── .gitignore               # Excludes secrets and state
 ```
@@ -216,14 +217,32 @@ terraform apply
 
 Then point DNS — create an A record for `dofek.asherlc.com` → the output `server_ip`. Caddy will auto-provision the TLS certificate.
 
-### Updating the domain
+### Updating server config files
 
-Edit `deploy/Caddyfile` with the new domain, copy it to the server, and restart Caddy:
+**Never SSH into the server to edit files directly.** All server config changes (`docker-compose.yml`, `Caddyfile`) go through Terraform via the `deploy/deploy-config` module:
+
+1. Edit the file locally in `deploy/`
+2. Run `terraform apply` from `deploy/deploy-config/` — it detects file changes (via md5 hash), copies the updated files to the server via SSH, and runs `docker compose up -d`
 
 ```bash
-scp deploy/Caddyfile root@<SERVER_IP>:/opt/dofek/
-ssh root@<SERVER_IP> "cd /opt/dofek && docker compose restart caddy"
+cd deploy/deploy-config
+terraform init                              # first time only
+terraform apply -var="server_ip=<SERVER_IP>" # copies changed files and restarts containers
 ```
+
+The `deploy-config` module is intentionally separate from the main `deploy/main.tf` (which provisions the Hetzner server). This lets you push config updates without needing the Hetzner API token or other provisioning secrets.
+
+**SSH agent requirement:** The deploy uses `agent = true` for SSH auth. Your SSH key must be available in the SSH agent. If you use 1Password for SSH keys, set `SSH_AUTH_SOCK` to the 1Password agent socket before running terraform:
+
+```bash
+export SSH_AUTH_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
+```
+
+Cloud-init handles the initial provisioning; `deploy-config` handles all subsequent config updates.
+
+### Updating the domain
+
+Edit `deploy/Caddyfile` with the new domain, then run `terraform apply` to push the change.
 
 ### SSH access
 
