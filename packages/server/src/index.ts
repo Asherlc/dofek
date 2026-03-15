@@ -179,22 +179,45 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
     next();
   });
 
-  // ── BullMQ import queue (lazy init) ──
-  const importQueue = createImportQueue();
+  // ── BullMQ queues (lazy init — deferred until first use to avoid Redis
+  //    connection attempts in test environments) ──
+  let _importQueue: ReturnType<typeof createImportQueue> | null = null;
+  let _syncQueue: ReturnType<typeof createSyncQueue> | null = null;
+
+  function getImportQueue() {
+    if (!_importQueue) _importQueue = createImportQueue();
+    return _importQueue;
+  }
+
+  function getSyncQueue() {
+    if (!_syncQueue) _syncQueue = createSyncQueue();
+    return _syncQueue;
+  }
 
   // ── Bull Board dashboard ──
   const bullBoardAdapter = new ExpressAdapter();
   bullBoardAdapter.setBasePath("/admin/queues");
-  const syncQueueForBoard = createSyncQueue();
-  createBullBoard({
-    queues: [new BullMQAdapter(syncQueueForBoard), new BullMQAdapter(importQueue)],
-    serverAdapter: bullBoardAdapter,
+  // Bull Board uses lazy adapters — queues are created on first dashboard visit
+  const lazyBullBoard = { initialized: false };
+  app.use("/admin/queues", (req, res, next) => {
+    if (!lazyBullBoard.initialized) {
+      createBullBoard({
+        queues: [new BullMQAdapter(getSyncQueue()), new BullMQAdapter(getImportQueue())],
+        serverAdapter: bullBoardAdapter,
+      });
+      lazyBullBoard.initialized = true;
+    }
+    bullBoardAdapter.getRouter()(req, res, next);
   });
-  app.use("/admin/queues", bullBoardAdapter.getRouter());
 
   // ── Shared job status helper ──
   async function getImportJobStatus(jobId: string) {
-    const job = await importQueue.getJob(jobId);
+    let job: Awaited<ReturnType<ReturnType<typeof getImportQueue>["getJob"]>> | undefined;
+    try {
+      job = await getImportQueue().getJob(jobId);
+    } catch {
+      return null; // Redis unavailable
+    }
     if (!job) return null;
 
     const state = await job.getState();
@@ -247,7 +270,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
     userId: string,
     opts?: { weightUnit?: "kg" | "lbs" },
   ): Promise<string> {
-    const job = await importQueue.add(importType, {
+    const job = await getImportQueue().add(importType, {
       filePath,
       since: since.toISOString(),
       userId,

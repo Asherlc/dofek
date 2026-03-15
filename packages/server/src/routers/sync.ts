@@ -1,4 +1,4 @@
-import { createSyncQueue, type SyncJobData } from "dofek/jobs/queues";
+import { createSyncQueue } from "dofek/jobs/queues";
 import { getAllProviders, registerProvider } from "dofek/providers/registry";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -161,7 +161,12 @@ export const syncRouter = router({
     .query(async ({ ctx, input }) => {
       if (!input.jobId) return null;
 
-      const job = await getSyncQueue().getJob(input.jobId);
+      let job: Awaited<ReturnType<ReturnType<typeof getSyncQueue>["getJob"]>> | undefined;
+      try {
+        job = await getSyncQueue().getJob(input.jobId);
+      } catch {
+        return null; // Redis unavailable
+      }
       if (!job) return null;
 
       // Only return status for jobs belonging to the requesting user
