@@ -101,6 +101,32 @@ Last updated: 2026-03-14
 
 ---
 
+## Not investigated (no viable path)
+
+### Rouvy
+- **Official API:** Partner-only (contact sales, no self-serve). Uses Tyk API Gateway internally.
+- **Internal API:** Firebase auth + GraphQL via Tyk gateway. No one has published any RE work.
+- **Community projects:** None — only a browser extension for the race page ([filemon/rouvy_extension](https://github.com/filemon/rouvy_extension)).
+- **Workaround:** Rouvy auto-syncs to Strava, Garmin Connect, and TrainingPeaks. Pull data from those instead.
+- **Verdict:** NOT FEASIBLE — no public API, no RE work to build on, Firebase + Tyk adds complexity.
+
+### Hammerhead (Karoo)
+- **Official API:** None for cloud data. Only an on-device Android SDK for Karoo extensions ([karoo-ext](https://github.com/hammerheadnav/karoo-ext)).
+- **Internal API:** `dashboard.hammerhead.io/v1/` endpoints discovered by community ([karoo-sync](https://github.com/tonithenhausen/karoo-sync)), but all Hammerhead accounts have been migrated to SRAM accounts, likely breaking the password-grant auth used by RE'd clients.
+- **Data:** FIT files available via manual download from dashboard or USB from device.
+- **Workaround:** Hammerhead auto-uploads to Strava, TrainingPeaks, Intervals.icu, and others. Pull from those.
+- **Verdict:** TOO FRAGILE — SRAM auth migration is a significant risk. The RE'd endpoints could break at any time.
+
+### Zepp (Amazfit/Huami)
+- **Official API:** Exists ([zepp-health/rest-api](https://github.com/zepp-health/rest-api/wiki)) with OAuth 2.0, but registration at dev.huami.com is effectively closed (months of silence, partner prioritization).
+- **Internal API:** Well-documented by community ([hacking-mifit-api](https://github.com/micw/hacking-mifit-api)). Email+password login to `account.huami.com/v2/client/login` → app_token. Data via `api-mifit.huami.com/v1/data/band_data.json`.
+- **Data:** Steps, HR (continuous), sleep (stages), SpO2, stress, workouts (GPS), PAI.
+- **Auth limitation:** Must use direct Zepp email+password account (not Xiaomi/Google SSO).
+- **Community projects:** [Mi-Fit-and-Zepp-workout-exporter](https://github.com/rolandsz/Mi-Fit-and-Zepp-workout-exporter), [huami-token](https://github.com/argrento/huami-token), [amazfit_pyclient](https://github.com/MyrikLD/amazfit_pyclient).
+- **Verdict:** FEASIBLE RE TARGET — good community docs, straightforward auth, rich data. Best candidate for a future `zepp-client` package.
+
+---
+
 ## Summary matrix
 
 | Provider | Official API Quality | RE Feasibility | RE Value | Status |
@@ -116,5 +142,8 @@ Last updated: 2026-03-14
 | Polar | Good | Low (server-rendered) | Low | Skip |
 | Oura | Good | Unknown (undocumented) | Low | Skip |
 | Samsung Health | None (on-device only) | Very hard (no web surface) | N/A | Skip |
+| Rouvy | Partner-only | Hard (Firebase + GraphQL) | Low | Skip — use Strava/Garmin |
+| Hammerhead | None (on-device SDK only) | Fragile (SRAM migration) | Low | Skip — use Strava/Intervals |
+| Zepp (Amazfit) | Closed registration | Easy (email+password) | Medium | Future candidate |
 | Peloton | Decent | Unknown | Medium | Not investigated |
 | Withings | Decent | Unknown | Medium | Not investigated |
