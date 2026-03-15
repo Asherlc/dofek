@@ -23,39 +23,13 @@ executors:
     resource_class: medium
 
 commands:
-  setup-pnpm:
-    description: Enable pnpm via corepack (no install)
+  setup:
+    description: Checkout, install pnpm, restore cache, install deps
     steps:
+      - checkout
       - run:
           name: Install pnpm
           command: corepack enable && corepack prepare pnpm@latest --activate
-
-  attach-deps:
-    description: Attach workspace and link node_modules from shared install
-    steps:
-      - setup-pnpm
-      - attach_workspace:
-          at: /tmp/workspace
-      - run:
-          name: Restore node_modules from workspace
-          command: |
-            mv /tmp/workspace/node_modules ./node_modules
-            mv /tmp/workspace/packages/server/node_modules ./packages/server/node_modules
-            mv /tmp/workspace/packages/web/node_modules ./packages/web/node_modules
-            # Restore any other workspace package node_modules
-            for dir in /tmp/workspace/packages/*/node_modules; do
-              pkg=$(basename "$(dirname "$dir")")
-              if [ -d "$dir" ] && [ ! -d "./packages/$pkg/node_modules" ]; then
-                mv "$dir" "./packages/$pkg/node_modules"
-              fi
-            done
-
-jobs:
-  install:
-    executor: node
-    steps:
-      - checkout
-      - setup-pnpm
       - restore_cache:
           keys:
             - pnpm-store-v1-{{ checksum "pnpm-lock.yaml" }}
@@ -65,27 +39,32 @@ jobs:
           key: pnpm-store-v1-{{ checksum "pnpm-lock.yaml" }}
           paths:
             - ~/.local/share/pnpm/store
-      - persist_to_workspace:
-          root: .
-          paths:
-            - node_modules
-            - packages/*/node_modules
 
-  check:
+jobs:
+  lint:
     executor: node
     steps:
-      - checkout
-      - attach-deps
+      - setup
+      - run: pnpm lint
+
+  typescript:
+    executor: node
+    steps:
+      - setup
       - run: cd packages/web && pnpm exec tsr generate
       - run:
-          name: Lint + typecheck (parallel)
+          name: Typecheck all packages
           command: |
-            pnpm lint &
             pnpm tsc --noEmit &
             (cd packages/server && pnpm tsc --noEmit) &
             (cd packages/web && pnpm tsc --noEmit) &
             wait
-      - run: cd packages/web && pnpm run build
+
+  knip:
+    executor: node
+    steps:
+      - setup
+      - run: pnpm knip
 
   test:
     executor: node-with-services
@@ -93,8 +72,7 @@ jobs:
       TEST_DATABASE_URL: postgres://test:test@localhost:5432/test
       REDIS_URL: redis://localhost:6379
     steps:
-      - checkout
-      - attach-deps
+      - setup
       - run:
           name: Wait for Postgres
           command: |
@@ -185,11 +163,10 @@ jobs:
     environment:
       NODE_OPTIONS: --max-old-space-size=3072
     steps:
-      - checkout
+      - setup
       - run:
           name: Fetch full history for diff
           command: git fetch origin main
-      - attach-deps
       - restore_cache:
           keys:
             - stryker-v1-{{ .Branch }}-
@@ -237,19 +214,29 @@ jobs:
           destination: mutation-report
 
 workflows:
-  ci:
+  lint:
     jobs:
-      - install
-      - check:
-          requires:
-            - install
-      - test:
-          requires:
-            - install
+      - lint
+
+  typescript:
+    jobs:
+      - typescript
+
+  knip:
+    jobs:
+      - knip
+
+  test:
+    jobs:
+      - test
+
+  e2e:
+    jobs:
       - e2e
+
+  mutation:
+    jobs:
       - mutation:
-          requires:
-            - install
           filters:
             branches:
               ignore: main
@@ -262,7 +249,4 @@ workflows:
             branches:
               only: main
     jobs:
-      - install
-      - mutation:
-          requires:
-            - install
+      - mutation
