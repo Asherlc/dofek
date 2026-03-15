@@ -5,6 +5,7 @@ import { createDatabaseFromEnv } from "./db/index.ts";
 import { ensureProvider, saveTokens } from "./db/tokens.ts";
 import { AutoSupplementsProvider } from "./providers/auto-supplements.ts";
 import { CronometerCsvProvider } from "./providers/cronometer-csv.ts";
+import { EightSleepProvider } from "./providers/eight-sleep.ts";
 import { FatSecretProvider } from "./providers/fatsecret.ts";
 import { FitbitProvider } from "./providers/fitbit.ts";
 import { GarminProvider } from "./providers/garmin.ts";
@@ -15,9 +16,11 @@ import { PolarProvider } from "./providers/polar.ts";
 import { RideWithGpsProvider } from "./providers/ride-with-gps.ts";
 import { StravaProvider } from "./providers/strava.ts";
 import { StrongCsvProvider } from "./providers/strong-csv.ts";
+import { TrainerRoadProvider } from "./providers/trainerroad.ts";
 import { WahooProvider } from "./providers/wahoo.ts";
 import { WhoopProvider } from "./providers/whoop.ts";
 import { WithingsProvider } from "./providers/withings.ts";
+import { ZwiftProvider } from "./providers/zwift.ts";
 import { runSync } from "./sync/runner.ts";
 
 // Load supplement config from supplements.json (managed via web UI)
@@ -50,6 +53,9 @@ registerProvider(new StravaProvider());
 registerProvider(new OuraProvider());
 registerProvider(new StrongCsvProvider());
 registerProvider(new CronometerCsvProvider());
+registerProvider(new EightSleepProvider());
+registerProvider(new ZwiftProvider());
+registerProvider(new TrainerRoadProvider());
 if (supplementConfig) {
   registerProvider(new AutoSupplementsProvider(supplementConfig));
 }
