@@ -16,6 +16,8 @@ jobs:
   wait-for-ci:
     name: Wait for CircleCI
     runs-on: ubuntu-latest
+    permissions:
+      checks: read
     steps:
       - name: Wait for CircleCI checks to pass
         uses: lewagon/wait-on-check-action@v1.3.4
