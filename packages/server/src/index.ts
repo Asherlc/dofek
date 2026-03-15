@@ -29,6 +29,7 @@ import {
   isProviderConfigured,
 } from "./auth/providers.ts";
 import { createSession, deleteSession, validateSession } from "./auth/session.ts";
+import { queryCache } from "./lib/cache.ts";
 import { httpRequestDuration, registry } from "./lib/metrics.ts";
 import { logger } from "./logger.ts";
 import { appRouter } from "./router.ts";
@@ -738,6 +739,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
         const { ensureProvider, saveTokens } = await import("dofek/db/tokens");
         await ensureProvider(db, provider.id, provider.name, setup.apiBaseUrl, userId);
         await saveTokens(db, provider.id, tokens);
+        await queryCache.invalidateByPrefix(`${userId}:sync.providers`);
 
         logger.info(
           `[auth] ${providerId} tokens saved. Expires: ${tokens.expiresAt.toISOString()}`,
@@ -852,6 +854,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
           expiresAt: new Date("2099-12-31"),
           scopes: "",
         });
+        await queryCache.invalidateByPrefix(`${stored.userId}:sync.providers`);
 
         logger.info(`[auth] ${stored.providerId} OAuth 1.0 tokens saved.`);
         res.send(
@@ -970,6 +973,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       const { saveTokens } = await import("dofek/db/tokens");
       await ensureProvider(db, provider.id, provider.name, setup.apiBaseUrl, stateUserId);
       await saveTokens(db, provider.id, tokens);
+      await queryCache.invalidateByPrefix(`${stateUserId}:sync.providers`);
 
       logger.info(`[auth] ${providerId} tokens saved. Expires: ${tokens.expiresAt.toISOString()}`);
       res.send(
