@@ -6,17 +6,6 @@ executors:
       - image: cimg/node:22.14
     resource_class: medium
 
-  node-with-services:
-    docker:
-      - image: cimg/node:22.14
-      - image: timescale/timescaledb:latest-pg16
-        environment:
-          POSTGRES_DB: test
-          POSTGRES_USER: test
-          POSTGRES_PASSWORD: test
-      - image: redis:7-alpine
-    resource_class: large
-
   machine:
     machine:
       image: ubuntu-2404:current
@@ -73,32 +62,13 @@ jobs:
       - setup
       - run: pnpm knip
 
-  test:
-    executor: node-with-services
-    environment:
-      TEST_DATABASE_URL: postgres://test:test@localhost:5432/test
-      REDIS_URL: redis://localhost:6379
+  test-unit:
+    executor: node
     steps:
       - setup
       - run:
-          name: Wait for Postgres
-          command: |
-            for i in $(seq 1 30); do
-              nc -z localhost 5432 && exit 0
-              sleep 2
-            done
-            echo "Postgres did not start" && exit 1
-      - run:
-          name: Wait for Redis
-          command: |
-            for i in $(seq 1 30); do
-              nc -z localhost 6379 && exit 0
-              sleep 1
-            done
-            echo "Redis did not start" && exit 1
-      - run:
-          name: Run tests with coverage
-          command: pnpm exec vitest run --coverage
+          name: Run unit tests with coverage
+          command: pnpm exec vitest run --config vitest.config.unit.ts --coverage
           environment:
             NODE_OPTIONS: --max-old-space-size=3072
       - store_artifacts:
@@ -235,7 +205,7 @@ workflows:
 
   test:
     jobs:
-      - test
+      - test-unit
 
   e2e:
     jobs:

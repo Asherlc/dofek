@@ -1,77 +1,144 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import postgres from "postgres";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { runMigrations } from "../migrate.ts";
-import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { readdirSync, readFileSync } from "node:fs";
+
+// Mock node:fs
+vi.mock("node:fs", () => ({
+  readdirSync: vi.fn(),
+  readFileSync: vi.fn(),
+}));
+
+const mockSqlEnd = vi.fn().mockResolvedValue(undefined);
+const mockSqlUnsafe = vi.fn().mockResolvedValue([]);
+
+// Tagged template function mock — returns a promise with rows
+function createMockSql(): ReturnType<typeof vi.fn> & {
+  unsafe: ReturnType<typeof vi.fn>;
+  end: ReturnType<typeof vi.fn>;
+} {
+  const sqlFn = vi.fn().mockResolvedValue([]) as ReturnType<typeof vi.fn> & {
+    unsafe: ReturnType<typeof vi.fn>;
+    end: ReturnType<typeof vi.fn>;
+  };
+  sqlFn.unsafe = mockSqlUnsafe;
+  sqlFn.end = mockSqlEnd;
+  return sqlFn;
+}
+
+const mockSql = createMockSql();
+
+vi.mock("postgres", () => ({
+  default: vi.fn(() => mockSql),
+}));
+
+const mockedReaddirSync = vi.mocked(readdirSync);
+const mockedReadFileSync = vi.mocked(readFileSync);
 
 describe("runMigrations", () => {
-  let ctx: TestContext;
-
-  beforeAll(async () => {
-    ctx = await setupTestDatabase();
-  }, 120_000);
-
-  afterAll(async () => {
-    await ctx?.cleanup();
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSql.mockResolvedValue([]);
+    mockSqlUnsafe.mockResolvedValue([]);
+    mockSqlEnd.mockResolvedValue(undefined);
   });
 
-  it("runs migrations successfully and returns count", async () => {
-    // Create a fresh database for this test (the test helper already ran migrations,
-    // so we test with a temporary migrations directory containing a single migration)
-    const tmpDir = mkdtempSync(join(tmpdir(), "migrate-test-"));
-    writeFileSync(
-      join(tmpDir, "0001_test.sql"),
-      "CREATE TABLE IF NOT EXISTS fitness.migrate_test (id serial PRIMARY KEY, name text);",
+  it("creates schemas and migrations table", async () => {
+    const { runMigrations } = await import("../migrate.ts");
+    mockedReaddirSync.mockReturnValue([]);
+
+    await runMigrations("postgres://localhost/test", "/tmp/migrations");
+
+    // Should call sql tagged template 3 times for setup (CREATE SCHEMA x2, CREATE TABLE)
+    // plus 1 for SELECT applied migrations
+    expect(mockSql).toHaveBeenCalled();
+    expect(mockSqlEnd).toHaveBeenCalled();
+  });
+
+  it("applies pending migrations and skips already-applied ones", async () => {
+    const { runMigrations } = await import("../migrate.ts");
+
+    mockedReaddirSync.mockReturnValue(
+      ["0001_init.sql", "0002_add_col.sql", "0003_new.sql"] as unknown as ReturnType<
+        typeof readdirSync
+      >,
     );
 
-    const count = await runMigrations(ctx.connectionString, tmpDir);
+    // Already applied: 0001 and 0002
+    mockSql.mockImplementation((..._args: unknown[]) => {
+      // The 4th call is the SELECT for applied migrations
+      return Promise.resolve([{ hash: "0001_init.sql" }, { hash: "0002_add_col.sql" }]);
+    });
+
+    mockedReadFileSync.mockReturnValue("CREATE TABLE foo (id INT)");
+
+    const count = await runMigrations("postgres://localhost/test", "/tmp/migrations");
+
+    // Only 0003_new.sql should be applied
     expect(count).toBe(1);
-
-    // Verify the table was created
-    const sql = postgres(ctx.connectionString, { max: 1 });
-    const result = await sql`SELECT table_name FROM information_schema.tables
-                             WHERE table_schema = 'fitness' AND table_name = 'migrate_test'`;
-    expect(result.length).toBe(1);
-    await sql.end();
+    expect(mockedReadFileSync).toHaveBeenCalledTimes(1);
+    expect(mockedReadFileSync).toHaveBeenCalledWith("/tmp/migrations/0003_new.sql", "utf-8");
   });
 
-  it("skips already-applied migrations on second run", async () => {
-    const tmpDir = mkdtempSync(join(tmpdir(), "migrate-test-idempotent-"));
-    writeFileSync(
-      join(tmpDir, "0001_test_idempotent.sql"),
-      "CREATE TABLE IF NOT EXISTS fitness.migrate_idempotent_test (id serial PRIMARY KEY);",
+  it("splits migration files on statement breakpoints", async () => {
+    const { runMigrations } = await import("../migrate.ts");
+
+    mockedReaddirSync.mockReturnValue(["0001_multi.sql"] as unknown as ReturnType<
+      typeof readdirSync
+    >);
+    mockSql.mockResolvedValue([]);
+    mockedReadFileSync.mockReturnValue(
+      "CREATE TABLE a (id INT)--> statement-breakpoint\nCREATE TABLE b (id INT)",
     );
 
-    const firstCount = await runMigrations(ctx.connectionString, tmpDir);
-    expect(firstCount).toBe(1);
+    await runMigrations("postgres://localhost/test", "/tmp/migrations");
 
-    const secondCount = await runMigrations(ctx.connectionString, tmpDir);
-    expect(secondCount).toBe(0);
+    // Should call sql.unsafe twice — once per statement
+    expect(mockSqlUnsafe).toHaveBeenCalledTimes(2);
+    expect(mockSqlUnsafe).toHaveBeenCalledWith("CREATE TABLE a (id INT)");
+    expect(mockSqlUnsafe).toHaveBeenCalledWith("CREATE TABLE b (id INT)");
   });
 
-  it("handles multiple statement breakpoints", async () => {
-    const tmpDir = mkdtempSync(join(tmpdir(), "migrate-test-multi-"));
-    writeFileSync(
-      join(tmpDir, "0001_multi.sql"),
-      [
-        "CREATE TABLE IF NOT EXISTS fitness.multi_a (id serial PRIMARY KEY);",
-        "--> statement-breakpoint",
-        "CREATE TABLE IF NOT EXISTS fitness.multi_b (id serial PRIMARY KEY);",
-      ].join("\n"),
+  it("returns 0 when no pending migrations exist", async () => {
+    const { runMigrations } = await import("../migrate.ts");
+
+    mockedReaddirSync.mockReturnValue(["0001_init.sql"] as unknown as ReturnType<
+      typeof readdirSync
+    >);
+    mockSql.mockResolvedValue([{ hash: "0001_init.sql" }]);
+
+    const count = await runMigrations("postgres://localhost/test", "/tmp/migrations");
+
+    expect(count).toBe(0);
+    expect(mockedReadFileSync).not.toHaveBeenCalled();
+  });
+
+  it("only considers .sql files", async () => {
+    const { runMigrations } = await import("../migrate.ts");
+
+    mockedReaddirSync.mockReturnValue(
+      ["0001_init.sql", "README.md", "meta.json", "0002_next.sql"] as unknown as ReturnType<
+        typeof readdirSync
+      >,
+    );
+    mockSql.mockResolvedValue([]);
+    mockedReadFileSync.mockReturnValue("SELECT 1");
+
+    const count = await runMigrations("postgres://localhost/test", "/tmp/migrations");
+
+    expect(count).toBe(2);
+    expect(mockedReadFileSync).toHaveBeenCalledTimes(2);
+  });
+
+  it("always closes the connection in finally block", async () => {
+    const { runMigrations } = await import("../migrate.ts");
+
+    mockedReaddirSync.mockImplementation(() => {
+      throw new Error("fs error");
+    });
+
+    await expect(runMigrations("postgres://localhost/test", "/tmp/migrations")).rejects.toThrow(
+      "fs error",
     );
 
-    const count = await runMigrations(ctx.connectionString, tmpDir);
-    expect(count).toBe(1);
-
-    // Verify both tables were created
-    const sql = postgres(ctx.connectionString, { max: 1 });
-    const result = await sql`SELECT table_name FROM information_schema.tables
-                             WHERE table_schema = 'fitness'
-                             AND table_name IN ('multi_a', 'multi_b')
-                             ORDER BY table_name`;
-    expect(result.length).toBe(2);
-    await sql.end();
+    expect(mockSqlEnd).toHaveBeenCalled();
   });
 });

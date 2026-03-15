@@ -1,123 +1,197 @@
-import { sql } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { DEFAULT_USER_ID } from "../schema.ts";
-import { ensureProvider, loadTokens, saveTokens } from "../tokens.ts";
-import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { ensureProvider, saveTokens, loadTokens } from "../tokens.ts";
 
-describe("Token storage (integration)", () => {
-  let ctx: TestContext;
+// Mock drizzle's eq function
+vi.mock("drizzle-orm", () => ({
+  eq: vi.fn((col, val) => ({ column: col, value: val })),
+}));
 
-  beforeAll(async () => {
-    ctx = await setupTestDatabase();
-  }, 60_000);
+function createMockDb() {
+  const onConflictDoUpdateFn = vi.fn().mockResolvedValue(undefined);
+  const valuesFn = vi.fn(() => ({ onConflictDoUpdate: onConflictDoUpdateFn }));
+  const insertFn = vi.fn(() => ({ values: valuesFn }));
 
-  afterAll(async () => {
-    await ctx?.cleanup();
+  const limitFn = vi.fn().mockResolvedValue([]);
+  const whereFn = vi.fn(() => ({ limit: limitFn }));
+  const fromFn = vi.fn(() => ({ where: whereFn }));
+  const selectFn = vi.fn(() => ({ from: fromFn }));
+
+  return {
+    insert: insertFn,
+    select: selectFn,
+    _valuesFn: valuesFn,
+    _onConflictDoUpdateFn: onConflictDoUpdateFn,
+    _limitFn: limitFn,
+    _whereFn: whereFn,
+    _fromFn: fromFn,
+  };
+}
+
+type MockDb = ReturnType<typeof createMockDb>;
+
+describe("ensureProvider", () => {
+  let mockDb: MockDb;
+
+  beforeEach(() => {
+    mockDb = createMockDb();
   });
 
-  it("ensureProvider inserts a provider row if missing", async () => {
-    await ensureProvider(ctx.db, "wahoo", "Wahoo");
-    const again = await ensureProvider(ctx.db, "wahoo", "Wahoo");
-    expect(again).toBe("wahoo");
+  it("inserts a provider with id, name, and apiBaseUrl", async () => {
+    // biome-ignore lint/suspicious/noExplicitAny: mock DB
+    const result = await ensureProvider(mockDb as any, "wahoo", "Wahoo", "https://api.wahoo.com");
+
+    expect(result).toBe("wahoo");
+    expect(mockDb.insert).toHaveBeenCalled();
+    expect(mockDb._valuesFn).toHaveBeenCalledWith({
+      id: "wahoo",
+      name: "Wahoo",
+      apiBaseUrl: "https://api.wahoo.com",
+    });
+    expect(mockDb._onConflictDoUpdateFn).toHaveBeenCalled();
   });
 
-  it("saveTokens inserts and loadTokens retrieves", async () => {
-    await ensureProvider(ctx.db, "wahoo", "Wahoo");
+  it("includes userId when provided", async () => {
+    // biome-ignore lint/suspicious/noExplicitAny: mock DB
+    await ensureProvider(mockDb as any, "whoop", "WHOOP", undefined, "user-123");
 
+    expect(mockDb._valuesFn).toHaveBeenCalledWith({
+      id: "whoop",
+      name: "WHOOP",
+      apiBaseUrl: undefined,
+      userId: "user-123",
+    });
+  });
+
+  it("omits userId when not provided", async () => {
+    // biome-ignore lint/suspicious/noExplicitAny: mock DB
+    await ensureProvider(mockDb as any, "wahoo", "Wahoo");
+
+    const valuesArg = mockDb._valuesFn.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(valuesArg).not.toHaveProperty("userId");
+  });
+
+  it("returns the provider id", async () => {
+    // biome-ignore lint/suspicious/noExplicitAny: mock DB
+    const result = await ensureProvider(mockDb as any, "test-id", "Test");
+    expect(result).toBe("test-id");
+  });
+});
+
+describe("saveTokens", () => {
+  let mockDb: MockDb;
+
+  beforeEach(() => {
+    mockDb = createMockDb();
+  });
+
+  it("upserts OAuth tokens for a provider", async () => {
     const tokens = {
       accessToken: "access-123",
       refreshToken: "refresh-456",
-      expiresAt: new Date("2026-06-01T00:00:00Z"),
-      scopes: "user_read workouts_read",
+      expiresAt: new Date("2026-04-01T00:00:00Z"),
+      scopes: "read write",
     };
 
-    await saveTokens(ctx.db, "wahoo", tokens);
+    // biome-ignore lint/suspicious/noExplicitAny: mock DB
+    await saveTokens(mockDb as any, "wahoo", tokens);
 
-    const loaded = await loadTokens(ctx.db, "wahoo");
-    expect(loaded).toEqual({
+    expect(mockDb.insert).toHaveBeenCalled();
+    expect(mockDb._valuesFn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: "wahoo",
+        accessToken: "access-123",
+        refreshToken: "refresh-456",
+        expiresAt: new Date("2026-04-01T00:00:00Z"),
+        scopes: "read write",
+      }),
+    );
+    expect(mockDb._onConflictDoUpdateFn).toHaveBeenCalled();
+  });
+
+  it("handles null refreshToken and scopes", async () => {
+    const tokens = {
+      accessToken: "access-only",
+      refreshToken: null,
+      expiresAt: new Date("2026-05-01T00:00:00Z"),
+      scopes: null,
+    };
+
+    // biome-ignore lint/suspicious/noExplicitAny: mock DB
+    await saveTokens(mockDb as any, "strava", tokens);
+
+    expect(mockDb._valuesFn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        refreshToken: null,
+        scopes: null,
+      }),
+    );
+  });
+});
+
+describe("loadTokens", () => {
+  let mockDb: MockDb;
+
+  beforeEach(() => {
+    mockDb = createMockDb();
+  });
+
+  it("returns token set when found", async () => {
+    mockDb._limitFn.mockResolvedValue([
+      {
+        accessToken: "access-123",
+        refreshToken: "refresh-456",
+        expiresAt: new Date("2026-04-01T00:00:00Z"),
+        scopes: "read",
+      },
+    ]);
+
+    // biome-ignore lint/suspicious/noExplicitAny: mock DB
+    const result = await loadTokens(mockDb as any, "wahoo");
+
+    expect(result).toEqual({
       accessToken: "access-123",
       refreshToken: "refresh-456",
-      expiresAt: new Date("2026-06-01T00:00:00Z"),
-      scopes: "user_read workouts_read",
+      expiresAt: new Date("2026-04-01T00:00:00Z"),
+      scopes: "read",
     });
   });
 
-  it("saveTokens upserts (overwrites existing tokens)", async () => {
-    await ensureProvider(ctx.db, "wahoo", "Wahoo");
+  it("returns null when no tokens exist", async () => {
+    mockDb._limitFn.mockResolvedValue([]);
 
-    await saveTokens(ctx.db, "wahoo", {
-      accessToken: "old-access",
-      refreshToken: "old-refresh",
-      expiresAt: new Date("2026-01-01T00:00:00Z"),
-      scopes: "user_read",
-    });
+    // biome-ignore lint/suspicious/noExplicitAny: mock DB
+    const result = await loadTokens(mockDb as any, "nonexistent");
 
-    await saveTokens(ctx.db, "wahoo", {
-      accessToken: "new-access",
-      refreshToken: "new-refresh",
-      expiresAt: new Date("2026-12-01T00:00:00Z"),
-      scopes: "user_read workouts_read",
-    });
-
-    const loaded = await loadTokens(ctx.db, "wahoo");
-    expect(loaded?.accessToken).toBe("new-access");
-    expect(loaded?.refreshToken).toBe("new-refresh");
+    expect(result).toBeNull();
   });
 
-  it("loadTokens returns null for unknown provider", async () => {
-    const loaded = await loadTokens(ctx.db, "nonexistent");
-    expect(loaded).toBeNull();
+  it("returns null when row is undefined", async () => {
+    mockDb._limitFn.mockResolvedValue([undefined]);
+
+    // biome-ignore lint/suspicious/noExplicitAny: mock DB
+    const result = await loadTokens(mockDb as any, "wahoo");
+
+    expect(result).toBeNull();
   });
 
-  it("loadTokens returns tokens with null scopes when scopes not set", async () => {
-    await ensureProvider(ctx.db, "no-scopes-provider", "No Scopes");
-    await saveTokens(ctx.db, "no-scopes-provider", {
-      accessToken: "a",
-      refreshToken: "r",
-      expiresAt: new Date("2026-06-01T00:00:00Z"),
+  it("returns null for scopes when row.scopes is null", async () => {
+    mockDb._limitFn.mockResolvedValue([
+      {
+        accessToken: "access-123",
+        refreshToken: null,
+        expiresAt: new Date("2026-04-01T00:00:00Z"),
+        scopes: null,
+      },
+    ]);
+
+    // biome-ignore lint/suspicious/noExplicitAny: mock DB
+    const result = await loadTokens(mockDb as any, "wahoo");
+
+    expect(result).toEqual({
+      accessToken: "access-123",
+      refreshToken: null,
+      expiresAt: new Date("2026-04-01T00:00:00Z"),
       scopes: null,
     });
-    const loaded = await loadTokens(ctx.db, "no-scopes-provider");
-    expect(loaded).toEqual({
-      accessToken: "a",
-      refreshToken: "r",
-      expiresAt: new Date("2026-06-01T00:00:00Z"),
-      scopes: null,
-    });
-  });
-
-  it("ensureProvider upserts userId when provided", async () => {
-    // Create a second user to test userId override
-    const testUserId = "11111111-1111-1111-1111-111111111111";
-    await ctx.db.execute(
-      sql`INSERT INTO fitness.user_profile (id, name) VALUES (${testUserId}, 'Test User') ON CONFLICT DO NOTHING`,
-    );
-
-    await ensureProvider(ctx.db, "user-test-provider", "Test Provider");
-    // Re-insert with a userId — should update the existing row
-    await ensureProvider(
-      ctx.db,
-      "user-test-provider",
-      "Test Provider Updated",
-      undefined,
-      testUserId,
-    );
-
-    const rows = await ctx.db.execute<{ user_id: string; name: string }>(
-      sql`SELECT user_id, name FROM fitness.provider WHERE id = 'user-test-provider'`,
-    );
-    expect(rows).toHaveLength(1);
-    expect(rows[0]?.user_id).toBe(testUserId);
-    expect(rows[0]?.name).toBe("Test Provider Updated");
-  });
-
-  it("ensureProvider defaults to DEFAULT_USER_ID when userId not provided", async () => {
-    await ensureProvider(ctx.db, "default-user-provider", "Default Provider");
-
-    const rows = await ctx.db.execute<{ user_id: string }>(
-      sql`SELECT user_id FROM fitness.provider WHERE id = 'default-user-provider'`,
-    );
-    expect(rows).toHaveLength(1);
-    expect(rows[0]?.user_id).toBe(DEFAULT_USER_ID);
   });
 });

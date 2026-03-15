@@ -1,0 +1,77 @@
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import postgres from "postgres";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { runMigrations } from "../migrate.ts";
+import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
+
+describe("runMigrations", () => {
+  let ctx: TestContext;
+
+  beforeAll(async () => {
+    ctx = await setupTestDatabase();
+  }, 120_000);
+
+  afterAll(async () => {
+    await ctx?.cleanup();
+  });
+
+  it("runs migrations successfully and returns count", async () => {
+    // Create a fresh database for this test (the test helper already ran migrations,
+    // so we test with a temporary migrations directory containing a single migration)
+    const tmpDir = mkdtempSync(join(tmpdir(), "migrate-test-"));
+    writeFileSync(
+      join(tmpDir, "0001_test.sql"),
+      "CREATE TABLE IF NOT EXISTS fitness.migrate_test (id serial PRIMARY KEY, name text);",
+    );
+
+    const count = await runMigrations(ctx.connectionString, tmpDir);
+    expect(count).toBe(1);
+
+    // Verify the table was created
+    const sql = postgres(ctx.connectionString, { max: 1 });
+    const result = await sql`SELECT table_name FROM information_schema.tables
+                             WHERE table_schema = 'fitness' AND table_name = 'migrate_test'`;
+    expect(result.length).toBe(1);
+    await sql.end();
+  });
+
+  it("skips already-applied migrations on second run", async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "migrate-test-idempotent-"));
+    writeFileSync(
+      join(tmpDir, "0001_test_idempotent.sql"),
+      "CREATE TABLE IF NOT EXISTS fitness.migrate_idempotent_test (id serial PRIMARY KEY);",
+    );
+
+    const firstCount = await runMigrations(ctx.connectionString, tmpDir);
+    expect(firstCount).toBe(1);
+
+    const secondCount = await runMigrations(ctx.connectionString, tmpDir);
+    expect(secondCount).toBe(0);
+  });
+
+  it("handles multiple statement breakpoints", async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "migrate-test-multi-"));
+    writeFileSync(
+      join(tmpDir, "0001_multi.sql"),
+      [
+        "CREATE TABLE IF NOT EXISTS fitness.multi_a (id serial PRIMARY KEY);",
+        "--> statement-breakpoint",
+        "CREATE TABLE IF NOT EXISTS fitness.multi_b (id serial PRIMARY KEY);",
+      ].join("\n"),
+    );
+
+    const count = await runMigrations(ctx.connectionString, tmpDir);
+    expect(count).toBe(1);
+
+    // Verify both tables were created
+    const sql = postgres(ctx.connectionString, { max: 1 });
+    const result = await sql`SELECT table_name FROM information_schema.tables
+                             WHERE table_schema = 'fitness'
+                             AND table_name IN ('multi_a', 'multi_b')
+                             ORDER BY table_name`;
+    expect(result.length).toBe(2);
+    await sql.end();
+  });
+});
