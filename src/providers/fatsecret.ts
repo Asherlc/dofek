@@ -542,6 +542,7 @@ export class FatSecretProvider implements Provider {
       };
     }
 
+    if (!tokens.refreshToken) throw new Error("No token secret stored for FatSecret");
     const creds: OAuth1Credentials = {
       consumerKey: this.consumerKey,
       consumerSecret: this.consumerSecret,

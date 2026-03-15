@@ -34,7 +34,7 @@ export function generateCodeChallenge(verifier: string): string {
 
 export interface TokenSet {
   accessToken: string;
-  refreshToken: string;
+  refreshToken: string | null;
   expiresAt: Date;
   scopes: string | null;
 }
@@ -64,7 +64,7 @@ function parseTokenResponse(data: Record<string, unknown>): TokenSet {
   const expiresIn = (data.expires_in as number) ?? 7200;
   return {
     accessToken: data.access_token as string,
-    refreshToken: data.refresh_token as string,
+    refreshToken: (data.refresh_token as string) ?? null,
     expiresAt: new Date(Date.now() + expiresIn * 1000),
     scopes: (data.scope as string) ?? null,
   };
