@@ -656,7 +656,7 @@ export function createSlackBot(db: Database): SlackBotResult | null {
       // Router is mounted at /slack, so use /events here → full path /slack/events
       endpoints: "/events",
       // No clientId/clientSecret — OAuth is handled by the main auth routes
-      processBeforeResponse: true,
+      processBeforeResponse: false,
     });
 
     const app = new App({
