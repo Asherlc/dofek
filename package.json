@@ -41,7 +41,7 @@
     "test:watch": "vitest --watch",
     "test:coverage": "vitest run --coverage",
     "test:mutation": "stryker run",
-    "knip": "knip",
+    "knip": "knip --config knip.json",
     "server": "./scripts/with-env.sh tsx src/server.ts",
     "build": "tsc",
     "start": "node dist/index.js",

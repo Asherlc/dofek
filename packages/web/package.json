@@ -23,6 +23,7 @@
     "tailwindcss": "4.2.1"
   },
   "devDependencies": {
+    "@tanstack/router-cli": "1.166.7",
     "@tanstack/router-plugin": "1.166.7",
     "@types/leaflet": "^1.9.21",
     "@types/react": "19.2.14",
