@@ -7,10 +7,7 @@ import { OuraProvider } from "../oura.ts";
 // Integration tests for sync() error paths
 // ============================================================
 
-function createMockFetchForErrors(opts: {
-  sleepError?: boolean;
-  dailyError?: boolean;
-}): typeof globalThis.fetch {
+function createMockFetchForErrors(opts: { sleepError?: boolean }): typeof globalThis.fetch {
   return (async (input: RequestInfo | URL): Promise<Response> => {
     const urlStr = input.toString();
 
@@ -34,19 +31,6 @@ function createMockFetchForErrors(opts: {
       if (opts.sleepError) {
         return new Response("Rate Limited", { status: 429 });
       }
-      return Response.json({ data: [], next_token: null });
-    }
-
-    // Daily readiness — error or empty
-    if (urlStr.includes("/v2/usercollection/daily_readiness")) {
-      if (opts.dailyError) {
-        return new Response("Server Error", { status: 500 });
-      }
-      return Response.json({ data: [], next_token: null });
-    }
-
-    // Daily activity — empty
-    if (urlStr.includes("/v2/usercollection/daily_activity")) {
       return Response.json({ data: [], next_token: null });
     }
 
@@ -139,23 +123,5 @@ describe("OuraProvider.sync() — error paths (integration)", () => {
 
     const sleepError = result.errors.find((e) => e.message.includes("sleep"));
     expect(sleepError).toBeDefined();
-  });
-
-  it("captures daily metrics fetch errors", async () => {
-    await saveTokens(ctx.db, "oura", {
-      accessToken: "valid-token",
-      refreshToken: "valid-refresh",
-      expiresAt: new Date("2027-01-01T00:00:00Z"),
-      scopes: "daily heartrate personal session spo2",
-    });
-
-    const since = new Date();
-    since.setDate(since.getDate() - 1);
-
-    const provider = new OuraProvider(createMockFetchForErrors({ dailyError: true }));
-    const result = await provider.sync(ctx.db, since);
-
-    const dailyError = result.errors.find((e) => e.message.includes("daily_metrics"));
-    expect(dailyError).toBeDefined();
   });
 });

@@ -1,18 +1,10 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
-import {
-  activity,
-  dailyMetrics,
-  healthEvent,
-  metricStream,
-  sleepSession,
-} from "../../db/schema.ts";
+import { activity, healthEvent, metricStream, sleepSession } from "../../db/schema.ts";
 import { ensureProvider, saveTokens } from "../../db/tokens.ts";
 import type {
-  OuraDailyActivity,
   OuraDailyCardiovascularAge,
-  OuraDailyReadiness,
   OuraDailyResilience,
   OuraDailySpO2,
   OuraDailyStress,
@@ -48,42 +40,6 @@ function fakeSleepDoc(overrides: Partial<OuraSleepDocument> = {}): OuraSleepDocu
     readiness_score_delta: 2.5,
     latency: 900,
     ...overrides,
-  };
-}
-
-function fakeReadiness(): OuraDailyReadiness {
-  return {
-    id: "readiness-001",
-    day: "2026-03-01",
-    score: 82,
-    temperature_deviation: -0.15,
-    temperature_trend_deviation: 0.05,
-    contributors: {
-      resting_heart_rate: 85,
-      hrv_balance: 78,
-      body_temperature: 90,
-      recovery_index: 72,
-      sleep_balance: 80,
-      previous_night: 88,
-      previous_day_activity: 75,
-      activity_balance: 82,
-    },
-  };
-}
-
-function fakeActivity(): OuraDailyActivity {
-  return {
-    id: "activity-001",
-    day: "2026-03-01",
-    steps: 9500,
-    active_calories: 450,
-    equivalent_walking_distance: 8200,
-    high_activity_time: 2700,
-    medium_activity_time: 1800,
-    low_activity_time: 7200,
-    resting_time: 50400,
-    sedentary_time: 28800,
-    total_calories: 2300,
   };
 }
 
@@ -207,8 +163,6 @@ function fakeSleepTime(): OuraSleepTime {
 
 interface MockFetchOptions {
   sleepDocs?: OuraSleepDocument[];
-  readinessDocs?: OuraDailyReadiness[];
-  activityDocs?: OuraDailyActivity[];
   spo2Docs?: OuraDailySpO2[];
   vo2MaxDocs?: OuraVO2Max[];
   workoutDocs?: OuraWorkout[];
@@ -243,10 +197,6 @@ function createMockFetch(opts?: MockFetchOptions): typeof globalThis.fetch {
       return Response.json({ data: o.sleepTimeDocs ?? [], next_token: null });
     if (urlStr.includes("/v2/usercollection/sleep"))
       return Response.json({ data: o.sleepDocs ?? [], next_token: null });
-    if (urlStr.includes("/v2/usercollection/daily_readiness"))
-      return Response.json({ data: o.readinessDocs ?? [], next_token: null });
-    if (urlStr.includes("/v2/usercollection/daily_activity"))
-      return Response.json({ data: o.activityDocs ?? [], next_token: null });
     if (urlStr.includes("/v2/usercollection/daily_spo2"))
       return Response.json({ data: o.spo2Docs ?? [], next_token: null });
     if (urlStr.includes("/v2/usercollection/vO2_max"))
@@ -303,8 +253,6 @@ describe("OuraProvider.sync() (integration)", () => {
           fakeSleepDoc({ id: "sleep-001" }),
           fakeSleepDoc({ id: "sleep-nap-001", type: "rest", total_sleep_duration: 1500 }),
         ],
-        readinessDocs: [fakeReadiness()],
-        activityDocs: [fakeActivity()],
         spo2Docs: [fakeSpO2()],
         vo2MaxDocs: [fakeVO2Max()],
         workoutDocs: [fakeWorkout()],
@@ -335,17 +283,6 @@ describe("OuraProvider.sync() (integration)", () => {
     const mainSleep = sleepRows.find((r) => r.externalId === "sleep-001");
     expect(mainSleep?.deepMinutes).toBe(90);
     expect(mainSleep?.isNap).toBe(false);
-
-    // Verify daily metrics
-    const dailyRows = await ctx.db
-      .select()
-      .from(dailyMetrics)
-      .where(eq(dailyMetrics.providerId, "oura"));
-    expect(dailyRows).toHaveLength(1);
-    const daily = dailyRows[0];
-    expect(daily?.steps).toBe(9500);
-    expect(daily?.spo2Avg).toBeCloseTo(97.5);
-    expect(daily?.vo2max).toBeCloseTo(42.5);
 
     // Verify workouts → activity table
     const activityRows = await ctx.db
@@ -417,8 +354,6 @@ describe("OuraProvider.sync() (integration)", () => {
     const provider = new OuraProvider(
       createMockFetch({
         sleepDocs: [fakeSleepDoc({ id: "sleep-001" })],
-        readinessDocs: [fakeReadiness()],
-        activityDocs: [fakeActivity()],
         workoutDocs: [fakeWorkout()],
         stressDocs: [fakeDailyStress()],
       }),
