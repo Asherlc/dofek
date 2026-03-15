@@ -312,7 +312,7 @@ describe("FatSecretProvider — authSetup oauth1Flow", () => {
 
     const provider = new FatSecretProvider();
     const setup = provider.authSetup();
-    expect(setup.oauthConfig.redirectUri).toContain("localhost");
+    expect(setup.oauthConfig.redirectUri).toContain("dofek");
   });
 
   it("oauthConfig uses OAUTH_REDIRECT_URI when set", () => {

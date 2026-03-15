@@ -225,7 +225,7 @@ export class WahooClient {
 // Provider implementation
 // ============================================================
 
-const DEFAULT_REDIRECT_URI = "https://localhost:9876/callback";
+const DEFAULT_REDIRECT_URI = "https://dofek.asherlc.com/callback";
 
 export function wahooOAuthConfig(): OAuthConfig | null {
   const clientId = process.env.WAHOO_CLIENT_ID;

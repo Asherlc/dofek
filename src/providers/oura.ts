@@ -377,7 +377,7 @@ export class OuraClient {
 // OAuth configuration
 // ============================================================
 
-const DEFAULT_REDIRECT_URI = "https://localhost:9876/callback";
+const DEFAULT_REDIRECT_URI = "https://dofek.asherlc.com/callback";
 
 export function ouraOAuthConfig(): OAuthConfig | null {
   const clientId = process.env.OURA_CLIENT_ID;

@@ -120,7 +120,7 @@ export function withingsOAuthConfig(): OAuthConfig | null {
     clientSecret,
     authorizeUrl: `${WITHINGS_AUTH_BASE}/oauth2_user/authorize2`,
     tokenUrl: `${WITHINGS_API_BASE}/v2/oauth2`,
-    redirectUri: process.env.OAUTH_REDIRECT_URI ?? "https://localhost:9876/callback",
+    redirectUri: process.env.OAUTH_REDIRECT_URI ?? "https://dofek.asherlc.com/callback",
     scopes: ["user.metrics"],
   };
 }

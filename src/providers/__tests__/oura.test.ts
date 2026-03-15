@@ -189,7 +189,7 @@ describe("ouraOAuthConfig", () => {
     process.env.OURA_CLIENT_SECRET = "test-secret";
     delete process.env.OAUTH_REDIRECT_URI;
     const config = ouraOAuthConfig();
-    expect(config?.redirectUri).toContain("localhost");
+    expect(config?.redirectUri).toContain("dofek");
   });
 });
 

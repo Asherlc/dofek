@@ -60,7 +60,7 @@ describe("stravaOAuthConfig", () => {
     process.env.STRAVA_CLIENT_SECRET = "test-secret";
     delete process.env.OAUTH_REDIRECT_URI;
     const config = stravaOAuthConfig();
-    expect(config?.redirectUri).toContain("localhost");
+    expect(config?.redirectUri).toContain("dofek");
   });
 });
 

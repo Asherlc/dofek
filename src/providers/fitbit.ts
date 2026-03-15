@@ -297,7 +297,7 @@ export class FitbitClient {
 // OAuth configuration
 // ============================================================
 
-const DEFAULT_REDIRECT_URI = "https://localhost:9876/callback";
+const DEFAULT_REDIRECT_URI = "https://dofek.asherlc.com/callback";
 
 export function fitbitOAuthConfig(): OAuthConfig | null {
   const clientId = process.env.FITBIT_CLIENT_ID;

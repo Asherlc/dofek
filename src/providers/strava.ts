@@ -290,7 +290,7 @@ export class StravaRateLimitError extends Error {
 // Provider implementation
 // ============================================================
 
-const DEFAULT_REDIRECT_URI = "https://localhost:9876/callback";
+const DEFAULT_REDIRECT_URI = "https://dofek.asherlc.com/callback";
 const STRAVA_AUTH_BASE = "https://www.strava.com/oauth";
 
 export function stravaOAuthConfig(): OAuthConfig | null {
