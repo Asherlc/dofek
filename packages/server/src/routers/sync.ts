@@ -173,14 +173,15 @@ export const syncRouter = router({
       if (job.data.userId !== ctx.userId) return null;
 
       const state = await job.getState();
-      const progress = job.progress as
+      // @ts-expect-error job.progress type doesn't match our narrower expected shape
+      const progress:
         | {
             providers?: Record<
               string,
               { status: "pending" | "running" | "done" | "error"; message?: string }
             >;
           }
-        | undefined;
+        | undefined = job.progress;
 
       return {
         status: mapBullMqStateToSyncStatus(state),

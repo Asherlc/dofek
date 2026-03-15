@@ -24,7 +24,7 @@ function createMockProvider(overrides: Partial<Provider> = {}): Provider {
   };
 }
 
-const mockDb = {} as Database;
+const mockDb = Object.create(null);
 
 describe("Sync Runner — updateUserMaxHr error handling", () => {
   it("completes sync even when updateUserMaxHr throws", async () => {

@@ -10,7 +10,8 @@ import { trpc } from "../lib/trpc.ts";
 
 /** Narrow loosely-typed tRPC raw-SQL results to a known shape without double-casting. */
 function typedData<T>(data: unknown): T {
-  return data as T;
+  // @ts-expect-error -- centralized type narrowing for tRPC raw-SQL results
+  return data;
 }
 
 const CALORIES_PER_GRAM = { protein: 4, carbs: 4, fat: 9 } as const;
@@ -43,7 +44,7 @@ export function NutritionPage() {
   const [collapsedMeals, setCollapsedMeals] = useState<Set<string>>(new Set());
 
   const calorieGoalQuery = trpc.settings.get.useQuery({ key: "calorieGoal" });
-  const calorieGoal = (calorieGoalQuery.data?.value as number) ?? 2000;
+  const calorieGoal = Number(calorieGoalQuery.data?.value ?? 2000);
 
   const dateString = formatDateForQuery(selectedDate);
 

@@ -61,7 +61,7 @@ describe("TrainerRoadClient.signIn", () => {
         json: () => Promise.resolve(memberInfo),
         text: () => Promise.resolve(JSON.stringify(memberInfo)),
       });
-    }) as typeof globalThis.fetch;
+    };
 
     const result = await TrainerRoadClient.signIn("testuser", "password123", fetchFn);
 
@@ -96,7 +96,7 @@ describe("TrainerRoadClient.signIn", () => {
           getSetCookie: () => [],
         },
       });
-    }) as typeof globalThis.fetch;
+    };
 
     await expect(
       TrainerRoadClient.signIn("testuser", "wrong-password", fetchFn),

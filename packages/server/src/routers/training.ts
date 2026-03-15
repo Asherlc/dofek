@@ -76,7 +76,8 @@ export const trainingRouter = router({
             GROUP BY up.max_hr, date_trunc('week', a.started_at)
             ORDER BY week`,
       );
-      const maxHr = (rows[0]?.max_hr as number | null) ?? null;
+      const rawMaxHr = rows[0]?.max_hr;
+      const maxHr = typeof rawMaxHr === "number" ? rawMaxHr : null;
       if (!maxHr) return { maxHr: null, weeks: [] };
       return { maxHr, weeks: rows };
     }),

@@ -73,7 +73,7 @@ async function createAuthenticatedClient(
     }
     // Forward to the API mock
     return (apiFetchFn as MockFetchFn)(...arguments);
-  }) as typeof globalThis.fetch;
+  };
 
   const client = await GarminConnectClient.fromTokens(tokens, "garmin.com", setupFetchFn);
 
@@ -172,7 +172,7 @@ describe("GarminConnectClient.fromTokens", () => {
           userName: "testuser",
         }),
       });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = await GarminConnectClient.fromTokens(tokens, "garmin.com", fetchFn);
 
@@ -225,7 +225,7 @@ describe("GarminConnectClient.fromTokens", () => {
           userName: "testuser",
         }),
       });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = await GarminConnectClient.fromTokens(tokens, "garmin.com", fetchFn);
 
@@ -240,7 +240,7 @@ describe("GarminConnectClient.fromTokens", () => {
     const fetchFn = vi.fn().mockResolvedValue({
       ok: false,
       status: 500,
-    }) as typeof globalThis.fetch;
+    };
 
     await expect(
       GarminConnectClient.fromTokens(tokens, "garmin.com", fetchFn),
@@ -258,7 +258,7 @@ describe("GarminConnectClient API methods", () => {
       ok: true,
       status: 200,
       json: () => Promise.resolve(activities),
-    }) as typeof globalThis.fetch;
+    };
 
     const client = await createAuthenticatedClient(apiFetchFn);
     const result = await client.getActivities(0, 10);
@@ -277,7 +277,7 @@ describe("GarminConnectClient API methods", () => {
       ok: true,
       status: 200,
       json: () => Promise.resolve(detail),
-    }) as typeof globalThis.fetch;
+    };
 
     const client = await createAuthenticatedClient(apiFetchFn);
     const result = await client.getActivityDetail(123);
@@ -294,7 +294,7 @@ describe("GarminConnectClient API methods", () => {
       ok: true,
       status: 200,
       json: () => Promise.resolve(sleepData),
-    }) as typeof globalThis.fetch;
+    };
 
     const client = await createAuthenticatedClient(apiFetchFn);
     const result = await client.getSleepData("2024-01-15");
@@ -312,7 +312,7 @@ describe("GarminConnectClient API methods", () => {
       ok: true,
       status: 200,
       json: () => Promise.resolve(hrData),
-    }) as typeof globalThis.fetch;
+    };
 
     const client = await createAuthenticatedClient(apiFetchFn);
     const result = await client.getDailyHeartRate("2024-01-15");
@@ -327,7 +327,7 @@ describe("GarminConnectClient API methods", () => {
       ok: true,
       status: 200,
       json: () => Promise.resolve(stressData),
-    }) as typeof globalThis.fetch;
+    };
 
     const client = await createAuthenticatedClient(apiFetchFn);
     const result = await client.getDailyStress("2024-01-15");
@@ -342,7 +342,7 @@ describe("GarminConnectClient API methods", () => {
       ok: true,
       status: 200,
       json: () => Promise.resolve(hrvData),
-    }) as typeof globalThis.fetch;
+    };
 
     const client = await createAuthenticatedClient(apiFetchFn);
     const result = await client.getHrvSummary("2024-01-15");
@@ -357,7 +357,7 @@ describe("GarminConnectClient API methods", () => {
       ok: false,
       status: 401,
       text: () => Promise.resolve("Unauthorized"),
-    }) as typeof globalThis.fetch;
+    };
 
     const client = await createAuthenticatedClient(apiFetchFn);
 
@@ -370,7 +370,7 @@ describe("GarminConnectClient API methods", () => {
       ok: false,
       status: 429,
       text: () => Promise.resolve("Too Many Requests"),
-    }) as typeof globalThis.fetch;
+    };
 
     const client = await createAuthenticatedClient(apiFetchFn);
 
@@ -383,7 +383,7 @@ describe("GarminConnectClient API methods", () => {
       ok: false,
       status: 500,
       text: () => Promise.resolve("Internal Server Error"),
-    }) as typeof globalThis.fetch;
+    };
 
     const client = await createAuthenticatedClient(apiFetchFn);
 
@@ -396,7 +396,7 @@ describe("GarminConnectClient API methods", () => {
       ok: true,
       status: 204,
       json: () => Promise.resolve({}),
-    }) as typeof globalThis.fetch;
+    };
 
     const client = await createAuthenticatedClient(apiFetchFn);
     const result = await client.getDailyStress("2024-01-15");
@@ -411,7 +411,7 @@ describe("GarminConnectClient API methods", () => {
       ok: true,
       status: 200,
       json: () => Promise.resolve(summary),
-    }) as typeof globalThis.fetch;
+    };
 
     const client = await createAuthenticatedClient(apiFetchFn);
     const result = await client.getDailySummary("2024-01-15");
@@ -428,7 +428,7 @@ describe("GarminConnectClient API methods", () => {
       ok: true,
       status: 200,
       json: () => Promise.resolve(status),
-    }) as typeof globalThis.fetch;
+    };
 
     const client = await createAuthenticatedClient(apiFetchFn);
     const result = await client.getTrainingStatus("2024-01-15");
@@ -445,7 +445,7 @@ describe("GarminConnectClient API methods", () => {
       ok: true,
       status: 200,
       json: () => Promise.resolve(vo2Data),
-    }) as typeof globalThis.fetch;
+    };
 
     const client = await createAuthenticatedClient(apiFetchFn);
     const result = await client.getVo2Max("2024-01-01", "2024-01-31");
@@ -462,7 +462,7 @@ describe("GarminConnectClient API methods", () => {
       ok: true,
       status: 200,
       arrayBuffer: () => Promise.resolve(buffer),
-    }) as typeof globalThis.fetch;
+    };
 
     const client = await createAuthenticatedClient(apiFetchFn);
     const result = await client.downloadFitFile(12345);
@@ -476,7 +476,7 @@ describe("GarminConnectClient API methods", () => {
     const apiFetchFn = vi.fn().mockResolvedValue({
       ok: false,
       status: 404,
-    }) as typeof globalThis.fetch;
+    };
 
     const client = await createAuthenticatedClient(apiFetchFn);
 
@@ -534,7 +534,7 @@ describe("GarminConnectClient token refresh on API call", () => {
         status: 200,
         json: () => Promise.resolve([]),
       });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = await GarminConnectClient.fromTokens(tokens, "garmin.com", fetchFn);
 

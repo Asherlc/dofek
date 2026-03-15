@@ -1,0 +1,9 @@
+`$x as $y` where {
+  $text = text($y),
+  $text <: not r"^const$",
+  register_diagnostic(
+    span = $x,
+    message = "Type assertion with 'as' is banned. Use Zod parsing, type guards, generics, or 'satisfies' instead.",
+    severity = "error"
+  )
+}

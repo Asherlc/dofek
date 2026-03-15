@@ -65,6 +65,23 @@ export interface StravaStreamSet {
   grade_smooth?: StravaStream;
 }
 
+const STREAM_KEYS = new Set<string>([
+  "time",
+  "heartrate",
+  "watts",
+  "cadence",
+  "velocity_smooth",
+  "latlng",
+  "altitude",
+  "distance",
+  "temp",
+  "grade_smooth",
+]);
+
+function isStreamKey(key: string): key is keyof StravaStreamSet {
+  return STREAM_KEYS.has(key);
+}
+
 // ============================================================
 // Activity type mapping
 // ============================================================
@@ -149,18 +166,35 @@ export function stravaStreamsToMetricStream(
   activityId: string,
   startedAt: Date,
 ): (typeof metricStream.$inferInsert)[] {
-  const timeData = streams.time?.data as number[] | undefined;
+  // Scalar streams contain number[], latlng contains [number, number][]
+  function scalarData(s: StravaStream | undefined): number[] | undefined {
+    if (!s?.data) return undefined;
+    const first = s.data[0];
+    if (Array.isArray(first)) return undefined; // tuple stream like latlng
+    // @ts-expect-error -- narrowed: not a tuple array, so it's number[]
+    const result: number[] = s.data;
+    return result;
+  }
+  function tupleData(s: StravaStream | undefined): [number, number][] | undefined {
+    if (!s?.data) return undefined;
+    const first = s.data[0];
+    if (!Array.isArray(first)) return undefined;
+    // @ts-expect-error -- narrowed: first element is array, so it's [number, number][]
+    const result: [number, number][] = s.data;
+    return result;
+  }
+  const timeData = scalarData(streams.time);
   if (!timeData || timeData.length === 0) return [];
 
-  const heartrates = streams.heartrate?.data as number[] | undefined;
-  const watts = streams.watts?.data as number[] | undefined;
-  const cadences = streams.cadence?.data as number[] | undefined;
-  const speeds = streams.velocity_smooth?.data as number[] | undefined;
-  const latlngs = streams.latlng?.data as [number, number][] | undefined;
-  const altitudes = streams.altitude?.data as number[] | undefined;
-  const distances = streams.distance?.data as number[] | undefined;
-  const temps = streams.temp?.data as number[] | undefined;
-  const grades = streams.grade_smooth?.data as number[] | undefined;
+  const heartrates = scalarData(streams.heartrate);
+  const watts = scalarData(streams.watts);
+  const cadences = scalarData(streams.cadence);
+  const speeds = scalarData(streams.velocity_smooth);
+  const latlngs = tupleData(streams.latlng);
+  const altitudes = scalarData(streams.altitude);
+  const distances = scalarData(streams.distance);
+  const temps = scalarData(streams.temp);
+  const grades = scalarData(streams.grade_smooth);
 
   return timeData.map((timeOffset, i) => {
     const latlng = latlngs?.[i];
@@ -241,7 +275,7 @@ export class StravaClient {
       throw new Error(`Strava API error (${response.status}): ${detail}`);
     }
 
-    return response.json() as Promise<T>;
+    return response.json();
   }
 
   async getActivities(after: number, page = 1, perPage = 30): Promise<StravaActivity[]> {
@@ -274,7 +308,9 @@ export class StravaClient {
     // Strava returns an array of stream objects; convert to a keyed object
     const streams: StravaStreamSet = {};
     for (const stream of response) {
-      (streams as Record<string, StravaStream>)[stream.type] = {
+      const streamKey = stream.type;
+      if (!isStreamKey(streamKey)) continue;
+      streams[streamKey] = {
         data: stream.data,
         series_type: stream.series_type,
         resolution: stream.resolution,
@@ -343,12 +379,12 @@ export class StravaProvider implements Provider {
           const text = await response.text();
           throw new Error(`Strava athlete API error (${response.status}): ${text}`);
         }
-        const athlete = (await response.json()) as {
+        const athlete: {
           id: number;
           email?: string | null;
           firstname?: string | null;
           lastname?: string | null;
-        };
+        } = await response.json();
         const nameParts = [athlete.firstname, athlete.lastname].filter(Boolean);
         return {
           providerAccountId: String(athlete.id),

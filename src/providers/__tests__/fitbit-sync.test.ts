@@ -108,7 +108,7 @@ function createMockFetch(opts?: {
   const daily = opts?.dailySummary ?? fakeDailySummary();
   const weights = opts?.weightLogs ?? [];
 
-  return (async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
+  return async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
     const urlStr = input.toString();
 
     // Token refresh
@@ -146,7 +146,7 @@ function createMockFetch(opts?: {
     }
 
     return new Response("Not found", { status: 404 });
-  }) as typeof globalThis.fetch;
+  };
 }
 
 describe("FitbitProvider.sync() (integration)", () => {

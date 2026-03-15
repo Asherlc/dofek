@@ -8,7 +8,7 @@ import { OuraProvider } from "../oura.ts";
 // ============================================================
 
 function createMockFetchForErrors(opts: { sleepError?: boolean }): typeof globalThis.fetch {
-  return (async (input: RequestInfo | URL): Promise<Response> => {
+  return async (input: RequestInfo | URL): Promise<Response> => {
     const urlStr = input.toString();
 
     // Token refresh
@@ -100,7 +100,7 @@ function createMockFetchForErrors(opts: { sleepError?: boolean }): typeof global
     }
 
     return new Response("Not found", { status: 404 });
-  }) as typeof globalThis.fetch;
+  };
 }
 
 describe("OuraProvider.sync() — error paths (integration)", () => {

@@ -31,17 +31,17 @@ export function HrvBaselineChart({ data, loading }: HrvBaselineChartProps) {
   // Upper band: mean + SD (capped, used as the visible top)
   const upperBandData = data
     .filter((d) => d.mean_60d != null && d.sd_60d != null)
-    .map((d) => [d.date, +((d.mean_60d as number) + (d.sd_60d as number)).toFixed(1)]);
+    .map((d) => [d.date, +((d.mean_60d ?? 0) + (d.sd_60d ?? 0)).toFixed(1)]);
 
   // Lower band: mean - SD (this is the base)
   const lowerBandData = data
     .filter((d) => d.mean_60d != null && d.sd_60d != null)
-    .map((d) => [d.date, +Math.max(0, (d.mean_60d as number) - (d.sd_60d as number)).toFixed(1)]);
+    .map((d) => [d.date, +Math.max(0, (d.mean_60d ?? 0) - (d.sd_60d ?? 0)).toFixed(1)]);
 
   // 7-day rolling average
   const rolling7dData = data
     .filter((d) => d.mean_7d != null)
-    .map((d) => [d.date, +(d.mean_7d as number).toFixed(1)]);
+    .map((d) => [d.date, +(d.mean_7d ?? 0).toFixed(1)]);
 
   // Daily HRV values
   const dailyHrvData = data.filter((d) => d.hrv != null).map((d) => [d.date, d.hrv]);
@@ -137,7 +137,7 @@ export function HrvBaselineChart({ data, loading }: HrvBaselineChartProps) {
         data: upperBandData.map((d, i) => {
           const lower = lowerBandData[i];
           if (!lower) return d;
-          return [d[0], +((d[1] as number) - (lower[1] as number)).toFixed(1)];
+          return [d[0], +(Number(d[1]) - Number(lower[1])).toFixed(1)];
         }),
         smooth: true,
         symbol: "none",

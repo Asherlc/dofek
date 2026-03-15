@@ -51,7 +51,7 @@ describe("EightSleepClient.signIn", () => {
     const [url, options] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
     expect(url).toBe("https://auth-api.8slp.net/v1/tokens");
     expect(options.method).toBe("POST");
-    const body = JSON.parse(options.body as string) as Record<string, string>;
+    const body: Record<string, string> = JSON.parse(options.body as string);
     expect(body.client_id).toBe(EIGHT_SLEEP_CLIENT_ID);
     expect(body.client_secret).toBe(EIGHT_SLEEP_CLIENT_SECRET);
     expect(body.grant_type).toBe("password");

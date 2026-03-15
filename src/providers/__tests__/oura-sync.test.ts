@@ -249,7 +249,7 @@ interface MockFetchOptions {
 function createMockFetch(opts?: MockFetchOptions): typeof globalThis.fetch {
   const o = opts ?? {};
 
-  return (async (input: RequestInfo | URL): Promise<Response> => {
+  return async (input: RequestInfo | URL): Promise<Response> => {
     const urlStr = input.toString();
 
     if (urlStr.includes("/oauth/token")) {
@@ -294,7 +294,7 @@ function createMockFetch(opts?: MockFetchOptions): typeof globalThis.fetch {
       return Response.json({ data: o.restModeDocs ?? [], next_token: null });
 
     return new Response("Not found", { status: 404 });
-  }) as typeof globalThis.fetch;
+  };
 }
 
 describe("OuraProvider.sync() (integration)", () => {

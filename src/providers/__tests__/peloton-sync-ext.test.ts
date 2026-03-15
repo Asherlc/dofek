@@ -101,7 +101,7 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
 
     let pagesRequested = 0;
 
-    const paginatedFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const paginatedFetch = async (input: RequestInfo | URL): Promise<Response> => {
       const urlStr = input.toString();
 
       if (urlStr.includes("/api/me")) return Response.json({ id: "user-123" });
@@ -152,7 +152,7 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
       }
 
       return new Response("Not found", { status: 404 });
-    }) as typeof globalThis.fetch;
+    };
 
     const provider = new PelotonProvider(paginatedFetch);
     const result = await provider.sync(ctx.db, new Date("2024-03-01T00:00:00Z"));
@@ -180,7 +180,9 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
 
     let callCount = 0;
     // Simulate a DB error on the first insert by providing invalid data via graph
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       const urlStr = input.toString();
       if (urlStr.includes("/api/me")) return Response.json({ id: "user-123" });
       if (urlStr.includes("/performance_graph")) {
@@ -208,7 +210,7 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
         });
       }
       return new Response("Not found", { status: 404 });
-    }) as typeof globalThis.fetch;
+    };
 
     const provider = new PelotonProvider(mockFetch);
     const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"));
@@ -235,7 +237,9 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
       metrics: [], // No metrics at all (e.g., meditation)
     };
 
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       const urlStr = input.toString();
       if (urlStr.includes("/api/me")) return Response.json({ id: "user-123" });
       if (urlStr.includes("/performance_graph")) return Response.json(emptyGraph);
@@ -261,7 +265,7 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
         });
       }
       return new Response("Not found", { status: 404 });
-    }) as typeof globalThis.fetch;
+    };
 
     const provider = new PelotonProvider(mockFetch);
     const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"));
@@ -324,7 +328,9 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
       ],
     };
 
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       const urlStr = input.toString();
       if (urlStr.includes("/api/me")) return Response.json({ id: "user-123" });
       if (urlStr.includes("/performance_graph")) return Response.json(largeGraph);
@@ -348,7 +354,7 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
         });
       }
       return new Response("Not found", { status: 404 });
-    }) as typeof globalThis.fetch;
+    };
 
     const provider = new PelotonProvider(mockFetch);
     const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"));
@@ -397,7 +403,9 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
       ],
     };
 
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       const urlStr = input.toString();
       if (urlStr.includes("/api/me")) return Response.json({ id: "user-123" });
       if (urlStr.includes("/performance_graph")) return Response.json(graph);
@@ -421,7 +429,7 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
         });
       }
       return new Response("Not found", { status: 404 });
-    }) as typeof globalThis.fetch;
+    };
 
     const provider = new PelotonProvider(mockFetch);
     const since = new Date("2024-01-01T00:00:00Z");
@@ -470,7 +478,9 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
       ],
     };
 
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       const urlStr = input.toString();
       if (urlStr.includes("/api/me")) return Response.json({ id: "user-123" });
       if (urlStr.includes("/performance_graph")) return Response.json(speedOnlyGraph);
@@ -495,7 +505,7 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
         });
       }
       return new Response("Not found", { status: 404 });
-    }) as typeof globalThis.fetch;
+    };
 
     const provider = new PelotonProvider(mockFetch);
     const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"));
@@ -536,7 +546,10 @@ describe("pelotonAutomatedLogin", () => {
 
     let step = 0;
 
-    const mockFetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ): Promise<Response> => {
       const urlStr = input.toString();
 
       // Step 1: GET /authorize -> redirect to login page
@@ -606,7 +619,7 @@ describe("pelotonAutomatedLogin", () => {
       }
 
       return new Response("Not found", { status: 404 });
-    }) as typeof globalThis.fetch;
+    };
 
     const tokens = await pelotonAutomatedLogin("user@test.com", "password123", mockFetch);
 
@@ -616,7 +629,9 @@ describe("pelotonAutomatedLogin", () => {
   });
 
   it("throws when injectedConfig is not found in login page", async () => {
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       const urlStr = input.toString();
 
       if (urlStr.includes("/authorize")) {
@@ -625,7 +640,7 @@ describe("pelotonAutomatedLogin", () => {
       }
 
       return new Response("Not found", { status: 404 });
-    }) as typeof globalThis.fetch;
+    };
 
     await expect(pelotonAutomatedLogin("user@test.com", "pass", mockFetch)).rejects.toThrow(
       "Could not find injectedConfig",
@@ -641,7 +656,10 @@ describe("pelotonAutomatedLogin", () => {
     };
     const configBase64 = Buffer.from(JSON.stringify(injectedConfig)).toString("base64");
 
-    const mockFetch = (async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+      _init?: RequestInit,
+    ): Promise<Response> => {
       const urlStr = input.toString();
 
       if (urlStr.includes("/authorize")) {
@@ -656,7 +674,7 @@ describe("pelotonAutomatedLogin", () => {
       }
 
       return new Response("Not found", { status: 404 });
-    }) as typeof globalThis.fetch;
+    };
 
     await expect(pelotonAutomatedLogin("user@test.com", "wrongpass", mockFetch)).rejects.toThrow(
       "Auth0 login failed (403)",
@@ -678,7 +696,10 @@ describe("pelotonAutomatedLogin", () => {
       </form>
     `;
 
-    const mockFetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ): Promise<Response> => {
       const urlStr = input.toString();
 
       if (urlStr.includes("/authorize") && (!init?.method || init.method === "GET")) {
@@ -698,7 +719,7 @@ describe("pelotonAutomatedLogin", () => {
       }
 
       return new Response("Not found", { status: 404 });
-    }) as typeof globalThis.fetch;
+    };
 
     await expect(pelotonAutomatedLogin("user@test.com", "pass", mockFetch)).rejects.toThrow(
       "redirect chain ended without a Location header",
@@ -720,7 +741,10 @@ describe("pelotonAutomatedLogin", () => {
       </form>
     `;
 
-    const mockFetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ): Promise<Response> => {
       const urlStr = input.toString();
 
       if (urlStr.includes("/authorize") && (!init?.method || init.method === "GET")) {
@@ -745,7 +769,7 @@ describe("pelotonAutomatedLogin", () => {
       }
 
       return new Response("Not found", { status: 404 });
-    }) as typeof globalThis.fetch;
+    };
 
     await expect(pelotonAutomatedLogin("user@test.com", "pass", mockFetch)).rejects.toThrow(
       "User blocked",

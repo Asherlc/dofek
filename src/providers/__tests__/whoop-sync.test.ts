@@ -113,7 +113,7 @@ function createMockFetch(
   cycles: FakeCycle[],
   opts?: { hrValues?: WhoopHrValue[]; authError?: boolean },
 ): typeof globalThis.fetch {
-  return (async (input: RequestInfo | URL): Promise<Response> => {
+  return async (input: RequestInfo | URL): Promise<Response> => {
     const urlStr = input.toString();
 
     // Cognito v3 auth endpoint (token refresh via REFRESH_TOKEN_AUTH)
@@ -164,7 +164,7 @@ function createMockFetch(
     }
 
     return new Response("Not found", { status: 404 });
-  }) as typeof globalThis.fetch;
+  };
 }
 
 describe("WhoopProvider.sync() (integration)", () => {
@@ -242,8 +242,12 @@ describe("WhoopProvider.sync() (integration)", () => {
     expect(workout.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
     expect(workout.endedAt).toEqual(new Date("2026-03-01T11:00:00Z"));
     // Summary data stored in raw JSONB
-    expect((workout.raw as Record<string, unknown>).avgHeartRate).toBe(155);
-    expect((workout.raw as Record<string, unknown>).maxHeartRate).toBe(185);
+    const workoutRaw: Record<string, unknown> = Object.assign(
+      Object.create(null),
+      workout.raw ?? {},
+    );
+    expect(workoutRaw.avgHeartRate).toBe(155);
+    expect(workoutRaw.maxHeartRate).toBe(185);
   });
 
   it("syncs multiple workouts from a single cycle", async () => {
@@ -351,7 +355,9 @@ describe("WhoopProvider.sync() (integration)", () => {
     });
 
     // Mock fetch where bootstrap returns NO user ID — should still work
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       const urlStr = input.toString();
       if (urlStr.includes("auth-service/v3/whoop")) {
         return Response.json({
@@ -378,7 +384,7 @@ describe("WhoopProvider.sync() (integration)", () => {
         return Response.json([]);
       }
       return new Response("Not found", { status: 404 });
-    }) as typeof globalThis.fetch;
+    };
 
     const provider = new WhoopProvider(mockFetch);
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
@@ -434,7 +440,7 @@ describe("WhoopProvider.sync() (integration)", () => {
       scopes: "userId:10129",
     });
 
-    const journalMockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const journalMockFetch = async (input: RequestInfo | URL): Promise<Response> => {
       const urlStr = input.toString();
 
       if (urlStr.includes("auth-service/v3/whoop")) {
@@ -467,7 +473,7 @@ describe("WhoopProvider.sync() (integration)", () => {
         ]);
       }
       return new Response("Not found", { status: 404 });
-    }) as typeof globalThis.fetch;
+    };
 
     const provider = new WhoopProvider(journalMockFetch);
     const result = await provider.sync(ctx.db, new Date("2026-02-28T00:00:00Z"));

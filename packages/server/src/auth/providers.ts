@@ -48,11 +48,12 @@ function initGoogle(): IdentityProvider {
     },
     async validateCallback(code, codeVerifier) {
       const tokens = await client.validateAuthorizationCode(code, codeVerifier);
-      const claims = decodeIdToken(tokens.idToken()) as {
+      // @ts-expect-error decodeIdToken returns {} but we know it has sub/email/name for Google
+      const claims: {
         sub: string;
         email?: string;
         name?: string;
-      };
+      } = decodeIdToken(tokens.idToken());
       return {
         tokens,
         user: { sub: claims.sub, email: claims.email ?? null, name: claims.name ?? null },
@@ -79,10 +80,11 @@ function initApple(): IdentityProvider {
     async validateCallback(code, _codeVerifier) {
       // Apple doesn't use PKCE
       const tokens = await client.validateAuthorizationCode(code);
-      const claims = decodeIdToken(tokens.idToken()) as {
+      // @ts-expect-error decodeIdToken returns {} but we know it has sub/email for Apple
+      const claims: {
         sub: string;
         email?: string;
-      };
+      } = decodeIdToken(tokens.idToken());
       return {
         tokens,
         // Apple only sends name on first authorization, not in the ID token
@@ -105,12 +107,13 @@ function initAuthentik(): IdentityProvider {
     },
     async validateCallback(code, codeVerifier) {
       const tokens = await client.validateAuthorizationCode(code, codeVerifier);
-      const claims = decodeIdToken(tokens.idToken()) as {
+      // @ts-expect-error decodeIdToken returns {} but we know it has sub/email/name for Authentik
+      const claims: {
         sub: string;
         email?: string;
         preferred_username?: string;
         name?: string;
-      };
+      } = decodeIdToken(tokens.idToken());
       return {
         tokens,
         user: {
@@ -164,7 +167,9 @@ export function getIdentityProvider(name: IdentityProviderName): IdentityProvide
 
 /** List all configured identity providers. */
 export function getConfiguredProviders(): IdentityProviderName[] {
-  return (Object.keys(requiredEnvKeys) as IdentityProviderName[]).filter(isProviderConfigured);
+  // @ts-expect-error Object.keys returns string[] but we know the keys are IdentityProviderName
+  const names: IdentityProviderName[] = Object.keys(requiredEnvKeys);
+  return names.filter(isProviderConfigured);
 }
 
 export { generateCodeVerifier, generateState };

@@ -52,7 +52,7 @@ export function InsightsPage() {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const insightsData = trpc.insights.compute.useQuery({ days });
 
-  const allInsights = (insightsData.data ?? []) as Insight[];
+  const allInsights: Insight[] = insightsData.data ?? [];
   const filtered =
     filter === "all"
       ? allInsights.filter((i) => i.confidence !== "insufficient")

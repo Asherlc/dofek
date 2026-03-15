@@ -139,11 +139,11 @@ describe("Food router", () => {
 
       expect(result.result.data).toBeDefined();
       // We have entries for 2025-01-15
-      const data = result.result.data as Array<{
+      const data: Array<{
         date: string;
         calories: number;
         protein_g: number;
-      }>;
+      }> = result.result.data;
       // With an empty-ish DB + our inserts, we should get at least one day
       expect(Array.isArray(data)).toBe(true);
     });
@@ -199,7 +199,7 @@ describe("Food router", () => {
 
       // Verify it's gone
       const entries = await query("food.byDate", { date: "2025-02-01" });
-      const remaining = entries.result.data as Array<{ id: string }>;
+      const remaining: Array<{ id: string }> = entries.result.data;
       const found = remaining.find((e) => e.id === entryId);
       expect(found).toBeUndefined();
     });
@@ -210,7 +210,7 @@ describe("Food router", () => {
       const result = await query("food.search", { query: "Oatmeal" });
 
       expect(result.result.data).toBeDefined();
-      const data = result.result.data as Array<{ food_name: string }>;
+      const data: Array<{ food_name: string }> = result.result.data;
       expect(data.length).toBeGreaterThanOrEqual(1);
       expect(data[0]?.food_name).toContain("Oatmeal");
     });

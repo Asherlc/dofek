@@ -18,7 +18,7 @@ function createMockProvider(overrides: Partial<Provider> = {}): Provider {
   };
 }
 
-const mockDb = {} as Database;
+const mockDb = Object.create(null);
 const since = new Date("2024-01-01");
 
 describe("Sync Runner", () => {

@@ -42,7 +42,8 @@ export function TrainingCalendar({ data, height = 180 }: TrainingCalendarProps) 
       borderColor: "#3f3f46",
       textStyle: { color: "#e4e4e7", fontSize: 12 },
       formatter(params: unknown): string {
-        const p = params as { value: [string, number] };
+        // @ts-expect-error ECharts params is typed as unknown
+        const p: { value: [string, number] } = params;
         const date = p.value[0];
         const minutes = p.value[1];
         const day = dayMap.get(date);

@@ -26,7 +26,8 @@ type GenerateTextResult = Awaited<ReturnType<typeof generateText>>;
 function mockResult(output: { items: NutritionItemWithMeal[] }): GenerateTextResult {
   // generateText returns many fields; tests only inspect `output`, so we provide
   // a structurally-typed partial with the correct return type annotation.
-  return { output } as GenerateTextResult;
+  const result: GenerateTextResult = Object.assign(Object.create(null), { output });
+  return result;
 }
 
 const burrito: NutritionItemWithMeal = {
@@ -99,7 +100,8 @@ describe("analyzeNutritionItems", () => {
     await analyzeNutritionItems("eggs and toast", "Monday, 7:30 AM");
 
     expect(mockGenerateText).toHaveBeenCalledOnce();
-    const callArgs = mockGenerateText.mock.calls[0]?.[0] as { system?: string } | undefined;
+    // @ts-expect-error mock call args type is wider than our narrow subset
+    const callArgs: { system?: string } | undefined = mockGenerateText.mock.calls[0]?.[0];
     expect(callArgs?.system).toContain("Monday, 7:30 AM");
   });
 
@@ -110,7 +112,8 @@ describe("analyzeNutritionItems", () => {
 
     await analyzeNutritionItems("chicken burrito and a coke");
 
-    const callArgs = mockGenerateText.mock.calls[0]?.[0] as { system?: string } | undefined;
+    // @ts-expect-error mock call args type is wider than our narrow subset
+    const callArgs: { system?: string } | undefined = mockGenerateText.mock.calls[0]?.[0];
     expect(callArgs?.system).not.toContain("local time is");
   });
 

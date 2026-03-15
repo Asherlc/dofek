@@ -218,7 +218,8 @@ export class GarminConnectClient {
     if (!response.ok) {
       throw new GarminAuthError("Failed to fetch OAuth consumer credentials");
     }
-    this.consumer = (await response.json()) as OAuthConsumer;
+    const consumer: OAuthConsumer = await response.json();
+    this.consumer = consumer;
   }
 
   private async getOAuth1Token(ticket: string): Promise<OAuth1Token> {
@@ -294,7 +295,7 @@ export class GarminConnectClient {
       );
     }
 
-    const token = (await response.json()) as Record<string, unknown>;
+    const token: Record<string, unknown> = await response.json();
     const now = Math.floor(Date.now() / 1000);
 
     return {
@@ -381,7 +382,7 @@ export class GarminConnectClient {
       return {} as T;
     }
 
-    return response.json() as Promise<T>;
+    return response.json();
   }
 
   private async downloadBytes(path: string): Promise<ArrayBuffer> {

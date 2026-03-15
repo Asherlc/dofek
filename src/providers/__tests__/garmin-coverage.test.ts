@@ -374,36 +374,36 @@ describe("parseGarminBodyComposition — edge cases", () => {
 
 describe("GarminClient — error handling", () => {
   it("throws on non-OK response from activities endpoint", async () => {
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Unauthorized", { status: 401 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new GarminClient("bad-token", mockFetch);
     await expect(client.getActivities(0, 1000)).rejects.toThrow("Garmin API error (401)");
   });
 
   it("throws on non-OK response from sleep endpoint", async () => {
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Server Error", { status: 500 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new GarminClient("token", mockFetch);
     await expect(client.getSleep(0, 1000)).rejects.toThrow("Garmin API error (500)");
   });
 
   it("throws on non-OK response from daily summaries endpoint", async () => {
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Forbidden", { status: 403 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new GarminClient("token", mockFetch);
     await expect(client.getDailySummaries(0, 1000)).rejects.toThrow("Garmin API error (403)");
   });
 
   it("throws on non-OK response from body composition endpoint", async () => {
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Not Found", { status: 404 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new GarminClient("token", mockFetch);
     await expect(client.getBodyComposition(0, 1000)).rejects.toThrow("Garmin API error (404)");

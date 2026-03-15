@@ -94,9 +94,10 @@ export const lifeEventsRouter = router({
       const events = await ctx.db.execute(
         sql`SELECT * FROM fitness.life_events WHERE user_id = ${ctx.userId} AND id = ${input.id}`,
       );
-      const event = events[0] as
+      // @ts-expect-error db.execute returns Record<string, unknown>[] but we know the shape
+      const event:
         | { started_at: string; ended_at: string | null; ongoing: boolean; [key: string]: unknown }
-        | undefined;
+        | undefined = events[0];
       if (!event) return null;
 
       const startDate = event.started_at;

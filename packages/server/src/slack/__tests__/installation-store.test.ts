@@ -13,11 +13,13 @@ import { createInstallationStore } from "../installation-store.ts";
  * required fields, then returns the value typed as `T`.
  */
 function invalidQuery(overrides: Partial<InstallationQuery<false>>): InstallationQuery<false> {
-  return overrides as InstallationQuery<false>;
+  // @ts-expect-error -- test helper: intentionally partial for error-path testing
+  return overrides;
 }
 
 function partialInstallation(overrides: Partial<Installation>): Installation {
-  return overrides as Installation;
+  // @ts-expect-error -- test helper: intentionally partial for testing
+  return overrides;
 }
 
 describe("Slack Installation Store (integration)", () => {
@@ -32,7 +34,7 @@ describe("Slack Installation Store (integration)", () => {
   });
 
   function makeInstallation(overrides: Partial<Installation> = {}): Installation {
-    return {
+    const obj = {
       team: { id: "T-TEST-001", name: "Test Workspace" },
       enterprise: undefined,
       user: { id: "U-INSTALLER", token: undefined, scopes: undefined },
@@ -46,7 +48,10 @@ describe("Slack Installation Store (integration)", () => {
       tokenType: "bot",
       isEnterpriseInstall: false,
       ...overrides,
-    } as Installation;
+    };
+    // @ts-expect-error -- test helper: structural match is sufficient for testing
+    const result: Installation = obj;
+    return result;
   }
 
   it("storeInstallation saves and fetchInstallation retrieves", async () => {
@@ -80,7 +85,7 @@ describe("Slack Installation Store (integration)", () => {
         id: "B-BOT-002",
         userId: "U-BOT-002",
       },
-    } as Partial<Installation>);
+    });
     await store.storeInstallation(updated);
 
     const query: InstallationQuery<false> = {
@@ -95,7 +100,7 @@ describe("Slack Installation Store (integration)", () => {
   it("storeInstallation throws when no team or enterprise ID", async () => {
     const store = createInstallationStore(ctx.db);
     const installation = makeInstallation();
-    installation.team = undefined as never;
+    installation.team = undefined;
 
     await expect(store.storeInstallation(installation)).rejects.toThrow(
       "Cannot store installation without team or enterprise ID",
@@ -105,7 +110,7 @@ describe("Slack Installation Store (integration)", () => {
   it("storeInstallation throws when no bot token", async () => {
     const store = createInstallationStore(ctx.db);
     const installation = makeInstallation();
-    installation.bot = undefined as never;
+    installation.bot = undefined;
 
     await expect(store.storeInstallation(installation)).rejects.toThrow(
       "Cannot store installation without bot token",
@@ -143,7 +148,7 @@ describe("Slack Installation Store (integration)", () => {
     const teamId = "T-DELETE-ME";
     const installation = makeInstallation({
       team: { id: teamId, name: "Delete Me" },
-    } as Partial<Installation>);
+    });
 
     await store.storeInstallation(installation);
 

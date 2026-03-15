@@ -32,7 +32,7 @@ async function refreshAccessToken(rt: string): Promise<AuthResult> {
     }),
   });
 
-  const data = (await response.json()) as Record<string, unknown>;
+  const data: Record<string, unknown> = await response.json();
   const authResult = data.AuthenticationResult as Record<string, unknown>;
   const accessToken = authResult.AccessToken as string;
 

@@ -32,13 +32,15 @@ describe("PolarizationTrendChart option builder", () => {
 
   it("tooltip formatter returns empty string for empty params", () => {
     const option = buildPolarizationTrendOption(sampleWeeks);
-    const formatter = option.tooltip.formatter as (params: unknown[]) => string;
+    // @ts-expect-error formatter signature uses specific params but option types it as unknown[]
+    const formatter: (params: unknown[]) => string = option.tooltip.formatter;
     expect(formatter([])).toBe("");
   });
 
   it("tooltip formatter handles undefined params[0]", () => {
     const option = buildPolarizationTrendOption(sampleWeeks);
-    const formatter = option.tooltip.formatter as (params: unknown[]) => string;
+    // @ts-expect-error formatter signature uses specific params but option types it as unknown[]
+    const formatter: (params: unknown[]) => string = option.tooltip.formatter;
     expect(formatter([undefined])).toBe("");
   });
 });
@@ -61,13 +63,15 @@ describe("RampRateChart option builder", () => {
 
   it("tooltip formatter returns empty string for empty params", () => {
     const option = buildRampRateOption(sampleWeeks);
-    const formatter = option.tooltip.formatter as (params: unknown[]) => string;
+    // @ts-expect-error formatter signature uses specific params but option types it as unknown[]
+    const formatter: (params: unknown[]) => string = option.tooltip.formatter;
     expect(formatter([])).toBe("");
   });
 
   it("tooltip formatter handles undefined params[0]", () => {
     const option = buildRampRateOption(sampleWeeks);
-    const formatter = option.tooltip.formatter as (params: unknown[]) => string;
+    // @ts-expect-error formatter signature uses specific params but option types it as unknown[]
+    const formatter: (params: unknown[]) => string = option.tooltip.formatter;
     expect(formatter([undefined])).toBe("");
   });
 });

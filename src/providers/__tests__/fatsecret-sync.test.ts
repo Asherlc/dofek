@@ -48,7 +48,7 @@ function fakeFoodEntriesResponse(
 function createMockFetch(
   responsesByDateInt: Map<string, FatSecretFoodEntriesResponse>,
 ): typeof globalThis.fetch {
-  return (async (input: RequestInfo | URL): Promise<Response> => {
+  return async (input: RequestInfo | URL): Promise<Response> => {
     const urlStr = input.toString();
 
     // FatSecret API call — parse date from query string
@@ -63,7 +63,7 @@ function createMockFetch(
     }
 
     return new Response("Not found", { status: 404 });
-  }) as typeof globalThis.fetch;
+  };
 }
 
 // ============================================================
@@ -225,9 +225,9 @@ describe("FatSecretProvider.sync() (integration)", () => {
     });
 
     // Mock that returns 500 for all requests
-    const errorFetch = (async (): Promise<Response> => {
+    const errorFetch = async (): Promise<Response> => {
       return new Response("Internal Server Error", { status: 500 });
-    }) as typeof globalThis.fetch;
+    };
 
     const provider = new FatSecretProvider(errorFetch);
     const since = new Date("2026-03-10T00:00:00Z");

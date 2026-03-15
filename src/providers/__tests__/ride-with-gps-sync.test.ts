@@ -5,6 +5,7 @@ import { activity, metricStream, oauthToken } from "../../db/schema.ts";
 import { ensureProvider, saveTokens } from "../../db/tokens.ts";
 import {
   RideWithGpsProvider,
+  type RideWithGpsSyncItem,
   type RideWithGpsSyncResponse,
   type RideWithGpsTrackPoint,
   type RideWithGpsTripDetail,
@@ -15,14 +16,14 @@ import {
 // ============================================================
 
 function fakeSyncResponse(
-  items: Array<{ item_id: number; action?: string }>,
+  items: Array<{ item_id: number; action?: RideWithGpsSyncItem["action"] }>,
   cursor = "2026-03-01T12:00:00Z",
 ): RideWithGpsSyncResponse {
   return {
     items: items.map((item) => ({
       item_type: "trip" as const,
       item_id: item.item_id,
-      action: (item.action ?? "created") as "created" | "updated" | "deleted" | "added" | "removed",
+      action: item.action ?? "created",
       datetime: "2026-03-01T10:00:00Z",
     })),
     meta: { rwgps_datetime: cursor },
@@ -70,7 +71,7 @@ function createMockFetch(
   syncResponse: RideWithGpsSyncResponse,
   trips: Map<number, RideWithGpsTripDetail>,
 ): typeof globalThis.fetch {
-  return (async (input: RequestInfo | URL): Promise<Response> => {
+  return async (input: RequestInfo | URL): Promise<Response> => {
     const urlStr = input.toString();
 
     // Sync endpoint
@@ -99,7 +100,7 @@ function createMockFetch(
     }
 
     return new Response("Not found", { status: 404 });
-  }) as typeof globalThis.fetch;
+  };
 }
 
 // ============================================================

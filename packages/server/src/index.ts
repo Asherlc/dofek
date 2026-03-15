@@ -221,11 +221,19 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
     if (!job) return null;
 
     const state = await job.getState();
-    const progress = job.progress as { pct?: number; message?: string } | number | undefined;
-    const pct = typeof progress === "number" ? progress : (progress as { pct?: number })?.pct;
+    const progress: unknown = job.progress;
+    const pct =
+      typeof progress === "number"
+        ? progress
+        : typeof progress === "object" &&
+            progress !== null &&
+            "pct" in progress &&
+            typeof progress.pct === "number"
+          ? progress.pct
+          : undefined;
     const msg =
-      typeof progress === "object" && progress !== null
-        ? (progress as { message?: string }).message
+      typeof progress === "object" && progress !== null && "message" in progress
+        ? String(progress.message)
         : undefined;
 
     let status: "uploading" | "assembling" | "processing" | "done" | "error";
@@ -314,10 +322,18 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       return;
     }
 
-    const uploadId = req.headers["x-upload-id"] as string | undefined;
-    const chunkIndex = parseInt(req.headers["x-chunk-index"] as string, 10);
-    const chunkTotal = parseInt(req.headers["x-chunk-total"] as string, 10);
-    const fileExt = (req.headers["x-file-ext"] as string) || ".zip";
+    const uploadId =
+      typeof req.headers["x-upload-id"] === "string" ? req.headers["x-upload-id"] : undefined;
+    const chunkIndex = parseInt(
+      typeof req.headers["x-chunk-index"] === "string" ? req.headers["x-chunk-index"] : "",
+      10,
+    );
+    const chunkTotal = parseInt(
+      typeof req.headers["x-chunk-total"] === "string" ? req.headers["x-chunk-total"] : "",
+      10,
+    );
+    const fileExt =
+      (typeof req.headers["x-file-ext"] === "string" ? req.headers["x-file-ext"] : "") || ".zip";
     const fullSync = req.query.fullSync === "true";
 
     // Validate uploadId and fileExt to prevent path traversal
@@ -459,7 +475,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
     try {
       await streamToFile(req, tmpFile);
       const jobId = await enqueueImport(tmpFile, new Date(0), "strong-csv", DEFAULT_USER_ID, {
-        weightUnit: weightUnit as "kg" | "lbs",
+        weightUnit,
       });
       res.json({ status: "processing", jobId });
     } catch (err: unknown) {
@@ -683,11 +699,14 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
 
   app.get("/auth/login/:provider", (req, res) => {
     try {
-      const providerName = req.params.provider as IdentityProviderName;
-      if (!IDENTITY_PROVIDERS.includes(providerName)) {
-        res.status(404).send(`Unknown identity provider: ${providerName}`);
+      const providerNameRaw = req.params.provider;
+      // @ts-expect-error string is not assignable to IdentityProviderName but includes works at runtime
+      if (!IDENTITY_PROVIDERS.includes(providerNameRaw)) {
+        res.status(404).send(`Unknown identity provider: ${providerNameRaw}`);
         return;
       }
+      // @ts-expect-error providerName is validated by the includes guard above
+      const providerName: IdentityProviderName = providerNameRaw;
       if (!isProviderConfigured(providerName)) {
         res.status(400).send(`Provider ${providerName} is not configured`);
         return;
@@ -713,11 +732,14 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
   // ── Link route: add a new identity provider to an existing logged-in account ──
   app.get("/auth/link/:provider", async (req, res) => {
     try {
-      const providerName = req.params.provider as IdentityProviderName;
-      if (!IDENTITY_PROVIDERS.includes(providerName)) {
-        res.status(404).send(`Unknown identity provider: ${providerName}`);
+      const providerNameRaw = req.params.provider;
+      // @ts-expect-error string is not assignable to IdentityProviderName but includes works at runtime
+      if (!IDENTITY_PROVIDERS.includes(providerNameRaw)) {
+        res.status(404).send(`Unknown identity provider: ${providerNameRaw}`);
         return;
       }
+      // @ts-expect-error providerName is validated by the includes guard above
+      const providerName: IdentityProviderName = providerNameRaw;
       if (!isProviderConfigured(providerName)) {
         res.status(400).send(`Provider ${providerName} is not configured`);
         return;
@@ -754,15 +776,18 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
 
   app.get("/auth/callback/:provider", async (req, res) => {
     try {
-      const providerName = req.params.provider as IdentityProviderName;
-      if (!IDENTITY_PROVIDERS.includes(providerName)) {
-        res.status(404).send(`Unknown identity provider: ${providerName}`);
+      const providerNameRaw = req.params.provider;
+      // @ts-expect-error string is not assignable to IdentityProviderName but includes works at runtime
+      if (!IDENTITY_PROVIDERS.includes(providerNameRaw)) {
+        res.status(404).send(`Unknown identity provider: ${providerNameRaw}`);
         return;
       }
+      // @ts-expect-error providerName is validated by the includes guard above
+      const providerName: IdentityProviderName = providerNameRaw;
 
-      const code = req.query.code as string | undefined;
-      const stateParam = req.query.state as string | undefined;
-      const error = req.query.error as string | undefined;
+      const code = typeof req.query.code === "string" ? req.query.code : undefined;
+      const stateParam = typeof req.query.state === "string" ? req.query.state : undefined;
+      const error = typeof req.query.error === "string" ? req.query.error : undefined;
 
       if (error) {
         res.status(400).send(`Authorization denied: ${error}`);
@@ -1023,11 +1048,13 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
 
   app.get("/callback", async (req, res) => {
     try {
-      const code = req.query.code as string | undefined;
-      const state = req.query.state as string | undefined;
-      const error = req.query.error as string | undefined;
-      const oauthToken = req.query.oauth_token as string | undefined;
-      const oauthVerifier = req.query.oauth_verifier as string | undefined;
+      const code = typeof req.query.code === "string" ? req.query.code : undefined;
+      const state = typeof req.query.state === "string" ? req.query.state : undefined;
+      const error = typeof req.query.error === "string" ? req.query.error : undefined;
+      const oauthToken =
+        typeof req.query.oauth_token === "string" ? req.query.oauth_token : undefined;
+      const oauthVerifier =
+        typeof req.query.oauth_verifier === "string" ? req.query.oauth_verifier : undefined;
 
       // Bare GET with no params — providers (e.g. Withings) verify the URL is reachable
       if (!code && !state && !error && !oauthToken) {
@@ -1121,7 +1148,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
             redirect_uri: redirectUri,
           }),
         });
-        const tokenData = (await tokenResponse.json()) as {
+        const tokenData: {
           ok: boolean;
           error?: string;
           team?: { id: string; name: string };
@@ -1129,7 +1156,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
           bot_user_id?: string;
           app_id?: string;
           authed_user?: { id: string };
-        };
+        } = await tokenResponse.json();
 
         if (!tokenData.ok || !tokenData.access_token || !tokenData.team?.id) {
           res.status(400).send(`Slack OAuth failed: ${tokenData.error ?? "unknown error"}`);

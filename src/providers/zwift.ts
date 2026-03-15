@@ -42,9 +42,9 @@ export class ZwiftProvider implements Provider {
         const result = await ZwiftClient.signIn(email, password, fetchFn);
 
         // Decode JWT to get athleteId
-        const payload = JSON.parse(
+        const payload: { sub?: string } = JSON.parse(
           Buffer.from(result.accessToken.split(".")[1] ?? "", "base64").toString(),
-        ) as { sub?: string };
+        );
         const athleteId = payload.sub ?? "";
 
         return {

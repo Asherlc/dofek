@@ -40,7 +40,7 @@ const sampleFitnessData = {
     [40.714, -74.004],
     [40.715, -74.003],
     [40.716, -74.002],
-  ] as Array<[number, number]>,
+  ] satisfies Array<[number, number]>,
   timeInSec: [0, 1, 2, 3, 4],
 };
 

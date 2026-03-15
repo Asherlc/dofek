@@ -63,7 +63,7 @@ function createMockFetch(
 ): typeof globalThis.fetch {
   let pageIndex = 0;
 
-  return (async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
+  return async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
     const urlStr = input.toString();
 
     // Token refresh
@@ -83,7 +83,7 @@ function createMockFetch(
     }
 
     return new Response("Not found", { status: 404 });
-  }) as typeof globalThis.fetch;
+  };
 }
 
 describe("XertProvider.sync() (integration)", () => {
@@ -252,7 +252,8 @@ describe("XertProvider.sync() (integration)", () => {
     const rows = await ctx.db.select().from(activity).where(eq(activity.externalId, "8801"));
     expect(rows).toHaveLength(1);
 
-    const raw = rows[0]?.raw as Record<string, unknown>;
+    // @ts-expect-error -- test assertion on raw JSONB
+    const raw: Record<string, unknown> = rows[0]?.raw;
     expect(raw.xss).toBe(120);
     expect(raw.focus).toBe(280);
     expect(raw.difficulty).toBe(4.2);

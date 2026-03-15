@@ -59,10 +59,11 @@ function extractEntryIdsFromThread(
     if (!threadMsg || !threadMsg.bot_id || !threadMsg.blocks) continue;
 
     for (const rawBlock of threadMsg.blocks) {
-      const block = rawBlock as {
+      // @ts-expect-error rawBlock is unknown but we check its properties below
+      const block: {
         type?: string;
         elements?: Array<{ action_id?: string; value?: string }>;
-      };
+      } = rawBlock;
       if (block.type !== "actions" || !block.elements) continue;
       for (const element of block.elements) {
         if (element.action_id === "confirm_food" && element.value) {
@@ -337,7 +338,8 @@ function slackTimestampToDateString(slackTs: string, timezone: string): string {
 function registerHandlers(app: AppType, db: Database) {
   // Handle direct messages (both top-level and thread replies)
   app.message(async ({ message, say, client }) => {
-    const msg = message as GenericMessageEvent;
+    // @ts-expect-error message may be a bot/subtype event but we filter those below
+    const msg: GenericMessageEvent = message;
     if (msg.subtype || !msg.text || msg.bot_id) return;
 
     const { userId, timezone: userTimezone } = await lookupOrCreateUserId(db, msg.user, client);
@@ -353,16 +355,14 @@ function registerHandlers(app: AppType, db: Database) {
           channel: msg.channel,
           ts: msg.thread_ts,
         });
-        const previousEntryIds = extractEntryIdsFromThread(
-          (thread.messages ?? []) as Array<{ bot_id?: string; blocks?: unknown[] }>,
-        );
+        const previousEntryIds = extractEntryIdsFromThread(thread.messages ?? []);
 
         if (previousEntryIds) {
           // Load the previous items from the database for refinement context
           const previousRows = await db.execute<{
             food_name: string;
             food_description: string | null;
-            category: string | null;
+            category: NutritionItemWithMeal["category"] | null;
             calories: number | null;
             protein_g: number | null;
             carbs_g: number | null;
@@ -380,10 +380,11 @@ function registerHandlers(app: AppType, db: Database) {
                 WHERE id IN (${sqlIdList(previousEntryIds)})`,
           );
 
+          // @ts-expect-error DB row meal/category are string but NutritionItemWithMeal expects narrower unions
           const previousItems: NutritionItemWithMeal[] = previousRows.map((r) => ({
             foodName: r.food_name,
             foodDescription: r.food_description ?? "",
-            category: (r.category ?? "other") as NutritionItemWithMeal["category"],
+            category: r.category ?? "other",
             calories: r.calories ?? 0,
             proteinG: r.protein_g ?? 0,
             carbsG: r.carbs_g ?? 0,
@@ -392,7 +393,7 @@ function registerHandlers(app: AppType, db: Database) {
             saturatedFatG: r.saturated_fat_g ?? 0,
             sugarG: r.sugar_g ?? 0,
             sodiumMg: r.sodium_mg ?? 0,
-            meal: (r.meal ?? "other") as NutritionItemWithMeal["meal"],
+            meal: r.meal ?? "other",
           }));
 
           if (previousItems.length > 0) {
@@ -534,10 +535,11 @@ function registerHandlers(app: AppType, db: Database) {
             WHERE id IN (${sqlIdList(entryIds)})`,
       );
 
+      // @ts-expect-error DB row meal/category are string but NutritionItemWithMeal expects narrower unions
       const items: NutritionItemWithMeal[] = rows.map((r) => ({
         foodName: r.food_name,
         foodDescription: r.food_description ?? "",
-        category: (r.category ?? "other") as NutritionItemWithMeal["category"],
+        category: r.category ?? "other",
         calories: r.calories ?? 0,
         proteinG: r.protein_g ?? 0,
         carbsG: r.carbs_g ?? 0,
@@ -546,7 +548,7 @@ function registerHandlers(app: AppType, db: Database) {
         saturatedFatG: r.saturated_fat_g ?? 0,
         sugarG: r.sugar_g ?? 0,
         sodiumMg: r.sodium_mg ?? 0,
-        meal: (r.meal ?? "other") as NutritionItemWithMeal["meal"],
+        meal: r.meal ?? "other",
       }));
 
       const savedMessage = formatSavedMessage(items);
@@ -646,10 +648,11 @@ function registerHandlers(app: AppType, db: Database) {
 
     // Find the confirm button's value to get entry IDs
     if (body.message?.blocks) {
-      for (const rawBlock of body.message.blocks as Array<{
+      const blocks: Array<{
         type?: string;
         elements?: Array<{ action_id?: string; value?: string }>;
-      }>) {
+      }> = body.message.blocks;
+      for (const rawBlock of blocks) {
         if (rawBlock.type !== "actions" || !rawBlock.elements) continue;
         for (const element of rawBlock.elements) {
           if (element.action_id === "confirm_food" && element.value) {

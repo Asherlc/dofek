@@ -26,7 +26,7 @@ function fakePolarDailyActivity(overrides: Partial<PolarDailyActivity> = {}): Po
 }
 
 function createMockFetchWithDailyActivityError(): typeof globalThis.fetch {
-  return (async (input: RequestInfo | URL): Promise<Response> => {
+  return async (input: RequestInfo | URL): Promise<Response> => {
     const urlStr = input.toString();
 
     // Exercises — return empty
@@ -50,14 +50,14 @@ function createMockFetchWithDailyActivityError(): typeof globalThis.fetch {
     }
 
     return new Response("Not found", { status: 404 });
-  }) as typeof globalThis.fetch;
+  };
 }
 
 function createMockFetchWithDailyActivity(
   dailyActivities: PolarDailyActivity[],
   nightlyRecharges: PolarNightlyRecharge[] = [],
 ): typeof globalThis.fetch {
-  return (async (input: RequestInfo | URL): Promise<Response> => {
+  return async (input: RequestInfo | URL): Promise<Response> => {
     const urlStr = input.toString();
 
     if (urlStr.includes("/v3/exercises")) {
@@ -77,7 +77,7 @@ function createMockFetchWithDailyActivity(
     }
 
     return new Response("Not found", { status: 404 });
-  }) as typeof globalThis.fetch;
+  };
 }
 
 describe("PolarProvider.sync() — daily_activity error paths (integration)", () => {

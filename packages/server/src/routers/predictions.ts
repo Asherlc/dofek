@@ -108,7 +108,8 @@ async function trainDailyPrediction(
   days: number,
   target: (typeof PREDICTION_TARGETS)[number],
 ) {
-  const dbAny = db as { execute: <T>(query: ReturnType<typeof sql>) => Promise<T[]> };
+  // @ts-expect-error Database type doesn't expose generic execute but it works at runtime
+  const dbAny: { execute: <T>(query: ReturnType<typeof sql>) => Promise<T[]> } = db;
   const [metrics, sleep, activities, nutrition, bodyComp] = await Promise.all([
     dbAny.execute<DailyRow>(
       sql`SELECT date, resting_hr, hrv, spo2_avg, steps, active_energy_kcal, skin_temp_c
@@ -162,7 +163,8 @@ async function trainActivityPrediction(
   days: number,
   target: (typeof ACTIVITY_PREDICTION_TARGETS)[number],
 ) {
-  const dbAny = db as { execute: <T>(query: ReturnType<typeof sql>) => Promise<T[]> };
+  // @ts-expect-error Database type doesn't expose generic execute but it works at runtime
+  const dbAny: { execute: <T>(query: ReturnType<typeof sql>) => Promise<T[]> } = db;
 
   // Always need daily context for trailing features
   const [dailyMetrics, sleepRows, nutritionRows, bodyCompRows, exerciseMinutesRows] =

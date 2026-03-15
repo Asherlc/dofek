@@ -66,7 +66,7 @@ describe("Auto-Supplements Provider", () => {
     it("rejects supplement without name", () => {
       expect(() =>
         parseSupplementConfig({
-          supplements: [{ description: "1 softgel" } as SupplementDefinition],
+          supplements: [{ description: "1 softgel" } satisfies Partial<SupplementDefinition>],
         }),
       ).toThrow();
     });
@@ -74,7 +74,7 @@ describe("Auto-Supplements Provider", () => {
     it("rejects supplement with invalid meal", () => {
       expect(() =>
         parseSupplementConfig({
-          supplements: [{ name: "Test", meal: "midnight_snack" as "breakfast" }],
+          supplements: [{ name: "Test", meal: "midnight_snack" }],
         }),
       ).toThrow();
     });

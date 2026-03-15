@@ -201,7 +201,7 @@ export class RideWithGpsClient {
       const text = await response.text();
       throw new Error(`RWGPS API error (${response.status}): ${text}`);
     }
-    return response.json() as Promise<T>;
+    return response.json();
   }
 
   async sync(since: string): Promise<RideWithGpsSyncResponse> {
@@ -230,7 +230,8 @@ async function loadSyncCursor(db: Database): Promise<string | null> {
     .limit(1);
 
   if (rows.length === 0 || !rows[0]) return null;
-  const value = rows[0].value as { cursor?: string };
+  // @ts-expect-error -- DB value is unknown; cursor shape is set by saveSyncCursor
+  const value: { cursor?: string } = rows[0].value;
   return value.cursor ?? null;
 }
 
@@ -294,9 +295,9 @@ export class RideWithGpsProvider implements Provider {
           const text = await response.text();
           throw new Error(`RWGPS user API error (${response.status}): ${text}`);
         }
-        const data = (await response.json()) as {
+        const data: {
           user: { id: number; email?: string | null; name?: string | null };
-        };
+        } = await response.json();
         return {
           providerAccountId: String(data.user.id),
           email: data.user.email ?? null,

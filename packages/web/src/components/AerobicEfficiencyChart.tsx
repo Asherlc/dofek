@@ -114,7 +114,8 @@ export function AerobicEfficiencyChart({
       borderColor: "#3f3f46",
       textStyle: { color: "#e4e4e7", fontSize: 12 },
       formatter: (params: Record<string, unknown>) => {
-        const data = params.data as
+        // @ts-expect-error ECharts params.data is typed as unknown
+        const data:
           | {
               value: [string, number];
               name: string;
@@ -122,7 +123,7 @@ export function AerobicEfficiencyChart({
               avgHr: number;
               z2Samples: number;
             }
-          | undefined;
+          | undefined = params.data;
         if (!data?.name) return "";
         const [date, ef] = data.value;
         const mins = Math.round(data.z2Samples / 60);

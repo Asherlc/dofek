@@ -22,10 +22,11 @@ function extractEntryIdsFromThread(
     if (!threadMsg || !threadMsg.bot_id || !threadMsg.blocks) continue;
 
     for (const rawBlock of threadMsg.blocks) {
-      const block = rawBlock as {
+      // @ts-expect-error rawBlock is unknown but we check its properties below
+      const block: {
         type?: string;
         elements?: Array<{ action_id?: string; value?: string }>;
-      };
+      } = rawBlock;
       if (block.type !== "actions" || !block.elements) continue;
       for (const element of block.elements) {
         if (element.action_id === "confirm_food" && element.value) {

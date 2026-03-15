@@ -57,7 +57,9 @@ describe("waitForAuthCode", () => {
 
     const error = await caught;
     expect(error).toBeInstanceOf(Error);
-    expect((error as Error).message).toBe("OAuth authorization denied: access_denied");
+    expect(String(error instanceof Error ? error.message : error)).toBe(
+      "OAuth authorization denied: access_denied",
+    );
   });
 
   it("supports custom paramName", async () => {

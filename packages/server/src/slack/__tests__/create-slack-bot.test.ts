@@ -46,7 +46,9 @@ import { createSlackBot, startSlackBot } from "../bot.ts";
  * typed as `T`. Uses `Partial<T>` so the single `as T` assertion is valid.
  */
 function mockAs<T extends object>(partial: Partial<T>): T {
-  return partial as T;
+  // @ts-expect-error Partial<T> used as T for test mocking purposes
+  const result: T = partial;
+  return result;
 }
 
 function createMockDb(): import("dofek/db").Database {

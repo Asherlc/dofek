@@ -22,7 +22,7 @@ describe("datesInRange — via buildDailyEntries and sync", () => {
 
     // since is far in the future — no dates in range
     const futureDate = new Date("2099-12-31T00:00:00Z");
-    const mockDb = {} as Parameters<typeof provider.sync>[0];
+    const mockDb = Object.create(null);
     const result = await provider.sync(mockDb, futureDate);
 
     expect(result.recordsSynced).toBe(0);

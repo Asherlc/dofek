@@ -240,7 +240,7 @@ export class WhoopClient {
       return null;
     }
 
-    const data = (await response.json()) as Record<string, unknown>;
+    const data: Record<string, unknown> = await response.json();
     const nested = data.user as Record<string, unknown> | undefined;
     const userId =
       (data.id as number | undefined) ??
@@ -274,7 +274,7 @@ export class WhoopClient {
       throw new Error(`WHOOP API error (${response.status}): ${text}`);
     }
 
-    return response.json() as Promise<T>;
+    return response.json();
   }
 
   async getHeartRate(start: string, end: string, step = 6): Promise<WhoopHrValue[]> {

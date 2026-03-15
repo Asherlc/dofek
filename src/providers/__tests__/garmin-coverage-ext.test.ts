@@ -37,12 +37,16 @@ describe("GarminClient — successful API calls", () => {
     ];
 
     let capturedUrl = "";
-    const mockFetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ): Promise<Response> => {
       capturedUrl = input.toString();
-      const headers = init?.headers as Record<string, string> | undefined;
+      // @ts-expect-error -- test: HeadersInit narrowed to Record for test assertions
+      const headers: Record<string, string> | undefined = init?.headers;
       expect(headers?.Authorization).toBe("Bearer test-token-123");
       return Response.json(activities);
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new GarminClient("test-token-123", mockFetch);
     const result = await client.getActivities(1000, 2000);
@@ -69,10 +73,12 @@ describe("GarminClient — successful API calls", () => {
     ];
 
     let capturedUrl = "";
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       capturedUrl = input.toString();
       return Response.json(sleepData);
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new GarminClient("test-token-123", mockFetch);
     const result = await client.getSleep(5000, 6000);
@@ -99,10 +105,12 @@ describe("GarminClient — successful API calls", () => {
     ];
 
     let capturedUrl = "";
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       capturedUrl = input.toString();
       return Response.json(dailies);
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new GarminClient("test-token-123", mockFetch);
     const result = await client.getDailySummaries(3000, 4000);
@@ -124,10 +132,12 @@ describe("GarminClient — successful API calls", () => {
     ];
 
     let capturedUrl = "";
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       capturedUrl = input.toString();
       return Response.json(bodyComp);
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new GarminClient("test-token-123", mockFetch);
     const result = await client.getBodyComposition(7000, 8000);
@@ -140,9 +150,9 @@ describe("GarminClient — successful API calls", () => {
   });
 
   it("includes error body text in thrown error message", async () => {
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Rate limit exceeded - try again later", { status: 429 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new GarminClient("token", mockFetch);
     await expect(client.getActivities(0, 1000)).rejects.toThrow(
@@ -243,10 +253,10 @@ describe("GarminProvider — provider identity", () => {
 describe("GarminClient — constructor defaults", () => {
   it("accepts custom fetch function", async () => {
     let fetchCalled = false;
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       fetchCalled = true;
       return Response.json([]);
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new GarminClient("token", mockFetch);
     await client.getActivities(0, 1000);
@@ -255,10 +265,12 @@ describe("GarminClient — constructor defaults", () => {
 
   it("builds correct URL with base path for each endpoint", async () => {
     const capturedUrls: string[] = [];
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       capturedUrls.push(input.toString());
       return Response.json([]);
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new GarminClient("token", mockFetch);
 
@@ -276,9 +288,9 @@ describe("GarminClient — constructor defaults", () => {
 
 describe("GarminClient — error responses include status and body", () => {
   it("includes response body in error for 400 Bad Request", async () => {
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Invalid date range parameter", { status: 400 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new GarminClient("token", mockFetch);
     await expect(client.getActivities(0, 1000)).rejects.toThrow("Garmin API error (400)");
@@ -286,9 +298,9 @@ describe("GarminClient — error responses include status and body", () => {
   });
 
   it("handles empty error body", async () => {
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("", { status: 503 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new GarminClient("token", mockFetch);
     await expect(client.getDailySummaries(0, 1000)).rejects.toThrow("Garmin API error (503)");

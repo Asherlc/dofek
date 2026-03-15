@@ -243,9 +243,9 @@ describe("PelotonProvider.authSetup()", () => {
 
 describe("PelotonClient — error handling", () => {
   it("throws on non-OK response", async () => {
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Unauthorized", { status: 401 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new PelotonClient("bad-token", mockFetch);
     await expect(client.getUserId()).rejects.toThrow("Peloton API error (401)");
@@ -253,7 +253,9 @@ describe("PelotonClient — error handling", () => {
 
   it("caches userId after first call", async () => {
     let callCount = 0;
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       const url = input.toString();
       if (url.includes("/api/me")) {
         callCount++;
@@ -273,7 +275,7 @@ describe("PelotonClient — error handling", () => {
         });
       }
       return new Response("Not found", { status: 404 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new PelotonClient("token", mockFetch);
     await client.getUserId();

@@ -359,7 +359,7 @@ async function processDailyMetrics(
     ];
 
     for (const { column, key } of additiveFields) {
-      const value = accumulator[key] as number;
+      const value = Number(accumulator[key]);
       if (value > 0) {
         insertColumns.push(sql`${sql.identifier(column)}`);
         insertValues.push(sql`${value}`);
