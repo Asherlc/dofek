@@ -343,9 +343,7 @@ describe("bot.ts — registerHandlers", () => {
       expect(chatPostMessage).toHaveBeenCalledWith(
         expect.objectContaining({ text: "Updating your entries..." }),
       );
-      expect(chatUpdate).toHaveBeenCalledWith(
-        expect.objectContaining({ ts: "thinking-ts" }),
-      );
+      expect(chatUpdate).toHaveBeenCalledWith(expect.objectContaining({ ts: "thinking-ts" }));
     });
 
     it("falls through to fresh analysis when no previous entries in thread", async () => {
