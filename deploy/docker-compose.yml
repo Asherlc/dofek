@@ -87,6 +87,7 @@ services:
       WATCHTOWER_INCLUDE_STOPPED: "false"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - /root/.docker/config.json:/config.json:ro
 
 volumes:
   db_data:

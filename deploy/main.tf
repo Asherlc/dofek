@@ -85,6 +85,7 @@ resource "hcloud_server" "dofek" {
   })
 }
 
+
 output "server_ip" {
   value = hcloud_server.dofek.ipv4_address
 }
