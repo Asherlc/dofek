@@ -134,13 +134,13 @@ jobs:
           command: docker compose -f docker-compose.e2e.yml up -d --build --wait
           background: true
       - run:
-          name: Install Node.js 22 + pnpm
+          name: Install Node.js 22
           command: |
-            source /opt/circleci/.nvm/nvm.sh
-            nvm install 22 && nvm alias default 22
-            echo 'source /opt/circleci/.nvm/nvm.sh' >> "$BASH_ENV"
-            echo 'nvm use 22' >> "$BASH_ENV"
-            corepack enable && corepack prepare pnpm@latest --activate
+            curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+            sudo apt-get install -y nodejs
+      - run:
+          name: Install pnpm
+          command: corepack enable && corepack prepare pnpm@latest --activate
       - restore_cache:
           keys:
             - pnpm-store-machine-v1-{{ checksum "pnpm-lock.yaml" }}
