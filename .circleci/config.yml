@@ -20,7 +20,6 @@ executors:
   machine:
     machine:
       image: ubuntu-2404:current
-      docker_layer_caching: true
     resource_class: medium
 
 commands:
@@ -120,6 +119,16 @@ jobs:
     executor: machine
     steps:
       - checkout
+      - restore_cache:
+          keys:
+            - docker-e2e-v1-{{ checksum "Dockerfile" }}-{{ checksum "docker-compose.e2e.yml" }}
+            - docker-e2e-v1-
+      - run:
+          name: Load cached Docker images
+          command: |
+            if [ -f /tmp/docker-cache/images.tar ]; then
+              docker load -i /tmp/docker-cache/images.tar || true
+            fi
       - run:
           name: Build e2e stack (background)
           command: docker compose -f docker-compose.e2e.yml up -d --build --wait
@@ -127,7 +136,10 @@ jobs:
       - run:
           name: Install Node.js 22 + pnpm
           command: |
+            source /opt/circleci/.nvm/nvm.sh
             nvm install 22 && nvm alias default 22
+            echo 'source /opt/circleci/.nvm/nvm.sh' >> "$BASH_ENV"
+            echo 'nvm use 22' >> "$BASH_ENV"
             corepack enable && corepack prepare pnpm@latest --activate
       - restore_cache:
           keys:
@@ -154,6 +166,16 @@ jobs:
               sleep 3
             done
             echo "e2e stack did not become ready" && exit 1
+      - run:
+          name: Save Docker images to cache
+          command: |
+            mkdir -p /tmp/docker-cache
+            docker save $(docker images --format '{{.Repository}}:{{.Tag}}' | grep -v '<none>') \
+              -o /tmp/docker-cache/images.tar || true
+      - save_cache:
+          key: docker-e2e-v1-{{ checksum "Dockerfile" }}-{{ checksum "docker-compose.e2e.yml" }}
+          paths:
+            - /tmp/docker-cache
       - run: pnpm e2e:run
       - store_artifacts:
           path: cypress/screenshots
