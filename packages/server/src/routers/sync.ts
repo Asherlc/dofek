@@ -1,10 +1,8 @@
-import { logSync } from "dofek/db/sync-log";
-import { ensureProvider } from "dofek/db/tokens";
+import { createSyncQueue } from "dofek/jobs/queues";
 import { getAllProviders, registerProvider } from "dofek/providers/registry";
-import type { Provider } from "dofek/providers/types";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { queryCache } from "../lib/cache.ts";
+import { startWorker } from "../lib/start-worker.ts";
 import { getSystemLogs, logger } from "../logger.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
@@ -52,18 +50,24 @@ async function doRegisterProviders() {
   }
 }
 
-// ── Background sync job tracking ──
-export interface SyncJob {
-  status: "running" | "done" | "error";
-  providers: Record<string, { status: "pending" | "running" | "done" | "error"; message?: string }>;
-  message?: string;
-  result?: unknown;
+// ── BullMQ sync queue (lazy init) ──
+let _syncQueue: ReturnType<typeof createSyncQueue> | null = null;
+
+function getSyncQueue() {
+  if (!_syncQueue) _syncQueue = createSyncQueue();
+  return _syncQueue;
 }
 
-const syncJobs = new Map<string, SyncJob>();
-
-function cleanupJob(jobId: string) {
-  setTimeout(() => syncJobs.delete(jobId), 10 * 60 * 1000);
+/** Map BullMQ job state to the frontend SyncJobStatus shape */
+function mapBullMqStateToSyncStatus(state: string): "running" | "done" | "error" {
+  switch (state) {
+    case "completed":
+      return "done";
+    case "failed":
+      return "error";
+    default:
+      return "running";
+  }
 }
 
 export const syncRouter = router({
@@ -122,7 +126,7 @@ export const syncRouter = router({
     });
   }),
 
-  /** Trigger sync — returns immediately with a jobId, processes in the background */
+  /** Trigger sync — enqueues a BullMQ job, returns immediately with jobId */
   triggerSync: protectedProcedure
     .input(
       z.object({
@@ -132,134 +136,63 @@ export const syncRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       await ensureProvidersRegistered();
-      const since = input.sinceDays
-        ? new Date(Date.now() - input.sinceDays * 24 * 60 * 60 * 1000)
-        : new Date(0); // full sync
 
-      let providers: Provider[];
+      // Validate provider exists and is configured before enqueuing
       if (input.providerId) {
         const provider = getAllProviders().find((p) => p.id === input.providerId);
         if (!provider) throw new Error(`Unknown provider: ${input.providerId}`);
         const validation = provider.validate();
         if (validation) throw new Error(`Provider not configured: ${validation}`);
-        providers = [provider];
-      } else {
-        providers = getAllProviders().filter((p) => p.validate() === null);
       }
 
-      const jobId = `sync-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-      const providerStatuses: SyncJob["providers"] = {};
-      for (const p of providers) {
-        providerStatuses[p.id] = { status: "pending" };
-      }
-      syncJobs.set(jobId, { status: "running", providers: providerStatuses });
+      const job = await getSyncQueue().add("sync", {
+        providerId: input.providerId,
+        sinceDays: input.sinceDays,
+        userId: ctx.userId,
+      });
 
-      // Fire and forget — .catch ensures no unhandled rejections
-      (async () => {
-        try {
-          for (const provider of providers) {
-            const job = syncJobs.get(jobId);
-            if (!job) break;
-            job.providers[provider.id] = { status: "running" };
-
-            await ensureProvider(ctx.db, provider.id, provider.name);
-
-            const syncStart = Date.now();
-            try {
-              logger.info(`[sync] Starting ${provider.name}...`);
-              const result = await provider.sync(ctx.db, since);
-              const hasErrors = result.errors.length > 0;
-              const parts = [`${result.recordsSynced} synced`];
-              if (hasErrors) parts.push(`${result.errors.length} errors`);
-              job.providers[provider.id] = {
-                status: hasErrors ? "error" : "done",
-                message: parts.join(", "),
-              };
-              await logSync(ctx.db, {
-                providerId: provider.id,
-                dataType: "sync",
-                status: hasErrors ? "error" : "success",
-                recordCount: result.recordsSynced,
-                errorMessage: hasErrors
-                  ? result.errors.map((e) => e.message).join("; ")
-                  : undefined,
-                durationMs: Date.now() - syncStart,
-              });
-            } catch (err: unknown) {
-              const message = err instanceof Error ? err.message : String(err);
-              job.providers[provider.id] = {
-                status: "error",
-                message,
-              };
-              await logSync(ctx.db, {
-                providerId: provider.id,
-                dataType: "sync",
-                status: "error",
-                errorMessage: message,
-                durationMs: Date.now() - syncStart,
-              });
-            }
-          }
-
-          // Update user max HR from newly synced data
-          try {
-            const { updateUserMaxHr } = await import("dofek/db/dedup");
-            await updateUserMaxHr(ctx.db);
-          } catch (err) {
-            logger.error(`[sync] Failed to update max HR: ${err}`);
-          }
-
-          // Refresh dedup + rollup views
-          try {
-            const { refreshDedupViews } = await import("dofek/db/dedup");
-            await refreshDedupViews(ctx.db);
-          } catch (err) {
-            logger.error(`[sync] Failed to refresh views: ${err}`);
-          }
-
-          // Invalidate all server-side caches
-          await queryCache.invalidateAll();
-
-          // Run anomaly detection and send Slack alerts if needed
-          try {
-            const { checkAnomalies, sendAnomalyAlertToSlack } = await import(
-              "./anomaly-detection.ts"
-            );
-            const anomalyResult = await checkAnomalies(ctx.db, ctx.userId);
-            if (anomalyResult.anomalies.length > 0) {
-              logger.info(
-                `[sync] Detected ${anomalyResult.anomalies.length} anomaly(ies), sending alert`,
-              );
-              await sendAnomalyAlertToSlack(ctx.db, ctx.userId, anomalyResult.anomalies);
-            }
-          } catch (err) {
-            logger.error(`[sync] Anomaly detection failed: ${err}`);
-          }
-
-          const job = syncJobs.get(jobId);
-          if (!job) return;
-          job.status = "done";
-          job.message = "Sync complete";
-          cleanupJob(jobId);
-        } catch (err: unknown) {
-          const job = syncJobs.get(jobId);
-          if (job) {
-            job.status = "error";
-            job.message = err instanceof Error ? err.message : String(err);
-            cleanupJob(jobId);
-          }
-        }
-      })().catch((err) => logger.error(`[sync] Unhandled sync error: ${err}`));
-
-      return { jobId };
+      startWorker();
+      return { jobId: job.id ?? `job-${Date.now()}` };
     }),
 
-  /** Poll sync job status */
-  syncStatus: protectedProcedure.input(z.object({ jobId: z.string() })).query(({ input }) => {
-    const job = syncJobs.get(input.jobId);
-    if (!job) return null;
-    return job;
-  }),
+  /** Poll sync job status — reads from BullMQ */
+  syncStatus: protectedProcedure
+    .input(z.object({ jobId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      if (!input.jobId) return null;
+
+      let job: Awaited<ReturnType<ReturnType<typeof getSyncQueue>["getJob"]>> | undefined;
+      try {
+        job = await getSyncQueue().getJob(input.jobId);
+      } catch {
+        return null; // Redis unavailable
+      }
+      if (!job) return null;
+
+      // Only return status for jobs belonging to the requesting user
+      if (job.data.userId !== ctx.userId) return null;
+
+      const state = await job.getState();
+      const progress = job.progress as
+        | {
+            providers?: Record<
+              string,
+              { status: "pending" | "running" | "done" | "error"; message?: string }
+            >;
+          }
+        | undefined;
+
+      return {
+        status: mapBullMqStateToSyncStatus(state),
+        providers: progress?.providers ?? {},
+        message:
+          state === "failed"
+            ? job.failedReason
+            : state === "completed"
+              ? "Sync complete"
+              : undefined,
+      };
+    }),
 
   /** Get sync log history */
   logs: cachedProtectedQuery(CacheTTL.SHORT)

@@ -9,8 +9,9 @@ if { [ -n "$SOPS_AGE_KEY" ] || [ -n "$SOPS_AGE_KEY_FILE" ]; } && [ -f .env ]; th
   CMD="$NODE"
   case "${1:-sync}" in
     web)  CMD="$CMD packages/server/src/index.ts" ;;
-    sync) CMD="$CMD src/index.ts sync" ;;
-    *)    echo "Unknown mode: $1 (expected 'web' or 'sync')" >&2; exit 1 ;;
+    sync)   CMD="$CMD src/index.ts sync" ;;
+    worker) CMD="$CMD src/jobs/worker.ts" ;;
+    *)      echo "Unknown mode: $1 (expected 'web', 'sync', or 'worker')" >&2; exit 1 ;;
   esac
   exec sops exec-env .env "$CMD"
 fi
@@ -23,8 +24,11 @@ case "${1:-sync}" in
   sync)
     exec $NODE src/index.ts sync
     ;;
+  worker)
+    exec $NODE src/jobs/worker.ts
+    ;;
   *)
-    echo "Unknown mode: $1 (expected 'web' or 'sync')" >&2
+    echo "Unknown mode: $1 (expected 'web', 'sync', or 'worker')" >&2
     exit 1
     ;;
 esac

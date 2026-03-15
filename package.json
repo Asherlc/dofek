@@ -25,7 +25,8 @@
     "./db/migrate": "./src/db/migrate.ts",
     "./db/tokens": "./src/db/tokens.ts",
     "./auth/oauth": "./src/auth/oauth.ts",
-    "./db/sync-log": "./src/db/sync-log.ts"
+    "./db/sync-log": "./src/db/sync-log.ts",
+    "./jobs/queues": "./src/jobs/queues.ts"
   },
   "scripts": {
     "dev": "./scripts/with-env.sh tsx src/index.ts",
@@ -50,6 +51,9 @@
     "e2e": "pnpm e2e:up && pnpm e2e:run; pnpm e2e:down"
   },
   "dependencies": {
+    "@bull-board/api": "^6.20.5",
+    "@bull-board/express": "^6.20.5",
+    "bullmq": "^5.71.0",
     "drizzle-orm": "0.38.4",
     "eight-sleep-client": "workspace:*",
     "garmin-connect": "workspace:*",

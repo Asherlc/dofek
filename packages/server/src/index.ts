@@ -3,6 +3,9 @@ import { createWriteStream } from "node:fs";
 import { mkdir, readdir, rm, stat, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createBullBoard } from "@bull-board/api";
+import { BullMQAdapter } from "@bull-board/api/bullMQAdapter";
+import { ExpressAdapter } from "@bull-board/express";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import compression from "compression";
 import cookieParser from "cookie-parser";
@@ -10,7 +13,8 @@ import { getOAuthRedirectUri } from "dofek/auth/oauth";
 import { createDatabaseFromEnv } from "dofek/db";
 import { runMigrations } from "dofek/db/migrate";
 import { DEFAULT_USER_ID } from "dofek/db/schema";
-import type { SyncResult } from "dofek/providers/types";
+import { createImportQueue, createSyncQueue } from "dofek/jobs/queues";
+
 import { sql } from "drizzle-orm";
 import express from "express";
 import { resolveOrCreateUser } from "./auth/account-linking.ts";
@@ -35,6 +39,7 @@ import {
 import { createSession, deleteSession, validateSession } from "./auth/session.ts";
 import { queryCache } from "./lib/cache.ts";
 import { httpRequestDuration, registry } from "./lib/metrics.ts";
+import { startWorker } from "./lib/start-worker.ts";
 import { logger } from "./logger.ts";
 import { appRouter } from "./router.ts";
 import { startSlackBot } from "./slack/bot.ts";
@@ -174,99 +179,118 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
     next();
   });
 
-  // ── Apple Health upload state ──
+  // ── BullMQ queues (lazy init — deferred until first use to avoid Redis
+  //    connection attempts in test environments) ──
+  let _importQueue: ReturnType<typeof createImportQueue> | null = null;
+  let _syncQueue: ReturnType<typeof createSyncQueue> | null = null;
+
+  function getImportQueue() {
+    if (!_importQueue) _importQueue = createImportQueue();
+    return _importQueue;
+  }
+
+  function getSyncQueue() {
+    if (!_syncQueue) _syncQueue = createSyncQueue();
+    return _syncQueue;
+  }
+
+  // ── Bull Board dashboard ──
+  const bullBoardAdapter = new ExpressAdapter();
+  bullBoardAdapter.setBasePath("/admin/queues");
+  // Bull Board uses lazy adapters — queues are created on first dashboard visit
+  const lazyBullBoard = { initialized: false };
+  app.use("/admin/queues", (req, res, next) => {
+    if (!lazyBullBoard.initialized) {
+      createBullBoard({
+        queues: [new BullMQAdapter(getSyncQueue()), new BullMQAdapter(getImportQueue())],
+        serverAdapter: bullBoardAdapter,
+      });
+      lazyBullBoard.initialized = true;
+    }
+    bullBoardAdapter.getRouter()(req, res, next);
+  });
+
+  // ── Shared job status helper ──
+  async function getImportJobStatus(jobId: string) {
+    let job: Awaited<ReturnType<ReturnType<typeof getImportQueue>["getJob"]>> | undefined;
+    try {
+      job = await getImportQueue().getJob(jobId);
+    } catch {
+      return null; // Redis unavailable
+    }
+    if (!job) return null;
+
+    const state = await job.getState();
+    const progress = job.progress as { pct?: number; message?: string } | number | undefined;
+    const pct = typeof progress === "number" ? progress : (progress as { pct?: number })?.pct;
+    const msg =
+      typeof progress === "object" && progress !== null
+        ? (progress as { message?: string }).message
+        : undefined;
+
+    let status: "uploading" | "assembling" | "processing" | "done" | "error";
+    if (state === "completed") status = "done";
+    else if (state === "failed") status = "error";
+    else status = "processing";
+
+    return {
+      status,
+      progress: status === "done" ? 100 : (pct ?? 0),
+      message: state === "failed" ? job.failedReason : msg,
+      result: job.returnvalue,
+    };
+  }
+
+  // ── Apple Health upload state (chunking still needs in-memory tracking) ──
   interface UploadChunks {
     received: Set<number>;
     total: number;
     dir: string;
   }
-  interface JobStatus {
-    status: "uploading" | "assembling" | "processing" | "done" | "error";
-    progress?: number;
-    message?: string;
-    result?: SyncResult;
-  }
   const activeUploads = new Map<string, UploadChunks>();
-  const jobStatuses = new Map<string, JobStatus>();
+  // Track upload-phase status for chunked uploads (before job is enqueued)
+  const uploadStatuses = new Map<string, { status: string; progress: number; message: string }>();
 
-  // Clean up completed jobs after 10 minutes
-  function setJobStatus(id: string, status: JobStatus) {
-    jobStatuses.set(id, status);
-    if (status.status === "done" || status.status === "error") {
-      setTimeout(() => jobStatuses.delete(id), 10 * 60 * 1000);
+  function setUploadStatus(
+    id: string,
+    status: { status: string; progress: number; message: string },
+  ) {
+    uploadStatuses.set(id, status);
+  }
+
+  function cleanupUploadStatus(id: string) {
+    setTimeout(() => uploadStatuses.delete(id), 10 * 60 * 1000);
+  }
+
+  /** Enqueue an import job and start the worker container */
+  async function enqueueImport(
+    filePath: string,
+    since: Date,
+    importType: "apple-health" | "strong-csv" | "cronometer-csv",
+    userId: string,
+    opts?: { weightUnit?: "kg" | "lbs" },
+  ): Promise<string> {
+    const job = await getImportQueue().add(importType, {
+      filePath,
+      since: since.toISOString(),
+      userId,
+      importType,
+      weightUnit: opts?.weightUnit,
+    });
+    startWorker();
+    return job.id ?? `job-${Date.now()}`;
+  }
+
+  // Poll job status — checks BullMQ first, falls back to upload-phase status
+  app.get("/api/upload/apple-health/status/:jobId", async (req, res) => {
+    // Check upload-phase status first (for chunked uploads still receiving)
+    const uploadStatus = uploadStatuses.get(req.params.jobId);
+    if (uploadStatus) {
+      res.json(uploadStatus);
+      return;
     }
-  }
 
-  // Background import — fires and forgets, updates jobStatuses as it runs
-  function startBackgroundImport(jobId: string, filePath: string, since: Date) {
-    logger.info("[apple-health] Starting import...");
-    setJobStatus(jobId, { status: "processing", progress: 0, message: "Starting import..." });
-
-    (async () => {
-      const importStart = Date.now();
-      try {
-        const { importAppleHealthFile } = await import("dofek/providers/apple-health");
-        let lastLoggedPct = 0;
-        const result = await importAppleHealthFile(db, filePath, since, (info) => {
-          setJobStatus(jobId, {
-            status: "processing",
-            progress: info.pct,
-            message: `Processing: ${info.pct}%`,
-          });
-          // Log every 10% to avoid noise
-          if (info.pct >= lastLoggedPct + 10) {
-            logger.info(`[apple-health] Import progress: ${info.pct}%`);
-            lastLoggedPct = info.pct;
-          }
-        });
-        const durationSec = ((Date.now() - importStart) / 1000).toFixed(1);
-        const msg = `${result.recordsSynced} records imported, ${result.errors?.length ?? 0} errors in ${durationSec}s`;
-        logger.info(`[apple-health] Import complete: ${msg}`);
-        setJobStatus(jobId, {
-          status: "done",
-          progress: 100,
-          message: msg,
-          result,
-        });
-        const { logSync } = await import("dofek/db/sync-log");
-        await logSync(db, {
-          providerId: "apple_health",
-          dataType: "import",
-          status: result.errors?.length ? "error" : "success",
-          recordCount: result.recordsSynced,
-          errorMessage: result.errors?.length
-            ? result.errors.map((e) => e.message).join("; ")
-            : undefined,
-          durationMs: Date.now() - importStart,
-        });
-      } catch (err: unknown) {
-        const message = errorMessage(err);
-        logger.error(`[upload] Background import failed: ${message}`);
-        setJobStatus(jobId, {
-          status: "error",
-          message,
-        });
-        try {
-          const { logSync } = await import("dofek/db/sync-log");
-          await logSync(db, {
-            providerId: "apple_health",
-            dataType: "import",
-            status: "error",
-            errorMessage: message,
-            durationMs: Date.now() - importStart,
-          });
-        } catch (logErr) {
-          logger.error(`[upload] Failed to log sync error: ${logErr}`);
-        }
-      } finally {
-        await unlink(filePath).catch(() => {});
-      }
-    })();
-  }
-
-  // Poll job status
-  app.get("/api/upload/apple-health/status/:jobId", (req, res) => {
-    const status = jobStatuses.get(req.params.jobId);
+    const status = await getImportJobStatus(req.params.jobId);
     if (!status) {
       res.status(404).json({ error: "Unknown job" });
       return;
@@ -307,14 +331,14 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
     }
     const since = fullSync ? new Date(0) : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-    // Non-chunked upload (single small file) — still processes in background
+    // Non-chunked upload (single small file)
     if (!uploadId || Number.isNaN(chunkTotal) || chunkTotal <= 1) {
-      const jobId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
       const ext = (req.headers["content-type"] ?? "").includes("xml") ? ".xml" : ".zip";
-      const tmpFile = join(tmpdir(), `apple-health-${jobId}${ext}`);
+      const tmpId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const tmpFile = join(tmpdir(), `apple-health-${tmpId}${ext}`);
       try {
         await streamToFile(req, tmpFile);
-        startBackgroundImport(jobId, tmpFile, since);
+        const jobId = await enqueueImport(tmpFile, since, "apple-health", DEFAULT_USER_ID);
         res.json({ status: "processing", jobId });
       } catch (err: unknown) {
         logger.error(`[upload] Apple Health upload failed: ${err}`);
@@ -338,12 +362,17 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
             if (stale) {
               activeUploads.delete(uploadId);
               await rm(stale.dir, { recursive: true, force: true }).catch(() => {});
-              setJobStatus(uploadId, { status: "error", message: "Upload timed out" });
+              setUploadStatus(uploadId, {
+                status: "error",
+                progress: 0,
+                message: "Upload timed out",
+              });
+              cleanupUploadStatus(uploadId);
             }
           },
           30 * 60 * 1000,
         );
-        setJobStatus(uploadId, {
+        setUploadStatus(uploadId, {
           status: "uploading",
           progress: 0,
           message: "Receiving chunks...",
@@ -358,7 +387,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       logger.info(`[upload] Chunk ${chunkIndex + 1}/${chunkTotal} for ${uploadId}`);
 
       if (upload.received.size < upload.total) {
-        setJobStatus(uploadId, {
+        setUploadStatus(uploadId, {
           status: "uploading",
           progress: uploadPct,
           message: `Received ${upload.received.size}/${upload.total} chunks`,
@@ -372,15 +401,21 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
         return;
       }
 
-      // All chunks received — assemble then process in background
-      setJobStatus(uploadId, { status: "assembling", progress: 0, message: "Assembling file..." });
+      // All chunks received — assemble then enqueue
+      setUploadStatus(uploadId, {
+        status: "assembling",
+        progress: 0,
+        message: "Assembling file...",
+      });
       const assembledFile = join(tmpdir(), `apple-health-${uploadId}${fileExt}`);
       await assembleChunks(upload.dir, assembledFile);
       activeUploads.delete(uploadId);
       await rm(upload.dir, { recursive: true, force: true });
 
-      startBackgroundImport(uploadId, assembledFile, since);
-      res.json({ status: "processing", jobId: uploadId });
+      // Clear upload status — BullMQ job status takes over from here
+      uploadStatuses.delete(uploadId);
+      const jobId = await enqueueImport(assembledFile, since, "apple-health", DEFAULT_USER_ID);
+      res.json({ status: "processing", jobId });
     } catch (err: unknown) {
       logger.error(`[upload] Chunked upload failed: ${err}`);
       const upload = activeUploads.get(uploadId);
@@ -388,14 +423,15 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
         activeUploads.delete(uploadId);
         await rm(upload.dir, { recursive: true, force: true }).catch(() => {});
       }
-      setJobStatus(uploadId, { status: "error", message: "Upload failed" });
+      setUploadStatus(uploadId, { status: "error", progress: 0, message: "Upload failed" });
+      cleanupUploadStatus(uploadId);
       res.status(500).json({ error: "Upload failed" });
     }
   });
 
   // ── Strong CSV upload ──
-  app.get("/api/upload/strong-csv/status/:jobId", (req, res) => {
-    const status = jobStatuses.get(req.params.jobId);
+  app.get("/api/upload/strong-csv/status/:jobId", async (req, res) => {
+    const status = await getImportJobStatus(req.params.jobId);
     if (!status) {
       res.status(404).json({ error: "Unknown job" });
       return;
@@ -417,57 +453,15 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
     }
 
     const weightUnit = req.query.units === "lbs" ? "lbs" : "kg";
-    const jobId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    const tmpFile = join(tmpdir(), `strong-csv-${jobId}.csv`);
+    const tmpId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const tmpFile = join(tmpdir(), `strong-csv-${tmpId}.csv`);
 
     try {
       await streamToFile(req, tmpFile);
-      setJobStatus(jobId, {
-        status: "processing",
-        progress: 0,
-        message: "Importing Strong CSV...",
+      const jobId = await enqueueImport(tmpFile, new Date(0), "strong-csv", DEFAULT_USER_ID, {
+        weightUnit: weightUnit as "kg" | "lbs",
       });
       res.json({ status: "processing", jobId });
-
-      // Fire-and-forget background import
-      (async () => {
-        const importStart = Date.now();
-        try {
-          const { readFile } = await import("node:fs/promises");
-          const csvText = await readFile(tmpFile, "utf-8");
-          const { importStrongCsv } = await import("dofek/providers/strong-csv");
-          const { DEFAULT_USER_ID } = await import("dofek/db/schema");
-          const result = await importStrongCsv(
-            db,
-            csvText,
-            DEFAULT_USER_ID,
-            weightUnit as "kg" | "lbs",
-          );
-
-          const durationSec = ((Date.now() - importStart) / 1000).toFixed(1);
-          const msg = `${result.recordsSynced} workouts imported, ${result.errors.length} errors in ${durationSec}s`;
-          logger.info(`[strong-csv] Import complete: ${msg}`);
-          setJobStatus(jobId, { status: "done", progress: 100, message: msg, result });
-
-          const { logSync } = await import("dofek/db/sync-log");
-          await logSync(db, {
-            providerId: "strong-csv",
-            dataType: "import",
-            status: result.errors.length ? "error" : "success",
-            recordCount: result.recordsSynced,
-            errorMessage: result.errors.length
-              ? result.errors.map((e) => e.message).join("; ")
-              : undefined,
-            durationMs: Date.now() - importStart,
-          });
-        } catch (err: unknown) {
-          const message = errorMessage(err);
-          logger.error(`[strong-csv] Import failed: ${message}`);
-          setJobStatus(jobId, { status: "error", message });
-        } finally {
-          await unlink(tmpFile).catch(() => {});
-        }
-      })();
     } catch (err: unknown) {
       logger.error(`[strong-csv] Upload failed: ${err}`);
       res.status(500).json({ error: "Upload failed" });
@@ -475,8 +469,8 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
   });
 
   // ── Cronometer CSV upload ──
-  app.get("/api/upload/cronometer-csv/status/:jobId", (req, res) => {
-    const status = jobStatuses.get(req.params.jobId);
+  app.get("/api/upload/cronometer-csv/status/:jobId", async (req, res) => {
+    const status = await getImportJobStatus(req.params.jobId);
     if (!status) {
       res.status(404).json({ error: "Unknown job" });
       return;
@@ -497,51 +491,13 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       return;
     }
 
-    const jobId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    const tmpFile = join(tmpdir(), `cronometer-csv-${jobId}.csv`);
+    const tmpId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const tmpFile = join(tmpdir(), `cronometer-csv-${tmpId}.csv`);
 
     try {
       await streamToFile(req, tmpFile);
-      setJobStatus(jobId, {
-        status: "processing",
-        progress: 0,
-        message: "Importing Cronometer CSV...",
-      });
+      const jobId = await enqueueImport(tmpFile, new Date(0), "cronometer-csv", DEFAULT_USER_ID);
       res.json({ status: "processing", jobId });
-
-      // Fire-and-forget background import
-      (async () => {
-        const importStart = Date.now();
-        try {
-          const { readFile } = await import("node:fs/promises");
-          const csvText = await readFile(tmpFile, "utf-8");
-          const { importCronometerCsv } = await import("dofek/providers/cronometer-csv");
-          const result = await importCronometerCsv(db, csvText, DEFAULT_USER_ID);
-
-          const durationSec = ((Date.now() - importStart) / 1000).toFixed(1);
-          const msg = `${result.recordsSynced} food entries imported, ${result.errors.length} errors in ${durationSec}s`;
-          logger.info(`[cronometer-csv] Import complete: ${msg}`);
-          setJobStatus(jobId, { status: "done", progress: 100, message: msg, result });
-
-          const { logSync } = await import("dofek/db/sync-log");
-          await logSync(db, {
-            providerId: "cronometer-csv",
-            dataType: "import",
-            status: result.errors.length ? "error" : "success",
-            recordCount: result.recordsSynced,
-            errorMessage: result.errors.length
-              ? result.errors.map((e: { message: string }) => e.message).join("; ")
-              : undefined,
-            durationMs: Date.now() - importStart,
-          });
-        } catch (err: unknown) {
-          const message = errorMessage(err);
-          logger.error(`[cronometer-csv] Import failed: ${message}`);
-          setJobStatus(jobId, { status: "error", message });
-        } finally {
-          await unlink(tmpFile).catch(() => {});
-        }
-      })();
     } catch (err: unknown) {
       logger.error(`[cronometer-csv] Upload failed: ${err}`);
       res.status(500).json({ error: "Upload failed" });
@@ -549,8 +505,14 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
   });
 
   // ── Data Export ──
-  // Stores userId for each export job so we can verify ownership on download
-  const exportJobOwners = new Map<string, string>();
+  // Export jobs run in-process (not via BullMQ) since they produce local temp files for download
+  interface ExportJobStatus {
+    status: string;
+    progress: number;
+    message: string;
+    userId: string;
+  }
+  const exportJobs = new Map<string, ExportJobStatus>();
 
   app.post("/api/export", async (req, res) => {
     const sessionId = getSessionCookie(req);
@@ -567,8 +529,12 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
     const jobId = `export-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const tmpFile = join(tmpdir(), `dofek-export-${jobId}.zip`);
 
-    setJobStatus(jobId, { status: "processing", progress: 0, message: "Starting export..." });
-    exportJobOwners.set(jobId, session.userId);
+    exportJobs.set(jobId, {
+      status: "processing",
+      progress: 0,
+      message: "Starting export...",
+      userId: session.userId,
+    });
 
     // Fire-and-forget background export
     (async () => {
@@ -576,21 +542,32 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       try {
         const { generateExport } = await import("./export.ts");
         const result = await generateExport(db, session.userId, tmpFile, (info) => {
-          setJobStatus(jobId, {
+          exportJobs.set(jobId, {
             status: "processing",
             progress: info.pct,
             message: info.message,
+            userId: session.userId,
           });
         });
 
         const durationSec = ((Date.now() - exportStart) / 1000).toFixed(1);
         const msg = `Exported ${result.totalRecords} records across ${result.tableCount} tables in ${durationSec}s`;
         logger.info(`[export] ${msg}`);
-        setJobStatus(jobId, { status: "done", progress: 100, message: msg });
+        exportJobs.set(jobId, {
+          status: "done",
+          progress: 100,
+          message: msg,
+          userId: session.userId,
+        });
       } catch (err: unknown) {
         const message = errorMessage(err);
         logger.error(`[export] Export failed: ${message}`);
-        setJobStatus(jobId, { status: "error", message });
+        exportJobs.set(jobId, {
+          status: "error",
+          progress: 0,
+          message,
+          userId: session.userId,
+        });
         await unlink(tmpFile).catch(() => {});
       }
     })();
@@ -599,13 +576,17 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
   });
 
   app.get("/api/export/status/:jobId", (req, res) => {
-    const status = jobStatuses.get(req.params.jobId);
-    if (!status) {
+    const job = exportJobs.get(req.params.jobId);
+    if (!job) {
       res.status(404).json({ error: "Unknown job" });
       return;
     }
-    const response: Record<string, unknown> = { ...status };
-    if (status.status === "done") {
+    const response: Record<string, unknown> = {
+      status: job.status,
+      progress: job.progress,
+      message: job.message,
+    };
+    if (job.status === "done") {
       response.downloadUrl = `/api/export/download/${req.params.jobId}`;
     }
     res.json(response);
@@ -624,20 +605,19 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
     }
 
     const { jobId } = req.params;
-    const status = jobStatuses.get(jobId);
-    if (!status) {
+    const job = exportJobs.get(jobId);
+    if (!job) {
       res.status(404).json({ error: "Unknown job" });
       return;
     }
 
     // Verify the export belongs to this user
-    const ownerId = exportJobOwners.get(jobId);
-    if (ownerId !== session.userId) {
+    if (job.userId !== session.userId) {
       res.status(403).json({ error: "Forbidden" });
       return;
     }
 
-    if (status.status !== "done") {
+    if (job.status !== "done") {
       res.status(400).json({ error: "Export not ready" });
       return;
     }
@@ -656,7 +636,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       }
       // Clean up the temp file after download
       unlink(filePath).catch(() => {});
-      exportJobOwners.delete(jobId);
+      exportJobs.delete(jobId);
     });
   });
 
