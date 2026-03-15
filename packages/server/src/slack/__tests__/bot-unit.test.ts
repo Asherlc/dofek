@@ -151,6 +151,8 @@ describe("bot.ts — registerHandlers", () => {
       const { messageHandler } = setupHandlers(db);
 
       const say = vi.fn();
+      const chatPostMessage = vi.fn().mockResolvedValue({ ts: "thinking-ts" });
+      const chatUpdate = vi.fn().mockResolvedValue({});
       const client = {
         users: {
           info: vi.fn().mockResolvedValue({
@@ -162,6 +164,7 @@ describe("bot.ts — registerHandlers", () => {
           }),
         },
         conversations: { replies: vi.fn() },
+        chat: { postMessage: chatPostMessage, update: chatUpdate },
       };
 
       await messageHandler({
@@ -176,9 +179,12 @@ describe("bot.ts — registerHandlers", () => {
       });
 
       expect(mockAnalyze).toHaveBeenCalledWith("Two eggs and toast", expect.any(String));
-      expect(say).toHaveBeenCalledWith(
+      expect(chatPostMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ text: "Analyzing what you ate..." }),
+      );
+      expect(chatUpdate).toHaveBeenCalledWith(
         expect.objectContaining({
-          thread_ts: "1700000000.000000",
+          ts: "thinking-ts",
           blocks: expect.any(Array),
         }),
       );
@@ -196,10 +202,13 @@ describe("bot.ts — registerHandlers", () => {
       const { messageHandler } = setupHandlers(db);
 
       const say = vi.fn();
+      const chatPostMessage = vi.fn().mockResolvedValue({ ts: "thinking-ts" });
+      const chatUpdate = vi.fn().mockResolvedValue({});
       const client = {
         users: {
           info: vi.fn().mockResolvedValue({ user: { tz: "America/New_York" } }),
         },
+        chat: { postMessage: chatPostMessage, update: chatUpdate },
       };
 
       await messageHandler({
@@ -213,10 +222,10 @@ describe("bot.ts — registerHandlers", () => {
         client,
       });
 
-      expect(say).toHaveBeenCalledWith(
+      expect(chatUpdate).toHaveBeenCalledWith(
         expect.objectContaining({
+          ts: "thinking-ts",
           text: expect.stringContaining("AI provider down"),
-          thread_ts: "1700000000.000000",
         }),
       );
     });
@@ -293,6 +302,8 @@ describe("bot.ts — registerHandlers", () => {
       const { messageHandler } = setupHandlers(db);
 
       const say = vi.fn();
+      const chatPostMessage = vi.fn().mockResolvedValue({ ts: "thinking-ts" });
+      const chatUpdate = vi.fn().mockResolvedValue({});
       const client = {
         users: {
           info: vi.fn().mockResolvedValue({ user: { tz: "America/Chicago" } }),
@@ -313,6 +324,7 @@ describe("bot.ts — registerHandlers", () => {
             ],
           }),
         },
+        chat: { postMessage: chatPostMessage, update: chatUpdate },
       };
 
       await messageHandler({
@@ -328,11 +340,10 @@ describe("bot.ts — registerHandlers", () => {
       });
 
       expect(mockRefine).toHaveBeenCalled();
-      expect(say).toHaveBeenCalledWith(
-        expect.objectContaining({
-          thread_ts: "1700000000.000000",
-        }),
+      expect(chatPostMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ text: "Updating your entries..." }),
       );
+      expect(chatUpdate).toHaveBeenCalledWith(expect.objectContaining({ ts: "thinking-ts" }));
     });
 
     it("falls through to fresh analysis when no previous entries in thread", async () => {
@@ -352,6 +363,8 @@ describe("bot.ts — registerHandlers", () => {
       const { messageHandler } = setupHandlers(db);
 
       const say = vi.fn();
+      const chatPostMessage = vi.fn().mockResolvedValue({ ts: "thinking-ts" });
+      const chatUpdate = vi.fn().mockResolvedValue({});
       const client = {
         users: {
           info: vi.fn().mockResolvedValue({ user: { tz: "America/Chicago" } }),
@@ -361,6 +374,7 @@ describe("bot.ts — registerHandlers", () => {
             messages: [{ text: "something" }], // no bot messages with confirm buttons
           }),
         },
+        chat: { postMessage: chatPostMessage, update: chatUpdate },
       };
 
       await messageHandler({
@@ -411,6 +425,7 @@ describe("bot.ts — registerHandlers", () => {
       const { messageHandler } = setupHandlers(db);
 
       const say = vi.fn();
+      const chatPostMessage = vi.fn().mockResolvedValue({ ts: "thinking-ts" });
       const client = {
         users: {
           info: vi.fn().mockResolvedValue({ user: { tz: "America/Chicago" } }),
@@ -430,6 +445,7 @@ describe("bot.ts — registerHandlers", () => {
             ],
           }),
         },
+        chat: { postMessage: chatPostMessage },
       };
 
       await messageHandler({
@@ -762,6 +778,8 @@ describe("bot.ts — registerHandlers", () => {
       mockAnalyze.mockResolvedValueOnce({ items: [item], provider: "gemini" });
 
       const say = vi.fn();
+      const chatPostMessage = vi.fn().mockResolvedValue({ ts: "thinking-ts" });
+      const chatUpdate = vi.fn().mockResolvedValue({});
       const client = {
         users: {
           info: vi.fn().mockResolvedValue({
@@ -772,6 +790,7 @@ describe("bot.ts — registerHandlers", () => {
             },
           }),
         },
+        chat: { postMessage: chatPostMessage, update: chatUpdate },
       };
 
       await messageHandler({
@@ -782,7 +801,7 @@ describe("bot.ts — registerHandlers", () => {
 
       // Verify the orphan repair happened: UPDATE auth_account + UPDATE food_entry
       expect(mockExecute).toHaveBeenCalled();
-      expect(say).toHaveBeenCalled();
+      expect(chatUpdate).toHaveBeenCalled();
     });
 
     it("repairs orphan via single-user fallback when no email match", async () => {
@@ -810,12 +829,15 @@ describe("bot.ts — registerHandlers", () => {
       mockAnalyze.mockResolvedValueOnce({ items: [makeFoodItem()], provider: "gemini" });
 
       const say = vi.fn();
+      const chatPostMessage = vi.fn().mockResolvedValue({ ts: "thinking-ts" });
+      const chatUpdate = vi.fn().mockResolvedValue({});
       const client = {
         users: {
           info: vi.fn().mockResolvedValue({
             user: { tz: "UTC", real_name: "Test", profile: { email: "test@example.com" } },
           }),
         },
+        chat: { postMessage: chatPostMessage, update: chatUpdate },
       };
 
       await messageHandler({
@@ -824,7 +846,7 @@ describe("bot.ts — registerHandlers", () => {
         client,
       });
 
-      expect(say).toHaveBeenCalled();
+      expect(chatUpdate).toHaveBeenCalled();
     });
   });
 
@@ -854,12 +876,15 @@ describe("bot.ts — registerHandlers", () => {
       mockAnalyze.mockResolvedValueOnce({ items: [makeFoodItem()], provider: "gemini" });
 
       const say = vi.fn();
+      const chatPostMessage = vi.fn().mockResolvedValue({ ts: "thinking-ts" });
+      const chatUpdate = vi.fn().mockResolvedValue({});
       const client = {
         users: {
           info: vi.fn().mockResolvedValue({
             user: { tz: "UTC", real_name: "Solo User", profile: { email: "solo@test.com" } },
           }),
         },
+        chat: { postMessage: chatPostMessage, update: chatUpdate },
       };
 
       await messageHandler({
@@ -868,7 +893,7 @@ describe("bot.ts — registerHandlers", () => {
         client,
       });
 
-      expect(say).toHaveBeenCalled();
+      expect(chatUpdate).toHaveBeenCalled();
     });
 
     it("finds user by user_profile email", async () => {
@@ -894,12 +919,15 @@ describe("bot.ts — registerHandlers", () => {
       mockAnalyze.mockResolvedValueOnce({ items: [makeFoodItem()], provider: "gemini" });
 
       const say = vi.fn();
+      const chatPostMessage = vi.fn().mockResolvedValue({ ts: "thinking-ts" });
+      const chatUpdate = vi.fn().mockResolvedValue({});
       const client = {
         users: {
           info: vi.fn().mockResolvedValue({
             user: { tz: "UTC", real_name: "Profile User", profile: { email: "p@test.com" } },
           }),
         },
+        chat: { postMessage: chatPostMessage, update: chatUpdate },
       };
 
       await messageHandler({
@@ -908,7 +936,7 @@ describe("bot.ts — registerHandlers", () => {
         client,
       });
 
-      expect(say).toHaveBeenCalled();
+      expect(chatUpdate).toHaveBeenCalled();
     });
 
     it("finds user by auth_account email", async () => {
@@ -932,12 +960,15 @@ describe("bot.ts — registerHandlers", () => {
       mockAnalyze.mockResolvedValueOnce({ items: [makeFoodItem()], provider: "gemini" });
 
       const say = vi.fn();
+      const chatPostMessage = vi.fn().mockResolvedValue({ ts: "thinking-ts" });
+      const chatUpdate = vi.fn().mockResolvedValue({});
       const client = {
         users: {
           info: vi.fn().mockResolvedValue({
             user: { tz: "UTC", real_name: "Auth User", profile: { email: "a@test.com" } },
           }),
         },
+        chat: { postMessage: chatPostMessage, update: chatUpdate },
       };
 
       await messageHandler({
@@ -946,7 +977,7 @@ describe("bot.ts — registerHandlers", () => {
         client,
       });
 
-      expect(say).toHaveBeenCalled();
+      expect(chatUpdate).toHaveBeenCalled();
     });
   });
 
@@ -968,10 +999,13 @@ describe("bot.ts — registerHandlers", () => {
       mockAnalyze.mockResolvedValueOnce({ items: [makeFoodItem()], provider: "gemini" });
 
       const say = vi.fn();
+      const chatPostMessage = vi.fn().mockResolvedValue({ ts: "thinking-ts" });
+      const chatUpdate = vi.fn().mockResolvedValue({});
       const client = {
         users: {
           info: vi.fn().mockRejectedValue(new Error("Slack API failed")),
         },
+        chat: { postMessage: chatPostMessage, update: chatUpdate },
       };
 
       await messageHandler({
@@ -981,7 +1015,7 @@ describe("bot.ts — registerHandlers", () => {
       });
 
       // Should still work with fallback timezone
-      expect(say).toHaveBeenCalled();
+      expect(chatUpdate).toHaveBeenCalled();
     });
   });
 
