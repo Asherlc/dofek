@@ -134,7 +134,47 @@ describe("StravaClient — error handling", () => {
     }) as typeof globalThis.fetch;
 
     const client = new StravaClient("token", mockFetch);
-    await expect(client.getActivities(0)).rejects.toThrow("Strava API error (500)");
+    await expect(client.getActivities(0)).rejects.toThrow("Strava API error (500): Server Error");
+  });
+
+  it("shows clean message for HTML error responses instead of dumping HTML", async () => {
+    const mockFetch = (async (): Promise<Response> => {
+      return new Response("<html><body>Not Found</body></html>", {
+        status: 404,
+        headers: { "content-type": "text/html; charset=utf-8" },
+      });
+    }) as typeof globalThis.fetch;
+
+    const client = new StravaClient("token", mockFetch);
+    await expect(client.getActivities(0)).rejects.toThrow(
+      "Strava API error (404): (HTML error page)",
+    );
+  });
+
+  it("includes JSON body for JSON error responses", async () => {
+    const mockFetch = (async (): Promise<Response> => {
+      return new Response(JSON.stringify({ message: "Not Found", errors: [] }), {
+        status: 404,
+        headers: { "content-type": "application/json; charset=utf-8" },
+      });
+    }) as typeof globalThis.fetch;
+
+    const client = new StravaClient("token", mockFetch);
+    await expect(client.getActivities(0)).rejects.toThrow(
+      'Strava API error (404): {"message":"Not Found","errors":[]}',
+    );
+  });
+
+  it("truncates long plain-text error responses", async () => {
+    const longText = "x".repeat(300);
+    const mockFetch = (async (): Promise<Response> => {
+      return new Response(longText, { status: 500 });
+    }) as typeof globalThis.fetch;
+
+    const client = new StravaClient("token", mockFetch);
+    await expect(client.getActivities(0)).rejects.toThrow(
+      `Strava API error (500): ${"x".repeat(200)}…`,
+    );
   });
 });
 
