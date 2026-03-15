@@ -189,8 +189,14 @@ function toRecord(obj: object): Record<string, unknown> {
 
 // Stryker restore all
 // Stryker disable all — parseFitFile wraps third-party FIT parser; only testable with real binary FIT files
+const FIT_PARSE_TIMEOUT_MS = 10_000;
+
 export function parseFitFile(buffer: Buffer): Promise<ParsedFitActivity> {
   return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error("FIT parser timed out — file may be corrupt or invalid"));
+    }, FIT_PARSE_TIMEOUT_MS);
+
     const parser = new FitParser({
       force: true,
       speedUnit: "m/s",
@@ -200,6 +206,7 @@ export function parseFitFile(buffer: Buffer): Promise<ParsedFitActivity> {
     });
 
     parser.parse(Buffer.from(buffer) as Buffer<ArrayBuffer>, (err, data) => {
+      clearTimeout(timer);
       if (err) {
         reject(new Error(String(err)));
         return;
