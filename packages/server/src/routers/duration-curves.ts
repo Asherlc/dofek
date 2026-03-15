@@ -3,19 +3,20 @@ import { z } from "zod";
 import { DURATION_LABELS } from "../lib/duration-labels.ts";
 import { enduranceTypeFilter } from "../lib/endurance-types.ts";
 import { linearRegression } from "../lib/math.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
-interface HrCurveRow {
-  duration_seconds: number;
-  best_hr: number;
-  activity_date: string;
-}
+const hrCurveRowSchema = z.object({
+  duration_seconds: z.coerce.number(),
+  best_hr: z.coerce.number(),
+  activity_date: z.string(),
+});
 
-interface PaceCurveRow {
-  duration_seconds: number;
-  best_pace: number;
-  activity_date: string;
-}
+const paceCurveRowSchema = z.object({
+  duration_seconds: z.coerce.number(),
+  best_pace: z.coerce.number(),
+  activity_date: z.string(),
+});
 
 export interface CriticalHeartRateModel {
   thresholdHr: number;
@@ -61,7 +62,10 @@ export const durationCurvesRouter = router({
   hrCurve: cachedProtectedQuery(CacheTTL.LONG)
     .input(daysInput)
     .query(async ({ ctx, input }) => {
-      const rows = await ctx.db.execute(sql`
+      const rows = await executeWithSchema(
+        ctx.db,
+        hrCurveRowSchema,
+        sql`
         WITH activity_hr AS (
           SELECT ms.activity_id, ms.recorded_at, ms.heart_rate,
                  a.started_at::date AS activity_date,
@@ -117,9 +121,10 @@ export const durationCurvesRouter = router({
         FROM best_per_duration
         WHERE best_hr > 0
         ORDER BY duration_seconds
-      `);
+      `,
+      );
 
-      const results = (rows as unknown as HrCurveRow[]).map((r) => ({
+      const results = rows.map((r) => ({
         durationSeconds: Number(r.duration_seconds),
         label: DURATION_LABELS[Number(r.duration_seconds)] ?? `${r.duration_seconds}s`,
         bestHeartRate: Number(r.best_hr),
@@ -140,7 +145,10 @@ export const durationCurvesRouter = router({
   paceCurve: cachedProtectedQuery(CacheTTL.LONG)
     .input(daysInput)
     .query(async ({ ctx, input }) => {
-      const rows = await ctx.db.execute(sql`
+      const rows = await executeWithSchema(
+        ctx.db,
+        paceCurveRowSchema,
+        sql`
         WITH activity_speed AS (
           SELECT ms.activity_id, ms.recorded_at, ms.speed,
                  a.started_at::date AS activity_date,
@@ -199,9 +207,10 @@ export const durationCurvesRouter = router({
         FROM best_per_duration
         WHERE best_speed_ms > 0
         ORDER BY duration_seconds
-      `);
+      `,
+      );
 
-      const results = (rows as unknown as PaceCurveRow[]).map((r) => ({
+      const results = rows.map((r) => ({
         durationSeconds: Number(r.duration_seconds),
         label: DURATION_LABELS[Number(r.duration_seconds)] ?? `${r.duration_seconds}s`,
         bestPaceSecondsPerKm: Number(r.best_pace),

@@ -174,6 +174,16 @@ function parseFitSession(raw: Record<string, unknown>): ParsedFitSession {
 }
 
 // ============================================================
+// Helpers
+// ============================================================
+
+/** Convert a typed library object to Record<string, unknown> with a single assertion. */
+function toRecord(obj: object): Record<string, unknown> {
+  // Spread creates a plain object — safe single cast from index-signature-compatible shape.
+  return { ...obj } as Record<string, unknown>;
+}
+
+// ============================================================
 // File-level parsing
 // ============================================================
 
@@ -200,10 +210,10 @@ export function parseFitFile(buffer: Buffer): Promise<ParsedFitActivity> {
       }
 
       const sessions = data.sessions ?? [];
-      const rawSession = (sessions[0] ?? {}) as unknown as Record<string, unknown>;
-      const rawRecords = (data.records ?? []) as unknown as Record<string, unknown>[];
-      const rawLaps = (data.laps ?? []) as unknown as Record<string, unknown>[];
-      const rawEvents = (data.events ?? []) as unknown as Record<string, unknown>[];
+      const rawSession = toRecord(sessions[0] ?? {});
+      const rawRecords = (data.records ?? []).map(toRecord);
+      const rawLaps = (data.laps ?? []).map(toRecord);
+      const rawEvents = (data.events ?? []).map(toRecord);
 
       resolve({
         session: parseFitSession(rawSession),

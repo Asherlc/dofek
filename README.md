@@ -92,8 +92,8 @@ Two images built from a single multi-stage Dockerfile:
 
 | Image | Base | Contents | Size |
 |-------|------|----------|------|
-| `ghcr.io/asherlc/dofek:latest` | node:22-slim | Express API + sync runner | ~350MB |
-| `ghcr.io/asherlc/dofek-client:latest` | nginx:alpine | Vite static bundle | ~63MB |
+| `ghcr.io/your-org/dofek:latest` | node:22-slim | Express API + sync runner | ~350MB |
+| `ghcr.io/your-org/dofek-client:latest` | nginx:alpine | Vite static bundle | ~63MB |
 
 ### How it works
 
@@ -153,7 +153,7 @@ Both use Node 22 `--experimental-transform-types` to run TypeScript source direc
 
 ## Deployment
 
-Deployed on a Hetzner Cloud CAX11 (ARM) server at `dofek.asherlc.com`.
+Deployed on a Hetzner Cloud CAX11 (ARM) server at `your-domain.example.com`.
 
 ### Infrastructure
 
@@ -187,9 +187,9 @@ Internet → Caddy (auto-HTTPS :443)
 | Container | Image | Purpose |
 |-----------|-------|---------|
 | `caddy` | caddy:2-alpine | TLS termination + reverse proxy to nginx |
-| `client` | ghcr.io/asherlc/dofek-client | Nginx serving Vite bundle + proxying API routes |
-| `web` | ghcr.io/asherlc/dofek | Express + tRPC API server (port 3000, internal only) |
-| `sync` | ghcr.io/asherlc/dofek | Sync runner (provider data sync) |
+| `client` | ghcr.io/your-org/dofek-client | Nginx serving Vite bundle + proxying API routes |
+| `web` | ghcr.io/your-org/dofek | Express + tRPC API server (port 3000, internal only) |
+| `sync` | ghcr.io/your-org/dofek | Sync runner (provider data sync) |
 | `db` | timescale/timescaledb | TimescaleDB (persistent volume) |
 | `db-backup` | postgres-backup-local | Daily pg_dump (7 daily, 4 weekly, 6 monthly) |
 | `watchtower` | containrrr/watchtower | Auto-pulls new images from GHCR every 5min |
@@ -215,7 +215,7 @@ terraform init
 terraform apply
 ```
 
-Then point DNS — create an A record for `dofek.asherlc.com` → the output `server_ip`. Caddy will auto-provision the TLS certificate.
+Then point DNS — create an A record for `your-domain.example.com` → the output `server_ip`. Caddy will auto-provision the TLS certificate.
 
 ### Updating server config files
 
@@ -381,10 +381,6 @@ The web UI requires sign-in via an identity provider (OIDC). Supported providers
 
 All credentials go in the SOPS-encrypted `.env`. The login page auto-discovers which providers are configured and shows buttons accordingly. If no provider env vars are set, the login page shows "No identity providers configured."
 
-### Current setup
-
-Authentik is the primary identity provider, using the Dofek OIDC application configured in Terraform (`homelab` repo, `terraform/authentik.tf`). The redirect URI is `https://dofek.asherlc.com/auth/callback/authentik`.
-
 ## Provider Configuration
 
 Each provider is enabled by adding its credentials to `.env` (SOPS-encrypted). OAuth providers also require a one-time browser authorization via the Data Sources page.
@@ -414,10 +410,9 @@ OAuth providers (Wahoo, Withings, Polar, FatSecret) also need `OAUTH_REDIRECT_UR
 ### Setup (new machine)
 
 ```bash
-# Retrieve age key from 1Password ("Homelab SOPS Age Key" in Personal vault)
+# Place your age private key where SOPS can find it
 mkdir -p ~/Library/Application\ Support/sops/age
-op item get "Homelab SOPS Age Key" --account my.1password.com --fields notesPlain \
-  | grep -A2 "^# created" > ~/Library/Application\ Support/sops/age/keys.txt
+# Copy your age key into keys.txt (the private key starts with AGE-SECRET-KEY-)
 chmod 600 ~/Library/Application\ Support/sops/age/keys.txt
 ```
 

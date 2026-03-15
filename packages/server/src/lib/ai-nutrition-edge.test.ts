@@ -20,6 +20,13 @@ import { analyzeNutrition, analyzeNutritionItems, refineNutritionItems } from ".
 
 const mockGenerateText = vi.mocked(generateText);
 
+type GenerateTextReturn = Awaited<ReturnType<typeof generateText>>;
+
+/** Build a mock generateText result with only the `output` field populated */
+function mockGenerateTextResult(output: unknown): GenerateTextReturn {
+  return { output } as GenerateTextReturn;
+}
+
 describe("ai-nutrition — edge cases for coverage", () => {
   beforeEach(() => {
     vi.resetAllMocks();
@@ -34,9 +41,7 @@ describe("ai-nutrition — edge cases for coverage", () => {
     it("throws when provider returns null output", async () => {
       process.env.GEMINI_API_KEY = "test-key";
 
-      mockGenerateText.mockResolvedValueOnce({
-        output: null,
-      } as unknown as Awaited<ReturnType<typeof generateText>>);
+      mockGenerateText.mockResolvedValueOnce(mockGenerateTextResult(null));
 
       await expect(analyzeNutrition("a banana")).rejects.toThrow("returned no structured output");
     });
@@ -46,9 +51,7 @@ describe("ai-nutrition — edge cases for coverage", () => {
     it("throws when provider returns null output", async () => {
       process.env.GEMINI_API_KEY = "test-key";
 
-      mockGenerateText.mockResolvedValueOnce({
-        output: null,
-      } as unknown as Awaited<ReturnType<typeof generateText>>);
+      mockGenerateText.mockResolvedValueOnce(mockGenerateTextResult(null));
 
       await expect(analyzeNutritionItems("eggs and toast")).rejects.toThrow(
         "returned no structured output",
@@ -119,8 +122,8 @@ describe("ai-nutrition — edge cases for coverage", () => {
 
       mockGenerateText
         .mockRejectedValueOnce(new Error("Quota exceeded for project"))
-        .mockResolvedValueOnce({
-          output: {
+        .mockResolvedValueOnce(
+          mockGenerateTextResult({
             foodName: "Banana",
             foodDescription: "1 medium",
             category: "fruit",
@@ -132,8 +135,8 @@ describe("ai-nutrition — edge cases for coverage", () => {
             saturatedFatG: 0.1,
             sugarG: 14,
             sodiumMg: 1,
-          },
-        } as unknown as Awaited<ReturnType<typeof generateText>>);
+          }),
+        );
 
       const result = await analyzeNutrition("a banana");
       expect(result.provider).toBe("mistral");
@@ -145,8 +148,8 @@ describe("ai-nutrition — edge cases for coverage", () => {
 
       mockGenerateText
         .mockRejectedValueOnce(new Error("RESOURCE_EXHAUSTED: out of quota"))
-        .mockResolvedValueOnce({
-          output: {
+        .mockResolvedValueOnce(
+          mockGenerateTextResult({
             foodName: "Apple",
             foodDescription: "1 medium",
             category: "fruit",
@@ -158,8 +161,8 @@ describe("ai-nutrition — edge cases for coverage", () => {
             saturatedFatG: 0,
             sugarG: 19,
             sodiumMg: 2,
-          },
-        } as unknown as Awaited<ReturnType<typeof generateText>>);
+          }),
+        );
 
       const result = await analyzeNutrition("an apple");
       expect(result.provider).toBe("mistral");
@@ -170,8 +173,8 @@ describe("ai-nutrition — edge cases for coverage", () => {
     it("works with only Mistral configured", async () => {
       process.env.MISTRAL_API_KEY = "test-key";
 
-      mockGenerateText.mockResolvedValueOnce({
-        output: {
+      mockGenerateText.mockResolvedValueOnce(
+        mockGenerateTextResult({
           foodName: "Toast",
           foodDescription: "2 slices",
           category: "breads_and_cereals",
@@ -183,8 +186,8 @@ describe("ai-nutrition — edge cases for coverage", () => {
           saturatedFatG: 0.5,
           sugarG: 3,
           sodiumMg: 280,
-        },
-      } as unknown as Awaited<ReturnType<typeof generateText>>);
+        }),
+      );
 
       const result = await analyzeNutrition("two slices of toast");
       expect(result.provider).toBe("mistral");
