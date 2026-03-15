@@ -51,6 +51,11 @@
   },
   "dependencies": {
     "drizzle-orm": "0.38.4",
+    "eight-sleep-client": "workspace:*",
+    "garmin-connect": "workspace:*",
+    "trainerroad-client": "workspace:*",
+    "velohero-client": "workspace:*",
+    "zwift-client": "workspace:*",
     "fit-file-parser": "2.3.3",
     "prom-client": "15.1.3",
     "sax": "1.5.0",

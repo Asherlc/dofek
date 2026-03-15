@@ -4,6 +4,11 @@ packages:
   - packages/web
   - packages/ios
   - packages/whoop-whoop
+  - packages/eight-sleep
+  - packages/zwift-client
+  - packages/trainerroad-client
+  - packages/velohero-client
+  - packages/garmin-connect
 
 ignoredBuiltDependencies:
   - cpu-features
