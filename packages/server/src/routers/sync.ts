@@ -152,7 +152,7 @@ export const syncRouter = router({
       });
 
       startWorker();
-      return { jobId: job.id };
+      return { jobId: job.id ?? `job-${Date.now()}` };
     }),
 
   /** Poll sync job status — reads from BullMQ */
@@ -169,7 +169,12 @@ export const syncRouter = router({
 
       const state = await job.getState();
       const progress = job.progress as
-        | { providers?: Record<string, { status: string; message?: string }> }
+        | {
+            providers?: Record<
+              string,
+              { status: "pending" | "running" | "done" | "error"; message?: string }
+            >;
+          }
         | undefined;
 
       return {
