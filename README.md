@@ -92,8 +92,8 @@ Two images built from a single multi-stage Dockerfile:
 
 | Image | Base | Contents | Size |
 |-------|------|----------|------|
-| `ghcr.io/asherlc/dofek:latest` | node:22-slim | Express API + sync runner | ~350MB |
-| `ghcr.io/asherlc/dofek-client:latest` | nginx:alpine | Vite static bundle | ~63MB |
+| `ghcr.io/your-org/dofek:latest` | node:22-slim | Express API + sync runner | ~350MB |
+| `ghcr.io/your-org/dofek-client:latest` | nginx:alpine | Vite static bundle | ~63MB |
 
 ### How it works
 
@@ -153,7 +153,7 @@ Both use Node 22 `--experimental-transform-types` to run TypeScript source direc
 
 ## Deployment
 
-Deployed on a Hetzner Cloud CAX11 (ARM) server at `dofek.asherlc.com`.
+Deployed on a Hetzner Cloud CAX11 (ARM) server at `your-domain.example.com`.
 
 ### Infrastructure
 
@@ -165,6 +165,7 @@ deploy/
 ├── cloud-init.yml           # Auto-installs Docker on first boot
 ├── docker-compose.yml       # Production stack (all services)
 ├── Caddyfile                # Auto-HTTPS via Let's Encrypt
+├── deploy-config/main.tf    # Terraform — pushes config updates to server via SSH
 ├── terraform.tfvars.example # Example config
 └── .gitignore               # Excludes secrets and state
 ```
@@ -186,9 +187,9 @@ Internet → Caddy (auto-HTTPS :443)
 | Container | Image | Purpose |
 |-----------|-------|---------|
 | `caddy` | caddy:2-alpine | TLS termination + reverse proxy to nginx |
-| `client` | ghcr.io/asherlc/dofek-client | Nginx serving Vite bundle + proxying API routes |
-| `web` | ghcr.io/asherlc/dofek | Express + tRPC API server (port 3000, internal only) |
-| `sync` | ghcr.io/asherlc/dofek | Sync runner (provider data sync) |
+| `client` | ghcr.io/your-org/dofek-client | Nginx serving Vite bundle + proxying API routes |
+| `web` | ghcr.io/your-org/dofek | Express + tRPC API server (port 3000, internal only) |
+| `sync` | ghcr.io/your-org/dofek | Sync runner (provider data sync) |
 | `db` | timescale/timescaledb | TimescaleDB (persistent volume) |
 | `db-backup` | postgres-backup-local | Daily pg_dump (7 daily, 4 weekly, 6 monthly) |
 | `watchtower` | containrrr/watchtower | Auto-pulls new images from GHCR every 5min |
@@ -214,16 +215,42 @@ terraform init
 terraform apply
 ```
 
-Then point DNS — create an A record for `dofek.asherlc.com` → the output `server_ip`. Caddy will auto-provision the TLS certificate.
+Then point DNS — create an A record for `your-domain.example.com` → the output `server_ip`. Caddy will auto-provision the TLS certificate.
+
+### Updating server config files
+
+**Never SSH into the server to edit files directly.** All server config changes (`docker-compose.yml`, `Caddyfile`) go through Terraform via the `deploy/deploy-config` module:
+
+1. Edit the file locally in `deploy/`
+2. Run `terraform apply` from `deploy/deploy-config/` — it detects file changes (via md5 hash), copies the updated files to the server via SSH, and runs `docker compose up -d`
+
+```bash
+cd deploy/deploy-config
+terraform init                              # first time only
+terraform apply -var="server_ip=<SERVER_IP>" # copies changed files and restarts containers
+```
+
+The `deploy-config` module is intentionally separate from the main `deploy/main.tf` (which provisions the Hetzner server). This lets you push config updates without needing the Hetzner API token or other provisioning secrets. The main module uses `user_data` (cloud-init) to place files at provisioning time, but changing `user_data` forces a server rebuild — `deploy-config` avoids that by using SSH provisioners instead.
+
+**SSH agent requirement:** Terraform's Go SSH client does **not** read `~/.ssh/config` — it only uses the standard `SSH_AUTH_SOCK` agent. If your SSH keys are in 1Password, you must point `SSH_AUTH_SOCK` at the 1Password agent socket:
+
+```bash
+export SSH_AUTH_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
+cd deploy/deploy-config
+terraform apply -var="server_ip=159.69.3.40"
+```
+
+Note: Terraform's SSH client also cannot use passphrase-protected keys from `~/.ssh/` without the agent, and `private_key` in the connection block doesn't work with keys stored in 1Password. The `agent = true` approach is the only reliable option.
+
+**Finding the server IP:** The domain is behind Cloudflare so you need the direct Hetzner IP:
+- `~/.ssh/known_hosts` — grep for Hetzner ranges (`159.69.*`, `116.203.*`, `49.12.*`)
+- Hetzner Cloud console → Servers → `dofek`
+
+Cloud-init handles the initial provisioning; `deploy-config` handles all subsequent config updates.
 
 ### Updating the domain
 
-Edit `deploy/Caddyfile` with the new domain, copy it to the server, and restart Caddy:
-
-```bash
-scp deploy/Caddyfile root@<SERVER_IP>:/opt/dofek/
-ssh root@<SERVER_IP> "cd /opt/dofek && docker compose restart caddy"
-```
+Edit `deploy/Caddyfile` with the new domain, then run `terraform apply` to push the change.
 
 ### SSH access
 
@@ -354,10 +381,6 @@ The web UI requires sign-in via an identity provider (OIDC). Supported providers
 
 All credentials go in the SOPS-encrypted `.env`. The login page auto-discovers which providers are configured and shows buttons accordingly. If no provider env vars are set, the login page shows "No identity providers configured."
 
-### Current setup
-
-Authentik is the primary identity provider, using the Dofek OIDC application configured in Terraform (`homelab` repo, `terraform/authentik.tf`). The redirect URI is `https://dofek.asherlc.com/auth/callback/authentik`.
-
 ## Provider Configuration
 
 Each provider is enabled by adding its credentials to `.env` (SOPS-encrypted). OAuth providers also require a one-time browser authorization via the Data Sources page.
@@ -430,10 +453,9 @@ See [docs/provider-api-audit.md](docs/provider-api-audit.md) for detailed RE fea
 ### Setup (new machine)
 
 ```bash
-# Retrieve age key from 1Password ("Homelab SOPS Age Key" in Personal vault)
+# Place your age private key where SOPS can find it
 mkdir -p ~/Library/Application\ Support/sops/age
-op item get "Homelab SOPS Age Key" --account my.1password.com --fields notesPlain \
-  | grep -A2 "^# created" > ~/Library/Application\ Support/sops/age/keys.txt
+# Copy your age key into keys.txt (the private key starts with AGE-SECRET-KEY-)
 chmod 600 ~/Library/Application\ Support/sops/age/keys.txt
 ```
 

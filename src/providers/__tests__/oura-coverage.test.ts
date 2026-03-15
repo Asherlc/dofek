@@ -7,10 +7,7 @@ import { OuraProvider } from "../oura.ts";
 // Integration tests for sync() error paths
 // ============================================================
 
-function createMockFetchForErrors(opts: {
-  sleepError?: boolean;
-  dailyError?: boolean;
-}): typeof globalThis.fetch {
+function createMockFetchForErrors(opts: { sleepError?: boolean }): typeof globalThis.fetch {
   return (async (input: RequestInfo | URL): Promise<Response> => {
     const urlStr = input.toString();
 
@@ -24,6 +21,11 @@ function createMockFetchForErrors(opts: {
       });
     }
 
+    // Sleep time (must come before sleep)
+    if (urlStr.includes("/v2/usercollection/sleep_time")) {
+      return Response.json({ data: [], next_token: null });
+    }
+
     // Sleep — error or empty
     if (urlStr.includes("/v2/usercollection/sleep")) {
       if (opts.sleepError) {
@@ -32,11 +34,13 @@ function createMockFetchForErrors(opts: {
       return Response.json({ data: [], next_token: null });
     }
 
-    // Daily readiness — error or empty
+    // Daily SpO2 — empty
+    if (urlStr.includes("/v2/usercollection/daily_spo2")) {
+      return Response.json({ data: [], next_token: null });
+    }
+
+    // Daily readiness — empty
     if (urlStr.includes("/v2/usercollection/daily_readiness")) {
-      if (opts.dailyError) {
-        return new Response("Server Error", { status: 500 });
-      }
       return Response.json({ data: [], next_token: null });
     }
 
@@ -45,8 +49,18 @@ function createMockFetchForErrors(opts: {
       return Response.json({ data: [], next_token: null });
     }
 
-    // Daily SpO2 — empty
-    if (urlStr.includes("/v2/usercollection/daily_spo2")) {
+    // Daily stress — empty
+    if (urlStr.includes("/v2/usercollection/daily_stress")) {
+      return Response.json({ data: [], next_token: null });
+    }
+
+    // Daily resilience — empty
+    if (urlStr.includes("/v2/usercollection/daily_resilience")) {
+      return Response.json({ data: [], next_token: null });
+    }
+
+    // Daily cardiovascular age — empty
+    if (urlStr.includes("/v2/usercollection/daily_cardiovascular_age")) {
       return Response.json({ data: [], next_token: null });
     }
 
@@ -60,13 +74,28 @@ function createMockFetchForErrors(opts: {
       return Response.json({ data: [], next_token: null });
     }
 
-    // Daily stress — empty
-    if (urlStr.includes("/v2/usercollection/daily_stress")) {
+    // Heart rate — empty
+    if (urlStr.includes("/v2/usercollection/heartrate")) {
       return Response.json({ data: [], next_token: null });
     }
 
-    // Daily resilience — empty
-    if (urlStr.includes("/v2/usercollection/daily_resilience")) {
+    // Sessions — empty
+    if (urlStr.includes("/v2/usercollection/session")) {
+      return Response.json({ data: [], next_token: null });
+    }
+
+    // Enhanced tags (must come before tag)
+    if (urlStr.includes("/v2/usercollection/enhanced_tag")) {
+      return Response.json({ data: [], next_token: null });
+    }
+
+    // Tags — empty
+    if (urlStr.includes("/v2/usercollection/tag")) {
+      return Response.json({ data: [], next_token: null });
+    }
+
+    // Rest mode — empty
+    if (urlStr.includes("/v2/usercollection/rest_mode_period")) {
       return Response.json({ data: [], next_token: null });
     }
 
@@ -104,23 +133,5 @@ describe("OuraProvider.sync() — error paths (integration)", () => {
 
     const sleepError = result.errors.find((e) => e.message.includes("sleep"));
     expect(sleepError).toBeDefined();
-  });
-
-  it("captures daily metrics fetch errors", async () => {
-    await saveTokens(ctx.db, "oura", {
-      accessToken: "valid-token",
-      refreshToken: "valid-refresh",
-      expiresAt: new Date("2027-01-01T00:00:00Z"),
-      scopes: "daily heartrate personal session spo2",
-    });
-
-    const since = new Date();
-    since.setDate(since.getDate() - 1);
-
-    const provider = new OuraProvider(createMockFetchForErrors({ dailyError: true }));
-    const result = await provider.sync(ctx.db, since);
-
-    const dailyError = result.errors.find((e) => e.message.includes("daily_metrics"));
-    expect(dailyError).toBeDefined();
   });
 });

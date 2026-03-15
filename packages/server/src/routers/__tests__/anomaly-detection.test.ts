@@ -129,10 +129,10 @@ describe("Anomaly detection", () => {
 
       // Mock global fetch to simulate Slack API success
       const originalFetch = globalThis.fetch;
-      globalThis.fetch = vi.fn().mockResolvedValue({
+      globalThis.fetch = vi.fn<typeof fetch>().mockResolvedValue({
         ok: true,
         json: async () => ({ ok: true }),
-      }) as unknown as typeof fetch;
+      } as Response);
 
       try {
         const result = await sendAnomalyAlertToSlack(testCtx.db, DEFAULT_USER_ID, anomalies);
@@ -198,10 +198,10 @@ describe("Anomaly detection", () => {
       ];
 
       const originalFetch = globalThis.fetch;
-      globalThis.fetch = vi.fn().mockResolvedValue({
+      globalThis.fetch = vi.fn<typeof fetch>().mockResolvedValue({
         ok: false,
         status: 500,
-      }) as unknown as typeof fetch;
+      } as Response);
 
       try {
         const result = await sendAnomalyAlertToSlack(testCtx.db, DEFAULT_USER_ID, anomalies);
@@ -245,10 +245,10 @@ describe("Anomaly detection", () => {
       ];
 
       const originalFetch = globalThis.fetch;
-      globalThis.fetch = vi.fn().mockResolvedValue({
+      globalThis.fetch = vi.fn<typeof fetch>().mockResolvedValue({
         ok: true,
         json: async () => ({ ok: false, error: "channel_not_found" }),
-      }) as unknown as typeof fetch;
+      } as Response);
 
       try {
         const result = await sendAnomalyAlertToSlack(testCtx.db, DEFAULT_USER_ID, anomalies);
@@ -292,9 +292,7 @@ describe("Anomaly detection", () => {
       ];
 
       const originalFetch = globalThis.fetch;
-      globalThis.fetch = vi
-        .fn()
-        .mockRejectedValue(new Error("Network error")) as unknown as typeof fetch;
+      globalThis.fetch = vi.fn<typeof fetch>().mockRejectedValue(new Error("Network error"));
 
       try {
         const result = await sendAnomalyAlertToSlack(testCtx.db, DEFAULT_USER_ID, anomalies);
@@ -338,10 +336,10 @@ describe("Anomaly detection", () => {
       ];
 
       const originalFetch = globalThis.fetch;
-      globalThis.fetch = vi.fn().mockResolvedValue({
+      globalThis.fetch = vi.fn<typeof fetch>().mockResolvedValue({
         ok: true,
         json: async () => ({ ok: true }),
-      }) as unknown as typeof fetch;
+      } as Response);
 
       try {
         const result = await sendAnomalyAlertToSlack(testCtx.db, DEFAULT_USER_ID, anomalies);

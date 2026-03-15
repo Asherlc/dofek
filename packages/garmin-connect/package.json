@@ -1,7 +1,7 @@
 {
   "name": "garmin-connect",
   "version": "0.1.0",
-  "description": "Unofficial Garmin Connect internal API client using reverse-engineered SSO authentication",
+  "description": "Unofficial Garmin Connect API client using the internal SSO + OAuth authentication flow",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"

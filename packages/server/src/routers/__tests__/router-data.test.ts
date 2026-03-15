@@ -88,7 +88,7 @@ describe("Router data coverage", () => {
       const avgPower = 190 + actIdx * 15;
       const hasAltitude = actIdx < 2; // first 2 activities have altitude for VAM
 
-      const actResult = await testCtx.db.execute(
+      const actResult = await testCtx.db.execute<{ id: string }>(
         sql`INSERT INTO fitness.activity (
               provider_id, user_id, activity_type, started_at, ended_at, name
             ) VALUES (
@@ -98,7 +98,7 @@ describe("Router data coverage", () => {
               ${`Training Ride ${actIdx}`}
             ) RETURNING id`,
       );
-      const actId = (actResult as unknown as { id: string }[])[0]?.id;
+      const actId = actResult[0]?.id;
 
       if (actId) {
         activityIds.push(actId);
@@ -137,7 +137,7 @@ describe("Router data coverage", () => {
 
     // ── Insert a running activity for pace curve (1-second intervals) ──
     const runDurationSec = 1200; // 20 minutes
-    const runResult = await testCtx.db.execute(
+    const runResult = await testCtx.db.execute<{ id: string }>(
       sql`INSERT INTO fitness.activity (
             provider_id, user_id, activity_type, started_at, ended_at, name
           ) VALUES (
@@ -147,7 +147,7 @@ describe("Router data coverage", () => {
             'Morning Run'
           ) RETURNING id`,
     );
-    const runId = (runResult as unknown as { id: string }[])[0]?.id;
+    const runId = runResult[0]?.id;
     if (runId) {
       for (let batchStart = 0; batchStart < runDurationSec; batchStart += 100) {
         const batchEnd = Math.min(batchStart + 100, runDurationSec);
@@ -214,7 +214,7 @@ describe("Router data coverage", () => {
     );
 
     for (let i = 0; i < 8; i++) {
-      const workoutResult = await testCtx.db.execute(
+      const workoutResult = await testCtx.db.execute<{ id: string }>(
         sql`INSERT INTO fitness.strength_workout (
               provider_id, user_id, external_id, started_at, name
             ) VALUES (
@@ -222,7 +222,7 @@ describe("Router data coverage", () => {
               NOW() - ${i * 4}::int * INTERVAL '1 day', 'Strength Session'
             ) ON CONFLICT DO NOTHING RETURNING id`,
       );
-      const workoutId = (workoutResult as unknown as { id: string }[])[0]?.id;
+      const workoutId = workoutResult[0]?.id;
       if (workoutId) {
         // Add 3 sets per workout
         for (let s = 0; s < 3; s++) {

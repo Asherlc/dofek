@@ -1,22 +1,30 @@
 import { randomBytes } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { mkdir, readdir, rm, unlink } from "node:fs/promises";
+import { mkdir, readdir, rm, stat, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createBullBoard } from "@bull-board/api";
+import { BullMQAdapter } from "@bull-board/api/bullMQAdapter";
+import { ExpressAdapter } from "@bull-board/express";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import compression from "compression";
 import cookieParser from "cookie-parser";
+import { getOAuthRedirectUri } from "dofek/auth/oauth";
 import { createDatabaseFromEnv } from "dofek/db";
 import { runMigrations } from "dofek/db/migrate";
 import { DEFAULT_USER_ID } from "dofek/db/schema";
-import type { SyncResult } from "dofek/providers/types";
+import { createImportQueue, createSyncQueue } from "dofek/jobs/queues";
+
 import { sql } from "drizzle-orm";
 import express from "express";
+import { resolveOrCreateUser } from "./auth/account-linking.ts";
 import {
   clearOAuthFlowCookies,
   clearSessionCookie,
+  getLinkUserCookie,
   getOAuthFlowCookies,
   getSessionCookie,
+  setLinkUserCookie,
   setOAuthFlowCookies,
   setSessionCookie,
 } from "./auth/cookies.ts";
@@ -31,6 +39,7 @@ import {
 import { createSession, deleteSession, validateSession } from "./auth/session.ts";
 import { queryCache } from "./lib/cache.ts";
 import { httpRequestDuration, registry } from "./lib/metrics.ts";
+import { startWorker } from "./lib/start-worker.ts";
 import { logger } from "./logger.ts";
 import { appRouter } from "./router.ts";
 import { startSlackBot } from "./slack/bot.ts";
@@ -170,99 +179,118 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
     next();
   });
 
-  // ── Apple Health upload state ──
+  // ── BullMQ queues (lazy init — deferred until first use to avoid Redis
+  //    connection attempts in test environments) ──
+  let _importQueue: ReturnType<typeof createImportQueue> | null = null;
+  let _syncQueue: ReturnType<typeof createSyncQueue> | null = null;
+
+  function getImportQueue() {
+    if (!_importQueue) _importQueue = createImportQueue();
+    return _importQueue;
+  }
+
+  function getSyncQueue() {
+    if (!_syncQueue) _syncQueue = createSyncQueue();
+    return _syncQueue;
+  }
+
+  // ── Bull Board dashboard ──
+  const bullBoardAdapter = new ExpressAdapter();
+  bullBoardAdapter.setBasePath("/admin/queues");
+  // Bull Board uses lazy adapters — queues are created on first dashboard visit
+  const lazyBullBoard = { initialized: false };
+  app.use("/admin/queues", (req, res, next) => {
+    if (!lazyBullBoard.initialized) {
+      createBullBoard({
+        queues: [new BullMQAdapter(getSyncQueue()), new BullMQAdapter(getImportQueue())],
+        serverAdapter: bullBoardAdapter,
+      });
+      lazyBullBoard.initialized = true;
+    }
+    bullBoardAdapter.getRouter()(req, res, next);
+  });
+
+  // ── Shared job status helper ──
+  async function getImportJobStatus(jobId: string) {
+    let job: Awaited<ReturnType<ReturnType<typeof getImportQueue>["getJob"]>> | undefined;
+    try {
+      job = await getImportQueue().getJob(jobId);
+    } catch {
+      return null; // Redis unavailable
+    }
+    if (!job) return null;
+
+    const state = await job.getState();
+    const progress = job.progress as { pct?: number; message?: string } | number | undefined;
+    const pct = typeof progress === "number" ? progress : (progress as { pct?: number })?.pct;
+    const msg =
+      typeof progress === "object" && progress !== null
+        ? (progress as { message?: string }).message
+        : undefined;
+
+    let status: "uploading" | "assembling" | "processing" | "done" | "error";
+    if (state === "completed") status = "done";
+    else if (state === "failed") status = "error";
+    else status = "processing";
+
+    return {
+      status,
+      progress: status === "done" ? 100 : (pct ?? 0),
+      message: state === "failed" ? job.failedReason : msg,
+      result: job.returnvalue,
+    };
+  }
+
+  // ── Apple Health upload state (chunking still needs in-memory tracking) ──
   interface UploadChunks {
     received: Set<number>;
     total: number;
     dir: string;
   }
-  interface JobStatus {
-    status: "uploading" | "assembling" | "processing" | "done" | "error";
-    progress?: number;
-    message?: string;
-    result?: SyncResult;
-  }
   const activeUploads = new Map<string, UploadChunks>();
-  const jobStatuses = new Map<string, JobStatus>();
+  // Track upload-phase status for chunked uploads (before job is enqueued)
+  const uploadStatuses = new Map<string, { status: string; progress: number; message: string }>();
 
-  // Clean up completed jobs after 10 minutes
-  function setJobStatus(id: string, status: JobStatus) {
-    jobStatuses.set(id, status);
-    if (status.status === "done" || status.status === "error") {
-      setTimeout(() => jobStatuses.delete(id), 10 * 60 * 1000);
+  function setUploadStatus(
+    id: string,
+    status: { status: string; progress: number; message: string },
+  ) {
+    uploadStatuses.set(id, status);
+  }
+
+  function cleanupUploadStatus(id: string) {
+    setTimeout(() => uploadStatuses.delete(id), 10 * 60 * 1000);
+  }
+
+  /** Enqueue an import job and start the worker container */
+  async function enqueueImport(
+    filePath: string,
+    since: Date,
+    importType: "apple-health" | "strong-csv" | "cronometer-csv",
+    userId: string,
+    opts?: { weightUnit?: "kg" | "lbs" },
+  ): Promise<string> {
+    const job = await getImportQueue().add(importType, {
+      filePath,
+      since: since.toISOString(),
+      userId,
+      importType,
+      weightUnit: opts?.weightUnit,
+    });
+    startWorker();
+    return job.id ?? `job-${Date.now()}`;
+  }
+
+  // Poll job status — checks BullMQ first, falls back to upload-phase status
+  app.get("/api/upload/apple-health/status/:jobId", async (req, res) => {
+    // Check upload-phase status first (for chunked uploads still receiving)
+    const uploadStatus = uploadStatuses.get(req.params.jobId);
+    if (uploadStatus) {
+      res.json(uploadStatus);
+      return;
     }
-  }
 
-  // Background import — fires and forgets, updates jobStatuses as it runs
-  function startBackgroundImport(jobId: string, filePath: string, since: Date) {
-    logger.info("[apple-health] Starting import...");
-    setJobStatus(jobId, { status: "processing", progress: 0, message: "Starting import..." });
-
-    (async () => {
-      const importStart = Date.now();
-      try {
-        const { importAppleHealthFile } = await import("dofek/providers/apple-health");
-        let lastLoggedPct = 0;
-        const result = await importAppleHealthFile(db, filePath, since, (info) => {
-          setJobStatus(jobId, {
-            status: "processing",
-            progress: info.pct,
-            message: `Processing: ${info.pct}%`,
-          });
-          // Log every 10% to avoid noise
-          if (info.pct >= lastLoggedPct + 10) {
-            logger.info(`[apple-health] Import progress: ${info.pct}%`);
-            lastLoggedPct = info.pct;
-          }
-        });
-        const durationSec = ((Date.now() - importStart) / 1000).toFixed(1);
-        const msg = `${result.recordsSynced} records imported, ${result.errors?.length ?? 0} errors in ${durationSec}s`;
-        logger.info(`[apple-health] Import complete: ${msg}`);
-        setJobStatus(jobId, {
-          status: "done",
-          progress: 100,
-          message: msg,
-          result,
-        });
-        const { logSync } = await import("dofek/db/sync-log");
-        await logSync(db, {
-          providerId: "apple_health",
-          dataType: "import",
-          status: result.errors?.length ? "error" : "success",
-          recordCount: result.recordsSynced,
-          errorMessage: result.errors?.length
-            ? result.errors.map((e) => e.message).join("; ")
-            : undefined,
-          durationMs: Date.now() - importStart,
-        });
-      } catch (err: unknown) {
-        const message = errorMessage(err);
-        logger.error(`[upload] Background import failed: ${message}`);
-        setJobStatus(jobId, {
-          status: "error",
-          message,
-        });
-        try {
-          const { logSync } = await import("dofek/db/sync-log");
-          await logSync(db, {
-            providerId: "apple_health",
-            dataType: "import",
-            status: "error",
-            errorMessage: message,
-            durationMs: Date.now() - importStart,
-          });
-        } catch (logErr) {
-          logger.error(`[upload] Failed to log sync error: ${logErr}`);
-        }
-      } finally {
-        await unlink(filePath).catch(() => {});
-      }
-    })();
-  }
-
-  // Poll job status
-  app.get("/api/upload/apple-health/status/:jobId", (req, res) => {
-    const status = jobStatuses.get(req.params.jobId);
+    const status = await getImportJobStatus(req.params.jobId);
     if (!status) {
       res.status(404).json({ error: "Unknown job" });
       return;
@@ -272,21 +300,45 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
 
   // Chunked upload endpoint
   app.post("/api/upload/apple-health", async (req, res) => {
+    const contentType = req.headers["content-type"]?.split(";")[0]?.trim().toLowerCase();
+    if (
+      contentType &&
+      !["application/octet-stream", "application/zip", "application/xml", "text/xml"].includes(
+        contentType,
+      )
+    ) {
+      res.status(415).json({
+        error:
+          "Unsupported Content-Type. Expected application/octet-stream, application/zip, application/xml, or text/xml",
+      });
+      return;
+    }
+
     const uploadId = req.headers["x-upload-id"] as string | undefined;
     const chunkIndex = parseInt(req.headers["x-chunk-index"] as string, 10);
     const chunkTotal = parseInt(req.headers["x-chunk-total"] as string, 10);
     const fileExt = (req.headers["x-file-ext"] as string) || ".zip";
     const fullSync = req.query.fullSync === "true";
+
+    // Validate uploadId and fileExt to prevent path traversal
+    if (uploadId && !/^[a-zA-Z0-9_-]+$/.test(uploadId)) {
+      res.status(400).json({ error: "Invalid upload ID" });
+      return;
+    }
+    if (![".zip", ".xml"].includes(fileExt)) {
+      res.status(400).json({ error: "Invalid file extension" });
+      return;
+    }
     const since = fullSync ? new Date(0) : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-    // Non-chunked upload (single small file) — still processes in background
+    // Non-chunked upload (single small file)
     if (!uploadId || Number.isNaN(chunkTotal) || chunkTotal <= 1) {
-      const jobId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
       const ext = (req.headers["content-type"] ?? "").includes("xml") ? ".xml" : ".zip";
-      const tmpFile = join(tmpdir(), `apple-health-${jobId}${ext}`);
+      const tmpId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const tmpFile = join(tmpdir(), `apple-health-${tmpId}${ext}`);
       try {
         await streamToFile(req, tmpFile);
-        startBackgroundImport(jobId, tmpFile, since);
+        const jobId = await enqueueImport(tmpFile, since, "apple-health", DEFAULT_USER_ID);
         res.json({ status: "processing", jobId });
       } catch (err: unknown) {
         logger.error(`[upload] Apple Health upload failed: ${err}`);
@@ -310,12 +362,17 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
             if (stale) {
               activeUploads.delete(uploadId);
               await rm(stale.dir, { recursive: true, force: true }).catch(() => {});
-              setJobStatus(uploadId, { status: "error", message: "Upload timed out" });
+              setUploadStatus(uploadId, {
+                status: "error",
+                progress: 0,
+                message: "Upload timed out",
+              });
+              cleanupUploadStatus(uploadId);
             }
           },
           30 * 60 * 1000,
         );
-        setJobStatus(uploadId, {
+        setUploadStatus(uploadId, {
           status: "uploading",
           progress: 0,
           message: "Receiving chunks...",
@@ -330,7 +387,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       logger.info(`[upload] Chunk ${chunkIndex + 1}/${chunkTotal} for ${uploadId}`);
 
       if (upload.received.size < upload.total) {
-        setJobStatus(uploadId, {
+        setUploadStatus(uploadId, {
           status: "uploading",
           progress: uploadPct,
           message: `Received ${upload.received.size}/${upload.total} chunks`,
@@ -344,15 +401,21 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
         return;
       }
 
-      // All chunks received — assemble then process in background
-      setJobStatus(uploadId, { status: "assembling", progress: 0, message: "Assembling file..." });
+      // All chunks received — assemble then enqueue
+      setUploadStatus(uploadId, {
+        status: "assembling",
+        progress: 0,
+        message: "Assembling file...",
+      });
       const assembledFile = join(tmpdir(), `apple-health-${uploadId}${fileExt}`);
       await assembleChunks(upload.dir, assembledFile);
       activeUploads.delete(uploadId);
       await rm(upload.dir, { recursive: true, force: true });
 
-      startBackgroundImport(uploadId, assembledFile, since);
-      res.json({ status: "processing", jobId: uploadId });
+      // Clear upload status — BullMQ job status takes over from here
+      uploadStatuses.delete(uploadId);
+      const jobId = await enqueueImport(assembledFile, since, "apple-health", DEFAULT_USER_ID);
+      res.json({ status: "processing", jobId });
     } catch (err: unknown) {
       logger.error(`[upload] Chunked upload failed: ${err}`);
       const upload = activeUploads.get(uploadId);
@@ -360,14 +423,15 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
         activeUploads.delete(uploadId);
         await rm(upload.dir, { recursive: true, force: true }).catch(() => {});
       }
-      setJobStatus(uploadId, { status: "error", message: "Upload failed" });
+      setUploadStatus(uploadId, { status: "error", progress: 0, message: "Upload failed" });
+      cleanupUploadStatus(uploadId);
       res.status(500).json({ error: "Upload failed" });
     }
   });
 
   // ── Strong CSV upload ──
-  app.get("/api/upload/strong-csv/status/:jobId", (req, res) => {
-    const status = jobStatuses.get(req.params.jobId);
+  app.get("/api/upload/strong-csv/status/:jobId", async (req, res) => {
+    const status = await getImportJobStatus(req.params.jobId);
     if (!status) {
       res.status(404).json({ error: "Unknown job" });
       return;
@@ -376,58 +440,28 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
   });
 
   app.post("/api/upload/strong-csv", async (req, res) => {
+    const contentType = req.headers["content-type"]?.split(";")[0]?.trim().toLowerCase();
+    if (
+      contentType &&
+      !["text/csv", "application/octet-stream", "text/plain"].includes(contentType)
+    ) {
+      res.status(415).json({
+        error:
+          "Unsupported Content-Type. Expected text/csv, application/octet-stream, or text/plain",
+      });
+      return;
+    }
+
     const weightUnit = req.query.units === "lbs" ? "lbs" : "kg";
-    const jobId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    const tmpFile = join(tmpdir(), `strong-csv-${jobId}.csv`);
+    const tmpId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const tmpFile = join(tmpdir(), `strong-csv-${tmpId}.csv`);
 
     try {
       await streamToFile(req, tmpFile);
-      setJobStatus(jobId, {
-        status: "processing",
-        progress: 0,
-        message: "Importing Strong CSV...",
+      const jobId = await enqueueImport(tmpFile, new Date(0), "strong-csv", DEFAULT_USER_ID, {
+        weightUnit: weightUnit as "kg" | "lbs",
       });
       res.json({ status: "processing", jobId });
-
-      // Fire-and-forget background import
-      (async () => {
-        const importStart = Date.now();
-        try {
-          const { readFile } = await import("node:fs/promises");
-          const csvText = await readFile(tmpFile, "utf-8");
-          const { importStrongCsv } = await import("dofek/providers/strong-csv");
-          const { DEFAULT_USER_ID } = await import("dofek/db/schema");
-          const result = await importStrongCsv(
-            db,
-            csvText,
-            DEFAULT_USER_ID,
-            weightUnit as "kg" | "lbs",
-          );
-
-          const durationSec = ((Date.now() - importStart) / 1000).toFixed(1);
-          const msg = `${result.recordsSynced} workouts imported, ${result.errors.length} errors in ${durationSec}s`;
-          logger.info(`[strong-csv] Import complete: ${msg}`);
-          setJobStatus(jobId, { status: "done", progress: 100, message: msg, result });
-
-          const { logSync } = await import("dofek/db/sync-log");
-          await logSync(db, {
-            providerId: "strong-csv",
-            dataType: "import",
-            status: result.errors.length ? "error" : "success",
-            recordCount: result.recordsSynced,
-            errorMessage: result.errors.length
-              ? result.errors.map((e) => e.message).join("; ")
-              : undefined,
-            durationMs: Date.now() - importStart,
-          });
-        } catch (err: unknown) {
-          const message = errorMessage(err);
-          logger.error(`[strong-csv] Import failed: ${message}`);
-          setJobStatus(jobId, { status: "error", message });
-        } finally {
-          await unlink(tmpFile).catch(() => {});
-        }
-      })();
     } catch (err: unknown) {
       logger.error(`[strong-csv] Upload failed: ${err}`);
       res.status(500).json({ error: "Upload failed" });
@@ -435,8 +469,8 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
   });
 
   // ── Cronometer CSV upload ──
-  app.get("/api/upload/cronometer-csv/status/:jobId", (req, res) => {
-    const status = jobStatuses.get(req.params.jobId);
+  app.get("/api/upload/cronometer-csv/status/:jobId", async (req, res) => {
+    const status = await getImportJobStatus(req.params.jobId);
     if (!status) {
       res.status(404).json({ error: "Unknown job" });
       return;
@@ -445,63 +479,177 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
   });
 
   app.post("/api/upload/cronometer-csv", async (req, res) => {
-    const jobId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    const tmpFile = join(tmpdir(), `cronometer-csv-${jobId}.csv`);
+    const contentType = req.headers["content-type"]?.split(";")[0]?.trim().toLowerCase();
+    if (
+      contentType &&
+      !["text/csv", "application/octet-stream", "text/plain"].includes(contentType)
+    ) {
+      res.status(415).json({
+        error:
+          "Unsupported Content-Type. Expected text/csv, application/octet-stream, or text/plain",
+      });
+      return;
+    }
+
+    const tmpId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const tmpFile = join(tmpdir(), `cronometer-csv-${tmpId}.csv`);
 
     try {
       await streamToFile(req, tmpFile);
-      setJobStatus(jobId, {
-        status: "processing",
-        progress: 0,
-        message: "Importing Cronometer CSV...",
-      });
+      const jobId = await enqueueImport(tmpFile, new Date(0), "cronometer-csv", DEFAULT_USER_ID);
       res.json({ status: "processing", jobId });
-
-      // Fire-and-forget background import
-      (async () => {
-        const importStart = Date.now();
-        try {
-          const { readFile } = await import("node:fs/promises");
-          const csvText = await readFile(tmpFile, "utf-8");
-          const { importCronometerCsv } = await import("dofek/providers/cronometer-csv");
-          const result = await importCronometerCsv(db, csvText, DEFAULT_USER_ID);
-
-          const durationSec = ((Date.now() - importStart) / 1000).toFixed(1);
-          const msg = `${result.recordsSynced} food entries imported, ${result.errors.length} errors in ${durationSec}s`;
-          logger.info(`[cronometer-csv] Import complete: ${msg}`);
-          setJobStatus(jobId, { status: "done", progress: 100, message: msg, result });
-
-          const { logSync } = await import("dofek/db/sync-log");
-          await logSync(db, {
-            providerId: "cronometer-csv",
-            dataType: "import",
-            status: result.errors.length ? "error" : "success",
-            recordCount: result.recordsSynced,
-            errorMessage: result.errors.length
-              ? result.errors.map((e: { message: string }) => e.message).join("; ")
-              : undefined,
-            durationMs: Date.now() - importStart,
-          });
-        } catch (err: unknown) {
-          const message = errorMessage(err);
-          logger.error(`[cronometer-csv] Import failed: ${message}`);
-          setJobStatus(jobId, { status: "error", message });
-        } finally {
-          await unlink(tmpFile).catch(() => {});
-        }
-      })();
     } catch (err: unknown) {
       logger.error(`[cronometer-csv] Upload failed: ${err}`);
       res.status(500).json({ error: "Upload failed" });
     }
   });
 
+  // ── Data Export ──
+  // Export jobs run in-process (not via BullMQ) since they produce local temp files for download
+  interface ExportJobStatus {
+    status: string;
+    progress: number;
+    message: string;
+    userId: string;
+  }
+  const exportJobs = new Map<string, ExportJobStatus>();
+
+  app.post("/api/export", async (req, res) => {
+    const sessionId = getSessionCookie(req);
+    if (!sessionId) {
+      res.status(401).json({ error: "Not authenticated" });
+      return;
+    }
+    const session = await validateSession(db, sessionId);
+    if (!session) {
+      res.status(401).json({ error: "Session expired" });
+      return;
+    }
+
+    const jobId = `export-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const tmpFile = join(tmpdir(), `dofek-export-${jobId}.zip`);
+
+    exportJobs.set(jobId, {
+      status: "processing",
+      progress: 0,
+      message: "Starting export...",
+      userId: session.userId,
+    });
+
+    // Fire-and-forget background export
+    (async () => {
+      const exportStart = Date.now();
+      try {
+        const { generateExport } = await import("./export.ts");
+        const result = await generateExport(db, session.userId, tmpFile, (info) => {
+          exportJobs.set(jobId, {
+            status: "processing",
+            progress: info.pct,
+            message: info.message,
+            userId: session.userId,
+          });
+        });
+
+        const durationSec = ((Date.now() - exportStart) / 1000).toFixed(1);
+        const msg = `Exported ${result.totalRecords} records across ${result.tableCount} tables in ${durationSec}s`;
+        logger.info(`[export] ${msg}`);
+        exportJobs.set(jobId, {
+          status: "done",
+          progress: 100,
+          message: msg,
+          userId: session.userId,
+        });
+      } catch (err: unknown) {
+        const message = errorMessage(err);
+        logger.error(`[export] Export failed: ${message}`);
+        exportJobs.set(jobId, {
+          status: "error",
+          progress: 0,
+          message,
+          userId: session.userId,
+        });
+        await unlink(tmpFile).catch(() => {});
+      }
+    })();
+
+    res.json({ status: "processing", jobId });
+  });
+
+  app.get("/api/export/status/:jobId", (req, res) => {
+    const job = exportJobs.get(req.params.jobId);
+    if (!job) {
+      res.status(404).json({ error: "Unknown job" });
+      return;
+    }
+    const response: Record<string, unknown> = {
+      status: job.status,
+      progress: job.progress,
+      message: job.message,
+    };
+    if (job.status === "done") {
+      response.downloadUrl = `/api/export/download/${req.params.jobId}`;
+    }
+    res.json(response);
+  });
+
+  app.get("/api/export/download/:jobId", async (req, res) => {
+    const sessionId = getSessionCookie(req);
+    if (!sessionId) {
+      res.status(401).json({ error: "Not authenticated" });
+      return;
+    }
+    const session = await validateSession(db, sessionId);
+    if (!session) {
+      res.status(401).json({ error: "Session expired" });
+      return;
+    }
+
+    const { jobId } = req.params;
+    const job = exportJobs.get(jobId);
+    if (!job) {
+      res.status(404).json({ error: "Unknown job" });
+      return;
+    }
+
+    // Verify the export belongs to this user
+    if (job.userId !== session.userId) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+
+    if (job.status !== "done") {
+      res.status(400).json({ error: "Export not ready" });
+      return;
+    }
+
+    const filePath = join(tmpdir(), `dofek-export-${jobId}.zip`);
+    try {
+      await stat(filePath);
+    } catch {
+      res.status(404).json({ error: "Export file not found" });
+      return;
+    }
+
+    res.download(filePath, "dofek-export.zip", (err) => {
+      if (err) {
+        logger.error(`[export] Download failed: ${err}`);
+      }
+      // Clean up the temp file after download
+      unlink(filePath).catch(() => {});
+      exportJobs.delete(jobId);
+    });
+  });
+
   // ── OAuth state ──
   // Maps random state tokens to provider IDs (+ optional PKCE verifier) for CSRF protection
-  const oauthStateMap = new Map<
-    string,
-    { providerId: string; codeVerifier?: string; userId: string }
-  >();
+  interface OAuthStateEntry {
+    providerId: string;
+    codeVerifier?: string;
+    intent: "data" | "login" | "link";
+    linkUserId?: string;
+    userId: string;
+  }
+  const oauthStateMap = new Map<string, OAuthStateEntry>();
   // OAuth 1.0 request token secrets (keyed by oauth_token)
   const oauth1Secrets = new Map<
     string,
@@ -512,8 +660,25 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
 
   const IDENTITY_PROVIDERS: IdentityProviderName[] = ["google", "apple", "authentik"];
 
-  app.get("/api/auth/providers", (_req, res) => {
-    res.json(getConfiguredProviders());
+  app.get("/api/auth/providers", async (_req, res) => {
+    try {
+      const identityProviders = getConfiguredProviders();
+      const { getAllProviders } = await import("dofek/providers/registry");
+      const { ensureProvidersRegistered } = await import("./routers/sync.ts");
+      await ensureProvidersRegistered();
+
+      const dataLoginProviders = getAllProviders()
+        .filter((p) => {
+          const setup = p.authSetup?.();
+          return setup?.getUserIdentity && setup.oauthConfig;
+        })
+        .map((p) => p.id);
+
+      res.json({ identity: identityProviders, data: dataLoginProviders });
+    } catch (err: unknown) {
+      logger.error(`[auth] Failed to list providers: ${err}`);
+      res.json({ identity: getConfiguredProviders(), data: [] });
+    }
   });
 
   app.get("/auth/login/:provider", (req, res) => {
@@ -541,6 +706,48 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       logger.error(`[auth] Failed to start login flow: ${message}`);
+      res.status(500).send("Auth error: failed to start login flow");
+    }
+  });
+
+  // ── Link route: add a new identity provider to an existing logged-in account ──
+  app.get("/auth/link/:provider", async (req, res) => {
+    try {
+      const providerName = req.params.provider as IdentityProviderName;
+      if (!IDENTITY_PROVIDERS.includes(providerName)) {
+        res.status(404).send(`Unknown identity provider: ${providerName}`);
+        return;
+      }
+      if (!isProviderConfigured(providerName)) {
+        res.status(400).send(`Provider ${providerName} is not configured`);
+        return;
+      }
+
+      // Require valid session
+      const sessionId = getSessionCookie(req);
+      if (!sessionId) {
+        res.status(401).send("You must be logged in to link an account");
+        return;
+      }
+      const session = await validateSession(db, sessionId);
+      if (!session) {
+        res.status(401).send("Session expired — please log in first");
+        return;
+      }
+
+      const state = generateState();
+      const codeVerifier = generateCodeVerifier();
+      const provider = getIdentityProvider(providerName);
+
+      const statePayload = `${providerName}:${state}`;
+      const url = provider.createAuthorizationUrl(statePayload, codeVerifier);
+
+      setOAuthFlowCookies(res, statePayload, codeVerifier);
+      setLinkUserCookie(res, session.userId);
+      res.redirect(url.toString());
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error(`[auth] Failed to start link flow: ${message}`);
       res.status(500).send(`Auth error: ${message}`);
     }
   });
@@ -567,6 +774,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       }
 
       const { state: storedState, codeVerifier } = getOAuthFlowCookies(req);
+      const linkUserId = getLinkUserCookie(req);
       clearOAuthFlowCookies(res);
 
       if (!storedState || !codeVerifier || stateParam !== storedState) {
@@ -578,68 +786,32 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       const provider = getIdentityProvider(providerName);
       const { user: identityUser } = await provider.validateCallback(code, codeVerifier);
 
-      // Look up or create the user
-      const existingAccount = await db.execute<{ user_id: string }>(
-        sql`SELECT user_id FROM fitness.auth_account
-            WHERE auth_provider = ${providerName} AND provider_account_id = ${identityUser.sub}
-            LIMIT 1`,
+      // Resolve or create user (with email-based auto-linking and optional logged-in linking)
+      const { userId } = await resolveOrCreateUser(
+        db,
+        providerName,
+        {
+          providerAccountId: identityUser.sub,
+          email: identityUser.email,
+          name: identityUser.name,
+        },
+        linkUserId,
       );
 
-      let userId: string;
-
-      const firstAccount = existingAccount[0];
-      if (existingAccount.length > 0 && firstAccount) {
-        userId = firstAccount.user_id;
-      } else {
-        // Check if this is the very first auth account (claim DEFAULT_USER_ID data)
-        const accountCount = await db.execute<{ count: string }>(
-          sql`SELECT COUNT(*)::text AS count FROM fitness.auth_account`,
-        );
-        const countRow = accountCount[0];
-        if (!countRow) throw new Error("Failed to query account count");
-        const isFirstUser = parseInt(countRow.count, 10) === 0;
-
-        if (isFirstUser) {
-          // First user — link to the default user profile and update it
-          userId = DEFAULT_USER_ID;
-          if (identityUser.email || identityUser.name) {
-            await db.execute(
-              sql`UPDATE fitness.user_profile
-                  SET email = COALESCE(${identityUser.email}, email),
-                      name = COALESCE(${identityUser.name}, name),
-                      updated_at = NOW()
-                  WHERE id = ${DEFAULT_USER_ID}`,
-            );
-          }
-        } else {
-          // New user — create a user profile
-          const newUser = await db.execute<{ id: string }>(
-            sql`INSERT INTO fitness.user_profile (name, email)
-                VALUES (${identityUser.name ?? "User"}, ${identityUser.email})
-                RETURNING id`,
-          );
-          const newUserRow = newUser[0];
-          if (!newUserRow) throw new Error("Failed to create user profile");
-          userId = newUserRow.id;
-        }
-
-        // Create the auth account link
-        await db.execute(
-          sql`INSERT INTO fitness.auth_account (user_id, auth_provider, provider_account_id, email, name)
-              VALUES (${userId}, ${providerName}, ${identityUser.sub}, ${identityUser.email}, ${identityUser.name})`,
-        );
+      // Create session (or keep existing if linking)
+      if (!linkUserId) {
+        const sessionInfo = await createSession(db, userId);
+        setSessionCookie(res, sessionInfo.sessionId, sessionInfo.expiresAt);
       }
 
-      // Create session
-      const sessionInfo = await createSession(db, userId);
-      setSessionCookie(res, sessionInfo.sessionId, sessionInfo.expiresAt);
-
-      logger.info(`[auth] User ${userId} logged in via ${providerName}`);
-      res.redirect("/");
+      logger.info(
+        `[auth] User ${userId} ${linkUserId ? "linked" : "logged in via"} ${providerName}`,
+      );
+      res.redirect(linkUserId ? "/settings" : "/");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       logger.error(`[auth] Identity callback failed: ${message}`);
-      res.status(500).send(`Login failed: ${message}`);
+      res.status(500).send("Login failed — please try again");
     }
   });
 
@@ -690,16 +862,147 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       res.status(400).send("SLACK_CLIENT_ID is not configured");
       return;
     }
-    const redirectUri = `${process.env.OAUTH_REDIRECT_URI ?? "https://dofek.asherlc.com/callback"}`;
+    const redirectUri = getOAuthRedirectUri();
+    const stateToken = `slack:${randomBytes(16).toString("hex")}`;
+    oauthStateMap.set(stateToken, { providerId: "slack", intent: "data", userId: DEFAULT_USER_ID });
+    setTimeout(() => oauthStateMap.delete(stateToken), 10 * 60 * 1000);
     const url = new URL("https://slack.com/oauth/v2/authorize");
     url.searchParams.set("client_id", clientId);
     url.searchParams.set("scope", SLACK_SCOPES.join(","));
     url.searchParams.set("redirect_uri", redirectUri);
-    url.searchParams.set("state", "slack");
+    url.searchParams.set("state", stateToken);
     res.redirect(url.toString());
   });
 
-  // ── Data-provider OAuth (Wahoo, Withings, etc.) ──
+  // ── Shared helper: start an OAuth 2.0 flow for a data provider ──
+  async function startDataProviderOAuth(
+    res: import("express").Response,
+    providerId: string,
+    stateEntry: OAuthStateEntry,
+  ): Promise<void> {
+    const { getAllProviders } = await import("dofek/providers/registry");
+    const { ensureProvidersRegistered } = await import("./routers/sync.ts");
+    await ensureProvidersRegistered();
+
+    const provider = getAllProviders().find((p) => p.id === providerId);
+    if (!provider) {
+      res.status(404).send(`Unknown provider: ${providerId}`);
+      return;
+    }
+
+    const setup = provider.authSetup?.();
+    if (!setup?.oauthConfig) {
+      res.status(400).send(`Provider ${providerId} does not use OAuth`);
+      return;
+    }
+
+    // Login intent requires getUserIdentity to extract user info from the provider
+    if (stateEntry.intent === "login" && !setup.getUserIdentity) {
+      res.status(400).send(`Provider ${providerId} cannot be used for login`);
+      return;
+    }
+
+    // Providers with automatedLogin (e.g. Peloton) — only for data intent
+    if (setup.automatedLogin && stateEntry.intent === "data") {
+      const envPrefix = providerId.toUpperCase();
+      const email = process.env[`${envPrefix}_USERNAME`];
+      const password = process.env[`${envPrefix}_PASSWORD`];
+      if (!email || !password) {
+        res.status(400).send(`${envPrefix}_USERNAME and ${envPrefix}_PASSWORD must be set`);
+        return;
+      }
+
+      logger.info(`[auth] Running automated login for ${providerId}...`);
+      const tokens = await setup.automatedLogin(email, password);
+      const { ensureProvider, saveTokens } = await import("dofek/db/tokens");
+      await ensureProvider(db, provider.id, provider.name, setup.apiBaseUrl, stateEntry.userId);
+      await saveTokens(db, provider.id, tokens);
+      await queryCache.invalidateByPrefix(`${stateEntry.userId}:sync.providers`);
+
+      logger.info(`[auth] ${providerId} tokens saved. Expires: ${tokens.expiresAt.toISOString()}`);
+      res.send(
+        `<html><body style="font-family:system-ui;background:#111;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center"><h1>Authorized!</h1><p>${provider.name} connected successfully.</p><p>Token expires: ${tokens.expiresAt.toISOString()}</p><p><a href="/" style="color:#10b981">Return to dashboard</a></p></div></body></html>`,
+      );
+      return;
+    }
+
+    // OAuth 1.0 providers (e.g. FatSecret) — only for data intent
+    if (setup.oauth1Flow && stateEntry.intent === "data") {
+      const callbackUrl = `${process.env.OAUTH_REDIRECT_URI ?? "https://dofek.asherlc.com/callback"}`;
+      const result = await setup.oauth1Flow.getRequestToken(callbackUrl);
+      oauth1Secrets.set(result.oauthToken, {
+        providerId,
+        tokenSecret: result.oauthTokenSecret,
+        userId: stateEntry.userId,
+      });
+      setTimeout(() => oauth1Secrets.delete(result.oauthToken), 10 * 60 * 1000);
+      res.redirect(result.authorizeUrl);
+      return;
+    }
+
+    const {
+      buildAuthorizationUrl,
+      generateCodeVerifier: genVerifier,
+      generateCodeChallenge,
+    } = await import("dofek/auth/oauth");
+
+    let pkceVerifier: string | undefined;
+    let pkceParam: { codeChallenge: string } | undefined;
+    if (setup.oauthConfig.usePkce) {
+      pkceVerifier = genVerifier();
+      pkceParam = { codeChallenge: generateCodeChallenge(pkceVerifier) };
+    }
+
+    const url = buildAuthorizationUrl(setup.oauthConfig, pkceParam);
+    const stateToken = randomBytes(16).toString("hex");
+    oauthStateMap.set(stateToken, { ...stateEntry, codeVerifier: pkceVerifier });
+    setTimeout(() => oauthStateMap.delete(stateToken), 10 * 60 * 1000);
+    const authUrl = new URL(url);
+    authUrl.searchParams.set("state", stateToken);
+    res.redirect(authUrl.toString());
+  }
+
+  // ── Data provider login: use a data provider as an identity/login provider ──
+  app.get("/auth/login/data/:provider", async (req, res) => {
+    try {
+      await startDataProviderOAuth(res, req.params.provider, {
+        providerId: req.params.provider,
+        intent: "login",
+        userId: DEFAULT_USER_ID,
+      });
+    } catch (err: unknown) {
+      logger.error(`[auth] Failed to start data provider login: ${err}`);
+      res.status(500).send("Auth error: failed to start login flow");
+    }
+  });
+
+  // ── Data provider link: link a data provider as identity while already logged in ──
+  app.get("/auth/link/data/:provider", async (req, res) => {
+    try {
+      const sessionId = getSessionCookie(req);
+      if (!sessionId) {
+        res.status(401).send("You must be logged in to link an account");
+        return;
+      }
+      const session = await validateSession(db, sessionId);
+      if (!session) {
+        res.status(401).send("Session expired — please log in first");
+        return;
+      }
+
+      await startDataProviderOAuth(res, req.params.provider, {
+        providerId: req.params.provider,
+        intent: "link",
+        linkUserId: session.userId,
+        userId: session.userId,
+      });
+    } catch (err: unknown) {
+      logger.error(`[auth] Failed to start data provider link: ${err}`);
+      res.status(500).send("Auth error: failed to start link flow");
+    }
+  });
+
+  // ── Data-provider OAuth for data sync (Wahoo, Withings, etc.) ──
   app.get("/auth/provider/:provider", async (req, res) => {
     try {
       // Resolve the logged-in user so the provider record is linked to them
@@ -707,86 +1010,11 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       const session = sessionId ? await validateSession(db, sessionId) : null;
       const userId = session?.userId ?? DEFAULT_USER_ID;
 
-      const providerId = req.params.provider;
-      const { getAllProviders } = await import("dofek/providers/registry");
-      const { ensureProvidersRegistered } = await import("./routers/sync.ts");
-      await ensureProvidersRegistered();
-
-      const provider = getAllProviders().find((p) => p.id === providerId);
-      if (!provider) {
-        res.status(404).send(`Unknown provider: ${providerId}`);
-        return;
-      }
-
-      const setup = provider.authSetup?.();
-      if (!setup?.oauthConfig) {
-        res.status(400).send(`Provider ${providerId} does not use OAuth`);
-        return;
-      }
-
-      // Providers with automatedLogin (e.g. Peloton) — run login server-side
-      if (setup.automatedLogin) {
-        const envPrefix = providerId.toUpperCase();
-        const email = process.env[`${envPrefix}_USERNAME`];
-        const password = process.env[`${envPrefix}_PASSWORD`];
-        if (!email || !password) {
-          res.status(400).send(`${envPrefix}_USERNAME and ${envPrefix}_PASSWORD must be set`);
-          return;
-        }
-
-        logger.info(`[auth] Running automated login for ${providerId}...`);
-        const tokens = await setup.automatedLogin(email, password);
-        const { ensureProvider, saveTokens } = await import("dofek/db/tokens");
-        await ensureProvider(db, provider.id, provider.name, setup.apiBaseUrl, userId);
-        await saveTokens(db, provider.id, tokens);
-        await queryCache.invalidateByPrefix(`${userId}:sync.providers`);
-
-        logger.info(
-          `[auth] ${providerId} tokens saved. Expires: ${tokens.expiresAt.toISOString()}`,
-        );
-        res.send(
-          `<html><body style="font-family:system-ui;background:#111;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center"><h1>Authorized!</h1><p>${provider.name} connected successfully.</p><p>Token expires: ${tokens.expiresAt.toISOString()}</p><p><a href="/" style="color:#10b981">Return to dashboard</a></p></div></body></html>`,
-        );
-        return;
-      }
-
-      // OAuth 1.0 providers (e.g. FatSecret) — get request token first
-      if (setup.oauth1Flow) {
-        const callbackUrl = `${process.env.OAUTH_REDIRECT_URI ?? "https://dofek.asherlc.com/callback"}`;
-        const result = await setup.oauth1Flow.getRequestToken(callbackUrl);
-        oauth1Secrets.set(result.oauthToken, {
-          providerId,
-          tokenSecret: result.oauthTokenSecret,
-          userId,
-        });
-        // Clean up after 10 minutes
-        setTimeout(() => oauth1Secrets.delete(result.oauthToken), 10 * 60 * 1000);
-        res.redirect(result.authorizeUrl);
-        return;
-      }
-
-      const {
-        buildAuthorizationUrl,
-        generateCodeVerifier: genVerifier,
-        generateCodeChallenge,
-      } = await import("dofek/auth/oauth");
-
-      // Generate PKCE challenge if the provider requires it
-      let pkceVerifier: string | undefined;
-      let pkceParam: { codeChallenge: string } | undefined;
-      if (setup.oauthConfig.usePkce) {
-        pkceVerifier = genVerifier();
-        pkceParam = { codeChallenge: generateCodeChallenge(pkceVerifier) };
-      }
-
-      const url = buildAuthorizationUrl(setup.oauthConfig, pkceParam);
-      // Generate random state for CSRF protection, map it to the provider ID + PKCE verifier
-      const stateToken = randomBytes(16).toString("hex");
-      oauthStateMap.set(stateToken, { providerId, codeVerifier: pkceVerifier, userId });
-      setTimeout(() => oauthStateMap.delete(stateToken), 10 * 60 * 1000);
-      const authUrl = new URL(url);
-      authUrl.searchParams.set("state", stateToken);
-      res.redirect(authUrl.toString());
+      await startDataProviderOAuth(res, req.params.provider, {
+        providerId: req.params.provider,
+        intent: "data",
+        userId,
+      });
     } catch (err: unknown) {
       logger.error(`[auth] Failed to start OAuth flow: ${err}`);
       res.status(500).send("Auth error: failed to start OAuth flow");
@@ -870,7 +1098,8 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       }
 
       // ── Slack OAuth callback (Add to Slack) ──
-      if (state === "slack") {
+      if (state.startsWith("slack:") && oauthStateMap.has(state)) {
+        oauthStateMap.delete(state);
         const clientId = process.env.SLACK_CLIENT_ID;
         const clientSecret = process.env.SLACK_CLIENT_SECRET;
         if (!clientId || !clientSecret) {
@@ -878,7 +1107,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
           return;
         }
 
-        const redirectUri = `${process.env.OAUTH_REDIRECT_URI ?? "https://dofek.asherlc.com/callback"}`;
+        const redirectUri = getOAuthRedirectUri();
         logger.info("[auth] Exchanging Slack OAuth code for bot token...");
 
         // Exchange code for access token via Slack's oauth.v2.access
@@ -948,7 +1177,13 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       }
       oauthStateMap.delete(state);
 
-      const { providerId, codeVerifier: storedCodeVerifier, userId: stateUserId } = stateEntry;
+      const {
+        providerId,
+        codeVerifier: storedCodeVerifier,
+        intent,
+        linkUserId,
+        userId: stateUserId,
+      } = stateEntry;
 
       const { getAllProviders } = await import("dofek/providers/registry");
       const { ensureProvidersRegistered } = await import("./routers/sync.ts");
@@ -976,6 +1211,43 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       await queryCache.invalidateByPrefix(`${stateUserId}:sync.providers`);
 
       logger.info(`[auth] ${providerId} tokens saved. Expires: ${tokens.expiresAt.toISOString()}`);
+
+      // Auto-link identity when connecting data providers (if getUserIdentity is available)
+      if (setup.getUserIdentity) {
+        try {
+          const identity = await setup.getUserIdentity(tokens.accessToken);
+
+          if (intent === "login") {
+            // Data provider login: resolve/create user and create session
+            const { userId } = await resolveOrCreateUser(db, providerId, identity);
+            const sessionInfo = await createSession(db, userId);
+            setSessionCookie(res, sessionInfo.sessionId, sessionInfo.expiresAt);
+            logger.info(`[auth] User ${userId} logged in via data provider ${providerId}`);
+            res.redirect("/");
+            return;
+          }
+
+          if (intent === "link" && linkUserId) {
+            // Data provider link: link to logged-in user
+            await resolveOrCreateUser(db, providerId, identity, linkUserId);
+            logger.info(`[auth] Linked ${providerId} to user ${linkUserId}`);
+            res.redirect("/settings");
+            return;
+          }
+
+          // intent === "data": auto-link identity to the current session user (if logged in)
+          const sessionId = getSessionCookie(req);
+          const session = sessionId ? await validateSession(db, sessionId) : null;
+          if (session) {
+            await resolveOrCreateUser(db, providerId, identity, session.userId);
+            logger.info(`[auth] Auto-linked ${providerId} identity to user ${session.userId}`);
+          }
+        } catch (identityErr: unknown) {
+          // Non-fatal: identity extraction failed but tokens are saved
+          logger.warn(`[auth] Failed to extract identity from ${providerId}: ${identityErr}`);
+        }
+      }
+
       res.send(
         `<html><body style="font-family:system-ui;background:#111;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center"><h1>Authorized!</h1><p>${provider.name} connected successfully.</p><p>Token expires: ${tokens.expiresAt.toISOString()}</p><p><a href="/" style="color:#10b981">Return to dashboard</a></p></div></body></html>`,
       );

@@ -5,6 +5,95 @@ import { activity, bodyMeasurement, dailyMetrics, metricStream, sleepSession } f
 import { ensureProvider } from "../tokens.ts";
 import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
 
+interface ActivityViewRow extends Record<string, unknown> {
+  id: string;
+  provider_id: string;
+  primary_activity_id: string;
+  activity_type: string;
+  started_at: Date;
+  ended_at: Date | null;
+  name: string | null;
+  notes: string | null;
+  raw: Record<string, unknown> | null;
+  source_providers: string[];
+}
+
+interface SleepViewRow extends Record<string, unknown> {
+  id: string;
+  provider_id: string;
+  started_at: Date;
+  ended_at: Date | null;
+  duration_minutes: number | null;
+  deep_minutes: number | null;
+  rem_minutes: number | null;
+  light_minutes: number | null;
+  awake_minutes: number | null;
+  efficiency_pct: number | null;
+  is_nap: boolean;
+  source_providers: string[];
+}
+
+interface BodyMeasurementViewRow extends Record<string, unknown> {
+  id: string;
+  provider_id: string;
+  recorded_at: Date;
+  weight_kg: number | null;
+  body_fat_pct: number | null;
+  muscle_mass_kg: number | null;
+  bmi: number | null;
+  systolic_bp: number | null;
+  diastolic_bp: number | null;
+  temperature_c: number | null;
+  height_cm: number | null;
+  source_providers: string[];
+}
+
+interface DailyMetricsViewRow extends Record<string, unknown> {
+  date: string;
+  resting_hr: number | null;
+  hrv: number | string | null;
+  vo2max: number | string | null;
+  spo2_avg: number | string | null;
+  respiratory_rate_avg: number | string | null;
+  skin_temp_c: number | string | null;
+  steps: number | null;
+  active_energy_kcal: number | string | null;
+  basal_energy_kcal: number | string | null;
+  distance_km: number | string | null;
+  flights_climbed: number | null;
+  exercise_minutes: number | null;
+  stand_hours: number | null;
+  walking_speed: number | string | null;
+  environmental_audio_exposure: number | string | null;
+  headphone_audio_exposure: number | string | null;
+  source_providers: string[];
+}
+
+interface ActivitySummaryRow extends Record<string, unknown> {
+  activity_id: string;
+  user_id: string;
+  activity_type: string;
+  started_at: Date;
+  ended_at: Date | null;
+  name: string | null;
+  avg_hr: number | null;
+  max_hr: number | null;
+  min_hr: number | null;
+  avg_power: number | null;
+  max_power: number | null;
+  avg_speed: number | null;
+  max_speed: number | null;
+  avg_cadence: number | null;
+  total_distance: number | null;
+  max_altitude: number | null;
+  min_altitude: number | null;
+  sample_count: number;
+  hr_sample_count: number;
+  power_sample_count: number;
+  first_sample_at: Date | null;
+  last_sample_at: Date | null;
+}
+
 describe("Deduplication materialized views", () => {
   let ctx: TestContext;
 
@@ -65,32 +154,32 @@ describe("Deduplication materialized views", () => {
 
     await refreshDedupViews(ctx.db);
 
-    const rows = await ctx.db.execute(sql`SELECT * FROM fitness.v_activity ORDER BY started_at`);
+    const rows = await ctx.db.execute<ActivityViewRow>(
+      sql`SELECT * FROM fitness.v_activity ORDER BY started_at`,
+    );
 
     // Should have 2 canonical activities: merged run + standalone yoga
     expect(rows.length).toBe(2);
 
-    // biome-ignore lint/suspicious/noExplicitAny: raw SQL view result — untyped db.execute
-    const run = rows.find((r: any) => r.activity_type === "running") as any;
+    const run = rows.find((r) => r.activity_type === "running");
     expect(run).toBeDefined();
     // Wahoo is highest priority (10), should be the primary
-    expect(run.provider_id).toBe("wahoo");
+    expect(run?.provider_id).toBe("wahoo");
     // Name should come from Wahoo (highest priority with non-null name)
-    expect(run.name).toBe("Morning Run");
+    expect(run?.name).toBe("Morning Run");
     // source_providers should include all 3
-    expect(run.source_providers).toContain("wahoo");
-    expect(run.source_providers).toContain("whoop");
-    expect(run.source_providers).toContain("apple_health");
+    expect(run?.source_providers).toContain("wahoo");
+    expect(run?.source_providers).toContain("whoop");
+    expect(run?.source_providers).toContain("apple_health");
     // raw should be merged JSONB (wahoo fields win on conflict)
-    const raw = typeof run.raw === "string" ? JSON.parse(run.raw) : run.raw;
-    expect(raw.avgPower).toBe(220);
-    expect(raw.strain).toBe(12.5); // from WHOOP, no conflict with wahoo
+    const raw = typeof run?.raw === "string" ? JSON.parse(run.raw) : run?.raw;
+    expect(raw?.avgPower).toBe(220);
+    expect(raw?.strain).toBe(12.5); // from WHOOP, no conflict with wahoo
 
-    // biome-ignore lint/suspicious/noExplicitAny: raw SQL view result — untyped db.execute
-    const yoga = rows.find((r: any) => r.activity_type === "yoga") as any;
+    const yoga = rows.find((r) => r.activity_type === "yoga");
     expect(yoga).toBeDefined();
-    expect(yoga.provider_id).toBe("whoop");
-    expect(yoga.source_providers).toHaveLength(1);
+    expect(yoga?.provider_id).toBe("whoop");
+    expect(yoga?.source_providers).toHaveLength(1);
   });
 
   it("v_activity keeps non-overlapping same-type activities separate", async () => {
@@ -114,7 +203,7 @@ describe("Deduplication materialized views", () => {
 
     await refreshDedupViews(ctx.db);
 
-    const rows = await ctx.db.execute(
+    const rows = await ctx.db.execute<ActivityViewRow>(
       sql`SELECT * FROM fitness.v_activity WHERE started_at::date = '2026-03-10'`,
     );
 
@@ -153,23 +242,18 @@ describe("Deduplication materialized views", () => {
 
     await refreshDedupViews(ctx.db);
 
-    const rows = await ctx.db.execute(
+    const rows = await ctx.db.execute<SleepViewRow>(
       sql`SELECT * FROM fitness.v_sleep WHERE started_at::date >= '2026-03-01' AND started_at::date <= '2026-03-02'`,
     );
 
     // Should merge into 1 canonical sleep session
-    // biome-ignore lint/suspicious/noExplicitAny: raw SQL view result — untyped db.execute
-    const mainSleep = rows.filter((r: any) => !r.is_nap);
+    const mainSleep = rows.filter((r) => !r.is_nap);
     expect(mainSleep.length).toBe(1);
     // WHOOP should win (priority 30 < apple_health 90)
-    // biome-ignore lint/suspicious/noExplicitAny: raw SQL view result — untyped db.execute
-    expect((mainSleep[0] as any).provider_id).toBe("whoop");
-    // biome-ignore lint/suspicious/noExplicitAny: raw SQL view result — untyped db.execute
-    expect((mainSleep[0] as any).deep_minutes).toBe(120);
-    // biome-ignore lint/suspicious/noExplicitAny: raw SQL view result — untyped db.execute
-    expect((mainSleep[0] as any).source_providers).toContain("whoop");
-    // biome-ignore lint/suspicious/noExplicitAny: raw SQL view result — untyped db.execute
-    expect((mainSleep[0] as any).source_providers).toContain("apple_health");
+    expect(mainSleep[0]?.provider_id).toBe("whoop");
+    expect(mainSleep[0]?.deep_minutes).toBe(120);
+    expect(mainSleep[0]?.source_providers).toContain("whoop");
+    expect(mainSleep[0]?.source_providers).toContain("apple_health");
   });
 
   it("v_body_measurement merges measurements within 5 minutes", async () => {
@@ -194,20 +278,20 @@ describe("Deduplication materialized views", () => {
 
     await refreshDedupViews(ctx.db);
 
-    const rows = await ctx.db.execute(
+    const rows = await ctx.db.execute<BodyMeasurementViewRow>(
       sql`SELECT * FROM fitness.v_body_measurement WHERE recorded_at::date = '2026-03-01'`,
     );
 
     expect(rows.length).toBe(1);
-    // biome-ignore lint/suspicious/noExplicitAny: raw SQL view result — untyped db.execute
-    const m = rows[0] as any;
+    const m = rows[0];
+    expect(m).toBeDefined();
     // Withings wins (priority 15)
-    expect(m.provider_id).toBe("withings");
-    expect(m.weight_kg).toBeCloseTo(75.2);
+    expect(m?.provider_id).toBe("withings");
+    expect(m?.weight_kg).toBeCloseTo(75.2);
     // Body fat from Withings (Apple Health was null)
-    expect(m.body_fat_pct).toBeCloseTo(18.5);
-    expect(m.source_providers).toContain("withings");
-    expect(m.source_providers).toContain("apple_health");
+    expect(m?.body_fat_pct).toBeCloseTo(18.5);
+    expect(m?.source_providers).toContain("withings");
+    expect(m?.source_providers).toContain("apple_health");
   });
 
   it("v_daily_metrics merges per-field across providers", async () => {
@@ -235,25 +319,25 @@ describe("Deduplication materialized views", () => {
 
     await refreshDedupViews(ctx.db);
 
-    const rows = await ctx.db.execute(
+    const rows = await ctx.db.execute<DailyMetricsViewRow>(
       sql`SELECT * FROM fitness.v_daily_metrics WHERE date = '2026-03-01'`,
     );
 
     expect(rows.length).toBe(1);
-    // biome-ignore lint/suspicious/noExplicitAny: raw SQL view result — untyped db.execute
-    const day = rows[0] as any;
+    const day = rows[0];
+    expect(day).toBeDefined();
     // WHOOP wins for restingHr/hrv/spo2 (priority 30 < 90)
-    expect(day.resting_hr).toBe(52);
-    expect(Number(day.hrv)).toBeCloseTo(65.5);
-    expect(Number(day.spo2_avg)).toBeCloseTo(97.2);
-    expect(Number(day.skin_temp_c)).toBeCloseTo(33.7);
+    expect(day?.resting_hr).toBe(52);
+    expect(Number(day?.hrv)).toBeCloseTo(65.5);
+    expect(Number(day?.spo2_avg)).toBeCloseTo(97.2);
+    expect(Number(day?.skin_temp_c)).toBeCloseTo(33.7);
     // Apple Health wins for steps (WHOOP was null)
-    expect(day.steps).toBe(8421);
-    expect(Number(day.active_energy_kcal)).toBeCloseTo(450);
-    expect(day.flights_climbed).toBe(12);
+    expect(day?.steps).toBe(8421);
+    expect(Number(day?.active_energy_kcal)).toBeCloseTo(450);
+    expect(day?.flights_climbed).toBe(12);
     // Both providers listed
-    expect(day.source_providers).toContain("whoop");
-    expect(day.source_providers).toContain("apple_health");
+    expect(day?.source_providers).toContain("whoop");
+    expect(day?.source_providers).toContain("apple_health");
   });
 
   it("activity_summary aggregates per-activity stats from metric_stream", async () => {
@@ -291,21 +375,21 @@ describe("Deduplication materialized views", () => {
 
     await refreshDedupViews(ctx.db);
 
-    const rows = await ctx.db.execute(
+    const rows = await ctx.db.execute<ActivitySummaryRow>(
       sql`SELECT * FROM fitness.activity_summary WHERE activity_id = ${wahooActivity.id}`,
     );
 
     expect(rows.length).toBe(1);
-    // biome-ignore lint/suspicious/noExplicitAny: raw SQL view result — untyped db.execute
-    const summary = rows[0] as any;
-    expect(summary.activity_type).toBe("cycling");
-    expect(Number(summary.avg_hr)).toBeCloseTo(142.5, 0);
-    expect(summary.max_hr).toBe(145);
-    expect(Number(summary.avg_power)).toBeCloseTo(205, 0);
-    expect(summary.max_power).toBe(210);
-    expect(summary.sample_count).toBe(2);
-    expect(summary.hr_sample_count).toBe(2);
-    expect(summary.power_sample_count).toBe(2);
+    const summary = rows[0];
+    expect(summary).toBeDefined();
+    expect(summary?.activity_type).toBe("cycling");
+    expect(Number(summary?.avg_hr)).toBeCloseTo(142.5, 0);
+    expect(summary?.max_hr).toBe(145);
+    expect(Number(summary?.avg_power)).toBeCloseTo(205, 0);
+    expect(summary?.max_power).toBe(210);
+    expect(summary?.sample_count).toBe(2);
+    expect(summary?.hr_sample_count).toBe(2);
+    expect(summary?.power_sample_count).toBe(2);
   });
 
   it("refreshDedupViews can be called multiple times", async () => {

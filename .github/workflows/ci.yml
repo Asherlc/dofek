@@ -1,13 +1,11 @@
-name: CI
+name: Docker Build & Push
 
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: docker-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -15,115 +13,23 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  check:
-    name: Lint & Type Check
+  wait-for-ci:
+    name: Wait for CircleCI
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - name: Wait for CircleCI checks to pass
+        uses: lewagon/wait-on-check-action@v1.3.4
         with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: cd packages/web && pnpm exec tsr generate
-      - run: pnpm lint
-      - run: pnpm tsc --noEmit
-      - run: cd packages/server && pnpm tsc --noEmit
-      - run: cd packages/web && pnpm tsc --noEmit
-
-  test:
-    name: Tests
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: timescale/timescaledb:latest-pg16
-        env:
-          POSTGRES_DB: test
-          POSTGRES_USER: test
-          POSTGRES_PASSWORD: test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U test -d test"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-    env:
-      TEST_DATABASE_URL: postgres://test:test@localhost:5432/test
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm test:coverage
-
-  build-web:
-    name: Build Web
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: cd packages/web && pnpm run build
-
-  e2e:
-    name: E2E Tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: docker/setup-buildx-action@v3
-
-      - name: Build Docker images
-        run: |
-          docker compose -f docker-compose.e2e.yml build
-
-      - name: Start e2e stack
-        run: docker compose -f docker-compose.e2e.yml up -d --wait
-
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-
-      - name: Cache Cypress binary
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/Cypress
-          key: cypress-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-
-      - name: Install Cypress binary
-        run: pnpm exec cypress install
-
-      - name: Run Cypress tests
-        run: pnpm e2e:run
-
-      - name: Upload screenshots on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: cypress-screenshots
-          path: cypress/screenshots/
-
-      - name: Teardown
-        if: always()
-        run: docker compose -f docker-compose.e2e.yml down -v
+          ref: ${{ github.sha }}
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          check-regexp: ci/circleci:.*
+          wait-interval: 30
+          allowed-conclusions: success
 
   docker:
     name: Docker (${{ matrix.target }})
-    needs: [check, test, build-web, e2e]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    runs-on: ubuntu-latest
+    needs: [wait-for-ci]
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
     permissions:
       contents: read
       packages: write
@@ -135,7 +41,7 @@ jobs:
           - target: client
             suffix: "-client"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: docker/setup-qemu-action@v3
 

@@ -20,36 +20,46 @@ import { analyzeNutritionItems, type NutritionItemWithMeal } from "./ai-nutritio
 
 const mockGenerateText = vi.mocked(generateText);
 
-const sampleItems: NutritionItemWithMeal[] = [
-  {
-    foodName: "Chicken Burrito",
-    foodDescription: "1 large burrito",
-    category: "fast_food",
-    calories: 650,
-    proteinG: 35,
-    carbsG: 72,
-    fatG: 22,
-    fiberG: 8,
-    saturatedFatG: 8,
-    sugarG: 3,
-    sodiumMg: 1200,
-    meal: "lunch",
-  },
-  {
-    foodName: "Coca-Cola",
-    foodDescription: "1 can (355ml)",
-    category: "beverages",
-    calories: 140,
-    proteinG: 0,
-    carbsG: 39,
-    fatG: 0,
-    fiberG: 0,
-    saturatedFatG: 0,
-    sugarG: 39,
-    sodiumMg: 45,
-    meal: "lunch",
-  },
-];
+type GenerateTextResult = Awaited<ReturnType<typeof generateText>>;
+
+/** Build a minimal mock result for generateText — only the `output` field is used by tests. */
+function mockResult(output: { items: NutritionItemWithMeal[] }): GenerateTextResult {
+  // generateText returns many fields; tests only inspect `output`, so we provide
+  // a structurally-typed partial with the correct return type annotation.
+  return { output } as GenerateTextResult;
+}
+
+const burrito: NutritionItemWithMeal = {
+  foodName: "Chicken Burrito",
+  foodDescription: "1 large burrito",
+  category: "fast_food",
+  calories: 650,
+  proteinG: 35,
+  carbsG: 72,
+  fatG: 22,
+  fiberG: 8,
+  saturatedFatG: 8,
+  sugarG: 3,
+  sodiumMg: 1200,
+  meal: "lunch",
+};
+
+const coke: NutritionItemWithMeal = {
+  foodName: "Coca-Cola",
+  foodDescription: "1 can (355ml)",
+  category: "beverages",
+  calories: 140,
+  proteinG: 0,
+  carbsG: 39,
+  fatG: 0,
+  fiberG: 0,
+  saturatedFatG: 0,
+  sugarG: 39,
+  sodiumMg: 45,
+  meal: "lunch",
+};
+
+const sampleItems: NutritionItemWithMeal[] = [burrito, coke];
 
 describe("analyzeNutritionItems", () => {
   beforeEach(() => {
@@ -64,9 +74,7 @@ describe("analyzeNutritionItems", () => {
   it("returns multiple food items from a single description", async () => {
     process.env.GEMINI_API_KEY = "test-key";
 
-    mockGenerateText.mockResolvedValueOnce({
-      output: { items: sampleItems },
-    } as unknown as Awaited<ReturnType<typeof generateText>>);
+    mockGenerateText.mockResolvedValueOnce(mockResult({ items: sampleItems }));
 
     const result = await analyzeNutritionItems("chicken burrito and a coke for lunch");
 
@@ -84,9 +92,9 @@ describe("analyzeNutritionItems", () => {
   it("includes local time in AI system prompt when provided", async () => {
     process.env.GEMINI_API_KEY = "test-key";
 
-    mockGenerateText.mockResolvedValueOnce({
-      output: { items: [{ ...sampleItems[0], meal: "breakfast" }] },
-    } as unknown as Awaited<ReturnType<typeof generateText>>);
+    mockGenerateText.mockResolvedValueOnce(
+      mockResult({ items: [{ ...burrito, meal: "breakfast" }] }),
+    );
 
     await analyzeNutritionItems("eggs and toast", "Monday, 7:30 AM");
 
@@ -98,9 +106,7 @@ describe("analyzeNutritionItems", () => {
   it("does not include time context when localTime is omitted", async () => {
     process.env.GEMINI_API_KEY = "test-key";
 
-    mockGenerateText.mockResolvedValueOnce({
-      output: { items: sampleItems },
-    } as unknown as Awaited<ReturnType<typeof generateText>>);
+    mockGenerateText.mockResolvedValueOnce(mockResult({ items: sampleItems }));
 
     await analyzeNutritionItems("chicken burrito and a coke");
 
@@ -114,9 +120,7 @@ describe("analyzeNutritionItems", () => {
 
     mockGenerateText
       .mockRejectedValueOnce(new Error("429 Too Many Requests"))
-      .mockResolvedValueOnce({
-        output: { items: [sampleItems[0]] },
-      } as unknown as Awaited<ReturnType<typeof generateText>>);
+      .mockResolvedValueOnce(mockResult({ items: [burrito] }));
 
     const result = await analyzeNutritionItems("a burrito for lunch");
 

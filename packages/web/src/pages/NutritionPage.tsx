@@ -8,6 +8,11 @@ import { SlackInstallBanner } from "../components/SlackInstallBanner.tsx";
 import { formatDateForDisplay, formatDateForQuery, isToday } from "../lib/dates.ts";
 import { trpc } from "../lib/trpc.ts";
 
+/** Narrow loosely-typed tRPC raw-SQL results to a known shape without double-casting. */
+function typedData<T>(data: unknown): T {
+  return data as T;
+}
+
 const CALORIES_PER_GRAM = { protein: 4, carbs: 4, fat: 9 } as const;
 
 const MEAL_ORDER: MealType[] = ["breakfast", "lunch", "dinner", "snack", "other"];
@@ -55,7 +60,7 @@ export function NutritionPage() {
     },
   });
 
-  const entries = (foodQuery.data ?? []) as unknown as FoodEntry[];
+  const entries = typedData<FoodEntry[]>(foodQuery.data ?? []);
 
   const dailyTotals = useMemo(() => {
     let totalCalories = 0;

@@ -308,17 +308,17 @@ describe("FatSecretProvider — authSetup oauth1Flow", () => {
   it("oauthConfig redirectUri uses env var or default", () => {
     process.env.FATSECRET_CONSUMER_KEY = "test-key";
     process.env.FATSECRET_CONSUMER_SECRET = "test-secret";
-    delete process.env.OAUTH_REDIRECT_URI;
+    delete process.env.OAUTH_REDIRECT_URI_unencrypted;
 
     const provider = new FatSecretProvider();
     const setup = provider.authSetup();
-    expect(setup.oauthConfig.redirectUri).toContain("localhost");
+    expect(setup.oauthConfig.redirectUri).toContain("dofek");
   });
 
-  it("oauthConfig uses OAUTH_REDIRECT_URI when set", () => {
+  it("oauthConfig uses OAUTH_REDIRECT_URI_unencrypted when set", () => {
     process.env.FATSECRET_CONSUMER_KEY = "test-key";
     process.env.FATSECRET_CONSUMER_SECRET = "test-secret";
-    process.env.OAUTH_REDIRECT_URI = "https://my-app.com/callback";
+    process.env.OAUTH_REDIRECT_URI_unencrypted = "https://my-app.com/callback";
 
     const provider = new FatSecretProvider();
     const setup = provider.authSetup();
@@ -346,7 +346,7 @@ describe("FatSecretProvider — custom fetch", () => {
     process.env.FATSECRET_CONSUMER_KEY = "test-key";
     process.env.FATSECRET_CONSUMER_SECRET = "test-secret";
 
-    const customFetch = (() => {}) as unknown as typeof globalThis.fetch;
+    const customFetch = (() => Promise.resolve(new Response())) as typeof globalThis.fetch;
     const provider = new FatSecretProvider(customFetch);
     expect(provider.id).toBe("fatsecret");
   });

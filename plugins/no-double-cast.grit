@@ -1,0 +1,7 @@
+`$x as unknown as $y` where {
+  register_diagnostic(
+    span = $x,
+    message = "Double type assertion (as unknown as) is banned. Use Zod parsing, type guards, or db.execute<T>() generics instead.",
+    severity = "error"
+  )
+}

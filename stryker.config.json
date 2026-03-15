@@ -16,11 +16,12 @@
     "src/auth/*.ts",
     "packages/web/src/lib/units.ts",
     "packages/web/src/lib/poll-sync-job.ts",
+    "packages/server/src/**/*.ts",
     "!src/**/*.test.ts",
-    "!src/**/__tests__/**"
+    "!src/**/__tests__/**",
+    "!packages/server/src/**/*.test.ts"
   ],
   "ignorePatterns": [
-    "packages/server/**",
     "packages/ios/**",
     "packages/whoop-whoop/**",
     "dist/**",

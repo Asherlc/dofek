@@ -1,9 +1,10 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { linearRegression } from "../lib/math.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
-interface ActivityRow {
+type ActivityRow = {
   id: string;
   date: string;
   duration_min: number;
@@ -12,7 +13,7 @@ interface ActivityRow {
   avg_power: number | null;
   power_samples: number;
   hr_samples: number;
-}
+};
 
 export interface PmcDataPoint {
   date: string;
@@ -134,7 +135,21 @@ export const pmcRouter = router({
       const queryDays = input.days + 42;
 
       // Get max HR, resting HR from user_profile + per-activity stats from activity_summary
-      const activityRows = await ctx.db.execute(
+      const combinedActivityRowSchema = z.object({
+        global_max_hr: z.coerce.number().nullable(),
+        resting_hr: z.coerce.number(),
+        id: z.string(),
+        date: z.string(),
+        duration_min: z.coerce.number(),
+        avg_hr: z.coerce.number(),
+        max_hr: z.coerce.number(),
+        avg_power: z.coerce.number().nullable(),
+        power_samples: z.coerce.number(),
+        hr_samples: z.coerce.number(),
+      });
+      const activityRows = await executeWithSchema(
+        ctx.db,
+        combinedActivityRowSchema,
         sql`SELECT
               up.max_hr AS global_max_hr,
               COALESCE(up.resting_hr, (
@@ -158,11 +173,7 @@ export const pmcRouter = router({
               AND asum.hr_sample_count > 0`,
       );
 
-      interface CombinedActivityRow extends ActivityRow {
-        global_max_hr: number | null;
-        resting_hr: number;
-      }
-      const allRows = activityRows as unknown as CombinedActivityRow[];
+      const allRows = activityRows;
 
       const globalMaxHr = allRows.length > 0 ? Number(allRows[0]?.global_max_hr) : null;
       if (!globalMaxHr) {
@@ -173,7 +184,7 @@ export const pmcRouter = router({
       }
 
       const restingHr = allRows.length > 0 ? Number(allRows[0]?.resting_hr) : 60;
-      const activities = allRows as unknown as ActivityRow[];
+      const activities = allRows;
 
       // Estimate FTP from the data
       const ftp = estimateFtp(activities);

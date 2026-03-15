@@ -107,9 +107,11 @@ describe("parseFoodEntries", () => {
   });
 
   it("returns empty array when food_entry is undefined", () => {
+    // Intentionally omit food_entry to test defensive parsing.
+    // The inner object is typed as Partial to simulate a malformed API response.
     const response = {
-      food_entries: {},
-    } as unknown as FatSecretFoodEntriesResponse;
+      food_entries: {} as Partial<FatSecretFoodEntriesResponse["food_entries"]>,
+    } as FatSecretFoodEntriesResponse;
     expect(parseFoodEntries(response)).toHaveLength(0);
   });
 

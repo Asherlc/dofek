@@ -97,7 +97,7 @@ describe("Router coverage", () => {
       const avgHr = 145 + actIdx * 5;
       const avgPower = 190 + actIdx * 15;
 
-      const actResult = await testCtx.db.execute(
+      const actResult = await testCtx.db.execute<{ id: string }>(
         sql`INSERT INTO fitness.activity (
               provider_id, user_id, activity_type, started_at, ended_at, name
             ) VALUES (
@@ -107,7 +107,7 @@ describe("Router coverage", () => {
               ${`Training Ride ${actIdx}`}
             ) RETURNING id`,
       );
-      const actId = (actResult as unknown as { id: string }[])[0]?.id;
+      const actId = actResult[0]?.id;
 
       if (actId) {
         for (let batchStart = 0; batchStart < durationSec; batchStart += 100) {
@@ -141,14 +141,14 @@ describe("Router coverage", () => {
       ["Squat", "legs"],
       ["Deadlift", "back"],
     ]) {
-      const result = await testCtx.db.execute(
+      const result = await testCtx.db.execute<{ id: string }>(
         sql`INSERT INTO fitness.exercise (name, muscle_group, equipment)
             VALUES (${name}, ${group}, 'barbell')
             ON CONFLICT (name, equipment) DO UPDATE SET muscle_group = EXCLUDED.muscle_group
             RETURNING id`,
       );
       exerciseResults.push({
-        id: (result as unknown as { id: string }[])[0]?.id,
+        id: result[0]?.id,
         name,
       });
     }
@@ -157,7 +157,7 @@ describe("Router coverage", () => {
     for (let weekIdx = 0; weekIdx < 6; weekIdx++) {
       for (let dayIdx = 0; dayIdx < 2; dayIdx++) {
         const daysAgo = weekIdx * 7 + dayIdx * 3 + 1;
-        const workoutResult = await testCtx.db.execute(
+        const workoutResult = await testCtx.db.execute<{ id: string }>(
           sql`INSERT INTO fitness.strength_workout (
                 provider_id, user_id, external_id, started_at, ended_at, name
               ) VALUES (
@@ -169,7 +169,7 @@ describe("Router coverage", () => {
               ) ON CONFLICT DO NOTHING
               RETURNING id`,
         );
-        const workoutId = (workoutResult as unknown as { id: string }[])[0]?.id;
+        const workoutId = workoutResult[0]?.id;
         if (!workoutId) continue;
 
         // Insert sets for each exercise
@@ -1306,28 +1306,28 @@ describe("Router coverage", () => {
     });
   });
 
+  /** POST a tRPC mutation and return parsed response data */
+  async function mutate<T = unknown>(
+    path: string,
+    input: Record<string, unknown> = {},
+  ): Promise<T> {
+    const res = await fetch(`${baseUrl}/api/trpc/${path}?batch=1`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: sessionCookie },
+      body: JSON.stringify({ "0": input }),
+    });
+    const data = (await res.json()) as Record<string, unknown>[];
+    const first = data[0] as { result?: { data?: T }; error?: { message: string } };
+    if (first?.error) {
+      throw new Error(`${path} error: ${JSON.stringify(first.error)}`);
+    }
+    return first?.result?.data as T;
+  }
+
   // ══════════════════════════════════════════════════════════════
   // Life Events — CRUD and analyze
   // ══════════════════════════════════════════════════════════════
   describe("lifeEvents", () => {
-    /** POST a tRPC mutation and return parsed response data */
-    async function mutate<T = unknown>(
-      path: string,
-      input: Record<string, unknown> = {},
-    ): Promise<T> {
-      const res = await fetch(`${baseUrl}/api/trpc/${path}?batch=1`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Cookie: sessionCookie },
-        body: JSON.stringify({ "0": input }),
-      });
-      const data = (await res.json()) as Record<string, unknown>[];
-      const first = data[0] as { result?: { data?: T }; error?: { message: string } };
-      if (first?.error) {
-        throw new Error(`${path} error: ${JSON.stringify(first.error)}`);
-      }
-      return first?.result?.data as T;
-    }
-
     it("create + list + update + delete lifecycle", async () => {
       // Create
       const created = await mutate<{
@@ -1381,6 +1381,82 @@ describe("Router coverage", () => {
         id: created.id,
       });
       expect(deleteResult.success).toBe(true);
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════
+  // Auth — linked accounts and unlinking
+  // ══════════════════════════════════════════════════════════════
+  describe("auth", () => {
+    it("linkedAccounts returns linked auth_accounts for current user", async () => {
+      const result =
+        await query<
+          { id: string; authProvider: string; email: string | null; name: string | null }[]
+        >("auth.linkedAccounts");
+      expect(Array.isArray(result)).toBe(true);
+    });
+
+    it("unlinkAccount rejects when user has fewer than 2 accounts", async () => {
+      // With 0 or 1 accounts, unlinking should fail
+      await expect(
+        mutate("auth.unlinkAccount", { accountId: "00000000-0000-0000-0000-000000000099" }),
+      ).rejects.toThrow(/Cannot unlink your only login method/);
+    });
+
+    it("unlinkAccount succeeds when user has 2+ accounts", async () => {
+      // Insert two auth_account rows for the default user
+      await testCtx.db.execute(
+        sql`INSERT INTO fitness.auth_account (auth_provider, provider_account_id, user_id, email, name)
+            VALUES ('test-provider-a', 'acct-a', ${DEFAULT_USER_ID}, 'a@test.com', 'A')
+            ON CONFLICT DO NOTHING`,
+      );
+      await testCtx.db.execute(
+        sql`INSERT INTO fitness.auth_account (auth_provider, provider_account_id, user_id, email, name)
+            VALUES ('test-provider-b', 'acct-b', ${DEFAULT_USER_ID}, 'b@test.com', 'B')
+            ON CONFLICT DO NOTHING`,
+      );
+      await queryCache.invalidateAll();
+
+      const accounts = await query<{ id: string; authProvider: string }[]>("auth.linkedAccounts");
+      expect(accounts.length).toBeGreaterThanOrEqual(2);
+
+      // Unlink the first one
+      const toUnlink = accounts[0];
+      if (toUnlink) {
+        const result = await mutate<{ ok: boolean }>("auth.unlinkAccount", {
+          accountId: toUnlink.id,
+        });
+        expect(result.ok).toBe(true);
+      }
+
+      // Clean up remaining test accounts
+      await testCtx.db.execute(
+        sql`DELETE FROM fitness.auth_account WHERE user_id = ${DEFAULT_USER_ID}`,
+      );
+    });
+
+    it("unlinkAccount returns not found for non-existent account", async () => {
+      // Insert 2 accounts so the count check passes, then try to unlink a non-existent ID
+      await testCtx.db.execute(
+        sql`INSERT INTO fitness.auth_account (auth_provider, provider_account_id, user_id, email, name)
+            VALUES ('test-x', 'x1', ${DEFAULT_USER_ID}, 'x@test.com', 'X')
+            ON CONFLICT DO NOTHING`,
+      );
+      await testCtx.db.execute(
+        sql`INSERT INTO fitness.auth_account (auth_provider, provider_account_id, user_id, email, name)
+            VALUES ('test-y', 'y1', ${DEFAULT_USER_ID}, 'y@test.com', 'Y')
+            ON CONFLICT DO NOTHING`,
+      );
+      await queryCache.invalidateAll();
+
+      await expect(
+        mutate("auth.unlinkAccount", { accountId: "00000000-0000-0000-0000-000000000099" }),
+      ).rejects.toThrow(/not found/i);
+
+      // Clean up
+      await testCtx.db.execute(
+        sql`DELETE FROM fitness.auth_account WHERE user_id = ${DEFAULT_USER_ID}`,
+      );
     });
   });
 });

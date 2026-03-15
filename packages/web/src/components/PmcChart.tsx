@@ -54,9 +54,12 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
       backgroundColor: "#18181b",
       borderColor: "#3f3f46",
       textStyle: { color: "#e4e4e7", fontSize: 12 },
-      formatter(params: Array<{ seriesName: string; value: number; marker: string }>) {
-        if (!params.length) return "";
-        const idx = (params[0] as unknown as { dataIndex: number }).dataIndex;
+      formatter(
+        params: Array<{ seriesName: string; value: number; marker: string; dataIndex: number }>,
+      ) {
+        const first = params[0];
+        if (!first) return "";
+        const idx = first.dataIndex;
         const d = data[idx];
         if (!d) return "";
         const label = new Date(d.date).toLocaleDateString("en-US", {

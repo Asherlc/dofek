@@ -13,36 +13,74 @@ services:
       - client
 
   client:
-    image: ghcr.io/asherlc/dofek-client:latest
+    image: ${DOFEK_CLIENT_IMAGE:-ghcr.io/asherlc/dofek-client:latest}
     restart: unless-stopped
     depends_on:
       - web
 
   web:
-    image: ghcr.io/asherlc/dofek:latest
+    image: ${DOFEK_IMAGE:-ghcr.io/asherlc/dofek:latest}
     hostname: dofek-web
     command: web
     restart: unless-stopped
     env_file: .env
     environment:
-      - DATABASE_URL=postgres://health:health@db:5432/health
+      - DATABASE_URL=postgres://health:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/health
+      - REDIS_URL=redis://redis:6379
       - PORT=3000
+      - NODE_ENV=production
+    volumes:
+      - job_files:/app/job-files
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    image: ghcr.io/asherlc/dofek:latest
+    container_name: dofek-worker
+    command: worker
+    restart: "no"
+    env_file: .env
+    environment:
+      - DATABASE_URL=postgres://health:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/health
+      - REDIS_URL=redis://redis:6379
+      - NODE_ENV=production
+    volumes:
+      - job_files:/app/job-files
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    stop_grace_period: 35m
+    labels:
+      - "com.centurylinklabs.watchtower.enable=false"
+
+  sync:
+    image: ${DOFEK_IMAGE:-ghcr.io/asherlc/dofek:latest}
+    command: sync
+    restart: "no"
+    env_file: .env
+    environment:
+      - DATABASE_URL=postgres://health:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/health
       - NODE_ENV=production
     depends_on:
       db:
         condition: service_healthy
 
-  sync:
-    image: ghcr.io/asherlc/dofek:latest
-    command: sync
-    restart: "no"
-    env_file: .env
-    environment:
-      - DATABASE_URL=postgres://health:health@db:5432/health
-      - NODE_ENV=production
-    depends_on:
-      db:
-        condition: service_healthy
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   db:
     image: timescale/timescaledb:latest-pg16
@@ -50,7 +88,7 @@ services:
     environment:
       POSTGRES_DB: health
       POSTGRES_USER: health
-      POSTGRES_PASSWORD: health
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
@@ -66,7 +104,7 @@ services:
       POSTGRES_HOST: db
       POSTGRES_DB: health
       POSTGRES_USER: health
-      POSTGRES_PASSWORD: health
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       SCHEDULE: "@daily"
       BACKUP_KEEP_DAYS: 7
       BACKUP_KEEP_WEEKS: 4
@@ -87,9 +125,12 @@ services:
       WATCHTOWER_INCLUDE_STOPPED: "false"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - /root/.docker/config.json:/config.json:ro
 
 volumes:
   db_data:
   db_backups:
   caddy_data:
   caddy_config:
+  redis_data:
+  job_files:

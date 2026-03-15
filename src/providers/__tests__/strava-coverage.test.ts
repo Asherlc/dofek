@@ -47,20 +47,20 @@ describe("stravaOAuthConfig", () => {
     expect(config?.scopeSeparator).toBe(",");
   });
 
-  it("uses custom OAUTH_REDIRECT_URI when set", () => {
+  it("uses custom OAUTH_REDIRECT_URI_unencrypted when set", () => {
     process.env.STRAVA_CLIENT_ID = "test-id";
     process.env.STRAVA_CLIENT_SECRET = "test-secret";
-    process.env.OAUTH_REDIRECT_URI = "https://example.com/callback";
+    process.env.OAUTH_REDIRECT_URI_unencrypted = "https://example.com/callback";
     const config = stravaOAuthConfig();
     expect(config?.redirectUri).toBe("https://example.com/callback");
   });
 
-  it("uses default redirect URI when OAUTH_REDIRECT_URI is not set", () => {
+  it("uses default redirect URI when OAUTH_REDIRECT_URI_unencrypted is not set", () => {
     process.env.STRAVA_CLIENT_ID = "test-id";
     process.env.STRAVA_CLIENT_SECRET = "test-secret";
-    delete process.env.OAUTH_REDIRECT_URI;
+    delete process.env.OAUTH_REDIRECT_URI_unencrypted;
     const config = stravaOAuthConfig();
-    expect(config?.redirectUri).toContain("localhost");
+    expect(config?.redirectUri).toContain("dofek");
   });
 });
 
@@ -200,5 +200,68 @@ describe("stravaStreamsToMetricStream — edge cases", () => {
       new Date("2026-03-01T08:00:00Z"),
     );
     expect(result).toHaveLength(0);
+  });
+});
+
+describe("StravaProvider.getUserIdentity()", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it("returns identity from athlete API", async () => {
+    process.env.STRAVA_CLIENT_ID = "test-id";
+    process.env.STRAVA_CLIENT_SECRET = "test-secret";
+
+    const mockFetch = (async (): Promise<Response> => {
+      return Response.json({
+        id: 12345,
+        email: "athlete@test.com",
+        firstname: "Jane",
+        lastname: "Doe",
+      });
+    }) as typeof globalThis.fetch;
+
+    const provider = new StravaProvider(mockFetch);
+    const setup = provider.authSetup();
+    if (!setup.getUserIdentity) throw new Error("getUserIdentity not defined");
+    const identity = await setup.getUserIdentity("test-token");
+    expect(identity.providerAccountId).toBe("12345");
+    expect(identity.email).toBe("athlete@test.com");
+    expect(identity.name).toBe("Jane Doe");
+  });
+
+  it("handles missing name fields", async () => {
+    process.env.STRAVA_CLIENT_ID = "test-id";
+    process.env.STRAVA_CLIENT_SECRET = "test-secret";
+
+    const mockFetch = (async (): Promise<Response> => {
+      return Response.json({ id: 99 });
+    }) as typeof globalThis.fetch;
+
+    const provider = new StravaProvider(mockFetch);
+    const setup = provider.authSetup();
+    if (!setup.getUserIdentity) throw new Error("getUserIdentity not defined");
+    const identity = await setup.getUserIdentity("test-token");
+    expect(identity.providerAccountId).toBe("99");
+    expect(identity.email).toBeNull();
+    expect(identity.name).toBeNull();
+  });
+
+  it("throws on API error", async () => {
+    process.env.STRAVA_CLIENT_ID = "test-id";
+    process.env.STRAVA_CLIENT_SECRET = "test-secret";
+
+    const mockFetch = (async (): Promise<Response> => {
+      return new Response("Forbidden", { status: 403 });
+    }) as typeof globalThis.fetch;
+
+    const provider = new StravaProvider(mockFetch);
+    const setup = provider.authSetup();
+    if (!setup.getUserIdentity) throw new Error("getUserIdentity not defined");
+    await expect(setup.getUserIdentity("bad-token")).rejects.toThrow(
+      "Strava athlete API error (403)",
+    );
   });
 });

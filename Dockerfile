@@ -35,11 +35,14 @@ FROM base AS server
 ENV NODE_ENV=production
 WORKDIR /app
 
-# Install SOPS for runtime .env decryption (supports both amd64 and arm64)
+# Install SOPS for runtime .env decryption + Docker CLI for starting worker container
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && \
     ARCH=$(dpkg --print-architecture) && \
     curl -fsSL "https://github.com/getsops/sops/releases/download/v3.9.4/sops-v3.9.4.linux.${ARCH}" \
       -o /usr/local/bin/sops && chmod +x /usr/local/bin/sops && \
+    DOCKER_ARCH=$(uname -m) && \
+    curl -fsSL "https://download.docker.com/linux/static/stable/${DOCKER_ARCH}/docker-27.5.1.tgz" | \
+      tar xz --strip-components=1 -C /usr/local/bin docker/docker && \
     apt-get purge -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 
 COPY --from=source /app/src ./src
@@ -60,6 +63,11 @@ COPY --from=source /app/.env .
 COPY --from=source /app/.sops.yaml .
 
 COPY entrypoint.sh .
+
+# Run as non-root user (node user is built into node:22-slim, uid 1000)
+RUN chown -R node:node /app
+USER node
+
 ENTRYPOINT ["./entrypoint.sh"]
 CMD ["sync"]
 

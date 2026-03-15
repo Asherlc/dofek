@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { enduranceTypeFilter } from "../lib/endurance-types.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export interface RampRateWeek {
@@ -59,7 +60,13 @@ export const cyclingAdvancedRouter = router({
     .input(daysInput)
     .query(async ({ ctx, input }): Promise<RampRateResult> => {
       // Get daily TRIMP loads from activity_summary
-      const dailyLoads = await ctx.db.execute(
+      const dailyLoadSchema = z.object({
+        day: z.string(),
+        trimp: z.coerce.number(),
+      });
+      const dailyLoads = await executeWithSchema(
+        ctx.db,
+        dailyLoadSchema,
         sql`SELECT
               asum.started_at::date AS day,
               SUM(
@@ -85,15 +92,15 @@ export const cyclingAdvancedRouter = router({
       // Fill in zero-load days and compute CTL (42-day EWMA)
       const loadMap = new Map<string, number>();
       for (const row of dailyLoads) {
-        loadMap.set(String(row.day), Number(row.trimp));
+        loadMap.set(row.day, row.trimp);
       }
 
       const firstLoad = dailyLoads[0];
       const lastLoad = dailyLoads[dailyLoads.length - 1];
       if (!firstLoad || !lastLoad)
         return { weeks: [], currentRampRate: 0, recommendation: "No data" };
-      const startDate = new Date(String(firstLoad.day));
-      const endDate = new Date(String(lastLoad.day));
+      const startDate = new Date(firstLoad.day);
+      const endDate = new Date(lastLoad.day);
       const ctlByDate = new Map<string, number>();
       const alpha = 2 / (42 + 1);
       let ctl = 0;
@@ -179,7 +186,15 @@ export const cyclingAdvancedRouter = router({
   trainingMonotony: cachedProtectedQuery(CacheTTL.LONG)
     .input(daysInput)
     .query(async ({ ctx, input }): Promise<TrainingMonotonyWeek[]> => {
-      const rows = await ctx.db.execute(
+      const monotonyRowSchema = z.object({
+        week: z.string(),
+        monotony: z.coerce.number(),
+        strain: z.coerce.number(),
+        weekly_load: z.coerce.number(),
+      });
+      const rows = await executeWithSchema(
+        ctx.db,
+        monotonyRowSchema,
         sql`WITH daily_loads AS (
               SELECT
                 asum.started_at::date AS day,
@@ -218,10 +233,10 @@ export const cyclingAdvancedRouter = router({
       );
 
       return rows.map((row) => ({
-        week: String(row.week),
-        monotony: Number(row.monotony),
-        strain: Number(row.strain),
-        weeklyLoad: Number(row.weekly_load),
+        week: row.week,
+        monotony: row.monotony,
+        strain: row.strain,
+        weeklyLoad: row.weekly_load,
       }));
     }),
 
@@ -235,7 +250,10 @@ export const cyclingAdvancedRouter = router({
     .query(async ({ ctx, input }): Promise<ActivityVariabilityRow[]> => {
       // Estimate FTP as 95% of best 20-minute average power.
       // Includes zero-power samples and adapts row offset to sample interval.
-      const ftpResult = await ctx.db.execute(
+      const ftpSchema = z.object({ ftp: z.coerce.number() });
+      const ftpResult = await executeWithSchema(
+        ctx.db,
+        ftpSchema,
         sql`WITH activity_power AS (
               SELECT
                 ms.activity_id,
@@ -273,11 +291,19 @@ export const cyclingAdvancedRouter = router({
               AND prev.rn = ap.rn - ROUND(1200.0 / sr.interval_s)::int
             WHERE ap.rn >= ROUND(1200.0 / sr.interval_s)::int`,
       );
-      const ftp = (ftpResult as unknown as { ftp: number }[])[0]?.ftp ?? null;
+      const ftp = ftpResult[0]?.ftp ?? null;
       if (!ftp) return [];
 
       // Compute NP, avg power per activity in a single query using SQL window functions
-      const rows = await ctx.db.execute(
+      const variabilityRowSchema = z.object({
+        date: z.string(),
+        name: z.string(),
+        np: z.coerce.number(),
+        avg_power: z.coerce.number(),
+      });
+      const rows = await executeWithSchema(
+        ctx.db,
+        variabilityRowSchema,
         sql`WITH rolling AS (
               SELECT
                 ms.activity_id,
@@ -307,11 +333,11 @@ export const cyclingAdvancedRouter = router({
       );
 
       return rows.map((row) => {
-        const normalizedPower = Number(row.np);
-        const averagePower = Number(row.avg_power);
+        const normalizedPower = row.np;
+        const averagePower = row.avg_power;
         return {
-          date: String(row.date),
-          activityName: String(row.name),
+          date: row.date,
+          activityName: row.name,
           normalizedPower,
           averagePower,
           variabilityIndex: Math.round((normalizedPower / averagePower) * 1000) / 1000,
@@ -327,7 +353,15 @@ export const cyclingAdvancedRouter = router({
   verticalAscentRate: cachedProtectedQuery(CacheTTL.LONG)
     .input(daysInput)
     .query(async ({ ctx, input }): Promise<VerticalAscentRow[]> => {
-      const rows = await ctx.db.execute(
+      const vamRowSchema = z.object({
+        date: z.string(),
+        name: z.string(),
+        elevation_gain: z.coerce.number(),
+        climbing_seconds: z.coerce.number(),
+      });
+      const rows = await executeWithSchema(
+        ctx.db,
+        vamRowSchema,
         sql`WITH climbing_segments AS (
               SELECT
                 ms.activity_id,
@@ -369,8 +403,8 @@ export const cyclingAdvancedRouter = router({
       );
 
       return rows.map((row) => {
-        const elevationGainMeters = Number(row.elevation_gain);
-        const climbingSeconds = Number(row.climbing_seconds);
+        const elevationGainMeters = row.elevation_gain;
+        const climbingSeconds = row.climbing_seconds;
         const climbingMinutes = Math.round((climbingSeconds / 60) * 10) / 10;
         const verticalAscentRate =
           climbingSeconds > 0
@@ -378,8 +412,8 @@ export const cyclingAdvancedRouter = router({
             : 0;
 
         return {
-          date: String(row.date),
-          activityName: String(row.name),
+          date: row.date,
+          activityName: row.name,
           verticalAscentRate,
           elevationGainMeters,
           climbingMinutes,
@@ -394,7 +428,16 @@ export const cyclingAdvancedRouter = router({
   pedalDynamics: cachedProtectedQuery(CacheTTL.LONG)
     .input(daysInput)
     .query(async ({ ctx, input }): Promise<PedalDynamicsRow[]> => {
-      const rows = await ctx.db.execute(
+      const pedalRowSchema = z.object({
+        date: z.string(),
+        name: z.string(),
+        avg_balance: z.coerce.number(),
+        avg_torque_effectiveness: z.coerce.number(),
+        avg_pedal_smoothness: z.coerce.number(),
+      });
+      const rows = await executeWithSchema(
+        ctx.db,
+        pedalRowSchema,
         sql`SELECT
               asum.started_at::date AS date,
               asum.name,
@@ -414,11 +457,11 @@ export const cyclingAdvancedRouter = router({
       );
 
       return rows.map((row) => ({
-        date: String(row.date),
-        activityName: String(row.name),
-        leftRightBalance: Number(row.avg_balance),
-        avgTorqueEffectiveness: Number(row.avg_torque_effectiveness),
-        avgPedalSmoothness: Number(row.avg_pedal_smoothness),
+        date: row.date,
+        activityName: row.name,
+        leftRightBalance: row.avg_balance,
+        avgTorqueEffectiveness: row.avg_torque_effectiveness,
+        avgPedalSmoothness: row.avg_pedal_smoothness,
       }));
     }),
 });

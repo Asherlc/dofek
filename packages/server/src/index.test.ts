@@ -97,7 +97,7 @@ describe("tRPC API", () => {
       expect(res.status).toBe(200);
       const data = await res.json();
       expect(data).toHaveLength(1);
-      expect(data[0].result.data.jobId).toMatch(/^sync-/);
+      expect(typeof data[0].result.data.jobId).toBe("string");
     });
 
     it("handles triggerSync mutation without sinceDays (full sync)", async () => {
@@ -110,7 +110,7 @@ describe("tRPC API", () => {
       expect(res.status).toBe(200);
       const data = await res.json();
       expect(data).toHaveLength(1);
-      expect(data[0].result.data.jobId).toMatch(/^sync-/);
+      expect(typeof data[0].result.data.jobId).toBe("string");
     });
   });
 
@@ -178,8 +178,11 @@ describe("tRPC API", () => {
       const res = await fetch(`${baseUrl}/api/auth/providers`);
       expect(res.status).toBe(200);
       const data = await res.json();
-      // Should return an array (may be empty if no providers configured in test)
-      expect(Array.isArray(data)).toBe(true);
+      // Should return { identity: [...], data: [...] }
+      expect(data).toHaveProperty("identity");
+      expect(data).toHaveProperty("data");
+      expect(Array.isArray(data.identity)).toBe(true);
+      expect(Array.isArray(data.data)).toBe(true);
     });
 
     it("GET /api/auth/me returns user info with valid session", async () => {
@@ -367,15 +370,13 @@ describe("tRPC API", () => {
       expect(res.status).toBe(200);
       const data = await res.json();
       expect(data.status).toBe("processing");
-      expect(data.jobId).toBeDefined();
+      expect(typeof data.jobId).toBe("string");
 
-      // The job should now appear in status endpoint
-      // Wait briefly for status to be set
-      await new Promise((r) => setTimeout(r, 100));
+      // The job should now appear in BullMQ status endpoint
       const statusRes = await fetch(`${baseUrl}/api/upload/apple-health/status/${data.jobId}`);
       expect(statusRes.status).toBe(200);
       const statusData = await statusRes.json();
-      // Should be processing or error (since the data is not a real zip)
+      // BullMQ job is enqueued but worker may not be running — status is "processing"
       expect(["processing", "error"]).toContain(statusData.status);
     });
 
@@ -431,9 +432,10 @@ describe("tRPC API", () => {
         if (i === 0) {
           expect(data.status).toBe("uploading");
         } else {
-          // Last chunk triggers assembly + processing
+          // Last chunk triggers assembly + enqueue to BullMQ
           expect(data.status).toBe("processing");
-          expect(data.jobId).toBe(uploadId);
+          // BullMQ assigns its own job ID, not the upload ID
+          expect(typeof data.jobId).toBe("string");
         }
       }
     });
@@ -451,10 +453,9 @@ describe("tRPC API", () => {
       expect(res.status).toBe(200);
       const data = await res.json();
       expect(data.status).toBe("processing");
-      expect(data.jobId).toBeDefined();
+      expect(typeof data.jobId).toBe("string");
 
-      // Status should be available
-      await new Promise((r) => setTimeout(r, 100));
+      // BullMQ job status should be available
       const statusRes = await fetch(`${baseUrl}/api/upload/strong-csv/status/${data.jobId}`);
       expect(statusRes.status).toBe(200);
     });
@@ -484,10 +485,9 @@ describe("tRPC API", () => {
       expect(res.status).toBe(200);
       const data = await res.json();
       expect(data.status).toBe("processing");
-      expect(data.jobId).toBeDefined();
+      expect(typeof data.jobId).toBe("string");
 
-      // Status should be available
-      await new Promise((r) => setTimeout(r, 100));
+      // BullMQ job status should be available
       const statusRes = await fetch(`${baseUrl}/api/upload/cronometer-csv/status/${data.jobId}`);
       expect(statusRes.status).toBe(200);
     });
@@ -503,11 +503,11 @@ describe("tRPC API", () => {
   });
 
   describe("Slack OAuth callback", () => {
-    it("GET /callback with state=slack returns 400 without env vars", async () => {
+    it("GET /callback with state=slack (no random token) returns 400 as unknown state", async () => {
       const res = await fetch(`${baseUrl}/callback?code=test&state=slack`);
       expect(res.status).toBe(400);
       const body = await res.text();
-      expect(body).toContain("SLACK_CLIENT_ID");
+      expect(body).toContain("Unknown or expired OAuth state");
     });
   });
 

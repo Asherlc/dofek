@@ -1,98 +1,120 @@
 # garmin-connect
 
-Unofficial Garmin Connect internal API client using the reverse-engineered SSO authentication flow. Based on the [garth](https://github.com/matin/garth) Python library and [python-garminconnect](https://github.com/cyberjunky/python-garminconnect).
+Unofficial TypeScript client for the Garmin Connect internal API. Provides access to granular health and training data that is not available through the official Garmin Health API.
 
 ## Why this exists
 
-Garmin's official Health API (via developer program) provides limited data: activities, sleep, daily summaries, and body composition. The internal Connect API exposes **significantly more** data that Garmin shows in their app but doesn't surface through the official API:
+The official Garmin Health API provides basic daily summaries, but the internal Connect API (used by the Garmin Connect mobile app and web interface) exposes significantly more data:
 
-- HRV (Heart Rate Variability) with nightly readings
-- Body Battery with charge/drain values
-- Stress levels with per-minute time series
-- Training Readiness scores
-- Training Status and load
-- Race predictions
-- Endurance and Hill scores
-- Fitness age
-- Second-by-second heart rate time series
-- SpO2 time series
-- FIT/TCX/GPX file downloads
+- **Training Status** (Productive/Peaking/Recovery/Overreaching)
+- **Training Readiness** score with component breakdowns
+- **Training Load** (acute, chronic, balance, ratio)
+- **VO2 Max** (separate values for running and cycling)
+- **Body Battery** time-series (not just daily totals)
+- **Stress** time-series (minute-by-minute)
+- **HRV Status** with 7-day baseline trending
+- **Activity streams** (second-by-second HR, power, cadence, GPS)
+- **FIT file downloads**
+- **Race Predictions**, Hill Score, Endurance Score
+- **Sleep** with granular stages, SpO2 epochs, and movement data
+- **Heart rate** time-series throughout the day
 
 ## Authentication
 
-Garmin uses a multi-step SSO flow with CSRF tokens, session cookies, OAuth1 ticket exchange, and finally OAuth2 tokens. Supports MFA.
+Authentication uses Garmin's SSO flow (same as the mobile app):
+
+1. Login with email/password via Garmin SSO
+2. Extract SSO ticket from response
+3. Exchange ticket for OAuth1 token (OAuth 1.0a signed request)
+4. Exchange OAuth1 for OAuth2 token
+5. All API calls use the OAuth2 Bearer token
+
+The OAuth consumer key/secret is fetched dynamically from a public S3 endpoint (same approach as the [garth](https://github.com/matin/garth) Python library).
 
 ```typescript
 import { GarminConnectClient } from "garmin-connect";
 
-const result = await GarminConnectClient.signIn("email@example.com", "password");
+// Sign in (first time)
+const { client, tokens } = await GarminConnectClient.signIn(
+  "user@example.com",
+  "password"
+);
 
-if (result.type === "mfa_required") {
-  const mfaResult = await GarminConnectClient.verifyMfa(result, "123456");
-  // Use mfaResult.oauth2.accessToken
-}
+// Save tokens for later use
+saveToDatabase(tokens);
 
-if (result.type === "success") {
-  const client = new GarminConnectClient(result.oauth2.accessToken);
-  const activities = await client.searchActivities(0, 20);
-  const sleep = await client.getSleepData("2024-01-15");
-  const hrv = await client.getHrv("2024-01-15");
-}
+// Restore from saved tokens (subsequent uses)
+const client = await GarminConnectClient.fromTokens(savedTokens);
 ```
 
-## Data available
+## Usage
 
-### From internal API (NOT in official API)
-- **HRV** -- nightly readings, weekly average, baseline, status
-- **Body Battery** -- charge/drain values, time series
-- **Stress** -- average level, duration breakdown, per-minute values
-- **Training Readiness** -- composite score with sleep, recovery, HRV components
-- **Training Status** -- load balance, 7-day and 28-day loads
-- **Race Predictions** -- 5K, 10K, half marathon, marathon times
-- **Max Metrics** -- VO2max (running + cycling), fitness age
-- **Endurance Score** -- overall score, exhaustion level
-- **Hill Score** -- strength and endurance factors
-- **Heart Rate Time Series** -- second-by-second values
-- **SpO2 Time Series** -- individual readings throughout night
-- **Fitness Age** -- with component scores (BMI, vigorous minutes, resting HR, body fat)
-- **Intensity Minutes** -- moderate vs vigorous breakdown
-- **FIT/TCX/GPX Downloads** -- raw activity files
+```typescript
+// Daily summary
+const summary = await client.getDailySummary("2024-01-15");
 
-### From both official and internal API
-- **Activities** with full metrics (HR, power, cadence, elevation, TSS, training effect)
-- **Sleep** with stage breakdowns and scores
-- **Daily Summary** (steps, distance, calories, floors)
-- **Weight / Body Composition**
+// Training metrics
+const status = await client.getTrainingStatus("2024-01-15");
+const readiness = await client.getTrainingReadiness("2024-01-15");
 
-## API details
+// Time-series data
+const stress = await client.getDailyStress("2024-01-15");
+const heartRate = await client.getDailyHeartRate("2024-01-15");
 
-| Detail | Value |
-|--------|-------|
-| SSO URL | `https://sso.garmin.com/sso` |
-| API Base URL | `https://connect.garmin.com` |
-| OAuth URL | `https://connectapi.garmin.com/oauth-service/oauth` |
-| Auth | SSO form login → OAuth1 ticket → OAuth2 token |
-| MFA | Supported (SMS + TOTP) |
-| User-Agent | `com.garmin.android.apps.connectmobile` |
-| Data format | JSON |
-| Key quirk | Weight in grams, distances sometimes in meters, sometimes km |
+// HRV
+const hrv = await client.getHrvSummary("2024-01-15");
 
-## SSO flow (5 steps)
+// Body battery
+const bodyBattery = await client.getBodyBatteryDaily("2024-01-15");
 
-1. `GET /sso/embed` -- initialize session cookies
-2. `GET /sso/signin` -- extract CSRF token from HTML
-3. `POST /sso/signin` -- submit credentials, receive SSO ticket
-4. `GET oauth/preauthorized?ticket=...` -- exchange ticket for OAuth1 token
-5. `POST oauth/exchange/user/2.0` -- exchange OAuth1 for OAuth2 access/refresh tokens
+// Sleep
+const sleep = await client.getSleepData("2024-01-15");
 
-## Exports
+// Activities
+const activities = await client.getActivities(0, 20);
+const detail = await client.getActivityDetail(activityId);
+const fitFile = await client.downloadFitFile(activityId);
 
-- `GarminConnectClient` -- API client class with 20+ endpoint methods
-- `mapGarminConnectSport()` -- Map activity type keys to normalized types
-- `GARMIN_CONNECT_SPORT_MAP` -- Full sport key mapping (80+ activities)
-- `parseGarminConnectActivity()` -- Parse activity with all training metrics
-- `parseGarminConnectSleep()` -- Parse sleep with scores and SpO2
-- `parseGarminConnectDailySummary()` -- Parse daily metrics with body battery and stress
-- `parseGarminConnectWeight()` -- Parse weight (grams-to-kg, visceral fat, metabolic age)
-- `parseGarminConnectHrv()` -- Parse HRV with baseline and status
-- All response and parsed types
+// Scores
+const vo2max = await client.getVo2Max("2024-01-01", "2024-01-15");
+const racePredictions = await client.getRacePredictions();
+const hillScore = await client.getHillScore("2024-01-01", "2024-01-15");
+const endurance = await client.getEnduranceScore("2024-01-01", "2024-01-15");
+
+// Respiration & SpO2
+const respiration = await client.getDailyRespiration("2024-01-15");
+const spo2 = await client.getDailySpO2("2024-01-15");
+```
+
+## Parsing
+
+Pure parsing functions are provided to normalize raw API responses:
+
+```typescript
+import {
+  parseConnectActivity,
+  parseConnectSleep,
+  parseConnectDailySummary,
+  parseTrainingStatus,
+  parseTrainingReadiness,
+  parseHrvSummary,
+  parseStressTimeSeries,
+  parseHeartRateTimeSeries,
+  parseActivityDetail,
+} from "garmin-connect";
+```
+
+## Exported modules
+
+| Module | Description |
+|--------|-------------|
+| `client.ts` | `GarminConnectClient` — authentication and API methods |
+| `types.ts` | TypeScript interfaces for all API response shapes |
+| `parsing.ts` | Pure parsing functions and normalized output types |
+| `oauth1.ts` | Minimal OAuth 1.0a signing for the auth flow |
+
+## Credits
+
+Authentication flow reverse-engineered from:
+- [garth](https://github.com/matin/garth) — Python Garmin SSO library
+- [python-garminconnect](https://github.com/cyberjunky/python-garminconnect) — Python Garmin Connect API wrapper
