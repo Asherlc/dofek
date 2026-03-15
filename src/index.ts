@@ -7,6 +7,8 @@ import { AutoSupplementsProvider } from "./providers/auto-supplements.ts";
 import { Concept2Provider } from "./providers/concept2.ts";
 import { CorosProvider } from "./providers/coros.ts";
 import { CronometerCsvProvider } from "./providers/cronometer-csv.ts";
+import { CyclingAnalyticsProvider } from "./providers/cycling-analytics.ts";
+import { DecathlonProvider } from "./providers/decathlon.ts";
 import { EightSleepProvider } from "./providers/eight-sleep.ts";
 import { FatSecretProvider } from "./providers/fatsecret.ts";
 import { FitbitProvider } from "./providers/fitbit.ts";
@@ -23,9 +25,12 @@ import { StrongCsvProvider } from "./providers/strong-csv.ts";
 import { SuuntoProvider } from "./providers/suunto.ts";
 import { TrainerRoadProvider } from "./providers/trainerroad.ts";
 import { UltrahumanProvider } from "./providers/ultrahuman.ts";
+import { VeloHeroProvider } from "./providers/velohero.ts";
 import { WahooProvider } from "./providers/wahoo.ts";
+import { WgerProvider } from "./providers/wger.ts";
 import { WhoopProvider } from "./providers/whoop.ts";
 import { WithingsProvider } from "./providers/withings.ts";
+import { XertProvider } from "./providers/xert.ts";
 import { ZwiftProvider } from "./providers/zwift.ts";
 import { runSync } from "./sync/runner.ts";
 
@@ -68,6 +73,11 @@ registerProvider(new SuuntoProvider());
 registerProvider(new CorosProvider());
 registerProvider(new Concept2Provider());
 registerProvider(new KomootProvider());
+registerProvider(new XertProvider());
+registerProvider(new CyclingAnalyticsProvider());
+registerProvider(new WgerProvider());
+registerProvider(new DecathlonProvider());
+registerProvider(new VeloHeroProvider());
 if (supplementConfig) {
   registerProvider(new AutoSupplementsProvider(supplementConfig));
 }
