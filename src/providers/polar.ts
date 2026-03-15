@@ -1,5 +1,5 @@
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
-import { exchangeCodeForTokens } from "../auth/oauth.ts";
+import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import type { Database } from "../db/index.ts";
 import { activity, dailyMetrics, sleepSession } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
@@ -250,7 +250,7 @@ function polarOAuthConfig(): OAuthConfig | null {
     clientSecret,
     authorizeUrl: POLAR_AUTHORIZE_URL,
     tokenUrl: POLAR_TOKEN_URL,
-    redirectUri: process.env.OAUTH_REDIRECT_URI ?? "https://localhost:9876/callback",
+    redirectUri: getOAuthRedirectUri(),
     scopes: ["accesslink.read_all"],
     tokenAuthMethod: "basic",
   };

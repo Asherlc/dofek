@@ -4,6 +4,7 @@ import {
   exchangeCodeForTokens,
   generateCodeChallenge,
   generateCodeVerifier,
+  getOAuthRedirectUri,
   refreshAccessToken,
 } from "../auth/oauth.ts";
 import type { Database } from "../db/index.ts";
@@ -297,20 +298,16 @@ export class FitbitClient {
 // OAuth configuration
 // ============================================================
 
-const DEFAULT_REDIRECT_URI = "https://localhost:9876/callback";
-
 export function fitbitOAuthConfig(): OAuthConfig | null {
   const clientId = process.env.FITBIT_CLIENT_ID;
   const clientSecret = process.env.FITBIT_CLIENT_SECRET;
   if (!clientId || !clientSecret) return null;
-  const redirectUri = process.env.OAUTH_REDIRECT_URI ?? DEFAULT_REDIRECT_URI;
-
   return {
     clientId,
     clientSecret,
     authorizeUrl: "https://www.fitbit.com/oauth2/authorize",
     tokenUrl: `${FITBIT_API_BASE}/oauth2/token`,
-    redirectUri,
+    redirectUri: getOAuthRedirectUri(),
     scopes: [
       "activity",
       "heartrate",

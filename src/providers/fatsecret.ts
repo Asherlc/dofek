@@ -1,4 +1,5 @@
 import { createHmac, randomBytes } from "node:crypto";
+import { getOAuthRedirectUri } from "../auth/oauth.ts";
 import type { Database } from "../db/index.ts";
 import { foodEntry } from "../db/schema.ts";
 import { ensureProvider } from "../db/tokens.ts";
@@ -497,7 +498,7 @@ export class FatSecretProvider implements Provider {
         clientSecret: consumerSecret,
         authorizeUrl: AUTHORIZE_URL,
         tokenUrl: ACCESS_TOKEN_URL,
-        redirectUri: process.env.OAUTH_REDIRECT_URI ?? "http://localhost:9876/callback",
+        redirectUri: getOAuthRedirectUri(),
         scopes: [],
       },
       oauth1Flow: {

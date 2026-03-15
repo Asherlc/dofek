@@ -58,18 +58,18 @@ describe("garminOAuthConfig", () => {
     expect(config?.clientSecret).toBeUndefined();
   });
 
-  it("uses custom OAUTH_REDIRECT_URI when set", () => {
+  it("uses custom OAUTH_REDIRECT_URI_unencrypted when set", () => {
     process.env.GARMIN_CLIENT_ID = "test-id";
-    process.env.OAUTH_REDIRECT_URI = "https://example.com/callback";
+    process.env.OAUTH_REDIRECT_URI_unencrypted = "https://example.com/callback";
     const config = garminOAuthConfig();
     expect(config?.redirectUri).toBe("https://example.com/callback");
   });
 
-  it("uses empty redirect URI when OAUTH_REDIRECT_URI is not set", () => {
+  it("uses default redirect URI when OAUTH_REDIRECT_URI_unencrypted is not set", () => {
     process.env.GARMIN_CLIENT_ID = "test-id";
-    delete process.env.OAUTH_REDIRECT_URI;
+    delete process.env.OAUTH_REDIRECT_URI_unencrypted;
     const config = garminOAuthConfig();
-    expect(config?.redirectUri).toBe("");
+    expect(config?.redirectUri).toContain("dofek");
   });
 });
 

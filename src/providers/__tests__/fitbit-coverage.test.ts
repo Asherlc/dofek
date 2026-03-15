@@ -62,10 +62,10 @@ describe("fitbitOAuthConfig", () => {
     expect(config?.usePkce).toBe(true);
   });
 
-  it("uses custom OAUTH_REDIRECT_URI when set", () => {
+  it("uses custom OAUTH_REDIRECT_URI_unencrypted when set", () => {
     process.env.FITBIT_CLIENT_ID = "test-id";
     process.env.FITBIT_CLIENT_SECRET = "test-secret";
-    process.env.OAUTH_REDIRECT_URI = "https://example.com/callback";
+    process.env.OAUTH_REDIRECT_URI_unencrypted = "https://example.com/callback";
     const config = fitbitOAuthConfig();
     expect(config?.redirectUri).toBe("https://example.com/callback");
   });
