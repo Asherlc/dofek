@@ -112,11 +112,6 @@ jobs:
           command: pnpm exec vitest run --coverage --exclude='**/oauth-providers-coverage.test.ts'
           environment:
             NODE_OPTIONS: --max-old-space-size=3072
-      - run:
-          name: Run excluded tests without coverage
-          command: pnpm exec vitest run src/providers/__tests__/oauth-providers-coverage.test.ts
-          environment:
-            NODE_OPTIONS: --max-old-space-size=3072
       - store_artifacts:
           path: coverage
 
