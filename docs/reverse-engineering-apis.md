@@ -390,6 +390,8 @@ The provider file (`src/providers/<service>.ts`) then imports from the package a
 
 ## Adding a new reverse-engineered provider
 
+See [reverse-engineering-walkthrough.md](./reverse-engineering-walkthrough.md) for a complete end-to-end guide. The short version:
+
 1. **Research** — Try all discovery methods above. Document findings in `docs/<service>.md`
 2. **Create package** — Set up `packages/<service>/` with client, types, sports mapping
 3. **Write tests** — Test pure parsing functions and sport mapping
