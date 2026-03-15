@@ -4,14 +4,25 @@ import type { TrainerRoadActivity, TrainerRoadMemberInfo } from "../types.ts";
 
 type MockFetchFn = ReturnType<typeof vi.fn>;
 
-function mockFetch(
-  response: { status: number; ok: boolean; body: unknown; headers?: Record<string, string[]> },
-): typeof globalThis.fetch {
+function asMock(fn: typeof globalThis.fetch): MockFetchFn {
+  // @ts-expect-error -- test helper: vi.fn() mock narrowing
+  return fn;
+}
+
+function mockFetch(response: {
+  status: number;
+  ok: boolean;
+  body: unknown;
+  headers?: Record<string, string[]>;
+}): typeof globalThis.fetch {
   return vi.fn().mockResolvedValue({
     ok: response.ok,
     status: response.status,
     json: () => Promise.resolve(response.body),
-    text: () => Promise.resolve(typeof response.body === "string" ? response.body : JSON.stringify(response.body)),
+    text: () =>
+      Promise.resolve(
+        typeof response.body === "string" ? response.body : JSON.stringify(response.body),
+      ),
     headers: {
       getSetCookie: () => response.headers?.["Set-Cookie"] ?? [],
     },
@@ -48,9 +59,7 @@ describe("TrainerRoadClient.signIn", () => {
           status: 302,
           text: () => Promise.resolve(""),
           headers: {
-            getSetCookie: () => [
-              "SharedTrainerRoadAuth=auth-cookie-value; path=/; HttpOnly",
-            ],
+            getSetCookie: () => ["SharedTrainerRoadAuth=auth-cookie-value; path=/; HttpOnly"],
           },
         });
       }
@@ -61,7 +70,7 @@ describe("TrainerRoadClient.signIn", () => {
         json: () => Promise.resolve(memberInfo),
         text: () => Promise.resolve(JSON.stringify(memberInfo)),
       });
-    };
+    });
 
     const result = await TrainerRoadClient.signIn("testuser", "password123", fetchFn);
 
@@ -96,11 +105,11 @@ describe("TrainerRoadClient.signIn", () => {
           getSetCookie: () => [],
         },
       });
-    };
+    });
 
-    await expect(
-      TrainerRoadClient.signIn("testuser", "wrong-password", fetchFn),
-    ).rejects.toThrow("TrainerRoad login failed");
+    await expect(TrainerRoadClient.signIn("testuser", "wrong-password", fetchFn)).rejects.toThrow(
+      "TrainerRoad login failed",
+    );
   });
 });
 
@@ -137,11 +146,13 @@ describe("TrainerRoadClient.getActivities", () => {
     const result = await client.getActivities("testuser", "2024-01-01", "2024-01-31");
 
     expect(result).toEqual(activities);
-    const [url, options] = (fetchFn as MockFetchFn).mock.calls[0] as [string, RequestInit];
+    // @ts-expect-error -- test: mock call args narrowing
+    const [url, options]: [string, RequestInit] = asMock(fetchFn).mock.calls[0];
     expect(url).toContain("/app/api/calendar/activities/testuser");
     expect(url).toContain("startDate=2024-01-01");
     expect(url).toContain("endDate=2024-01-31");
-    const headers = options.headers as Record<string, string>;
+    // @ts-expect-error -- test: HeadersInit narrowed to Record
+    const headers: Record<string, string> = options.headers;
     expect(headers.Cookie).toBe("SharedTrainerRoadAuth=test-auth-cookie");
   });
 
@@ -149,9 +160,9 @@ describe("TrainerRoadClient.getActivities", () => {
     const fetchFn = mockFetch({ status: 403, ok: false, body: "Forbidden" });
     const client = new TrainerRoadClient("test-auth-cookie", fetchFn);
 
-    await expect(
-      client.getActivities("testuser", "2024-01-01", "2024-01-31"),
-    ).rejects.toThrow("TrainerRoad API error (403)");
+    await expect(client.getActivities("testuser", "2024-01-01", "2024-01-31")).rejects.toThrow(
+      "TrainerRoad API error (403)",
+    );
   });
 });
 
@@ -164,7 +175,8 @@ describe("TrainerRoadClient.getCareer", () => {
     const result = await client.getCareer("testuser");
 
     expect(result).toEqual(career);
-    const [url] = (fetchFn as MockFetchFn).mock.calls[0] as [string];
+    // @ts-expect-error -- test: mock call args narrowing
+    const [url]: [string] = asMock(fetchFn).mock.calls[0];
     expect(url).toContain("/app/api/career/testuser/new");
   });
 });
@@ -178,7 +190,8 @@ describe("TrainerRoadClient.getMemberInfo", () => {
     const result = await client.getMemberInfo();
 
     expect(result).toEqual(memberInfo);
-    const [url] = (fetchFn as MockFetchFn).mock.calls[0] as [string];
+    // @ts-expect-error -- test: mock call args narrowing
+    const [url]: [string] = asMock(fetchFn).mock.calls[0];
     expect(url).toContain("/app/api/member-info");
   });
 });

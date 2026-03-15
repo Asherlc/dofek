@@ -68,7 +68,8 @@ export class ZwiftClient {
     if (!response.ok) {
       throw new Error(`Zwift fitness data fetch failed (${response.status})`);
     }
-    return response.json() as Promise<ZwiftFitnessData>;
+    const result: Promise<ZwiftFitnessData> = response.json();
+    return result;
   }
 
   async getPowerCurve(): Promise<ZwiftPowerCurve> {

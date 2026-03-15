@@ -15,6 +15,29 @@ const WHOOP_API_VERSION = "7";
 const COGNITO_ENDPOINT = `${WHOOP_API_BASE}/auth-service/v3/whoop/`;
 const COGNITO_CLIENT_ID = "37365lrcda1js3fapqfe2n40eh";
 
+/** Safely extract a string from an untyped record */
+function getString(obj: Record<string, unknown>, key: string): string | undefined {
+  const val = obj[key];
+  return typeof val === "string" ? val : undefined;
+}
+
+/** Safely extract a number from an untyped record */
+function getNumber(obj: Record<string, unknown>, key: string): number | undefined {
+  const val = obj[key];
+  return typeof val === "number" ? val : undefined;
+}
+
+/** Type guard: checks if a value is a non-null, non-array object (Record-like) */
+function isRecord(val: unknown): val is Record<string, unknown> {
+  return val !== null && typeof val === "object" && !Array.isArray(val);
+}
+
+/** Safely extract a nested record from an untyped record */
+function getRecord(obj: Record<string, unknown>, key: string): Record<string, unknown> | undefined {
+  const val = obj[key];
+  return isRecord(val) ? val : undefined;
+}
+
 /** Make a Cognito API call through WHOOP's proxy endpoint */
 async function cognitoCall(
   action: string,
@@ -34,14 +57,14 @@ async function cognitoCall(
   const bodyText = await response.text();
   let data: Record<string, unknown>;
   try {
-    data = JSON.parse(bodyText) as Record<string, unknown>;
+    data = JSON.parse(bodyText);
   } catch {
     throw new Error(`WHOOP auth failed (${response.status}): ${bodyText || response.statusText}`);
   }
 
   if (!response.ok) {
-    const errorType = (data.__type as string)?.split("#").pop() ?? "UnknownError";
-    const errorMessage = (data.message as string) ?? (data.Message as string) ?? "Auth failed";
+    const errorType = getString(data, "__type")?.split("#").pop() ?? "UnknownError";
+    const errorMessage = getString(data, "message") ?? getString(data, "Message") ?? "Auth failed";
     throw new Error(`WHOOP Cognito ${errorType}: ${errorMessage}`);
   }
 
@@ -82,31 +105,38 @@ export class WhoopClient {
     );
 
     // MFA challenge — Cognito returns ChallengeName + Session
-    const challengeName = data.ChallengeName as string | undefined;
+    const challengeName = getString(data, "ChallengeName");
     if (challengeName) {
+      const session = getString(data, "Session");
+      if (!session) {
+        throw new Error("WHOOP sign-in: MFA challenge but no session returned");
+      }
       return {
         type: "verification_required",
-        session: data.Session as string,
+        session,
         method: challengeName === "SOFTWARE_TOKEN_MFA" ? "totp" : "sms",
       };
     }
 
     // No MFA — tokens returned directly
-    const authResult = data.AuthenticationResult as Record<string, unknown>;
-    if (!authResult?.AccessToken) {
+    const authResult = getRecord(data, "AuthenticationResult");
+    const accessToken = authResult ? getString(authResult, "AccessToken") : undefined;
+    if (!authResult || !accessToken) {
       throw new Error("WHOOP sign-in: no tokens in response");
     }
 
-    const userId = await WhoopClient._fetchUserId(authResult.AccessToken as string, fetchFn);
+    const userId = await WhoopClient._fetchUserId(accessToken, fetchFn);
     if (!userId) {
       throw new Error("WHOOP sign-in: could not determine user ID from bootstrap endpoint");
     }
 
+    const refreshToken = getString(authResult, "RefreshToken") ?? "";
+
     return {
       type: "success",
       token: {
-        accessToken: authResult.AccessToken as string,
-        refreshToken: authResult.RefreshToken as string,
+        accessToken,
+        refreshToken,
         userId,
       },
     };
@@ -153,19 +183,20 @@ export class WhoopClient {
       );
     }
 
-    const authResult = data.AuthenticationResult as Record<string, unknown>;
-    if (!authResult?.AccessToken) {
+    const authResult = getRecord(data, "AuthenticationResult");
+    const accessToken = authResult ? getString(authResult, "AccessToken") : undefined;
+    if (!authResult || !accessToken) {
       throw new Error("WHOOP verification: no tokens in response");
     }
 
-    const userId = await WhoopClient._fetchUserId(authResult.AccessToken as string, fetchFn);
+    const userId = await WhoopClient._fetchUserId(accessToken, fetchFn);
     if (!userId) {
       throw new Error("WHOOP verification: could not determine user ID from bootstrap endpoint");
     }
 
     return {
-      accessToken: authResult.AccessToken as string,
-      refreshToken: (authResult.RefreshToken as string) ?? "",
+      accessToken,
+      refreshToken: (authResult ? getString(authResult, "RefreshToken") : undefined) ?? "",
       userId,
     };
   }
@@ -189,19 +220,21 @@ export class WhoopClient {
       fetchFn,
     );
 
-    const authResult = data.AuthenticationResult as Record<string, unknown>;
-    if (!authResult?.AccessToken) {
+    const authResult = getRecord(data, "AuthenticationResult");
+    const accessToken = authResult ? getString(authResult, "AccessToken") : undefined;
+    if (!authResult || !accessToken) {
       throw new Error("WHOOP token refresh: no tokens in response");
     }
 
     // Best-effort: try to get userId from bootstrap. Returns null if it fails —
     // caller should fall back to the stored userId from the original auth.
-    const userId = await WhoopClient._fetchUserId(authResult.AccessToken as string, fetchFn);
+    const userId = await WhoopClient._fetchUserId(accessToken, fetchFn);
 
     return {
-      accessToken: authResult.AccessToken as string,
+      accessToken,
       // Cognito REFRESH_TOKEN_AUTH doesn't return a new refresh token — reuse the old one
-      refreshToken: (authResult.RefreshToken as string) ?? refreshToken,
+      refreshToken:
+        (authResult ? getString(authResult, "RefreshToken") : undefined) ?? refreshToken,
       userId,
     };
   }
@@ -241,12 +274,12 @@ export class WhoopClient {
     }
 
     const data: Record<string, unknown> = await response.json();
-    const nested = data.user as Record<string, unknown> | undefined;
+    const nested = getRecord(data, "user");
     const userId =
-      (data.id as number | undefined) ??
-      (data.user_id as number | undefined) ??
-      (nested?.id as number | undefined) ??
-      (nested?.user_id as number | undefined);
+      getNumber(data, "id") ??
+      getNumber(data, "user_id") ??
+      (nested ? getNumber(nested, "id") : undefined) ??
+      (nested ? getNumber(nested, "user_id") : undefined);
     if (!userId || typeof userId !== "number") {
       return null;
     }
@@ -293,12 +326,18 @@ export class WhoopClient {
       limit: String(limit),
     });
     // BFF may return bare array or wrapped object — normalize
-    if (Array.isArray(raw)) return raw as WhoopCycle[];
-    if (raw && typeof raw === "object") {
+    if (Array.isArray(raw)) {
+      const cycles: WhoopCycle[] = raw;
+      return cycles;
+    }
+    if (isRecord(raw)) {
       // Try common wrapper keys
       for (const key of ["cycles", "records", "data", "results"]) {
-        const val = (raw as Record<string, unknown>)[key];
-        if (Array.isArray(val)) return val as WhoopCycle[];
+        const val = raw[key];
+        if (Array.isArray(val)) {
+          const cycles: WhoopCycle[] = val;
+          return cycles;
+        }
       }
     }
     return [];
@@ -343,6 +382,7 @@ export class WhoopClient {
       throw new Error(`WHOOP weightlifting API error (${response.status}): ${text}`);
     }
 
-    return response.json() as Promise<WhoopWeightliftingWorkoutResponse>;
+    const result: WhoopWeightliftingWorkoutResponse = await response.json();
+    return result;
   }
 }
