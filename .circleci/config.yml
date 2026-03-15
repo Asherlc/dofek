@@ -179,6 +179,8 @@ jobs:
 
   mutation:
     executor: node
+    environment:
+      NODE_OPTIONS: --max-old-space-size=3072
     steps:
       - checkout
       - run:
