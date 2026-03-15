@@ -20,13 +20,55 @@ jobs:
       checks: read
     steps:
       - name: Wait for CircleCI checks to pass
-        uses: lewagon/wait-on-check-action@v1.3.4
-        with:
-          ref: ${{ github.sha }}
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-          check-regexp: ci/circleci:.*
-          wait-interval: 30
-          allowed-conclusions: success
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SHA="${{ github.sha }}"
+          REPO="${{ github.repository }}"
+          PATTERN="^ci/circleci:"
+          MAX_WAIT=1800  # 30 minutes
+          INTERVAL=30
+          elapsed=0
+
+          echo "Waiting for CircleCI statuses matching '$PATTERN' on $SHA"
+
+          while [ $elapsed -lt $MAX_WAIT ]; do
+            # Get all commit statuses (CircleCI reports via status API, not checks API)
+            statuses=$(gh api "repos/$REPO/commits/$SHA/status" --jq '
+              .statuses | map(select(.context | test("^ci/circleci:")))
+            ')
+
+            count=$(echo "$statuses" | jq 'length')
+            if [ "$count" -eq 0 ]; then
+              echo "No CircleCI statuses found yet, waiting ${INTERVAL}s... (${elapsed}s elapsed)"
+              sleep $INTERVAL
+              elapsed=$((elapsed + INTERVAL))
+              continue
+            fi
+
+            pending=$(echo "$statuses" | jq '[.[] | select(.state == "pending")] | length')
+            failed=$(echo "$statuses" | jq '[.[] | select(.state == "failure" or .state == "error")] | length')
+            success=$(echo "$statuses" | jq '[.[] | select(.state == "success")] | length')
+
+            echo "CircleCI statuses: $success success, $pending pending, $failed failed (of $count total)"
+
+            if [ "$failed" -gt 0 ]; then
+              echo "::error::CircleCI checks failed"
+              echo "$statuses" | jq '.[] | select(.state == "failure" or .state == "error") | "\(.context): \(.state)"'
+              exit 1
+            fi
+
+            if [ "$pending" -eq 0 ]; then
+              echo "All $count CircleCI checks passed!"
+              exit 0
+            fi
+
+            sleep $INTERVAL
+            elapsed=$((elapsed + INTERVAL))
+          done
+
+          echo "::error::Timed out waiting for CircleCI checks after ${MAX_WAIT}s"
+          exit 1
 
   docker:
     name: Docker (${{ matrix.target }})
