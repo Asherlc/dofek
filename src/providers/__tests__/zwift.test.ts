@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mapZwiftSport, parseZwiftActivity, parseZwiftFitnessData } from "../zwift.ts";
+import { mapZwiftSport, parseZwiftActivity, parseZwiftFitnessData } from "zwift-client";
 
 // ============================================================
 // Sample API responses

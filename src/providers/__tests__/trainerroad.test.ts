@@ -1,5 +1,5 @@
+import { mapTrainerRoadActivityType, parseTrainerRoadActivity } from "trainerroad-client";
 import { describe, expect, it } from "vitest";
-import { mapTrainerRoadActivityType, parseTrainerRoadActivity } from "../trainerroad.ts";
 
 const sampleActivity = {
   Id: 987654,

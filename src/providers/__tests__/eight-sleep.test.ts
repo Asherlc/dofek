@@ -1,9 +1,9 @@
-import { describe, expect, it } from "vitest";
 import {
   parseEightSleepDailyMetrics,
   parseEightSleepHeartRateSamples,
   parseEightSleepTrendDay,
-} from "../eight-sleep.ts";
+} from "eight-sleep-client";
+import { describe, expect, it } from "vitest";
 
 // ============================================================
 // Sample API responses

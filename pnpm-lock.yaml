@@ -11,6 +11,9 @@ importers:
       drizzle-orm:
         specifier: 0.38.4
         version: 0.38.4(@opentelemetry/api@1.9.0)(@types/react@19.2.14)(postgres@3.4.8)(react@19.2.4)
+      eight-sleep-client:
+        specifier: workspace:*
+        version: link:packages/eight-sleep
       fit-file-parser:
         specifier: 2.3.3
         version: 2.3.3
@@ -20,6 +23,12 @@ importers:
       sax:
         specifier: 1.5.0
         version: 1.5.0
+      trainerroad-client:
+        specifier: workspace:*
+        version: link:packages/trainerroad-client
+      velohero-client:
+        specifier: workspace:*
+        version: link:packages/velohero-client
       whoop-whoop:
         specifier: workspace:*
         version: link:packages/whoop-whoop
@@ -35,6 +44,9 @@ importers:
       zod:
         specifier: 3.25.76
         version: 3.25.76
+      zwift-client:
+        specifier: workspace:*
+        version: link:packages/zwift-client
     devDependencies:
       '@biomejs/biome':
         specifier: 2.4.6
@@ -81,6 +93,15 @@ importers:
       wait-on:
         specifier: ^9.0.4
         version: 9.0.4
+
+  packages/eight-sleep:
+    devDependencies:
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 3.2.4
+        version: 3.2.4(@types/node@22.19.15)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
 
   packages/ios:
     dependencies:
@@ -201,6 +222,24 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
+  packages/trainerroad-client:
+    devDependencies:
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 3.2.4
+        version: 3.2.4(@types/node@22.19.15)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
+
+  packages/velohero-client:
+    devDependencies:
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 3.2.4
+        version: 3.2.4(@types/node@22.19.15)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
+
   packages/web:
     dependencies:
       '@tailwindcss/vite':
@@ -272,6 +311,15 @@ importers:
         version: 6.4.1(@types/node@22.19.15)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
 
   packages/whoop-whoop:
+    devDependencies:
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 3.2.4
+        version: 3.2.4(@types/node@22.19.15)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
+
+  packages/zwift-client:
     devDependencies:
       typescript:
         specifier: 5.9.3
