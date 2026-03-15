@@ -80,7 +80,7 @@ jobs:
       # Upload HTML report as artifact
       - name: Upload mutation report
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: mutation-report
           path: reports/mutation/
