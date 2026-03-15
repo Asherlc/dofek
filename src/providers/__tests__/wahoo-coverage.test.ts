@@ -45,18 +45,18 @@ describe("wahooOAuthConfig", () => {
     expect(config?.scopes).toContain("workouts_read");
   });
 
-  it("uses custom OAUTH_REDIRECT_URI when set", () => {
+  it("uses custom OAUTH_REDIRECT_URI_unencrypted when set", () => {
     process.env.WAHOO_CLIENT_ID = "test-id";
     process.env.WAHOO_CLIENT_SECRET = "test-secret";
-    process.env.OAUTH_REDIRECT_URI = "https://example.com/callback";
+    process.env.OAUTH_REDIRECT_URI_unencrypted = "https://example.com/callback";
     const config = wahooOAuthConfig();
     expect(config?.redirectUri).toBe("https://example.com/callback");
   });
 
-  it("uses default redirect URI when OAUTH_REDIRECT_URI is not set", () => {
+  it("uses default redirect URI when OAUTH_REDIRECT_URI_unencrypted is not set", () => {
     process.env.WAHOO_CLIENT_ID = "test-id";
     process.env.WAHOO_CLIENT_SECRET = "test-secret";
-    delete process.env.OAUTH_REDIRECT_URI;
+    delete process.env.OAUTH_REDIRECT_URI_unencrypted;
     const config = wahooOAuthConfig();
     expect(config?.redirectUri).toContain("dofek");
   });

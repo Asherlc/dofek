@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import compression from "compression";
 import cookieParser from "cookie-parser";
+import { getOAuthRedirectUri } from "dofek/auth/oauth";
 import { createDatabaseFromEnv } from "dofek/db";
 import { runMigrations } from "dofek/db/migrate";
 import { DEFAULT_USER_ID } from "dofek/db/schema";
@@ -802,7 +803,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       res.status(400).send("SLACK_CLIENT_ID is not configured");
       return;
     }
-    const redirectUri = `${process.env.OAUTH_REDIRECT_URI ?? "https://dofek.asherlc.com/callback"}`;
+    const redirectUri = getOAuthRedirectUri();
     const url = new URL("https://slack.com/oauth/v2/authorize");
     url.searchParams.set("client_id", clientId);
     url.searchParams.set("scope", SLACK_SCOPES.join(","));
@@ -864,7 +865,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
 
       // OAuth 1.0 providers (e.g. FatSecret) — get request token first
       if (setup.oauth1Flow) {
-        const callbackUrl = `${process.env.OAUTH_REDIRECT_URI ?? "https://dofek.asherlc.com/callback"}`;
+        const callbackUrl = getOAuthRedirectUri();
         const result = await setup.oauth1Flow.getRequestToken(callbackUrl);
         oauth1Secrets.set(result.oauthToken, {
           providerId,
@@ -990,7 +991,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
           return;
         }
 
-        const redirectUri = `${process.env.OAUTH_REDIRECT_URI ?? "https://dofek.asherlc.com/callback"}`;
+        const redirectUri = getOAuthRedirectUri();
         logger.info("[auth] Exchanging Slack OAuth code for bot token...");
 
         // Exchange code for access token via Slack's oauth.v2.access

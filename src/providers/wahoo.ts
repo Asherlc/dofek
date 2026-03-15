@@ -1,5 +1,5 @@
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
-import { exchangeCodeForTokens, refreshAccessToken } from "../auth/oauth.ts";
+import { exchangeCodeForTokens, getOAuthRedirectUri, refreshAccessToken } from "../auth/oauth.ts";
 import type { Database } from "../db/index.ts";
 import { activity, metricStream } from "../db/schema.ts";
 import { loadTokens, saveTokens } from "../db/tokens.ts";
@@ -225,20 +225,16 @@ export class WahooClient {
 // Provider implementation
 // ============================================================
 
-const DEFAULT_REDIRECT_URI = "https://dofek.asherlc.com/callback";
-
 export function wahooOAuthConfig(): OAuthConfig | null {
   const clientId = process.env.WAHOO_CLIENT_ID;
   const clientSecret = process.env.WAHOO_CLIENT_SECRET;
   if (!clientId || !clientSecret) return null;
-  const redirectUri = process.env.OAUTH_REDIRECT_URI ?? DEFAULT_REDIRECT_URI;
-
   return {
     clientId,
     clientSecret,
     authorizeUrl: `${WAHOO_API_BASE}/oauth/authorize`,
     tokenUrl: `${WAHOO_API_BASE}/oauth/token`,
-    redirectUri,
+    redirectUri: getOAuthRedirectUri(),
     scopes: ["user_read", "workouts_read", "offline_data"],
   };
 }

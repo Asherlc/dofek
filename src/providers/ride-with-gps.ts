@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import type { OAuthConfig } from "../auth/oauth.ts";
-import { exchangeCodeForTokens } from "../auth/oauth.ts";
+import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import type { Database } from "../db/index.ts";
 import { activity, DEFAULT_USER_ID, metricStream, userSettings } from "../db/schema.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
@@ -70,7 +70,7 @@ export function rideWithGpsOAuthConfig(): OAuthConfig | null {
     clientSecret: process.env.RWGPS_CLIENT_SECRET ?? undefined,
     authorizeUrl: RWGPS_OAUTH_AUTHORIZE_URL,
     tokenUrl: RWGPS_OAUTH_TOKEN_URL,
-    redirectUri: process.env.OAUTH_REDIRECT_URI ?? "https://dofek.asherlc.com/callback",
+    redirectUri: getOAuthRedirectUri(),
     scopes: ["user"],
     tokenAuthMethod: "basic",
   };

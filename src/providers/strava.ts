@@ -1,5 +1,5 @@
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
-import { exchangeCodeForTokens, refreshAccessToken } from "../auth/oauth.ts";
+import { exchangeCodeForTokens, getOAuthRedirectUri, refreshAccessToken } from "../auth/oauth.ts";
 import type { Database } from "../db/index.ts";
 import { activity, metricStream } from "../db/schema.ts";
 import { loadTokens, saveTokens } from "../db/tokens.ts";
@@ -290,21 +290,18 @@ export class StravaRateLimitError extends Error {
 // Provider implementation
 // ============================================================
 
-const DEFAULT_REDIRECT_URI = "https://dofek.asherlc.com/callback";
 const STRAVA_AUTH_BASE = "https://www.strava.com/oauth";
 
 export function stravaOAuthConfig(): OAuthConfig | null {
   const clientId = process.env.STRAVA_CLIENT_ID;
   const clientSecret = process.env.STRAVA_CLIENT_SECRET;
   if (!clientId || !clientSecret) return null;
-  const redirectUri = process.env.OAUTH_REDIRECT_URI ?? DEFAULT_REDIRECT_URI;
-
   return {
     clientId,
     clientSecret,
     authorizeUrl: `${STRAVA_AUTH_BASE}/authorize`,
     tokenUrl: `${STRAVA_AUTH_BASE}/token`,
-    redirectUri,
+    redirectUri: getOAuthRedirectUri(),
     scopes: ["read", "activity:read_all"],
     scopeSeparator: ",",
   };

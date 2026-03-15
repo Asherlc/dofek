@@ -403,7 +403,7 @@ Each provider is enabled by adding its credentials to `.env` (SOPS-encrypted). O
 | Strong | File import | None (upload `.csv` via UI) |
 | Cronometer | File import | None (upload `.csv` via UI) |
 
-OAuth providers (Wahoo, Withings, Polar, FatSecret) also need `OAUTH_REDIRECT_URI` set to your deployment's callback URL (e.g. `https://dofek.asherlc.com/callback`). After adding credentials, click the provider tile on the Data Sources page to complete the OAuth flow.
+OAuth providers (Wahoo, Withings, Polar, FatSecret) also need `OAUTH_REDIRECT_URI_unencrypted` set to your deployment's callback URL (e.g. `https://dofek.asherlc.com/callback`). After adding credentials, click the provider tile on the Data Sources page to complete the OAuth flow.
 
 **Not supported:** Fitbit (requires a Fitbit device), standalone FIT file import (FIT parsing exists but is only used internally by the Wahoo provider).
 

@@ -1,5 +1,5 @@
 import type { OAuthConfig } from "../auth/oauth.ts";
-import { exchangeCodeForTokens, refreshAccessToken } from "../auth/oauth.ts";
+import { exchangeCodeForTokens, getOAuthRedirectUri, refreshAccessToken } from "../auth/oauth.ts";
 import type { Database } from "../db/index.ts";
 import { activity, healthEvent, metricStream, sleepSession } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
@@ -377,8 +377,6 @@ export class OuraClient {
 // OAuth configuration
 // ============================================================
 
-const DEFAULT_REDIRECT_URI = "https://dofek.asherlc.com/callback";
-
 export function ouraOAuthConfig(): OAuthConfig | null {
   const clientId = process.env.OURA_CLIENT_ID;
   const clientSecret = process.env.OURA_CLIENT_SECRET;
@@ -389,7 +387,7 @@ export function ouraOAuthConfig(): OAuthConfig | null {
     clientSecret,
     authorizeUrl: "https://cloud.ouraring.com/oauth/authorize",
     tokenUrl: `${OURA_API_BASE}/oauth/token`,
-    redirectUri: process.env.OAUTH_REDIRECT_URI ?? DEFAULT_REDIRECT_URI,
+    redirectUri: getOAuthRedirectUri(),
     scopes: ["daily", "heartrate", "personal", "session", "spo2", "workout", "tag"],
   };
 }
