@@ -3,6 +3,7 @@ import type { Request, Response } from "express";
 const SESSION_COOKIE = "session";
 const CODE_VERIFIER_COOKIE = "auth_code_verifier";
 const STATE_COOKIE = "auth_state";
+const LINK_USER_COOKIE = "auth_link_user";
 
 const isProduction = process.env.NODE_ENV === "production";
 
@@ -52,4 +53,15 @@ export function getOAuthFlowCookies(req: Request): {
 export function clearOAuthFlowCookies(res: Response): void {
   res.clearCookie(STATE_COOKIE, { path: "/" });
   res.clearCookie(CODE_VERIFIER_COOKIE, { path: "/" });
+  res.clearCookie(LINK_USER_COOKIE, { path: "/" });
+}
+
+// ── Account linking cookie (marks OAuth flow as "link to existing user") ──
+
+export function setLinkUserCookie(res: Response, userId: string): void {
+  res.cookie(LINK_USER_COOKIE, userId, { ...cookieDefaults, maxAge: FLOW_MAX_AGE });
+}
+
+export function getLinkUserCookie(req: Request): string | undefined {
+  return req.cookies?.[LINK_USER_COOKIE] as string | undefined;
 }

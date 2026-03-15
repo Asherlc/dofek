@@ -6,6 +6,20 @@ import {
 } from "../../../../../src/db/__tests__/test-helpers.ts";
 import { createInstallationStore } from "../installation-store.ts";
 
+/**
+ * Helper to build intentionally-invalid test data that violates the type
+ * contract (e.g. missing required fields). Tests use this to verify runtime
+ * error handling for malformed inputs. Uses `Partial<T>` to allow omitting
+ * required fields, then returns the value typed as `T`.
+ */
+function invalidQuery(overrides: Partial<InstallationQuery<false>>): InstallationQuery<false> {
+  return overrides as InstallationQuery<false>;
+}
+
+function partialInstallation(overrides: Partial<Installation>): Installation {
+  return overrides as Installation;
+}
+
 describe("Slack Installation Store (integration)", () => {
   let ctx: TestContext;
 
@@ -113,11 +127,11 @@ describe("Slack Installation Store (integration)", () => {
 
   it("fetchInstallation throws when teamId is missing", async () => {
     const store = createInstallationStore(ctx.db);
-    const query = {
+    const query = invalidQuery({
       teamId: undefined,
       enterpriseId: undefined,
       isEnterpriseInstall: false,
-    } as unknown as InstallationQuery<false>;
+    });
 
     await expect(store.fetchInstallation(query)).rejects.toThrow(
       "Cannot fetch installation without team ID",
@@ -153,7 +167,7 @@ describe("Slack Installation Store (integration)", () => {
 
   it("storeInstallation falls back to enterprise ID when team ID is missing", async () => {
     const store = createInstallationStore(ctx.db);
-    const installation = {
+    const installation = partialInstallation({
       team: undefined,
       enterprise: { id: "E-ENTERPRISE-001", name: "Enterprise Corp" },
       user: { id: "U-INSTALLER", token: undefined, scopes: undefined },
@@ -166,7 +180,7 @@ describe("Slack Installation Store (integration)", () => {
       appId: "A-ENT-001",
       tokenType: "bot",
       isEnterpriseInstall: true,
-    } as unknown as Installation;
+    });
 
     await store.storeInstallation(installation);
 
@@ -181,16 +195,18 @@ describe("Slack Installation Store (integration)", () => {
 
   it("storeInstallation handles installation with minimal optional fields", async () => {
     const store = createInstallationStore(ctx.db);
-    const installation = {
+    const installation = partialInstallation({
       team: { id: "T-MINIMAL-001" },
-      user: { id: "U-MIN" },
+      user: { id: "U-MIN", token: undefined, scopes: undefined },
       bot: {
         token: "xoxb-minimal",
         scopes: [],
+        id: "",
+        userId: "",
       },
       tokenType: "bot",
       isEnterpriseInstall: false,
-    } as unknown as Installation;
+    });
 
     await store.storeInstallation(installation);
 
@@ -205,11 +221,11 @@ describe("Slack Installation Store (integration)", () => {
 
   it("deleteInstallation is a no-op when teamId is missing", async () => {
     const store = createInstallationStore(ctx.db);
-    const query = {
+    const query = invalidQuery({
       teamId: undefined,
       enterpriseId: undefined,
       isEnterpriseInstall: false,
-    } as unknown as InstallationQuery<false>;
+    });
 
     // Should not throw
     if (store.deleteInstallation) await store.deleteInstallation(query);

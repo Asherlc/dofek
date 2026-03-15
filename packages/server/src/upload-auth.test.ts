@@ -226,11 +226,11 @@ describe("Upload & Auth - extended coverage", () => {
       expect(body).toContain("Unknown or expired OAuth 1.0 request token");
     });
 
-    it("GET /callback with state=slack but no env vars returns 400", async () => {
+    it("GET /callback with state=slack (no random token) returns 400 as unknown state", async () => {
       const res = await fetch(`${baseUrl}/callback?code=slack_code&state=slack`);
       expect(res.status).toBe(400);
       const body = await res.text();
-      expect(body).toContain("SLACK_CLIENT_ID");
+      expect(body).toContain("Unknown or expired OAuth state");
     });
 
     it("GET /callback with unknown state token returns 400", async () => {

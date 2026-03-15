@@ -10,9 +10,7 @@ import { logger } from "../logger.ts";
 export function createInstallationStore(db: Database): InstallationStore {
   return {
     storeInstallation: async (installation) => {
-      const teamId =
-        installation.team?.id ??
-        (installation as unknown as { enterprise?: { id?: string } }).enterprise?.id;
+      const teamId = installation.team?.id ?? installation.enterprise?.id;
       if (!teamId) {
         throw new Error("Cannot store installation without team or enterprise ID");
       }

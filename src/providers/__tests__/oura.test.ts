@@ -1,14 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  mapOuraActivityType,
   OuraClient,
-  type OuraDailyActivity,
-  type OuraDailyReadiness,
   type OuraDailySpO2,
   OuraProvider,
   type OuraSleepDocument,
   type OuraVO2Max,
   ouraOAuthConfig,
-  parseOuraDailyMetrics,
   parseOuraSleep,
 } from "../oura.ts";
 
@@ -54,38 +52,6 @@ const sampleNap: OuraSleepDocument = {
   time_in_bed: 1800,
   readiness_score_delta: null,
   latency: 120,
-};
-
-const sampleReadiness: OuraDailyReadiness = {
-  id: "readiness-abc123",
-  day: "2026-03-01",
-  score: 82,
-  temperature_deviation: -0.15,
-  temperature_trend_deviation: 0.05,
-  contributors: {
-    resting_heart_rate: 85,
-    hrv_balance: 78,
-    body_temperature: 90,
-    recovery_index: 72,
-    sleep_balance: 80,
-    previous_night: 88,
-    previous_day_activity: 75,
-    activity_balance: 82,
-  },
-};
-
-const sampleActivity: OuraDailyActivity = {
-  id: "activity-abc123",
-  day: "2026-03-01",
-  steps: 9500,
-  active_calories: 450,
-  equivalent_walking_distance: 8200,
-  high_activity_time: 2700, // 45 min in seconds
-  medium_activity_time: 1800, // 30 min in seconds
-  low_activity_time: 7200, // 120 min in seconds
-  resting_time: 50400,
-  sedentary_time: 28800,
-  total_calories: 2300,
 };
 
 const sampleSpO2: OuraDailySpO2 = {
@@ -173,126 +139,6 @@ describe("Oura Provider", () => {
       expect(result.deepMinutes).toBe(2);
     });
   });
-
-  describe("parseOuraDailyMetrics", () => {
-    it("maps daily readiness and activity fields", () => {
-      const result = parseOuraDailyMetrics(sampleReadiness, sampleActivity, null, null);
-
-      expect(result.date).toBe("2026-03-01");
-      expect(result.steps).toBe(9500);
-      expect(result.activeEnergyKcal).toBe(450);
-      expect(result.hrv).toBe(78);
-      expect(result.restingHr).toBe(85);
-      expect(result.exerciseMinutes).toBe(75);
-      expect(result.skinTempC).toBe(-0.15);
-    });
-
-    it("includes SpO2 when provided", () => {
-      const result = parseOuraDailyMetrics(sampleReadiness, sampleActivity, sampleSpO2, null);
-
-      expect(result.spo2Avg).toBe(97.5);
-    });
-
-    it("includes VO2 max when provided", () => {
-      const result = parseOuraDailyMetrics(sampleReadiness, sampleActivity, null, sampleVO2Max);
-
-      expect(result.vo2max).toBe(42.5);
-    });
-
-    it("includes both SpO2 and VO2 max", () => {
-      const result = parseOuraDailyMetrics(
-        sampleReadiness,
-        sampleActivity,
-        sampleSpO2,
-        sampleVO2Max,
-      );
-
-      expect(result.spo2Avg).toBe(97.5);
-      expect(result.vo2max).toBe(42.5);
-    });
-
-    it("handles null spo2_percentage", () => {
-      const noPercentage: OuraDailySpO2 = { ...sampleSpO2, spo2_percentage: null };
-      const result = parseOuraDailyMetrics(null, null, noPercentage, null);
-      expect(result.spo2Avg).toBeUndefined();
-    });
-
-    it("handles null vo2_max value", () => {
-      const noValue: OuraVO2Max = { ...sampleVO2Max, vo2_max: null };
-      const result = parseOuraDailyMetrics(null, null, null, noValue);
-      expect(result.vo2max).toBeUndefined();
-    });
-
-    it("handles null readiness", () => {
-      const result = parseOuraDailyMetrics(null, sampleActivity, null, null);
-
-      expect(result.steps).toBe(9500);
-      expect(result.activeEnergyKcal).toBe(450);
-      expect(result.hrv).toBeUndefined();
-      expect(result.restingHr).toBeUndefined();
-      expect(result.skinTempC).toBeUndefined();
-    });
-
-    it("handles null activity", () => {
-      const result = parseOuraDailyMetrics(sampleReadiness, null, null, null);
-
-      expect(result.steps).toBeUndefined();
-      expect(result.activeEnergyKcal).toBeUndefined();
-      expect(result.exerciseMinutes).toBeUndefined();
-      expect(result.hrv).toBe(78);
-      expect(result.restingHr).toBe(85);
-    });
-
-    it("handles null contributors in readiness", () => {
-      const noContributors: OuraDailyReadiness = {
-        ...sampleReadiness,
-        contributors: {
-          resting_heart_rate: null,
-          hrv_balance: null,
-          body_temperature: null,
-          recovery_index: null,
-          sleep_balance: null,
-          previous_night: null,
-          previous_day_activity: null,
-          activity_balance: null,
-        },
-      };
-
-      const result = parseOuraDailyMetrics(noContributors, sampleActivity, null, null);
-      expect(result.hrv).toBeUndefined();
-      expect(result.restingHr).toBeUndefined();
-    });
-
-    it("uses activity day when readiness is null", () => {
-      const result = parseOuraDailyMetrics(null, sampleActivity, null, null);
-      expect(result.date).toBe("2026-03-01");
-    });
-
-    it("returns empty date when all are null", () => {
-      const result = parseOuraDailyMetrics(null, null, null, null);
-      expect(result.date).toBe("");
-    });
-
-    it("uses spo2 day when readiness and activity are null", () => {
-      const result = parseOuraDailyMetrics(null, null, sampleSpO2, null);
-      expect(result.date).toBe("2026-03-01");
-    });
-
-    it("uses vo2max day when others are null", () => {
-      const result = parseOuraDailyMetrics(null, null, null, sampleVO2Max);
-      expect(result.date).toBe("2026-03-01");
-    });
-
-    it("rounds exercise minutes from seconds", () => {
-      const activity: OuraDailyActivity = {
-        ...sampleActivity,
-        high_activity_time: 100, // 1.67 min
-        medium_activity_time: 100, // 1.67 min
-      };
-      const result = parseOuraDailyMetrics(null, activity, null, null);
-      expect(result.exerciseMinutes).toBe(3); // Math.round(200/60)
-    });
-  });
 });
 
 // ============================================================
@@ -330,10 +176,10 @@ describe("ouraOAuthConfig", () => {
     expect(config?.tokenUrl).toContain("api.ouraring.com");
   });
 
-  it("uses custom OAUTH_REDIRECT_URI when set", () => {
+  it("uses custom OAUTH_REDIRECT_URI_unencrypted when set", () => {
     process.env.OURA_CLIENT_ID = "test-id";
     process.env.OURA_CLIENT_SECRET = "test-secret";
-    process.env.OAUTH_REDIRECT_URI = "https://example.com/callback";
+    process.env.OAUTH_REDIRECT_URI_unencrypted = "https://example.com/callback";
     const config = ouraOAuthConfig();
     expect(config?.redirectUri).toBe("https://example.com/callback");
   });
@@ -341,9 +187,9 @@ describe("ouraOAuthConfig", () => {
   it("uses default redirect URI when not set", () => {
     process.env.OURA_CLIENT_ID = "test-id";
     process.env.OURA_CLIENT_SECRET = "test-secret";
-    delete process.env.OAUTH_REDIRECT_URI;
+    delete process.env.OAUTH_REDIRECT_URI_unencrypted;
     const config = ouraOAuthConfig();
-    expect(config?.redirectUri).toContain("localhost");
+    expect(config?.redirectUri).toContain("dofek");
   });
 });
 
@@ -429,28 +275,6 @@ describe("OuraClient", () => {
     );
   });
 
-  it("throws on non-OK response for readiness", async () => {
-    const mockFetch = (async (): Promise<Response> => {
-      return new Response("Server Error", { status: 500 });
-    }) as typeof globalThis.fetch;
-
-    const client = new OuraClient("token", mockFetch);
-    await expect(client.getDailyReadiness("2026-03-01", "2026-03-02")).rejects.toThrow(
-      "Oura API error (500)",
-    );
-  });
-
-  it("throws on non-OK response for activity", async () => {
-    const mockFetch = (async (): Promise<Response> => {
-      return new Response("Rate Limited", { status: 429 });
-    }) as typeof globalThis.fetch;
-
-    const client = new OuraClient("token", mockFetch);
-    await expect(client.getDailyActivity("2026-03-01", "2026-03-02")).rejects.toThrow(
-      "Oura API error (429)",
-    );
-  });
-
   it("fetches sleep data with correct URL", async () => {
     let capturedUrl = "";
     const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
@@ -479,56 +303,6 @@ describe("OuraClient", () => {
     await client.getSleep("2026-03-01", "2026-03-02", "page2token");
 
     expect(capturedUrl).toContain("next_token=page2token");
-  });
-
-  it("fetches readiness data successfully", async () => {
-    const mockFetch = (async (): Promise<Response> => {
-      return Response.json({ data: [sampleReadiness], next_token: null });
-    }) as typeof globalThis.fetch;
-
-    const client = new OuraClient("test-token", mockFetch);
-    const result = await client.getDailyReadiness("2026-03-01", "2026-03-02");
-
-    expect(result.data).toHaveLength(1);
-    expect(result.data[0]?.score).toBe(82);
-  });
-
-  it("passes next_token for readiness pagination", async () => {
-    let capturedUrl = "";
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
-      capturedUrl = input.toString();
-      return Response.json({ data: [], next_token: null });
-    }) as typeof globalThis.fetch;
-
-    const client = new OuraClient("test-token", mockFetch);
-    await client.getDailyReadiness("2026-03-01", "2026-03-02", "nextpage");
-
-    expect(capturedUrl).toContain("next_token=nextpage");
-  });
-
-  it("fetches activity data successfully", async () => {
-    const mockFetch = (async (): Promise<Response> => {
-      return Response.json({ data: [sampleActivity], next_token: null });
-    }) as typeof globalThis.fetch;
-
-    const client = new OuraClient("test-token", mockFetch);
-    const result = await client.getDailyActivity("2026-03-01", "2026-03-02");
-
-    expect(result.data).toHaveLength(1);
-    expect(result.data[0]?.steps).toBe(9500);
-  });
-
-  it("passes next_token for activity pagination", async () => {
-    let capturedUrl = "";
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
-      capturedUrl = input.toString();
-      return Response.json({ data: [], next_token: null });
-    }) as typeof globalThis.fetch;
-
-    const client = new OuraClient("test-token", mockFetch);
-    await client.getDailyActivity("2026-03-01", "2026-03-02", "actpage");
-
-    expect(capturedUrl).toContain("next_token=actpage");
   });
 
   it("sends Authorization header with Bearer token", async () => {
@@ -636,5 +410,152 @@ describe("OuraClient", () => {
     await expect(client.getVO2Max("2026-03-01", "2026-03-02")).rejects.toThrow(
       "Oura API error (500)",
     );
+  });
+
+  it("fetches workouts with correct URL", async () => {
+    let capturedUrl = "";
+    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+      capturedUrl = input.toString();
+      return Response.json({ data: [], next_token: null });
+    }) as typeof globalThis.fetch;
+
+    const client = new OuraClient("test-token", mockFetch);
+    await client.getWorkouts("2026-03-01", "2026-03-02");
+    expect(capturedUrl).toContain("/v2/usercollection/workout");
+    expect(capturedUrl).toContain("start_date=2026-03-01");
+  });
+
+  it("fetches heart rate with datetime params", async () => {
+    let capturedUrl = "";
+    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+      capturedUrl = input.toString();
+      return Response.json({ data: [] });
+    }) as typeof globalThis.fetch;
+
+    const client = new OuraClient("test-token", mockFetch);
+    await client.getHeartRate("2026-03-01", "2026-03-02");
+    expect(capturedUrl).toContain("/v2/usercollection/heartrate");
+    expect(capturedUrl).toContain("start_datetime=2026-03-01T00:00:00");
+    expect(capturedUrl).toContain("end_datetime=2026-03-02T23:59:59");
+  });
+
+  it("fetches sessions with correct URL", async () => {
+    let capturedUrl = "";
+    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+      capturedUrl = input.toString();
+      return Response.json({ data: [], next_token: null });
+    }) as typeof globalThis.fetch;
+
+    const client = new OuraClient("test-token", mockFetch);
+    await client.getSessions("2026-03-01", "2026-03-02");
+    expect(capturedUrl).toContain("/v2/usercollection/session");
+  });
+
+  it("fetches daily stress with correct URL", async () => {
+    let capturedUrl = "";
+    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+      capturedUrl = input.toString();
+      return Response.json({ data: [], next_token: null });
+    }) as typeof globalThis.fetch;
+
+    const client = new OuraClient("test-token", mockFetch);
+    await client.getDailyStress("2026-03-01", "2026-03-02");
+    expect(capturedUrl).toContain("/v2/usercollection/daily_stress");
+  });
+
+  it("fetches daily resilience with correct URL", async () => {
+    let capturedUrl = "";
+    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+      capturedUrl = input.toString();
+      return Response.json({ data: [], next_token: null });
+    }) as typeof globalThis.fetch;
+
+    const client = new OuraClient("test-token", mockFetch);
+    await client.getDailyResilience("2026-03-01", "2026-03-02");
+    expect(capturedUrl).toContain("/v2/usercollection/daily_resilience");
+  });
+
+  it("fetches cardiovascular age with correct URL", async () => {
+    let capturedUrl = "";
+    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+      capturedUrl = input.toString();
+      return Response.json({ data: [], next_token: null });
+    }) as typeof globalThis.fetch;
+
+    const client = new OuraClient("test-token", mockFetch);
+    await client.getDailyCardiovascularAge("2026-03-01", "2026-03-02");
+    expect(capturedUrl).toContain("/v2/usercollection/daily_cardiovascular_age");
+  });
+
+  it("fetches tags with correct URL", async () => {
+    let capturedUrl = "";
+    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+      capturedUrl = input.toString();
+      return Response.json({ data: [], next_token: null });
+    }) as typeof globalThis.fetch;
+
+    const client = new OuraClient("test-token", mockFetch);
+    await client.getTags("2026-03-01", "2026-03-02");
+    expect(capturedUrl).toContain("/v2/usercollection/tag");
+  });
+
+  it("fetches enhanced tags with correct URL", async () => {
+    let capturedUrl = "";
+    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+      capturedUrl = input.toString();
+      return Response.json({ data: [], next_token: null });
+    }) as typeof globalThis.fetch;
+
+    const client = new OuraClient("test-token", mockFetch);
+    await client.getEnhancedTags("2026-03-01", "2026-03-02");
+    expect(capturedUrl).toContain("/v2/usercollection/enhanced_tag");
+  });
+
+  it("fetches rest mode periods with correct URL", async () => {
+    let capturedUrl = "";
+    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+      capturedUrl = input.toString();
+      return Response.json({ data: [], next_token: null });
+    }) as typeof globalThis.fetch;
+
+    const client = new OuraClient("test-token", mockFetch);
+    await client.getRestModePeriods("2026-03-01", "2026-03-02");
+    expect(capturedUrl).toContain("/v2/usercollection/rest_mode_period");
+  });
+
+  it("fetches sleep time with correct URL", async () => {
+    let capturedUrl = "";
+    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+      capturedUrl = input.toString();
+      return Response.json({ data: [], next_token: null });
+    }) as typeof globalThis.fetch;
+
+    const client = new OuraClient("test-token", mockFetch);
+    await client.getSleepTime("2026-03-01", "2026-03-02");
+    expect(capturedUrl).toContain("/v2/usercollection/sleep_time");
+  });
+});
+
+// ============================================================
+// Activity type mapping tests
+// ============================================================
+
+describe("mapOuraActivityType", () => {
+  it("maps known activity types", () => {
+    expect(mapOuraActivityType("walking")).toBe("walking");
+    expect(mapOuraActivityType("running")).toBe("running");
+    expect(mapOuraActivityType("cycling")).toBe("cycling");
+    expect(mapOuraActivityType("swimming")).toBe("swimming");
+    expect(mapOuraActivityType("strength_training")).toBe("strength");
+  });
+
+  it("handles case-insensitive input", () => {
+    expect(mapOuraActivityType("Walking")).toBe("walking");
+    expect(mapOuraActivityType("RUNNING")).toBe("running");
+  });
+
+  it("passes through unknown types lowercase", () => {
+    expect(mapOuraActivityType("kickboxing")).toBe("kickboxing");
+    expect(mapOuraActivityType("CrossFit")).toBe("crossfit");
   });
 });

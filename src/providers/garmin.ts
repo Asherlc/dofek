@@ -11,8 +11,9 @@ import {
   parseStressTimeSeries,
   parseTrainingStatus,
 } from "garmin-connect";
+import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
-import { exchangeCodeForTokens, refreshAccessToken } from "../auth/oauth.ts";
+import { exchangeCodeForTokens, getOAuthRedirectUri, refreshAccessToken } from "../auth/oauth.ts";
 import type { Database } from "../db/index.ts";
 import {
   activity,
@@ -349,14 +350,12 @@ export function garminOAuthConfig(): OAuthConfig | null {
   if (!clientId) return null;
 
   const clientSecret = process.env.GARMIN_CLIENT_SECRET;
-  const redirectUri = process.env.OAUTH_REDIRECT_URI ?? "https://dofek.asherlc.com/callback";
-
   return {
     clientId,
     clientSecret: clientSecret ?? undefined,
     authorizeUrl: GARMIN_OAUTH_AUTHORIZE_URL,
     tokenUrl: GARMIN_OAUTH_TOKEN_URL,
-    redirectUri,
+    redirectUri: getOAuthRedirectUri(),
     scopes: [],
     usePkce: true,
   };
@@ -377,14 +376,32 @@ function serializeInternalTokens(tokens: GarminTokens): TokenSet {
   };
 }
 
+const garminTokensSchema = z.object({
+  oauth1: z.object({
+    oauth_token: z.string(),
+    oauth_token_secret: z.string(),
+    mfa_token: z.string().optional(),
+    mfa_expiration_timestamp: z.string().optional(),
+  }),
+  oauth2: z.object({
+    scope: z.string(),
+    jti: z.string(),
+    token_type: z.string(),
+    access_token: z.string(),
+    refresh_token: z.string(),
+    expires_in: z.number(),
+    expires_at: z.number(),
+    refresh_token_expires_in: z.number(),
+    refresh_token_expires_at: z.number(),
+  }),
+});
+
 function deserializeInternalTokens(stored: TokenSet): GarminTokens | null {
   if (stored.scopes !== INTERNAL_SCOPE_MARKER) return null;
   try {
-    const parsed = JSON.parse(stored.accessToken) as Record<string, unknown>;
-    if (typeof parsed === "object" && parsed !== null && "oauth1" in parsed && "oauth2" in parsed) {
-      return parsed as unknown as GarminTokens;
-    }
-    return null;
+    const parsed: unknown = JSON.parse(stored.accessToken);
+    const result = garminTokensSchema.safeParse(parsed);
+    return result.success ? result.data : null;
   } catch {
     return null;
   }

@@ -45,20 +45,20 @@ describe("wahooOAuthConfig", () => {
     expect(config?.scopes).toContain("workouts_read");
   });
 
-  it("uses custom OAUTH_REDIRECT_URI when set", () => {
+  it("uses custom OAUTH_REDIRECT_URI_unencrypted when set", () => {
     process.env.WAHOO_CLIENT_ID = "test-id";
     process.env.WAHOO_CLIENT_SECRET = "test-secret";
-    process.env.OAUTH_REDIRECT_URI = "https://example.com/callback";
+    process.env.OAUTH_REDIRECT_URI_unencrypted = "https://example.com/callback";
     const config = wahooOAuthConfig();
     expect(config?.redirectUri).toBe("https://example.com/callback");
   });
 
-  it("uses default redirect URI when OAUTH_REDIRECT_URI is not set", () => {
+  it("uses default redirect URI when OAUTH_REDIRECT_URI_unencrypted is not set", () => {
     process.env.WAHOO_CLIENT_ID = "test-id";
     process.env.WAHOO_CLIENT_SECRET = "test-secret";
-    delete process.env.OAUTH_REDIRECT_URI;
+    delete process.env.OAUTH_REDIRECT_URI_unencrypted;
     const config = wahooOAuthConfig();
-    expect(config?.redirectUri).toContain("localhost");
+    expect(config?.redirectUri).toContain("dofek");
   });
 });
 
@@ -240,5 +240,66 @@ describe("parseWorkoutSummary — additional type mappings", () => {
     expect(parseWorkoutSummary({ ...baseWorkout, workout_type_id: 5 }).activityType).toBe(
       "cycling",
     );
+  });
+});
+
+describe("WahooProvider.getUserIdentity()", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it("returns identity from user API", async () => {
+    process.env.WAHOO_CLIENT_ID = "test-id";
+    process.env.WAHOO_CLIENT_SECRET = "test-secret";
+
+    const mockFetch = (async (): Promise<Response> => {
+      return Response.json({
+        id: 42,
+        email: "user@wahoo.com",
+        first_name: "John",
+        last_name: "Smith",
+      });
+    }) as typeof globalThis.fetch;
+
+    const provider = new WahooProvider(mockFetch);
+    const setup = provider.authSetup();
+    if (!setup.getUserIdentity) throw new Error("getUserIdentity not defined");
+    const identity = await setup.getUserIdentity("test-token");
+    expect(identity.providerAccountId).toBe("42");
+    expect(identity.email).toBe("user@wahoo.com");
+    expect(identity.name).toBe("John Smith");
+  });
+
+  it("handles missing name/email", async () => {
+    process.env.WAHOO_CLIENT_ID = "test-id";
+    process.env.WAHOO_CLIENT_SECRET = "test-secret";
+
+    const mockFetch = (async (): Promise<Response> => {
+      return Response.json({ id: 7 });
+    }) as typeof globalThis.fetch;
+
+    const provider = new WahooProvider(mockFetch);
+    const setup = provider.authSetup();
+    if (!setup.getUserIdentity) throw new Error("getUserIdentity not defined");
+    const identity = await setup.getUserIdentity("test-token");
+    expect(identity.providerAccountId).toBe("7");
+    expect(identity.email).toBeNull();
+    expect(identity.name).toBeNull();
+  });
+
+  it("throws on API error", async () => {
+    process.env.WAHOO_CLIENT_ID = "test-id";
+    process.env.WAHOO_CLIENT_SECRET = "test-secret";
+
+    const mockFetch = (async (): Promise<Response> => {
+      return new Response("Unauthorized", { status: 401 });
+    }) as typeof globalThis.fetch;
+
+    const provider = new WahooProvider(mockFetch);
+    const setup = provider.authSetup();
+    if (!setup.getUserIdentity) throw new Error("getUserIdentity not defined");
+    await expect(setup.getUserIdentity("bad-token")).rejects.toThrow("Wahoo user API error (401)");
   });
 });

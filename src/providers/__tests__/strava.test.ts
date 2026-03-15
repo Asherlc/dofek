@@ -244,6 +244,28 @@ describe("Strava Provider", () => {
       expect(rows[0]?.power).toBeUndefined();
       expect(rows[0]?.lat).toBeUndefined();
       expect(rows[0]?.altitude).toBeUndefined();
+      // raw should only include keys for streams that are present
+      expect(rows[0]?.raw).toEqual({ time: 0, heartrate: 130 });
+    });
+
+    it("omits all optional fields when only time stream is present", () => {
+      const timeOnly: StravaStreamSet = {
+        time: {
+          data: [0],
+          series_type: "time",
+          resolution: "high",
+          original_size: 1,
+        },
+      };
+
+      const rows = stravaStreamsToMetricStream(timeOnly, "strava", "act-uuid", startedAt);
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.heartRate).toBeUndefined();
+      expect(rows[0]?.power).toBeUndefined();
+      expect(rows[0]?.lat).toBeUndefined();
+      expect(rows[0]?.lng).toBeUndefined();
+      expect(rows[0]?.raw).toEqual({ time: 0 });
     });
 
     it("returns empty array when no time stream", () => {
@@ -252,7 +274,7 @@ describe("Strava Provider", () => {
       expect(rows).toHaveLength(0);
     });
 
-    it("returns empty array when time stream has empty data", () => {
+    it("returns empty array when time stream data is empty", () => {
       const emptyTime: StravaStreamSet = {
         time: { data: [], series_type: "time", resolution: "high", original_size: 0 },
       };
