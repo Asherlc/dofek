@@ -4,13 +4,10 @@ import { parseFitFile, parseFitRecord } from "../parser.ts";
 describe("FIT Parser — edge cases", () => {
   describe("parseFitFile error handling", () => {
     it.skipIf(!!process.env.CI)("rejects with error for corrupt/invalid FIT data", async () => {
-      // Skipped in CI: the FIT parser with force:true hangs on garbage data
+      // Skipped in CI: FIT parser with force:true blocks the event loop
+      // on garbage data, preventing the internal timeout from firing
       const corruptBuffer = Buffer.from("this is not a valid FIT file");
-      try {
-        await parseFitFile(corruptBuffer);
-      } catch (err) {
-        expect(err).toBeInstanceOf(Error);
-      }
+      await expect(parseFitFile(corruptBuffer)).rejects.toThrow();
     });
 
     it("handles empty buffer", async () => {
