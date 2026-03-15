@@ -81,6 +81,7 @@ services:
     image: containrrr/watchtower
     restart: unless-stopped
     environment:
+      DOCKER_API_VERSION: "1.40"
       WATCHTOWER_POLL_INTERVAL: 300
       WATCHTOWER_CLEANUP: "true"
       WATCHTOWER_INCLUDE_STOPPED: "false"
