@@ -13,12 +13,13 @@ export default defineConfig({
     ],
     exclude: [
       // Integration tests that require a database (use setupTestDatabase)
-      "src/providers/__tests__/*-sync.test.ts",
-      "src/providers/__tests__/*-coverage.test.ts",
-      "src/providers/__tests__/*-import.test.ts",
-      "src/providers/__tests__/*-ext.test.ts",
-      "src/db/__tests__/**",
-      "src/sync/__tests__/runner.test.ts",
+      "src/providers/*-sync.test.ts",
+      "src/providers/*-coverage.test.ts",
+      "src/providers/*-import.test.ts",
+      "src/providers/*-ext.test.ts",
+      "src/db/*.test.ts",
+      "src/db/test-helpers.ts",
+      "src/sync/runner.test.ts",
     ],
   },
   resolve: {

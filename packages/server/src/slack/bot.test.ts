@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { setupTestDatabase, type TestContext } from "../../../../src/db/__tests__/test-helpers.ts";
+import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 
 const DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001";
 const DOFEK_PROVIDER_ID = "dofek";

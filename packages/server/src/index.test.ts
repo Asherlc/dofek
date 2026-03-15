@@ -1,7 +1,35 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { setupTestDatabase, type TestContext } from "../../../src/db/__tests__/test-helpers.ts";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { setupTestDatabase, type TestContext } from "../../../src/db/test-helpers.ts";
 import { createSession } from "./auth/session.ts";
 import { createApp } from "./index.ts";
+
+// Mock BullMQ queues so tests don't require Redis
+const mockJob = {
+  id: "mock-job-id",
+  data: { userId: "00000000-0000-0000-0000-000000000001" },
+  progress: 0,
+  getState: vi.fn().mockResolvedValue("waiting"),
+  failedReason: undefined,
+  returnvalue: undefined,
+};
+
+const mockQueue = {
+  add: vi.fn().mockResolvedValue(mockJob),
+  getJob: vi.fn().mockImplementation(async (id: string) => (id === "mock-job-id" ? mockJob : null)),
+  close: vi.fn(),
+};
+
+vi.mock("dofek/jobs/queues", () => ({
+  createImportQueue: () => mockQueue,
+  createSyncQueue: () => mockQueue,
+  getRedisConnection: () => ({}),
+  SYNC_QUEUE: "sync",
+  IMPORT_QUEUE: "import",
+}));
+
+vi.mock("./lib/start-worker.ts", () => ({
+  startWorker: vi.fn(),
+}));
 
 /**
  * Integration tests for the tRPC API layer.
