@@ -24,6 +24,11 @@ function createMockFetchForErrors(opts: {
       });
     }
 
+    // Sleep time (must come before sleep)
+    if (urlStr.includes("/v2/usercollection/sleep_time")) {
+      return Response.json({ data: [], next_token: null });
+    }
+
     // Sleep — error or empty
     if (urlStr.includes("/v2/usercollection/sleep")) {
       if (opts.sleepError) {
@@ -50,8 +55,53 @@ function createMockFetchForErrors(opts: {
       return Response.json({ data: [], next_token: null });
     }
 
+    // Daily stress — empty
+    if (urlStr.includes("/v2/usercollection/daily_stress")) {
+      return Response.json({ data: [], next_token: null });
+    }
+
+    // Daily resilience — empty
+    if (urlStr.includes("/v2/usercollection/daily_resilience")) {
+      return Response.json({ data: [], next_token: null });
+    }
+
+    // Daily cardiovascular age — empty
+    if (urlStr.includes("/v2/usercollection/daily_cardiovascular_age")) {
+      return Response.json({ data: [], next_token: null });
+    }
+
     // VO2 max — empty
     if (urlStr.includes("/v2/usercollection/vO2_max")) {
+      return Response.json({ data: [], next_token: null });
+    }
+
+    // Workouts — empty
+    if (urlStr.includes("/v2/usercollection/workout")) {
+      return Response.json({ data: [], next_token: null });
+    }
+
+    // Heart rate — empty
+    if (urlStr.includes("/v2/usercollection/heartrate")) {
+      return Response.json({ data: [], next_token: null });
+    }
+
+    // Sessions — empty
+    if (urlStr.includes("/v2/usercollection/session")) {
+      return Response.json({ data: [], next_token: null });
+    }
+
+    // Enhanced tags (must come before tag)
+    if (urlStr.includes("/v2/usercollection/enhanced_tag")) {
+      return Response.json({ data: [], next_token: null });
+    }
+
+    // Tags — empty
+    if (urlStr.includes("/v2/usercollection/tag")) {
+      return Response.json({ data: [], next_token: null });
+    }
+
+    // Rest mode — empty
+    if (urlStr.includes("/v2/usercollection/rest_mode_period")) {
       return Response.json({ data: [], next_token: null });
     }
 

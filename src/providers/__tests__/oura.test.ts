@@ -1,12 +1,23 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  mapOuraActivityType,
   OuraClient,
   type OuraDailyActivity,
+  type OuraDailyCardiovascularAge,
   type OuraDailyReadiness,
+  type OuraDailyResilience,
   type OuraDailySpO2,
+  type OuraDailyStress,
+  type OuraEnhancedTag,
+  type OuraHeartRate,
   OuraProvider,
+  type OuraRestModePeriod,
+  type OuraSession,
   type OuraSleepDocument,
+  type OuraSleepTime,
+  type OuraTag,
   type OuraVO2Max,
+  type OuraWorkout,
   ouraOAuthConfig,
   parseOuraDailyMetrics,
   parseOuraSleep,
@@ -636,5 +647,152 @@ describe("OuraClient", () => {
     await expect(client.getVO2Max("2026-03-01", "2026-03-02")).rejects.toThrow(
       "Oura API error (500)",
     );
+  });
+
+  it("fetches workouts with correct URL", async () => {
+    let capturedUrl = "";
+    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+      capturedUrl = input.toString();
+      return Response.json({ data: [], next_token: null });
+    }) as typeof globalThis.fetch;
+
+    const client = new OuraClient("test-token", mockFetch);
+    await client.getWorkouts("2026-03-01", "2026-03-02");
+    expect(capturedUrl).toContain("/v2/usercollection/workout");
+    expect(capturedUrl).toContain("start_date=2026-03-01");
+  });
+
+  it("fetches heart rate with datetime params", async () => {
+    let capturedUrl = "";
+    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+      capturedUrl = input.toString();
+      return Response.json({ data: [] });
+    }) as typeof globalThis.fetch;
+
+    const client = new OuraClient("test-token", mockFetch);
+    await client.getHeartRate("2026-03-01", "2026-03-02");
+    expect(capturedUrl).toContain("/v2/usercollection/heartrate");
+    expect(capturedUrl).toContain("start_datetime=2026-03-01T00:00:00");
+    expect(capturedUrl).toContain("end_datetime=2026-03-02T23:59:59");
+  });
+
+  it("fetches sessions with correct URL", async () => {
+    let capturedUrl = "";
+    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+      capturedUrl = input.toString();
+      return Response.json({ data: [], next_token: null });
+    }) as typeof globalThis.fetch;
+
+    const client = new OuraClient("test-token", mockFetch);
+    await client.getSessions("2026-03-01", "2026-03-02");
+    expect(capturedUrl).toContain("/v2/usercollection/session");
+  });
+
+  it("fetches daily stress with correct URL", async () => {
+    let capturedUrl = "";
+    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+      capturedUrl = input.toString();
+      return Response.json({ data: [], next_token: null });
+    }) as typeof globalThis.fetch;
+
+    const client = new OuraClient("test-token", mockFetch);
+    await client.getDailyStress("2026-03-01", "2026-03-02");
+    expect(capturedUrl).toContain("/v2/usercollection/daily_stress");
+  });
+
+  it("fetches daily resilience with correct URL", async () => {
+    let capturedUrl = "";
+    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+      capturedUrl = input.toString();
+      return Response.json({ data: [], next_token: null });
+    }) as typeof globalThis.fetch;
+
+    const client = new OuraClient("test-token", mockFetch);
+    await client.getDailyResilience("2026-03-01", "2026-03-02");
+    expect(capturedUrl).toContain("/v2/usercollection/daily_resilience");
+  });
+
+  it("fetches cardiovascular age with correct URL", async () => {
+    let capturedUrl = "";
+    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+      capturedUrl = input.toString();
+      return Response.json({ data: [], next_token: null });
+    }) as typeof globalThis.fetch;
+
+    const client = new OuraClient("test-token", mockFetch);
+    await client.getDailyCardiovascularAge("2026-03-01", "2026-03-02");
+    expect(capturedUrl).toContain("/v2/usercollection/daily_cardiovascular_age");
+  });
+
+  it("fetches tags with correct URL", async () => {
+    let capturedUrl = "";
+    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+      capturedUrl = input.toString();
+      return Response.json({ data: [], next_token: null });
+    }) as typeof globalThis.fetch;
+
+    const client = new OuraClient("test-token", mockFetch);
+    await client.getTags("2026-03-01", "2026-03-02");
+    expect(capturedUrl).toContain("/v2/usercollection/tag");
+  });
+
+  it("fetches enhanced tags with correct URL", async () => {
+    let capturedUrl = "";
+    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+      capturedUrl = input.toString();
+      return Response.json({ data: [], next_token: null });
+    }) as typeof globalThis.fetch;
+
+    const client = new OuraClient("test-token", mockFetch);
+    await client.getEnhancedTags("2026-03-01", "2026-03-02");
+    expect(capturedUrl).toContain("/v2/usercollection/enhanced_tag");
+  });
+
+  it("fetches rest mode periods with correct URL", async () => {
+    let capturedUrl = "";
+    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+      capturedUrl = input.toString();
+      return Response.json({ data: [], next_token: null });
+    }) as typeof globalThis.fetch;
+
+    const client = new OuraClient("test-token", mockFetch);
+    await client.getRestModePeriods("2026-03-01", "2026-03-02");
+    expect(capturedUrl).toContain("/v2/usercollection/rest_mode_period");
+  });
+
+  it("fetches sleep time with correct URL", async () => {
+    let capturedUrl = "";
+    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+      capturedUrl = input.toString();
+      return Response.json({ data: [], next_token: null });
+    }) as typeof globalThis.fetch;
+
+    const client = new OuraClient("test-token", mockFetch);
+    await client.getSleepTime("2026-03-01", "2026-03-02");
+    expect(capturedUrl).toContain("/v2/usercollection/sleep_time");
+  });
+});
+
+// ============================================================
+// Activity type mapping tests
+// ============================================================
+
+describe("mapOuraActivityType", () => {
+  it("maps known activity types", () => {
+    expect(mapOuraActivityType("walking")).toBe("walking");
+    expect(mapOuraActivityType("running")).toBe("running");
+    expect(mapOuraActivityType("cycling")).toBe("cycling");
+    expect(mapOuraActivityType("swimming")).toBe("swimming");
+    expect(mapOuraActivityType("strength_training")).toBe("strength");
+  });
+
+  it("handles case-insensitive input", () => {
+    expect(mapOuraActivityType("Walking")).toBe("walking");
+    expect(mapOuraActivityType("RUNNING")).toBe("running");
+  });
+
+  it("passes through unknown types lowercase", () => {
+    expect(mapOuraActivityType("kickboxing")).toBe("kickboxing");
+    expect(mapOuraActivityType("CrossFit")).toBe("crossfit");
   });
 });
