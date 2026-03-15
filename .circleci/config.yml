@@ -56,9 +56,16 @@ jobs:
           name: Typecheck all packages
           command: |
             pnpm tsc --noEmit &
+            pid1=$!
             (cd packages/server && pnpm tsc --noEmit) &
+            pid2=$!
             (cd packages/web && pnpm tsc --noEmit) &
-            wait
+            pid3=$!
+            fail=0
+            wait $pid1 || fail=1
+            wait $pid2 || fail=1
+            wait $pid3 || fail=1
+            exit $fail
 
   knip:
     executor: node
