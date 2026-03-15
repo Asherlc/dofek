@@ -725,46 +725,99 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
     res.redirect(url.toString());
   });
 
+  // ── Shared helper: start an OAuth 2.0 flow for a data provider ──
+  async function startDataProviderOAuth(
+    res: import("express").Response,
+    providerId: string,
+    stateEntry: OAuthStateEntry,
+  ): Promise<void> {
+    const { getAllProviders } = await import("dofek/providers/registry");
+    const { ensureProvidersRegistered } = await import("./routers/sync.ts");
+    await ensureProvidersRegistered();
+
+    const provider = getAllProviders().find((p) => p.id === providerId);
+    if (!provider) {
+      res.status(404).send(`Unknown provider: ${providerId}`);
+      return;
+    }
+
+    const setup = provider.authSetup?.();
+    if (!setup?.oauthConfig) {
+      res.status(400).send(`Provider ${providerId} does not use OAuth`);
+      return;
+    }
+
+    // Login intent requires getUserIdentity to extract user info from the provider
+    if (stateEntry.intent === "login" && !setup.getUserIdentity) {
+      res.status(400).send(`Provider ${providerId} cannot be used for login`);
+      return;
+    }
+
+    // Providers with automatedLogin (e.g. Peloton) — only for data intent
+    if (setup.automatedLogin && stateEntry.intent === "data") {
+      const envPrefix = providerId.toUpperCase();
+      const email = process.env[`${envPrefix}_USERNAME`];
+      const password = process.env[`${envPrefix}_PASSWORD`];
+      if (!email || !password) {
+        res.status(400).send(`${envPrefix}_USERNAME and ${envPrefix}_PASSWORD must be set`);
+        return;
+      }
+
+      logger.info(`[auth] Running automated login for ${providerId}...`);
+      const tokens = await setup.automatedLogin(email, password);
+      const { ensureProvider, saveTokens } = await import("dofek/db/tokens");
+      await ensureProvider(db, provider.id, provider.name, setup.apiBaseUrl);
+      await saveTokens(db, provider.id, tokens);
+
+      logger.info(`[auth] ${providerId} tokens saved. Expires: ${tokens.expiresAt.toISOString()}`);
+      res.send(
+        `<html><body style="font-family:system-ui;background:#111;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center"><h1>Authorized!</h1><p>${provider.name} connected successfully.</p><p>Token expires: ${tokens.expiresAt.toISOString()}</p><p><a href="/" style="color:#10b981">Return to dashboard</a></p></div></body></html>`,
+      );
+      return;
+    }
+
+    // OAuth 1.0 providers (e.g. FatSecret) — only for data intent
+    if (setup.oauth1Flow && stateEntry.intent === "data") {
+      const callbackUrl = `${process.env.OAUTH_REDIRECT_URI ?? "https://dofek.asherlc.com/callback"}`;
+      const result = await setup.oauth1Flow.getRequestToken(callbackUrl);
+      oauth1Secrets.set(result.oauthToken, {
+        providerId,
+        tokenSecret: result.oauthTokenSecret,
+      });
+      setTimeout(() => oauth1Secrets.delete(result.oauthToken), 10 * 60 * 1000);
+      res.redirect(result.authorizeUrl);
+      return;
+    }
+
+    const {
+      buildAuthorizationUrl,
+      generateCodeVerifier: genVerifier,
+      generateCodeChallenge,
+    } = await import("dofek/auth/oauth");
+
+    let pkceVerifier: string | undefined;
+    let pkceParam: { codeChallenge: string } | undefined;
+    if (setup.oauthConfig.usePkce) {
+      pkceVerifier = genVerifier();
+      pkceParam = { codeChallenge: generateCodeChallenge(pkceVerifier) };
+    }
+
+    const url = buildAuthorizationUrl(setup.oauthConfig, pkceParam);
+    const stateToken = randomBytes(16).toString("hex");
+    oauthStateMap.set(stateToken, { ...stateEntry, codeVerifier: pkceVerifier });
+    setTimeout(() => oauthStateMap.delete(stateToken), 10 * 60 * 1000);
+    const authUrl = new URL(url);
+    authUrl.searchParams.set("state", stateToken);
+    res.redirect(authUrl.toString());
+  }
+
   // ── Data provider login: use a data provider as an identity/login provider ──
   app.get("/auth/login/data/:provider", async (req, res) => {
     try {
-      const providerId = req.params.provider;
-      const { getAllProviders } = await import("dofek/providers/registry");
-      const { ensureProvidersRegistered } = await import("./routers/sync.ts");
-      await ensureProvidersRegistered();
-
-      const provider = getAllProviders().find((p) => p.id === providerId);
-      if (!provider) {
-        res.status(404).send(`Unknown provider: ${providerId}`);
-        return;
-      }
-
-      const setup = provider.authSetup?.();
-      if (!setup?.oauthConfig || !setup.getUserIdentity) {
-        res.status(400).send(`Provider ${providerId} cannot be used for login`);
-        return;
-      }
-
-      const {
-        buildAuthorizationUrl,
-        generateCodeVerifier: genVerifier,
-        generateCodeChallenge,
-      } = await import("dofek/auth/oauth");
-
-      let pkceVerifier: string | undefined;
-      let pkceParam: { codeChallenge: string } | undefined;
-      if (setup.oauthConfig.usePkce) {
-        pkceVerifier = genVerifier();
-        pkceParam = { codeChallenge: generateCodeChallenge(pkceVerifier) };
-      }
-
-      const url = buildAuthorizationUrl(setup.oauthConfig, pkceParam);
-      const stateToken = randomBytes(16).toString("hex");
-      oauthStateMap.set(stateToken, { providerId, codeVerifier: pkceVerifier, intent: "login" });
-      setTimeout(() => oauthStateMap.delete(stateToken), 10 * 60 * 1000);
-      const authUrl = new URL(url);
-      authUrl.searchParams.set("state", stateToken);
-      res.redirect(authUrl.toString());
+      await startDataProviderOAuth(res, req.params.provider, {
+        providerId: req.params.provider,
+        intent: "login",
+      });
     } catch (err: unknown) {
       logger.error(`[auth] Failed to start data provider login: ${err}`);
       res.status(500).send("Auth error: failed to start login flow");
@@ -774,9 +827,6 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
   // ── Data provider link: link a data provider as identity while already logged in ──
   app.get("/auth/link/data/:provider", async (req, res) => {
     try {
-      const providerId = req.params.provider;
-
-      // Require valid session
       const sessionId = getSessionCookie(req);
       if (!sessionId) {
         res.status(401).send("You must be logged in to link an account");
@@ -788,134 +838,24 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
         return;
       }
 
-      const { getAllProviders } = await import("dofek/providers/registry");
-      const { ensureProvidersRegistered } = await import("./routers/sync.ts");
-      await ensureProvidersRegistered();
-
-      const provider = getAllProviders().find((p) => p.id === providerId);
-      if (!provider) {
-        res.status(404).send(`Unknown provider: ${providerId}`);
-        return;
-      }
-
-      const setup = provider.authSetup?.();
-      if (!setup?.oauthConfig) {
-        res.status(400).send(`Provider ${providerId} does not use OAuth`);
-        return;
-      }
-
-      const {
-        buildAuthorizationUrl,
-        generateCodeVerifier: genVerifier,
-        generateCodeChallenge,
-      } = await import("dofek/auth/oauth");
-
-      let pkceVerifier: string | undefined;
-      let pkceParam: { codeChallenge: string } | undefined;
-      if (setup.oauthConfig.usePkce) {
-        pkceVerifier = genVerifier();
-        pkceParam = { codeChallenge: generateCodeChallenge(pkceVerifier) };
-      }
-
-      const url = buildAuthorizationUrl(setup.oauthConfig, pkceParam);
-      const stateToken = randomBytes(16).toString("hex");
-      oauthStateMap.set(stateToken, {
-        providerId,
-        codeVerifier: pkceVerifier,
+      await startDataProviderOAuth(res, req.params.provider, {
+        providerId: req.params.provider,
         intent: "link",
         linkUserId: session.userId,
       });
-      setTimeout(() => oauthStateMap.delete(stateToken), 10 * 60 * 1000);
-      const authUrl = new URL(url);
-      authUrl.searchParams.set("state", stateToken);
-      res.redirect(authUrl.toString());
     } catch (err: unknown) {
       logger.error(`[auth] Failed to start data provider link: ${err}`);
       res.status(500).send("Auth error: failed to start link flow");
     }
   });
 
-  // ── Data-provider OAuth (Wahoo, Withings, etc.) ──
+  // ── Data-provider OAuth for data sync (Wahoo, Withings, etc.) ──
   app.get("/auth/provider/:provider", async (req, res) => {
     try {
-      const providerId = req.params.provider;
-      const { getAllProviders } = await import("dofek/providers/registry");
-      const { ensureProvidersRegistered } = await import("./routers/sync.ts");
-      await ensureProvidersRegistered();
-
-      const provider = getAllProviders().find((p) => p.id === providerId);
-      if (!provider) {
-        res.status(404).send(`Unknown provider: ${providerId}`);
-        return;
-      }
-
-      const setup = provider.authSetup?.();
-      if (!setup?.oauthConfig) {
-        res.status(400).send(`Provider ${providerId} does not use OAuth`);
-        return;
-      }
-
-      // Providers with automatedLogin (e.g. Peloton) — run login server-side
-      if (setup.automatedLogin) {
-        const envPrefix = providerId.toUpperCase();
-        const email = process.env[`${envPrefix}_USERNAME`];
-        const password = process.env[`${envPrefix}_PASSWORD`];
-        if (!email || !password) {
-          res.status(400).send(`${envPrefix}_USERNAME and ${envPrefix}_PASSWORD must be set`);
-          return;
-        }
-
-        logger.info(`[auth] Running automated login for ${providerId}...`);
-        const tokens = await setup.automatedLogin(email, password);
-        const { ensureProvider, saveTokens } = await import("dofek/db/tokens");
-        await ensureProvider(db, provider.id, provider.name, setup.apiBaseUrl);
-        await saveTokens(db, provider.id, tokens);
-
-        logger.info(
-          `[auth] ${providerId} tokens saved. Expires: ${tokens.expiresAt.toISOString()}`,
-        );
-        res.send(
-          `<html><body style="font-family:system-ui;background:#111;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center"><h1>Authorized!</h1><p>${provider.name} connected successfully.</p><p>Token expires: ${tokens.expiresAt.toISOString()}</p><p><a href="/" style="color:#10b981">Return to dashboard</a></p></div></body></html>`,
-        );
-        return;
-      }
-
-      // OAuth 1.0 providers (e.g. FatSecret) — get request token first
-      if (setup.oauth1Flow) {
-        const callbackUrl = `${process.env.OAUTH_REDIRECT_URI ?? "https://dofek.asherlc.com/callback"}`;
-        const result = await setup.oauth1Flow.getRequestToken(callbackUrl);
-        oauth1Secrets.set(result.oauthToken, {
-          providerId,
-          tokenSecret: result.oauthTokenSecret,
-        });
-        // Clean up after 10 minutes
-        setTimeout(() => oauth1Secrets.delete(result.oauthToken), 10 * 60 * 1000);
-        res.redirect(result.authorizeUrl);
-        return;
-      }
-
-      const {
-        buildAuthorizationUrl,
-        generateCodeVerifier: genVerifier,
-        generateCodeChallenge,
-      } = await import("dofek/auth/oauth");
-
-      // Generate PKCE challenge if the provider requires it
-      let pkceVerifier: string | undefined;
-      let pkceParam: { codeChallenge: string } | undefined;
-      if (setup.oauthConfig.usePkce) {
-        pkceVerifier = genVerifier();
-        pkceParam = { codeChallenge: generateCodeChallenge(pkceVerifier) };
-      }
-
-      const url = buildAuthorizationUrl(setup.oauthConfig, pkceParam);
-      // Generate random state for CSRF protection, map it to the provider ID + PKCE verifier
-      const stateToken = randomBytes(16).toString("hex");
-      oauthStateMap.set(stateToken, { providerId, codeVerifier: pkceVerifier, intent: "data" });
-      setTimeout(() => oauthStateMap.delete(stateToken), 10 * 60 * 1000);
-      const authUrl = new URL(url);
-      authUrl.searchParams.set("state", stateToken);
-      res.redirect(authUrl.toString());
+      await startDataProviderOAuth(res, req.params.provider, {
+        providerId: req.params.provider,
+        intent: "data",
+      });
     } catch (err: unknown) {
       logger.error(`[auth] Failed to start OAuth flow: ${err}`);
       res.status(500).send("Auth error: failed to start OAuth flow");
