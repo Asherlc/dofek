@@ -81,10 +81,19 @@ jobs:
           name: Lint + typecheck (parallel)
           command: |
             pnpm lint &
+            pid1=$!
             pnpm tsc --noEmit &
+            pid2=$!
             (cd packages/server && pnpm tsc --noEmit) &
+            pid3=$!
             (cd packages/web && pnpm tsc --noEmit) &
-            wait
+            pid4=$!
+            fail=0
+            wait $pid1 || fail=1
+            wait $pid2 || fail=1
+            wait $pid3 || fail=1
+            wait $pid4 || fail=1
+            exit $fail
       - run: cd packages/web && pnpm run build
 
   test:
