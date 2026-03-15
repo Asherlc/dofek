@@ -6,9 +6,12 @@ import { ensureProvider, saveTokens } from "../../db/tokens.ts";
 import type {
   OuraDailyActivity,
   OuraDailyReadiness,
+  OuraDailyResilience,
   OuraDailySpO2,
+  OuraDailyStress,
   OuraSleepDocument,
   OuraVO2Max,
+  OuraWorkout,
 } from "../oura.ts";
 import { OuraProvider } from "../oura.ts";
 
@@ -89,18 +92,47 @@ function fakeVO2Max(): OuraVO2Max {
   };
 }
 
+function fakeStress(): OuraDailyStress {
+  return {
+    id: "stress-001",
+    day: "2026-03-01",
+    stress_high: 5400, // 90 min
+    recovery_high: 10800, // 180 min
+    day_summary: "restored",
+  };
+}
+
+function fakeResilience(): OuraDailyResilience {
+  return {
+    id: "resilience-001",
+    day: "2026-03-01",
+    level: "solid",
+    contributors: {
+      sleep_recovery: 85,
+      daytime_recovery: 72,
+      stress: 68,
+    },
+  };
+}
+
 function createMockFetch(opts?: {
   sleepDocs?: OuraSleepDocument[];
   readinessDocs?: OuraDailyReadiness[];
   activityDocs?: OuraDailyActivity[];
   spo2Docs?: OuraDailySpO2[];
   vo2MaxDocs?: OuraVO2Max[];
+  workoutDocs?: OuraWorkout[];
+  stressDocs?: OuraDailyStress[];
+  resilienceDocs?: OuraDailyResilience[];
 }): typeof globalThis.fetch {
   const sleepDocs = opts?.sleepDocs ?? [];
   const readinessDocs = opts?.readinessDocs ?? [];
   const activityDocs = opts?.activityDocs ?? [];
   const spo2Docs = opts?.spo2Docs ?? [];
   const vo2MaxDocs = opts?.vo2MaxDocs ?? [];
+  const workoutDocs = opts?.workoutDocs ?? [];
+  const stressDocs = opts?.stressDocs ?? [];
+  const resilienceDocs = opts?.resilienceDocs ?? [];
 
   return (async (input: RequestInfo | URL): Promise<Response> => {
     const urlStr = input.toString();
@@ -138,6 +170,21 @@ function createMockFetch(opts?: {
     // VO2 max
     if (urlStr.includes("/v2/usercollection/vO2_max")) {
       return Response.json({ data: vo2MaxDocs, next_token: null });
+    }
+
+    // Workouts
+    if (urlStr.includes("/v2/usercollection/workout")) {
+      return Response.json({ data: workoutDocs, next_token: null });
+    }
+
+    // Daily stress
+    if (urlStr.includes("/v2/usercollection/daily_stress")) {
+      return Response.json({ data: stressDocs, next_token: null });
+    }
+
+    // Daily resilience
+    if (urlStr.includes("/v2/usercollection/daily_resilience")) {
+      return Response.json({ data: resilienceDocs, next_token: null });
     }
 
     return new Response("Not found", { status: 404 });
@@ -220,6 +267,40 @@ describe("OuraProvider.sync() (integration)", () => {
     expect(daily.skinTempC).toBeCloseTo(-0.15);
     expect(daily.spo2Avg).toBeCloseTo(97.5);
     expect(daily.vo2max).toBeCloseTo(42.5);
+  });
+
+  it("syncs stress and resilience data into daily metrics", async () => {
+    await saveTokens(ctx.db, "oura", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "daily heartrate personal session spo2 workout",
+    });
+
+    const since = new Date("2026-03-01T00:00:00Z");
+    const provider = new OuraProvider(
+      createMockFetch({
+        readinessDocs: [fakeReadiness()],
+        activityDocs: [fakeActivity()],
+        stressDocs: [fakeStress()],
+        resilienceDocs: [fakeResilience()],
+      }),
+    );
+
+    const result = await provider.sync(ctx.db, since);
+
+    expect(result.errors).toHaveLength(0);
+
+    const dailyRows = await ctx.db
+      .select()
+      .from(dailyMetrics)
+      .where(eq(dailyMetrics.providerId, "oura"));
+
+    const daily = dailyRows.find((r) => r.date === "2026-03-01");
+    if (!daily) throw new Error("expected daily metrics for 2026-03-01");
+    expect(daily.stressHighMinutes).toBe(90);
+    expect(daily.recoveryHighMinutes).toBe(180);
+    expect(daily.resilienceLevel).toBe("solid");
   });
 
   it("upserts on re-sync (no duplicates)", async () => {

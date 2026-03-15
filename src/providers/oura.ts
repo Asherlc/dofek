@@ -140,6 +140,9 @@ export interface ParsedOuraDailyMetrics {
   skinTempC?: number;
   spo2Avg?: number;
   vo2max?: number;
+  stressHighMinutes?: number;
+  recoveryHighMinutes?: number;
+  resilienceLevel?: string;
 }
 
 // ============================================================
@@ -171,8 +174,17 @@ export function parseOuraDailyMetrics(
   activity: OuraDailyActivity | null,
   spo2: OuraDailySpO2 | null,
   vo2max: OuraVO2Max | null,
+  stress: OuraDailyStress | null,
+  resilience: OuraDailyResilience | null,
 ): ParsedOuraDailyMetrics {
-  const day = readiness?.day ?? activity?.day ?? spo2?.day ?? vo2max?.day ?? "";
+  const day =
+    readiness?.day ??
+    activity?.day ??
+    spo2?.day ??
+    vo2max?.day ??
+    stress?.day ??
+    resilience?.day ??
+    "";
 
   let exerciseMinutes: number | undefined;
   if (activity) {
@@ -191,6 +203,9 @@ export function parseOuraDailyMetrics(
     skinTempC: readiness?.temperature_deviation ?? undefined,
     spo2Avg: spo2?.spo2_percentage?.average ?? undefined,
     vo2max: vo2max?.vo2_max ?? undefined,
+    stressHighMinutes: secondsToMinutes(stress?.stress_high ?? null),
+    recoveryHighMinutes: secondsToMinutes(stress?.recovery_high ?? null),
+    resilienceLevel: resilience?.level ?? undefined,
   };
 }
 
@@ -574,12 +589,17 @@ export class OuraProvider implements Provider {
       const dailyCount = await withSyncLog(db, this.id, "daily_metrics", async () => {
         let count = 0;
 
-        const [allReadiness, allActivity, allSpO2, allVO2Max] = await Promise.all([
-          fetchAllPages((nextToken) => client.getDailyReadiness(sinceDate, todayDate, nextToken)),
-          fetchAllPages((nextToken) => client.getDailyActivity(sinceDate, todayDate, nextToken)),
-          fetchAllPages((nextToken) => client.getDailySpO2(sinceDate, todayDate, nextToken)),
-          fetchAllPages((nextToken) => client.getVO2Max(sinceDate, todayDate, nextToken)),
-        ]);
+        const [allReadiness, allActivity, allSpO2, allVO2Max, allStress, allResilience] =
+          await Promise.all([
+            fetchAllPages((nextToken) => client.getDailyReadiness(sinceDate, todayDate, nextToken)),
+            fetchAllPages((nextToken) => client.getDailyActivity(sinceDate, todayDate, nextToken)),
+            fetchAllPages((nextToken) => client.getDailySpO2(sinceDate, todayDate, nextToken)),
+            fetchAllPages((nextToken) => client.getVO2Max(sinceDate, todayDate, nextToken)),
+            fetchAllPages((nextToken) => client.getDailyStress(sinceDate, todayDate, nextToken)),
+            fetchAllPages((nextToken) =>
+              client.getDailyResilience(sinceDate, todayDate, nextToken),
+            ),
+          ]);
 
         // Index by day for merging
         const readinessByDay = new Map<string, OuraDailyReadiness>();
@@ -594,12 +614,20 @@ export class OuraProvider implements Provider {
         const vo2maxByDay = new Map<string, OuraVO2Max>();
         for (const v of allVO2Max) vo2maxByDay.set(v.day, v);
 
+        const stressByDay = new Map<string, OuraDailyStress>();
+        for (const s of allStress) stressByDay.set(s.day, s);
+
+        const resilienceByDay = new Map<string, OuraDailyResilience>();
+        for (const r of allResilience) resilienceByDay.set(r.day, r);
+
         // Union of all days
         const allDays = new Set([
           ...readinessByDay.keys(),
           ...activityByDay.keys(),
           ...spo2ByDay.keys(),
           ...vo2maxByDay.keys(),
+          ...stressByDay.keys(),
+          ...resilienceByDay.keys(),
         ]);
 
         for (const day of allDays) {
@@ -607,7 +635,16 @@ export class OuraProvider implements Provider {
           const activity = activityByDay.get(day) ?? null;
           const spo2 = spo2ByDay.get(day) ?? null;
           const vo2max = vo2maxByDay.get(day) ?? null;
-          const parsed = parseOuraDailyMetrics(readiness, activity, spo2, vo2max);
+          const stress = stressByDay.get(day) ?? null;
+          const resilience = resilienceByDay.get(day) ?? null;
+          const parsed = parseOuraDailyMetrics(
+            readiness,
+            activity,
+            spo2,
+            vo2max,
+            stress,
+            resilience,
+          );
 
           try {
             await db
@@ -623,6 +660,9 @@ export class OuraProvider implements Provider {
                 skinTempC: parsed.skinTempC,
                 spo2Avg: parsed.spo2Avg,
                 vo2max: parsed.vo2max,
+                stressHighMinutes: parsed.stressHighMinutes,
+                recoveryHighMinutes: parsed.recoveryHighMinutes,
+                resilienceLevel: parsed.resilienceLevel,
               })
               .onConflictDoUpdate({
                 target: [dailyMetrics.date, dailyMetrics.providerId],
@@ -635,6 +675,9 @@ export class OuraProvider implements Provider {
                   skinTempC: parsed.skinTempC,
                   spo2Avg: parsed.spo2Avg,
                   vo2max: parsed.vo2max,
+                  stressHighMinutes: parsed.stressHighMinutes,
+                  recoveryHighMinutes: parsed.recoveryHighMinutes,
+                  resilienceLevel: parsed.resilienceLevel,
                 },
               });
             count++;

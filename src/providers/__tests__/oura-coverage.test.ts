@@ -55,6 +55,21 @@ function createMockFetchForErrors(opts: {
       return Response.json({ data: [], next_token: null });
     }
 
+    // Workouts — empty
+    if (urlStr.includes("/v2/usercollection/workout")) {
+      return Response.json({ data: [], next_token: null });
+    }
+
+    // Daily stress — empty
+    if (urlStr.includes("/v2/usercollection/daily_stress")) {
+      return Response.json({ data: [], next_token: null });
+    }
+
+    // Daily resilience — empty
+    if (urlStr.includes("/v2/usercollection/daily_resilience")) {
+      return Response.json({ data: [], next_token: null });
+    }
+
     return new Response("Not found", { status: 404 });
   }) as typeof globalThis.fetch;
 }
