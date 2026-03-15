@@ -337,6 +337,9 @@ export class OuraProvider implements Provider {
     if (!config) {
       throw new Error("OURA_CLIENT_ID and OURA_CLIENT_SECRET are required to refresh tokens");
     }
+    if (!tokens.refreshToken) {
+      throw new Error("No refresh token for Oura");
+    }
     const refreshed = await refreshAccessToken(config, tokens.refreshToken, this.fetchFn);
     await saveTokens(db, this.id, refreshed);
     return refreshed.accessToken;

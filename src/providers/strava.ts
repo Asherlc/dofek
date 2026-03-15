@@ -339,6 +339,7 @@ export class StravaProvider implements Provider {
     const config = stravaOAuthConfig();
     if (!config)
       throw new Error("STRAVA_CLIENT_ID and STRAVA_CLIENT_SECRET are required to refresh tokens");
+    if (!tokens.refreshToken) throw new Error("No refresh token for Strava");
     const refreshed = await refreshAccessToken(config, tokens.refreshToken, this.fetchFn);
     await saveTokens(db, this.id, refreshed);
     return refreshed;

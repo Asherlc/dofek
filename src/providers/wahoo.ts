@@ -285,6 +285,7 @@ export class WahooProvider implements Provider {
     const config = wahooOAuthConfig();
     if (!config)
       throw new Error("WAHOO_CLIENT_ID and WAHOO_CLIENT_SECRET are required to refresh tokens");
+    if (!tokens.refreshToken) throw new Error("No refresh token for Wahoo");
     const refreshed = await refreshAccessToken(config, tokens.refreshToken, this.fetchFn);
     await saveTokens(db, this.id, refreshed);
     return refreshed;

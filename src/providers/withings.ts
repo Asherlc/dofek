@@ -310,6 +310,7 @@ export class WithingsProvider implements Provider {
       throw new Error(
         "WITHINGS_CLIENT_ID and WITHINGS_CLIENT_SECRET are required to refresh tokens",
       );
+    if (!tokens.refreshToken) throw new Error("No refresh token for Withings");
     const refreshed = await refreshWithingsToken(config, tokens.refreshToken, this.fetchFn);
     await saveTokens(db, this.id, refreshed);
     return refreshed;

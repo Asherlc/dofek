@@ -428,6 +428,7 @@ export class GarminProvider implements Provider {
     console.log("[garmin] Access token expired, refreshing...");
     const config = garminOAuthConfig();
     if (!config) throw new Error("GARMIN_CLIENT_ID is required to refresh tokens");
+    if (!tokens.refreshToken) throw new Error("No refresh token for Garmin");
     const refreshed = await refreshAccessToken(config, tokens.refreshToken, this.fetchFn);
     await saveTokens(db, this.id, refreshed);
     return refreshed;

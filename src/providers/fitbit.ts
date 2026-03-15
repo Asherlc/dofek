@@ -382,6 +382,9 @@ export class FitbitProvider implements Provider {
     if (!config) {
       throw new Error("FITBIT_CLIENT_ID and FITBIT_CLIENT_SECRET are required to refresh tokens");
     }
+    if (!tokens.refreshToken) {
+      throw new Error("No refresh token for FitBit");
+    }
     const refreshed = await refreshAccessToken(config, tokens.refreshToken, this.fetchFn);
     await saveTokens(db, this.id, refreshed);
     return refreshed;

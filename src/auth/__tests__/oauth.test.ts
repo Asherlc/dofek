@@ -363,6 +363,22 @@ describe("OAuth", () => {
       );
     });
 
+    it("returns null refreshToken when provider omits refresh_token", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            access_token: "polar-access",
+            expires_in: 999999,
+            scope: "accesslink.read_all",
+          }),
+      });
+
+      const result = await exchangeCodeForTokens(config, "code", mockFetch);
+      expect(result.accessToken).toBe("polar-access");
+      expect(result.refreshToken).toBeNull();
+    });
+
     it("sends code_verifier instead of client_secret in token exchange", async () => {
       const pkceConfig: OAuthConfig = {
         ...config,
