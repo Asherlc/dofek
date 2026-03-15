@@ -6,10 +6,11 @@ describe("fetchCurrentUser", () => {
     vi.restoreAllMocks();
   });
 
-  it("returns user on success", async () => {
+  it("calls /api/auth/me with credentials and returns user", async () => {
     const user = { id: "u1", name: "Test", email: "test@example.com" };
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json(user));
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json(user));
     const result = await fetchCurrentUser();
+    expect(fetchSpy).toHaveBeenCalledWith("/api/auth/me", { credentials: "include" });
     expect(result).toEqual(user);
   });
 
@@ -25,10 +26,11 @@ describe("fetchConfiguredProviders", () => {
     vi.restoreAllMocks();
   });
 
-  it("returns providers on success", async () => {
+  it("calls /api/auth/providers and returns result", async () => {
     const providers = { identity: ["google"], data: ["strava"] };
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json(providers));
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json(providers));
     const result = await fetchConfiguredProviders();
+    expect(fetchSpy).toHaveBeenCalledWith("/api/auth/providers");
     expect(result).toEqual(providers);
   });
 
@@ -41,3 +43,4 @@ describe("fetchConfiguredProviders", () => {
     );
   });
 });
+
