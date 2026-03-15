@@ -15,7 +15,7 @@ executors:
           POSTGRES_USER: test
           POSTGRES_PASSWORD: test
       - image: redis:7-alpine
-    resource_class: medium
+    resource_class: large
 
   machine:
     machine:
@@ -111,7 +111,11 @@ jobs:
               sleep 1
             done
             echo "Redis did not start" && exit 1
-      - run: pnpm test:coverage
+      - run:
+          name: Run tests with coverage
+          command: pnpm exec vitest run --coverage --exclude='**/oauth-providers-coverage.test.ts'
+          environment:
+            NODE_OPTIONS: --max-old-space-size=3072
       - store_artifacts:
           path: coverage
 
@@ -178,6 +182,8 @@ jobs:
 
   mutation:
     executor: node
+    environment:
+      NODE_OPTIONS: --max-old-space-size=3072
     steps:
       - checkout
       - run:

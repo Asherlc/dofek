@@ -431,6 +431,9 @@ export const dailyMetrics = fitness.table(
     environmentalAudioExposure: real("environmental_audio_exposure"), // dBASPL avg
     headphoneAudioExposure: real("headphone_audio_exposure"), // dBASPL avg
     skinTempC: real("skin_temp_c"), // celsius (WHOOP)
+    stressHighMinutes: integer("stress_high_minutes"), // minutes of high stress (Oura)
+    recoveryHighMinutes: integer("recovery_high_minutes"), // minutes of high recovery (Oura)
+    resilienceLevel: text("resilience_level"), // e.g. "limited", "adequate", "solid", "strong", "exceptional"
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [

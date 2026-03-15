@@ -2,11 +2,16 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   mapOuraActivityType,
   OuraClient,
+  type OuraDailyActivity,
+  type OuraDailyReadiness,
+  type OuraDailyResilience,
   type OuraDailySpO2,
+  type OuraDailyStress,
   OuraProvider,
   type OuraSleepDocument,
   type OuraVO2Max,
   ouraOAuthConfig,
+  parseOuraDailyMetrics,
   parseOuraSleep,
 } from "../oura.ts";
 
@@ -66,6 +71,57 @@ const sampleVO2Max: OuraVO2Max = {
   day: "2026-03-01",
   timestamp: "2026-03-01T08:00:00",
   vo2_max: 42.5,
+};
+
+const sampleReadiness: OuraDailyReadiness = {
+  id: "readiness-abc123",
+  day: "2026-03-01",
+  score: 82,
+  temperature_deviation: -0.15,
+  temperature_trend_deviation: 0.05,
+  contributors: {
+    resting_heart_rate: 85,
+    hrv_balance: 78,
+    body_temperature: 90,
+    recovery_index: 72,
+    sleep_balance: 80,
+    previous_night: 88,
+    previous_day_activity: 75,
+    activity_balance: 82,
+  },
+};
+
+const sampleActivity: OuraDailyActivity = {
+  id: "activity-abc123",
+  day: "2026-03-01",
+  steps: 9500,
+  active_calories: 450,
+  equivalent_walking_distance: 8200,
+  high_activity_time: 2700,
+  medium_activity_time: 1800,
+  low_activity_time: 7200,
+  resting_time: 50400,
+  sedentary_time: 28800,
+  total_calories: 2300,
+};
+
+const sampleStress: OuraDailyStress = {
+  id: "stress-abc123",
+  day: "2026-03-01",
+  stress_high: 5400, // 90 min in seconds
+  recovery_high: 10800, // 180 min in seconds
+  day_summary: "restored",
+};
+
+const sampleResilience: OuraDailyResilience = {
+  id: "resilience-abc123",
+  day: "2026-03-01",
+  level: "solid",
+  contributors: {
+    sleep_recovery: 85,
+    daytime_recovery: 72,
+    stress: 68,
+  },
 };
 
 // ============================================================
@@ -137,6 +193,195 @@ describe("Oura Provider", () => {
       const result = parseOuraSleep(oddDurations);
       expect(result.durationMinutes).toBe(31);
       expect(result.deepMinutes).toBe(2);
+    });
+  });
+
+  describe("parseOuraDailyMetrics", () => {
+    it("maps daily readiness and activity fields", () => {
+      const result = parseOuraDailyMetrics(sampleReadiness, sampleActivity, null, null, null, null);
+
+      expect(result.date).toBe("2026-03-01");
+      expect(result.steps).toBe(9500);
+      expect(result.activeEnergyKcal).toBe(450);
+      expect(result.hrv).toBe(78);
+      expect(result.restingHr).toBe(85);
+      expect(result.exerciseMinutes).toBe(75);
+      expect(result.skinTempC).toBe(-0.15);
+    });
+
+    it("includes SpO2 when provided", () => {
+      const result = parseOuraDailyMetrics(
+        sampleReadiness,
+        sampleActivity,
+        sampleSpO2,
+        null,
+        null,
+        null,
+      );
+
+      expect(result.spo2Avg).toBe(97.5);
+    });
+
+    it("includes VO2 max when provided", () => {
+      const result = parseOuraDailyMetrics(
+        sampleReadiness,
+        sampleActivity,
+        null,
+        sampleVO2Max,
+        null,
+        null,
+      );
+
+      expect(result.vo2max).toBe(42.5);
+    });
+
+    it("includes both SpO2 and VO2 max", () => {
+      const result = parseOuraDailyMetrics(
+        sampleReadiness,
+        sampleActivity,
+        sampleSpO2,
+        sampleVO2Max,
+        null,
+        null,
+      );
+
+      expect(result.spo2Avg).toBe(97.5);
+      expect(result.vo2max).toBe(42.5);
+    });
+
+    it("handles null spo2_percentage", () => {
+      const noPercentage: OuraDailySpO2 = { ...sampleSpO2, spo2_percentage: null };
+      const result = parseOuraDailyMetrics(null, null, noPercentage, null, null, null);
+      expect(result.spo2Avg).toBeUndefined();
+    });
+
+    it("handles null vo2_max value", () => {
+      const noValue: OuraVO2Max = { ...sampleVO2Max, vo2_max: null };
+      const result = parseOuraDailyMetrics(null, null, null, noValue, null, null);
+      expect(result.vo2max).toBeUndefined();
+    });
+
+    it("handles null readiness", () => {
+      const result = parseOuraDailyMetrics(null, sampleActivity, null, null, null, null);
+
+      expect(result.steps).toBe(9500);
+      expect(result.activeEnergyKcal).toBe(450);
+      expect(result.hrv).toBeUndefined();
+      expect(result.restingHr).toBeUndefined();
+      expect(result.skinTempC).toBeUndefined();
+    });
+
+    it("handles null activity", () => {
+      const result = parseOuraDailyMetrics(sampleReadiness, null, null, null, null, null);
+
+      expect(result.steps).toBeUndefined();
+      expect(result.activeEnergyKcal).toBeUndefined();
+      expect(result.exerciseMinutes).toBeUndefined();
+      expect(result.hrv).toBe(78);
+      expect(result.restingHr).toBe(85);
+    });
+
+    it("handles null contributors in readiness", () => {
+      const noContributors: OuraDailyReadiness = {
+        ...sampleReadiness,
+        contributors: {
+          resting_heart_rate: null,
+          hrv_balance: null,
+          body_temperature: null,
+          recovery_index: null,
+          sleep_balance: null,
+          previous_night: null,
+          previous_day_activity: null,
+          activity_balance: null,
+        },
+      };
+
+      const result = parseOuraDailyMetrics(noContributors, sampleActivity, null, null, null, null);
+      expect(result.hrv).toBeUndefined();
+      expect(result.restingHr).toBeUndefined();
+    });
+
+    it("uses activity day when readiness is null", () => {
+      const result = parseOuraDailyMetrics(null, sampleActivity, null, null, null, null);
+      expect(result.date).toBe("2026-03-01");
+    });
+
+    it("returns empty date when all are null", () => {
+      const result = parseOuraDailyMetrics(null, null, null, null, null, null);
+      expect(result.date).toBe("");
+    });
+
+    it("uses spo2 day when readiness and activity are null", () => {
+      const result = parseOuraDailyMetrics(null, null, sampleSpO2, null, null, null);
+      expect(result.date).toBe("2026-03-01");
+    });
+
+    it("uses vo2max day when others are null", () => {
+      const result = parseOuraDailyMetrics(null, null, null, sampleVO2Max, null, null);
+      expect(result.date).toBe("2026-03-01");
+    });
+
+    it("rounds exercise minutes from seconds", () => {
+      const activity: OuraDailyActivity = {
+        ...sampleActivity,
+        high_activity_time: 100, // 1.67 min
+        medium_activity_time: 100, // 1.67 min
+      };
+      const result = parseOuraDailyMetrics(null, activity, null, null, null, null);
+      expect(result.exerciseMinutes).toBe(3); // Math.round(200/60)
+    });
+
+    it("includes stress data when provided", () => {
+      const result = parseOuraDailyMetrics(
+        sampleReadiness,
+        sampleActivity,
+        null,
+        null,
+        sampleStress,
+        null,
+      );
+      expect(result.stressHighMinutes).toBe(90);
+      expect(result.recoveryHighMinutes).toBe(180);
+    });
+
+    it("includes resilience level when provided", () => {
+      const result = parseOuraDailyMetrics(
+        sampleReadiness,
+        sampleActivity,
+        null,
+        null,
+        null,
+        sampleResilience,
+      );
+      expect(result.resilienceLevel).toBe("solid");
+    });
+
+    it("handles null stress fields", () => {
+      const nullStress: OuraDailyStress = {
+        ...sampleStress,
+        stress_high: null,
+        recovery_high: null,
+      };
+      const result = parseOuraDailyMetrics(null, null, null, null, nullStress, null);
+      expect(result.stressHighMinutes).toBeUndefined();
+      expect(result.recoveryHighMinutes).toBeUndefined();
+    });
+
+    it("handles null stress and resilience", () => {
+      const result = parseOuraDailyMetrics(sampleReadiness, sampleActivity, null, null, null, null);
+      expect(result.stressHighMinutes).toBeUndefined();
+      expect(result.recoveryHighMinutes).toBeUndefined();
+      expect(result.resilienceLevel).toBeUndefined();
+    });
+
+    it("uses stress day when others are null", () => {
+      const result = parseOuraDailyMetrics(null, null, null, null, sampleStress, null);
+      expect(result.date).toBe("2026-03-01");
+    });
+
+    it("uses resilience day when others are null", () => {
+      const result = parseOuraDailyMetrics(null, null, null, null, null, sampleResilience);
+      expect(result.date).toBe("2026-03-01");
     });
   });
 });

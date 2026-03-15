@@ -385,23 +385,66 @@ All credentials go in the SOPS-encrypted `.env`. The login page auto-discovers w
 
 Each provider is enabled by adding its credentials to `.env` (SOPS-encrypted). OAuth providers also require a one-time browser authorization via the Data Sources page.
 
-| Provider | Auth Type | Required `.env` Variables |
-|----------|-----------|--------------------------|
-| Apple Health | File import | None (upload `.zip`/`.xml` via UI) |
-| Wahoo | OAuth 2.0 | `WAHOO_CLIENT_ID`, `WAHOO_CLIENT_SECRET` |
-| WHOOP | Custom (email/password + MFA) | None (credentials entered in UI modal) |
-| Peloton | Automated login | `PELOTON_USERNAME`, `PELOTON_PASSWORD` |
-| FatSecret | OAuth 1.0 | `FATSECRET_CONSUMER_KEY`, `FATSECRET_CONSUMER_SECRET` |
-| Withings | OAuth 2.0 | `WITHINGS_CLIENT_ID`, `WITHINGS_CLIENT_SECRET` |
-| RideWithGPS | Custom (API key + credentials) | None (entered in UI modal) |
-| Polar | OAuth 2.0 | `POLAR_CLIENT_ID`, `POLAR_CLIENT_SECRET` |
-| Garmin | SSO login | `GARMIN_EMAIL`, `GARMIN_PASSWORD` |
-| Strong | File import | None (upload `.csv` via UI) |
-| Cronometer | File import | None (upload `.csv` via UI) |
+### Implemented Providers (29)
 
-OAuth providers (Wahoo, Withings, Polar, FatSecret) also need `OAUTH_REDIRECT_URI_unencrypted` set to your deployment's callback URL (e.g. `https://dofek.asherlc.com/callback`). After adding credentials, click the provider tile on the Data Sources page to complete the OAuth flow.
+| Provider | Auth Type | Data Types | Required `.env` Variables |
+|----------|-----------|------------|--------------------------|
+| Apple Health | File import | HR, HRV, sleep, workouts, body, glucose, nutrition, walking, labs | None (upload `.zip`/`.xml` via UI) |
+| Wahoo | OAuth 2.0 | Activities with FIT file parsing (GPS, power, HR, cadence, running dynamics) | `WAHOO_CLIENT_ID`, `WAHOO_CLIENT_SECRET` |
+| WHOOP | RE'd (Cognito) | Sleep, recovery, workouts, 6s HR streams, journal, strength sets | None (credentials entered in UI modal) |
+| Peloton | Automated login | Workouts with performance metrics | `PELOTON_USERNAME`, `PELOTON_PASSWORD` |
+| FatSecret | OAuth 1.0 | Per-food-item nutrition with full micro/macronutrients | `FATSECRET_CONSUMER_KEY`, `FATSECRET_CONSUMER_SECRET` |
+| Withings | OAuth 2.0 | Scale, BP, thermometer | `WITHINGS_CLIENT_ID`, `WITHINGS_CLIENT_SECRET` |
+| RideWithGPS | Custom | Trips with GPS track points | None (entered in UI modal) |
+| Polar | OAuth 2.0 | Exercises, sleep, HR, Nightly Recharge | `POLAR_CLIENT_ID`, `POLAR_CLIENT_SECRET` |
+| Garmin | RE'd (SSO) | Activities, sleep, daily metrics, body battery, stress, HRV, training | `GARMIN_EMAIL`, `GARMIN_PASSWORD` |
+| Strava | OAuth 2.0 | Activities | `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET` |
+| Fitbit | OAuth 2.0 | HR, sleep, SpO2, HRV, temperature, VO2 max, activity | `FITBIT_CLIENT_ID`, `FITBIT_CLIENT_SECRET` |
+| Oura | OAuth 2.0 | Sleep, readiness, activity, SpO2, VO2 max, workouts, stress, resilience | `OURA_CLIENT_ID`, `OURA_CLIENT_SECRET` |
+| Eight Sleep | RE'd (hardcoded creds) | Sleep trends (HR, HRV, respiratory, temperature, stages) | `EIGHT_SLEEP_EMAIL`, `EIGHT_SLEEP_PASSWORD` |
+| Zwift | RE'd (Keycloak) | Activities with power/HR/cadence, FTP | `ZWIFT_USERNAME`, `ZWIFT_PASSWORD` |
+| TrainerRoad | RE'd (CSRF cookies) | Activities with power data, career stats | `TRAINERROAD_USERNAME`, `TRAINERROAD_PASSWORD` |
+| Suunto | OAuth 2.0 | Workouts | `SUUNTO_CLIENT_ID`, `SUUNTO_CLIENT_SECRET`, `SUUNTO_SUBSCRIPTION_KEY` |
+| COROS | OAuth 2.0 | Activities | `COROS_CLIENT_ID`, `COROS_CLIENT_SECRET` |
+| Concept2 | OAuth 2.0 | Rowing results | `CONCEPT2_CLIENT_ID`, `CONCEPT2_CLIENT_SECRET` |
+| Komoot | OAuth 2.0 | Tours | `KOMOOT_CLIENT_ID`, `KOMOOT_CLIENT_SECRET` |
+| MapMyFitness | OAuth 2.0 | Workouts | `MAPMYFITNESS_CLIENT_ID`, `MAPMYFITNESS_CLIENT_SECRET` |
+| Ultrahuman | RE'd | Sleep, activity, daily metrics | `ULTRAHUMAN_EMAIL`, `ULTRAHUMAN_PASSWORD` |
+| VeloHero | RE'd (SSO) | Workouts with HR/power/cadence | `VELOHERO_SSO_KEY` |
+| Xert | OAuth 2.0 | Activities | `XERT_CLIENT_ID`, `XERT_CLIENT_SECRET` |
+| Cycling Analytics | OAuth 2.0 | Rides | `CYCLING_ANALYTICS_CLIENT_ID`, `CYCLING_ANALYTICS_CLIENT_SECRET` |
+| Wger | OAuth 2.0 | Workouts | `WGER_CLIENT_ID`, `WGER_CLIENT_SECRET` |
+| Decathlon | OAuth 2.0 | Activities | `DECATHLON_CLIENT_ID`, `DECATHLON_CLIENT_SECRET` |
+| Strong | File import | Strength training history | None (upload `.csv` via UI) |
+| Cronometer | File import | Nutrition | None (upload `.csv` via UI) |
+| Auto-Supplements | Config-based | Daily supplement entries | None (configured in UI) |
 
-**Not supported:** Fitbit (requires a Fitbit device), standalone FIT file import (FIT parsing exists but is only used internally by the Wahoo provider).
+OAuth providers also need `OAUTH_REDIRECT_URI` set to your deployment's callback URL (e.g. `https://dofek.asherlc.com/callback`). After adding credentials, click the provider tile on the Data Sources page to complete the OAuth flow.
+
+### Reverse-Engineered API Packages (7)
+
+Standalone TypeScript packages for internal APIs that lack public developer access:
+
+| Package | Auth Pattern | Source |
+|---------|-------------|--------|
+| `packages/whoop-whoop` | AWS Cognito | Internal API |
+| `packages/eight-sleep` | Hardcoded OAuth creds (from APK) | Internal API |
+| `packages/zwift-client` | Keycloak password grant | Internal API |
+| `packages/trainerroad-client` | CSRF cookie form login | Internal API |
+| `packages/velohero-client` | SSO token | Simple web API |
+| `packages/garmin-connect` | Multi-step SSO (OAuth1 → OAuth2) | Based on python-garminconnect |
+| `packages/trainingpeaks-connect` | Browser cookie → Bearer exchange | Based on tp2intervals |
+
+### Not Implemented
+
+| Provider | Reason | Workaround |
+|----------|--------|------------|
+| Rouvy | No public API, no RE work exists. Firebase + GraphQL behind Tyk gateway. | Sync to Strava/Garmin, pull from there |
+| Hammerhead | No public API. Some RE work exists but SRAM account migration broke auth. | Sync to Strava/Intervals.icu, pull from there |
+| Zepp (Amazfit) | Official API registration effectively closed. RE feasible via `hacking-mifit-api` (email+password auth) but not yet built. | Future candidate for RE'd package |
+| Samsung Health | No web API, no RE work. Would need dedicated Android companion app. | Not feasible for server-side sync |
+
+See [docs/provider-api-audit.md](docs/provider-api-audit.md) for detailed RE feasibility analysis of each provider.
 
 ## Secrets
 
