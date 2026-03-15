@@ -109,7 +109,12 @@ jobs:
             echo "Redis did not start" && exit 1
       - run:
           name: Run tests with coverage
-          command: pnpm test:coverage -- --maxWorkers=2
+          command: pnpm test:coverage -- --exclude='src/providers/__tests__/oauth-providers-coverage.test.ts'
+          environment:
+            NODE_OPTIONS: --max-old-space-size=3072
+      - run:
+          name: Run excluded tests without coverage
+          command: pnpm test -- --run src/providers/__tests__/oauth-providers-coverage.test.ts
           environment:
             NODE_OPTIONS: --max-old-space-size=3072
       - store_artifacts:
