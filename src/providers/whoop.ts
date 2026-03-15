@@ -227,7 +227,7 @@ export function parseWeightliftingWorkout(
 // Journal parsing — response shape discovered empirically
 // ============================================================
 
-interface ParsedJournalEntry {
+export interface ParsedJournalEntry {
   question: string; // e.g. "caffeine", "alcohol", "melatonin"
   answerText: string | null;
   answerNumeric: number | null;
@@ -242,7 +242,7 @@ interface ParsedJournalEntry {
  * - Wrapped object with entries under a known key
  * - Individual entry with nested answers
  */
-function parseJournalResponse(raw: unknown): ParsedJournalEntry[] {
+export function parseJournalResponse(raw: unknown): ParsedJournalEntry[] {
   if (!raw || typeof raw !== "object") return [];
 
   // Unwrap if wrapped in a known key
