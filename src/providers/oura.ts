@@ -1,7 +1,7 @@
 import type { OAuthConfig } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, refreshAccessToken } from "../auth/oauth.ts";
 import type { Database } from "../db/index.ts";
-import { dailyMetrics, sleepSession } from "../db/schema.ts";
+import { activity, dailyMetrics, sleepSession } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
@@ -74,6 +74,38 @@ export interface OuraVO2Max {
   day: string;
   timestamp: string;
   vo2_max: number | null;
+}
+
+export interface OuraWorkout {
+  id: string;
+  activity: string;
+  calories: number | null;
+  day: string;
+  distance: number | null;
+  end_datetime: string;
+  start_datetime: string;
+  intensity: "easy" | "moderate" | "hard";
+  label: string | null;
+  source: string;
+}
+
+export interface OuraDailyStress {
+  id: string;
+  day: string;
+  stress_high: number | null;
+  recovery_high: number | null;
+  day_summary: string | null;
+}
+
+export interface OuraDailyResilience {
+  id: string;
+  day: string;
+  level: string;
+  contributors: {
+    sleep_recovery: number;
+    daytime_recovery: number;
+    stress: number;
+  };
 }
 
 interface OuraListResponse<T> {
@@ -163,6 +195,38 @@ export function parseOuraDailyMetrics(
 }
 
 // ============================================================
+// Sport type mapping
+// ============================================================
+
+const OURA_SPORT_MAP: Record<string, string> = {
+  cycling: "cycling",
+  running: "running",
+  walking: "walking",
+  hiking: "hiking",
+  swimming: "swimming",
+  strength_training: "strength",
+  yoga: "yoga",
+  pilates: "pilates",
+  dancing: "dancing",
+  elliptical: "elliptical",
+  rowing: "rowing",
+  skiing: "skiing",
+  snowboarding: "snowboarding",
+  basketball: "basketball",
+  soccer: "soccer",
+  tennis: "tennis",
+  golf: "golf",
+  climbing: "climbing",
+  martial_arts: "martial_arts",
+  meditation: "meditation",
+  other: "other",
+};
+
+export function mapOuraSport(activityType: string): string {
+  return OURA_SPORT_MAP[activityType] ?? "other";
+}
+
+// ============================================================
 // Oura API client
 // ============================================================
 
@@ -241,6 +305,36 @@ export class OuraClient {
     if (nextToken) path += `&next_token=${nextToken}`;
     return this.get(path);
   }
+
+  async getWorkouts(
+    startDate: string,
+    endDate: string,
+    nextToken?: string,
+  ): Promise<OuraListResponse<OuraWorkout>> {
+    let path = `/v2/usercollection/workout?start_date=${startDate}&end_date=${endDate}`;
+    if (nextToken) path += `&next_token=${nextToken}`;
+    return this.get(path);
+  }
+
+  async getDailyStress(
+    startDate: string,
+    endDate: string,
+    nextToken?: string,
+  ): Promise<OuraListResponse<OuraDailyStress>> {
+    let path = `/v2/usercollection/daily_stress?start_date=${startDate}&end_date=${endDate}`;
+    if (nextToken) path += `&next_token=${nextToken}`;
+    return this.get(path);
+  }
+
+  async getDailyResilience(
+    startDate: string,
+    endDate: string,
+    nextToken?: string,
+  ): Promise<OuraListResponse<OuraDailyResilience>> {
+    let path = `/v2/usercollection/daily_resilience?start_date=${startDate}&end_date=${endDate}`;
+    if (nextToken) path += `&next_token=${nextToken}`;
+    return this.get(path);
+  }
 }
 
 // ============================================================
@@ -260,7 +354,7 @@ export function ouraOAuthConfig(): OAuthConfig | null {
     authorizeUrl: "https://cloud.ouraring.com/oauth/authorize",
     tokenUrl: `${OURA_API_BASE}/oauth/token`,
     redirectUri: process.env.OAUTH_REDIRECT_URI ?? DEFAULT_REDIRECT_URI,
-    scopes: ["daily", "heartrate", "personal", "session", "spo2"],
+    scopes: ["daily", "heartrate", "personal", "session", "spo2", "workout"],
   };
 }
 
@@ -424,7 +518,58 @@ export class OuraProvider implements Provider {
       });
     }
 
-    // 2. Sync daily metrics (readiness + activity + SpO2 + VO2 max merged by day)
+    // 2. Sync workouts → activity table
+    try {
+      const workoutCount = await withSyncLog(db, this.id, "activity", async () => {
+        let count = 0;
+        const allWorkouts = await fetchAllPages((nextToken) =>
+          client.getWorkouts(sinceDate, todayDate, nextToken),
+        );
+
+        for (const workout of allWorkouts) {
+          try {
+            await db
+              .insert(activity)
+              .values({
+                providerId: this.id,
+                externalId: workout.id,
+                activityType: mapOuraSport(workout.activity),
+                name: workout.label ?? workout.activity,
+                startedAt: new Date(workout.start_datetime),
+                endedAt: new Date(workout.end_datetime),
+                raw: workout as unknown as Record<string, unknown>,
+              })
+              .onConflictDoUpdate({
+                target: [activity.providerId, activity.externalId],
+                set: {
+                  activityType: mapOuraSport(workout.activity),
+                  name: workout.label ?? workout.activity,
+                  startedAt: new Date(workout.start_datetime),
+                  endedAt: new Date(workout.end_datetime),
+                  raw: workout as unknown as Record<string, unknown>,
+                },
+              });
+            count++;
+          } catch (err) {
+            errors.push({
+              message: err instanceof Error ? err.message : String(err),
+              externalId: workout.id,
+              cause: err,
+            });
+          }
+        }
+
+        return { recordCount: count, result: count };
+      });
+      recordsSynced += workoutCount;
+    } catch (err) {
+      errors.push({
+        message: `activity: ${err instanceof Error ? err.message : String(err)}`,
+        cause: err,
+      });
+    }
+
+    // 3. Sync daily metrics (readiness + activity + SpO2 + VO2 max merged by day)
     try {
       const dailyCount = await withSyncLog(db, this.id, "daily_metrics", async () => {
         let count = 0;
