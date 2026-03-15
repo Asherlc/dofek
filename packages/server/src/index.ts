@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { mkdir, readdir, rm, unlink } from "node:fs/promises";
+import { mkdir, readdir, rm, stat, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
@@ -494,6 +494,118 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       logger.error(`[cronometer-csv] Upload failed: ${err}`);
       res.status(500).json({ error: "Upload failed" });
     }
+  });
+
+  // ── Data Export ──
+  // Stores userId for each export job so we can verify ownership on download
+  const exportJobOwners = new Map<string, string>();
+
+  app.post("/api/export", async (req, res) => {
+    const sessionId = getSessionCookie(req);
+    if (!sessionId) {
+      res.status(401).json({ error: "Not authenticated" });
+      return;
+    }
+    const session = await validateSession(db, sessionId);
+    if (!session) {
+      res.status(401).json({ error: "Session expired" });
+      return;
+    }
+
+    const jobId = `export-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const tmpFile = join(tmpdir(), `dofek-export-${jobId}.zip`);
+
+    setJobStatus(jobId, { status: "processing", progress: 0, message: "Starting export..." });
+    exportJobOwners.set(jobId, session.userId);
+
+    // Fire-and-forget background export
+    (async () => {
+      const exportStart = Date.now();
+      try {
+        const { generateExport } = await import("./export.ts");
+        const result = await generateExport(db, session.userId, tmpFile, (info) => {
+          setJobStatus(jobId, {
+            status: "processing",
+            progress: info.pct,
+            message: info.message,
+          });
+        });
+
+        const durationSec = ((Date.now() - exportStart) / 1000).toFixed(1);
+        const msg = `Exported ${result.totalRecords} records across ${result.tableCount} tables in ${durationSec}s`;
+        logger.info(`[export] ${msg}`);
+        setJobStatus(jobId, { status: "done", progress: 100, message: msg });
+      } catch (err: unknown) {
+        const message = errorMessage(err);
+        logger.error(`[export] Export failed: ${message}`);
+        setJobStatus(jobId, { status: "error", message });
+        await unlink(tmpFile).catch(() => {});
+      }
+    })();
+
+    res.json({ status: "processing", jobId });
+  });
+
+  app.get("/api/export/status/:jobId", (req, res) => {
+    const status = jobStatuses.get(req.params.jobId);
+    if (!status) {
+      res.status(404).json({ error: "Unknown job" });
+      return;
+    }
+    const response: Record<string, unknown> = { ...status };
+    if (status.status === "done") {
+      response.downloadUrl = `/api/export/download/${req.params.jobId}`;
+    }
+    res.json(response);
+  });
+
+  app.get("/api/export/download/:jobId", async (req, res) => {
+    const sessionId = getSessionCookie(req);
+    if (!sessionId) {
+      res.status(401).json({ error: "Not authenticated" });
+      return;
+    }
+    const session = await validateSession(db, sessionId);
+    if (!session) {
+      res.status(401).json({ error: "Session expired" });
+      return;
+    }
+
+    const { jobId } = req.params;
+    const status = jobStatuses.get(jobId);
+    if (!status) {
+      res.status(404).json({ error: "Unknown job" });
+      return;
+    }
+
+    // Verify the export belongs to this user
+    const ownerId = exportJobOwners.get(jobId);
+    if (ownerId !== session.userId) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+
+    if (status.status !== "done") {
+      res.status(400).json({ error: "Export not ready" });
+      return;
+    }
+
+    const filePath = join(tmpdir(), `dofek-export-${jobId}.zip`);
+    try {
+      await stat(filePath);
+    } catch {
+      res.status(404).json({ error: "Export file not found" });
+      return;
+    }
+
+    res.download(filePath, "dofek-export.zip", (err) => {
+      if (err) {
+        logger.error(`[export] Download failed: ${err}`);
+      }
+      // Clean up the temp file after download
+      unlink(filePath).catch(() => {});
+      exportJobOwners.delete(jobId);
+    });
   });
 
   // ── OAuth state ──
