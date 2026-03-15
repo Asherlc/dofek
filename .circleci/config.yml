@@ -23,32 +23,59 @@ executors:
     resource_class: medium
 
 commands:
-  install-pnpm:
+  setup-pnpm:
+    description: Enable pnpm via corepack (no install)
     steps:
       - run:
           name: Install pnpm
           command: corepack enable && corepack prepare pnpm@latest --activate
+
+  attach-deps:
+    description: Attach workspace and link node_modules from shared install
+    steps:
+      - setup-pnpm
+      - attach_workspace:
+          at: /tmp/workspace
       - run:
-          name: Get pnpm store path
-          command: echo "export PNPM_STORE=$(pnpm store path)" >> "$BASH_ENV"
+          name: Restore node_modules from workspace
+          command: |
+            cp -a /tmp/workspace/node_modules ./node_modules
+            cp -a /tmp/workspace/packages/server/node_modules ./packages/server/node_modules
+            cp -a /tmp/workspace/packages/web/node_modules ./packages/web/node_modules
+            # Restore any other workspace package node_modules
+            for dir in /tmp/workspace/packages/*/node_modules; do
+              pkg=$(basename "$(dirname "$dir")")
+              if [ -d "$dir" ] && [ ! -d "./packages/$pkg/node_modules" ]; then
+                cp -a "$dir" "./packages/$pkg/node_modules"
+              fi
+            done
+
+jobs:
+  install:
+    executor: node
+    steps:
+      - checkout
+      - setup-pnpm
       - restore_cache:
           keys:
             - pnpm-store-v1-{{ checksum "pnpm-lock.yaml" }}
             - pnpm-store-v1-
-      - run:
-          name: Install dependencies
-          command: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile
       - save_cache:
           key: pnpm-store-v1-{{ checksum "pnpm-lock.yaml" }}
           paths:
             - ~/.local/share/pnpm/store
+      - persist_to_workspace:
+          root: .
+          paths:
+            - node_modules
+            - packages/*/node_modules
 
-jobs:
   check:
     executor: node
     steps:
       - checkout
-      - install-pnpm
+      - attach-deps
       - run: cd packages/web && pnpm exec tsr generate
       - run: pnpm lint
       - run: pnpm tsc --noEmit
@@ -63,7 +90,7 @@ jobs:
       REDIS_URL: redis://localhost:6379
     steps:
       - checkout
-      - install-pnpm
+      - attach-deps
       - run:
           name: Wait for Postgres
           command: dockerize -wait tcp://localhost:5432 -timeout 60s
@@ -140,7 +167,7 @@ jobs:
     executor: node
     steps:
       - checkout
-      - install-pnpm
+      - attach-deps
       - restore_cache:
           keys:
             - stryker-v1-{{ .Branch }}-
@@ -190,10 +217,17 @@ jobs:
 workflows:
   ci:
     jobs:
-      - check
-      - test
+      - install
+      - check:
+          requires:
+            - install
+      - test:
+          requires:
+            - install
       - e2e
       - mutation:
+          requires:
+            - install
           filters:
             branches:
               ignore: main
@@ -206,4 +240,7 @@ workflows:
             branches:
               only: main
     jobs:
-      - mutation
+      - install
+      - mutation:
+          requires:
+            - install
