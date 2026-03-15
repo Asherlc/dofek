@@ -13,9 +13,22 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  wait-for-ci:
+    name: Wait for CircleCI
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for CircleCI checks to pass
+        uses: lewagon/wait-on-check-action@v1.3.4
+        with:
+          ref: ${{ github.sha }}
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          check-regexp: ci/circleci:.*
+          wait-interval: 30
+          allowed-conclusions: success
+
   docker:
     name: Docker (${{ matrix.target }})
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [wait-for-ci]
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
     permissions:
       contents: read
