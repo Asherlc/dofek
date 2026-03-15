@@ -178,8 +178,8 @@ jobs:
     steps:
       - checkout
       - run:
-          name: Fetch main for diff
-          command: git fetch origin main
+          name: Fetch full history for diff
+          command: git fetch --unshallow origin && git fetch origin main
       - attach-deps
       - restore_cache:
           keys:
