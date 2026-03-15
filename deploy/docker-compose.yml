@@ -13,13 +13,13 @@ services:
       - client
 
   client:
-    image: ${DOFEK_CLIENT_IMAGE:-ghcr.io/eastbaysoftware/dofek-client:latest}
+    image: ${DOFEK_CLIENT_IMAGE:-ghcr.io/asherlc/dofek-client:latest}
     restart: unless-stopped
     depends_on:
       - web
 
   web:
-    image: ${DOFEK_IMAGE:-ghcr.io/eastbaysoftware/dofek:latest}
+    image: ${DOFEK_IMAGE:-ghcr.io/asherlc/dofek:latest}
     hostname: dofek-web
     command: web
     restart: unless-stopped
@@ -60,7 +60,7 @@ services:
       - "com.centurylinklabs.watchtower.enable=false"
 
   sync:
-    image: ${DOFEK_IMAGE:-ghcr.io/eastbaysoftware/dofek:latest}
+    image: ${DOFEK_IMAGE:-ghcr.io/asherlc/dofek:latest}
     command: sync
     restart: "no"
     env_file: .env
