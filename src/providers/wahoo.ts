@@ -4,7 +4,13 @@ import type { Database } from "../db/index.ts";
 import { activity, metricStream } from "../db/schema.ts";
 import { loadTokens, saveTokens } from "../db/tokens.ts";
 import { type ParsedFitRecord, parseFitFile } from "../fit/parser.ts";
-import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
+import type {
+  Provider,
+  ProviderAuthSetup,
+  ProviderIdentity,
+  SyncError,
+  SyncResult,
+} from "./types.ts";
 
 // ============================================================
 // Wahoo API types
@@ -265,6 +271,27 @@ export class WahooProvider implements Provider {
       oauthConfig: config,
       exchangeCode: (code) => exchangeCodeForTokens(config, code),
       apiBaseUrl: WAHOO_API_BASE,
+      getUserIdentity: async (accessToken: string): Promise<ProviderIdentity> => {
+        const response = await this.fetchFn(`${WAHOO_API_BASE}/v1/user`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Wahoo user API error (${response.status}): ${text}`);
+        }
+        const user = (await response.json()) as {
+          id: number;
+          email?: string | null;
+          first_name?: string | null;
+          last_name?: string | null;
+        };
+        const nameParts = [user.first_name, user.last_name].filter(Boolean);
+        return {
+          providerAccountId: String(user.id),
+          email: user.email ?? null,
+          name: nameParts.length > 0 ? nameParts.join(" ") : null,
+        };
+      },
     };
   }
 

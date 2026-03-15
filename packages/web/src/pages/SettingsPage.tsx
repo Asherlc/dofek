@@ -1,4 +1,5 @@
 import { AppHeader } from "../components/AppHeader.tsx";
+import { LinkedAccountsPanel } from "../components/LinkedAccountsPanel.tsx";
 import { SlackIntegrationPanel } from "../components/SlackIntegrationPanel.tsx";
 import { UnitSystemToggle } from "../components/UnitSystemToggle.tsx";
 import { SECTION_LABELS, useDashboardLayout } from "../lib/dashboardLayoutContext.ts";
@@ -12,6 +13,16 @@ export function SettingsPage() {
     <div className="min-h-screen bg-zinc-950 text-zinc-100 overflow-x-hidden">
       <AppHeader />
       <main className="mx-auto max-w-7xl px-3 sm:px-6 py-4 sm:py-6 space-y-6 sm:space-y-8">
+        <section>
+          <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-1">
+            Linked Accounts
+          </h2>
+          <p className="text-xs text-zinc-600 mb-4">Manage login methods linked to your account</p>
+          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+            <LinkedAccountsPanel />
+          </div>
+        </section>
+
         <section>
           <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-1">Units</h2>
           <p className="text-xs text-zinc-600 mb-4">Choose how measurements are displayed</p>

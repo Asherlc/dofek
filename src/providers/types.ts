@@ -16,6 +16,16 @@ export interface OAuth1Flow {
 }
 
 /**
+ * Identity info extracted from a data provider's API after OAuth.
+ * Enables using data providers as login/identity providers.
+ */
+export interface ProviderIdentity {
+  providerAccountId: string;
+  email: string | null;
+  name: string | null;
+}
+
+/**
  * Auth setup returned by providers that use OAuth.
  */
 export interface ProviderAuthSetup {
@@ -28,6 +38,8 @@ export interface ProviderAuthSetup {
   automatedLogin?: (email: string, password: string) => Promise<TokenSet>;
   /** OAuth 1.0 flow for providers that use 3-legged OAuth (e.g. FatSecret) */
   oauth1Flow?: OAuth1Flow;
+  /** Extract user identity from this provider (enables using it as a login provider) */
+  getUserIdentity?: (accessToken: string) => Promise<ProviderIdentity>;
 }
 
 /**

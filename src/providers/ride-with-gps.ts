@@ -4,7 +4,13 @@ import { exchangeCodeForTokens } from "../auth/oauth.ts";
 import type { Database } from "../db/index.ts";
 import { activity, DEFAULT_USER_ID, metricStream, userSettings } from "../db/schema.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
-import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
+import type {
+  Provider,
+  ProviderAuthSetup,
+  ProviderIdentity,
+  SyncError,
+  SyncResult,
+} from "./types.ts";
 
 // ============================================================
 // RideWithGPS API types
@@ -276,6 +282,26 @@ export class RideWithGpsProvider implements Provider {
           codeVerifier ? { codeVerifier } : undefined,
         ),
       apiBaseUrl: RWGPS_API_BASE,
+      getUserIdentity: async (accessToken: string): Promise<ProviderIdentity> => {
+        const response = await this.fetchFn(`${RWGPS_API_BASE}/users/current.json`, {
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
+        });
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`RWGPS user API error (${response.status}): ${text}`);
+        }
+        const data = (await response.json()) as {
+          user: { id: number; email?: string | null; name?: string | null };
+        };
+        return {
+          providerAccountId: String(data.user.id),
+          email: data.user.email ?? null,
+          name: data.user.name ?? null,
+        };
+      },
     };
   }
 
