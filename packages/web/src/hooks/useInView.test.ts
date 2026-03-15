@@ -1,6 +1,4 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-// Import to establish file relationship for mutation testing (Stryker)
-import { useInView } from "./useInView.ts";
 
 type IntersectionCallback = (entries: Array<{ isIntersecting: boolean }>) => void;
 
