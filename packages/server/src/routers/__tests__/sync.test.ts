@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
 const { mockAdd, mockGetJob, mockGetAllProviders, mockRegisterProvider } = vi.hoisted(() => ({
@@ -64,7 +64,7 @@ vi.mock("dofek/db/schema", () => ({
   },
 }));
 
-import { syncRouter, ensureProvidersRegistered } from "../sync.ts";
+import { ensureProvidersRegistered, syncRouter } from "../sync.ts";
 
 describe("syncRouter", () => {
   const createCaller = createTestCallerFactory(syncRouter);
@@ -195,9 +195,7 @@ describe("syncRouter", () => {
     });
 
     it("validates provider exists before enqueuing", async () => {
-      mockGetAllProviders.mockReturnValue([
-        { id: "wahoo", name: "Wahoo", validate: () => null },
-      ]);
+      mockGetAllProviders.mockReturnValue([{ id: "wahoo", name: "Wahoo", validate: () => null }]);
 
       const caller = createCaller({
         // @ts-expect-error mock db
@@ -474,9 +472,9 @@ describe("syncRouter", () => {
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
             orderBy: vi.fn().mockReturnValue({
-              limit: vi.fn().mockResolvedValue([
-                { id: "log-1", providerId: "wahoo", syncedAt: "2024-01-01" },
-              ]),
+              limit: vi
+                .fn()
+                .mockResolvedValue([{ id: "log-1", providerId: "wahoo", syncedAt: "2024-01-01" }]),
             }),
           }),
         }),

@@ -54,8 +54,8 @@ vi.mock("../trpc.ts", async () => {
   };
 });
 
-import { appRouter } from "../router.ts";
 import type { AppRouter } from "../router.ts";
+import { appRouter } from "../router.ts";
 
 describe("appRouter", () => {
   it("is defined and exports AppRouter type", () => {
@@ -65,7 +65,7 @@ describe("appRouter", () => {
   });
 
   it("contains all expected sub-routers", () => {
-    const routerKeys = Object.keys(appRouter._def.procedures);
+    const _routerKeys = Object.keys(appRouter._def.procedures);
     // The merged router should have keys for each sub-router
     // Since we're using mock routers with empty procedures, check that it assembled
     expect(appRouter).toBeDefined();

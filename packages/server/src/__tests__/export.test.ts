@@ -1,5 +1,5 @@
 import { Readable } from "node:stream";
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock archiver
 const mockArchive = {
@@ -174,12 +174,10 @@ describe("generateExport", () => {
     await generateExport(db, "user-1", "/tmp/test.zip", () => {});
 
     // Find the metadata append call
-    const metadataCall = mockArchive.append.mock.calls.find(
-      (call: unknown[]) => {
-        // @ts-expect-error checking call args
-        return call[1]?.name === "export-metadata.json";
-      },
-    );
+    const metadataCall = mockArchive.append.mock.calls.find((call: unknown[]) => {
+      // @ts-expect-error checking call args
+      return call[1]?.name === "export-metadata.json";
+    });
     expect(metadataCall).toBeDefined();
 
     const metadata = JSON.parse(metadataCall[0]);

@@ -7,8 +7,8 @@ import {
   parseWeightliftingWorkout,
   parseWorkout,
   WhoopClient,
-  WhoopProvider,
   type WhoopHrValue,
+  WhoopProvider,
   type WhoopRecoveryRecord,
   type WhoopSleepRecord,
   type WhoopWeightliftingWorkoutResponse,
@@ -63,7 +63,7 @@ function makeSyncMockFetch(options: {
   journalError?: boolean;
   cyclesError?: boolean;
 }) {
-  const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+  const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL, _init?: RequestInit) => {
     const url = input.toString();
 
     // Auth: Cognito refresh
