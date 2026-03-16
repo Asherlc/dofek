@@ -1,5 +1,7 @@
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { http, HttpResponse } from "msw";
+import { setupServer } from "msw/node";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
 import { activity, metricStream } from "../../db/schema.ts";
 import { ensureProvider, saveTokens } from "../../db/tokens.ts";
@@ -79,36 +81,34 @@ function fakePerformanceGraph(): PelotonPerformanceGraph {
   };
 }
 
-function createMockFetch(
+function pelotonHandlers(
   workouts: PelotonWorkout[],
   graph: PelotonPerformanceGraph = fakePerformanceGraph(),
-): typeof globalThis.fetch {
-  return async (input: RequestInfo | URL): Promise<Response> => {
-    const urlStr = input.toString();
-
+) {
+  return [
     // Token refresh
-    if (urlStr.includes("/oauth/token")) {
-      return Response.json({
+    http.post("https://api.onepeloton.com/oauth/token", () => {
+      return HttpResponse.json({
         access_token: "refreshed-token",
         refresh_token: "new-refresh",
         expires_in: 172800,
         scope: "offline_access openid peloton-api.members:default",
       });
-    }
+    }),
 
     // Get user info
-    if (urlStr.includes("/api/me")) {
-      return Response.json({ id: "user-123" });
-    }
+    http.get("https://api.onepeloton.com/api/me", () => {
+      return HttpResponse.json({ id: "user-123" });
+    }),
 
     // Performance graph
-    if (urlStr.includes("/performance_graph")) {
-      return Response.json(graph);
-    }
+    http.get("https://api.onepeloton.com/api/workout/:workoutId/performance_graph", () => {
+      return HttpResponse.json(graph);
+    }),
 
     // Workout list
-    if (urlStr.includes("/workouts")) {
-      return Response.json({
+    http.get("https://api.onepeloton.com/api/user/:userId/workouts", () => {
+      return HttpResponse.json({
         data: workouts,
         total: workouts.length,
         count: workouts.length,
@@ -119,11 +119,11 @@ function createMockFetch(
         show_next: false,
         show_previous: false,
       });
-    }
-
-    return new Response("Not found", { status: 404 });
-  };
+    }),
+  ];
 }
+
+const server = setupServer();
 
 // ============================================================
 // Tests
@@ -133,11 +133,17 @@ describe("PelotonProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
+    server.listen({ onUnhandledRequest: "error" });
     ctx = await setupTestDatabase();
     await ensureProvider(ctx.db, "peloton", "Peloton", "https://api.onepeloton.com");
   }, 60_000);
 
+  afterEach(() => {
+    server.resetHandlers();
+  });
+
   afterAll(async () => {
+    server.close();
     if (ctx) await ctx.cleanup();
   });
 
@@ -167,7 +173,9 @@ describe("PelotonProvider.sync() (integration)", () => {
       }),
     ];
 
-    const provider = new PelotonProvider(createMockFetch(workouts));
+    server.use(...pelotonHandlers(workouts));
+
+    const provider = new PelotonProvider();
     const since = new Date("2024-01-01T00:00:00Z");
     const result = await provider.sync(ctx.db, since);
 
@@ -218,7 +226,9 @@ describe("PelotonProvider.sync() (integration)", () => {
       fakeWorkout({ id: "workout-001", start_time: 1709280000, end_time: 1709281800 }),
     ];
 
-    const provider = new PelotonProvider(createMockFetch(workouts));
+    server.use(...pelotonHandlers(workouts));
+
+    const provider = new PelotonProvider();
     await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"));
 
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "peloton"));
@@ -237,7 +247,9 @@ describe("PelotonProvider.sync() (integration)", () => {
       }),
     ];
 
-    const provider = new PelotonProvider(createMockFetch(workouts));
+    server.use(...pelotonHandlers(workouts));
+
+    const provider = new PelotonProvider();
     await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"));
 
     const rows = await ctx.db
@@ -252,7 +264,7 @@ describe("PelotonProvider.sync() (integration)", () => {
     const { oauthToken } = await import("../../db/schema.ts");
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "peloton"));
 
-    const provider = new PelotonProvider(createMockFetch([]));
+    const provider = new PelotonProvider();
     const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);
@@ -281,7 +293,9 @@ describe("PelotonProvider.sync() (integration)", () => {
       fakeWorkout({ id: "workout-refresh-test", start_time: 1709625600, end_time: 1709627400 }),
     ];
 
-    const provider = new PelotonProvider(createMockFetch(workouts));
+    server.use(...pelotonHandlers(workouts));
+
+    const provider = new PelotonProvider();
     const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(0);
@@ -316,24 +330,24 @@ describe("PelotonProvider.sync() (integration)", () => {
     });
 
     let pageRequested = 0;
-    const paginatedFetch = async (input: RequestInfo | URL): Promise<Response> => {
-      const urlStr = input.toString();
 
-      if (urlStr.includes("/api/me")) {
-        return Response.json({ id: "user-123" });
-      }
-
-      if (urlStr.includes("/performance_graph")) {
-        return Response.json(fakePerformanceGraph());
-      }
-
-      if (urlStr.includes("/workouts")) {
-        const url = new URL(urlStr);
+    server.use(
+      http.get("https://api.onepeloton.com/api/me", () => {
+        return HttpResponse.json({ id: "user-123" });
+      }),
+      http.get(
+        "https://api.onepeloton.com/api/workout/:workoutId/performance_graph",
+        () => {
+          return HttpResponse.json(fakePerformanceGraph());
+        },
+      ),
+      http.get("https://api.onepeloton.com/api/user/:userId/workouts", ({ request }) => {
+        const url = new URL(request.url);
         const page = Number(url.searchParams.get("page") ?? "0");
         pageRequested = Math.max(pageRequested, page);
 
         if (page === 0) {
-          return Response.json({
+          return HttpResponse.json({
             data: [
               fakeWorkout({ id: "page0-workout", start_time: 1709712000, end_time: 1709713800 }),
             ],
@@ -347,7 +361,7 @@ describe("PelotonProvider.sync() (integration)", () => {
             show_previous: false,
           });
         }
-        return Response.json({
+        return HttpResponse.json({
           data: [
             fakeWorkout({ id: "page1-workout", start_time: 1709625600, end_time: 1709627400 }),
           ],
@@ -360,12 +374,10 @@ describe("PelotonProvider.sync() (integration)", () => {
           show_next: false,
           show_previous: true,
         });
-      }
+      }),
+    );
 
-      return new Response("Not found", { status: 404 });
-    };
-
-    const provider = new PelotonProvider(paginatedFetch);
+    const provider = new PelotonProvider();
     const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(0);
@@ -388,16 +400,18 @@ describe("PelotonProvider.sync() (integration)", () => {
       fakeWorkout({ id: "workout-graph-fail", start_time: 1709539200, end_time: 1709541000 }),
     ];
 
-    const failGraphFetch = async (input: RequestInfo | URL): Promise<Response> => {
-      const urlStr = input.toString();
-      if (urlStr.includes("/api/me")) {
-        return Response.json({ id: "user-123" });
-      }
-      if (urlStr.includes("/performance_graph")) {
-        return new Response("Internal Server Error", { status: 500 });
-      }
-      if (urlStr.includes("/workouts")) {
-        return Response.json({
+    server.use(
+      http.get("https://api.onepeloton.com/api/me", () => {
+        return HttpResponse.json({ id: "user-123" });
+      }),
+      http.get(
+        "https://api.onepeloton.com/api/workout/:workoutId/performance_graph",
+        () => {
+          return new HttpResponse("Internal Server Error", { status: 500 });
+        },
+      ),
+      http.get("https://api.onepeloton.com/api/user/:userId/workouts", () => {
+        return HttpResponse.json({
           data: workouts,
           total: 1,
           count: 1,
@@ -408,11 +422,10 @@ describe("PelotonProvider.sync() (integration)", () => {
           show_next: false,
           show_previous: false,
         });
-      }
-      return new Response("Not found", { status: 404 });
-    };
+      }),
+    );
 
-    const provider = new PelotonProvider(failGraphFetch);
+    const provider = new PelotonProvider();
     const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);
