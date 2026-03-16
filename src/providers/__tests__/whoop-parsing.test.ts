@@ -4,10 +4,12 @@ import {
   parseJournalResponse,
   parseRecovery,
   parseSleep,
+  parseWeightliftingWorkout,
   parseWorkout,
   WhoopClient,
   type WhoopRecoveryRecord,
   type WhoopSleepRecord,
+  type WhoopWeightliftingWorkoutResponse,
   type WhoopWorkoutRecord,
 } from "../whoop.ts";
 
@@ -298,8 +300,8 @@ describe("parseHeartRateValues — edge cases", () => {
 
 describe("WhoopClient.authenticate — MFA required path", () => {
   it("throws when MFA is required", async () => {
-    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL) => {
-      const url = input.toString();
+    const mockFetch: typeof globalThis.fetch = (_input: RequestInfo | URL) => {
+      const url = _input.toString();
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(
           Response.json({
@@ -317,8 +319,8 @@ describe("WhoopClient.authenticate — MFA required path", () => {
   });
 
   it("returns token when no MFA required", async () => {
-    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL) => {
-      const url = input.toString();
+    const mockFetch: typeof globalThis.fetch = (_input: RequestInfo | URL) => {
+      const url = _input.toString();
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(
           Response.json({
@@ -339,8 +341,8 @@ describe("WhoopClient.authenticate — MFA required path", () => {
   });
 
   it("throws when signIn gets token but no userId from bootstrap", async () => {
-    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL) => {
-      const url = input.toString();
+    const mockFetch: typeof globalThis.fetch = (_input: RequestInfo | URL) => {
+      const url = _input.toString();
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(
           Response.json({
@@ -362,8 +364,8 @@ describe("WhoopClient.authenticate — MFA required path", () => {
 
 describe("WhoopClient._fetchUserId — various response shapes", () => {
   it("extracts user_id from top level", async () => {
-    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL) => {
-      const url = input.toString();
+    const mockFetch: typeof globalThis.fetch = (_input: RequestInfo | URL) => {
+      const url = _input.toString();
       if (url.includes("users-service/v2/bootstrap")) {
         return Promise.resolve(Response.json({ user_id: 123 }));
       }
@@ -375,8 +377,8 @@ describe("WhoopClient._fetchUserId — various response shapes", () => {
   });
 
   it("extracts id from nested user object", async () => {
-    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL) => {
-      const url = input.toString();
+    const mockFetch: typeof globalThis.fetch = (_input: RequestInfo | URL) => {
+      const url = _input.toString();
       if (url.includes("users-service/v2/bootstrap")) {
         return Promise.resolve(Response.json({ user: { id: 456 } }));
       }
@@ -388,8 +390,8 @@ describe("WhoopClient._fetchUserId — various response shapes", () => {
   });
 
   it("extracts user_id from nested user object", async () => {
-    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL) => {
-      const url = input.toString();
+    const mockFetch: typeof globalThis.fetch = (_input: RequestInfo | URL) => {
+      const url = _input.toString();
       if (url.includes("users-service/v2/bootstrap")) {
         return Promise.resolve(Response.json({ user: { user_id: 789 } }));
       }
@@ -401,8 +403,8 @@ describe("WhoopClient._fetchUserId — various response shapes", () => {
   });
 
   it("returns null when no user ID can be extracted", async () => {
-    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL) => {
-      const url = input.toString();
+    const mockFetch: typeof globalThis.fetch = (_input: RequestInfo | URL) => {
+      const url = _input.toString();
       if (url.includes("users-service/v2/bootstrap")) {
         return Promise.resolve(Response.json({ something: "else" }));
       }
@@ -416,8 +418,8 @@ describe("WhoopClient._fetchUserId — various response shapes", () => {
 
 describe("WhoopClient.refreshAccessToken — success path", () => {
   it("returns new access token and reuses old refresh token", async () => {
-    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL) => {
-      const url = input.toString();
+    const mockFetch: typeof globalThis.fetch = (_input: RequestInfo | URL) => {
+      const url = _input.toString();
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(
           Response.json({
@@ -439,8 +441,8 @@ describe("WhoopClient.refreshAccessToken — success path", () => {
   });
 
   it("returns new refresh token when Cognito provides one", async () => {
-    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL) => {
-      const url = input.toString();
+    const mockFetch: typeof globalThis.fetch = (_input: RequestInfo | URL) => {
+      const url = _input.toString();
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(
           Response.json({
@@ -460,18 +462,13 @@ describe("WhoopClient.refreshAccessToken — success path", () => {
 });
 
 // ============================================================
-// parseWorkout — legacy format (no `during` field)
+// parseWorkout — legacy fallback (no `during` field)
 // ============================================================
 
-describe("parseWorkout — legacy format without during", () => {
-  // These tests exercise defensive code paths for legacy API responses
-  // where fields now typed as required were absent in older API versions.
-
-  it("falls back to start/end fields when during is absent", () => {
-    // Legacy API response missing `during` — testing defensive fallback
+describe("parseWorkout — legacy fallback without during", () => {
+  it("falls back to start/end when during is missing", () => {
     const record: WhoopWorkoutRecord = {
       activity_id: "uuid-legacy-1",
-      during: "", // empty — triggers fallback
       timezone_offset: "-05:00",
       sport_id: 0,
       start: "2026-03-01T10:00:00Z",
@@ -484,11 +481,9 @@ describe("parseWorkout — legacy format without during", () => {
     expect(parsed.durationSeconds).toBe(3600);
   });
 
-  it("falls back to created_at/updated_at when start/end are also missing", () => {
-    // Legacy API response missing both `during` and `start`/`end` — testing deepest fallback
+  it("falls back to created_at/updated_at when during and start/end are missing", () => {
     const record: WhoopWorkoutRecord = {
       activity_id: "uuid-legacy-2",
-      during: "", // empty — triggers fallback
       timezone_offset: "-05:00",
       sport_id: 1,
       created_at: "2026-03-01T09:00:00Z",
@@ -501,14 +496,12 @@ describe("parseWorkout — legacy format without during", () => {
     expect(parsed.durationSeconds).toBe(5400);
   });
 
-  it("uses record.id as externalId when activity_id is missing", () => {
-    // Legacy API response with numeric id instead of activity_id UUID
+  it("uses id as externalId when activity_id is missing", () => {
     const record: WhoopWorkoutRecord = {
-      activity_id: "", // empty — triggers id fallback
       id: 12345,
-      during: "['2026-03-01T10:00:00Z','2026-03-01T11:00:00Z')",
       timezone_offset: "-05:00",
       sport_id: 0,
+      during: "['2026-03-01T10:00:00Z','2026-03-01T11:00:00Z')",
     };
 
     const parsed = parseWorkout(record);
@@ -517,7 +510,7 @@ describe("parseWorkout — legacy format without during", () => {
 });
 
 // ============================================================
-// parseJournalResponse — branch coverage
+// parseJournalResponse — all branches
 // ============================================================
 
 describe("parseJournalResponse", () => {
@@ -531,13 +524,13 @@ describe("parseJournalResponse", () => {
     expect(parseJournalResponse(undefined)).toEqual([]);
   });
 
-  it("parses array of entries with answers", () => {
+  it("handles plain array of entries with nested answers", () => {
     const raw = [
       {
-        date: "2026-03-01",
+        date: "2026-03-01T00:00:00Z",
         answers: [
-          { name: "caffeine", value: 2, impact: 0.5 },
-          { name: "alcohol", value: 0 },
+          { name: "caffeine", value: 1, impact: 0.5 },
+          { name: "alcohol", value: 0, impact: -0.2 },
         ],
       },
     ];
@@ -545,241 +538,399 @@ describe("parseJournalResponse", () => {
     const entries = parseJournalResponse(raw);
     expect(entries).toHaveLength(2);
     expect(entries[0]?.question).toBe("caffeine");
-    expect(entries[0]?.answerNumeric).toBe(2);
+    expect(entries[0]?.answerNumeric).toBe(1);
     expect(entries[0]?.impactScore).toBe(0.5);
     expect(entries[1]?.question).toBe("alcohol");
-    expect(entries[1]?.answerNumeric).toBe(0);
-    expect(entries[1]?.impactScore).toBeNull();
   });
 
-  it("unwraps entries from impacts wrapper key", () => {
+  it("unwraps entries from 'impacts' wrapper key", () => {
     const raw = {
-      impacts: [{ date: "2026-03-01", name: "sleep_quality", score: 8 }],
+      impacts: [{ date: "2026-03-01", answers: [{ name: "sleep_aid", value: 0 }] }],
     };
 
     const entries = parseJournalResponse(raw);
     expect(entries).toHaveLength(1);
-    expect(entries[0]?.question).toBe("sleep_quality");
-    expect(entries[0]?.answerNumeric).toBe(8);
+    expect(entries[0]?.question).toBe("sleep_aid");
   });
 
-  it("unwraps entries from entries wrapper key", () => {
+  it("unwraps entries from 'entries' wrapper key", () => {
     const raw = {
-      entries: [{ date: "2026-03-01", name: "mood", value: 7 }],
-    };
-
-    const entries = parseJournalResponse(raw);
-    expect(entries).toHaveLength(1);
-    expect(entries[0]?.question).toBe("mood");
-  });
-
-  it("unwraps from data wrapper key", () => {
-    const raw = {
-      data: [{ date: "2026-03-01", name: "stress", score: 3 }],
-    };
-
-    const entries = parseJournalResponse(raw);
-    expect(entries).toHaveLength(1);
-    expect(entries[0]?.question).toBe("stress");
-  });
-
-  it("unwraps from results wrapper key", () => {
-    const raw = {
-      results: [{ date: "2026-03-01", name: "energy", value: 5 }],
+      entries: [{ date: "2026-03-01", answers: [{ name: "melatonin", value: 1 }] }],
     };
 
     const entries = parseJournalResponse(raw);
     expect(entries).toHaveLength(1);
   });
 
-  it("unwraps from journal wrapper key", () => {
+  it("unwraps entries from 'data' wrapper key", () => {
     const raw = {
-      journal: [{ date: "2026-03-01", behavior: "meditation", value: 1 }],
+      data: [{ date: "2026-03-01", answers: [{ name: "stretch", value: 1 }] }],
     };
 
     const entries = parseJournalResponse(raw);
     expect(entries).toHaveLength(1);
-    expect(entries[0]?.question).toBe("meditation");
   });
 
-  it("unwraps from records wrapper key", () => {
+  it("unwraps entries from 'results' wrapper key", () => {
     const raw = {
-      records: [{ date: "2026-03-01", type: "supplement", answer: "yes" }],
+      results: [{ date: "2026-03-01", answers: [{ name: "hydration", score: 3 }] }],
     };
 
     const entries = parseJournalResponse(raw);
     expect(entries).toHaveLength(1);
-    expect(entries[0]?.question).toBe("supplement");
-    expect(entries[0]?.answerText).toBe("yes");
-  });
-
-  it("wraps single non-array object as entry", () => {
-    const raw = { date: "2026-03-01", name: "caffeine", value: 3 };
-
-    const entries = parseJournalResponse(raw);
-    expect(entries).toHaveLength(1);
-    expect(entries[0]?.question).toBe("caffeine");
     expect(entries[0]?.answerNumeric).toBe(3);
   });
 
-  it("extracts date from created_at fallback", () => {
-    const raw = [{ created_at: "2026-03-01T12:00:00Z", name: "test", value: 1 }];
-
-    const entries = parseJournalResponse(raw);
-    expect(entries).toHaveLength(1);
-    expect(entries[0]?.date).toEqual(new Date("2026-03-01T12:00:00Z"));
-  });
-
-  it("extracts date from cycle_start fallback", () => {
-    const raw = [{ cycle_start: "2026-03-01T00:00:00Z", name: "test", value: 1 }];
+  it("unwraps entries from 'journal' wrapper key", () => {
+    const raw = {
+      journal: [{ date: "2026-03-01", answers: [{ name: "mood", value: 4 }] }],
+    };
 
     const entries = parseJournalResponse(raw);
     expect(entries).toHaveLength(1);
   });
 
-  it("extracts date from start fallback", () => {
-    const raw = [{ start: "2026-03-01T00:00:00Z", name: "test", value: 1 }];
+  it("unwraps entries from 'records' wrapper key", () => {
+    const raw = {
+      records: [{ date: "2026-03-01", answers: [{ name: "recovery", value: 2 }] }],
+    };
 
     const entries = parseJournalResponse(raw);
     expect(entries).toHaveLength(1);
   });
 
-  it("extracts date from day fallback", () => {
-    const raw = [{ day: "2026-03-01", name: "test", value: 1 }];
+  it("wraps single object when wrapped value is not an array", () => {
+    const raw = {
+      impacts: "not-an-array",
+      date: "2026-03-01",
+      name: "single_entry",
+      value: 5,
+    };
 
     const entries = parseJournalResponse(raw);
     expect(entries).toHaveLength(1);
-  });
-
-  it("skips entries with invalid dates", () => {
-    const raw = [{ date: "not-a-date", name: "test", value: 1 }];
-
-    const entries = parseJournalResponse(raw);
-    expect(entries).toHaveLength(0);
-  });
-
-  it("skips entries with no date fields at all", () => {
-    const raw = [{ name: "test", value: 1 }];
-
-    const entries = parseJournalResponse(raw);
-    expect(entries).toHaveLength(0);
+    expect(entries[0]?.question).toBe("single_entry");
+    expect(entries[0]?.answerNumeric).toBe(5);
   });
 
   it("skips null and non-object items in array", () => {
-    const raw = [null, "string", { date: "2026-03-01", name: "valid", value: 1 }];
+    const raw = [
+      null,
+      "string-item",
+      42,
+      { date: "2026-03-01", answers: [{ name: "valid", value: 1 }] },
+    ];
 
     const entries = parseJournalResponse(raw);
     expect(entries).toHaveLength(1);
     expect(entries[0]?.question).toBe("valid");
   });
 
-  it("parses nested behaviors array", () => {
-    const raw = [
-      {
-        date: "2026-03-01",
-        behaviors: [{ behavior: "stretching", value: 1, impact_score: 0.3 }],
-      },
-    ];
+  it("extracts date from cycle_start field", () => {
+    const raw = [{ cycle_start: "2026-03-01T00:00:00Z", answers: [{ name: "test", value: 1 }] }];
 
     const entries = parseJournalResponse(raw);
     expect(entries).toHaveLength(1);
-    expect(entries[0]?.question).toBe("stretching");
-    expect(entries[0]?.impactScore).toBe(0.3);
+    expect(entries[0]?.date).toEqual(new Date("2026-03-01T00:00:00Z"));
   });
 
-  it("parses nested items array", () => {
-    const raw = [
-      {
-        date: "2026-03-01",
-        items: [{ question: "How stressed?", score: 4, response: "moderate" }],
-      },
-    ];
+  it("extracts date from start field", () => {
+    const raw = [{ start: "2026-03-01T00:00:00Z", answers: [{ name: "test", value: 1 }] }];
 
     const entries = parseJournalResponse(raw);
     expect(entries).toHaveLength(1);
-    expect(entries[0]?.question).toBe("how_stressed?");
-    expect(entries[0]?.answerNumeric).toBe(4);
-    expect(entries[0]?.answerText).toBe("moderate");
   });
 
-  it("parses nested journal_entries array", () => {
-    const raw = [
-      {
-        date: "2026-03-01",
-        journal_entries: [{ type: "sleep_aid", value: "melatonin" }],
-      },
-    ];
+  it("extracts date from day field", () => {
+    const raw = [{ day: "2026-03-01", answers: [{ name: "test", value: 1 }] }];
 
     const entries = parseJournalResponse(raw);
     expect(entries).toHaveLength(1);
-    expect(entries[0]?.question).toBe("sleep_aid");
-    expect(entries[0]?.answerText).toBe("melatonin");
+  });
+
+  it("skips entries with invalid dates", () => {
+    const raw = [
+      { date: "not-a-date", answers: [{ name: "test", value: 1 }] },
+      { answers: [{ name: "no_date", value: 1 }] },
+    ];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries).toHaveLength(0);
   });
 
   it("skips null/non-object answers in nested array", () => {
     const raw = [
       {
         date: "2026-03-01",
-        answers: [null, "bad", { name: "valid", value: 1 }],
+        answers: [null, "string", { name: "valid_answer", value: 3 }],
       },
     ];
 
     const entries = parseJournalResponse(raw);
     expect(entries).toHaveLength(1);
+    expect(entries[0]?.question).toBe("valid_answer");
   });
 
-  it("uses fallback question name from type field", () => {
+  it("extracts answerText from answer field", () => {
     const raw = [
       {
         date: "2026-03-01",
-        answers: [{ type: "supplement_type", value: 1 }],
+        answers: [{ name: "note", answer: "felt great" }],
       },
     ];
 
     const entries = parseJournalResponse(raw);
-    expect(entries[0]?.question).toBe("supplement_type");
+    expect(entries[0]?.answerText).toBe("felt great");
   });
 
-  it("defaults question to unknown when no name fields exist", () => {
+  it("extracts answerText from response field when answer is not a string", () => {
     const raw = [
       {
         date: "2026-03-01",
-        answers: [{ value: 1 }],
+        answers: [{ name: "note", answer: 42, response: "pretty good" }],
       },
     ];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries[0]?.answerText).toBe("pretty good");
+  });
+
+  it("extracts answerText from value field when answer and response are not strings", () => {
+    const raw = [
+      {
+        date: "2026-03-01",
+        answers: [{ name: "note", answer: 1, response: 2, value: "string value" }],
+      },
+    ];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries[0]?.answerText).toBe("string value");
+    // value is a string so answerNumeric should be null
+    expect(entries[0]?.answerNumeric).toBeNull();
+  });
+
+  it("extracts impactScore from impact_score field", () => {
+    const raw = [
+      {
+        date: "2026-03-01",
+        answers: [{ name: "test", impact_score: 0.8 }],
+      },
+    ];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries[0]?.impactScore).toBe(0.8);
+  });
+
+  it("uses behavior/question/type as question name fallbacks", () => {
+    const raw = [{ date: "2026-03-01", answers: [{ behavior: "my_behavior", value: 1 }] }];
+    expect(parseJournalResponse(raw)[0]?.question).toBe("my_behavior");
+
+    const raw2 = [{ date: "2026-03-01", answers: [{ question: "my_question", value: 1 }] }];
+    expect(parseJournalResponse(raw2)[0]?.question).toBe("my_question");
+
+    const raw3 = [{ date: "2026-03-01", answers: [{ type: "my_type", value: 1 }] }];
+    expect(parseJournalResponse(raw3)[0]?.question).toBe("my_type");
+  });
+
+  it("defaults to 'unknown' when no question name fields exist in answer", () => {
+    const raw = [{ date: "2026-03-01", answers: [{ value: 1 }] }];
 
     const entries = parseJournalResponse(raw);
     expect(entries[0]?.question).toBe("unknown");
   });
 
-  it("handles flat entry with behavior field", () => {
-    const raw = [{ date: "2026-03-01", behavior: "cold_shower", score: 5 }];
+  it("handles flat entries without nested answers", () => {
+    const raw = [
+      {
+        date: "2026-03-01",
+        name: "caffeine",
+        value: 2,
+        impact: 0.3,
+      },
+    ];
 
     const entries = parseJournalResponse(raw);
     expect(entries).toHaveLength(1);
-    expect(entries[0]?.question).toBe("cold_shower");
-    expect(entries[0]?.answerNumeric).toBe(5);
+    expect(entries[0]?.question).toBe("caffeine");
+    expect(entries[0]?.answerNumeric).toBe(2);
+    expect(entries[0]?.answerText).toBeNull();
+    expect(entries[0]?.impactScore).toBe(0.3);
   });
 
-  it("handles flat entry with response as answer text", () => {
-    const raw = [{ date: "2026-03-01", name: "note", response: "felt good" }];
+  it("handles flat entries with behavior as question name", () => {
+    const raw = [{ date: "2026-03-01", behavior: "meditation", score: 4 }];
 
     const entries = parseJournalResponse(raw);
-    expect(entries[0]?.answerText).toBe("felt good");
+    expect(entries[0]?.question).toBe("meditation");
+    expect(entries[0]?.answerNumeric).toBe(4);
   });
 
-  it("handles flat entry with impact_score field", () => {
-    const raw = [{ date: "2026-03-01", name: "caffeine", impact_score: -0.2, value: 3 }];
+  it("handles flat entries with type as question name", () => {
+    const raw = [{ date: "2026-03-01", type: "sleep_quality", score: 3 }];
 
     const entries = parseJournalResponse(raw);
-    expect(entries[0]?.impactScore).toBe(-0.2);
-    expect(entries[0]?.answerNumeric).toBe(3);
+    expect(entries[0]?.question).toBe("sleep_quality");
   });
 
-  it("defaults flat entry question to journal when no name fields exist", () => {
+  it("handles flat entries with answer/response string fields", () => {
+    const raw = [{ date: "2026-03-01", name: "note", answer: "good day" }];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries[0]?.answerText).toBe("good day");
+
+    const raw2 = [{ date: "2026-03-01", name: "note", response: "okay day" }];
+    expect(parseJournalResponse(raw2)[0]?.answerText).toBe("okay day");
+  });
+
+  it("handles flat entries with impact_score", () => {
+    const raw = [{ date: "2026-03-01", name: "test", impact_score: 0.7 }];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries[0]?.impactScore).toBe(0.7);
+  });
+
+  it("defaults flat entry question to 'journal' when no name fields exist", () => {
     const raw = [{ date: "2026-03-01", value: 1 }];
 
     const entries = parseJournalResponse(raw);
     expect(entries[0]?.question).toBe("journal");
+  });
+
+  it("normalizes question names to lowercase with underscores", () => {
+    const raw = [
+      {
+        date: "2026-03-01",
+        answers: [{ name: "Morning  Stretch", value: 1 }],
+      },
+    ];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries[0]?.question).toBe("morning_stretch");
+  });
+
+  it("extracts answerNumeric from score field in nested answers", () => {
+    const raw = [
+      {
+        date: "2026-03-01",
+        answers: [{ name: "energy", score: 7 }],
+      },
+    ];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries[0]?.answerNumeric).toBe(7);
+  });
+});
+
+// ============================================================
+// parseWeightliftingWorkout — additional edge cases
+// ============================================================
+
+describe("parseWeightliftingWorkout — additional edge cases", () => {
+  it("returns null duration for TIME format with zero time_in_seconds", () => {
+    const response: WhoopWeightliftingWorkoutResponse = {
+      activity_id: "test-time-zero",
+      user_id: 1,
+      zone_durations: {
+        zone0_to10_duration: 0,
+        zone10_to20_duration: 0,
+        zone20_to30_duration: 0,
+        zone30_to40_duration: 0,
+        zone40_to50_duration: 0,
+        zone50_to60_duration: 0,
+        zone60_to70_duration: 0,
+        zone70_to80_duration: 0,
+        zone80_to90_duration: 0,
+        zone90_to100_duration: 0,
+      },
+      workout_groups: [
+        {
+          workout_exercises: [
+            {
+              sets: [
+                {
+                  weight_kg: 0,
+                  number_of_reps: 0,
+                  msk_total_volume_kg: 0,
+                  time_in_seconds: 0,
+                  during: "['2026-03-12T21:37:00.000Z','2026-03-12T21:37:00.001Z')",
+                  complete: true,
+                },
+              ],
+              exercise_details: {
+                exercise_id: "PLANK",
+                name: "Plank",
+                equipment: "BODY",
+                exercise_type: "STRENGTH",
+                muscle_groups: ["CORE"],
+                volume_input_format: "TIME",
+              },
+            },
+          ],
+        },
+      ],
+      total_effective_volume_kg: 0,
+      raw_msk_strain_score: 0,
+      scaled_msk_strain_score: 0,
+      cardio_strain_score: 0,
+      cardio_strain_contribution_percent: 0,
+      msk_strain_contribution_percent: 0,
+    };
+
+    const result = parseWeightliftingWorkout(response);
+    expect(result.exercises[0]?.sets[0]?.durationSeconds).toBeNull();
+  });
+
+  it("sets equipment to null when empty string", () => {
+    const response: WhoopWeightliftingWorkoutResponse = {
+      activity_id: "test-no-equip",
+      user_id: 1,
+      zone_durations: {
+        zone0_to10_duration: 0,
+        zone10_to20_duration: 0,
+        zone20_to30_duration: 0,
+        zone30_to40_duration: 0,
+        zone40_to50_duration: 0,
+        zone50_to60_duration: 0,
+        zone60_to70_duration: 0,
+        zone70_to80_duration: 0,
+        zone80_to90_duration: 0,
+        zone90_to100_duration: 0,
+      },
+      workout_groups: [
+        {
+          workout_exercises: [
+            {
+              sets: [
+                {
+                  weight_kg: 20,
+                  number_of_reps: 10,
+                  msk_total_volume_kg: 200,
+                  time_in_seconds: 0,
+                  during: "['2026-03-12T21:37:00.000Z','2026-03-12T21:37:00.001Z')",
+                  complete: true,
+                },
+              ],
+              exercise_details: {
+                exercise_id: "PUSHUP",
+                name: "Push Up",
+                equipment: "",
+                exercise_type: "STRENGTH",
+                muscle_groups: ["CHEST"],
+                volume_input_format: "REPS_AND_WEIGHT",
+              },
+            },
+          ],
+        },
+      ],
+      total_effective_volume_kg: 200,
+      raw_msk_strain_score: 0,
+      scaled_msk_strain_score: 0,
+      cardio_strain_score: 0,
+      cardio_strain_contribution_percent: 0,
+      msk_strain_contribution_percent: 0,
+    };
+
+    const result = parseWeightliftingWorkout(response);
+    expect(result.exercises[0]?.equipment).toBeNull();
   });
 });

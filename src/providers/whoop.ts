@@ -135,7 +135,7 @@ export function parseWorkout(record: WhoopWorkoutRecord): ParsedWorkout {
   }
 
   return {
-    externalId: record.activity_id || String(record.id ?? ""),
+    externalId: record.activity_id ?? String(record.id ?? ""),
     activityType: mapSportId(record.sport_id),
     startedAt,
     endedAt,
@@ -235,6 +235,23 @@ export interface ParsedJournalEntry {
   date: Date;
 }
 
+function getString(obj: Record<string, unknown>, key: string): string | undefined {
+  const val = obj[key];
+  return typeof val === "string" ? val : undefined;
+}
+
+function getArray(obj: Record<string, unknown>, key: string): unknown[] | undefined {
+  const val = obj[key];
+  return Array.isArray(val) ? val : undefined;
+}
+
+function toRecord(val: unknown): Record<string, unknown> | null {
+  if (val && typeof val === "object" && !Array.isArray(val)) {
+    return Object.fromEntries(Object.entries(val));
+  }
+  return null;
+}
+
 /**
  * Parse the behavior-impact-service response into health_event entries.
  * The response shape isn't documented — this handles several possibilities:
@@ -242,10 +259,6 @@ export interface ParsedJournalEntry {
  * - Wrapped object with entries under a known key
  * - Individual entry with nested answers
  */
-function toRecord(value: object): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(value));
-}
-
 export function parseJournalResponse(raw: unknown): ParsedJournalEntry[] {
   if (!raw || typeof raw !== "object") return [];
 
@@ -254,7 +267,8 @@ export function parseJournalResponse(raw: unknown): ParsedJournalEntry[] {
   if (Array.isArray(raw)) {
     items = raw;
   } else {
-    const obj = typeof raw === "object" && raw !== null ? toRecord(raw) : {};
+    const obj = toRecord(raw);
+    if (!obj) return [];
     // Try common wrapper keys
     const wrapped =
       obj.impacts ?? obj.entries ?? obj.data ?? obj.results ?? obj.journal ?? obj.records;
@@ -268,29 +282,36 @@ export function parseJournalResponse(raw: unknown): ParsedJournalEntry[] {
 
   const entries: ParsedJournalEntry[] = [];
   for (const item of items) {
-    if (!item || typeof item !== "object") continue;
     const obj = toRecord(item);
+    if (!obj) continue;
 
     // Try to extract a date
-    const dateStr = [obj.date, obj.created_at, obj.cycle_start, obj.start, obj.day].find(
-      (v): v is string => typeof v === "string",
-    );
+    const dateStr =
+      getString(obj, "date") ??
+      getString(obj, "created_at") ??
+      getString(obj, "cycle_start") ??
+      getString(obj, "start") ??
+      getString(obj, "day");
     const date = dateStr ? new Date(dateStr) : null;
     if (!date || Number.isNaN(date.getTime())) continue;
 
     // Check if it has nested answers/behaviors
-    const answers = [obj.answers, obj.behaviors, obj.items, obj.journal_entries].find(
-      (v): v is unknown[] => Array.isArray(v),
-    );
+    const answers =
+      getArray(obj, "answers") ??
+      getArray(obj, "behaviors") ??
+      getArray(obj, "items") ??
+      getArray(obj, "journal_entries");
 
     if (Array.isArray(answers)) {
       for (const answer of answers) {
-        if (!answer || typeof answer !== "object") continue;
         const a = toRecord(answer);
+        if (!a) continue;
         const question =
-          [a.name, a.behavior, a.question, a.type].find(
-            (v): v is string => typeof v === "string",
-          ) ?? "unknown";
+          getString(a, "name") ??
+          getString(a, "behavior") ??
+          getString(a, "question") ??
+          getString(a, "type") ??
+          "unknown";
         const answerNumeric =
           typeof a.value === "number" ? a.value : typeof a.score === "number" ? a.score : null;
         const answerText =
@@ -319,8 +340,7 @@ export function parseJournalResponse(raw: unknown): ParsedJournalEntry[] {
     } else {
       // Flat entry — use available fields
       const question =
-        [obj.name, obj.behavior, obj.type].find((v): v is string => typeof v === "string") ??
-        "journal";
+        getString(obj, "name") ?? getString(obj, "behavior") ?? getString(obj, "type") ?? "journal";
       const answerNumeric =
         typeof obj.value === "number"
           ? obj.value
@@ -627,6 +647,7 @@ export class WhoopProvider implements Provider {
 
             // Parse workout times from the weightlifting response or fall back to workout record
             const workoutDuring = weightliftingData.during ?? workoutRecord.during;
+            if (!workoutDuring) continue; // skip if no time range available
             const { start: startedAt, end: endedAt } = parseDuringRange(workoutDuring);
 
             // Upsert strength_workout
