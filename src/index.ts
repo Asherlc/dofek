@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { waitForAuthCode } from "./auth/callback-server.ts";
 import { buildAuthorizationUrl } from "./auth/index.ts";
+import { computeSinceDate, parseSinceDays } from "./cli.ts";
 import { createDatabaseFromEnv } from "./db/index.ts";
 import { ensureProvider, saveTokens } from "./db/tokens.ts";
 import { AutoSupplementsProvider } from "./providers/auto-supplements.ts";
@@ -82,12 +83,6 @@ if (supplementConfig) {
   registerProvider(new AutoSupplementsProvider(supplementConfig));
 }
 
-function parseSinceDays(): number {
-  const arg = process.argv.find((a) => a.startsWith("--since-days="));
-  if (arg) return parseInt(arg.split("=")[1] ?? "7", 10);
-  return 7;
-}
-
 async function main() {
   const command = process.argv[2] ?? "sync";
 
@@ -96,9 +91,9 @@ async function main() {
 
   if (command === "sync") {
     const fullSync = process.argv.includes("--full-sync");
-    const days = parseSinceDays();
+    const days = parseSinceDays(process.argv);
     const db = createDatabaseFromEnv();
-    const since = fullSync ? new Date(0) : new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const since = computeSinceDate(days, fullSync);
 
     const enabled = getEnabledProviders();
     if (enabled.length === 0) {
@@ -230,8 +225,8 @@ async function main() {
       }
 
       const fullSync = process.argv.includes("--full-sync");
-      const days = parseSinceDays();
-      const since = fullSync ? new Date(0) : new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+      const days = parseSinceDays(process.argv);
+      const since = computeSinceDate(days, fullSync);
 
       const { importAppleHealthFile } = await import("./providers/apple-health.ts");
       const db = createDatabaseFromEnv();
