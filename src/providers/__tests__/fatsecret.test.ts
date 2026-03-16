@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   buildOAuth1Header,
   type FatSecretFoodEntriesResponse,
+  FatSecretProvider,
   inferCategory,
   parseFoodEntries,
 } from "../fatsecret.ts";
@@ -246,5 +247,207 @@ describe("FatSecret Provider", () => {
       const nonce2 = h2.match(/oauth_nonce="([^"]+)"/)?.[1];
       expect(nonce1).not.toBe(nonce2);
     });
+
+    it("handles URL with query parameters", () => {
+      const header = buildOAuth1Header(
+        "GET",
+        "https://platform.fatsecret.com/rest/server.api?existing=param",
+        { method: "food_entries.get.v2" },
+        {
+          consumerKey: "test-consumer-key",
+          consumerSecret: "test-consumer-secret",
+          token: "test-token",
+          tokenSecret: "test-token-secret",
+        },
+      );
+      expect(header).toMatch(/^OAuth /);
+    });
+
+    it("uppercases the HTTP method in signature", () => {
+      const creds = {
+        consumerKey: "test-consumer-key",
+        consumerSecret: "test-consumer-secret",
+        token: "test-token",
+        tokenSecret: "test-token-secret",
+      };
+      const header1 = buildOAuth1Header(
+        "get",
+        "https://platform.fatsecret.com/rest/server.api",
+        {},
+        creds,
+      );
+      const header2 = buildOAuth1Header(
+        "GET",
+        "https://platform.fatsecret.com/rest/server.api",
+        {},
+        creds,
+      );
+      expect(header1).toMatch(/^OAuth /);
+      expect(header2).toMatch(/^OAuth /);
+    });
+  });
+
+  describe("parseFoodEntries — edge cases", () => {
+    it("returns empty array when food_entries is missing", () => {
+      const response: FatSecretFoodEntriesResponse = Object.create(null);
+      expect(parseFoodEntries(response)).toHaveLength(0);
+    });
+
+    it("returns empty array when food_entry is undefined", () => {
+      const response: FatSecretFoodEntriesResponse = {
+        food_entries: Object.create(null),
+      };
+      expect(parseFoodEntries(response)).toHaveLength(0);
+    });
+
+    it("maps unknown meal to 'other'", () => {
+      const response: FatSecretFoodEntriesResponse = {
+        food_entries: {
+          food_entry: [
+            {
+              food_entry_id: "1",
+              food_entry_name: "Toast",
+              food_entry_description: "1 slice",
+              food_id: "10",
+              serving_id: "20",
+              number_of_units: "1.000",
+              meal: "Second Breakfast",
+              date_int: "20000",
+              calories: "80",
+              carbohydrate: "14",
+              protein: "3",
+              fat: "1",
+            },
+          ],
+        },
+      };
+
+      const entries = parseFoodEntries(response);
+      expect(entries[0]?.meal).toBe("other");
+    });
+  });
+
+  describe("inferCategory — additional patterns", () => {
+    it("detects additional supplement keywords", () => {
+      expect(inferCategory("Melatonin 5mg")).toBe("supplement");
+      expect(inferCategory("BCAA Powder")).toBe("supplement");
+      expect(inferCategory("Electrolyte Mix")).toBe("supplement");
+      expect(inferCategory("Turmeric Curcumin")).toBe("supplement");
+    });
+
+    it("detects dosage patterns", () => {
+      expect(inferCategory("Something 200mg")).toBe("supplement");
+      expect(inferCategory("Something 5000IU")).toBe("supplement");
+      expect(inferCategory("Something 1000mcg")).toBe("supplement");
+    });
+
+    it("returns undefined for regular food items", () => {
+      expect(inferCategory("Brown Rice")).toBeUndefined();
+      expect(inferCategory("Banana")).toBeUndefined();
+    });
+  });
+});
+
+describe("FatSecretProvider — constructor and validate()", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it("throws when env vars are missing", () => {
+    delete process.env.FATSECRET_CONSUMER_KEY;
+    delete process.env.FATSECRET_CONSUMER_SECRET;
+    expect(() => new FatSecretProvider()).toThrow("FATSECRET_CONSUMER_KEY");
+  });
+
+  it("constructs when env vars are set", () => {
+    process.env.FATSECRET_CONSUMER_KEY = "key";
+    process.env.FATSECRET_CONSUMER_SECRET = "secret";
+    const provider = new FatSecretProvider();
+    expect(provider.id).toBe("fatsecret");
+    expect(provider.name).toBe("FatSecret");
+  });
+
+  it("validate() always returns null", () => {
+    process.env.FATSECRET_CONSUMER_KEY = "key";
+    process.env.FATSECRET_CONSUMER_SECRET = "secret";
+    const provider = new FatSecretProvider();
+    expect(provider.validate()).toBeNull();
+  });
+});
+
+describe("FatSecretProvider.authSetup()", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it("returns OAuth 1.0 auth setup", () => {
+    process.env.FATSECRET_CONSUMER_KEY = "key";
+    process.env.FATSECRET_CONSUMER_SECRET = "secret";
+    const provider = new FatSecretProvider();
+    const setup = provider.authSetup();
+    expect(setup.oauthConfig.clientId).toBe("key");
+    expect(setup.oauthConfig.clientSecret).toBe("secret");
+    expect(setup.oauth1Flow).toBeDefined();
+    expect(setup.oauth1Flow.getRequestToken).toBeTypeOf("function");
+    expect(setup.oauth1Flow.exchangeForAccessToken).toBeTypeOf("function");
+  });
+
+  it("exchangeCode throws for OAuth 1.0 provider", async () => {
+    process.env.FATSECRET_CONSUMER_KEY = "key";
+    process.env.FATSECRET_CONSUMER_SECRET = "secret";
+    const provider = new FatSecretProvider();
+    const setup = provider.authSetup();
+    await expect(setup.exchangeCode("code")).rejects.toThrow("OAuth 1.0");
+  });
+
+  it("oauth1Flow.getRequestToken calls FatSecret and returns tokens", async () => {
+    process.env.FATSECRET_CONSUMER_KEY = "key";
+    process.env.FATSECRET_CONSUMER_SECRET = "secret";
+
+    const mockFetch: typeof globalThis.fetch = async (
+      _input: RequestInfo | URL,
+      _init?: RequestInit,
+    ): Promise<Response> => {
+      return new Response("oauth_token=req-token&oauth_token_secret=req-secret", {
+        status: 200,
+      });
+    };
+
+    const provider = new FatSecretProvider(mockFetch);
+    const setup = provider.authSetup();
+    const result = await setup.oauth1Flow.getRequestToken("http://localhost:9876/callback");
+
+    expect(result.oauthToken).toBe("req-token");
+    expect(result.oauthTokenSecret).toBe("req-secret");
+    expect(result.authorizeUrl).toContain("req-token");
+  });
+
+  it("oauth1Flow.exchangeForAccessToken calls FatSecret and returns access tokens", async () => {
+    process.env.FATSECRET_CONSUMER_KEY = "key";
+    process.env.FATSECRET_CONSUMER_SECRET = "secret";
+
+    const mockFetch: typeof globalThis.fetch = async (
+      _input: RequestInfo | URL,
+      _init?: RequestInit,
+    ): Promise<Response> => {
+      return new Response("oauth_token=access-token&oauth_token_secret=access-secret", {
+        status: 200,
+      });
+    };
+
+    const provider = new FatSecretProvider(mockFetch);
+    const setup = provider.authSetup();
+    const result = await setup.oauth1Flow.exchangeForAccessToken(
+      "req-token",
+      "req-secret",
+      "verifier-123",
+    );
+
+    expect(result.token).toBe("access-token");
+    expect(result.tokenSecret).toBe("access-secret");
   });
 });

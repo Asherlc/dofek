@@ -101,19 +101,42 @@ describe("concept2OAuthConfig", () => {
     process.env = { ...originalEnv };
   });
 
-  it("returns null when env vars missing", () => {
+  it("returns null when CONCEPT2_CLIENT_ID is not set", () => {
     delete process.env.CONCEPT2_CLIENT_ID;
     delete process.env.CONCEPT2_CLIENT_SECRET;
     expect(concept2OAuthConfig()).toBeNull();
   });
 
-  it("returns config when both set", () => {
-    process.env.CONCEPT2_CLIENT_ID = "id";
-    process.env.CONCEPT2_CLIENT_SECRET = "secret";
+  it("returns null when CONCEPT2_CLIENT_SECRET is not set", () => {
+    process.env.CONCEPT2_CLIENT_ID = "test-id";
+    delete process.env.CONCEPT2_CLIENT_SECRET;
+    expect(concept2OAuthConfig()).toBeNull();
+  });
+
+  it("returns config when both env vars are set", () => {
+    process.env.CONCEPT2_CLIENT_ID = "test-id";
+    process.env.CONCEPT2_CLIENT_SECRET = "test-secret";
     const config = concept2OAuthConfig();
-    expect(config?.clientId).toBe("id");
-    expect(config?.authorizeUrl).toContain("concept2.com");
+    expect(config).not.toBeNull();
+    expect(config?.clientId).toBe("test-id");
+    expect(config?.clientSecret).toBe("test-secret");
     expect(config?.scopes).toContain("results:read");
+  });
+
+  it("uses custom OAUTH_REDIRECT_URI when set", () => {
+    process.env.CONCEPT2_CLIENT_ID = "test-id";
+    process.env.CONCEPT2_CLIENT_SECRET = "test-secret";
+    process.env.OAUTH_REDIRECT_URI = "https://example.com/callback";
+    const config = concept2OAuthConfig();
+    expect(config?.redirectUri).toBe("https://example.com/callback");
+  });
+
+  it("uses default redirect URI when OAUTH_REDIRECT_URI is not set", () => {
+    process.env.CONCEPT2_CLIENT_ID = "test-id";
+    process.env.CONCEPT2_CLIENT_SECRET = "test-secret";
+    delete process.env.OAUTH_REDIRECT_URI;
+    const config = concept2OAuthConfig();
+    expect(config?.redirectUri).toContain("localhost");
   });
 });
 
@@ -124,13 +147,19 @@ describe("Concept2Provider", () => {
     process.env = { ...originalEnv };
   });
 
-  it("validate returns error when missing env vars", () => {
+  it("validate returns error when CONCEPT2_CLIENT_ID is missing", () => {
     delete process.env.CONCEPT2_CLIENT_ID;
     delete process.env.CONCEPT2_CLIENT_SECRET;
     expect(new Concept2Provider().validate()).toContain("CONCEPT2_CLIENT_ID");
   });
 
-  it("validate returns null when set", () => {
+  it("validate returns error when CONCEPT2_CLIENT_SECRET is missing", () => {
+    process.env.CONCEPT2_CLIENT_ID = "test-id";
+    delete process.env.CONCEPT2_CLIENT_SECRET;
+    expect(new Concept2Provider().validate()).toContain("CONCEPT2_CLIENT_SECRET");
+  });
+
+  it("validate returns null when both are set", () => {
     process.env.CONCEPT2_CLIENT_ID = "id";
     process.env.CONCEPT2_CLIENT_SECRET = "secret";
     expect(new Concept2Provider().validate()).toBeNull();
@@ -141,7 +170,14 @@ describe("Concept2Provider", () => {
     process.env.CONCEPT2_CLIENT_SECRET = "secret";
     const setup = new Concept2Provider().authSetup();
     expect(setup.oauthConfig.clientId).toBe("id");
+    expect(setup.exchangeCode).toBeTypeOf("function");
     expect(setup.apiBaseUrl).toContain("concept2.com");
+  });
+
+  it("authSetup throws when env vars are missing", () => {
+    delete process.env.CONCEPT2_CLIENT_ID;
+    delete process.env.CONCEPT2_CLIENT_SECRET;
+    expect(() => new Concept2Provider().authSetup()).toThrow("CONCEPT2_CLIENT_ID");
   });
 
   it("sync returns error when no tokens", async () => {

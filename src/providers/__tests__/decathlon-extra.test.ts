@@ -6,6 +6,10 @@ import {
   parseDecathlonActivity,
 } from "../decathlon.ts";
 
+// ============================================================
+// Tests merged from decathlon-coverage.test.ts
+// ============================================================
+
 describe("mapDecathlonSport — all types", () => {
   it("maps known sport IDs from URI", () => {
     expect(mapDecathlonSport("/v2/sports/381")).toBe("running");
@@ -93,12 +97,44 @@ describe("decathlonOAuthConfig", () => {
     expect(decathlonOAuthConfig()).toBeNull();
   });
 
+  it("returns null when DECATHLON_CLIENT_SECRET is not set", () => {
+    process.env.DECATHLON_CLIENT_ID = "test-id";
+    delete process.env.DECATHLON_CLIENT_SECRET;
+    expect(decathlonOAuthConfig()).toBeNull();
+  });
+
   it("returns config when set", () => {
     process.env.DECATHLON_CLIENT_ID = "id";
     process.env.DECATHLON_CLIENT_SECRET = "secret";
     const config = decathlonOAuthConfig();
     expect(config?.clientId).toBe("id");
     expect(config?.authorizeUrl).toContain("decathlon.net");
+  });
+
+  it("returns config with scopes when both env vars are set", () => {
+    process.env.DECATHLON_CLIENT_ID = "test-id";
+    process.env.DECATHLON_CLIENT_SECRET = "test-secret";
+    const config = decathlonOAuthConfig();
+    expect(config).not.toBeNull();
+    expect(config?.clientSecret).toBe("test-secret");
+    expect(config?.scopes).toContain("openid");
+    expect(config?.scopes).toContain("profile");
+  });
+
+  it("uses custom OAUTH_REDIRECT_URI when set", () => {
+    process.env.DECATHLON_CLIENT_ID = "test-id";
+    process.env.DECATHLON_CLIENT_SECRET = "test-secret";
+    process.env.OAUTH_REDIRECT_URI = "https://example.com/callback";
+    const config = decathlonOAuthConfig();
+    expect(config?.redirectUri).toBe("https://example.com/callback");
+  });
+
+  it("uses default redirect URI when OAUTH_REDIRECT_URI is not set", () => {
+    process.env.DECATHLON_CLIENT_ID = "test-id";
+    process.env.DECATHLON_CLIENT_SECRET = "test-secret";
+    delete process.env.OAUTH_REDIRECT_URI;
+    const config = decathlonOAuthConfig();
+    expect(config?.redirectUri).toContain("localhost");
   });
 });
 
@@ -141,5 +177,30 @@ describe("DecathlonProvider", () => {
     // @ts-expect-error mock DB
     const result = await new DecathlonProvider().sync(mockDb, new Date("2026-01-01"));
     expect(result.errors.length).toBeGreaterThan(0);
+  });
+});
+
+describe("DecathlonProvider.authSetup()", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it("returns auth setup with OAuth config", () => {
+    process.env.DECATHLON_CLIENT_ID = "test-id";
+    process.env.DECATHLON_CLIENT_SECRET = "test-secret";
+    const provider = new DecathlonProvider();
+    const setup = provider.authSetup();
+    expect(setup.oauthConfig.clientId).toBe("test-id");
+    expect(setup.exchangeCode).toBeTypeOf("function");
+    expect(setup.apiBaseUrl).toContain("decathlon.net");
+  });
+
+  it("throws when env vars are missing", () => {
+    delete process.env.DECATHLON_CLIENT_ID;
+    delete process.env.DECATHLON_CLIENT_SECRET;
+    const provider = new DecathlonProvider();
+    expect(() => provider.authSetup()).toThrow("DECATHLON_CLIENT_ID");
   });
 });
