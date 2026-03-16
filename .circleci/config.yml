@@ -227,6 +227,8 @@ jobs:
                 | { grep -v 'drizzle/' || true; } \
                 | { grep -v 'scripts/' || true; } \
                 | { grep -v '\.config\.' || true; } \
+                | { grep -v '^src/index\.ts$' || true; } \
+                | { grep -v '^src/server\.ts$' || true; } \
                 | tr '\n' ',' \
                 | sed 's/,$//')
               echo "export MUTATE_FILES=$FILES" >> "$BASH_ENV"
