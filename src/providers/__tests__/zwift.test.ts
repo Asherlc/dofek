@@ -429,8 +429,8 @@ describe("ZwiftProvider.authSetup() — automatedLogin", () => {
     const setup = provider.authSetup();
     const result = await setup.automatedLogin?.("user@example.com", "password123");
 
-    expect(result.accessToken).toContain("eyJ");
-    expect(result.refreshToken).toBe("refresh-123");
-    expect(result.scopes).toContain("athleteId:");
+    expect(result?.accessToken).toContain("eyJ");
+    expect(result?.refreshToken).toBe("refresh-123");
+    expect(result?.scopes).toContain("athleteId:");
   });
 });

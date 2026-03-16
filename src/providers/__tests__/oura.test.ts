@@ -59,7 +59,9 @@ vi.mock("../../auth/oauth.ts", () => ({
     expiresAt: new Date("2027-01-01T00:00:00Z"),
     scopes: "daily",
   })),
-  getOAuthRedirectUri: vi.fn(() => "https://dofek.example.com/callback"),
+  getOAuthRedirectUri: vi.fn(
+    () => process.env.OAUTH_REDIRECT_URI_unencrypted ?? "https://dofek.example.com/callback",
+  ),
   refreshAccessToken: vi.fn(async () => ({
     accessToken: "refreshed-token",
     refreshToken: "refreshed-refresh",

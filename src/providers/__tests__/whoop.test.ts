@@ -732,11 +732,21 @@ describe("WhoopProvider.sync() — workout collection from cycles", () => {
   });
 });
 
+const defaultStrainFields = {
+  total_effective_volume_kg: 0,
+  raw_msk_strain_score: 0,
+  scaled_msk_strain_score: 0,
+  cardio_strain_score: 0,
+  cardio_strain_contribution_percent: 0,
+  msk_strain_contribution_percent: 0,
+};
+
 describe("parseWeightliftingWorkout — edge cases", () => {
   it("skips incomplete sets", () => {
     const response: WhoopWeightliftingWorkoutResponse = {
       activity_id: "act-1",
       user_id: 42,
+      ...defaultStrainFields,
       zone_durations: {
         zone0_to10_duration: 0,
         zone10_to20_duration: 0,
@@ -796,6 +806,7 @@ describe("parseWeightliftingWorkout — edge cases", () => {
     const response: WhoopWeightliftingWorkoutResponse = {
       activity_id: "act-2",
       user_id: 42,
+      ...defaultStrainFields,
       zone_durations: {
         zone0_to10_duration: 0,
         zone10_to20_duration: 0,
@@ -847,6 +858,7 @@ describe("parseWeightliftingWorkout — edge cases", () => {
     const response: WhoopWeightliftingWorkoutResponse = {
       activity_id: "act-3",
       user_id: 42,
+      ...defaultStrainFields,
       zone_durations: {
         zone0_to10_duration: 0,
         zone10_to20_duration: 0,
@@ -871,6 +883,7 @@ describe("parseWeightliftingWorkout — edge cases", () => {
     const response: WhoopWeightliftingWorkoutResponse = {
       activity_id: "act-4",
       user_id: 42,
+      ...defaultStrainFields,
       zone_durations: {
         zone0_to10_duration: 0,
         zone10_to20_duration: 0,
@@ -921,6 +934,7 @@ describe("parseWeightliftingWorkout — edge cases", () => {
     const response: WhoopWeightliftingWorkoutResponse = {
       activity_id: "act-5",
       user_id: 42,
+      ...defaultStrainFields,
       zone_durations: {
         zone0_to10_duration: 0,
         zone10_to20_duration: 0,
