@@ -369,12 +369,13 @@ describe("WhoopProvider.sync() (integration)", () => {
       scopes: "userId:10129",
     });
 
-    // Override bootstrap to return NO user ID
+    // Override bootstrap to return NO user ID — must come before whoopHandlers
+    // spread so MSW matches it first
     server.use(
-      ...whoopHandlers([fakeCycle()]),
       http.get("https://api.prod.whoop.com/users-service/v2/bootstrap/", () => {
         return HttpResponse.json({ profile: { name: "Test" } });
       }),
+      ...whoopHandlers([fakeCycle()]),
     );
 
     const provider = new WhoopProvider();

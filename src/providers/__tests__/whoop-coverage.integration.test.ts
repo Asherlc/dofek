@@ -377,7 +377,7 @@ describe("WhoopClient._fetchUserId — bootstrap HTTP failure", () => {
       }),
     );
 
-    const userId = await WhoopClient._fetchUserId("bad-token", globalThis.fetch);
+    const userId = await WhoopClient._fetchUserId("bad-token");
     expect(userId).toBeNull();
   });
 });
