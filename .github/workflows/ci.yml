@@ -73,7 +73,7 @@ jobs:
   docker:
     name: Docker (${{ matrix.target }})
     needs: [wait-for-ci]
-    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
