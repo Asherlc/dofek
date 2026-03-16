@@ -1,10 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   mapStravaActivityType,
   parseStravaActivity,
   parseStravaActivityList,
   type StravaActivity,
+  StravaClient,
+  StravaProvider,
+  StravaRateLimitError,
   type StravaStreamSet,
+  stravaOAuthConfig,
   stravaStreamsToMetricStream,
 } from "../strava.ts";
 

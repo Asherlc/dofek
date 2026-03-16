@@ -6,7 +6,7 @@ export interface DashboardLayout {
   collapsed: Record<string, boolean>;
 }
 
-export const DEFAULT_ORDER = [
+const DEFAULT_ORDER = [
   "healthMonitor",
   "topInsights",
   "weeklyReport",
@@ -44,7 +44,7 @@ export const SECTION_LABELS: Record<string, string> = {
   activities: "Recent Activities",
 };
 
-export interface DashboardLayoutContextValue {
+interface DashboardLayoutContextValue {
   layout: DashboardLayout;
   setOrder: (order: string[]) => void;
   toggleHidden: (id: string) => void;

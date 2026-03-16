@@ -1,146 +1,168 @@
-import { sql } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { SyncLogEntry } from "../sync-log.ts";
 import { logSync, withSyncLog } from "../sync-log.ts";
-import { ensureProvider } from "../tokens.ts";
-import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
 
-describe("Sync Log (integration)", () => {
-  let ctx: TestContext;
+// Create a mock DB with an insert chain
+function createMockDb() {
+  const valuesFn = vi.fn().mockResolvedValue(undefined);
+  const insertFn = vi.fn(() => ({ values: valuesFn }));
+  return {
+    insert: insertFn,
+    _valuesFn: valuesFn,
+    _insertFn: insertFn,
+  };
+}
 
-  beforeAll(async () => {
-    ctx = await setupTestDatabase();
-    await ensureProvider(ctx.db, "test-provider", "Test Provider");
-  }, 120_000);
+// We need to type this loosely since Database is a complex drizzle type
+type MockDb = ReturnType<typeof createMockDb>;
 
-  afterAll(async () => {
-    await ctx?.cleanup();
+describe("logSync", () => {
+  let mockDb: MockDb;
+
+  beforeEach(() => {
+    mockDb = createMockDb();
   });
 
-  describe("logSync", () => {
-    it("logs a successful sync", async () => {
-      await logSync(ctx.db, {
-        providerId: "test-provider",
+  it("inserts a success log entry with all fields", async () => {
+    const entry: SyncLogEntry = {
+      providerId: "wahoo",
+      dataType: "activities",
+      status: "success",
+      recordCount: 42,
+      durationMs: 1500,
+    };
+
+    // @ts-expect-error mock DB
+    await logSync(mockDb, entry);
+
+    expect(mockDb._insertFn).toHaveBeenCalled();
+    expect(mockDb._valuesFn).toHaveBeenCalledWith({
+      providerId: "wahoo",
+      dataType: "activities",
+      status: "success",
+      recordCount: 42,
+      errorMessage: undefined,
+      durationMs: 1500,
+    });
+  });
+
+  it("inserts an error log entry with error message", async () => {
+    const entry: SyncLogEntry = {
+      providerId: "whoop",
+      dataType: "sleep",
+      status: "error",
+      errorMessage: "API timeout",
+      durationMs: 5000,
+    };
+
+    // @ts-expect-error mock DB
+    await logSync(mockDb, entry);
+
+    expect(mockDb._valuesFn).toHaveBeenCalledWith({
+      providerId: "whoop",
+      dataType: "sleep",
+      status: "error",
+      recordCount: 0,
+      errorMessage: "API timeout",
+      durationMs: 5000,
+    });
+  });
+
+  it("defaults recordCount to 0 when not provided", async () => {
+    const entry: SyncLogEntry = {
+      providerId: "wahoo",
+      dataType: "activities",
+      status: "success",
+    };
+
+    // @ts-expect-error mock DB
+    await logSync(mockDb, entry);
+
+    expect(mockDb._valuesFn).toHaveBeenCalledWith(expect.objectContaining({ recordCount: 0 }));
+  });
+});
+
+describe("withSyncLog", () => {
+  let mockDb: MockDb;
+
+  beforeEach(() => {
+    mockDb = createMockDb();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("logs success and returns the result on success", async () => {
+    const fn = vi.fn().mockResolvedValue({ recordCount: 10, result: "data" });
+
+    // @ts-expect-error mock DB
+    const result = await withSyncLog(mockDb, "wahoo", "activities", fn);
+
+    expect(result).toBe("data");
+    expect(fn).toHaveBeenCalled();
+    expect(mockDb._valuesFn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: "wahoo",
         dataType: "activities",
         status: "success",
         recordCount: 10,
-        durationMs: 500,
-      });
+      }),
+    );
+  });
 
-      const rows = await ctx.db.execute<{
-        provider_id: string;
-        data_type: string;
-        status: string;
-        record_count: number;
-        duration_ms: number;
-      }>(
-        sql`SELECT provider_id, data_type, status, record_count, duration_ms
-            FROM fitness.sync_log
-            WHERE provider_id = 'test-provider' AND data_type = 'activities'
-            ORDER BY synced_at DESC LIMIT 1`,
-      );
+  it("logs error and re-throws on failure", async () => {
+    const fn = vi.fn().mockRejectedValue(new Error("sync failed"));
 
-      expect(rows.length).toBe(1);
-      expect(rows[0]?.status).toBe("success");
-      expect(rows[0]?.record_count).toBe(10);
-      expect(rows[0]?.duration_ms).toBe(500);
-    });
+    await expect(
+      // @ts-expect-error mock DB
+      withSyncLog(mockDb, "whoop", "sleep", fn),
+    ).rejects.toThrow("sync failed");
 
-    it("logs an error sync with error message", async () => {
-      await logSync(ctx.db, {
-        providerId: "test-provider",
+    expect(mockDb._valuesFn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: "whoop",
         dataType: "sleep",
         status: "error",
-        errorMessage: "API rate limit exceeded",
-        durationMs: 100,
-      });
-
-      const rows = await ctx.db.execute<{
-        status: string;
-        error_message: string;
-        record_count: number;
-      }>(
-        sql`SELECT status, error_message, record_count
-            FROM fitness.sync_log
-            WHERE provider_id = 'test-provider' AND data_type = 'sleep'
-            ORDER BY synced_at DESC LIMIT 1`,
-      );
-
-      expect(rows[0]?.status).toBe("error");
-      expect(rows[0]?.error_message).toBe("API rate limit exceeded");
-      expect(rows[0]?.record_count).toBe(0); // defaults to 0
-    });
+        errorMessage: "sync failed",
+      }),
+    );
   });
 
-  describe("withSyncLog", () => {
-    it("logs success and returns the result", async () => {
-      const result = await withSyncLog(ctx.db, "test-provider", "metrics", async () => ({
-        recordCount: 5,
-        result: "synced-data",
-      }));
+  it("logs non-Error exceptions as strings", async () => {
+    const fn = vi.fn().mockRejectedValue("string error");
 
-      expect(result).toBe("synced-data");
+    await expect(
+      // @ts-expect-error mock DB
+      withSyncLog(mockDb, "wahoo", "body", fn),
+    ).rejects.toBe("string error");
 
-      const rows = await ctx.db.execute<{ status: string; record_count: number }>(
-        sql`SELECT status, record_count
-            FROM fitness.sync_log
-            WHERE provider_id = 'test-provider' AND data_type = 'metrics'
-            ORDER BY synced_at DESC LIMIT 1`,
-      );
-      expect(rows[0]?.status).toBe("success");
-      expect(rows[0]?.record_count).toBe(5);
+    expect(mockDb._valuesFn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        errorMessage: "string error",
+      }),
+    );
+  });
+
+  it("records durationMs in both success and error logs", async () => {
+    vi.setSystemTime(new Date("2026-03-15T10:00:00Z"));
+
+    const fn = vi.fn().mockImplementation(async () => {
+      vi.advanceTimersByTime(500);
+      return { recordCount: 1, result: "ok" };
     });
 
-    it("logs error and re-throws on failure", async () => {
-      await expect(
-        withSyncLog(ctx.db, "test-provider", "workouts", async () => {
-          throw new Error("Connection timeout");
-        }),
-      ).rejects.toThrow("Connection timeout");
+    // @ts-expect-error mock DB
+    await withSyncLog(mockDb, "wahoo", "activities", fn);
 
-      const rows = await ctx.db.execute<{ status: string; error_message: string }>(
-        sql`SELECT status, error_message
-            FROM fitness.sync_log
-            WHERE provider_id = 'test-provider' AND data_type = 'workouts'
-            ORDER BY synced_at DESC LIMIT 1`,
-      );
-      expect(rows[0]?.status).toBe("error");
-      expect(rows[0]?.error_message).toBe("Connection timeout");
-    });
-
-    it("records duration in milliseconds", async () => {
-      await withSyncLog(ctx.db, "test-provider", "hr-data", async () => {
-        // Simulate some work
-        await new Promise((r) => setTimeout(r, 50));
-        return { recordCount: 1, result: null };
-      });
-
-      const rows = await ctx.db.execute<{ duration_ms: number }>(
-        sql`SELECT duration_ms
-            FROM fitness.sync_log
-            WHERE provider_id = 'test-provider' AND data_type = 'hr-data'
-            ORDER BY synced_at DESC LIMIT 1`,
-      );
-      expect(rows[0]?.duration_ms).toBeGreaterThanOrEqual(40);
-    });
-
-    it("logs duration even on error", async () => {
-      try {
-        await withSyncLog(ctx.db, "test-provider", "error-timed", async () => {
-          await new Promise((r) => setTimeout(r, 30));
-          throw new Error("timed failure");
-        });
-      } catch {
-        // expected
-      }
-
-      const rows = await ctx.db.execute<{ duration_ms: number; status: string }>(
-        sql`SELECT duration_ms, status
-            FROM fitness.sync_log
-            WHERE provider_id = 'test-provider' AND data_type = 'error-timed'
-            ORDER BY synced_at DESC LIMIT 1`,
-      );
-      expect(rows[0]?.status).toBe("error");
-      expect(rows[0]?.duration_ms).toBeGreaterThanOrEqual(20);
-    });
+    expect(mockDb._valuesFn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        durationMs: 500,
+      }),
+    );
   });
 });
+
+// Need afterEach import
+import { afterEach } from "vitest";

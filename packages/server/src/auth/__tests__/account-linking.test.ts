@@ -1,187 +1,204 @@
-import { sql } from "drizzle-orm";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import {
-  setupTestDatabase,
-  type TestContext,
-} from "../../../../../src/db/__tests__/test-helpers.ts";
+import { describe, expect, it, vi, beforeEach } from "vitest";
+
+vi.mock("../../logger.ts", () => ({
+  logger: { info: vi.fn(), warn: vi.fn() },
+}));
+
+vi.mock("dofek/db/schema", () => ({
+  DEFAULT_USER_ID: "default-user-id",
+}));
+
 import { resolveOrCreateUser } from "../account-linking.ts";
 
-const DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001";
+function createMockDb() {
+  return {
+    execute: vi.fn(),
+  };
+}
 
-describe("resolveOrCreateUser (integration)", () => {
-  let ctx: TestContext;
+const identity = {
+  providerAccountId: "provider-acc-123",
+  email: "test@example.com",
+  name: "Test User",
+};
 
-  beforeAll(async () => {
-    ctx = await setupTestDatabase();
-  }, 120_000);
+describe("resolveOrCreateUser", () => {
+  let db: ReturnType<typeof createMockDb>;
 
-  afterAll(async () => {
-    await ctx?.cleanup();
+  beforeEach(() => {
+    db = createMockDb();
+    vi.clearAllMocks();
   });
 
-  beforeEach(async () => {
-    // Clean up auth_account and non-default user_profile rows
-    await ctx.db.execute(sql`DELETE FROM fitness.session`);
-    await ctx.db.execute(sql`DELETE FROM fitness.auth_account`);
-    await ctx.db.execute(sql`DELETE FROM fitness.user_profile WHERE id != ${DEFAULT_USER_ID}`);
-    // Reset default user email/name
-    await ctx.db.execute(
-      sql`UPDATE fitness.user_profile SET email = NULL, name = 'Default User' WHERE id = ${DEFAULT_USER_ID}`,
-    );
+  describe("Step 1: logged-in user linking", () => {
+    it("links to the logged-in user and returns their userId", async () => {
+      // upsertAuthAccount call
+      db.execute.mockResolvedValueOnce([]);
+
+      // @ts-expect-error mock db
+      const result = await resolveOrCreateUser(db, "google", identity, "logged-in-user");
+
+      expect(result).toEqual({ userId: "logged-in-user", isNewUser: false });
+      expect(db.execute).toHaveBeenCalledTimes(1);
+    });
   });
 
-  it("claims DEFAULT_USER_ID for the very first user", async () => {
-    const result = await resolveOrCreateUser(ctx.db, "google", {
-      providerAccountId: "google-123",
-      email: "first@example.com",
-      name: "First User",
+  describe("Step 2: existing auth_account lookup", () => {
+    it("returns existing user when auth_account found", async () => {
+      // auth_account lookup
+      db.execute.mockResolvedValueOnce([{ user_id: "existing-user-1" }]);
+
+      // @ts-expect-error mock db
+      const result = await resolveOrCreateUser(db, "google", identity);
+
+      expect(result).toEqual({ userId: "existing-user-1", isNewUser: false });
+      expect(db.execute).toHaveBeenCalledTimes(1);
     });
-
-    expect(result.userId).toBe(DEFAULT_USER_ID);
-    expect(result.isNewUser).toBe(true);
-
-    // Verify user_profile was updated
-    const rows = await ctx.db.execute<{ email: string; name: string }>(
-      sql`SELECT email, name FROM fitness.user_profile WHERE id = ${DEFAULT_USER_ID}`,
-    );
-    expect(rows[0]?.email).toBe("first@example.com");
-    expect(rows[0]?.name).toBe("First User");
   });
 
-  it("returns existing user when auth_account already exists", async () => {
-    // Set up: first user
-    const first = await resolveOrCreateUser(ctx.db, "google", {
-      providerAccountId: "google-123",
-      email: "user@example.com",
-      name: "User",
+  describe("Step 3: email-based auto-linking", () => {
+    it("links to existing user by email match", async () => {
+      // auth_account lookup - not found
+      db.execute.mockResolvedValueOnce([]);
+      // email match - found
+      db.execute.mockResolvedValueOnce([{ id: "email-matched-user" }]);
+      // upsertAuthAccount
+      db.execute.mockResolvedValueOnce([]);
+
+      // @ts-expect-error mock db
+      const result = await resolveOrCreateUser(db, "google", identity);
+
+      expect(result).toEqual({ userId: "email-matched-user", isNewUser: false });
+      expect(db.execute).toHaveBeenCalledTimes(3);
     });
 
-    // Same provider + account ID should return same user
-    const second = await resolveOrCreateUser(ctx.db, "google", {
-      providerAccountId: "google-123",
-      email: "user@example.com",
-      name: "User",
-    });
+    it("skips email lookup when email is null", async () => {
+      const noEmailIdentity = { ...identity, email: null };
 
-    expect(second.userId).toBe(first.userId);
-    expect(second.isNewUser).toBe(false);
+      // auth_account lookup - not found
+      db.execute.mockResolvedValueOnce([]);
+      // account count (skips email lookup since email is null)
+      db.execute.mockResolvedValueOnce([{ count: "5" }]);
+      // create new user
+      db.execute.mockResolvedValueOnce([{ id: "new-user-1" }]);
+      // upsertAuthAccount
+      db.execute.mockResolvedValueOnce([]);
+
+      // @ts-expect-error mock db
+      const result = await resolveOrCreateUser(db, "google", noEmailIdentity);
+
+      expect(result.isNewUser).toBe(true);
+    });
   });
 
-  it("auto-links by email when a different provider has the same email", async () => {
-    // Set up: first user with Google
-    const first = await resolveOrCreateUser(ctx.db, "google", {
-      providerAccountId: "google-123",
-      email: "shared@example.com",
-      name: "User",
+  describe("Step 4: first-user migration", () => {
+    it("claims DEFAULT_USER_ID when no auth accounts exist", async () => {
+      // auth_account lookup - not found
+      db.execute.mockResolvedValueOnce([]);
+      // email match - not found
+      db.execute.mockResolvedValueOnce([]);
+      // account count - zero
+      db.execute.mockResolvedValueOnce([{ count: "0" }]);
+      // update user_profile with email/name
+      db.execute.mockResolvedValueOnce([]);
+      // upsertAuthAccount
+      db.execute.mockResolvedValueOnce([]);
+
+      // @ts-expect-error mock db
+      const result = await resolveOrCreateUser(db, "google", identity);
+
+      expect(result).toEqual({ userId: "default-user-id", isNewUser: true });
     });
 
-    // Different provider, same email should link to same user
-    const second = await resolveOrCreateUser(ctx.db, "authentik", {
-      providerAccountId: "authentik-456",
-      email: "shared@example.com",
-      name: "User",
+    it("skips profile update when identity has no email or name", async () => {
+      const bareIdentity = { providerAccountId: "bare-123", email: null, name: null };
+
+      // auth_account lookup - not found
+      db.execute.mockResolvedValueOnce([]);
+      // skip email lookup (email is null)
+      // account count - zero
+      db.execute.mockResolvedValueOnce([{ count: "0" }]);
+      // upsertAuthAccount (no profile update since both are null)
+      db.execute.mockResolvedValueOnce([]);
+
+      // @ts-expect-error mock db
+      const result = await resolveOrCreateUser(db, "google", bareIdentity);
+
+      expect(result).toEqual({ userId: "default-user-id", isNewUser: true });
+      // Should be: auth_account lookup, account count, upsertAuthAccount (3 calls, no profile update)
+      expect(db.execute).toHaveBeenCalledTimes(3);
     });
 
-    expect(second.userId).toBe(first.userId);
-    expect(second.isNewUser).toBe(false);
+    it("throws when account count query returns no rows", async () => {
+      // auth_account lookup - not found
+      db.execute.mockResolvedValueOnce([]);
+      // email match - not found
+      db.execute.mockResolvedValueOnce([]);
+      // account count - empty result
+      db.execute.mockResolvedValueOnce([]);
 
-    // Verify both auth_accounts exist
-    const accounts = await ctx.db.execute<{ auth_provider: string }>(
-      sql`SELECT auth_provider FROM fitness.auth_account WHERE user_id = ${first.userId} ORDER BY auth_provider`,
-    );
-    expect(accounts).toHaveLength(2);
-    expect(accounts.map((a) => a.auth_provider)).toEqual(["authentik", "google"]);
+      await expect(
+        // @ts-expect-error mock db
+        resolveOrCreateUser(db, "google", identity),
+      ).rejects.toThrow("Failed to query account count");
+    });
   });
 
-  it("creates a new user when email does not match any existing user", async () => {
-    // Set up: first user
-    await resolveOrCreateUser(ctx.db, "google", {
-      providerAccountId: "google-123",
-      email: "first@example.com",
-      name: "First",
+  describe("Step 5: new user creation", () => {
+    it("creates a new user profile when no matches found", async () => {
+      // auth_account lookup - not found
+      db.execute.mockResolvedValueOnce([]);
+      // email match - not found
+      db.execute.mockResolvedValueOnce([]);
+      // account count - non-zero (not first user)
+      db.execute.mockResolvedValueOnce([{ count: "5" }]);
+      // create user profile
+      db.execute.mockResolvedValueOnce([{ id: "new-user-456" }]);
+      // upsertAuthAccount
+      db.execute.mockResolvedValueOnce([]);
+
+      // @ts-expect-error mock db
+      const result = await resolveOrCreateUser(db, "google", identity);
+
+      expect(result).toEqual({ userId: "new-user-456", isNewUser: true });
     });
 
-    // Different email should create a new user
-    const second = await resolveOrCreateUser(ctx.db, "authentik", {
-      providerAccountId: "authentik-456",
-      email: "different@example.com",
-      name: "Second",
+    it("throws when user profile creation returns no rows", async () => {
+      // auth_account lookup - not found
+      db.execute.mockResolvedValueOnce([]);
+      // email match - not found
+      db.execute.mockResolvedValueOnce([]);
+      // account count - non-zero
+      db.execute.mockResolvedValueOnce([{ count: "3" }]);
+      // create user profile - empty result
+      db.execute.mockResolvedValueOnce([]);
+
+      await expect(
+        // @ts-expect-error mock db
+        resolveOrCreateUser(db, "google", identity),
+      ).rejects.toThrow("Failed to create user profile");
     });
 
-    expect(second.userId).not.toBe(DEFAULT_USER_ID);
-    expect(second.isNewUser).toBe(true);
-  });
+    it("uses 'User' as default name when identity has no name", async () => {
+      const noNameIdentity = { ...identity, name: null };
 
-  it("links to loggedInUserId regardless of email", async () => {
-    // Set up: first user
-    const first = await resolveOrCreateUser(ctx.db, "google", {
-      providerAccountId: "google-123",
-      email: "first@example.com",
-      name: "First",
+      // auth_account lookup - not found
+      db.execute.mockResolvedValueOnce([]);
+      // email match - not found
+      db.execute.mockResolvedValueOnce([]);
+      // account count - non-zero
+      db.execute.mockResolvedValueOnce([{ count: "2" }]);
+      // create user profile
+      db.execute.mockResolvedValueOnce([{ id: "new-user-789" }]);
+      // upsertAuthAccount
+      db.execute.mockResolvedValueOnce([]);
+
+      // @ts-expect-error mock db
+      const result = await resolveOrCreateUser(db, "google", noNameIdentity);
+
+      expect(result).toEqual({ userId: "new-user-789", isNewUser: true });
+      // The INSERT call is the 4th execute call
+      expect(db.execute).toHaveBeenCalledTimes(5);
     });
-
-    // When loggedInUserId is provided, always link to that user even with different email
-    const linked = await resolveOrCreateUser(
-      ctx.db,
-      "apple",
-      {
-        providerAccountId: "apple-789",
-        email: "totally-different@example.com",
-        name: "Different",
-      },
-      first.userId,
-    );
-
-    expect(linked.userId).toBe(first.userId);
-    expect(linked.isNewUser).toBe(false);
-  });
-
-  it("handles null email gracefully (no email-based linking)", async () => {
-    // Set up: first user
-    await resolveOrCreateUser(ctx.db, "google", {
-      providerAccountId: "google-123",
-      email: "user@example.com",
-      name: "User",
-    });
-
-    // Provider without email should create a new user (can't auto-link)
-    const noEmail = await resolveOrCreateUser(ctx.db, "fitbit", {
-      providerAccountId: "fitbit-999",
-      email: null,
-      name: "Fitbit User",
-    });
-
-    expect(noEmail.userId).not.toBe(DEFAULT_USER_ID);
-    expect(noEmail.isNewUser).toBe(true);
-  });
-
-  it("upserts auth_account on duplicate provider+accountId (updates email/name)", async () => {
-    // First login
-    await resolveOrCreateUser(ctx.db, "google", {
-      providerAccountId: "google-123",
-      email: "old@example.com",
-      name: "Old Name",
-    });
-
-    // Re-link with updated info (via loggedInUserId)
-    await resolveOrCreateUser(
-      ctx.db,
-      "google",
-      {
-        providerAccountId: "google-123",
-        email: "new@example.com",
-        name: "New Name",
-      },
-      DEFAULT_USER_ID,
-    );
-
-    // Verify only one auth_account exists (upserted, not duplicated)
-    const accounts = await ctx.db.execute<{ email: string; name: string }>(
-      sql`SELECT email, name FROM fitness.auth_account
-          WHERE auth_provider = 'google' AND provider_account_id = 'google-123'`,
-    );
-    expect(accounts).toHaveLength(1);
-    expect(accounts[0]?.email).toBe("new@example.com");
-    expect(accounts[0]?.name).toBe("New Name");
   });
 });

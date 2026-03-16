@@ -20,7 +20,6 @@ export default defineConfig({
         "src/index.ts",
         "src/server.ts",
         "src/providers/types.ts",
-        "src/fit/index.ts",
         "src/auth/index.ts",
         "packages/server/src/types.ts",
         "src/db/schema.ts",

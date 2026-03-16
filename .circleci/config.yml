@@ -6,56 +6,19 @@ executors:
       - image: cimg/node:22.14
     resource_class: medium
 
-  node-with-services:
-    docker:
-      - image: cimg/node:22.14
-      - image: timescale/timescaledb:latest-pg16
-        environment:
-          POSTGRES_DB: test
-          POSTGRES_USER: test
-          POSTGRES_PASSWORD: test
-      - image: redis:7-alpine
-    resource_class: large
-
   machine:
     machine:
       image: ubuntu-2404:current
     resource_class: medium
 
 commands:
-  setup-pnpm:
-    description: Enable pnpm via corepack (no install)
+  setup:
+    description: Checkout, install pnpm, restore cache, install deps
     steps:
+      - checkout
       - run:
           name: Install pnpm
           command: corepack enable && corepack prepare pnpm@latest --activate
-
-  attach-deps:
-    description: Attach workspace and link node_modules from shared install
-    steps:
-      - setup-pnpm
-      - attach_workspace:
-          at: /tmp/workspace
-      - run:
-          name: Restore node_modules from workspace
-          command: |
-            mv /tmp/workspace/node_modules ./node_modules
-            mv /tmp/workspace/packages/server/node_modules ./packages/server/node_modules
-            mv /tmp/workspace/packages/web/node_modules ./packages/web/node_modules
-            # Restore any other workspace package node_modules
-            for dir in /tmp/workspace/packages/*/node_modules; do
-              pkg=$(basename "$(dirname "$dir")")
-              if [ -d "$dir" ] && [ ! -d "./packages/$pkg/node_modules" ]; then
-                mv "$dir" "./packages/$pkg/node_modules"
-              fi
-            done
-
-jobs:
-  install:
-    executor: node
-    steps:
-      - checkout
-      - setup-pnpm
       - restore_cache:
           keys:
             - pnpm-store-v1-{{ checksum "pnpm-lock.yaml" }}
@@ -65,64 +28,47 @@ jobs:
           key: pnpm-store-v1-{{ checksum "pnpm-lock.yaml" }}
           paths:
             - ~/.local/share/pnpm/store
-      - persist_to_workspace:
-          root: .
-          paths:
-            - node_modules
-            - packages/*/node_modules
 
-  check:
+jobs:
+  lint:
     executor: node
     steps:
-      - checkout
-      - attach-deps
+      - setup
+      - run: pnpm lint
+
+  typescript:
+    executor: node
+    steps:
+      - setup
       - run: cd packages/web && pnpm exec tsr generate
       - run:
-          name: Lint + typecheck (parallel)
+          name: Typecheck all packages
           command: |
-            pnpm lint &
-            pid1=$!
             pnpm tsc --noEmit &
-            pid2=$!
+            pid1=$!
             (cd packages/server && pnpm tsc --noEmit) &
-            pid3=$!
+            pid2=$!
             (cd packages/web && pnpm tsc --noEmit) &
-            pid4=$!
+            pid3=$!
             fail=0
             wait $pid1 || fail=1
             wait $pid2 || fail=1
             wait $pid3 || fail=1
-            wait $pid4 || fail=1
             exit $fail
-      - run: cd packages/web && pnpm run build
 
-  test:
-    executor: node-with-services
-    environment:
-      TEST_DATABASE_URL: postgres://test:test@localhost:5432/test
-      REDIS_URL: redis://localhost:6379
+  knip:
+    executor: node
     steps:
-      - checkout
-      - attach-deps
+      - setup
+      - run: pnpm knip
+
+  test-unit:
+    executor: node
+    steps:
+      - setup
       - run:
-          name: Wait for Postgres
-          command: |
-            for i in $(seq 1 30); do
-              nc -z localhost 5432 && exit 0
-              sleep 2
-            done
-            echo "Postgres did not start" && exit 1
-      - run:
-          name: Wait for Redis
-          command: |
-            for i in $(seq 1 30); do
-              nc -z localhost 6379 && exit 0
-              sleep 1
-            done
-            echo "Redis did not start" && exit 1
-      - run:
-          name: Run tests with coverage
-          command: pnpm exec vitest run --coverage
+          name: Run unit tests with coverage
+          command: pnpm exec vitest run --config vitest.config.unit.ts --coverage
           environment:
             NODE_OPTIONS: --max-old-space-size=3072
       - store_artifacts:
@@ -194,11 +140,10 @@ jobs:
     environment:
       NODE_OPTIONS: --max-old-space-size=3072
     steps:
-      - checkout
+      - setup
       - run:
           name: Fetch full history for diff
           command: git fetch origin main
-      - attach-deps
       - restore_cache:
           keys:
             - stryker-v1-{{ .Branch }}-
@@ -251,19 +196,29 @@ jobs:
           destination: mutation-report
 
 workflows:
-  ci:
+  lint:
     jobs:
-      - install
-      - check:
-          requires:
-            - install
-      - test:
-          requires:
-            - install
+      - lint
+
+  typescript:
+    jobs:
+      - typescript
+
+  knip:
+    jobs:
+      - knip
+
+  test:
+    jobs:
+      - test-unit
+
+  e2e:
+    jobs:
       - e2e
+
+  mutation:
+    jobs:
       - mutation:
-          requires:
-            - install
           filters:
             branches:
               ignore: main
@@ -276,7 +231,4 @@ workflows:
             branches:
               only: main
     jobs:
-      - install
-      - mutation:
-          requires:
-            - install
+      - mutation

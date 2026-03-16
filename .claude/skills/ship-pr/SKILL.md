@@ -28,7 +28,7 @@ cd packages/web && pnpm tsc --noEmit
 pnpm test
 ```
 
-If checks fail, attempt to fix lint/type errors automatically. If tests fail, stop and report the failures to the user.
+ALL errors must be fixed before proceeding — regardless of whether they were introduced in this branch or already existed on main. Fix lint/type errors automatically. If tests fail, stop and report the failures to the user.
 
 ### 2. Push and open PR
 

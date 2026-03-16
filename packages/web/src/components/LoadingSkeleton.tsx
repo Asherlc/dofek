@@ -1,18 +1,3 @@
-interface LoadingSkeletonProps {
-  height?: number | string;
-  className?: string;
-}
-
-export function LoadingSkeleton({ height = 200, className = "" }: LoadingSkeletonProps) {
-  const style = typeof height === "number" ? { height } : { height };
-  return (
-    <div
-      className={`flex items-center justify-center rounded-lg bg-zinc-800/50 animate-pulse ${className}`}
-      style={style}
-    />
-  );
-}
-
 export function ChartLoadingSkeleton({ height = 200 }: { height?: number }) {
   return (
     <div className="flex items-center justify-center" style={{ height }}>
