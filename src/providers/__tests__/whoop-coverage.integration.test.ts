@@ -173,7 +173,9 @@ describe("WhoopClient — verifyCode", () => {
   it("verifies code via SMS_MFA challenge", async () => {
     clientServer.use(
       http.post("https://api.prod.whoop.com/auth-service/v3/whoop/", async ({ request }) => {
-        const body = (await request.json()) as Record<string, unknown>;
+        const raw = await request.json();
+        const body =
+          typeof raw === "object" && raw !== null ? (raw satisfies Record<string, unknown>) : {};
         if (body.ChallengeName === "SMS_MFA") {
           return HttpResponse.json({
             AuthenticationResult: { AccessToken: "verified-tok", RefreshToken: "verified-ref" },
@@ -199,7 +201,9 @@ describe("WhoopClient — verifyCode", () => {
 
     clientServer.use(
       http.post("https://api.prod.whoop.com/auth-service/v3/whoop/", async ({ request }) => {
-        const body = (await request.json()) as Record<string, unknown>;
+        const raw = await request.json();
+        const body =
+          typeof raw === "object" && raw !== null ? (raw satisfies Record<string, unknown>) : {};
         challengeNames.push(String(body.ChallengeName));
         if (body.ChallengeName === "SMS_MFA") {
           return HttpResponse.json(
