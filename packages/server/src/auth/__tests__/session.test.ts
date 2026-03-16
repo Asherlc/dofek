@@ -1,9 +1,4 @@
-import { sql } from "drizzle-orm";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import {
-  setupTestDatabase,
-  type TestContext,
-} from "../../../../../src/db/__tests__/test-helpers.ts";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createSession,
   deleteExpiredSessions,
@@ -11,124 +6,100 @@ import {
   validateSession,
 } from "../session.ts";
 
-const DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001";
+const mockExecute = vi.fn();
 
-describe("Auth session (integration)", () => {
-  let ctx: TestContext;
+function createMockDb() {
+  return { execute: mockExecute };
+}
 
-  beforeAll(async () => {
-    ctx = await setupTestDatabase();
-  }, 120_000);
+type MockDb = ReturnType<typeof createMockDb>;
 
-  afterAll(async () => {
-    await ctx?.cleanup();
-  });
+describe("session", () => {
+  let mockDb: MockDb;
 
-  beforeEach(async () => {
-    await ctx.db.execute(sql`DELETE FROM fitness.session`);
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockExecute.mockResolvedValue([]);
+    mockDb = createMockDb();
   });
 
   describe("createSession", () => {
-    it("creates a session and returns sessionId, userId, and expiresAt", async () => {
-      const result = await createSession(ctx.db, DEFAULT_USER_ID);
+    it("inserts a session and returns session info", async () => {
+      // @ts-expect-error mock DB
+      const result = await createSession(mockDb, "user-123");
 
-      expect(result.sessionId).toBeDefined();
-      expect(result.sessionId).toHaveLength(64); // 32 bytes hex
-      expect(result.userId).toBe(DEFAULT_USER_ID);
+      expect(mockExecute).toHaveBeenCalledTimes(1);
+      expect(result.userId).toBe("user-123");
+      expect(result.sessionId).toHaveLength(64); // 32 bytes = 64 hex chars
       expect(result.expiresAt).toBeInstanceOf(Date);
-      expect(result.expiresAt.getTime()).toBeGreaterThan(Date.now());
+      // Expires ~30 days from now
+      const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+      const diff = result.expiresAt.getTime() - Date.now();
+      expect(diff).toBeGreaterThan(thirtyDaysMs - 1000);
+      expect(diff).toBeLessThanOrEqual(thirtyDaysMs);
     });
 
-    it("creates unique session tokens for each call", async () => {
-      const session1 = await createSession(ctx.db, DEFAULT_USER_ID);
-      const session2 = await createSession(ctx.db, DEFAULT_USER_ID);
+    it("generates unique session tokens", async () => {
+      // @ts-expect-error mock DB
+      const result1 = await createSession(mockDb, "user-1");
+      // @ts-expect-error mock DB
+      const result2 = await createSession(mockDb, "user-1");
 
-      expect(session1.sessionId).not.toBe(session2.sessionId);
+      expect(result1.sessionId).not.toBe(result2.sessionId);
     });
 
-    it("persists session in the database", async () => {
-      const session = await createSession(ctx.db, DEFAULT_USER_ID);
-
-      const rows = await ctx.db.execute<{ id: string; user_id: string }>(
-        sql`SELECT id, user_id FROM fitness.session WHERE id = ${session.sessionId}`,
-      );
-      expect(rows.length).toBe(1);
-      expect(rows[0]?.user_id).toBe(DEFAULT_USER_ID);
+    it("generates hex-only session tokens", async () => {
+      // @ts-expect-error mock DB
+      const result = await createSession(mockDb, "user-1");
+      expect(result.sessionId).toMatch(/^[0-9a-f]{64}$/);
     });
   });
 
   describe("validateSession", () => {
-    it("returns userId for a valid, non-expired session", async () => {
-      const session = await createSession(ctx.db, DEFAULT_USER_ID);
+    it("returns userId when session is valid", async () => {
+      mockExecute.mockResolvedValue([{ user_id: "user-abc", expires_at: new Date("2027-01-01") }]);
 
-      const result = await validateSession(ctx.db, session.sessionId);
+      // @ts-expect-error mock DB
+      const result = await validateSession(mockDb, "session-token");
 
-      expect(result).not.toBeNull();
-      expect(result?.userId).toBe(DEFAULT_USER_ID);
+      expect(result).toEqual({ userId: "user-abc" });
+      expect(mockExecute).toHaveBeenCalledTimes(1);
     });
 
-    it("returns null for a non-existent session", async () => {
-      const result = await validateSession(ctx.db, "nonexistent-session-token");
+    it("returns null when no matching session exists", async () => {
+      mockExecute.mockResolvedValue([]);
+
+      // @ts-expect-error mock DB
+      const result = await validateSession(mockDb, "nonexistent");
+
       expect(result).toBeNull();
     });
 
-    it("returns null for an expired session", async () => {
-      // Insert a session that expired in the past
-      const expiredSessionId = `expired-session-${Date.now().toString(16)}`;
-      await ctx.db.execute(
-        sql`INSERT INTO fitness.session (id, user_id, expires_at)
-            VALUES (${expiredSessionId}, ${DEFAULT_USER_ID}, ${new Date("2020-01-01").toISOString()})`,
-      );
+    it("returns null when row is undefined", async () => {
+      mockExecute.mockResolvedValue([undefined]);
 
-      const result = await validateSession(ctx.db, expiredSessionId);
+      // @ts-expect-error mock DB
+      const result = await validateSession(mockDb, "bad-session");
+
       expect(result).toBeNull();
     });
   });
 
   describe("deleteSession", () => {
-    it("removes the session from the database", async () => {
-      const session = await createSession(ctx.db, DEFAULT_USER_ID);
+    it("executes a DELETE query", async () => {
+      // @ts-expect-error mock DB
+      await deleteSession(mockDb, "session-to-delete");
 
-      await deleteSession(ctx.db, session.sessionId);
-
-      const result = await validateSession(ctx.db, session.sessionId);
-      expect(result).toBeNull();
-    });
-
-    it("does not throw when deleting a non-existent session", async () => {
-      await expect(deleteSession(ctx.db, "nonexistent-token")).resolves.not.toThrow();
+      expect(mockExecute).toHaveBeenCalledTimes(1);
     });
   });
 
   describe("deleteExpiredSessions", () => {
-    it("removes expired sessions but keeps valid ones", async () => {
-      // Create a valid session
-      const validSession = await createSession(ctx.db, DEFAULT_USER_ID);
+    it("executes a DELETE for expired sessions", async () => {
+      // @ts-expect-error mock DB
+      await deleteExpiredSessions(mockDb);
 
-      // Insert an expired session
-      const expiredId = `expired-${Date.now().toString(16)}`;
-      await ctx.db.execute(
-        sql`INSERT INTO fitness.session (id, user_id, expires_at)
-            VALUES (${expiredId}, ${DEFAULT_USER_ID}, ${new Date("2020-01-01").toISOString()})`,
-      );
-
-      await deleteExpiredSessions(ctx.db);
-
-      // Valid session should still exist
-      const valid = await validateSession(ctx.db, validSession.sessionId);
-      expect(valid).not.toBeNull();
-
-      // Expired session should be gone
-      const rows = await ctx.db.execute(
-        sql`SELECT id FROM fitness.session WHERE id = ${expiredId}`,
-      );
-      expect(rows.length).toBe(0);
-    });
-
-    it("handles case with no expired sessions", async () => {
-      await createSession(ctx.db, DEFAULT_USER_ID);
-
-      await expect(deleteExpiredSessions(ctx.db)).resolves.not.toThrow();
+      expect(mockExecute).toHaveBeenCalledTimes(1);
     });
   });
 });

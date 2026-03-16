@@ -1,368 +1,411 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import {
-  setupTestDatabase,
-  type TestContext,
-} from "../../../../../src/db/__tests__/test-helpers.ts";
-import { type AnomalyRow, checkAnomalies, sendAnomalyAlertToSlack } from "../anomaly-detection.ts";
+import { describe, expect, it, vi } from "vitest";
 
-/**
- * Unit tests for the anomaly detection logic (checkAnomalies)
- * and the Slack notification function (sendAnomalyAlertToSlack).
- *
- * checkAnomalies is SQL-based and returns empty results on an empty DB,
- * so we focus on testing the Slack notification path and the anomaly
- * row processing logic via sendAnomalyAlertToSlack.
- */
-describe("Anomaly detection", () => {
-  let testCtx: TestContext;
+const mockExecuteWithSchema = vi.fn();
 
-  beforeAll(async () => {
-    testCtx = await setupTestDatabase();
-  }, 120_000);
+vi.mock("../../lib/typed-sql.ts", () => ({
+  executeWithSchema: (...args: unknown[]) => mockExecuteWithSchema(...args),
+}));
 
-  afterAll(async () => {
-    await testCtx?.cleanup();
+vi.mock("../../logger.ts", () => ({
+  logger: { debug: vi.fn(), info: vi.fn(), error: vi.fn(), warn: vi.fn() },
+}));
+
+import { checkAnomalies, sendAnomalyAlertToSlack } from "../anomaly-detection.ts";
+
+function makeDb(rows: Record<string, unknown>[]) {
+  mockExecuteWithSchema.mockReset();
+  mockExecuteWithSchema.mockResolvedValue(rows);
+  // @ts-expect-error mock DB
+  return { execute: vi.fn().mockResolvedValue(rows) };
+}
+
+describe("checkAnomalies", () => {
+  it("returns empty when no data", async () => {
+    const db = makeDb([]);
+    const result = await checkAnomalies(db, "user-1");
+    expect(result.anomalies).toEqual([]);
+    expect(result.checkedMetrics).toEqual([]);
   });
 
-  describe("checkAnomalies", () => {
-    it("returns empty anomalies and checkedMetrics on empty database", async () => {
-      const DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001";
-      const result = await checkAnomalies(testCtx.db, DEFAULT_USER_ID);
-
-      expect(result.anomalies).toEqual([]);
-      expect(result.checkedMetrics).toEqual([]);
-    });
+  it("returns empty when row has null date", async () => {
+    const db = makeDb([{ date: null }]);
+    const result = await checkAnomalies(db, "user-1");
+    expect(result.anomalies).toEqual([]);
   });
 
-  describe("sendAnomalyAlertToSlack", () => {
-    const DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001";
+  it("detects elevated resting HR anomaly (z > 2)", async () => {
+    const db = makeDb([
+      {
+        date: "2024-01-15",
+        resting_hr: 75,
+        rhr_mean: 60,
+        rhr_sd: 5,
+        rhr_count: 20,
+        hrv: null,
+        hrv_mean: null,
+        hrv_sd: null,
+        hrv_count: null,
+        duration_minutes: null,
+        sleep_mean: null,
+        sleep_sd: null,
+        sleep_count: null,
+      },
+    ]);
+    const result = await checkAnomalies(db, "user-1");
 
-    it("returns false when anomalies array is empty", async () => {
-      const result = await sendAnomalyAlertToSlack(testCtx.db, DEFAULT_USER_ID, []);
-      expect(result).toBe(false);
+    expect(result.checkedMetrics).toContain("resting_hr");
+    expect(result.anomalies).toHaveLength(1);
+    expect(result.anomalies[0]?.metric).toBe("Resting Heart Rate");
+    expect(result.anomalies[0]?.severity).toBe("warning"); // z = 3.0 is not > 3
+  });
+
+  it("classifies resting HR warning (2 < z <= 3)", async () => {
+    const db = makeDb([
+      {
+        date: "2024-01-15",
+        resting_hr: 71,
+        rhr_mean: 60,
+        rhr_sd: 5,
+        rhr_count: 20,
+        hrv: null,
+        hrv_mean: null,
+        hrv_sd: null,
+        hrv_count: null,
+        duration_minutes: null,
+        sleep_mean: null,
+        sleep_sd: null,
+        sleep_count: null,
+      },
+    ]);
+    const result = await checkAnomalies(db, "user-1");
+
+    expect(result.anomalies).toHaveLength(1);
+    expect(result.anomalies[0]?.severity).toBe("warning");
+  });
+
+  it("skips resting HR check with insufficient data (count < 14)", async () => {
+    const db = makeDb([
+      {
+        date: "2024-01-15",
+        resting_hr: 100,
+        rhr_mean: 60,
+        rhr_sd: 5,
+        rhr_count: 10,
+        hrv: null,
+        hrv_mean: null,
+        hrv_sd: null,
+        hrv_count: null,
+        duration_minutes: null,
+        sleep_mean: null,
+        sleep_sd: null,
+        sleep_count: null,
+      },
+    ]);
+    const result = await checkAnomalies(db, "user-1");
+    expect(result.checkedMetrics).not.toContain("resting_hr");
+  });
+
+  it("detects depressed HRV anomaly (z < -2)", async () => {
+    const db = makeDb([
+      {
+        date: "2024-01-15",
+        resting_hr: null,
+        rhr_mean: null,
+        rhr_sd: null,
+        rhr_count: null,
+        hrv: 20,
+        hrv_mean: 50,
+        hrv_sd: 10,
+        hrv_count: 20,
+        duration_minutes: null,
+        sleep_mean: null,
+        sleep_sd: null,
+        sleep_count: null,
+      },
+    ]);
+    const result = await checkAnomalies(db, "user-1");
+
+    expect(result.checkedMetrics).toContain("hrv");
+    expect(result.anomalies).toHaveLength(1);
+    expect(result.anomalies[0]?.metric).toBe("Heart Rate Variability");
+    expect(result.anomalies[0]?.severity).toBe("warning"); // z = -3.0 is not < -3
+  });
+
+  it("detects short sleep anomaly (z < -2)", async () => {
+    const db = makeDb([
+      {
+        date: "2024-01-15",
+        resting_hr: null,
+        rhr_mean: null,
+        rhr_sd: null,
+        rhr_count: null,
+        hrv: null,
+        hrv_mean: null,
+        hrv_sd: null,
+        hrv_count: null,
+        duration_minutes: 300,
+        sleep_mean: 480,
+        sleep_sd: 60,
+        sleep_count: 20,
+      },
+    ]);
+    const result = await checkAnomalies(db, "user-1");
+
+    expect(result.checkedMetrics).toContain("sleep_duration");
+    expect(result.anomalies).toHaveLength(1);
+    expect(result.anomalies[0]?.metric).toBe("Sleep Duration");
+    expect(result.anomalies[0]?.severity).toBe("warning"); // z = -3.0 is not < -3
+  });
+
+  it("does not flag normal values", async () => {
+    const db = makeDb([
+      {
+        date: "2024-01-15",
+        resting_hr: 62,
+        rhr_mean: 60,
+        rhr_sd: 5,
+        rhr_count: 20,
+        hrv: 48,
+        hrv_mean: 50,
+        hrv_sd: 10,
+        hrv_count: 20,
+        duration_minutes: 460,
+        sleep_mean: 480,
+        sleep_sd: 60,
+        sleep_count: 20,
+      },
+    ]);
+    const result = await checkAnomalies(db, "user-1");
+
+    expect(result.checkedMetrics).toHaveLength(3);
+    expect(result.anomalies).toHaveLength(0);
+  });
+
+  it("skips checks when stddev is 0", async () => {
+    const db = makeDb([
+      {
+        date: "2024-01-15",
+        resting_hr: 75,
+        rhr_mean: 60,
+        rhr_sd: 0,
+        rhr_count: 20,
+        hrv: null,
+        hrv_mean: null,
+        hrv_sd: null,
+        hrv_count: null,
+        duration_minutes: null,
+        sleep_mean: null,
+        sleep_sd: null,
+        sleep_count: null,
+      },
+    ]);
+    const result = await checkAnomalies(db, "user-1");
+    expect(result.checkedMetrics).not.toContain("resting_hr");
+  });
+});
+
+describe("sendAnomalyAlertToSlack", () => {
+  it("returns false when no anomalies", async () => {
+    const db = makeDb([]);
+    const result = await sendAnomalyAlertToSlack(db, "user-1", []);
+    expect(result).toBe(false);
+  });
+
+  it("returns false when no Slack installation", async () => {
+    mockExecuteWithSchema.mockReset();
+    mockExecuteWithSchema.mockResolvedValue([]);
+    // @ts-expect-error mock DB
+    const db = {};
+    const anomalies = [
+      {
+        date: "2024-01-15",
+        metric: "Resting Heart Rate",
+        value: 75,
+        baselineMean: 60,
+        baselineStddev: 5,
+        zScore: 3.0,
+        severity: "alert" as const,
+      },
+    ];
+    const result = await sendAnomalyAlertToSlack(db, "user-1", anomalies);
+    expect(result).toBe(false);
+  });
+
+  it("returns false when no Slack account linked", async () => {
+    mockExecuteWithSchema.mockReset();
+    mockExecuteWithSchema.mockResolvedValueOnce([{ bot_token: "xoxb-fake" }]);
+    mockExecuteWithSchema.mockResolvedValueOnce([]);
+    // @ts-expect-error mock DB
+    const db = {};
+
+    const anomalies = [
+      {
+        date: "2024-01-15",
+        metric: "Resting Heart Rate",
+        value: 75,
+        baselineMean: 60,
+        baselineStddev: 5,
+        zScore: 3.0,
+        severity: "alert" as const,
+      },
+    ];
+    const result = await sendAnomalyAlertToSlack(db, "user-1", anomalies);
+    expect(result).toBe(false);
+  });
+
+  it("sends Slack message and returns true on success", async () => {
+    mockExecuteWithSchema.mockReset();
+    mockExecuteWithSchema.mockResolvedValueOnce([{ bot_token: "xoxb-fake" }]);
+    mockExecuteWithSchema.mockResolvedValueOnce([{ provider_account_id: "U12345" }]);
+    // @ts-expect-error mock DB
+    const db = {};
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ ok: true }),
+      // @ts-expect-error partial mock
     });
 
-    it("returns false when no Slack installation exists", async () => {
-      const anomalies: AnomalyRow[] = [
-        {
-          date: "2026-03-13",
-          metric: "Resting Heart Rate",
-          value: 72,
-          baselineMean: 58,
-          baselineStddev: 4,
-          zScore: 3.5,
-          severity: "alert",
-        },
-      ];
+    const anomalies = [
+      {
+        date: "2024-01-15",
+        metric: "Resting Heart Rate",
+        value: 75,
+        baselineMean: 60,
+        baselineStddev: 5,
+        zScore: 3.0,
+        severity: "alert" as const,
+      },
+    ];
+    const result = await sendAnomalyAlertToSlack(db, "user-1", anomalies);
+    expect(result).toBe(true);
+    expect(fetchSpy).toHaveBeenCalledOnce();
+    fetchSpy.mockRestore();
+  });
 
-      const result = await sendAnomalyAlertToSlack(testCtx.db, DEFAULT_USER_ID, anomalies);
-      expect(result).toBe(false);
+  it("includes illness warning when both HR and HRV are anomalous", async () => {
+    mockExecuteWithSchema.mockReset();
+    mockExecuteWithSchema.mockResolvedValueOnce([{ bot_token: "xoxb-fake" }]);
+    mockExecuteWithSchema.mockResolvedValueOnce([{ provider_account_id: "U12345" }]);
+    // @ts-expect-error mock DB
+    const db = {};
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ ok: true }),
+      // @ts-expect-error partial mock
     });
 
-    it("returns false when Slack installation exists but no linked Slack account", async () => {
-      // Insert a Slack installation
-      const { sql } = await import("drizzle-orm");
-      await testCtx.db.execute(
-        sql`INSERT INTO fitness.slack_installation (team_id, team_name, bot_token, app_id, raw_installation)
-            VALUES ('T-TEST', 'Test Team', 'xoxb-test-token', 'A-TEST', '{}')
-            ON CONFLICT (team_id) DO NOTHING`,
-      );
+    const anomalies = [
+      {
+        date: "2024-01-15",
+        metric: "Resting Heart Rate",
+        value: 75,
+        baselineMean: 60,
+        baselineStddev: 5,
+        zScore: 3.0,
+        severity: "alert" as const,
+      },
+      {
+        date: "2024-01-15",
+        metric: "Heart Rate Variability",
+        value: 20,
+        baselineMean: 50,
+        baselineStddev: 10,
+        zScore: -3.0,
+        severity: "alert" as const,
+      },
+    ];
+    const result = await sendAnomalyAlertToSlack(db, "user-1", anomalies);
+    expect(result).toBe(true);
 
-      const anomalies: AnomalyRow[] = [
-        {
-          date: "2026-03-13",
-          metric: "Heart Rate Variability",
-          value: 25,
-          baselineMean: 50,
-          baselineStddev: 8,
-          zScore: -3.13,
-          severity: "alert",
-        },
-      ];
+    // Check the body of the fetch call includes the illness pattern message
+    const callBody = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body));
+    const blockTexts = callBody.blocks.map((b: { text?: { text: string } }) => b.text?.text);
+    expect(blockTexts.some((t: string) => t?.includes("fighting something"))).toBe(true);
+    fetchSpy.mockRestore();
+  });
 
-      const result = await sendAnomalyAlertToSlack(testCtx.db, DEFAULT_USER_ID, anomalies);
-      expect(result).toBe(false);
+  it("returns false when Slack API returns non-ok HTTP", async () => {
+    mockExecuteWithSchema.mockReset();
+    mockExecuteWithSchema.mockResolvedValueOnce([{ bot_token: "xoxb-fake" }]);
+    mockExecuteWithSchema.mockResolvedValueOnce([{ provider_account_id: "U12345" }]);
+    // @ts-expect-error mock DB
+    const db = {};
 
-      // Cleanup
-      await testCtx.db.execute(
-        sql`DELETE FROM fitness.slack_installation WHERE team_id = 'T-TEST'`,
-      );
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: false,
+      status: 500,
+      // @ts-expect-error partial mock
     });
 
-    it("calls Slack API and returns true on success", async () => {
-      const { sql } = await import("drizzle-orm");
+    const anomalies = [
+      {
+        date: "2024-01-15",
+        metric: "Resting Heart Rate",
+        value: 75,
+        baselineMean: 60,
+        baselineStddev: 5,
+        zScore: 3.0,
+        severity: "alert" as const,
+      },
+    ];
+    const result = await sendAnomalyAlertToSlack(db, "user-1", anomalies);
+    expect(result).toBe(false);
+    fetchSpy.mockRestore();
+  });
 
-      // Insert Slack installation
-      await testCtx.db.execute(
-        sql`INSERT INTO fitness.slack_installation (team_id, team_name, bot_token, app_id, raw_installation)
-            VALUES ('T-TEST-2', 'Test Team', 'xoxb-test-token', 'A-TEST', '{}')
-            ON CONFLICT (team_id) DO NOTHING`,
-      );
+  it("returns false when Slack API returns ok:false", async () => {
+    mockExecuteWithSchema.mockReset();
+    mockExecuteWithSchema.mockResolvedValueOnce([{ bot_token: "xoxb-fake" }]);
+    mockExecuteWithSchema.mockResolvedValueOnce([{ provider_account_id: "U12345" }]);
+    // @ts-expect-error mock DB
+    const db = {};
 
-      // Link Slack account to user
-      await testCtx.db.execute(
-        sql`INSERT INTO fitness.auth_account (user_id, auth_provider, provider_account_id, name)
-            VALUES (${DEFAULT_USER_ID}, 'slack', 'U_SLACK_ALERT', 'Alert User')
-            ON CONFLICT DO NOTHING`,
-      );
-
-      const anomalies: AnomalyRow[] = [
-        {
-          date: "2026-03-13",
-          metric: "Resting Heart Rate",
-          value: 72,
-          baselineMean: 58,
-          baselineStddev: 4,
-          zScore: 3.5,
-          severity: "alert",
-        },
-        {
-          date: "2026-03-13",
-          metric: "Heart Rate Variability",
-          value: 25,
-          baselineMean: 50,
-          baselineStddev: 8,
-          zScore: -3.13,
-          severity: "alert",
-        },
-      ];
-
-      // Mock global fetch to simulate Slack API success
-      const originalFetch = globalThis.fetch;
-      // @ts-expect-error partial Response mock for testing
-      globalThis.fetch = vi.fn<typeof fetch>().mockResolvedValue({
-        ok: true,
-        json: async () => ({ ok: true }),
-      });
-
-      try {
-        const result = await sendAnomalyAlertToSlack(testCtx.db, DEFAULT_USER_ID, anomalies);
-        expect(result).toBe(true);
-
-        // Verify fetch was called with correct params
-        // @ts-expect-error globalThis.fetch was replaced with a vi.fn mock above
-        const mockFetch: ReturnType<typeof vi.fn> = globalThis.fetch;
-        expect(mockFetch).toHaveBeenCalledWith(
-          "https://slack.com/api/chat.postMessage",
-          expect.objectContaining({
-            method: "POST",
-            headers: expect.objectContaining({
-              Authorization: "Bearer xoxb-test-token",
-            }),
-          }),
-        );
-
-        // Verify the body includes illness pattern warning
-        const callBody = JSON.parse(String((mockFetch.mock.calls[0] ?? [])[1]?.body ?? ""));
-        const blockTexts = callBody.blocks.map(
-          (b: { text?: { text?: string } }) => b.text?.text ?? "",
-        );
-        const hasIllnessWarning = blockTexts.some((t: string) => t.includes("fighting something"));
-        expect(hasIllnessWarning).toBe(true);
-      } finally {
-        globalThis.fetch = originalFetch;
-        await testCtx.db.execute(
-          sql`DELETE FROM fitness.auth_account WHERE provider_account_id = 'U_SLACK_ALERT'`,
-        );
-        await testCtx.db.execute(
-          sql`DELETE FROM fitness.slack_installation WHERE team_id = 'T-TEST-2'`,
-        );
-      }
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ ok: false, error: "channel_not_found" }),
+      // @ts-expect-error partial mock
     });
 
-    it("returns false when Slack API returns non-ok HTTP status", async () => {
-      const { sql } = await import("drizzle-orm");
+    const anomalies = [
+      {
+        date: "2024-01-15",
+        metric: "Resting Heart Rate",
+        value: 75,
+        baselineMean: 60,
+        baselineStddev: 5,
+        zScore: 3.0,
+        severity: "alert" as const,
+      },
+    ];
+    const result = await sendAnomalyAlertToSlack(db, "user-1", anomalies);
+    expect(result).toBe(false);
+    fetchSpy.mockRestore();
+  });
 
-      await testCtx.db.execute(
-        sql`INSERT INTO fitness.slack_installation (team_id, team_name, bot_token, app_id, raw_installation)
-            VALUES ('T-TEST-3', 'Test Team', 'xoxb-test-token', 'A-TEST', '{}')
-            ON CONFLICT (team_id) DO NOTHING`,
-      );
+  it("returns false when fetch throws", async () => {
+    mockExecuteWithSchema.mockReset();
+    mockExecuteWithSchema.mockResolvedValueOnce([{ bot_token: "xoxb-fake" }]);
+    mockExecuteWithSchema.mockResolvedValueOnce([{ provider_account_id: "U12345" }]);
+    // @ts-expect-error mock DB
+    const db = {};
 
-      await testCtx.db.execute(
-        sql`INSERT INTO fitness.auth_account (user_id, auth_provider, provider_account_id, name)
-            VALUES (${DEFAULT_USER_ID}, 'slack', 'U_SLACK_FAIL', 'Fail User')
-            ON CONFLICT DO NOTHING`,
-      );
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("network error"));
 
-      const anomalies: AnomalyRow[] = [
-        {
-          date: "2026-03-13",
-          metric: "Sleep Duration",
-          value: 280,
-          baselineMean: 420,
-          baselineStddev: 40,
-          zScore: -3.5,
-          severity: "alert",
-        },
-      ];
-
-      const originalFetch = globalThis.fetch;
-      // @ts-expect-error partial Response mock for testing
-      globalThis.fetch = vi.fn<typeof fetch>().mockResolvedValue({
-        ok: false,
-        status: 500,
-      });
-
-      try {
-        const result = await sendAnomalyAlertToSlack(testCtx.db, DEFAULT_USER_ID, anomalies);
-        expect(result).toBe(false);
-      } finally {
-        globalThis.fetch = originalFetch;
-        await testCtx.db.execute(
-          sql`DELETE FROM fitness.auth_account WHERE provider_account_id = 'U_SLACK_FAIL'`,
-        );
-        await testCtx.db.execute(
-          sql`DELETE FROM fitness.slack_installation WHERE team_id = 'T-TEST-3'`,
-        );
-      }
-    });
-
-    it("returns false when Slack API returns ok:false", async () => {
-      const { sql } = await import("drizzle-orm");
-
-      await testCtx.db.execute(
-        sql`INSERT INTO fitness.slack_installation (team_id, team_name, bot_token, app_id, raw_installation)
-            VALUES ('T-TEST-4', 'Test Team', 'xoxb-test-token', 'A-TEST', '{}')
-            ON CONFLICT (team_id) DO NOTHING`,
-      );
-
-      await testCtx.db.execute(
-        sql`INSERT INTO fitness.auth_account (user_id, auth_provider, provider_account_id, name)
-            VALUES (${DEFAULT_USER_ID}, 'slack', 'U_SLACK_ERR', 'Error User')
-            ON CONFLICT DO NOTHING`,
-      );
-
-      const anomalies: AnomalyRow[] = [
-        {
-          date: "2026-03-13",
-          metric: "Resting Heart Rate",
-          value: 68,
-          baselineMean: 55,
-          baselineStddev: 4,
-          zScore: 3.25,
-          severity: "alert",
-        },
-      ];
-
-      const originalFetch = globalThis.fetch;
-      // @ts-expect-error partial Response mock for testing
-      globalThis.fetch = vi.fn<typeof fetch>().mockResolvedValue({
-        ok: true,
-        json: async () => ({ ok: false, error: "channel_not_found" }),
-      });
-
-      try {
-        const result = await sendAnomalyAlertToSlack(testCtx.db, DEFAULT_USER_ID, anomalies);
-        expect(result).toBe(false);
-      } finally {
-        globalThis.fetch = originalFetch;
-        await testCtx.db.execute(
-          sql`DELETE FROM fitness.auth_account WHERE provider_account_id = 'U_SLACK_ERR'`,
-        );
-        await testCtx.db.execute(
-          sql`DELETE FROM fitness.slack_installation WHERE team_id = 'T-TEST-4'`,
-        );
-      }
-    });
-
-    it("returns false when fetch throws a network error", async () => {
-      const { sql } = await import("drizzle-orm");
-
-      await testCtx.db.execute(
-        sql`INSERT INTO fitness.slack_installation (team_id, team_name, bot_token, app_id, raw_installation)
-            VALUES ('T-TEST-5', 'Test Team', 'xoxb-test-token', 'A-TEST', '{}')
-            ON CONFLICT (team_id) DO NOTHING`,
-      );
-
-      await testCtx.db.execute(
-        sql`INSERT INTO fitness.auth_account (user_id, auth_provider, provider_account_id, name)
-            VALUES (${DEFAULT_USER_ID}, 'slack', 'U_SLACK_NET', 'Net User')
-            ON CONFLICT DO NOTHING`,
-      );
-
-      const anomalies: AnomalyRow[] = [
-        {
-          date: "2026-03-13",
-          metric: "Resting Heart Rate",
-          value: 70,
-          baselineMean: 55,
-          baselineStddev: 4,
-          zScore: 3.75,
-          severity: "alert",
-        },
-      ];
-
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = vi.fn<typeof fetch>().mockRejectedValue(new Error("Network error"));
-
-      try {
-        const result = await sendAnomalyAlertToSlack(testCtx.db, DEFAULT_USER_ID, anomalies);
-        expect(result).toBe(false);
-      } finally {
-        globalThis.fetch = originalFetch;
-        await testCtx.db.execute(
-          sql`DELETE FROM fitness.auth_account WHERE provider_account_id = 'U_SLACK_NET'`,
-        );
-        await testCtx.db.execute(
-          sql`DELETE FROM fitness.slack_installation WHERE team_id = 'T-TEST-5'`,
-        );
-      }
-    });
-
-    it("includes warning severity in message text when no alerts", async () => {
-      const { sql } = await import("drizzle-orm");
-
-      await testCtx.db.execute(
-        sql`INSERT INTO fitness.slack_installation (team_id, team_name, bot_token, app_id, raw_installation)
-            VALUES ('T-TEST-6', 'Test Team', 'xoxb-test-token', 'A-TEST', '{}')
-            ON CONFLICT (team_id) DO NOTHING`,
-      );
-
-      await testCtx.db.execute(
-        sql`INSERT INTO fitness.auth_account (user_id, auth_provider, provider_account_id, name)
-            VALUES (${DEFAULT_USER_ID}, 'slack', 'U_SLACK_WARN', 'Warn User')
-            ON CONFLICT DO NOTHING`,
-      );
-
-      const anomalies: AnomalyRow[] = [
-        {
-          date: "2026-03-13",
-          metric: "Resting Heart Rate",
-          value: 66,
-          baselineMean: 55,
-          baselineStddev: 4,
-          zScore: 2.75,
-          severity: "warning",
-        },
-      ];
-
-      const originalFetch = globalThis.fetch;
-      // @ts-expect-error partial Response mock for testing
-      globalThis.fetch = vi.fn<typeof fetch>().mockResolvedValue({
-        ok: true,
-        json: async () => ({ ok: true }),
-      });
-
-      try {
-        const result = await sendAnomalyAlertToSlack(testCtx.db, DEFAULT_USER_ID, anomalies);
-        expect(result).toBe(true);
-
-        // @ts-expect-error globalThis.fetch was replaced with a vi.fn mock above
-        const mockFetch: ReturnType<typeof vi.fn> = globalThis.fetch;
-        const callBody = JSON.parse(String((mockFetch.mock.calls[0] ?? [])[1]?.body ?? ""));
-        // Warning header (not alert)
-        expect(callBody.blocks[0].text.text).toBe("Health Warning");
-        expect(callBody.text).toContain("warning");
-      } finally {
-        globalThis.fetch = originalFetch;
-        await testCtx.db.execute(
-          sql`DELETE FROM fitness.auth_account WHERE provider_account_id = 'U_SLACK_WARN'`,
-        );
-        await testCtx.db.execute(
-          sql`DELETE FROM fitness.slack_installation WHERE team_id = 'T-TEST-6'`,
-        );
-      }
-    });
+    const anomalies = [
+      {
+        date: "2024-01-15",
+        metric: "Resting Heart Rate",
+        value: 75,
+        baselineMean: 60,
+        baselineStddev: 5,
+        zScore: 3.0,
+        severity: "alert" as const,
+      },
+    ];
+    const result = await sendAnomalyAlertToSlack(db, "user-1", anomalies);
+    expect(result).toBe(false);
+    fetchSpy.mockRestore();
   });
 });

@@ -1,0 +1,292 @@
+import { describe, expect, it, vi } from "vitest";
+import { createTestCallerFactory } from "./test-helpers.ts";
+
+vi.mock("../../trpc.ts", async () => {
+  const { initTRPC } = await import("@trpc/server");
+  const t = initTRPC.context<{ db: unknown; userId: string | null }>().create();
+  return {
+    router: t.router,
+    protectedProcedure: t.procedure,
+    cachedProtectedQuery: () => t.procedure,
+    cachedProtectedQueryLight: () => t.procedure,
+    CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
+  };
+});
+
+vi.mock("../../lib/typed-sql.ts", () => ({
+  executeWithSchema: vi.fn(async (db: { execute: () => Promise<unknown[]> }) => db.execute()),
+}));
+
+vi.mock("whoop-whoop", () => ({
+  WhoopClient: {
+    signIn: vi.fn(),
+    verifyCode: vi.fn(),
+  },
+}));
+
+vi.mock("dofek/db/tokens", () => ({
+  ensureProvider: vi.fn(),
+  saveTokens: vi.fn(),
+}));
+
+import { trendsRouter } from "../trends.ts";
+import { weeklyReportRouter } from "../weekly-report.ts";
+import { whoopAuthRouter } from "../whoop-auth.ts";
+
+// ── Trends Router ──
+
+describe("trendsRouter", () => {
+  const createCaller = createTestCallerFactory(trendsRouter);
+
+  function makeCaller(rows: Record<string, unknown>[] = []) {
+    return createCaller({
+      // @ts-expect-error mock DB
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+    });
+  }
+
+  describe("daily", () => {
+    it("returns daily trend rows", async () => {
+      const rows = [
+        {
+          date: "2024-01-15",
+          avg_hr: 145.3,
+          max_hr: 180,
+          avg_power: 200.7,
+          max_power: 350,
+          avg_cadence: 85.2,
+          avg_speed: 8.456,
+          total_samples: 3600,
+          hr_samples: 3500,
+          power_samples: 3000,
+          activity_count: 1,
+        },
+      ];
+      const caller = makeCaller(rows);
+      const result = await caller.daily({ days: 365 });
+
+      expect(result).toHaveLength(1);
+      expect(result[0]?.avgHr).toBe(145.3);
+      expect(result[0]?.avgSpeed).toBe(8.46); // rounded to 2 decimals
+    });
+
+    it("handles null values", async () => {
+      const rows = [
+        {
+          date: "2024-01-15",
+          avg_hr: null,
+          max_hr: null,
+          avg_power: null,
+          max_power: null,
+          avg_cadence: null,
+          avg_speed: null,
+          total_samples: 0,
+          hr_samples: 0,
+          power_samples: 0,
+          activity_count: 0,
+        },
+      ];
+      const caller = makeCaller(rows);
+      const result = await caller.daily({ days: 365 });
+
+      expect(result[0]?.avgHr).toBeNull();
+      expect(result[0]?.maxPower).toBeNull();
+    });
+  });
+
+  describe("weekly", () => {
+    it("returns weekly trend rows", async () => {
+      const rows = [
+        {
+          week: "2024-01-15",
+          avg_hr: 150,
+          max_hr: 185,
+          avg_power: 210,
+          max_power: 380,
+          avg_cadence: 88,
+          avg_speed: 9.12,
+          total_samples: 25000,
+          hr_samples: 24000,
+          power_samples: 20000,
+          activity_count: 5,
+        },
+      ];
+      const caller = makeCaller(rows);
+      const result = await caller.weekly({ weeks: 52 });
+
+      expect(result).toHaveLength(1);
+      expect(result[0]?.week).toBe("2024-01-15");
+      expect(result[0]?.activityCount).toBe(5);
+    });
+  });
+});
+
+// ── Weekly Report Router ──
+
+describe("weeklyReportRouter", () => {
+  const createCaller = createTestCallerFactory(weeklyReportRouter);
+
+  describe("report", () => {
+    it("returns empty report when no data", async () => {
+      const caller = createCaller({
+        // @ts-expect-error mock DB
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+      });
+      const result = await caller.report({ weeks: 12 });
+
+      expect(result.current).toBeNull();
+      expect(result.history).toEqual([]);
+    });
+
+    it("returns report with current and history", async () => {
+      const rows = [
+        {
+          week_start: "2024-01-08",
+          total_hours: 5.5,
+          activity_count: 4,
+          avg_daily_load: 50,
+          avg_sleep_min: 440,
+          avg_resting_hr: 55,
+          avg_hrv: 62,
+          chronic_avg_load: 45,
+          prev_3wk_avg_sleep: 430,
+        },
+        {
+          week_start: "2024-01-15",
+          total_hours: 6.2,
+          activity_count: 5,
+          avg_daily_load: 55,
+          avg_sleep_min: 450,
+          avg_resting_hr: 54,
+          avg_hrv: 65,
+          chronic_avg_load: 48,
+          prev_3wk_avg_sleep: 440,
+        },
+      ];
+      const caller = createCaller({
+        // @ts-expect-error mock DB
+        db: { execute: vi.fn().mockResolvedValue(rows) },
+        userId: "user-1",
+      });
+      const result = await caller.report({ weeks: 12 });
+
+      expect(result.current).not.toBeNull();
+      expect(result.current?.weekStart).toBe("2024-01-15");
+      expect(result.history).toHaveLength(1);
+      expect(result.current?.strainZone).toBeDefined();
+      expect(result.current?.sleepPerformancePct).toBeGreaterThan(0);
+    });
+  });
+});
+
+// ── Whoop Auth Router ──
+
+describe("whoopAuthRouter", () => {
+  const createCaller = createTestCallerFactory(whoopAuthRouter);
+
+  describe("signIn", () => {
+    it("returns verification_required when MFA needed", async () => {
+      const { WhoopClient } = await import("whoop-whoop");
+      vi.mocked(WhoopClient.signIn).mockResolvedValueOnce({
+        type: "verification_required",
+        session: "cognito-session-123",
+        method: "SMS",
+      });
+
+      const caller = createCaller({
+        // @ts-expect-error mock DB
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+      });
+      const result = await caller.signIn({ username: "test@example.com", password: "pass" });
+
+      expect(result.status).toBe("verification_required");
+      expect(result).toHaveProperty("challengeId");
+      expect(result).toHaveProperty("method", "SMS");
+    });
+
+    it("returns success when no MFA required", async () => {
+      const { WhoopClient } = await import("whoop-whoop");
+      vi.mocked(WhoopClient.signIn).mockResolvedValueOnce({
+        type: "success",
+        token: { accessToken: "at", refreshToken: "rt", userId: 123 },
+      });
+
+      const caller = createCaller({
+        // @ts-expect-error mock DB
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+      });
+      const result = await caller.signIn({ username: "test@example.com", password: "pass" });
+
+      expect(result.status).toBe("success");
+      expect(result).toHaveProperty("token");
+    });
+  });
+
+  describe("verifyCode", () => {
+    it("throws when challenge not found", async () => {
+      const caller = createCaller({
+        // @ts-expect-error mock DB
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+      });
+
+      await expect(
+        caller.verifyCode({ challengeId: "nonexistent", code: "123456" }),
+      ).rejects.toThrow("expired or not found");
+    });
+
+    it("verifies code successfully after signIn", async () => {
+      const { WhoopClient } = await import("whoop-whoop");
+      vi.mocked(WhoopClient.signIn).mockResolvedValueOnce({
+        type: "verification_required",
+        session: "session-xyz",
+        method: "SMS",
+      });
+      vi.mocked(WhoopClient.verifyCode).mockResolvedValueOnce({
+        accessToken: "new-at",
+        refreshToken: "new-rt",
+        userId: 456,
+      });
+
+      const caller = createCaller({
+        // @ts-expect-error mock DB
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+      });
+
+      // Step 1: sign in to get challengeId
+      const signInResult = await caller.signIn({ username: "test@example.com", password: "pass" });
+      // @ts-expect-error signInResult type depends on sign-in outcome
+      const challengeId: string = signInResult.challengeId;
+
+      // Step 2: verify code
+      const result = await caller.verifyCode({ challengeId, code: "123456" });
+      expect(result.status).toBe("success");
+    });
+  });
+
+  describe("saveTokens", () => {
+    it("saves tokens to database", async () => {
+      const { ensureProvider, saveTokens } = await import("dofek/db/tokens");
+      const caller = createCaller({
+        // @ts-expect-error mock DB
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+      });
+
+      const result = await caller.saveTokens({
+        accessToken: "at-123",
+        refreshToken: "rt-456",
+        userId: 789,
+      });
+
+      expect(result).toEqual({ success: true });
+      expect(ensureProvider).toHaveBeenCalled();
+      expect(saveTokens).toHaveBeenCalled();
+    });
+  });
+});

@@ -568,3 +568,535 @@ describe("GarminConnectClient token refresh on API call", () => {
     expect(result).toEqual([]);
   });
 });
+
+describe("GarminConnectClient.signIn", () => {
+  /**
+   * Helper: build a mock fetchFn for the signIn flow.
+   * The sign-in makes these calls in order:
+   * 1. GET oauth_consumer.json
+   * 2. GET sso/embed (set cookies)
+   * 3. GET sso/signin (get CSRF)
+   * 4. POST sso/signin (login)
+   * 5. GET preauthorized (OAuth1)
+   * 6. POST exchange (OAuth2)
+   * 7. GET socialProfile (loadProfile)
+   *
+   * We use `options.method` to distinguish the GET vs POST to sso/signin.
+   */
+  function buildSignInMock(
+    overrides: {
+      signinGetHtml?: string;
+      signinPostHtml?: string;
+      oauth1Response?: { ok: boolean; status: number; text: string };
+      oauth2Response?: { ok: boolean; status: number; body: Record<string, unknown> };
+    } = {},
+  ) {
+    const signinGetHtml = overrides.signinGetHtml ?? '<input name="_csrf" value="csrf123">';
+    const signinPostHtml =
+      overrides.signinPostHtml ??
+      '<title>Success</title><iframe src="embed?ticket=ST-12345-test"></iframe>';
+
+    const mock = vi.fn().mockImplementation((url: string, options?: RequestInit) => {
+      const method = options?.method?.toUpperCase() ?? "GET";
+
+      if (String(url).includes("oauth_consumer.json")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ consumer_key: "ck", consumer_secret: "cs" }),
+        });
+      }
+
+      if (String(url).includes("sso/embed") && !String(url).includes("signin")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          url: "https://sso.garmin.com/sso/embed",
+          headers: { getSetCookie: () => ["GARMIN-SSO-GUID=abc123; Path=/"] },
+          text: () => Promise.resolve("<html></html>"),
+        });
+      }
+
+      // GET sso/signin — return CSRF page
+      if (String(url).includes("sso/signin") && method === "GET") {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          url: "https://sso.garmin.com/sso/signin",
+          headers: { getSetCookie: () => ["GARMIN-SSO-CUST=def456; Path=/"] },
+          text: () => Promise.resolve(signinGetHtml),
+        });
+      }
+
+      // POST sso/signin — login result
+      if (String(url).includes("sso/signin") && method === "POST") {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          url: "https://sso.garmin.com/sso/signin",
+          headers: { getSetCookie: () => [] },
+          text: () => Promise.resolve(signinPostHtml),
+        });
+      }
+
+      if (String(url).includes("preauthorized")) {
+        const resp = overrides.oauth1Response ?? {
+          ok: true,
+          status: 200,
+          text: "oauth_token=token123&oauth_token_secret=secret456",
+        };
+        return Promise.resolve({
+          ok: resp.ok,
+          status: resp.status,
+          text: () => Promise.resolve(resp.text),
+        });
+      }
+
+      if (String(url).includes("oauth-service/oauth/exchange")) {
+        const resp = overrides.oauth2Response ?? {
+          ok: true,
+          status: 200,
+          body: {
+            access_token: "access-token-xyz",
+            refresh_token: "refresh-token-xyz",
+            expires_in: 3600,
+            refresh_token_expires_in: 86400,
+            scope: "test",
+            jti: "jti-123",
+            token_type: "Bearer",
+          },
+        };
+        if (!resp.ok) {
+          return Promise.resolve({
+            ok: false,
+            status: resp.status,
+            text: () => Promise.resolve(JSON.stringify(resp.body)),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve(resp.body),
+        });
+      }
+
+      if (String(url).includes("socialProfile")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ displayName: "testuser", userName: "testuser" }),
+        });
+      }
+
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({}) });
+    });
+    // @ts-expect-error -- partial fetch mock
+    return mock;
+  }
+
+  it("completes full sign-in flow successfully", async () => {
+    const fetchFn = buildSignInMock();
+
+    const { client, tokens } = await GarminConnectClient.signIn(
+      "test@example.com",
+      "password123",
+      "garmin.com",
+      fetchFn,
+    );
+
+    expect(client).toBeInstanceOf(GarminConnectClient);
+    expect(tokens.oauth1.oauth_token).toBe("token123");
+    expect(tokens.oauth1.oauth_token_secret).toBe("secret456");
+    expect(tokens.oauth2.access_token).toBe("access-token-xyz");
+    expect(client.getDisplayName()).toBe("testuser");
+  });
+
+  it("throws GarminMfaRequiredError when MFA is required", async () => {
+    const fetchFn = buildSignInMock({
+      signinPostHtml: "<title>MFA Challenge</title><body>Enter code</body>",
+    });
+
+    await expect(
+      GarminConnectClient.signIn("test@example.com", "password", "garmin.com", fetchFn),
+    ).rejects.toThrow(GarminMfaRequiredError);
+  });
+
+  it("throws GarminAuthError when login fails", async () => {
+    const fetchFn = buildSignInMock({
+      signinPostHtml: "<title>Login Error</title><body>Bad password</body>",
+    });
+
+    await expect(
+      GarminConnectClient.signIn("test@example.com", "bad", "garmin.com", fetchFn),
+    ).rejects.toThrow(GarminAuthError);
+    await expect(
+      GarminConnectClient.signIn("test@example.com", "bad", "garmin.com", fetchFn),
+    ).rejects.toThrow('Login failed. SSO returned title: "Login Error"');
+  });
+
+  it("throws when CSRF token is missing", async () => {
+    const fetchFn = buildSignInMock({
+      signinGetHtml: "<html><body>No CSRF here</body></html>",
+    });
+
+    await expect(
+      GarminConnectClient.signIn("test@example.com", "password", "garmin.com", fetchFn),
+    ).rejects.toThrow("Could not find CSRF token");
+  });
+
+  it("throws when title is missing from login response", async () => {
+    const fetchFn = buildSignInMock({
+      signinPostHtml: "<html><body>No title here</body></html>",
+    });
+
+    await expect(
+      GarminConnectClient.signIn("test@example.com", "password", "garmin.com", fetchFn),
+    ).rejects.toThrow("Could not find title");
+  });
+
+  it("throws when ticket is missing from success page", async () => {
+    const fetchFn = buildSignInMock({
+      signinPostHtml: "<html><title>Success</title><body>No ticket</body></html>",
+    });
+
+    await expect(
+      GarminConnectClient.signIn("test@example.com", "password", "garmin.com", fetchFn),
+    ).rejects.toThrow("Could not find SSO ticket");
+  });
+
+  it("throws when OAuth1 token request fails", async () => {
+    const fetchFn = buildSignInMock({
+      oauth1Response: { ok: false, status: 403, text: "Forbidden" },
+    });
+
+    await expect(
+      GarminConnectClient.signIn("test@example.com", "password", "garmin.com", fetchFn),
+    ).rejects.toThrow("Failed to get OAuth1 token (403)");
+  });
+
+  it("throws when OAuth2 exchange fails", async () => {
+    const fetchFn = buildSignInMock({
+      oauth2Response: { ok: false, status: 500, body: { error: "Server error" } },
+    });
+
+    await expect(
+      GarminConnectClient.signIn("test@example.com", "password", "garmin.com", fetchFn),
+    ).rejects.toThrow("Failed to exchange for OAuth2 (500)");
+  });
+});
+
+describe("GarminConnectClient remaining API methods", () => {
+  it("getUserSettings returns user settings", async () => {
+    const settings = { weight: 75, height: 180 };
+
+    const apiFetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(settings),
+    });
+
+    const client = await createAuthenticatedClient(apiFetchFn);
+    const result = await client.getUserSettings();
+
+    expect(result).toEqual(settings);
+    // @ts-expect-error -- mock.calls typed as unknown[][]
+    const [url]: [string] = asMock(apiFetchFn).mock.calls[0];
+    expect(url).toContain("/userprofile-service/userprofile/user-settings");
+  });
+
+  it("getBodyBatteryDaily returns body battery data", async () => {
+    const data = [{ date: "2024-01-15", charged: 50, drained: 30 }];
+
+    const apiFetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(data),
+    });
+
+    const client = await createAuthenticatedClient(apiFetchFn);
+    const result = await client.getBodyBatteryDaily("2024-01-15");
+
+    expect(result).toEqual(data);
+    // @ts-expect-error -- mock.calls typed as unknown[][]
+    const [url]: [string] = asMock(apiFetchFn).mock.calls[0];
+    expect(url).toContain("/wellness-service/wellness/bodyBattery/reports/daily/2024-01-15");
+  });
+
+  it("getBodyBatteryEvents returns events data", async () => {
+    const data = { events: [] };
+
+    const apiFetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(data),
+    });
+
+    const client = await createAuthenticatedClient(apiFetchFn);
+    const result = await client.getBodyBatteryEvents("2024-01-15");
+
+    expect(result).toEqual(data);
+    // @ts-expect-error -- mock.calls typed as unknown[][]
+    const [url]: [string] = asMock(apiFetchFn).mock.calls[0];
+    expect(url).toContain("/wellness-service/wellness/bodyBattery/events/2024-01-15");
+  });
+
+  it("getTrainingReadiness returns readiness data", async () => {
+    const data = { calendarDate: "2024-01-15", score: 85, level: "HIGH" };
+
+    const apiFetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(data),
+    });
+
+    const client = await createAuthenticatedClient(apiFetchFn);
+    const result = await client.getTrainingReadiness("2024-01-15");
+
+    expect(result).toEqual(data);
+    // @ts-expect-error -- mock.calls typed as unknown[][]
+    const [url]: [string] = asMock(apiFetchFn).mock.calls[0];
+    expect(url).toContain("/metrics-service/metrics/trainingreadiness/2024-01-15");
+  });
+
+  it("getRacePredictions returns predictions", async () => {
+    const data = { calendarDate: "2024-01-15", raceTime5K: 1200 };
+
+    const apiFetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(data),
+    });
+
+    const client = await createAuthenticatedClient(apiFetchFn);
+    const result = await client.getRacePredictions();
+
+    expect(result).toEqual(data);
+    // @ts-expect-error -- mock.calls typed as unknown[][]
+    const [url]: [string] = asMock(apiFetchFn).mock.calls[0];
+    expect(url).toContain("/metrics-service/metrics/racepredictions");
+  });
+
+  it("getHillScore returns hill score data", async () => {
+    const data = [{ calendarDate: "2024-01-15", overallScore: 80 }];
+
+    const apiFetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(data),
+    });
+
+    const client = await createAuthenticatedClient(apiFetchFn);
+    const result = await client.getHillScore("2024-01-01", "2024-01-31");
+
+    expect(result).toEqual(data);
+    // @ts-expect-error -- mock.calls typed as unknown[][]
+    const [url]: [string] = asMock(apiFetchFn).mock.calls[0];
+    expect(url).toContain("/metrics-service/metrics/hillscore/2024-01-01/2024-01-31");
+  });
+
+  it("getEnduranceScore returns endurance score data", async () => {
+    const data = [{ calendarDate: "2024-01-15", overallScore: 70 }];
+
+    const apiFetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(data),
+    });
+
+    const client = await createAuthenticatedClient(apiFetchFn);
+    const result = await client.getEnduranceScore("2024-01-01", "2024-01-31");
+
+    expect(result).toEqual(data);
+    // @ts-expect-error -- mock.calls typed as unknown[][]
+    const [url]: [string] = asMock(apiFetchFn).mock.calls[0];
+    expect(url).toContain("/metrics-service/metrics/endurancescore/2024-01-01/2024-01-31");
+  });
+
+  it("getDailyRespiration returns respiration data", async () => {
+    const data = {
+      avgWakingRespirationValue: 16,
+      highestRespirationValue: 22,
+      lowestRespirationValue: 12,
+    };
+
+    const apiFetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(data),
+    });
+
+    const client = await createAuthenticatedClient(apiFetchFn);
+    const result = await client.getDailyRespiration("2024-01-15");
+
+    expect(result).toEqual(data);
+    // @ts-expect-error -- mock.calls typed as unknown[][]
+    const [url]: [string] = asMock(apiFetchFn).mock.calls[0];
+    expect(url).toContain("/wellness-service/wellness/daily/respiration/2024-01-15");
+  });
+
+  it("getDailySpO2 returns SpO2 data", async () => {
+    const data = { calendarDate: "2024-01-15", averageSpO2: 97 };
+
+    const apiFetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(data),
+    });
+
+    const client = await createAuthenticatedClient(apiFetchFn);
+    const result = await client.getDailySpO2("2024-01-15");
+
+    expect(result).toEqual(data);
+    // @ts-expect-error -- mock.calls typed as unknown[][]
+    const [url]: [string] = asMock(apiFetchFn).mock.calls[0];
+    expect(url).toContain("/wellness-service/wellness/daily/spo2/2024-01-15");
+  });
+
+  it("getDailyIntensityMinutes returns intensity data", async () => {
+    const data = [
+      {
+        calendarDate: "2024-01-15",
+        weeklyGoal: 150,
+        moderateIntensityMinutes: 30,
+        vigorousIntensityMinutes: 15,
+      },
+    ];
+
+    const apiFetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(data),
+    });
+
+    const client = await createAuthenticatedClient(apiFetchFn);
+    const result = await client.getDailyIntensityMinutes("2024-01-15");
+
+    expect(result).toEqual(data);
+    // @ts-expect-error -- mock.calls typed as unknown[][]
+    const [url]: [string] = asMock(apiFetchFn).mock.calls[0];
+    expect(url).toContain("/wellness-service/wellness/daily/im/2024-01-15");
+  });
+
+  it("getDailySteps returns steps data", async () => {
+    const data = [{ calendarDate: "2024-01-15", totalSteps: 10000 }];
+
+    const apiFetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(data),
+    });
+
+    const client = await createAuthenticatedClient(apiFetchFn);
+    const result = await client.getDailySteps("2024-01-01", "2024-01-31");
+
+    expect(result).toEqual(data);
+    // @ts-expect-error -- mock.calls typed as unknown[][]
+    const [url]: [string] = asMock(apiFetchFn).mock.calls[0];
+    expect(url).toContain("/usersummary-service/stats/steps/daily/2024-01-01/2024-01-31");
+  });
+
+  it("getFloors returns floor data", async () => {
+    const data = { floorsAscended: 10, floorsDescended: 8 };
+
+    const apiFetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(data),
+    });
+
+    const client = await createAuthenticatedClient(apiFetchFn);
+    const result = await client.getFloors("2024-01-15");
+
+    expect(result).toEqual(data);
+    // @ts-expect-error -- mock.calls typed as unknown[][]
+    const [url]: [string] = asMock(apiFetchFn).mock.calls[0];
+    expect(url).toContain("/wellness-service/wellness/floorsChartData/daily/2024-01-15");
+  });
+
+  it("getActivities uses default parameters", async () => {
+    const apiFetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve([]),
+    });
+
+    const client = await createAuthenticatedClient(apiFetchFn);
+    await client.getActivities();
+
+    // @ts-expect-error -- mock.calls typed as unknown[][]
+    const [url]: [string] = asMock(apiFetchFn).mock.calls[0];
+    expect(url).toContain("start=0");
+    expect(url).toContain("limit=20");
+  });
+
+  it("getActivityDetail uses default chart sizes", async () => {
+    const apiFetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({}),
+    });
+
+    const client = await createAuthenticatedClient(apiFetchFn);
+    await client.getActivityDetail(123);
+
+    // @ts-expect-error -- mock.calls typed as unknown[][]
+    const [url]: [string] = asMock(apiFetchFn).mock.calls[0];
+    expect(url).toContain("maxChartSize=2000");
+    expect(url).toContain("maxPolylineSize=4000");
+  });
+});
+
+describe("GarminConnectClient cookie handling", () => {
+  it("handles responses without getSetCookie method", async () => {
+    const fetchFn = vi.fn().mockImplementation((url: string, options?: RequestInit) => {
+      const method = options?.method?.toUpperCase() ?? "GET";
+
+      if (String(url).includes("oauth_consumer.json")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ consumer_key: "ck", consumer_secret: "cs" }),
+        });
+      }
+
+      // Return response without getSetCookie (some fetch implementations)
+      if (String(url).includes("sso/embed") && !String(url).includes("signin")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          url: "https://sso.garmin.com/sso/embed",
+          headers: { getSetCookie: undefined },
+          text: () => Promise.resolve(""),
+        });
+      }
+
+      if (String(url).includes("sso/signin") && method === "GET") {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          url: "https://sso.garmin.com/sso/signin",
+          headers: { getSetCookie: undefined },
+          text: () => Promise.resolve('<input name="_csrf" value="csrf123">'),
+        });
+      }
+
+      if (String(url).includes("sso/signin") && method === "POST") {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          url: "https://sso.garmin.com/sso/signin",
+          headers: { getSetCookie: undefined },
+          text: () => Promise.resolve("<title>Login Error</title>"),
+        });
+      }
+
+      return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve("") });
+      // @ts-expect-error partial fetch mock
+    });
+
+    // Should still work (cookies will be empty, but flow proceeds)
+    await expect(
+      GarminConnectClient.signIn("test@example.com", "password", "garmin.com", fetchFn),
+    ).rejects.toThrow('Login failed. SSO returned title: "Login Error"');
+  });
+});

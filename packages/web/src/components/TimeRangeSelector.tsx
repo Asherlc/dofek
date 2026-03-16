@@ -1,4 +1,4 @@
-export const TIME_RANGES = [
+const TIME_RANGES = [
   { label: "7d", days: 7 },
   { label: "14d", days: 14 },
   { label: "30d", days: 30 },

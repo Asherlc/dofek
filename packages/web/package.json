@@ -14,14 +14,12 @@
     "@tanstack/react-router": "1.166.7",
     "@trpc/client": "11.12.0",
     "@trpc/react-query": "11.12.0",
-    "clsx": "2.1.1",
     "dofek-server": "workspace:*",
     "echarts": "5.6.0",
     "echarts-for-react": "3.0.6",
     "leaflet": "^1.9.4",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "tailwind-merge": "3.5.0",
     "tailwindcss": "4.2.1"
   },
   "devDependencies": {
