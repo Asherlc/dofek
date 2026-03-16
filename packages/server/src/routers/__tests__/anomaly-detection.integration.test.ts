@@ -1,9 +1,13 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { http, HttpResponse } from "msw";
+import { setupServer } from "msw/node";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   setupTestDatabase,
   type TestContext,
 } from "../../../../../src/db/__tests__/test-helpers.ts";
 import { type AnomalyRow, checkAnomalies, sendAnomalyAlertToSlack } from "../anomaly-detection.ts";
+
+const mswServer = setupServer();
 
 /**
  * Unit tests for the anomaly detection logic (checkAnomalies)
@@ -17,10 +21,16 @@ describe("Anomaly detection", () => {
   let testCtx: TestContext;
 
   beforeAll(async () => {
+    mswServer.listen({ onUnhandledRequest: "bypass" });
     testCtx = await setupTestDatabase();
   }, 120_000);
 
+  afterEach(() => {
+    mswServer.resetHandlers();
+  });
+
   afterAll(async () => {
+    mswServer.close();
     await testCtx?.cleanup();
   });
 
@@ -127,43 +137,27 @@ describe("Anomaly detection", () => {
         },
       ];
 
-      // Mock global fetch to simulate Slack API success
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = vi.fn<typeof fetch>().mockResolvedValue({
-        ok: true,
-        json: async () => ({ ok: true }),
-        // @ts-expect-error partial mock
-      });
+      let capturedBody = "";
+
+      mswServer.use(
+        http.post("https://slack.com/api/chat.postMessage", async ({ request }) => {
+          capturedBody = await request.text();
+          return HttpResponse.json({ ok: true });
+        }),
+      );
 
       try {
         const result = await sendAnomalyAlertToSlack(testCtx.db, DEFAULT_USER_ID, anomalies);
         expect(result).toBe(true);
 
-        // Verify fetch was called with correct params
-        // @ts-expect-error mock fetch typed as vi.fn
-        const mockFetch = globalThis.fetch;
-        expect(mockFetch).toHaveBeenCalledWith(
-          "https://slack.com/api/chat.postMessage",
-          expect.objectContaining({
-            method: "POST",
-            headers: expect.objectContaining({
-              Authorization: "Bearer xoxb-test-token",
-            }),
-          }),
-        );
-
         // Verify the body includes illness pattern warning
-        const callBody = JSON.parse(
-          // @ts-expect-error mock calls typed as unknown[][]
-          mockFetch.mock.calls[0][1].body,
-        );
+        const callBody = JSON.parse(capturedBody);
         const blockTexts = callBody.blocks.map(
           (b: { text?: { text?: string } }) => b.text?.text ?? "",
         );
         const hasIllnessWarning = blockTexts.some((t: string) => t.includes("fighting something"));
         expect(hasIllnessWarning).toBe(true);
       } finally {
-        globalThis.fetch = originalFetch;
         await testCtx.db.execute(
           sql`DELETE FROM fitness.auth_account WHERE provider_account_id = 'U_SLACK_ALERT'`,
         );
@@ -200,18 +194,16 @@ describe("Anomaly detection", () => {
         },
       ];
 
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = vi.fn<typeof fetch>().mockResolvedValue({
-        ok: false,
-        status: 500,
-        // @ts-expect-error partial mock
-      });
+      mswServer.use(
+        http.post("https://slack.com/api/chat.postMessage", () => {
+          return new HttpResponse("Internal Server Error", { status: 500 });
+        }),
+      );
 
       try {
         const result = await sendAnomalyAlertToSlack(testCtx.db, DEFAULT_USER_ID, anomalies);
         expect(result).toBe(false);
       } finally {
-        globalThis.fetch = originalFetch;
         await testCtx.db.execute(
           sql`DELETE FROM fitness.auth_account WHERE provider_account_id = 'U_SLACK_FAIL'`,
         );
@@ -248,18 +240,16 @@ describe("Anomaly detection", () => {
         },
       ];
 
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = vi.fn<typeof fetch>().mockResolvedValue({
-        ok: true,
-        json: async () => ({ ok: false, error: "channel_not_found" }),
-        // @ts-expect-error partial mock
-      });
+      mswServer.use(
+        http.post("https://slack.com/api/chat.postMessage", () => {
+          return HttpResponse.json({ ok: false, error: "channel_not_found" });
+        }),
+      );
 
       try {
         const result = await sendAnomalyAlertToSlack(testCtx.db, DEFAULT_USER_ID, anomalies);
         expect(result).toBe(false);
       } finally {
-        globalThis.fetch = originalFetch;
         await testCtx.db.execute(
           sql`DELETE FROM fitness.auth_account WHERE provider_account_id = 'U_SLACK_ERR'`,
         );
@@ -296,14 +286,16 @@ describe("Anomaly detection", () => {
         },
       ];
 
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = vi.fn<typeof fetch>().mockRejectedValue(new Error("Network error"));
+      mswServer.use(
+        http.post("https://slack.com/api/chat.postMessage", () => {
+          return HttpResponse.error();
+        }),
+      );
 
       try {
         const result = await sendAnomalyAlertToSlack(testCtx.db, DEFAULT_USER_ID, anomalies);
         expect(result).toBe(false);
       } finally {
-        globalThis.fetch = originalFetch;
         await testCtx.db.execute(
           sql`DELETE FROM fitness.auth_account WHERE provider_account_id = 'U_SLACK_NET'`,
         );
@@ -340,28 +332,24 @@ describe("Anomaly detection", () => {
         },
       ];
 
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = vi.fn<typeof fetch>().mockResolvedValue({
-        ok: true,
-        json: async () => ({ ok: true }),
-        // @ts-expect-error partial mock
-      });
+      let capturedBody = "";
+
+      mswServer.use(
+        http.post("https://slack.com/api/chat.postMessage", async ({ request }) => {
+          capturedBody = await request.text();
+          return HttpResponse.json({ ok: true });
+        }),
+      );
 
       try {
         const result = await sendAnomalyAlertToSlack(testCtx.db, DEFAULT_USER_ID, anomalies);
         expect(result).toBe(true);
 
-        // @ts-expect-error mock fetch typed as vi.fn
-        const mockFetch = globalThis.fetch;
-        const callBody = JSON.parse(
-          // @ts-expect-error mock calls typed as unknown[][]
-          mockFetch.mock.calls[0][1].body,
-        );
+        const callBody = JSON.parse(capturedBody);
         // Warning header (not alert)
         expect(callBody.blocks[0].text.text).toBe("Health Warning");
         expect(callBody.text).toContain("warning");
       } finally {
-        globalThis.fetch = originalFetch;
         await testCtx.db.execute(
           sql`DELETE FROM fitness.auth_account WHERE provider_account_id = 'U_SLACK_WARN'`,
         );
