@@ -1,10 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  XertProvider,
-  mapXertSport,
-  parseXertActivity,
-  xertOAuthConfig,
-} from "../xert.ts";
+import { describe, expect, it, vi } from "vitest";
+import { mapXertSport, parseXertActivity, XertProvider, xertOAuthConfig } from "../xert.ts";
 
 describe("mapXertSport — all types", () => {
   it("maps all known sports", () => {

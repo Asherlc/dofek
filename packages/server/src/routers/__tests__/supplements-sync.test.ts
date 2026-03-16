@@ -14,12 +14,14 @@ vi.mock("../../trpc.ts", async () => {
 });
 
 vi.mock("node:fs/promises", () => ({
-  readFile: vi.fn().mockResolvedValue(JSON.stringify({
-    supplements: [
-      { name: "Vitamin D", amount: 5000, unit: "IU" },
-      { name: "Omega 3", amount: 2000, unit: "mg" },
-    ],
-  })),
+  readFile: vi.fn().mockResolvedValue(
+    JSON.stringify({
+      supplements: [
+        { name: "Vitamin D", amount: 5000, unit: "IU" },
+        { name: "Omega 3", amount: 2000, unit: "mg" },
+      ],
+    }),
+  ),
   writeFile: vi.fn().mockResolvedValue(undefined),
 }));
 

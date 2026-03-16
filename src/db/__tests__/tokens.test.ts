@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { ensureProvider, saveTokens, loadTokens } from "../tokens.ts";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ensureProvider, loadTokens, saveTokens } from "../tokens.ts";
 
 // Mock drizzle's eq function
 vi.mock("drizzle-orm", () => ({
@@ -66,7 +66,8 @@ describe("ensureProvider", () => {
     // biome-ignore lint/suspicious/noExplicitAny: mock DB
     await ensureProvider(mockDb as any, "wahoo", "Wahoo");
 
-    const valuesArg = mockDb._valuesFn.mock.calls[0]?.[0] as Record<string, unknown>;
+    const calls = mockDb._valuesFn.mock.calls as unknown[][];
+    const valuesArg = calls[0]?.[0] as Record<string, unknown> | undefined;
     expect(valuesArg).not.toHaveProperty("userId");
   });
 

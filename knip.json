@@ -8,26 +8,60 @@
         "vitest.config.mutation.ts"
       ],
       "project": ["src/**/*.ts", "*.config.{ts,js,json}"],
-      "ignoreDependencies": ["tsx"]
+      "ignoreDependencies": ["tsx"],
+      "vitest": {
+        "config": ["vitest.config.ts", "vitest.config.unit.ts"],
+        "entry": ["src/**/*.test.ts", "src/**/*.integration.test.ts"]
+      }
     },
-    "packages/server": {},
+    "packages/server": {
+      "vitest": {
+        "config": ["../../vitest.config.ts", "../../vitest.config.unit.ts"],
+        "entry": ["src/**/*.test.ts", "src/**/*.integration.test.ts"]
+      }
+    },
     "packages/web": {
       "ignoreDependencies": ["@tanstack/router-cli"],
       "vitest": {
-        "config": ["../../vitest.config.ts"],
+        "config": ["../../vitest.config.ts", "../../vitest.config.unit.ts"],
         "entry": ["src/**/*.test.{ts,tsx}"]
       }
     },
     "packages/ios": {
       "ignore": ["**/*"]
     },
-    "packages/whoop-whoop": {},
+    "packages/whoop-whoop": {
+      "vitest": {
+        "config": ["../../vitest.config.ts", "../../vitest.config.unit.ts"],
+        "entry": ["src/**/*.test.ts"]
+      }
+    },
     "packages/eight-sleep": {},
-    "packages/zwift-client": {},
+    "packages/zwift-client": {
+      "vitest": {
+        "config": ["../../vitest.config.ts", "../../vitest.config.unit.ts"],
+        "entry": ["src/**/*.test.ts"]
+      }
+    },
     "packages/trainerroad-client": {},
-    "packages/velohero-client": {},
-    "packages/garmin-connect": {},
-    "packages/trainingpeaks-connect": {}
+    "packages/velohero-client": {
+      "vitest": {
+        "config": ["../../vitest.config.ts", "../../vitest.config.unit.ts"],
+        "entry": ["src/**/*.test.ts"]
+      }
+    },
+    "packages/garmin-connect": {
+      "vitest": {
+        "config": ["../../vitest.config.ts", "../../vitest.config.unit.ts"],
+        "entry": ["src/**/*.test.ts"]
+      }
+    },
+    "packages/trainingpeaks-connect": {
+      "vitest": {
+        "config": ["../../vitest.config.ts", "../../vitest.config.unit.ts"],
+        "entry": ["src/**/*.test.ts"]
+      }
+    }
   },
   "ignoreExportsUsedInFile": true
 }

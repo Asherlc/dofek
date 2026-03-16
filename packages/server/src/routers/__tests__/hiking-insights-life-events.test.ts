@@ -289,9 +289,7 @@ describe("lifeEventsRouter", () => {
     it("returns analysis for an event", async () => {
       const execute = vi.fn();
       // First call: get event
-      execute.mockResolvedValueOnce([
-        { started_at: "2024-06-01", ended_at: null, ongoing: false },
-      ]);
+      execute.mockResolvedValueOnce([{ started_at: "2024-06-01", ended_at: null, ongoing: false }]);
       // Second call: metrics before/after
       execute.mockResolvedValueOnce([
         { period: "before", days: 10, avg_resting_hr: 55 },

@@ -83,7 +83,9 @@ describe("parseDecathlonActivity", () => {
 
 describe("decathlonOAuthConfig", () => {
   const originalEnv = { ...process.env };
-  afterEach(() => { process.env = { ...originalEnv }; });
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
 
   it("returns null when missing", () => {
     delete process.env.DECATHLON_CLIENT_ID;
@@ -102,7 +104,9 @@ describe("decathlonOAuthConfig", () => {
 
 describe("DecathlonProvider", () => {
   const originalEnv = { ...process.env };
-  afterEach(() => { process.env = { ...originalEnv }; });
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
 
   it("validate checks env vars", () => {
     delete process.env.DECATHLON_CLIENT_ID;

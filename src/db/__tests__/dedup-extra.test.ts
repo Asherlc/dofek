@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock drizzle-orm's sql as both a tagged template function and an object with .raw
 function mockSqlTaggedTemplate(strings: TemplateStringsArray, ..._values: unknown[]) {

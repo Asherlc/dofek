@@ -81,9 +81,7 @@ describe("recoveryRouter", () => {
 
   describe("hrvVariability", () => {
     it("returns HRV variability data", async () => {
-      const rows = [
-        { date: "2024-01-15", hrv: 55, rolling_mean: 60, rolling_cv: 12.5 },
-      ];
+      const rows = [{ date: "2024-01-15", hrv: 55, rolling_mean: 60, rolling_cv: 12.5 }];
       const caller = makeCaller(rows);
       const result = await caller.hrvVariability({ days: 90 });
 
@@ -93,9 +91,7 @@ describe("recoveryRouter", () => {
     });
 
     it("handles null values", async () => {
-      const rows = [
-        { date: "2024-01-15", hrv: null, rolling_mean: null, rolling_cv: null },
-      ];
+      const rows = [{ date: "2024-01-15", hrv: null, rolling_mean: null, rolling_cv: null }];
       const caller = makeCaller(rows);
       const result = await caller.hrvVariability({ days: 90 });
 
@@ -181,7 +177,7 @@ describe("recoveryRouter", () => {
       const result = await caller.readinessScore({ days: 30 });
 
       expect(result.length).toBeGreaterThan(0);
-      const r = result[0]!;
+      const r = result[0];
       expect(r.readinessScore).toBeGreaterThanOrEqual(0);
       expect(r.readinessScore).toBeLessThanOrEqual(100);
       expect(r.components).toHaveProperty("hrvScore");

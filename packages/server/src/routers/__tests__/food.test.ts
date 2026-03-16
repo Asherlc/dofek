@@ -70,7 +70,14 @@ describe("foodRouter", () => {
   describe("dailyTotals", () => {
     it("returns aggregated daily totals", async () => {
       const rows = [
-        { date: "2024-01-15", calories: 2100, protein_g: 150, carbs_g: 250, fat_g: 70, fiber_g: 30 },
+        {
+          date: "2024-01-15",
+          calories: 2100,
+          protein_g: 150,
+          carbs_g: 250,
+          fat_g: 70,
+          fiber_g: 30,
+        },
       ];
       const caller = makeCaller(rows);
       const result = await caller.dailyTotals({ days: 30 });

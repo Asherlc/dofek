@@ -4,12 +4,12 @@ import {
   type PolarDailyActivity,
   type PolarExercise,
   type PolarNightlyRecharge,
+  PolarProvider,
   type PolarSleep,
   parsePolarDailyActivity,
   parsePolarDuration,
   parsePolarExercise,
   parsePolarSleep,
-  PolarProvider,
 } from "../polar.ts";
 
 // ============================================================

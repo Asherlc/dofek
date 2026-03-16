@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  WithingsClient,
-  WithingsProvider,
   exchangeWithingsCode,
   parseMeasureGroup,
   refreshWithingsToken,
-  withingsOAuthConfig,
+  WithingsClient,
   type WithingsMeasureGroup,
+  WithingsProvider,
+  withingsOAuthConfig,
 } from "../withings.ts";
 
 // ============================================================
@@ -74,15 +74,13 @@ describe("WithingsClient — API calls", () => {
     let capturedBody = "";
     let capturedHeaders: Record<string, string> = {};
 
-    const mockFetch = (async (
-      input: RequestInfo | URL,
-      init?: RequestInit,
-    ): Promise<Response> => {
+    const mockFetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       capturedUrl = input.toString();
       capturedBody = init?.body as string;
-      capturedHeaders = Object.fromEntries(
-        Object.entries(init?.headers ?? {}),
-      ) as Record<string, string>;
+      capturedHeaders = Object.fromEntries(Object.entries(init?.headers ?? {})) as Record<
+        string,
+        string
+      >;
       return Response.json({
         status: 0,
         body: { measuregrps: [], more: 0, offset: 0 },
@@ -123,10 +121,7 @@ describe("WithingsClient — API calls", () => {
 
   it("uses default offset of 0", async () => {
     let capturedBody = "";
-    const mockFetch = (async (
-      _input: RequestInfo | URL,
-      init?: RequestInit,
-    ): Promise<Response> => {
+    const mockFetch = (async (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       capturedBody = init?.body as string;
       return Response.json({
         status: 0,
@@ -176,10 +171,7 @@ describe("withingsOAuthConfig", () => {
 describe("exchangeWithingsCode", () => {
   it("sends action=requesttoken with authorization_code grant", async () => {
     let capturedBody = "";
-    const mockFetch = (async (
-      _input: RequestInfo | URL,
-      init?: RequestInit,
-    ): Promise<Response> => {
+    const mockFetch = (async (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       capturedBody = init?.body as string;
       return Response.json({
         status: 0,
@@ -255,10 +247,7 @@ describe("exchangeWithingsCode", () => {
 describe("refreshWithingsToken", () => {
   it("sends action=requesttoken with refresh_token grant", async () => {
     let capturedBody = "";
-    const mockFetch = (async (
-      _input: RequestInfo | URL,
-      init?: RequestInit,
-    ): Promise<Response> => {
+    const mockFetch = (async (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       capturedBody = init?.body as string;
       return Response.json({
         status: 0,
@@ -322,10 +311,7 @@ describe("refreshWithingsToken", () => {
 
   it("handles config without clientSecret", async () => {
     let capturedBody = "";
-    const mockFetch = (async (
-      _input: RequestInfo | URL,
-      init?: RequestInit,
-    ): Promise<Response> => {
+    const mockFetch = (async (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       capturedBody = init?.body as string;
       return Response.json({
         status: 0,

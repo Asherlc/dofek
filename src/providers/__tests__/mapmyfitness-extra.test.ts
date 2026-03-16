@@ -60,7 +60,9 @@ describe("parseMapMyFitnessWorkout", () => {
     expect(parsed.activityType).toBe("running");
     expect(parsed.name).toBe("Morning Run");
     expect(parsed.startedAt).toEqual(new Date("2026-03-01T08:00:00Z"));
-    expect(parsed.endedAt).toEqual(new Date(new Date("2026-03-01T08:00:00Z").getTime() + 3600 * 1000));
+    expect(parsed.endedAt).toEqual(
+      new Date(new Date("2026-03-01T08:00:00Z").getTime() + 3600 * 1000),
+    );
     expect(parsed.raw.distanceMeters).toBe(10000);
     expect(parsed.raw.avgHeartRate).toBe(150);
     expect(parsed.raw.maxHeartRate).toBe(175);
@@ -120,14 +122,12 @@ describe("parseMapMyFitnessWorkout", () => {
 
 describe("MapMyFitnessClient", () => {
   it("throws on API error", async () => {
-    const mockFetch = vi.fn().mockResolvedValue(
-      new Response("Unauthorized", { status: 401 }),
-    );
+    const mockFetch = vi.fn().mockResolvedValue(new Response("Unauthorized", { status: 401 }));
 
-    const client = new MapMyFitnessClient("token", "client-id", mockFetch as unknown as typeof fetch);
-    await expect(
-      client.getWorkouts("user-1", "2026-01-01T00:00:00Z"),
-    ).rejects.toThrow("MapMyFitness API error (401)");
+    const client = new MapMyFitnessClient("token", "client-id", mockFetch as never);
+    await expect(client.getWorkouts("user-1", "2026-01-01T00:00:00Z")).rejects.toThrow(
+      "MapMyFitness API error (401)",
+    );
   });
 
   it("includes correct headers", async () => {
@@ -139,7 +139,7 @@ describe("MapMyFitnessClient", () => {
       }),
     );
 
-    const client = new MapMyFitnessClient("my-token", "my-client-id", mockFetch as unknown as typeof fetch);
+    const client = new MapMyFitnessClient("my-token", "my-client-id", mockFetch as never);
     await client.getWorkouts("user-1", "2026-01-01");
 
     const headers = mockFetch.mock.calls[0]?.[1]?.headers as Record<string, string>;

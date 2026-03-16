@@ -49,6 +49,7 @@ describe("parseConcept2Result", () => {
       drag_factor: 125,
       weight_class: "H",
       workout_type: "FixedDistanceFixedTime",
+      privacy: "public",
     };
 
     const parsed = parseConcept2Result(result);

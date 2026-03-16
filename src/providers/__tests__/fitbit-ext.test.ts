@@ -4,13 +4,6 @@ import {
   FitbitProvider,
   fitbitOAuthConfig,
   mapFitbitActivityType,
-  parseFitbitActivity,
-  parseFitbitDailySummary,
-  parseFitbitSleep,
-  parseFitbitWeightLog,
-  type FitbitActivity,
-  type FitbitSleepLog,
-  type FitbitWeightLog,
 } from "../fitbit.ts";
 
 // ============================================================
@@ -101,9 +94,10 @@ describe("FitbitClient — API calls", () => {
   it("sends Authorization header with Bearer token", async () => {
     let capturedHeaders: Record<string, string> = {};
     const mockFetch = (async (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-      capturedHeaders = Object.fromEntries(
-        Object.entries(init?.headers ?? {}),
-      ) as Record<string, string>;
+      capturedHeaders = Object.fromEntries(Object.entries(init?.headers ?? {})) as Record<
+        string,
+        string
+      >;
       return Response.json({
         activities: [],
         pagination: { next: "", previous: "", limit: 20, offset: 0, sort: "asc" },

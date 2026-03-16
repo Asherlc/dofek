@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { z } from "zod";
 import { sql } from "drizzle-orm";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { executeWithSchema } from "../typed-sql.ts";
 
 const mockExecute = vi.fn();

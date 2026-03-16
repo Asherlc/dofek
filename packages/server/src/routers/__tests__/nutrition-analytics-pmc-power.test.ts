@@ -25,10 +25,17 @@ vi.mock("../../lib/math.ts", () => ({
   linearRegression: vi.fn((xs: number[], ys: number[]) => {
     const n = xs.length;
     if (n < 2) return { slope: 0, intercept: 0, r2: 0 };
-    let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+    let sumX = 0,
+      sumY = 0,
+      sumXY = 0,
+      sumX2 = 0;
     for (let i = 0; i < n; i++) {
-      sumX += xs[i]!; sumY += ys[i]!;
-      sumXY += xs[i]! * ys[i]!; sumX2 += xs[i]! * xs[i]!;
+      const x = xs[i] ?? 0;
+      const y = ys[i] ?? 0;
+      sumX += x;
+      sumY += y;
+      sumXY += x * y;
+      sumX2 += x * x;
     }
     const denom = n * sumX2 - sumX * sumX;
     if (denom === 0) return { slope: 0, intercept: 0, r2: 0 };
@@ -65,18 +72,20 @@ describe("nutritionAnalyticsRouter", () => {
     });
 
     it("computes adequacy percentages", async () => {
-      const rows = [{
-        avg_vitamin_c_mg: 60,
-        days_vitamin_c_mg: 10,
-        avg_iron_mg: 12,
-        days_iron_mg: 10,
-        avg_fiber_g: 25,
-        days_fiber_g: 10,
-      }];
+      const rows = [
+        {
+          avg_vitamin_c_mg: 60,
+          days_vitamin_c_mg: 10,
+          avg_iron_mg: 12,
+          days_iron_mg: 10,
+          avg_fiber_g: 25,
+          days_fiber_g: 10,
+        },
+      ];
       const caller = makeCaller(rows);
       const result = await caller.micronutrientAdequacy({ days: 30 });
 
-      const vitC = result.find(r => r.nutrient === "Vitamin C");
+      const vitC = result.find((r) => r.nutrient === "Vitamin C");
       expect(vitC).toBeDefined();
       expect(vitC?.avgIntake).toBe(60);
       expect(vitC?.percentRda).toBeCloseTo(66.7, 0);
@@ -85,15 +94,17 @@ describe("nutritionAnalyticsRouter", () => {
 
   describe("caloricBalance", () => {
     it("returns caloric balance rows", async () => {
-      const rows = [{
-        date: "2024-01-15",
-        calories_in: 2200,
-        active_energy: 500,
-        basal_energy: 1800,
-        total_expenditure: 2300,
-        balance: -100,
-        rolling_avg_balance: -50,
-      }];
+      const rows = [
+        {
+          date: "2024-01-15",
+          calories_in: 2200,
+          active_energy: 500,
+          basal_energy: 1800,
+          total_expenditure: 2300,
+          balance: -100,
+          rolling_avg_balance: -50,
+        },
+      ];
       const caller = makeCaller(rows);
       const result = await caller.caloricBalance({ days: 30 });
 
@@ -105,9 +116,7 @@ describe("nutritionAnalyticsRouter", () => {
 
   describe("adaptiveTdee", () => {
     it("returns null TDEE when insufficient data", async () => {
-      const rows = [
-        { date: "2024-01-15", calories_in: 2200, weight_kg: 75 },
-      ];
+      const rows = [{ date: "2024-01-15", calories_in: 2200, weight_kg: 75 }];
       const caller = makeCaller(rows);
       const result = await caller.adaptiveTdee({ days: 90 });
 
@@ -136,33 +145,37 @@ describe("nutritionAnalyticsRouter", () => {
 
   describe("macroRatios", () => {
     it("computes macro percentages", async () => {
-      const rows = [{
-        date: "2024-01-15",
-        protein_g: 150,
-        carbs_g: 250,
-        fat_g: 70,
-        calories: 2200,
-        weight_kg: 75,
-      }];
+      const rows = [
+        {
+          date: "2024-01-15",
+          protein_g: 150,
+          carbs_g: 250,
+          fat_g: 70,
+          calories: 2200,
+          weight_kg: 75,
+        },
+      ];
       const caller = makeCaller(rows);
       const result = await caller.macroRatios({ days: 30 });
 
       expect(result).toHaveLength(1);
-      const r = result[0]!;
+      const r = result[0];
       // protein: 150*4=600, carbs: 250*4=1000, fat: 70*9=630. total=2230
       expect(r.proteinPct).toBeCloseTo(26.9, 0);
       expect(r.proteinPerKg).toBe(2); // 150/75
     });
 
     it("handles null weight", async () => {
-      const rows = [{
-        date: "2024-01-15",
-        protein_g: 100,
-        carbs_g: 200,
-        fat_g: 60,
-        calories: 2000,
-        weight_kg: null,
-      }];
+      const rows = [
+        {
+          date: "2024-01-15",
+          protein_g: 100,
+          carbs_g: 200,
+          fat_g: 60,
+          calories: 2000,
+          weight_kg: null,
+        },
+      ];
       const caller = makeCaller(rows);
       const result = await caller.macroRatios({ days: 30 });
 

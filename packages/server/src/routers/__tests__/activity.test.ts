@@ -78,9 +78,9 @@ describe("activityRouter", () => {
 
     it("throws NOT_FOUND when activity does not exist", async () => {
       const caller = makeCaller([]);
-      await expect(
-        caller.byId({ id: "00000000-0000-0000-0000-000000000001" }),
-      ).rejects.toThrow(TRPCError);
+      await expect(caller.byId({ id: "00000000-0000-0000-0000-000000000001" })).rejects.toThrow(
+        TRPCError,
+      );
     });
 
     it("handles null optional fields", async () => {

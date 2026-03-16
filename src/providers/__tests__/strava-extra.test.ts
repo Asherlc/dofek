@@ -1,16 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  StravaClient,
-  StravaProvider,
-  StravaRateLimitError,
-  type StravaActivity,
-  type StravaStreamSet,
-  mapStravaActivityType,
-  parseStravaActivity,
-  parseStravaActivityList,
-  stravaOAuthConfig,
-  stravaStreamsToMetricStream,
-} from "../strava.ts";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { mapStravaActivityType, StravaClient, StravaProvider } from "../strava.ts";
 
 // ============================================================
 // Tests targeting uncovered sync paths in strava.ts
@@ -37,7 +26,7 @@ describe("StravaClient", () => {
       ]),
     );
 
-    const client = new StravaClient("test-token", mockFetch as unknown as typeof fetch);
+    const client = new StravaClient("test-token", mockFetch as never);
     const result = await client.getActivities(1000, 2, 50);
 
     expect(mockFetch).toHaveBeenCalledOnce();
@@ -53,13 +42,31 @@ describe("StravaClient", () => {
   it("getActivityStreams transforms array to keyed object", async () => {
     const mockFetch = vi.fn().mockResolvedValue(
       Response.json([
-        { type: "time", data: [0, 1, 2], series_type: "time", resolution: "high", original_size: 3 },
-        { type: "heartrate", data: [130, 132, 135], series_type: "time", resolution: "high", original_size: 3 },
-        { type: "watts", data: [200, 210, 205], series_type: "time", resolution: "high", original_size: 3 },
+        {
+          type: "time",
+          data: [0, 1, 2],
+          series_type: "time",
+          resolution: "high",
+          original_size: 3,
+        },
+        {
+          type: "heartrate",
+          data: [130, 132, 135],
+          series_type: "time",
+          resolution: "high",
+          original_size: 3,
+        },
+        {
+          type: "watts",
+          data: [200, 210, 205],
+          series_type: "time",
+          resolution: "high",
+          original_size: 3,
+        },
       ]),
     );
 
-    const client = new StravaClient("test-token", mockFetch as unknown as typeof fetch);
+    const client = new StravaClient("test-token", mockFetch as never);
     const streams = await client.getActivityStreams(12345);
 
     expect(streams.time?.data).toEqual([0, 1, 2]);
@@ -80,7 +87,7 @@ describe("StravaProvider.sync", () => {
     process.env.STRAVA_CLIENT_SECRET = "secret";
 
     const mockFetch = vi.fn();
-    const provider = new StravaProvider(mockFetch as unknown as typeof fetch);
+    const provider = new StravaProvider(mockFetch as never);
 
     // Mock db with loadTokens returning null
     const mockDb = {
@@ -113,7 +120,7 @@ describe("StravaProvider.sync", () => {
       return Response.json([]);
     });
 
-    const provider = new StravaProvider(mockFetch as unknown as typeof fetch);
+    const provider = new StravaProvider(mockFetch as never);
 
     // Provide tokens
     const futureDate = new Date("2099-01-01");
@@ -121,13 +128,15 @@ describe("StravaProvider.sync", () => {
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
-            limit: vi.fn().mockResolvedValue([{
-              providerId: "strava",
-              accessToken: "token",
-              refreshToken: "refresh",
-              expiresAt: futureDate,
-              scopes: null,
-            }]),
+            limit: vi.fn().mockResolvedValue([
+              {
+                providerId: "strava",
+                accessToken: "token",
+                refreshToken: "refresh",
+                expiresAt: futureDate,
+                scopes: null,
+              },
+            ]),
           }),
         }),
       }),

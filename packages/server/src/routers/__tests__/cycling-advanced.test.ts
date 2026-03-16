@@ -61,9 +61,7 @@ describe("cyclingAdvancedRouter", () => {
 
   describe("trainingMonotony", () => {
     it("returns monotony data", async () => {
-      const rows = [
-        { week: "2024-01-15", monotony: 1.5, strain: 300, weekly_load: 200 },
-      ];
+      const rows = [{ week: "2024-01-15", monotony: 1.5, strain: 300, weekly_load: 200 }];
       const caller = makeCaller(rows);
       const result = await caller.trainingMonotony({ days: 90 });
 

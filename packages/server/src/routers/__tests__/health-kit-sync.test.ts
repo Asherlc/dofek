@@ -68,7 +68,11 @@ describe("healthKitSyncRouter", () => {
       const result = await caller.pushQuantitySamples({
         samples: [
           makeSample({ type: "HKQuantityTypeIdentifierStepCount", value: 5000, uuid: "s1" }),
-          makeSample({ type: "HKQuantityTypeIdentifierActiveEnergyBurned", value: 300, uuid: "s2" }),
+          makeSample({
+            type: "HKQuantityTypeIdentifierActiveEnergyBurned",
+            value: 300,
+            uuid: "s2",
+          }),
         ],
       });
 
@@ -86,7 +90,11 @@ describe("healthKitSyncRouter", () => {
       const result = await caller.pushQuantitySamples({
         samples: [
           makeSample({ type: "HKQuantityTypeIdentifierRestingHeartRate", value: 55, uuid: "rhr1" }),
-          makeSample({ type: "HKQuantityTypeIdentifierHeartRateVariabilitySDNN", value: 65, uuid: "hrv1" }),
+          makeSample({
+            type: "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
+            value: 65,
+            uuid: "hrv1",
+          }),
         ],
       });
 

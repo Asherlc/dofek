@@ -126,9 +126,7 @@ describe("trainingRouter", () => {
 
   describe("weeklyVolume", () => {
     it("returns weekly volume rows", async () => {
-      const rows = [
-        { week: "2024-01-15", activity_type: "cycling", count: 3, hours: 5.5 },
-      ];
+      const rows = [{ week: "2024-01-15", activity_type: "cycling", count: 3, hours: 5.5 }];
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) } as never,
         userId: "user-1",
@@ -141,7 +139,15 @@ describe("trainingRouter", () => {
   describe("hrZones", () => {
     it("returns zones with maxHr", async () => {
       const rows = [
-        { max_hr: 190, week: "2024-01-15", zone1: 500, zone2: 1000, zone3: 800, zone4: 300, zone5: 50 },
+        {
+          max_hr: 190,
+          week: "2024-01-15",
+          zone1: 500,
+          zone2: 1000,
+          zone3: 800,
+          zone4: 300,
+          zone5: 50,
+        },
       ];
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) } as never,
@@ -181,9 +187,7 @@ describe("intervalsRouter", () => {
 
   describe("byActivity", () => {
     it("returns interval rows", async () => {
-      const rows = [
-        { id: "i1", interval_index: 0, label: "Warmup", avg_power: 100 },
-      ];
+      const rows = [{ id: "i1", interval_index: 0, label: "Warmup", avg_power: 100 }];
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) } as never,
         userId: "user-1",
@@ -210,11 +214,61 @@ describe("intervalsRouter", () => {
     it("detects intervals from power changes", async () => {
       // Create minute-level data with a significant power change
       const rows = [
-        { minute_start: "2024-01-01T10:00:00Z", avg_power: 100, avg_hr: null, avg_speed: 5, avg_cadence: 80, max_power: 120, max_hr: null, max_speed: 6, distance: 0 },
-        { minute_start: "2024-01-01T10:01:00Z", avg_power: 100, avg_hr: null, avg_speed: 5, avg_cadence: 80, max_power: 110, max_hr: null, max_speed: 6, distance: 300 },
-        { minute_start: "2024-01-01T10:02:00Z", avg_power: 250, avg_hr: null, avg_speed: 8, avg_cadence: 95, max_power: 300, max_hr: null, max_speed: 9, distance: 600 },
-        { minute_start: "2024-01-01T10:03:00Z", avg_power: 260, avg_hr: null, avg_speed: 8, avg_cadence: 95, max_power: 310, max_hr: null, max_speed: 9, distance: 900 },
-        { minute_start: "2024-01-01T10:04:00Z", avg_power: 100, avg_hr: null, avg_speed: 5, avg_cadence: 80, max_power: 120, max_hr: null, max_speed: 6, distance: 1200 },
+        {
+          minute_start: "2024-01-01T10:00:00Z",
+          avg_power: 100,
+          avg_hr: null,
+          avg_speed: 5,
+          avg_cadence: 80,
+          max_power: 120,
+          max_hr: null,
+          max_speed: 6,
+          distance: 0,
+        },
+        {
+          minute_start: "2024-01-01T10:01:00Z",
+          avg_power: 100,
+          avg_hr: null,
+          avg_speed: 5,
+          avg_cadence: 80,
+          max_power: 110,
+          max_hr: null,
+          max_speed: 6,
+          distance: 300,
+        },
+        {
+          minute_start: "2024-01-01T10:02:00Z",
+          avg_power: 250,
+          avg_hr: null,
+          avg_speed: 8,
+          avg_cadence: 95,
+          max_power: 300,
+          max_hr: null,
+          max_speed: 9,
+          distance: 600,
+        },
+        {
+          minute_start: "2024-01-01T10:03:00Z",
+          avg_power: 260,
+          avg_hr: null,
+          avg_speed: 8,
+          avg_cadence: 95,
+          max_power: 310,
+          max_hr: null,
+          max_speed: 9,
+          distance: 900,
+        },
+        {
+          minute_start: "2024-01-01T10:04:00Z",
+          avg_power: 100,
+          avg_hr: null,
+          avg_speed: 5,
+          avg_cadence: 80,
+          max_power: 120,
+          max_hr: null,
+          max_speed: 6,
+          distance: 1200,
+        },
       ];
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) } as never,
@@ -231,9 +285,39 @@ describe("intervalsRouter", () => {
 
     it("falls back to HR when no power data", async () => {
       const rows = [
-        { minute_start: "2024-01-01T10:00:00Z", avg_power: null, avg_hr: 120, avg_speed: 5, avg_cadence: null, max_power: null, max_hr: 130, max_speed: 6, distance: 0 },
-        { minute_start: "2024-01-01T10:01:00Z", avg_power: null, avg_hr: 120, avg_speed: 5, avg_cadence: null, max_power: null, max_hr: 130, max_speed: 6, distance: 300 },
-        { minute_start: "2024-01-01T10:02:00Z", avg_power: null, avg_hr: 175, avg_speed: 8, avg_cadence: null, max_power: null, max_hr: 185, max_speed: 9, distance: 600 },
+        {
+          minute_start: "2024-01-01T10:00:00Z",
+          avg_power: null,
+          avg_hr: 120,
+          avg_speed: 5,
+          avg_cadence: null,
+          max_power: null,
+          max_hr: 130,
+          max_speed: 6,
+          distance: 0,
+        },
+        {
+          minute_start: "2024-01-01T10:01:00Z",
+          avg_power: null,
+          avg_hr: 120,
+          avg_speed: 5,
+          avg_cadence: null,
+          max_power: null,
+          max_hr: 130,
+          max_speed: 6,
+          distance: 300,
+        },
+        {
+          minute_start: "2024-01-01T10:02:00Z",
+          avg_power: null,
+          avg_hr: 175,
+          avg_speed: 8,
+          avg_cadence: null,
+          max_power: null,
+          max_hr: 185,
+          max_speed: 9,
+          distance: 600,
+        },
       ];
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) } as never,

@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  WgerProvider,
   parseWgerWeightEntry,
   parseWgerWorkoutSession,
+  WgerProvider,
   wgerOAuthConfig,
 } from "../wger.ts";
 
@@ -67,7 +67,9 @@ describe("parseWgerWeightEntry", () => {
 
 describe("wgerOAuthConfig", () => {
   const originalEnv = { ...process.env };
-  afterEach(() => { process.env = { ...originalEnv }; });
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
 
   it("returns null when env vars missing", () => {
     delete process.env.WGER_CLIENT_ID;
@@ -87,7 +89,9 @@ describe("wgerOAuthConfig", () => {
 
 describe("WgerProvider", () => {
   const originalEnv = { ...process.env };
-  afterEach(() => { process.env = { ...originalEnv }; });
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
 
   it("validate checks env vars", () => {
     delete process.env.WGER_CLIENT_ID;

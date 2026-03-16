@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockQueueInstance = { name: "mock-queue" };
 const MockQueue = vi.fn(() => mockQueueInstance);
@@ -59,10 +59,12 @@ describe("queues", () => {
       const { getRedisConnection } = await import("../queues.ts");
 
       const conn = getRedisConnection();
+      expect("host" in conn).toBe(true);
+      const redisOpts = conn as { host: string; port: number; password?: string };
 
-      expect(conn.host).toBe("redis-host");
-      expect(conn.port).toBe(6379);
-      expect(conn.password).toBeUndefined();
+      expect(redisOpts.host).toBe("redis-host");
+      expect(redisOpts.port).toBe(6379);
+      expect(redisOpts.password).toBeUndefined();
     });
 
     it("defaults port to 6379 when not specified", async () => {
@@ -70,8 +72,9 @@ describe("queues", () => {
       const { getRedisConnection } = await import("../queues.ts");
 
       const conn = getRedisConnection();
+      const redisOpts = conn as { port: number };
 
-      expect(conn.port).toBe(6379);
+      expect(redisOpts.port).toBe(6379);
     });
   });
 

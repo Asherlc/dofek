@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  type FatSecretFoodEntriesResponse,
   buildOAuth1Header,
+  type FatSecretFoodEntriesResponse,
   inferCategory,
   parseFoodEntries,
 } from "../fatsecret.ts";

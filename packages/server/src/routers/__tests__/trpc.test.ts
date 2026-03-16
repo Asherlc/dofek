@@ -1,6 +1,5 @@
 import { initTRPC, TRPCError } from "@trpc/server";
 import { describe, expect, it, vi } from "vitest";
-import { trpcMock, createTestCallerFactory } from "./test-helpers.ts";
 
 // Mock external dependencies before importing
 vi.mock("../../lib/cache.ts", () => ({

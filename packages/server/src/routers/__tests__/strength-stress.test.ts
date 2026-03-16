@@ -34,9 +34,7 @@ describe("strengthRouter", () => {
 
   describe("volumeOverTime", () => {
     it("returns weekly volume", async () => {
-      const rows = [
-        { week: "2024-01-15", total_volume_kg: 5000, set_count: 50, workout_count: 3 },
-      ];
+      const rows = [{ week: "2024-01-15", total_volume_kg: 5000, set_count: 50, workout_count: 3 }];
       const caller = makeCaller(rows);
       const result = await caller.volumeOverTime({ days: 90 });
 
@@ -49,15 +47,33 @@ describe("strengthRouter", () => {
   describe("estimatedOneRepMax", () => {
     it("groups entries by exercise", async () => {
       const rows = [
-        { exercise_name: "Bench Press", workout_date: "2024-01-15", estimated_max: 100, actual_weight: 80, actual_reps: 8 },
-        { exercise_name: "Bench Press", workout_date: "2024-01-22", estimated_max: 105, actual_weight: 85, actual_reps: 7 },
-        { exercise_name: "Squat", workout_date: "2024-01-15", estimated_max: 140, actual_weight: 120, actual_reps: 5 },
+        {
+          exercise_name: "Bench Press",
+          workout_date: "2024-01-15",
+          estimated_max: 100,
+          actual_weight: 80,
+          actual_reps: 8,
+        },
+        {
+          exercise_name: "Bench Press",
+          workout_date: "2024-01-22",
+          estimated_max: 105,
+          actual_weight: 85,
+          actual_reps: 7,
+        },
+        {
+          exercise_name: "Squat",
+          workout_date: "2024-01-15",
+          estimated_max: 140,
+          actual_weight: 120,
+          actual_reps: 5,
+        },
       ];
       const caller = makeCaller(rows);
       const result = await caller.estimatedOneRepMax({ days: 90 });
 
       expect(result).toHaveLength(2);
-      const bench = result.find(r => r.exerciseName === "Bench Press");
+      const bench = result.find((r) => r.exerciseName === "Bench Press");
       expect(bench?.history).toHaveLength(2);
     });
 
@@ -79,7 +95,7 @@ describe("strengthRouter", () => {
       const result = await caller.muscleGroupVolume({ days: 90 });
 
       expect(result).toHaveLength(2);
-      const chest = result.find(r => r.muscleGroup === "chest");
+      const chest = result.find((r) => r.muscleGroup === "chest");
       expect(chest?.weeklyData).toHaveLength(2);
     });
   });
@@ -100,9 +116,7 @@ describe("strengthRouter", () => {
     });
 
     it("filters exercises with fewer than 2 weeks", async () => {
-      const rows = [
-        { exercise_name: "Curl", week: "2024-01-15", weekly_volume: 500 },
-      ];
+      const rows = [{ exercise_name: "Curl", week: "2024-01-15", weekly_volume: 500 }];
       const caller = makeCaller(rows);
       const result = await caller.progressiveOverload({ days: 90 });
       expect(result).toEqual([]);

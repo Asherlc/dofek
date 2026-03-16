@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockDrizzleReturn = { query: {} };
 const mockDrizzle = vi.fn(() => mockDrizzleReturn);
@@ -50,7 +50,9 @@ describe("db/index", () => {
   describe("createDatabaseFromEnv", () => {
     it("throws when DATABASE_URL is not set", async () => {
       const { createDatabaseFromEnv } = await import("../index.ts");
-      expect(() => createDatabaseFromEnv()).toThrow("DATABASE_URL environment variable is required");
+      expect(() => createDatabaseFromEnv()).toThrow(
+        "DATABASE_URL environment variable is required",
+      );
     });
 
     it("creates a database using DATABASE_URL from env", async () => {

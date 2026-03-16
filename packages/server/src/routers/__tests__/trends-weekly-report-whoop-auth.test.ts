@@ -30,7 +30,7 @@ vi.mock("dofek/db/tokens", () => ({
 }));
 
 import { trendsRouter } from "../trends.ts";
-import { classifyStrainZone, weeklyReportRouter } from "../weekly-report.ts";
+import { weeklyReportRouter } from "../weekly-report.ts";
 import { whoopAuthRouter } from "../whoop-auth.ts";
 
 // ── Trends Router ──

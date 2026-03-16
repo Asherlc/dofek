@@ -16,11 +16,7 @@ describe("executeWithSchema", () => {
       ]),
     };
 
-    const result = await executeWithSchema(
-      mockDb as never,
-      schema,
-      sql`SELECT * FROM test`,
-    );
+    const result = await executeWithSchema(mockDb as never, schema, sql`SELECT * FROM test`);
 
     expect(result).toEqual([
       { id: 1, name: "Alice" },
@@ -35,11 +31,7 @@ describe("executeWithSchema", () => {
       execute: vi.fn().mockResolvedValue([]),
     };
 
-    const result = await executeWithSchema(
-      mockDb as never,
-      schema,
-      sql`SELECT * FROM empty_table`,
-    );
+    const result = await executeWithSchema(mockDb as never, schema, sql`SELECT * FROM empty_table`);
 
     expect(result).toEqual([]);
   });
@@ -52,11 +44,7 @@ describe("executeWithSchema", () => {
       execute: vi.fn().mockResolvedValue([{ value: "42.5" }]),
     };
 
-    const result = await executeWithSchema(
-      mockDb as never,
-      schema,
-      sql`SELECT value FROM test`,
-    );
+    const result = await executeWithSchema(mockDb as never, schema, sql`SELECT value FROM test`);
 
     expect(result).toEqual([{ value: 42.5 }]);
   });
@@ -87,11 +75,7 @@ describe("executeWithSchema", () => {
       ]),
     };
 
-    const result = await executeWithSchema(
-      mockDb as never,
-      schema,
-      sql`SELECT * FROM test`,
-    );
+    const result = await executeWithSchema(mockDb as never, schema, sql`SELECT * FROM test`);
 
     expect(result).toEqual([
       { id: 1, value: null },

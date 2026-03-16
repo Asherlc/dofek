@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
-  STRONG_PROVIDER_ID,
-  StrongCsvProvider,
   parseDurationString,
   parseStrongCsv,
   parseStrongExerciseName,
+  STRONG_PROVIDER_ID,
+  StrongCsvProvider,
 } from "../strong-csv.ts";
 
 // ============================================================
@@ -74,9 +74,9 @@ describe("parseStrongCsv", () => {
 
   it("parses a single workout with sets", () => {
     const rows = [
-      '2026-03-01 10:00:00,Full Body,1:00:00,Bench Press (Barbell),1,100,8,,,,,',
-      '2026-03-01 10:00:00,Full Body,1:00:00,Bench Press (Barbell),2,100,8,,,,,',
-      '2026-03-01 10:00:00,Full Body,1:00:00,Squat (Barbell),1,120,5,,,,,',
+      "2026-03-01 10:00:00,Full Body,1:00:00,Bench Press (Barbell),1,100,8,,,,,",
+      "2026-03-01 10:00:00,Full Body,1:00:00,Bench Press (Barbell),2,100,8,,,,,",
+      "2026-03-01 10:00:00,Full Body,1:00:00,Squat (Barbell),1,120,5,,,,,",
     ];
     const csv = `${header}\n${rows.join("\n")}`;
     const groups = parseStrongCsv(csv);
@@ -93,8 +93,8 @@ describe("parseStrongCsv", () => {
 
   it("groups by date + workout name", () => {
     const rows = [
-      '2026-03-01 10:00:00,Morning,1h,Squat (Barbell),1,100,5,,,,,',
-      '2026-03-01 18:00:00,Evening,45m,Bench Press (Barbell),1,80,8,,,,,',
+      "2026-03-01 10:00:00,Morning,1h,Squat (Barbell),1,100,5,,,,,",
+      "2026-03-01 18:00:00,Evening,45m,Bench Press (Barbell),1,80,8,,,,,",
     ];
     const csv = `${header}\n${rows.join("\n")}`;
     const groups = parseStrongCsv(csv);
@@ -105,8 +105,7 @@ describe("parseStrongCsv", () => {
   });
 
   it("parses distance and seconds fields", () => {
-    const row =
-      "2026-03-01 10:00:00,Cardio,30m,Treadmill Run,1,,,,1800,,,";
+    const row = "2026-03-01 10:00:00,Cardio,30m,Treadmill Run,1,,,,1800,,,";
     const csv = `${header}\n${row}`;
     const groups = parseStrongCsv(csv);
 
@@ -116,8 +115,7 @@ describe("parseStrongCsv", () => {
   });
 
   it("parses notes and workout notes", () => {
-    const row =
-      "2026-03-01 10:00:00,Test,30m,Curl (Dumbbell),1,20,12,,,Set note,Workout note,8";
+    const row = "2026-03-01 10:00:00,Test,30m,Curl (Dumbbell),1,20,12,,,Set note,Workout note,8";
     const csv = `${header}\n${row}`;
     const groups = parseStrongCsv(csv);
 
@@ -157,8 +155,7 @@ describe("parseStrongCsv", () => {
   });
 
   it("handles distance field", () => {
-    const row =
-      "2026-03-01 10:00:00,Cardio,30m,Walk,1,,,2.5,1800,,,";
+    const row = "2026-03-01 10:00:00,Cardio,30m,Walk,1,,,2.5,1800,,,";
     const csv = `${header}\n${row}`;
     const groups = parseStrongCsv(csv);
     expect(groups[0]?.sets[0]?.distance).toBe(2.5);

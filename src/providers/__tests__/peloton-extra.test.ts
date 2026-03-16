@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  PelotonClient,
-  PelotonProvider,
-  type PelotonPerformanceGraph,
-  type PelotonWorkout,
   mapFitnessDiscipline,
+  PelotonClient,
+  type PelotonPerformanceGraph,
+  PelotonProvider,
+  type PelotonWorkout,
   parseAuth0FormHtml,
   parsePerformanceGraph,
   parseWorkout,
@@ -203,7 +203,7 @@ describe("pelotonOAuthConfig", () => {
 describe("PelotonClient", () => {
   it("getUserId fetches and caches user ID", async () => {
     const mockFetch = vi.fn().mockResolvedValue(Response.json({ id: "user-abc" }));
-    const client = new PelotonClient("test-token", mockFetch as unknown as typeof fetch);
+    const client = new PelotonClient("test-token", mockFetch as never);
 
     const id1 = await client.getUserId();
     expect(id1).toBe("user-abc");
@@ -215,11 +215,9 @@ describe("PelotonClient", () => {
   });
 
   it("throws on API error", async () => {
-    const mockFetch = vi.fn().mockResolvedValue(
-      new Response("Unauthorized", { status: 401 }),
-    );
+    const mockFetch = vi.fn().mockResolvedValue(new Response("Unauthorized", { status: 401 }));
 
-    const client = new PelotonClient("bad-token", mockFetch as unknown as typeof fetch);
+    const client = new PelotonClient("bad-token", mockFetch as never);
     await expect(client.getUserId()).rejects.toThrow("Peloton API error (401)");
   });
 
@@ -241,7 +239,7 @@ describe("PelotonClient", () => {
         }),
       );
 
-    const client = new PelotonClient("token", mockFetch as unknown as typeof fetch);
+    const client = new PelotonClient("token", mockFetch as never);
     const result = await client.getWorkouts(0, 20);
     expect(result.data).toEqual([]);
     const secondUrl = mockFetch.mock.calls[1]?.[0] as string;
@@ -260,7 +258,7 @@ describe("PelotonClient", () => {
       }),
     );
 
-    const client = new PelotonClient("token", mockFetch as unknown as typeof fetch);
+    const client = new PelotonClient("token", mockFetch as never);
     const result = await client.getPerformanceGraph("w-123", 5);
     expect(result.metrics).toEqual([]);
     const url = mockFetch.mock.calls[0]?.[0] as string;

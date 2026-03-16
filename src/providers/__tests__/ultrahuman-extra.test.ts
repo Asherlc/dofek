@@ -1,9 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  UltrahumanClient,
-  UltrahumanProvider,
-  parseUltrahumanMetrics,
-} from "../ultrahuman.ts";
+import { parseUltrahumanMetrics, UltrahumanClient, UltrahumanProvider } from "../ultrahuman.ts";
 
 describe("parseUltrahumanMetrics", () => {
   it("parses resting HR from night_rhr with avg", () => {
@@ -101,9 +97,7 @@ describe("parseUltrahumanMetrics", () => {
   });
 
   it("handles sleep without quick_metrics", () => {
-    const { sleep } = parseUltrahumanMetrics("2026-03-01", [
-      { type: "sleep", object: {} },
-    ]);
+    const { sleep } = parseUltrahumanMetrics("2026-03-01", [{ type: "sleep", object: {} }]);
     expect(sleep.durationMinutes).toBeUndefined();
     expect(sleep.sleepScore).toBeUndefined();
   });
@@ -111,11 +105,11 @@ describe("parseUltrahumanMetrics", () => {
 
 describe("UltrahumanClient", () => {
   it("throws on API error", async () => {
-    const mockFetch = vi.fn().mockResolvedValue(
-      new Response("Unauthorized", { status: 401 }),
+    const mockFetch = vi.fn().mockResolvedValue(new Response("Unauthorized", { status: 401 }));
+    const client = new UltrahumanClient("token", "test@test.com", mockFetch as never);
+    await expect(client.getDailyMetrics("2026-03-01")).rejects.toThrow(
+      "Ultrahuman API error (401)",
     );
-    const client = new UltrahumanClient("token", "test@test.com", mockFetch as unknown as typeof fetch);
-    await expect(client.getDailyMetrics("2026-03-01")).rejects.toThrow("Ultrahuman API error (401)");
   });
 
   it("returns parsed response on success", async () => {
@@ -125,7 +119,7 @@ describe("UltrahumanClient", () => {
       status: 200,
     };
     const mockFetch = vi.fn().mockResolvedValue(Response.json(mockData));
-    const client = new UltrahumanClient("token", "test@test.com", mockFetch as unknown as typeof fetch);
+    const client = new UltrahumanClient("token", "test@test.com", mockFetch as never);
     const result = await client.getDailyMetrics("2026-03-01");
     expect(result.status).toBe(200);
   });
@@ -133,7 +127,9 @@ describe("UltrahumanClient", () => {
 
 describe("UltrahumanProvider", () => {
   const originalEnv = { ...process.env };
-  afterEach(() => { process.env = { ...originalEnv }; });
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
 
   it("validate checks env vars", () => {
     delete process.env.ULTRAHUMAN_API_TOKEN;

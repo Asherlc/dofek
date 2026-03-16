@@ -1,10 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  KomootProvider,
-  komootOAuthConfig,
-  mapKomootSport,
-  parseKomootTour,
-} from "../komoot.ts";
+import { KomootProvider, komootOAuthConfig, mapKomootSport, parseKomootTour } from "../komoot.ts";
 
 describe("mapKomootSport", () => {
   it("maps all known sport types", () => {
@@ -80,7 +75,9 @@ describe("parseKomootTour", () => {
 
 describe("komootOAuthConfig", () => {
   const originalEnv = { ...process.env };
-  afterEach(() => { process.env = { ...originalEnv }; });
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
 
   it("returns null when missing env vars", () => {
     delete process.env.KOMOOT_CLIENT_ID;
@@ -99,7 +96,9 @@ describe("komootOAuthConfig", () => {
 
 describe("KomootProvider", () => {
   const originalEnv = { ...process.env };
-  afterEach(() => { process.env = { ...originalEnv }; });
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
 
   it("validate returns errors", () => {
     delete process.env.KOMOOT_CLIENT_ID;

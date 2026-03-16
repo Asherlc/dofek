@@ -1,12 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  WahooClient,
-  WahooProvider,
-  type WahooWorkout,
   fitRecordsToMetricStream,
   parseWorkoutList,
   parseWorkoutSummary,
-  wahooOAuthConfig,
+  WahooClient,
+  WahooProvider,
+  type WahooWorkout,
 } from "../wahoo.ts";
 
 // ============================================================
@@ -27,7 +26,7 @@ describe("WahooClient.getWorkout", () => {
       }),
     );
 
-    const client = new WahooClient("test-token", mockFetch as unknown as typeof fetch);
+    const client = new WahooClient("test-token", mockFetch as never);
     const result = await client.getWorkout(42);
     expect(result.workout.id).toBe(42);
     expect(mockFetch).toHaveBeenCalledOnce();
@@ -39,11 +38,9 @@ describe("WahooClient.getWorkout", () => {
 describe("WahooClient.downloadFitFile", () => {
   it("downloads and returns a Buffer", async () => {
     const testData = new Uint8Array([0x2e, 0x46, 0x49, 0x54]);
-    const mockFetch = vi.fn().mockResolvedValue(
-      new Response(testData, { status: 200 }),
-    );
+    const mockFetch = vi.fn().mockResolvedValue(new Response(testData, { status: 200 }));
 
-    const client = new WahooClient("test-token", mockFetch as unknown as typeof fetch);
+    const client = new WahooClient("test-token", mockFetch as never);
     const result = await client.downloadFitFile("https://example.com/test.fit");
     expect(Buffer.isBuffer(result)).toBe(true);
     expect(result.length).toBe(4);
@@ -205,7 +202,7 @@ describe("WahooProvider.sync — token error path", () => {
     process.env.WAHOO_CLIENT_ID = "id";
     process.env.WAHOO_CLIENT_SECRET = "secret";
 
-    const provider = new WahooProvider(vi.fn() as unknown as typeof fetch);
+    const provider = new WahooProvider(vi.fn() as never);
     const mockDb = {
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({

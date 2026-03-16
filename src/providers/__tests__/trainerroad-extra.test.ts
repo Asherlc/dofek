@@ -49,13 +49,15 @@ describe("TrainerRoadProvider", () => {
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
-            limit: vi.fn().mockResolvedValue([{
-              providerId: "trainerroad",
-              accessToken: "cookie",
-              refreshToken: null,
-              expiresAt: new Date("2099-01-01"),
-              scopes: null, // no username
-            }]),
+            limit: vi.fn().mockResolvedValue([
+              {
+                providerId: "trainerroad",
+                accessToken: "cookie",
+                refreshToken: null,
+                expiresAt: new Date("2099-01-01"),
+                scopes: null, // no username
+              },
+            ]),
           }),
         }),
       }),
@@ -83,13 +85,15 @@ describe("TrainerRoadProvider", () => {
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
-            limit: vi.fn().mockResolvedValue([{
-              providerId: "trainerroad",
-              accessToken: "old-cookie",
-              refreshToken: null,
-              expiresAt: new Date("2020-01-01"), // expired
-              scopes: "username:testuser",
-            }]),
+            limit: vi.fn().mockResolvedValue([
+              {
+                providerId: "trainerroad",
+                accessToken: "old-cookie",
+                refreshToken: null,
+                expiresAt: new Date("2020-01-01"), // expired
+                scopes: "username:testuser",
+              },
+            ]),
           }),
         }),
       }),

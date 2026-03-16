@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  type ActivitySummary,
-  type WorkoutStatistics,
   enrichWorkoutFromStats,
   parseActivitySummary,
   parseCategoryRecord,
@@ -11,6 +9,7 @@ import {
   parseSleepAnalysis,
   parseWorkout,
   parseWorkoutStatistics,
+  type WorkoutStatistics,
 } from "../apple-health.ts";
 
 // ============================================================
@@ -102,12 +101,25 @@ describe("parseSleepAnalysis", () => {
       endDate: "2024-03-02 00:30:00 -0500",
     };
 
-    expect(parseSleepAnalysis({ ...base, value: "HKCategoryValueSleepAnalysisInBed" })?.stage).toBe("inBed");
-    expect(parseSleepAnalysis({ ...base, value: "HKCategoryValueSleepAnalysisAsleepCore" })?.stage).toBe("core");
-    expect(parseSleepAnalysis({ ...base, value: "HKCategoryValueSleepAnalysisAsleepDeep" })?.stage).toBe("deep");
-    expect(parseSleepAnalysis({ ...base, value: "HKCategoryValueSleepAnalysisAsleepREM" })?.stage).toBe("rem");
-    expect(parseSleepAnalysis({ ...base, value: "HKCategoryValueSleepAnalysisAwake" })?.stage).toBe("awake");
-    expect(parseSleepAnalysis({ ...base, value: "HKCategoryValueSleepAnalysisAsleepUnspecified" })?.stage).toBe("asleep");
+    expect(parseSleepAnalysis({ ...base, value: "HKCategoryValueSleepAnalysisInBed" })?.stage).toBe(
+      "inBed",
+    );
+    expect(
+      parseSleepAnalysis({ ...base, value: "HKCategoryValueSleepAnalysisAsleepCore" })?.stage,
+    ).toBe("core");
+    expect(
+      parseSleepAnalysis({ ...base, value: "HKCategoryValueSleepAnalysisAsleepDeep" })?.stage,
+    ).toBe("deep");
+    expect(
+      parseSleepAnalysis({ ...base, value: "HKCategoryValueSleepAnalysisAsleepREM" })?.stage,
+    ).toBe("rem");
+    expect(parseSleepAnalysis({ ...base, value: "HKCategoryValueSleepAnalysisAwake" })?.stage).toBe(
+      "awake",
+    );
+    expect(
+      parseSleepAnalysis({ ...base, value: "HKCategoryValueSleepAnalysisAsleepUnspecified" })
+        ?.stage,
+    ).toBe("asleep");
   });
 
   it("parses legacy numeric values", () => {
@@ -203,14 +215,59 @@ describe("parseWorkout", () => {
   });
 
   it("maps common workout types", () => {
-    expect(parseWorkout({ workoutActivityType: "HKWorkoutActivityTypeRunning", startDate: "", endDate: "" }).activityType).toBe("running");
-    expect(parseWorkout({ workoutActivityType: "HKWorkoutActivityTypeSwimming", startDate: "", endDate: "" }).activityType).toBe("swimming");
-    expect(parseWorkout({ workoutActivityType: "HKWorkoutActivityTypeYoga", startDate: "", endDate: "" }).activityType).toBe("yoga");
-    expect(parseWorkout({ workoutActivityType: "HKWorkoutActivityTypeHiking", startDate: "", endDate: "" }).activityType).toBe("hiking");
-    expect(parseWorkout({ workoutActivityType: "HKWorkoutActivityTypeRowing", startDate: "", endDate: "" }).activityType).toBe("rowing");
-    expect(parseWorkout({ workoutActivityType: "HKWorkoutActivityTypeElliptical", startDate: "", endDate: "" }).activityType).toBe("elliptical");
-    expect(parseWorkout({ workoutActivityType: "HKWorkoutActivityTypeHighIntensityIntervalTraining", startDate: "", endDate: "" }).activityType).toBe("hiit");
-    expect(parseWorkout({ workoutActivityType: "HKWorkoutActivityTypeTraditionalStrengthTraining", startDate: "", endDate: "" }).activityType).toBe("strength_training");
+    expect(
+      parseWorkout({
+        workoutActivityType: "HKWorkoutActivityTypeRunning",
+        startDate: "",
+        endDate: "",
+      }).activityType,
+    ).toBe("running");
+    expect(
+      parseWorkout({
+        workoutActivityType: "HKWorkoutActivityTypeSwimming",
+        startDate: "",
+        endDate: "",
+      }).activityType,
+    ).toBe("swimming");
+    expect(
+      parseWorkout({ workoutActivityType: "HKWorkoutActivityTypeYoga", startDate: "", endDate: "" })
+        .activityType,
+    ).toBe("yoga");
+    expect(
+      parseWorkout({
+        workoutActivityType: "HKWorkoutActivityTypeHiking",
+        startDate: "",
+        endDate: "",
+      }).activityType,
+    ).toBe("hiking");
+    expect(
+      parseWorkout({
+        workoutActivityType: "HKWorkoutActivityTypeRowing",
+        startDate: "",
+        endDate: "",
+      }).activityType,
+    ).toBe("rowing");
+    expect(
+      parseWorkout({
+        workoutActivityType: "HKWorkoutActivityTypeElliptical",
+        startDate: "",
+        endDate: "",
+      }).activityType,
+    ).toBe("elliptical");
+    expect(
+      parseWorkout({
+        workoutActivityType: "HKWorkoutActivityTypeHighIntensityIntervalTraining",
+        startDate: "",
+        endDate: "",
+      }).activityType,
+    ).toBe("hiit");
+    expect(
+      parseWorkout({
+        workoutActivityType: "HKWorkoutActivityTypeTraditionalStrengthTraining",
+        startDate: "",
+        endDate: "",
+      }).activityType,
+    ).toBe("strength_training");
   });
 
   it("falls back to lowercased HKWorkoutActivityType suffix for unknown types", () => {
@@ -374,9 +431,7 @@ describe("enrichWorkoutFromStats", () => {
       endDate: "2024-03-01 09:00:00 -0500",
     });
 
-    const stats: WorkoutStatistics[] = [
-      { type: "HKQuantityTypeIdentifierStepCount", sum: 5000 },
-    ];
+    const stats: WorkoutStatistics[] = [{ type: "HKQuantityTypeIdentifierStepCount", sum: 5000 }];
 
     enrichWorkoutFromStats(workout, stats);
     expect(workout.avgHeartRate).toBeUndefined();

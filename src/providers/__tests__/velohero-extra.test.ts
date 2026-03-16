@@ -53,13 +53,15 @@ describe("VeloHeroProvider", () => {
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
-            limit: vi.fn().mockResolvedValue([{
-              providerId: "velohero",
-              accessToken: "old-session",
-              refreshToken: null,
-              expiresAt: new Date("2020-01-01"), // expired
-              scopes: "userId:123",
-            }]),
+            limit: vi.fn().mockResolvedValue([
+              {
+                providerId: "velohero",
+                accessToken: "old-session",
+                refreshToken: null,
+                expiresAt: new Date("2020-01-01"), // expired
+                scopes: "userId:123",
+              },
+            ]),
           }),
         }),
       }),

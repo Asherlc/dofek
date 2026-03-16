@@ -5,9 +5,9 @@ import {
   parseTripToActivity,
   RideWithGpsClient,
   RideWithGpsProvider,
-  rideWithGpsOAuthConfig,
   type RideWithGpsTrackPoint,
   type RideWithGpsTripSummary,
+  rideWithGpsOAuthConfig,
 } from "../ride-with-gps.ts";
 
 // ============================================================
@@ -23,14 +23,12 @@ describe("RideWithGpsClient — API calls", () => {
   it("sync sends correct URL with since parameter", async () => {
     let capturedUrl = "";
     let capturedHeaders: Record<string, string> = {};
-    const mockFetch = (async (
-      input: RequestInfo | URL,
-      init?: RequestInit,
-    ): Promise<Response> => {
+    const mockFetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       capturedUrl = input.toString();
-      capturedHeaders = Object.fromEntries(
-        Object.entries(init?.headers ?? {}),
-      ) as Record<string, string>;
+      capturedHeaders = Object.fromEntries(Object.entries(init?.headers ?? {})) as Record<
+        string,
+        string
+      >;
       return Response.json({
         items: [],
         meta: { rwgps_datetime: "2026-03-15T12:00:00Z" },
@@ -211,17 +209,13 @@ describe("parseTripToActivity — additional edge cases", () => {
 
 describe("parseTrackPoints — speed edge cases", () => {
   it("converts speed = 0 to 0 m/s", () => {
-    const points: RideWithGpsTrackPoint[] = [
-      { x: -122.6, y: 45.5, d: 0, t: 1723276200, s: 0 },
-    ];
+    const points: RideWithGpsTrackPoint[] = [{ x: -122.6, y: 45.5, d: 0, t: 1723276200, s: 0 }];
     const result = parseTrackPoints(points);
     expect(result[0]?.speed).toBeCloseTo(0);
   });
 
   it("handles undefined speed as undefined", () => {
-    const points: RideWithGpsTrackPoint[] = [
-      { x: -122.6, y: 45.5, d: 0, t: 1723276200 },
-    ];
+    const points: RideWithGpsTrackPoint[] = [{ x: -122.6, y: 45.5, d: 0, t: 1723276200 }];
     const result = parseTrackPoints(points);
     expect(result[0]?.speed).toBeUndefined();
   });

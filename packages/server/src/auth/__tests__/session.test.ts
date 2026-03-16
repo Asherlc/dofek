@@ -1,5 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { createSession, validateSession, deleteSession, deleteExpiredSessions } from "../session.ts";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  createSession,
+  deleteExpiredSessions,
+  deleteSession,
+  validateSession,
+} from "../session.ts";
 
 const mockExecute = vi.fn();
 
@@ -52,9 +57,7 @@ describe("session", () => {
 
   describe("validateSession", () => {
     it("returns userId when session is valid", async () => {
-      mockExecute.mockResolvedValue([
-        { user_id: "user-abc", expires_at: new Date("2027-01-01") },
-      ]);
+      mockExecute.mockResolvedValue([{ user_id: "user-abc", expires_at: new Date("2027-01-01") }]);
 
       // biome-ignore lint/suspicious/noExplicitAny: mock DB
       const result = await validateSession(mockDb as any, "session-token");

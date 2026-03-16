@@ -50,13 +50,15 @@ describe("ZwiftProvider", () => {
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
-            limit: vi.fn().mockResolvedValue([{
-              providerId: "zwift",
-              accessToken: "token",
-              refreshToken: "refresh",
-              expiresAt: new Date("2099-01-01"),
-              scopes: null, // no athleteId
-            }]),
+            limit: vi.fn().mockResolvedValue([
+              {
+                providerId: "zwift",
+                accessToken: "token",
+                refreshToken: "refresh",
+                expiresAt: new Date("2099-01-01"),
+                scopes: null, // no athleteId
+              },
+            ]),
           }),
         }),
       }),
@@ -80,13 +82,15 @@ describe("ZwiftProvider", () => {
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
-            limit: vi.fn().mockResolvedValue([{
-              providerId: "zwift",
-              accessToken: "old-token",
-              refreshToken: null,
-              expiresAt: new Date("2020-01-01"), // expired
-              scopes: "athleteId:12345",
-            }]),
+            limit: vi.fn().mockResolvedValue([
+              {
+                providerId: "zwift",
+                accessToken: "old-token",
+                refreshToken: null,
+                expiresAt: new Date("2020-01-01"), // expired
+                scopes: "athleteId:12345",
+              },
+            ]),
           }),
         }),
       }),

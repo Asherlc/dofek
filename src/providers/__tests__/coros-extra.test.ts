@@ -1,10 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  CorosProvider,
-  corosOAuthConfig,
-  mapCorosSportType,
-  parseCorosWorkout,
-} from "../coros.ts";
+import { CorosProvider, corosOAuthConfig, mapCorosSportType, parseCorosWorkout } from "../coros.ts";
 
 // ============================================================
 // Tests targeting uncovered paths in coros.ts

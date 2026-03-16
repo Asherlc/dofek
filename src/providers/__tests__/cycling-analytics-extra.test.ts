@@ -46,7 +46,7 @@ describe("parseCyclingAnalyticsRide — edge cases", () => {
       max_speed: 15.0,
       calories: 1200,
       training_stress_score: 150,
-      intensity_factor: 0.90,
+      intensity_factor: 0.9,
     };
 
     const parsed = parseCyclingAnalyticsRide(ride);
@@ -58,13 +58,15 @@ describe("parseCyclingAnalyticsRide — edge cases", () => {
     expect(parsed.raw.elevationLoss).toBe(490);
     expect(parsed.raw.averageSpeed).toBe(8.33);
     expect(parsed.raw.maxSpeed).toBe(15.0);
-    expect(parsed.raw.intensityFactor).toBe(0.90);
+    expect(parsed.raw.intensityFactor).toBe(0.9);
   });
 });
 
 describe("cyclingAnalyticsOAuthConfig", () => {
   const originalEnv = { ...process.env };
-  afterEach(() => { process.env = { ...originalEnv }; });
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
 
   it("returns null when missing", () => {
     delete process.env.CYCLING_ANALYTICS_CLIENT_ID;
@@ -83,7 +85,9 @@ describe("cyclingAnalyticsOAuthConfig", () => {
 
 describe("CyclingAnalyticsProvider", () => {
   const originalEnv = { ...process.env };
-  afterEach(() => { process.env = { ...originalEnv }; });
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
 
   it("validate checks env vars", () => {
     delete process.env.CYCLING_ANALYTICS_CLIENT_ID;
@@ -123,7 +127,10 @@ describe("CyclingAnalyticsProvider", () => {
         }),
       }),
     };
-    const result = await new CyclingAnalyticsProvider().sync(mockDb as never, new Date("2026-01-01"));
+    const result = await new CyclingAnalyticsProvider().sync(
+      mockDb as never,
+      new Date("2026-01-01"),
+    );
     expect(result.errors.length).toBeGreaterThan(0);
   });
 });

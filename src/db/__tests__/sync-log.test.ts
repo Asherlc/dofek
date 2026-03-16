@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncLogEntry } from "../sync-log.ts";
 import { logSync, withSyncLog } from "../sync-log.ts";
 
@@ -78,9 +78,7 @@ describe("logSync", () => {
     // biome-ignore lint/suspicious/noExplicitAny: mock DB doesn't match full Drizzle type
     await logSync(mockDb as any, entry);
 
-    expect(mockDb._valuesFn).toHaveBeenCalledWith(
-      expect.objectContaining({ recordCount: 0 }),
-    );
+    expect(mockDb._valuesFn).toHaveBeenCalledWith(expect.objectContaining({ recordCount: 0 }));
   });
 });
 

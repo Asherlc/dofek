@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  SuuntoProvider,
   mapSuuntoActivityType,
   parseSuuntoWorkout,
+  SuuntoProvider,
   suuntoOAuthConfig,
 } from "../suunto.ts";
 
@@ -86,7 +86,9 @@ describe("parseSuuntoWorkout", () => {
 
 describe("suuntoOAuthConfig", () => {
   const originalEnv = { ...process.env };
-  afterEach(() => { process.env = { ...originalEnv }; });
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
 
   it("returns null when missing", () => {
     delete process.env.SUUNTO_CLIENT_ID;
@@ -105,7 +107,9 @@ describe("suuntoOAuthConfig", () => {
 
 describe("SuuntoProvider", () => {
   const originalEnv = { ...process.env };
-  afterEach(() => { process.env = { ...originalEnv }; });
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
 
   it("validate returns errors for missing env vars", () => {
     delete process.env.SUUNTO_CLIENT_ID;

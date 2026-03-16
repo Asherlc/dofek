@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
 import { readdirSync, readFileSync } from "node:fs";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock node:fs
 vi.mock("node:fs", () => ({
@@ -56,11 +56,11 @@ describe("runMigrations", () => {
   it("applies pending migrations and skips already-applied ones", async () => {
     const { runMigrations } = await import("../migrate.ts");
 
-    mockedReaddirSync.mockReturnValue(
-      ["0001_init.sql", "0002_add_col.sql", "0003_new.sql"] as unknown as ReturnType<
-        typeof readdirSync
-      >,
-    );
+    mockedReaddirSync.mockReturnValue([
+      "0001_init.sql",
+      "0002_add_col.sql",
+      "0003_new.sql",
+    ] as never);
 
     // Already applied: 0001 and 0002
     mockSql.mockImplementation((..._args: unknown[]) => {
@@ -81,9 +81,7 @@ describe("runMigrations", () => {
   it("splits migration files on statement breakpoints", async () => {
     const { runMigrations } = await import("../migrate.ts");
 
-    mockedReaddirSync.mockReturnValue(["0001_multi.sql"] as unknown as ReturnType<
-      typeof readdirSync
-    >);
+    mockedReaddirSync.mockReturnValue(["0001_multi.sql"] as never);
     mockSql.mockResolvedValue([]);
     mockedReadFileSync.mockReturnValue(
       "CREATE TABLE a (id INT)--> statement-breakpoint\nCREATE TABLE b (id INT)",
@@ -100,9 +98,7 @@ describe("runMigrations", () => {
   it("returns 0 when no pending migrations exist", async () => {
     const { runMigrations } = await import("../migrate.ts");
 
-    mockedReaddirSync.mockReturnValue(["0001_init.sql"] as unknown as ReturnType<
-      typeof readdirSync
-    >);
+    mockedReaddirSync.mockReturnValue(["0001_init.sql"] as never);
     mockSql.mockResolvedValue([{ hash: "0001_init.sql" }]);
 
     const count = await runMigrations("postgres://localhost/test", "/tmp/migrations");
@@ -114,11 +110,12 @@ describe("runMigrations", () => {
   it("only considers .sql files", async () => {
     const { runMigrations } = await import("../migrate.ts");
 
-    mockedReaddirSync.mockReturnValue(
-      ["0001_init.sql", "README.md", "meta.json", "0002_next.sql"] as unknown as ReturnType<
-        typeof readdirSync
-      >,
-    );
+    mockedReaddirSync.mockReturnValue([
+      "0001_init.sql",
+      "README.md",
+      "meta.json",
+      "0002_next.sql",
+    ] as never);
     mockSql.mockResolvedValue([]);
     mockedReadFileSync.mockReturnValue("SELECT 1");
 
