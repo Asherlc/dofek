@@ -330,35 +330,18 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
       ],
     };
 
-    const mockFetch: typeof globalThis.fetch = async (
-      input: RequestInfo | URL,
-    ): Promise<Response> => {
-      const urlStr = input.toString();
-      if (urlStr.includes("/api/me")) return Response.json({ id: "user-123" });
-      if (urlStr.includes("/performance_graph")) return Response.json(largeGraph);
-      if (urlStr.includes("/workouts")) {
-        return Response.json({
-          data: [
-            fakeWorkout({
-              id: "ext-large-stream",
-              start_time: 1709971200,
-              end_time: 1709974200,
-            }),
-          ],
-          total: 1,
-          count: 1,
-          page: 0,
-          limit: 20,
-          page_count: 1,
-          sort_by: "-created_at",
-          show_next: false,
-          show_previous: false,
+    server.use(
+      http.get("https://api.onepeloton.com/api/me", () => HttpResponse.json({ id: "user-123" })),
+      http.get("https://api.onepeloton.com/api/workout/:workoutId/performance_graph", () => HttpResponse.json(largeGraph)),
+      http.get("https://api.onepeloton.com/api/user/:userId/workouts", () => {
+        return HttpResponse.json({
+          data: [fakeWorkout({ id: "ext-large-stream", start_time: 1709971200, end_time: 1709974200 })],
+          total: 1, count: 1, page: 0, limit: 20, page_count: 1, sort_by: "-created_at", show_next: false, show_previous: false,
         });
-      }
-      return new Response("Not found", { status: 404 });
-    };
+      }),
+    );
 
-    const provider = new PelotonProvider(mockFetch);
+    const provider = new PelotonProvider();
     const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(0);
@@ -405,35 +388,18 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
       ],
     };
 
-    const mockFetch: typeof globalThis.fetch = async (
-      input: RequestInfo | URL,
-    ): Promise<Response> => {
-      const urlStr = input.toString();
-      if (urlStr.includes("/api/me")) return Response.json({ id: "user-123" });
-      if (urlStr.includes("/performance_graph")) return Response.json(graph);
-      if (urlStr.includes("/workouts")) {
-        return Response.json({
-          data: [
-            fakeWorkout({
-              id: "ext-resync-workout",
-              start_time: 1710057600,
-              end_time: 1710059400,
-            }),
-          ],
-          total: 1,
-          count: 1,
-          page: 0,
-          limit: 20,
-          page_count: 1,
-          sort_by: "-created_at",
-          show_next: false,
-          show_previous: false,
+    server.use(
+      http.get("https://api.onepeloton.com/api/me", () => HttpResponse.json({ id: "user-123" })),
+      http.get("https://api.onepeloton.com/api/workout/:workoutId/performance_graph", () => HttpResponse.json(graph)),
+      http.get("https://api.onepeloton.com/api/user/:userId/workouts", () => {
+        return HttpResponse.json({
+          data: [fakeWorkout({ id: "ext-resync-workout", start_time: 1710057600, end_time: 1710059400 })],
+          total: 1, count: 1, page: 0, limit: 20, page_count: 1, sort_by: "-created_at", show_next: false, show_previous: false,
         });
-      }
-      return new Response("Not found", { status: 404 });
-    };
+      }),
+    );
 
-    const provider = new PelotonProvider(mockFetch);
+    const provider = new PelotonProvider();
     const since = new Date("2024-01-01T00:00:00Z");
 
     // Sync twice
@@ -480,36 +446,18 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
       ],
     };
 
-    const mockFetch: typeof globalThis.fetch = async (
-      input: RequestInfo | URL,
-    ): Promise<Response> => {
-      const urlStr = input.toString();
-      if (urlStr.includes("/api/me")) return Response.json({ id: "user-123" });
-      if (urlStr.includes("/performance_graph")) return Response.json(speedOnlyGraph);
-      if (urlStr.includes("/workouts")) {
-        return Response.json({
-          data: [
-            fakeWorkout({
-              id: "ext-speed-only",
-              start_time: 1710144000,
-              end_time: 1710145800,
-              fitness_discipline: "walking",
-            }),
-          ],
-          total: 1,
-          count: 1,
-          page: 0,
-          limit: 20,
-          page_count: 1,
-          sort_by: "-created_at",
-          show_next: false,
-          show_previous: false,
+    server.use(
+      http.get("https://api.onepeloton.com/api/me", () => HttpResponse.json({ id: "user-123" })),
+      http.get("https://api.onepeloton.com/api/workout/:workoutId/performance_graph", () => HttpResponse.json(speedOnlyGraph)),
+      http.get("https://api.onepeloton.com/api/user/:userId/workouts", () => {
+        return HttpResponse.json({
+          data: [fakeWorkout({ id: "ext-speed-only", start_time: 1710144000, end_time: 1710145800, fitness_discipline: "walking" })],
+          total: 1, count: 1, page: 0, limit: 20, page_count: 1, sort_by: "-created_at", show_next: false, show_previous: false,
         });
-      }
-      return new Response("Not found", { status: 404 });
-    };
+      }),
+    );
 
-    const provider = new PelotonProvider(mockFetch);
+    const provider = new PelotonProvider();
     const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(0);
@@ -528,7 +476,20 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
 // pelotonAutomatedLogin tests (mock Auth0 flow)
 // ============================================================
 
+const loginServer = setupServer();
+
 describe("pelotonAutomatedLogin", () => {
+  beforeAll(() => {
+    loginServer.listen({ onUnhandledRequest: "error" });
+  });
+
+  afterEach(() => {
+    loginServer.resetHandlers();
+  });
+
+  afterAll(() => {
+    loginServer.close();
+  });
   it.skip("completes the full Auth0 automated login flow", async () => {
     const injectedConfig = {
       extraParams: {
@@ -623,7 +584,7 @@ describe("pelotonAutomatedLogin", () => {
       return new Response("Not found", { status: 404 });
     };
 
-    const tokens = await pelotonAutomatedLogin("user@test.com", "password123", mockFetch);
+    const tokens = await pelotonAutomatedLogin("user@test.com", "password123");
 
     expect(step).toBe(6);
     expect(tokens.accessToken).toBe("new-access-token");
@@ -644,7 +605,7 @@ describe("pelotonAutomatedLogin", () => {
       return new Response("Not found", { status: 404 });
     };
 
-    await expect(pelotonAutomatedLogin("user@test.com", "pass", mockFetch)).rejects.toThrow(
+    await expect(pelotonAutomatedLogin("user@test.com", "pass")).rejects.toThrow(
       "Could not find injectedConfig",
     );
   });
@@ -678,7 +639,7 @@ describe("pelotonAutomatedLogin", () => {
       return new Response("Not found", { status: 404 });
     };
 
-    await expect(pelotonAutomatedLogin("user@test.com", "wrongpass", mockFetch)).rejects.toThrow(
+    await expect(pelotonAutomatedLogin("user@test.com", "wrongpass")).rejects.toThrow(
       "Auth0 login failed (403)",
     );
   });
@@ -723,7 +684,7 @@ describe("pelotonAutomatedLogin", () => {
       return new Response("Not found", { status: 404 });
     };
 
-    await expect(pelotonAutomatedLogin("user@test.com", "pass", mockFetch)).rejects.toThrow(
+    await expect(pelotonAutomatedLogin("user@test.com", "pass")).rejects.toThrow(
       "redirect chain ended without a Location header",
     );
   });
@@ -773,7 +734,7 @@ describe("pelotonAutomatedLogin", () => {
       return new Response("Not found", { status: 404 });
     };
 
-    await expect(pelotonAutomatedLogin("user@test.com", "pass", mockFetch)).rejects.toThrow(
+    await expect(pelotonAutomatedLogin("user@test.com", "pass")).rejects.toThrow(
       "User blocked",
     );
   });
