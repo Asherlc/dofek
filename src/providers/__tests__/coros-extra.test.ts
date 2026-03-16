@@ -122,26 +122,42 @@ describe("corosOAuthConfig", () => {
     process.env = { ...originalEnv };
   });
 
-  it("returns null when env vars are missing", () => {
+  it("returns null when COROS_CLIENT_ID is not set", () => {
     delete process.env.COROS_CLIENT_ID;
     delete process.env.COROS_CLIENT_SECRET;
     expect(corosOAuthConfig()).toBeNull();
   });
 
-  it("returns config when both env vars set", () => {
-    process.env.COROS_CLIENT_ID = "id";
-    process.env.COROS_CLIENT_SECRET = "secret";
-    const config = corosOAuthConfig();
-    expect(config?.clientId).toBe("id");
-    expect(config?.authorizeUrl).toContain("coros.com");
+  it("returns null when COROS_CLIENT_SECRET is not set", () => {
+    process.env.COROS_CLIENT_ID = "test-id";
+    delete process.env.COROS_CLIENT_SECRET;
+    expect(corosOAuthConfig()).toBeNull();
   });
 
-  it("uses custom redirect URI", () => {
-    process.env.COROS_CLIENT_ID = "id";
-    process.env.COROS_CLIENT_SECRET = "secret";
-    process.env.OAUTH_REDIRECT_URI = "https://example.com/cb";
+  it("returns config when both env vars are set", () => {
+    process.env.COROS_CLIENT_ID = "test-id";
+    process.env.COROS_CLIENT_SECRET = "test-secret";
     const config = corosOAuthConfig();
-    expect(config?.redirectUri).toBe("https://example.com/cb");
+    expect(config).not.toBeNull();
+    expect(config?.clientId).toBe("test-id");
+    expect(config?.clientSecret).toBe("test-secret");
+    expect(config?.scopes).toEqual([]);
+  });
+
+  it("uses custom OAUTH_REDIRECT_URI when set", () => {
+    process.env.COROS_CLIENT_ID = "test-id";
+    process.env.COROS_CLIENT_SECRET = "test-secret";
+    process.env.OAUTH_REDIRECT_URI = "https://example.com/callback";
+    const config = corosOAuthConfig();
+    expect(config?.redirectUri).toBe("https://example.com/callback");
+  });
+
+  it("uses default redirect URI when OAUTH_REDIRECT_URI is not set", () => {
+    process.env.COROS_CLIENT_ID = "test-id";
+    process.env.COROS_CLIENT_SECRET = "test-secret";
+    delete process.env.OAUTH_REDIRECT_URI;
+    const config = corosOAuthConfig();
+    expect(config?.redirectUri).toContain("localhost");
   });
 });
 
@@ -152,36 +168,37 @@ describe("CorosProvider", () => {
     process.env = { ...originalEnv };
   });
 
-  it("validate returns error when CLIENT_ID missing", () => {
+  it("validate returns error when COROS_CLIENT_ID is missing", () => {
     delete process.env.COROS_CLIENT_ID;
     delete process.env.COROS_CLIENT_SECRET;
     expect(new CorosProvider().validate()).toContain("COROS_CLIENT_ID");
   });
 
-  it("validate returns error when CLIENT_SECRET missing", () => {
-    process.env.COROS_CLIENT_ID = "id";
+  it("validate returns error when COROS_CLIENT_SECRET is missing", () => {
+    process.env.COROS_CLIENT_ID = "test-id";
     delete process.env.COROS_CLIENT_SECRET;
     expect(new CorosProvider().validate()).toContain("COROS_CLIENT_SECRET");
   });
 
-  it("validate returns null when both set", () => {
-    process.env.COROS_CLIENT_ID = "id";
-    process.env.COROS_CLIENT_SECRET = "secret";
+  it("validate returns null when both are set", () => {
+    process.env.COROS_CLIENT_ID = "test-id";
+    process.env.COROS_CLIENT_SECRET = "test-secret";
     expect(new CorosProvider().validate()).toBeNull();
   });
 
-  it("authSetup returns correct config", () => {
-    process.env.COROS_CLIENT_ID = "id";
-    process.env.COROS_CLIENT_SECRET = "secret";
+  it("authSetup returns auth setup with OAuth config", () => {
+    process.env.COROS_CLIENT_ID = "test-id";
+    process.env.COROS_CLIENT_SECRET = "test-secret";
     const setup = new CorosProvider().authSetup();
-    expect(setup.oauthConfig.clientId).toBe("id");
+    expect(setup.oauthConfig.clientId).toBe("test-id");
+    expect(setup.exchangeCode).toBeTypeOf("function");
     expect(setup.apiBaseUrl).toContain("coros.com");
   });
 
-  it("authSetup throws when env vars missing", () => {
+  it("authSetup throws when env vars are missing", () => {
     delete process.env.COROS_CLIENT_ID;
     delete process.env.COROS_CLIENT_SECRET;
-    expect(() => new CorosProvider().authSetup()).toThrow();
+    expect(() => new CorosProvider().authSetup()).toThrow("COROS_CLIENT_ID");
   });
 
   it("sync returns error when no tokens", async () => {

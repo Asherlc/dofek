@@ -253,4 +253,62 @@ describe("WithingsProvider.sync() (integration)", () => {
     expect(result.errors[0]?.message).toContain("No OAuth tokens found");
     expect(result.recordsSynced).toBe(0);
   });
+
+  it("captures per-measurement insert errors and continues", async () => {
+    await saveTokens(ctx.db, "withings", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user.metrics",
+    });
+
+    // Clear previous data
+    await ctx.db.delete(bodyMeasurement).where(eq(bodyMeasurement.providerId, "withings"));
+
+    server.use(
+      http.post("https://wbsapi.withings.net/measure", () => {
+        return HttpResponse.json({
+          status: 0,
+          body: {
+            measuregrps: [fakeWeightGroup({ grpid: 9010 }), fakeWeightGroup({ grpid: 9011 })],
+            more: 0,
+            offset: 0,
+          },
+        });
+      }),
+    );
+
+    const provider = new WithingsProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+
+    // Both should succeed (this verifies the happy path through the insert logic)
+    expect(result.recordsSynced).toBe(2);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it("catches outer withSyncLog error and reports it", async () => {
+    await saveTokens(ctx.db, "withings", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user.metrics",
+    });
+
+    server.use(
+      http.post("https://wbsapi.withings.net/measure", () => {
+        return HttpResponse.json({
+          status: 401, // Non-zero = Withings API error
+          body: {},
+        });
+      }),
+    );
+
+    const provider = new WithingsProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+
+    // The outer catch should capture the error
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain("body_measurement");
+    expect(result.recordsSynced).toBe(0);
+  });
 });

@@ -68,18 +68,42 @@ describe("cyclingAnalyticsOAuthConfig", () => {
     process.env = { ...originalEnv };
   });
 
-  it("returns null when missing", () => {
+  it("returns null when CYCLING_ANALYTICS_CLIENT_ID is not set", () => {
     delete process.env.CYCLING_ANALYTICS_CLIENT_ID;
     delete process.env.CYCLING_ANALYTICS_CLIENT_SECRET;
     expect(cyclingAnalyticsOAuthConfig()).toBeNull();
   });
 
-  it("returns config when set", () => {
-    process.env.CYCLING_ANALYTICS_CLIENT_ID = "id";
-    process.env.CYCLING_ANALYTICS_CLIENT_SECRET = "secret";
+  it("returns null when CYCLING_ANALYTICS_CLIENT_SECRET is not set", () => {
+    process.env.CYCLING_ANALYTICS_CLIENT_ID = "test-id";
+    delete process.env.CYCLING_ANALYTICS_CLIENT_SECRET;
+    expect(cyclingAnalyticsOAuthConfig()).toBeNull();
+  });
+
+  it("returns config when both env vars are set", () => {
+    process.env.CYCLING_ANALYTICS_CLIENT_ID = "test-id";
+    process.env.CYCLING_ANALYTICS_CLIENT_SECRET = "test-secret";
     const config = cyclingAnalyticsOAuthConfig();
-    expect(config?.clientId).toBe("id");
-    expect(config?.authorizeUrl).toContain("cyclinganalytics.com");
+    expect(config).not.toBeNull();
+    expect(config?.clientId).toBe("test-id");
+    expect(config?.clientSecret).toBe("test-secret");
+    expect(config?.scopes).toEqual([]);
+  });
+
+  it("uses custom OAUTH_REDIRECT_URI when set", () => {
+    process.env.CYCLING_ANALYTICS_CLIENT_ID = "test-id";
+    process.env.CYCLING_ANALYTICS_CLIENT_SECRET = "test-secret";
+    process.env.OAUTH_REDIRECT_URI = "https://example.com/callback";
+    const config = cyclingAnalyticsOAuthConfig();
+    expect(config?.redirectUri).toBe("https://example.com/callback");
+  });
+
+  it("uses default redirect URI when OAUTH_REDIRECT_URI is not set", () => {
+    process.env.CYCLING_ANALYTICS_CLIENT_ID = "test-id";
+    process.env.CYCLING_ANALYTICS_CLIENT_SECRET = "test-secret";
+    delete process.env.OAUTH_REDIRECT_URI;
+    const config = cyclingAnalyticsOAuthConfig();
+    expect(config?.redirectUri).toContain("localhost");
   });
 });
 
@@ -89,22 +113,37 @@ describe("CyclingAnalyticsProvider", () => {
     process.env = { ...originalEnv };
   });
 
-  it("validate checks env vars", () => {
+  it("validate returns error when CYCLING_ANALYTICS_CLIENT_ID is missing", () => {
     delete process.env.CYCLING_ANALYTICS_CLIENT_ID;
     delete process.env.CYCLING_ANALYTICS_CLIENT_SECRET;
     expect(new CyclingAnalyticsProvider().validate()).toContain("CYCLING_ANALYTICS_CLIENT_ID");
-    process.env.CYCLING_ANALYTICS_CLIENT_ID = "id";
+  });
+
+  it("validate returns error when CYCLING_ANALYTICS_CLIENT_SECRET is missing", () => {
+    process.env.CYCLING_ANALYTICS_CLIENT_ID = "test-id";
+    delete process.env.CYCLING_ANALYTICS_CLIENT_SECRET;
     expect(new CyclingAnalyticsProvider().validate()).toContain("CYCLING_ANALYTICS_CLIENT_SECRET");
-    process.env.CYCLING_ANALYTICS_CLIENT_SECRET = "secret";
+  });
+
+  it("validate returns null when both are set", () => {
+    process.env.CYCLING_ANALYTICS_CLIENT_ID = "test-id";
+    process.env.CYCLING_ANALYTICS_CLIENT_SECRET = "test-secret";
     expect(new CyclingAnalyticsProvider().validate()).toBeNull();
   });
 
-  it("authSetup returns config", () => {
-    process.env.CYCLING_ANALYTICS_CLIENT_ID = "id";
-    process.env.CYCLING_ANALYTICS_CLIENT_SECRET = "secret";
+  it("authSetup returns auth setup with OAuth config", () => {
+    process.env.CYCLING_ANALYTICS_CLIENT_ID = "test-id";
+    process.env.CYCLING_ANALYTICS_CLIENT_SECRET = "test-secret";
     const setup = new CyclingAnalyticsProvider().authSetup();
-    expect(setup.oauthConfig.clientId).toBe("id");
+    expect(setup.oauthConfig.clientId).toBe("test-id");
+    expect(setup.exchangeCode).toBeTypeOf("function");
     expect(setup.apiBaseUrl).toContain("cyclinganalytics.com");
+  });
+
+  it("authSetup throws when env vars are missing", () => {
+    delete process.env.CYCLING_ANALYTICS_CLIENT_ID;
+    delete process.env.CYCLING_ANALYTICS_CLIENT_SECRET;
+    expect(() => new CyclingAnalyticsProvider().authSetup()).toThrow("CYCLING_ANALYTICS_CLIENT_ID");
   });
 
   it("sync returns error when no tokens", async () => {

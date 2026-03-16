@@ -343,4 +343,149 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
       .where(eq(metricStream.activityId, activities[0]?.id ?? ""));
     expect(metrics).toHaveLength(0);
   });
+
+  it("handles sync endpoint failure and returns early with error (lines 308-319)", async () => {
+    await saveTokens(ctx.db, "ride-with-gps", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user",
+    });
+
+    server.use(
+      http.get("https://ridewithgps.com/api/v1/sync.json", () => {
+        return new HttpResponse("Service Unavailable", { status: 503 });
+      }),
+    );
+
+    const provider = new RideWithGpsProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain("Sync endpoint failed");
+  });
+
+  it("handles deleted trip where activity does not exist (exercises delete path, lines 333-338)", async () => {
+    await saveTokens(ctx.db, "ride-with-gps", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user",
+    });
+
+    // Sync response with a deleted trip that doesn't exist in the DB
+    const syncResp: RideWithGpsSyncResponse = {
+      items: [
+        {
+          item_type: "trip",
+          item_id: 99999,
+          action: "deleted",
+          datetime: "2026-03-01T10:00:00Z",
+        },
+      ],
+      meta: { rwgps_datetime: "2026-03-01T12:00:00Z" },
+    };
+
+    server.use(
+      http.get("https://ridewithgps.com/api/v1/sync.json", () => {
+        return HttpResponse.json(syncResp);
+      }),
+    );
+
+    const provider = new RideWithGpsProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+
+    // Delete of non-existent trip should not error
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(0);
+  });
+
+  it("handles removed trip action (delete branch, lines 325-339)", async () => {
+    await saveTokens(ctx.db, "ride-with-gps", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user",
+    });
+
+    const syncResp: RideWithGpsSyncResponse = {
+      items: [
+        {
+          item_type: "trip",
+          item_id: 88888,
+          action: "removed",
+          datetime: "2026-03-01T10:00:00Z",
+        },
+      ],
+      meta: { rwgps_datetime: "2026-03-01T12:00:00Z" },
+    };
+
+    server.use(
+      http.get("https://ridewithgps.com/api/v1/sync.json", () => {
+        return HttpResponse.json(syncResp);
+      }),
+    );
+
+    const provider = new RideWithGpsProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(0);
+  });
+});
+
+describe("RideWithGpsProvider.getUserIdentity()", () => {
+  const originalEnv = { ...process.env };
+  const identityServer = setupServer();
+
+  beforeAll(() => {
+    identityServer.listen({ onUnhandledRequest: "error" });
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    identityServer.resetHandlers();
+  });
+
+  afterAll(() => {
+    identityServer.close();
+  });
+
+  it("returns identity from user API", async () => {
+    process.env.RWGPS_CLIENT_ID = "test-id";
+    process.env.RWGPS_CLIENT_SECRET = "test-secret";
+
+    identityServer.use(
+      http.get("https://ridewithgps.com/users/current.json", () => {
+        return HttpResponse.json({
+          user: { id: 555, email: "rider@rwgps.com", name: "Road Rider" },
+        });
+      }),
+    );
+
+    const provider = new RideWithGpsProvider();
+    const setup = provider.authSetup();
+    if (!setup.getUserIdentity) throw new Error("getUserIdentity not defined");
+    const identity = await setup.getUserIdentity("test-token");
+    expect(identity.providerAccountId).toBe("555");
+    expect(identity.email).toBe("rider@rwgps.com");
+    expect(identity.name).toBe("Road Rider");
+  });
+
+  it("throws on API error", async () => {
+    process.env.RWGPS_CLIENT_ID = "test-id";
+    process.env.RWGPS_CLIENT_SECRET = "test-secret";
+
+    identityServer.use(
+      http.get("https://ridewithgps.com/users/current.json", () => {
+        return new HttpResponse("Not Found", { status: 404 });
+      }),
+    );
+
+    const provider = new RideWithGpsProvider();
+    const setup = provider.authSetup();
+    if (!setup.getUserIdentity) throw new Error("getUserIdentity not defined");
+    await expect(setup.getUserIdentity("bad-token")).rejects.toThrow("RWGPS user API error (404)");
+  });
 });

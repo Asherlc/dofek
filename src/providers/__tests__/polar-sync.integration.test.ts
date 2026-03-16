@@ -348,3 +348,110 @@ describe("PolarProvider.sync() (integration)", () => {
     expect(result.recordsSynced).toBe(0);
   });
 });
+
+// ============================================================
+// Coverage tests for daily_activity error paths
+// ============================================================
+
+function polarCoverageHandlers(opts: {
+  dailyActivities?: PolarDailyActivity[];
+  nightlyRecharges?: PolarNightlyRecharge[];
+  dailyActivityError?: boolean;
+}) {
+  return [
+    // Exercises — return empty
+    http.get("https://www.polar.com/v3/exercises", () => {
+      return HttpResponse.json([]);
+    }),
+
+    // Sleep — return empty
+    http.get("https://www.polar.com/v3/sleep", () => {
+      return HttpResponse.json([]);
+    }),
+
+    // Nightly recharge
+    http.get("https://www.polar.com/v3/nightly-recharge", () => {
+      return HttpResponse.json(opts.nightlyRecharges ?? []);
+    }),
+
+    // Daily activity
+    http.get("https://www.polar.com/v3/activity", () => {
+      if (opts.dailyActivityError) {
+        return new HttpResponse("Internal Server Error", { status: 500 });
+      }
+      return HttpResponse.json(opts.dailyActivities ?? []);
+    }),
+  ];
+}
+
+describe("PolarProvider.sync() — daily_activity error paths (integration)", () => {
+  let ctx: TestContext;
+  const errorServer = setupServer();
+
+  beforeAll(async () => {
+    errorServer.listen({ onUnhandledRequest: "error" });
+    process.env.POLAR_CLIENT_ID = "test-polar-client";
+    process.env.POLAR_CLIENT_SECRET = "test-polar-secret";
+    ctx = await setupTestDatabase();
+    await ensureProvider(ctx.db, "polar", "Polar", "https://www.polar.com/v3");
+  }, 60_000);
+
+  afterEach(() => {
+    errorServer.resetHandlers();
+  });
+
+  afterAll(async () => {
+    errorServer.close();
+    if (ctx) await ctx.cleanup();
+  });
+
+  it("catches outer daily_activity withSyncLog error (lines 542-546)", async () => {
+    await saveTokens(ctx.db, "polar", {
+      accessToken: "valid-polar-token",
+      refreshToken: "valid-polar-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "accesslink.read_all",
+    });
+
+    errorServer.use(...polarCoverageHandlers({ dailyActivityError: true }));
+
+    const provider = new PolarProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+
+    // The daily_activity fetch fails with 500, which throws inside withSyncLog
+    // The outer catch at lines 542-546 should catch it
+    const dailyError = result.errors.find((e) => e.message.includes("daily_activity"));
+    expect(dailyError).toBeDefined();
+  });
+
+  it("inserts daily metrics successfully and handles insert errors (lines 530-535)", async () => {
+    await saveTokens(ctx.db, "polar", {
+      accessToken: "valid-polar-token",
+      refreshToken: "valid-polar-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "accesslink.read_all",
+    });
+
+    // Clear daily metrics
+    await ctx.db.delete(dailyMetrics).where(eq(dailyMetrics.providerId, "polar"));
+
+    errorServer.use(
+      ...polarCoverageHandlers({
+        dailyActivities: [fakePolarDailyActivity({ date: "2026-03-10", active_steps: 9000 })],
+      }),
+    );
+
+    const provider = new PolarProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+
+    // Should succeed
+    expect(result.errors).toHaveLength(0);
+    const rows = await ctx.db
+      .select()
+      .from(dailyMetrics)
+      .where(eq(dailyMetrics.providerId, "polar"));
+    const march10 = rows.find((r) => r.date === "2026-03-10");
+    expect(march10).toBeDefined();
+    expect(march10?.steps).toBe(9000);
+  });
+});

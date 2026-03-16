@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { KomootProvider, komootOAuthConfig, mapKomootSport, parseKomootTour } from "../komoot.ts";
 
+// ============================================================
+// Tests merged from komoot-coverage.test.ts
+// ============================================================
+
 describe("mapKomootSport", () => {
   it("maps all known sport types", () => {
     expect(mapKomootSport("BIKING")).toBe("cycling");
@@ -85,12 +89,43 @@ describe("komootOAuthConfig", () => {
     expect(komootOAuthConfig()).toBeNull();
   });
 
+  it("returns null when KOMOOT_CLIENT_SECRET is not set", () => {
+    process.env.KOMOOT_CLIENT_ID = "test-id";
+    delete process.env.KOMOOT_CLIENT_SECRET;
+    expect(komootOAuthConfig()).toBeNull();
+  });
+
   it("returns config when set", () => {
     process.env.KOMOOT_CLIENT_ID = "id";
     process.env.KOMOOT_CLIENT_SECRET = "secret";
     const config = komootOAuthConfig();
     expect(config?.clientId).toBe("id");
     expect(config?.tokenAuthMethod).toBe("basic");
+  });
+
+  it("returns config with scopes when both env vars are set", () => {
+    process.env.KOMOOT_CLIENT_ID = "test-id";
+    process.env.KOMOOT_CLIENT_SECRET = "test-secret";
+    const config = komootOAuthConfig();
+    expect(config).not.toBeNull();
+    expect(config?.clientSecret).toBe("test-secret");
+    expect(config?.scopes).toContain("profile");
+  });
+
+  it("uses custom OAUTH_REDIRECT_URI when set", () => {
+    process.env.KOMOOT_CLIENT_ID = "test-id";
+    process.env.KOMOOT_CLIENT_SECRET = "test-secret";
+    process.env.OAUTH_REDIRECT_URI = "https://example.com/callback";
+    const config = komootOAuthConfig();
+    expect(config?.redirectUri).toBe("https://example.com/callback");
+  });
+
+  it("uses default redirect URI when OAUTH_REDIRECT_URI is not set", () => {
+    process.env.KOMOOT_CLIENT_ID = "test-id";
+    process.env.KOMOOT_CLIENT_SECRET = "test-secret";
+    delete process.env.OAUTH_REDIRECT_URI;
+    const config = komootOAuthConfig();
+    expect(config?.redirectUri).toContain("localhost");
   });
 });
 
@@ -137,5 +172,30 @@ describe("KomootProvider", () => {
     // @ts-expect-error mock DB
     const result = await new KomootProvider().sync(mockDb, new Date("2026-01-01"));
     expect(result.errors.length).toBeGreaterThan(0);
+  });
+});
+
+describe("KomootProvider.authSetup()", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it("returns auth setup with OAuth config", () => {
+    process.env.KOMOOT_CLIENT_ID = "test-id";
+    process.env.KOMOOT_CLIENT_SECRET = "test-secret";
+    const provider = new KomootProvider();
+    const setup = provider.authSetup();
+    expect(setup.oauthConfig.clientId).toBe("test-id");
+    expect(setup.exchangeCode).toBeTypeOf("function");
+    expect(setup.apiBaseUrl).toContain("komoot.de");
+  });
+
+  it("throws when env vars are missing", () => {
+    delete process.env.KOMOOT_CLIENT_ID;
+    delete process.env.KOMOOT_CLIENT_SECRET;
+    const provider = new KomootProvider();
+    expect(() => provider.authSetup()).toThrow("KOMOOT_CLIENT_ID");
   });
 });

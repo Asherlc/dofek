@@ -1,11 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   mapFitnessDiscipline,
+  PelotonClient,
   type PelotonPerformanceGraph,
+  PelotonProvider,
   type PelotonWorkout,
   parseAuth0FormHtml,
   parsePerformanceGraph,
   parseWorkout,
+  pelotonOAuthConfig,
 } from "../peloton.ts";
 
 // ============================================================
@@ -186,6 +189,14 @@ describe("Peloton Provider", () => {
       expect(mapFitnessDiscipline("caesar")).toBe("rowing");
     });
 
+    it("maps cardio", () => {
+      expect(mapFitnessDiscipline("cardio")).toBe("cardio");
+    });
+
+    it("maps outdoor to running", () => {
+      expect(mapFitnessDiscipline("outdoor")).toBe("running");
+    });
+
     it("maps unknown disciplines to other", () => {
       expect(mapFitnessDiscipline("some_future_class")).toBe("other");
     });
@@ -261,6 +272,65 @@ describe("Peloton Provider", () => {
     it("computes duration from start/end when both present", () => {
       const result = parseWorkout(sampleWorkout);
       expect(result.name).toBe("30 min Power Zone Ride");
+    });
+
+    it("stores personal record flag in raw", () => {
+      const workout = { ...sampleWorkout, is_total_work_personal_record: true };
+      const parsed = parseWorkout(workout);
+      expect(parsed.raw.isPersonalRecord).toBe(true);
+    });
+
+    it("omits isPersonalRecord when false", () => {
+      const workout = { ...sampleWorkout, is_total_work_personal_record: false };
+      const parsed = parseWorkout(workout);
+      expect(parsed.raw.isPersonalRecord).toBeUndefined();
+    });
+
+    it("omits totalWorkJoules when total_work is 0", () => {
+      const workout = { ...sampleWorkout, total_work: 0 };
+      const parsed = parseWorkout(workout);
+      expect(parsed.raw.totalWorkJoules).toBeUndefined();
+    });
+
+    it("stores fitness discipline in raw", () => {
+      const workout: PelotonWorkout = {
+        ...sampleWorkout,
+        fitness_discipline: "yoga",
+      };
+      const parsed = parseWorkout(workout);
+      expect(parsed.raw.fitnessDiscipline).toBe("yoga");
+      expect(parsed.activityType).toBe("yoga");
+    });
+
+    it("stores peloton ride ID in raw", () => {
+      const workout: PelotonWorkout = {
+        ...sampleWorkout,
+        ride: {
+          ...sampleRide,
+          id: "ride-abc",
+          title: "Power Ride",
+          duration: 2700,
+          overall_rating_avg: 4.95,
+        },
+      };
+      const parsed = parseWorkout(workout);
+      expect(parsed.raw.pelotonRideId).toBe("ride-abc");
+      expect(parsed.raw.overallRating).toBeCloseTo(4.95);
+    });
+
+    it("stores ride description in raw", () => {
+      const workout: PelotonWorkout = {
+        ...sampleWorkout,
+        ride: {
+          ...sampleRide,
+          id: "ride-desc",
+          title: "Cool Ride",
+          duration: 1200,
+          description: "A really cool ride with intervals",
+        },
+      };
+      const parsed = parseWorkout(workout);
+      expect(parsed.raw.rideDescription).toBe("A really cool ride with intervals");
     });
   });
 
@@ -373,5 +443,246 @@ describe("Peloton Provider", () => {
       expect(result.fields.field1).toBe("val1");
       expect(result.fields.field2).toBe("val2");
     });
+
+    it("only includes hidden inputs, not text or password", () => {
+      const html = `
+        <form method="POST" action="https://auth.example.com/callback">
+          <input type="text" name="username" value="should-not-be-parsed"/>
+          <input type="hidden" name="wa" value="wsignin1.0"/>
+          <input type="hidden" name="wresult" value="long-jwt-token"/>
+          <input type="password" name="password" value="secret"/>
+          <input type="hidden" name="wctx" value="some-context"/>
+          <button type="submit">Continue</button>
+        </form>
+      `;
+      const result = parseAuth0FormHtml(html);
+      expect(result.action).toBe("https://auth.example.com/callback");
+      expect(result.fields.wa).toBe("wsignin1.0");
+      expect(result.fields.wresult).toBe("long-jwt-token");
+      expect(result.fields.wctx).toBe("some-context");
+      // Should not include non-hidden inputs
+      expect(result.fields.username).toBeUndefined();
+      expect(result.fields.password).toBeUndefined();
+    });
+
+    it("handles hidden input without value attribute", () => {
+      const html = `
+        <form method="POST" action="https://example.com/cb">
+          <input type="hidden" name="emptyfield"/>
+        </form>
+      `;
+      const result = parseAuth0FormHtml(html);
+      expect(result.fields.emptyfield).toBe("");
+    });
+  });
+});
+
+describe("pelotonOAuthConfig", () => {
+  it("returns a config with expected fields", () => {
+    const config = pelotonOAuthConfig();
+    expect(config.clientId).toBeDefined();
+    expect(config.authorizeUrl).toContain("onepeloton.com");
+    expect(config.tokenUrl).toContain("onepeloton.com");
+    expect(config.scopes).toContain("offline_access");
+    expect(config.usePkce).toBe(true);
+  });
+
+  it("includes all required OAuth configuration fields", () => {
+    const config = pelotonOAuthConfig();
+    expect(config.clientId).toBeTruthy();
+    expect(config.authorizeUrl).toBeTruthy();
+    expect(config.tokenUrl).toBeTruthy();
+    expect(config.redirectUri).toBeTruthy();
+    expect(config.scopes).toBeInstanceOf(Array);
+    expect(config.scopes.length).toBeGreaterThan(0);
+    expect(config.audience).toContain("onepeloton.com");
+  });
+});
+
+describe("PelotonProvider.validate()", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it("returns error when credentials are missing", () => {
+    delete process.env.PELOTON_USERNAME;
+    delete process.env.PELOTON_PASSWORD;
+    const provider = new PelotonProvider();
+    expect(provider.validate()).toContain("PELOTON_USERNAME");
+  });
+
+  it("returns null when credentials are set", () => {
+    process.env.PELOTON_USERNAME = "user@test.com";
+    process.env.PELOTON_PASSWORD = "password";
+    const provider = new PelotonProvider();
+    expect(provider.validate()).toBeNull();
+  });
+});
+
+describe("PelotonProvider.authSetup()", () => {
+  it("returns auth setup with OAuth config", () => {
+    const provider = new PelotonProvider();
+    const setup = provider.authSetup();
+    expect(setup.oauthConfig.clientId).toBeDefined();
+    expect(setup.exchangeCode).toBeTypeOf("function");
+    expect(setup.automatedLogin).toBeTypeOf("function");
+    expect(setup.apiBaseUrl).toContain("onepeloton.com");
+  });
+
+  it("authUrl contains onepeloton.com", () => {
+    const provider = new PelotonProvider();
+    const setup = provider.authSetup();
+    expect(typeof setup.authUrl).toBe("string");
+    expect(setup.authUrl).toContain("onepeloton.com");
+  });
+});
+
+describe("PelotonProvider — provider info", () => {
+  it("has correct id and name", () => {
+    const provider = new PelotonProvider();
+    expect(provider.id).toBe("peloton");
+    expect(provider.name).toBe("Peloton");
+  });
+});
+
+describe("PelotonClient — error handling", () => {
+  it("throws on non-OK response", async () => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response("Unauthorized", { status: 401 });
+    };
+
+    const client = new PelotonClient("bad-token", mockFetch);
+    await expect(client.getUserId()).rejects.toThrow("Peloton API error (401)");
+  });
+
+  it("caches userId after first call", async () => {
+    let callCount = 0;
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
+      const url = input.toString();
+      if (url.includes("/api/me")) {
+        callCount++;
+        return Response.json({ id: "user-456" });
+      }
+      if (url.includes("/workouts")) {
+        return Response.json({
+          data: [],
+          total: 0,
+          count: 0,
+          page: 0,
+          limit: 20,
+          page_count: 0,
+          sort_by: "-created_at",
+          show_next: false,
+          show_previous: false,
+        });
+      }
+      return new Response("Not found", { status: 404 });
+    };
+
+    const client = new PelotonClient("token", mockFetch);
+    await client.getUserId();
+    await client.getWorkouts(0);
+
+    // /api/me should have been called only once
+    expect(callCount).toBe(1);
+  });
+});
+
+describe("PelotonClient — getPerformanceGraph", () => {
+  it("passes everyN parameter to the API", async () => {
+    let capturedUrl = "";
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
+      const url = input.toString();
+      if (url.includes("/api/me")) {
+        return Response.json({ id: "user-123" });
+      }
+      if (url.includes("/performance_graph")) {
+        capturedUrl = url;
+        return Response.json({
+          duration: 1800,
+          is_class_plan_shown: false,
+          segment_list: [],
+          average_summaries: [],
+          summaries: [],
+          metrics: [],
+        });
+      }
+      return new Response("Not found", { status: 404 });
+    };
+
+    const client = new PelotonClient("token", mockFetch);
+    await client.getPerformanceGraph("workout-123", 10);
+
+    expect(capturedUrl).toContain("every_n=10");
+    expect(capturedUrl).toContain("workout-123");
+  });
+});
+
+describe("PelotonClient — getWorkouts", () => {
+  it("passes page and limit parameters", async () => {
+    let capturedUrl = "";
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
+      const url = input.toString();
+      if (url.includes("/api/me")) {
+        return Response.json({ id: "user-789" });
+      }
+      if (url.includes("/workouts")) {
+        capturedUrl = url;
+        return Response.json({
+          data: [],
+          total: 0,
+          count: 0,
+          page: 2,
+          limit: 50,
+          page_count: 0,
+          sort_by: "-created_at",
+          show_next: false,
+          show_previous: true,
+        });
+      }
+      return new Response("Not found", { status: 404 });
+    };
+
+    const client = new PelotonClient("token", mockFetch);
+    await client.getWorkouts(2, 50);
+
+    expect(capturedUrl).toContain("page=2");
+    expect(capturedUrl).toContain("limit=50");
+    expect(capturedUrl).toContain("sort_by=-created_at");
+    expect(capturedUrl).toContain("joins=ride");
+  });
+});
+
+describe("parsePerformanceGraph — extended", () => {
+  it("handles single metric with different everyN", () => {
+    const graph: PelotonPerformanceGraph = {
+      duration: 600,
+      is_class_plan_shown: false,
+      segment_list: [],
+      average_summaries: [],
+      summaries: [],
+      metrics: [
+        {
+          display_name: "Cadence",
+          slug: "cadence",
+          values: [80, 90, 100, 85],
+          average_value: 88.75,
+          max_value: 100,
+        },
+      ],
+    };
+
+    const series = parsePerformanceGraph(graph, 10);
+    expect(series).toHaveLength(1);
+    expect(series[0]?.offsetsSeconds).toEqual([0, 10, 20, 30]);
+    expect(series[0]?.displayName).toBe("Cadence");
   });
 });
