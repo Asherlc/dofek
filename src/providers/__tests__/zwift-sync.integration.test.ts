@@ -1,5 +1,7 @@
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { http, HttpResponse } from "msw";
+import { setupServer } from "msw/node";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
 import { activity, dailyMetrics, metricStream } from "../../db/schema.ts";
 import { ensureProvider, saveTokens } from "../../db/tokens.ts";
@@ -92,10 +94,10 @@ const FAKE_JWT_PAYLOAD = Buffer.from(JSON.stringify({ sub: "42" })).toString("ba
 const FAKE_ACCESS_TOKEN = `header.${FAKE_JWT_PAYLOAD}.signature`;
 
 // ============================================================
-// Mock fetch factory
+// MSW handler factory
 // ============================================================
 
-interface ZwiftMockFetchOptions {
+interface ZwiftMockOptions {
   activities?: ReturnType<typeof fakeZwiftActivitySummary>[];
   activityDetails?: Record<number, ReturnType<typeof fakeZwiftActivityDetail>>;
   fitnessData?: ReturnType<typeof fakeZwiftFitnessData> | null;
@@ -103,71 +105,74 @@ interface ZwiftMockFetchOptions {
   tokenRefreshError?: boolean;
   fitnessDataError?: boolean;
   activityDetailError?: boolean;
-  /** Return fewer activities on second page to test pagination stop */
   paginateActivities?: boolean;
 }
 
-function createMockFetch(opts: ZwiftMockFetchOptions = {}): typeof globalThis.fetch {
+function zwiftHandlers(opts: ZwiftMockOptions = {}) {
   const activities = opts.activities ?? [];
   let pageRequestCount = 0;
 
-  return async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
-    const urlStr = input.toString();
-
+  return [
     // Token refresh (Zwift auth endpoint)
-    if (urlStr.includes("secure.zwift.com") && urlStr.includes("token")) {
-      if (opts.tokenRefreshError) {
-        return new Response("Unauthorized", { status: 401 });
-      }
-      return Response.json({
-        access_token: "refreshed-zwift-token",
-        refresh_token: "new-zwift-refresh",
-        expires_in: 7200,
-        token_type: "Bearer",
-      });
-    }
+    http.post(
+      "https://secure.zwift.com/auth/realms/zwift/protocol/openid-connect/token",
+      () => {
+        if (opts.tokenRefreshError) {
+          return new HttpResponse("Unauthorized", { status: 401 });
+        }
+        return HttpResponse.json({
+          access_token: "refreshed-zwift-token",
+          refresh_token: "new-zwift-refresh",
+          expires_in: 7200,
+          token_type: "Bearer",
+        });
+      },
+    ),
 
     // Power curve
-    if (urlStr.includes("/api/power-curve/power-profile")) {
-      return Response.json(opts.powerCurve ?? fakeZwiftPowerCurve());
-    }
+    http.get(
+      "https://us-or-rly101.zwift.com/api/power-curve/power-profile/:profileId",
+      () => {
+        return HttpResponse.json(opts.powerCurve ?? fakeZwiftPowerCurve());
+      },
+    ),
 
-    // Activity detail (fetchSnapshots)
-    if (urlStr.match(/\/api\/activities\/(\d+)/)) {
+    // Activity detail
+    http.get("https://us-or-rly101.zwift.com/api/activities/:activityId", ({ params }) => {
       if (opts.activityDetailError) {
-        return new Response("Internal Server Error", { status: 500 });
+        return new HttpResponse("Internal Server Error", { status: 500 });
       }
-      const idMatch = urlStr.match(/\/api\/activities\/(\d+)/);
-      const activityId = Number(idMatch?.[1]);
+      const activityId = Number(params.activityId);
       const detail = opts.activityDetails?.[activityId] ?? fakeZwiftActivityDetail(activityId);
-      return Response.json(detail);
-    }
+      return HttpResponse.json(detail);
+    }),
 
     // Fitness data download
-    if (urlStr.includes("cdn.zwift.com/fitness/") || urlStr.includes("fitness")) {
+    http.get("https://cdn.zwift.com/fitness/*", () => {
       if (opts.fitnessDataError) {
-        return new Response("Internal Server Error", { status: 500 });
+        return new HttpResponse("Internal Server Error", { status: 500 });
       }
       if (opts.fitnessData === null) {
-        return Response.json({});
+        return HttpResponse.json({});
       }
-      return Response.json(opts.fitnessData ?? fakeZwiftFitnessData());
-    }
+      return HttpResponse.json(opts.fitnessData ?? fakeZwiftFitnessData());
+    }),
 
     // Activity list (paginated)
-    if (urlStr.includes("/api/profiles/") && urlStr.includes("/activities")) {
-      pageRequestCount++;
-      if (opts.paginateActivities && pageRequestCount > 1) {
-        // Empty second page to stop pagination
-        return Response.json([]);
-      }
-      return Response.json(activities);
-    }
+    http.get(
+      "https://us-or-rly101.zwift.com/api/profiles/:profileId/activities",
+      () => {
+        pageRequestCount++;
+        if (opts.paginateActivities && pageRequestCount > 1) {
+          return HttpResponse.json([]);
+        }
+        return HttpResponse.json(activities);
+      },
+    ),
 
-    // OAuth consumer URL (for garmin-connect, but Zwift doesn't use it)
     // Profile endpoint
-    if (urlStr.includes("/api/profiles/")) {
-      return Response.json({
+    http.get("https://us-or-rly101.zwift.com/api/profiles/:profileId", () => {
+      return HttpResponse.json({
         id: 42,
         firstName: "Test",
         lastName: "User",
@@ -175,11 +180,11 @@ function createMockFetch(opts: ZwiftMockFetchOptions = {}): typeof globalThis.fe
         weight: 75000,
         height: 180,
       });
-    }
-
-    return new Response("Not found", { status: 404 });
-  };
+    }),
+  ];
 }
+
+const server = setupServer();
 
 // ============================================================
 // Tests
@@ -189,11 +194,17 @@ describe("ZwiftProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
+    server.listen({ onUnhandledRequest: "error" });
     ctx = await setupTestDatabase();
     await ensureProvider(ctx.db, "zwift", "Zwift", "https://us-or-rly101.zwift.com");
   }, 60_000);
 
+  afterEach(() => {
+    server.resetHandlers();
+  });
+
   afterAll(async () => {
+    server.close();
     if (ctx) await ctx.cleanup();
   });
 
@@ -205,7 +216,7 @@ describe("ZwiftProvider.sync() (integration)", () => {
       scopes: "athleteId:42",
     });
 
-    const activities = [
+    const zwiftActivities = [
       fakeZwiftActivitySummary({ id: 100001, id_str: "100001", startDate: "2026-03-01T10:00:00Z" }),
       fakeZwiftActivitySummary({
         id: 100002,
@@ -216,13 +227,14 @@ describe("ZwiftProvider.sync() (integration)", () => {
       }),
     ];
 
-    const provider = new ZwiftProvider(
-      createMockFetch({
-        activities,
+    server.use(
+      ...zwiftHandlers({
+        activities: zwiftActivities,
         paginateActivities: true,
       }),
     );
 
+    const provider = new ZwiftProvider();
     const since = new Date("2026-02-01T00:00:00Z");
     const result = await provider.sync(ctx.db, since);
 
@@ -277,14 +289,19 @@ describe("ZwiftProvider.sync() (integration)", () => {
       scopes: "athleteId:42",
     });
 
-    const activities = [
+    const zwiftActivities = [
       fakeZwiftActivitySummary({ id: 100001, id_str: "100001", startDate: "2026-03-01T10:00:00Z" }),
     ];
 
-    const provider = new ZwiftProvider(createMockFetch({ activities, paginateActivities: true }));
+    server.use(...zwiftHandlers({ activities: zwiftActivities, paginateActivities: true }));
 
+    const provider = new ZwiftProvider();
     const since = new Date("2026-02-01T00:00:00Z");
     await provider.sync(ctx.db, since);
+
+    server.resetHandlers();
+    server.use(...zwiftHandlers({ activities: zwiftActivities, paginateActivities: true }));
+
     await provider.sync(ctx.db, since);
 
     const activityRows = await ctx.db
@@ -303,9 +320,11 @@ describe("ZwiftProvider.sync() (integration)", () => {
       scopes: "athleteId:42",
     });
 
-    const provider = new ZwiftProvider(
-      createMockFetch({ activities: [], paginateActivities: true }),
+    server.use(
+      ...zwiftHandlers({ activities: [], paginateActivities: true }),
     );
+
+    const provider = new ZwiftProvider();
     await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     // Verify token was refreshed in DB
@@ -318,7 +337,7 @@ describe("ZwiftProvider.sync() (integration)", () => {
     const { oauthToken } = await import("../../db/schema.ts");
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "zwift"));
 
-    const provider = new ZwiftProvider(createMockFetch());
+    const provider = new ZwiftProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);
@@ -334,7 +353,7 @@ describe("ZwiftProvider.sync() (integration)", () => {
       scopes: "", // no athleteId
     });
 
-    const provider = new ZwiftProvider(createMockFetch());
+    const provider = new ZwiftProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);
@@ -350,7 +369,7 @@ describe("ZwiftProvider.sync() (integration)", () => {
       scopes: "athleteId:42",
     });
 
-    const provider = new ZwiftProvider(createMockFetch());
+    const provider = new ZwiftProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);
@@ -366,7 +385,7 @@ describe("ZwiftProvider.sync() (integration)", () => {
       scopes: "athleteId:42",
     });
 
-    const activities = [
+    const zwiftActivities = [
       fakeZwiftActivitySummary({
         id: 200001,
         id_str: "200001",
@@ -374,14 +393,15 @@ describe("ZwiftProvider.sync() (integration)", () => {
       }),
     ];
 
-    const provider = new ZwiftProvider(
-      createMockFetch({
-        activities,
+    server.use(
+      ...zwiftHandlers({
+        activities: zwiftActivities,
         fitnessDataError: true,
         paginateActivities: true,
       }),
     );
 
+    const provider = new ZwiftProvider();
     const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
 
     // Activity should still be synced (counted)
@@ -409,7 +429,7 @@ describe("ZwiftProvider.sync() (integration)", () => {
     });
 
     // Activity that's before the since date — should trigger done=true
-    const activities = [
+    const zwiftActivities = [
       fakeZwiftActivitySummary({
         id: 300001,
         id_str: "300001",
@@ -422,8 +442,9 @@ describe("ZwiftProvider.sync() (integration)", () => {
       }),
     ];
 
-    const provider = new ZwiftProvider(createMockFetch({ activities }));
+    server.use(...zwiftHandlers({ activities: zwiftActivities }));
 
+    const provider = new ZwiftProvider();
     const since = new Date("2026-02-01T00:00:00Z");
     const result = await provider.sync(ctx.db, since);
 
@@ -455,14 +476,15 @@ describe("ZwiftProvider.sync() (integration)", () => {
     // Clear existing daily metrics from previous tests
     await ctx.db.delete(dailyMetrics).where(eq(dailyMetrics.providerId, "zwift"));
 
-    const provider = new ZwiftProvider(
-      createMockFetch({
+    server.use(
+      ...zwiftHandlers({
         activities: [],
         paginateActivities: true,
         powerCurve: { zFtp: 0, zMap: 0, vo2Max: 0, efforts: [] },
       }),
     );
 
+    const provider = new ZwiftProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     // No activities, no power curve data → 0 records
