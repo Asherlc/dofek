@@ -65,7 +65,7 @@ MY_PROVIDER_API_KEY=
 
 ## 5. Write tests first (TDD)
 
-Create `src/providers/__tests__/my-provider.test.ts` with:
+Create `src/providers/my-provider.test.ts` (colocated next to the source file) with:
 - API response parsing tests (mock the HTTP calls)
 - Data transformation tests
 - Upsert/dedup logic tests

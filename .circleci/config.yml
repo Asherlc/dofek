@@ -155,7 +155,7 @@ jobs:
               FILES=$(git diff --name-only origin/main...HEAD \
                 | { grep '\.ts$' || true; } \
                 | { grep -v '\.test\.ts$' || true; } \
-                | { grep -v '__tests__/' || true; } \
+                | { grep -v 'test-helpers\.ts$' || true; } \
                 | { grep -v '\.d\.ts$' || true; } \
                 | { grep -v 'packages/server/' || true; } \
                 | { grep -v 'packages/ios/' || true; } \
