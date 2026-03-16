@@ -7,7 +7,7 @@ export default defineConfig({
     hookTimeout: 120_000,
     fileParallelism: true,
     include: ["src/**/*.test.ts", "packages/*/src/**/*.test.ts"],
-    exclude: ["**/*.integration.test.ts"],
+    exclude: ["**/*.integration.test.ts", "**/__tests__/**"],
     coverage: {
       provider: "v8",
       reporter: ["text", "json-summary"],
