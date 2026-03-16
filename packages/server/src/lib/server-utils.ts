@@ -1,6 +1,7 @@
 import { createWriteStream } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
+import type { Readable } from "node:stream";
 
 /** Max upload size: 2 GB */
 export const MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024;
@@ -11,7 +12,7 @@ export function errorMessage(err: unknown): string {
 
 /** Stream a request body to a file on disk, enforcing a max size. */
 export function streamToFile(
-  req: import("express").Request,
+  req: Readable,
   filePath: string,
   maxBytes = MAX_UPLOAD_BYTES,
 ): Promise<void> {
