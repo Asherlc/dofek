@@ -509,80 +509,52 @@ describe("pelotonAutomatedLogin", () => {
 
     let step = 0;
 
-    const mockFetch: typeof globalThis.fetch = async (
-      input: RequestInfo | URL,
-      init?: RequestInit,
-    ): Promise<Response> => {
-      const urlStr = input.toString();
-
-      // Step 1: GET /authorize -> redirect to login page
-      if (urlStr.includes("/authorize") && (!init?.method || init.method === "GET")) {
+    loginServer.use(
+      http.get("https://auth.onepeloton.com/authorize", () => {
         step = 1;
-        return new Response(null, {
+        return new HttpResponse(null, {
           status: 302,
           headers: {
             Location: "https://auth.onepeloton.com/login?state=test",
             "Set-Cookie": "auth0=session-cookie",
           },
         });
-      }
-
-      // Step 1b: follow redirect to login page
-      if (
-        urlStr.includes("/login") &&
-        !urlStr.includes("/callback") &&
-        !urlStr.includes("usernamepassword") &&
-        (!init?.method || init.method === "GET")
-      ) {
+      }),
+      http.get("https://auth.onepeloton.com/login", () => {
         step = 2;
-        // Return the login page HTML with injectedConfig
         const html = `<html>
           <script>window.injectedConfig = window.atob("${configBase64}")</script>
         </html>`;
-        return new Response(html, { status: 200 });
-      }
-
-      // Step 2: POST /usernamepassword/login
-      if (urlStr.includes("/usernamepassword/login")) {
+        return new HttpResponse(html, { status: 200 });
+      }),
+      http.post("https://auth.onepeloton.com/usernamepassword/login", () => {
         step = 3;
-        return new Response(loginFormHtml, { status: 200 });
-      }
-
-      // Step 3: POST the form action (/login/callback)
-      if (urlStr.includes("/login/callback") && init?.method === "POST") {
+        return new HttpResponse(loginFormHtml, { status: 200 });
+      }),
+      http.post("https://auth.onepeloton.com/login/callback", () => {
         step = 4;
-        return new Response(null, {
+        return new HttpResponse(null, {
           status: 302,
-          headers: {
-            Location: "https://auth.onepeloton.com/authorize/resume?state=test",
-          },
+          headers: { Location: "https://auth.onepeloton.com/authorize/resume?state=test" },
         });
-      }
-
-      // Step 4: follow redirect to /authorize/resume
-      if (urlStr.includes("/authorize/resume")) {
+      }),
+      http.get("https://auth.onepeloton.com/authorize/resume", () => {
         step = 5;
-        return new Response(null, {
+        return new HttpResponse(null, {
           status: 302,
-          headers: {
-            Location: "https://members.onepeloton.com/callback?code=auth-code-123&state=test",
-          },
+          headers: { Location: "https://members.onepeloton.com/callback?code=auth-code-123&state=test" },
         });
-      }
-
-      // Step 5: Exchange code for tokens (POST to /oauth/token)
-      if (urlStr.includes("/oauth/token")) {
+      }),
+      http.post("https://api.onepeloton.com/oauth/token", () => {
         step = 6;
-        return Response.json({
+        return HttpResponse.json({
           access_token: "new-access-token",
           refresh_token: "new-refresh-token",
           expires_in: 172800,
           scope: "offline_access openid peloton-api.members:default",
         });
-      }
-
-      return new Response("Not found", { status: 404 });
-    };
+      }),
+    );
 
     const tokens = await pelotonAutomatedLogin("user@test.com", "password123");
 
@@ -592,18 +564,11 @@ describe("pelotonAutomatedLogin", () => {
   });
 
   it("throws when injectedConfig is not found in login page", async () => {
-    const mockFetch: typeof globalThis.fetch = async (
-      input: RequestInfo | URL,
-    ): Promise<Response> => {
-      const urlStr = input.toString();
-
-      if (urlStr.includes("/authorize")) {
-        // Return login page directly (no redirect)
-        return new Response("<html><body>No config here</body></html>", { status: 200 });
-      }
-
-      return new Response("Not found", { status: 404 });
-    };
+    loginServer.use(
+      http.get("https://auth.onepeloton.com/authorize", () => {
+        return new HttpResponse("<html><body>No config here</body></html>", { status: 200 });
+      }),
+    );
 
     await expect(pelotonAutomatedLogin("user@test.com", "pass")).rejects.toThrow(
       "Could not find injectedConfig",
@@ -619,25 +584,17 @@ describe("pelotonAutomatedLogin", () => {
     };
     const configBase64 = Buffer.from(JSON.stringify(injectedConfig)).toString("base64");
 
-    const mockFetch: typeof globalThis.fetch = async (
-      input: RequestInfo | URL,
-      _init?: RequestInit,
-    ): Promise<Response> => {
-      const urlStr = input.toString();
-
-      if (urlStr.includes("/authorize")) {
-        return new Response(
+    loginServer.use(
+      http.get("https://auth.onepeloton.com/authorize", () => {
+        return new HttpResponse(
           `<html><script>window.injectedConfig = window.atob("${configBase64}")</script></html>`,
           { status: 200 },
         );
-      }
-
-      if (urlStr.includes("/usernamepassword/login")) {
-        return new Response("Invalid credentials", { status: 403 });
-      }
-
-      return new Response("Not found", { status: 404 });
-    };
+      }),
+      http.post("https://auth.onepeloton.com/usernamepassword/login", () => {
+        return new HttpResponse("Invalid credentials", { status: 403 });
+      }),
+    );
 
     await expect(pelotonAutomatedLogin("user@test.com", "wrongpass")).rejects.toThrow(
       "Auth0 login failed (403)",
@@ -659,30 +616,20 @@ describe("pelotonAutomatedLogin", () => {
       </form>
     `;
 
-    const mockFetch: typeof globalThis.fetch = async (
-      input: RequestInfo | URL,
-      init?: RequestInit,
-    ): Promise<Response> => {
-      const urlStr = input.toString();
-
-      if (urlStr.includes("/authorize") && (!init?.method || init.method === "GET")) {
-        return new Response(
+    loginServer.use(
+      http.get("https://auth.onepeloton.com/authorize", () => {
+        return new HttpResponse(
           `<html><script>window.injectedConfig = window.atob("${configBase64}")</script></html>`,
           { status: 200 },
         );
-      }
-
-      if (urlStr.includes("/usernamepassword/login")) {
-        return new Response(loginFormHtml, { status: 200 });
-      }
-
-      // Form POST returns 200 with no Location -> redirect chain ends
-      if (urlStr.includes("/login/callback")) {
-        return new Response("OK", { status: 200 });
-      }
-
-      return new Response("Not found", { status: 404 });
-    };
+      }),
+      http.post("https://auth.onepeloton.com/usernamepassword/login", () => {
+        return new HttpResponse(loginFormHtml, { status: 200 });
+      }),
+      http.post("https://auth.onepeloton.com/login/callback", () => {
+        return new HttpResponse("OK", { status: 200 });
+      }),
+    );
 
     await expect(pelotonAutomatedLogin("user@test.com", "pass")).rejects.toThrow(
       "redirect chain ended without a Location header",
@@ -704,35 +651,26 @@ describe("pelotonAutomatedLogin", () => {
       </form>
     `;
 
-    const mockFetch: typeof globalThis.fetch = async (
-      input: RequestInfo | URL,
-      init?: RequestInit,
-    ): Promise<Response> => {
-      const urlStr = input.toString();
-
-      if (urlStr.includes("/authorize") && (!init?.method || init.method === "GET")) {
-        return new Response(
+    loginServer.use(
+      http.get("https://auth.onepeloton.com/authorize", () => {
+        return new HttpResponse(
           `<html><script>window.injectedConfig = window.atob("${configBase64}")</script></html>`,
           { status: 200 },
         );
-      }
-
-      if (urlStr.includes("/usernamepassword/login")) {
-        return new Response(loginFormHtml, { status: 200 });
-      }
-
-      if (urlStr.includes("/login/callback")) {
-        return new Response(null, {
+      }),
+      http.post("https://auth.onepeloton.com/usernamepassword/login", () => {
+        return new HttpResponse(loginFormHtml, { status: 200 });
+      }),
+      http.post("https://auth.onepeloton.com/login/callback", () => {
+        return new HttpResponse(null, {
           status: 302,
           headers: {
             Location:
               "https://members.onepeloton.com/callback?error=access_denied&error_description=User+blocked",
           },
         });
-      }
-
-      return new Response("Not found", { status: 404 });
-    };
+      }),
+    );
 
     await expect(pelotonAutomatedLogin("user@test.com", "pass")).rejects.toThrow(
       "User blocked",
