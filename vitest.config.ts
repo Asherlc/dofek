@@ -27,8 +27,6 @@ export default defineConfig({
         "packages/server/src/index.ts",
         "packages/web/src/**",
         "src/jobs/worker.ts",
-        "src/jobs/provider-registration.ts",
-        "packages/server/src/lib/start-worker.ts",
       ],
       thresholds: {
         lines: 80,
