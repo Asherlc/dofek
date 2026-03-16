@@ -1,19 +1,368 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   mapOuraActivityType,
   OuraClient,
   type OuraDailyActivity,
+  type OuraDailyCardiovascularAge,
   type OuraDailyReadiness,
   type OuraDailyResilience,
   type OuraDailySpO2,
   type OuraDailyStress,
+  type OuraEnhancedTag,
+  type OuraHeartRate,
   OuraProvider,
+  type OuraRestModePeriod,
+  type OuraSession,
   type OuraSleepDocument,
+  type OuraSleepTime,
+  type OuraTag,
   type OuraVO2Max,
+  type OuraWorkout,
   ouraOAuthConfig,
   parseOuraDailyMetrics,
   parseOuraSleep,
 } from "../oura.ts";
+
+// ============================================================
+// Mock external dependencies (for sync tests)
+// ============================================================
+
+vi.mock("../../db/sync-log.ts", () => ({
+  withSyncLog: vi.fn(
+    async (
+      _db: unknown,
+      _providerId: string,
+      _dataType: string,
+      fn: () => Promise<{ recordCount: number; result: unknown }>,
+    ) => {
+      const { result } = await fn();
+      return result;
+    },
+  ),
+}));
+
+vi.mock("../../db/tokens.ts", () => ({
+  ensureProvider: vi.fn(async () => "oura"),
+  loadTokens: vi.fn(async () => ({
+    accessToken: "valid-access-token",
+    refreshToken: "valid-refresh-token",
+    expiresAt: new Date("2027-01-01T00:00:00Z"),
+    scopes: "daily heartrate personal session spo2 workout tag",
+  })),
+  saveTokens: vi.fn(async () => {}),
+}));
+
+vi.mock("../../auth/oauth.ts", () => ({
+  exchangeCodeForTokens: vi.fn(async () => ({
+    accessToken: "exchanged-token",
+    refreshToken: "exchanged-refresh",
+    expiresAt: new Date("2027-01-01T00:00:00Z"),
+    scopes: "daily",
+  })),
+  getOAuthRedirectUri: vi.fn(() => "https://dofek.example.com/callback"),
+  refreshAccessToken: vi.fn(async () => ({
+    accessToken: "refreshed-token",
+    refreshToken: "refreshed-refresh",
+    expiresAt: new Date("2027-01-01T00:00:00Z"),
+    scopes: "daily",
+  })),
+}));
+
+// ============================================================
+// Mock DB (chainable insert pattern)
+// ============================================================
+
+function createMockDb() {
+  const onConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
+  const onConflictDoNothing = vi.fn().mockResolvedValue(undefined);
+  const values = vi.fn().mockReturnValue({ onConflictDoUpdate, onConflictDoNothing });
+  const insert = vi.fn().mockReturnValue({ values });
+  return { insert, values, onConflictDoUpdate, onConflictDoNothing };
+}
+
+// ============================================================
+// Sample data factories (for sync tests)
+// ============================================================
+
+function fakeSleepDoc(overrides: Partial<OuraSleepDocument> = {}): OuraSleepDocument {
+  return {
+    id: "sleep-001",
+    day: "2026-03-01",
+    bedtime_start: "2026-02-28T22:30:00+00:00",
+    bedtime_end: "2026-03-01T06:45:00+00:00",
+    total_sleep_duration: 28800,
+    deep_sleep_duration: 5400,
+    rem_sleep_duration: 5700,
+    light_sleep_duration: 14400,
+    awake_time: 3300,
+    efficiency: 87,
+    type: "long_sleep",
+    average_heart_rate: 52,
+    lowest_heart_rate: 45,
+    average_hrv: 48,
+    time_in_bed: 29700,
+    readiness_score_delta: 2.5,
+    latency: 900,
+    ...overrides,
+  };
+}
+
+function fakeWorkout(overrides: Partial<OuraWorkout> = {}): OuraWorkout {
+  return {
+    id: "workout-001",
+    activity: "running",
+    calories: 350,
+    day: "2026-03-01",
+    distance: 5000,
+    end_datetime: "2026-03-01T08:30:00+00:00",
+    intensity: "moderate",
+    label: "Morning Run",
+    source: "confirmed",
+    start_datetime: "2026-03-01T08:00:00+00:00",
+    ...overrides,
+  };
+}
+
+function fakeSession(overrides: Partial<OuraSession> = {}): OuraSession {
+  return {
+    id: "session-001",
+    day: "2026-03-01",
+    start_datetime: "2026-03-01T07:00:00+00:00",
+    end_datetime: "2026-03-01T07:15:00+00:00",
+    type: "meditation",
+    mood: "good",
+    ...overrides,
+  };
+}
+
+function fakeHeartRate(overrides: Partial<OuraHeartRate> = {}): OuraHeartRate {
+  return {
+    bpm: 72,
+    source: "awake",
+    timestamp: "2026-03-01T10:00:00+00:00",
+    ...overrides,
+  };
+}
+
+function fakeReadiness(overrides: Partial<OuraDailyReadiness> = {}): OuraDailyReadiness {
+  return {
+    id: "readiness-001",
+    day: "2026-03-01",
+    score: 82,
+    temperature_deviation: -0.15,
+    temperature_trend_deviation: 0.05,
+    contributors: {
+      resting_heart_rate: 85,
+      hrv_balance: 78,
+      body_temperature: 90,
+      recovery_index: 72,
+      sleep_balance: 80,
+      previous_night: 88,
+      previous_day_activity: 75,
+      activity_balance: 82,
+    },
+    ...overrides,
+  };
+}
+
+function fakeActivity(overrides: Partial<OuraDailyActivity> = {}): OuraDailyActivity {
+  return {
+    id: "activity-001",
+    day: "2026-03-01",
+    steps: 9500,
+    active_calories: 450,
+    equivalent_walking_distance: 8200,
+    high_activity_time: 2700,
+    medium_activity_time: 1800,
+    low_activity_time: 7200,
+    resting_time: 50400,
+    sedentary_time: 28800,
+    total_calories: 2300,
+    ...overrides,
+  };
+}
+
+function fakeSpO2(overrides: Partial<OuraDailySpO2> = {}): OuraDailySpO2 {
+  return {
+    id: "spo2-001",
+    day: "2026-03-01",
+    spo2_percentage: { average: 97.5 },
+    breathing_disturbance_index: 12,
+    ...overrides,
+  };
+}
+
+function fakeVO2Max(overrides: Partial<OuraVO2Max> = {}): OuraVO2Max {
+  return {
+    id: "vo2max-001",
+    day: "2026-03-01",
+    timestamp: "2026-03-01T08:00:00",
+    vo2_max: 42.5,
+    ...overrides,
+  };
+}
+
+function fakeStress(overrides: Partial<OuraDailyStress> = {}): OuraDailyStress {
+  return {
+    id: "stress-001",
+    day: "2026-03-01",
+    stress_high: 5400,
+    recovery_high: 10800,
+    day_summary: "restored",
+    ...overrides,
+  };
+}
+
+function fakeResilience(overrides: Partial<OuraDailyResilience> = {}): OuraDailyResilience {
+  return {
+    id: "resilience-001",
+    day: "2026-03-01",
+    level: "solid",
+    contributors: {
+      sleep_recovery: 85,
+      daytime_recovery: 72,
+      stress: 68,
+    },
+    ...overrides,
+  };
+}
+
+function fakeCvAge(overrides: Partial<OuraDailyCardiovascularAge> = {}): OuraDailyCardiovascularAge {
+  return {
+    day: "2026-03-01",
+    vascular_age: 35,
+    ...overrides,
+  };
+}
+
+function fakeTag(overrides: Partial<OuraTag> = {}): OuraTag {
+  return {
+    id: "tag-001",
+    day: "2026-03-01",
+    text: "caffeine",
+    timestamp: "2026-03-01T09:00:00+00:00",
+    tags: ["caffeine", "morning"],
+    ...overrides,
+  };
+}
+
+function fakeEnhancedTag(overrides: Partial<OuraEnhancedTag> = {}): OuraEnhancedTag {
+  return {
+    id: "etag-001",
+    tag_type_code: "caffeine",
+    start_time: "2026-03-01T09:00:00+00:00",
+    end_time: "2026-03-01T10:00:00+00:00",
+    start_day: "2026-03-01",
+    end_day: "2026-03-01",
+    comment: null,
+    custom_name: null,
+    ...overrides,
+  };
+}
+
+function fakeRestMode(overrides: Partial<OuraRestModePeriod> = {}): OuraRestModePeriod {
+  return {
+    id: "rm-001",
+    start_day: "2026-03-01",
+    start_time: "2026-03-01T08:00:00+00:00",
+    end_day: "2026-03-02",
+    end_time: "2026-03-02T08:00:00+00:00",
+    ...overrides,
+  };
+}
+
+function fakeSleepTime(overrides: Partial<OuraSleepTime> = {}): OuraSleepTime {
+  return {
+    id: "st-001",
+    day: "2026-03-01",
+    optimal_bedtime: {
+      day_tz: -18000,
+      end_offset: 3600,
+      start_offset: 0,
+    },
+    recommendation: "follow_optimal_bedtime",
+    status: "optimal_found",
+    ...overrides,
+  };
+}
+
+// ============================================================
+// Helper: create a mock fetch that routes Oura API calls
+// ============================================================
+
+interface MockApiData {
+  sleep?: OuraSleepDocument[];
+  workouts?: OuraWorkout[];
+  sessions?: OuraSession[];
+  heartRate?: OuraHeartRate[];
+  readiness?: OuraDailyReadiness[];
+  dailyActivity?: OuraDailyActivity[];
+  spo2?: OuraDailySpO2[];
+  vo2max?: OuraVO2Max[];
+  stress?: OuraDailyStress[];
+  resilience?: OuraDailyResilience[];
+  cvAge?: OuraDailyCardiovascularAge[];
+  tags?: OuraTag[];
+  enhancedTags?: OuraEnhancedTag[];
+  restMode?: OuraRestModePeriod[];
+  sleepTime?: OuraSleepTime[];
+}
+
+function createMockApiFetch(data: MockApiData = {}): typeof globalThis.fetch {
+  return async (input: RequestInfo | URL): Promise<Response> => {
+    const urlStr = input.toString();
+
+    // Sleep time must come before sleep check
+    if (urlStr.includes("/v2/usercollection/sleep_time")) {
+      return Response.json({ data: data.sleepTime ?? [], next_token: null });
+    }
+    if (urlStr.includes("/v2/usercollection/sleep")) {
+      return Response.json({ data: data.sleep ?? [], next_token: null });
+    }
+    if (urlStr.includes("/v2/usercollection/workout")) {
+      return Response.json({ data: data.workouts ?? [], next_token: null });
+    }
+    if (urlStr.includes("/v2/usercollection/session")) {
+      return Response.json({ data: data.sessions ?? [], next_token: null });
+    }
+    if (urlStr.includes("/v2/usercollection/heartrate")) {
+      return Response.json({ data: data.heartRate ?? [], next_token: null });
+    }
+    if (urlStr.includes("/v2/usercollection/daily_readiness")) {
+      return Response.json({ data: data.readiness ?? [], next_token: null });
+    }
+    if (urlStr.includes("/v2/usercollection/daily_activity")) {
+      return Response.json({ data: data.dailyActivity ?? [], next_token: null });
+    }
+    if (urlStr.includes("/v2/usercollection/daily_spo2")) {
+      return Response.json({ data: data.spo2 ?? [], next_token: null });
+    }
+    if (urlStr.includes("/v2/usercollection/daily_stress")) {
+      return Response.json({ data: data.stress ?? [], next_token: null });
+    }
+    if (urlStr.includes("/v2/usercollection/daily_resilience")) {
+      return Response.json({ data: data.resilience ?? [], next_token: null });
+    }
+    if (urlStr.includes("/v2/usercollection/daily_cardiovascular_age")) {
+      return Response.json({ data: data.cvAge ?? [], next_token: null });
+    }
+    if (urlStr.includes("/v2/usercollection/vO2_max")) {
+      return Response.json({ data: data.vo2max ?? [], next_token: null });
+    }
+    // Enhanced tags must come before tags
+    if (urlStr.includes("/v2/usercollection/enhanced_tag")) {
+      return Response.json({ data: data.enhancedTags ?? [], next_token: null });
+    }
+    if (urlStr.includes("/v2/usercollection/tag")) {
+      return Response.json({ data: data.tags ?? [], next_token: null });
+    }
+    if (urlStr.includes("/v2/usercollection/rest_mode_period")) {
+      return Response.json({ data: data.restMode ?? [], next_token: null });
+    }
+
+    return new Response("Not found", { status: 404 });
+  };
+}
 
 // ============================================================
 // Sample API responses (Oura API v2 format)

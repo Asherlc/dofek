@@ -1,5 +1,35 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// Mock modules (needed for sync tests)
+vi.mock("../../db/sync-log.ts", () => ({
+  withSyncLog: vi.fn(
+    async (
+      _db: unknown,
+      _providerId: string,
+      _dataType: string,
+      fn: () => Promise<{ recordCount: number; result: unknown }>,
+    ) => {
+      const { result } = await fn();
+      return result;
+    },
+  ),
+}));
+
+vi.mock("../../db/tokens.ts", () => ({
+  ensureProvider: vi.fn(),
+  loadTokens: vi.fn(),
+  saveTokens: vi.fn(),
+}));
+
+vi.mock("../../auth/oauth.ts", () => ({
+  exchangeCodeForTokens: vi.fn(),
+  refreshAccessToken: vi.fn(),
+}));
+
 import { CorosProvider, corosOAuthConfig, mapCorosSportType, parseCorosWorkout } from "../coros.ts";
+import { loadTokens, saveTokens } from "../../db/tokens.ts";
+import { refreshAccessToken } from "../../auth/oauth.ts";
+import { withSyncLog } from "../../db/sync-log.ts";
 
 // ============================================================
 // Tests targeting uncovered paths in coros.ts
