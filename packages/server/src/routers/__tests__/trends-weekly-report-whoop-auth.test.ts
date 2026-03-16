@@ -40,7 +40,8 @@ describe("trendsRouter", () => {
 
   function makeCaller(rows: Record<string, unknown>[] = []) {
     return createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) } as never,
+      // @ts-expect-error mock DB
+      db: { execute: vi.fn().mockResolvedValue(rows) },
       userId: "user-1",
     });
   }
@@ -129,7 +130,8 @@ describe("weeklyReportRouter", () => {
   describe("report", () => {
     it("returns empty report when no data", async () => {
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue([]) } as never,
+        // @ts-expect-error mock DB
+        db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
       const result = await caller.report({ weeks: 12 });
@@ -164,7 +166,8 @@ describe("weeklyReportRouter", () => {
         },
       ];
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) } as never,
+        // @ts-expect-error mock DB
+        db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
       });
       const result = await caller.report({ weeks: 12 });
@@ -193,7 +196,8 @@ describe("whoopAuthRouter", () => {
       });
 
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue([]) } as never,
+        // @ts-expect-error mock DB
+        db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
       const result = await caller.signIn({ username: "test@example.com", password: "pass" });
@@ -211,7 +215,8 @@ describe("whoopAuthRouter", () => {
       });
 
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue([]) } as never,
+        // @ts-expect-error mock DB
+        db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
       const result = await caller.signIn({ username: "test@example.com", password: "pass" });
@@ -224,7 +229,8 @@ describe("whoopAuthRouter", () => {
   describe("verifyCode", () => {
     it("throws when challenge not found", async () => {
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue([]) } as never,
+        // @ts-expect-error mock DB
+        db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
 
@@ -247,13 +253,15 @@ describe("whoopAuthRouter", () => {
       });
 
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue([]) } as never,
+        // @ts-expect-error mock DB
+        db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
 
       // Step 1: sign in to get challengeId
       const signInResult = await caller.signIn({ username: "test@example.com", password: "pass" });
-      const challengeId = (signInResult as { challengeId: string }).challengeId;
+      // @ts-expect-error signInResult type depends on sign-in outcome
+      const challengeId: string = signInResult.challengeId;
 
       // Step 2: verify code
       const result = await caller.verifyCode({ challengeId, code: "123456" });
@@ -265,7 +273,8 @@ describe("whoopAuthRouter", () => {
     it("saves tokens to database", async () => {
       const { ensureProvider, saveTokens } = await import("dofek/db/tokens");
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue([]) } as never,
+        // @ts-expect-error mock DB
+        db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
 

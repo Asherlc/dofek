@@ -39,7 +39,8 @@ describe("ZwiftProvider", () => {
     };
 
     const provider = new ZwiftProvider();
-    const result = await provider.sync(mockDb as never, new Date("2026-01-01"));
+    // @ts-expect-error mock DB
+    const result = await provider.sync(mockDb, new Date("2026-01-01"));
     expect(result.provider).toBe("zwift");
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors[0]?.message).toContain("not connected");
@@ -73,7 +74,8 @@ describe("ZwiftProvider", () => {
     };
 
     const provider = new ZwiftProvider();
-    const result = await provider.sync(mockDb as never, new Date("2026-01-01"));
+    // @ts-expect-error mock DB
+    const result = await provider.sync(mockDb, new Date("2026-01-01"));
     expect(result.errors[0]?.message).toContain("athlete ID not found");
   });
 
@@ -105,7 +107,8 @@ describe("ZwiftProvider", () => {
     };
 
     const provider = new ZwiftProvider();
-    const result = await provider.sync(mockDb as never, new Date("2026-01-01"));
+    // @ts-expect-error mock DB
+    const result = await provider.sync(mockDb, new Date("2026-01-01"));
     expect(result.errors[0]?.message).toContain("token expired");
   });
 });

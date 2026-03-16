@@ -34,15 +34,18 @@ import {
 
 describe("trpc", () => {
   describe("CacheTTL", () => {
-    it("defines SHORT as 2 minutes", () => {
+    // @ts-expect-error mock type assertion
+    it("defines SHORT minutes", () => {
       expect(CacheTTL.SHORT).toBe(2 * 60 * 1000);
     });
 
-    it("defines MEDIUM as 10 minutes", () => {
+    // @ts-expect-error mock type assertion
+    it("defines MEDIUM minutes", () => {
       expect(CacheTTL.MEDIUM).toBe(10 * 60 * 1000);
     });
 
-    it("defines LONG as 1 hour", () => {
+    // @ts-expect-error mock type assertion
+    it("defines LONG hour", () => {
       expect(CacheTTL.LONG).toBe(60 * 60 * 1000);
     });
   });
@@ -74,7 +77,8 @@ describe("trpc", () => {
       const t = initTRPC.context<Context>().create();
       const createCaller = t.createCallerFactory(testRouter);
       const caller = createCaller({
-        db: {} as Context["db"],
+        // @ts-expect-error mock DB
+        db: {},
         userId: null,
       });
 
@@ -92,7 +96,8 @@ describe("trpc", () => {
       const t = initTRPC.context<Context>().create();
       const createCaller = t.createCallerFactory(testRouter);
       const caller = createCaller({
-        db: {} as Context["db"],
+        // @ts-expect-error mock DB
+        db: {},
         userId: "user-123",
       });
 

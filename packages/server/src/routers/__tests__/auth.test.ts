@@ -31,7 +31,8 @@ describe("authRouter", () => {
         },
       ];
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) } as never,
+        // @ts-expect-error mock DB
+        db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
       });
       const result = await caller.linkedAccounts();
@@ -53,7 +54,8 @@ describe("authRouter", () => {
       const execute = vi.fn();
       execute.mockResolvedValueOnce([{ count: "1" }]);
       const caller = createCaller({
-        db: { execute } as never,
+        // @ts-expect-error mock DB
+        db: { execute },
         userId: "user-1",
       });
 
@@ -67,7 +69,8 @@ describe("authRouter", () => {
       execute.mockResolvedValueOnce([{ count: "2" }]);
       execute.mockResolvedValueOnce([]); // no rows deleted
       const caller = createCaller({
-        db: { execute } as never,
+        // @ts-expect-error mock DB
+        db: { execute },
         userId: "user-1",
       });
 
@@ -81,7 +84,8 @@ describe("authRouter", () => {
       execute.mockResolvedValueOnce([{ count: "3" }]);
       execute.mockResolvedValueOnce([{ id: "acc-1" }]); // deleted row returned
       const caller = createCaller({
-        db: { execute } as never,
+        // @ts-expect-error mock DB
+        db: { execute },
         userId: "user-1",
       });
 

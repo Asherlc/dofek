@@ -23,7 +23,8 @@ const createCaller = createTestCallerFactory(bodyAnalyticsRouter);
 
 function makeCaller(rows: Record<string, unknown>[] = []) {
   return createCaller({
-    db: { execute: vi.fn().mockResolvedValue(rows) } as never,
+    // @ts-expect-error mock DB
+    db: { execute: vi.fn().mockResolvedValue(rows) },
     userId: "user-1",
   });
 }

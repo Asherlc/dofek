@@ -27,7 +27,8 @@ const createCaller = createTestCallerFactory(cyclingAdvancedRouter);
 
 function makeCaller(rows: Record<string, unknown>[] = []) {
   return createCaller({
-    db: { execute: vi.fn().mockResolvedValue(rows) } as never,
+    // @ts-expect-error mock DB
+    db: { execute: vi.fn().mockResolvedValue(rows) },
     userId: "user-1",
   });
 }
@@ -94,7 +95,8 @@ describe("cyclingAdvancedRouter", () => {
       ]);
 
       const caller = createCaller({
-        db: { execute } as never,
+        // @ts-expect-error mock DB
+        db: { execute },
         userId: "user-1",
       });
       const result = await caller.activityVariability({ days: 90 });

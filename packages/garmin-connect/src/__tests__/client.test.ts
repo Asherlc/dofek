@@ -583,17 +583,20 @@ describe("GarminConnectClient.signIn", () => {
    *
    * We use `options.method` to distinguish the GET vs POST to sso/signin.
    */
-  function buildSignInMock(overrides: {
-    signinGetHtml?: string;
-    signinPostHtml?: string;
-    oauth1Response?: { ok: boolean; status: number; text: string };
-    oauth2Response?: { ok: boolean; status: number; body: Record<string, unknown> };
-  } = {}) {
+  function buildSignInMock(
+    overrides: {
+      signinGetHtml?: string;
+      signinPostHtml?: string;
+      oauth1Response?: { ok: boolean; status: number; text: string };
+      oauth2Response?: { ok: boolean; status: number; body: Record<string, unknown> };
+    } = {},
+  ) {
     const signinGetHtml = overrides.signinGetHtml ?? '<input name="_csrf" value="csrf123">';
-    const signinPostHtml = overrides.signinPostHtml ??
+    const signinPostHtml =
+      overrides.signinPostHtml ??
       '<title>Success</title><iframe src="embed?ticket=ST-12345-test"></iframe>';
 
-    return vi.fn().mockImplementation((url: string, options?: RequestInit) => {
+    const mock = vi.fn().mockImplementation((url: string, options?: RequestInit) => {
       const method = options?.method?.toUpperCase() ?? "GET";
 
       if (String(url).includes("oauth_consumer.json")) {
@@ -637,7 +640,11 @@ describe("GarminConnectClient.signIn", () => {
       }
 
       if (String(url).includes("preauthorized")) {
-        const resp = overrides.oauth1Response ?? { ok: true, status: 200, text: "oauth_token=token123&oauth_token_secret=secret456" };
+        const resp = overrides.oauth1Response ?? {
+          ok: true,
+          status: 200,
+          text: "oauth_token=token123&oauth_token_secret=secret456",
+        };
         return Promise.resolve({
           ok: resp.ok,
           status: resp.status,
@@ -682,7 +689,9 @@ describe("GarminConnectClient.signIn", () => {
       }
 
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({}) });
-    }) as typeof globalThis.fetch;
+    });
+    // @ts-expect-error -- partial fetch mock
+    return mock;
   }
 
   it("completes full sign-in flow successfully", async () => {
@@ -704,7 +713,7 @@ describe("GarminConnectClient.signIn", () => {
 
   it("throws GarminMfaRequiredError when MFA is required", async () => {
     const fetchFn = buildSignInMock({
-      signinPostHtml: '<title>MFA Challenge</title><body>Enter code</body>',
+      signinPostHtml: "<title>MFA Challenge</title><body>Enter code</body>",
     });
 
     await expect(
@@ -714,7 +723,7 @@ describe("GarminConnectClient.signIn", () => {
 
   it("throws GarminAuthError when login fails", async () => {
     const fetchFn = buildSignInMock({
-      signinPostHtml: '<title>Login Error</title><body>Bad password</body>',
+      signinPostHtml: "<title>Login Error</title><body>Bad password</body>",
     });
 
     await expect(
@@ -784,13 +793,14 @@ describe("GarminConnectClient remaining API methods", () => {
       ok: true,
       status: 200,
       json: () => Promise.resolve(settings),
-    }) as typeof globalThis.fetch;
+    });
 
     const client = await createAuthenticatedClient(apiFetchFn);
     const result = await client.getUserSettings();
 
     expect(result).toEqual(settings);
-    const [url] = (apiFetchFn as MockFetchFn).mock.calls[0] as [string];
+    // @ts-expect-error -- mock.calls typed as unknown[][]
+    const [url]: [string] = asMock(apiFetchFn).mock.calls[0];
     expect(url).toContain("/userprofile-service/userprofile/user-settings");
   });
 
@@ -801,13 +811,14 @@ describe("GarminConnectClient remaining API methods", () => {
       ok: true,
       status: 200,
       json: () => Promise.resolve(data),
-    }) as typeof globalThis.fetch;
+    });
 
     const client = await createAuthenticatedClient(apiFetchFn);
     const result = await client.getBodyBatteryDaily("2024-01-15");
 
     expect(result).toEqual(data);
-    const [url] = (apiFetchFn as MockFetchFn).mock.calls[0] as [string];
+    // @ts-expect-error -- mock.calls typed as unknown[][]
+    const [url]: [string] = asMock(apiFetchFn).mock.calls[0];
     expect(url).toContain("/wellness-service/wellness/bodyBattery/reports/daily/2024-01-15");
   });
 
@@ -818,13 +829,14 @@ describe("GarminConnectClient remaining API methods", () => {
       ok: true,
       status: 200,
       json: () => Promise.resolve(data),
-    }) as typeof globalThis.fetch;
+    });
 
     const client = await createAuthenticatedClient(apiFetchFn);
     const result = await client.getBodyBatteryEvents("2024-01-15");
 
     expect(result).toEqual(data);
-    const [url] = (apiFetchFn as MockFetchFn).mock.calls[0] as [string];
+    // @ts-expect-error -- mock.calls typed as unknown[][]
+    const [url]: [string] = asMock(apiFetchFn).mock.calls[0];
     expect(url).toContain("/wellness-service/wellness/bodyBattery/events/2024-01-15");
   });
 
@@ -835,13 +847,14 @@ describe("GarminConnectClient remaining API methods", () => {
       ok: true,
       status: 200,
       json: () => Promise.resolve(data),
-    }) as typeof globalThis.fetch;
+    });
 
     const client = await createAuthenticatedClient(apiFetchFn);
     const result = await client.getTrainingReadiness("2024-01-15");
 
     expect(result).toEqual(data);
-    const [url] = (apiFetchFn as MockFetchFn).mock.calls[0] as [string];
+    // @ts-expect-error -- mock.calls typed as unknown[][]
+    const [url]: [string] = asMock(apiFetchFn).mock.calls[0];
     expect(url).toContain("/metrics-service/metrics/trainingreadiness/2024-01-15");
   });
 
@@ -852,13 +865,14 @@ describe("GarminConnectClient remaining API methods", () => {
       ok: true,
       status: 200,
       json: () => Promise.resolve(data),
-    }) as typeof globalThis.fetch;
+    });
 
     const client = await createAuthenticatedClient(apiFetchFn);
     const result = await client.getRacePredictions();
 
     expect(result).toEqual(data);
-    const [url] = (apiFetchFn as MockFetchFn).mock.calls[0] as [string];
+    // @ts-expect-error -- mock.calls typed as unknown[][]
+    const [url]: [string] = asMock(apiFetchFn).mock.calls[0];
     expect(url).toContain("/metrics-service/metrics/racepredictions");
   });
 
@@ -869,13 +883,14 @@ describe("GarminConnectClient remaining API methods", () => {
       ok: true,
       status: 200,
       json: () => Promise.resolve(data),
-    }) as typeof globalThis.fetch;
+    });
 
     const client = await createAuthenticatedClient(apiFetchFn);
     const result = await client.getHillScore("2024-01-01", "2024-01-31");
 
     expect(result).toEqual(data);
-    const [url] = (apiFetchFn as MockFetchFn).mock.calls[0] as [string];
+    // @ts-expect-error -- mock.calls typed as unknown[][]
+    const [url]: [string] = asMock(apiFetchFn).mock.calls[0];
     expect(url).toContain("/metrics-service/metrics/hillscore/2024-01-01/2024-01-31");
   });
 
@@ -886,30 +901,36 @@ describe("GarminConnectClient remaining API methods", () => {
       ok: true,
       status: 200,
       json: () => Promise.resolve(data),
-    }) as typeof globalThis.fetch;
+    });
 
     const client = await createAuthenticatedClient(apiFetchFn);
     const result = await client.getEnduranceScore("2024-01-01", "2024-01-31");
 
     expect(result).toEqual(data);
-    const [url] = (apiFetchFn as MockFetchFn).mock.calls[0] as [string];
+    // @ts-expect-error -- mock.calls typed as unknown[][]
+    const [url]: [string] = asMock(apiFetchFn).mock.calls[0];
     expect(url).toContain("/metrics-service/metrics/endurancescore/2024-01-01/2024-01-31");
   });
 
   it("getDailyRespiration returns respiration data", async () => {
-    const data = { avgWakingRespirationValue: 16, highestRespirationValue: 22, lowestRespirationValue: 12 };
+    const data = {
+      avgWakingRespirationValue: 16,
+      highestRespirationValue: 22,
+      lowestRespirationValue: 12,
+    };
 
     const apiFetchFn = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
       json: () => Promise.resolve(data),
-    }) as typeof globalThis.fetch;
+    });
 
     const client = await createAuthenticatedClient(apiFetchFn);
     const result = await client.getDailyRespiration("2024-01-15");
 
     expect(result).toEqual(data);
-    const [url] = (apiFetchFn as MockFetchFn).mock.calls[0] as [string];
+    // @ts-expect-error -- mock.calls typed as unknown[][]
+    const [url]: [string] = asMock(apiFetchFn).mock.calls[0];
     expect(url).toContain("/wellness-service/wellness/daily/respiration/2024-01-15");
   });
 
@@ -920,30 +941,39 @@ describe("GarminConnectClient remaining API methods", () => {
       ok: true,
       status: 200,
       json: () => Promise.resolve(data),
-    }) as typeof globalThis.fetch;
+    });
 
     const client = await createAuthenticatedClient(apiFetchFn);
     const result = await client.getDailySpO2("2024-01-15");
 
     expect(result).toEqual(data);
-    const [url] = (apiFetchFn as MockFetchFn).mock.calls[0] as [string];
+    // @ts-expect-error -- mock.calls typed as unknown[][]
+    const [url]: [string] = asMock(apiFetchFn).mock.calls[0];
     expect(url).toContain("/wellness-service/wellness/daily/spo2/2024-01-15");
   });
 
   it("getDailyIntensityMinutes returns intensity data", async () => {
-    const data = [{ calendarDate: "2024-01-15", weeklyGoal: 150, moderateIntensityMinutes: 30, vigorousIntensityMinutes: 15 }];
+    const data = [
+      {
+        calendarDate: "2024-01-15",
+        weeklyGoal: 150,
+        moderateIntensityMinutes: 30,
+        vigorousIntensityMinutes: 15,
+      },
+    ];
 
     const apiFetchFn = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
       json: () => Promise.resolve(data),
-    }) as typeof globalThis.fetch;
+    });
 
     const client = await createAuthenticatedClient(apiFetchFn);
     const result = await client.getDailyIntensityMinutes("2024-01-15");
 
     expect(result).toEqual(data);
-    const [url] = (apiFetchFn as MockFetchFn).mock.calls[0] as [string];
+    // @ts-expect-error -- mock.calls typed as unknown[][]
+    const [url]: [string] = asMock(apiFetchFn).mock.calls[0];
     expect(url).toContain("/wellness-service/wellness/daily/im/2024-01-15");
   });
 
@@ -954,13 +984,14 @@ describe("GarminConnectClient remaining API methods", () => {
       ok: true,
       status: 200,
       json: () => Promise.resolve(data),
-    }) as typeof globalThis.fetch;
+    });
 
     const client = await createAuthenticatedClient(apiFetchFn);
     const result = await client.getDailySteps("2024-01-01", "2024-01-31");
 
     expect(result).toEqual(data);
-    const [url] = (apiFetchFn as MockFetchFn).mock.calls[0] as [string];
+    // @ts-expect-error -- mock.calls typed as unknown[][]
+    const [url]: [string] = asMock(apiFetchFn).mock.calls[0];
     expect(url).toContain("/usersummary-service/stats/steps/daily/2024-01-01/2024-01-31");
   });
 
@@ -971,13 +1002,14 @@ describe("GarminConnectClient remaining API methods", () => {
       ok: true,
       status: 200,
       json: () => Promise.resolve(data),
-    }) as typeof globalThis.fetch;
+    });
 
     const client = await createAuthenticatedClient(apiFetchFn);
     const result = await client.getFloors("2024-01-15");
 
     expect(result).toEqual(data);
-    const [url] = (apiFetchFn as MockFetchFn).mock.calls[0] as [string];
+    // @ts-expect-error -- mock.calls typed as unknown[][]
+    const [url]: [string] = asMock(apiFetchFn).mock.calls[0];
     expect(url).toContain("/wellness-service/wellness/floorsChartData/daily/2024-01-15");
   });
 
@@ -986,12 +1018,13 @@ describe("GarminConnectClient remaining API methods", () => {
       ok: true,
       status: 200,
       json: () => Promise.resolve([]),
-    }) as typeof globalThis.fetch;
+    });
 
     const client = await createAuthenticatedClient(apiFetchFn);
     await client.getActivities();
 
-    const [url] = (apiFetchFn as MockFetchFn).mock.calls[0] as [string];
+    // @ts-expect-error -- mock.calls typed as unknown[][]
+    const [url]: [string] = asMock(apiFetchFn).mock.calls[0];
     expect(url).toContain("start=0");
     expect(url).toContain("limit=20");
   });
@@ -1001,12 +1034,13 @@ describe("GarminConnectClient remaining API methods", () => {
       ok: true,
       status: 200,
       json: () => Promise.resolve({}),
-    }) as typeof globalThis.fetch;
+    });
 
     const client = await createAuthenticatedClient(apiFetchFn);
     await client.getActivityDetail(123);
 
-    const [url] = (apiFetchFn as MockFetchFn).mock.calls[0] as [string];
+    // @ts-expect-error -- mock.calls typed as unknown[][]
+    const [url]: [string] = asMock(apiFetchFn).mock.calls[0];
     expect(url).toContain("maxChartSize=2000");
     expect(url).toContain("maxPolylineSize=4000");
   });
@@ -1052,12 +1086,13 @@ describe("GarminConnectClient cookie handling", () => {
           status: 200,
           url: "https://sso.garmin.com/sso/signin",
           headers: { getSetCookie: undefined },
-          text: () => Promise.resolve('<title>Login Error</title>'),
+          text: () => Promise.resolve("<title>Login Error</title>"),
         });
       }
 
       return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve("") });
-    }) as typeof globalThis.fetch;
+      // @ts-expect-error partial fetch mock
+    });
 
     // Should still work (cookies will be empty, but flow proceeds)
     await expect(

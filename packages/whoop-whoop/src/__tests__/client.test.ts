@@ -1,21 +1,19 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { WhoopClient } from "../client.ts";
 import type { WhoopAuthToken } from "../types.ts";
 
-type MockFetchFn = ReturnType<typeof vi.fn>;
-
-function mockFetch(
-  response: { status: number; ok: boolean; body: unknown },
-): typeof globalThis.fetch {
+function mockFetch(response: {
+  status: number;
+  ok: boolean;
+  body: unknown;
+}): typeof globalThis.fetch {
   return vi.fn().mockResolvedValue({
     ok: response.ok,
     status: response.status,
     json: () => Promise.resolve(response.body),
     text: () =>
       Promise.resolve(
-        typeof response.body === "string"
-          ? response.body
-          : JSON.stringify(response.body),
+        typeof response.body === "string" ? response.body : JSON.stringify(response.body),
       ),
   });
 }
@@ -49,7 +47,7 @@ describe("WhoopClient.signIn", () => {
   it("returns success with token when no MFA", async () => {
     const callCount = { value: 0 };
 
-    const fetchFn = vi.fn().mockImplementation((url: string) => {
+    const fetchFn = vi.fn().mockImplementation((_url: string) => {
       callCount.value++;
 
       // First call: InitiateAuth
@@ -76,7 +74,8 @@ describe("WhoopClient.signIn", () => {
         status: 200,
         json: () => Promise.resolve({ user: { id: 999 } }),
       });
-    }) as typeof globalThis.fetch;
+      // @ts-expect-error partial fetch mock
+    });
 
     const result = await WhoopClient.signIn("user@example.com", "password123", fetchFn);
 
@@ -99,7 +98,8 @@ describe("WhoopClient.signIn", () => {
             Session: "session-abc",
           }),
         ),
-    }) as typeof globalThis.fetch;
+      // @ts-expect-error partial fetch mock
+    });
 
     const result = await WhoopClient.signIn("user@example.com", "password123", fetchFn);
 
@@ -121,7 +121,8 @@ describe("WhoopClient.signIn", () => {
             Session: "session-xyz",
           }),
         ),
-    }) as typeof globalThis.fetch;
+      // @ts-expect-error partial fetch mock
+    });
 
     const result = await WhoopClient.signIn("user@example.com", "password123", fetchFn);
 
@@ -136,11 +137,12 @@ describe("WhoopClient.signIn", () => {
       ok: true,
       status: 200,
       text: () => Promise.resolve(JSON.stringify({})),
-    }) as typeof globalThis.fetch;
+      // @ts-expect-error partial fetch mock
+    });
 
-    await expect(
-      WhoopClient.signIn("user@example.com", "password123", fetchFn),
-    ).rejects.toThrow("no tokens in response");
+    await expect(WhoopClient.signIn("user@example.com", "password123", fetchFn)).rejects.toThrow(
+      "no tokens in response",
+    );
   });
 
   it("throws when userId cannot be fetched", async () => {
@@ -169,11 +171,12 @@ describe("WhoopClient.signIn", () => {
         status: 500,
         json: () => Promise.resolve({}),
       });
-    }) as typeof globalThis.fetch;
+      // @ts-expect-error partial fetch mock
+    });
 
-    await expect(
-      WhoopClient.signIn("user@example.com", "password123", fetchFn),
-    ).rejects.toThrow("could not determine user ID");
+    await expect(WhoopClient.signIn("user@example.com", "password123", fetchFn)).rejects.toThrow(
+      "could not determine user ID",
+    );
   });
 
   it("throws on Cognito error response", async () => {
@@ -187,11 +190,12 @@ describe("WhoopClient.signIn", () => {
             message: "Incorrect username or password.",
           }),
         ),
-    }) as typeof globalThis.fetch;
+      // @ts-expect-error partial fetch mock
+    });
 
-    await expect(
-      WhoopClient.signIn("user@example.com", "bad-password", fetchFn),
-    ).rejects.toThrow("NotAuthorizedException: Incorrect username or password.");
+    await expect(WhoopClient.signIn("user@example.com", "bad-password", fetchFn)).rejects.toThrow(
+      "NotAuthorizedException: Incorrect username or password.",
+    );
   });
 
   it("throws on non-JSON error response", async () => {
@@ -200,11 +204,12 @@ describe("WhoopClient.signIn", () => {
       status: 500,
       statusText: "Internal Server Error",
       text: () => Promise.resolve("not json"),
-    }) as typeof globalThis.fetch;
+      // @ts-expect-error partial fetch mock
+    });
 
-    await expect(
-      WhoopClient.signIn("user@example.com", "password", fetchFn),
-    ).rejects.toThrow("WHOOP auth failed (500)");
+    await expect(WhoopClient.signIn("user@example.com", "password", fetchFn)).rejects.toThrow(
+      "WHOOP auth failed (500)",
+    );
   });
 });
 
@@ -240,9 +245,15 @@ describe("WhoopClient.verifyCode", () => {
         status: 200,
         json: () => Promise.resolve({ id: 42 }),
       });
-    }) as typeof globalThis.fetch;
+      // @ts-expect-error partial fetch mock
+    });
 
-    const result = await WhoopClient.verifyCode("session-123", "123456", "user@example.com", fetchFn);
+    const result = await WhoopClient.verifyCode(
+      "session-123",
+      "123456",
+      "user@example.com",
+      fetchFn,
+    );
 
     expect(result.accessToken).toBe("verified-token");
     expect(result.refreshToken).toBe("verified-refresh");
@@ -290,9 +301,15 @@ describe("WhoopClient.verifyCode", () => {
         status: 200,
         json: () => Promise.resolve({ user_id: 55 }),
       });
-    }) as typeof globalThis.fetch;
+      // @ts-expect-error partial fetch mock
+    });
 
-    const result = await WhoopClient.verifyCode("session-123", "654321", "user@example.com", fetchFn);
+    const result = await WhoopClient.verifyCode(
+      "session-123",
+      "654321",
+      "user@example.com",
+      fetchFn,
+    );
 
     expect(result.accessToken).toBe("totp-token");
     expect(result.userId).toBe(55);
@@ -303,7 +320,8 @@ describe("WhoopClient.verifyCode", () => {
       ok: true,
       status: 200,
       text: () => Promise.resolve(JSON.stringify({})),
-    }) as typeof globalThis.fetch;
+      // @ts-expect-error partial fetch mock
+    });
 
     await expect(
       WhoopClient.verifyCode("session-123", "123456", "user@example.com", fetchFn),
@@ -336,7 +354,8 @@ describe("WhoopClient.verifyCode", () => {
         status: 200,
         json: () => Promise.resolve({ foo: "bar" }),
       });
-    }) as typeof globalThis.fetch;
+      // @ts-expect-error partial fetch mock
+    });
 
     await expect(
       WhoopClient.verifyCode("session-123", "123456", "user@example.com", fetchFn),
@@ -375,7 +394,8 @@ describe("WhoopClient.refreshAccessToken", () => {
         status: 200,
         json: () => Promise.resolve({ id: 77 }),
       });
-    }) as typeof globalThis.fetch;
+      // @ts-expect-error partial fetch mock
+    });
 
     const result = await WhoopClient.refreshAccessToken("old-refresh-token", fetchFn);
 
@@ -409,7 +429,8 @@ describe("WhoopClient.refreshAccessToken", () => {
         status: 200,
         json: () => Promise.resolve({ id: 88 }),
       });
-    }) as typeof globalThis.fetch;
+      // @ts-expect-error partial fetch mock
+    });
 
     const result = await WhoopClient.refreshAccessToken("keep-this-refresh", fetchFn);
 
@@ -441,7 +462,8 @@ describe("WhoopClient.refreshAccessToken", () => {
         status: 500,
         json: () => Promise.resolve({}),
       });
-    }) as typeof globalThis.fetch;
+      // @ts-expect-error partial fetch mock
+    });
 
     const result = await WhoopClient.refreshAccessToken("refresh-token", fetchFn);
 
@@ -453,11 +475,12 @@ describe("WhoopClient.refreshAccessToken", () => {
       ok: true,
       status: 200,
       text: () => Promise.resolve(JSON.stringify({})),
-    }) as typeof globalThis.fetch;
+      // @ts-expect-error partial fetch mock
+    });
 
-    await expect(
-      WhoopClient.refreshAccessToken("refresh-token", fetchFn),
-    ).rejects.toThrow("no tokens in response");
+    await expect(WhoopClient.refreshAccessToken("refresh-token", fetchFn)).rejects.toThrow(
+      "no tokens in response",
+    );
   });
 });
 
@@ -491,7 +514,8 @@ describe("WhoopClient.authenticate", () => {
         status: 200,
         json: () => Promise.resolve({ id: 100 }),
       });
-    }) as typeof globalThis.fetch;
+      // @ts-expect-error partial fetch mock
+    });
 
     const token = await WhoopClient.authenticate("user@example.com", "password", fetchFn);
 
@@ -510,11 +534,12 @@ describe("WhoopClient.authenticate", () => {
             Session: "session-abc",
           }),
         ),
-    }) as typeof globalThis.fetch;
+      // @ts-expect-error partial fetch mock
+    });
 
-    await expect(
-      WhoopClient.authenticate("user@example.com", "password", fetchFn),
-    ).rejects.toThrow("requires MFA");
+    await expect(WhoopClient.authenticate("user@example.com", "password", fetchFn)).rejects.toThrow(
+      "requires MFA",
+    );
   });
 });
 
@@ -583,7 +608,8 @@ describe("WhoopClient.getHeartRate", () => {
     const result = await client.getHeartRate("2024-01-15T00:00:00Z", "2024-01-15T23:59:59Z");
 
     expect(result).toEqual(hrValues);
-    const [url] = (fetchFn as MockFetchFn).mock.calls[0] as [string];
+    // @ts-expect-error mock type
+    const [url] = fetchFn.mock.calls[0];
     expect(url).toContain("/metrics-service/v1/metrics/user/12345");
     expect(url).toContain("name=heart_rate");
     expect(url).toContain("step=6");
@@ -604,7 +630,8 @@ describe("WhoopClient.getHeartRate", () => {
 
     await client.getHeartRate("2024-01-15T00:00:00Z", "2024-01-15T23:59:59Z", 60);
 
-    const [url] = (fetchFn as MockFetchFn).mock.calls[0] as [string];
+    // @ts-expect-error mock type
+    const [url] = fetchFn.mock.calls[0];
     expect(url).toContain("step=60");
   });
 });
@@ -684,7 +711,8 @@ describe("WhoopClient.getCycles", () => {
 
     await client.getCycles("2024-01-01T00:00:00Z", "2024-01-31T23:59:59Z");
 
-    const [url] = (fetchFn as MockFetchFn).mock.calls[0] as [string];
+    // @ts-expect-error mock type
+    const [url] = fetchFn.mock.calls[0];
     expect(url).toContain("limit=26");
   });
 
@@ -694,7 +722,8 @@ describe("WhoopClient.getCycles", () => {
 
     await client.getCycles("2024-01-01T00:00:00Z", "2024-01-31T23:59:59Z", 50);
 
-    const [url] = (fetchFn as MockFetchFn).mock.calls[0] as [string];
+    // @ts-expect-error mock type
+    const [url] = fetchFn.mock.calls[0];
     expect(url).toContain("limit=50");
   });
 });
@@ -719,7 +748,8 @@ describe("WhoopClient.getSleep", () => {
     const result = await client.getSleep(1001);
 
     expect(result).toEqual(sleepRecord);
-    const [url] = (fetchFn as MockFetchFn).mock.calls[0] as [string];
+    // @ts-expect-error mock type
+    const [url] = fetchFn.mock.calls[0];
     expect(url).toContain("/sleep-service/v1/sleep-events");
     expect(url).toContain("activityId=1001");
   });
@@ -735,7 +765,8 @@ describe("WhoopClient.getJournal", () => {
     const result = await client.getJournal("2024-01-01T00:00:00Z", "2024-01-31T23:59:59Z");
 
     expect(result).toEqual(journalData);
-    const [url] = (fetchFn as MockFetchFn).mock.calls[0] as [string];
+    // @ts-expect-error mock type
+    const [url] = fetchFn.mock.calls[0];
     expect(url).toContain("/behavior-impact-service/v1/impact");
   });
 });
@@ -760,7 +791,8 @@ describe("WhoopClient.getWeightliftingWorkout", () => {
     const result = await client.getWeightliftingWorkout("abc-123");
 
     expect(result).toEqual(workoutData);
-    const [url] = (fetchFn as MockFetchFn).mock.calls[0] as [string];
+    // @ts-expect-error mock type
+    const [url] = fetchFn.mock.calls[0];
     expect(url).toContain("/weightlifting-service/v2/weightlifting-workout/abc-123");
   });
 
@@ -768,7 +800,8 @@ describe("WhoopClient.getWeightliftingWorkout", () => {
     const fetchFn = vi.fn().mockResolvedValue({
       ok: false,
       status: 404,
-    }) as typeof globalThis.fetch;
+      // @ts-expect-error partial fetch mock
+    });
 
     const client = new WhoopClient(makeToken(), fetchFn);
 
@@ -782,13 +815,14 @@ describe("WhoopClient.getWeightliftingWorkout", () => {
       ok: false,
       status: 500,
       text: () => Promise.resolve("Server Error"),
-    }) as typeof globalThis.fetch;
+      // @ts-expect-error partial fetch mock
+    });
 
     const client = new WhoopClient(makeToken(), fetchFn);
 
-    await expect(
-      client.getWeightliftingWorkout("abc-123"),
-    ).rejects.toThrow("WHOOP weightlifting API error (500)");
+    await expect(client.getWeightliftingWorkout("abc-123")).rejects.toThrow(
+      "WHOOP weightlifting API error (500)",
+    );
   });
 });
 
@@ -798,7 +832,8 @@ describe("WhoopClient API error handling", () => {
       ok: false,
       status: 403,
       text: () => Promise.resolve("Forbidden"),
-    }) as typeof globalThis.fetch;
+      // @ts-expect-error partial fetch mock
+    });
 
     const client = new WhoopClient(makeToken(), fetchFn);
 
@@ -809,7 +844,8 @@ describe("WhoopClient API error handling", () => {
 });
 
 describe("cognitoCall error handling", () => {
-  it("includes Message field as fallback", async () => {
+  // @ts-expect-error mock type assertion
+  it("includes Message field", async () => {
     const fetchFn = vi.fn().mockResolvedValue({
       ok: false,
       status: 400,
@@ -820,11 +856,12 @@ describe("cognitoCall error handling", () => {
             Message: "Fallback message",
           }),
         ),
-    }) as typeof globalThis.fetch;
+      // @ts-expect-error partial fetch mock
+    });
 
-    await expect(
-      WhoopClient.signIn("user@example.com", "password", fetchFn),
-    ).rejects.toThrow("Fallback message");
+    await expect(WhoopClient.signIn("user@example.com", "password", fetchFn)).rejects.toThrow(
+      "Fallback message",
+    );
   });
 
   it("defaults to Auth failed when no message fields", async () => {
@@ -837,11 +874,12 @@ describe("cognitoCall error handling", () => {
             __type: "com.amazonaws.cognito#SomeError",
           }),
         ),
-    }) as typeof globalThis.fetch;
+      // @ts-expect-error partial fetch mock
+    });
 
-    await expect(
-      WhoopClient.signIn("user@example.com", "password", fetchFn),
-    ).rejects.toThrow("SomeError: Auth failed");
+    await expect(WhoopClient.signIn("user@example.com", "password", fetchFn)).rejects.toThrow(
+      "SomeError: Auth failed",
+    );
   });
 
   it("includes empty body text when response body is empty", async () => {
@@ -850,10 +888,11 @@ describe("cognitoCall error handling", () => {
       status: 500,
       statusText: "Internal Server Error",
       text: () => Promise.resolve(""),
-    }) as typeof globalThis.fetch;
+      // @ts-expect-error partial fetch mock
+    });
 
-    await expect(
-      WhoopClient.signIn("user@example.com", "password", fetchFn),
-    ).rejects.toThrow("WHOOP auth failed (500): Internal Server Error");
+    await expect(WhoopClient.signIn("user@example.com", "password", fetchFn)).rejects.toThrow(
+      "WHOOP auth failed (500): Internal Server Error",
+    );
   });
 });

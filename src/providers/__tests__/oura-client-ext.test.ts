@@ -11,10 +11,10 @@ import { OuraClient } from "../oura.ts";
 
 function makeCapturingFetch(): { fetch: typeof globalThis.fetch; urls: string[] } {
   const urls: string[] = [];
-  const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+  const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
     urls.push(input.toString());
     return Response.json({ data: [], next_token: null });
-  }) as typeof globalThis.fetch;
+  };
   return { fetch: mockFetch, urls };
 }
 

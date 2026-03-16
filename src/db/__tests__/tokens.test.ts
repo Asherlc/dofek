@@ -37,8 +37,8 @@ describe("ensureProvider", () => {
   });
 
   it("inserts a provider with id, name, and apiBaseUrl", async () => {
-    // biome-ignore lint/suspicious/noExplicitAny: mock DB
-    const result = await ensureProvider(mockDb as any, "wahoo", "Wahoo", "https://api.wahoo.com");
+    // @ts-expect-error mock DB
+    const result = await ensureProvider(mockDb, "wahoo", "Wahoo", "https://api.wahoo.com");
 
     expect(result).toBe("wahoo");
     expect(mockDb.insert).toHaveBeenCalled();
@@ -51,8 +51,8 @@ describe("ensureProvider", () => {
   });
 
   it("includes userId when provided", async () => {
-    // biome-ignore lint/suspicious/noExplicitAny: mock DB
-    await ensureProvider(mockDb as any, "whoop", "WHOOP", undefined, "user-123");
+    // @ts-expect-error mock DB
+    await ensureProvider(mockDb, "whoop", "WHOOP", undefined, "user-123");
 
     expect(mockDb._valuesFn).toHaveBeenCalledWith({
       id: "whoop",
@@ -63,17 +63,17 @@ describe("ensureProvider", () => {
   });
 
   it("omits userId when not provided", async () => {
-    // biome-ignore lint/suspicious/noExplicitAny: mock DB
-    await ensureProvider(mockDb as any, "wahoo", "Wahoo");
+    // @ts-expect-error mock DB
+    await ensureProvider(mockDb, "wahoo", "Wahoo");
 
-    const calls = mockDb._valuesFn.mock.calls as unknown[][];
-    const valuesArg = calls[0]?.[0] as Record<string, unknown> | undefined;
+    // @ts-expect-error mock calls
+    const valuesArg: Record<string, unknown> | undefined = mockDb._valuesFn.mock.calls[0]?.[0];
     expect(valuesArg).not.toHaveProperty("userId");
   });
 
   it("returns the provider id", async () => {
-    // biome-ignore lint/suspicious/noExplicitAny: mock DB
-    const result = await ensureProvider(mockDb as any, "test-id", "Test");
+    // @ts-expect-error mock DB
+    const result = await ensureProvider(mockDb, "test-id", "Test");
     expect(result).toBe("test-id");
   });
 });
@@ -93,8 +93,8 @@ describe("saveTokens", () => {
       scopes: "read write",
     };
 
-    // biome-ignore lint/suspicious/noExplicitAny: mock DB
-    await saveTokens(mockDb as any, "wahoo", tokens);
+    // @ts-expect-error mock DB
+    await saveTokens(mockDb, "wahoo", tokens);
 
     expect(mockDb.insert).toHaveBeenCalled();
     expect(mockDb._valuesFn).toHaveBeenCalledWith(
@@ -117,8 +117,8 @@ describe("saveTokens", () => {
       scopes: null,
     };
 
-    // biome-ignore lint/suspicious/noExplicitAny: mock DB
-    await saveTokens(mockDb as any, "strava", tokens);
+    // @ts-expect-error mock DB
+    await saveTokens(mockDb, "strava", tokens);
 
     expect(mockDb._valuesFn).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -146,8 +146,8 @@ describe("loadTokens", () => {
       },
     ]);
 
-    // biome-ignore lint/suspicious/noExplicitAny: mock DB
-    const result = await loadTokens(mockDb as any, "wahoo");
+    // @ts-expect-error mock DB
+    const result = await loadTokens(mockDb, "wahoo");
 
     expect(result).toEqual({
       accessToken: "access-123",
@@ -160,8 +160,8 @@ describe("loadTokens", () => {
   it("returns null when no tokens exist", async () => {
     mockDb._limitFn.mockResolvedValue([]);
 
-    // biome-ignore lint/suspicious/noExplicitAny: mock DB
-    const result = await loadTokens(mockDb as any, "nonexistent");
+    // @ts-expect-error mock DB
+    const result = await loadTokens(mockDb, "nonexistent");
 
     expect(result).toBeNull();
   });
@@ -169,8 +169,8 @@ describe("loadTokens", () => {
   it("returns null when row is undefined", async () => {
     mockDb._limitFn.mockResolvedValue([undefined]);
 
-    // biome-ignore lint/suspicious/noExplicitAny: mock DB
-    const result = await loadTokens(mockDb as any, "wahoo");
+    // @ts-expect-error mock DB
+    const result = await loadTokens(mockDb, "wahoo");
 
     expect(result).toBeNull();
   });
@@ -185,8 +185,8 @@ describe("loadTokens", () => {
       },
     ]);
 
-    // biome-ignore lint/suspicious/noExplicitAny: mock DB
-    const result = await loadTokens(mockDb as any, "wahoo");
+    // @ts-expect-error mock DB
+    const result = await loadTokens(mockDb, "wahoo");
 
     expect(result).toEqual({
       accessToken: "access-123",

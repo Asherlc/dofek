@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  mapZwiftSport,
-  parseZwiftActivity,
-  parseZwiftFitnessData,
-} from "../parsing.ts";
+import { mapZwiftSport, parseZwiftActivity, parseZwiftFitnessData } from "../parsing.ts";
 import type { ZwiftActivitySummary, ZwiftFitnessData } from "../types.ts";
 
 // ============================================================

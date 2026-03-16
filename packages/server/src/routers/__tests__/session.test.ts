@@ -9,7 +9,8 @@ import {
 function createMockDb(rows: Record<string, unknown>[] = []) {
   return {
     execute: vi.fn().mockResolvedValue(rows),
-  } as never;
+    // @ts-expect-error mock DB
+  };
 }
 
 describe("session", () => {
@@ -37,7 +38,8 @@ describe("session", () => {
 
     it("calls db.execute with INSERT statement", async () => {
       const mockExecute = vi.fn().mockResolvedValue([]);
-      const db = { execute: mockExecute } as never;
+      // @ts-expect-error mock DB
+      const db = { execute: mockExecute };
 
       await createSession(db, "user-456");
 
@@ -76,7 +78,8 @@ describe("session", () => {
   describe("deleteSession", () => {
     it("calls db.execute to delete session", async () => {
       const mockExecute = vi.fn().mockResolvedValue([]);
-      const db = { execute: mockExecute } as never;
+      // @ts-expect-error mock DB
+      const db = { execute: mockExecute };
 
       await deleteSession(db, "session-to-delete");
 
@@ -87,7 +90,8 @@ describe("session", () => {
   describe("deleteExpiredSessions", () => {
     it("calls db.execute to delete expired sessions", async () => {
       const mockExecute = vi.fn().mockResolvedValue([]);
-      const db = { execute: mockExecute } as never;
+      // @ts-expect-error mock DB
+      const db = { execute: mockExecute };
 
       await deleteExpiredSessions(db);
 

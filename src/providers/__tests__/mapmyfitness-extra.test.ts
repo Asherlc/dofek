@@ -124,7 +124,7 @@ describe("MapMyFitnessClient", () => {
   it("throws on API error", async () => {
     const mockFetch = vi.fn().mockResolvedValue(new Response("Unauthorized", { status: 401 }));
 
-    const client = new MapMyFitnessClient("token", "client-id", mockFetch as never);
+    const client = new MapMyFitnessClient("token", "client-id", mockFetch);
     await expect(client.getWorkouts("user-1", "2026-01-01T00:00:00Z")).rejects.toThrow(
       "MapMyFitness API error (401)",
     );
@@ -139,10 +139,10 @@ describe("MapMyFitnessClient", () => {
       }),
     );
 
-    const client = new MapMyFitnessClient("my-token", "my-client-id", mockFetch as never);
+    const client = new MapMyFitnessClient("my-token", "my-client-id", mockFetch);
     await client.getWorkouts("user-1", "2026-01-01");
 
-    const headers = mockFetch.mock.calls[0]?.[1]?.headers as Record<string, string>;
+    const headers: Record<string, string> = mockFetch.mock.calls[0]?.[1]?.headers;
     expect(headers.Authorization).toBe("Bearer my-token");
     expect(headers["Api-Key"]).toBe("my-client-id");
   });
@@ -210,7 +210,8 @@ describe("MapMyFitnessProvider", () => {
       }),
     };
 
-    const result = await new MapMyFitnessProvider().sync(mockDb as never, new Date("2026-01-01"));
+    // @ts-expect-error mock DB
+    const result = await new MapMyFitnessProvider().sync(mockDb, new Date("2026-01-01"));
     expect(result.provider).toBe("mapmyfitness");
     expect(result.errors.length).toBeGreaterThan(0);
   });

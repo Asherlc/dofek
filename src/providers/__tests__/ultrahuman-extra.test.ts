@@ -106,7 +106,7 @@ describe("parseUltrahumanMetrics", () => {
 describe("UltrahumanClient", () => {
   it("throws on API error", async () => {
     const mockFetch = vi.fn().mockResolvedValue(new Response("Unauthorized", { status: 401 }));
-    const client = new UltrahumanClient("token", "test@test.com", mockFetch as never);
+    const client = new UltrahumanClient("token", "test@test.com", mockFetch);
     await expect(client.getDailyMetrics("2026-03-01")).rejects.toThrow(
       "Ultrahuman API error (401)",
     );
@@ -119,7 +119,7 @@ describe("UltrahumanClient", () => {
       status: 200,
     };
     const mockFetch = vi.fn().mockResolvedValue(Response.json(mockData));
-    const client = new UltrahumanClient("token", "test@test.com", mockFetch as never);
+    const client = new UltrahumanClient("token", "test@test.com", mockFetch);
     const result = await client.getDailyMetrics("2026-03-01");
     expect(result.status).toBe(200);
   });
@@ -181,7 +181,8 @@ describe("UltrahumanProvider", () => {
         }),
       }),
     };
-    const result = await new UltrahumanProvider().sync(mockDb as never, new Date("2026-01-01"));
+    // @ts-expect-error mock DB
+    const result = await new UltrahumanProvider().sync(mockDb, new Date("2026-01-01"));
     expect(result.errors.length).toBeGreaterThan(0);
   });
 });

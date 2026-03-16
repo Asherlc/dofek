@@ -203,7 +203,7 @@ describe("pelotonOAuthConfig", () => {
 describe("PelotonClient", () => {
   it("getUserId fetches and caches user ID", async () => {
     const mockFetch = vi.fn().mockResolvedValue(Response.json({ id: "user-abc" }));
-    const client = new PelotonClient("test-token", mockFetch as never);
+    const client = new PelotonClient("test-token", mockFetch);
 
     const id1 = await client.getUserId();
     expect(id1).toBe("user-abc");
@@ -217,7 +217,7 @@ describe("PelotonClient", () => {
   it("throws on API error", async () => {
     const mockFetch = vi.fn().mockResolvedValue(new Response("Unauthorized", { status: 401 }));
 
-    const client = new PelotonClient("bad-token", mockFetch as never);
+    const client = new PelotonClient("bad-token", mockFetch);
     await expect(client.getUserId()).rejects.toThrow("Peloton API error (401)");
   });
 
@@ -239,10 +239,10 @@ describe("PelotonClient", () => {
         }),
       );
 
-    const client = new PelotonClient("token", mockFetch as never);
+    const client = new PelotonClient("token", mockFetch);
     const result = await client.getWorkouts(0, 20);
     expect(result.data).toEqual([]);
-    const secondUrl = mockFetch.mock.calls[1]?.[0] as string;
+    const secondUrl = String(mockFetch.mock.calls[1]?.[0]);
     expect(secondUrl).toContain("/api/user/user-123/workouts");
   });
 
@@ -258,10 +258,10 @@ describe("PelotonClient", () => {
       }),
     );
 
-    const client = new PelotonClient("token", mockFetch as never);
+    const client = new PelotonClient("token", mockFetch);
     const result = await client.getPerformanceGraph("w-123", 5);
     expect(result.metrics).toEqual([]);
-    const url = mockFetch.mock.calls[0]?.[0] as string;
+    const url = String(mockFetch.mock.calls[0]?.[0]);
     expect(url).toContain("/api/workout/w-123/performance_graph");
     expect(url).toContain("every_n=5");
   });
@@ -309,7 +309,8 @@ describe("PelotonProvider", () => {
     };
 
     const provider = new PelotonProvider();
-    const result = await provider.sync(mockDb as never, new Date("2026-01-01"));
+    // @ts-expect-error mock DB
+    const result = await provider.sync(mockDb, new Date("2026-01-01"));
     expect(result.provider).toBe("peloton");
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors[0]?.message).toContain("No OAuth tokens");

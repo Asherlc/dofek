@@ -15,7 +15,8 @@ import { checkAnomalies, sendAnomalyAlertToSlack } from "../anomaly-detection.ts
 function makeDb(rows: Record<string, unknown>[]) {
   mockExecuteWithSchema.mockReset();
   mockExecuteWithSchema.mockResolvedValue(rows);
-  return { execute: vi.fn().mockResolvedValue(rows) } as never;
+  // @ts-expect-error mock DB
+  return { execute: vi.fn().mockResolvedValue(rows) };
 }
 
 describe("checkAnomalies", () => {
@@ -213,7 +214,8 @@ describe("sendAnomalyAlertToSlack", () => {
   it("returns false when no Slack installation", async () => {
     mockExecuteWithSchema.mockReset();
     mockExecuteWithSchema.mockResolvedValue([]);
-    const db = {} as never;
+    // @ts-expect-error mock DB
+    const db = {};
     const anomalies = [
       {
         date: "2024-01-15",
@@ -233,7 +235,8 @@ describe("sendAnomalyAlertToSlack", () => {
     mockExecuteWithSchema.mockReset();
     mockExecuteWithSchema.mockResolvedValueOnce([{ bot_token: "xoxb-fake" }]);
     mockExecuteWithSchema.mockResolvedValueOnce([]);
-    const db = {} as never;
+    // @ts-expect-error mock DB
+    const db = {};
 
     const anomalies = [
       {
@@ -254,12 +257,14 @@ describe("sendAnomalyAlertToSlack", () => {
     mockExecuteWithSchema.mockReset();
     mockExecuteWithSchema.mockResolvedValueOnce([{ bot_token: "xoxb-fake" }]);
     mockExecuteWithSchema.mockResolvedValueOnce([{ provider_account_id: "U12345" }]);
-    const db = {} as never;
+    // @ts-expect-error mock DB
+    const db = {};
 
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({ ok: true }),
-    } as Response);
+      // @ts-expect-error partial mock
+    });
 
     const anomalies = [
       {
@@ -282,12 +287,14 @@ describe("sendAnomalyAlertToSlack", () => {
     mockExecuteWithSchema.mockReset();
     mockExecuteWithSchema.mockResolvedValueOnce([{ bot_token: "xoxb-fake" }]);
     mockExecuteWithSchema.mockResolvedValueOnce([{ provider_account_id: "U12345" }]);
-    const db = {} as never;
+    // @ts-expect-error mock DB
+    const db = {};
 
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({ ok: true }),
-    } as Response);
+      // @ts-expect-error partial mock
+    });
 
     const anomalies = [
       {
@@ -313,7 +320,7 @@ describe("sendAnomalyAlertToSlack", () => {
     expect(result).toBe(true);
 
     // Check the body of the fetch call includes the illness pattern message
-    const callBody = JSON.parse(fetchSpy.mock.calls[0]?.[1]?.body as string);
+    const callBody = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body));
     const blockTexts = callBody.blocks.map((b: { text?: { text: string } }) => b.text?.text);
     expect(blockTexts.some((t: string) => t?.includes("fighting something"))).toBe(true);
     fetchSpy.mockRestore();
@@ -323,12 +330,14 @@ describe("sendAnomalyAlertToSlack", () => {
     mockExecuteWithSchema.mockReset();
     mockExecuteWithSchema.mockResolvedValueOnce([{ bot_token: "xoxb-fake" }]);
     mockExecuteWithSchema.mockResolvedValueOnce([{ provider_account_id: "U12345" }]);
-    const db = {} as never;
+    // @ts-expect-error mock DB
+    const db = {};
 
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: false,
       status: 500,
-    } as Response);
+      // @ts-expect-error partial mock
+    });
 
     const anomalies = [
       {
@@ -350,12 +359,14 @@ describe("sendAnomalyAlertToSlack", () => {
     mockExecuteWithSchema.mockReset();
     mockExecuteWithSchema.mockResolvedValueOnce([{ bot_token: "xoxb-fake" }]);
     mockExecuteWithSchema.mockResolvedValueOnce([{ provider_account_id: "U12345" }]);
-    const db = {} as never;
+    // @ts-expect-error mock DB
+    const db = {};
 
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({ ok: false, error: "channel_not_found" }),
-    } as Response);
+      // @ts-expect-error partial mock
+    });
 
     const anomalies = [
       {
@@ -377,7 +388,8 @@ describe("sendAnomalyAlertToSlack", () => {
     mockExecuteWithSchema.mockReset();
     mockExecuteWithSchema.mockResolvedValueOnce([{ bot_token: "xoxb-fake" }]);
     mockExecuteWithSchema.mockResolvedValueOnce([{ provider_account_id: "U12345" }]);
-    const db = {} as never;
+    // @ts-expect-error mock DB
+    const db = {};
 
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("network error"));
 

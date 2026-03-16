@@ -26,11 +26,11 @@ describe("WahooClient.getWorkout", () => {
       }),
     );
 
-    const client = new WahooClient("test-token", mockFetch as never);
+    const client = new WahooClient("test-token", mockFetch);
     const result = await client.getWorkout(42);
     expect(result.workout.id).toBe(42);
     expect(mockFetch).toHaveBeenCalledOnce();
-    const url = mockFetch.mock.calls[0]?.[0] as string;
+    const url = String(mockFetch.mock.calls[0]?.[0]);
     expect(url).toContain("/v1/workouts/42");
   });
 });
@@ -40,7 +40,7 @@ describe("WahooClient.downloadFitFile", () => {
     const testData = new Uint8Array([0x2e, 0x46, 0x49, 0x54]);
     const mockFetch = vi.fn().mockResolvedValue(new Response(testData, { status: 200 }));
 
-    const client = new WahooClient("test-token", mockFetch as never);
+    const client = new WahooClient("test-token", mockFetch);
     const result = await client.downloadFitFile("https://example.com/test.fit");
     expect(Buffer.isBuffer(result)).toBe(true);
     expect(result.length).toBe(4);
@@ -168,7 +168,7 @@ describe("parseWorkoutList", () => {
     expect(result.page).toBe(1);
   });
 
-  it("calculates hasMore as false when all fetched", () => {
+  it("calculates hasMore when all fetched", () => {
     const response = {
       workouts: [
         {
@@ -202,7 +202,7 @@ describe("WahooProvider.sync — token error path", () => {
     process.env.WAHOO_CLIENT_ID = "id";
     process.env.WAHOO_CLIENT_SECRET = "secret";
 
-    const provider = new WahooProvider(vi.fn() as never);
+    const provider = new WahooProvider(vi.fn());
     const mockDb = {
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
@@ -213,7 +213,8 @@ describe("WahooProvider.sync — token error path", () => {
       }),
     };
 
-    const result = await provider.sync(mockDb as never, new Date("2026-01-01"));
+    // @ts-expect-error mock DB
+    const result = await provider.sync(mockDb, new Date("2026-01-01"));
     expect(result.provider).toBe("wahoo");
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors[0]?.message).toContain("No OAuth tokens");

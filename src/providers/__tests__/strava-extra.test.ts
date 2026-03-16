@@ -26,11 +26,11 @@ describe("StravaClient", () => {
       ]),
     );
 
-    const client = new StravaClient("test-token", mockFetch as never);
+    const client = new StravaClient("test-token", mockFetch);
     const result = await client.getActivities(1000, 2, 50);
 
     expect(mockFetch).toHaveBeenCalledOnce();
-    const callUrl = mockFetch.mock.calls[0]?.[0] as string;
+    const callUrl = String(mockFetch.mock.calls[0]?.[0]);
     expect(callUrl).toContain("/athlete/activities");
     expect(callUrl).toContain("after=1000");
     expect(callUrl).toContain("page=2");
@@ -66,7 +66,7 @@ describe("StravaClient", () => {
       ]),
     );
 
-    const client = new StravaClient("test-token", mockFetch as never);
+    const client = new StravaClient("test-token", mockFetch);
     const streams = await client.getActivityStreams(12345);
 
     expect(streams.time?.data).toEqual([0, 1, 2]);
@@ -87,7 +87,7 @@ describe("StravaProvider.sync", () => {
     process.env.STRAVA_CLIENT_SECRET = "secret";
 
     const mockFetch = vi.fn();
-    const provider = new StravaProvider(mockFetch as never);
+    const provider = new StravaProvider(mockFetch);
 
     // Mock db with loadTokens returning null
     const mockDb = {
@@ -100,7 +100,8 @@ describe("StravaProvider.sync", () => {
       }),
     };
 
-    const result = await provider.sync(mockDb as never, new Date("2026-01-01"));
+    // @ts-expect-error mock DB
+    const result = await provider.sync(mockDb, new Date("2026-01-01"));
     expect(result.provider).toBe("strava");
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors[0]?.message).toContain("No OAuth tokens");
@@ -120,7 +121,7 @@ describe("StravaProvider.sync", () => {
       return Response.json([]);
     });
 
-    const provider = new StravaProvider(mockFetch as never);
+    const provider = new StravaProvider(mockFetch);
 
     // Provide tokens
     const futureDate = new Date("2099-01-01");
@@ -149,7 +150,8 @@ describe("StravaProvider.sync", () => {
       }),
     };
 
-    const result = await provider.sync(mockDb as never, new Date("2026-01-01"));
+    // @ts-expect-error mock DB
+    const result = await provider.sync(mockDb, new Date("2026-01-01"));
     expect(result.provider).toBe("strava");
     expect(result.errors.some((e) => e.message.includes("rate limit"))).toBe(true);
   });

@@ -38,7 +38,8 @@ describe("VeloHeroProvider", () => {
     };
 
     const provider = new VeloHeroProvider();
-    const result = await provider.sync(mockDb as never, new Date("2026-01-01"));
+    // @ts-expect-error mock DB
+    const result = await provider.sync(mockDb, new Date("2026-01-01"));
     expect(result.provider).toBe("velohero");
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors[0]?.message).toContain("not connected");
@@ -76,7 +77,8 @@ describe("VeloHeroProvider", () => {
     };
 
     const provider = new VeloHeroProvider();
-    const result = await provider.sync(mockDb as never, new Date("2026-01-01"));
+    // @ts-expect-error mock DB
+    const result = await provider.sync(mockDb, new Date("2026-01-01"));
     expect(result.errors[0]?.message).toContain("session expired");
 
     process.env = { ...originalEnv };

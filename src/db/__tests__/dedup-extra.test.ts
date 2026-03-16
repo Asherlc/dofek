@@ -28,8 +28,8 @@ describe("refreshDedupViews", () => {
     const { refreshDedupViews } = await import("../dedup.ts");
     const mockDb = createMockDb();
 
-    // biome-ignore lint/suspicious/noExplicitAny: mock DB
-    await refreshDedupViews(mockDb as any);
+    // @ts-expect-error mock DB
+    await refreshDedupViews(mockDb);
 
     // 4 dedup views + 1 rollup view = 5 total refreshes
     expect(mockExecute).toHaveBeenCalledTimes(5);
@@ -60,8 +60,8 @@ describe("refreshDedupViews", () => {
       return Promise.resolve(undefined);
     });
 
-    // biome-ignore lint/suspicious/noExplicitAny: mock DB
-    await refreshDedupViews(mockDb as any);
+    // @ts-expect-error mock DB
+    await refreshDedupViews(mockDb);
 
     // Each view: 1 failed CONCURRENTLY + 1 fallback = 2 calls per view, 5 views = 10
     expect(mockExecute).toHaveBeenCalledTimes(10);
@@ -81,8 +81,8 @@ describe("refreshDedupViews", () => {
       return Promise.resolve(undefined);
     });
 
-    // biome-ignore lint/suspicious/noExplicitAny: mock DB
-    await refreshDedupViews(mockDb as any);
+    // @ts-expect-error mock DB
+    await refreshDedupViews(mockDb);
 
     // First view: 1 failed + 1 fallback = 2; remaining 4 views: 1 each = 4; total = 6
     expect(mockExecute).toHaveBeenCalledTimes(6);
@@ -95,8 +95,8 @@ describe("refreshDedupViews", () => {
     mockExecute.mockRejectedValue(new Error("connection refused"));
 
     await expect(
-      // biome-ignore lint/suspicious/noExplicitAny: mock DB
-      refreshDedupViews(mockDb as any),
+      // @ts-expect-error mock DB
+      refreshDedupViews(mockDb),
     ).rejects.toThrow("connection refused");
   });
 });
@@ -111,8 +111,8 @@ describe("updateUserMaxHr", () => {
     const { updateUserMaxHr } = await import("../dedup.ts");
     const mockDb = createMockDb();
 
-    // biome-ignore lint/suspicious/noExplicitAny: mock DB
-    await updateUserMaxHr(mockDb as any);
+    // @ts-expect-error mock DB
+    await updateUserMaxHr(mockDb);
 
     expect(mockExecute).toHaveBeenCalledTimes(1);
   });

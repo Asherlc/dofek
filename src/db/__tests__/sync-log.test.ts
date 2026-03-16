@@ -32,8 +32,8 @@ describe("logSync", () => {
       durationMs: 1500,
     };
 
-    // biome-ignore lint/suspicious/noExplicitAny: mock DB doesn't match full Drizzle type
-    await logSync(mockDb as any, entry);
+    // @ts-expect-error mock DB
+    await logSync(mockDb, entry);
 
     expect(mockDb._insertFn).toHaveBeenCalled();
     expect(mockDb._valuesFn).toHaveBeenCalledWith({
@@ -55,8 +55,8 @@ describe("logSync", () => {
       durationMs: 5000,
     };
 
-    // biome-ignore lint/suspicious/noExplicitAny: mock DB doesn't match full Drizzle type
-    await logSync(mockDb as any, entry);
+    // @ts-expect-error mock DB
+    await logSync(mockDb, entry);
 
     expect(mockDb._valuesFn).toHaveBeenCalledWith({
       providerId: "whoop",
@@ -75,8 +75,8 @@ describe("logSync", () => {
       status: "success",
     };
 
-    // biome-ignore lint/suspicious/noExplicitAny: mock DB doesn't match full Drizzle type
-    await logSync(mockDb as any, entry);
+    // @ts-expect-error mock DB
+    await logSync(mockDb, entry);
 
     expect(mockDb._valuesFn).toHaveBeenCalledWith(expect.objectContaining({ recordCount: 0 }));
   });
@@ -97,8 +97,8 @@ describe("withSyncLog", () => {
   it("logs success and returns the result on success", async () => {
     const fn = vi.fn().mockResolvedValue({ recordCount: 10, result: "data" });
 
-    // biome-ignore lint/suspicious/noExplicitAny: mock DB doesn't match full Drizzle type
-    const result = await withSyncLog(mockDb as any, "wahoo", "activities", fn);
+    // @ts-expect-error mock DB
+    const result = await withSyncLog(mockDb, "wahoo", "activities", fn);
 
     expect(result).toBe("data");
     expect(fn).toHaveBeenCalled();
@@ -116,8 +116,8 @@ describe("withSyncLog", () => {
     const fn = vi.fn().mockRejectedValue(new Error("sync failed"));
 
     await expect(
-      // biome-ignore lint/suspicious/noExplicitAny: mock DB doesn't match full Drizzle type
-      withSyncLog(mockDb as any, "whoop", "sleep", fn),
+      // @ts-expect-error mock DB
+      withSyncLog(mockDb, "whoop", "sleep", fn),
     ).rejects.toThrow("sync failed");
 
     expect(mockDb._valuesFn).toHaveBeenCalledWith(
@@ -134,8 +134,8 @@ describe("withSyncLog", () => {
     const fn = vi.fn().mockRejectedValue("string error");
 
     await expect(
-      // biome-ignore lint/suspicious/noExplicitAny: mock DB doesn't match full Drizzle type
-      withSyncLog(mockDb as any, "wahoo", "body", fn),
+      // @ts-expect-error mock DB
+      withSyncLog(mockDb, "wahoo", "body", fn),
     ).rejects.toBe("string error");
 
     expect(mockDb._valuesFn).toHaveBeenCalledWith(
@@ -153,8 +153,8 @@ describe("withSyncLog", () => {
       return { recordCount: 1, result: "ok" };
     });
 
-    // biome-ignore lint/suspicious/noExplicitAny: mock DB doesn't match full Drizzle type
-    await withSyncLog(mockDb as any, "wahoo", "activities", fn);
+    // @ts-expect-error mock DB
+    await withSyncLog(mockDb, "wahoo", "activities", fn);
 
     expect(mockDb._valuesFn).toHaveBeenCalledWith(
       expect.objectContaining({

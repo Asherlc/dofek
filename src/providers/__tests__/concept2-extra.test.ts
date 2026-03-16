@@ -165,7 +165,8 @@ describe("Concept2Provider", () => {
       }),
     };
 
-    const result = await new Concept2Provider().sync(mockDb as never, new Date("2026-01-01"));
+    // @ts-expect-error mock DB
+    const result = await new Concept2Provider().sync(mockDb, new Date("2026-01-01"));
     expect(result.provider).toBe("concept2");
     expect(result.errors.length).toBeGreaterThan(0);
   });

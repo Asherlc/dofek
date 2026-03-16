@@ -134,7 +134,8 @@ describe("KomootProvider", () => {
         }),
       }),
     };
-    const result = await new KomootProvider().sync(mockDb as never, new Date("2026-01-01"));
+    // @ts-expect-error mock DB
+    const result = await new KomootProvider().sync(mockDb, new Date("2026-01-01"));
     expect(result.errors.length).toBeGreaterThan(0);
   });
 });

@@ -17,13 +17,13 @@ import {
 describe("FitbitClient — API calls", () => {
   it("getActivities sends correct URL with afterDate and offset", async () => {
     let capturedUrl = "";
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
       capturedUrl = input.toString();
       return Response.json({
         activities: [],
         pagination: { next: "", previous: "", limit: 20, offset: 0, sort: "asc" },
       });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new FitbitClient("test-token", mockFetch);
     await client.getActivities("2026-03-01", 10);
@@ -37,13 +37,13 @@ describe("FitbitClient — API calls", () => {
 
   it("getSleepLogs sends correct URL", async () => {
     let capturedUrl = "";
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
       capturedUrl = input.toString();
       return Response.json({
         sleep: [],
         pagination: { next: "", previous: "", limit: 20, offset: 0, sort: "asc" },
       });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new FitbitClient("test-token", mockFetch);
     await client.getSleepLogs("2026-03-01", 5);
@@ -55,7 +55,7 @@ describe("FitbitClient — API calls", () => {
 
   it("getDailySummary sends correct URL with date", async () => {
     let capturedUrl = "";
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
       capturedUrl = input.toString();
       return Response.json({
         summary: {
@@ -70,7 +70,7 @@ describe("FitbitClient — API calls", () => {
           sedentaryMinutes: 0,
         },
       });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new FitbitClient("test-token", mockFetch);
     await client.getDailySummary("2026-03-15");
@@ -80,10 +80,10 @@ describe("FitbitClient — API calls", () => {
 
   it("getWeightLogs sends correct URL", async () => {
     let capturedUrl = "";
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
       capturedUrl = input.toString();
       return Response.json({ weight: [] });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new FitbitClient("test-token", mockFetch);
     await client.getWeightLogs("2026-03-01");
@@ -93,16 +93,16 @@ describe("FitbitClient — API calls", () => {
 
   it("sends Authorization header with Bearer token", async () => {
     let capturedHeaders: Record<string, string> = {};
-    const mockFetch = (async (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-      capturedHeaders = Object.fromEntries(Object.entries(init?.headers ?? {})) as Record<
-        string,
-        string
-      >;
+    const mockFetch: typeof globalThis.fetch = async (
+      _input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      capturedHeaders = Object.fromEntries(Object.entries(init?.headers ?? {}));
       return Response.json({
         activities: [],
         pagination: { next: "", previous: "", limit: 20, offset: 0, sort: "asc" },
       });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new FitbitClient("my-secret-token", mockFetch);
     await client.getActivities("2026-03-01");
@@ -111,18 +111,18 @@ describe("FitbitClient — API calls", () => {
   });
 
   it("throws on non-OK response", async () => {
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async () => {
       return new Response("Unauthorized", { status: 401 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new FitbitClient("bad-token", mockFetch);
     await expect(client.getActivities("2026-03-01")).rejects.toThrow("Fitbit API error (401)");
   });
 
   it("includes response body in error message", async () => {
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async () => {
       return new Response("Rate limit exceeded", { status: 429 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new FitbitClient("token", mockFetch);
     await expect(client.getWeightLogs("2026-03-01")).rejects.toThrow("Rate limit exceeded");
@@ -130,13 +130,13 @@ describe("FitbitClient — API calls", () => {
 
   it("uses default offset of 0 for getActivities", async () => {
     let capturedUrl = "";
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
       capturedUrl = input.toString();
       return Response.json({
         activities: [],
         pagination: { next: "", previous: "", limit: 20, offset: 0, sort: "asc" },
       });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new FitbitClient("test-token", mockFetch);
     await client.getActivities("2026-03-01");

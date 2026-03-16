@@ -25,8 +25,8 @@ describe("session", () => {
 
   describe("createSession", () => {
     it("inserts a session and returns session info", async () => {
-      // biome-ignore lint/suspicious/noExplicitAny: mock DB
-      const result = await createSession(mockDb as any, "user-123");
+      // @ts-expect-error mock DB
+      const result = await createSession(mockDb, "user-123");
 
       expect(mockExecute).toHaveBeenCalledTimes(1);
       expect(result.userId).toBe("user-123");
@@ -40,17 +40,17 @@ describe("session", () => {
     });
 
     it("generates unique session tokens", async () => {
-      // biome-ignore lint/suspicious/noExplicitAny: mock DB
-      const result1 = await createSession(mockDb as any, "user-1");
-      // biome-ignore lint/suspicious/noExplicitAny: mock DB
-      const result2 = await createSession(mockDb as any, "user-1");
+      // @ts-expect-error mock DB
+      const result1 = await createSession(mockDb, "user-1");
+      // @ts-expect-error mock DB
+      const result2 = await createSession(mockDb, "user-1");
 
       expect(result1.sessionId).not.toBe(result2.sessionId);
     });
 
     it("generates hex-only session tokens", async () => {
-      // biome-ignore lint/suspicious/noExplicitAny: mock DB
-      const result = await createSession(mockDb as any, "user-1");
+      // @ts-expect-error mock DB
+      const result = await createSession(mockDb, "user-1");
       expect(result.sessionId).toMatch(/^[0-9a-f]{64}$/);
     });
   });
@@ -59,8 +59,8 @@ describe("session", () => {
     it("returns userId when session is valid", async () => {
       mockExecute.mockResolvedValue([{ user_id: "user-abc", expires_at: new Date("2027-01-01") }]);
 
-      // biome-ignore lint/suspicious/noExplicitAny: mock DB
-      const result = await validateSession(mockDb as any, "session-token");
+      // @ts-expect-error mock DB
+      const result = await validateSession(mockDb, "session-token");
 
       expect(result).toEqual({ userId: "user-abc" });
       expect(mockExecute).toHaveBeenCalledTimes(1);
@@ -69,8 +69,8 @@ describe("session", () => {
     it("returns null when no matching session exists", async () => {
       mockExecute.mockResolvedValue([]);
 
-      // biome-ignore lint/suspicious/noExplicitAny: mock DB
-      const result = await validateSession(mockDb as any, "nonexistent");
+      // @ts-expect-error mock DB
+      const result = await validateSession(mockDb, "nonexistent");
 
       expect(result).toBeNull();
     });
@@ -78,8 +78,8 @@ describe("session", () => {
     it("returns null when row is undefined", async () => {
       mockExecute.mockResolvedValue([undefined]);
 
-      // biome-ignore lint/suspicious/noExplicitAny: mock DB
-      const result = await validateSession(mockDb as any, "bad-session");
+      // @ts-expect-error mock DB
+      const result = await validateSession(mockDb, "bad-session");
 
       expect(result).toBeNull();
     });
@@ -87,8 +87,8 @@ describe("session", () => {
 
   describe("deleteSession", () => {
     it("executes a DELETE query", async () => {
-      // biome-ignore lint/suspicious/noExplicitAny: mock DB
-      await deleteSession(mockDb as any, "session-to-delete");
+      // @ts-expect-error mock DB
+      await deleteSession(mockDb, "session-to-delete");
 
       expect(mockExecute).toHaveBeenCalledTimes(1);
     });
@@ -96,8 +96,8 @@ describe("session", () => {
 
   describe("deleteExpiredSessions", () => {
     it("executes a DELETE for expired sessions", async () => {
-      // biome-ignore lint/suspicious/noExplicitAny: mock DB
-      await deleteExpiredSessions(mockDb as any);
+      // @ts-expect-error mock DB
+      await deleteExpiredSessions(mockDb);
 
       expect(mockExecute).toHaveBeenCalledTimes(1);
     });

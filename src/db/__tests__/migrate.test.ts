@@ -11,17 +11,11 @@ const mockSqlEnd = vi.fn().mockResolvedValue(undefined);
 const mockSqlUnsafe = vi.fn().mockResolvedValue([]);
 
 // Tagged template function mock — returns a promise with rows
-function createMockSql(): ReturnType<typeof vi.fn> & {
-  unsafe: ReturnType<typeof vi.fn>;
-  end: ReturnType<typeof vi.fn>;
-} {
-  const sqlFn = vi.fn().mockResolvedValue([]) as ReturnType<typeof vi.fn> & {
-    unsafe: ReturnType<typeof vi.fn>;
-    end: ReturnType<typeof vi.fn>;
-  };
-  sqlFn.unsafe = mockSqlUnsafe;
-  sqlFn.end = mockSqlEnd;
-  return sqlFn;
+function createMockSql() {
+  return Object.assign(vi.fn().mockResolvedValue([]), {
+    unsafe: mockSqlUnsafe,
+    end: mockSqlEnd,
+  });
 }
 
 const mockSql = createMockSql();
@@ -56,11 +50,8 @@ describe("runMigrations", () => {
   it("applies pending migrations and skips already-applied ones", async () => {
     const { runMigrations } = await import("../migrate.ts");
 
-    mockedReaddirSync.mockReturnValue([
-      "0001_init.sql",
-      "0002_add_col.sql",
-      "0003_new.sql",
-    ] as never);
+    // @ts-expect-error string[] not assignable to Dirent[]
+    mockedReaddirSync.mockReturnValue(["0001_init.sql", "0002_add_col.sql", "0003_new.sql"]);
 
     // Already applied: 0001 and 0002
     mockSql.mockImplementation((..._args: unknown[]) => {
@@ -81,7 +72,8 @@ describe("runMigrations", () => {
   it("splits migration files on statement breakpoints", async () => {
     const { runMigrations } = await import("../migrate.ts");
 
-    mockedReaddirSync.mockReturnValue(["0001_multi.sql"] as never);
+    // @ts-expect-error string[] not assignable to Dirent[]
+    mockedReaddirSync.mockReturnValue(["0001_multi.sql"]);
     mockSql.mockResolvedValue([]);
     mockedReadFileSync.mockReturnValue(
       "CREATE TABLE a (id INT)--> statement-breakpoint\nCREATE TABLE b (id INT)",
@@ -98,7 +90,8 @@ describe("runMigrations", () => {
   it("returns 0 when no pending migrations exist", async () => {
     const { runMigrations } = await import("../migrate.ts");
 
-    mockedReaddirSync.mockReturnValue(["0001_init.sql"] as never);
+    // @ts-expect-error string[] not assignable to Dirent[]
+    mockedReaddirSync.mockReturnValue(["0001_init.sql"]);
     mockSql.mockResolvedValue([{ hash: "0001_init.sql" }]);
 
     const count = await runMigrations("postgres://localhost/test", "/tmp/migrations");
@@ -110,12 +103,8 @@ describe("runMigrations", () => {
   it("only considers .sql files", async () => {
     const { runMigrations } = await import("../migrate.ts");
 
-    mockedReaddirSync.mockReturnValue([
-      "0001_init.sql",
-      "README.md",
-      "meta.json",
-      "0002_next.sql",
-    ] as never);
+    // @ts-expect-error string[] not assignable to Dirent[]
+    mockedReaddirSync.mockReturnValue(["0001_init.sql", "README.md", "meta.json", "0002_next.sql"]);
     mockSql.mockResolvedValue([]);
     mockedReadFileSync.mockReturnValue("SELECT 1");
 

@@ -39,7 +39,8 @@ describe("efficiencyRouter", () => {
         },
       ];
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) } as never,
+        // @ts-expect-error mock DB
+        db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
       });
       const result = await caller.aerobicEfficiency({ days: 180 });
@@ -51,7 +52,8 @@ describe("efficiencyRouter", () => {
 
     it("returns null maxHr when no data", async () => {
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue([]) } as never,
+        // @ts-expect-error mock DB
+        db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
       const result = await caller.aerobicEfficiency({ days: 180 });
@@ -74,7 +76,8 @@ describe("efficiencyRouter", () => {
         },
       ];
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) } as never,
+        // @ts-expect-error mock DB
+        db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
       });
       const result = await caller.aerobicDecoupling({ days: 180 });
@@ -96,7 +99,8 @@ describe("efficiencyRouter", () => {
         },
       ];
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) } as never,
+        // @ts-expect-error mock DB
+        db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
       });
       const result = await caller.polarizationTrend({ days: 180 });
@@ -111,7 +115,8 @@ describe("efficiencyRouter", () => {
         { max_hr: 190, week: "2024-01-15", z1_seconds: 5000, z2_seconds: 0, z3_seconds: 0 },
       ];
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) } as never,
+        // @ts-expect-error mock DB
+        db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
       });
       const result = await caller.polarizationTrend({ days: 180 });
@@ -128,7 +133,8 @@ describe("trainingRouter", () => {
     it("returns weekly volume rows", async () => {
       const rows = [{ week: "2024-01-15", activity_type: "cycling", count: 3, hours: 5.5 }];
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) } as never,
+        // @ts-expect-error mock DB
+        db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
       });
       const result = await caller.weeklyVolume({ days: 90 });
@@ -150,7 +156,8 @@ describe("trainingRouter", () => {
         },
       ];
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) } as never,
+        // @ts-expect-error mock DB
+        db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
       });
       const result = await caller.hrZones({ days: 90 });
@@ -160,7 +167,8 @@ describe("trainingRouter", () => {
 
     it("returns null maxHr when no data", async () => {
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue([]) } as never,
+        // @ts-expect-error mock DB
+        db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
       const result = await caller.hrZones({ days: 90 });
@@ -173,7 +181,8 @@ describe("trainingRouter", () => {
     it("returns activity stats rows", async () => {
       const rows = [{ id: "a1", activity_type: "cycling", avg_hr: 155 }];
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) } as never,
+        // @ts-expect-error mock DB
+        db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
       });
       const result = await caller.activityStats({ days: 90 });
@@ -189,7 +198,8 @@ describe("intervalsRouter", () => {
     it("returns interval rows", async () => {
       const rows = [{ id: "i1", interval_index: 0, label: "Warmup", avg_power: 100 }];
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) } as never,
+        // @ts-expect-error mock DB
+        db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
       });
       const result = await caller.byActivity({
@@ -202,7 +212,8 @@ describe("intervalsRouter", () => {
   describe("detect", () => {
     it("returns empty when no stream data", async () => {
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue([]) } as never,
+        // @ts-expect-error mock DB
+        db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
       const result = await caller.detect({
@@ -271,7 +282,8 @@ describe("intervalsRouter", () => {
         },
       ];
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) } as never,
+        // @ts-expect-error mock DB
+        db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
       });
       const result = await caller.detect({
@@ -320,7 +332,8 @@ describe("intervalsRouter", () => {
         },
       ];
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) } as never,
+        // @ts-expect-error mock DB
+        db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
       });
       const result = await caller.detect({

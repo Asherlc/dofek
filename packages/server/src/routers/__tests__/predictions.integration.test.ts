@@ -186,12 +186,15 @@ describe("Predictions router (integration)", () => {
       headers: { "Content-Type": "application/json", Cookie: sessionCookie },
       body: JSON.stringify({ "0": input }),
     });
-    const data = (await res.json()) as Record<string, unknown>[];
-    const first = data[0] as { result?: { data?: T }; error?: { message: string } };
+    // @ts-expect-error tRPC batch response shape
+    const data: Record<string, unknown>[] = await res.json();
+    // @ts-expect-error tRPC batch response shape
+    const first: { result?: { data?: T }; error?: { message: string } } = data[0];
     if (first?.error) {
       throw new Error(`${path} error: ${JSON.stringify(first.error)}`);
     }
-    return first?.result?.data as T;
+    // @ts-expect-error tRPC batch response shape
+    return first?.result?.data;
   }
 
   describe("targets", () => {

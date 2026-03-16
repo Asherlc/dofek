@@ -46,7 +46,7 @@ describe("inferCategory", () => {
 
 describe("parseFoodEntries", () => {
   it("returns empty array for missing food_entries", () => {
-    const response = { food_entries: { food_entry: [] } } as FatSecretFoodEntriesResponse;
+    const response = { food_entries: { food_entry: [] } };
     expect(parseFoodEntries(response)).toEqual([]);
   });
 

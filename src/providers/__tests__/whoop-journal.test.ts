@@ -23,8 +23,9 @@ describe("parseWorkout — fallback paths (no `during` field)", () => {
       max_heart_rate: 175,
       kilojoules: 2000,
       score: 10,
-    } as WhoopWorkoutRecord;
+    };
 
+    // @ts-expect-error partial mock record
     const parsed = parseWorkout(record);
     expect(parsed.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
     expect(parsed.endedAt).toEqual(new Date("2026-03-01T11:00:00Z"));
@@ -42,8 +43,9 @@ describe("parseWorkout — fallback paths (no `during` field)", () => {
       created_at: "2026-03-01T09:00:00Z",
       updated_at: "2026-03-01T10:30:00Z",
       score: 8,
-    } as WhoopWorkoutRecord;
+    };
 
+    // @ts-expect-error partial mock record
     const parsed = parseWorkout(record);
     expect(parsed.startedAt).toEqual(new Date("2026-03-01T09:00:00Z"));
     expect(parsed.endedAt).toEqual(new Date("2026-03-01T10:30:00Z"));
@@ -58,8 +60,9 @@ describe("parseWorkout — fallback paths (no `during` field)", () => {
       timezone_offset: "-05:00",
       sport_id: 44, // yoga
       score: 3,
-    } as WhoopWorkoutRecord;
+    };
 
+    // @ts-expect-error partial mock record
     const parsed = parseWorkout(record);
     expect(parsed.externalId).toBe("98765");
     expect(parsed.activityType).toBe("yoga");
@@ -71,8 +74,9 @@ describe("parseWorkout — fallback paths (no `during` field)", () => {
       timezone_offset: "-05:00",
       sport_id: 0,
       score: 5,
-    } as WhoopWorkoutRecord;
+    };
 
+    // @ts-expect-error partial mock record
     const parsed = parseWorkout(record);
     expect(parsed.externalId).toBe("");
   });

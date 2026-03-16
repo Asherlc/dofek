@@ -29,7 +29,8 @@ const createCaller = createTestCallerFactory(foodRouter);
 
 function makeCaller(rows: Record<string, unknown>[] = []) {
   return createCaller({
-    db: { execute: vi.fn().mockResolvedValue(rows) } as never,
+    // @ts-expect-error mock DB
+    db: { execute: vi.fn().mockResolvedValue(rows) },
     userId: "user-1",
   });
 }
@@ -101,7 +102,8 @@ describe("foodRouter", () => {
       execute.mockResolvedValueOnce([]); // ensureDofekProvider
       execute.mockResolvedValueOnce([created]); // INSERT
       const caller = createCaller({
-        db: { execute } as never,
+        // @ts-expect-error mock DB
+        db: { execute },
         userId: "user-1",
       });
 
@@ -179,7 +181,8 @@ describe("foodRouter", () => {
       execute.mockResolvedValueOnce([]); // ensureDofekProvider
       execute.mockResolvedValueOnce([created]); // INSERT
       const caller = createCaller({
-        db: { execute } as never,
+        // @ts-expect-error mock DB
+        db: { execute },
         userId: "user-1",
       });
 

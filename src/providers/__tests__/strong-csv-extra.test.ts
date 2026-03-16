@@ -176,7 +176,8 @@ describe("StrongCsvProvider", () => {
 
   it("sync returns zero records", async () => {
     const provider = new StrongCsvProvider();
-    const result = await provider.sync({} as never, new Date());
+    // @ts-expect-error mock DB
+    const result = await provider.sync({}, new Date());
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toEqual([]);
   });

@@ -23,17 +23,17 @@ describe("RideWithGpsClient — API calls", () => {
   it("sync sends correct URL with since parameter", async () => {
     let capturedUrl = "";
     let capturedHeaders: Record<string, string> = {};
-    const mockFetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
       capturedUrl = input.toString();
-      capturedHeaders = Object.fromEntries(Object.entries(init?.headers ?? {})) as Record<
-        string,
-        string
-      >;
+      capturedHeaders = Object.fromEntries(Object.entries(init?.headers ?? {}));
       return Response.json({
         items: [],
         meta: { rwgps_datetime: "2026-03-15T12:00:00Z" },
       });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new RideWithGpsClient("test-token", mockFetch);
     const result = await client.sync("2026-03-01T00:00:00Z");
@@ -48,7 +48,7 @@ describe("RideWithGpsClient — API calls", () => {
 
   it("getTrip sends correct URL with trip ID", async () => {
     let capturedUrl = "";
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
       capturedUrl = input.toString();
       return Response.json({
         trip: {
@@ -64,7 +64,7 @@ describe("RideWithGpsClient — API calls", () => {
           track_points: [],
         },
       });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new RideWithGpsClient("test-token", mockFetch);
     const result = await client.getTrip(42);
@@ -75,18 +75,18 @@ describe("RideWithGpsClient — API calls", () => {
   });
 
   it("throws on non-OK response", async () => {
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async () => {
       return new Response("Unauthorized", { status: 401 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new RideWithGpsClient("bad-token", mockFetch);
     await expect(client.sync("2026-03-01")).rejects.toThrow("RWGPS API error (401)");
   });
 
   it("includes error body in error message", async () => {
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async () => {
       return new Response("Invalid token", { status: 403 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new RideWithGpsClient("bad-token", mockFetch);
     await expect(client.getTrip(123)).rejects.toThrow("Invalid token");

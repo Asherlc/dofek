@@ -28,8 +28,8 @@ describe("executeWithSchema", () => {
     const mockDb = createMockDb();
     const query = sql`SELECT * FROM users`;
 
-    // biome-ignore lint/suspicious/noExplicitAny: mock DB
-    const result = await executeWithSchema(mockDb as any, schema, query);
+    // @ts-expect-error mock DB
+    const result = await executeWithSchema(mockDb, schema, query);
 
     expect(result).toEqual([
       { id: 1, name: "Alice" },
@@ -43,8 +43,8 @@ describe("executeWithSchema", () => {
     mockExecute.mockResolvedValue([]);
 
     const mockDb = createMockDb();
-    // biome-ignore lint/suspicious/noExplicitAny: mock DB
-    const result = await executeWithSchema(mockDb as any, schema, sql`SELECT 1`);
+    // @ts-expect-error mock DB
+    const result = await executeWithSchema(mockDb, schema, sql`SELECT 1`);
 
     expect(result).toEqual([]);
   });
@@ -60,8 +60,8 @@ describe("executeWithSchema", () => {
     const mockDb = createMockDb();
 
     await expect(
-      // biome-ignore lint/suspicious/noExplicitAny: mock DB
-      executeWithSchema(mockDb as any, schema, sql`SELECT * FROM users`),
+      // @ts-expect-error mock DB
+      executeWithSchema(mockDb, schema, sql`SELECT * FROM users`),
     ).rejects.toThrow(z.ZodError);
   });
 
@@ -76,8 +76,8 @@ describe("executeWithSchema", () => {
     const mockDb = createMockDb();
 
     await expect(
-      // biome-ignore lint/suspicious/noExplicitAny: mock DB
-      executeWithSchema(mockDb as any, schema, sql`SELECT id FROM users`),
+      // @ts-expect-error mock DB
+      executeWithSchema(mockDb, schema, sql`SELECT id FROM users`),
     ).rejects.toThrow(z.ZodError);
   });
 
@@ -89,8 +89,8 @@ describe("executeWithSchema", () => {
     mockExecute.mockResolvedValue([{ count: "42" }]);
 
     const mockDb = createMockDb();
-    // biome-ignore lint/suspicious/noExplicitAny: mock DB
-    const result = await executeWithSchema(mockDb as any, schema, sql`SELECT count(*)`);
+    // @ts-expect-error mock DB
+    const result = await executeWithSchema(mockDb, schema, sql`SELECT count(*)`);
 
     expect(result).toEqual([{ count: 42 }]);
   });
@@ -104,8 +104,8 @@ describe("executeWithSchema", () => {
     mockExecute.mockResolvedValue([{ id: 1, extra: "field" }]);
 
     const mockDb = createMockDb();
-    // biome-ignore lint/suspicious/noExplicitAny: mock DB
-    const result = await executeWithSchema(mockDb as any, schema, sql`SELECT *`);
+    // @ts-expect-error mock DB
+    const result = await executeWithSchema(mockDb, schema, sql`SELECT *`);
 
     expect(result).toEqual([{ id: 1 }]);
   });

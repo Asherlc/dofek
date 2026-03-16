@@ -28,7 +28,7 @@ describe("parseWgerWorkoutSession", () => {
     expect(parsed.raw.timeEnd).toBe("10:30");
   });
 
-  it("uses 'Workout' as default name when comment is empty", () => {
+  it("uses 'Workout' name when comment is empty", () => {
     const session = {
       id: 1,
       date: "2026-03-01",
@@ -137,7 +137,8 @@ describe("WgerProvider", () => {
         }),
       }),
     };
-    const result = await new WgerProvider().sync(mockDb as never, new Date("2026-01-01"));
+    // @ts-expect-error mock DB
+    const result = await new WgerProvider().sync(mockDb, new Date("2026-01-01"));
     expect(result.errors.length).toBeGreaterThan(0);
   });
 });

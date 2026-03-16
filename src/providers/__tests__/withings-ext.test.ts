@@ -62,7 +62,6 @@ describe("parseMeasureGroup — fat_free_mass and fat_mass (types 5, 8)", () => 
     };
 
     const result = parseMeasureGroup(group);
-    // These types are in the getMeas request but not mapped to fields
     expect(result.weightKg).toBeUndefined();
     expect(result.muscleMassKg).toBeUndefined();
   });
@@ -74,18 +73,18 @@ describe("WithingsClient — API calls", () => {
     let capturedBody = "";
     let capturedHeaders: Record<string, string> = {};
 
-    const mockFetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
       capturedUrl = input.toString();
-      capturedBody = init?.body as string;
-      capturedHeaders = Object.fromEntries(Object.entries(init?.headers ?? {})) as Record<
-        string,
-        string
-      >;
+      capturedBody = String(init?.body);
+      capturedHeaders = Object.fromEntries(Object.entries(init?.headers ?? {}));
       return Response.json({
         status: 0,
         body: { measuregrps: [], more: 0, offset: 0 },
       });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new WithingsClient("test-token", mockFetch);
     const result = await client.getMeas(1000, 2000, 5);
@@ -102,18 +101,18 @@ describe("WithingsClient — API calls", () => {
   });
 
   it("throws on non-OK HTTP response", async () => {
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async () => {
       return new Response("Server Error", { status: 500 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new WithingsClient("bad-token", mockFetch);
     await expect(client.getMeas(0, 1000)).rejects.toThrow("Withings API error (500)");
   });
 
   it("throws on non-zero status in response body", async () => {
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async () => {
       return Response.json({ status: 401, body: {} });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new WithingsClient("expired-token", mockFetch);
     await expect(client.getMeas(0, 1000)).rejects.toThrow("Withings API error (status 401)");
@@ -121,13 +120,16 @@ describe("WithingsClient — API calls", () => {
 
   it("uses default offset of 0", async () => {
     let capturedBody = "";
-    const mockFetch = (async (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-      capturedBody = init?.body as string;
+    const mockFetch: typeof globalThis.fetch = async (
+      _input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      capturedBody = String(init?.body);
       return Response.json({
         status: 0,
         body: { measuregrps: [], more: 0, offset: 0 },
       });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new WithingsClient("test-token", mockFetch);
     await client.getMeas(1000, 2000);
@@ -171,8 +173,11 @@ describe("withingsOAuthConfig", () => {
 describe("exchangeWithingsCode", () => {
   it("sends action=requesttoken with authorization_code grant", async () => {
     let capturedBody = "";
-    const mockFetch = (async (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-      capturedBody = init?.body as string;
+    const mockFetch: typeof globalThis.fetch = async (
+      _input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      capturedBody = String(init?.body);
       return Response.json({
         status: 0,
         body: {
@@ -182,7 +187,7 @@ describe("exchangeWithingsCode", () => {
           scope: "user.metrics",
         },
       });
-    }) as typeof globalThis.fetch;
+    };
 
     const config = {
       clientId: "test-id",
@@ -206,9 +211,9 @@ describe("exchangeWithingsCode", () => {
   });
 
   it("throws on non-OK HTTP response", async () => {
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async () => {
       return new Response("Bad Request", { status: 400 });
-    }) as typeof globalThis.fetch;
+    };
 
     const config = {
       clientId: "test-id",
@@ -225,9 +230,9 @@ describe("exchangeWithingsCode", () => {
   });
 
   it("throws on non-zero status in response", async () => {
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async () => {
       return Response.json({ status: 293, body: {} });
-    }) as typeof globalThis.fetch;
+    };
 
     const config = {
       clientId: "test-id",
@@ -247,8 +252,11 @@ describe("exchangeWithingsCode", () => {
 describe("refreshWithingsToken", () => {
   it("sends action=requesttoken with refresh_token grant", async () => {
     let capturedBody = "";
-    const mockFetch = (async (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-      capturedBody = init?.body as string;
+    const mockFetch: typeof globalThis.fetch = async (
+      _input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      capturedBody = String(init?.body);
       return Response.json({
         status: 0,
         body: {
@@ -258,7 +266,7 @@ describe("refreshWithingsToken", () => {
           scope: "user.metrics",
         },
       });
-    }) as typeof globalThis.fetch;
+    };
 
     const config = {
       clientId: "test-id",
@@ -279,7 +287,7 @@ describe("refreshWithingsToken", () => {
   });
 
   it("handles missing expires_in by defaulting to 10800", async () => {
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async () => {
       return Response.json({
         status: 0,
         body: {
@@ -287,7 +295,7 @@ describe("refreshWithingsToken", () => {
           refresh_token: "refresh",
         },
       });
-    }) as typeof globalThis.fetch;
+    };
 
     const config = {
       clientId: "test-id",
@@ -302,7 +310,6 @@ describe("refreshWithingsToken", () => {
     const result = await refreshWithingsToken(config, "ref", mockFetch);
     const after = Date.now();
 
-    // Default expiry should be roughly 3 hours from now
     const expectedMin = before + 10800 * 1000;
     const expectedMax = after + 10800 * 1000;
     expect(result.expiresAt.getTime()).toBeGreaterThanOrEqual(expectedMin);
@@ -311,8 +318,11 @@ describe("refreshWithingsToken", () => {
 
   it("handles config without clientSecret", async () => {
     let capturedBody = "";
-    const mockFetch = (async (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-      capturedBody = init?.body as string;
+    const mockFetch: typeof globalThis.fetch = async (
+      _input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      capturedBody = String(init?.body);
       return Response.json({
         status: 0,
         body: {
@@ -321,7 +331,7 @@ describe("refreshWithingsToken", () => {
           expires_in: 3600,
         },
       });
-    }) as typeof globalThis.fetch;
+    };
 
     const config = {
       clientId: "test-id",

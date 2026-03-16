@@ -38,7 +38,8 @@ describe("TrainerRoadProvider", () => {
     };
 
     const provider = new TrainerRoadProvider();
-    const result = await provider.sync(mockDb as never, new Date("2026-01-01"));
+    // @ts-expect-error mock DB
+    const result = await provider.sync(mockDb, new Date("2026-01-01"));
     expect(result.provider).toBe("trainerroad");
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors[0]?.message).toContain("not connected");
@@ -72,7 +73,8 @@ describe("TrainerRoadProvider", () => {
     };
 
     const provider = new TrainerRoadProvider();
-    const result = await provider.sync(mockDb as never, new Date("2026-01-01"));
+    // @ts-expect-error mock DB
+    const result = await provider.sync(mockDb, new Date("2026-01-01"));
     expect(result.errors[0]?.message).toContain("username not found");
   });
 
@@ -108,7 +110,8 @@ describe("TrainerRoadProvider", () => {
     };
 
     const provider = new TrainerRoadProvider();
-    const result = await provider.sync(mockDb as never, new Date("2026-01-01"));
+    // @ts-expect-error mock DB
+    const result = await provider.sync(mockDb, new Date("2026-01-01"));
     expect(result.errors[0]?.message).toContain("cookie expired");
 
     process.env = { ...originalEnv };
