@@ -5,7 +5,7 @@ import {
   ZWIFT_AUTH_URL,
   ZwiftClient,
 } from "zwift-client";
-import type { Database } from "../db/index.ts";
+import type { SyncDatabase } from "../db/index.ts";
 import { activity, dailyMetrics, metricStream } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
@@ -60,7 +60,9 @@ export class ZwiftProvider implements Provider {
     };
   }
 
-  private async resolveTokens(db: Database): Promise<{ accessToken: string; athleteId: number }> {
+  private async resolveTokens(
+    db: SyncDatabase,
+  ): Promise<{ accessToken: string; athleteId: number }> {
     const stored = await loadTokens(db, this.id);
     if (!stored) {
       throw new Error("Zwift not connected — authenticate via the web UI");
@@ -92,7 +94,7 @@ export class ZwiftProvider implements Provider {
     return { accessToken: stored.accessToken, athleteId };
   }
 
-  async sync(db: Database, since: Date): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;

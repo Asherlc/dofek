@@ -1,6 +1,6 @@
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri, refreshAccessToken } from "../auth/oauth.ts";
-import type { Database } from "../db/index.ts";
+import type { SyncDatabase } from "../db/index.ts";
 import { activity, metricStream } from "../db/schema.ts";
 import { loadTokens, saveTokens } from "../db/tokens.ts";
 import type {
@@ -167,21 +167,19 @@ export function stravaStreamsToMetricStream(
   startedAt: Date,
 ): (typeof metricStream.$inferInsert)[] {
   // Scalar streams contain number[], latlng contains [number, number][]
+  function isScalarArray(data: number[] | [number, number][]): data is number[] {
+    return data.length === 0 || !Array.isArray(data[0]);
+  }
+  function isTupleArray(data: number[] | [number, number][]): data is [number, number][] {
+    return data.length > 0 && Array.isArray(data[0]);
+  }
   function scalarData(s: StravaStream | undefined): number[] | undefined {
     if (!s?.data) return undefined;
-    const first = s.data[0];
-    if (Array.isArray(first)) return undefined; // tuple stream like latlng
-    // @ts-expect-error -- narrowed: not a tuple array, so it's number[]
-    const result: number[] = s.data;
-    return result;
+    return isScalarArray(s.data) ? s.data : undefined;
   }
   function tupleData(s: StravaStream | undefined): [number, number][] | undefined {
     if (!s?.data) return undefined;
-    const first = s.data[0];
-    if (!Array.isArray(first)) return undefined;
-    // @ts-expect-error -- narrowed: first element is array, so it's [number, number][]
-    const result: [number, number][] = s.data;
-    return result;
+    return isTupleArray(s.data) ? s.data : undefined;
   }
   const timeData = scalarData(streams.time);
   if (!timeData || timeData.length === 0) return [];
@@ -395,7 +393,7 @@ export class StravaProvider implements Provider {
     };
   }
 
-  private async resolveTokens(db: Database): Promise<TokenSet> {
+  private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
     const tokens = await loadTokens(db, this.id);
     if (!tokens) {
       throw new Error("No OAuth tokens found for Strava. Run: health-data auth strava");
@@ -415,7 +413,7 @@ export class StravaProvider implements Provider {
     return refreshed;
   }
 
-  async sync(db: Database, since: Date): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;

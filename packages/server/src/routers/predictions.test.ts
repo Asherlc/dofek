@@ -53,7 +53,6 @@ describe("predictionsRouter", () => {
   describe("targets", () => {
     it("returns available prediction targets", async () => {
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
@@ -70,7 +69,6 @@ describe("predictionsRouter", () => {
     it("trains a daily prediction for known target", async () => {
       const execute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute },
         userId: "user-1",
       });
@@ -83,7 +81,6 @@ describe("predictionsRouter", () => {
 
     it("returns null for unknown target", async () => {
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
@@ -94,7 +91,6 @@ describe("predictionsRouter", () => {
     it("handles cardio activity target", async () => {
       const execute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute },
         userId: "user-1",
       });
@@ -107,7 +103,6 @@ describe("predictionsRouter", () => {
     it("handles strength activity target", async () => {
       const execute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute },
         userId: "user-1",
       });

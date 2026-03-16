@@ -1,4 +1,4 @@
-import type { Database } from "./index.ts";
+import type { SyncDatabase } from "./index.ts";
 import { syncLog } from "./schema.ts";
 
 export interface SyncLogEntry {
@@ -13,7 +13,7 @@ export interface SyncLogEntry {
 /**
  * Record a sync attempt for a specific provider + data type.
  */
-export async function logSync(db: Database, entry: SyncLogEntry): Promise<void> {
+export async function logSync(db: SyncDatabase, entry: SyncLogEntry): Promise<void> {
   await db.insert(syncLog).values({
     providerId: entry.providerId,
     dataType: entry.dataType,
@@ -29,7 +29,7 @@ export async function logSync(db: Database, entry: SyncLogEntry): Promise<void> 
  * Returns the result of the operation, logs success or error.
  */
 export async function withSyncLog<T>(
-  db: Database,
+  db: SyncDatabase,
   providerId: string,
   dataType: string,
   fn: () => Promise<{ recordCount: number; result: T }>,

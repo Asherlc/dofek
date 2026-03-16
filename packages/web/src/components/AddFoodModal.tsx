@@ -225,8 +225,18 @@ export function AddFoodModal({
             <select
               id="meal-type"
               value={mealType}
-              // @ts-expect-error select value is string but MealType expected
-              onChange={(e) => setMealType(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (
+                  val === "breakfast" ||
+                  val === "lunch" ||
+                  val === "dinner" ||
+                  val === "snack" ||
+                  val === "other"
+                ) {
+                  setMealType(val);
+                }
+              }}
               className={inputClass}
             >
               {mealOptions.map((opt) => (

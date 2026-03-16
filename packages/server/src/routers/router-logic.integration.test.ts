@@ -945,7 +945,6 @@ describe("Router transformation logic", () => {
       const activityRows = await testCtx.db.execute(
         sql`SELECT id FROM fitness.activity WHERE external_id = 'interval-detect-1' AND provider_id = 'test-provider'`,
       );
-      // @ts-expect-error db.execute returns Record<string, unknown> but we know the shape
       const firstRow: { id: string } = activityRows[0];
       intervalActivityId = firstRow.id;
 

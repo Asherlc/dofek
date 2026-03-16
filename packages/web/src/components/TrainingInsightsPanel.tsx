@@ -1,10 +1,13 @@
 import ReactECharts from "echarts-for-react";
 import { trpc } from "../lib/trpc.ts";
 
-/** Narrow loosely-typed tRPC raw-SQL results to a known shape without double-casting. */
+/**
+ * Narrow loosely-typed tRPC raw-SQL results to a known shape.
+ * JSON round-trip bridges the type gap (data is already JSON-serialized over tRPC).
+ */
 function typedData<T>(data: unknown): T {
-  // @ts-expect-error -- centralized type narrowing for tRPC raw-SQL results
-  return data;
+  const parsed: T = JSON.parse(JSON.stringify(data));
+  return parsed;
 }
 
 // HR zone colors (blue->green->yellow->orange->red)
@@ -113,9 +116,12 @@ function WeeklyVolumeChart({ data }: { data: WeeklyVolumeRow[] }) {
   // Build lookup: week -> type -> hours
   const lookup = new Map<string, Map<string, number>>();
   for (const row of data) {
-    if (!lookup.has(row.week)) lookup.set(row.week, new Map());
-    // biome-ignore lint/style/noNonNullAssertion: guaranteed by has() + set() above
-    lookup.get(row.week)!.set(row.activity_type, Number(row.hours) || 0);
+    let inner = lookup.get(row.week);
+    if (!inner) {
+      inner = new Map();
+      lookup.set(row.week, inner);
+    }
+    inner.set(row.activity_type, Number(row.hours) || 0);
   }
 
   const series = typeSet.map((type) => ({

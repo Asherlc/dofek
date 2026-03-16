@@ -30,7 +30,6 @@ describe("healthspanRouter", () => {
   describe("score", () => {
     it("returns default score when no data", async () => {
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
@@ -67,7 +66,6 @@ describe("healthspanRouter", () => {
         },
       ];
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
       });
@@ -100,7 +98,6 @@ describe("healthspanRouter", () => {
         },
       ];
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
       });
@@ -130,14 +127,12 @@ describe("healthspanRouter", () => {
         },
       ];
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
       });
       const result = await caller.score({ weeks: 12 });
 
       // Very healthy metrics => biological age should be younger than chronological
-      // @ts-expect-error mock type assertion
       expect(result.biologicalAge).toBeLessThan(result.chronologicalAge);
     });
   });

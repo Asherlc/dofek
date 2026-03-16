@@ -35,10 +35,11 @@ describe("TrainerRoadProvider", () => {
           }),
         }),
       }),
+      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      execute: vi.fn().mockResolvedValue([]),
     };
 
     const provider = new TrainerRoadProvider();
-    // @ts-expect-error mock DB
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
     expect(result.provider).toBe("trainerroad");
     expect(result.errors.length).toBeGreaterThan(0);
@@ -70,10 +71,11 @@ describe("TrainerRoadProvider", () => {
           }),
         }),
       }),
+      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      execute: vi.fn().mockResolvedValue([]),
     };
 
     const provider = new TrainerRoadProvider();
-    // @ts-expect-error mock DB
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
     expect(result.errors[0]?.message).toContain("username not found");
   });
@@ -107,10 +109,11 @@ describe("TrainerRoadProvider", () => {
           }),
         }),
       }),
+      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      execute: vi.fn().mockResolvedValue([]),
     };
 
     const provider = new TrainerRoadProvider();
-    // @ts-expect-error mock DB
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
     expect(result.errors[0]?.message).toContain("cookie expired");
 

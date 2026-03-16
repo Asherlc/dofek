@@ -59,7 +59,6 @@ describe("nutritionAnalyticsRouter", () => {
 
   function makeCaller(rows: Record<string, unknown>[] = []) {
     return createCaller({
-      // @ts-expect-error mock DB
       db: { execute: vi.fn().mockResolvedValue(rows) },
       userId: "user-1",
     });
@@ -191,7 +190,6 @@ describe("pmcRouter", () => {
   describe("chart", () => {
     it("returns empty when no globalMaxHr", async () => {
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
@@ -218,7 +216,6 @@ describe("pmcRouter", () => {
         },
       ];
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
       });
@@ -249,7 +246,6 @@ describe("pmcRouter", () => {
         });
       }
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
       });
@@ -272,7 +268,6 @@ describe("powerRouter", () => {
         { duration_seconds: 1200, best_power: 280, activity_date: "2024-01-10" },
       ];
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
       });
@@ -285,7 +280,6 @@ describe("powerRouter", () => {
 
     it("returns empty points when no data", async () => {
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
@@ -307,7 +301,6 @@ describe("powerRouter", () => {
       ]);
 
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute },
         userId: "user-1",
       });

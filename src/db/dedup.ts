@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import type { Database } from "./index.ts";
+import type { SyncDatabase } from "./index.ts";
 
 const DEDUP_VIEWS = [
   "fitness.v_activity",
@@ -17,7 +17,7 @@ const ROLLUP_VIEWS = ["fitness.activity_summary"] as const;
  * CONCURRENTLY allows reads during refresh (requires unique index).
  * Falls back to regular refresh if the view has never been populated.
  */
-export async function refreshDedupViews(db: Database): Promise<void> {
+export async function refreshDedupViews(db: SyncDatabase): Promise<void> {
   // Refresh dedup views first (rollup views may depend on v_activity)
   for (const view of DEDUP_VIEWS) {
     await refreshView(db, view);
@@ -33,7 +33,7 @@ export async function refreshDedupViews(db: Database): Promise<void> {
  * Update user_profile.max_hr from the highest observed heart rate in metric_stream.
  * Called after syncs that touch metric_stream data.
  */
-export async function updateUserMaxHr(db: Database): Promise<void> {
+export async function updateUserMaxHr(db: SyncDatabase): Promise<void> {
   await db.execute(sql`
     UPDATE fitness.user_profile up
     SET max_hr = sub.observed_max_hr,
@@ -49,7 +49,7 @@ export async function updateUserMaxHr(db: Database): Promise<void> {
   `);
 }
 
-async function refreshView(db: Database, view: string): Promise<void> {
+async function refreshView(db: SyncDatabase, view: string): Promise<void> {
   try {
     await db.execute(sql.raw(`REFRESH MATERIALIZED VIEW CONCURRENTLY ${view}`));
   } catch (err) {

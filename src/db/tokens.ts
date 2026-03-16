@@ -1,13 +1,13 @@
 import { eq } from "drizzle-orm";
 import type { TokenSet } from "../auth/oauth.ts";
-import type { Database } from "./index.ts";
+import type { SyncDatabase } from "./index.ts";
 import { oauthToken, provider } from "./schema.ts";
 
 /**
  * Ensure a provider row exists. Idempotent — does nothing if already present.
  */
 export async function ensureProvider(
-  db: Database,
+  db: SyncDatabase,
   id: string,
   name: string,
   apiBaseUrl?: string,
@@ -28,7 +28,7 @@ export async function ensureProvider(
  * Save (upsert) OAuth tokens for a provider.
  */
 export async function saveTokens(
-  db: Database,
+  db: SyncDatabase,
   providerId: string,
   tokens: TokenSet,
 ): Promise<void> {
@@ -57,7 +57,7 @@ export async function saveTokens(
 /**
  * Load stored tokens for a provider. Returns null if none exist.
  */
-export async function loadTokens(db: Database, providerId: string): Promise<TokenSet | null> {
+export async function loadTokens(db: SyncDatabase, providerId: string): Promise<TokenSet | null> {
   const rows = await db
     .select()
     .from(oauthToken)

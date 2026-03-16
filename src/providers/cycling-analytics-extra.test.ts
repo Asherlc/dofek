@@ -165,12 +165,10 @@ describe("CyclingAnalyticsProvider", () => {
           }),
         }),
       }),
+      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      execute: vi.fn().mockResolvedValue([]),
     };
-    const result = await new CyclingAnalyticsProvider().sync(
-      // @ts-expect-error mock DB
-      mockDb,
-      new Date("2026-01-01"),
-    );
+    const result = await new CyclingAnalyticsProvider().sync(mockDb, new Date("2026-01-01"));
     expect(result.errors.length).toBeGreaterThan(0);
   });
 });

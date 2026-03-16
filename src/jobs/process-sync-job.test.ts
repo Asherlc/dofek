@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { SyncDatabase } from "../db/index.ts";
 import type { Provider, SyncResult } from "../providers/types.ts";
 
 // Mock dependencies — the mock functions are accessed via module-level refs
@@ -31,7 +32,13 @@ vi.mock("../db/dedup.ts", () => ({
 // Import after mocks are set up
 const { processSyncJob } = await import("./process-sync-job.ts");
 
-const mockDb = Object.create(null);
+// All DB functions are mocked at module level, so the db object is never actually called.
+const mockDb: SyncDatabase = {
+  select: vi.fn(),
+  insert: vi.fn(),
+  delete: vi.fn(),
+  execute: vi.fn(),
+};
 
 interface MockJob {
   data: { providerId?: string; sinceDays?: number; userId: string };
@@ -62,14 +69,10 @@ function createMockProvider(overrides: Partial<Provider> = {}): Provider {
   };
 }
 
-// Helper to call processSyncJob with a mock job without needing `as` casts.
-// processSyncJob expects a full BullMQ Job but only uses .data and .updateProgress.
-function runSyncJob(job: MockJob, db: unknown) {
-  return processSyncJob(
-    // @ts-expect-error -- mock job only implements the subset of Job used by processSyncJob
-    job,
-    db,
-  );
+// Helper to call processSyncJob with a mock job.
+// processSyncJob accepts any object with .data and .updateProgress (SyncJob interface).
+function runSyncJob(job: MockJob, db: SyncDatabase) {
+  return processSyncJob(job, db);
 }
 
 describe("processSyncJob", () => {

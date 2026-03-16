@@ -1,6 +1,6 @@
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, refreshAccessToken } from "../auth/oauth.ts";
-import type { Database } from "../db/index.ts";
+import type { SyncDatabase } from "../db/index.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
@@ -210,7 +210,7 @@ export class MapMyFitnessProvider implements Provider {
     };
   }
 
-  private async resolveTokens(db: Database): Promise<TokenSet> {
+  private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
     const tokens = await loadTokens(db, this.id);
     if (!tokens) {
       throw new Error("No OAuth tokens found for MapMyFitness. Run: health-data auth mapmyfitness");
@@ -227,7 +227,7 @@ export class MapMyFitnessProvider implements Provider {
     return refreshed;
   }
 
-  async sync(db: Database, since: Date): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;

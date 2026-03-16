@@ -3,10 +3,10 @@ import bolt from "@slack/bolt";
 
 const { App, ExpressReceiver } = bolt;
 
-import type { GenericMessageEvent } from "@slack/types";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import type express from "express";
+import { z } from "zod";
 import {
   analyzeNutritionItems,
   type NutritionItemWithMeal,
@@ -15,6 +15,43 @@ import {
 import { queryCache } from "../lib/cache.ts";
 import { logger } from "../logger.ts";
 import { formatConfirmationMessage, formatSavedMessage } from "./formatting.ts";
+
+const slackBlockSchema = z.object({
+  type: z.string().optional(),
+  elements: z
+    .array(
+      z.object({
+        action_id: z.string().optional(),
+        value: z.string().optional(),
+      }),
+    )
+    .optional(),
+});
+
+const mealSchema = z.enum(["breakfast", "lunch", "dinner", "snack", "other"]).catch("other");
+const categorySchema = z
+  .enum([
+    "beans_and_legumes",
+    "beverages",
+    "breads_and_cereals",
+    "cheese_milk_and_dairy",
+    "eggs",
+    "fast_food",
+    "fish_and_seafood",
+    "fruit",
+    "meat",
+    "nuts_and_seeds",
+    "pasta_rice_and_noodles",
+    "salads",
+    "sauces_spices_and_spreads",
+    "snacks",
+    "soups",
+    "sweets_candy_and_desserts",
+    "vegetables",
+    "supplement",
+    "other",
+  ])
+  .catch("other");
 
 const DOFEK_PROVIDER_ID = "dofek";
 
@@ -59,11 +96,9 @@ function extractEntryIdsFromThread(
     if (!threadMsg || !threadMsg.bot_id || !threadMsg.blocks) continue;
 
     for (const rawBlock of threadMsg.blocks) {
-      // @ts-expect-error rawBlock is unknown but we check its properties below
-      const block: {
-        type?: string;
-        elements?: Array<{ action_id?: string; value?: string }>;
-      } = rawBlock;
+      const parsed = slackBlockSchema.safeParse(rawBlock);
+      if (!parsed.success) continue;
+      const block = parsed.data;
       if (block.type !== "actions" || !block.elements) continue;
       for (const element of block.elements) {
         if (element.action_id === "confirm_food" && element.value) {
@@ -338,22 +373,32 @@ function slackTimestampToDateString(slackTs: string, timezone: string): string {
 function registerHandlers(app: AppType, db: Database) {
   // Handle direct messages (both top-level and thread replies)
   app.message(async ({ message, say, client }) => {
-    // @ts-expect-error message may be a bot/subtype event but we filter those below
-    const msg: GenericMessageEvent = message;
-    if (msg.subtype || !msg.text || msg.bot_id) return;
+    // Filter non-user messages: bots, subtypes (edits, deletes, etc.)
+    if (!("text" in message) || !message.text) return;
+    if ("subtype" in message && message.subtype) return;
+    if ("bot_id" in message && message.bot_id) return;
+    if (!("user" in message) || !message.user) return;
+    if (!("ts" in message) || !message.ts) return;
+    if (!("channel" in message) || !message.channel) return;
+    // Capture narrowed fields into local constants so TypeScript doesn't lose the narrowing
+    const msgText = message.text;
+    const msgUser = message.user;
+    const msgTs = message.ts;
+    const msgChannel = message.channel;
+    const msgThreadTs = "thread_ts" in message ? message.thread_ts : undefined;
 
-    const { userId, timezone: userTimezone } = await lookupOrCreateUserId(db, msg.user, client);
+    const { userId, timezone: userTimezone } = await lookupOrCreateUserId(db, msgUser, client);
 
-    const date = slackTimestampToDateString(msg.ts, userTimezone);
+    const date = slackTimestampToDateString(msgTs, userTimezone);
 
     // Thread reply — look for previous items to refine
-    if (msg.thread_ts && msg.thread_ts !== msg.ts) {
-      logger.info(`[slack] Thread reply from ${msg.user}: "${msg.text}"`);
+    if (msgThreadTs && msgThreadTs !== msgTs) {
+      logger.info(`[slack] Thread reply from ${msgUser}: "${msgText}"`);
 
       try {
         const thread = await client.conversations.replies({
-          channel: msg.channel,
-          ts: msg.thread_ts,
+          channel: msgChannel,
+          ts: msgThreadTs,
         });
         const previousEntryIds = extractEntryIdsFromThread(thread.messages ?? []);
 
@@ -380,11 +425,10 @@ function registerHandlers(app: AppType, db: Database) {
                 WHERE id IN (${sqlIdList(previousEntryIds)})`,
           );
 
-          // @ts-expect-error DB row meal/category are string but NutritionItemWithMeal expects narrower unions
           const previousItems: NutritionItemWithMeal[] = previousRows.map((r) => ({
             foodName: r.food_name,
             foodDescription: r.food_description ?? "",
-            category: r.category ?? "other",
+            category: categorySchema.parse(r.category ?? "other"),
             calories: r.calories ?? 0,
             proteinG: r.protein_g ?? 0,
             carbsG: r.carbs_g ?? 0,
@@ -393,21 +437,21 @@ function registerHandlers(app: AppType, db: Database) {
             saturatedFatG: r.saturated_fat_g ?? 0,
             sugarG: r.sugar_g ?? 0,
             sodiumMg: r.sodium_mg ?? 0,
-            meal: r.meal ?? "other",
+            meal: mealSchema.parse(r.meal ?? "other"),
           }));
 
           if (previousItems.length > 0) {
-            logger.info(`[slack] Refining ${previousItems.length} items with: "${msg.text}"`);
+            logger.info(`[slack] Refining ${previousItems.length} items with: "${msgText}"`);
 
             // Post a temporary "thinking" message so the user knows we're working
             const thinkingMsg = await client.chat.postMessage({
-              channel: msg.channel,
-              thread_ts: msg.thread_ts,
+              channel: msgChannel,
+              thread_ts: msgThreadTs,
               text: "Updating your entries...",
             });
 
-            const localTime = slackTimestampToLocalTime(msg.ts, userTimezone);
-            const result = await refineNutritionItems(previousItems, msg.text, localTime);
+            const localTime = slackTimestampToLocalTime(msgTs, userTimezone);
+            const result = await refineNutritionItems(previousItems, msgText, localTime);
 
             // Delete old unconfirmed entries and save new refined ones
             await deleteUnconfirmedEntries(db, previousEntryIds);
@@ -419,12 +463,12 @@ function registerHandlers(app: AppType, db: Database) {
             // Replace the "thinking" message with the actual result
             if (thinkingMsg.ts) {
               await client.chat.update({
-                channel: msg.channel,
+                channel: msgChannel,
                 ts: thinkingMsg.ts,
                 ...confirmation,
               });
             } else {
-              await say({ ...confirmation, thread_ts: msg.thread_ts });
+              await say({ ...confirmation, thread_ts: msgThreadTs });
             }
             return;
           }
@@ -434,25 +478,25 @@ function registerHandlers(app: AppType, db: Database) {
         logger.error(`[slack] Refinement failed: ${errorMessage}`);
         await say({
           text: `Sorry, I couldn't refine that.\n\`${errorMessage}\``,
-          thread_ts: msg.thread_ts,
+          thread_ts: msgThreadTs,
         });
         return;
       }
     }
 
     // Top-level message — fresh analysis (reply in thread so user can refine)
-    logger.info(`[slack] Parsing food from ${msg.user}: "${msg.text}"`);
+    logger.info(`[slack] Parsing food from ${msgUser}: "${msgText}"`);
 
     // Post a temporary "thinking" message so the user knows we're working
     const thinkingMsg = await client.chat.postMessage({
-      channel: msg.channel,
-      thread_ts: msg.ts,
+      channel: msgChannel,
+      thread_ts: msgTs,
       text: "Analyzing what you ate...",
     });
 
     try {
-      const localTime = slackTimestampToLocalTime(msg.ts, userTimezone);
-      const result = await analyzeNutritionItems(msg.text, localTime);
+      const localTime = slackTimestampToLocalTime(msgTs, userTimezone);
+      const result = await analyzeNutritionItems(msgText, localTime);
       const entryIds = await saveUnconfirmedFoodEntries(db, userId, date, result.items);
       const entryIdsValue = entryIds.join(",");
       const confirmation = formatConfirmationMessage(result.items, entryIdsValue);
@@ -460,12 +504,12 @@ function registerHandlers(app: AppType, db: Database) {
       // Replace the "thinking" message with the actual result
       if (thinkingMsg.ts) {
         await client.chat.update({
-          channel: msg.channel,
+          channel: msgChannel,
           ts: thinkingMsg.ts,
           ...confirmation,
         });
       } else {
-        await say({ ...confirmation, thread_ts: msg.ts });
+        await say({ ...confirmation, thread_ts: msgTs });
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -475,13 +519,13 @@ function registerHandlers(app: AppType, db: Database) {
       const errorText = `Sorry, I couldn't parse that. Try describing what you ate more specifically.\n\`${errorMessage}\``;
       if (thinkingMsg.ts) {
         await client.chat.update({
-          channel: msg.channel,
+          channel: msgChannel,
           ts: thinkingMsg.ts,
           text: errorText,
           blocks: [],
         });
       } else {
-        await say({ text: errorText, thread_ts: msg.ts });
+        await say({ text: errorText, thread_ts: msgTs });
       }
     }
   });
@@ -535,11 +579,10 @@ function registerHandlers(app: AppType, db: Database) {
             WHERE id IN (${sqlIdList(entryIds)})`,
       );
 
-      // @ts-expect-error DB row meal/category are string but NutritionItemWithMeal expects narrower unions
       const items: NutritionItemWithMeal[] = rows.map((r) => ({
         foodName: r.food_name,
         foodDescription: r.food_description ?? "",
-        category: r.category ?? "other",
+        category: categorySchema.parse(r.category ?? "other"),
         calories: r.calories ?? 0,
         proteinG: r.protein_g ?? 0,
         carbsG: r.carbs_g ?? 0,
@@ -548,7 +591,7 @@ function registerHandlers(app: AppType, db: Database) {
         saturatedFatG: r.saturated_fat_g ?? 0,
         sugarG: r.sugar_g ?? 0,
         sodiumMg: r.sodium_mg ?? 0,
-        meal: r.meal ?? "other",
+        meal: mealSchema.parse(r.meal ?? "other"),
       }));
 
       const savedMessage = formatSavedMessage(items);

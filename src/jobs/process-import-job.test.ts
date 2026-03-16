@@ -2,6 +2,8 @@ import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { SyncDatabase } from "../db/index.ts";
+import type { ImportJobData } from "./queues.ts";
 
 // Mock dependencies with module-level mock functions (avoids `as` casts)
 const mockLogSync = vi.fn().mockResolvedValue(undefined);
@@ -43,14 +45,20 @@ vi.mock("../providers/cronometer-csv.ts", () => ({
 // Import after mocks
 const { processImportJob } = await import("./process-import-job.ts");
 
-const mockDb = Object.create(null);
+// All DB functions are mocked at module level, so the db object is never actually called.
+const mockDb: SyncDatabase = {
+  select: vi.fn(),
+  insert: vi.fn(),
+  delete: vi.fn(),
+  execute: vi.fn(),
+};
 
 interface MockJob {
-  data: Record<string, unknown>;
+  data: ImportJobData;
   updateProgress: ReturnType<typeof vi.fn>;
 }
 
-function createMockJob(overrides: Record<string, unknown> = {}): MockJob {
+function createMockJob(overrides: Partial<ImportJobData> = {}): MockJob {
   return {
     data: {
       filePath: "/tmp/test-upload.zip",
@@ -63,14 +71,10 @@ function createMockJob(overrides: Record<string, unknown> = {}): MockJob {
   };
 }
 
-// Helper to call processImportJob with a mock job without needing `as` casts.
-// processImportJob expects a full BullMQ Job but only uses .data and .updateProgress.
-function runImportJob(job: MockJob, db: unknown) {
-  return processImportJob(
-    // @ts-expect-error -- mock job only implements the subset of Job used by processImportJob
-    job,
-    db,
-  );
+// Helper to call processImportJob with a mock job.
+// processImportJob accepts any object with .data and .updateProgress (ImportJob interface).
+function runImportJob(job: MockJob, db: SyncDatabase) {
+  return processImportJob(job, db);
 }
 
 describe("processImportJob", () => {

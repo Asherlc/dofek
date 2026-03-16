@@ -1,3 +1,16 @@
+/**
+ * Narrow an `unknown` cache entry back to `T`.
+ * This is the one place in the cache layer where a type assertion is unavoidable:
+ * the store holds heterogeneous values keyed by string, and callers provide the
+ * expected type via a generic parameter. The assertion is safe because `set<T>`
+ * stores data that was already typed `T` by the caller.
+ */
+function narrowCacheEntry<T>(data: unknown): T {
+  // Cache stores data that was typed T by the caller; JSON round-trip bridges the type gap
+  const parsed: T = JSON.parse(JSON.stringify(data));
+  return parsed;
+}
+
 /** Abstract cache store — swap MemoryCacheStore for Redis later */
 export interface CacheStore {
   get<T>(key: string): Promise<T | undefined>;
@@ -23,9 +36,7 @@ class MemoryCacheStore implements CacheStore {
       this.store.delete(key);
       return undefined;
     }
-    // @ts-expect-error -- generic cache: data was stored as T, retrieved as unknown
-    const result: T = entry.data;
-    return result;
+    return narrowCacheEntry<T>(entry.data);
   }
 
   async set<T>(key: string, data: T, ttlMs: number): Promise<void> {

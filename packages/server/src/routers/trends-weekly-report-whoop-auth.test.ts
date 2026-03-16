@@ -40,7 +40,6 @@ describe("trendsRouter", () => {
 
   function makeCaller(rows: Record<string, unknown>[] = []) {
     return createCaller({
-      // @ts-expect-error mock DB
       db: { execute: vi.fn().mockResolvedValue(rows) },
       userId: "user-1",
     });
@@ -130,7 +129,6 @@ describe("weeklyReportRouter", () => {
   describe("report", () => {
     it("returns empty report when no data", async () => {
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
@@ -166,7 +164,6 @@ describe("weeklyReportRouter", () => {
         },
       ];
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
       });
@@ -196,7 +193,6 @@ describe("whoopAuthRouter", () => {
       });
 
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
@@ -215,7 +211,6 @@ describe("whoopAuthRouter", () => {
       });
 
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
@@ -229,7 +224,6 @@ describe("whoopAuthRouter", () => {
   describe("verifyCode", () => {
     it("throws when challenge not found", async () => {
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
@@ -253,14 +247,12 @@ describe("whoopAuthRouter", () => {
       });
 
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
 
       // Step 1: sign in to get challengeId
       const signInResult = await caller.signIn({ username: "test@example.com", password: "pass" });
-      // @ts-expect-error signInResult type depends on sign-in outcome
       const challengeId: string = signInResult.challengeId;
 
       // Step 2: verify code
@@ -273,7 +265,6 @@ describe("whoopAuthRouter", () => {
     it("saves tokens to database", async () => {
       const { ensureProvider, saveTokens } = await import("dofek/db/tokens");
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });

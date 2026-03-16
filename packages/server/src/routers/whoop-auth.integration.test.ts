@@ -121,7 +121,6 @@ describe("whoopAuth router", () => {
         password: "password123",
       });
 
-      // @ts-expect-error result data is unknown but we know the shape from the API
       const data: {
         status: string;
         challengeId: string;
@@ -142,7 +141,6 @@ describe("whoopAuth router", () => {
         username: "user@test.com",
         password: "password123",
       });
-      // @ts-expect-error result data is unknown but we know the shape from the API
       const signInData: {
         challengeId: string;
       } = signInResult.result?.result?.data;
@@ -159,7 +157,6 @@ describe("whoopAuth router", () => {
         code: "123456",
       });
 
-      // @ts-expect-error result data is unknown but we know the shape from the API
       const data: {
         status: string;
         token: { accessToken: string; refreshToken: string; userId: number };
@@ -189,7 +186,6 @@ describe("whoopAuth router", () => {
       });
 
       expect(status).toBe(200);
-      // @ts-expect-error result data is unknown but we know the shape from the API
       const data: { success: boolean } = result?.result?.data;
       expect(data.success).toBe(true);
 

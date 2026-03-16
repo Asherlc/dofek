@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { and, eq } from "drizzle-orm";
-import type { Database } from "../db/index.ts";
+import type { SyncDatabase } from "../db/index.ts";
 import { exercise, exerciseAlias, strengthSet, strengthWorkout } from "../db/schema.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import type { Provider, SyncError, SyncResult } from "./types.ts";
@@ -193,7 +193,7 @@ export function parseStrongCsv(csvText: string): StrongWorkoutGroup[] {
 
 // Stryker disable all — DB import function only tested via integration tests
 export async function importStrongCsv(
-  db: Database,
+  db: SyncDatabase,
   csvText: string,
   userId: string,
   weightUnit: "kg" | "lbs",
@@ -352,7 +352,7 @@ export class StrongCsvProvider implements Provider {
     return null; // Always valid — file import, no API key needed
   }
 
-  async sync(_db: Database, _since: Date): Promise<SyncResult> {
+  async sync(_db: SyncDatabase, _since: Date): Promise<SyncResult> {
     return { provider: this.id, recordsSynced: 0, errors: [], duration: 0 };
   }
 }

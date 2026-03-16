@@ -35,7 +35,6 @@ describe("resolveOrCreateUser", () => {
       // upsertAuthAccount call
       db.execute.mockResolvedValueOnce([]);
 
-      // @ts-expect-error mock db
       const result = await resolveOrCreateUser(db, "google", identity, "logged-in-user");
 
       expect(result).toEqual({ userId: "logged-in-user", isNewUser: false });
@@ -48,7 +47,6 @@ describe("resolveOrCreateUser", () => {
       // auth_account lookup
       db.execute.mockResolvedValueOnce([{ user_id: "existing-user-1" }]);
 
-      // @ts-expect-error mock db
       const result = await resolveOrCreateUser(db, "google", identity);
 
       expect(result).toEqual({ userId: "existing-user-1", isNewUser: false });
@@ -65,7 +63,6 @@ describe("resolveOrCreateUser", () => {
       // upsertAuthAccount
       db.execute.mockResolvedValueOnce([]);
 
-      // @ts-expect-error mock db
       const result = await resolveOrCreateUser(db, "google", identity);
 
       expect(result).toEqual({ userId: "email-matched-user", isNewUser: false });
@@ -84,7 +81,6 @@ describe("resolveOrCreateUser", () => {
       // upsertAuthAccount
       db.execute.mockResolvedValueOnce([]);
 
-      // @ts-expect-error mock db
       const result = await resolveOrCreateUser(db, "google", noEmailIdentity);
 
       expect(result.isNewUser).toBe(true);
@@ -104,7 +100,6 @@ describe("resolveOrCreateUser", () => {
       // upsertAuthAccount
       db.execute.mockResolvedValueOnce([]);
 
-      // @ts-expect-error mock db
       const result = await resolveOrCreateUser(db, "google", identity);
 
       expect(result).toEqual({ userId: "default-user-id", isNewUser: true });
@@ -121,7 +116,6 @@ describe("resolveOrCreateUser", () => {
       // upsertAuthAccount (no profile update since both are null)
       db.execute.mockResolvedValueOnce([]);
 
-      // @ts-expect-error mock db
       const result = await resolveOrCreateUser(db, "google", bareIdentity);
 
       expect(result).toEqual({ userId: "default-user-id", isNewUser: true });
@@ -137,10 +131,9 @@ describe("resolveOrCreateUser", () => {
       // account count - empty result
       db.execute.mockResolvedValueOnce([]);
 
-      await expect(
-        // @ts-expect-error mock db
-        resolveOrCreateUser(db, "google", identity),
-      ).rejects.toThrow("Failed to query account count");
+      await expect(resolveOrCreateUser(db, "google", identity)).rejects.toThrow(
+        "Failed to query account count",
+      );
     });
   });
 
@@ -157,7 +150,6 @@ describe("resolveOrCreateUser", () => {
       // upsertAuthAccount
       db.execute.mockResolvedValueOnce([]);
 
-      // @ts-expect-error mock db
       const result = await resolveOrCreateUser(db, "google", identity);
 
       expect(result).toEqual({ userId: "new-user-456", isNewUser: true });
@@ -173,10 +165,9 @@ describe("resolveOrCreateUser", () => {
       // create user profile - empty result
       db.execute.mockResolvedValueOnce([]);
 
-      await expect(
-        // @ts-expect-error mock db
-        resolveOrCreateUser(db, "google", identity),
-      ).rejects.toThrow("Failed to create user profile");
+      await expect(resolveOrCreateUser(db, "google", identity)).rejects.toThrow(
+        "Failed to create user profile",
+      );
     });
 
     it("uses 'User' as default name when identity has no name", async () => {
@@ -193,7 +184,6 @@ describe("resolveOrCreateUser", () => {
       // upsertAuthAccount
       db.execute.mockResolvedValueOnce([]);
 
-      // @ts-expect-error mock db
       const result = await resolveOrCreateUser(db, "google", noNameIdentity);
 
       expect(result).toEqual({ userId: "new-user-789", isNewUser: true });

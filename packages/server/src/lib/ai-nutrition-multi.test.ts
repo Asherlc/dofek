@@ -100,7 +100,6 @@ describe("analyzeNutritionItems", () => {
     await analyzeNutritionItems("eggs and toast", "Monday, 7:30 AM");
 
     expect(mockGenerateText).toHaveBeenCalledOnce();
-    // @ts-expect-error mock call args type is wider than our narrow subset
     const callArgs: { system?: string } | undefined = mockGenerateText.mock.calls[0]?.[0];
     expect(callArgs?.system).toContain("Monday, 7:30 AM");
   });
@@ -112,7 +111,6 @@ describe("analyzeNutritionItems", () => {
 
     await analyzeNutritionItems("chicken burrito and a coke");
 
-    // @ts-expect-error mock call args type is wider than our narrow subset
     const callArgs: { system?: string } | undefined = mockGenerateText.mock.calls[0]?.[0];
     expect(callArgs?.system).not.toContain("local time is");
   });

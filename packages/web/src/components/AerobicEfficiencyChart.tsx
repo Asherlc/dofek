@@ -114,25 +114,28 @@ export function AerobicEfficiencyChart({
       borderColor: "#3f3f46",
       textStyle: { color: "#e4e4e7", fontSize: 12 },
       formatter: (params: Record<string, unknown>) => {
-        // @ts-expect-error ECharts params.data is typed as unknown
-        const data:
-          | {
-              value: [string, number];
-              name: string;
-              avgPower: number;
-              avgHr: number;
-              z2Samples: number;
-            }
-          | undefined = params.data;
-        if (!data?.name) return "";
-        const [date, ef] = data.value;
-        const mins = Math.round(data.z2Samples / 60);
+        const data = params.data;
+        if (
+          !data ||
+          typeof data !== "object" ||
+          !("name" in data) ||
+          !("value" in data) ||
+          !("avgPower" in data) ||
+          !("avgHr" in data) ||
+          !("z2Samples" in data)
+        )
+          return "";
+        const value = Array.isArray(data.value) ? data.value : [];
+        const date = String(value[0] ?? "");
+        const ef = typeof value[1] === "number" ? value[1] : 0;
+        const z2Samples = typeof data.z2Samples === "number" ? data.z2Samples : 0;
+        const mins = Math.round(z2Samples / 60);
         return [
-          `<strong>${data.name}</strong>`,
+          `<strong>${String(data.name)}</strong>`,
           `Date: ${date}`,
           `Efficiency: ${ef.toFixed(3)} W/bpm`,
-          `Avg Power (Zone 2): ${data.avgPower}W`,
-          `Avg Heart Rate (Zone 2): ${data.avgHr} bpm`,
+          `Avg Power (Zone 2): ${String(data.avgPower)}W`,
+          `Avg Heart Rate (Zone 2): ${String(data.avgHr)} bpm`,
           `Zone 2 time: ${mins} min`,
         ].join("<br/>");
       },

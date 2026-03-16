@@ -337,8 +337,7 @@ export class GarminConnectClient {
     }
 
     if (response.status === 204) {
-      // @ts-expect-error -- 204 No Content: return empty object as a safe default for all API response types
-      return {};
+      throw new GarminApiError("No content available (204)", 204);
     }
 
     return response.json();

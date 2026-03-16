@@ -1,29 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { EIGHT_SLEEP_CLIENT_ID, EIGHT_SLEEP_CLIENT_SECRET, EightSleepClient } from "./client.ts";
+import { createMockFetch } from "./test-helpers.ts";
 import type { EightSleepAuthResponse, EightSleepTrendsResponse } from "./types.ts";
-
-type MockFetchFn = ReturnType<typeof vi.fn>;
-
-function asMock(fn: typeof globalThis.fetch): MockFetchFn {
-  // @ts-expect-error -- test helper: vi.fn() mock narrowing
-  return fn;
-}
-
-function mockFetch(response: {
-  status: number;
-  ok: boolean;
-  body: unknown;
-}): typeof globalThis.fetch {
-  return vi.fn().mockResolvedValue({
-    ok: response.ok,
-    status: response.status,
-    json: () => Promise.resolve(response.body),
-    text: () =>
-      Promise.resolve(
-        typeof response.body === "string" ? response.body : JSON.stringify(response.body),
-      ),
-  });
-}
 
 describe("EightSleepClient constants", () => {
   it("exports EIGHT_SLEEP_CLIENT_ID as a non-empty string", () => {
@@ -45,7 +23,7 @@ describe("EightSleepClient.signIn", () => {
       userId: "user-123",
     };
 
-    const fetchFn = mockFetch({ status: 200, ok: true, body: authResponse });
+    const fetchFn = createMockFetch({ status: 200, ok: true, body: authResponse });
 
     const result = await EightSleepClient.signIn("test@example.com", "password123", fetchFn);
 
@@ -56,11 +34,10 @@ describe("EightSleepClient.signIn", () => {
     });
 
     expect(fetchFn).toHaveBeenCalledOnce();
-    // @ts-expect-error -- test: mock call args narrowing
-    const [url, options]: [string, RequestInit] = asMock(fetchFn).mock.calls[0];
+    const [url, options] = fetchFn.mock.calls[0];
     expect(url).toBe("https://auth-api.8slp.net/v1/tokens");
-    expect(options.method).toBe("POST");
-    const body: Record<string, string> = JSON.parse(String(options.body));
+    expect(options?.method).toBe("POST");
+    const body: Record<string, string> = JSON.parse(String(options?.body));
     expect(body.client_id).toBe(EIGHT_SLEEP_CLIENT_ID);
     expect(body.client_secret).toBe(EIGHT_SLEEP_CLIENT_SECRET);
     expect(body.grant_type).toBe("password");
@@ -69,7 +46,7 @@ describe("EightSleepClient.signIn", () => {
   });
 
   it("throws on non-200 response", async () => {
-    const fetchFn = mockFetch({ status: 401, ok: false, body: "Unauthorized" });
+    const fetchFn = createMockFetch({ status: 401, ok: false, body: "Unauthorized" });
 
     await expect(
       EightSleepClient.signIn("test@example.com", "wrong-password", fetchFn),
@@ -99,7 +76,7 @@ describe("EightSleepClient.getTrends", () => {
       ],
     };
 
-    const fetchFn = mockFetch({ status: 200, ok: true, body: trendsResponse });
+    const fetchFn = createMockFetch({ status: 200, ok: true, body: trendsResponse });
     const client = new EightSleepClient("test-token", "user-123", fetchFn);
 
     const result = await client.getTrends("America/New_York", "2024-01-01", "2024-01-02");
@@ -107,8 +84,7 @@ describe("EightSleepClient.getTrends", () => {
     expect(result).toEqual(trendsResponse);
     expect(fetchFn).toHaveBeenCalledOnce();
 
-    // @ts-expect-error -- test: mock call args narrowing
-    const [url, options]: [string, RequestInit] = asMock(fetchFn).mock.calls[0];
+    const [url, options] = fetchFn.mock.calls[0];
     expect(url).toContain("https://client-api.8slp.net/v1/users/user-123/trends");
     expect(url).toContain("tz=America%2FNew_York");
     expect(url).toContain("from=2024-01-01");
@@ -116,13 +92,12 @@ describe("EightSleepClient.getTrends", () => {
     expect(url).toContain("include-main=false");
     expect(url).toContain("include-all-sessions=true");
     expect(url).toContain("model-version=v2");
-    // @ts-expect-error -- test: HeadersInit narrowed to Record
-    const headers: Record<string, string> = options.headers;
-    expect(headers.Authorization).toBe("Bearer test-token");
+    const headers = new Headers(options?.headers);
+    expect(headers.get("Authorization")).toBe("Bearer test-token");
   });
 
   it("throws on non-200 response", async () => {
-    const fetchFn = mockFetch({ status: 500, ok: false, body: "Internal Server Error" });
+    const fetchFn = createMockFetch({ status: 500, ok: false, body: "Internal Server Error" });
     const client = new EightSleepClient("test-token", "user-123", fetchFn);
 
     await expect(client.getTrends("America/New_York", "2024-01-01", "2024-01-02")).rejects.toThrow(

@@ -299,9 +299,10 @@ export const foodRouter = router({
     const setClauses: ReturnType<typeof sql>[] = [];
 
     for (const [fieldName, columnName] of Object.entries(fieldColumnMap)) {
-      // @ts-expect-error fieldName comes from fieldColumnMap keys which match fields keys
-      const fieldKey: keyof typeof fields = fieldName;
-      const value = fields[fieldKey];
+      if (!Object.hasOwn(fields, fieldName)) continue;
+      // Object.entries always returns string keys; use indexed access after hasOwnProperty check
+      const fieldsRecord: Record<string, unknown> = fields;
+      const value = fieldsRecord[fieldName];
       if (value !== undefined) {
         if (fieldName === "date") {
           setClauses.push(

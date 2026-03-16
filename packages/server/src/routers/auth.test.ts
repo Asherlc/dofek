@@ -31,7 +31,6 @@ describe("authRouter", () => {
         },
       ];
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
       });
@@ -54,7 +53,6 @@ describe("authRouter", () => {
       const execute = vi.fn();
       execute.mockResolvedValueOnce([{ count: "1" }]);
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute },
         userId: "user-1",
       });
@@ -69,7 +67,6 @@ describe("authRouter", () => {
       execute.mockResolvedValueOnce([{ count: "2" }]);
       execute.mockResolvedValueOnce([]); // no rows deleted
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute },
         userId: "user-1",
       });
@@ -84,7 +81,6 @@ describe("authRouter", () => {
       execute.mockResolvedValueOnce([{ count: "3" }]);
       execute.mockResolvedValueOnce([{ id: "acc-1" }]); // deleted row returned
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute },
         userId: "user-1",
       });

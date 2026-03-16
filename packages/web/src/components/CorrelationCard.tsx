@@ -244,9 +244,11 @@ function ScatterPlot({ insight }: { insight: Insight }) {
       borderColor: "#3f3f46",
       textStyle: { color: "#e4e4e7", fontSize: 11 },
       formatter: (params: unknown) => {
-        // @ts-expect-error ECharts params is typed as unknown
-        const p: { value: [number, number] } = params;
-        return `${insight.action}: ${formatValue(p.value[0])}<br/>${insight.metric}: ${formatValue(p.value[1])}`;
+        if (!params || typeof params !== "object" || !("value" in params)) return "";
+        const rawValue = Array.isArray(params.value) ? params.value : [0, 0];
+        const v0 = Number(rawValue[0] ?? 0);
+        const v1 = Number(rawValue[1] ?? 0);
+        return `${insight.action}: ${formatValue(v0)}<br/>${insight.metric}: ${formatValue(v1)}`;
       },
     },
   };

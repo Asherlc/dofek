@@ -27,7 +27,6 @@ describe("strengthRouter", () => {
 
   function makeCaller(rows: Record<string, unknown>[] = []) {
     return createCaller({
-      // @ts-expect-error mock DB
       db: { execute: vi.fn().mockResolvedValue(rows) },
       userId: "user-1",
     });
@@ -153,7 +152,6 @@ describe("stressRouter", () => {
 
   function makeCaller(rows: Record<string, unknown>[] = []) {
     return createCaller({
-      // @ts-expect-error mock DB
       db: { execute: vi.fn().mockResolvedValue(rows) },
       userId: "user-1",
     });

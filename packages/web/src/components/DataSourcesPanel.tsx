@@ -479,6 +479,13 @@ function WhoopAuthModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
   const [challengeId, setChallengeId] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const emailRef = useRef<HTMLInputElement>(null);
+  const codeRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (step === "credentials") emailRef.current?.focus();
+    if (step === "verify") codeRef.current?.focus();
+  }, [step]);
 
   const signInMutation = trpc.whoopAuth.signIn.useMutation();
   const verifyMutation = trpc.whoopAuth.verifyCode.useMutation();
@@ -555,13 +562,12 @@ function WhoopAuthModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
                 Email
               </label>
               <input
+                ref={emailRef}
                 id="whoop-email"
                 type="email"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 required
-                // biome-ignore lint/a11y/noAutofocus: modal should auto-focus first input
-                autoFocus
                 className="w-full px-3 py-2 text-sm bg-zinc-800 border border-zinc-700 rounded text-zinc-200 focus:outline-none focus:border-zinc-500"
                 placeholder="you@example.com"
               />
@@ -599,13 +605,12 @@ function WhoopAuthModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
                 Verification Code
               </label>
               <input
+                ref={codeRef}
                 id="whoop-code"
                 type="text"
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
                 required
-                // biome-ignore lint/a11y/noAutofocus: modal should auto-focus first input
-                autoFocus
                 inputMode="numeric"
                 pattern="[0-9]*"
                 className="w-full px-3 py-2 text-sm bg-zinc-800 border border-zinc-700 rounded text-zinc-200 focus:outline-none focus:border-zinc-500 text-center tracking-widest text-lg"

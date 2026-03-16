@@ -1,6 +1,7 @@
 import { createHmac, randomBytes } from "node:crypto";
+import { z } from "zod";
 import { getOAuthRedirectUri } from "../auth/oauth.ts";
-import type { Database } from "../db/index.ts";
+import type { SyncDatabase } from "../db/index.ts";
 import { foodEntry } from "../db/schema.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import type { Provider, SyncError, SyncResult } from "./types.ts";
@@ -110,6 +111,39 @@ export interface FatSecretFoodEntriesResponse {
     food_entry: FatSecretFoodEntry[];
   };
 }
+
+const fatSecretFoodEntriesResponseSchema = z.object({
+  food_entries: z.object({
+    food_entry: z.array(
+      z.object({
+        food_entry_id: z.string(),
+        food_entry_name: z.string(),
+        food_entry_description: z.string(),
+        food_id: z.string(),
+        serving_id: z.string(),
+        number_of_units: z.string(),
+        meal: z.string(),
+        date_int: z.string(),
+        calories: z.string(),
+        carbohydrate: z.string(),
+        protein: z.string(),
+        fat: z.string(),
+        saturated_fat: z.string().optional(),
+        polyunsaturated_fat: z.string().optional(),
+        monounsaturated_fat: z.string().optional(),
+        cholesterol: z.string().optional(),
+        sodium: z.string().optional(),
+        potassium: z.string().optional(),
+        fiber: z.string().optional(),
+        sugar: z.string().optional(),
+        vitamin_a: z.string().optional(),
+        vitamin_c: z.string().optional(),
+        calcium: z.string().optional(),
+        iron: z.string().optional(),
+      }),
+    ),
+  }),
+});
 
 // ============================================================
 // Parsed types
@@ -526,7 +560,7 @@ export class FatSecretProvider implements Provider {
     };
   }
 
-  async sync(db: Database, since: Date): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -562,13 +596,13 @@ export class FatSecretProvider implements Provider {
       const dateInt = Math.floor(current.getTime() / 86400000).toString();
 
       try {
-        // @ts-expect-error -- fatsecretApi returns unknown; response shape validated by parseFoodEntries
-        const response: FatSecretFoodEntriesResponse = await fatsecretApi(
+        const rawResponse = await fatsecretApi(
           "food_entries.get.v2",
           { date: dateInt },
           creds,
           this.fetchFn,
         );
+        const response = fatSecretFoodEntriesResponseSchema.parse(rawResponse);
 
         const entries = parseFoodEntries(response);
 

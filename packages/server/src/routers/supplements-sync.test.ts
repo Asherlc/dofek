@@ -56,7 +56,6 @@ describe("supplementsRouter", () => {
   describe("list", () => {
     it("returns supplements from config file", async () => {
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
@@ -71,7 +70,6 @@ describe("supplementsRouter", () => {
     it("saves supplements to config file", async () => {
       const { writeFile } = await import("node:fs/promises");
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });

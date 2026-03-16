@@ -30,7 +30,6 @@ describe("hikingRouter", () => {
 
   function makeCaller(rows: Record<string, unknown>[] = []) {
     return createCaller({
-      // @ts-expect-error mock DB
       db: { execute: vi.fn().mockResolvedValue(rows) },
       userId: "user-1",
     });
@@ -195,7 +194,6 @@ describe("insightsRouter", () => {
   it("calls computeInsights with fetched data", async () => {
     const execute = vi.fn().mockResolvedValue([]);
     const caller = createCaller({
-      // @ts-expect-error mock DB
       db: { execute },
       userId: "user-1",
     });
@@ -212,7 +210,6 @@ describe("lifeEventsRouter", () => {
 
   function makeCaller(rows: Record<string, unknown>[] = []) {
     return createCaller({
-      // @ts-expect-error mock DB
       db: { execute: vi.fn().mockResolvedValue(rows) },
       userId: "user-1",
     });
@@ -304,7 +301,6 @@ describe("lifeEventsRouter", () => {
       execute.mockResolvedValueOnce([]);
 
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute },
         userId: "user-1",
       });

@@ -144,8 +144,9 @@ describe("SuuntoProvider", () => {
           }),
         }),
       }),
+      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      execute: vi.fn().mockResolvedValue([]),
     };
-    // @ts-expect-error mock DB
     const result = await new SuuntoProvider().sync(mockDb, new Date("2026-01-01"));
     expect(result.errors.length).toBeGreaterThan(0);
   });

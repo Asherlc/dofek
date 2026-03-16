@@ -15,6 +15,9 @@ const mockExecute = vi.fn().mockResolvedValue(undefined);
 function createMockDb() {
   return {
     execute: mockExecute,
+    select: vi.fn(),
+    insert: vi.fn(),
+    delete: vi.fn(),
   };
 }
 
@@ -28,7 +31,6 @@ describe("refreshDedupViews", () => {
     const { refreshDedupViews } = await import("./dedup.ts");
     const mockDb = createMockDb();
 
-    // @ts-expect-error mock DB
     await refreshDedupViews(mockDb);
 
     // 4 dedup views + 1 rollup view = 5 total refreshes
@@ -60,7 +62,6 @@ describe("refreshDedupViews", () => {
       return Promise.resolve(undefined);
     });
 
-    // @ts-expect-error mock DB
     await refreshDedupViews(mockDb);
 
     // Each view: 1 failed CONCURRENTLY + 1 fallback = 2 calls per view, 5 views = 10
@@ -81,7 +82,6 @@ describe("refreshDedupViews", () => {
       return Promise.resolve(undefined);
     });
 
-    // @ts-expect-error mock DB
     await refreshDedupViews(mockDb);
 
     // First view: 1 failed + 1 fallback = 2; remaining 4 views: 1 each = 4; total = 6
@@ -94,10 +94,7 @@ describe("refreshDedupViews", () => {
 
     mockExecute.mockRejectedValue(new Error("connection refused"));
 
-    await expect(
-      // @ts-expect-error mock DB
-      refreshDedupViews(mockDb),
-    ).rejects.toThrow("connection refused");
+    await expect(refreshDedupViews(mockDb)).rejects.toThrow("connection refused");
   });
 });
 
@@ -111,7 +108,6 @@ describe("updateUserMaxHr", () => {
     const { updateUserMaxHr } = await import("./dedup.ts");
     const mockDb = createMockDb();
 
-    // @ts-expect-error mock DB
     await updateUserMaxHr(mockDb);
 
     expect(mockExecute).toHaveBeenCalledTimes(1);

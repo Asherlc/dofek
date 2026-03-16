@@ -1,6 +1,6 @@
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri, refreshAccessToken } from "../auth/oauth.ts";
-import type { Database } from "../db/index.ts";
+import type { SyncDatabase } from "../db/index.ts";
 import { activity, metricStream } from "../db/schema.ts";
 import { loadTokens, saveTokens } from "../db/tokens.ts";
 import { type ParsedFitRecord, parseFitFile } from "../fit/parser.ts";
@@ -294,7 +294,7 @@ export class WahooProvider implements Provider {
   /**
    * Resolve a valid access token — refreshing if expired.
    */
-  private async resolveTokens(db: Database): Promise<TokenSet> {
+  private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
     const tokens = await loadTokens(db, this.id);
     if (!tokens) {
       throw new Error("No OAuth tokens found for Wahoo. Run: health-data auth wahoo");
@@ -314,7 +314,7 @@ export class WahooProvider implements Provider {
     return refreshed;
   }
 
-  async sync(db: Database, since: Date): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;

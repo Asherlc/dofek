@@ -35,10 +35,11 @@ describe("VeloHeroProvider", () => {
           }),
         }),
       }),
+      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      execute: vi.fn().mockResolvedValue([]),
     };
 
     const provider = new VeloHeroProvider();
-    // @ts-expect-error mock DB
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
     expect(result.provider).toBe("velohero");
     expect(result.errors.length).toBeGreaterThan(0);
@@ -74,10 +75,11 @@ describe("VeloHeroProvider", () => {
           }),
         }),
       }),
+      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      execute: vi.fn().mockResolvedValue([]),
     };
 
     const provider = new VeloHeroProvider();
-    // @ts-expect-error mock DB
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
     expect(result.errors[0]?.message).toContain("session expired");
 

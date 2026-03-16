@@ -655,9 +655,8 @@ describe("GarminClient — successful API calls", () => {
       init?: RequestInit,
     ): Promise<Response> => {
       capturedUrl = input.toString();
-      // @ts-expect-error -- test: HeadersInit narrowed to Record for test assertions
-      const headers: Record<string, string> | undefined = init?.headers;
-      expect(headers?.Authorization).toBe("Bearer test-token-123");
+      const headers = new Headers(init?.headers);
+      expect(headers.get("Authorization")).toBe("Bearer test-token-123");
       return Response.json(activities);
     };
 

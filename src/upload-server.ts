@@ -7,7 +7,7 @@ import type { IncomingMessage, RequestListener, ServerResponse } from "node:http
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { computeSinceDate } from "./cli.ts";
-import type { Database } from "./db/index.ts";
+import type { Database, SyncDatabase } from "./db/index.ts";
 import type { SyncResult } from "./providers/types.ts";
 
 /** Parse `since-days` and `full-sync` query params into a cutoff Date. */
@@ -19,7 +19,7 @@ export function parseSince(url: URL): Date {
 
 export interface UploadHandlerDependencies {
   createDatabase: () => Database;
-  importAppleHealth: (db: Database, filePath: string, since: Date) => Promise<SyncResult>;
+  importAppleHealth: (db: SyncDatabase, filePath: string, since: Date) => Promise<SyncResult>;
   apiKey: string | undefined;
 }
 

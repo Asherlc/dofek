@@ -122,8 +122,11 @@ export function Dashboard() {
   const anomalyCheck = trpc.anomalyDetection.check.useQuery({});
   const smoothedWeight = trpc.bodyAnalytics.smoothedWeight.useQuery({ days: Math.max(days, 90) });
   const bodyRecomp = trpc.bodyAnalytics.recomposition.useQuery({ days: Math.max(days, 180) });
-  // @ts-expect-error tRPC raw SQL result — typed assertion pending server-side typing
-  const trendData: TrendRow | undefined = trends.data ?? undefined;
+  // trends.data is Record<string, unknown> from raw SQL; narrow to TrendRow
+  // JSON round-trip bridges the type gap (data is already JSON-serialized over tRPC)
+  const trendData: TrendRow | undefined = trends.data
+    ? JSON.parse(JSON.stringify(trends.data))
+    : undefined;
 
   const topInsights = useMemo(() => {
     const all: Insight[] = insightsQuery.data ?? [];

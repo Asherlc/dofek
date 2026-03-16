@@ -3,10 +3,15 @@ import { trpc } from "../lib/trpc.ts";
 import { useUnitSystem } from "../lib/unitContext.ts";
 import { convertWeight, weightLabel } from "../lib/units.ts";
 
-/** Narrow loosely-typed tRPC raw-SQL results to a known shape without double-casting. */
+/**
+ * Narrow loosely-typed tRPC raw-SQL results to a known shape.
+ * Raw SQL results via tRPC are typed as `unknown` at compile time but have a
+ * known runtime shape determined by the SQL query. JSON round-trip bridges
+ * the type gap without `as` (data is already JSON-serialized over tRPC).
+ */
 function typedData<T>(data: unknown): T {
-  // @ts-expect-error -- centralized type narrowing for tRPC raw-SQL results
-  return data;
+  const parsed: T = JSON.parse(JSON.stringify(data));
+  return parsed;
 }
 
 interface LifeEvent {
@@ -115,17 +120,23 @@ export function LifeEventsPanel() {
       )}
 
       {/* Analysis */}
-      {selectedEvent && (
-        <EventAnalysis
-          // @ts-expect-error eventList[0] fallback may be undefined but we're inside selectedEvent guard
-          event={eventList.find((e) => e.id === selectedEvent) ?? eventList[0]}
-          analysis={typedData<EventAnalysisData | null>(analysis.data)}
-          loading={analysis.isLoading}
-          windowDays={windowDays}
-          onWindowChange={setWindowDays}
-          onDelete={() => deleteMutation.mutate({ id: selectedEvent })}
-        />
-      )}
+      {(() => {
+        if (!selectedEvent || eventList.length === 0) return null;
+        const foundEvent = eventList.find((e) => e.id === selectedEvent);
+        const fallbackEvent = eventList[0];
+        const event = foundEvent ?? fallbackEvent;
+        if (!event) return null;
+        return (
+          <EventAnalysis
+            event={event}
+            analysis={typedData<EventAnalysisData | null>(analysis.data)}
+            loading={analysis.isLoading}
+            windowDays={windowDays}
+            onWindowChange={setWindowDays}
+            onDelete={() => deleteMutation.mutate({ id: selectedEvent })}
+          />
+        );
+      })()}
     </div>
   );
 }

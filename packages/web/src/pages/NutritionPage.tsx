@@ -8,10 +8,13 @@ import { SlackInstallBanner } from "../components/SlackInstallBanner.tsx";
 import { formatDateForDisplay, formatDateForQuery, isToday } from "../lib/dates.ts";
 import { trpc } from "../lib/trpc.ts";
 
-/** Narrow loosely-typed tRPC raw-SQL results to a known shape without double-casting. */
+/**
+ * Narrow loosely-typed tRPC raw-SQL results to a known shape.
+ * JSON round-trip bridges the type gap (data is already JSON-serialized over tRPC).
+ */
 function typedData<T>(data: unknown): T {
-  // @ts-expect-error -- centralized type narrowing for tRPC raw-SQL results
-  return data;
+  const parsed: T = JSON.parse(JSON.stringify(data));
+  return parsed;
 }
 
 const CALORIES_PER_GRAM = { protein: 4, carbs: 4, fat: 9 } as const;

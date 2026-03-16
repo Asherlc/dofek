@@ -183,14 +183,11 @@ describe("Predictions router (integration)", () => {
       headers: { "Content-Type": "application/json", Cookie: sessionCookie },
       body: JSON.stringify({ "0": input }),
     });
-    // @ts-expect-error tRPC batch response shape
     const data: Record<string, unknown>[] = await res.json();
-    // @ts-expect-error tRPC batch response shape
     const first: { result?: { data?: T }; error?: { message: string } } = data[0];
     if (first?.error) {
       throw new Error(`${path} error: ${JSON.stringify(first.error)}`);
     }
-    // @ts-expect-error tRPC batch response shape
     return first?.result?.data;
   }
 

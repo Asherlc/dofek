@@ -314,10 +314,14 @@ function SupplementForm({
       supp.unit = unit;
     }
     if (form) supp.form = form;
-    if (meal) {
-      // @ts-expect-error meal is string but Supplement["meal"] expects specific union
-      const typedMeal: Supplement["meal"] = meal;
-      supp.meal = typedMeal;
+    if (
+      meal === "breakfast" ||
+      meal === "lunch" ||
+      meal === "dinner" ||
+      meal === "snack" ||
+      meal === "other"
+    ) {
+      supp.meal = meal;
     }
 
     // Build description from amount + unit + form for the provider

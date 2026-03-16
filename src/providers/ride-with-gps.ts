@@ -1,7 +1,8 @@
 import { and, eq } from "drizzle-orm";
+import { z } from "zod";
 import type { OAuthConfig } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
-import type { Database } from "../db/index.ts";
+import type { SyncDatabase } from "../db/index.ts";
 import { activity, DEFAULT_USER_ID, metricStream, userSettings } from "../db/schema.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import type {
@@ -222,7 +223,7 @@ export class RideWithGpsClient {
 
 const SYNC_CURSOR_KEY = "rwgps_sync_cursor";
 
-async function loadSyncCursor(db: Database): Promise<string | null> {
+async function loadSyncCursor(db: SyncDatabase): Promise<string | null> {
   const rows = await db
     .select({ value: userSettings.value })
     .from(userSettings)
@@ -230,12 +231,12 @@ async function loadSyncCursor(db: Database): Promise<string | null> {
     .limit(1);
 
   if (rows.length === 0 || !rows[0]) return null;
-  // @ts-expect-error -- DB value is unknown; cursor shape is set by saveSyncCursor
-  const value: { cursor?: string } = rows[0].value;
+  const cursorSchema = z.object({ cursor: z.string().optional() }).catch({ cursor: undefined });
+  const value = cursorSchema.parse(rows[0].value);
   return value.cursor ?? null;
 }
 
-async function saveSyncCursor(db: Database, cursor: string): Promise<void> {
+async function saveSyncCursor(db: SyncDatabase, cursor: string): Promise<void> {
   await db
     .insert(userSettings)
     .values({
@@ -307,7 +308,7 @@ export class RideWithGpsProvider implements Provider {
     };
   }
 
-  async sync(db: Database, since: Date): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;

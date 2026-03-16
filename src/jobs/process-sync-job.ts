@@ -1,10 +1,15 @@
-import type { Job } from "bullmq";
-import type { Database } from "../db/index.ts";
+import type { SyncDatabase } from "../db/index.ts";
 import { logSync } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import type { SyncJobData } from "./queues.ts";
 
-export async function processSyncJob(job: Job<SyncJobData>, db: Database): Promise<void> {
+/** Minimal Job interface — only the subset processSyncJob actually uses. */
+interface SyncJob {
+  data: SyncJobData;
+  updateProgress: (data: object) => Promise<void>;
+}
+
+export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<void> {
   const { providerId, sinceDays } = job.data;
   const since = sinceDays ? new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000) : new Date(0);
 

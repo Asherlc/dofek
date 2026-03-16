@@ -110,7 +110,6 @@ describe("syncRouter", () => {
       ]);
 
       const caller = createCaller({
-        // @ts-expect-error mock db
         db: {
           execute: vi
             .fn()
@@ -162,7 +161,6 @@ describe("syncRouter", () => {
       ]);
 
       const caller = createCaller({
-        // @ts-expect-error mock db
         db: {
           execute: vi.fn().mockResolvedValue([]),
         },
@@ -180,7 +178,6 @@ describe("syncRouter", () => {
       mockGetAllProviders.mockReturnValue([]);
 
       const caller = createCaller({
-        // @ts-expect-error mock db
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
@@ -198,7 +195,6 @@ describe("syncRouter", () => {
       mockGetAllProviders.mockReturnValue([{ id: "wahoo", name: "Wahoo", validate: () => null }]);
 
       const caller = createCaller({
-        // @ts-expect-error mock db
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
@@ -211,7 +207,6 @@ describe("syncRouter", () => {
       mockGetAllProviders.mockReturnValue([]);
 
       const caller = createCaller({
-        // @ts-expect-error mock db
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
@@ -227,7 +222,6 @@ describe("syncRouter", () => {
       ]);
 
       const caller = createCaller({
-        // @ts-expect-error mock db
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
@@ -242,7 +236,6 @@ describe("syncRouter", () => {
       mockGetAllProviders.mockReturnValue([]);
 
       const caller = createCaller({
-        // @ts-expect-error mock db
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
@@ -255,7 +248,6 @@ describe("syncRouter", () => {
   describe("syncStatus", () => {
     it("returns null for empty jobId", async () => {
       const caller = createCaller({
-        // @ts-expect-error mock db
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
@@ -268,7 +260,6 @@ describe("syncRouter", () => {
       mockGetJob.mockResolvedValueOnce(undefined);
 
       const caller = createCaller({
-        // @ts-expect-error mock db
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
@@ -281,7 +272,6 @@ describe("syncRouter", () => {
       mockGetJob.mockRejectedValueOnce(new Error("Redis connection refused"));
 
       const caller = createCaller({
-        // @ts-expect-error mock db
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
@@ -298,7 +288,6 @@ describe("syncRouter", () => {
       });
 
       const caller = createCaller({
-        // @ts-expect-error mock db
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
@@ -319,7 +308,6 @@ describe("syncRouter", () => {
       });
 
       const caller = createCaller({
-        // @ts-expect-error mock db
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
@@ -339,7 +327,6 @@ describe("syncRouter", () => {
       });
 
       const caller = createCaller({
-        // @ts-expect-error mock db
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
@@ -358,7 +345,6 @@ describe("syncRouter", () => {
       });
 
       const caller = createCaller({
-        // @ts-expect-error mock db
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
@@ -376,7 +362,6 @@ describe("syncRouter", () => {
       });
 
       const caller = createCaller({
-        // @ts-expect-error mock db
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
@@ -390,7 +375,6 @@ describe("syncRouter", () => {
   describe("systemLogs", () => {
     it("returns system logs with default limit", async () => {
       const caller = createCaller({
-        // @ts-expect-error mock db
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
@@ -401,7 +385,6 @@ describe("syncRouter", () => {
 
     it("respects limit parameter", async () => {
       const caller = createCaller({
-        // @ts-expect-error mock db
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
@@ -414,7 +397,6 @@ describe("syncRouter", () => {
   describe("providerStats", () => {
     it("maps database rows to provider stats", async () => {
       const caller = createCaller({
-        // @ts-expect-error mock db
         db: {
           execute: vi.fn().mockResolvedValue([
             {
@@ -456,7 +438,6 @@ describe("syncRouter", () => {
 
     it("returns empty array when no providers", async () => {
       const caller = createCaller({
-        // @ts-expect-error mock db
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
@@ -481,7 +462,6 @@ describe("syncRouter", () => {
       });
 
       const caller = createCaller({
-        // @ts-expect-error mock db
         db: { select: mockSelect, execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });

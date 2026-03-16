@@ -2,13 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 import { VeloHeroClient } from "./client.ts";
 import type { VeloHeroSsoResponse, VeloHeroWorkout, VeloHeroWorkoutsResponse } from "./types.ts";
 
-type MockFetchFn = ReturnType<typeof vi.fn>;
-
-function asMock(fn: typeof globalThis.fetch): MockFetchFn {
-  // @ts-expect-error -- test helper: vi.fn() mock narrowing
-  return fn;
-}
-
 function mockFetch(response: {
   status: number;
   ok: boolean;
@@ -41,12 +34,10 @@ describe("VeloHeroClient.signIn", () => {
       userId: "user-42",
     });
 
-    // @ts-expect-error -- test: mock call args narrowing
-    const [url, options]: [string, RequestInit] = asMock(fetchFn).mock.calls[0];
+    const [url, options]: [string, RequestInit] = fetchFn.mock.calls[0];
     expect(url).toBe("https://app.velohero.com/sso");
     expect(options.method).toBe("POST");
     expect(options.redirect).toBe("manual");
-    // @ts-expect-error -- test: HeadersInit narrowed to Record
     const headers: Record<string, string> = options.headers;
     expect(headers["Content-Type"]).toBe("application/x-www-form-urlencoded");
   });
@@ -94,12 +85,10 @@ describe("VeloHeroClient.getWorkouts", () => {
     const result = await client.getWorkouts("2024-01-01", "2024-01-31");
 
     expect(result).toEqual(workouts);
-    // @ts-expect-error -- test: mock call args narrowing
-    const [url, options]: [string, RequestInit] = asMock(fetchFn).mock.calls[0];
+    const [url, options]: [string, RequestInit] = fetchFn.mock.calls[0];
     expect(url).toContain("https://app.velohero.com/export/workouts/json");
     expect(url).toContain("date_from=2024-01-01");
     expect(url).toContain("date_to=2024-01-31");
-    // @ts-expect-error -- test: HeadersInit narrowed to Record
     const headers: Record<string, string> = options.headers;
     expect(headers.Cookie).toBe("VeloHero_session=abc123");
   });
@@ -141,8 +130,7 @@ describe("VeloHeroClient.getWorkout", () => {
     const result = await client.getWorkout("1001");
 
     expect(result).toEqual(workout);
-    // @ts-expect-error -- test: mock call args narrowing
-    const [url]: [string] = asMock(fetchFn).mock.calls[0];
+    const [url]: [string] = fetchFn.mock.calls[0];
     expect(url).toBe("https://app.velohero.com/export/workouts/json/1001");
   });
 });

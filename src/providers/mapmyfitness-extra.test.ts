@@ -208,9 +208,10 @@ describe("MapMyFitnessProvider", () => {
           }),
         }),
       }),
+      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      execute: vi.fn().mockResolvedValue([]),
     };
 
-    // @ts-expect-error mock DB
     const result = await new MapMyFitnessProvider().sync(mockDb, new Date("2026-01-01"));
     expect(result.provider).toBe("mapmyfitness");
     expect(result.errors.length).toBeGreaterThan(0);

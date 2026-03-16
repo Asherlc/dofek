@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { SyncDatabase } from "../db/index.ts";
 import {
   parseHeartRateValues,
   parseJournalResponse,
@@ -37,18 +38,39 @@ vi.mock("../db/tokens.ts", () => ({
 }));
 
 function makeChainableMock(resolvedValue: unknown = []) {
-  const mock: Record<string, ReturnType<typeof vi.fn>> = {};
-  mock.insert = vi.fn().mockReturnValue(mock);
-  mock.values = vi.fn().mockReturnValue(mock);
-  mock.onConflictDoUpdate = vi.fn().mockReturnValue(mock);
-  mock.onConflictDoNothing = vi.fn().mockResolvedValue(resolvedValue);
-  mock.returning = vi.fn().mockResolvedValue(resolvedValue);
-  mock.select = vi.fn().mockReturnValue(mock);
-  mock.from = vi.fn().mockReturnValue(mock);
-  mock.where = vi.fn().mockReturnValue(mock);
-  mock.limit = vi.fn().mockResolvedValue(resolvedValue);
-  mock.delete = vi.fn().mockReturnValue(mock);
-  return mock;
+  const selectFn = vi.fn();
+  const insertFn = vi.fn();
+  const deleteFn = vi.fn();
+  const executeFn = vi.fn().mockResolvedValue([]);
+
+  // Self-referencing chain: each method returns the mock object
+  const chain = {
+    values: vi.fn(),
+    onConflictDoUpdate: vi.fn(),
+    onConflictDoNothing: vi.fn().mockResolvedValue(resolvedValue),
+    returning: vi.fn().mockResolvedValue(resolvedValue),
+    from: vi.fn(),
+    where: vi.fn(),
+    limit: vi.fn().mockResolvedValue(resolvedValue),
+  };
+
+  // Make each chain method return the chain for fluent chaining
+  for (const fn of Object.values(chain)) {
+    fn.mockReturnValue(chain);
+  }
+  selectFn.mockReturnValue(chain);
+  insertFn.mockReturnValue(chain);
+  deleteFn.mockReturnValue(chain);
+
+  const db: SyncDatabase = {
+    select: selectFn,
+    insert: insertFn,
+    delete: deleteFn,
+    execute: executeFn,
+  };
+
+  // Return an object that is both SyncDatabase and has chain spies accessible
+  return Object.assign(db, chain);
 }
 
 // Helper to make a WhoopClient-shaped mock via fetch
@@ -235,10 +257,17 @@ describe("WhoopClient.signIn (Cognito v3)", () => {
     await WhoopClient.signIn("user@test.com", "pass", mockFetch);
     expect(capturedTarget).toBe("AWSCognitoIdentityProviderService.InitiateAuth");
     expect(capturedBody.AuthFlow).toBe("USER_PASSWORD_AUTH");
-    // @ts-expect-error -- test assertion on parsed JSON body
-    const authParams: Record<string, string> = capturedBody.AuthParameters;
-    expect(authParams.USERNAME).toBe("user@test.com");
-    expect(authParams.PASSWORD).toBe("pass");
+    const authParams = capturedBody.AuthParameters;
+    expect(authParams).toBeDefined();
+    if (
+      authParams &&
+      typeof authParams === "object" &&
+      "USERNAME" in authParams &&
+      "PASSWORD" in authParams
+    ) {
+      expect(authParams.USERNAME).toBe("user@test.com");
+      expect(authParams.PASSWORD).toBe("pass");
+    }
   });
 
   it("fetches user ID from users-service bootstrap after sign-in", async () => {
@@ -291,9 +320,11 @@ describe("WhoopClient.refreshAccessToken (Cognito v3)", () => {
 
     const token = await WhoopClient.refreshAccessToken("old-ref", mockFetch);
     expect(capturedBody.AuthFlow).toBe("REFRESH_TOKEN_AUTH");
-    // @ts-expect-error -- test assertion on parsed JSON body
-    const refreshParams: Record<string, string> = capturedBody.AuthParameters;
-    expect(refreshParams.REFRESH_TOKEN).toBe("old-ref");
+    const refreshParams = capturedBody.AuthParameters;
+    expect(refreshParams).toBeDefined();
+    if (refreshParams && typeof refreshParams === "object" && "REFRESH_TOKEN" in refreshParams) {
+      expect(refreshParams.REFRESH_TOKEN).toBe("old-ref");
+    }
     expect(token.accessToken).toBe("new-tok");
     expect(token.refreshToken).toBe("old-ref"); // reuses old when not returned
     expect(token.userId).toBe(42);
@@ -438,15 +469,16 @@ describe("WHOOP Provider — parsing", () => {
 // Sync flow tests (mocked DB + client)
 // ============================================================
 
+// Default future expiry for token mocks
+const futureExpiry = new Date("2099-01-01T00:00:00Z");
+
 describe("WhoopProvider.sync() — token resolution", () => {
   it("returns error when no tokens are stored", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    // @ts-expect-error mock
-    loadTokens.mockResolvedValueOnce(null);
+    vi.mocked(loadTokens).mockResolvedValueOnce(null);
 
     const provider = new WhoopProvider();
     const db = makeChainableMock();
-    // @ts-expect-error mock DB
     const result = await provider.sync(db, new Date("2026-03-01"));
 
     expect(result.provider).toBe("whoop");
@@ -456,12 +488,15 @@ describe("WhoopProvider.sync() — token resolution", () => {
 
   it("returns error when refreshToken is missing", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    // @ts-expect-error mock
-    loadTokens.mockResolvedValueOnce({ accessToken: "tok", refreshToken: "" });
+    vi.mocked(loadTokens).mockResolvedValueOnce({
+      accessToken: "tok",
+      refreshToken: "",
+      expiresAt: futureExpiry,
+      scopes: null,
+    });
 
     const provider = new WhoopProvider();
     const db = makeChainableMock();
-    // @ts-expect-error mock DB
     const result = await provider.sync(db, new Date("2026-03-01"));
 
     expect(result.errors.length).toBeGreaterThan(0);
@@ -470,10 +505,10 @@ describe("WhoopProvider.sync() — token resolution", () => {
 
   it("returns error when user ID not found after refresh", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    // @ts-expect-error mock
-    loadTokens.mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValueOnce({
       accessToken: "tok",
       refreshToken: "ref",
+      expiresAt: futureExpiry,
       scopes: null,
     });
 
@@ -495,7 +530,6 @@ describe("WhoopProvider.sync() — token resolution", () => {
 
     const provider = new WhoopProvider(mockFetch);
     const db = makeChainableMock();
-    // @ts-expect-error mock DB
     const result = await provider.sync(db, new Date("2026-03-01"));
 
     expect(result.errors.length).toBeGreaterThan(0);
@@ -504,24 +538,22 @@ describe("WhoopProvider.sync() — token resolution", () => {
 
   it("uses stored userId from scopes when available", async () => {
     const { loadTokens, saveTokens } = await import("../db/tokens.ts");
-    // @ts-expect-error mock
-    loadTokens.mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValueOnce({
       accessToken: "tok",
       refreshToken: "ref",
+      expiresAt: futureExpiry,
       scopes: "userId:12345",
     });
 
     const mockFetch = makeSyncMockFetch({ cycles: [] });
     const provider = new WhoopProvider(mockFetch);
     const db = makeChainableMock();
-    // @ts-expect-error mock DB
     const result = await provider.sync(db, new Date("2026-03-01"));
 
     expect(result.provider).toBe("whoop");
     // saveTokens should have been called with userId:12345 in scopes
     expect(saveTokens).toHaveBeenCalled();
-    // @ts-expect-error mock
-    const savedScopes = saveTokens.mock.calls[0]?.[2]?.scopes;
+    const savedScopes = vi.mocked(saveTokens).mock.calls[0]?.[2]?.scopes;
     expect(savedScopes).toBe("userId:12345");
   });
 });
@@ -529,17 +561,16 @@ describe("WhoopProvider.sync() — token resolution", () => {
 describe("WhoopProvider.sync() — cycles error", () => {
   it("returns error when getCycles fails", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    // @ts-expect-error mock
-    loadTokens.mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValueOnce({
       accessToken: "tok",
       refreshToken: "ref",
+      expiresAt: futureExpiry,
       scopes: "userId:42",
     });
 
     const mockFetch = makeSyncMockFetch({ cyclesError: true });
     const provider = new WhoopProvider(mockFetch);
     const db = makeChainableMock();
-    // @ts-expect-error mock DB
     const result = await provider.sync(db, new Date("2026-03-01"));
 
     expect(result.errors.length).toBeGreaterThan(0);
@@ -550,10 +581,10 @@ describe("WhoopProvider.sync() — cycles error", () => {
 describe("WhoopProvider.sync() — recovery sync", () => {
   it("syncs recovery data from scored cycles", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    // @ts-expect-error mock
-    loadTokens.mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValueOnce({
       accessToken: "tok",
       refreshToken: "ref",
+      expiresAt: futureExpiry,
       scopes: "userId:42",
     });
 
@@ -590,7 +621,6 @@ describe("WhoopProvider.sync() — recovery sync", () => {
     const db = makeChainableMock();
     // Make onConflictDoUpdate resolve properly for recovery insert chain
     db.onConflictDoUpdate = vi.fn().mockResolvedValue([]);
-    // @ts-expect-error mock DB
     const result = await provider.sync(db, new Date("2026-03-01"));
 
     expect(result.provider).toBe("whoop");
@@ -600,10 +630,10 @@ describe("WhoopProvider.sync() — recovery sync", () => {
 
   it("uses created_at date fallback when days array is empty", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    // @ts-expect-error mock
-    loadTokens.mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValueOnce({
       accessToken: "tok",
       refreshToken: "ref",
+      expiresAt: futureExpiry,
       scopes: "userId:42",
     });
 
@@ -637,7 +667,6 @@ describe("WhoopProvider.sync() — recovery sync", () => {
     const provider = new WhoopProvider(mockFetch);
     const db = makeChainableMock();
     db.onConflictDoUpdate = vi.fn().mockResolvedValue([]);
-    // @ts-expect-error mock DB
     const result = await provider.sync(db, new Date("2026-03-01"));
 
     expect(result.provider).toBe("whoop");
@@ -645,10 +674,10 @@ describe("WhoopProvider.sync() — recovery sync", () => {
 
   it("skips unscored recovery cycles", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    // @ts-expect-error mock
-    loadTokens.mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValueOnce({
       accessToken: "tok",
       refreshToken: "ref",
+      expiresAt: futureExpiry,
       scopes: "userId:42",
     });
 
@@ -675,7 +704,6 @@ describe("WhoopProvider.sync() — recovery sync", () => {
     });
     const provider = new WhoopProvider(mockFetch);
     const db = makeChainableMock();
-    // @ts-expect-error mock DB
     const result = await provider.sync(db, new Date("2026-03-01"));
 
     expect(result.provider).toBe("whoop");
@@ -685,10 +713,10 @@ describe("WhoopProvider.sync() — recovery sync", () => {
 describe("WhoopProvider.sync() — workout collection from cycles", () => {
   it("collects workouts from strain.workouts fallback", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    // @ts-expect-error mock
-    loadTokens.mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValueOnce({
       accessToken: "tok",
       refreshToken: "ref",
+      expiresAt: futureExpiry,
       scopes: "userId:42",
     });
 
@@ -724,7 +752,6 @@ describe("WhoopProvider.sync() — workout collection from cycles", () => {
     const db = makeChainableMock();
     db.onConflictDoUpdate = vi.fn().mockReturnValue(db);
     db.returning = vi.fn().mockResolvedValue([]);
-    // @ts-expect-error mock DB
     const result = await provider.sync(db, new Date("2026-03-01"));
 
     expect(result.provider).toBe("whoop");

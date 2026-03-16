@@ -24,7 +24,6 @@ function makeCaller<T extends ReturnType<typeof import("../trpc.ts").router>>(
 ) {
   const factory = createTestCallerFactory(routerDef);
   return factory({
-    // @ts-expect-error mock DB
     db: { execute: vi.fn().mockResolvedValue(rows) },
     userId: "user-1",
   });

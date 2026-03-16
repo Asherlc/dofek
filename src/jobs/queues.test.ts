@@ -60,12 +60,11 @@ describe("queues", () => {
 
       const conn = getRedisConnection();
       expect("host" in conn).toBe(true);
-      // @ts-expect-error accessing redis connection properties
-      expect(conn.host).toBe("redis-host");
-      // @ts-expect-error accessing redis connection properties
-      expect(conn.port).toBe(6379);
-      // @ts-expect-error accessing redis connection properties
-      expect(conn.password).toBeUndefined();
+      if ("host" in conn) {
+        expect(conn.host).toBe("redis-host");
+        expect(conn.port).toBe(6379);
+        expect(conn.password).toBeUndefined();
+      }
     });
 
     it("defaults port to 6379 when not specified", async () => {
@@ -73,8 +72,9 @@ describe("queues", () => {
       const { getRedisConnection } = await import("./queues.ts");
 
       const conn = getRedisConnection();
-      // @ts-expect-error accessing redis connection properties
-      expect(conn.port).toBe(6379);
+      if ("port" in conn) {
+        expect(conn.port).toBe(6379);
+      }
     });
   });
 

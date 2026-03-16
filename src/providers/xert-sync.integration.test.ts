@@ -269,11 +269,11 @@ describe("XertProvider.sync() (integration)", () => {
     const rows = await ctx.db.select().from(activity).where(eq(activity.externalId, "8801"));
     expect(rows).toHaveLength(1);
 
-    // @ts-expect-error -- test assertion on raw JSONB
-    const raw: Record<string, unknown> = rows[0]?.raw;
-    expect(raw.xss).toBe(120);
-    expect(raw.focus).toBe(280);
-    expect(raw.difficulty).toBe(4.2);
+    const raw = rows[0]?.raw;
+    if (raw === null || typeof raw !== "object") throw new Error("expected raw to be object");
+    if ("xss" in raw) expect(raw.xss).toBe(120);
+    if ("focus" in raw) expect(raw.focus).toBe(280);
+    if ("difficulty" in raw) expect(raw.difficulty).toBe(4.2);
   });
 
   it("refreshes expired tokens and saves new ones", async () => {

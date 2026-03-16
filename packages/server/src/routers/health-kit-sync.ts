@@ -307,11 +307,11 @@ async function processDailyMetrics(
 
   for (const sample of samples) {
     const dateStr = extractDate(sample.startDate);
-    if (!byDate.has(dateStr)) {
-      byDate.set(dateStr, createEmptyAccumulator());
+    let accumulator = byDate.get(dateStr);
+    if (!accumulator) {
+      accumulator = createEmptyAccumulator();
+      byDate.set(dateStr, accumulator);
     }
-    // biome-ignore lint/style/noNonNullAssertion: guaranteed by the has() + set() above
-    const accumulator = byDate.get(dateStr)!;
 
     const additiveMapping = additiveDailyMetricTypes[sample.type];
     if (additiveMapping) {

@@ -1,5 +1,5 @@
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
-import type { Database } from "../db/index.ts";
+import type { SyncDatabase } from "../db/index.ts";
 
 /**
  * OAuth 1.0 3-legged flow (e.g. FatSecret).
@@ -86,5 +86,5 @@ export interface Provider {
    * @param db - Drizzle database instance
    * @param since - Only sync data after this date (incremental sync)
    */
-  sync(db: Database, since: Date): Promise<SyncResult>;
+  sync(db: SyncDatabase, since: Date): Promise<SyncResult>;
 }

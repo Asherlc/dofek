@@ -74,7 +74,6 @@ describe("trpc", () => {
       const t = initTRPC.context<Context>().create();
       const createCaller = t.createCallerFactory(testRouter);
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: {},
         userId: null,
       });
@@ -93,7 +92,6 @@ describe("trpc", () => {
       const t = initTRPC.context<Context>().create();
       const createCaller = t.createCallerFactory(testRouter);
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: {},
         userId: "user-123",
       });

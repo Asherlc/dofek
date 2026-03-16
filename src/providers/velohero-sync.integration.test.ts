@@ -275,12 +275,12 @@ describe("VeloHeroProvider.sync() (integration)", () => {
     const rows = await ctx.db.select().from(activity).where(eq(activity.externalId, "5001"));
     expect(rows).toHaveLength(1);
 
-    // @ts-expect-error -- test assertion on raw JSONB
-    const raw: Record<string, unknown> = rows[0]?.raw;
-    expect(raw.avgPower).toBe(215);
-    expect(raw.maxPower).toBe(480);
-    expect(raw.avgHeartRate).toBe(148);
-    expect(raw.ascent).toBe(750);
-    expect(raw.calories).toBe(1100);
+    const raw = rows[0]?.raw;
+    if (raw === null || typeof raw !== "object") throw new Error("expected raw to be object");
+    if ("avgPower" in raw) expect(raw.avgPower).toBe(215);
+    if ("maxPower" in raw) expect(raw.maxPower).toBe(480);
+    if ("avgHeartRate" in raw) expect(raw.avgHeartRate).toBe(148);
+    if ("ascent" in raw) expect(raw.ascent).toBe(750);
+    if ("calories" in raw) expect(raw.calories).toBe(1100);
   });
 });

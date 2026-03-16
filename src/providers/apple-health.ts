@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { and, eq, gte, sql } from "drizzle-orm";
 import sax from "sax";
 import yauzl from "yauzl";
-import type { Database } from "../db/index.ts";
+import type { SyncDatabase } from "../db/index.ts";
 import {
   activity,
   bodyMeasurement,
@@ -17,6 +17,20 @@ import {
 } from "../db/schema.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import type { Provider, SyncError, SyncResult } from "./types.ts";
+
+/**
+ * Extract string attributes from a SAX node.
+ * When `strict=true` is used without `xmlns`, SAX always returns `Tag` with
+ * `{ [key: string]: string }` attributes, but the TS union type includes
+ * `QualifiedTag` too. This helper converts both shapes to `Record<string, string>`.
+ */
+function getStringAttrs(node: sax.Tag | sax.QualifiedTag): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [key, val] of Object.entries(node.attributes)) {
+    result[key] = typeof val === "string" ? val : val.value;
+  }
+  return result;
+}
 
 // ============================================================
 // Apple Health date parsing
@@ -537,8 +551,7 @@ export function streamHealthExport(
     }
 
     parser.on("opentag", (node) => {
-      // @ts-expect-error -- sax strict mode (no xmlns) always returns string attrs, but TS types include QualifiedAttribute
-      const attrs: Record<string, string> = node.attributes;
+      const attrs = getStringAttrs(node);
 
       // Records appear at top level and inside Correlations (e.g. BP pairs)
       if (node.name === "Record") {
@@ -725,7 +738,7 @@ function dateToString(d: Date): string {
 // ============================================================
 
 async function upsertMetricStreamBatch(
-  db: Database,
+  db: SyncDatabase,
   providerId: string,
   records: HealthRecord[],
 ): Promise<number> {
@@ -734,31 +747,28 @@ async function upsertMetricStreamBatch(
     const field = METRIC_STREAM_TYPES[record.type];
     if (!field) continue;
 
-    const row: Record<string, unknown> = {
+    const base = {
       providerId,
       recordedAt: record.startDate,
     };
 
     switch (field) {
       case "heartRate":
-        row.heartRate = Math.round(record.value);
+        rows.push({ ...base, heartRate: Math.round(record.value) });
         break;
       case "spo2":
-        row.spo2 = record.value;
+        rows.push({ ...base, spo2: record.value });
         break;
       case "respiratoryRate":
-        row.respiratoryRate = record.value;
+        rows.push({ ...base, respiratoryRate: record.value });
         break;
       case "bloodGlucose":
-        row.bloodGlucose = record.value;
+        rows.push({ ...base, bloodGlucose: record.value });
         break;
       case "audioExposure":
-        row.audioExposure = record.value;
+        rows.push({ ...base, audioExposure: record.value });
         break;
     }
-
-    // @ts-expect-error -- row is built dynamically but always contains providerId + recordedAt
-    rows.push(row);
   }
 
   for (let i = 0; i < rows.length; i += 1000) {
@@ -768,7 +778,7 @@ async function upsertMetricStreamBatch(
 }
 
 async function upsertBodyMeasurementBatch(
-  db: Database,
+  db: SyncDatabase,
   providerId: string,
   records: HealthRecord[],
 ): Promise<number> {
@@ -787,7 +797,7 @@ async function upsertBodyMeasurementBatch(
     const first = group[0];
     if (!first) continue;
     const externalId = `ah:body:${first.startDate.toISOString()}`;
-    const row: Record<string, unknown> = {
+    const row: typeof bodyMeasurement.$inferInsert = {
       providerId,
       externalId,
       recordedAt: first.startDate,
@@ -821,7 +831,6 @@ async function upsertBodyMeasurementBatch(
           break;
       }
     }
-    // @ts-expect-error -- row is built dynamically but always contains providerId + recordedAt
     rows.push(row);
   }
 
@@ -853,7 +862,7 @@ async function upsertBodyMeasurementBatch(
 }
 
 async function upsertDailyMetricsBatch(
-  db: Database,
+  db: SyncDatabase,
   providerId: string,
   records: HealthRecord[],
 ): Promise<number> {
@@ -873,9 +882,9 @@ async function upsertDailyMetricsBatch(
     }
   }
 
-  const rows: { row: Record<string, unknown> }[] = [];
+  const rows: { row: typeof dailyMetrics.$inferInsert }[] = [];
   for (const [dateKey, metrics] of byDate) {
-    const row: Record<string, unknown> = {
+    const row: typeof dailyMetrics.$inferInsert = {
       date: dateKey,
       providerId,
     };
@@ -943,7 +952,6 @@ async function upsertDailyMetricsBatch(
   for (let i = 0; i < insertRows.length; i += 500) {
     await db
       .insert(dailyMetrics)
-      // @ts-expect-error -- rows are dynamically built Records with required fields
       .values(insertRows.slice(i, i + 500))
       .onConflictDoUpdate({
         target: [dailyMetrics.date, dailyMetrics.providerId],
@@ -976,7 +984,7 @@ async function upsertDailyMetricsBatch(
 }
 
 async function upsertNutritionBatch(
-  db: Database,
+  db: SyncDatabase,
   providerId: string,
   records: HealthRecord[],
 ): Promise<number> {
@@ -991,9 +999,9 @@ async function upsertNutritionBatch(
     day.set(field, (day.get(field) ?? 0) + r.value);
   }
 
-  const rows: { row: Record<string, unknown> }[] = [];
+  const rows: { row: typeof nutritionDaily.$inferInsert }[] = [];
   for (const [dateKey, nutrients] of byDate) {
-    const row: Record<string, unknown> = {
+    const row: typeof nutritionDaily.$inferInsert = {
       date: dateKey,
       providerId,
     };
@@ -1028,7 +1036,6 @@ async function upsertNutritionBatch(
   for (let i = 0; i < insertRows.length; i += 500) {
     await db
       .insert(nutritionDaily)
-      // @ts-expect-error -- rows are dynamically built Records with required fields
       .values(insertRows.slice(i, i + 500))
       .onConflictDoUpdate({
         target: [nutritionDaily.date, nutritionDaily.providerId],
@@ -1046,7 +1053,7 @@ async function upsertNutritionBatch(
 }
 
 async function upsertHealthEventBatch(
-  db: Database,
+  db: SyncDatabase,
   providerId: string,
   records: HealthRecord[],
 ): Promise<number> {
@@ -1079,7 +1086,7 @@ async function upsertHealthEventBatch(
 }
 
 async function upsertWorkoutBatch(
-  db: Database,
+  db: SyncDatabase,
   providerId: string,
   workouts: HealthWorkout[],
 ): Promise<number> {
@@ -1146,7 +1153,7 @@ async function upsertWorkoutBatch(
 }
 
 async function upsertSleepBatch(
-  db: Database,
+  db: SyncDatabase,
   providerId: string,
   records: SleepAnalysisRecord[],
 ): Promise<number> {
@@ -1310,7 +1317,7 @@ function defaultConsoleProgress(info: ProgressInfo): void {
 // ============================================================
 
 async function runImport(
-  db: Database,
+  db: SyncDatabase,
   providerId: string,
   xmlPath: string,
   since: Date,
@@ -1402,7 +1409,7 @@ async function runImport(
  * Import from a file path — accepts either a .zip or .xml file.
  */
 export async function importAppleHealthFile(
-  db: Database,
+  db: SyncDatabase,
   filePath: string,
   since: Date,
   onProgress?: (info: ProgressInfo) => void,
@@ -1507,10 +1514,9 @@ function buildSourceNameMap(xmlPath: string): Promise<Map<string, string>> {
 
     parser.on("opentag", (node) => {
       if (node.name === "ClinicalRecord") {
-        // @ts-expect-error -- sax strict mode (no xmlns) returns string attrs, but TS types include QualifiedAttribute
-        const sourceName: string | undefined = node.attributes.sourceName;
-        // @ts-expect-error -- sax strict mode (no xmlns) returns string attrs, but TS types include QualifiedAttribute
-        const resourcePath: string | undefined = node.attributes.resourceFilePath;
+        const attrs = getStringAttrs(node);
+        const sourceName: string | undefined = attrs.sourceName;
+        const resourcePath: string | undefined = attrs.resourceFilePath;
         if (sourceName && resourcePath) {
           map.set(resourcePath.replace(/^\//, ""), sourceName);
         }
@@ -1525,7 +1531,7 @@ function buildSourceNameMap(xmlPath: string): Promise<Map<string, string>> {
 }
 
 async function importClinicalRecords(
-  db: Database,
+  db: SyncDatabase,
   providerId: string,
   zipPath: string,
   xmlPath: string,
@@ -1667,7 +1673,7 @@ export class AppleHealthProvider implements Provider {
     }
   }
 
-  async sync(db: Database, since: Date): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
     const filePath = this.findLatestExport();
     if (!filePath) {
       return {
@@ -1733,17 +1739,16 @@ export interface FhirDiagnosticReport {
   result?: { reference: string }[];
 }
 
-const VALID_LAB_STATUSES = new Set<LabResultStatus>([
+const VALID_LAB_STATUSES: ReadonlyArray<string> = [
   "final",
   "preliminary",
   "corrected",
   "cancelled",
-]);
+];
 type LabResultStatus = "final" | "preliminary" | "corrected" | "cancelled";
 
 function isLabResultStatus(s: string): s is LabResultStatus {
-  // @ts-expect-error -- checking membership of string in Set<LabResultStatus>
-  return VALID_LAB_STATUSES.has(s);
+  return VALID_LAB_STATUSES.includes(s);
 }
 
 export interface ParsedLabResult {

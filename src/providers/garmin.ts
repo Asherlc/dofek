@@ -14,7 +14,7 @@ import {
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri, refreshAccessToken } from "../auth/oauth.ts";
-import type { Database } from "../db/index.ts";
+import type { SyncDatabase } from "../db/index.ts";
 import {
   activity,
   bodyMeasurement,
@@ -435,7 +435,7 @@ function eachDay(since: Date, until: Date): string[] {
 
 const SYNC_CURSOR_KEY = "garmin_sync_cursor";
 
-async function loadSyncCursor(db: Database): Promise<string | null> {
+async function loadSyncCursor(db: SyncDatabase): Promise<string | null> {
   const rows = await db
     .select({ value: userSettings.value })
     .from(userSettings)
@@ -443,12 +443,12 @@ async function loadSyncCursor(db: Database): Promise<string | null> {
     .limit(1);
 
   if (rows.length === 0 || !rows[0]) return null;
-  // @ts-expect-error -- DB value is unknown; cursor shape is set by saveSyncCursor
-  const value: { cursor?: string } = rows[0].value;
+  const cursorSchema = z.object({ cursor: z.string().optional() }).catch({ cursor: undefined });
+  const value = cursorSchema.parse(rows[0].value);
   return value.cursor ?? null;
 }
 
-async function saveSyncCursor(db: Database, cursor: string): Promise<void> {
+async function saveSyncCursor(db: SyncDatabase, cursor: string): Promise<void> {
   await db
     .insert(userSettings)
     .values({
@@ -524,7 +524,7 @@ export class GarminProvider implements Provider {
     return setup;
   }
 
-  private async resolveTokens(db: Database): Promise<TokenSet> {
+  private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
     const tokens = await loadTokens(db, this.id);
     if (!tokens) {
       throw new Error("No OAuth tokens found for Garmin. Authorize via the dashboard first.");
@@ -560,7 +560,7 @@ export class GarminProvider implements Provider {
     return refreshed;
   }
 
-  async sync(db: Database, since: Date): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -614,7 +614,7 @@ export class GarminProvider implements Provider {
   // ============================================================
 
   private async syncViaOfficialApi(
-    db: Database,
+    db: SyncDatabase,
     tokens: TokenSet,
     since: Date,
     until: Date,
@@ -704,7 +704,7 @@ export class GarminProvider implements Provider {
   // ============================================================
 
   private async syncViaConnectApi(
-    db: Database,
+    db: SyncDatabase,
     tokens: GarminTokens,
     since: Date,
     until: Date,
@@ -807,7 +807,10 @@ export class GarminProvider implements Provider {
   // Connect API sync methods
   // ============================================================
 
-  private async syncConnectActivities(db: Database, client: GarminConnectClient): Promise<number> {
+  private async syncConnectActivities(
+    db: SyncDatabase,
+    client: GarminConnectClient,
+  ): Promise<number> {
     // Fetch recent activities (paginated, most recent first)
     const activities = await client.getActivities(0, 50);
     let count = 0;
@@ -892,7 +895,7 @@ export class GarminProvider implements Provider {
   }
 
   private async syncConnectSleep(
-    db: Database,
+    db: SyncDatabase,
     client: GarminConnectClient,
     dates: string[],
   ): Promise<number> {
@@ -940,7 +943,7 @@ export class GarminProvider implements Provider {
   }
 
   private async syncConnectDailyMetrics(
-    db: Database,
+    db: SyncDatabase,
     client: GarminConnectClient,
     dates: string[],
   ): Promise<number> {
@@ -1017,7 +1020,7 @@ export class GarminProvider implements Provider {
   }
 
   private async syncConnectStress(
-    db: Database,
+    db: SyncDatabase,
     client: GarminConnectClient,
     dates: string[],
   ): Promise<number> {
@@ -1049,7 +1052,7 @@ export class GarminProvider implements Provider {
   }
 
   private async syncConnectHeartRate(
-    db: Database,
+    db: SyncDatabase,
     client: GarminConnectClient,
     dates: string[],
   ): Promise<number> {
@@ -1085,7 +1088,7 @@ export class GarminProvider implements Provider {
   // ============================================================
 
   private async syncOfficialActivities(
-    db: Database,
+    db: SyncDatabase,
     client: GarminClient,
     sinceEpochSeconds: number,
     untilEpochSeconds: number,
@@ -1125,7 +1128,7 @@ export class GarminProvider implements Provider {
   }
 
   private async syncOfficialSleep(
-    db: Database,
+    db: SyncDatabase,
     client: GarminClient,
     sinceEpochSeconds: number,
     untilEpochSeconds: number,
@@ -1171,7 +1174,7 @@ export class GarminProvider implements Provider {
   }
 
   private async syncOfficialDailyMetrics(
-    db: Database,
+    db: SyncDatabase,
     client: GarminClient,
     sinceEpochSeconds: number,
     untilEpochSeconds: number,
@@ -1221,7 +1224,7 @@ export class GarminProvider implements Provider {
   }
 
   private async syncOfficialBodyComposition(
-    db: Database,
+    db: SyncDatabase,
     client: GarminClient,
     sinceEpochSeconds: number,
     untilEpochSeconds: number,

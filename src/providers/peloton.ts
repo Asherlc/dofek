@@ -7,7 +7,7 @@ import {
   generateCodeVerifier,
   refreshAccessToken,
 } from "../auth/oauth.ts";
-import type { Database } from "../db/index.ts";
+import type { SyncDatabase } from "../db/index.ts";
 import { activity, metricStream } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
@@ -274,9 +274,7 @@ export function parseAuth0FormHtml(html: string): {
 
   const fields: Record<string, string> = {};
   const inputRegex = /<input[^>]+type="hidden"[^>]*>/gi;
-  let match: RegExpExecArray | null;
-  // biome-ignore lint/suspicious/noAssignInExpressions: standard regex exec loop
-  while ((match = inputRegex.exec(html)) !== null) {
+  for (const match of html.matchAll(inputRegex)) {
     const tag = match[0];
     const nameMatch = tag.match(/name="([^"]+)"/);
     const valueMatch = tag.match(/value="([^"]*)"/);
@@ -519,7 +517,7 @@ export class PelotonProvider implements Provider {
     };
   }
 
-  private async resolveTokens(db: Database): Promise<TokenSet> {
+  private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
     const tokens = await loadTokens(db, this.id);
     if (!tokens) {
       throw new Error("No OAuth tokens found for Peloton. Run: pnpm dev auth peloton");
@@ -537,7 +535,7 @@ export class PelotonProvider implements Provider {
     return refreshed;
   }
 
-  async sync(db: Database, since: Date): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;

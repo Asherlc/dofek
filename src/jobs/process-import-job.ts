@@ -1,9 +1,14 @@
-import type { Job } from "bullmq";
-import type { Database } from "../db/index.ts";
+import type { SyncDatabase } from "../db/index.ts";
 import { logSync } from "../db/sync-log.ts";
 import type { ImportJobData } from "./queues.ts";
 
-export async function processImportJob(job: Job<ImportJobData>, db: Database): Promise<void> {
+/** Minimal Job interface — only the subset processImportJob actually uses. */
+interface ImportJob {
+  data: ImportJobData;
+  updateProgress: (data: object) => Promise<void>;
+}
+
+export async function processImportJob(job: ImportJob, db: SyncDatabase): Promise<void> {
   const { filePath, since, userId, importType, weightUnit } = job.data;
   const sinceDate = new Date(since);
   const importStart = Date.now();
