@@ -212,7 +212,7 @@ export class DecathlonProvider implements Provider {
             throw new Error(`Decathlon API error (${response.status}): ${text}`);
           }
 
-          const data = (await response.json()) as DecathlonActivitiesResponse;
+          const data: DecathlonActivitiesResponse = await response.json();
           const activities = data.data ?? [];
           nextUrl = data.links?.next;
 

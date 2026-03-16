@@ -402,7 +402,7 @@ describe("Router transformation logic", () => {
           const activityRows = await testCtx.db.execute(
             sql`SELECT id FROM fitness.activity WHERE external_id = ${externalId} AND provider_id = 'test-provider'`,
           );
-          const activityId = (activityRows[0] as { id: string } | undefined)?.id;
+          const activityId = activityRows[0]?.id;
           if (activityId) {
             // Insert a few metric samples so activity_summary can compute stats
             for (let minute = 0; minute < 60; minute++) {
@@ -791,7 +791,7 @@ describe("Router transformation logic", () => {
         const activityRows = await testCtx.db.execute(
           sql`SELECT id FROM fitness.activity WHERE external_id = ${externalId} AND provider_id = 'test-provider'`,
         );
-        const activityId = (activityRows[0] as { id: string } | undefined)?.id;
+        const activityId = activityRows[0]?.id;
         if (activityId) {
           // Insert metric_stream with altitude data for elevation calculations
           for (let minute = 0; minute < 90; minute++) {
@@ -881,7 +881,7 @@ describe("Router transformation logic", () => {
         const activityRows = await testCtx.db.execute(
           sql`SELECT id FROM fitness.activity WHERE external_id = ${externalId} AND provider_id = 'test-provider'`,
         );
-        const activityId = (activityRows[0] as { id: string } | undefined)?.id;
+        const activityId = activityRows[0]?.id;
         if (activityId) {
           for (let minute = 0; minute < 75; minute++) {
             const sampleTime = new Date(startedAt.getTime() + minute * 60 * 1000);
@@ -948,7 +948,9 @@ describe("Router transformation logic", () => {
       const activityRows = await testCtx.db.execute(
         sql`SELECT id FROM fitness.activity WHERE external_id = 'interval-detect-1' AND provider_id = 'test-provider'`,
       );
-      intervalActivityId = (activityRows[0] as { id: string }).id;
+      // @ts-expect-error db.execute returns Record<string, unknown> but we know the shape
+      const firstRow: { id: string } = activityRows[0];
+      intervalActivityId = firstRow.id;
 
       // Insert metric_stream with alternating easy/hard segments
       // Easy: power ~150, Hard: power ~250 (>15% change)

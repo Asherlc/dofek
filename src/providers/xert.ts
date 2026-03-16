@@ -202,7 +202,7 @@ export class XertProvider implements Provider {
             throw new Error(`Xert API error (${response.status}): ${text}`);
           }
 
-          const data = (await response.json()) as XertActivity[];
+          const data: XertActivity[] = await response.json();
           hasMore = data.length >= pageSize;
 
           for (const rawActivity of data) {

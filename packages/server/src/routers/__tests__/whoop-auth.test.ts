@@ -66,11 +66,11 @@ describe("whoopAuth router", () => {
       headers: { "Content-Type": "application/json", Cookie: sessionCookie },
       body: JSON.stringify({ "0": input }),
     });
-    const data = (await res.json()) as Record<string, unknown>[];
-    const first = data[0] as {
+    const data = await res.json();
+    const first: {
       result?: { data?: unknown };
       error?: { message: string; json?: { message: string } };
-    };
+    } = data[0];
     return { status: res.status, result: first };
   }
 
@@ -112,11 +112,12 @@ describe("whoopAuth router", () => {
         password: "password123",
       });
 
-      const data = result?.result?.data as {
+      // @ts-expect-error result data is unknown but we know the shape from the API
+      const data: {
         status: string;
         challengeId: string;
         method: string;
-      };
+      } = result?.result?.data;
       expect(data.status).toBe("verification_required");
       expect(data.challengeId).toMatch(/^whoop-/);
       expect(data.method).toBe("SMS_MFA");
@@ -136,9 +137,10 @@ describe("whoopAuth router", () => {
         username: "user@test.com",
         password: "password123",
       });
-      const signInData = signInResult.result?.result?.data as {
+      // @ts-expect-error result data is unknown but we know the shape from the API
+      const signInData: {
         challengeId: string;
-      };
+      } = signInResult.result?.result?.data;
 
       // Now verify the code
       mockVerifyCode.mockResolvedValueOnce({
@@ -152,10 +154,11 @@ describe("whoopAuth router", () => {
         code: "123456",
       });
 
-      const data = result?.result?.data as {
+      // @ts-expect-error result data is unknown but we know the shape from the API
+      const data: {
         status: string;
         token: { accessToken: string; refreshToken: string; userId: number };
-      };
+      } = result?.result?.data;
       expect(data.status).toBe("success");
       expect(data.token.accessToken).toBe("verified-access-token");
       expect(data.token.userId).toBe(99999);
@@ -181,7 +184,8 @@ describe("whoopAuth router", () => {
       });
 
       expect(status).toBe(200);
-      const data = result?.result?.data as { success: boolean };
+      // @ts-expect-error result data is unknown but we know the shape from the API
+      const data: { success: boolean } = result?.result?.data;
       expect(data.success).toBe(true);
 
       // Verify provider was created

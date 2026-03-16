@@ -298,7 +298,7 @@ describe("parseHeartRateValues — edge cases", () => {
 
 describe("WhoopClient.authenticate — MFA required path", () => {
   it("throws when MFA is required", async () => {
-    const mockFetch = ((input: RequestInfo | URL) => {
+    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL) => {
       const url = input.toString();
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(
@@ -309,7 +309,7 @@ describe("WhoopClient.authenticate — MFA required path", () => {
         );
       }
       return Promise.resolve(new Response("Not found", { status: 404 }));
-    }) as typeof globalThis.fetch;
+    };
 
     await expect(WhoopClient.authenticate("user@test.com", "pass", mockFetch)).rejects.toThrow(
       /MFA/,
@@ -317,7 +317,7 @@ describe("WhoopClient.authenticate — MFA required path", () => {
   });
 
   it("returns token when no MFA required", async () => {
-    const mockFetch = ((input: RequestInfo | URL) => {
+    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL) => {
       const url = input.toString();
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(
@@ -330,7 +330,7 @@ describe("WhoopClient.authenticate — MFA required path", () => {
         return Promise.resolve(Response.json({ id: 42 }));
       }
       return Promise.resolve(new Response("Not found", { status: 404 }));
-    }) as typeof globalThis.fetch;
+    };
 
     const token = await WhoopClient.authenticate("user@test.com", "pass", mockFetch);
     expect(token.accessToken).toBe("my-tok");
@@ -339,7 +339,7 @@ describe("WhoopClient.authenticate — MFA required path", () => {
   });
 
   it("throws when signIn gets token but no userId from bootstrap", async () => {
-    const mockFetch = ((input: RequestInfo | URL) => {
+    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL) => {
       const url = input.toString();
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(
@@ -352,7 +352,7 @@ describe("WhoopClient.authenticate — MFA required path", () => {
         return Promise.resolve(Response.json({ profile: {} }));
       }
       return Promise.resolve(new Response("Not found", { status: 404 }));
-    }) as typeof globalThis.fetch;
+    };
 
     await expect(WhoopClient.authenticate("user@test.com", "pass", mockFetch)).rejects.toThrow(
       /user ID/i,
@@ -362,52 +362,52 @@ describe("WhoopClient.authenticate — MFA required path", () => {
 
 describe("WhoopClient._fetchUserId — various response shapes", () => {
   it("extracts user_id from top level", async () => {
-    const mockFetch = ((input: RequestInfo | URL) => {
+    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL) => {
       const url = input.toString();
       if (url.includes("users-service/v2/bootstrap")) {
         return Promise.resolve(Response.json({ user_id: 123 }));
       }
       return Promise.resolve(new Response("Not found", { status: 404 }));
-    }) as typeof globalThis.fetch;
+    };
 
     const userId = await WhoopClient._fetchUserId("token", mockFetch);
     expect(userId).toBe(123);
   });
 
   it("extracts id from nested user object", async () => {
-    const mockFetch = ((input: RequestInfo | URL) => {
+    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL) => {
       const url = input.toString();
       if (url.includes("users-service/v2/bootstrap")) {
         return Promise.resolve(Response.json({ user: { id: 456 } }));
       }
       return Promise.resolve(new Response("Not found", { status: 404 }));
-    }) as typeof globalThis.fetch;
+    };
 
     const userId = await WhoopClient._fetchUserId("token", mockFetch);
     expect(userId).toBe(456);
   });
 
   it("extracts user_id from nested user object", async () => {
-    const mockFetch = ((input: RequestInfo | URL) => {
+    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL) => {
       const url = input.toString();
       if (url.includes("users-service/v2/bootstrap")) {
         return Promise.resolve(Response.json({ user: { user_id: 789 } }));
       }
       return Promise.resolve(new Response("Not found", { status: 404 }));
-    }) as typeof globalThis.fetch;
+    };
 
     const userId = await WhoopClient._fetchUserId("token", mockFetch);
     expect(userId).toBe(789);
   });
 
   it("returns null when no user ID can be extracted", async () => {
-    const mockFetch = ((input: RequestInfo | URL) => {
+    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL) => {
       const url = input.toString();
       if (url.includes("users-service/v2/bootstrap")) {
         return Promise.resolve(Response.json({ something: "else" }));
       }
       return Promise.resolve(new Response("Not found", { status: 404 }));
-    }) as typeof globalThis.fetch;
+    };
 
     const userId = await WhoopClient._fetchUserId("token", mockFetch);
     expect(userId).toBeNull();
@@ -416,7 +416,7 @@ describe("WhoopClient._fetchUserId — various response shapes", () => {
 
 describe("WhoopClient.refreshAccessToken — success path", () => {
   it("returns new access token and reuses old refresh token", async () => {
-    const mockFetch = ((input: RequestInfo | URL) => {
+    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL) => {
       const url = input.toString();
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(
@@ -429,7 +429,7 @@ describe("WhoopClient.refreshAccessToken — success path", () => {
         return Promise.resolve(Response.json({ id: 99 }));
       }
       return Promise.resolve(new Response("Not found", { status: 404 }));
-    }) as typeof globalThis.fetch;
+    };
 
     const result = await WhoopClient.refreshAccessToken("old-refresh", mockFetch);
     expect(result.accessToken).toBe("new-access");
@@ -439,7 +439,7 @@ describe("WhoopClient.refreshAccessToken — success path", () => {
   });
 
   it("returns new refresh token when Cognito provides one", async () => {
-    const mockFetch = ((input: RequestInfo | URL) => {
+    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL) => {
       const url = input.toString();
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(
@@ -452,7 +452,7 @@ describe("WhoopClient.refreshAccessToken — success path", () => {
         return Promise.resolve(Response.json({ id: 88 }));
       }
       return Promise.resolve(new Response("Not found", { status: 404 }));
-    }) as typeof globalThis.fetch;
+    };
 
     const result = await WhoopClient.refreshAccessToken("old-refresh", mockFetch);
     expect(result.refreshToken).toBe("new-refresh");
@@ -468,13 +468,15 @@ describe("parseWorkout — legacy format without during", () => {
   // where fields now typed as required were absent in older API versions.
 
   it("falls back to start/end fields when during is absent", () => {
-    const record = {
+    // Legacy API response missing `during` — testing defensive fallback
+    const record: WhoopWorkoutRecord = {
       activity_id: "uuid-legacy-1",
+      during: "", // empty — triggers fallback
       timezone_offset: "-05:00",
       sport_id: 0,
       start: "2026-03-01T10:00:00Z",
       end: "2026-03-01T11:00:00Z",
-    } as WhoopWorkoutRecord;
+    };
 
     const parsed = parseWorkout(record);
     expect(parsed.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
@@ -483,13 +485,15 @@ describe("parseWorkout — legacy format without during", () => {
   });
 
   it("falls back to created_at/updated_at when start/end are also missing", () => {
-    const record = {
+    // Legacy API response missing both `during` and `start`/`end` — testing deepest fallback
+    const record: WhoopWorkoutRecord = {
       activity_id: "uuid-legacy-2",
+      during: "", // empty — triggers fallback
       timezone_offset: "-05:00",
       sport_id: 1,
       created_at: "2026-03-01T09:00:00Z",
       updated_at: "2026-03-01T10:30:00Z",
-    } as WhoopWorkoutRecord;
+    };
 
     const parsed = parseWorkout(record);
     expect(parsed.startedAt).toEqual(new Date("2026-03-01T09:00:00Z"));
@@ -498,12 +502,14 @@ describe("parseWorkout — legacy format without during", () => {
   });
 
   it("uses record.id as externalId when activity_id is missing", () => {
-    const record = {
+    // Legacy API response with numeric id instead of activity_id UUID
+    const record: WhoopWorkoutRecord = {
+      activity_id: "", // empty — triggers id fallback
       id: 12345,
       during: "['2026-03-01T10:00:00Z','2026-03-01T11:00:00Z')",
       timezone_offset: "-05:00",
       sport_id: 0,
-    } as WhoopWorkoutRecord;
+    };
 
     const parsed = parseWorkout(record);
     expect(parsed.externalId).toBe("12345");

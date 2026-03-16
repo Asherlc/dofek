@@ -1,13 +1,13 @@
 import type {
   ConnectActivityDetail,
   ConnectActivitySummary,
+  ConnectDailySummary,
   ConnectSleepData,
   DailyHeartRate,
   DailyStress,
   HrvSummary,
   TrainingReadiness,
   TrainingStatus,
-  ConnectDailySummary,
 } from "./types.ts";
 
 // ============================================================
@@ -163,9 +163,7 @@ function ensureUtcSuffix(dateString: string): string {
 // Parsing functions
 // ============================================================
 
-export function parseConnectActivity(
-  raw: ConnectActivitySummary,
-): ParsedConnectActivity {
+export function parseConnectActivity(raw: ConnectActivitySummary): ParsedConnectActivity {
   // Garmin labels times as "GMT" but doesn't include a Z suffix,
   // so new Date() would parse them as local time. Append Z to force UTC.
   const startedAt = new Date(ensureUtcSuffix(raw.startTimeGMT));
@@ -183,9 +181,7 @@ export function parseConnectActivity(
   };
 }
 
-export function parseConnectSleep(
-  data: ConnectSleepData,
-): ParsedConnectSleep | null {
+export function parseConnectSleep(data: ConnectSleepData): ParsedConnectSleep | null {
   const dto = data.dailySleepDTO;
   if (!dto.sleepStartTimestampGMT || !dto.sleepEndTimestampGMT) {
     return null;
@@ -207,9 +203,7 @@ export function parseConnectSleep(
   };
 }
 
-export function parseConnectDailySummary(
-  summary: ConnectDailySummary,
-): ParsedDailyMetrics {
+export function parseConnectDailySummary(summary: ConnectDailySummary): ParsedDailyMetrics {
   const moderateMin = summary.moderateIntensityMinutes;
   const vigorousMin = summary.vigorousIntensityMinutes;
   let exerciseMinutes: number | undefined;
@@ -231,10 +225,7 @@ export function parseConnectDailySummary(
   };
 }
 
-export function parseTrainingStatus(
-  status: TrainingStatus,
-  date: string,
-): ParsedTrainingStatus {
+export function parseTrainingStatus(status: TrainingStatus, date: string): ParsedTrainingStatus {
   return {
     date,
     acuteTrainingLoad: status.acuteTrainingLoad,
@@ -248,9 +239,7 @@ export function parseTrainingStatus(
   };
 }
 
-export function parseTrainingReadiness(
-  readiness: TrainingReadiness,
-): ParsedTrainingReadiness {
+export function parseTrainingReadiness(readiness: TrainingReadiness): ParsedTrainingReadiness {
   return {
     date: readiness.calendarDate,
     score: readiness.score,
@@ -276,9 +265,7 @@ export function parseHrvSummary(hrv: HrvSummary): ParsedHrvSummary {
   };
 }
 
-export function parseStressTimeSeries(
-  stress: DailyStress,
-): ParsedStressTimeSeries {
+export function parseStressTimeSeries(stress: DailyStress): ParsedStressTimeSeries {
   const samples: Array<{ timestamp: Date; stressLevel: number }> = [];
 
   if (stress.stressValuesArray) {
@@ -301,9 +288,7 @@ export function parseStressTimeSeries(
   };
 }
 
-export function parseHeartRateTimeSeries(
-  hr: DailyHeartRate,
-): ParsedHeartRateTimeSeries {
+export function parseHeartRateTimeSeries(hr: DailyHeartRate): ParsedHeartRateTimeSeries {
   const samples: Array<{ timestamp: Date; heartRate: number }> = [];
 
   if (hr.heartRateValues) {
@@ -326,9 +311,7 @@ export function parseHeartRateTimeSeries(
   };
 }
 
-export function parseActivityDetail(
-  detail: ConnectActivityDetail,
-): ParsedActivityStream {
+export function parseActivityDetail(detail: ConnectActivityDetail): ParsedActivityStream {
   const metricKeys = detail.metricDescriptors.map((d) => d.key);
 
   const samples: Array<Record<string, number | null>> = [];

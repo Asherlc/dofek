@@ -49,13 +49,14 @@ export function VerticalAscentChart({ data, loading }: VerticalAscentChartProps)
       borderColor: "#3f3f46",
       textStyle: { color: "#e4e4e7", fontSize: 12 },
       formatter: (params: Record<string, unknown>) => {
-        const itemData = params.data as
+        // @ts-expect-error ECharts params.data is typed as unknown
+        const itemData:
           | {
               value: [string, number];
               name: string;
               elevationGain: number;
             }
-          | undefined;
+          | undefined = params.data;
         if (!itemData?.name) return "";
         const [date, vam] = itemData.value;
         return [
@@ -91,7 +92,8 @@ export function VerticalAscentChart({ data, loading }: VerticalAscentChartProps)
           symbolSize: d.symbolSize,
         })),
         symbolSize: (_val: unknown, params: Record<string, unknown>) => {
-          const itemData = params.data as { symbolSize: number } | undefined;
+          // @ts-expect-error ECharts params.data is typed as unknown
+          const itemData: { symbolSize: number } | undefined = params.data;
           return itemData?.symbolSize ?? minSize;
         },
         itemStyle: {

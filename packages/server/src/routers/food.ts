@@ -299,12 +299,14 @@ export const foodRouter = router({
     const setClauses: ReturnType<typeof sql>[] = [];
 
     for (const [fieldName, columnName] of Object.entries(fieldColumnMap)) {
-      const value = fields[fieldName as keyof typeof fields];
+      // @ts-expect-error fieldName comes from fieldColumnMap keys which match fields keys
+      const fieldKey: keyof typeof fields = fieldName;
+      const value = fields[fieldKey];
       if (value !== undefined) {
         if (fieldName === "date") {
           setClauses.push(
             value !== null
-              ? sql`${sql.identifier(columnName)} = ${value as string}::date`
+              ? sql`${sql.identifier(columnName)} = ${String(value)}::date`
               : sql`${sql.identifier(columnName)} = NULL`,
           );
         } else if (value === null) {

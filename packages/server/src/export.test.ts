@@ -110,7 +110,7 @@ describe("Data Export", () => {
       headers: { Cookie: sessionCookie },
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { status: string; jobId: string };
+    const body: { status: string; jobId: string } = await res.json();
     expect(body.status).toBe("processing");
     expect(body.jobId).toBeTruthy();
   });
@@ -133,7 +133,7 @@ describe("Data Export", () => {
       method: "POST",
       headers: { Cookie: sessionCookie },
     });
-    const { jobId } = (await triggerRes.json()) as { jobId: string };
+    const { jobId }: { jobId: string } = await triggerRes.json();
 
     // Poll until done (max 30 seconds)
     let status: { status: string; downloadUrl?: string } = { status: "processing" };
@@ -143,7 +143,7 @@ describe("Data Export", () => {
       const statusRes = await fetch(`${baseUrl}/api/export/status/${jobId}`, {
         headers: { Cookie: sessionCookie },
       });
-      status = (await statusRes.json()) as { status: string; downloadUrl?: string };
+      status = await statusRes.json();
     }
 
     expect(status.status).toBe("done");
@@ -187,23 +187,23 @@ describe("Data Export", () => {
 
     // Verify activities contain data
     const activitiesJson = await readZipFile(zip, "activities.json");
-    const activities = JSON.parse(activitiesJson) as Array<Record<string, unknown>>;
+    const activities: Array<Record<string, unknown>> = JSON.parse(activitiesJson);
     expect(activities).toHaveLength(1);
     expect(activities[0]).toMatchObject({ name: "Morning Ride", raw: { source: "test" } });
 
     // Verify metric streams contain data
     const metricStreamsJson = await readZipFile(zip, "metric-streams.json");
-    const metricStreams = JSON.parse(metricStreamsJson) as Array<Record<string, unknown>>;
+    const metricStreams: Array<Record<string, unknown>> = JSON.parse(metricStreamsJson);
     expect(metricStreams).toHaveLength(1);
     expect(metricStreams[0]).toMatchObject({ heart_rate: 145 });
 
     // Verify metadata
     const metadataJson = await readZipFile(zip, "export-metadata.json");
-    const metadata = JSON.parse(metadataJson) as {
+    const metadata: {
       exportedAt: string;
       userId: string;
       totalRecords: number;
-    };
+    } = JSON.parse(metadataJson);
     expect(metadata.userId).toBe(DEFAULT_USER_ID);
     expect(metadata.totalRecords).toBeGreaterThan(0);
     expect(metadata.exportedAt).toBeTruthy();
@@ -215,7 +215,7 @@ describe("Data Export", () => {
       method: "POST",
       headers: { Cookie: sessionCookie },
     });
-    const { jobId } = (await triggerRes.json()) as { jobId: string };
+    const { jobId }: { jobId: string } = await triggerRes.json();
 
     // Try to download without auth
     const downloadRes = await fetch(`${baseUrl}/api/export/download/${jobId}`);
@@ -241,7 +241,7 @@ describe("Data Export", () => {
       method: "POST",
       headers: { Cookie: sessionCookie },
     });
-    const { jobId } = (await triggerRes.json()) as { jobId: string };
+    const { jobId }: { jobId: string } = await triggerRes.json();
 
     // Poll until done
     let status: { status: string; downloadUrl?: string } = { status: "processing" };
@@ -251,7 +251,7 @@ describe("Data Export", () => {
       const statusRes = await fetch(`${baseUrl}/api/export/status/${jobId}`, {
         headers: { Cookie: sessionCookie },
       });
-      status = (await statusRes.json()) as { status: string; downloadUrl?: string };
+      status = await statusRes.json();
     }
 
     expect(status.status).toBe("done");
@@ -262,7 +262,7 @@ describe("Data Export", () => {
     });
     const zip = await JSZip.loadAsync(await downloadRes.arrayBuffer());
     const activitiesJson = await readZipFile(zip, "activities.json");
-    const activities = JSON.parse(activitiesJson) as Array<Record<string, unknown>>;
+    const activities: Array<Record<string, unknown>> = JSON.parse(activitiesJson);
 
     // Should only contain the default user's activity, not "Secret Run"
     expect(activities.every((a) => a.user_id === DEFAULT_USER_ID)).toBe(true);

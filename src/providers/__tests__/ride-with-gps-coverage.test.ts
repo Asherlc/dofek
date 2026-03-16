@@ -10,7 +10,7 @@ import { RideWithGpsProvider, type RideWithGpsSyncResponse } from "../ride-with-
 // ============================================================
 
 function createSyncFailureFetch(): typeof globalThis.fetch {
-  return (async (input: RequestInfo | URL): Promise<Response> => {
+  return async (input: RequestInfo | URL): Promise<Response> => {
     const urlStr = input.toString();
 
     if (urlStr.includes("/api/v1/sync.json")) {
@@ -18,11 +18,11 @@ function createSyncFailureFetch(): typeof globalThis.fetch {
     }
 
     return new Response("Not found", { status: 404 });
-  }) as typeof globalThis.fetch;
+  };
 }
 
 function createDeleteFetch(syncResponse: RideWithGpsSyncResponse): typeof globalThis.fetch {
-  return (async (input: RequestInfo | URL): Promise<Response> => {
+  return async (input: RequestInfo | URL): Promise<Response> => {
     const urlStr = input.toString();
 
     if (urlStr.includes("/api/v1/sync.json")) {
@@ -30,7 +30,7 @@ function createDeleteFetch(syncResponse: RideWithGpsSyncResponse): typeof global
     }
 
     return new Response("Not found", { status: 404 });
-  }) as typeof globalThis.fetch;
+  };
 }
 
 describe("RideWithGpsProvider.sync() — error paths (integration)", () => {
@@ -132,9 +132,9 @@ describe("RideWithGpsProvider.getUserIdentity()", () => {
     process.env.RWGPS_CLIENT_ID = "test-id";
     process.env.RWGPS_CLIENT_SECRET = "test-secret";
 
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return Response.json({ user: { id: 555, email: "rider@rwgps.com", name: "Road Rider" } });
-    }) as typeof globalThis.fetch;
+    };
 
     const provider = new RideWithGpsProvider(mockFetch);
     const setup = provider.authSetup();
@@ -149,9 +149,9 @@ describe("RideWithGpsProvider.getUserIdentity()", () => {
     process.env.RWGPS_CLIENT_ID = "test-id";
     process.env.RWGPS_CLIENT_SECRET = "test-secret";
 
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Not Found", { status: 404 });
-    }) as typeof globalThis.fetch;
+    };
 
     const provider = new RideWithGpsProvider(mockFetch);
     const setup = provider.authSetup();

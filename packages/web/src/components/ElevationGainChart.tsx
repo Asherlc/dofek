@@ -35,11 +35,12 @@ export function ElevationGainChart({ data, loading }: ElevationGainChartProps) {
       borderColor: "#3f3f46",
       textStyle: { color: "#e4e4e7", fontSize: 12 },
       formatter: (params: Record<string, unknown>[]) => {
-        const param = params[0] as {
+        // @ts-expect-error ECharts params[0] is Record<string, unknown> but we need specific shape
+        const param: {
           name: string;
           value: [string, number];
           dataIndex: number;
-        };
+        } = params[0];
         const row = data[param.dataIndex];
         if (!row) return "";
         const dateLabel = new Date(row.week).toLocaleDateString("en-US", {

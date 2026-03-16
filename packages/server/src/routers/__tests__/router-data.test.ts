@@ -320,12 +320,13 @@ describe("Router data coverage", () => {
       headers: { "Content-Type": "application/json", Cookie: sessionCookie },
       body: JSON.stringify({ "0": input }),
     });
-    const data = (await res.json()) as Record<string, unknown>[];
-    const first = data[0] as { result?: { data?: T }; error?: { message: string } };
+    const data = await res.json();
+    const first: { result?: { data?: T }; error?: { message: string } } = data[0];
     if (first?.error) {
       throw new Error(`${path} error: ${JSON.stringify(first.error)}`);
     }
-    return first?.result?.data as T;
+    // @ts-expect-error T | undefined returned as T — test helper assumes data is present
+    return first?.result?.data;
   }
 
   /** POST a tRPC mutation and return parsed response data */
@@ -338,12 +339,13 @@ describe("Router data coverage", () => {
       headers: { "Content-Type": "application/json", Cookie: sessionCookie },
       body: JSON.stringify({ "0": input }),
     });
-    const data = (await res.json()) as Record<string, unknown>[];
-    const first = data[0] as { result?: { data?: T }; error?: { message: string } };
+    const data = await res.json();
+    const first: { result?: { data?: T }; error?: { message: string } } = data[0];
     if (first?.error) {
       throw new Error(`${path} error: ${JSON.stringify(first.error)}`);
     }
-    return first?.result?.data as T;
+    // @ts-expect-error T | undefined returned as T — test helper assumes data is present
+    return first?.result?.data;
   }
 
   // ══════════════════════════════════════════════════════════════

@@ -29,7 +29,7 @@ export function AdaptiveTdeeChart({ data, loading }: AdaptiveTdeeChartProps) {
 
   const weightValues = data.dailyData
     .filter((d) => d.smoothedWeight != null)
-    .map((d) => d.smoothedWeight as number);
+    .map((d) => Number(d.smoothedWeight));
   const weightMin = Math.min(...weightValues);
   const weightMax = Math.max(...weightValues);
   const weightPadding = Math.max((weightMax - weightMin) * 0.3, 1);

@@ -150,7 +150,7 @@ function fakeStressData(date: string) {
       [1772078400000, 42],
       [1772082000000, -1], // rest state, should be filtered
       [1772085600000, 55],
-    ] as Array<[number, number]>,
+    ] satisfies Array<[number, number]>,
   };
 }
 
@@ -171,7 +171,7 @@ function fakeHeartRateData(date: string) {
       [1772078400000, 62],
       [1772082000000, null], // null value, should be filtered
       [1772085600000, 145],
-    ] as Array<[number, number | null]>,
+    ] satisfies Array<[number, number | null]>,
   };
 }
 
@@ -216,7 +216,7 @@ interface ConnectMockOptions {
 function createConnectMockFetch(opts: ConnectMockOptions = {}): typeof globalThis.fetch {
   const activities = opts.activities ?? [];
 
-  return (async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
+  return async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
     const urlStr = input.toString();
 
     // OAuth consumer credentials
@@ -366,7 +366,7 @@ function createConnectMockFetch(opts: ConnectMockOptions = {}): typeof globalThi
     }
 
     return new Response("Not found", { status: 404 });
-  }) as typeof globalThis.fetch;
+  };
 }
 
 // ============================================================
@@ -672,7 +672,8 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
       .from(userSettings)
       .where(eq(userSettings.key, "garmin_sync_cursor"));
     expect(cursorRows).toHaveLength(1);
-    const cursor = cursorRows[0]?.value as { cursor?: string };
+    // @ts-expect-error -- test assertion on raw DB value
+    const cursor: { cursor?: string } = cursorRows[0]?.value;
     expect(cursor.cursor).toBeDefined();
     // Cursor should be a recent ISO timestamp
     const cursorDate = new Date(cursor.cursor ?? "");

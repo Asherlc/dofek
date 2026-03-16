@@ -39,7 +39,7 @@ export class EightSleepClient {
       throw new Error(`Eight Sleep API error (${response.status}): ${text}`);
     }
 
-    return response.json() as Promise<T>;
+    return response.json();
   }
 
   async getTrends(
@@ -83,7 +83,7 @@ export class EightSleepClient {
       throw new Error(`Eight Sleep sign-in failed (${response.status}): ${text}`);
     }
 
-    const data = (await response.json()) as EightSleepAuthResponse;
+    const data: EightSleepAuthResponse = await response.json();
     return {
       accessToken: data.access_token,
       expiresIn: data.expires_in,

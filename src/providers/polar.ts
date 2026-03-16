@@ -282,7 +282,7 @@ class PolarClient {
       throw new Error(`Polar API error (${response.status}): ${text}`);
     }
 
-    return response.json() as Promise<T>;
+    return response.json();
   }
 
   async getExercises(): Promise<PolarExercise[]> {

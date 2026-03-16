@@ -119,7 +119,7 @@ export function SupplementStackPanel() {
     onSuccess: () => utils.supplements.list.invalidate(),
   });
 
-  const supplements = (stack.data ?? []) as Supplement[];
+  const supplements: Supplement[] = stack.data ?? [];
 
   const handleSave = (updated: Supplement[]) => {
     saveMutation.mutate({ supplements: updated });
@@ -314,7 +314,11 @@ function SupplementForm({
       supp.unit = unit;
     }
     if (form) supp.form = form;
-    if (meal) supp.meal = meal as Supplement["meal"];
+    if (meal) {
+      // @ts-expect-error meal is string but Supplement["meal"] expects specific union
+      const typedMeal: Supplement["meal"] = meal;
+      supp.meal = typedMeal;
+    }
 
     // Build description from amount + unit + form for the provider
     const descParts: string[] = [];

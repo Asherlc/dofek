@@ -25,7 +25,9 @@ type GenerateTextReturn = Awaited<ReturnType<typeof generateText>>;
 
 /** Build a mock generateText result with only the `output` field populated */
 function mockGenerateTextResult(output: unknown): GenerateTextReturn {
-  return { output } as GenerateTextReturn;
+  // @ts-expect-error partial mock — only populating the output field needed by tests
+  const result: GenerateTextReturn = { output };
+  return result;
 }
 
 const sampleResult: AiNutritionResult = {

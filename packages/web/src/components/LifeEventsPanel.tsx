@@ -5,7 +5,8 @@ import { convertWeight, weightLabel } from "../lib/units.ts";
 
 /** Narrow loosely-typed tRPC raw-SQL results to a known shape without double-casting. */
 function typedData<T>(data: unknown): T {
-  return data as T;
+  // @ts-expect-error -- centralized type narrowing for tRPC raw-SQL results
+  return data;
 }
 
 interface LifeEvent {
@@ -116,8 +117,9 @@ export function LifeEventsPanel() {
       {/* Analysis */}
       {selectedEvent && (
         <EventAnalysis
-          event={(eventList.find((e) => e.id === selectedEvent) ?? eventList[0]) as LifeEvent}
-          analysis={analysis.data as EventAnalysisData | null}
+          // @ts-expect-error eventList[0] fallback may be undefined but we're inside selectedEvent guard
+          event={eventList.find((e) => e.id === selectedEvent) ?? eventList[0]}
+          analysis={typedData<EventAnalysisData | null>(analysis.data)}
           loading={analysis.isLoading}
           windowDays={windowDays}
           onWindowChange={setWindowDays}
@@ -405,12 +407,12 @@ function EventAnalysis({
           unit={weightLabel(unitSystem)}
           before={
             before.body?.avg_weight != null
-              ? convertWeight(before.body.avg_weight as number, unitSystem)
+              ? convertWeight(Number(before.body.avg_weight), unitSystem)
               : undefined
           }
           after={
             after.body?.avg_weight != null
-              ? convertWeight(after.body.avg_weight as number, unitSystem)
+              ? convertWeight(Number(after.body.avg_weight), unitSystem)
               : undefined
           }
           periodLabel={periodLabel}

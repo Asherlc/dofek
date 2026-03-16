@@ -82,9 +82,7 @@ export function parseUltrahumanMetrics(
         daily.skinTempC = typeof obj.value === "number" ? obj.value : undefined;
         break;
       case "sleep": {
-        const quickMetrics = obj.quick_metrics as
-          | Array<{ type: string; value: number }>
-          | undefined;
+        const quickMetrics = Array.isArray(obj.quick_metrics) ? obj.quick_metrics : undefined;
         if (quickMetrics) {
           for (const qm of quickMetrics) {
             if (qm.type === "total_sleep") {
@@ -132,7 +130,7 @@ export class UltrahumanClient {
       throw new Error(`Ultrahuman API error (${response.status}): ${text}`);
     }
 
-    return response.json() as Promise<UltrahumanDailyMetricsResponse>;
+    return response.json();
   }
 }
 

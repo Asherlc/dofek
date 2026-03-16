@@ -122,11 +122,11 @@ export function Dashboard() {
   const anomalyCheck = trpc.anomalyDetection.check.useQuery({});
   const smoothedWeight = trpc.bodyAnalytics.smoothedWeight.useQuery({ days: Math.max(days, 90) });
   const bodyRecomp = trpc.bodyAnalytics.recomposition.useQuery({ days: Math.max(days, 180) });
-  // tRPC raw SQL result — typed assertion pending server-side typing
-  const trendData = (trends.data ?? undefined) as TrendRow | undefined;
+  // @ts-expect-error tRPC raw SQL result — typed assertion pending server-side typing
+  const trendData: TrendRow | undefined = trends.data ?? undefined;
 
   const topInsights = useMemo(() => {
-    const all = (insightsQuery.data ?? []) as Insight[];
+    const all: Insight[] = insightsQuery.data ?? [];
     return all
       .filter((i) => i.confidence !== "insufficient")
       .sort((a, b) => Math.abs(b.effectSize) - Math.abs(a.effectSize))
@@ -136,7 +136,7 @@ export function Dashboard() {
   const healthMetrics = useMemo(
     () =>
       trendData
-        ? ([
+        ? [
             {
               label: "Resting HR",
               value: trendData.latest_resting_hr,
@@ -183,7 +183,7 @@ export function Dashboard() {
               stddev: trendData.stddev_skin_temp,
               unit: temperatureLabel(unitSystem),
             },
-          ].filter(Boolean) as MetricEntry[])
+          ].filter((entry): entry is MetricEntry => Boolean(entry))
         : [],
     [trendData, unitSystem],
   );
@@ -196,7 +196,7 @@ export function Dashboard() {
   const spo2Series = useMemo(
     () => ({
       name: "SpO2",
-      data: metrics.map((d) => [d.date, d.spo2_avg] as [string, number | null]),
+      data: metrics.map((d): [string, number | null] => [d.date, d.spo2_avg]),
       color: "#3b82f6",
       areaStyle: true,
     }),
@@ -206,13 +206,10 @@ export function Dashboard() {
   const skinTempSeries = useMemo(
     () => ({
       name: "Skin Temp",
-      data: metrics.map(
-        (d) =>
-          [
-            d.date,
-            d.skin_temp_c != null ? convertTemperature(d.skin_temp_c, unitSystem) : null,
-          ] as [string, number | null],
-      ),
+      data: metrics.map((d): [string, number | null] => [
+        d.date,
+        d.skin_temp_c != null ? convertTemperature(d.skin_temp_c, unitSystem) : null,
+      ]),
       color: "#f59e0b",
     }),
     [metrics, unitSystem],
@@ -221,7 +218,7 @@ export function Dashboard() {
   const stepsSeries = useMemo(
     () => ({
       name: "Steps",
-      data: metrics.map((d) => [d.date, d.steps] as [string, number | null]),
+      data: metrics.map((d): [string, number | null] => [d.date, d.steps]),
       color: "#8b5cf6",
       areaStyle: true,
     }),
@@ -284,19 +281,7 @@ export function Dashboard() {
       subtitle: "60-day baseline band with 7-day rolling average",
       content: (
         <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
-          <HrvBaselineChart
-            data={
-              (hrvBaseline.data ?? []) as {
-                date: string;
-                hrv: number | null;
-                resting_hr: number | null;
-                mean_60d: number | null;
-                sd_60d: number | null;
-                mean_7d: number | null;
-              }[]
-            }
-            loading={hrvBaseline.isLoading}
-          />
+          <HrvBaselineChart data={hrvBaseline.data ?? []} loading={hrvBaseline.isLoading} />
         </div>
       ),
     },

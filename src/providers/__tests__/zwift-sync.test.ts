@@ -68,7 +68,7 @@ function fakeZwiftFitnessData(sampleCount = 3) {
     distanceInCm: Array.from({ length: sampleCount }, (_, i) => (i + 1) * 100000),
     speedInCmPerSec: Array.from({ length: sampleCount }, () => 972),
     altitudeInCm: Array.from({ length: sampleCount }, (_, i) => 5000 + i * 100),
-    latlng: Array.from({ length: sampleCount }, () => [51.5, -0.1] as [number, number]),
+    latlng: Array.from({ length: sampleCount }, () => [51.5, -0.1] satisfies [number, number]),
     timeInSec: Array.from({ length: sampleCount }, (_, i) => i * 60),
   };
 }
@@ -111,7 +111,7 @@ function createMockFetch(opts: ZwiftMockFetchOptions = {}): typeof globalThis.fe
   const activities = opts.activities ?? [];
   let pageRequestCount = 0;
 
-  return (async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
+  return async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
     const urlStr = input.toString();
 
     // Token refresh (Zwift auth endpoint)
@@ -178,7 +178,7 @@ function createMockFetch(opts: ZwiftMockFetchOptions = {}): typeof globalThis.fe
     }
 
     return new Response("Not found", { status: 404 });
-  }) as typeof globalThis.fetch;
+  };
 }
 
 // ============================================================

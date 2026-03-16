@@ -53,11 +53,11 @@ const sampleTrendDay = {
           ["2026-02-28T23:10:00.000Z", 55],
           ["2026-02-28T23:15:00.000Z", 52],
           ["2026-03-01T02:00:00.000Z", 48],
-        ] as Array<[string, number]>,
+        ] satisfies Array<[string, number]>,
         tempBedC: [
           ["2026-02-28T23:05:00.000Z", 27.5],
           ["2026-03-01T02:00:00.000Z", 28.0],
-        ] as Array<[string, number]>,
+        ] satisfies Array<[string, number]>,
       },
     },
   ],
@@ -175,7 +175,7 @@ describe("Eight Sleep Provider", () => {
               ["2026-03-01T00:00:00Z", 55],
               ["2026-03-01T00:05:00Z", 0],
               ["2026-03-01T00:10:00Z", 52],
-            ] as Array<[string, number]>,
+            ] satisfies Array<[string, number]>,
           },
         },
       ];
@@ -202,13 +202,13 @@ describe("Eight Sleep Provider", () => {
         {
           stages: [],
           timeseries: {
-            heartRate: [["2026-03-01T00:00:00Z", 55]] as Array<[string, number]>,
+            heartRate: [["2026-03-01T00:00:00Z", 55]] satisfies Array<[string, number]>,
           },
         },
         {
           stages: [],
           timeseries: {
-            heartRate: [["2026-03-01T01:00:00Z", 50]] as Array<[string, number]>,
+            heartRate: [["2026-03-01T01:00:00Z", 50]] satisfies Array<[string, number]>,
           },
         },
       ];

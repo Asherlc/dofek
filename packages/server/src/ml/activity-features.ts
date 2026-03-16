@@ -32,6 +32,14 @@ export interface StrengthWorkoutRow {
 
 export type ActivityRow = CardioActivityRow | StrengthWorkoutRow;
 
+function isCardio(a: ActivityRow): a is CardioActivityRow {
+  return "durationMin" in a;
+}
+
+function isStrength(a: ActivityRow): a is StrengthWorkoutRow {
+  return "totalVolume" in a;
+}
+
 /** Daily context data used to build trailing features for each activity */
 export interface DailyContext {
   date: string;
@@ -129,27 +137,27 @@ function getCardioFeatures(): ActivityFeatureDef[] {
   return [
     {
       name: "duration_min",
-      extract: (a) => (a as CardioActivityRow).durationMin,
+      extract: (a) => (isCardio(a) ? a.durationMin : null),
     },
     {
       name: "avg_hr",
-      extract: (a) => (a as CardioActivityRow).avgHr,
+      extract: (a) => (isCardio(a) ? a.avgHr : null),
     },
     {
       name: "avg_speed",
-      extract: (a) => (a as CardioActivityRow).avgSpeed,
+      extract: (a) => (isCardio(a) ? a.avgSpeed : null),
     },
     {
       name: "total_distance",
-      extract: (a) => (a as CardioActivityRow).totalDistance,
+      extract: (a) => (isCardio(a) ? a.totalDistance : null),
     },
     {
       name: "elevation_gain",
-      extract: (a) => (a as CardioActivityRow).elevationGain,
+      extract: (a) => (isCardio(a) ? a.elevationGain : null),
     },
     {
       name: "avg_cadence",
-      extract: (a) => (a as CardioActivityRow).avgCadence,
+      extract: (a) => (isCardio(a) ? a.avgCadence : null),
     },
   ];
 }
@@ -159,15 +167,15 @@ function getStrengthFeatures(): ActivityFeatureDef[] {
   return [
     {
       name: "working_set_count",
-      extract: (a) => (a as StrengthWorkoutRow).workingSetCount,
+      extract: (a) => (isStrength(a) ? a.workingSetCount : null),
     },
     {
       name: "max_weight",
-      extract: (a) => (a as StrengthWorkoutRow).maxWeight,
+      extract: (a) => (isStrength(a) ? a.maxWeight : null),
     },
     {
       name: "avg_rpe",
-      extract: (a) => (a as StrengthWorkoutRow).avgRpe,
+      extract: (a) => (isStrength(a) ? a.avgRpe : null),
     },
   ];
 }
@@ -190,7 +198,7 @@ export const ACTIVITY_PREDICTION_TARGETS: ActivityPredictionTarget[] = [
     label: "Cardio Power Output",
     unit: "W",
     activityType: "cardio",
-    extractTarget: (a) => (a as CardioActivityRow).avgPower,
+    extractTarget: (a) => (isCardio(a) ? a.avgPower : null),
     excludeFeatures: ["avg_power"],
   },
   {
@@ -198,7 +206,7 @@ export const ACTIVITY_PREDICTION_TARGETS: ActivityPredictionTarget[] = [
     label: "Strength Training Volume",
     unit: "kg",
     activityType: "strength",
-    extractTarget: (a) => (a as StrengthWorkoutRow).totalVolume,
+    extractTarget: (a) => (isStrength(a) ? a.totalVolume : null),
     excludeFeatures: ["total_volume"],
   },
 ];

@@ -54,7 +54,7 @@ function createMockFetch(
   workouts: FakeVeloHeroWorkout[],
   opts?: { signInError?: boolean },
 ): typeof globalThis.fetch {
-  return (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const urlStr = input.toString();
 
     // Sign-in (SSO)
@@ -76,7 +76,7 @@ function createMockFetch(
     }
 
     return new Response("Not found", { status: 404 });
-  }) as typeof globalThis.fetch;
+  };
 }
 
 describe("VeloHeroProvider.sync() (integration)", () => {
@@ -262,7 +262,8 @@ describe("VeloHeroProvider.sync() (integration)", () => {
     const rows = await ctx.db.select().from(activity).where(eq(activity.externalId, "5001"));
     expect(rows).toHaveLength(1);
 
-    const raw = rows[0]?.raw as Record<string, unknown>;
+    // @ts-expect-error -- test assertion on raw JSONB
+    const raw: Record<string, unknown> = rows[0]?.raw;
     expect(raw.avgPower).toBe(215);
     expect(raw.maxPower).toBe(480);
     expect(raw.avgHeartRate).toBe(148);

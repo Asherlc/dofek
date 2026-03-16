@@ -1,13 +1,13 @@
-export { EightSleepClient, EIGHT_SLEEP_CLIENT_ID, EIGHT_SLEEP_CLIENT_SECRET } from "./client.ts";
-export {
-  parseEightSleepTrendDay,
-  parseEightSleepDailyMetrics,
-  parseEightSleepHeartRateSamples,
-} from "./parsing.ts";
+export { EIGHT_SLEEP_CLIENT_ID, EIGHT_SLEEP_CLIENT_SECRET, EightSleepClient } from "./client.ts";
 export type {
-  ParsedEightSleepSession,
   ParsedEightSleepDailyMetrics,
   ParsedEightSleepHrSample,
+  ParsedEightSleepSession,
+} from "./parsing.ts";
+export {
+  parseEightSleepDailyMetrics,
+  parseEightSleepHeartRateSamples,
+  parseEightSleepTrendDay,
 } from "./parsing.ts";
 export type {
   EightSleepAuthResponse,

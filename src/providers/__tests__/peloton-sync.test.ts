@@ -83,7 +83,7 @@ function createMockFetch(
   workouts: PelotonWorkout[],
   graph: PelotonPerformanceGraph = fakePerformanceGraph(),
 ): typeof globalThis.fetch {
-  return (async (input: RequestInfo | URL): Promise<Response> => {
+  return async (input: RequestInfo | URL): Promise<Response> => {
     const urlStr = input.toString();
 
     // Token refresh
@@ -122,7 +122,7 @@ function createMockFetch(
     }
 
     return new Response("Not found", { status: 404 });
-  }) as typeof globalThis.fetch;
+  };
 }
 
 // ============================================================
@@ -185,7 +185,8 @@ describe("PelotonProvider.sync() (integration)", () => {
     expect(ride.name).toBe("30 min Power Zone Ride");
 
     // Check raw JSONB metadata
-    const raw = ride.raw as Record<string, unknown>;
+    // @ts-expect-error -- test assertion on raw JSONB
+    const raw: Record<string, unknown> = ride.raw;
     expect(raw.instructor).toBe("Matt Wilpers");
     expect(raw.classTitle).toBe("30 min Power Zone Ride");
     expect(raw.difficultyRating).toBeCloseTo(7.85);
@@ -315,7 +316,7 @@ describe("PelotonProvider.sync() (integration)", () => {
     });
 
     let pageRequested = 0;
-    const paginatedFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const paginatedFetch = async (input: RequestInfo | URL): Promise<Response> => {
       const urlStr = input.toString();
 
       if (urlStr.includes("/api/me")) {
@@ -362,7 +363,7 @@ describe("PelotonProvider.sync() (integration)", () => {
       }
 
       return new Response("Not found", { status: 404 });
-    }) as typeof globalThis.fetch;
+    };
 
     const provider = new PelotonProvider(paginatedFetch);
     const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"));
@@ -387,7 +388,7 @@ describe("PelotonProvider.sync() (integration)", () => {
       fakeWorkout({ id: "workout-graph-fail", start_time: 1709539200, end_time: 1709541000 }),
     ];
 
-    const failGraphFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const failGraphFetch = async (input: RequestInfo | URL): Promise<Response> => {
       const urlStr = input.toString();
       if (urlStr.includes("/api/me")) {
         return Response.json({ id: "user-123" });
@@ -409,7 +410,7 @@ describe("PelotonProvider.sync() (integration)", () => {
         });
       }
       return new Response("Not found", { status: 404 });
-    }) as typeof globalThis.fetch;
+    };
 
     const provider = new PelotonProvider(failGraphFetch);
     const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"));

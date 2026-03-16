@@ -23,7 +23,7 @@ interface PolarizationWeekData {
 }
 
 export function buildPolarizationTrendOption(validWeeks: PolarizationWeekData[]) {
-  const piValues = validWeeks.map((w) => w.polarizationIndex as number);
+  const piValues = validWeeks.map((w) => Number(w.polarizationIndex));
   const piMin = Math.min(...piValues);
   const piMax = Math.max(...piValues);
   const yMin = Math.floor(Math.min(piMin, 0) * 10) / 10;

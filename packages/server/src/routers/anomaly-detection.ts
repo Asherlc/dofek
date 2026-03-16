@@ -270,7 +270,7 @@ export async function sendAnomalyAlertToSlack(
       return false;
     }
 
-    const result = (await response.json()) as { ok: boolean; error?: string };
+    const result: { ok: boolean; error?: string } = await response.json();
     if (!result.ok) {
       logger.error(`[anomaly] Slack API error: ${result.error}`);
       return false;

@@ -53,7 +53,7 @@ function createMockFetch(
 ): typeof globalThis.fetch {
   const totalPages = opts?.totalPages ?? 1;
 
-  return (async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
+  return async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
     const urlStr = input.toString();
 
     // Token refresh
@@ -94,7 +94,7 @@ function createMockFetch(
     }
 
     return new Response("Not found", { status: 404 });
-  }) as typeof globalThis.fetch;
+  };
 }
 
 describe("Concept2Provider.sync() (integration)", () => {

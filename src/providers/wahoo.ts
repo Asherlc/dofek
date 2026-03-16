@@ -203,7 +203,7 @@ export class WahooClient {
       throw new Error(`Wahoo API error (${response.status}): ${text}`);
     }
 
-    return response.json() as Promise<T>;
+    return response.json();
   }
 
   async getWorkouts(page = 1, perPage = 30): Promise<WahooWorkoutListResponse> {
@@ -275,12 +275,12 @@ export class WahooProvider implements Provider {
           const text = await response.text();
           throw new Error(`Wahoo user API error (${response.status}): ${text}`);
         }
-        const user = (await response.json()) as {
+        const user: {
           id: number;
           email?: string | null;
           first_name?: string | null;
           last_name?: string | null;
-        };
+        } = await response.json();
         const nameParts = [user.first_name, user.last_name].filter(Boolean);
         return {
           providerAccountId: String(user.id),
