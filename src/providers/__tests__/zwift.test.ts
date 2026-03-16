@@ -6,39 +6,41 @@ import { ZwiftProvider } from "../zwift.ts";
 // implementations while mocking ZwiftClient class for sync tests
 // ============================================================
 
-const realModule = await vi.importActual<typeof import("zwift-client")>("zwift-client");
+const { MockZwiftClient } = vi.hoisted(() => {
+  class MockZwiftClient {
+    static signInResult = {
+      accessToken: "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiI5OTk5OSJ9.fake",
+      refreshToken: "refresh-token",
+      expiresIn: 3600,
+    };
+    static refreshResult = {
+      accessToken: "refreshed-token",
+      refreshToken: "new-refresh",
+      expiresIn: 3600,
+    };
+    static activities: Array<Record<string, unknown>> = [];
+    static activityDetail: Record<string, unknown> = {};
+    static fitnessData: Record<string, unknown> = {};
+    static powerCurve: Record<string, unknown> = {};
 
-class MockZwiftClient {
-  static signInResult = {
-    accessToken: "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiI5OTk5OSJ9.fake",
-    refreshToken: "refresh-token",
-    expiresIn: 3600,
-  };
-  static refreshResult = {
-    accessToken: "refreshed-token",
-    refreshToken: "new-refresh",
-    expiresIn: 3600,
-  };
-  static activities: Array<Record<string, unknown>> = [];
-  static activityDetail: Record<string, unknown> = {};
-  static fitnessData: Record<string, unknown> = {};
-  static powerCurve: Record<string, unknown> = {};
+    static signIn = vi.fn().mockImplementation(async () => MockZwiftClient.signInResult);
+    static refreshToken = vi.fn().mockImplementation(async () => MockZwiftClient.refreshResult);
 
-  static signIn = vi.fn().mockImplementation(async () => MockZwiftClient.signInResult);
-  static refreshToken = vi.fn().mockImplementation(async () => MockZwiftClient.refreshResult);
+    getActivities = vi.fn().mockImplementation(async () => MockZwiftClient.activities);
+    getActivityDetail = vi.fn().mockImplementation(async () => MockZwiftClient.activityDetail);
+    getFitnessData = vi.fn().mockImplementation(async () => MockZwiftClient.fitnessData);
+    getPowerCurve = vi.fn().mockImplementation(async () => MockZwiftClient.powerCurve);
+  }
+  return { MockZwiftClient };
+});
 
-  getActivities = vi.fn().mockImplementation(async () => MockZwiftClient.activities);
-  getActivityDetail = vi.fn().mockImplementation(async () => MockZwiftClient.activityDetail);
-  getFitnessData = vi.fn().mockImplementation(async () => MockZwiftClient.fitnessData);
-  getPowerCurve = vi.fn().mockImplementation(async () => MockZwiftClient.powerCurve);
-}
+vi.mock("zwift-client", async (importOriginal) => {
+  const real = await importOriginal<typeof import("zwift-client")>();
+  return { ...real, ZwiftClient: MockZwiftClient };
+});
 
-vi.mock("zwift-client", () => ({
-  ...realModule,
-  ZwiftClient: MockZwiftClient,
-}));
-
-const { mapZwiftSport, parseZwiftActivity, parseZwiftFitnessData } = realModule;
+const { mapZwiftSport, parseZwiftActivity, parseZwiftFitnessData } =
+  await vi.importActual<typeof import("zwift-client")>("zwift-client");
 
 // ============================================================
 // Sample API responses
