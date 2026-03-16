@@ -1,5 +1,7 @@
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { http, HttpResponse } from "msw";
+import { setupServer } from "msw/node";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
 import { bodyMeasurement } from "../../db/schema.ts";
 import { ensureProvider, saveTokens } from "../../db/tokens.ts";
@@ -47,22 +49,19 @@ function fakeBpGroup(overrides?: Partial<WithingsMeasureGroup>): WithingsMeasure
   };
 }
 
-function createMockFetch(opts?: {
+function withingsHandlers(opts?: {
   measureGroups?: WithingsMeasureGroup[];
   hasMore?: boolean;
-}): typeof globalThis.fetch {
+}) {
   const measureGroups = opts?.measureGroups ?? [];
   const hasMore = opts?.hasMore ?? false;
 
-  return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const urlStr = input.toString();
-
-    // Token refresh (Withings uses v2/oauth2)
-    if (urlStr.includes("/v2/oauth2")) {
-      // Check if it's a token refresh vs a measure request
-      const body = init?.body?.toString() ?? "";
+  return [
+    // Token refresh (Withings uses v2/oauth2 with action=requesttoken in body)
+    http.post("https://wbsapi.withings.net/v2/oauth2", async ({ request }) => {
+      const body = await request.text();
       if (body.includes("action=requesttoken")) {
-        return Response.json({
+        return HttpResponse.json({
           status: 0,
           body: {
             access_token: "refreshed-withings-token",
@@ -72,11 +71,12 @@ function createMockFetch(opts?: {
           },
         });
       }
-    }
+      return new HttpResponse("Not found", { status: 404 });
+    }),
 
     // Measure endpoint (POST to /measure with action=getmeas)
-    if (urlStr.includes("/measure")) {
-      return Response.json({
+    http.post("https://wbsapi.withings.net/measure", () => {
+      return HttpResponse.json({
         status: 0,
         body: {
           measuregrps: measureGroups,
@@ -84,23 +84,29 @@ function createMockFetch(opts?: {
           offset: 0,
         },
       });
-    }
-
-    return new Response("Not found", { status: 404 });
-  };
+    }),
+  ];
 }
+
+const server = setupServer();
 
 describe("WithingsProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
+    server.listen({ onUnhandledRequest: "error" });
     process.env.WITHINGS_CLIENT_ID = "test-withings-client";
     process.env.WITHINGS_CLIENT_SECRET = "test-withings-secret";
     ctx = await setupTestDatabase();
     await ensureProvider(ctx.db, "withings", "Withings", "https://wbsapi.withings.net");
   }, 60_000);
 
+  afterEach(() => {
+    server.resetHandlers();
+  });
+
   afterAll(async () => {
+    server.close();
     if (ctx) await ctx.cleanup();
   });
 
@@ -112,11 +118,13 @@ describe("WithingsProvider.sync() (integration)", () => {
       scopes: "user.metrics",
     });
 
-    const provider = new WithingsProvider(
-      createMockFetch({
+    server.use(
+      ...withingsHandlers({
         measureGroups: [fakeWeightGroup(), fakeBpGroup()],
       }),
     );
+
+    const provider = new WithingsProvider();
 
     const since = new Date("2026-02-01T00:00:00Z");
     const result = await provider.sync(ctx.db, since);
@@ -157,8 +165,8 @@ describe("WithingsProvider.sync() (integration)", () => {
     // Clear previous data
     await ctx.db.delete(bodyMeasurement).where(eq(bodyMeasurement.providerId, "withings"));
 
-    const provider = new WithingsProvider(
-      createMockFetch({
+    server.use(
+      ...withingsHandlers({
         measureGroups: [
           fakeWeightGroup({ grpid: 8010 }),
           // User objective — should be skipped (category 2 produces empty parsed result)
@@ -171,6 +179,8 @@ describe("WithingsProvider.sync() (integration)", () => {
         ],
       }),
     );
+
+    const provider = new WithingsProvider();
 
     const since = new Date("2026-02-01T00:00:00Z");
     const result = await provider.sync(ctx.db, since);
@@ -197,11 +207,13 @@ describe("WithingsProvider.sync() (integration)", () => {
     // Clear previous data
     await ctx.db.delete(bodyMeasurement).where(eq(bodyMeasurement.providerId, "withings"));
 
-    const provider = new WithingsProvider(
-      createMockFetch({
+    server.use(
+      ...withingsHandlers({
         measureGroups: [fakeWeightGroup({ grpid: 8020 })],
       }),
     );
+
+    const provider = new WithingsProvider();
 
     const since = new Date("2026-02-01T00:00:00Z");
     await provider.sync(ctx.db, since);
@@ -223,7 +235,9 @@ describe("WithingsProvider.sync() (integration)", () => {
       scopes: "user.metrics",
     });
 
-    const provider = new WithingsProvider(createMockFetch());
+    server.use(...withingsHandlers());
+
+    const provider = new WithingsProvider();
     await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     const { loadTokens } = await import("../../db/tokens.ts");
@@ -235,7 +249,7 @@ describe("WithingsProvider.sync() (integration)", () => {
     const { oauthToken } = await import("../../db/schema.ts");
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "withings"));
 
-    const provider = new WithingsProvider(createMockFetch());
+    const provider = new WithingsProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);

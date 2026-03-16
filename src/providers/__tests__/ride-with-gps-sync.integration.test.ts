@@ -1,5 +1,7 @@
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { http, HttpResponse } from "msw";
+import { setupServer } from "msw/node";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
 import { activity, metricStream, oauthToken } from "../../db/schema.ts";
 import { ensureProvider, saveTokens } from "../../db/tokens.ts";
@@ -67,41 +69,38 @@ function fakeTripDetail(
   };
 }
 
-function createMockFetch(
+function rwgpsHandlers(
   syncResponse: RideWithGpsSyncResponse,
   trips: Map<number, RideWithGpsTripDetail>,
-): typeof globalThis.fetch {
-  return async (input: RequestInfo | URL): Promise<Response> => {
-    const urlStr = input.toString();
-
-    // Sync endpoint
-    if (urlStr.includes("/api/v1/sync.json")) {
-      return Response.json(syncResponse);
-    }
-
-    // Trip detail endpoint
-    const tripMatch = urlStr.match(/\/api\/v1\/trips\/(\d+)\.json/);
-    if (tripMatch) {
-      const tripId = Number(tripMatch[1]);
-      const trip = trips.get(tripId);
-      if (trip) {
-        return Response.json({ trip });
-      }
-      return new Response("Not found", { status: 404 });
-    }
-
+) {
+  return [
     // Token refresh
-    if (urlStr.includes("/oauth/token")) {
-      return Response.json({
+    http.post("https://ridewithgps.com/oauth/token", () => {
+      return HttpResponse.json({
         access_token: "refreshed-token",
         refresh_token: "new-refresh",
         expires_in: 7200,
       });
-    }
+    }),
 
-    return new Response("Not found", { status: 404 });
-  };
+    // Sync endpoint
+    http.get("https://ridewithgps.com/api/v1/sync.json", () => {
+      return HttpResponse.json(syncResponse);
+    }),
+
+    // Trip detail endpoint
+    http.get("https://ridewithgps.com/api/v1/trips/:tripId.json", ({ params }) => {
+      const tripId = Number(params.tripId);
+      const trip = trips.get(tripId);
+      if (trip) {
+        return HttpResponse.json({ trip });
+      }
+      return new HttpResponse("Not found", { status: 404 });
+    }),
+  ];
 }
+
+const server = setupServer();
 
 // ============================================================
 // Tests
@@ -111,13 +110,19 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
+    server.listen({ onUnhandledRequest: "error" });
     process.env.RWGPS_CLIENT_ID = "test-client-id";
     process.env.RWGPS_CLIENT_SECRET = "test-client-secret";
     ctx = await setupTestDatabase();
     await ensureProvider(ctx.db, "ride-with-gps", "RideWithGPS", "https://ridewithgps.com");
   }, 60_000);
 
+  afterEach(() => {
+    server.resetHandlers();
+  });
+
   afterAll(async () => {
+    server.close();
     if (ctx) await ctx.cleanup();
   });
 
@@ -141,7 +146,9 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
       }),
     );
 
-    const provider = new RideWithGpsProvider(createMockFetch(syncResp, trips));
+    server.use(...rwgpsHandlers(syncResp, trips));
+
+    const provider = new RideWithGpsProvider();
     const since = new Date("2026-02-01T00:00:00Z");
     const result = await provider.sync(ctx.db, since);
 
@@ -192,7 +199,9 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     const trips = new Map<number, RideWithGpsTripDetail>();
     trips.set(5001, fakeTripDetail(5001));
 
-    const provider = new RideWithGpsProvider(createMockFetch(syncResp, trips));
+    server.use(...rwgpsHandlers(syncResp, trips));
+
+    const provider = new RideWithGpsProvider();
     await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
     await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
@@ -218,12 +227,17 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     const trips = new Map<number, RideWithGpsTripDetail>();
     trips.set(6001, fakeTripDetail(6001));
 
-    const provider1 = new RideWithGpsProvider(createMockFetch(syncResp1, trips));
+    server.use(...rwgpsHandlers(syncResp1, trips));
+
+    const provider1 = new RideWithGpsProvider();
     await provider1.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     // Now sync with deleted action
+    server.resetHandlers();
     const deleteSyncResp = fakeSyncResponse([{ item_id: 6001, action: "deleted" }]);
-    const provider2 = new RideWithGpsProvider(createMockFetch(deleteSyncResp, new Map()));
+    server.use(...rwgpsHandlers(deleteSyncResp, new Map()));
+
+    const provider2 = new RideWithGpsProvider();
     await provider2.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     const rows = await ctx.db.select().from(activity).where(eq(activity.externalId, "6001"));
@@ -251,7 +265,9 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
       meta: { rwgps_datetime: "2026-03-01T12:00:00Z" },
     };
 
-    const provider = new RideWithGpsProvider(createMockFetch(syncResp, new Map()));
+    server.use(...rwgpsHandlers(syncResp, new Map()));
+
+    const provider = new RideWithGpsProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     // No trips synced since the only item was a route
@@ -262,7 +278,7 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
   it("returns error when no tokens exist", async () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "ride-with-gps"));
 
-    const provider = new RideWithGpsProvider(createMockFetch(fakeSyncResponse([]), new Map()));
+    const provider = new RideWithGpsProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);
@@ -280,7 +296,9 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
 
     // Sync response references trip 7001 but trips map doesn't have it (404)
     const syncResp = fakeSyncResponse([{ item_id: 7001 }]);
-    const provider = new RideWithGpsProvider(createMockFetch(syncResp, new Map()));
+    server.use(...rwgpsHandlers(syncResp, new Map()));
+
+    const provider = new RideWithGpsProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);
@@ -308,7 +326,9 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     const trips = new Map<number, RideWithGpsTripDetail>();
     trips.set(8001, noTimestampTrip);
 
-    const provider = new RideWithGpsProvider(createMockFetch(syncResp, trips));
+    server.use(...rwgpsHandlers(syncResp, trips));
+
+    const provider = new RideWithGpsProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.recordsSynced).toBe(1);
