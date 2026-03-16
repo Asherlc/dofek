@@ -1,5 +1,7 @@
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { http, HttpResponse } from "msw";
+import { setupServer } from "msw/node";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
 import { activity, metricStream } from "../../db/schema.ts";
 import { ensureProvider, saveTokens } from "../../db/tokens.ts";
@@ -10,6 +12,8 @@ import {
   parseAuth0FormHtml,
   pelotonAutomatedLogin,
 } from "../peloton.ts";
+
+const server = setupServer();
 
 // ============================================================
 // Helpers
@@ -83,11 +87,17 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
+    server.listen({ onUnhandledRequest: "error" });
     ctx = await setupTestDatabase();
     await ensureProvider(ctx.db, "peloton", "Peloton", "https://api.onepeloton.com");
   }, 60_000);
 
+  afterEach(() => {
+    server.resetHandlers();
+  });
+
   afterAll(async () => {
+    server.close();
     if (ctx) await ctx.cleanup();
   });
 
@@ -101,19 +111,20 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
 
     let pagesRequested = 0;
 
-    const paginatedFetch = async (input: RequestInfo | URL): Promise<Response> => {
-      const urlStr = input.toString();
-
-      if (urlStr.includes("/api/me")) return Response.json({ id: "user-123" });
-      if (urlStr.includes("/performance_graph")) return Response.json(fakePerformanceGraph());
-
-      if (urlStr.includes("/workouts")) {
-        const url = new URL(urlStr);
+    server.use(
+      http.get("https://api.onepeloton.com/api/me", () => {
+        return HttpResponse.json({ id: "user-123" });
+      }),
+      http.get("https://api.onepeloton.com/api/workout/:workoutId/performance_graph", () => {
+        return HttpResponse.json(fakePerformanceGraph());
+      }),
+      http.get("https://api.onepeloton.com/api/user/:userId/workouts", ({ request }) => {
+        const url = new URL(request.url);
         const page = Number(url.searchParams.get("page") ?? "0");
         pagesRequested = Math.max(pagesRequested, page);
 
         if (page === 0) {
-          return Response.json({
+          return HttpResponse.json({
             data: [
               fakeWorkout({
                 id: "ext-recent",
@@ -132,7 +143,7 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
           });
         }
         // Page 1 has a workout before `since`
-        return Response.json({
+        return HttpResponse.json({
           data: [
             fakeWorkout({
               id: "ext-old",
@@ -149,12 +160,10 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
           show_next: true, // API says there's more, but we should stop
           show_previous: true,
         });
-      }
+      }),
+    );
 
-      return new Response("Not found", { status: 404 });
-    };
-
-    const provider = new PelotonProvider(paginatedFetch);
+    const provider = new PelotonProvider();
     const result = await provider.sync(ctx.db, new Date("2024-03-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(0);
@@ -180,18 +189,16 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
 
     let callCount = 0;
     // Simulate a DB error on the first insert by providing invalid data via graph
-    const mockFetch: typeof globalThis.fetch = async (
-      input: RequestInfo | URL,
-    ): Promise<Response> => {
-      const urlStr = input.toString();
-      if (urlStr.includes("/api/me")) return Response.json({ id: "user-123" });
-      if (urlStr.includes("/performance_graph")) {
+    server.use(
+      http.get("https://api.onepeloton.com/api/me", () => {
+        return HttpResponse.json({ id: "user-123" });
+      }),
+      http.get("https://api.onepeloton.com/api/workout/:workoutId/performance_graph", () => {
         callCount++;
-        // Graph is still fetched even if there was an activity insert issue
-        return Response.json(fakePerformanceGraph());
-      }
-      if (urlStr.includes("/workouts")) {
-        return Response.json({
+        return HttpResponse.json(fakePerformanceGraph());
+      }),
+      http.get("https://api.onepeloton.com/api/user/:userId/workouts", () => {
+        return HttpResponse.json({
           data: [
             fakeWorkout({
               id: "ext-normal-workout",
@@ -208,11 +215,10 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
           show_next: false,
           show_previous: false,
         });
-      }
-      return new Response("Not found", { status: 404 });
-    };
+      }),
+    );
 
-    const provider = new PelotonProvider(mockFetch);
+    const provider = new PelotonProvider();
     const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"));
 
     // Performance graph was called
@@ -237,14 +243,11 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
       metrics: [], // No metrics at all (e.g., meditation)
     };
 
-    const mockFetch: typeof globalThis.fetch = async (
-      input: RequestInfo | URL,
-    ): Promise<Response> => {
-      const urlStr = input.toString();
-      if (urlStr.includes("/api/me")) return Response.json({ id: "user-123" });
-      if (urlStr.includes("/performance_graph")) return Response.json(emptyGraph);
-      if (urlStr.includes("/workouts")) {
-        return Response.json({
+    server.use(
+      http.get("https://api.onepeloton.com/api/me", () => HttpResponse.json({ id: "user-123" })),
+      http.get("https://api.onepeloton.com/api/workout/:workoutId/performance_graph", () => HttpResponse.json(emptyGraph)),
+      http.get("https://api.onepeloton.com/api/user/:userId/workouts", () => {
+        return HttpResponse.json({
           data: [
             fakeWorkout({
               id: "ext-meditation",
@@ -263,11 +266,10 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
           show_next: false,
           show_previous: false,
         });
-      }
-      return new Response("Not found", { status: 404 });
-    };
+      }),
+    );
 
-    const provider = new PelotonProvider(mockFetch);
+    const provider = new PelotonProvider();
     const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(0);
