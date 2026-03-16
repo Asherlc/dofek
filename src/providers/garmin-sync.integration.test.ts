@@ -135,10 +135,10 @@ describe("GarminProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
-    server.listen({ onUnhandledRequest: "error" });
     process.env.GARMIN_CLIENT_ID = "test-garmin-client";
     process.env.GARMIN_CLIENT_SECRET = "test-garmin-secret";
     ctx = await setupTestDatabase();
+    server.listen({ onUnhandledRequest: "error" });
     await ensureProvider(
       ctx.db,
       "garmin",

@@ -185,8 +185,8 @@ describe("ZwiftProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
-    server.listen({ onUnhandledRequest: "error" });
     ctx = await setupTestDatabase();
+    server.listen({ onUnhandledRequest: "error" });
     await ensureProvider(ctx.db, "zwift", "Zwift", "https://us-or-rly101.zwift.com");
   }, 60_000);
 

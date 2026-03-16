@@ -113,8 +113,8 @@ describe("TrainerRoadProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
-    server.listen({ onUnhandledRequest: "error" });
     ctx = await setupTestDatabase();
+    server.listen({ onUnhandledRequest: "error" });
     await ensureProvider(ctx.db, "trainerroad", "TrainerRoad", "https://www.trainerroad.com");
   }, 60_000);
 

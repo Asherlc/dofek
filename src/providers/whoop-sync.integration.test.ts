@@ -175,8 +175,8 @@ describe("WhoopProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
-    server.listen({ onUnhandledRequest: "error" });
     ctx = await setupTestDatabase();
+    server.listen({ onUnhandledRequest: "error" });
     await ensureProvider(ctx.db, "whoop", "WHOOP");
     // Store a fake refresh token so the provider can authenticate
     await saveTokens(ctx.db, "whoop", {

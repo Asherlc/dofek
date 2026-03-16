@@ -161,10 +161,10 @@ describe("FitbitProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
-    server.listen({ onUnhandledRequest: "error" });
     process.env.FITBIT_CLIENT_ID = "test-fitbit-client";
     process.env.FITBIT_CLIENT_SECRET = "test-fitbit-secret";
     ctx = await setupTestDatabase();
+    server.listen({ onUnhandledRequest: "error" });
     await ensureProvider(ctx.db, "fitbit", "Fitbit", "https://api.fitbit.com");
   }, 60_000);
 
@@ -640,7 +640,6 @@ describe("parseFitbitActivity — edge cases", () => {
 
 describe("FitbitClient — error handling", () => {
   beforeAll(() => {
-    server.listen({ onUnhandledRequest: "error" });
   });
 
   afterEach(() => {
@@ -764,10 +763,11 @@ describe("FitbitProvider.sync() — weight error paths (integration)", () => {
   const weightServer = setupServer();
 
   beforeAll(async () => {
-    weightServer.listen({ onUnhandledRequest: "error" });
     process.env.FITBIT_CLIENT_ID = "test-fitbit-client";
     process.env.FITBIT_CLIENT_SECRET = "test-fitbit-secret";
     ctx = await setupTestDatabase();
+    weightServer.listen({ onUnhandledRequest: "error" });
+    server.listen({ onUnhandledRequest: "error" });
     await ensureProvider(ctx.db, "fitbit", "Fitbit", "https://api.fitbit.com");
   }, 60_000);
 

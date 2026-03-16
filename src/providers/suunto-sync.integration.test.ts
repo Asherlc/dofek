@@ -72,11 +72,11 @@ describe("SuuntoProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
-    server.listen({ onUnhandledRequest: "error" });
     process.env.SUUNTO_CLIENT_ID = "test-client-id";
     process.env.SUUNTO_CLIENT_SECRET = "test-client-secret";
     process.env.SUUNTO_SUBSCRIPTION_KEY = "test-subscription-key";
     ctx = await setupTestDatabase();
+    server.listen({ onUnhandledRequest: "error" });
     await ensureProvider(ctx.db, "suunto", "Suunto", "https://cloudapi.suunto.com");
   }, 60_000);
 

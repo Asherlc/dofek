@@ -100,10 +100,10 @@ describe("MapMyFitnessProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
-    server.listen({ onUnhandledRequest: "error" });
     process.env.MAPMYFITNESS_CLIENT_ID = "test-client-id";
     process.env.MAPMYFITNESS_CLIENT_SECRET = "test-client-secret";
     ctx = await setupTestDatabase();
+    server.listen({ onUnhandledRequest: "error" });
     await ensureProvider(ctx.db, "mapmyfitness", "MapMyFitness", "https://api.mapmyfitness.com");
   }, 60_000);
 

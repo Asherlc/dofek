@@ -100,10 +100,10 @@ describe("Concept2Provider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
-    server.listen({ onUnhandledRequest: "error" });
     process.env.CONCEPT2_CLIENT_ID = "test-client-id";
     process.env.CONCEPT2_CLIENT_SECRET = "test-client-secret";
     ctx = await setupTestDatabase();
+    server.listen({ onUnhandledRequest: "error" });
     await ensureProvider(ctx.db, "concept2", "Concept2", "https://log.concept2.com");
   }, 60_000);
 

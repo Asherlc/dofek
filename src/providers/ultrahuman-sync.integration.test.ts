@@ -113,10 +113,10 @@ describe("UltrahumanProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
-    server.listen({ onUnhandledRequest: "error" });
     process.env.ULTRAHUMAN_API_TOKEN = "test-ultrahuman-token";
     process.env.ULTRAHUMAN_EMAIL = "test@example.com";
     ctx = await setupTestDatabase();
+    server.listen({ onUnhandledRequest: "error" });
     await ensureProvider(
       ctx.db,
       "ultrahuman",

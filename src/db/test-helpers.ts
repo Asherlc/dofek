@@ -65,7 +65,7 @@ export async function setupTestDatabase(): Promise<TestContext> {
 
   // Run all migrations in order
   const migrationClient = postgres(connectionString, { max: 1 });
-  const drizzleDir = resolve(import.meta.dirname, "../../../drizzle");
+  const drizzleDir = resolve(import.meta.dirname, "../../drizzle");
   const migrationFiles = readdirSync(drizzleDir)
     .filter((f) => f.endsWith(".sql"))
     .sort();

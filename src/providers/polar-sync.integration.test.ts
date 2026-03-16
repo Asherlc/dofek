@@ -134,10 +134,10 @@ describe("PolarProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
-    server.listen({ onUnhandledRequest: "error" });
     process.env.POLAR_CLIENT_ID = "test-polar-client";
     process.env.POLAR_CLIENT_SECRET = "test-polar-secret";
     ctx = await setupTestDatabase();
+    server.listen({ onUnhandledRequest: "error" });
     await ensureProvider(ctx.db, "polar", "Polar", "https://www.polar.com/v3");
   }, 60_000);
 
@@ -389,10 +389,10 @@ describe("PolarProvider.sync() — daily_activity error paths (integration)", ()
   const errorServer = setupServer();
 
   beforeAll(async () => {
-    errorServer.listen({ onUnhandledRequest: "error" });
     process.env.POLAR_CLIENT_ID = "test-polar-client";
     process.env.POLAR_CLIENT_SECRET = "test-polar-secret";
     ctx = await setupTestDatabase();
+    errorServer.listen({ onUnhandledRequest: "error" });
     await ensureProvider(ctx.db, "polar", "Polar", "https://www.polar.com/v3");
   }, 60_000);
 

@@ -80,8 +80,8 @@ describe("VeloHeroProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
-    server.listen({ onUnhandledRequest: "error" });
     ctx = await setupTestDatabase();
+    server.listen({ onUnhandledRequest: "error" });
     await ensureProvider(ctx.db, "velohero", "VeloHero", "https://app.velohero.com");
   }, 60_000);
 

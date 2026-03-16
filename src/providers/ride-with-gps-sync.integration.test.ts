@@ -110,10 +110,10 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
-    server.listen({ onUnhandledRequest: "error" });
     process.env.RWGPS_CLIENT_ID = "test-client-id";
     process.env.RWGPS_CLIENT_SECRET = "test-client-secret";
     ctx = await setupTestDatabase();
+    server.listen({ onUnhandledRequest: "error" });
     await ensureProvider(ctx.db, "ride-with-gps", "RideWithGPS", "https://ridewithgps.com");
   }, 60_000);
 

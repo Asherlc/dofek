@@ -86,10 +86,10 @@ describe("CyclingAnalyticsProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
-    server.listen({ onUnhandledRequest: "error" });
     process.env.CYCLING_ANALYTICS_CLIENT_ID = "test-client-id";
     process.env.CYCLING_ANALYTICS_CLIENT_SECRET = "test-client-secret";
     ctx = await setupTestDatabase();
+    server.listen({ onUnhandledRequest: "error" });
     await ensureProvider(
       ctx.db,
       "cycling_analytics",

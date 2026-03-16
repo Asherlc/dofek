@@ -97,10 +97,10 @@ describe("WgerProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
-    server.listen({ onUnhandledRequest: "error" });
     process.env.WGER_CLIENT_ID = "test-client-id";
     process.env.WGER_CLIENT_SECRET = "test-client-secret";
     ctx = await setupTestDatabase();
+    server.listen({ onUnhandledRequest: "error" });
     await ensureProvider(ctx.db, "wger", "Wger", "https://wger.de/api/v2");
   }, 60_000);
 

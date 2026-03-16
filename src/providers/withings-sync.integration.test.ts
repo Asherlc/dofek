@@ -91,10 +91,10 @@ describe("WithingsProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
-    server.listen({ onUnhandledRequest: "error" });
     process.env.WITHINGS_CLIENT_ID = "test-withings-client";
     process.env.WITHINGS_CLIENT_SECRET = "test-withings-secret";
     ctx = await setupTestDatabase();
+    server.listen({ onUnhandledRequest: "error" });
     await ensureProvider(ctx.db, "withings", "Withings", "https://wbsapi.withings.net");
   }, 60_000);
 

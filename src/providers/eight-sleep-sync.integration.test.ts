@@ -119,8 +119,8 @@ describe("EightSleepProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
-    server.listen({ onUnhandledRequest: "error" });
     ctx = await setupTestDatabase();
+    server.listen({ onUnhandledRequest: "error" });
     await ensureProvider(ctx.db, "eight-sleep", "Eight Sleep");
   }, 60_000);
 

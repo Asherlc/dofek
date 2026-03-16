@@ -88,10 +88,10 @@ describe("XertProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
-    server.listen({ onUnhandledRequest: "error" });
     process.env.XERT_CLIENT_ID = "xert_public";
     process.env.XERT_CLIENT_SECRET = "xert_public";
     ctx = await setupTestDatabase();
+    server.listen({ onUnhandledRequest: "error" });
     await ensureProvider(ctx.db, "xert", "Xert", "https://www.xertonline.com");
   }, 60_000);
 
