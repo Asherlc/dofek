@@ -235,6 +235,23 @@ export interface ParsedJournalEntry {
   date: Date;
 }
 
+function getString(obj: Record<string, unknown>, key: string): string | undefined {
+  const val = obj[key];
+  return typeof val === "string" ? val : undefined;
+}
+
+function getArray(obj: Record<string, unknown>, key: string): unknown[] | undefined {
+  const val = obj[key];
+  return Array.isArray(val) ? val : undefined;
+}
+
+function toRecord(val: unknown): Record<string, unknown> | null {
+  if (val && typeof val === "object" && !Array.isArray(val)) {
+    return Object.fromEntries(Object.entries(val));
+  }
+  return null;
+}
+
 /**
  * Parse the behavior-impact-service response into health_event entries.
  * The response shape isn't documented — this handles several possibilities:
@@ -250,7 +267,8 @@ export function parseJournalResponse(raw: unknown): ParsedJournalEntry[] {
   if (Array.isArray(raw)) {
     items = raw;
   } else {
-    const obj = raw as Record<string, unknown>;
+    const obj = toRecord(raw);
+    if (!obj) return [];
     // Try common wrapper keys
     const wrapped =
       obj.impacts ?? obj.entries ?? obj.data ?? obj.results ?? obj.journal ?? obj.records;
@@ -264,35 +282,35 @@ export function parseJournalResponse(raw: unknown): ParsedJournalEntry[] {
 
   const entries: ParsedJournalEntry[] = [];
   for (const item of items) {
-    if (!item || typeof item !== "object") continue;
-    const obj = item as Record<string, unknown>;
+    const obj = toRecord(item);
+    if (!obj) continue;
 
     // Try to extract a date
     const dateStr =
-      (obj.date as string) ??
-      (obj.created_at as string) ??
-      (obj.cycle_start as string) ??
-      (obj.start as string) ??
-      (obj.day as string);
+      getString(obj, "date") ??
+      getString(obj, "created_at") ??
+      getString(obj, "cycle_start") ??
+      getString(obj, "start") ??
+      getString(obj, "day");
     const date = dateStr ? new Date(dateStr) : null;
     if (!date || Number.isNaN(date.getTime())) continue;
 
     // Check if it has nested answers/behaviors
     const answers =
-      (obj.answers as unknown[]) ??
-      (obj.behaviors as unknown[]) ??
-      (obj.items as unknown[]) ??
-      (obj.journal_entries as unknown[]);
+      getArray(obj, "answers") ??
+      getArray(obj, "behaviors") ??
+      getArray(obj, "items") ??
+      getArray(obj, "journal_entries");
 
     if (Array.isArray(answers)) {
       for (const answer of answers) {
-        if (!answer || typeof answer !== "object") continue;
-        const a = answer as Record<string, unknown>;
+        const a = toRecord(answer);
+        if (!a) continue;
         const question =
-          (a.name as string) ??
-          (a.behavior as string) ??
-          (a.question as string) ??
-          (a.type as string) ??
+          getString(a, "name") ??
+          getString(a, "behavior") ??
+          getString(a, "question") ??
+          getString(a, "type") ??
           "unknown";
         const answerNumeric =
           typeof a.value === "number" ? a.value : typeof a.score === "number" ? a.score : null;
@@ -322,7 +340,7 @@ export function parseJournalResponse(raw: unknown): ParsedJournalEntry[] {
     } else {
       // Flat entry — use available fields
       const question =
-        (obj.name as string) ?? (obj.behavior as string) ?? (obj.type as string) ?? "journal";
+        getString(obj, "name") ?? getString(obj, "behavior") ?? getString(obj, "type") ?? "journal";
       const answerNumeric =
         typeof obj.value === "number"
           ? obj.value
