@@ -448,10 +448,9 @@ function fitbitWeightErrorHandlers(opts: { weightError?: boolean }) {
   ];
 }
 
-const weightServer = setupServer();
-
 describe("FitbitProvider.sync() — weight error paths (integration)", () => {
   let ctx: TestContext;
+  const weightServer = setupServer();
 
   beforeAll(async () => {
     weightServer.listen({ onUnhandledRequest: "error" });
