@@ -185,8 +185,15 @@ describe("processSyncJob", () => {
     });
     mockGetAllProviders.mockReturnValue([provider]);
 
+    const progressSnapshots: Array<Record<string, unknown>> = [];
+    const job = createMockJob();
+    job.updateProgress.mockImplementation((data: Record<string, unknown>) => {
+      progressSnapshots.push(structuredClone(data));
+      return Promise.resolve();
+    });
+
     // Should not throw — errors are caught per-provider
-    await runSyncJob(createMockJob(), mockDb);
+    await runSyncJob(job, mockDb);
 
     expect(mockLogSync).toHaveBeenCalledWith(
       mockDb,
@@ -195,8 +202,15 @@ describe("processSyncJob", () => {
         dataType: "sync",
         status: "error",
         errorMessage: "API timeout",
+        durationMs: expect.any(Number),
       }),
     );
+
+    // Verify error status was reported in progress with the error message
+    const lastSnapshot = progressSnapshots[progressSnapshots.length - 1];
+    expect(lastSnapshot).toEqual({
+      providers: { broken: { status: "error", message: "API timeout" } },
+    });
   });
 
   it("reports error status with message when sync has errors", async () => {
@@ -206,7 +220,7 @@ describe("processSyncJob", () => {
       sync: vi.fn().mockResolvedValue({
         provider: "partial",
         recordsSynced: 3,
-        errors: [{ message: "bad record" }],
+        errors: [{ message: "bad record 1" }, { message: "bad record 2" }],
         duration: 50,
       }),
     });
@@ -223,15 +237,16 @@ describe("processSyncJob", () => {
 
     const lastSnapshot = progressSnapshots[progressSnapshots.length - 1];
     expect(lastSnapshot).toEqual({
-      providers: { partial: { status: "error", message: "3 synced, 1 errors" } },
+      providers: { partial: { status: "error", message: "3 synced, 2 errors" } },
     });
 
+    // Verify errors are joined with "; " separator
     expect(mockLogSync).toHaveBeenCalledWith(
       mockDb,
       expect.objectContaining({
         providerId: "partial",
         status: "error",
-        errorMessage: "bad record",
+        errorMessage: "bad record 1; bad record 2",
       }),
     );
   });
@@ -254,16 +269,21 @@ describe("processSyncJob", () => {
     expect(mockRefreshDedupViews).toHaveBeenCalledWith(mockDb);
   });
 
-  it("handles post-sync cleanup failures gracefully", async () => {
+  it("handles post-sync cleanup failures gracefully and logs errors", async () => {
     mockGetAllProviders.mockReturnValue([]);
     mockUpdateUserMaxHr.mockRejectedValue(new Error("db gone"));
     mockRefreshDedupViews.mockRejectedValue(new Error("db gone"));
+
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     // Should not throw
     await runSyncJob(createMockJob(), mockDb);
 
     expect(mockUpdateUserMaxHr).toHaveBeenCalled();
     expect(mockRefreshDedupViews).toHaveBeenCalled();
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("Failed to update max HR"));
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("Failed to refresh views"));
+    consoleSpy.mockRestore();
   });
 
   it("computes since date from sinceDays", async () => {

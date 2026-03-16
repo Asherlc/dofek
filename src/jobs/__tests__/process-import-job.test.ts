@@ -164,6 +164,51 @@ describe("processImportJob", () => {
         message: "Processing: 50%",
       });
     });
+
+    it("only logs progress at 10% increments", async () => {
+      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+      mockImportAppleHealthFile.mockImplementation(
+        async (
+          _db: unknown,
+          _path: unknown,
+          _since: unknown,
+          onProgress: (info: { pct: number }) => void,
+        ) => {
+          onProgress({ pct: 5 });
+          onProgress({ pct: 9 });
+          onProgress({ pct: 10 });
+          onProgress({ pct: 15 });
+          onProgress({ pct: 20 });
+          return { recordsSynced: 10, errors: [] };
+        },
+      );
+
+      const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
+      await runImportJob(job, mockDb);
+
+      // Should log at 10% and 20%, but not at 5%, 9%, or 15%
+      const progressLogs = consoleSpy.mock.calls.filter((call) =>
+        String(call[0]).includes("progress"),
+      );
+      expect(progressLogs).toHaveLength(2);
+      expect(progressLogs[0][0]).toContain("10%");
+      expect(progressLogs[1][0]).toContain("20%");
+      consoleSpy.mockRestore();
+    });
+
+    it("logs completion message with record count", async () => {
+      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+      const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
+      await runImportJob(job, mockDb);
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Apple Health import complete"),
+      );
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("42 records imported"));
+      consoleSpy.mockRestore();
+    });
   });
 
   describe("strong-csv import", () => {
@@ -198,8 +243,9 @@ describe("processImportJob", () => {
       expect(mockImportStrongCsv).toHaveBeenCalledWith(mockDb, "csv data", "user-1", "kg");
     });
 
-    it("logs sync on success", async () => {
+    it("logs sync and completion message on success", async () => {
       await writeFile(tempFilePath, "csv data");
+      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
       const job = createMockJob({ filePath: tempFilePath, importType: "strong-csv" });
       await runImportJob(job, mockDb);
@@ -213,6 +259,11 @@ describe("processImportJob", () => {
           recordCount: 10,
         }),
       );
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Strong CSV import complete"),
+      );
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("10 workouts imported"));
+      consoleSpy.mockRestore();
     });
   });
 
@@ -230,8 +281,9 @@ describe("processImportJob", () => {
       );
     });
 
-    it("logs sync on success", async () => {
+    it("logs sync and completion message on success", async () => {
       await writeFile(tempFilePath, "csv data");
+      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
       const job = createMockJob({ filePath: tempFilePath, importType: "cronometer-csv" });
       await runImportJob(job, mockDb);
@@ -245,6 +297,11 @@ describe("processImportJob", () => {
           recordCount: 7,
         }),
       );
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Cronometer CSV import complete"),
+      );
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("7 food entries imported"));
+      consoleSpy.mockRestore();
     });
   });
 
@@ -279,9 +336,10 @@ describe("processImportJob", () => {
       expect(mockRefreshDedupViews).toHaveBeenCalledWith(mockDb);
     });
 
-    it("handles post-import refresh failures gracefully", async () => {
+    it("handles post-import refresh failures gracefully and logs errors", async () => {
       mockUpdateUserMaxHr.mockRejectedValue(new Error("db gone"));
       mockRefreshDedupViews.mockRejectedValue(new Error("db gone"));
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
       // Should not throw
@@ -289,6 +347,9 @@ describe("processImportJob", () => {
 
       expect(mockUpdateUserMaxHr).toHaveBeenCalled();
       expect(mockRefreshDedupViews).toHaveBeenCalled();
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("Failed to update max HR"));
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("Failed to refresh views"));
+      consoleSpy.mockRestore();
     });
   });
 });
