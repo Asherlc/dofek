@@ -34,17 +34,14 @@ import {
 
 describe("trpc", () => {
   describe("CacheTTL", () => {
-    // @ts-expect-error mock type assertion
     it("defines SHORT minutes", () => {
       expect(CacheTTL.SHORT).toBe(2 * 60 * 1000);
     });
 
-    // @ts-expect-error mock type assertion
     it("defines MEDIUM minutes", () => {
       expect(CacheTTL.MEDIUM).toBe(10 * 60 * 1000);
     });
 
-    // @ts-expect-error mock type assertion
     it("defines LONG hour", () => {
       expect(CacheTTL.LONG).toBe(60 * 60 * 1000);
     });
