@@ -93,8 +93,9 @@ export interface WhoopWorkoutScore {
 
 export interface WhoopWorkoutRecord {
   // BFF v0 uses `during` (Postgres range) + `activity_id` (UUID)
-  activity_id: string; // UUID
-  during: string; // Postgres range format: "['start','end')"
+  // Both optional because legacy API versions may omit them
+  activity_id?: string; // UUID
+  during?: string; // Postgres range format: "['start','end')"
   timezone_offset: string;
   sport_id: number;
   average_heart_rate?: number;

@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   parseHeartRateValues,
+  parseJournalResponse,
   parseRecovery,
   parseSleep,
+  parseWeightliftingWorkout,
   parseWorkout,
   WhoopClient,
   type WhoopRecoveryRecord,
   type WhoopSleepRecord,
+  type WhoopWeightliftingWorkoutResponse,
   type WhoopWorkoutRecord,
 } from "../whoop.ts";
 
@@ -455,5 +458,479 @@ describe("WhoopClient.refreshAccessToken — success path", () => {
 
     const result = await WhoopClient.refreshAccessToken("old-refresh", mockFetch);
     expect(result.refreshToken).toBe("new-refresh");
+  });
+});
+
+// ============================================================
+// parseWorkout — legacy fallback (no `during` field)
+// ============================================================
+
+describe("parseWorkout — legacy fallback without during", () => {
+  it("falls back to start/end when during is missing", () => {
+    const record: WhoopWorkoutRecord = {
+      activity_id: "uuid-legacy-1",
+      timezone_offset: "-05:00",
+      sport_id: 0,
+      start: "2026-03-01T10:00:00Z",
+      end: "2026-03-01T11:00:00Z",
+    };
+
+    const parsed = parseWorkout(record);
+    expect(parsed.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
+    expect(parsed.endedAt).toEqual(new Date("2026-03-01T11:00:00Z"));
+    expect(parsed.durationSeconds).toBe(3600);
+  });
+
+  it("falls back to created_at/updated_at when during and start/end are missing", () => {
+    const record: WhoopWorkoutRecord = {
+      activity_id: "uuid-legacy-2",
+      timezone_offset: "-05:00",
+      sport_id: 1,
+      created_at: "2026-03-01T09:00:00Z",
+      updated_at: "2026-03-01T10:30:00Z",
+    };
+
+    const parsed = parseWorkout(record);
+    expect(parsed.startedAt).toEqual(new Date("2026-03-01T09:00:00Z"));
+    expect(parsed.endedAt).toEqual(new Date("2026-03-01T10:30:00Z"));
+    expect(parsed.durationSeconds).toBe(5400);
+  });
+
+  it("uses id as externalId when activity_id is missing", () => {
+    const record: WhoopWorkoutRecord = {
+      id: 12345,
+      timezone_offset: "-05:00",
+      sport_id: 0,
+      during: "['2026-03-01T10:00:00Z','2026-03-01T11:00:00Z')",
+    };
+
+    const parsed = parseWorkout(record);
+    expect(parsed.externalId).toBe("12345");
+  });
+});
+
+// ============================================================
+// parseJournalResponse — all branches
+// ============================================================
+
+describe("parseJournalResponse", () => {
+  it("returns empty array for null input", () => {
+    expect(parseJournalResponse(null)).toEqual([]);
+  });
+
+  it("returns empty array for non-object input", () => {
+    expect(parseJournalResponse("string")).toEqual([]);
+    expect(parseJournalResponse(42)).toEqual([]);
+    expect(parseJournalResponse(undefined)).toEqual([]);
+  });
+
+  it("handles plain array of entries with nested answers", () => {
+    const raw = [
+      {
+        date: "2026-03-01T00:00:00Z",
+        answers: [
+          { name: "caffeine", value: 1, impact: 0.5 },
+          { name: "alcohol", value: 0, impact: -0.2 },
+        ],
+      },
+    ];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries).toHaveLength(2);
+    expect(entries[0]?.question).toBe("caffeine");
+    expect(entries[0]?.answerNumeric).toBe(1);
+    expect(entries[0]?.impactScore).toBe(0.5);
+    expect(entries[1]?.question).toBe("alcohol");
+  });
+
+  it("unwraps entries from 'impacts' wrapper key", () => {
+    const raw = {
+      impacts: [{ date: "2026-03-01", answers: [{ name: "sleep_aid", value: 0 }] }],
+    };
+
+    const entries = parseJournalResponse(raw);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.question).toBe("sleep_aid");
+  });
+
+  it("unwraps entries from 'entries' wrapper key", () => {
+    const raw = {
+      entries: [{ date: "2026-03-01", answers: [{ name: "melatonin", value: 1 }] }],
+    };
+
+    const entries = parseJournalResponse(raw);
+    expect(entries).toHaveLength(1);
+  });
+
+  it("unwraps entries from 'data' wrapper key", () => {
+    const raw = {
+      data: [{ date: "2026-03-01", answers: [{ name: "stretch", value: 1 }] }],
+    };
+
+    const entries = parseJournalResponse(raw);
+    expect(entries).toHaveLength(1);
+  });
+
+  it("unwraps entries from 'results' wrapper key", () => {
+    const raw = {
+      results: [{ date: "2026-03-01", answers: [{ name: "hydration", score: 3 }] }],
+    };
+
+    const entries = parseJournalResponse(raw);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.answerNumeric).toBe(3);
+  });
+
+  it("unwraps entries from 'journal' wrapper key", () => {
+    const raw = {
+      journal: [{ date: "2026-03-01", answers: [{ name: "mood", value: 4 }] }],
+    };
+
+    const entries = parseJournalResponse(raw);
+    expect(entries).toHaveLength(1);
+  });
+
+  it("unwraps entries from 'records' wrapper key", () => {
+    const raw = {
+      records: [{ date: "2026-03-01", answers: [{ name: "recovery", value: 2 }] }],
+    };
+
+    const entries = parseJournalResponse(raw);
+    expect(entries).toHaveLength(1);
+  });
+
+  it("wraps single object when wrapped value is not an array", () => {
+    const raw = {
+      impacts: "not-an-array",
+      date: "2026-03-01",
+      name: "single_entry",
+      value: 5,
+    };
+
+    const entries = parseJournalResponse(raw);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.question).toBe("single_entry");
+    expect(entries[0]?.answerNumeric).toBe(5);
+  });
+
+  it("skips null and non-object items in array", () => {
+    const raw = [
+      null,
+      "string-item",
+      42,
+      { date: "2026-03-01", answers: [{ name: "valid", value: 1 }] },
+    ];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.question).toBe("valid");
+  });
+
+  it("extracts date from cycle_start field", () => {
+    const raw = [{ cycle_start: "2026-03-01T00:00:00Z", answers: [{ name: "test", value: 1 }] }];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.date).toEqual(new Date("2026-03-01T00:00:00Z"));
+  });
+
+  it("extracts date from start field", () => {
+    const raw = [{ start: "2026-03-01T00:00:00Z", answers: [{ name: "test", value: 1 }] }];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries).toHaveLength(1);
+  });
+
+  it("extracts date from day field", () => {
+    const raw = [{ day: "2026-03-01", answers: [{ name: "test", value: 1 }] }];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries).toHaveLength(1);
+  });
+
+  it("skips entries with invalid dates", () => {
+    const raw = [
+      { date: "not-a-date", answers: [{ name: "test", value: 1 }] },
+      { answers: [{ name: "no_date", value: 1 }] },
+    ];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries).toHaveLength(0);
+  });
+
+  it("skips null/non-object answers in nested array", () => {
+    const raw = [
+      {
+        date: "2026-03-01",
+        answers: [null, "string", { name: "valid_answer", value: 3 }],
+      },
+    ];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.question).toBe("valid_answer");
+  });
+
+  it("extracts answerText from answer field", () => {
+    const raw = [
+      {
+        date: "2026-03-01",
+        answers: [{ name: "note", answer: "felt great" }],
+      },
+    ];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries[0]?.answerText).toBe("felt great");
+  });
+
+  it("extracts answerText from response field when answer is not a string", () => {
+    const raw = [
+      {
+        date: "2026-03-01",
+        answers: [{ name: "note", answer: 42, response: "pretty good" }],
+      },
+    ];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries[0]?.answerText).toBe("pretty good");
+  });
+
+  it("extracts answerText from value field when answer and response are not strings", () => {
+    const raw = [
+      {
+        date: "2026-03-01",
+        answers: [{ name: "note", answer: 1, response: 2, value: "string value" }],
+      },
+    ];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries[0]?.answerText).toBe("string value");
+    // value is a string so answerNumeric should be null
+    expect(entries[0]?.answerNumeric).toBeNull();
+  });
+
+  it("extracts impactScore from impact_score field", () => {
+    const raw = [
+      {
+        date: "2026-03-01",
+        answers: [{ name: "test", impact_score: 0.8 }],
+      },
+    ];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries[0]?.impactScore).toBe(0.8);
+  });
+
+  it("uses behavior/question/type as question name fallbacks", () => {
+    const raw = [{ date: "2026-03-01", answers: [{ behavior: "my_behavior", value: 1 }] }];
+    expect(parseJournalResponse(raw)[0]?.question).toBe("my_behavior");
+
+    const raw2 = [{ date: "2026-03-01", answers: [{ question: "my_question", value: 1 }] }];
+    expect(parseJournalResponse(raw2)[0]?.question).toBe("my_question");
+
+    const raw3 = [{ date: "2026-03-01", answers: [{ type: "my_type", value: 1 }] }];
+    expect(parseJournalResponse(raw3)[0]?.question).toBe("my_type");
+  });
+
+  it("defaults to 'unknown' when no question name fields exist in answer", () => {
+    const raw = [{ date: "2026-03-01", answers: [{ value: 1 }] }];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries[0]?.question).toBe("unknown");
+  });
+
+  it("handles flat entries without nested answers", () => {
+    const raw = [
+      {
+        date: "2026-03-01",
+        name: "caffeine",
+        value: 2,
+        impact: 0.3,
+      },
+    ];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.question).toBe("caffeine");
+    expect(entries[0]?.answerNumeric).toBe(2);
+    expect(entries[0]?.answerText).toBeNull();
+    expect(entries[0]?.impactScore).toBe(0.3);
+  });
+
+  it("handles flat entries with behavior as question name", () => {
+    const raw = [{ date: "2026-03-01", behavior: "meditation", score: 4 }];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries[0]?.question).toBe("meditation");
+    expect(entries[0]?.answerNumeric).toBe(4);
+  });
+
+  it("handles flat entries with type as question name", () => {
+    const raw = [{ date: "2026-03-01", type: "sleep_quality", score: 3 }];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries[0]?.question).toBe("sleep_quality");
+  });
+
+  it("handles flat entries with answer/response string fields", () => {
+    const raw = [{ date: "2026-03-01", name: "note", answer: "good day" }];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries[0]?.answerText).toBe("good day");
+
+    const raw2 = [{ date: "2026-03-01", name: "note", response: "okay day" }];
+    expect(parseJournalResponse(raw2)[0]?.answerText).toBe("okay day");
+  });
+
+  it("handles flat entries with impact_score", () => {
+    const raw = [{ date: "2026-03-01", name: "test", impact_score: 0.7 }];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries[0]?.impactScore).toBe(0.7);
+  });
+
+  it("defaults flat entry question to 'journal' when no name fields exist", () => {
+    const raw = [{ date: "2026-03-01", value: 1 }];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries[0]?.question).toBe("journal");
+  });
+
+  it("normalizes question names to lowercase with underscores", () => {
+    const raw = [
+      {
+        date: "2026-03-01",
+        answers: [{ name: "Morning  Stretch", value: 1 }],
+      },
+    ];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries[0]?.question).toBe("morning_stretch");
+  });
+
+  it("extracts answerNumeric from score field in nested answers", () => {
+    const raw = [
+      {
+        date: "2026-03-01",
+        answers: [{ name: "energy", score: 7 }],
+      },
+    ];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries[0]?.answerNumeric).toBe(7);
+  });
+});
+
+// ============================================================
+// parseWeightliftingWorkout — additional edge cases
+// ============================================================
+
+describe("parseWeightliftingWorkout — additional edge cases", () => {
+  it("returns null duration for TIME format with zero time_in_seconds", () => {
+    const response: WhoopWeightliftingWorkoutResponse = {
+      activity_id: "test-time-zero",
+      user_id: 1,
+      zone_durations: {
+        zone0_to10_duration: 0,
+        zone10_to20_duration: 0,
+        zone20_to30_duration: 0,
+        zone30_to40_duration: 0,
+        zone40_to50_duration: 0,
+        zone50_to60_duration: 0,
+        zone60_to70_duration: 0,
+        zone70_to80_duration: 0,
+        zone80_to90_duration: 0,
+        zone90_to100_duration: 0,
+      },
+      workout_groups: [
+        {
+          workout_exercises: [
+            {
+              sets: [
+                {
+                  weight_kg: 0,
+                  number_of_reps: 0,
+                  msk_total_volume_kg: 0,
+                  time_in_seconds: 0,
+                  during: "['2026-03-12T21:37:00.000Z','2026-03-12T21:37:00.001Z')",
+                  complete: true,
+                },
+              ],
+              exercise_details: {
+                exercise_id: "PLANK",
+                name: "Plank",
+                equipment: "BODY",
+                exercise_type: "STRENGTH",
+                muscle_groups: ["CORE"],
+                volume_input_format: "TIME",
+              },
+            },
+          ],
+        },
+      ],
+      total_effective_volume_kg: 0,
+      raw_msk_strain_score: 0,
+      scaled_msk_strain_score: 0,
+      cardio_strain_score: 0,
+      cardio_strain_contribution_percent: 0,
+      msk_strain_contribution_percent: 0,
+    };
+
+    const result = parseWeightliftingWorkout(response);
+    expect(result.exercises[0]?.sets[0]?.durationSeconds).toBeNull();
+  });
+
+  it("sets equipment to null when empty string", () => {
+    const response: WhoopWeightliftingWorkoutResponse = {
+      activity_id: "test-no-equip",
+      user_id: 1,
+      zone_durations: {
+        zone0_to10_duration: 0,
+        zone10_to20_duration: 0,
+        zone20_to30_duration: 0,
+        zone30_to40_duration: 0,
+        zone40_to50_duration: 0,
+        zone50_to60_duration: 0,
+        zone60_to70_duration: 0,
+        zone70_to80_duration: 0,
+        zone80_to90_duration: 0,
+        zone90_to100_duration: 0,
+      },
+      workout_groups: [
+        {
+          workout_exercises: [
+            {
+              sets: [
+                {
+                  weight_kg: 20,
+                  number_of_reps: 10,
+                  msk_total_volume_kg: 200,
+                  time_in_seconds: 0,
+                  during: "['2026-03-12T21:37:00.000Z','2026-03-12T21:37:00.001Z')",
+                  complete: true,
+                },
+              ],
+              exercise_details: {
+                exercise_id: "PUSHUP",
+                name: "Push Up",
+                equipment: "",
+                exercise_type: "STRENGTH",
+                muscle_groups: ["CHEST"],
+                volume_input_format: "REPS_AND_WEIGHT",
+              },
+            },
+          ],
+        },
+      ],
+      total_effective_volume_kg: 200,
+      raw_msk_strain_score: 0,
+      scaled_msk_strain_score: 0,
+      cardio_strain_score: 0,
+      cardio_strain_contribution_percent: 0,
+      msk_strain_contribution_percent: 0,
+    };
+
+    const result = parseWeightliftingWorkout(response);
+    expect(result.exercises[0]?.equipment).toBeNull();
   });
 });
