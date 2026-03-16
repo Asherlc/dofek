@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { Database } from "../db/index.ts";
+import type { SyncDatabase } from "../db/index.ts";
 import { foodEntry } from "../db/schema.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import type { Provider, SyncError, SyncResult } from "./types.ts";
@@ -217,7 +217,7 @@ export class AutoSupplementsProvider implements Provider {
     }
   }
 
-  async sync(db: Database, since: Date): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
 

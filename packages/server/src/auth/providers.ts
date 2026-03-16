@@ -7,6 +7,25 @@ import {
   generateCodeVerifier,
   generateState,
 } from "arctic";
+import { z } from "zod";
+
+const googleClaimsSchema = z.object({
+  sub: z.string(),
+  email: z.string().optional(),
+  name: z.string().optional(),
+});
+
+const appleClaimsSchema = z.object({
+  sub: z.string(),
+  email: z.string().optional(),
+});
+
+const authentikClaimsSchema = z.object({
+  sub: z.string(),
+  email: z.string().optional(),
+  preferred_username: z.string().optional(),
+  name: z.string().optional(),
+});
 
 // ── Provider types ──
 
@@ -48,12 +67,7 @@ function initGoogle(): IdentityProvider {
     },
     async validateCallback(code, codeVerifier) {
       const tokens = await client.validateAuthorizationCode(code, codeVerifier);
-      // @ts-expect-error decodeIdToken returns {} but we know it has sub/email/name for Google
-      const claims: {
-        sub: string;
-        email?: string;
-        name?: string;
-      } = decodeIdToken(tokens.idToken());
+      const claims = googleClaimsSchema.parse(decodeIdToken(tokens.idToken()));
       return {
         tokens,
         user: { sub: claims.sub, email: claims.email ?? null, name: claims.name ?? null },
@@ -80,11 +94,7 @@ function initApple(): IdentityProvider {
     async validateCallback(code, _codeVerifier) {
       // Apple doesn't use PKCE
       const tokens = await client.validateAuthorizationCode(code);
-      // @ts-expect-error decodeIdToken returns {} but we know it has sub/email for Apple
-      const claims: {
-        sub: string;
-        email?: string;
-      } = decodeIdToken(tokens.idToken());
+      const claims = appleClaimsSchema.parse(decodeIdToken(tokens.idToken()));
       return {
         tokens,
         // Apple only sends name on first authorization, not in the ID token
@@ -107,13 +117,7 @@ function initAuthentik(): IdentityProvider {
     },
     async validateCallback(code, codeVerifier) {
       const tokens = await client.validateAuthorizationCode(code, codeVerifier);
-      // @ts-expect-error decodeIdToken returns {} but we know it has sub/email/name for Authentik
-      const claims: {
-        sub: string;
-        email?: string;
-        preferred_username?: string;
-        name?: string;
-      } = decodeIdToken(tokens.idToken());
+      const claims = authentikClaimsSchema.parse(decodeIdToken(tokens.idToken()));
       return {
         tokens,
         user: {
@@ -167,9 +171,8 @@ export function getIdentityProvider(name: IdentityProviderName): IdentityProvide
 
 /** List all configured identity providers. */
 export function getConfiguredProviders(): IdentityProviderName[] {
-  // @ts-expect-error Object.keys returns string[] but we know the keys are IdentityProviderName
-  const names: IdentityProviderName[] = Object.keys(requiredEnvKeys);
-  return names.filter(isProviderConfigured);
+  const allNames: IdentityProviderName[] = ["google", "apple", "authentik"];
+  return allNames.filter(isProviderConfigured);
 }
 
 export { generateCodeVerifier, generateState };

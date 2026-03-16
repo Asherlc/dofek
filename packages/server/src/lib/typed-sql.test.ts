@@ -28,7 +28,6 @@ describe("executeWithSchema", () => {
     const mockDb = createMockDb();
     const query = sql`SELECT * FROM users`;
 
-    // @ts-expect-error mock DB
     const result = await executeWithSchema(mockDb, schema, query);
 
     expect(result).toEqual([
@@ -43,7 +42,6 @@ describe("executeWithSchema", () => {
     mockExecute.mockResolvedValue([]);
 
     const mockDb = createMockDb();
-    // @ts-expect-error mock DB
     const result = await executeWithSchema(mockDb, schema, sql`SELECT 1`);
 
     expect(result).toEqual([]);
@@ -59,10 +57,9 @@ describe("executeWithSchema", () => {
 
     const mockDb = createMockDb();
 
-    await expect(
-      // @ts-expect-error mock DB
-      executeWithSchema(mockDb, schema, sql`SELECT * FROM users`),
-    ).rejects.toThrow(z.ZodError);
+    await expect(executeWithSchema(mockDb, schema, sql`SELECT * FROM users`)).rejects.toThrow(
+      z.ZodError,
+    );
   });
 
   it("throws when row has missing fields", async () => {
@@ -75,10 +72,9 @@ describe("executeWithSchema", () => {
 
     const mockDb = createMockDb();
 
-    await expect(
-      // @ts-expect-error mock DB
-      executeWithSchema(mockDb, schema, sql`SELECT id FROM users`),
-    ).rejects.toThrow(z.ZodError);
+    await expect(executeWithSchema(mockDb, schema, sql`SELECT id FROM users`)).rejects.toThrow(
+      z.ZodError,
+    );
   });
 
   it("coerces values when schema uses coerce", async () => {
@@ -89,7 +85,6 @@ describe("executeWithSchema", () => {
     mockExecute.mockResolvedValue([{ count: "42" }]);
 
     const mockDb = createMockDb();
-    // @ts-expect-error mock DB
     const result = await executeWithSchema(mockDb, schema, sql`SELECT count(*)`);
 
     expect(result).toEqual([{ count: 42 }]);
@@ -104,7 +99,6 @@ describe("executeWithSchema", () => {
     mockExecute.mockResolvedValue([{ id: 1, extra: "field" }]);
 
     const mockDb = createMockDb();
-    // @ts-expect-error mock DB
     const result = await executeWithSchema(mockDb, schema, sql`SELECT *`);
 
     expect(result).toEqual([{ id: 1 }]);

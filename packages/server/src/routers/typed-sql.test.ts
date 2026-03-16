@@ -16,7 +16,6 @@ describe("executeWithSchema", () => {
       ]),
     };
 
-    // @ts-expect-error mock DB
     const result = await executeWithSchema(mockDb, schema, sql`SELECT * FROM test`);
 
     expect(result).toEqual([
@@ -32,7 +31,6 @@ describe("executeWithSchema", () => {
       execute: vi.fn().mockResolvedValue([]),
     };
 
-    // @ts-expect-error mock DB
     const result = await executeWithSchema(mockDb, schema, sql`SELECT * FROM empty_table`);
 
     expect(result).toEqual([]);
@@ -46,7 +44,6 @@ describe("executeWithSchema", () => {
       execute: vi.fn().mockResolvedValue([{ value: "42.5" }]),
     };
 
-    // @ts-expect-error mock DB
     const result = await executeWithSchema(mockDb, schema, sql`SELECT value FROM test`);
 
     expect(result).toEqual([{ value: 42.5 }]);
@@ -61,10 +58,7 @@ describe("executeWithSchema", () => {
       execute: vi.fn().mockResolvedValue([{ id: "not-a-number", name: 123 }]),
     };
 
-    await expect(
-      // @ts-expect-error mock DB
-      executeWithSchema(mockDb, schema, sql`SELECT * FROM test`),
-    ).rejects.toThrow();
+    await expect(executeWithSchema(mockDb, schema, sql`SELECT * FROM test`)).rejects.toThrow();
   });
 
   it("handles nullable fields", async () => {
@@ -79,7 +73,6 @@ describe("executeWithSchema", () => {
       ]),
     };
 
-    // @ts-expect-error mock DB
     const result = await executeWithSchema(mockDb, schema, sql`SELECT * FROM test`);
 
     expect(result).toEqual([

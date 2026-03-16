@@ -24,7 +24,6 @@ type GenerateTextReturn = Awaited<ReturnType<typeof generateText>>;
 
 /** Build a mock generateText result with only the `output` field populated */
 function mockGenerateTextResult(output: unknown): GenerateTextReturn {
-  // @ts-expect-error partial mock — only populating the output field needed by tests
   const result: GenerateTextReturn = { output };
   return result;
 }
@@ -113,7 +112,6 @@ describe("refineNutritionItems", () => {
 
     await refineNutritionItems(previousItems, "that's all", "Tuesday, 8:15 AM");
 
-    // @ts-expect-error mock call args type is wider than our narrow subset
     const callArgs: { system?: string } | undefined = mockGenerateText.mock.calls[0]?.[0];
     expect(callArgs?.system).toContain("Tuesday, 8:15 AM");
   });
@@ -125,7 +123,6 @@ describe("refineNutritionItems", () => {
 
     await refineNutritionItems(previousItems, "that's correct");
 
-    // @ts-expect-error mock call args type is wider than our narrow subset
     const callArgs: { system?: string } | undefined = mockGenerateText.mock.calls[0]?.[0];
     expect(callArgs?.system).not.toContain("local time is");
   });
@@ -137,7 +134,6 @@ describe("refineNutritionItems", () => {
 
     await refineNutritionItems(previousItems, "remove the toast");
 
-    // @ts-expect-error mock call args type is wider than our narrow subset
     const callArgs:
       | {
           messages?: Array<{ role: string; content: string }>;

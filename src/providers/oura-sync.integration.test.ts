@@ -310,10 +310,10 @@ describe("OuraProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
-    server.listen({ onUnhandledRequest: "error" });
     process.env.OURA_CLIENT_ID = "test-oura-client";
     process.env.OURA_CLIENT_SECRET = "test-oura-secret";
     ctx = await setupTestDatabase();
+    server.listen({ onUnhandledRequest: "error" });
     await ensureProvider(ctx.db, "oura", "Oura", "https://api.ouraring.com");
   }, 60_000);
 
@@ -613,10 +613,10 @@ describe("OuraProvider.sync() — error paths (integration)", () => {
   const errorServer = setupServer();
 
   beforeAll(async () => {
-    errorServer.listen({ onUnhandledRequest: "error" });
     process.env.OURA_CLIENT_ID = "test-oura-client";
     process.env.OURA_CLIENT_SECRET = "test-oura-secret";
     ctx = await setupTestDatabase();
+    errorServer.listen({ onUnhandledRequest: "error" });
     await ensureProvider(ctx.db, "oura", "Oura", "https://api.ouraring.com");
   }, 60_000);
 

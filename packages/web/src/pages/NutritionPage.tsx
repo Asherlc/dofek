@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { z } from "zod";
 import { AddFoodModal, type FoodFormData, type MealType } from "../components/AddFoodModal.tsx";
 import { AppHeader } from "../components/AppHeader.tsx";
 import { FoodEntryRow } from "../components/FoodEntryRow.tsx";
@@ -7,12 +8,6 @@ import { MacroBar } from "../components/MacroBar.tsx";
 import { SlackInstallBanner } from "../components/SlackInstallBanner.tsx";
 import { formatDateForDisplay, formatDateForQuery, isToday } from "../lib/dates.ts";
 import { trpc } from "../lib/trpc.ts";
-
-/** Narrow loosely-typed tRPC raw-SQL results to a known shape without double-casting. */
-function typedData<T>(data: unknown): T {
-  // @ts-expect-error -- centralized type narrowing for tRPC raw-SQL results
-  return data;
-}
 
 const CALORIES_PER_GRAM = { protein: 4, carbs: 4, fat: 9 } as const;
 
@@ -26,16 +21,17 @@ const MEAL_LABELS: Record<MealType, string> = {
   other: "Other",
 };
 
-interface FoodEntry {
-  id: string;
-  food_name: string;
-  meal: string;
-  calories: number;
-  protein_g: number | null;
-  carbs_g: number | null;
-  fat_g: number | null;
-  food_description: string | null;
-}
+const foodEntrySchema = z.object({
+  id: z.string(),
+  food_name: z.string(),
+  meal: z.string(),
+  calories: z.number(),
+  protein_g: z.number().nullable(),
+  carbs_g: z.number().nullable(),
+  fat_g: z.number().nullable(),
+  food_description: z.string().nullable(),
+});
+type FoodEntry = z.infer<typeof foodEntrySchema>;
 
 export function NutritionPage() {
   const [selectedDate, setSelectedDate] = useState(() => new Date());
@@ -61,7 +57,7 @@ export function NutritionPage() {
     },
   });
 
-  const entries = typedData<FoodEntry[]>(foodQuery.data ?? []);
+  const entries = z.array(foodEntrySchema).parse(foodQuery.data ?? []);
 
   const dailyTotals = useMemo(() => {
     let totalCalories = 0;

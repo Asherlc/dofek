@@ -49,15 +49,17 @@ export function VerticalAscentChart({ data, loading }: VerticalAscentChartProps)
       borderColor: "#3f3f46",
       textStyle: { color: "#e4e4e7", fontSize: 12 },
       formatter: (params: Record<string, unknown>) => {
-        // @ts-expect-error ECharts params.data is typed as unknown
-        const itemData:
-          | {
-              value: [string, number];
-              name: string;
-              elevationGain: number;
-            }
-          | undefined = params.data;
-        if (!itemData?.name) return "";
+        const rawData = params.data;
+        if (!rawData || typeof rawData !== "object" || !("name" in rawData)) return "";
+        const itemData = {
+          name: String(rawData.name ?? ""),
+          value: "value" in rawData && Array.isArray(rawData.value) ? rawData.value : ["", 0],
+          elevationGain:
+            "elevationGain" in rawData && typeof rawData.elevationGain === "number"
+              ? rawData.elevationGain
+              : 0,
+        };
+        if (!itemData.name) return "";
         const [date, vam] = itemData.value;
         return [
           `<strong>${itemData.name}</strong>`,
@@ -92,9 +94,16 @@ export function VerticalAscentChart({ data, loading }: VerticalAscentChartProps)
           symbolSize: d.symbolSize,
         })),
         symbolSize: (_val: unknown, params: Record<string, unknown>) => {
-          // @ts-expect-error ECharts params.data is typed as unknown
-          const itemData: { symbolSize: number } | undefined = params.data;
-          return itemData?.symbolSize ?? minSize;
+          const rawData = params.data;
+          if (
+            rawData &&
+            typeof rawData === "object" &&
+            "symbolSize" in rawData &&
+            typeof rawData.symbolSize === "number"
+          ) {
+            return rawData.symbolSize;
+          }
+          return minSize;
         },
         itemStyle: {
           color: "#8b5cf6",

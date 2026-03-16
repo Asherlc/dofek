@@ -1,26 +1,13 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createMockDatabase } from "../providers/test-helpers.ts";
 import type { SyncLogEntry } from "./sync-log.ts";
 import { logSync, withSyncLog } from "./sync-log.ts";
 
-// Create a mock DB with an insert chain
-function createMockDb() {
-  const valuesFn = vi.fn().mockResolvedValue(undefined);
-  const insertFn = vi.fn(() => ({ values: valuesFn }));
-  return {
-    insert: insertFn,
-    _valuesFn: valuesFn,
-    _insertFn: insertFn,
-  };
-}
-
-// We need to type this loosely since Database is a complex drizzle type
-type MockDb = ReturnType<typeof createMockDb>;
-
 describe("logSync", () => {
-  let mockDb: MockDb;
+  let db: ReturnType<typeof createMockDatabase>;
 
   beforeEach(() => {
-    mockDb = createMockDb();
+    db = createMockDatabase();
   });
 
   it("inserts a success log entry with all fields", async () => {
@@ -32,11 +19,10 @@ describe("logSync", () => {
       durationMs: 1500,
     };
 
-    // @ts-expect-error mock DB
-    await logSync(mockDb, entry);
+    await logSync(db.db, entry);
 
-    expect(mockDb._insertFn).toHaveBeenCalled();
-    expect(mockDb._valuesFn).toHaveBeenCalledWith({
+    expect(db.spies.insert).toHaveBeenCalled();
+    expect(db.spies.values).toHaveBeenCalledWith({
       providerId: "wahoo",
       dataType: "activities",
       status: "success",
@@ -55,10 +41,9 @@ describe("logSync", () => {
       durationMs: 5000,
     };
 
-    // @ts-expect-error mock DB
-    await logSync(mockDb, entry);
+    await logSync(db.db, entry);
 
-    expect(mockDb._valuesFn).toHaveBeenCalledWith({
+    expect(db.spies.values).toHaveBeenCalledWith({
       providerId: "whoop",
       dataType: "sleep",
       status: "error",
@@ -75,18 +60,17 @@ describe("logSync", () => {
       status: "success",
     };
 
-    // @ts-expect-error mock DB
-    await logSync(mockDb, entry);
+    await logSync(db.db, entry);
 
-    expect(mockDb._valuesFn).toHaveBeenCalledWith(expect.objectContaining({ recordCount: 0 }));
+    expect(db.spies.values).toHaveBeenCalledWith(expect.objectContaining({ recordCount: 0 }));
   });
 });
 
 describe("withSyncLog", () => {
-  let mockDb: MockDb;
+  let db: ReturnType<typeof createMockDatabase>;
 
   beforeEach(() => {
-    mockDb = createMockDb();
+    db = createMockDatabase();
     vi.useFakeTimers();
   });
 
@@ -97,12 +81,11 @@ describe("withSyncLog", () => {
   it("logs success and returns the result on success", async () => {
     const fn = vi.fn().mockResolvedValue({ recordCount: 10, result: "data" });
 
-    // @ts-expect-error mock DB
-    const result = await withSyncLog(mockDb, "wahoo", "activities", fn);
+    const result = await withSyncLog(db.db, "wahoo", "activities", fn);
 
     expect(result).toBe("data");
     expect(fn).toHaveBeenCalled();
-    expect(mockDb._valuesFn).toHaveBeenCalledWith(
+    expect(db.spies.values).toHaveBeenCalledWith(
       expect.objectContaining({
         providerId: "wahoo",
         dataType: "activities",
@@ -115,12 +98,9 @@ describe("withSyncLog", () => {
   it("logs error and re-throws on failure", async () => {
     const fn = vi.fn().mockRejectedValue(new Error("sync failed"));
 
-    await expect(
-      // @ts-expect-error mock DB
-      withSyncLog(mockDb, "whoop", "sleep", fn),
-    ).rejects.toThrow("sync failed");
+    await expect(withSyncLog(db.db, "whoop", "sleep", fn)).rejects.toThrow("sync failed");
 
-    expect(mockDb._valuesFn).toHaveBeenCalledWith(
+    expect(db.spies.values).toHaveBeenCalledWith(
       expect.objectContaining({
         providerId: "whoop",
         dataType: "sleep",
@@ -133,12 +113,9 @@ describe("withSyncLog", () => {
   it("logs non-Error exceptions as strings", async () => {
     const fn = vi.fn().mockRejectedValue("string error");
 
-    await expect(
-      // @ts-expect-error mock DB
-      withSyncLog(mockDb, "wahoo", "body", fn),
-    ).rejects.toBe("string error");
+    await expect(withSyncLog(db.db, "wahoo", "body", fn)).rejects.toBe("string error");
 
-    expect(mockDb._valuesFn).toHaveBeenCalledWith(
+    expect(db.spies.values).toHaveBeenCalledWith(
       expect.objectContaining({
         errorMessage: "string error",
       }),
@@ -153,16 +130,12 @@ describe("withSyncLog", () => {
       return { recordCount: 1, result: "ok" };
     });
 
-    // @ts-expect-error mock DB
-    await withSyncLog(mockDb, "wahoo", "activities", fn);
+    await withSyncLog(db.db, "wahoo", "activities", fn);
 
-    expect(mockDb._valuesFn).toHaveBeenCalledWith(
+    expect(db.spies.values).toHaveBeenCalledWith(
       expect.objectContaining({
         durationMs: 500,
       }),
     );
   });
 });
-
-// Need afterEach import
-import { afterEach } from "vitest";

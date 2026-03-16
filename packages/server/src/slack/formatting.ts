@@ -60,10 +60,10 @@ function formatMacroLine(item: NutritionItemWithMeal): string {
 export function formatMicroLine(item: NutritionItemWithMeal | MicroTotals): string {
   const parts: string[] = [];
   for (const { key, label, unit } of MICRO_DISPLAY) {
-    // @ts-expect-error MicroKey indexes may return string|number but we only use numeric keys
-    const value: number | undefined = item[key];
-    if (value != null && value > 0) {
-      const formatted = value < 10 ? value.toFixed(1) : Math.round(value).toString();
+    const rawValue = item[key];
+    if (typeof rawValue !== "number") continue;
+    if (rawValue > 0) {
+      const formatted = rawValue < 10 ? rawValue.toFixed(1) : Math.round(rawValue).toString();
       parts.push(`${label}: ${formatted}${unit}`);
     }
   }
@@ -75,10 +75,9 @@ function sumMicro(items: NutritionItemWithMeal[], key: MicroKey): number | undef
   let total = 0;
   let hasValue = false;
   for (const item of items) {
-    // @ts-expect-error MicroKey indexes may return string|number but we only use numeric keys
-    const value: number | undefined = item[key];
-    if (value != null) {
-      total += value;
+    const rawValue = item[key];
+    if (typeof rawValue === "number") {
+      total += rawValue;
       hasValue = true;
     }
   }

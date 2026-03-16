@@ -1,11 +1,6 @@
 import ReactECharts from "echarts-for-react";
+import { z } from "zod";
 import { trpc } from "../lib/trpc.ts";
-
-/** Narrow loosely-typed tRPC raw-SQL results to a known shape without double-casting. */
-function typedData<T>(data: unknown): T {
-  // @ts-expect-error -- centralized type narrowing for tRPC raw-SQL results
-  return data;
-}
 
 // HR zone colors (blue->green->yellow->orange->red)
 const ZONE_COLORS = {
@@ -39,21 +34,23 @@ function getActivityColor(type: string): string {
   return ACTIVITY_COLORS[type.toLowerCase()] ?? "#71717a";
 }
 
-interface WeeklyVolumeRow {
-  week: string;
-  activity_type: string;
-  count: number;
-  hours: number;
-}
+const weeklyVolumeRowSchema = z.object({
+  week: z.string(),
+  activity_type: z.string(),
+  count: z.number(),
+  hours: z.number(),
+});
+type WeeklyVolumeRow = z.infer<typeof weeklyVolumeRowSchema>;
 
-interface HrZoneWeek {
-  week: string;
-  zone1: number;
-  zone2: number;
-  zone3: number;
-  zone4: number;
-  zone5: number;
-}
+const hrZoneWeekSchema = z.object({
+  week: z.string(),
+  zone1: z.number(),
+  zone2: z.number(),
+  zone3: z.number(),
+  zone4: z.number(),
+  zone5: z.number(),
+});
+type HrZoneWeek = z.infer<typeof hrZoneWeekSchema>;
 
 interface TrainingInsightsPanelProps {
   days: number;
@@ -65,10 +62,11 @@ export function TrainingInsightsPanel({ days }: TrainingInsightsPanelProps) {
 
   // tRPC infers raw SQL result types as Record<string, unknown>;
   // narrow to known row shapes via typed identity function
-  const volumeRows = typedData<WeeklyVolumeRow[]>(volume.data ?? []);
-  const zoneData = typedData<{ maxHr: number | null; weeks: HrZoneWeek[] } | undefined>(
-    hrZones.data,
-  );
+  const volumeRows = z.array(weeklyVolumeRowSchema).parse(volume.data ?? []);
+  const zoneData = z
+    .object({ maxHr: z.number().nullable(), weeks: z.array(hrZoneWeekSchema) })
+    .optional()
+    .parse(hrZones.data);
   const zoneWeeks = zoneData?.weeks ?? [];
 
   const loading = volume.isLoading || hrZones.isLoading;
@@ -113,9 +111,12 @@ function WeeklyVolumeChart({ data }: { data: WeeklyVolumeRow[] }) {
   // Build lookup: week -> type -> hours
   const lookup = new Map<string, Map<string, number>>();
   for (const row of data) {
-    if (!lookup.has(row.week)) lookup.set(row.week, new Map());
-    // biome-ignore lint/style/noNonNullAssertion: guaranteed by has() + set() above
-    lookup.get(row.week)!.set(row.activity_type, Number(row.hours) || 0);
+    let inner = lookup.get(row.week);
+    if (!inner) {
+      inner = new Map();
+      lookup.set(row.week, inner);
+    }
+    inner.set(row.activity_type, Number(row.hours) || 0);
   }
 
   const series = typeSet.map((type) => ({

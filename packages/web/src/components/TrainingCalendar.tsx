@@ -42,10 +42,10 @@ export function TrainingCalendar({ data, height = 180 }: TrainingCalendarProps) 
       borderColor: "#3f3f46",
       textStyle: { color: "#e4e4e7", fontSize: 12 },
       formatter(params: unknown): string {
-        // @ts-expect-error ECharts params is typed as unknown
-        const p: { value: [string, number] } = params;
-        const date = p.value[0];
-        const minutes = p.value[1];
+        if (!params || typeof params !== "object" || !("value" in params)) return "";
+        const rawValue = Array.isArray(params.value) ? params.value : ["", 0];
+        const date = String(rawValue[0] ?? "");
+        const minutes = Number(rawValue[1] ?? 0);
         const day = dayMap.get(date);
         if (!day) return date;
         const types = day.activityTypes.join(", ");

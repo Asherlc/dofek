@@ -1,12 +1,14 @@
+import { type ZodType, z } from "zod";
+
 /**
- * Type assertion for tRPC raw SQL query results.
- * Raw SQL queries return Record<string, unknown>[] — this helper asserts the
- * expected row shape without using banned double-cast patterns.
- * Use only for tRPC endpoints that return raw SQL until proper server-side
- * typing is added.
+ * Parse tRPC raw SQL query results with a Zod schema for runtime validation.
+ * Raw SQL queries return Record<string, unknown>[] — this helper validates each
+ * row against the provided schema. Use only for tRPC endpoints that return raw
+ * SQL until proper server-side typing is added.
  */
-export function assertRows<T>(data: ReadonlyArray<Record<string, unknown>> | undefined): T[] {
-  // @ts-expect-error -- centralized type narrowing for raw SQL results
-  const result: T[] = data ?? [];
-  return result;
+export function assertRows<T>(
+  data: ReadonlyArray<Record<string, unknown>> | undefined,
+  schema: ZodType<T>,
+): T[] {
+  return z.array(schema).parse(data ?? []);
 }

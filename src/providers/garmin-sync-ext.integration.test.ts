@@ -672,12 +672,18 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
       .from(userSettings)
       .where(eq(userSettings.key, "garmin_sync_cursor"));
     expect(cursorRows).toHaveLength(1);
-    // @ts-expect-error -- test assertion on raw DB value
-    const cursor: { cursor?: string } = cursorRows[0]?.value;
-    expect(cursor.cursor).toBeDefined();
-    // Cursor should be a recent ISO timestamp
-    const cursorDate = new Date(cursor.cursor ?? "");
-    expect(cursorDate.getTime()).toBeGreaterThan(Date.now() - 60_000);
+    const rawValue: unknown = cursorRows[0]?.value;
+    expect(rawValue).toBeDefined();
+    // Narrow the unknown JSONB value to access the cursor property
+    if (rawValue !== null && typeof rawValue === "object" && "cursor" in rawValue) {
+      const cursor = rawValue.cursor;
+      expect(cursor).toBeDefined();
+      const cursorStr = typeof cursor === "string" ? cursor : "";
+      const cursorDate = new Date(cursorStr);
+      expect(cursorDate.getTime()).toBeGreaterThan(Date.now() - 60_000);
+    } else {
+      expect.fail("Expected cursor value to be an object with cursor property");
+    }
   });
 
   it("returns error when Connect API authentication fails", async () => {

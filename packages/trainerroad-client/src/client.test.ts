@@ -2,13 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 import { TrainerRoadClient } from "./client.ts";
 import type { TrainerRoadActivity, TrainerRoadMemberInfo } from "./types.ts";
 
-type MockFetchFn = ReturnType<typeof vi.fn>;
-
-function asMock(fn: typeof globalThis.fetch): MockFetchFn {
-  // @ts-expect-error -- test helper: vi.fn() mock narrowing
-  return fn;
-}
-
 function mockFetch(response: {
   status: number;
   ok: boolean;
@@ -146,12 +139,10 @@ describe("TrainerRoadClient.getActivities", () => {
     const result = await client.getActivities("testuser", "2024-01-01", "2024-01-31");
 
     expect(result).toEqual(activities);
-    // @ts-expect-error -- test: mock call args narrowing
-    const [url, options]: [string, RequestInit] = asMock(fetchFn).mock.calls[0];
+    const [url, options]: [string, RequestInit] = fetchFn.mock.calls[0];
     expect(url).toContain("/app/api/calendar/activities/testuser");
     expect(url).toContain("startDate=2024-01-01");
     expect(url).toContain("endDate=2024-01-31");
-    // @ts-expect-error -- test: HeadersInit narrowed to Record
     const headers: Record<string, string> = options.headers;
     expect(headers.Cookie).toBe("SharedTrainerRoadAuth=test-auth-cookie");
   });
@@ -175,8 +166,7 @@ describe("TrainerRoadClient.getCareer", () => {
     const result = await client.getCareer("testuser");
 
     expect(result).toEqual(career);
-    // @ts-expect-error -- test: mock call args narrowing
-    const [url]: [string] = asMock(fetchFn).mock.calls[0];
+    const [url]: [string] = fetchFn.mock.calls[0];
     expect(url).toContain("/app/api/career/testuser/new");
   });
 });
@@ -190,8 +180,7 @@ describe("TrainerRoadClient.getMemberInfo", () => {
     const result = await client.getMemberInfo();
 
     expect(result).toEqual(memberInfo);
-    // @ts-expect-error -- test: mock call args narrowing
-    const [url]: [string] = asMock(fetchFn).mock.calls[0];
+    const [url]: [string] = fetchFn.mock.calls[0];
     expect(url).toContain("/app/api/member-info");
   });
 });

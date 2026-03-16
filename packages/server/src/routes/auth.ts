@@ -43,6 +43,10 @@ const oauth1Secrets = new Map<
 
 const IDENTITY_PROVIDERS: IdentityProviderName[] = ["google", "apple", "authentik"];
 
+function isIdentityProviderName(value: string): value is IdentityProviderName {
+  return IDENTITY_PROVIDERS.some((p) => p === value);
+}
+
 const SLACK_SCOPES = [
   "chat:write",
   "im:history",
@@ -170,13 +174,11 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
   router.get("/auth/login/:provider", (req, res) => {
     try {
       const providerNameRaw = req.params.provider;
-      // @ts-expect-error string is not assignable to IdentityProviderName but includes works at runtime
-      if (!IDENTITY_PROVIDERS.includes(providerNameRaw)) {
+      if (!isIdentityProviderName(providerNameRaw)) {
         res.status(404).send(`Unknown identity provider: ${providerNameRaw}`);
         return;
       }
-      // @ts-expect-error providerName is validated by the includes guard above
-      const providerName: IdentityProviderName = providerNameRaw;
+      const providerName = providerNameRaw;
       if (!isProviderConfigured(providerName)) {
         res.status(400).send(`Provider ${providerName} is not configured`);
         return;
@@ -203,13 +205,11 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
   router.get("/auth/link/:provider", async (req, res) => {
     try {
       const providerNameRaw = req.params.provider;
-      // @ts-expect-error string is not assignable to IdentityProviderName but includes works at runtime
-      if (!IDENTITY_PROVIDERS.includes(providerNameRaw)) {
+      if (!isIdentityProviderName(providerNameRaw)) {
         res.status(404).send(`Unknown identity provider: ${providerNameRaw}`);
         return;
       }
-      // @ts-expect-error providerName is validated by the includes guard above
-      const providerName: IdentityProviderName = providerNameRaw;
+      const providerName = providerNameRaw;
       if (!isProviderConfigured(providerName)) {
         res.status(400).send(`Provider ${providerName} is not configured`);
         return;
@@ -247,13 +247,11 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
   router.get("/auth/callback/:provider", async (req, res) => {
     try {
       const providerNameRaw = req.params.provider;
-      // @ts-expect-error string is not assignable to IdentityProviderName but includes works at runtime
-      if (!IDENTITY_PROVIDERS.includes(providerNameRaw)) {
+      if (!isIdentityProviderName(providerNameRaw)) {
         res.status(404).send(`Unknown identity provider: ${providerNameRaw}`);
         return;
       }
-      // @ts-expect-error providerName is validated by the includes guard above
-      const providerName: IdentityProviderName = providerNameRaw;
+      const providerName = providerNameRaw;
 
       const code = typeof req.query.code === "string" ? req.query.code : undefined;
       const stateParam = typeof req.query.state === "string" ? req.query.state : undefined;

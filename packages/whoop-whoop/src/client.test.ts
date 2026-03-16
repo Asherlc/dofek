@@ -1,22 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { WhoopClient } from "./client.ts";
+import { createMockFetch, createMockResponse, createTypedMockFetch } from "./test-helpers.ts";
 import type { WhoopAuthToken } from "./types.ts";
-
-function mockFetch(response: {
-  status: number;
-  ok: boolean;
-  body: unknown;
-}): typeof globalThis.fetch {
-  return vi.fn().mockResolvedValue({
-    ok: response.ok,
-    status: response.status,
-    json: () => Promise.resolve(response.body),
-    text: () =>
-      Promise.resolve(
-        typeof response.body === "string" ? response.body : JSON.stringify(response.body),
-      ),
-  });
-}
 
 function makeToken(overrides: Partial<WhoopAuthToken> = {}): WhoopAuthToken {
   return {
@@ -47,34 +32,27 @@ describe("WhoopClient.signIn", () => {
   it("returns success with token when no MFA", async () => {
     const callCount = { value: 0 };
 
-    const fetchFn = vi.fn().mockImplementation((_url: string) => {
+    const fetchFn = createTypedMockFetch();
+    fetchFn.mockImplementation(() => {
       callCount.value++;
 
       // First call: InitiateAuth
       if (callCount.value === 1) {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          text: () =>
-            Promise.resolve(
-              JSON.stringify({
-                AuthenticationResult: {
-                  AccessToken: "whoop-access-123",
-                  RefreshToken: "whoop-refresh-456",
-                  IdToken: "id-token",
-                },
-              }),
-            ),
-        });
+        return Promise.resolve(
+          createMockResponse({
+            body: {
+              AuthenticationResult: {
+                AccessToken: "whoop-access-123",
+                RefreshToken: "whoop-refresh-456",
+                IdToken: "id-token",
+              },
+            },
+          }),
+        );
       }
 
       // Second call: _fetchUserId (bootstrap)
-      return Promise.resolve({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve({ user: { id: 999 } }),
-      });
-      // @ts-expect-error partial fetch mock
+      return Promise.resolve(createMockResponse({ body: { user: { id: 999 } } }));
     });
 
     const result = await WhoopClient.signIn("user@example.com", "password123", fetchFn);
@@ -88,17 +66,10 @@ describe("WhoopClient.signIn", () => {
   });
 
   it("returns verification_required when MFA challenge (SMS)", async () => {
-    const fetchFn = vi.fn().mockResolvedValue({
+    const fetchFn = createMockFetch({
       ok: true,
       status: 200,
-      text: () =>
-        Promise.resolve(
-          JSON.stringify({
-            ChallengeName: "SMS_MFA",
-            Session: "session-abc",
-          }),
-        ),
-      // @ts-expect-error partial fetch mock
+      body: { ChallengeName: "SMS_MFA", Session: "session-abc" },
     });
 
     const result = await WhoopClient.signIn("user@example.com", "password123", fetchFn);
@@ -111,17 +82,10 @@ describe("WhoopClient.signIn", () => {
   });
 
   it("returns verification_required when MFA challenge (TOTP)", async () => {
-    const fetchFn = vi.fn().mockResolvedValue({
+    const fetchFn = createMockFetch({
       ok: true,
       status: 200,
-      text: () =>
-        Promise.resolve(
-          JSON.stringify({
-            ChallengeName: "SOFTWARE_TOKEN_MFA",
-            Session: "session-xyz",
-          }),
-        ),
-      // @ts-expect-error partial fetch mock
+      body: { ChallengeName: "SOFTWARE_TOKEN_MFA", Session: "session-xyz" },
     });
 
     const result = await WhoopClient.signIn("user@example.com", "password123", fetchFn);
@@ -133,12 +97,7 @@ describe("WhoopClient.signIn", () => {
   });
 
   it("throws when no tokens in response and no challenge", async () => {
-    const fetchFn = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      text: () => Promise.resolve(JSON.stringify({})),
-      // @ts-expect-error partial fetch mock
-    });
+    const fetchFn = createMockFetch({ ok: true, status: 200, body: {} });
 
     await expect(WhoopClient.signIn("user@example.com", "password123", fetchFn)).rejects.toThrow(
       "no tokens in response",
@@ -148,30 +107,23 @@ describe("WhoopClient.signIn", () => {
   it("throws when userId cannot be fetched", async () => {
     const callCount = { value: 0 };
 
-    const fetchFn = vi.fn().mockImplementation(() => {
+    const fetchFn = createTypedMockFetch();
+    fetchFn.mockImplementation(() => {
       callCount.value++;
       if (callCount.value === 1) {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          text: () =>
-            Promise.resolve(
-              JSON.stringify({
-                AuthenticationResult: {
-                  AccessToken: "token",
-                  RefreshToken: "refresh",
-                },
-              }),
-            ),
-        });
+        return Promise.resolve(
+          createMockResponse({
+            body: {
+              AuthenticationResult: {
+                AccessToken: "token",
+                RefreshToken: "refresh",
+              },
+            },
+          }),
+        );
       }
       // Bootstrap fails
-      return Promise.resolve({
-        ok: false,
-        status: 500,
-        json: () => Promise.resolve({}),
-      });
-      // @ts-expect-error partial fetch mock
+      return Promise.resolve(createMockResponse({ ok: false, status: 500, body: {} }));
     });
 
     await expect(WhoopClient.signIn("user@example.com", "password123", fetchFn)).rejects.toThrow(
@@ -180,17 +132,13 @@ describe("WhoopClient.signIn", () => {
   });
 
   it("throws on Cognito error response", async () => {
-    const fetchFn = vi.fn().mockResolvedValue({
+    const fetchFn = createMockFetch({
       ok: false,
       status: 400,
-      text: () =>
-        Promise.resolve(
-          JSON.stringify({
-            __type: "com.amazonaws.cognito#NotAuthorizedException",
-            message: "Incorrect username or password.",
-          }),
-        ),
-      // @ts-expect-error partial fetch mock
+      body: {
+        __type: "com.amazonaws.cognito#NotAuthorizedException",
+        message: "Incorrect username or password.",
+      },
     });
 
     await expect(WhoopClient.signIn("user@example.com", "bad-password", fetchFn)).rejects.toThrow(
@@ -199,12 +147,11 @@ describe("WhoopClient.signIn", () => {
   });
 
   it("throws on non-JSON error response", async () => {
-    const fetchFn = vi.fn().mockResolvedValue({
+    const fetchFn = createMockFetch({
       ok: false,
       status: 500,
       statusText: "Internal Server Error",
-      text: () => Promise.resolve("not json"),
-      // @ts-expect-error partial fetch mock
+      body: "not json",
     });
 
     await expect(WhoopClient.signIn("user@example.com", "password", fetchFn)).rejects.toThrow(
@@ -221,31 +168,24 @@ describe("WhoopClient.verifyCode", () => {
   it("returns token on successful SMS verification", async () => {
     const callCount = { value: 0 };
 
-    const fetchFn = vi.fn().mockImplementation(() => {
+    const fetchFn = createTypedMockFetch();
+    fetchFn.mockImplementation(() => {
       callCount.value++;
       if (callCount.value === 1) {
         // SMS_MFA challenge response
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          text: () =>
-            Promise.resolve(
-              JSON.stringify({
-                AuthenticationResult: {
-                  AccessToken: "verified-token",
-                  RefreshToken: "verified-refresh",
-                },
-              }),
-            ),
-        });
+        return Promise.resolve(
+          createMockResponse({
+            body: {
+              AuthenticationResult: {
+                AccessToken: "verified-token",
+                RefreshToken: "verified-refresh",
+              },
+            },
+          }),
+        );
       }
       // Bootstrap to get userId
-      return Promise.resolve({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve({ id: 42 }),
-      });
-      // @ts-expect-error partial fetch mock
+      return Promise.resolve(createMockResponse({ body: { id: 42 } }));
     });
 
     const result = await WhoopClient.verifyCode(
@@ -263,45 +203,37 @@ describe("WhoopClient.verifyCode", () => {
   it("falls back to SOFTWARE_TOKEN_MFA when SMS_MFA fails", async () => {
     const callCount = { value: 0 };
 
-    const fetchFn = vi.fn().mockImplementation(() => {
+    const fetchFn = createTypedMockFetch();
+    fetchFn.mockImplementation(() => {
       callCount.value++;
       if (callCount.value === 1) {
         // SMS_MFA fails
-        return Promise.resolve({
-          ok: false,
-          status: 400,
-          text: () =>
-            Promise.resolve(
-              JSON.stringify({
-                __type: "com.amazonaws.cognito#CodeMismatchException",
-                message: "Invalid code",
-              }),
-            ),
-        });
+        return Promise.resolve(
+          createMockResponse({
+            ok: false,
+            status: 400,
+            body: {
+              __type: "com.amazonaws.cognito#CodeMismatchException",
+              message: "Invalid code",
+            },
+          }),
+        );
       }
       if (callCount.value === 2) {
         // SOFTWARE_TOKEN_MFA succeeds
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          text: () =>
-            Promise.resolve(
-              JSON.stringify({
-                AuthenticationResult: {
-                  AccessToken: "totp-token",
-                  RefreshToken: "totp-refresh",
-                },
-              }),
-            ),
-        });
+        return Promise.resolve(
+          createMockResponse({
+            body: {
+              AuthenticationResult: {
+                AccessToken: "totp-token",
+                RefreshToken: "totp-refresh",
+              },
+            },
+          }),
+        );
       }
       // Bootstrap
-      return Promise.resolve({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve({ user_id: 55 }),
-      });
-      // @ts-expect-error partial fetch mock
+      return Promise.resolve(createMockResponse({ body: { user_id: 55 } }));
     });
 
     const result = await WhoopClient.verifyCode(
@@ -316,12 +248,7 @@ describe("WhoopClient.verifyCode", () => {
   });
 
   it("throws when no tokens in verification response", async () => {
-    const fetchFn = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      text: () => Promise.resolve(JSON.stringify({})),
-      // @ts-expect-error partial fetch mock
-    });
+    const fetchFn = createMockFetch({ ok: true, status: 200, body: {} });
 
     await expect(
       WhoopClient.verifyCode("session-123", "123456", "user@example.com", fetchFn),
@@ -331,30 +258,23 @@ describe("WhoopClient.verifyCode", () => {
   it("throws when userId cannot be determined after verification", async () => {
     const callCount = { value: 0 };
 
-    const fetchFn = vi.fn().mockImplementation(() => {
+    const fetchFn = createTypedMockFetch();
+    fetchFn.mockImplementation(() => {
       callCount.value++;
       if (callCount.value === 1) {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          text: () =>
-            Promise.resolve(
-              JSON.stringify({
-                AuthenticationResult: {
-                  AccessToken: "token",
-                  RefreshToken: "refresh",
-                },
-              }),
-            ),
-        });
+        return Promise.resolve(
+          createMockResponse({
+            body: {
+              AuthenticationResult: {
+                AccessToken: "token",
+                RefreshToken: "refresh",
+              },
+            },
+          }),
+        );
       }
       // Bootstrap returns no userId
-      return Promise.resolve({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve({ foo: "bar" }),
-      });
-      // @ts-expect-error partial fetch mock
+      return Promise.resolve(createMockResponse({ body: { foo: "bar" } }));
     });
 
     await expect(
@@ -371,30 +291,23 @@ describe("WhoopClient.refreshAccessToken", () => {
   it("returns refreshed tokens with userId", async () => {
     const callCount = { value: 0 };
 
-    const fetchFn = vi.fn().mockImplementation(() => {
+    const fetchFn = createTypedMockFetch();
+    fetchFn.mockImplementation(() => {
       callCount.value++;
       if (callCount.value === 1) {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          text: () =>
-            Promise.resolve(
-              JSON.stringify({
-                AuthenticationResult: {
-                  AccessToken: "new-access",
-                  RefreshToken: "new-refresh",
-                },
-              }),
-            ),
-        });
+        return Promise.resolve(
+          createMockResponse({
+            body: {
+              AuthenticationResult: {
+                AccessToken: "new-access",
+                RefreshToken: "new-refresh",
+              },
+            },
+          }),
+        );
       }
       // Bootstrap
-      return Promise.resolve({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve({ id: 77 }),
-      });
-      // @ts-expect-error partial fetch mock
+      return Promise.resolve(createMockResponse({ body: { id: 77 } }));
     });
 
     const result = await WhoopClient.refreshAccessToken("old-refresh-token", fetchFn);
@@ -407,29 +320,22 @@ describe("WhoopClient.refreshAccessToken", () => {
   it("reuses old refresh token when Cognito does not return new one", async () => {
     const callCount = { value: 0 };
 
-    const fetchFn = vi.fn().mockImplementation(() => {
+    const fetchFn = createTypedMockFetch();
+    fetchFn.mockImplementation(() => {
       callCount.value++;
       if (callCount.value === 1) {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          text: () =>
-            Promise.resolve(
-              JSON.stringify({
-                AuthenticationResult: {
-                  AccessToken: "new-access",
-                  // No RefreshToken
-                },
-              }),
-            ),
-        });
+        return Promise.resolve(
+          createMockResponse({
+            body: {
+              AuthenticationResult: {
+                AccessToken: "new-access",
+                // No RefreshToken
+              },
+            },
+          }),
+        );
       }
-      return Promise.resolve({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve({ id: 88 }),
-      });
-      // @ts-expect-error partial fetch mock
+      return Promise.resolve(createMockResponse({ body: { id: 88 } }));
     });
 
     const result = await WhoopClient.refreshAccessToken("keep-this-refresh", fetchFn);
@@ -440,29 +346,22 @@ describe("WhoopClient.refreshAccessToken", () => {
   it("returns null userId when bootstrap fails", async () => {
     const callCount = { value: 0 };
 
-    const fetchFn = vi.fn().mockImplementation(() => {
+    const fetchFn = createTypedMockFetch();
+    fetchFn.mockImplementation(() => {
       callCount.value++;
       if (callCount.value === 1) {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          text: () =>
-            Promise.resolve(
-              JSON.stringify({
-                AuthenticationResult: {
-                  AccessToken: "new-access",
-                },
-              }),
-            ),
-        });
+        return Promise.resolve(
+          createMockResponse({
+            body: {
+              AuthenticationResult: {
+                AccessToken: "new-access",
+              },
+            },
+          }),
+        );
       }
       // Bootstrap fails
-      return Promise.resolve({
-        ok: false,
-        status: 500,
-        json: () => Promise.resolve({}),
-      });
-      // @ts-expect-error partial fetch mock
+      return Promise.resolve(createMockResponse({ ok: false, status: 500, body: {} }));
     });
 
     const result = await WhoopClient.refreshAccessToken("refresh-token", fetchFn);
@@ -471,12 +370,7 @@ describe("WhoopClient.refreshAccessToken", () => {
   });
 
   it("throws when no tokens in refresh response", async () => {
-    const fetchFn = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      text: () => Promise.resolve(JSON.stringify({})),
-      // @ts-expect-error partial fetch mock
-    });
+    const fetchFn = createMockFetch({ ok: true, status: 200, body: {} });
 
     await expect(WhoopClient.refreshAccessToken("refresh-token", fetchFn)).rejects.toThrow(
       "no tokens in response",
@@ -492,29 +386,22 @@ describe("WhoopClient.authenticate", () => {
   it("returns token directly when no MFA", async () => {
     const callCount = { value: 0 };
 
-    const fetchFn = vi.fn().mockImplementation(() => {
+    const fetchFn = createTypedMockFetch();
+    fetchFn.mockImplementation(() => {
       callCount.value++;
       if (callCount.value === 1) {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          text: () =>
-            Promise.resolve(
-              JSON.stringify({
-                AuthenticationResult: {
-                  AccessToken: "access",
-                  RefreshToken: "refresh",
-                },
-              }),
-            ),
-        });
+        return Promise.resolve(
+          createMockResponse({
+            body: {
+              AuthenticationResult: {
+                AccessToken: "access",
+                RefreshToken: "refresh",
+              },
+            },
+          }),
+        );
       }
-      return Promise.resolve({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve({ id: 100 }),
-      });
-      // @ts-expect-error partial fetch mock
+      return Promise.resolve(createMockResponse({ body: { id: 100 } }));
     });
 
     const token = await WhoopClient.authenticate("user@example.com", "password", fetchFn);
@@ -524,17 +411,10 @@ describe("WhoopClient.authenticate", () => {
   });
 
   it("throws when MFA is required", async () => {
-    const fetchFn = vi.fn().mockResolvedValue({
+    const fetchFn = createMockFetch({
       ok: true,
       status: 200,
-      text: () =>
-        Promise.resolve(
-          JSON.stringify({
-            ChallengeName: "SMS_MFA",
-            Session: "session-abc",
-          }),
-        ),
-      // @ts-expect-error partial fetch mock
+      body: { ChallengeName: "SMS_MFA", Session: "session-abc" },
     });
 
     await expect(WhoopClient.authenticate("user@example.com", "password", fetchFn)).rejects.toThrow(
@@ -549,43 +429,51 @@ describe("WhoopClient.authenticate", () => {
 
 describe("WhoopClient._fetchUserId", () => {
   it("returns id from top-level id field", async () => {
-    const fetchFn = mockFetch({ status: 200, ok: true, body: { id: 42 } });
+    const fetchFn = createMockFetch({ status: 200, ok: true, body: { id: 42 } });
     const result = await WhoopClient._fetchUserId("token", fetchFn);
     expect(result).toBe(42);
   });
 
   it("returns id from top-level user_id field", async () => {
-    const fetchFn = mockFetch({ status: 200, ok: true, body: { user_id: 55 } });
+    const fetchFn = createMockFetch({ status: 200, ok: true, body: { user_id: 55 } });
     const result = await WhoopClient._fetchUserId("token", fetchFn);
     expect(result).toBe(55);
   });
 
   it("returns id from nested user.id field", async () => {
-    const fetchFn = mockFetch({ status: 200, ok: true, body: { user: { id: 66 } } });
+    const fetchFn = createMockFetch({ status: 200, ok: true, body: { user: { id: 66 } } });
     const result = await WhoopClient._fetchUserId("token", fetchFn);
     expect(result).toBe(66);
   });
 
   it("returns id from nested user.user_id field", async () => {
-    const fetchFn = mockFetch({ status: 200, ok: true, body: { user: { user_id: 77 } } });
+    const fetchFn = createMockFetch({
+      status: 200,
+      ok: true,
+      body: { user: { user_id: 77 } },
+    });
     const result = await WhoopClient._fetchUserId("token", fetchFn);
     expect(result).toBe(77);
   });
 
   it("returns null when response is not ok", async () => {
-    const fetchFn = mockFetch({ status: 500, ok: false, body: {} });
+    const fetchFn = createMockFetch({ status: 500, ok: false, body: {} });
     const result = await WhoopClient._fetchUserId("token", fetchFn);
     expect(result).toBeNull();
   });
 
   it("returns null when no valid userId in response", async () => {
-    const fetchFn = mockFetch({ status: 200, ok: true, body: { foo: "bar" } });
+    const fetchFn = createMockFetch({ status: 200, ok: true, body: { foo: "bar" } });
     const result = await WhoopClient._fetchUserId("token", fetchFn);
     expect(result).toBeNull();
   });
 
   it("returns null when userId is not a number", async () => {
-    const fetchFn = mockFetch({ status: 200, ok: true, body: { id: "not-a-number" } });
+    const fetchFn = createMockFetch({
+      status: 200,
+      ok: true,
+      body: { id: "not-a-number" },
+    });
     const result = await WhoopClient._fetchUserId("token", fetchFn);
     expect(result).toBeNull();
   });
@@ -602,21 +490,20 @@ describe("WhoopClient.getHeartRate", () => {
       { time: 1700000006000, data: 75 },
     ];
 
-    const fetchFn = mockFetch({ status: 200, ok: true, body: { values: hrValues } });
+    const fetchFn = createMockFetch({ status: 200, ok: true, body: { values: hrValues } });
     const client = new WhoopClient(makeToken(), fetchFn);
 
     const result = await client.getHeartRate("2024-01-15T00:00:00Z", "2024-01-15T23:59:59Z");
 
     expect(result).toEqual(hrValues);
-    // @ts-expect-error mock type
     const [url] = fetchFn.mock.calls[0];
-    expect(url).toContain("/metrics-service/v1/metrics/user/12345");
-    expect(url).toContain("name=heart_rate");
-    expect(url).toContain("step=6");
+    expect(String(url)).toContain("/metrics-service/v1/metrics/user/12345");
+    expect(String(url)).toContain("name=heart_rate");
+    expect(String(url)).toContain("step=6");
   });
 
   it("returns empty array when no values", async () => {
-    const fetchFn = mockFetch({ status: 200, ok: true, body: {} });
+    const fetchFn = createMockFetch({ status: 200, ok: true, body: {} });
     const client = new WhoopClient(makeToken(), fetchFn);
 
     const result = await client.getHeartRate("2024-01-15T00:00:00Z", "2024-01-15T23:59:59Z");
@@ -625,21 +512,20 @@ describe("WhoopClient.getHeartRate", () => {
   });
 
   it("uses custom step parameter", async () => {
-    const fetchFn = mockFetch({ status: 200, ok: true, body: { values: [] } });
+    const fetchFn = createMockFetch({ status: 200, ok: true, body: { values: [] } });
     const client = new WhoopClient(makeToken(), fetchFn);
 
     await client.getHeartRate("2024-01-15T00:00:00Z", "2024-01-15T23:59:59Z", 60);
 
-    // @ts-expect-error mock type
     const [url] = fetchFn.mock.calls[0];
-    expect(url).toContain("step=60");
+    expect(String(url)).toContain("step=60");
   });
 });
 
 describe("WhoopClient.getCycles", () => {
   it("returns cycles from array response", async () => {
     const cycles = [{ id: 1, user_id: 12345 }];
-    const fetchFn = mockFetch({ status: 200, ok: true, body: cycles });
+    const fetchFn = createMockFetch({ status: 200, ok: true, body: cycles });
     const client = new WhoopClient(makeToken(), fetchFn);
 
     const result = await client.getCycles("2024-01-01T00:00:00Z", "2024-01-31T23:59:59Z");
@@ -649,7 +535,7 @@ describe("WhoopClient.getCycles", () => {
 
   it("returns cycles from wrapped response with cycles key", async () => {
     const cycles = [{ id: 2 }];
-    const fetchFn = mockFetch({ status: 200, ok: true, body: { cycles } });
+    const fetchFn = createMockFetch({ status: 200, ok: true, body: { cycles } });
     const client = new WhoopClient(makeToken(), fetchFn);
 
     const result = await client.getCycles("2024-01-01T00:00:00Z", "2024-01-31T23:59:59Z");
@@ -659,7 +545,7 @@ describe("WhoopClient.getCycles", () => {
 
   it("returns cycles from wrapped response with records key", async () => {
     const records = [{ id: 3 }];
-    const fetchFn = mockFetch({ status: 200, ok: true, body: { records } });
+    const fetchFn = createMockFetch({ status: 200, ok: true, body: { records } });
     const client = new WhoopClient(makeToken(), fetchFn);
 
     const result = await client.getCycles("2024-01-01T00:00:00Z", "2024-01-31T23:59:59Z");
@@ -669,7 +555,7 @@ describe("WhoopClient.getCycles", () => {
 
   it("returns cycles from wrapped response with data key", async () => {
     const data = [{ id: 4 }];
-    const fetchFn = mockFetch({ status: 200, ok: true, body: { data } });
+    const fetchFn = createMockFetch({ status: 200, ok: true, body: { data } });
     const client = new WhoopClient(makeToken(), fetchFn);
 
     const result = await client.getCycles("2024-01-01T00:00:00Z", "2024-01-31T23:59:59Z");
@@ -679,7 +565,7 @@ describe("WhoopClient.getCycles", () => {
 
   it("returns cycles from wrapped response with results key", async () => {
     const results = [{ id: 5 }];
-    const fetchFn = mockFetch({ status: 200, ok: true, body: { results } });
+    const fetchFn = createMockFetch({ status: 200, ok: true, body: { results } });
     const client = new WhoopClient(makeToken(), fetchFn);
 
     const result = await client.getCycles("2024-01-01T00:00:00Z", "2024-01-31T23:59:59Z");
@@ -688,7 +574,7 @@ describe("WhoopClient.getCycles", () => {
   });
 
   it("returns empty array for object without known wrapper keys", async () => {
-    const fetchFn = mockFetch({ status: 200, ok: true, body: { unknown: "value" } });
+    const fetchFn = createMockFetch({ status: 200, ok: true, body: { unknown: "value" } });
     const client = new WhoopClient(makeToken(), fetchFn);
 
     const result = await client.getCycles("2024-01-01T00:00:00Z", "2024-01-31T23:59:59Z");
@@ -697,7 +583,7 @@ describe("WhoopClient.getCycles", () => {
   });
 
   it("returns empty array for null/primitive response", async () => {
-    const fetchFn = mockFetch({ status: 200, ok: true, body: null });
+    const fetchFn = createMockFetch({ status: 200, ok: true, body: null });
     const client = new WhoopClient(makeToken(), fetchFn);
 
     const result = await client.getCycles("2024-01-01T00:00:00Z", "2024-01-31T23:59:59Z");
@@ -706,25 +592,23 @@ describe("WhoopClient.getCycles", () => {
   });
 
   it("uses default limit parameter", async () => {
-    const fetchFn = mockFetch({ status: 200, ok: true, body: [] });
+    const fetchFn = createMockFetch({ status: 200, ok: true, body: [] });
     const client = new WhoopClient(makeToken(), fetchFn);
 
     await client.getCycles("2024-01-01T00:00:00Z", "2024-01-31T23:59:59Z");
 
-    // @ts-expect-error mock type
     const [url] = fetchFn.mock.calls[0];
-    expect(url).toContain("limit=26");
+    expect(String(url)).toContain("limit=26");
   });
 
   it("uses custom limit parameter", async () => {
-    const fetchFn = mockFetch({ status: 200, ok: true, body: [] });
+    const fetchFn = createMockFetch({ status: 200, ok: true, body: [] });
     const client = new WhoopClient(makeToken(), fetchFn);
 
     await client.getCycles("2024-01-01T00:00:00Z", "2024-01-31T23:59:59Z", 50);
 
-    // @ts-expect-error mock type
     const [url] = fetchFn.mock.calls[0];
-    expect(url).toContain("limit=50");
+    expect(String(url)).toContain("limit=50");
   });
 });
 
@@ -742,16 +626,15 @@ describe("WhoopClient.getSleep", () => {
       score_state: "SCORED",
     };
 
-    const fetchFn = mockFetch({ status: 200, ok: true, body: sleepRecord });
+    const fetchFn = createMockFetch({ status: 200, ok: true, body: sleepRecord });
     const client = new WhoopClient(makeToken(), fetchFn);
 
     const result = await client.getSleep(1001);
 
     expect(result).toEqual(sleepRecord);
-    // @ts-expect-error mock type
     const [url] = fetchFn.mock.calls[0];
-    expect(url).toContain("/sleep-service/v1/sleep-events");
-    expect(url).toContain("activityId=1001");
+    expect(String(url)).toContain("/sleep-service/v1/sleep-events");
+    expect(String(url)).toContain("activityId=1001");
   });
 });
 
@@ -759,15 +642,14 @@ describe("WhoopClient.getJournal", () => {
   it("returns journal data", async () => {
     const journalData = { impacts: [] };
 
-    const fetchFn = mockFetch({ status: 200, ok: true, body: journalData });
+    const fetchFn = createMockFetch({ status: 200, ok: true, body: journalData });
     const client = new WhoopClient(makeToken(), fetchFn);
 
     const result = await client.getJournal("2024-01-01T00:00:00Z", "2024-01-31T23:59:59Z");
 
     expect(result).toEqual(journalData);
-    // @ts-expect-error mock type
     const [url] = fetchFn.mock.calls[0];
-    expect(url).toContain("/behavior-impact-service/v1/impact");
+    expect(String(url)).toContain("/behavior-impact-service/v1/impact");
   });
 });
 
@@ -785,23 +667,18 @@ describe("WhoopClient.getWeightliftingWorkout", () => {
       msk_strain_contribution_percent: 60,
     };
 
-    const fetchFn = mockFetch({ status: 200, ok: true, body: workoutData });
+    const fetchFn = createMockFetch({ status: 200, ok: true, body: workoutData });
     const client = new WhoopClient(makeToken(), fetchFn);
 
     const result = await client.getWeightliftingWorkout("abc-123");
 
     expect(result).toEqual(workoutData);
-    // @ts-expect-error mock type
     const [url] = fetchFn.mock.calls[0];
-    expect(url).toContain("/weightlifting-service/v2/weightlifting-workout/abc-123");
+    expect(String(url)).toContain("/weightlifting-service/v2/weightlifting-workout/abc-123");
   });
 
   it("returns null on 404", async () => {
-    const fetchFn = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 404,
-      // @ts-expect-error partial fetch mock
-    });
+    const fetchFn = createMockFetch({ ok: false, status: 404, body: "" });
 
     const client = new WhoopClient(makeToken(), fetchFn);
 
@@ -811,11 +688,10 @@ describe("WhoopClient.getWeightliftingWorkout", () => {
   });
 
   it("throws on non-404 error", async () => {
-    const fetchFn = vi.fn().mockResolvedValue({
+    const fetchFn = createMockFetch({
       ok: false,
       status: 500,
-      text: () => Promise.resolve("Server Error"),
-      // @ts-expect-error partial fetch mock
+      body: "Server Error",
     });
 
     const client = new WhoopClient(makeToken(), fetchFn);
@@ -828,11 +704,10 @@ describe("WhoopClient.getWeightliftingWorkout", () => {
 
 describe("WhoopClient API error handling", () => {
   it("throws on non-200 response from get method", async () => {
-    const fetchFn = vi.fn().mockResolvedValue({
+    const fetchFn = createMockFetch({
       ok: false,
       status: 403,
-      text: () => Promise.resolve("Forbidden"),
-      // @ts-expect-error partial fetch mock
+      body: "Forbidden",
     });
 
     const client = new WhoopClient(makeToken(), fetchFn);
@@ -844,19 +719,11 @@ describe("WhoopClient API error handling", () => {
 });
 
 describe("cognitoCall error handling", () => {
-  // @ts-expect-error mock type assertion
   it("includes Message field", async () => {
-    const fetchFn = vi.fn().mockResolvedValue({
+    const fetchFn = createMockFetch({
       ok: false,
       status: 400,
-      text: () =>
-        Promise.resolve(
-          JSON.stringify({
-            __type: "SomeError",
-            Message: "Fallback message",
-          }),
-        ),
-      // @ts-expect-error partial fetch mock
+      body: { __type: "SomeError", Message: "Fallback message" },
     });
 
     await expect(WhoopClient.signIn("user@example.com", "password", fetchFn)).rejects.toThrow(
@@ -865,16 +732,10 @@ describe("cognitoCall error handling", () => {
   });
 
   it("defaults to Auth failed when no message fields", async () => {
-    const fetchFn = vi.fn().mockResolvedValue({
+    const fetchFn = createMockFetch({
       ok: false,
       status: 400,
-      text: () =>
-        Promise.resolve(
-          JSON.stringify({
-            __type: "com.amazonaws.cognito#SomeError",
-          }),
-        ),
-      // @ts-expect-error partial fetch mock
+      body: { __type: "com.amazonaws.cognito#SomeError" },
     });
 
     await expect(WhoopClient.signIn("user@example.com", "password", fetchFn)).rejects.toThrow(
@@ -883,12 +744,11 @@ describe("cognitoCall error handling", () => {
   });
 
   it("includes empty body text when response body is empty", async () => {
-    const fetchFn = vi.fn().mockResolvedValue({
+    const fetchFn = createMockFetch({
       ok: false,
       status: 500,
       statusText: "Internal Server Error",
-      text: () => Promise.resolve(""),
-      // @ts-expect-error partial fetch mock
+      body: "",
     });
 
     await expect(WhoopClient.signIn("user@example.com", "password", fetchFn)).rejects.toThrow(

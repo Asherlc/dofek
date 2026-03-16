@@ -74,7 +74,6 @@ describe("formatConfirmationMessage", () => {
     );
     expect(actionsBlock).toBeDefined();
 
-    // @ts-expect-error actionsBlock.elements is unknown but we know its shape
     const elements: Array<Record<string, unknown>> = actionsBlock?.elements;
     const confirmButton = elements.find((e) => e.action_id === "confirm_food");
     expect(confirmButton).toBeDefined();
@@ -192,7 +191,6 @@ describe("formatConfirmationMessage button value size", () => {
     const actionsBlock: Record<string, unknown> | undefined = result.blocks.find(
       (b: Record<string, unknown>) => b.type === "actions",
     );
-    // @ts-expect-error actionsBlock.elements is unknown but we know its shape
     const elements: Array<Record<string, unknown>> = actionsBlock?.elements;
     const confirmButton = elements.find((e) => e.action_id === "confirm_food");
     const value = String(confirmButton?.value);

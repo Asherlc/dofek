@@ -20,13 +20,14 @@ const GRID_PAIRS: Record<string, string> = {
 
 function isValidLayout(value: unknown): value is DashboardLayout {
   if (typeof value !== "object" || value === null) return false;
-  // @ts-expect-error narrowing object to Record<string, unknown> after null check
-  const obj: Record<string, unknown> = value;
   return (
-    Array.isArray(obj.order) &&
-    Array.isArray(obj.hidden) &&
-    typeof obj.collapsed === "object" &&
-    obj.collapsed !== null
+    "order" in value &&
+    Array.isArray(value.order) &&
+    "hidden" in value &&
+    Array.isArray(value.hidden) &&
+    "collapsed" in value &&
+    typeof value.collapsed === "object" &&
+    value.collapsed !== null
   );
 }
 

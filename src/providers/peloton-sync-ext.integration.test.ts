@@ -87,8 +87,8 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
-    server.listen({ onUnhandledRequest: "error" });
     ctx = await setupTestDatabase();
+    server.listen({ onUnhandledRequest: "error" });
     await ensureProvider(ctx.db, "peloton", "Peloton", "https://api.onepeloton.com");
   }, 60_000);
 

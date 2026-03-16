@@ -29,7 +29,6 @@ describe("recoveryRouter", () => {
 
   function makeCaller(rows: Record<string, unknown>[] = []) {
     return createCaller({
-      // @ts-expect-error mock DB
       db: { execute: vi.fn().mockResolvedValue(rows) },
       userId: "user-1",
     });
@@ -220,7 +219,6 @@ describe("settingsRouter", () => {
     it("returns setting value", async () => {
       const rows = [{ key: "theme", value: "dark" }];
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
       });
@@ -230,7 +228,6 @@ describe("settingsRouter", () => {
 
     it("returns null when setting not found", async () => {
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
@@ -246,7 +243,6 @@ describe("settingsRouter", () => {
         { key: "units", value: "metric" },
       ];
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
       });
@@ -259,7 +255,6 @@ describe("settingsRouter", () => {
     it("upserts a setting", async () => {
       const rows = [{ key: "theme", value: "light" }];
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
       });
@@ -269,7 +264,6 @@ describe("settingsRouter", () => {
 
     it("throws when upsert fails", async () => {
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
@@ -282,7 +276,6 @@ describe("settingsRouter", () => {
   describe("slackStatus", () => {
     it("returns slack status", async () => {
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
@@ -295,7 +288,6 @@ describe("settingsRouter", () => {
     it("returns connected when slack account exists", async () => {
       const rows = [{ provider_account_id: "slack-123" }];
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
       });
@@ -323,7 +315,6 @@ describe("sleepNeedRouter", () => {
         },
       ];
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
       });
@@ -346,7 +337,6 @@ describe("sleepNeedRouter", () => {
         });
       }
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
       });
@@ -359,7 +349,6 @@ describe("sleepNeedRouter", () => {
 
     it("handles empty data", async () => {
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
@@ -378,7 +367,6 @@ describe("sportSettingsRouter", () => {
 
   function makeCaller(rows: Record<string, unknown>[] = []) {
     return createCaller({
-      // @ts-expect-error mock DB
       db: { execute: vi.fn().mockResolvedValue(rows) },
       userId: "user-1",
     });

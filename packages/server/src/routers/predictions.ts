@@ -1,14 +1,9 @@
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import type {
-  ActivityRow,
-  BodyCompRow,
-  DailyRow,
-  NutritionRow,
-  SleepRow,
-} from "../insights/engine.ts";
+import type { BodyCompRow, DailyRow, NutritionRow, SleepRow } from "../insights/engine.ts";
 import { joinByDate } from "../insights/engine.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import {
   ACTIVITY_PREDICTION_TARGETS,
   buildActivityDataset,
@@ -20,38 +15,79 @@ import { getPredictionTarget, PREDICTION_TARGETS } from "../ml/features.ts";
 import { trainFromDataset, trainPredictor } from "../ml/predictor.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
-/** SQL row for activity summary (pre-aggregated from metric_stream) */
-interface ActivitySummaryRow {
-  [key: string]: string | number | Date | boolean | null | undefined;
-  activity_id: string;
-  activity_type: string;
-  started_at: string;
-  avg_hr: number | null;
-  avg_power: number | null;
-  avg_speed: number | null;
-  total_distance: number | null;
-  elevation_gain_m: number | null;
-  avg_cadence: number | null;
-  duration_min: number | null;
-}
+/** Zod schemas for SQL row validation */
+const dailyRowSchema = z.object({
+  date: z.union([z.string(), z.coerce.date()]),
+  resting_hr: z.number().nullable(),
+  hrv: z.number().nullable(),
+  spo2_avg: z.number().nullable(),
+  steps: z.number().nullable(),
+  active_energy_kcal: z.number().nullable(),
+  skin_temp_c: z.number().nullable(),
+});
+
+const sleepRowSchema = z.object({
+  started_at: z.string(),
+  duration_minutes: z.number().nullable(),
+  deep_minutes: z.number().nullable(),
+  rem_minutes: z.number().nullable(),
+  light_minutes: z.number().nullable(),
+  awake_minutes: z.number().nullable(),
+  efficiency_pct: z.number().nullable(),
+  is_nap: z.boolean(),
+});
+
+const activityRowSchema = z.object({
+  started_at: z.string(),
+  ended_at: z.string().nullable(),
+  activity_type: z.string(),
+});
+
+const nutritionRowSchema = z.object({
+  date: z.union([z.string(), z.coerce.date()]),
+  calories: z.number().nullable(),
+  protein_g: z.number().nullable(),
+  carbs_g: z.number().nullable(),
+  fat_g: z.number().nullable(),
+  fiber_g: z.number().nullable(),
+  water_ml: z.number().nullable(),
+});
+
+const bodyCompRowSchema = z.object({
+  recorded_at: z.string(),
+  weight_kg: z.number().nullable(),
+  body_fat_pct: z.number().nullable(),
+});
+
+const activitySummaryRowSchema = z.object({
+  activity_id: z.string(),
+  activity_type: z.string(),
+  started_at: z.string(),
+  avg_hr: z.number().nullable(),
+  avg_power: z.number().nullable(),
+  avg_speed: z.number().nullable(),
+  total_distance: z.number().nullable(),
+  elevation_gain_m: z.number().nullable(),
+  avg_cadence: z.number().nullable(),
+  duration_min: z.number().nullable(),
+});
+
+const exerciseMinutesRowSchema = z.object({
+  date: z.union([z.string(), z.coerce.date()]),
+  exercise_minutes: z.number().nullable(),
+});
+
+const strengthVolumeRowSchema = z.object({
+  workout_id: z.string(),
+  started_at: z.string(),
+  total_volume: z.number().nullable(),
+  working_set_count: z.number().nullable(),
+  max_weight: z.number().nullable(),
+  avg_rpe: z.number().nullable(),
+});
 
 /** SQL row for per-day exercise minutes (aggregated from activity_summary) */
-interface ExerciseMinutesRow {
-  [key: string]: string | number | Date | boolean | null | undefined;
-  date: string;
-  exercise_minutes: number | null;
-}
-
-/** SQL row for strength workout volume */
-interface StrengthVolumeRow {
-  [key: string]: string | number | Date | boolean | null | undefined;
-  workout_id: string;
-  started_at: string;
-  total_volume: number | null;
-  working_set_count: number | null;
-  max_weight: number | null;
-  avg_rpe: number | null;
-}
+type ExerciseMinutesRow = z.infer<typeof exerciseMinutesRowSchema>;
 
 const ALL_TARGETS = [
   ...PREDICTION_TARGETS.map((t) => ({
@@ -108,17 +144,19 @@ async function trainDailyPrediction(
   days: number,
   target: (typeof PREDICTION_TARGETS)[number],
 ) {
-  // @ts-expect-error Database type doesn't expose generic execute but it works at runtime
-  const dbAny: { execute: <T>(query: ReturnType<typeof sql>) => Promise<T[]> } = db;
   const [metrics, sleep, activities, nutrition, bodyComp] = await Promise.all([
-    dbAny.execute<DailyRow>(
+    executeWithSchema(
+      db,
+      dailyRowSchema,
       sql`SELECT date, resting_hr, hrv, spo2_avg, steps, active_energy_kcal, skin_temp_c
           FROM fitness.v_daily_metrics
           WHERE user_id = ${userId}
             AND date > CURRENT_DATE - ${days}::int
           ORDER BY date ASC`,
     ),
-    dbAny.execute<SleepRow>(
+    executeWithSchema(
+      db,
+      sleepRowSchema,
       sql`SELECT started_at, duration_minutes, deep_minutes, rem_minutes,
                  light_minutes, awake_minutes, efficiency_pct, is_nap
           FROM fitness.v_sleep
@@ -126,21 +164,27 @@ async function trainDailyPrediction(
             AND started_at > CURRENT_DATE - ${days}::int
           ORDER BY started_at ASC`,
     ),
-    dbAny.execute<ActivityRow>(
+    executeWithSchema(
+      db,
+      activityRowSchema,
       sql`SELECT started_at, ended_at, activity_type
           FROM fitness.v_activity
           WHERE user_id = ${userId}
             AND started_at > CURRENT_DATE - ${days}::int
           ORDER BY started_at ASC`,
     ),
-    dbAny.execute<NutritionRow>(
+    executeWithSchema(
+      db,
+      nutritionRowSchema,
       sql`SELECT date, calories, protein_g, carbs_g, fat_g, fiber_g, water_ml
           FROM fitness.nutrition_daily
           WHERE user_id = ${userId}
             AND date > CURRENT_DATE - ${days}::int
           ORDER BY date ASC`,
     ),
-    dbAny.execute<BodyCompRow>(
+    executeWithSchema(
+      db,
+      bodyCompRowSchema,
       sql`SELECT recorded_at, weight_kg, body_fat_pct
           FROM fitness.v_body_measurement
           WHERE user_id = ${userId}
@@ -163,20 +207,21 @@ async function trainActivityPrediction(
   days: number,
   target: (typeof ACTIVITY_PREDICTION_TARGETS)[number],
 ) {
-  // @ts-expect-error Database type doesn't expose generic execute but it works at runtime
-  const dbAny: { execute: <T>(query: ReturnType<typeof sql>) => Promise<T[]> } = db;
-
   // Always need daily context for trailing features
   const [dailyMetrics, sleepRows, nutritionRows, bodyCompRows, exerciseMinutesRows] =
     await Promise.all([
-      dbAny.execute<DailyRow>(
+      executeWithSchema(
+        db,
+        dailyRowSchema,
         sql`SELECT date, resting_hr, hrv, spo2_avg, steps, active_energy_kcal, skin_temp_c
             FROM fitness.v_daily_metrics
             WHERE user_id = ${userId}
               AND date > CURRENT_DATE - ${days}::int
             ORDER BY date ASC`,
       ),
-      dbAny.execute<SleepRow>(
+      executeWithSchema(
+        db,
+        sleepRowSchema,
         sql`SELECT started_at, duration_minutes, deep_minutes, rem_minutes,
                    light_minutes, awake_minutes, efficiency_pct, is_nap
             FROM fitness.v_sleep
@@ -184,21 +229,27 @@ async function trainActivityPrediction(
               AND started_at > CURRENT_DATE - ${days}::int
             ORDER BY started_at ASC`,
       ),
-      dbAny.execute<NutritionRow>(
+      executeWithSchema(
+        db,
+        nutritionRowSchema,
         sql`SELECT date, calories, protein_g, carbs_g, fat_g, fiber_g, water_ml
             FROM fitness.nutrition_daily
             WHERE user_id = ${userId}
               AND date > CURRENT_DATE - ${days}::int
             ORDER BY date ASC`,
       ),
-      dbAny.execute<BodyCompRow>(
+      executeWithSchema(
+        db,
+        bodyCompRowSchema,
         sql`SELECT recorded_at, weight_kg, body_fat_pct
             FROM fitness.v_body_measurement
             WHERE user_id = ${userId}
               AND recorded_at > CURRENT_DATE - ${days}::int
             ORDER BY recorded_at ASC`,
       ),
-      dbAny.execute<ExerciseMinutesRow>(
+      executeWithSchema(
+        db,
+        exerciseMinutesRowSchema,
         sql`SELECT DATE(started_at) AS date,
                    SUM(EXTRACT(EPOCH FROM (last_sample_at - first_sample_at)) / 60) AS exercise_minutes
             FROM fitness.activity_summary
@@ -219,7 +270,9 @@ async function trainActivityPrediction(
   );
 
   if (target.activityType === "cardio") {
-    const activityRows = await dbAny.execute<ActivitySummaryRow>(
+    const activityRows = await executeWithSchema(
+      db,
+      activitySummaryRowSchema,
       sql`SELECT
             a.activity_id, a.activity_type, a.started_at,
             a.avg_hr, a.avg_power, a.avg_speed, a.total_distance,
@@ -250,7 +303,9 @@ async function trainActivityPrediction(
   }
 
   if (target.activityType === "strength") {
-    const workoutRows = await dbAny.execute<StrengthVolumeRow>(
+    const workoutRows = await executeWithSchema(
+      db,
+      strengthVolumeRowSchema,
       sql`SELECT
             w.id AS workout_id, w.started_at,
             SUM(s.weight_kg * s.reps) FILTER (WHERE s.set_type = 'working') AS total_volume,

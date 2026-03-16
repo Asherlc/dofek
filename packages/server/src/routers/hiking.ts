@@ -258,11 +258,12 @@ export const hikingRouter = router({
       const grouped = new Map<string, ActivityComparisonInstance[]>();
       for (const r of rows) {
         const name = String(r.activity_name);
-        if (!grouped.has(name)) {
-          grouped.set(name, []);
+        let group = grouped.get(name);
+        if (!group) {
+          group = [];
+          grouped.set(name, group);
         }
-        // biome-ignore lint/style/noNonNullAssertion: guaranteed by the has() + set() above
-        grouped.get(name)!.push({
+        group.push({
           date: String(r.date),
           durationMinutes: Number(r.duration_minutes),
           averagePaceMinPerKm: Number(r.average_pace_min_per_km),

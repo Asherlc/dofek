@@ -6,6 +6,7 @@ import {
   STRONG_PROVIDER_ID,
   StrongCsvProvider,
 } from "./strong-csv.ts";
+import { createMockDatabase } from "./test-helpers.ts";
 
 // ============================================================
 // Tests targeting uncovered CSV parsing paths in strong-csv.ts
@@ -176,8 +177,8 @@ describe("StrongCsvProvider", () => {
 
   it("sync returns zero records", async () => {
     const provider = new StrongCsvProvider();
-    // @ts-expect-error mock DB
-    const result = await provider.sync({}, new Date());
+    const { db } = createMockDatabase();
+    const result = await provider.sync(db, new Date());
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toEqual([]);
   });

@@ -60,7 +60,6 @@ interface MockSlackApp {
  * valid (Partial<T> always overlaps with T).
  */
 function mockAs<T extends object>(partial: Partial<T>): T {
-  // @ts-expect-error Partial<T> used as T for test mocking purposes
   const result: T = partial;
   return result;
 }
@@ -71,7 +70,6 @@ function mockAs<T extends object>(partial: Partial<T>): T {
  * the mock interface.
  */
 function castMock<T>(value: object): T {
-  // @ts-expect-error -- test mock: structural cast for partial mock objects
   return value;
 }
 
@@ -80,7 +78,6 @@ function createMockDb(): import("dofek/db").Database {
 }
 
 function getMockExecute(db: import("dofek/db").Database): FlexibleMock {
-  // @ts-expect-error db.execute type doesn't match FlexibleMock but it's a vi.fn() mock
   const mock: FlexibleMock = db.execute;
   return mock;
 }
@@ -117,15 +114,10 @@ function setupHandlers(db: ReturnType<typeof createMockDb>) {
   const app = castMock<MockSlackApp>(result?.app ?? {});
   type Handler = (...args: unknown[]) => Promise<void>;
   const messageHandler: Handler = app.message.mock.calls[0]?.[0];
-  // @ts-expect-error mock calls type is wider than our tuple type
   const actionCalls: [unknown, Handler][] = app.action.mock.calls;
-  // @ts-expect-error find may return undefined but we assert below
   const confirmHandler: Handler = actionCalls.find((c) => String(c[0]) === "confirm_food")?.[1];
-  // @ts-expect-error find may return undefined but we assert below
   const cancelHandler: Handler = actionCalls.find((c) => String(c[0]) === "cancel_food")?.[1];
-  // @ts-expect-error mock calls type is wider than our tuple type
   const eventCalls: [unknown, Handler][] = app.event.mock.calls;
-  // @ts-expect-error find may return undefined but we assert below
   const homeOpenedHandler: Handler = eventCalls.find(
     (c) => String(c[0]) === "app_home_opened",
   )?.[1];

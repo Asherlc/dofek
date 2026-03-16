@@ -9,13 +9,6 @@ import type {
   ZwiftTokenResponse,
 } from "./types.ts";
 
-type MockFetchFn = ReturnType<typeof vi.fn>;
-
-function asMock(fn: typeof globalThis.fetch): MockFetchFn {
-  // @ts-expect-error -- test helper: vi.fn() mock narrowing
-  return fn;
-}
-
 function mockFetch(response: {
   status: number;
   ok: boolean;
@@ -63,8 +56,7 @@ describe("ZwiftClient.signIn", () => {
       expiresIn: 3600,
     });
 
-    // @ts-expect-error -- test: mock call args narrowing
-    const [url, options]: [string, RequestInit] = asMock(fetchFn).mock.calls[0];
+    const [url, options]: [string, RequestInit] = fetchFn.mock.calls[0];
     expect(url).toBe(ZWIFT_AUTH_URL);
     expect(options.method).toBe("POST");
     const body = new URLSearchParams(String(options.body));
@@ -102,8 +94,7 @@ describe("ZwiftClient.refreshToken", () => {
       expiresIn: 3600,
     });
 
-    // @ts-expect-error -- test: mock call args narrowing
-    const [url, options]: [string, RequestInit] = asMock(fetchFn).mock.calls[0];
+    const [url, options]: [string, RequestInit] = fetchFn.mock.calls[0];
     expect(url).toBe(ZWIFT_AUTH_URL);
     const body = new URLSearchParams(String(options.body));
     expect(body.get("grant_type")).toBe("refresh_token");
@@ -151,8 +142,7 @@ describe("ZwiftClient.getActivities", () => {
     const result = await client.getActivities(0, 10);
 
     expect(result).toEqual(activities);
-    // @ts-expect-error -- test: mock call args narrowing
-    const [url]: [string] = asMock(fetchFn).mock.calls[0];
+    const [url]: [string] = fetchFn.mock.calls[0];
     expect(url).toContain("/api/profiles/100/activities");
     expect(url).toContain("start=0");
     expect(url).toContain("limit=10");
@@ -164,8 +154,7 @@ describe("ZwiftClient.getActivities", () => {
 
     await client.getActivities();
 
-    // @ts-expect-error -- test: mock call args narrowing
-    const [url]: [string] = asMock(fetchFn).mock.calls[0];
+    const [url]: [string] = fetchFn.mock.calls[0];
     expect(url).toContain("start=0");
     expect(url).toContain("limit=20");
   });
@@ -207,8 +196,7 @@ describe("ZwiftClient.getActivityDetail", () => {
     const result = await client.getActivityDetail(1);
 
     expect(result).toEqual(detail);
-    // @ts-expect-error -- test: mock call args narrowing
-    const [url]: [string] = asMock(fetchFn).mock.calls[0];
+    const [url]: [string] = fetchFn.mock.calls[0];
     expect(url).toContain("/api/activities/1");
     expect(url).toContain("fetchSnapshots=true");
   });
@@ -239,10 +227,8 @@ describe("ZwiftClient.getFitnessData", () => {
     const result = await client.getFitnessData("https://example.com/fitness-data");
 
     expect(result).toEqual(fitnessData);
-    // @ts-expect-error -- test: mock call args narrowing
-    const [url, options]: [string, RequestInit] = asMock(fetchFn).mock.calls[0];
+    const [url, options]: [string, RequestInit] = fetchFn.mock.calls[0];
     expect(url).toBe("https://example.com/fitness-data");
-    // @ts-expect-error -- test: HeadersInit narrowed to Record
     const headers: Record<string, string> = options.headers;
     expect(headers.Authorization).toBe("Bearer test-token");
   });
@@ -276,8 +262,7 @@ describe("ZwiftClient.getPowerCurve", () => {
     const result = await client.getPowerCurve();
 
     expect(result).toEqual(powerCurve);
-    // @ts-expect-error -- test: mock call args narrowing
-    const [url]: [string] = asMock(fetchFn).mock.calls[0];
+    const [url]: [string] = fetchFn.mock.calls[0];
     expect(url).toContain("/api/power-curve/power-profile");
   });
 
@@ -306,8 +291,7 @@ describe("ZwiftClient.getProfile", () => {
     const result = await client.getProfile();
 
     expect(result).toEqual(profile);
-    // @ts-expect-error -- test: mock call args narrowing
-    const [url]: [string] = asMock(fetchFn).mock.calls[0];
+    const [url]: [string] = fetchFn.mock.calls[0];
     expect(url).toContain("/api/profiles/100");
   });
 });

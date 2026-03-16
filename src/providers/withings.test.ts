@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { createMockDatabase } from "./test-helpers.ts";
 import {
   exchangeWithingsCode,
   parseMeasureGroup,
@@ -94,38 +95,8 @@ describe("Withings Provider — parsing", () => {
 // Sync & integration tests (mock DB)
 // ============================================================
 
-function createMockDb({
-  tokensResult = [] satisfies Record<string, unknown>[],
-  insertErrorAfterCalls = 0,
-  insertError,
-}: {
-  tokensResult?: Record<string, unknown>[];
-  insertErrorAfterCalls?: number;
-  insertError?: Error;
-} = {}) {
-  let upsertCallCount = 0;
-
-  const onConflictDoUpdate = vi.fn().mockImplementation(() => {
-    upsertCallCount++;
-    if (insertError && upsertCallCount > insertErrorAfterCalls) throw insertError;
-    return { returning: vi.fn().mockResolvedValue([]) };
-  });
-
-  return {
-    select: vi.fn().mockReturnValue({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockReturnValue({
-          limit: vi.fn().mockResolvedValue(tokensResult),
-        }),
-      }),
-    }),
-    insert: vi.fn().mockReturnValue({
-      values: vi.fn().mockReturnValue({
-        onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
-        onConflictDoUpdate,
-      }),
-    }),
-  };
+function createMockDb(options: Parameters<typeof createMockDatabase>[0] = {}) {
+  return createMockDatabase(options);
 }
 
 describe("WithingsProvider.sync() — unit tests", () => {
@@ -139,10 +110,9 @@ describe("WithingsProvider.sync() — unit tests", () => {
     process.env.WITHINGS_CLIENT_ID = "test-id";
     process.env.WITHINGS_CLIENT_SECRET = "test-secret";
 
-    const mockDb = createMockDb();
+    const { db: mockDb } = createMockDb();
     const provider = new WithingsProvider();
 
-    // @ts-expect-error mock DB
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
     expect(result.provider).toBe("withings");
     expect(result.errors.length).toBeGreaterThan(0);
@@ -154,7 +124,7 @@ describe("WithingsProvider.sync() — unit tests", () => {
     process.env.WITHINGS_CLIENT_SECRET = "test-secret";
 
     const futureDate = new Date("2099-01-01");
-    const mockDb = createMockDb({
+    const { db: mockDb } = createMockDb({
       tokensResult: [
         {
           providerId: "withings",
@@ -192,7 +162,6 @@ describe("WithingsProvider.sync() — unit tests", () => {
     };
 
     const provider = new WithingsProvider(mockFetch);
-    // @ts-expect-error mock DB
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
     expect(result.recordsSynced).toBe(1);
     expect(result.errors).toHaveLength(0);
@@ -203,7 +172,7 @@ describe("WithingsProvider.sync() — unit tests", () => {
     process.env.WITHINGS_CLIENT_SECRET = "test-secret";
 
     const futureDate = new Date("2099-01-01");
-    const mockDb = createMockDb({
+    const { db: mockDb } = createMockDb({
       tokensResult: [
         {
           providerId: "withings",
@@ -253,7 +222,6 @@ describe("WithingsProvider.sync() — unit tests", () => {
     };
 
     const provider = new WithingsProvider(mockFetch);
-    // @ts-expect-error mock DB
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
     expect(result.recordsSynced).toBe(2);
     expect(callCount).toBe(2);
@@ -264,7 +232,7 @@ describe("WithingsProvider.sync() — unit tests", () => {
     process.env.WITHINGS_CLIENT_SECRET = "test-secret";
 
     const futureDate = new Date("2099-01-01");
-    const mockDb = createMockDb({
+    const { db: mockDb } = createMockDb({
       tokensResult: [
         {
           providerId: "withings",
@@ -301,7 +269,6 @@ describe("WithingsProvider.sync() — unit tests", () => {
     };
 
     const provider = new WithingsProvider(mockFetch);
-    // @ts-expect-error mock DB
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
     expect(result.recordsSynced).toBe(0);
   });
@@ -311,7 +278,7 @@ describe("WithingsProvider.sync() — unit tests", () => {
     process.env.WITHINGS_CLIENT_SECRET = "test-secret";
 
     const futureDate = new Date("2099-01-01");
-    const mockDb = createMockDb({
+    const { db: mockDb } = createMockDb({
       tokensResult: [
         {
           providerId: "withings",
@@ -344,7 +311,6 @@ describe("WithingsProvider.sync() — unit tests", () => {
     };
 
     const provider = new WithingsProvider(mockFetch);
-    // @ts-expect-error mock DB
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
     // The insert error is caught per-measurement, so we get 0 synced and 1 error
     expect(result.recordsSynced).toBe(0);
@@ -357,7 +323,7 @@ describe("WithingsProvider.sync() — unit tests", () => {
     process.env.WITHINGS_CLIENT_SECRET = "test-secret";
 
     const futureDate = new Date("2099-01-01");
-    const mockDb = createMockDb({
+    const { db: mockDb } = createMockDb({
       tokensResult: [
         {
           providerId: "withings",
@@ -374,7 +340,6 @@ describe("WithingsProvider.sync() — unit tests", () => {
     };
 
     const provider = new WithingsProvider(mockFetch);
-    // @ts-expect-error mock DB
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors[0]?.message).toContain("body_measurement");
@@ -387,7 +352,7 @@ describe("WithingsProvider.sync() — unit tests", () => {
     const expiredDate = new Date("2020-01-01");
     let tokenCallMade = false;
 
-    const mockDb = createMockDb({
+    const { db: mockDb } = createMockDb({
       tokensResult: [
         {
           providerId: "withings",
@@ -432,7 +397,6 @@ describe("WithingsProvider.sync() — unit tests", () => {
     };
 
     const provider = new WithingsProvider(mockFetch);
-    // @ts-expect-error mock DB
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
     expect(tokenCallMade).toBe(true);
     expect(result.provider).toBe("withings");
@@ -442,7 +406,7 @@ describe("WithingsProvider.sync() — unit tests", () => {
     process.env.WITHINGS_CLIENT_ID = "test-id";
     process.env.WITHINGS_CLIENT_SECRET = "test-secret";
 
-    const mockDb = createMockDb({
+    const { db: mockDb } = createMockDb({
       tokensResult: [
         {
           providerId: "withings",
@@ -455,7 +419,6 @@ describe("WithingsProvider.sync() — unit tests", () => {
     });
 
     const provider = new WithingsProvider();
-    // @ts-expect-error mock DB
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors[0]?.message).toContain("No refresh token");
@@ -465,7 +428,7 @@ describe("WithingsProvider.sync() — unit tests", () => {
     delete process.env.WITHINGS_CLIENT_ID;
     delete process.env.WITHINGS_CLIENT_SECRET;
 
-    const mockDb = createMockDb({
+    const { db: mockDb } = createMockDb({
       tokensResult: [
         {
           providerId: "withings",
@@ -478,7 +441,6 @@ describe("WithingsProvider.sync() — unit tests", () => {
     });
 
     const provider = new WithingsProvider();
-    // @ts-expect-error mock DB
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors[0]?.message).toContain("WITHINGS_CLIENT_ID");
@@ -497,7 +459,7 @@ describe("WithingsProvider.sync() — temperature measurement", () => {
     process.env.WITHINGS_CLIENT_SECRET = "test-secret";
 
     const futureDate = new Date("2099-01-01");
-    const mockDb = createMockDb({
+    const { db: mockDb } = createMockDb({
       tokensResult: [
         {
           providerId: "withings",
@@ -528,7 +490,6 @@ describe("WithingsProvider.sync() — temperature measurement", () => {
     };
 
     const provider = new WithingsProvider(mockFetch);
-    // @ts-expect-error mock DB
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
     expect(result.recordsSynced).toBe(1);
   });

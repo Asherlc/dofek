@@ -91,14 +91,19 @@ export const lifeEventsRouter = router({
     )
     .query(async ({ ctx, input }) => {
       // Get the event
+      const lifeEventSchema = z
+        .object({
+          started_at: z.string(),
+          ended_at: z.string().nullable(),
+          ongoing: z.boolean(),
+        })
+        .passthrough();
+
       const events = await ctx.db.execute(
         sql`SELECT * FROM fitness.life_events WHERE user_id = ${ctx.userId} AND id = ${input.id}`,
       );
-      // @ts-expect-error db.execute returns Record<string, unknown>[] but we know the shape
-      const event:
-        | { started_at: string; ended_at: string | null; ongoing: boolean; [key: string]: unknown }
-        | undefined = events[0];
-      if (!event) return null;
+      if (!events[0]) return null;
+      const event = lifeEventSchema.parse(events[0]);
 
       const startDate = event.started_at;
       const endDate = event.ended_at ?? (event.ongoing ? "NOW()" : null);

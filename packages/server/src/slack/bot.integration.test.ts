@@ -317,7 +317,6 @@ function extractEntryIdsFromThread(
     if (!threadMsg || !threadMsg.bot_id || !threadMsg.blocks) continue;
 
     for (const rawBlock of threadMsg.blocks) {
-      // @ts-expect-error rawBlock is unknown but we check its properties below
       const block: {
         type?: string;
         elements?: Array<{ action_id?: string; value?: string }>;

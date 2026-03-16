@@ -40,7 +40,6 @@ describe("healthKitSyncRouter", () => {
     it("processes body measurement samples", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute },
         userId: "user-1",
       });
@@ -62,7 +61,6 @@ describe("healthKitSyncRouter", () => {
     it("processes additive daily metric samples", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute },
         userId: "user-1",
       });
@@ -85,7 +83,6 @@ describe("healthKitSyncRouter", () => {
     it("processes point-in-time daily metric samples", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute },
         userId: "user-1",
       });
@@ -107,7 +104,6 @@ describe("healthKitSyncRouter", () => {
     it("processes metric stream samples", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute },
         userId: "user-1",
       });
@@ -124,7 +120,6 @@ describe("healthKitSyncRouter", () => {
     it("processes health event samples (catch-all)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute },
         userId: "user-1",
       });
@@ -141,7 +136,6 @@ describe("healthKitSyncRouter", () => {
     it("handles empty samples array", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute },
         userId: "user-1",
       });
@@ -155,7 +149,6 @@ describe("healthKitSyncRouter", () => {
     it("applies body fat percentage transform", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute },
         userId: "user-1",
       });
@@ -181,7 +174,6 @@ describe("healthKitSyncRouter", () => {
       execute.mockRejectedValueOnce(new Error("DB connection failed"));
 
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute },
         userId: "user-1",
       });
@@ -199,7 +191,6 @@ describe("healthKitSyncRouter", () => {
     it("applies distance transform (m to km)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute },
         userId: "user-1",
       });
@@ -222,7 +213,6 @@ describe("healthKitSyncRouter", () => {
     it("processes workout samples", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute },
         userId: "user-1",
       });
@@ -249,7 +239,6 @@ describe("healthKitSyncRouter", () => {
     it("maps unknown workout type to other", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute },
         userId: "user-1",
       });
@@ -276,7 +265,6 @@ describe("healthKitSyncRouter", () => {
     it("handles empty workouts array", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute },
         userId: "user-1",
       });
@@ -290,7 +278,6 @@ describe("healthKitSyncRouter", () => {
     it("processes sleep session with stages", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute },
         userId: "user-1",
       });
@@ -341,7 +328,6 @@ describe("healthKitSyncRouter", () => {
     it("returns 0 when no inBed samples", async () => {
       const execute = makeExecute();
       const caller = createCaller({
-        // @ts-expect-error mock DB
         db: { execute },
         userId: "user-1",
       });

@@ -116,7 +116,6 @@ describe("Trends router — continuous aggregate data tests", () => {
     if (first?.error) {
       throw new Error(`${path} error: ${JSON.stringify(first.error)}`);
     }
-    // @ts-expect-error T | undefined returned as T — test helper assumes data is present
     return first?.result?.data;
   }
 

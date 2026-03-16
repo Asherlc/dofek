@@ -75,10 +75,10 @@ describe("FatSecretProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
-    server.listen({ onUnhandledRequest: "error" });
     process.env.FATSECRET_CONSUMER_KEY = "test-consumer-key";
     process.env.FATSECRET_CONSUMER_SECRET = "test-consumer-secret";
     ctx = await setupTestDatabase();
+    server.listen({ onUnhandledRequest: "error" });
     await ensureProvider(ctx.db, "fatsecret", "FatSecret");
   }, 60_000);
 

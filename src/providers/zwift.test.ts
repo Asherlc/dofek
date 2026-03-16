@@ -128,7 +128,8 @@ function makeMockDb(
     where: vi.fn().mockResolvedValue(undefined),
   });
 
-  return { insert, select, delete: deleteFn, _insertValues: insertValues };
+  const execute = vi.fn().mockResolvedValue([]);
+  return { insert, select, delete: deleteFn, execute, _insertValues: insertValues };
 }
 
 // ============================================================
@@ -273,7 +274,6 @@ describe("ZwiftProvider.sync() — token resolution", () => {
     });
 
     const provider = new ZwiftProvider();
-    // @ts-expect-error mock DB
     const result = await provider.sync(db, new Date("2026-01-01"));
     expect(result.errors.length).toBeGreaterThan(0);
   });
@@ -297,7 +297,6 @@ describe("ZwiftProvider.sync() — token resolution", () => {
     });
 
     const provider = new ZwiftProvider();
-    // @ts-expect-error mock DB
     const result = await provider.sync(db, new Date("2026-01-01"));
     // Should proceed (no "token expired" error, just possibly empty results)
     expect(result.provider).toBe("zwift");
@@ -330,7 +329,6 @@ describe("ZwiftProvider.sync() — activity sync", () => {
     });
 
     const provider = new ZwiftProvider();
-    // @ts-expect-error mock DB
     const result = await provider.sync(db, new Date("2026-01-01"));
     expect(result.provider).toBe("zwift");
     expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
@@ -362,7 +360,6 @@ describe("ZwiftProvider.sync() — activity sync", () => {
     });
 
     const provider = new ZwiftProvider();
-    // @ts-expect-error mock DB
     const result = await provider.sync(db, new Date("2026-01-01"));
     // The activity itself still counted even if streams fail
     expect(result.provider).toBe("zwift");
@@ -389,7 +386,6 @@ describe("ZwiftProvider.sync() — activity sync", () => {
     });
 
     const provider = new ZwiftProvider();
-    // @ts-expect-error mock DB
     const result = await provider.sync(db, new Date("2026-01-01"));
     expect(result.provider).toBe("zwift");
     // Old activity skipped
@@ -411,7 +407,6 @@ describe("ZwiftProvider.sync() — power curve sync", () => {
     });
 
     const provider = new ZwiftProvider();
-    // @ts-expect-error mock DB
     const result = await provider.sync(db, new Date("2026-01-01"));
     expect(result.provider).toBe("zwift");
     // recordsSynced should be 0 since nothing was synced

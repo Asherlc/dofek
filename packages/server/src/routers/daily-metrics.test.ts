@@ -23,7 +23,6 @@ const createCaller = createTestCallerFactory(dailyMetricsRouter);
 
 function makeCaller(rows: Record<string, unknown>[] = []) {
   return createCaller({
-    // @ts-expect-error mock DB
     db: { execute: vi.fn().mockResolvedValue(rows) },
     userId: "user-1",
   });

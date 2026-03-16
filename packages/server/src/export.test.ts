@@ -85,7 +85,6 @@ describe("generateExport", () => {
       }
     });
 
-    // @ts-expect-error mock db
     const result = await generateExport(db, "user-1", "/tmp/test.zip", (info) => {
       progress.push(info);
     });
@@ -116,7 +115,6 @@ describe("generateExport", () => {
       }
     });
 
-    // @ts-expect-error mock db
     const result = await generateExport(db, "user-1", "/tmp/test.zip", () => {});
 
     expect(result.tableCount).toBe(16);
@@ -140,7 +138,6 @@ describe("generateExport", () => {
       }
     });
 
-    // @ts-expect-error mock db
     await generateExport(db, "user-1", "/tmp/test.zip", (info) => {
       progress.push(info);
     });
@@ -170,12 +167,10 @@ describe("generateExport", () => {
       }
     });
 
-    // @ts-expect-error mock db
     await generateExport(db, "user-1", "/tmp/test.zip", () => {});
 
     // Find the metadata append call
     const metadataCall = mockArchive.append.mock.calls.find((call: unknown[]) => {
-      // @ts-expect-error checking call args
       return call[1]?.name === "export-metadata.json";
     });
     expect(metadataCall).toBeDefined();

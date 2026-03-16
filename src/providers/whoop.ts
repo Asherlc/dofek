@@ -10,7 +10,7 @@ import {
   type WhoopWeightliftingWorkoutResponse,
   type WhoopWorkoutRecord,
 } from "whoop-whoop";
-import type { Database } from "../db/index.ts";
+import type { SyncDatabase } from "../db/index.ts";
 import {
   activity,
   dailyMetrics,
@@ -390,7 +390,7 @@ export class WhoopProvider implements Provider {
     return null;
   }
 
-  async sync(db: Database, since: Date): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;

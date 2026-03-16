@@ -173,15 +173,19 @@ export const syncRouter = router({
       if (job.data.userId !== ctx.userId) return null;
 
       const state = await job.getState();
-      // @ts-expect-error job.progress type doesn't match our narrower expected shape
-      const progress:
-        | {
-            providers?: Record<
-              string,
-              { status: "pending" | "running" | "done" | "error"; message?: string }
-            >;
-          }
-        | undefined = job.progress;
+
+      const progressSchema = z.object({
+        providers: z
+          .record(
+            z.object({
+              status: z.enum(["pending", "running", "done", "error"]),
+              message: z.string().optional(),
+            }),
+          )
+          .optional(),
+      });
+      const parsed = progressSchema.safeParse(job.progress);
+      const progress = parsed.success ? parsed.data : undefined;
 
       return {
         status: mapBullMqStateToSyncStatus(state),

@@ -33,7 +33,6 @@ async function refreshAccessToken(rt: string): Promise<AuthResult> {
   });
 
   const data: Record<string, unknown> = await response.json();
-  // @ts-expect-error — untyped API response, AuthenticationResult is a nested object
   const authResult: Record<string, unknown> = data.AuthenticationResult;
   const accessToken = String(authResult.AccessToken);
 
@@ -43,7 +42,6 @@ async function refreshAccessToken(rt: string): Promise<AuthResult> {
     { headers: { Authorization: `Bearer ${accessToken}` } },
   );
   const bootstrapData: Record<string, unknown> = await bootstrapResp.json();
-  // @ts-expect-error — untyped API response, user is a nested object
   const user: Record<string, unknown> | undefined = bootstrapData.user;
   const userId = Number(bootstrapData.id ?? bootstrapData.user_id ?? user?.id ?? user?.user_id);
 
@@ -91,7 +89,6 @@ async function main() {
       for (const item of obj) extractWorkouts(item, depth + 1);
       return;
     }
-    // @ts-expect-error — obj is narrowed to non-null, non-array object
     const rec: Record<string, unknown> = obj;
     if ("sport_id" in rec) {
       const sportId = Number(rec.sport_id);

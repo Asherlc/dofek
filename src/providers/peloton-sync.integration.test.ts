@@ -133,8 +133,8 @@ describe("PelotonProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
-    server.listen({ onUnhandledRequest: "error" });
     ctx = await setupTestDatabase();
+    server.listen({ onUnhandledRequest: "error" });
     await ensureProvider(ctx.db, "peloton", "Peloton", "https://api.onepeloton.com");
   }, 60_000);
 
@@ -193,11 +193,14 @@ describe("PelotonProvider.sync() (integration)", () => {
     expect(ride.name).toBe("30 min Power Zone Ride");
 
     // Check raw JSONB metadata
-    // @ts-expect-error -- test assertion on raw JSONB
-    const raw: Record<string, unknown> = ride.raw;
-    expect(raw.instructor).toBe("Matt Wilpers");
-    expect(raw.classTitle).toBe("30 min Power Zone Ride");
-    expect(raw.difficultyRating).toBeCloseTo(7.85);
+    // ride.raw is typed as unknown (jsonb column); narrow via type guard
+    const raw = ride.raw;
+    if (raw === null || typeof raw !== "object") throw new Error("expected raw to be object");
+    if ("instructor" in raw) expect(raw.instructor).toBe("Matt Wilpers");
+    if ("classTitle" in raw) expect(raw.classTitle).toBe("30 min Power Zone Ride");
+    if ("difficultyRating" in raw && typeof raw.difficultyRating === "number") {
+      expect(raw.difficultyRating).toBeCloseTo(7.85);
+    }
 
     const run = rows.find((r) => r.externalId === "workout-002");
     if (!run) throw new Error("expected workout-002");

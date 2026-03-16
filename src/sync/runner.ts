@@ -1,5 +1,5 @@
 import { refreshDedupViews, updateUserMaxHr } from "../db/dedup.ts";
-import type { Database } from "../db/index.ts";
+import type { SyncDatabase } from "../db/index.ts";
 import { getEnabledProviders } from "../providers/index.ts";
 import type { Provider, SyncResult } from "../providers/types.ts";
 
@@ -15,7 +15,7 @@ export interface SyncRunResult {
  * Each provider runs independently — one failure doesn't block others.
  */
 export async function runSync(
-  db: Database,
+  db: SyncDatabase,
   since: Date,
   providers?: Provider[],
 ): Promise<SyncRunResult> {

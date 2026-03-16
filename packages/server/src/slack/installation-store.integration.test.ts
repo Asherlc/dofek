@@ -10,12 +10,10 @@ import { createInstallationStore } from "./installation-store.ts";
  * required fields, then returns the value typed as `T`.
  */
 function invalidQuery(overrides: Partial<InstallationQuery<false>>): InstallationQuery<false> {
-  // @ts-expect-error -- test helper: intentionally partial for error-path testing
   return overrides;
 }
 
 function partialInstallation(overrides: Partial<Installation>): Installation {
-  // @ts-expect-error -- test helper: intentionally partial for testing
   return overrides;
 }
 
@@ -46,7 +44,6 @@ describe("Slack Installation Store (integration)", () => {
       isEnterpriseInstall: false,
       ...overrides,
     };
-    // @ts-expect-error -- test helper: structural match is sufficient for testing
     const result: Installation = obj;
     return result;
   }

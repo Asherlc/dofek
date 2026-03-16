@@ -20,7 +20,6 @@ describe("session", () => {
 
   describe("createSession", () => {
     it("inserts a session and returns session info", async () => {
-      // @ts-expect-error mock DB
       const result = await createSession(mockDb, "user-123");
 
       expect(mockExecute).toHaveBeenCalledTimes(1);
@@ -35,16 +34,13 @@ describe("session", () => {
     });
 
     it("generates unique session tokens", async () => {
-      // @ts-expect-error mock DB
       const result1 = await createSession(mockDb, "user-1");
-      // @ts-expect-error mock DB
       const result2 = await createSession(mockDb, "user-1");
 
       expect(result1.sessionId).not.toBe(result2.sessionId);
     });
 
     it("generates hex-only session tokens", async () => {
-      // @ts-expect-error mock DB
       const result = await createSession(mockDb, "user-1");
       expect(result.sessionId).toMatch(/^[0-9a-f]{64}$/);
     });
@@ -54,7 +50,6 @@ describe("session", () => {
     it("returns userId when session is valid", async () => {
       mockExecute.mockResolvedValue([{ user_id: "user-abc", expires_at: new Date("2027-01-01") }]);
 
-      // @ts-expect-error mock DB
       const result = await validateSession(mockDb, "session-token");
 
       expect(result).toEqual({ userId: "user-abc" });
@@ -64,7 +59,6 @@ describe("session", () => {
     it("returns null when no matching session exists", async () => {
       mockExecute.mockResolvedValue([]);
 
-      // @ts-expect-error mock DB
       const result = await validateSession(mockDb, "nonexistent");
 
       expect(result).toBeNull();
@@ -73,7 +67,6 @@ describe("session", () => {
     it("returns null when row is undefined", async () => {
       mockExecute.mockResolvedValue([undefined]);
 
-      // @ts-expect-error mock DB
       const result = await validateSession(mockDb, "bad-session");
 
       expect(result).toBeNull();
@@ -82,7 +75,6 @@ describe("session", () => {
 
   describe("deleteSession", () => {
     it("executes a DELETE query", async () => {
-      // @ts-expect-error mock DB
       await deleteSession(mockDb, "session-to-delete");
 
       expect(mockExecute).toHaveBeenCalledTimes(1);
@@ -91,7 +83,6 @@ describe("session", () => {
 
   describe("deleteExpiredSessions", () => {
     it("executes a DELETE for expired sessions", async () => {
-      // @ts-expect-error mock DB
       await deleteExpiredSessions(mockDb);
 
       expect(mockExecute).toHaveBeenCalledTimes(1);

@@ -1,6 +1,6 @@
 /** Abstract cache store — swap MemoryCacheStore for Redis later */
 export interface CacheStore {
-  get<T>(key: string): Promise<T | undefined>;
+  get(key: string): Promise<unknown | undefined>;
   set<T>(key: string, data: T, ttlMs: number): Promise<void>;
   invalidateByPrefix(prefix: string): Promise<void>;
   invalidateAll(): Promise<void>;
@@ -16,16 +16,14 @@ class MemoryCacheStore implements CacheStore {
     if (this.sweepInterval.unref) this.sweepInterval.unref();
   }
 
-  async get<T>(key: string): Promise<T | undefined> {
+  async get(key: string): Promise<unknown | undefined> {
     const entry = this.store.get(key);
     if (!entry) return undefined;
     if (entry.expiresAt <= Date.now()) {
       this.store.delete(key);
       return undefined;
     }
-    // @ts-expect-error -- generic cache: data was stored as T, retrieved as unknown
-    const result: T = entry.data;
-    return result;
+    return entry.data;
   }
 
   async set<T>(key: string, data: T, ttlMs: number): Promise<void> {
