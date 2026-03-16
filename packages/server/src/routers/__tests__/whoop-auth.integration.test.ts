@@ -1,5 +1,7 @@
 import { sql } from "drizzle-orm";
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { http, HttpResponse } from "msw";
+import { setupServer } from "msw/node";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   setupTestDatabase,
   type TestContext,
@@ -7,20 +9,36 @@ import {
 import { createSession } from "../../auth/session.ts";
 import { createApp } from "../../index.ts";
 
-// Mock the WhoopClient static methods
-vi.mock("whoop-whoop", () => ({
-  WhoopClient: {
-    signIn: vi.fn(),
-    verifyCode: vi.fn(),
-  },
-}));
-
-import { WhoopClient } from "whoop-whoop";
-
 const DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001";
 
-const mockSignIn = vi.mocked(WhoopClient.signIn);
-const mockVerifyCode = vi.mocked(WhoopClient.verifyCode);
+// MSW handlers for WHOOP Cognito auth and bootstrap endpoints
+function cognitoSuccessHandler(accessToken: string, refreshToken: string) {
+  return http.post("https://api.prod.whoop.com/auth-service/v3/whoop/", () => {
+    return HttpResponse.json({
+      AuthenticationResult: {
+        AccessToken: accessToken,
+        RefreshToken: refreshToken,
+      },
+    });
+  });
+}
+
+function cognitoMfaHandler(session: string, challengeName = "SMS_MFA") {
+  return http.post("https://api.prod.whoop.com/auth-service/v3/whoop/", () => {
+    return HttpResponse.json({
+      ChallengeName: challengeName,
+      Session: session,
+    });
+  });
+}
+
+function bootstrapHandler(userId: number) {
+  return http.get("https://api.prod.whoop.com/users-service/v2/bootstrap/", () => {
+    return HttpResponse.json({ id: userId });
+  });
+}
+
+const mswServer = setupServer();
 
 describe("whoopAuth router", () => {
   let server: ReturnType<import("express").Express["listen"]>;
@@ -29,6 +47,7 @@ describe("whoopAuth router", () => {
   let sessionCookie: string;
 
   beforeAll(async () => {
+    mswServer.listen({ onUnhandledRequest: "bypass" });
     testCtx = await setupTestDatabase();
 
     const session = await createSession(testCtx.db, DEFAULT_USER_ID);
@@ -46,6 +65,7 @@ describe("whoopAuth router", () => {
   }, 60_000);
 
   afterAll(async () => {
+    mswServer.close();
     if (server) {
       server.closeAllConnections();
       await new Promise<void>((resolve) => {
@@ -56,7 +76,7 @@ describe("whoopAuth router", () => {
   });
 
   afterEach(() => {
-    vi.resetAllMocks();
+    mswServer.resetHandlers();
   });
 
   /** POST a tRPC mutation */
@@ -76,14 +96,10 @@ describe("whoopAuth router", () => {
 
   describe("signIn", () => {
     it("returns token on successful sign-in (no MFA)", async () => {
-      mockSignIn.mockResolvedValueOnce({
-        type: "success",
-        token: {
-          accessToken: "whoop-access-token",
-          refreshToken: "whoop-refresh-token",
-          userId: 12345,
-        },
-      });
+      mswServer.use(
+        cognitoSuccessHandler("whoop-access-token", "whoop-refresh-token"),
+        bootstrapHandler(12345),
+      );
 
       const { result } = await mutate("whoopAuth.signIn", {
         username: "user@test.com",
@@ -101,11 +117,7 @@ describe("whoopAuth router", () => {
     });
 
     it("returns verification_required when MFA is needed", async () => {
-      mockSignIn.mockResolvedValueOnce({
-        type: "verification_required",
-        session: "cognito-session-abc",
-        method: "SMS_MFA",
-      });
+      mswServer.use(cognitoMfaHandler("cognito-session-abc", "SMS_MFA"));
 
       const { result } = await mutate("whoopAuth.signIn", {
         username: "user@test.com",
@@ -127,11 +139,7 @@ describe("whoopAuth router", () => {
   describe("verifyCode", () => {
     it("returns token after successful MFA verification", async () => {
       // First, sign in to create a pending challenge
-      mockSignIn.mockResolvedValueOnce({
-        type: "verification_required",
-        session: "cognito-session-xyz",
-        method: "SMS_MFA",
-      });
+      mswServer.use(cognitoMfaHandler("cognito-session-xyz", "SMS_MFA"));
 
       const signInResult = await mutate("whoopAuth.signIn", {
         username: "user@test.com",
@@ -142,12 +150,12 @@ describe("whoopAuth router", () => {
         challengeId: string;
       } = signInResult.result?.result?.data;
 
-      // Now verify the code
-      mockVerifyCode.mockResolvedValueOnce({
-        accessToken: "verified-access-token",
-        refreshToken: "verified-refresh-token",
-        userId: 99999,
-      });
+      // Now set up handlers for the verify code flow
+      mswServer.resetHandlers();
+      mswServer.use(
+        cognitoSuccessHandler("verified-access-token", "verified-refresh-token"),
+        bootstrapHandler(99999),
+      );
 
       const { result } = await mutate("whoopAuth.verifyCode", {
         challengeId: signInData.challengeId,
