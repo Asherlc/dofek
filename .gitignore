@@ -25,3 +25,5 @@ reports/
 cypress/videos/
 cypress/screenshots/
 cypress/downloads/
+# Code coverage
+coverage/
