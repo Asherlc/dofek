@@ -1,5 +1,7 @@
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { http, HttpResponse } from "msw";
+import { setupServer } from "msw/node";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
 import { activity, oauthToken } from "../../db/schema.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../../db/tokens.ts";
@@ -47,39 +49,36 @@ function fakeResult(overrides: Partial<FakeConcept2Result> = {}): FakeConcept2Re
   };
 }
 
-function createMockFetch(
+function concept2Handlers(
   results: FakeConcept2Result[],
   opts?: { totalPages?: number; apiError?: boolean },
-): typeof globalThis.fetch {
+) {
   const totalPages = opts?.totalPages ?? 1;
 
-  return async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
-    const urlStr = input.toString();
-
+  return [
     // Token refresh
-    if (urlStr.includes("/oauth/access_token")) {
-      return Response.json({
+    http.post("https://log.concept2.com/oauth/access_token", () => {
+      return HttpResponse.json({
         access_token: "refreshed-token",
         refresh_token: "new-refresh",
         expires_in: 7200,
         scope: "user:read results:read",
       });
-    }
+    }),
 
     // Results API
-    if (urlStr.includes("/api/users/me/results")) {
+    http.get("https://log.concept2.com/api/users/me/results", ({ request }) => {
       if (opts?.apiError) {
-        return new Response("Internal Server Error", { status: 500 });
+        return new HttpResponse("Internal Server Error", { status: 500 });
       }
 
-      // Parse page from URL
-      const url = new URL(urlStr);
+      const url = new URL(request.url);
       const page = Number.parseInt(url.searchParams.get("page") ?? "1", 10);
 
       // For pagination tests: return results only on the requested page
       const pageResults = totalPages > 1 ? (page === 1 ? results : []) : results;
 
-      return Response.json({
+      return HttpResponse.json({
         data: pageResults,
         meta: {
           pagination: {
@@ -91,23 +90,29 @@ function createMockFetch(
           },
         },
       });
-    }
-
-    return new Response("Not found", { status: 404 });
-  };
+    }),
+  ];
 }
+
+const server = setupServer();
 
 describe("Concept2Provider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
+    server.listen({ onUnhandledRequest: "error" });
     process.env.CONCEPT2_CLIENT_ID = "test-client-id";
     process.env.CONCEPT2_CLIENT_SECRET = "test-client-secret";
     ctx = await setupTestDatabase();
     await ensureProvider(ctx.db, "concept2", "Concept2", "https://log.concept2.com");
   }, 60_000);
 
+  afterEach(() => {
+    server.resetHandlers();
+  });
+
   afterAll(async () => {
+    server.close();
     if (ctx) await ctx.cleanup();
   });
 
@@ -124,7 +129,9 @@ describe("Concept2Provider.sync() (integration)", () => {
       fakeResult({ id: 5002, type: "skierg", date: "2026-03-02 09:00:00" }),
     ];
 
-    const provider = new Concept2Provider(createMockFetch(results));
+    server.use(...concept2Handlers(results));
+
+    const provider = new Concept2Provider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.provider).toBe("concept2");
@@ -154,7 +161,9 @@ describe("Concept2Provider.sync() (integration)", () => {
 
     const results = [fakeResult({ id: 5001, date: "2026-03-01 10:00:00" })];
 
-    const provider = new Concept2Provider(createMockFetch(results));
+    server.use(...concept2Handlers(results));
+
+    const provider = new Concept2Provider();
     await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     // Sync again — should upsert, not duplicate
@@ -177,7 +186,9 @@ describe("Concept2Provider.sync() (integration)", () => {
     const results = [fakeResult({ id: 6001, date: "2026-04-01 10:00:00" })];
 
     // Mock returns 2 total pages but results only on page 1
-    const provider = new Concept2Provider(createMockFetch(results, { totalPages: 2 }));
+    server.use(...concept2Handlers(results, { totalPages: 2 }));
+
+    const provider = new Concept2Provider();
     const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
 
     expect(result.recordsSynced).toBe(1);
@@ -192,7 +203,9 @@ describe("Concept2Provider.sync() (integration)", () => {
       scopes: "user:read results:read",
     });
 
-    const provider = new Concept2Provider(createMockFetch([]));
+    server.use(...concept2Handlers([]));
+
+    const provider = new Concept2Provider();
     await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     // Verify token was refreshed in DB
@@ -204,7 +217,7 @@ describe("Concept2Provider.sync() (integration)", () => {
     // Delete existing tokens
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "concept2"));
 
-    const provider = new Concept2Provider(createMockFetch([]));
+    const provider = new Concept2Provider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);
@@ -220,7 +233,9 @@ describe("Concept2Provider.sync() (integration)", () => {
       scopes: "user:read results:read",
     });
 
-    const provider = new Concept2Provider(createMockFetch([], { apiError: true }));
+    server.use(...concept2Handlers([], { apiError: true }));
+
+    const provider = new Concept2Provider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors.length).toBeGreaterThan(0);
