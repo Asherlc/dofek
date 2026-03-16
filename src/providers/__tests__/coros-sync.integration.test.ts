@@ -1,5 +1,7 @@
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { http, HttpResponse } from "msw";
+import { setupServer } from "msw/node";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
 import { activity, dailyMetrics, oauthToken, sleepSession } from "../../db/schema.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../../db/tokens.ts";
@@ -83,62 +85,66 @@ function fakeDailyData(overrides: Partial<FakeCorosDailyData> = {}): FakeCorosDa
   };
 }
 
-function createMockFetch(
+function corosHandlers(
   workouts: FakeCorosWorkout[],
   dailyData: FakeCorosDailyData[],
   opts?: { apiError?: boolean },
-): typeof globalThis.fetch {
-  return async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
-    const urlStr = input.toString();
-
+) {
+  return [
     // Token refresh
-    if (urlStr.includes("/oauth2/token")) {
-      return Response.json({
+    http.post("https://open.coros.com/oauth2/token", () => {
+      return HttpResponse.json({
         access_token: "refreshed-token",
         refresh_token: "new-refresh",
         expires_in: 7200,
       });
-    }
+    }),
 
     // Workouts API
-    if (urlStr.includes("/v2/coros/sport/list")) {
+    http.get("https://open.coros.com/v2/coros/sport/list", () => {
       if (opts?.apiError) {
-        return new Response("Internal Server Error", { status: 500 });
+        return new HttpResponse("Internal Server Error", { status: 500 });
       }
-      return Response.json({
+      return HttpResponse.json({
         data: workouts,
         message: "OK",
         result: "0000",
       });
-    }
+    }),
 
     // Daily data API
-    if (urlStr.includes("/v2/coros/daily/list")) {
+    http.get("https://open.coros.com/v2/coros/daily/list", () => {
       if (opts?.apiError) {
-        return new Response("Internal Server Error", { status: 500 });
+        return new HttpResponse("Internal Server Error", { status: 500 });
       }
-      return Response.json({
+      return HttpResponse.json({
         data: dailyData,
         message: "OK",
         result: "0000",
       });
-    }
-
-    return new Response("Not found", { status: 404 });
-  };
+    }),
+  ];
 }
+
+const server = setupServer();
 
 describe("CorosProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
+    server.listen({ onUnhandledRequest: "error" });
     process.env.COROS_CLIENT_ID = "test-client-id";
     process.env.COROS_CLIENT_SECRET = "test-client-secret";
     ctx = await setupTestDatabase();
     await ensureProvider(ctx.db, "coros", "COROS", "https://open.coros.com");
   }, 60_000);
 
+  afterEach(() => {
+    server.resetHandlers();
+  });
+
   afterAll(async () => {
+    server.close();
     if (ctx) await ctx.cleanup();
   });
 
@@ -155,7 +161,9 @@ describe("CorosProvider.sync() (integration)", () => {
       fakeWorkout({ labelId: "coros-w-1002", mode: 9 }), // cycling
     ];
 
-    const provider = new CorosProvider(createMockFetch(workouts, []));
+    server.use(...corosHandlers(workouts, []));
+
+    const provider = new CorosProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.provider).toBe("coros");
@@ -184,7 +192,9 @@ describe("CorosProvider.sync() (integration)", () => {
 
     const daily = [fakeDailyData({ date: "20260305", steps: 10000, restingHr: 52, hrv: 45 })];
 
-    const provider = new CorosProvider(createMockFetch([], daily));
+    server.use(...corosHandlers([], daily));
+
+    const provider = new CorosProvider();
     const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(0);
@@ -223,7 +233,9 @@ describe("CorosProvider.sync() (integration)", () => {
       }),
     ];
 
-    const provider = new CorosProvider(createMockFetch([], daily));
+    server.use(...corosHandlers([], daily));
+
+    const provider = new CorosProvider();
     const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(0);
@@ -250,7 +262,9 @@ describe("CorosProvider.sync() (integration)", () => {
       scopes: null,
     });
 
-    const provider = new CorosProvider(createMockFetch([], []));
+    server.use(...corosHandlers([], []));
+
+    const provider = new CorosProvider();
     await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     const tokens = await loadTokens(ctx.db, "coros");
@@ -260,7 +274,7 @@ describe("CorosProvider.sync() (integration)", () => {
   it("returns error when no tokens exist", async () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "coros"));
 
-    const provider = new CorosProvider(createMockFetch([], []));
+    const provider = new CorosProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);
@@ -278,7 +292,9 @@ describe("CorosProvider.sync() (integration)", () => {
 
     const workouts = [fakeWorkout({ labelId: "coros-w-upsert", mode: 8 })];
 
-    const provider = new CorosProvider(createMockFetch(workouts, []));
+    server.use(...corosHandlers(workouts, []));
+
+    const provider = new CorosProvider();
     await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     // Sync again — should upsert, not duplicate
