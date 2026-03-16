@@ -1,5 +1,7 @@
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { HttpResponse, http } from "msw";
+import { setupServer } from "msw/node";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
 import { activity, oauthToken } from "../../db/schema.ts";
 import { ensureProvider, saveTokens } from "../../db/tokens.ts";
@@ -56,57 +58,61 @@ interface MockFetchOptions {
   }>;
 }
 
-function createMockFetch(opts: MockFetchOptions): typeof globalThis.fetch {
+function mapmyfitHandlers(opts: MockFetchOptions) {
   const pages = opts.pages ?? [];
   let pageIndex = 0;
 
-  return async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
-    const urlStr = input.toString();
-
+  return [
     // Token refresh
-    if (urlStr.includes("/oauth2/access_token")) {
-      return Response.json({
+    http.post("https://api.mapmyfitness.com/v7.1/oauth2/access_token/", () => {
+      return HttpResponse.json({
         access_token: "refreshed-token",
         refresh_token: "new-refresh",
         expires_in: 7200,
       });
-    }
+    }),
 
     // Workouts list (paginated via offset)
-    if (urlStr.includes("/v7.1/workout/")) {
+    http.get("https://api.mapmyfitness.com/v7.1/workout/", () => {
       const page = pages[pageIndex];
       pageIndex++;
       if (!page) {
-        return Response.json({
+        return HttpResponse.json({
           _embedded: { workouts: [] },
           _links: {},
           total_count: 0,
         });
       }
-      return Response.json({
+      return HttpResponse.json({
         _embedded: { workouts: page.workouts },
         _links: {
           next: page.hasNext ? [{ href: "/v7.1/workout/?offset=40" }] : undefined,
         },
         total_count: page.workouts.length,
       });
-    }
-
-    return new Response("Not found", { status: 404 });
-  };
+    }),
+  ];
 }
+
+const server = setupServer();
 
 describe("MapMyFitnessProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
+    server.listen({ onUnhandledRequest: "error" });
     process.env.MAPMYFITNESS_CLIENT_ID = "test-client-id";
     process.env.MAPMYFITNESS_CLIENT_SECRET = "test-client-secret";
     ctx = await setupTestDatabase();
     await ensureProvider(ctx.db, "mapmyfitness", "MapMyFitness", "https://api.mapmyfitness.com");
   }, 60_000);
 
+  afterEach(() => {
+    server.resetHandlers();
+  });
+
   afterAll(async () => {
+    server.close();
     if (ctx) await ctx.cleanup();
   });
 
@@ -128,9 +134,9 @@ describe("MapMyFitnessProvider.sync() (integration)", () => {
       }),
     ];
 
-    const provider = new MapMyFitnessProvider(
-      createMockFetch({ pages: [{ workouts, hasNext: false }] }),
-    );
+    server.use(...mapmyfitHandlers({ pages: [{ workouts, hasNext: false }] }));
+
+    const provider = new MapMyFitnessProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.provider).toBe("mapmyfitness");
@@ -164,15 +170,16 @@ describe("MapMyFitnessProvider.sync() (integration)", () => {
 
     const workouts = [fakeWorkout({ id: "mmf-1001" })];
 
-    const provider = new MapMyFitnessProvider(
-      createMockFetch({ pages: [{ workouts, hasNext: false }] }),
-    );
+    server.use(...mapmyfitHandlers({ pages: [{ workouts, hasNext: false }] }));
+
+    const provider = new MapMyFitnessProvider();
     await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     // Sync again
-    const provider2 = new MapMyFitnessProvider(
-      createMockFetch({ pages: [{ workouts, hasNext: false }] }),
-    );
+    server.resetHandlers();
+    server.use(...mapmyfitHandlers({ pages: [{ workouts, hasNext: false }] }));
+
+    const provider2 = new MapMyFitnessProvider();
     await provider2.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     const rows = await ctx.db
@@ -200,14 +207,16 @@ describe("MapMyFitnessProvider.sync() (integration)", () => {
       fakeWorkout({ id: "mmf-p3", start_datetime: "2026-04-03T08:00:00+00:00" }),
     ];
 
-    const provider = new MapMyFitnessProvider(
-      createMockFetch({
+    server.use(
+      ...mapmyfitHandlers({
         pages: [
           { workouts: page1Workouts, hasNext: true },
           { workouts: page2Workouts, hasNext: false },
         ],
       }),
     );
+
+    const provider = new MapMyFitnessProvider();
     const result = await provider.sync(ctx.db, new Date("2026-03-15T00:00:00Z"));
 
     expect(result.recordsSynced).toBe(3);
@@ -245,9 +254,9 @@ describe("MapMyFitnessProvider.sync() (integration)", () => {
       }),
     ];
 
-    const provider = new MapMyFitnessProvider(
-      createMockFetch({ pages: [{ workouts, hasNext: false }] }),
-    );
+    server.use(...mapmyfitHandlers({ pages: [{ workouts, hasNext: false }] }));
+
+    const provider = new MapMyFitnessProvider();
     const result = await provider.sync(ctx.db, new Date("2026-04-01T00:00:00Z"));
     expect(result.recordsSynced).toBe(4);
 
@@ -277,9 +286,9 @@ describe("MapMyFitnessProvider.sync() (integration)", () => {
       scopes: "user_id:12345",
     });
 
-    const provider = new MapMyFitnessProvider(
-      createMockFetch({ pages: [{ workouts: [], hasNext: false }] }),
-    );
+    server.use(...mapmyfitHandlers({ pages: [{ workouts: [], hasNext: false }] }));
+
+    const provider = new MapMyFitnessProvider();
     await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     const { loadTokens } = await import("../../db/tokens.ts");
@@ -290,7 +299,7 @@ describe("MapMyFitnessProvider.sync() (integration)", () => {
   it("returns error when no tokens exist", async () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "mapmyfitness"));
 
-    const provider = new MapMyFitnessProvider(createMockFetch({ pages: [] }));
+    const provider = new MapMyFitnessProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);

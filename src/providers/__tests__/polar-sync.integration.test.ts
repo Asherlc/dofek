@@ -1,5 +1,7 @@
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { HttpResponse, http } from "msw";
+import { setupServer } from "msw/node";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
 import { activity, dailyMetrics, sleepSession } from "../../db/schema.ts";
 import { ensureProvider, saveTokens } from "../../db/tokens.ts";
@@ -82,65 +84,69 @@ function fakePolarNightlyRecharge(
   };
 }
 
-function createMockFetch(opts?: {
+function polarHandlers(opts?: {
   exercises?: PolarExercise[];
   sleep?: PolarSleep[];
   dailyActivity?: PolarDailyActivity[];
   nightlyRecharge?: PolarNightlyRecharge[];
-}): typeof globalThis.fetch {
+}) {
   const exercises = opts?.exercises ?? [];
   const sleep = opts?.sleep ?? [];
   const dailyActivity = opts?.dailyActivity ?? [];
   const nightlyRecharge = opts?.nightlyRecharge ?? [];
 
-  return async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
-    const urlStr = input.toString();
-
+  return [
     // Token refresh (Polar uses polarremote.com)
-    if (urlStr.includes("polarremote.com")) {
-      return Response.json({
+    http.post("https://polarremote.com/v2/oauth2/token", () => {
+      return HttpResponse.json({
         access_token: "refreshed-polar-token",
         refresh_token: "new-polar-refresh",
         expires_in: 86400,
         token_type: "Bearer",
       });
-    }
+    }),
 
     // Exercises
-    if (urlStr.includes("/v3/exercises")) {
-      return Response.json(exercises);
-    }
+    http.get("https://www.polar.com/v3/exercises", () => {
+      return HttpResponse.json(exercises);
+    }),
 
     // Sleep
-    if (urlStr.includes("/v3/sleep")) {
-      return Response.json(sleep);
-    }
+    http.get("https://www.polar.com/v3/sleep", () => {
+      return HttpResponse.json(sleep);
+    }),
 
     // Nightly recharge
-    if (urlStr.includes("/v3/nightly-recharge")) {
-      return Response.json(nightlyRecharge);
-    }
+    http.get("https://www.polar.com/v3/nightly-recharge", () => {
+      return HttpResponse.json(nightlyRecharge);
+    }),
 
     // Daily activity
-    if (urlStr.includes("/v3/activity")) {
-      return Response.json(dailyActivity);
-    }
-
-    return new Response("Not found", { status: 404 });
-  };
+    http.get("https://www.polar.com/v3/activity", () => {
+      return HttpResponse.json(dailyActivity);
+    }),
+  ];
 }
+
+const server = setupServer();
 
 describe("PolarProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
+    server.listen({ onUnhandledRequest: "error" });
     process.env.POLAR_CLIENT_ID = "test-polar-client";
     process.env.POLAR_CLIENT_SECRET = "test-polar-secret";
     ctx = await setupTestDatabase();
     await ensureProvider(ctx.db, "polar", "Polar", "https://www.polar.com/v3");
   }, 60_000);
 
+  afterEach(() => {
+    server.resetHandlers();
+  });
+
   afterAll(async () => {
+    server.close();
     if (ctx) await ctx.cleanup();
   });
 
@@ -152,8 +158,8 @@ describe("PolarProvider.sync() (integration)", () => {
       scopes: "accesslink.read_all",
     });
 
-    const provider = new PolarProvider(
-      createMockFetch({
+    server.use(
+      ...polarHandlers({
         exercises: [
           fakePolarExercise({ id: "ex-1001" }),
           fakePolarExercise({
@@ -172,6 +178,7 @@ describe("PolarProvider.sync() (integration)", () => {
       }),
     );
 
+    const provider = new PolarProvider();
     const since = new Date("2026-02-01T00:00:00Z");
     const result = await provider.sync(ctx.db, since);
 
@@ -235,8 +242,8 @@ describe("PolarProvider.sync() (integration)", () => {
     // Clear previous data
     await ctx.db.delete(dailyMetrics).where(eq(dailyMetrics.providerId, "polar"));
 
-    const provider = new PolarProvider(
-      createMockFetch({
+    server.use(
+      ...polarHandlers({
         dailyActivity: [
           fakePolarDailyActivity({ date: "2026-03-05", active_steps: 8500, active_calories: 600 }),
         ],
@@ -244,6 +251,7 @@ describe("PolarProvider.sync() (integration)", () => {
       }),
     );
 
+    const provider = new PolarProvider();
     const since = new Date("2026-02-01T00:00:00Z");
     const result = await provider.sync(ctx.db, since);
 
@@ -268,8 +276,8 @@ describe("PolarProvider.sync() (integration)", () => {
       scopes: "accesslink.read_all",
     });
 
-    const provider = new PolarProvider(
-      createMockFetch({
+    server.use(
+      ...polarHandlers({
         exercises: [fakePolarExercise({ id: "ex-1001" })],
         sleep: [fakePolarSleep()],
         dailyActivity: [fakePolarDailyActivity()],
@@ -277,6 +285,7 @@ describe("PolarProvider.sync() (integration)", () => {
       }),
     );
 
+    const provider = new PolarProvider();
     const since = new Date("2026-02-01T00:00:00Z");
     await provider.sync(ctx.db, since);
     await provider.sync(ctx.db, since);
@@ -300,8 +309,8 @@ describe("PolarProvider.sync() (integration)", () => {
     // Clear previous activity data
     await ctx.db.delete(activity).where(eq(activity.providerId, "polar"));
 
-    const provider = new PolarProvider(
-      createMockFetch({
+    server.use(
+      ...polarHandlers({
         exercises: [
           fakePolarExercise({
             id: "ex-old",
@@ -315,6 +324,7 @@ describe("PolarProvider.sync() (integration)", () => {
       }),
     );
 
+    const provider = new PolarProvider();
     const since = new Date("2026-03-01T00:00:00Z");
     await provider.sync(ctx.db, since);
 
@@ -330,7 +340,7 @@ describe("PolarProvider.sync() (integration)", () => {
     const { oauthToken } = await import("../../db/schema.ts");
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "polar"));
 
-    const provider = new PolarProvider(createMockFetch());
+    const provider = new PolarProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);

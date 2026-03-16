@@ -1,3 +1,5 @@
+import { HttpResponse, http } from "msw";
+import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../../db/tokens.ts";
@@ -9,41 +11,25 @@ import { RideWithGpsProvider, type RideWithGpsSyncResponse } from "../ride-with-
 // - Lines 333-338: error during trip deletion (db.delete throws)
 // ============================================================
 
-function createSyncFailureFetch(): typeof globalThis.fetch {
-  return async (input: RequestInfo | URL): Promise<Response> => {
-    const urlStr = input.toString();
-
-    if (urlStr.includes("/api/v1/sync.json")) {
-      return new Response("Service Unavailable", { status: 503 });
-    }
-
-    return new Response("Not found", { status: 404 });
-  };
-}
-
-function createDeleteFetch(syncResponse: RideWithGpsSyncResponse): typeof globalThis.fetch {
-  return async (input: RequestInfo | URL): Promise<Response> => {
-    const urlStr = input.toString();
-
-    if (urlStr.includes("/api/v1/sync.json")) {
-      return Response.json(syncResponse);
-    }
-
-    return new Response("Not found", { status: 404 });
-  };
-}
+const server = setupServer();
 
 describe("RideWithGpsProvider.sync() — error paths (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
+    server.listen({ onUnhandledRequest: "error" });
     process.env.RWGPS_CLIENT_ID = "test-client-id";
     process.env.RWGPS_CLIENT_SECRET = "test-client-secret";
     ctx = await setupTestDatabase();
     await ensureProvider(ctx.db, "ride-with-gps", "RideWithGPS", "https://ridewithgps.com");
   }, 60_000);
 
+  afterEach(() => {
+    server.resetHandlers();
+  });
+
   afterAll(async () => {
+    server.close();
     if (ctx) await ctx.cleanup();
   });
 
@@ -55,7 +41,13 @@ describe("RideWithGpsProvider.sync() — error paths (integration)", () => {
       scopes: "user",
     });
 
-    const provider = new RideWithGpsProvider(createSyncFailureFetch());
+    server.use(
+      http.get("https://ridewithgps.com/api/v1/sync.json", () => {
+        return new HttpResponse("Service Unavailable", { status: 503 });
+      }),
+    );
+
+    const provider = new RideWithGpsProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.recordsSynced).toBe(0);
@@ -72,7 +64,6 @@ describe("RideWithGpsProvider.sync() — error paths (integration)", () => {
     });
 
     // Sync response with a deleted trip that doesn't exist in the DB
-    // This exercises the delete path; the DB delete won't find anything but won't error
     const syncResp: RideWithGpsSyncResponse = {
       items: [
         {
@@ -85,7 +76,13 @@ describe("RideWithGpsProvider.sync() — error paths (integration)", () => {
       meta: { rwgps_datetime: "2026-03-01T12:00:00Z" },
     };
 
-    const provider = new RideWithGpsProvider(createDeleteFetch(syncResp));
+    server.use(
+      http.get("https://ridewithgps.com/api/v1/sync.json", () => {
+        return HttpResponse.json(syncResp);
+      }),
+    );
+
+    const provider = new RideWithGpsProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     // Delete of non-existent trip should not error
@@ -113,7 +110,13 @@ describe("RideWithGpsProvider.sync() — error paths (integration)", () => {
       meta: { rwgps_datetime: "2026-03-01T12:00:00Z" },
     };
 
-    const provider = new RideWithGpsProvider(createDeleteFetch(syncResp));
+    server.use(
+      http.get("https://ridewithgps.com/api/v1/sync.json", () => {
+        return HttpResponse.json(syncResp);
+      }),
+    );
+
+    const provider = new RideWithGpsProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(0);
@@ -126,17 +129,22 @@ describe("RideWithGpsProvider.getUserIdentity()", () => {
 
   afterEach(() => {
     process.env = { ...originalEnv };
+    server.resetHandlers();
   });
 
   it("returns identity from user API", async () => {
     process.env.RWGPS_CLIENT_ID = "test-id";
     process.env.RWGPS_CLIENT_SECRET = "test-secret";
 
-    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
-      return Response.json({ user: { id: 555, email: "rider@rwgps.com", name: "Road Rider" } });
-    };
+    server.use(
+      http.get("https://ridewithgps.com/users/current.json", () => {
+        return HttpResponse.json({
+          user: { id: 555, email: "rider@rwgps.com", name: "Road Rider" },
+        });
+      }),
+    );
 
-    const provider = new RideWithGpsProvider(mockFetch);
+    const provider = new RideWithGpsProvider();
     const setup = provider.authSetup();
     if (!setup.getUserIdentity) throw new Error("getUserIdentity not defined");
     const identity = await setup.getUserIdentity("test-token");
@@ -149,11 +157,13 @@ describe("RideWithGpsProvider.getUserIdentity()", () => {
     process.env.RWGPS_CLIENT_ID = "test-id";
     process.env.RWGPS_CLIENT_SECRET = "test-secret";
 
-    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
-      return new Response("Not Found", { status: 404 });
-    };
+    server.use(
+      http.get("https://ridewithgps.com/users/current.json", () => {
+        return new HttpResponse("Not Found", { status: 404 });
+      }),
+    );
 
-    const provider = new RideWithGpsProvider(mockFetch);
+    const provider = new RideWithGpsProvider();
     const setup = provider.authSetup();
     if (!setup.getUserIdentity) throw new Error("getUserIdentity not defined");
     await expect(setup.getUserIdentity("bad-token")).rejects.toThrow("RWGPS user API error (404)");

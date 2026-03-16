@@ -1,5 +1,7 @@
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { HttpResponse, http } from "msw";
+import { setupServer } from "msw/node";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
 import {
   bodyMeasurement,
@@ -88,45 +90,46 @@ function fakeTrendDay(overrides: Partial<FakeTrendDay> = {}): FakeTrendDay {
   };
 }
 
-function createMockFetch(
-  trendDays: FakeTrendDay[],
-  opts?: { signInError?: boolean },
-): typeof globalThis.fetch {
-  return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const urlStr = input.toString();
-
+function eightSleepHandlers(trendDays: FakeTrendDay[], opts?: { signInError?: boolean }) {
+  return [
     // Sign-in (re-auth)
-    if (urlStr.includes("auth-api.8slp.net/v1/tokens") && init?.method === "POST") {
+    http.post("https://auth-api.8slp.net/v1/tokens", () => {
       if (opts?.signInError) {
-        return new Response("Unauthorized", { status: 401 });
+        return new HttpResponse("Unauthorized", { status: 401 });
       }
-      return Response.json({
+      return HttpResponse.json({
         access_token: "refreshed-eight-sleep-token",
         expires_in: 86400,
         userId: "user-123",
       });
-    }
+    }),
 
     // Trends API
-    if (urlStr.includes("/users/") && urlStr.includes("/trends")) {
-      return Response.json({
+    http.get("https://app-api.8slp.net/v1/users/:userId/trends", () => {
+      return HttpResponse.json({
         days: trendDays,
       });
-    }
-
-    return new Response("Not found", { status: 404 });
-  };
+    }),
+  ];
 }
+
+const server = setupServer();
 
 describe("EightSleepProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
+    server.listen({ onUnhandledRequest: "error" });
     ctx = await setupTestDatabase();
     await ensureProvider(ctx.db, "eight-sleep", "Eight Sleep");
   }, 60_000);
 
+  afterEach(() => {
+    server.resetHandlers();
+  });
+
   afterAll(async () => {
+    server.close();
     if (ctx) await ctx.cleanup();
   });
 
@@ -158,7 +161,9 @@ describe("EightSleepProvider.sync() (integration)", () => {
       }),
     ];
 
-    const provider = new EightSleepProvider(createMockFetch(days));
+    server.use(...eightSleepHandlers(days));
+
+    const provider = new EightSleepProvider();
     const since = new Date("2026-02-01T00:00:00Z");
     const result = await provider.sync(ctx.db, since);
 
@@ -233,7 +238,9 @@ describe("EightSleepProvider.sync() (integration)", () => {
       fakeTrendDay({ day: "2026-03-11", processing: false }),
     ];
 
-    const provider = new EightSleepProvider(createMockFetch(days));
+    server.use(...eightSleepHandlers(days));
+
+    const provider = new EightSleepProvider();
     const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(0);
@@ -265,7 +272,9 @@ describe("EightSleepProvider.sync() (integration)", () => {
     await ctx.db.delete(metricStream).where(eq(metricStream.providerId, "eight-sleep"));
 
     const days = [fakeTrendDay({ day: "2026-03-15" })];
-    const provider = new EightSleepProvider(createMockFetch(days));
+    server.use(...eightSleepHandlers(days));
+
+    const provider = new EightSleepProvider();
     const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(0);
@@ -292,7 +301,7 @@ describe("EightSleepProvider.sync() (integration)", () => {
     delete process.env.EIGHT_SLEEP_USERNAME;
     delete process.env.EIGHT_SLEEP_PASSWORD;
 
-    const provider = new EightSleepProvider(createMockFetch([]));
+    const provider = new EightSleepProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);
@@ -304,7 +313,7 @@ describe("EightSleepProvider.sync() (integration)", () => {
   it("returns error when no tokens exist", async () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "eight-sleep"));
 
-    const provider = new EightSleepProvider(createMockFetch([]));
+    const provider = new EightSleepProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);
@@ -320,7 +329,7 @@ describe("EightSleepProvider.sync() (integration)", () => {
       scopes: null, // no userId encoded
     });
 
-    const provider = new EightSleepProvider(createMockFetch([]));
+    const provider = new EightSleepProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);
@@ -356,7 +365,9 @@ describe("EightSleepProvider.sync() (integration)", () => {
       }),
     ];
 
-    const provider = new EightSleepProvider(createMockFetch(days));
+    server.use(...eightSleepHandlers(days));
+
+    const provider = new EightSleepProvider();
     const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
 
     // Sleep session should be skipped (no presenceStart/End)

@@ -1,5 +1,7 @@
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { HttpResponse, http } from "msw";
+import { setupServer } from "msw/node";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
 import { foodEntry, oauthToken } from "../../db/schema.ts";
 import { ensureProvider, saveTokens } from "../../db/tokens.ts";
@@ -45,26 +47,25 @@ function fakeFoodEntriesResponse(
   };
 }
 
-function createMockFetch(
-  responsesByDateInt: Map<string, FatSecretFoodEntriesResponse>,
-): typeof globalThis.fetch {
-  return async (input: RequestInfo | URL): Promise<Response> => {
-    const urlStr = input.toString();
-
-    // FatSecret API call — parse date from query string
-    if (urlStr.includes("platform.fatsecret.com")) {
-      const url = new URL(urlStr);
+function fatsecretHandlers(responsesByDateInt: Map<string, FatSecretFoodEntriesResponse>) {
+  return [
+    // FatSecret API (OAuth 1.0 signed GET request)
+    http.get("https://platform.fatsecret.com/rest/server.api", ({ request }) => {
+      const url = new URL(request.url);
       const dateParam = url.searchParams.get("date");
       if (dateParam && responsesByDateInt.has(dateParam)) {
-        return Response.json(responsesByDateInt.get(dateParam));
+        return HttpResponse.json(responsesByDateInt.get(dateParam));
       }
       // No entries for this date — FatSecret returns an error
-      return Response.json({ error: { code: 7, message: "No entries found" } }, { status: 400 });
-    }
-
-    return new Response("Not found", { status: 404 });
-  };
+      return HttpResponse.json(
+        { error: { code: 7, message: "No entries found" } },
+        { status: 400 },
+      );
+    }),
+  ];
 }
+
+const server = setupServer();
 
 // ============================================================
 // Tests
@@ -74,13 +75,19 @@ describe("FatSecretProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
+    server.listen({ onUnhandledRequest: "error" });
     process.env.FATSECRET_CONSUMER_KEY = "test-consumer-key";
     process.env.FATSECRET_CONSUMER_SECRET = "test-consumer-secret";
     ctx = await setupTestDatabase();
     await ensureProvider(ctx.db, "fatsecret", "FatSecret");
   }, 60_000);
 
+  afterEach(() => {
+    server.resetHandlers();
+  });
+
   afterAll(async () => {
+    server.close();
     if (ctx) await ctx.cleanup();
   });
 
@@ -121,7 +128,9 @@ describe("FatSecretProvider.sync() (integration)", () => {
       ]),
     );
 
-    const provider = new FatSecretProvider(createMockFetch(responses));
+    server.use(...fatsecretHandlers(responses));
+
+    const provider = new FatSecretProvider();
     // Sync just this one day
     const since = new Date("2026-03-01T00:00:00Z");
     const result = await provider.sync(ctx.db, since);
@@ -166,7 +175,9 @@ describe("FatSecretProvider.sync() (integration)", () => {
       ]),
     );
 
-    const provider = new FatSecretProvider(createMockFetch(responses));
+    server.use(...fatsecretHandlers(responses));
+
+    const provider = new FatSecretProvider();
     const since = new Date("2026-03-01T00:00:00Z");
 
     await provider.sync(ctx.db, since);
@@ -195,7 +206,9 @@ describe("FatSecretProvider.sync() (integration)", () => {
       ]),
     );
 
-    const provider = new FatSecretProvider(createMockFetch(responses));
+    server.use(...fatsecretHandlers(responses));
+
+    const provider = new FatSecretProvider();
     const since = new Date("2026-03-02T00:00:00Z");
     await provider.sync(ctx.db, since);
 
@@ -208,7 +221,7 @@ describe("FatSecretProvider.sync() (integration)", () => {
   it("returns error when no tokens exist", async () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "fatsecret"));
 
-    const provider = new FatSecretProvider(createMockFetch(new Map()));
+    const provider = new FatSecretProvider();
     const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);
@@ -224,12 +237,14 @@ describe("FatSecretProvider.sync() (integration)", () => {
       scopes: null,
     });
 
-    // Mock that returns 500 for all requests
-    const errorFetch = async (): Promise<Response> => {
-      return new Response("Internal Server Error", { status: 500 });
-    };
+    // Override to return 500 for all requests
+    server.use(
+      http.get("https://platform.fatsecret.com/rest/server.api", () => {
+        return new HttpResponse("Internal Server Error", { status: 500 });
+      }),
+    );
 
-    const provider = new FatSecretProvider(errorFetch);
+    const provider = new FatSecretProvider();
     const since = new Date("2026-03-10T00:00:00Z");
     const result = await provider.sync(ctx.db, since);
 

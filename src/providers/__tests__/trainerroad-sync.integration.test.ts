@@ -1,5 +1,7 @@
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { HttpResponse, http } from "msw";
+import { setupServer } from "msw/node";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
 import { activity, oauthToken } from "../../db/schema.ts";
 import { ensureProvider, saveTokens } from "../../db/tokens.ts";
@@ -58,74 +60,70 @@ function fakeActivity(overrides: Partial<FakeTrainerRoadActivity> = {}): FakeTra
   };
 }
 
-function createMockFetch(
+function trainerroadHandlers(
   activities: FakeTrainerRoadActivity[],
   opts?: { signInError?: boolean },
-): typeof globalThis.fetch {
-  return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const urlStr = input.toString();
-
+) {
+  return [
     // Login page (GET for CSRF token)
-    if (urlStr.includes("/app/login") && (!init?.method || init.method === "GET")) {
-      return new Response('<input name="__RequestVerificationToken" value="fake-csrf-token" />', {
-        status: 200,
-        headers: {
-          "Set-Cookie": "AntiForgeryCookie=abc123; path=/",
+    http.get("https://www.trainerroad.com/app/login", () => {
+      return new HttpResponse(
+        '<input name="__RequestVerificationToken" value="fake-csrf-token" />',
+        {
+          status: 200,
+          headers: {
+            "Set-Cookie": "AntiForgeryCookie=abc123; path=/",
+          },
         },
-      });
-    }
+      );
+    }),
 
     // Login POST
-    if (urlStr.includes("/app/login") && init?.method === "POST") {
+    http.post("https://www.trainerroad.com/app/login", () => {
       if (opts?.signInError) {
-        return new Response("Login failed", {
-          status: 200,
-          headers: {},
-        });
+        return new HttpResponse("Login failed", { status: 200 });
       }
-      const response = new Response("", {
+      return new HttpResponse("", {
         status: 302,
         headers: {
           Location: "/app/dashboard",
+          "Set-Cookie": "SharedTrainerRoadAuth=new-auth-cookie; path=/; HttpOnly",
         },
       });
-      // Mock getSetCookie
-      const originalHeaders = response.headers;
-      Object.defineProperty(originalHeaders, "getSetCookie", {
-        value: () => [
-          "SharedTrainerRoadAuth=new-auth-cookie; path=/; HttpOnly",
-          "other=value; path=/",
-        ],
-      });
-      return response;
-    }
+    }),
 
     // Member info (used during signIn to get username)
-    if (urlStr.includes("/app/api/member-info")) {
-      return Response.json({
+    http.get("https://www.trainerroad.com/app/api/member-info", () => {
+      return HttpResponse.json({
         MemberId: 12345,
         Username: "testuser",
       });
-    }
+    }),
 
     // Activities API
-    if (urlStr.includes("/app/api/calendar/activities/")) {
-      return Response.json(activities);
-    }
-
-    return new Response("Not found", { status: 404 });
-  };
+    http.get("https://www.trainerroad.com/app/api/calendar/activities/:username", () => {
+      return HttpResponse.json(activities);
+    }),
+  ];
 }
+
+const server = setupServer();
 
 describe("TrainerRoadProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
+    server.listen({ onUnhandledRequest: "error" });
     ctx = await setupTestDatabase();
     await ensureProvider(ctx.db, "trainerroad", "TrainerRoad", "https://www.trainerroad.com");
   }, 60_000);
 
+  afterEach(() => {
+    server.resetHandlers();
+  });
+
   afterAll(async () => {
+    server.close();
     if (ctx) await ctx.cleanup();
   });
 
@@ -148,7 +146,9 @@ describe("TrainerRoadProvider.sync() (integration)", () => {
       }),
     ];
 
-    const provider = new TrainerRoadProvider(createMockFetch(trActivities));
+    server.use(...trainerroadHandlers(trActivities));
+
+    const provider = new TrainerRoadProvider();
     const since = new Date("2026-02-01T00:00:00Z");
     const result = await provider.sync(ctx.db, since);
 
@@ -181,7 +181,9 @@ describe("TrainerRoadProvider.sync() (integration)", () => {
 
     const trActivities = [fakeActivity({ Id: 5001, WorkoutName: "Baxter Updated" })];
 
-    const provider = new TrainerRoadProvider(createMockFetch(trActivities));
+    server.use(...trainerroadHandlers(trActivities));
+
+    const provider = new TrainerRoadProvider();
     await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     // Sync again
@@ -208,7 +210,9 @@ describe("TrainerRoadProvider.sync() (integration)", () => {
     process.env.TRAINERROAD_PASSWORD = "test-password";
 
     const trActivities = [fakeActivity({ Id: 6001, WorkoutName: "Post-reauth workout" })];
-    const provider = new TrainerRoadProvider(createMockFetch(trActivities));
+    server.use(...trainerroadHandlers(trActivities));
+
+    const provider = new TrainerRoadProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(0);
@@ -236,7 +240,7 @@ describe("TrainerRoadProvider.sync() (integration)", () => {
     delete process.env.TRAINERROAD_USERNAME;
     delete process.env.TRAINERROAD_PASSWORD;
 
-    const provider = new TrainerRoadProvider(createMockFetch([]));
+    const provider = new TrainerRoadProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);
@@ -248,7 +252,7 @@ describe("TrainerRoadProvider.sync() (integration)", () => {
   it("returns error when no tokens exist", async () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "trainerroad"));
 
-    const provider = new TrainerRoadProvider(createMockFetch([]));
+    const provider = new TrainerRoadProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);
@@ -264,7 +268,7 @@ describe("TrainerRoadProvider.sync() (integration)", () => {
       scopes: null, // no username encoded
     });
 
-    const provider = new TrainerRoadProvider(createMockFetch([]));
+    const provider = new TrainerRoadProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);
@@ -296,7 +300,9 @@ describe("TrainerRoadProvider.sync() (integration)", () => {
       }),
     ];
 
-    const provider = new TrainerRoadProvider(createMockFetch(trActivities));
+    server.use(...trainerroadHandlers(trActivities));
+
+    const provider = new TrainerRoadProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(0);

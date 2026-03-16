@@ -1,7 +1,9 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { HttpResponse, http } from "msw";
+import { setupServer } from "msw/node";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
 import { activity, metricStream } from "../../db/schema.ts";
 import { ensureProvider, saveTokens } from "../../db/tokens.ts";
@@ -40,34 +42,29 @@ function fakeWorkout(overrides: Partial<WahooWorkout> = {}): WahooWorkout {
 const FIT_FIXTURE_PATH = resolve(import.meta.dirname, "../../fit/__tests__/fixtures/test.fit");
 const fitFileBuffer = readFileSync(FIT_FIXTURE_PATH);
 
-function createMockFetch(
-  workouts: WahooWorkout[],
-  opts?: { fitFileError?: boolean },
-): typeof globalThis.fetch {
-  return async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
-    const urlStr = input.toString();
-
+function wahooHandlers(workouts: WahooWorkout[], opts?: { fitFileError?: boolean }) {
+  return [
     // Token refresh
-    if (urlStr.includes("/oauth/token")) {
-      return Response.json({
+    http.post("https://api.wahooligan.com/oauth/token", () => {
+      return HttpResponse.json({
         access_token: "refreshed-token",
         refresh_token: "new-refresh",
         expires_in: 7200,
         scope: "user_read workouts_read",
       });
-    }
+    }),
 
     // FIT file download
-    if (urlStr.includes(".fit")) {
+    http.get("https://cdn.wahoo.com/files/*", () => {
       if (opts?.fitFileError) {
-        return new Response("Internal Server Error", { status: 500 });
+        return new HttpResponse("Internal Server Error", { status: 500 });
       }
-      return new Response(fitFileBuffer);
-    }
+      return new HttpResponse(fitFileBuffer);
+    }),
 
     // Workout list
-    if (urlStr.includes("/v1/workouts") && !urlStr.match(/\/v1\/workouts\/\d+/)) {
-      return Response.json({
+    http.get("https://api.wahooligan.com/v1/workouts", () => {
+      return HttpResponse.json({
         workouts,
         total: workouts.length,
         page: 1,
@@ -75,23 +72,29 @@ function createMockFetch(
         order: "descending",
         sort: "starts",
       });
-    }
-
-    return new Response("Not found", { status: 404 });
-  };
+    }),
+  ];
 }
+
+const server = setupServer();
 
 describe("WahooProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
+    server.listen({ onUnhandledRequest: "error" });
     process.env.WAHOO_CLIENT_ID = "test-client-id";
     process.env.WAHOO_CLIENT_SECRET = "test-client-secret";
     ctx = await setupTestDatabase();
     await ensureProvider(ctx.db, "wahoo", "Wahoo", "https://api.wahooligan.com");
   }, 60_000);
 
+  afterEach(() => {
+    server.resetHandlers();
+  });
+
   afterAll(async () => {
+    server.close();
     if (ctx) await ctx.cleanup();
   });
 
@@ -109,7 +112,9 @@ describe("WahooProvider.sync() (integration)", () => {
       fakeWorkout({ id: 1002, starts: "2026-03-05T14:00:00Z", workout_type_id: 1 }),
     ];
 
-    const provider = new WahooProvider(createMockFetch(workouts));
+    server.use(...wahooHandlers(workouts));
+
+    const provider = new WahooProvider();
     const since = new Date("2026-02-01T00:00:00Z");
     const result = await provider.sync(ctx.db, since);
 
@@ -141,7 +146,9 @@ describe("WahooProvider.sync() (integration)", () => {
 
     const workouts = [fakeWorkout({ id: 1001, starts: "2026-03-01T10:00:00Z" })];
 
-    const provider = new WahooProvider(createMockFetch(workouts));
+    server.use(...wahooHandlers(workouts));
+
+    const provider = new WahooProvider();
     await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     // Sync again — should upsert, not duplicate
@@ -162,7 +169,9 @@ describe("WahooProvider.sync() (integration)", () => {
       scopes: "user_read workouts_read",
     });
 
-    const provider = new WahooProvider(createMockFetch([]));
+    server.use(...wahooHandlers([]));
+
+    const provider = new WahooProvider();
     await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     // Verify token was refreshed in DB
@@ -181,7 +190,9 @@ describe("WahooProvider.sync() (integration)", () => {
 
     const workouts = [fakeWorkout({ id: 2001, starts: "2026-04-01T10:00:00Z" })];
 
-    const provider = new WahooProvider(createMockFetch(workouts));
+    server.use(...wahooHandlers(workouts));
+
+    const provider = new WahooProvider();
     const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(0);
@@ -219,7 +230,9 @@ describe("WahooProvider.sync() (integration)", () => {
 
     const workouts = [fakeWorkout({ id: 3001, starts: "2026-05-01T10:00:00Z" })];
 
-    const provider = new WahooProvider(createMockFetch(workouts, { fitFileError: true }));
+    server.use(...wahooHandlers(workouts, { fitFileError: true }));
+
+    const provider = new WahooProvider();
     const result = await provider.sync(ctx.db, new Date("2026-04-01T00:00:00Z"));
 
     // Activity should still be inserted
@@ -241,7 +254,7 @@ describe("WahooProvider.sync() (integration)", () => {
     const { eq } = await import("drizzle-orm");
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "wahoo"));
 
-    const provider = new WahooProvider(createMockFetch([]));
+    const provider = new WahooProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);

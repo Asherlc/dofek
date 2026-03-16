@@ -1,5 +1,7 @@
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { HttpResponse, http } from "msw";
+import { setupServer } from "msw/node";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
 import { activity, metricStream } from "../../db/schema.ts";
 import { ensureProvider, saveTokens } from "../../db/tokens.ts";
@@ -10,6 +12,8 @@ import {
   parseAuth0FormHtml,
   pelotonAutomatedLogin,
 } from "../peloton.ts";
+
+const server = setupServer();
 
 // ============================================================
 // Helpers
@@ -83,11 +87,17 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
+    server.listen({ onUnhandledRequest: "error" });
     ctx = await setupTestDatabase();
     await ensureProvider(ctx.db, "peloton", "Peloton", "https://api.onepeloton.com");
   }, 60_000);
 
+  afterEach(() => {
+    server.resetHandlers();
+  });
+
   afterAll(async () => {
+    server.close();
     if (ctx) await ctx.cleanup();
   });
 
@@ -101,19 +111,20 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
 
     let pagesRequested = 0;
 
-    const paginatedFetch = async (input: RequestInfo | URL): Promise<Response> => {
-      const urlStr = input.toString();
-
-      if (urlStr.includes("/api/me")) return Response.json({ id: "user-123" });
-      if (urlStr.includes("/performance_graph")) return Response.json(fakePerformanceGraph());
-
-      if (urlStr.includes("/workouts")) {
-        const url = new URL(urlStr);
+    server.use(
+      http.get("https://api.onepeloton.com/api/me", () => {
+        return HttpResponse.json({ id: "user-123" });
+      }),
+      http.get("https://api.onepeloton.com/api/workout/:workoutId/performance_graph", () => {
+        return HttpResponse.json(fakePerformanceGraph());
+      }),
+      http.get("https://api.onepeloton.com/api/user/:userId/workouts", ({ request }) => {
+        const url = new URL(request.url);
         const page = Number(url.searchParams.get("page") ?? "0");
         pagesRequested = Math.max(pagesRequested, page);
 
         if (page === 0) {
-          return Response.json({
+          return HttpResponse.json({
             data: [
               fakeWorkout({
                 id: "ext-recent",
@@ -132,7 +143,7 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
           });
         }
         // Page 1 has a workout before `since`
-        return Response.json({
+        return HttpResponse.json({
           data: [
             fakeWorkout({
               id: "ext-old",
@@ -149,12 +160,10 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
           show_next: true, // API says there's more, but we should stop
           show_previous: true,
         });
-      }
+      }),
+    );
 
-      return new Response("Not found", { status: 404 });
-    };
-
-    const provider = new PelotonProvider(paginatedFetch);
+    const provider = new PelotonProvider();
     const result = await provider.sync(ctx.db, new Date("2024-03-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(0);
@@ -180,18 +189,16 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
 
     let callCount = 0;
     // Simulate a DB error on the first insert by providing invalid data via graph
-    const mockFetch: typeof globalThis.fetch = async (
-      input: RequestInfo | URL,
-    ): Promise<Response> => {
-      const urlStr = input.toString();
-      if (urlStr.includes("/api/me")) return Response.json({ id: "user-123" });
-      if (urlStr.includes("/performance_graph")) {
+    server.use(
+      http.get("https://api.onepeloton.com/api/me", () => {
+        return HttpResponse.json({ id: "user-123" });
+      }),
+      http.get("https://api.onepeloton.com/api/workout/:workoutId/performance_graph", () => {
         callCount++;
-        // Graph is still fetched even if there was an activity insert issue
-        return Response.json(fakePerformanceGraph());
-      }
-      if (urlStr.includes("/workouts")) {
-        return Response.json({
+        return HttpResponse.json(fakePerformanceGraph());
+      }),
+      http.get("https://api.onepeloton.com/api/user/:userId/workouts", () => {
+        return HttpResponse.json({
           data: [
             fakeWorkout({
               id: "ext-normal-workout",
@@ -208,11 +215,10 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
           show_next: false,
           show_previous: false,
         });
-      }
-      return new Response("Not found", { status: 404 });
-    };
+      }),
+    );
 
-    const provider = new PelotonProvider(mockFetch);
+    const provider = new PelotonProvider();
     const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"));
 
     // Performance graph was called
@@ -237,14 +243,13 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
       metrics: [], // No metrics at all (e.g., meditation)
     };
 
-    const mockFetch: typeof globalThis.fetch = async (
-      input: RequestInfo | URL,
-    ): Promise<Response> => {
-      const urlStr = input.toString();
-      if (urlStr.includes("/api/me")) return Response.json({ id: "user-123" });
-      if (urlStr.includes("/performance_graph")) return Response.json(emptyGraph);
-      if (urlStr.includes("/workouts")) {
-        return Response.json({
+    server.use(
+      http.get("https://api.onepeloton.com/api/me", () => HttpResponse.json({ id: "user-123" })),
+      http.get("https://api.onepeloton.com/api/workout/:workoutId/performance_graph", () =>
+        HttpResponse.json(emptyGraph),
+      ),
+      http.get("https://api.onepeloton.com/api/user/:userId/workouts", () => {
+        return HttpResponse.json({
           data: [
             fakeWorkout({
               id: "ext-meditation",
@@ -263,11 +268,10 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
           show_next: false,
           show_previous: false,
         });
-      }
-      return new Response("Not found", { status: 404 });
-    };
+      }),
+    );
 
-    const provider = new PelotonProvider(mockFetch);
+    const provider = new PelotonProvider();
     const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(0);
@@ -328,20 +332,15 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
       ],
     };
 
-    const mockFetch: typeof globalThis.fetch = async (
-      input: RequestInfo | URL,
-    ): Promise<Response> => {
-      const urlStr = input.toString();
-      if (urlStr.includes("/api/me")) return Response.json({ id: "user-123" });
-      if (urlStr.includes("/performance_graph")) return Response.json(largeGraph);
-      if (urlStr.includes("/workouts")) {
-        return Response.json({
+    server.use(
+      http.get("https://api.onepeloton.com/api/me", () => HttpResponse.json({ id: "user-123" })),
+      http.get("https://api.onepeloton.com/api/workout/:workoutId/performance_graph", () =>
+        HttpResponse.json(largeGraph),
+      ),
+      http.get("https://api.onepeloton.com/api/user/:userId/workouts", () => {
+        return HttpResponse.json({
           data: [
-            fakeWorkout({
-              id: "ext-large-stream",
-              start_time: 1709971200,
-              end_time: 1709974200,
-            }),
+            fakeWorkout({ id: "ext-large-stream", start_time: 1709971200, end_time: 1709974200 }),
           ],
           total: 1,
           count: 1,
@@ -352,11 +351,10 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
           show_next: false,
           show_previous: false,
         });
-      }
-      return new Response("Not found", { status: 404 });
-    };
+      }),
+    );
 
-    const provider = new PelotonProvider(mockFetch);
+    const provider = new PelotonProvider();
     const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(0);
@@ -403,20 +401,15 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
       ],
     };
 
-    const mockFetch: typeof globalThis.fetch = async (
-      input: RequestInfo | URL,
-    ): Promise<Response> => {
-      const urlStr = input.toString();
-      if (urlStr.includes("/api/me")) return Response.json({ id: "user-123" });
-      if (urlStr.includes("/performance_graph")) return Response.json(graph);
-      if (urlStr.includes("/workouts")) {
-        return Response.json({
+    server.use(
+      http.get("https://api.onepeloton.com/api/me", () => HttpResponse.json({ id: "user-123" })),
+      http.get("https://api.onepeloton.com/api/workout/:workoutId/performance_graph", () =>
+        HttpResponse.json(graph),
+      ),
+      http.get("https://api.onepeloton.com/api/user/:userId/workouts", () => {
+        return HttpResponse.json({
           data: [
-            fakeWorkout({
-              id: "ext-resync-workout",
-              start_time: 1710057600,
-              end_time: 1710059400,
-            }),
+            fakeWorkout({ id: "ext-resync-workout", start_time: 1710057600, end_time: 1710059400 }),
           ],
           total: 1,
           count: 1,
@@ -427,11 +420,10 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
           show_next: false,
           show_previous: false,
         });
-      }
-      return new Response("Not found", { status: 404 });
-    };
+      }),
+    );
 
-    const provider = new PelotonProvider(mockFetch);
+    const provider = new PelotonProvider();
     const since = new Date("2024-01-01T00:00:00Z");
 
     // Sync twice
@@ -478,14 +470,13 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
       ],
     };
 
-    const mockFetch: typeof globalThis.fetch = async (
-      input: RequestInfo | URL,
-    ): Promise<Response> => {
-      const urlStr = input.toString();
-      if (urlStr.includes("/api/me")) return Response.json({ id: "user-123" });
-      if (urlStr.includes("/performance_graph")) return Response.json(speedOnlyGraph);
-      if (urlStr.includes("/workouts")) {
-        return Response.json({
+    server.use(
+      http.get("https://api.onepeloton.com/api/me", () => HttpResponse.json({ id: "user-123" })),
+      http.get("https://api.onepeloton.com/api/workout/:workoutId/performance_graph", () =>
+        HttpResponse.json(speedOnlyGraph),
+      ),
+      http.get("https://api.onepeloton.com/api/user/:userId/workouts", () => {
+        return HttpResponse.json({
           data: [
             fakeWorkout({
               id: "ext-speed-only",
@@ -503,11 +494,10 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
           show_next: false,
           show_previous: false,
         });
-      }
-      return new Response("Not found", { status: 404 });
-    };
+      }),
+    );
 
-    const provider = new PelotonProvider(mockFetch);
+    const provider = new PelotonProvider();
     const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(0);
@@ -526,7 +516,20 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
 // pelotonAutomatedLogin tests (mock Auth0 flow)
 // ============================================================
 
+const loginServer = setupServer();
+
 describe("pelotonAutomatedLogin", () => {
+  beforeAll(() => {
+    loginServer.listen({ onUnhandledRequest: "error" });
+  });
+
+  afterEach(() => {
+    loginServer.resetHandlers();
+  });
+
+  afterAll(() => {
+    loginServer.close();
+  });
   it.skip("completes the full Auth0 automated login flow", async () => {
     const injectedConfig = {
       extraParams: {
@@ -546,82 +549,56 @@ describe("pelotonAutomatedLogin", () => {
 
     let step = 0;
 
-    const mockFetch: typeof globalThis.fetch = async (
-      input: RequestInfo | URL,
-      init?: RequestInit,
-    ): Promise<Response> => {
-      const urlStr = input.toString();
-
-      // Step 1: GET /authorize -> redirect to login page
-      if (urlStr.includes("/authorize") && (!init?.method || init.method === "GET")) {
+    loginServer.use(
+      http.get("https://auth.onepeloton.com/authorize", () => {
         step = 1;
-        return new Response(null, {
+        return new HttpResponse(null, {
           status: 302,
           headers: {
             Location: "https://auth.onepeloton.com/login?state=test",
             "Set-Cookie": "auth0=session-cookie",
           },
         });
-      }
-
-      // Step 1b: follow redirect to login page
-      if (
-        urlStr.includes("/login") &&
-        !urlStr.includes("/callback") &&
-        !urlStr.includes("usernamepassword") &&
-        (!init?.method || init.method === "GET")
-      ) {
+      }),
+      http.get("https://auth.onepeloton.com/login", () => {
         step = 2;
-        // Return the login page HTML with injectedConfig
         const html = `<html>
           <script>window.injectedConfig = window.atob("${configBase64}")</script>
         </html>`;
-        return new Response(html, { status: 200 });
-      }
-
-      // Step 2: POST /usernamepassword/login
-      if (urlStr.includes("/usernamepassword/login")) {
+        return new HttpResponse(html, { status: 200 });
+      }),
+      http.post("https://auth.onepeloton.com/usernamepassword/login", () => {
         step = 3;
-        return new Response(loginFormHtml, { status: 200 });
-      }
-
-      // Step 3: POST the form action (/login/callback)
-      if (urlStr.includes("/login/callback") && init?.method === "POST") {
+        return new HttpResponse(loginFormHtml, { status: 200 });
+      }),
+      http.post("https://auth.onepeloton.com/login/callback", () => {
         step = 4;
-        return new Response(null, {
+        return new HttpResponse(null, {
           status: 302,
-          headers: {
-            Location: "https://auth.onepeloton.com/authorize/resume?state=test",
-          },
+          headers: { Location: "https://auth.onepeloton.com/authorize/resume?state=test" },
         });
-      }
-
-      // Step 4: follow redirect to /authorize/resume
-      if (urlStr.includes("/authorize/resume")) {
+      }),
+      http.get("https://auth.onepeloton.com/authorize/resume", () => {
         step = 5;
-        return new Response(null, {
+        return new HttpResponse(null, {
           status: 302,
           headers: {
             Location: "https://members.onepeloton.com/callback?code=auth-code-123&state=test",
           },
         });
-      }
-
-      // Step 5: Exchange code for tokens (POST to /oauth/token)
-      if (urlStr.includes("/oauth/token")) {
+      }),
+      http.post("https://api.onepeloton.com/oauth/token", () => {
         step = 6;
-        return Response.json({
+        return HttpResponse.json({
           access_token: "new-access-token",
           refresh_token: "new-refresh-token",
           expires_in: 172800,
           scope: "offline_access openid peloton-api.members:default",
         });
-      }
+      }),
+    );
 
-      return new Response("Not found", { status: 404 });
-    };
-
-    const tokens = await pelotonAutomatedLogin("user@test.com", "password123", mockFetch);
+    const tokens = await pelotonAutomatedLogin("user@test.com", "password123");
 
     expect(step).toBe(6);
     expect(tokens.accessToken).toBe("new-access-token");
@@ -629,20 +606,13 @@ describe("pelotonAutomatedLogin", () => {
   });
 
   it("throws when injectedConfig is not found in login page", async () => {
-    const mockFetch: typeof globalThis.fetch = async (
-      input: RequestInfo | URL,
-    ): Promise<Response> => {
-      const urlStr = input.toString();
+    loginServer.use(
+      http.get("https://auth.onepeloton.com/authorize", () => {
+        return new HttpResponse("<html><body>No config here</body></html>", { status: 200 });
+      }),
+    );
 
-      if (urlStr.includes("/authorize")) {
-        // Return login page directly (no redirect)
-        return new Response("<html><body>No config here</body></html>", { status: 200 });
-      }
-
-      return new Response("Not found", { status: 404 });
-    };
-
-    await expect(pelotonAutomatedLogin("user@test.com", "pass", mockFetch)).rejects.toThrow(
+    await expect(pelotonAutomatedLogin("user@test.com", "pass")).rejects.toThrow(
       "Could not find injectedConfig",
     );
   });
@@ -656,27 +626,19 @@ describe("pelotonAutomatedLogin", () => {
     };
     const configBase64 = Buffer.from(JSON.stringify(injectedConfig)).toString("base64");
 
-    const mockFetch: typeof globalThis.fetch = async (
-      input: RequestInfo | URL,
-      _init?: RequestInit,
-    ): Promise<Response> => {
-      const urlStr = input.toString();
-
-      if (urlStr.includes("/authorize")) {
-        return new Response(
+    loginServer.use(
+      http.get("https://auth.onepeloton.com/authorize", () => {
+        return new HttpResponse(
           `<html><script>window.injectedConfig = window.atob("${configBase64}")</script></html>`,
           { status: 200 },
         );
-      }
+      }),
+      http.post("https://auth.onepeloton.com/usernamepassword/login", () => {
+        return new HttpResponse("Invalid credentials", { status: 403 });
+      }),
+    );
 
-      if (urlStr.includes("/usernamepassword/login")) {
-        return new Response("Invalid credentials", { status: 403 });
-      }
-
-      return new Response("Not found", { status: 404 });
-    };
-
-    await expect(pelotonAutomatedLogin("user@test.com", "wrongpass", mockFetch)).rejects.toThrow(
+    await expect(pelotonAutomatedLogin("user@test.com", "wrongpass")).rejects.toThrow(
       "Auth0 login failed (403)",
     );
   });
@@ -696,32 +658,22 @@ describe("pelotonAutomatedLogin", () => {
       </form>
     `;
 
-    const mockFetch: typeof globalThis.fetch = async (
-      input: RequestInfo | URL,
-      init?: RequestInit,
-    ): Promise<Response> => {
-      const urlStr = input.toString();
-
-      if (urlStr.includes("/authorize") && (!init?.method || init.method === "GET")) {
-        return new Response(
+    loginServer.use(
+      http.get("https://auth.onepeloton.com/authorize", () => {
+        return new HttpResponse(
           `<html><script>window.injectedConfig = window.atob("${configBase64}")</script></html>`,
           { status: 200 },
         );
-      }
+      }),
+      http.post("https://auth.onepeloton.com/usernamepassword/login", () => {
+        return new HttpResponse(loginFormHtml, { status: 200 });
+      }),
+      http.post("https://auth.onepeloton.com/login/callback", () => {
+        return new HttpResponse("OK", { status: 200 });
+      }),
+    );
 
-      if (urlStr.includes("/usernamepassword/login")) {
-        return new Response(loginFormHtml, { status: 200 });
-      }
-
-      // Form POST returns 200 with no Location -> redirect chain ends
-      if (urlStr.includes("/login/callback")) {
-        return new Response("OK", { status: 200 });
-      }
-
-      return new Response("Not found", { status: 404 });
-    };
-
-    await expect(pelotonAutomatedLogin("user@test.com", "pass", mockFetch)).rejects.toThrow(
+    await expect(pelotonAutomatedLogin("user@test.com", "pass")).rejects.toThrow(
       "redirect chain ended without a Location header",
     );
   });
@@ -741,39 +693,28 @@ describe("pelotonAutomatedLogin", () => {
       </form>
     `;
 
-    const mockFetch: typeof globalThis.fetch = async (
-      input: RequestInfo | URL,
-      init?: RequestInit,
-    ): Promise<Response> => {
-      const urlStr = input.toString();
-
-      if (urlStr.includes("/authorize") && (!init?.method || init.method === "GET")) {
-        return new Response(
+    loginServer.use(
+      http.get("https://auth.onepeloton.com/authorize", () => {
+        return new HttpResponse(
           `<html><script>window.injectedConfig = window.atob("${configBase64}")</script></html>`,
           { status: 200 },
         );
-      }
-
-      if (urlStr.includes("/usernamepassword/login")) {
-        return new Response(loginFormHtml, { status: 200 });
-      }
-
-      if (urlStr.includes("/login/callback")) {
-        return new Response(null, {
+      }),
+      http.post("https://auth.onepeloton.com/usernamepassword/login", () => {
+        return new HttpResponse(loginFormHtml, { status: 200 });
+      }),
+      http.post("https://auth.onepeloton.com/login/callback", () => {
+        return new HttpResponse(null, {
           status: 302,
           headers: {
             Location:
               "https://members.onepeloton.com/callback?error=access_denied&error_description=User+blocked",
           },
         });
-      }
-
-      return new Response("Not found", { status: 404 });
-    };
-
-    await expect(pelotonAutomatedLogin("user@test.com", "pass", mockFetch)).rejects.toThrow(
-      "User blocked",
+      }),
     );
+
+    await expect(pelotonAutomatedLogin("user@test.com", "pass")).rejects.toThrow("User blocked");
   });
 });
 

@@ -1,5 +1,7 @@
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { HttpResponse, http } from "msw";
+import { setupServer } from "msw/node";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
 import { dailyMetrics, sleepSession } from "../../db/schema.ts";
 import { ensureProvider, saveTokens } from "../../db/tokens.ts";
@@ -68,7 +70,7 @@ function fakeSleepOnlyDay(): UltrahumanMetric[] {
 }
 
 // ============================================================
-// Mock fetch factory
+// MSW handler factory
 // ============================================================
 
 interface UltrahumanMockOptions {
@@ -77,34 +79,31 @@ interface UltrahumanMockOptions {
   apiErrorDate?: string;
 }
 
-function createMockFetch(opts: UltrahumanMockOptions = {}): typeof globalThis.fetch {
+function ultrahumanHandlers(opts: UltrahumanMockOptions = {}) {
   const dayResponses = opts.dayResponses ?? {};
 
-  return async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
-    const urlStr = input.toString();
-
-    // Daily metrics endpoint
-    if (urlStr.includes("/api/v1/partner/daily_metrics")) {
-      const url = new URL(urlStr);
+  return [
+    http.get("https://partner.ultrahuman.com/api/v1/partner/daily_metrics", ({ request }) => {
+      const url = new URL(request.url);
       const date = url.searchParams.get("date") ?? "";
 
       // Simulate per-date API errors
       if (opts.apiError || (opts.apiErrorDate && date === opts.apiErrorDate)) {
-        return new Response("Internal Server Error", { status: 500 });
+        return new HttpResponse("Internal Server Error", { status: 500 });
       }
 
       const metrics = dayResponses[date];
       if (metrics) {
-        return Response.json(fakeUltrahumanDailyResponse(date, metrics));
+        return HttpResponse.json(fakeUltrahumanDailyResponse(date, metrics));
       }
 
       // No data for this date
-      return Response.json(fakeUltrahumanDailyResponse(date, []));
-    }
-
-    return new Response("Not found", { status: 404 });
-  };
+      return HttpResponse.json(fakeUltrahumanDailyResponse(date, []));
+    }),
+  ];
 }
+
+const server = setupServer();
 
 // ============================================================
 // Tests
@@ -114,6 +113,7 @@ describe("UltrahumanProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
+    server.listen({ onUnhandledRequest: "error" });
     process.env.ULTRAHUMAN_API_TOKEN = "test-ultrahuman-token";
     process.env.ULTRAHUMAN_EMAIL = "test@example.com";
     ctx = await setupTestDatabase();
@@ -125,7 +125,12 @@ describe("UltrahumanProvider.sync() (integration)", () => {
     );
   }, 60_000);
 
+  afterEach(() => {
+    server.resetHandlers();
+  });
+
   afterAll(async () => {
+    server.close();
     if (ctx) await ctx.cleanup();
   });
 
@@ -137,14 +142,16 @@ describe("UltrahumanProvider.sync() (integration)", () => {
       scopes: "email:test@example.com",
     });
 
-    const provider = new UltrahumanProvider(
-      createMockFetch({
+    server.use(
+      ...ultrahumanHandlers({
         dayResponses: {
           "2026-03-14": fakeFullDayMetrics(),
           "2026-03-15": fakeMetricsOnlyDay(),
         },
       }),
     );
+
+    const provider = new UltrahumanProvider();
 
     // Sync from March 14 to today (March 15)
     const since = new Date("2026-03-14T00:00:00Z");
@@ -198,13 +205,15 @@ describe("UltrahumanProvider.sync() (integration)", () => {
       scopes: "email:test@example.com",
     });
 
-    const provider = new UltrahumanProvider(
-      createMockFetch({
+    server.use(
+      ...ultrahumanHandlers({
         dayResponses: {
           "2026-03-14": fakeFullDayMetrics(),
         },
       }),
     );
+
+    const provider = new UltrahumanProvider();
 
     const since = new Date("2026-03-14T00:00:00Z");
     await provider.sync(ctx.db, since);
@@ -234,21 +243,17 @@ describe("UltrahumanProvider.sync() (integration)", () => {
       });
 
       let capturedAuthHeader: string | null = null;
-      const capturingFetch: typeof globalThis.fetch = async (
-        input: RequestInfo | URL,
-        init?: RequestInit,
-      ): Promise<Response> => {
-        const urlStr = input.toString();
-        if (urlStr.includes("/api/v1/partner/daily_metrics")) {
-          // @ts-expect-error -- test: HeadersInit narrowed to Record for test assertions
-          const headers: Record<string, string> | undefined = init?.headers;
-          capturedAuthHeader = headers?.Authorization ?? null;
-          return Response.json(fakeUltrahumanDailyResponse("2026-03-15", []));
-        }
-        return new Response("Not found", { status: 404 });
-      };
 
-      const provider = new UltrahumanProvider(capturingFetch);
+      server.use(
+        http.get("https://partner.ultrahuman.com/api/v1/partner/daily_metrics", ({ request }) => {
+          capturedAuthHeader = request.headers.get("Authorization");
+          const url = new URL(request.url);
+          const date = url.searchParams.get("date") ?? "";
+          return HttpResponse.json(fakeUltrahumanDailyResponse(date, []));
+        }),
+      );
+
+      const provider = new UltrahumanProvider();
       await provider.sync(ctx.db, new Date("2026-03-15T00:00:00Z"));
 
       expect(capturedAuthHeader).toBe("db-stored-token");
@@ -269,7 +274,7 @@ describe("UltrahumanProvider.sync() (integration)", () => {
       const { oauthToken } = await import("../../db/schema.ts");
       await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "ultrahuman"));
 
-      const provider = new UltrahumanProvider(createMockFetch());
+      const provider = new UltrahumanProvider();
       const result = await provider.sync(ctx.db, new Date("2026-03-14T00:00:00Z"));
 
       expect(result.errors).toHaveLength(1);
@@ -293,8 +298,8 @@ describe("UltrahumanProvider.sync() (integration)", () => {
     await ctx.db.delete(dailyMetrics).where(eq(dailyMetrics.providerId, "ultrahuman"));
     await ctx.db.delete(sleepSession).where(eq(sleepSession.providerId, "ultrahuman"));
 
-    const provider = new UltrahumanProvider(
-      createMockFetch({
+    server.use(
+      ...ultrahumanHandlers({
         dayResponses: {
           "2026-03-14": fakeFullDayMetrics(),
           // March 15 will fail
@@ -302,6 +307,8 @@ describe("UltrahumanProvider.sync() (integration)", () => {
         apiErrorDate: "2026-03-15",
       }),
     );
+
+    const provider = new UltrahumanProvider();
 
     const since = new Date("2026-03-14T00:00:00Z");
     const result = await provider.sync(ctx.db, since);
@@ -332,14 +339,16 @@ describe("UltrahumanProvider.sync() (integration)", () => {
     await ctx.db.delete(dailyMetrics).where(eq(dailyMetrics.providerId, "ultrahuman"));
     await ctx.db.delete(sleepSession).where(eq(sleepSession.providerId, "ultrahuman"));
 
-    const provider = new UltrahumanProvider(
-      createMockFetch({
+    server.use(
+      ...ultrahumanHandlers({
         dayResponses: {
           // March 15 has sleep only — no daily metrics values
           "2026-03-15": fakeSleepOnlyDay(),
         },
       }),
     );
+
+    const provider = new UltrahumanProvider();
 
     const since = new Date("2026-03-15T00:00:00Z");
     const result = await provider.sync(ctx.db, since);

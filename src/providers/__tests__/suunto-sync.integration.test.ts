@@ -1,5 +1,7 @@
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { HttpResponse, http } from "msw";
+import { setupServer } from "msw/node";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
 import { activity, oauthToken } from "../../db/schema.ts";
 import { ensureProvider, saveTokens } from "../../db/tokens.ts";
@@ -46,32 +48,31 @@ function fakeWorkout(overrides: FakeWorkoutOverrides = {}) {
   };
 }
 
-function createMockFetch(workouts: Array<ReturnType<typeof fakeWorkout>>): typeof globalThis.fetch {
-  return async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
-    const urlStr = input.toString();
-
+function suuntoHandlers(workouts: Array<ReturnType<typeof fakeWorkout>>) {
+  return [
     // Token refresh
-    if (urlStr.includes("/oauth/token")) {
-      return Response.json({
+    http.post("https://cloudapi-oauth.suunto.com/oauth/token", () => {
+      return HttpResponse.json({
         access_token: "refreshed-token",
         refresh_token: "new-refresh",
         expires_in: 7200,
       });
-    }
+    }),
 
     // Workouts list
-    if (urlStr.includes("/v2/workouts")) {
-      return Response.json({ payload: workouts });
-    }
-
-    return new Response("Not found", { status: 404 });
-  };
+    http.get("https://cloudapi.suunto.com/v2/workouts", () => {
+      return HttpResponse.json({ payload: workouts });
+    }),
+  ];
 }
+
+const server = setupServer();
 
 describe("SuuntoProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
+    server.listen({ onUnhandledRequest: "error" });
     process.env.SUUNTO_CLIENT_ID = "test-client-id";
     process.env.SUUNTO_CLIENT_SECRET = "test-client-secret";
     process.env.SUUNTO_SUBSCRIPTION_KEY = "test-subscription-key";
@@ -79,7 +80,12 @@ describe("SuuntoProvider.sync() (integration)", () => {
     await ensureProvider(ctx.db, "suunto", "Suunto", "https://cloudapi.suunto.com");
   }, 60_000);
 
+  afterEach(() => {
+    server.resetHandlers();
+  });
+
   afterAll(async () => {
+    server.close();
     if (ctx) await ctx.cleanup();
   });
 
@@ -108,7 +114,9 @@ describe("SuuntoProvider.sync() (integration)", () => {
       }),
     ];
 
-    const provider = new SuuntoProvider(createMockFetch(workouts));
+    server.use(...suuntoHandlers(workouts));
+
+    const provider = new SuuntoProvider();
     const result = await provider.sync(ctx.db, new Date("2024-02-01T00:00:00Z"));
 
     expect(result.provider).toBe("suunto");
@@ -139,12 +147,13 @@ describe("SuuntoProvider.sync() (integration)", () => {
 
     const workouts = [fakeWorkout({ workoutKey: "suunto-w1" })];
 
-    const provider = new SuuntoProvider(createMockFetch(workouts));
+    server.use(...suuntoHandlers(workouts));
+
+    const provider = new SuuntoProvider();
     await provider.sync(ctx.db, new Date("2024-02-01T00:00:00Z"));
 
     // Sync again
-    const provider2 = new SuuntoProvider(createMockFetch(workouts));
-    await provider2.sync(ctx.db, new Date("2024-02-01T00:00:00Z"));
+    await provider.sync(ctx.db, new Date("2024-02-01T00:00:00Z"));
 
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "suunto"));
 
@@ -167,7 +176,9 @@ describe("SuuntoProvider.sync() (integration)", () => {
       fakeWorkout({ workoutKey: "suunto-unknown", activityId: 999 }),
     ];
 
-    const provider = new SuuntoProvider(createMockFetch(workouts));
+    server.use(...suuntoHandlers(workouts));
+
+    const provider = new SuuntoProvider();
     const result = await provider.sync(ctx.db, new Date("2024-02-01T00:00:00Z"));
     expect(result.recordsSynced).toBe(4);
 
@@ -194,7 +205,9 @@ describe("SuuntoProvider.sync() (integration)", () => {
       scopes: "workout",
     });
 
-    const provider = new SuuntoProvider(createMockFetch([]));
+    server.use(...suuntoHandlers([]));
+
+    const provider = new SuuntoProvider();
     await provider.sync(ctx.db, new Date("2024-02-01T00:00:00Z"));
 
     const { loadTokens } = await import("../../db/tokens.ts");
@@ -205,7 +218,7 @@ describe("SuuntoProvider.sync() (integration)", () => {
   it("returns error when no tokens exist", async () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "suunto"));
 
-    const provider = new SuuntoProvider(createMockFetch([]));
+    const provider = new SuuntoProvider();
     const result = await provider.sync(ctx.db, new Date("2024-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);

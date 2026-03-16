@@ -1,5 +1,7 @@
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { HttpResponse, http } from "msw";
+import { setupServer } from "msw/node";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
 import { activity, bodyMeasurement, dailyMetrics, sleepSession } from "../../db/schema.ts";
 import { ensureProvider, saveTokens } from "../../db/tokens.ts";
@@ -83,58 +85,57 @@ function fakeGarminBody(overrides: Partial<GarminBodyComposition> = {}): GarminB
   };
 }
 
-function createMockFetch(opts?: {
+function garminHandlers(opts?: {
   activities?: GarminActivitySummary[];
   sleep?: GarminSleepSummary[];
   dailies?: GarminDailySummary[];
   bodyComp?: GarminBodyComposition[];
-}): typeof globalThis.fetch {
+}) {
   const activities = opts?.activities ?? [];
   const sleep = opts?.sleep ?? [];
   const dailies = opts?.dailies ?? [];
   const bodyComp = opts?.bodyComp ?? [];
 
-  return async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
-    const urlStr = input.toString();
-
+  return [
     // Token refresh (Garmin uses diauth.garmin.com)
-    if (urlStr.includes("di-oauth2-service/oauth/token")) {
-      return Response.json({
+    http.post("https://diauth.garmin.com/di-oauth2-service/oauth/token", () => {
+      return HttpResponse.json({
         access_token: "refreshed-garmin-token",
         refresh_token: "new-garmin-refresh",
         expires_in: 3600,
         token_type: "Bearer",
       });
-    }
+    }),
 
     // Activities
-    if (urlStr.includes("/wellness-api/rest/activities")) {
-      return Response.json(activities);
-    }
+    http.get("https://apis.garmin.com/wellness-api/rest/activities", () => {
+      return HttpResponse.json(activities);
+    }),
 
     // Sleep
-    if (urlStr.includes("/wellness-api/rest/sleep")) {
-      return Response.json(sleep);
-    }
+    http.get("https://apis.garmin.com/wellness-api/rest/sleep", () => {
+      return HttpResponse.json(sleep);
+    }),
 
     // Daily summaries
-    if (urlStr.includes("/wellness-api/rest/dailies")) {
-      return Response.json(dailies);
-    }
+    http.get("https://apis.garmin.com/wellness-api/rest/dailies", () => {
+      return HttpResponse.json(dailies);
+    }),
 
     // Body composition
-    if (urlStr.includes("/wellness-api/rest/bodyComposition")) {
-      return Response.json(bodyComp);
-    }
-
-    return new Response("Not found", { status: 404 });
-  };
+    http.get("https://apis.garmin.com/wellness-api/rest/bodyComposition", () => {
+      return HttpResponse.json(bodyComp);
+    }),
+  ];
 }
+
+const server = setupServer();
 
 describe("GarminProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
+    server.listen({ onUnhandledRequest: "error" });
     process.env.GARMIN_CLIENT_ID = "test-garmin-client";
     process.env.GARMIN_CLIENT_SECRET = "test-garmin-secret";
     ctx = await setupTestDatabase();
@@ -146,7 +147,12 @@ describe("GarminProvider.sync() (integration)", () => {
     );
   }, 60_000);
 
+  afterEach(() => {
+    server.resetHandlers();
+  });
+
   afterAll(async () => {
+    server.close();
     if (ctx) await ctx.cleanup();
   });
 
@@ -158,8 +164,8 @@ describe("GarminProvider.sync() (integration)", () => {
       scopes: "",
     });
 
-    const provider = new GarminProvider(
-      createMockFetch({
+    server.use(
+      ...garminHandlers({
         activities: [
           fakeGarminActivity({ activityId: 9001 }),
           fakeGarminActivity({
@@ -175,6 +181,7 @@ describe("GarminProvider.sync() (integration)", () => {
       }),
     );
 
+    const provider = new GarminProvider();
     const since = new Date("2026-02-01T00:00:00Z");
     const result = await provider.sync(ctx.db, since);
 
@@ -251,8 +258,8 @@ describe("GarminProvider.sync() (integration)", () => {
       scopes: "",
     });
 
-    const provider = new GarminProvider(
-      createMockFetch({
+    server.use(
+      ...garminHandlers({
         activities: [fakeGarminActivity({ activityId: 9001 })],
         sleep: [fakeGarminSleep()],
         dailies: [fakeGarminDaily()],
@@ -260,6 +267,7 @@ describe("GarminProvider.sync() (integration)", () => {
       }),
     );
 
+    const provider = new GarminProvider();
     const since = new Date("2026-02-01T00:00:00Z");
     await provider.sync(ctx.db, since);
     await provider.sync(ctx.db, since);
@@ -280,7 +288,9 @@ describe("GarminProvider.sync() (integration)", () => {
       scopes: "",
     });
 
-    const provider = new GarminProvider(createMockFetch());
+    server.use(...garminHandlers());
+
+    const provider = new GarminProvider();
     await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     const { loadTokens } = await import("../../db/tokens.ts");
@@ -292,7 +302,7 @@ describe("GarminProvider.sync() (integration)", () => {
     const { oauthToken } = await import("../../db/schema.ts");
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "garmin"));
 
-    const provider = new GarminProvider(createMockFetch());
+    const provider = new GarminProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);

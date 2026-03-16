@@ -1,5 +1,7 @@
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { HttpResponse, http } from "msw";
+import { setupServer } from "msw/node";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
 import { activity, bodyMeasurement, dailyMetrics, sleepSession } from "../../db/schema.ts";
 import { ensureProvider, saveTokens } from "../../db/tokens.ts";
@@ -94,12 +96,12 @@ function fakeWeightLogs(): FitbitWeightLog[] {
   ];
 }
 
-function createMockFetch(opts?: {
+function fitbitHandlers(opts?: {
   activities?: FitbitActivity[];
   sleepResponse?: FitbitSleepListResponse;
   dailySummary?: FitbitDailySummary;
   weightLogs?: FitbitWeightLog[];
-}): typeof globalThis.fetch {
+}) {
   const activities = opts?.activities ?? [];
   const sleepResponse = opts?.sleepResponse ?? {
     sleep: [],
@@ -108,58 +110,62 @@ function createMockFetch(opts?: {
   const daily = opts?.dailySummary ?? fakeDailySummary();
   const weights = opts?.weightLogs ?? [];
 
-  return async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
-    const urlStr = input.toString();
-
+  return [
     // Token refresh
-    if (urlStr.includes("/oauth2/token")) {
-      return Response.json({
+    http.post("https://api.fitbit.com/oauth2/token", () => {
+      return HttpResponse.json({
         access_token: "refreshed-fitbit-token",
         refresh_token: "new-fitbit-refresh",
         expires_in: 28800,
         token_type: "Bearer",
       });
-    }
+    }),
 
     // Activities list
-    if (urlStr.includes("/activities/list.json")) {
+    http.get("https://api.fitbit.com/1/user/-/activities/list.json", () => {
       const response: FitbitActivityListResponse = {
         activities,
         pagination: { next: "", previous: "", limit: 20, offset: 0, sort: "asc" },
       };
-      return Response.json(response);
-    }
+      return HttpResponse.json(response);
+    }),
 
     // Sleep logs
-    if (urlStr.includes("/sleep/list.json")) {
-      return Response.json(sleepResponse);
-    }
+    http.get("https://api.fitbit.com/1.2/user/-/sleep/list.json", () => {
+      return HttpResponse.json(sleepResponse);
+    }),
 
     // Daily summary (activities/date/YYYY-MM-DD.json)
-    if (urlStr.match(/\/activities\/date\/\d{4}-\d{2}-\d{2}\.json/)) {
-      return Response.json(daily);
-    }
+    http.get("https://api.fitbit.com/1/user/-/activities/date/:date.json", () => {
+      return HttpResponse.json(daily);
+    }),
 
     // Weight logs
-    if (urlStr.includes("/body/log/weight/date/")) {
-      return Response.json({ weight: weights });
-    }
-
-    return new Response("Not found", { status: 404 });
-  };
+    http.get("https://api.fitbit.com/1/user/-/body/log/weight/date/:startDate/:range.json", () => {
+      return HttpResponse.json({ weight: weights });
+    }),
+  ];
 }
+
+const server = setupServer();
 
 describe("FitbitProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
+    server.listen({ onUnhandledRequest: "error" });
     process.env.FITBIT_CLIENT_ID = "test-fitbit-client";
     process.env.FITBIT_CLIENT_SECRET = "test-fitbit-secret";
     ctx = await setupTestDatabase();
     await ensureProvider(ctx.db, "fitbit", "Fitbit", "https://api.fitbit.com");
   }, 60_000);
 
+  afterEach(() => {
+    server.resetHandlers();
+  });
+
   afterAll(async () => {
+    server.close();
     if (ctx) await ctx.cleanup();
   });
 
@@ -174,8 +180,8 @@ describe("FitbitProvider.sync() (integration)", () => {
     // Use a very narrow "since" window so daily iteration only covers 1 day
     const since = new Date("2026-03-01T00:00:00Z");
 
-    const provider = new FitbitProvider(
-      createMockFetch({
+    server.use(
+      ...fitbitHandlers({
         activities: [
           fakeActivity({ logId: 5001, startDate: "2026-03-01" }),
           fakeActivity({
@@ -192,6 +198,7 @@ describe("FitbitProvider.sync() (integration)", () => {
       }),
     );
 
+    const provider = new FitbitProvider();
     const result = await provider.sync(ctx.db, since);
 
     expect(result.provider).toBe("fitbit");
@@ -266,14 +273,15 @@ describe("FitbitProvider.sync() (integration)", () => {
 
     const since = new Date("2026-03-01T00:00:00Z");
 
-    const provider = new FitbitProvider(
-      createMockFetch({
+    server.use(
+      ...fitbitHandlers({
         activities: [fakeActivity({ logId: 5001, startDate: "2026-03-01" })],
         sleepResponse: fakeSleepLog(),
         weightLogs: fakeWeightLogs(),
       }),
     );
 
+    const provider = new FitbitProvider();
     await provider.sync(ctx.db, since);
     await provider.sync(ctx.db, since);
 
@@ -300,7 +308,9 @@ describe("FitbitProvider.sync() (integration)", () => {
       scopes: "activity heartrate sleep weight",
     });
 
-    const provider = new FitbitProvider(createMockFetch());
+    server.use(...fitbitHandlers());
+
+    const provider = new FitbitProvider();
     await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
 
     const { loadTokens } = await import("../../db/tokens.ts");
@@ -312,7 +322,7 @@ describe("FitbitProvider.sync() (integration)", () => {
     const { oauthToken } = await import("../../db/schema.ts");
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "fitbit"));
 
-    const provider = new FitbitProvider(createMockFetch());
+    const provider = new FitbitProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);

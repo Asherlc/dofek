@@ -1,5 +1,7 @@
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { HttpResponse, http } from "msw";
+import { setupServer } from "msw/node";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
 import { activity, oauthToken } from "../../db/schema.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../../db/tokens.ts";
@@ -38,30 +40,25 @@ function fakeTour(overrides: Partial<FakeKomootTour> = {}): FakeKomootTour {
   };
 }
 
-function createMockFetch(
-  pages: FakeKomootTour[][],
-  opts?: { apiError?: boolean },
-): typeof globalThis.fetch {
-  return async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
-    const urlStr = input.toString();
-
+function komootHandlers(pages: FakeKomootTour[][], opts?: { apiError?: boolean }) {
+  return [
     // Token refresh
-    if (urlStr.includes("/oauth/token")) {
-      return Response.json({
+    http.post("https://auth.komoot.de/oauth/token", () => {
+      return HttpResponse.json({
         access_token: "refreshed-token",
         refresh_token: "new-refresh",
         expires_in: 7200,
         scope: "profile",
       });
-    }
+    }),
 
     // Tours API (page-based pagination, 0-indexed)
-    if (urlStr.includes("/users/me/tours")) {
+    http.get("https://external-api.komoot.de/v007/users/me/tours/", ({ request }) => {
       if (opts?.apiError) {
-        return new Response("Internal Server Error", { status: 500 });
+        return new HttpResponse("Internal Server Error", { status: 500 });
       }
 
-      const url = new URL(urlStr);
+      const url = new URL(request.url);
       const page = Number.parseInt(url.searchParams.get("page") ?? "0", 10);
       const totalPages = pages.length;
       const currentPageTours = pages[page] ?? [];
@@ -69,7 +66,7 @@ function createMockFetch(
       // Sum all tours across all pages for totalElements
       const totalElements = pages.reduce((sum, p) => sum + p.length, 0);
 
-      return Response.json({
+      return HttpResponse.json({
         _embedded: {
           tours: currentPageTours,
         },
@@ -80,23 +77,29 @@ function createMockFetch(
           number: page,
         },
       });
-    }
-
-    return new Response("Not found", { status: 404 });
-  };
+    }),
+  ];
 }
+
+const server = setupServer();
 
 describe("KomootProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
+    server.listen({ onUnhandledRequest: "error" });
     process.env.KOMOOT_CLIENT_ID = "test-client-id";
     process.env.KOMOOT_CLIENT_SECRET = "test-client-secret";
     ctx = await setupTestDatabase();
     await ensureProvider(ctx.db, "komoot", "Komoot", "https://external-api.komoot.de/v007");
   }, 60_000);
 
+  afterEach(() => {
+    server.resetHandlers();
+  });
+
   afterAll(async () => {
+    server.close();
     if (ctx) await ctx.cleanup();
   });
 
@@ -113,7 +116,9 @@ describe("KomootProvider.sync() (integration)", () => {
       fakeTour({ id: 7002, sport: "RUNNING", name: "Park Run" }),
     ];
 
-    const provider = new KomootProvider(createMockFetch([tours]));
+    server.use(...komootHandlers([tours]));
+
+    const provider = new KomootProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.provider).toBe("komoot");
@@ -145,7 +150,9 @@ describe("KomootProvider.sync() (integration)", () => {
     const page0 = [fakeTour({ id: 8001, name: "Page 0 Tour", sport: "BIKING" })];
     const page1 = [fakeTour({ id: 8002, name: "Page 1 Tour", sport: "TRAIL_RUNNING" })];
 
-    const provider = new KomootProvider(createMockFetch([page0, page1]));
+    server.use(...komootHandlers([page0, page1]));
+
+    const provider = new KomootProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.recordsSynced).toBe(2);
@@ -176,12 +183,13 @@ describe("KomootProvider.sync() (integration)", () => {
 
     const tours = [fakeTour({ id: 7001 })];
 
-    const provider = new KomootProvider(createMockFetch([tours]));
+    server.use(...komootHandlers([tours]));
+
+    const provider = new KomootProvider();
     await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     // Sync again
-    const provider2 = new KomootProvider(createMockFetch([tours]));
-    await provider2.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "komoot"));
 
@@ -197,7 +205,9 @@ describe("KomootProvider.sync() (integration)", () => {
       scopes: "profile",
     });
 
-    const provider = new KomootProvider(createMockFetch([[]]));
+    server.use(...komootHandlers([[]]));
+
+    const provider = new KomootProvider();
     await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     const tokens = await loadTokens(ctx.db, "komoot");
@@ -207,7 +217,7 @@ describe("KomootProvider.sync() (integration)", () => {
   it("returns error when no tokens exist", async () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "komoot"));
 
-    const provider = new KomootProvider(createMockFetch([[]]));
+    const provider = new KomootProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);
@@ -223,7 +233,9 @@ describe("KomootProvider.sync() (integration)", () => {
       scopes: "profile",
     });
 
-    const provider = new KomootProvider(createMockFetch([], { apiError: true }));
+    server.use(...komootHandlers([], { apiError: true }));
+
+    const provider = new KomootProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors.length).toBeGreaterThan(0);

@@ -1,5 +1,7 @@
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { HttpResponse, http } from "msw";
+import { setupServer } from "msw/node";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
 import { bodyMeasurement } from "../../db/schema.ts";
 import { ensureProvider, saveTokens } from "../../db/tokens.ts";
@@ -26,17 +28,25 @@ function fakeWeightGroup(overrides?: Partial<WithingsMeasureGroup>): WithingsMea
   };
 }
 
+const server = setupServer();
+
 describe("WithingsProvider.sync() — error paths (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
+    server.listen({ onUnhandledRequest: "error" });
     process.env.WITHINGS_CLIENT_ID = "test-withings-client";
     process.env.WITHINGS_CLIENT_SECRET = "test-withings-secret";
     ctx = await setupTestDatabase();
     await ensureProvider(ctx.db, "withings", "Withings", "https://wbsapi.withings.net");
   }, 60_000);
 
+  afterEach(() => {
+    server.resetHandlers();
+  });
+
   afterAll(async () => {
+    server.close();
     if (ctx) await ctx.cleanup();
   });
 
@@ -51,42 +61,20 @@ describe("WithingsProvider.sync() — error paths (integration)", () => {
     // Clear previous data
     await ctx.db.delete(bodyMeasurement).where(eq(bodyMeasurement.providerId, "withings"));
 
-    let _callCount = 0;
-
-    // Create a mock fetch that returns two weight groups.
-    // We'll use a provider that calls the real DB, but we'll make the second
-    // group have a conflicting externalId pattern that triggers an error.
-    // Instead, we can inject a null value for recordedAt to trigger a DB constraint error.
-    const mockFetch: typeof globalThis.fetch = async (
-      input: RequestInfo | URL,
-      _init?: RequestInit,
-    ): Promise<Response> => {
-      const urlStr = input.toString();
-
-      if (urlStr.includes("/measure")) {
-        _callCount++;
-        return Response.json({
+    server.use(
+      http.post("https://wbsapi.withings.net/measure", () => {
+        return HttpResponse.json({
           status: 0,
           body: {
-            measuregrps: [
-              fakeWeightGroup({ grpid: 9010 }),
-              // This group has the same grpid as the first - but that won't error with upsert.
-              // Instead, let's return a group where the date is invalid (NaN timestamp)
-              // Actually, we need a real DB constraint violation. Let's use a null externalId
-              // by passing grpid that produces issues. The simplest approach: pass two valid
-              // groups and verify both are inserted, then test the outer catch separately.
-              fakeWeightGroup({ grpid: 9011 }),
-            ],
+            measuregrps: [fakeWeightGroup({ grpid: 9010 }), fakeWeightGroup({ grpid: 9011 })],
             more: 0,
             offset: 0,
           },
         });
-      }
+      }),
+    );
 
-      return new Response("Not found", { status: 404 });
-    };
-
-    const provider = new WithingsProvider(mockFetch);
+    const provider = new WithingsProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     // Both should succeed (this verifies the happy path through lines ~358-386)
@@ -102,24 +90,16 @@ describe("WithingsProvider.sync() — error paths (integration)", () => {
       scopes: "user.metrics",
     });
 
-    // Create a mock fetch where the API returns a non-zero status (error)
-    // which will cause the WithingsClient.post() to throw inside the withSyncLog callback
-    const mockFetch: typeof globalThis.fetch = async (
-      input: RequestInfo | URL,
-    ): Promise<Response> => {
-      const urlStr = input.toString();
-
-      if (urlStr.includes("/measure")) {
-        return Response.json({
+    server.use(
+      http.post("https://wbsapi.withings.net/measure", () => {
+        return HttpResponse.json({
           status: 401, // Non-zero = Withings API error
           body: {},
         });
-      }
+      }),
+    );
 
-      return new Response("Not found", { status: 404 });
-    };
-
-    const provider = new WithingsProvider(mockFetch);
+    const provider = new WithingsProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     // The outer catch at lines 405-409 should capture the error

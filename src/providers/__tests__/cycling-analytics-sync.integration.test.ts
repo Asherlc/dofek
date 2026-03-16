@@ -1,5 +1,7 @@
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { HttpResponse, http } from "msw";
+import { setupServer } from "msw/node";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
 import { activity, oauthToken } from "../../db/schema.ts";
 import { ensureProvider, saveTokens } from "../../db/tokens.ts";
@@ -56,38 +58,35 @@ function fakeRide(overrides: FakeRideOverrides = {}) {
   };
 }
 
-function createMockFetch(
-  pages: Array<Array<ReturnType<typeof fakeRide>>>,
-): typeof globalThis.fetch {
+function cyclingAnalyticsHandlers(pages: Array<Array<ReturnType<typeof fakeRide>>>) {
   let pageIndex = 0;
 
-  return async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
-    const urlStr = input.toString();
-
+  return [
     // Token refresh
-    if (urlStr.includes("/api/token")) {
-      return Response.json({
+    http.post("https://www.cyclinganalytics.com/api/token", () => {
+      return HttpResponse.json({
         access_token: "refreshed-token",
         refresh_token: "new-refresh",
         expires_in: 7200,
       });
-    }
+    }),
 
     // Rides list (paginated)
-    if (urlStr.includes("/me/rides")) {
+    http.get("https://www.cyclinganalytics.com/api/me/rides", () => {
       const rides = pages[pageIndex] ?? [];
       pageIndex++;
-      return Response.json({ rides });
-    }
-
-    return new Response("Not found", { status: 404 });
-  };
+      return HttpResponse.json({ rides });
+    }),
+  ];
 }
+
+const server = setupServer();
 
 describe("CyclingAnalyticsProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
+    server.listen({ onUnhandledRequest: "error" });
     process.env.CYCLING_ANALYTICS_CLIENT_ID = "test-client-id";
     process.env.CYCLING_ANALYTICS_CLIENT_SECRET = "test-client-secret";
     ctx = await setupTestDatabase();
@@ -99,7 +98,12 @@ describe("CyclingAnalyticsProvider.sync() (integration)", () => {
     );
   }, 60_000);
 
+  afterEach(() => {
+    server.resetHandlers();
+  });
+
   afterAll(async () => {
+    server.close();
     if (ctx) await ctx.cleanup();
   });
 
@@ -116,7 +120,9 @@ describe("CyclingAnalyticsProvider.sync() (integration)", () => {
       fakeRide({ id: 5002, date: "2026-03-05T14:00:00Z", title: "Afternoon Spin" }),
     ];
 
-    const provider = new CyclingAnalyticsProvider(createMockFetch([rides]));
+    server.use(...cyclingAnalyticsHandlers([rides]));
+
+    const provider = new CyclingAnalyticsProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.provider).toBe("cycling_analytics");
@@ -150,11 +156,16 @@ describe("CyclingAnalyticsProvider.sync() (integration)", () => {
 
     const rides = [fakeRide({ id: 5001, date: "2026-03-01T08:00:00Z" })];
 
-    const provider = new CyclingAnalyticsProvider(createMockFetch([rides]));
+    server.use(...cyclingAnalyticsHandlers([rides]));
+
+    const provider = new CyclingAnalyticsProvider();
     await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     // Sync again — should upsert, not duplicate
-    const provider2 = new CyclingAnalyticsProvider(createMockFetch([rides]));
+    server.resetHandlers();
+    server.use(...cyclingAnalyticsHandlers([rides]));
+
+    const provider2 = new CyclingAnalyticsProvider();
     await provider2.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     const rows = await ctx.db
@@ -181,7 +192,9 @@ describe("CyclingAnalyticsProvider.sync() (integration)", () => {
     const page2 = [fakeRide({ id: 6003, date: "2026-04-03T08:00:00Z" })];
     const page3: Array<ReturnType<typeof fakeRide>> = []; // empty page signals end
 
-    const provider = new CyclingAnalyticsProvider(createMockFetch([page1, page2, page3]));
+    server.use(...cyclingAnalyticsHandlers([page1, page2, page3]));
+
+    const provider = new CyclingAnalyticsProvider();
     const result = await provider.sync(ctx.db, new Date("2026-03-15T00:00:00Z"));
 
     expect(result.recordsSynced).toBe(3);
@@ -196,7 +209,9 @@ describe("CyclingAnalyticsProvider.sync() (integration)", () => {
       scopes: null,
     });
 
-    const provider = new CyclingAnalyticsProvider(createMockFetch([[]]));
+    server.use(...cyclingAnalyticsHandlers([[]]));
+
+    const provider = new CyclingAnalyticsProvider();
     await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     const { loadTokens } = await import("../../db/tokens.ts");
@@ -207,7 +222,7 @@ describe("CyclingAnalyticsProvider.sync() (integration)", () => {
   it("returns error when no tokens exist", async () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "cycling_analytics"));
 
-    const provider = new CyclingAnalyticsProvider(createMockFetch([[]]));
+    const provider = new CyclingAnalyticsProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);

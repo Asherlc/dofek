@@ -258,7 +258,7 @@ export class WhoopClient {
    */
   static async _fetchUserId(
     accessToken: string,
-    fetchFn: typeof globalThis.fetch,
+    fetchFn: typeof globalThis.fetch = globalThis.fetch,
   ): Promise<number | null> {
     const response = await fetchFn(
       `${WHOOP_API_BASE}/users-service/v2/bootstrap/?accountType=users&apiVersion=7&include=profile`,

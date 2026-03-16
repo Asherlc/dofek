@@ -83,6 +83,7 @@
     "drizzle-kit": "0.30.6",
     "jszip": "^3.10.1",
     "knip": "^5.86.0",
+    "msw": "^2.12.11",
     "postgres": "3.4.8",
     "testcontainers": "10.28.0",
     "tsx": "4.21.0",
