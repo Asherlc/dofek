@@ -750,6 +750,33 @@ function FileImportZone({
     async (file: File) => {
       setState({ status: "syncing", progress: 0, message: `Uploading ${file.name}...` });
 
+      const MAX_RETRIES = 3;
+
+      async function fetchWithRetry(
+        url: string,
+        init: RequestInit,
+        attempt = 0,
+      ): Promise<Response> {
+        try {
+          const resp = await fetch(url, init);
+          if (!resp.ok) {
+            const err = await resp.json().catch(() => ({ error: resp.statusText }));
+            throw new Error(err.error ?? `Upload failed (HTTP ${resp.status})`);
+          }
+          return resp;
+        } catch (err) {
+          const isNetworkError =
+            err instanceof TypeError ||
+            (err instanceof Error && err.message.includes("NetworkError"));
+          if (isNetworkError && attempt < MAX_RETRIES) {
+            const delay = 1000 * 2 ** attempt;
+            await new Promise((r) => setTimeout(r, delay));
+            return fetchWithRetry(url, init, attempt + 1);
+          }
+          throw err;
+        }
+      }
+
       try {
         let jobId: string | null = null;
 
@@ -773,7 +800,7 @@ function FileImportZone({
                   : `Uploading ${file.name}...`,
             });
 
-            const resp = await fetch(uploadUrl, {
+            const resp = await fetchWithRetry(uploadUrl, {
               method: "POST",
               headers: {
                 "Content-Type": "application/octet-stream",
@@ -784,23 +811,15 @@ function FileImportZone({
               },
               body: chunk,
             });
-            if (!resp.ok) {
-              const err = await resp.json().catch(() => ({ error: resp.statusText }));
-              throw new Error(err.error ?? "Upload failed");
-            }
             const data = await resp.json();
             if (data.jobId) jobId = data.jobId;
           }
         } else {
-          const resp = await fetch(uploadUrl, {
+          const resp = await fetchWithRetry(uploadUrl, {
             method: "POST",
             headers: { "Content-Type": "application/octet-stream" },
             body: file,
           });
-          if (!resp.ok) {
-            const err = await resp.json().catch(() => ({ error: resp.statusText }));
-            throw new Error(err.error ?? "Upload failed");
-          }
           const data = await resp.json();
           jobId = data.jobId ?? null;
         }
@@ -810,10 +829,13 @@ function FileImportZone({
           await pollStatus(jobId);
         }
       } catch (err: unknown) {
-        setState({
-          status: "error",
-          message: err instanceof Error ? err.message : "Upload failed",
-        });
+        const message =
+          err instanceof TypeError
+            ? "Network error — check your connection and try again"
+            : err instanceof Error
+              ? err.message
+              : "Upload failed";
+        setState({ status: "error", message });
       }
     },
     [uploadUrl, chunked, pollStatus],
