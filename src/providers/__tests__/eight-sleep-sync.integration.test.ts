@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { http, HttpResponse } from "msw";
+import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
@@ -90,10 +90,7 @@ function fakeTrendDay(overrides: Partial<FakeTrendDay> = {}): FakeTrendDay {
   };
 }
 
-function eightSleepHandlers(
-  trendDays: FakeTrendDay[],
-  opts?: { signInError?: boolean },
-) {
+function eightSleepHandlers(trendDays: FakeTrendDay[], opts?: { signInError?: boolean }) {
   return [
     // Sign-in (re-auth)
     http.post("https://auth-api.8slp.net/v1/tokens", () => {

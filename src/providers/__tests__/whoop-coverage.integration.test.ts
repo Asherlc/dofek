@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { http, HttpResponse } from "msw";
+import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
@@ -90,9 +90,12 @@ describe("WhoopProvider — HR stream error path", () => {
       http.get("https://api.prod.whoop.com/core-details-bff/v0/cycles/details", () => {
         return HttpResponse.json([]);
       }),
-      http.get("https://api.prod.whoop.com/weightlifting-service/v2/weightlifting-workout/:id", () => {
-        return new HttpResponse("Not found", { status: 404 });
-      }),
+      http.get(
+        "https://api.prod.whoop.com/weightlifting-service/v2/weightlifting-workout/:id",
+        () => {
+          return new HttpResponse("Not found", { status: 404 });
+        },
+      ),
       http.get("https://api.prod.whoop.com/metrics-service/v1/metrics/user/:userId", () => {
         return new HttpResponse("Internal Server Error", { status: 500 });
       }),
@@ -170,7 +173,7 @@ describe("WhoopClient — verifyCode", () => {
   it("verifies code via SMS_MFA challenge", async () => {
     clientServer.use(
       http.post("https://api.prod.whoop.com/auth-service/v3/whoop/", async ({ request }) => {
-        const body: Record<string, unknown> = await request.json();
+        const body = (await request.json()) as Record<string, unknown>;
         if (body.ChallengeName === "SMS_MFA") {
           return HttpResponse.json({
             AuthenticationResult: { AccessToken: "verified-tok", RefreshToken: "verified-ref" },
@@ -196,7 +199,7 @@ describe("WhoopClient — verifyCode", () => {
 
     clientServer.use(
       http.post("https://api.prod.whoop.com/auth-service/v3/whoop/", async ({ request }) => {
-        const body: Record<string, unknown> = await request.json();
+        const body = (await request.json()) as Record<string, unknown>;
         challengeNames.push(String(body.ChallengeName));
         if (body.ChallengeName === "SMS_MFA") {
           return HttpResponse.json(
@@ -227,9 +230,9 @@ describe("WhoopClient — verifyCode", () => {
       }),
     );
 
-    await expect(
-      WhoopClient.verifyCode("session", "123456", "user@test.com"),
-    ).rejects.toThrow(/no tokens/i);
+    await expect(WhoopClient.verifyCode("session", "123456", "user@test.com")).rejects.toThrow(
+      /no tokens/i,
+    );
   });
 
   it("throws when bootstrap returns no userId during verifyCode", async () => {
@@ -244,9 +247,9 @@ describe("WhoopClient — verifyCode", () => {
       }),
     );
 
-    await expect(
-      WhoopClient.verifyCode("session", "123456", "user@test.com"),
-    ).rejects.toThrow(/user ID/i);
+    await expect(WhoopClient.verifyCode("session", "123456", "user@test.com")).rejects.toThrow(
+      /user ID/i,
+    );
   });
 });
 
@@ -272,9 +275,7 @@ describe("WhoopClient — cognitoCall error paths", () => {
       }),
     );
 
-    await expect(WhoopClient.signIn("user@test.com", "pass")).rejects.toThrow(
-      /WHOOP auth failed/,
-    );
+    await expect(WhoopClient.signIn("user@test.com", "pass")).rejects.toThrow(/WHOOP auth failed/);
   });
 
   it("throws with error type from Cognito error response", async () => {
@@ -302,9 +303,7 @@ describe("WhoopClient — cognitoCall error paths", () => {
       }),
     );
 
-    await expect(WhoopClient.signIn("user@test.com", "pass")).rejects.toThrow(
-      /no tokens/i,
-    );
+    await expect(WhoopClient.signIn("user@test.com", "pass")).rejects.toThrow(/no tokens/i);
   });
 
   it("throws when refreshAccessToken gets no AccessToken", async () => {
@@ -314,9 +313,7 @@ describe("WhoopClient — cognitoCall error paths", () => {
       }),
     );
 
-    await expect(WhoopClient.refreshAccessToken("old-ref")).rejects.toThrow(
-      /no tokens/i,
-    );
+    await expect(WhoopClient.refreshAccessToken("old-ref")).rejects.toThrow(/no tokens/i);
   });
 });
 
@@ -376,7 +373,7 @@ describe("WhoopClient._fetchUserId — bootstrap HTTP failure", () => {
       }),
     );
 
-    const userId = await WhoopClient._fetchUserId("bad-token");
+    const userId = await WhoopClient._fetchUserId("bad-token", globalThis.fetch);
     expect(userId).toBeNull();
   });
 });

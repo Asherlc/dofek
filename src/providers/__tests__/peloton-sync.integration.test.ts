@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { http, HttpResponse } from "msw";
+import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
@@ -335,12 +335,9 @@ describe("PelotonProvider.sync() (integration)", () => {
       http.get("https://api.onepeloton.com/api/me", () => {
         return HttpResponse.json({ id: "user-123" });
       }),
-      http.get(
-        "https://api.onepeloton.com/api/workout/:workoutId/performance_graph",
-        () => {
-          return HttpResponse.json(fakePerformanceGraph());
-        },
-      ),
+      http.get("https://api.onepeloton.com/api/workout/:workoutId/performance_graph", () => {
+        return HttpResponse.json(fakePerformanceGraph());
+      }),
       http.get("https://api.onepeloton.com/api/user/:userId/workouts", ({ request }) => {
         const url = new URL(request.url);
         const page = Number(url.searchParams.get("page") ?? "0");
@@ -404,12 +401,9 @@ describe("PelotonProvider.sync() (integration)", () => {
       http.get("https://api.onepeloton.com/api/me", () => {
         return HttpResponse.json({ id: "user-123" });
       }),
-      http.get(
-        "https://api.onepeloton.com/api/workout/:workoutId/performance_graph",
-        () => {
-          return new HttpResponse("Internal Server Error", { status: 500 });
-        },
-      ),
+      http.get("https://api.onepeloton.com/api/workout/:workoutId/performance_graph", () => {
+        return new HttpResponse("Internal Server Error", { status: 500 });
+      }),
       http.get("https://api.onepeloton.com/api/user/:userId/workouts", () => {
         return HttpResponse.json({
           data: workouts,

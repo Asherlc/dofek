@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { http, HttpResponse } from "msw";
+import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
@@ -112,9 +112,7 @@ describe("PolarProvider.sync() — daily_activity error paths (integration)", ()
 
     server.use(
       ...polarCoverageHandlers({
-        dailyActivities: [
-          fakePolarDailyActivity({ date: "2026-03-10", active_steps: 9000 }),
-        ],
+        dailyActivities: [fakePolarDailyActivity({ date: "2026-03-10", active_steps: 9000 })],
       }),
     );
 

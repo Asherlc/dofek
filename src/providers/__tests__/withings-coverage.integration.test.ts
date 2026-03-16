@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { http, HttpResponse } from "msw";
+import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
@@ -66,10 +66,7 @@ describe("WithingsProvider.sync() — error paths (integration)", () => {
         return HttpResponse.json({
           status: 0,
           body: {
-            measuregrps: [
-              fakeWeightGroup({ grpid: 9010 }),
-              fakeWeightGroup({ grpid: 9011 }),
-            ],
+            measuregrps: [fakeWeightGroup({ grpid: 9010 }), fakeWeightGroup({ grpid: 9011 })],
             more: 0,
             offset: 0,
           },

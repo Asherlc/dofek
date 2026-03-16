@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { http, HttpResponse } from "msw";
+import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
@@ -245,7 +245,9 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
 
     server.use(
       http.get("https://api.onepeloton.com/api/me", () => HttpResponse.json({ id: "user-123" })),
-      http.get("https://api.onepeloton.com/api/workout/:workoutId/performance_graph", () => HttpResponse.json(emptyGraph)),
+      http.get("https://api.onepeloton.com/api/workout/:workoutId/performance_graph", () =>
+        HttpResponse.json(emptyGraph),
+      ),
       http.get("https://api.onepeloton.com/api/user/:userId/workouts", () => {
         return HttpResponse.json({
           data: [
@@ -332,11 +334,22 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
 
     server.use(
       http.get("https://api.onepeloton.com/api/me", () => HttpResponse.json({ id: "user-123" })),
-      http.get("https://api.onepeloton.com/api/workout/:workoutId/performance_graph", () => HttpResponse.json(largeGraph)),
+      http.get("https://api.onepeloton.com/api/workout/:workoutId/performance_graph", () =>
+        HttpResponse.json(largeGraph),
+      ),
       http.get("https://api.onepeloton.com/api/user/:userId/workouts", () => {
         return HttpResponse.json({
-          data: [fakeWorkout({ id: "ext-large-stream", start_time: 1709971200, end_time: 1709974200 })],
-          total: 1, count: 1, page: 0, limit: 20, page_count: 1, sort_by: "-created_at", show_next: false, show_previous: false,
+          data: [
+            fakeWorkout({ id: "ext-large-stream", start_time: 1709971200, end_time: 1709974200 }),
+          ],
+          total: 1,
+          count: 1,
+          page: 0,
+          limit: 20,
+          page_count: 1,
+          sort_by: "-created_at",
+          show_next: false,
+          show_previous: false,
         });
       }),
     );
@@ -390,11 +403,22 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
 
     server.use(
       http.get("https://api.onepeloton.com/api/me", () => HttpResponse.json({ id: "user-123" })),
-      http.get("https://api.onepeloton.com/api/workout/:workoutId/performance_graph", () => HttpResponse.json(graph)),
+      http.get("https://api.onepeloton.com/api/workout/:workoutId/performance_graph", () =>
+        HttpResponse.json(graph),
+      ),
       http.get("https://api.onepeloton.com/api/user/:userId/workouts", () => {
         return HttpResponse.json({
-          data: [fakeWorkout({ id: "ext-resync-workout", start_time: 1710057600, end_time: 1710059400 })],
-          total: 1, count: 1, page: 0, limit: 20, page_count: 1, sort_by: "-created_at", show_next: false, show_previous: false,
+          data: [
+            fakeWorkout({ id: "ext-resync-workout", start_time: 1710057600, end_time: 1710059400 }),
+          ],
+          total: 1,
+          count: 1,
+          page: 0,
+          limit: 20,
+          page_count: 1,
+          sort_by: "-created_at",
+          show_next: false,
+          show_previous: false,
         });
       }),
     );
@@ -448,11 +472,27 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
 
     server.use(
       http.get("https://api.onepeloton.com/api/me", () => HttpResponse.json({ id: "user-123" })),
-      http.get("https://api.onepeloton.com/api/workout/:workoutId/performance_graph", () => HttpResponse.json(speedOnlyGraph)),
+      http.get("https://api.onepeloton.com/api/workout/:workoutId/performance_graph", () =>
+        HttpResponse.json(speedOnlyGraph),
+      ),
       http.get("https://api.onepeloton.com/api/user/:userId/workouts", () => {
         return HttpResponse.json({
-          data: [fakeWorkout({ id: "ext-speed-only", start_time: 1710144000, end_time: 1710145800, fitness_discipline: "walking" })],
-          total: 1, count: 1, page: 0, limit: 20, page_count: 1, sort_by: "-created_at", show_next: false, show_previous: false,
+          data: [
+            fakeWorkout({
+              id: "ext-speed-only",
+              start_time: 1710144000,
+              end_time: 1710145800,
+              fitness_discipline: "walking",
+            }),
+          ],
+          total: 1,
+          count: 1,
+          page: 0,
+          limit: 20,
+          page_count: 1,
+          sort_by: "-created_at",
+          show_next: false,
+          show_previous: false,
         });
       }),
     );
@@ -542,7 +582,9 @@ describe("pelotonAutomatedLogin", () => {
         step = 5;
         return new HttpResponse(null, {
           status: 302,
-          headers: { Location: "https://members.onepeloton.com/callback?code=auth-code-123&state=test" },
+          headers: {
+            Location: "https://members.onepeloton.com/callback?code=auth-code-123&state=test",
+          },
         });
       }),
       http.post("https://api.onepeloton.com/oauth/token", () => {
@@ -672,9 +714,7 @@ describe("pelotonAutomatedLogin", () => {
       }),
     );
 
-    await expect(pelotonAutomatedLogin("user@test.com", "pass")).rejects.toThrow(
-      "User blocked",
-    );
+    await expect(pelotonAutomatedLogin("user@test.com", "pass")).rejects.toThrow("User blocked");
   });
 });
 

@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { http, HttpResponse } from "msw";
+import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
@@ -114,28 +114,22 @@ function zwiftHandlers(opts: ZwiftMockOptions = {}) {
 
   return [
     // Token refresh (Zwift auth endpoint)
-    http.post(
-      "https://secure.zwift.com/auth/realms/zwift/protocol/openid-connect/token",
-      () => {
-        if (opts.tokenRefreshError) {
-          return new HttpResponse("Unauthorized", { status: 401 });
-        }
-        return HttpResponse.json({
-          access_token: "refreshed-zwift-token",
-          refresh_token: "new-zwift-refresh",
-          expires_in: 7200,
-          token_type: "Bearer",
-        });
-      },
-    ),
+    http.post("https://secure.zwift.com/auth/realms/zwift/protocol/openid-connect/token", () => {
+      if (opts.tokenRefreshError) {
+        return new HttpResponse("Unauthorized", { status: 401 });
+      }
+      return HttpResponse.json({
+        access_token: "refreshed-zwift-token",
+        refresh_token: "new-zwift-refresh",
+        expires_in: 7200,
+        token_type: "Bearer",
+      });
+    }),
 
     // Power curve
-    http.get(
-      "https://us-or-rly101.zwift.com/api/power-curve/power-profile/:profileId",
-      () => {
-        return HttpResponse.json(opts.powerCurve ?? fakeZwiftPowerCurve());
-      },
-    ),
+    http.get("https://us-or-rly101.zwift.com/api/power-curve/power-profile/:profileId", () => {
+      return HttpResponse.json(opts.powerCurve ?? fakeZwiftPowerCurve());
+    }),
 
     // Activity detail
     http.get("https://us-or-rly101.zwift.com/api/activities/:activityId", ({ params }) => {
@@ -159,16 +153,13 @@ function zwiftHandlers(opts: ZwiftMockOptions = {}) {
     }),
 
     // Activity list (paginated)
-    http.get(
-      "https://us-or-rly101.zwift.com/api/profiles/:profileId/activities",
-      () => {
-        pageRequestCount++;
-        if (opts.paginateActivities && pageRequestCount > 1) {
-          return HttpResponse.json([]);
-        }
-        return HttpResponse.json(activities);
-      },
-    ),
+    http.get("https://us-or-rly101.zwift.com/api/profiles/:profileId/activities", () => {
+      pageRequestCount++;
+      if (opts.paginateActivities && pageRequestCount > 1) {
+        return HttpResponse.json([]);
+      }
+      return HttpResponse.json(activities);
+    }),
 
     // Profile endpoint
     http.get("https://us-or-rly101.zwift.com/api/profiles/:profileId", () => {
@@ -320,9 +311,7 @@ describe("ZwiftProvider.sync() (integration)", () => {
       scopes: "athleteId:42",
     });
 
-    server.use(
-      ...zwiftHandlers({ activities: [], paginateActivities: true }),
-    );
+    server.use(...zwiftHandlers({ activities: [], paginateActivities: true }));
 
     const provider = new ZwiftProvider();
     await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));

@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { http, HttpResponse } from "msw";
+import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
@@ -245,15 +245,12 @@ describe("UltrahumanProvider.sync() (integration)", () => {
       let capturedAuthHeader: string | null = null;
 
       server.use(
-        http.get(
-          "https://partner.ultrahuman.com/api/v1/partner/daily_metrics",
-          ({ request }) => {
-            capturedAuthHeader = request.headers.get("Authorization");
-            const url = new URL(request.url);
-            const date = url.searchParams.get("date") ?? "";
-            return HttpResponse.json(fakeUltrahumanDailyResponse(date, []));
-          },
-        ),
+        http.get("https://partner.ultrahuman.com/api/v1/partner/daily_metrics", ({ request }) => {
+          capturedAuthHeader = request.headers.get("Authorization");
+          const url = new URL(request.url);
+          const date = url.searchParams.get("date") ?? "";
+          return HttpResponse.json(fakeUltrahumanDailyResponse(date, []));
+        }),
       );
 
       const provider = new UltrahumanProvider();

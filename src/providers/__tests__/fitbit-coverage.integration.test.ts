@@ -1,4 +1,4 @@
-import { http, HttpResponse } from "msw";
+import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
@@ -367,9 +367,12 @@ describe("FitbitClient — error handling", () => {
 
   it("throws on non-OK weight log response", async () => {
     server.use(
-      http.get("https://api.fitbit.com/1/user/-/body/log/weight/date/:startDate/:range.json", () => {
-        return new HttpResponse("Rate Limited", { status: 429 });
-      }),
+      http.get(
+        "https://api.fitbit.com/1/user/-/body/log/weight/date/:startDate/:range.json",
+        () => {
+          return new HttpResponse("Rate Limited", { status: 429 });
+        },
+      ),
     );
 
     const client = new FitbitClient("token");
