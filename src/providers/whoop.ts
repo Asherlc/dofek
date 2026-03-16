@@ -135,7 +135,7 @@ export function parseWorkout(record: WhoopWorkoutRecord): ParsedWorkout {
   }
 
   return {
-    externalId: record.activity_id ?? String(record.id ?? ""),
+    externalId: record.activity_id || String(record.id ?? ""),
     activityType: mapSportId(record.sport_id),
     startedAt,
     endedAt,

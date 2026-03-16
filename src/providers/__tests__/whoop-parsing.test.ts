@@ -468,13 +468,15 @@ describe("parseWorkout — legacy format without during", () => {
   // where fields now typed as required were absent in older API versions.
 
   it("falls back to start/end fields when during is absent", () => {
-    const record = {
+    // Legacy API response missing `during` — testing defensive fallback
+    const record: WhoopWorkoutRecord = {
       activity_id: "uuid-legacy-1",
+      during: "", // empty — triggers fallback
       timezone_offset: "-05:00",
       sport_id: 0,
       start: "2026-03-01T10:00:00Z",
       end: "2026-03-01T11:00:00Z",
-    } as WhoopWorkoutRecord;
+    };
 
     const parsed = parseWorkout(record);
     expect(parsed.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
@@ -483,13 +485,15 @@ describe("parseWorkout — legacy format without during", () => {
   });
 
   it("falls back to created_at/updated_at when start/end are also missing", () => {
-    const record = {
+    // Legacy API response missing both `during` and `start`/`end` — testing deepest fallback
+    const record: WhoopWorkoutRecord = {
       activity_id: "uuid-legacy-2",
+      during: "", // empty — triggers fallback
       timezone_offset: "-05:00",
       sport_id: 1,
       created_at: "2026-03-01T09:00:00Z",
       updated_at: "2026-03-01T10:30:00Z",
-    } as WhoopWorkoutRecord;
+    };
 
     const parsed = parseWorkout(record);
     expect(parsed.startedAt).toEqual(new Date("2026-03-01T09:00:00Z"));
@@ -498,12 +502,14 @@ describe("parseWorkout — legacy format without during", () => {
   });
 
   it("uses record.id as externalId when activity_id is missing", () => {
-    const record = {
+    // Legacy API response with numeric id instead of activity_id UUID
+    const record: WhoopWorkoutRecord = {
+      activity_id: "", // empty — triggers id fallback
       id: 12345,
       during: "['2026-03-01T10:00:00Z','2026-03-01T11:00:00Z')",
       timezone_offset: "-05:00",
       sport_id: 0,
-    } as WhoopWorkoutRecord;
+    };
 
     const parsed = parseWorkout(record);
     expect(parsed.externalId).toBe("12345");

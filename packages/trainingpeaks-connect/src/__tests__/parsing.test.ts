@@ -4,10 +4,7 @@ import {
   parseTrainingPeaksPmc,
   parseTrainingPeaksWorkout,
 } from "../parsing.ts";
-import type {
-  TrainingPeaksPmcEntry,
-  TrainingPeaksWorkout,
-} from "../types.ts";
+import type { TrainingPeaksPmcEntry, TrainingPeaksWorkout } from "../types.ts";
 
 describe("decimalHoursToSeconds", () => {
   it("converts whole hours", () => {

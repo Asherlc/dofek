@@ -52,7 +52,7 @@ async function createAuthenticatedClient(
   const tokens = makeGarminTokens(tokenOverrides);
   const callCount = { value: 0 };
 
-  const setupFetchFn = vi.fn().mockImplementation(() => {
+  const setupFetchFn = vi.fn().mockImplementation((...args: Parameters<typeof fetch>) => {
     callCount.value++;
     if (callCount.value === 1) {
       // loadConsumer
@@ -79,7 +79,7 @@ async function createAuthenticatedClient(
       });
     }
     // Forward to the API mock
-    return asMock(apiFetchFn)(...arguments);
+    return asMock(apiFetchFn)(...args);
   });
 
   const client = await GarminConnectClient.fromTokens(tokens, "garmin.com", setupFetchFn);
