@@ -18,7 +18,7 @@
     "packages/web/src/lib/poll-sync-job.ts",
     "packages/server/src/**/*.ts",
     "!src/**/*.test.ts",
-    "!src/**/__tests__/**",
+    "!src/**/test-helpers.ts",
     "!packages/server/src/**/*.test.ts"
   ],
   "ignorePatterns": [

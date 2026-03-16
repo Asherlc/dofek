@@ -1,0 +1,310 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Provider, SyncResult } from "../providers/types.ts";
+
+// Mock dependencies — the mock functions are accessed via module-level refs
+vi.mock("./provider-registration.ts", () => ({
+  ensureProvidersRegistered: vi.fn().mockResolvedValue(undefined),
+}));
+
+const mockGetAllProviders = vi.fn<() => Provider[]>().mockReturnValue([]);
+vi.mock("../providers/index.ts", () => ({
+  getAllProviders: (...args: []) => mockGetAllProviders(...args),
+}));
+
+const mockLogSync = vi.fn().mockResolvedValue(undefined);
+vi.mock("../db/sync-log.ts", () => ({
+  logSync: (...args: unknown[]) => mockLogSync(...args),
+}));
+
+const mockEnsureProvider = vi.fn().mockResolvedValue("test-id");
+vi.mock("../db/tokens.ts", () => ({
+  ensureProvider: (...args: unknown[]) => mockEnsureProvider(...args),
+}));
+
+const mockUpdateUserMaxHr = vi.fn().mockResolvedValue(undefined);
+const mockRefreshDedupViews = vi.fn().mockResolvedValue(undefined);
+vi.mock("../db/dedup.ts", () => ({
+  updateUserMaxHr: (...args: unknown[]) => mockUpdateUserMaxHr(...args),
+  refreshDedupViews: (...args: unknown[]) => mockRefreshDedupViews(...args),
+}));
+
+// Import after mocks are set up
+const { processSyncJob } = await import("./process-sync-job.ts");
+
+const mockDb = Object.create(null);
+
+interface MockJob {
+  data: { providerId?: string; sinceDays?: number; userId: string };
+  updateProgress: ReturnType<typeof vi.fn>;
+}
+
+function createMockJob(
+  data: { providerId?: string; sinceDays?: number; userId?: string } = {},
+): MockJob {
+  return {
+    data: { userId: "user-1", ...data },
+    updateProgress: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
+function createMockProvider(overrides: Partial<Provider> = {}): Provider {
+  return {
+    id: "test-provider",
+    name: "Test Provider",
+    validate: () => null,
+    sync: vi.fn().mockResolvedValue({
+      provider: "test-provider",
+      recordsSynced: 5,
+      errors: [],
+      duration: 100,
+    } satisfies SyncResult),
+    ...overrides,
+  };
+}
+
+// Helper to call processSyncJob with a mock job without needing `as` casts.
+// processSyncJob expects a full BullMQ Job but only uses .data and .updateProgress.
+function runSyncJob(job: MockJob, db: unknown) {
+  return processSyncJob(
+    // @ts-expect-error -- mock job only implements the subset of Job used by processSyncJob
+    job,
+    db,
+  );
+}
+
+describe("processSyncJob", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Restore default return values after clearAllMocks
+    mockGetAllProviders.mockReturnValue([]);
+    mockLogSync.mockResolvedValue(undefined);
+    mockEnsureProvider.mockResolvedValue("test-id");
+    mockUpdateUserMaxHr.mockResolvedValue(undefined);
+    mockRefreshDedupViews.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("syncs all valid providers when no providerId specified", async () => {
+    const providerA = createMockProvider({ id: "a", name: "Provider A" });
+    const providerB = createMockProvider({ id: "b", name: "Provider B" });
+    mockGetAllProviders.mockReturnValue([providerA, providerB]);
+
+    await runSyncJob(createMockJob(), mockDb);
+
+    expect(providerA.sync).toHaveBeenCalledOnce();
+    expect(providerB.sync).toHaveBeenCalledOnce();
+  });
+
+  it("filters out invalid providers", async () => {
+    const valid = createMockProvider({ id: "valid", name: "Valid" });
+    const invalid = createMockProvider({
+      id: "invalid",
+      name: "Invalid",
+      validate: () => "missing API key",
+    });
+    mockGetAllProviders.mockReturnValue([valid, invalid]);
+
+    await runSyncJob(createMockJob(), mockDb);
+
+    expect(valid.sync).toHaveBeenCalledOnce();
+    expect(invalid.sync).not.toHaveBeenCalled();
+  });
+
+  it("syncs only the specified provider when providerId is given", async () => {
+    const providerA = createMockProvider({ id: "a", name: "Provider A" });
+    const providerB = createMockProvider({ id: "b", name: "Provider B" });
+    mockGetAllProviders.mockReturnValue([providerA, providerB]);
+
+    await runSyncJob(createMockJob({ providerId: "b" }), mockDb);
+
+    expect(providerA.sync).not.toHaveBeenCalled();
+    expect(providerB.sync).toHaveBeenCalledOnce();
+  });
+
+  it("throws for unknown providerId", async () => {
+    const providerA = createMockProvider({ id: "a", name: "Provider A" });
+    mockGetAllProviders.mockReturnValue([providerA]);
+
+    await expect(runSyncJob(createMockJob({ providerId: "nonexistent" }), mockDb)).rejects.toThrow(
+      "Unknown provider: nonexistent",
+    );
+  });
+
+  it("updates job progress through pending → running → done states", async () => {
+    const provider = createMockProvider({ id: "test", name: "Test" });
+    mockGetAllProviders.mockReturnValue([provider]);
+
+    // Capture snapshots since the status object is mutated in place
+    const progressSnapshots: Array<Record<string, unknown>> = [];
+    const job = createMockJob();
+    job.updateProgress.mockImplementation((data: Record<string, unknown>) => {
+      progressSnapshots.push(structuredClone(data));
+      return Promise.resolve();
+    });
+
+    await runSyncJob(job, mockDb);
+
+    expect(progressSnapshots).toHaveLength(3);
+    expect(progressSnapshots[0]).toEqual({
+      providers: { test: { status: "pending" } },
+    });
+    expect(progressSnapshots[1]).toEqual({
+      providers: { test: { status: "running" } },
+    });
+    expect(progressSnapshots[2]).toEqual({
+      providers: { test: { status: "done", message: "5 synced" } },
+    });
+  });
+
+  it("logs success to sync log", async () => {
+    const provider = createMockProvider({ id: "test", name: "Test" });
+    mockGetAllProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob(), mockDb);
+
+    expect(mockLogSync).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        providerId: "test",
+        dataType: "sync",
+        status: "success",
+        recordCount: 5,
+        errorMessage: undefined,
+      }),
+    );
+  });
+
+  it("logs errors to sync log when provider.sync throws", async () => {
+    const provider = createMockProvider({
+      id: "broken",
+      name: "Broken",
+      sync: vi.fn().mockRejectedValue(new Error("API timeout")),
+    });
+    mockGetAllProviders.mockReturnValue([provider]);
+
+    const progressSnapshots: Array<Record<string, unknown>> = [];
+    const job = createMockJob();
+    job.updateProgress.mockImplementation((data: Record<string, unknown>) => {
+      progressSnapshots.push(structuredClone(data));
+      return Promise.resolve();
+    });
+
+    // Should not throw — errors are caught per-provider
+    await runSyncJob(job, mockDb);
+
+    expect(mockLogSync).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        providerId: "broken",
+        dataType: "sync",
+        status: "error",
+        errorMessage: "API timeout",
+        durationMs: expect.any(Number),
+      }),
+    );
+
+    // Verify error status was reported in progress with the error message
+    const lastSnapshot = progressSnapshots[progressSnapshots.length - 1];
+    expect(lastSnapshot).toEqual({
+      providers: { broken: { status: "error", message: "API timeout" } },
+    });
+  });
+
+  it("reports error status with message when sync has errors", async () => {
+    const provider = createMockProvider({
+      id: "partial",
+      name: "Partial",
+      sync: vi.fn().mockResolvedValue({
+        provider: "partial",
+        recordsSynced: 3,
+        errors: [{ message: "bad record 1" }, { message: "bad record 2" }],
+        duration: 50,
+      }),
+    });
+    mockGetAllProviders.mockReturnValue([provider]);
+
+    const progressSnapshots: Array<Record<string, unknown>> = [];
+    const job = createMockJob();
+    job.updateProgress.mockImplementation((data: Record<string, unknown>) => {
+      progressSnapshots.push(structuredClone(data));
+      return Promise.resolve();
+    });
+
+    await runSyncJob(job, mockDb);
+
+    const lastSnapshot = progressSnapshots[progressSnapshots.length - 1];
+    expect(lastSnapshot).toEqual({
+      providers: { partial: { status: "error", message: "3 synced, 2 errors" } },
+    });
+
+    // Verify errors are joined with "; " separator
+    expect(mockLogSync).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        providerId: "partial",
+        status: "error",
+        errorMessage: "bad record 1; bad record 2",
+      }),
+    );
+  });
+
+  it("calls ensureProvider for each synced provider", async () => {
+    const provider = createMockProvider({ id: "test", name: "Test Provider" });
+    mockGetAllProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob(), mockDb);
+
+    expect(mockEnsureProvider).toHaveBeenCalledWith(mockDb, "test", "Test Provider");
+  });
+
+  it("calls updateUserMaxHr and refreshDedupViews post-sync", async () => {
+    mockGetAllProviders.mockReturnValue([]);
+
+    await runSyncJob(createMockJob(), mockDb);
+
+    expect(mockUpdateUserMaxHr).toHaveBeenCalledWith(mockDb);
+    expect(mockRefreshDedupViews).toHaveBeenCalledWith(mockDb);
+  });
+
+  it("handles post-sync cleanup failures gracefully and logs errors", async () => {
+    mockGetAllProviders.mockReturnValue([]);
+    mockUpdateUserMaxHr.mockRejectedValue(new Error("db gone"));
+    mockRefreshDedupViews.mockRejectedValue(new Error("db gone"));
+
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    // Should not throw
+    await runSyncJob(createMockJob(), mockDb);
+
+    expect(mockUpdateUserMaxHr).toHaveBeenCalled();
+    expect(mockRefreshDedupViews).toHaveBeenCalled();
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("Failed to update max HR"));
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("Failed to refresh views"));
+    consoleSpy.mockRestore();
+  });
+
+  it("computes since date from sinceDays", async () => {
+    const provider = createMockProvider({ id: "test", name: "Test" });
+    mockGetAllProviders.mockReturnValue([provider]);
+
+    const now = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(now);
+
+    await runSyncJob(createMockJob({ sinceDays: 30 }), mockDb);
+
+    const expectedSince = new Date(now - 30 * 24 * 60 * 60 * 1000);
+    expect(provider.sync).toHaveBeenCalledWith(mockDb, expectedSince);
+  });
+
+  it("uses epoch when sinceDays is not provided", async () => {
+    const provider = createMockProvider({ id: "test", name: "Test" });
+    mockGetAllProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob({}), mockDb);
+
+    expect(provider.sync).toHaveBeenCalledWith(mockDb, new Date(0));
+  });
+});

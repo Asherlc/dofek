@@ -1,0 +1,198 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ensureProvider, loadTokens, saveTokens } from "./tokens.ts";
+
+// Mock drizzle's eq function
+vi.mock("drizzle-orm", () => ({
+  eq: vi.fn((col, val) => ({ column: col, value: val })),
+}));
+
+function createMockDb() {
+  const onConflictDoUpdateFn = vi.fn().mockResolvedValue(undefined);
+  const valuesFn = vi.fn(() => ({ onConflictDoUpdate: onConflictDoUpdateFn }));
+  const insertFn = vi.fn(() => ({ values: valuesFn }));
+
+  const limitFn = vi.fn().mockResolvedValue([]);
+  const whereFn = vi.fn(() => ({ limit: limitFn }));
+  const fromFn = vi.fn(() => ({ where: whereFn }));
+  const selectFn = vi.fn(() => ({ from: fromFn }));
+
+  return {
+    insert: insertFn,
+    select: selectFn,
+    _valuesFn: valuesFn,
+    _onConflictDoUpdateFn: onConflictDoUpdateFn,
+    _limitFn: limitFn,
+    _whereFn: whereFn,
+    _fromFn: fromFn,
+  };
+}
+
+type MockDb = ReturnType<typeof createMockDb>;
+
+describe("ensureProvider", () => {
+  let mockDb: MockDb;
+
+  beforeEach(() => {
+    mockDb = createMockDb();
+  });
+
+  it("inserts a provider with id, name, and apiBaseUrl", async () => {
+    // @ts-expect-error mock DB
+    const result = await ensureProvider(mockDb, "wahoo", "Wahoo", "https://api.wahoo.com");
+
+    expect(result).toBe("wahoo");
+    expect(mockDb.insert).toHaveBeenCalled();
+    expect(mockDb._valuesFn).toHaveBeenCalledWith({
+      id: "wahoo",
+      name: "Wahoo",
+      apiBaseUrl: "https://api.wahoo.com",
+    });
+    expect(mockDb._onConflictDoUpdateFn).toHaveBeenCalled();
+  });
+
+  it("includes userId when provided", async () => {
+    // @ts-expect-error mock DB
+    await ensureProvider(mockDb, "whoop", "WHOOP", undefined, "user-123");
+
+    expect(mockDb._valuesFn).toHaveBeenCalledWith({
+      id: "whoop",
+      name: "WHOOP",
+      apiBaseUrl: undefined,
+      userId: "user-123",
+    });
+  });
+
+  it("omits userId when not provided", async () => {
+    // @ts-expect-error mock DB
+    await ensureProvider(mockDb, "wahoo", "Wahoo");
+
+    // @ts-expect-error mock calls
+    const valuesArg: Record<string, unknown> | undefined = mockDb._valuesFn.mock.calls[0]?.[0];
+    expect(valuesArg).not.toHaveProperty("userId");
+  });
+
+  it("returns the provider id", async () => {
+    // @ts-expect-error mock DB
+    const result = await ensureProvider(mockDb, "test-id", "Test");
+    expect(result).toBe("test-id");
+  });
+});
+
+describe("saveTokens", () => {
+  let mockDb: MockDb;
+
+  beforeEach(() => {
+    mockDb = createMockDb();
+  });
+
+  it("upserts OAuth tokens for a provider", async () => {
+    const tokens = {
+      accessToken: "access-123",
+      refreshToken: "refresh-456",
+      expiresAt: new Date("2026-04-01T00:00:00Z"),
+      scopes: "read write",
+    };
+
+    // @ts-expect-error mock DB
+    await saveTokens(mockDb, "wahoo", tokens);
+
+    expect(mockDb.insert).toHaveBeenCalled();
+    expect(mockDb._valuesFn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: "wahoo",
+        accessToken: "access-123",
+        refreshToken: "refresh-456",
+        expiresAt: new Date("2026-04-01T00:00:00Z"),
+        scopes: "read write",
+      }),
+    );
+    expect(mockDb._onConflictDoUpdateFn).toHaveBeenCalled();
+  });
+
+  it("handles null refreshToken and scopes", async () => {
+    const tokens = {
+      accessToken: "access-only",
+      refreshToken: null,
+      expiresAt: new Date("2026-05-01T00:00:00Z"),
+      scopes: null,
+    };
+
+    // @ts-expect-error mock DB
+    await saveTokens(mockDb, "strava", tokens);
+
+    expect(mockDb._valuesFn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        refreshToken: null,
+        scopes: null,
+      }),
+    );
+  });
+});
+
+describe("loadTokens", () => {
+  let mockDb: MockDb;
+
+  beforeEach(() => {
+    mockDb = createMockDb();
+  });
+
+  it("returns token set when found", async () => {
+    mockDb._limitFn.mockResolvedValue([
+      {
+        accessToken: "access-123",
+        refreshToken: "refresh-456",
+        expiresAt: new Date("2026-04-01T00:00:00Z"),
+        scopes: "read",
+      },
+    ]);
+
+    // @ts-expect-error mock DB
+    const result = await loadTokens(mockDb, "wahoo");
+
+    expect(result).toEqual({
+      accessToken: "access-123",
+      refreshToken: "refresh-456",
+      expiresAt: new Date("2026-04-01T00:00:00Z"),
+      scopes: "read",
+    });
+  });
+
+  it("returns null when no tokens exist", async () => {
+    mockDb._limitFn.mockResolvedValue([]);
+
+    // @ts-expect-error mock DB
+    const result = await loadTokens(mockDb, "nonexistent");
+
+    expect(result).toBeNull();
+  });
+
+  it("returns null when row is undefined", async () => {
+    mockDb._limitFn.mockResolvedValue([undefined]);
+
+    // @ts-expect-error mock DB
+    const result = await loadTokens(mockDb, "wahoo");
+
+    expect(result).toBeNull();
+  });
+
+  it("returns null for scopes when row.scopes is null", async () => {
+    mockDb._limitFn.mockResolvedValue([
+      {
+        accessToken: "access-123",
+        refreshToken: null,
+        expiresAt: new Date("2026-04-01T00:00:00Z"),
+        scopes: null,
+      },
+    ]);
+
+    // @ts-expect-error mock DB
+    const result = await loadTokens(mockDb, "wahoo");
+
+    expect(result).toEqual({
+      accessToken: "access-123",
+      refreshToken: null,
+      expiresAt: new Date("2026-04-01T00:00:00Z"),
+      scopes: null,
+    });
+  });
+});
