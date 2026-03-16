@@ -1,5 +1,7 @@
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { http, HttpResponse } from "msw";
+import { setupServer } from "msw/node";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
 import { activity, metricStream } from "../../db/schema.ts";
 import { ensureProvider, saveTokens } from "../../db/tokens.ts";
@@ -61,69 +63,73 @@ function fakeStreams(): StravaStreamSet {
   };
 }
 
-function createMockFetch(
+function stravaHandlers(
   activities: StravaActivity[],
   opts?: { streamsError?: boolean; rateLimited?: boolean },
-): typeof globalThis.fetch {
-  return async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
-    const urlStr = input.toString();
+) {
+  const streams = fakeStreams();
+  const streamArray = Object.entries(streams).map(([type, stream]) => ({
+    type,
+    ...stream,
+  }));
 
+  return [
     // Token refresh
-    if (urlStr.includes("/oauth/token")) {
-      return Response.json({
+    http.post("https://www.strava.com/oauth/token", () => {
+      return HttpResponse.json({
         access_token: "refreshed-token",
         refresh_token: "new-refresh",
         expires_in: 21600,
         token_type: "Bearer",
       });
-    }
+    }),
 
     // Streams endpoint
-    if (urlStr.match(/\/activities\/\d+\/streams/)) {
+    http.get("https://www.strava.com/api/v3/activities/:activityId/streams", () => {
       if (opts?.rateLimited) {
-        return new Response("Rate Limit Exceeded", {
+        return new HttpResponse("Rate Limit Exceeded", {
           status: 429,
           headers: { "X-RateLimit-Limit": "100,1000", "X-RateLimit-Usage": "100,950" },
         });
       }
       if (opts?.streamsError) {
-        return new Response("Internal Server Error", { status: 500 });
+        return new HttpResponse("Internal Server Error", { status: 500 });
       }
-      // Return streams as array format (Strava returns array of stream objects)
-      const streams = fakeStreams();
-      const streamArray = Object.entries(streams).map(([type, stream]) => ({
-        type,
-        ...stream,
-      }));
-      return Response.json(streamArray);
-    }
+      return HttpResponse.json(streamArray);
+    }),
 
     // Activities list
-    if (urlStr.includes("/athlete/activities")) {
+    http.get("https://www.strava.com/api/v3/athlete/activities", () => {
       if (opts?.rateLimited) {
-        return new Response("Rate Limit Exceeded", {
+        return new HttpResponse("Rate Limit Exceeded", {
           status: 429,
           headers: { "X-RateLimit-Limit": "100,1000", "X-RateLimit-Usage": "100,950" },
         });
       }
-      return Response.json(activities);
-    }
-
-    return new Response("Not found", { status: 404 });
-  };
+      return HttpResponse.json(activities);
+    }),
+  ];
 }
+
+const server = setupServer();
 
 describe("StravaProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
+    server.listen({ onUnhandledRequest: "error" });
     process.env.STRAVA_CLIENT_ID = "test-client-id";
     process.env.STRAVA_CLIENT_SECRET = "test-client-secret";
     ctx = await setupTestDatabase();
     await ensureProvider(ctx.db, "strava", "Strava", "https://www.strava.com/api/v3");
   }, 60_000);
 
+  afterEach(() => {
+    server.resetHandlers();
+  });
+
   afterAll(async () => {
+    server.close();
     if (ctx) await ctx.cleanup();
   });
 
@@ -145,7 +151,9 @@ describe("StravaProvider.sync() (integration)", () => {
       }),
     ];
 
-    const provider = new StravaProvider(createMockFetch(activities));
+    server.use(...stravaHandlers(activities));
+
+    const provider = new StravaProvider();
     const since = new Date("2026-02-01T00:00:00Z");
     const result = await provider.sync(ctx.db, since);
 
@@ -186,7 +194,9 @@ describe("StravaProvider.sync() (integration)", () => {
 
     const activities = [fakeActivity({ id: 1001, start_date: "2026-03-01T10:00:00Z" })];
 
-    const provider = new StravaProvider(createMockFetch(activities));
+    server.use(...stravaHandlers(activities));
+
+    const provider = new StravaProvider();
     await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
     await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
@@ -203,7 +213,9 @@ describe("StravaProvider.sync() (integration)", () => {
       scopes: "read,activity:read_all",
     });
 
-    const provider = new StravaProvider(createMockFetch([]));
+    server.use(...stravaHandlers([]));
+
+    const provider = new StravaProvider();
     await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     const { loadTokens } = await import("../../db/tokens.ts");
@@ -221,7 +233,9 @@ describe("StravaProvider.sync() (integration)", () => {
 
     const activities = [fakeActivity({ id: 3001, start_date: "2026-05-01T10:00:00Z" })];
 
-    const provider = new StravaProvider(createMockFetch(activities, { streamsError: true }));
+    server.use(...stravaHandlers(activities, { streamsError: true }));
+
+    const provider = new StravaProvider();
     const result = await provider.sync(ctx.db, new Date("2026-04-01T00:00:00Z"));
 
     // Activity should still be inserted
@@ -247,7 +261,9 @@ describe("StravaProvider.sync() (integration)", () => {
       fakeActivity({ id: 4002, start_date: "2026-06-02T10:00:00Z" }),
     ];
 
-    const provider = new StravaProvider(createMockFetch(activities, { rateLimited: true }));
+    server.use(...stravaHandlers(activities, { rateLimited: true }));
+
+    const provider = new StravaProvider();
     const result = await provider.sync(ctx.db, new Date("2026-05-01T00:00:00Z"));
 
     // Should report rate limit error
@@ -260,7 +276,7 @@ describe("StravaProvider.sync() (integration)", () => {
     const { oauthToken } = await import("../../db/schema.ts");
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "strava"));
 
-    const provider = new StravaProvider(createMockFetch([]));
+    const provider = new StravaProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);

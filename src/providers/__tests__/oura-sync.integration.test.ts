@@ -1,5 +1,7 @@
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { http, HttpResponse } from "msw";
+import { setupServer } from "msw/node";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
 import {
   activity,
@@ -189,7 +191,7 @@ function fakeReadiness(): OuraDailyReadiness {
   };
 }
 
-function fakeActivity(): OuraDailyActivity {
+function fakeOuraActivity(): OuraDailyActivity {
   return {
     id: "activity-001",
     day: "2026-03-01",
@@ -246,68 +248,87 @@ interface MockFetchOptions {
   activityDocs?: OuraDailyActivity[];
 }
 
-function createMockFetch(opts?: MockFetchOptions): typeof globalThis.fetch {
+function ouraHandlers(opts?: MockFetchOptions) {
   const o = opts ?? {};
 
-  return async (input: RequestInfo | URL): Promise<Response> => {
-    const urlStr = input.toString();
-
-    if (urlStr.includes("/oauth/token")) {
-      return Response.json({
+  return [
+    http.post("https://api.ouraring.com/oauth/token", () => {
+      return HttpResponse.json({
         access_token: "refreshed-oura-token",
         refresh_token: "new-oura-refresh",
         expires_in: 86400,
         token_type: "Bearer",
       });
-    }
+    }),
 
     // Order matters: more specific paths before less specific ones
-    if (urlStr.includes("/v2/usercollection/sleep_time"))
-      return Response.json({ data: o.sleepTimeDocs ?? [], next_token: null });
-    if (urlStr.includes("/v2/usercollection/sleep"))
-      return Response.json({ data: o.sleepDocs ?? [], next_token: null });
-    if (urlStr.includes("/v2/usercollection/daily_readiness"))
-      return Response.json({ data: o.readinessDocs ?? [], next_token: null });
-    if (urlStr.includes("/v2/usercollection/daily_activity"))
-      return Response.json({ data: o.activityDocs ?? [], next_token: null });
-    if (urlStr.includes("/v2/usercollection/daily_spo2"))
-      return Response.json({ data: o.spo2Docs ?? [], next_token: null });
-    if (urlStr.includes("/v2/usercollection/vO2_max"))
-      return Response.json({ data: o.vo2MaxDocs ?? [], next_token: null });
-    if (urlStr.includes("/v2/usercollection/workout"))
-      return Response.json({ data: o.workoutDocs ?? [], next_token: null });
-    if (urlStr.includes("/v2/usercollection/heartrate"))
-      return Response.json({ data: o.heartRateDocs ?? [] });
-    if (urlStr.includes("/v2/usercollection/session"))
-      return Response.json({ data: o.sessionDocs ?? [], next_token: null });
-    if (urlStr.includes("/v2/usercollection/daily_stress"))
-      return Response.json({ data: o.stressDocs ?? [], next_token: null });
-    if (urlStr.includes("/v2/usercollection/daily_resilience"))
-      return Response.json({ data: o.resilienceDocs ?? [], next_token: null });
-    if (urlStr.includes("/v2/usercollection/daily_cardiovascular_age"))
-      return Response.json({ data: o.cvAgeDocs ?? [], next_token: null });
-    if (urlStr.includes("/v2/usercollection/enhanced_tag"))
-      return Response.json({ data: o.enhancedTagDocs ?? [], next_token: null });
-    if (urlStr.includes("/v2/usercollection/tag"))
-      return Response.json({ data: o.tagDocs ?? [], next_token: null });
-    if (urlStr.includes("/v2/usercollection/rest_mode_period"))
-      return Response.json({ data: o.restModeDocs ?? [], next_token: null });
-
-    return new Response("Not found", { status: 404 });
-  };
+    http.get("https://api.ouraring.com/v2/usercollection/sleep_time", () => {
+      return HttpResponse.json({ data: o.sleepTimeDocs ?? [], next_token: null });
+    }),
+    http.get("https://api.ouraring.com/v2/usercollection/sleep", () => {
+      return HttpResponse.json({ data: o.sleepDocs ?? [], next_token: null });
+    }),
+    http.get("https://api.ouraring.com/v2/usercollection/daily_readiness", () => {
+      return HttpResponse.json({ data: o.readinessDocs ?? [], next_token: null });
+    }),
+    http.get("https://api.ouraring.com/v2/usercollection/daily_activity", () => {
+      return HttpResponse.json({ data: o.activityDocs ?? [], next_token: null });
+    }),
+    http.get("https://api.ouraring.com/v2/usercollection/daily_spo2", () => {
+      return HttpResponse.json({ data: o.spo2Docs ?? [], next_token: null });
+    }),
+    http.get("https://api.ouraring.com/v2/usercollection/vO2_max", () => {
+      return HttpResponse.json({ data: o.vo2MaxDocs ?? [], next_token: null });
+    }),
+    http.get("https://api.ouraring.com/v2/usercollection/workout", () => {
+      return HttpResponse.json({ data: o.workoutDocs ?? [], next_token: null });
+    }),
+    http.get("https://api.ouraring.com/v2/usercollection/heartrate", () => {
+      return HttpResponse.json({ data: o.heartRateDocs ?? [] });
+    }),
+    http.get("https://api.ouraring.com/v2/usercollection/session", () => {
+      return HttpResponse.json({ data: o.sessionDocs ?? [], next_token: null });
+    }),
+    http.get("https://api.ouraring.com/v2/usercollection/daily_stress", () => {
+      return HttpResponse.json({ data: o.stressDocs ?? [], next_token: null });
+    }),
+    http.get("https://api.ouraring.com/v2/usercollection/daily_resilience", () => {
+      return HttpResponse.json({ data: o.resilienceDocs ?? [], next_token: null });
+    }),
+    http.get("https://api.ouraring.com/v2/usercollection/daily_cardiovascular_age", () => {
+      return HttpResponse.json({ data: o.cvAgeDocs ?? [], next_token: null });
+    }),
+    http.get("https://api.ouraring.com/v2/usercollection/enhanced_tag", () => {
+      return HttpResponse.json({ data: o.enhancedTagDocs ?? [], next_token: null });
+    }),
+    http.get("https://api.ouraring.com/v2/usercollection/tag", () => {
+      return HttpResponse.json({ data: o.tagDocs ?? [], next_token: null });
+    }),
+    http.get("https://api.ouraring.com/v2/usercollection/rest_mode_period", () => {
+      return HttpResponse.json({ data: o.restModeDocs ?? [], next_token: null });
+    }),
+  ];
 }
+
+const server = setupServer();
 
 describe("OuraProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
+    server.listen({ onUnhandledRequest: "error" });
     process.env.OURA_CLIENT_ID = "test-oura-client";
     process.env.OURA_CLIENT_SECRET = "test-oura-secret";
     ctx = await setupTestDatabase();
     await ensureProvider(ctx.db, "oura", "Oura", "https://api.ouraring.com");
   }, 60_000);
 
+  afterEach(() => {
+    server.resetHandlers();
+  });
+
   afterAll(async () => {
+    server.close();
     if (ctx) await ctx.cleanup();
   });
 
@@ -320,8 +341,9 @@ describe("OuraProvider.sync() (integration)", () => {
     });
 
     const since = new Date("2026-03-01T00:00:00Z");
-    const provider = new OuraProvider(
-      createMockFetch({
+
+    server.use(
+      ...ouraHandlers({
         sleepDocs: [
           fakeSleepDoc({ id: "sleep-001" }),
           fakeSleepDoc({ id: "sleep-nap-001", type: "rest", total_sleep_duration: 1500 }),
@@ -341,6 +363,7 @@ describe("OuraProvider.sync() (integration)", () => {
       }),
     );
 
+    const provider = new OuraProvider();
     const result = await provider.sync(ctx.db, since);
 
     expect(result.provider).toBe("oura");
@@ -424,15 +447,17 @@ describe("OuraProvider.sync() (integration)", () => {
     });
 
     const since = new Date("2026-03-01T00:00:00Z");
-    const provider = new OuraProvider(
-      createMockFetch({
+
+    server.use(
+      ...ouraHandlers({
         readinessDocs: [fakeReadiness()],
-        activityDocs: [fakeActivity()],
+        activityDocs: [fakeOuraActivity()],
         stressDocs: [fakeStress()],
         resilienceDocs: [fakeResilience()],
       }),
     );
 
+    const provider = new OuraProvider();
     const result = await provider.sync(ctx.db, since);
 
     expect(result.errors).toHaveLength(0);
@@ -458,14 +483,16 @@ describe("OuraProvider.sync() (integration)", () => {
     });
 
     const since = new Date("2026-03-01T00:00:00Z");
-    const provider = new OuraProvider(
-      createMockFetch({
+
+    server.use(
+      ...ouraHandlers({
         sleepDocs: [fakeSleepDoc({ id: "sleep-001" })],
         workoutDocs: [fakeWorkout()],
         stressDocs: [fakeDailyStress()],
       }),
     );
 
+    const provider = new OuraProvider();
     await provider.sync(ctx.db, since);
     await provider.sync(ctx.db, since);
 
@@ -492,7 +519,9 @@ describe("OuraProvider.sync() (integration)", () => {
       scopes: "daily heartrate personal session spo2 workout tag",
     });
 
-    const provider = new OuraProvider(createMockFetch());
+    server.use(...ouraHandlers());
+
+    const provider = new OuraProvider();
     await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
 
     const { loadTokens } = await import("../../db/tokens.ts");
@@ -504,7 +533,7 @@ describe("OuraProvider.sync() (integration)", () => {
     const { oauthToken } = await import("../../db/schema.ts");
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "oura"));
 
-    const provider = new OuraProvider(createMockFetch());
+    const provider = new OuraProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);

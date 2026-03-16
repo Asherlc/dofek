@@ -1,5 +1,7 @@
 import { and, eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { http, HttpResponse } from "msw";
+import { setupServer } from "msw/node";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
 import { activity, dailyMetrics, metricStream, sleepSession } from "../../db/schema.ts";
 import { ensureProvider, saveTokens } from "../../db/tokens.ts";
@@ -109,68 +111,70 @@ function fakeHrValues(count: number, startTime: number): WhoopHrValue[] {
   }));
 }
 
-function createMockFetch(
+function whoopHandlers(
   cycles: FakeCycle[],
   opts?: { hrValues?: WhoopHrValue[]; authError?: boolean },
-): typeof globalThis.fetch {
-  return async (input: RequestInfo | URL): Promise<Response> => {
-    const urlStr = input.toString();
-
+) {
+  return [
     // Cognito v3 auth endpoint (token refresh via REFRESH_TOKEN_AUTH)
-    if (urlStr.includes("auth-service/v3/whoop")) {
+    http.post("https://api.prod.whoop.com/auth-service/v3/whoop/", () => {
       if (opts?.authError) {
-        return Response.json(
+        return HttpResponse.json(
           { __type: "NotAuthorizedException", message: "Invalid refresh token" },
           { status: 400 },
         );
       }
-      return Response.json({
+      return HttpResponse.json({
         AuthenticationResult: {
           AccessToken: "test-token",
           RefreshToken: "test-refresh",
         },
       });
-    }
+    }),
 
     // User bootstrap endpoint (for getting userId after auth)
-    if (urlStr.includes("users-service/v2/bootstrap")) {
-      return Response.json({ id: 10129 });
-    }
+    http.get("https://api.prod.whoop.com/users-service/v2/bootstrap/", () => {
+      return HttpResponse.json({ id: 10129 });
+    }),
 
-    // Cycles (BFF endpoint) — wrapped in { records: [...] } like the real API
-    if (urlStr.includes("/cycles")) {
-      return Response.json({ records: cycles });
-    }
+    // Cycles (BFF endpoint)
+    http.get("https://api.prod.whoop.com/core-details-bff/v0/cycles/details", () => {
+      return HttpResponse.json({ records: cycles });
+    }),
 
     // Weightlifting-service — return 404 unless overridden
-    if (urlStr.includes("weightlifting-service")) {
-      return new Response("Not found", { status: 404 });
-    }
+    http.get(
+      "https://api.prod.whoop.com/weightlifting-service/v2/weightlifting-workout/:activityId",
+      () => {
+        return new HttpResponse("Not found", { status: 404 });
+      },
+    ),
 
     // Sleep events
-    if (urlStr.includes("sleep-events") || urlStr.includes("sleep-service")) {
-      return Response.json(fakeSleepResponse);
-    }
+    http.get("https://api.prod.whoop.com/sleep-service/v1/sleep-events", () => {
+      return HttpResponse.json(fakeSleepResponse);
+    }),
 
     // Heart rate (metrics-service)
-    if (urlStr.includes("metrics-service") || urlStr.includes("metrics/user")) {
+    http.get("https://api.prod.whoop.com/metrics-service/v1/metrics/user/:userId", () => {
       const values = opts?.hrValues ?? fakeHrValues(100, Date.now() - 600000);
-      return Response.json({ values });
-    }
+      return HttpResponse.json({ values });
+    }),
 
     // Journal / behavior-impact-service
-    if (urlStr.includes("behavior-impact-service")) {
-      return Response.json([]);
-    }
-
-    return new Response("Not found", { status: 404 });
-  };
+    http.get("https://api.prod.whoop.com/behavior-impact-service/v1/impact", () => {
+      return HttpResponse.json([]);
+    }),
+  ];
 }
+
+const server = setupServer();
 
 describe("WhoopProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
+    server.listen({ onUnhandledRequest: "error" });
     ctx = await setupTestDatabase();
     await ensureProvider(ctx.db, "whoop", "WHOOP");
     // Store a fake refresh token so the provider can authenticate
@@ -182,13 +186,19 @@ describe("WhoopProvider.sync() (integration)", () => {
     });
   }, 60_000);
 
+  afterEach(() => {
+    server.resetHandlers();
+  });
+
   afterAll(async () => {
+    server.close();
     if (ctx) await ctx.cleanup();
   });
 
   it("syncs recovery into daily_metrics with spo2 and skin temp", async () => {
     const cycles = [fakeCycle()];
-    const provider = new WhoopProvider(createMockFetch(cycles));
+    server.use(...whoopHandlers(cycles));
+    const provider = new WhoopProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(0);
@@ -209,7 +219,8 @@ describe("WhoopProvider.sync() (integration)", () => {
 
   it("syncs sleep sessions", async () => {
     const cycles = [fakeCycle()];
-    const provider = new WhoopProvider(createMockFetch(cycles));
+    server.use(...whoopHandlers(cycles));
+    const provider = new WhoopProvider();
     await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     const rows = await ctx.db
@@ -228,7 +239,8 @@ describe("WhoopProvider.sync() (integration)", () => {
 
   it("syncs workouts from cycles into cardio_activity", async () => {
     const cycles = [fakeCycle()];
-    const provider = new WhoopProvider(createMockFetch(cycles));
+    server.use(...whoopHandlers(cycles));
+    const provider = new WhoopProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(0);
@@ -280,7 +292,8 @@ describe("WhoopProvider.sync() (integration)", () => {
       ],
     });
 
-    const provider = new WhoopProvider(createMockFetch([twoWorkoutCycle]));
+    server.use(...whoopHandlers([twoWorkoutCycle]));
+    const provider = new WhoopProvider();
     await provider.sync(ctx.db, new Date("2026-03-04T00:00:00Z"));
 
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "whoop"));
@@ -296,7 +309,8 @@ describe("WhoopProvider.sync() (integration)", () => {
 
   it("syncs HR stream into metric_stream", async () => {
     const hrValues = fakeHrValues(50, new Date("2026-03-01T10:00:00Z").getTime());
-    const provider = new WhoopProvider(createMockFetch([], { hrValues }));
+    server.use(...whoopHandlers([], { hrValues }));
+    const provider = new WhoopProvider();
     const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(0);
@@ -331,7 +345,8 @@ describe("WhoopProvider.sync() (integration)", () => {
       }),
     ];
 
-    const provider = new WhoopProvider(createMockFetch(cycles));
+    server.use(...whoopHandlers(cycles));
+    const provider = new WhoopProvider();
     await provider.sync(ctx.db, new Date("2026-03-07T00:00:00Z"));
     await provider.sync(ctx.db, new Date("2026-03-07T00:00:00Z"));
 
@@ -354,39 +369,15 @@ describe("WhoopProvider.sync() (integration)", () => {
       scopes: "userId:10129",
     });
 
-    // Mock fetch where bootstrap returns NO user ID — should still work
-    const mockFetch: typeof globalThis.fetch = async (
-      input: RequestInfo | URL,
-    ): Promise<Response> => {
-      const urlStr = input.toString();
-      if (urlStr.includes("auth-service/v3/whoop")) {
-        return Response.json({
-          AuthenticationResult: { AccessToken: "test-token", RefreshToken: "test-refresh" },
-        });
-      }
-      if (urlStr.includes("users-service/v2/bootstrap")) {
-        // Return response with no user ID fields
-        return Response.json({ profile: { name: "Test" } });
-      }
-      if (urlStr.includes("/cycles")) {
-        return Response.json({ records: [fakeCycle()] });
-      }
-      if (urlStr.includes("weightlifting-service")) {
-        return new Response("Not found", { status: 404 });
-      }
-      if (urlStr.includes("sleep-events") || urlStr.includes("sleep-service")) {
-        return Response.json(fakeSleepResponse);
-      }
-      if (urlStr.includes("metrics-service") || urlStr.includes("metrics/user")) {
-        return Response.json({ values: [] });
-      }
-      if (urlStr.includes("behavior-impact-service")) {
-        return Response.json([]);
-      }
-      return new Response("Not found", { status: 404 });
-    };
+    // Override bootstrap to return NO user ID
+    server.use(
+      ...whoopHandlers([fakeCycle()]),
+      http.get("https://api.prod.whoop.com/users-service/v2/bootstrap/", () => {
+        return HttpResponse.json({ profile: { name: "Test" } });
+      }),
+    );
 
-    const provider = new WhoopProvider(mockFetch);
+    const provider = new WhoopProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     // Should succeed using stored userId, not fail with "user 0" error
@@ -402,7 +393,8 @@ describe("WhoopProvider.sync() (integration)", () => {
       scopes: "userId:10129",
     });
 
-    const provider = new WhoopProvider(createMockFetch([fakeCycle()]));
+    server.use(...whoopHandlers([fakeCycle()]));
+    const provider = new WhoopProvider();
     await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     // After sync, the scopes should still contain the userId
@@ -416,7 +408,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     const { oauthToken } = await import("../../db/schema.ts");
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "whoop"));
 
-    const provider = new WhoopProvider(createMockFetch([]));
+    const provider = new WhoopProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);
@@ -440,28 +432,27 @@ describe("WhoopProvider.sync() (integration)", () => {
       scopes: "userId:10129",
     });
 
-    const journalMockFetch = async (input: RequestInfo | URL): Promise<Response> => {
-      const urlStr = input.toString();
-
-      if (urlStr.includes("auth-service/v3/whoop")) {
-        return Response.json({
+    // Override to return journal data and empty cycles
+    server.use(
+      http.post("https://api.prod.whoop.com/auth-service/v3/whoop/", () => {
+        return HttpResponse.json({
           AuthenticationResult: {
             AccessToken: "test-token",
             RefreshToken: "test-refresh",
           },
         });
-      }
-      if (urlStr.includes("users-service/v2/bootstrap")) {
-        return Response.json({ id: 10129 });
-      }
-      if (urlStr.includes("/cycles")) {
-        return Response.json([]);
-      }
-      if (urlStr.includes("metrics-service") || urlStr.includes("metrics/user")) {
-        return Response.json({ values: [] });
-      }
-      if (urlStr.includes("behavior-impact-service")) {
-        return Response.json([
+      }),
+      http.get("https://api.prod.whoop.com/users-service/v2/bootstrap/", () => {
+        return HttpResponse.json({ id: 10129 });
+      }),
+      http.get("https://api.prod.whoop.com/core-details-bff/v0/cycles/details", () => {
+        return HttpResponse.json([]);
+      }),
+      http.get("https://api.prod.whoop.com/metrics-service/v1/metrics/user/:userId", () => {
+        return HttpResponse.json({ values: [] });
+      }),
+      http.get("https://api.prod.whoop.com/behavior-impact-service/v1/impact", () => {
+        return HttpResponse.json([
           {
             date: "2026-03-01T00:00:00Z",
             answers: [
@@ -471,11 +462,10 @@ describe("WhoopProvider.sync() (integration)", () => {
             ],
           },
         ]);
-      }
-      return new Response("Not found", { status: 404 });
-    };
+      }),
+    );
 
-    const provider = new WhoopProvider(journalMockFetch);
+    const provider = new WhoopProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-28T00:00:00Z"));
 
     expect(result.errors).toHaveLength(0);
@@ -494,7 +484,8 @@ describe("WhoopProvider.sync() (integration)", () => {
   });
 
   it("handles auth failure gracefully", async () => {
-    const provider = new WhoopProvider(createMockFetch([], { authError: true }));
+    server.use(...whoopHandlers([], { authError: true }));
+    const provider = new WhoopProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors.length).toBeGreaterThan(0);
@@ -515,7 +506,8 @@ describe("WhoopProvider.sync() (integration)", () => {
       ],
     });
 
-    const provider = new WhoopProvider(createMockFetch([cycle]));
+    server.use(...whoopHandlers([cycle]));
+    const provider = new WhoopProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     // Should have synced recovery + sleep even if workout failed
