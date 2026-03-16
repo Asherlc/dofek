@@ -1,14 +1,6 @@
 import ReactECharts from "echarts-for-react";
+import { z } from "zod";
 import { trpc } from "../lib/trpc.ts";
-
-/**
- * Narrow loosely-typed tRPC raw-SQL results to a known shape.
- * JSON round-trip bridges the type gap (data is already JSON-serialized over tRPC).
- */
-function typedData<T>(data: unknown): T {
-  const parsed: T = JSON.parse(JSON.stringify(data));
-  return parsed;
-}
 
 // HR zone colors (blue->green->yellow->orange->red)
 const ZONE_COLORS = {
@@ -42,21 +34,23 @@ function getActivityColor(type: string): string {
   return ACTIVITY_COLORS[type.toLowerCase()] ?? "#71717a";
 }
 
-interface WeeklyVolumeRow {
-  week: string;
-  activity_type: string;
-  count: number;
-  hours: number;
-}
+const weeklyVolumeRowSchema = z.object({
+  week: z.string(),
+  activity_type: z.string(),
+  count: z.number(),
+  hours: z.number(),
+});
+type WeeklyVolumeRow = z.infer<typeof weeklyVolumeRowSchema>;
 
-interface HrZoneWeek {
-  week: string;
-  zone1: number;
-  zone2: number;
-  zone3: number;
-  zone4: number;
-  zone5: number;
-}
+const hrZoneWeekSchema = z.object({
+  week: z.string(),
+  zone1: z.number(),
+  zone2: z.number(),
+  zone3: z.number(),
+  zone4: z.number(),
+  zone5: z.number(),
+});
+type HrZoneWeek = z.infer<typeof hrZoneWeekSchema>;
 
 interface TrainingInsightsPanelProps {
   days: number;
@@ -68,10 +62,11 @@ export function TrainingInsightsPanel({ days }: TrainingInsightsPanelProps) {
 
   // tRPC infers raw SQL result types as Record<string, unknown>;
   // narrow to known row shapes via typed identity function
-  const volumeRows = typedData<WeeklyVolumeRow[]>(volume.data ?? []);
-  const zoneData = typedData<{ maxHr: number | null; weeks: HrZoneWeek[] } | undefined>(
-    hrZones.data,
-  );
+  const volumeRows = z.array(weeklyVolumeRowSchema).parse(volume.data ?? []);
+  const zoneData = z
+    .object({ maxHr: z.number().nullable(), weeks: z.array(hrZoneWeekSchema) })
+    .optional()
+    .parse(hrZones.data);
   const zoneWeeks = zoneData?.weeks ?? [];
 
   const loading = volume.isLoading || hrZones.isLoading;

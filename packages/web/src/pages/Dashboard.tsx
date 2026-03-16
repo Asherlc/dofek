@@ -1,4 +1,5 @@
 import { type ReactNode, useMemo, useState } from "react";
+import { z } from "zod";
 import { ActivityList } from "../components/ActivityList.tsx";
 import { AnomalyAlertBanner } from "../components/AnomalyAlertBanner.tsx";
 import { AppHeader } from "../components/AppHeader.tsx";
@@ -30,64 +31,65 @@ type MetricEntry = {
   lowerBetter?: boolean;
 };
 
-interface TrendRow {
-  avg_resting_hr: number | null;
-  avg_hrv: number | null;
-  avg_spo2: number | null;
-  avg_steps: number | null;
-  avg_active_energy: number | null;
-  avg_skin_temp: number | null;
-  stddev_resting_hr: number | null;
-  stddev_hrv: number | null;
-  stddev_spo2: number | null;
-  stddev_skin_temp: number | null;
-  latest_resting_hr: number | null;
-  latest_hrv: number | null;
-  latest_spo2: number | null;
-  latest_steps: number | null;
-  latest_active_energy: number | null;
-  latest_skin_temp: number | null;
-  latest_date: string | null;
-}
+const trendRowSchema = z.object({
+  avg_resting_hr: z.number().nullable(),
+  avg_hrv: z.number().nullable(),
+  avg_spo2: z.number().nullable(),
+  avg_steps: z.number().nullable(),
+  avg_active_energy: z.number().nullable(),
+  avg_skin_temp: z.number().nullable(),
+  stddev_resting_hr: z.number().nullable(),
+  stddev_hrv: z.number().nullable(),
+  stddev_spo2: z.number().nullable(),
+  stddev_skin_temp: z.number().nullable(),
+  latest_resting_hr: z.number().nullable(),
+  latest_hrv: z.number().nullable(),
+  latest_spo2: z.number().nullable(),
+  latest_steps: z.number().nullable(),
+  latest_active_energy: z.number().nullable(),
+  latest_skin_temp: z.number().nullable(),
+  latest_date: z.string().nullable(),
+});
+type TrendRow = z.infer<typeof trendRowSchema>;
 
-interface DailyMetricRow {
-  date: string;
-  resting_hr: number | null;
-  hrv: number | null;
-  spo2_avg: number | null;
-  skin_temp_c: number | null;
-  steps: number | null;
-  active_energy_kcal: number | null;
-}
+const dailyMetricRowSchema = z.object({
+  date: z.string(),
+  resting_hr: z.number().nullable(),
+  hrv: z.number().nullable(),
+  spo2_avg: z.number().nullable(),
+  skin_temp_c: z.number().nullable(),
+  steps: z.number().nullable(),
+  active_energy_kcal: z.number().nullable(),
+});
 
-interface SleepRow {
-  started_at: string;
-  duration_minutes: number | null;
-  deep_minutes: number | null;
-  rem_minutes: number | null;
-  light_minutes: number | null;
-  awake_minutes: number | null;
-  efficiency_pct: number | null;
-}
+const sleepRowSchema = z.object({
+  started_at: z.string(),
+  duration_minutes: z.number().nullable(),
+  deep_minutes: z.number().nullable(),
+  rem_minutes: z.number().nullable(),
+  light_minutes: z.number().nullable(),
+  awake_minutes: z.number().nullable(),
+  efficiency_pct: z.number().nullable(),
+});
 
-interface NutritionDailyRow {
-  date: string;
-  calories: number | null;
-  protein_g: number | null;
-  carbs_g: number | null;
-  fat_g: number | null;
-  fiber_g: number | null;
-}
+const nutritionDailyRowSchema = z.object({
+  date: z.string(),
+  calories: z.number().nullable(),
+  protein_g: z.number().nullable(),
+  carbs_g: z.number().nullable(),
+  fat_g: z.number().nullable(),
+  fiber_g: z.number().nullable(),
+});
 
-interface ActivityRow {
-  id: string;
-  started_at: string;
-  ended_at: string | null;
-  activity_type: string;
-  name: string | null;
-  provider_id: string;
-  source_providers: string[] | null;
-}
+const activityRowSchema = z.object({
+  id: z.string(),
+  started_at: z.string(),
+  ended_at: z.string().nullable(),
+  activity_type: z.string(),
+  name: z.string().nullable(),
+  provider_id: z.string(),
+  source_providers: z.array(z.string()).nullable(),
+});
 
 /** Sections that render side-by-side in a 2-column grid. The key is the "primary" (left) section. */
 const GRID_PAIRS: Record<string, string> = {
@@ -122,10 +124,8 @@ export function Dashboard() {
   const anomalyCheck = trpc.anomalyDetection.check.useQuery({});
   const smoothedWeight = trpc.bodyAnalytics.smoothedWeight.useQuery({ days: Math.max(days, 90) });
   const bodyRecomp = trpc.bodyAnalytics.recomposition.useQuery({ days: Math.max(days, 180) });
-  // trends.data is Record<string, unknown> from raw SQL; narrow to TrendRow
-  // JSON round-trip bridges the type gap (data is already JSON-serialized over tRPC)
   const trendData: TrendRow | undefined = trends.data
-    ? JSON.parse(JSON.stringify(trends.data))
+    ? trendRowSchema.parse(trends.data)
     : undefined;
 
   const topInsights = useMemo(() => {
@@ -191,7 +191,7 @@ export function Dashboard() {
     [trendData, unitSystem],
   );
 
-  const metrics = assertRows<DailyMetricRow>(dailyMetrics.data);
+  const metrics = assertRows(dailyMetrics.data, dailyMetricRowSchema);
 
   const hasSpO2 = metrics.some((d) => d.spo2_avg != null);
   const hasSkinTemp = metrics.some((d) => d.skin_temp_c != null);
@@ -322,7 +322,10 @@ export function Dashboard() {
       subtitle: `Stage breakdown (${days} days)`,
       content: (
         <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
-          <SleepChart data={assertRows<SleepRow>(sleepData.data)} loading={sleepData.isLoading} />
+          <SleepChart
+            data={assertRows(sleepData.data, sleepRowSchema)}
+            loading={sleepData.isLoading}
+          />
         </div>
       ),
     },
@@ -332,7 +335,7 @@ export function Dashboard() {
       content: (
         <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
           <NutritionChart
-            data={assertRows<NutritionDailyRow>(nutritionData.data)}
+            data={assertRows(nutritionData.data, nutritionDailyRowSchema)}
             loading={nutritionData.isLoading}
           />
         </div>
@@ -363,7 +366,7 @@ export function Dashboard() {
       content: (
         <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
           <ActivityList
-            activities={assertRows<ActivityRow>(activities.data)}
+            activities={assertRows(activities.data, activityRowSchema)}
             loading={activities.isLoading}
           />
         </div>

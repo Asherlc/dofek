@@ -1,52 +1,45 @@
 import { useState } from "react";
+import { z } from "zod";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitSystem } from "../lib/unitContext.ts";
 import { convertWeight, weightLabel } from "../lib/units.ts";
 
-/**
- * Narrow loosely-typed tRPC raw-SQL results to a known shape.
- * Raw SQL results via tRPC are typed as `unknown` at compile time but have a
- * known runtime shape determined by the SQL query. JSON round-trip bridges
- * the type gap without `as` (data is already JSON-serialized over tRPC).
- */
-function typedData<T>(data: unknown): T {
-  const parsed: T = JSON.parse(JSON.stringify(data));
-  return parsed;
-}
+const lifeEventSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  started_at: z.string(),
+  ended_at: z.string().nullable(),
+  category: z.string().nullable(),
+  ongoing: z.boolean(),
+  notes: z.string().nullable(),
+});
+type LifeEvent = z.infer<typeof lifeEventSchema>;
 
-interface LifeEvent {
-  id: string;
-  label: string;
-  started_at: string;
-  ended_at: string | null;
-  category: string | null;
-  ongoing: boolean;
-  notes: string | null;
-}
+const analysisMetricSchema = z.object({
+  period: z.string(),
+  days: z.number().optional(),
+  nights: z.number().optional(),
+  measurements: z.number().optional(),
+  avg_resting_hr: z.number().optional(),
+  avg_hrv: z.number().optional(),
+  avg_steps: z.number().optional(),
+  avg_active_energy: z.number().optional(),
+  avg_sleep_min: z.number().optional(),
+  avg_deep_min: z.number().optional(),
+  avg_rem_min: z.number().optional(),
+  avg_efficiency: z.number().optional(),
+  avg_weight: z.number().optional(),
+  avg_body_fat: z.number().optional(),
+});
+type AnalysisMetric = z.infer<typeof analysisMetricSchema>;
 
-interface AnalysisMetric {
-  period: string;
-  days?: number;
-  nights?: number;
-  measurements?: number;
-  avg_resting_hr?: number;
-  avg_hrv?: number;
-  avg_steps?: number;
-  avg_active_energy?: number;
-  avg_sleep_min?: number;
-  avg_deep_min?: number;
-  avg_rem_min?: number;
-  avg_efficiency?: number;
-  avg_weight?: number;
-  avg_body_fat?: number;
-}
-
-interface EventAnalysisData {
-  event: LifeEvent;
-  metrics: AnalysisMetric[];
-  sleep: AnalysisMetric[];
-  bodyComp: AnalysisMetric[];
-}
+const eventAnalysisDataSchema = z.object({
+  event: lifeEventSchema,
+  metrics: z.array(analysisMetricSchema),
+  sleep: z.array(analysisMetricSchema),
+  bodyComp: z.array(analysisMetricSchema),
+});
+type EventAnalysisData = z.infer<typeof eventAnalysisDataSchema>;
 
 const CATEGORIES = ["diet", "supplement", "injury", "lifestyle", "training", "other"] as const;
 
@@ -74,7 +67,7 @@ export function LifeEventsPanel() {
     { enabled: !!selectedEvent },
   );
 
-  const eventList = typedData<LifeEvent[]>(events.data ?? []);
+  const eventList = z.array(lifeEventSchema).parse(events.data ?? []);
 
   return (
     <div className="space-y-4">
@@ -129,7 +122,7 @@ export function LifeEventsPanel() {
         return (
           <EventAnalysis
             event={event}
-            analysis={typedData<EventAnalysisData | null>(analysis.data)}
+            analysis={eventAnalysisDataSchema.nullable().parse(analysis.data ?? null)}
             loading={analysis.isLoading}
             windowDays={windowDays}
             onWindowChange={setWindowDays}
@@ -307,7 +300,7 @@ function EventAnalysis({
       if (k === "period") continue;
       out[k] = v != null ? Number(v) : null;
     }
-    return typedData<AnalysisMetric>(out);
+    return analysisMetricSchema.parse(out);
   };
 
   const before = {
