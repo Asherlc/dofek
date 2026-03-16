@@ -640,6 +640,7 @@ describe("parseFitbitActivity — edge cases", () => {
 
 describe("FitbitClient — error handling", () => {
   beforeAll(() => {
+    server.listen({ onUnhandledRequest: "error" });
   });
 
   afterEach(() => {
