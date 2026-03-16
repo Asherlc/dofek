@@ -192,8 +192,8 @@ describe("processImportJob", () => {
         String(call[0]).includes("progress"),
       );
       expect(progressLogs).toHaveLength(2);
-      expect(progressLogs[0][0]).toContain("10%");
-      expect(progressLogs[1][0]).toContain("20%");
+      expect(String(progressLogs.at(0))).toContain("10%");
+      expect(String(progressLogs.at(1))).toContain("20%");
       consoleSpy.mockRestore();
     });
 
