@@ -1,5 +1,7 @@
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { http, HttpResponse } from "msw";
+import { setupServer } from "msw/node";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
 import { activity, oauthToken } from "../../db/schema.ts";
 import { ensureProvider, saveTokens } from "../../db/tokens.ts";
@@ -50,44 +52,48 @@ function fakeWorkout(overrides: Partial<FakeVeloHeroWorkout> = {}): FakeVeloHero
   };
 }
 
-function createMockFetch(
+function veloheroHandlers(
   workouts: FakeVeloHeroWorkout[],
   opts?: { signInError?: boolean },
-): typeof globalThis.fetch {
-  return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const urlStr = input.toString();
-
+) {
+  return [
     // Sign-in (SSO)
-    if (urlStr.includes("/sso") && init?.method === "POST") {
+    http.post("https://app.velohero.com/sso", () => {
       if (opts?.signInError) {
-        return new Response("Unauthorized", { status: 401 });
+        return new HttpResponse("Unauthorized", { status: 401 });
       }
-      return Response.json({
+      return HttpResponse.json({
         session: "new-session-token",
         "user-id": "user-456",
       });
-    }
+    }),
 
     // Workouts export
-    if (urlStr.includes("/export/workouts/json")) {
-      return Response.json({
+    http.get("https://app.velohero.com/export/workouts/json", () => {
+      return HttpResponse.json({
         workouts,
       });
-    }
-
-    return new Response("Not found", { status: 404 });
-  };
+    }),
+  ];
 }
+
+const server = setupServer();
 
 describe("VeloHeroProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
+    server.listen({ onUnhandledRequest: "error" });
     ctx = await setupTestDatabase();
     await ensureProvider(ctx.db, "velohero", "VeloHero", "https://app.velohero.com");
   }, 60_000);
 
+  afterEach(() => {
+    server.resetHandlers();
+  });
+
   afterAll(async () => {
+    server.close();
     if (ctx) await ctx.cleanup();
   });
 
@@ -112,7 +118,9 @@ describe("VeloHeroProvider.sync() (integration)", () => {
       }),
     ];
 
-    const provider = new VeloHeroProvider(createMockFetch(workouts));
+    server.use(...veloheroHandlers(workouts));
+
+    const provider = new VeloHeroProvider();
     const since = new Date("2026-02-01T00:00:00Z");
     const result = await provider.sync(ctx.db, since);
 
@@ -143,7 +151,9 @@ describe("VeloHeroProvider.sync() (integration)", () => {
 
     const workouts = [fakeWorkout({ id: "3001", title: "Updated ride" })];
 
-    const provider = new VeloHeroProvider(createMockFetch(workouts));
+    server.use(...veloheroHandlers(workouts));
+
+    const provider = new VeloHeroProvider();
     await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     // Sync again
@@ -170,7 +180,9 @@ describe("VeloHeroProvider.sync() (integration)", () => {
     process.env.VELOHERO_PASSWORD = "test-password";
 
     const workouts = [fakeWorkout({ id: "4001", title: "Post-reauth workout" })];
-    const provider = new VeloHeroProvider(createMockFetch(workouts));
+    server.use(...veloheroHandlers(workouts));
+
+    const provider = new VeloHeroProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(0);
@@ -198,7 +210,7 @@ describe("VeloHeroProvider.sync() (integration)", () => {
     delete process.env.VELOHERO_USERNAME;
     delete process.env.VELOHERO_PASSWORD;
 
-    const provider = new VeloHeroProvider(createMockFetch([]));
+    const provider = new VeloHeroProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);
@@ -210,7 +222,7 @@ describe("VeloHeroProvider.sync() (integration)", () => {
   it("returns error when no tokens exist", async () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "velohero"));
 
-    const provider = new VeloHeroProvider(createMockFetch([]));
+    const provider = new VeloHeroProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);
@@ -228,7 +240,9 @@ describe("VeloHeroProvider.sync() (integration)", () => {
       scopes: "userId:user-456",
     });
 
-    const provider = new VeloHeroProvider(createMockFetch([]));
+    server.use(...veloheroHandlers([]));
+
+    const provider = new VeloHeroProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(0);
@@ -254,7 +268,9 @@ describe("VeloHeroProvider.sync() (integration)", () => {
       }),
     ];
 
-    const provider = new VeloHeroProvider(createMockFetch(workouts));
+    server.use(...veloheroHandlers(workouts));
+
+    const provider = new VeloHeroProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(0);
