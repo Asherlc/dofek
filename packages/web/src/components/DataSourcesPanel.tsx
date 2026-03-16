@@ -99,7 +99,7 @@ export function DataSourcesPanel() {
     [stats.data],
   );
 
-  const syncRows = (logs.data ?? []) as Array<{
+  const syncRows: Array<{
     id: string;
     providerId: string;
     dataType: string;
@@ -108,7 +108,7 @@ export function DataSourcesPanel() {
     errorMessage: string | null;
     durationMs: number | null;
     syncedAt: string;
-  }>;
+  }> = logs.data ?? [];
 
   const logsByProvider = useMemo(() => {
     const map = new Map<string, typeof syncRows>();

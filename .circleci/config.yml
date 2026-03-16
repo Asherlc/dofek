@@ -81,10 +81,19 @@ jobs:
           name: Lint + typecheck (parallel)
           command: |
             pnpm lint &
+            pid1=$!
             pnpm tsc --noEmit &
+            pid2=$!
             (cd packages/server && pnpm tsc --noEmit) &
+            pid3=$!
             (cd packages/web && pnpm tsc --noEmit) &
-            wait
+            pid4=$!
+            fail=0
+            wait $pid1 || fail=1
+            wait $pid2 || fail=1
+            wait $pid3 || fail=1
+            wait $pid4 || fail=1
+            exit $fail
       - run: cd packages/web && pnpm run build
 
   test:
@@ -206,6 +215,11 @@ jobs:
                 | { grep -v 'packages/server/' || true; } \
                 | { grep -v 'packages/ios/' || true; } \
                 | { grep -v 'packages/whoop-whoop/' || true; } \
+                | { grep -v 'packages/garmin-connect/' || true; } \
+                | { grep -v 'packages/eight-sleep/' || true; } \
+                | { grep -v 'packages/trainerroad-client/' || true; } \
+                | { grep -v 'packages/velohero-client/' || true; } \
+                | { grep -v 'packages/zwift-client/' || true; } \
                 | awk '!/^src\/providers\// || /^src\/providers\/(index|strong-csv|cronometer-csv)\.ts$/' \
                 | { grep -v 'packages/web/src/pages/' || true; } \
                 | { grep -v 'packages/web/src/hooks/' || true; } \

@@ -209,7 +209,7 @@ export class CorosProvider implements Provider {
       const text = await response.text();
       throw new Error(`COROS API error (${response.status}): ${text}`);
     }
-    return response.json() as Promise<T>;
+    return response.json();
   }
 
   async sync(db: Database, since: Date): Promise<SyncResult> {

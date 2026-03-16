@@ -190,7 +190,7 @@ export class CyclingAnalyticsProvider implements Provider {
             throw new Error(`Cycling Analytics API error (${response.status}): ${text}`);
           }
 
-          const data = (await response.json()) as CyclingAnalyticsRidesResponse;
+          const data: CyclingAnalyticsRidesResponse = await response.json();
           const rides = data.rides ?? [];
 
           if (rides.length === 0) {

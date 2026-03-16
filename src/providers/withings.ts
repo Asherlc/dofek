@@ -153,19 +153,19 @@ async function withingsTokenExchange(
     throw new Error(`Withings token request failed (${response.status}): ${text}`);
   }
 
-  const json = (await response.json()) as { status: number; body: Record<string, unknown> };
+  const json: { status: number; body: Record<string, unknown> } = await response.json();
   if (json.status !== 0) {
     throw new Error(`Withings token error (status ${json.status})`);
   }
 
   const data = json.body;
-  const expiresIn = (data.expires_in as number) ?? 10800;
+  const expiresIn = typeof data.expires_in === "number" ? data.expires_in : 10800;
 
   return {
-    accessToken: data.access_token as string,
-    refreshToken: data.refresh_token as string,
+    accessToken: String(data.access_token),
+    refreshToken: String(data.refresh_token),
     expiresAt: new Date(Date.now() + expiresIn * 1000),
-    scopes: (data.scope as string) ?? "",
+    scopes: typeof data.scope === "string" ? data.scope : "",
   };
 }
 
@@ -230,7 +230,7 @@ export class WithingsClient {
       throw new Error(`Withings API error (${response.status}): ${text}`);
     }
 
-    const json = (await response.json()) as { status: number; body: T };
+    const json: { status: number; body: T } = await response.json();
     if (json.status !== 0) {
       throw new Error(`Withings API error (status ${json.status})`);
     }

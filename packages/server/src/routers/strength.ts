@@ -81,7 +81,7 @@ export const strengthRouter = router({
         totalVolumeKg: r.total_volume_kg,
         setCount: r.set_count,
         workoutCount: r.workout_count,
-      })) as VolumeOverTimeRow[];
+      }));
     }),
 
   /**
@@ -156,7 +156,7 @@ export const strengthRouter = router({
       return Array.from(exerciseMap.entries()).map(([exerciseName, history]) => ({
         exerciseName,
         history,
-      })) as EstimatedOneRepMaxRow[];
+      }));
     }),
 
   /**
@@ -197,7 +197,7 @@ export const strengthRouter = router({
       return Array.from(groupMap.entries()).map(([muscleGroup, weeklyData]) => ({
         muscleGroup,
         weeklyData,
-      })) as MuscleGroupVolumeRow[];
+      }));
     }),
 
   /**
@@ -245,7 +245,7 @@ export const strengthRouter = router({
             slopeKgPerWeek: Math.round(slope * 100) / 100,
             isProgressing: slope > 0,
           };
-        }) as ProgressiveOverloadRow[];
+        });
     }),
 
   /**
@@ -288,7 +288,7 @@ export const strengthRouter = router({
         totalSets: r.total_sets,
         totalVolumeKg: r.total_volume_kg,
         durationMinutes: r.duration_minutes,
-      })) as WorkoutSummaryRow[];
+      }));
     }),
 });
 

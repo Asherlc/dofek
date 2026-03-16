@@ -102,16 +102,16 @@ describe("parseFoodEntries", () => {
   });
 
   it("returns empty array when food_entries is missing", () => {
-    const response = {} as FatSecretFoodEntriesResponse;
+    const response: FatSecretFoodEntriesResponse = Object.create(null);
     expect(parseFoodEntries(response)).toHaveLength(0);
   });
 
   it("returns empty array when food_entry is undefined", () => {
     // Intentionally omit food_entry to test defensive parsing.
     // The inner object is typed as Partial to simulate a malformed API response.
-    const response = {
-      food_entries: {} as Partial<FatSecretFoodEntriesResponse["food_entries"]>,
-    } as FatSecretFoodEntriesResponse;
+    const response: FatSecretFoodEntriesResponse = {
+      food_entries: Object.create(null),
+    };
     expect(parseFoodEntries(response)).toHaveLength(0);
   });
 
@@ -352,14 +352,14 @@ describe("FatSecretProvider.authSetup()", () => {
     process.env.FATSECRET_CONSUMER_KEY = "key";
     process.env.FATSECRET_CONSUMER_SECRET = "secret";
 
-    const mockFetch = (async (
+    const mockFetch: typeof globalThis.fetch = async (
       _input: RequestInfo | URL,
       _init?: RequestInit,
     ): Promise<Response> => {
       return new Response("oauth_token=req-token&oauth_token_secret=req-secret", {
         status: 200,
       });
-    }) as typeof globalThis.fetch;
+    };
 
     const provider = new FatSecretProvider(mockFetch);
     const setup = provider.authSetup();
@@ -374,14 +374,14 @@ describe("FatSecretProvider.authSetup()", () => {
     process.env.FATSECRET_CONSUMER_KEY = "key";
     process.env.FATSECRET_CONSUMER_SECRET = "secret";
 
-    const mockFetch = (async (
+    const mockFetch: typeof globalThis.fetch = async (
       _input: RequestInfo | URL,
       _init?: RequestInit,
     ): Promise<Response> => {
       return new Response("oauth_token=access-token&oauth_token_secret=access-secret", {
         status: 200,
       });
-    }) as typeof globalThis.fetch;
+    };
 
     const provider = new FatSecretProvider(mockFetch);
     const setup = provider.authSetup();

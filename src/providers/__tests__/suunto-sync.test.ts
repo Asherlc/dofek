@@ -47,7 +47,7 @@ function fakeWorkout(overrides: FakeWorkoutOverrides = {}) {
 }
 
 function createMockFetch(workouts: Array<ReturnType<typeof fakeWorkout>>): typeof globalThis.fetch {
-  return (async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
+  return async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
     const urlStr = input.toString();
 
     // Token refresh
@@ -65,7 +65,7 @@ function createMockFetch(workouts: Array<ReturnType<typeof fakeWorkout>>): typeo
     }
 
     return new Response("Not found", { status: 404 });
-  }) as typeof globalThis.fetch;
+  };
 }
 
 describe("SuuntoProvider.sync() (integration)", () => {

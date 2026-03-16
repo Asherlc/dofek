@@ -12,6 +12,7 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 - **Read README.md first**: Before working on deployment, infrastructure, or operational tasks, always read the README for current architecture, deployment procedures, and operational runbooks. The README is the source of truth for how the production system works.
 
 ## Development Rules
+- **Fix properly, no workarounds**: When encountering an issue, fix the root cause. Lint rules, type checks, and CI gates exist for a reason — don't disable them, skip them, add ignores, or use workarounds to make problems go away. Always do the harder thing that actually solves the problem. If you genuinely cannot fix the root cause, **stop and ask the user before** resorting to any shortcut, disable, or workaround. Never take the "easy" or "efficient" way out without explicit approval.
 - **TDD**: Write tests first, then implement. Every new feature or provider starts with a failing test. When fixing bugs, write a failing test that reproduces the bug before writing the fix.
 - **Provider-agnostic**: The schema and sync framework must not be coupled to any specific provider. Providers implement a plugin interface.
 - **Isolated & modular providers**: Each provider must be self-contained in its own file under `src/providers/`. Providers implement the `Provider` interface from `types.ts` and must not depend on other providers. All provider-specific types, parsing, API client code, and sync logic live within the provider's own file. This keeps providers easy to add, remove, or modify independently.
@@ -51,6 +52,7 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
   ```
 - **Document as you go**: Keep README.md and docs/ updated with every significant change. When learning about external APIs, data formats, auth protocols, or provider quirks, write notes in `docs/` (e.g., `docs/peloton.md`, `docs/apple-health.md`). These notes help future development and debugging.
 - **Run migrations**: After generating a migration from schema changes, always run `pnpm migrate` yourself — don't tell the user to do it.
+- **Never modify repo settings**: Never change GitHub branch protection rules, required status checks, repo rulesets, or any other repository-level settings via the API or CLI. If branch protection is blocking a merge, ask the user how to proceed.
 - **No manual server changes**: Never SSH into the server to edit config files directly. All server config changes (`docker-compose.yml`, `Caddyfile`) must go through Terraform (`cd deploy/deploy-config && terraform apply -var="server_ip=<IP>"`). See the README for details.
 - **Drizzle generate is interactive**: `pnpm generate` (`drizzle-kit generate`) prompts interactively when it detects potential table/column renames. Since CLI tools can't handle interactive prompts, write migration SQL files manually when `generate` would prompt. Name them sequentially (e.g., `drizzle/0012_description.sql`). Use `ALTER TABLE ... ADD COLUMN` for new columns, etc. Always run `pnpm migrate` after creating manual migrations.
 

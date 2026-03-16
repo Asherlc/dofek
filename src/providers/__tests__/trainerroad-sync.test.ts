@@ -62,7 +62,7 @@ function createMockFetch(
   activities: FakeTrainerRoadActivity[],
   opts?: { signInError?: boolean },
 ): typeof globalThis.fetch {
-  return (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const urlStr = input.toString();
 
     // Login page (GET for CSRF token)
@@ -114,7 +114,7 @@ function createMockFetch(
     }
 
     return new Response("Not found", { status: 404 });
-  }) as typeof globalThis.fetch;
+  };
 }
 
 describe("TrainerRoadProvider.sync() (integration)", () => {

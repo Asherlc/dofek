@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TRAINING_PEAKS_SPORT_MAP, mapTrainingPeaksSport } from "../sports.ts";
+import { mapTrainingPeaksSport, TRAINING_PEAKS_SPORT_MAP } from "../sports.ts";
 
 describe("mapTrainingPeaksSport", () => {
   it("maps known sport family IDs", () => {

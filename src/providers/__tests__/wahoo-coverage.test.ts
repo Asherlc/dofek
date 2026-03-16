@@ -118,18 +118,18 @@ describe("WahooProvider.authSetup()", () => {
 
 describe("WahooClient — error handling", () => {
   it("throws on non-OK response from workouts endpoint", async () => {
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Unauthorized", { status: 401 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new WahooClient("bad-token", mockFetch);
     await expect(client.getWorkouts()).rejects.toThrow("Wahoo API error (401)");
   });
 
   it("throws on FIT file download failure", async () => {
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Not Found", { status: 404 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new WahooClient("token", mockFetch);
     await expect(client.downloadFitFile("https://example.com/test.fit")).rejects.toThrow(
@@ -254,14 +254,14 @@ describe("WahooProvider.getUserIdentity()", () => {
     process.env.WAHOO_CLIENT_ID = "test-id";
     process.env.WAHOO_CLIENT_SECRET = "test-secret";
 
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return Response.json({
         id: 42,
         email: "user@wahoo.com",
         first_name: "John",
         last_name: "Smith",
       });
-    }) as typeof globalThis.fetch;
+    };
 
     const provider = new WahooProvider(mockFetch);
     const setup = provider.authSetup();
@@ -276,9 +276,9 @@ describe("WahooProvider.getUserIdentity()", () => {
     process.env.WAHOO_CLIENT_ID = "test-id";
     process.env.WAHOO_CLIENT_SECRET = "test-secret";
 
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return Response.json({ id: 7 });
-    }) as typeof globalThis.fetch;
+    };
 
     const provider = new WahooProvider(mockFetch);
     const setup = provider.authSetup();
@@ -293,9 +293,9 @@ describe("WahooProvider.getUserIdentity()", () => {
     process.env.WAHOO_CLIENT_ID = "test-id";
     process.env.WAHOO_CLIENT_SECRET = "test-secret";
 
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Unauthorized", { status: 401 });
-    }) as typeof globalThis.fetch;
+    };
 
     const provider = new WahooProvider(mockFetch);
     const setup = provider.authSetup();

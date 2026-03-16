@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Database } from "../../db/index.ts";
+
 import type { Provider } from "../../providers/types.ts";
 import { runSync } from "../runner.ts";
 
@@ -24,7 +24,7 @@ function createMockProvider(overrides: Partial<Provider> = {}): Provider {
   };
 }
 
-const mockDb = {} as Database;
+const mockDb = Object.create(null);
 
 describe("Sync Runner — updateUserMaxHr error handling", () => {
   it("completes sync even when updateUserMaxHr throws", async () => {

@@ -85,8 +85,8 @@ export function spearmanCorrelation(x: number[], y: number[]): CorrelationResult
   const n = x.length;
   if (n < 5) return { rho: 0, pValue: 1, n };
 
-  const rx = ranks(x, { method: "average" }) as number[];
-  const ry = ranks(y, { method: "average" }) as number[];
+  const rx: number[] = ranks(x, { method: "average" });
+  const ry: number[] = ranks(y, { method: "average" });
 
   const result = pcorrtest(rx, ry);
   return {

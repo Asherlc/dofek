@@ -15,7 +15,7 @@ export function ProvidersPage() {
 
   const [logFilter, setLogFilter] = useState<string | null>(null);
 
-  const syncRows = (logs.data ?? []) as Array<{
+  const syncRows: Array<{
     id: string;
     providerId: string;
     dataType: string;
@@ -24,7 +24,7 @@ export function ProvidersPage() {
     errorMessage: string | null;
     durationMs: number | null;
     syncedAt: string;
-  }>;
+  }> = logs.data ?? [];
 
   const filteredLogs = logFilter ? syncRows.filter((r) => r.providerId === logFilter) : syncRows;
 

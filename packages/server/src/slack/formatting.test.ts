@@ -69,12 +69,13 @@ describe("formatConfirmationMessage", () => {
     const entryIds = "abc-123,def-456";
     const result = formatConfirmationMessage([sampleItem], entryIds);
 
-    const actionsBlock = result.blocks.find((b: Record<string, unknown>) => b.type === "actions") as
-      | Record<string, unknown>
-      | undefined;
+    const actionsBlock: Record<string, unknown> | undefined = result.blocks.find(
+      (b: Record<string, unknown>) => b.type === "actions",
+    );
     expect(actionsBlock).toBeDefined();
 
-    const elements = actionsBlock?.elements as Array<Record<string, unknown>>;
+    // @ts-expect-error actionsBlock.elements is unknown but we know its shape
+    const elements: Array<Record<string, unknown>> = actionsBlock?.elements;
     const confirmButton = elements.find((e) => e.action_id === "confirm_food");
     expect(confirmButton).toBeDefined();
 
@@ -188,12 +189,13 @@ describe("formatConfirmationMessage button value size", () => {
     const entryIds =
       "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee,ffffffff-1111-2222-3333-444444444444,55555555-6666-7777-8888-999999999999";
     const result = formatConfirmationMessage(items, entryIds);
-    const actionsBlock = result.blocks.find((b: Record<string, unknown>) => b.type === "actions") as
-      | Record<string, unknown>
-      | undefined;
-    const elements = actionsBlock?.elements as Array<Record<string, unknown>>;
+    const actionsBlock: Record<string, unknown> | undefined = result.blocks.find(
+      (b: Record<string, unknown>) => b.type === "actions",
+    );
+    // @ts-expect-error actionsBlock.elements is unknown but we know its shape
+    const elements: Array<Record<string, unknown>> = actionsBlock?.elements;
     const confirmButton = elements.find((e) => e.action_id === "confirm_food");
-    const value = confirmButton?.value as string;
+    const value = String(confirmButton?.value);
     expect(value.length).toBeLessThanOrEqual(2000);
     // Value should be comma-separated UUIDs
     expect(value).toBe(entryIds);

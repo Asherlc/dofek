@@ -64,7 +64,8 @@ export function createInstallationStore(db: Database): InstallationStore {
       }
 
       const raw = row.raw_installation;
-      return (typeof raw === "string" ? JSON.parse(raw) : raw) as Installation;
+      const installation: Installation = typeof raw === "string" ? JSON.parse(raw) : raw;
+      return installation;
     },
 
     deleteInstallation: async (installQuery: InstallationQuery<boolean>) => {

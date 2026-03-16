@@ -635,9 +635,9 @@ describe("parseMapMyFitnessWorkout — edge cases", () => {
 
 describe("MapMyFitnessClient — error handling", () => {
   it("throws on non-OK response from getWorkouts", async () => {
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Unauthorized", { status: 401 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new MapMyFitnessClient("bad-token", "client-id", mockFetch);
     await expect(client.getWorkouts("-", "2026-03-01T00:00:00Z")).rejects.toThrow(
@@ -646,9 +646,9 @@ describe("MapMyFitnessClient — error handling", () => {
   });
 
   it("throws on 403 Forbidden", async () => {
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Forbidden", { status: 403 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new MapMyFitnessClient("token", "client-id", mockFetch);
     await expect(client.getWorkouts("-", "2026-03-01T00:00:00Z")).rejects.toThrow(
@@ -657,9 +657,9 @@ describe("MapMyFitnessClient — error handling", () => {
   });
 
   it("throws on 500 server error", async () => {
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Internal Server Error", { status: 500 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new MapMyFitnessClient("token", "client-id", mockFetch);
     await expect(client.getWorkouts("-", "2026-03-01T00:00:00Z")).rejects.toThrow(
@@ -668,9 +668,9 @@ describe("MapMyFitnessClient — error handling", () => {
   });
 
   it("includes error body text in thrown error", async () => {
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Rate limit exceeded", { status: 429 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new MapMyFitnessClient("token", "client-id", mockFetch);
     await expect(client.getWorkouts("-", "2026-03-01T00:00:00Z")).rejects.toThrow(

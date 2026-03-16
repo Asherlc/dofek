@@ -28,11 +28,7 @@ function generateTimestamp(): string {
   return Math.floor(Date.now() / 1000).toString();
 }
 
-function buildBaseString(
-  method: string,
-  url: string,
-  params: Record<string, string>,
-): string {
+function buildBaseString(method: string, url: string, params: Record<string, string>): string {
   const sortedKeys = Object.keys(params).sort();
   const paramString = sortedKeys
     .map((key) => `${percentEncode(key)}=${percentEncode(params[key] ?? "")}`)
@@ -42,9 +38,7 @@ function buildBaseString(
 }
 
 function signHmacSha1(baseString: string, signingKey: string): string {
-  return createHmac("sha1", signingKey)
-    .update(baseString)
-    .digest("base64");
+  return createHmac("sha1", signingKey).update(baseString).digest("base64");
 }
 
 export function buildOAuth1Header(

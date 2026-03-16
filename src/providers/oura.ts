@@ -330,7 +330,7 @@ export class OuraClient {
       throw new Error(`Oura API error (${response.status}): ${text}`);
     }
 
-    return response.json() as Promise<T>;
+    return response.json();
   }
 
   private dateQuery(startDate: string, endDate: string, nextToken?: string): string {

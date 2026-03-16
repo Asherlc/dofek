@@ -179,7 +179,7 @@ export class WgerProvider implements Provider {
             throw new Error(`Wger API error (${response.status}): ${text}`);
           }
 
-          const data = (await response.json()) as WgerPaginatedResponse<WgerWorkoutSession>;
+          const data: WgerPaginatedResponse<WgerWorkoutSession> = await response.json();
           const sessions = data.results ?? [];
 
           for (const raw of sessions) {
@@ -255,7 +255,7 @@ export class WgerProvider implements Provider {
             throw new Error(`Wger API error (${response.status}): ${text}`);
           }
 
-          const data = (await response.json()) as WgerPaginatedResponse<WgerWeightEntry>;
+          const data: WgerPaginatedResponse<WgerWeightEntry> = await response.json();
           const entries = data.results ?? [];
 
           for (const raw of entries) {

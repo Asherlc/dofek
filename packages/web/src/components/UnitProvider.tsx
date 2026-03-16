@@ -20,7 +20,7 @@ export function UnitProvider({ children }: { children: React.ReactNode }) {
   // Once the server setting loads, apply it (overrides locale default)
   useEffect(() => {
     if (setting.data?.value) {
-      const value = setting.data.value as string;
+      const value = String(setting.data.value);
       if (value === "metric" || value === "imperial") {
         setUnitSystemState(value);
       }

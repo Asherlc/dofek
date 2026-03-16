@@ -1,6 +1,6 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.4.6/schema.json",
-  "plugins": ["./plugins/no-double-cast.grit"],
+  "plugins": ["./plugins/no-double-cast.grit", "./plugins/no-as-type-assertion.grit"],
   "vcs": {
     "enabled": true,
     "clientKind": "git",
@@ -8,7 +8,7 @@
   },
   "files": {
     "ignoreUnknown": true,
-    "includes": ["src/**", "packages/server/src/**", "packages/web/src/**"]
+    "includes": ["src/**", "packages/*/src/**", "packages/web/src/**", "scripts/**"]
   },
   "formatter": {
     "indentStyle": "space",

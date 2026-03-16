@@ -42,7 +42,7 @@ describe("AutoSupplementsProvider — validate()", () => {
 describe("AutoSupplementsProvider — sync() edge cases", () => {
   it("returns error when no config during sync", async () => {
     const provider = new AutoSupplementsProvider();
-    const mockDb = {} as Parameters<typeof provider.sync>[0];
+    const mockDb = Object.create(null);
     const result = await provider.sync(mockDb, new Date());
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(1);

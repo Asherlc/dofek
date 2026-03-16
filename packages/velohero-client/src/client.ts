@@ -25,7 +25,7 @@ export class VeloHeroClient {
       throw new Error(`VeloHero API error (${response.status}): ${text}`);
     }
 
-    return response.json() as Promise<T>;
+    return response.json();
   }
 
   async getWorkouts(dateFrom: string, dateTo: string): Promise<VeloHeroWorkout[]> {
@@ -66,7 +66,7 @@ export class VeloHeroClient {
       throw new Error(`VeloHero sign-in failed (${response.status}): ${text}`);
     }
 
-    const data = (await response.json()) as VeloHeroSsoResponse;
+    const data: VeloHeroSsoResponse = await response.json();
     if (!data.session) {
       throw new Error("VeloHero sign-in did not return a session token");
     }

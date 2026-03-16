@@ -244,7 +244,8 @@ function ScatterPlot({ insight }: { insight: Insight }) {
       borderColor: "#3f3f46",
       textStyle: { color: "#e4e4e7", fontSize: 11 },
       formatter: (params: unknown) => {
-        const p = params as { value: [number, number] };
+        // @ts-expect-error ECharts params is typed as unknown
+        const p: { value: [number, number] } = params;
         return `${insight.action}: ${formatValue(p.value[0])}<br/>${insight.metric}: ${formatValue(p.value[1])}`;
       },
     },

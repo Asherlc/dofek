@@ -207,7 +207,7 @@ export class PelotonClient {
       throw new Error(`Peloton API error (${response.status}): ${text}`);
     }
 
-    return response.json() as Promise<T>;
+    return response.json();
   }
 
   async getUserId(): Promise<string> {
@@ -350,7 +350,7 @@ async function followRedirects(
   const resp = await fetchFn(fullUrl, {
     ...init,
     redirect: "manual",
-    headers: { ...(init?.headers as Record<string, string>), Cookie: jar.getForUrl(fullUrl) },
+    headers: { ...(init?.headers ?? {}), Cookie: jar.getForUrl(fullUrl) },
   });
   jar.addFromResponse(fullUrl, resp.headers);
   return { response: resp, location: resp.headers.get("location") };
@@ -399,7 +399,7 @@ export async function pelotonAutomatedLogin(
     throw new Error("Could not extract injectedConfig value from Auth0 login page");
   }
   const injectedConfig = JSON.parse(Buffer.from(configBase64, "base64").toString("utf-8"));
-  const extraParams = injectedConfig.extraParams as Record<string, string>;
+  const extraParams: Record<string, string> = injectedConfig.extraParams;
   if (!extraParams.state || !extraParams._csrf) {
     throw new Error("Could not extract state/_csrf from Auth0 injectedConfig");
   }

@@ -63,8 +63,10 @@ export function ActivityComparisonChart({ data, loading }: ActivityComparisonCha
       borderColor: "#3f3f46",
       textStyle: { color: "#e4e4e7", fontSize: 12 },
       formatter: (params: Record<string, unknown>) => {
-        const value = params.value as [string, number];
-        const seriesName = params.seriesName as string;
+        // @ts-expect-error ECharts params.value is typed as unknown
+        const value: [string, number] = params.value;
+        // @ts-expect-error ECharts params.seriesName is typed as unknown
+        const seriesName: string = params.seriesName;
         return [
           `<strong>${seriesName}</strong>`,
           `Date: ${value[0]}`,

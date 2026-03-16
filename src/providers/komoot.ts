@@ -202,7 +202,7 @@ export class KomootProvider implements Provider {
             throw new Error(`Komoot API error (${response.status}): ${text}`);
           }
 
-          const data = (await response.json()) as KomootToursResponse;
+          const data: KomootToursResponse = await response.json();
           totalPages = data.page.totalPages;
           const tours = data._embedded?.tours ?? [];
 

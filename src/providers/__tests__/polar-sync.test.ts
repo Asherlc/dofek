@@ -93,7 +93,7 @@ function createMockFetch(opts?: {
   const dailyActivity = opts?.dailyActivity ?? [];
   const nightlyRecharge = opts?.nightlyRecharge ?? [];
 
-  return (async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
+  return async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
     const urlStr = input.toString();
 
     // Token refresh (Polar uses polarremote.com)
@@ -127,7 +127,7 @@ function createMockFetch(opts?: {
     }
 
     return new Response("Not found", { status: 404 });
-  }) as typeof globalThis.fetch;
+  };
 }
 
 describe("PolarProvider.sync() (integration)", () => {

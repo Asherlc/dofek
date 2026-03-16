@@ -115,6 +115,8 @@ export interface FatSecretFoodEntriesResponse {
 // Parsed types
 // ============================================================
 
+type MealType = "breakfast" | "lunch" | "dinner" | "snack" | "other";
+
 export interface ParsedFoodEntry {
   externalId: string;
   foodName: string;
@@ -122,7 +124,7 @@ export interface ParsedFoodEntry {
   fatsecretFoodId: string;
   fatsecretServingId: string;
   numberOfUnits: number;
-  meal: string;
+  meal: MealType;
   date: string;
   calories: number;
   proteinG: number;
@@ -167,7 +169,7 @@ function optNum(val: string | undefined): number | undefined {
 /**
  * Normalize FatSecret meal name to lowercase enum value.
  */
-function normalizeMeal(meal: string): string {
+function normalizeMeal(meal: string): MealType {
   const lower = meal.toLowerCase();
   if (lower === "breakfast" || lower === "lunch" || lower === "dinner" || lower === "snack") {
     return lower;
@@ -560,12 +562,13 @@ export class FatSecretProvider implements Provider {
       const dateInt = Math.floor(current.getTime() / 86400000).toString();
 
       try {
-        const response = (await fatsecretApi(
+        // @ts-expect-error -- fatsecretApi returns unknown; response shape validated by parseFoodEntries
+        const response: FatSecretFoodEntriesResponse = await fatsecretApi(
           "food_entries.get.v2",
           { date: dateInt },
           creds,
           this.fetchFn,
-        )) as FatSecretFoodEntriesResponse;
+        );
 
         const entries = parseFoodEntries(response);
 
@@ -574,7 +577,7 @@ export class FatSecretProvider implements Provider {
             providerId: this.id,
             externalId: e.externalId,
             date: e.date,
-            meal: e.meal as "breakfast" | "lunch" | "dinner" | "snack" | "other",
+            meal: e.meal,
             foodName: e.foodName,
             foodDescription: e.foodDescription,
             category: inferCategory(e.foodName),
@@ -597,7 +600,7 @@ export class FatSecretProvider implements Provider {
             vitaminCMg: e.vitaminCMg,
             calciumMg: e.calciumMg,
             ironMg: e.ironMg,
-            raw: { ...e } as Record<string, unknown>,
+            raw: { ...e },
           }));
 
           await db.insert(foodEntry).values(rows).onConflictDoNothing();

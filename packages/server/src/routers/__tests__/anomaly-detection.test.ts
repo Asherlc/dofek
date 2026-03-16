@@ -129,17 +129,19 @@ describe("Anomaly detection", () => {
 
       // Mock global fetch to simulate Slack API success
       const originalFetch = globalThis.fetch;
+      // @ts-expect-error partial Response mock for testing
       globalThis.fetch = vi.fn<typeof fetch>().mockResolvedValue({
         ok: true,
         json: async () => ({ ok: true }),
-      } as Response);
+      });
 
       try {
         const result = await sendAnomalyAlertToSlack(testCtx.db, DEFAULT_USER_ID, anomalies);
         expect(result).toBe(true);
 
         // Verify fetch was called with correct params
-        const mockFetch = globalThis.fetch as ReturnType<typeof vi.fn>;
+        // @ts-expect-error globalThis.fetch was replaced with a vi.fn mock above
+        const mockFetch: ReturnType<typeof vi.fn> = globalThis.fetch;
         expect(mockFetch).toHaveBeenCalledWith(
           "https://slack.com/api/chat.postMessage",
           expect.objectContaining({
@@ -151,9 +153,7 @@ describe("Anomaly detection", () => {
         );
 
         // Verify the body includes illness pattern warning
-        const callBody = JSON.parse(
-          (mockFetch.mock.calls[0] as [string, { body: string }])[1].body,
-        );
+        const callBody = JSON.parse(String((mockFetch.mock.calls[0] ?? [])[1]?.body ?? ""));
         const blockTexts = callBody.blocks.map(
           (b: { text?: { text?: string } }) => b.text?.text ?? "",
         );
@@ -198,10 +198,11 @@ describe("Anomaly detection", () => {
       ];
 
       const originalFetch = globalThis.fetch;
+      // @ts-expect-error partial Response mock for testing
       globalThis.fetch = vi.fn<typeof fetch>().mockResolvedValue({
         ok: false,
         status: 500,
-      } as Response);
+      });
 
       try {
         const result = await sendAnomalyAlertToSlack(testCtx.db, DEFAULT_USER_ID, anomalies);
@@ -245,10 +246,11 @@ describe("Anomaly detection", () => {
       ];
 
       const originalFetch = globalThis.fetch;
+      // @ts-expect-error partial Response mock for testing
       globalThis.fetch = vi.fn<typeof fetch>().mockResolvedValue({
         ok: true,
         json: async () => ({ ok: false, error: "channel_not_found" }),
-      } as Response);
+      });
 
       try {
         const result = await sendAnomalyAlertToSlack(testCtx.db, DEFAULT_USER_ID, anomalies);
@@ -336,19 +338,19 @@ describe("Anomaly detection", () => {
       ];
 
       const originalFetch = globalThis.fetch;
+      // @ts-expect-error partial Response mock for testing
       globalThis.fetch = vi.fn<typeof fetch>().mockResolvedValue({
         ok: true,
         json: async () => ({ ok: true }),
-      } as Response);
+      });
 
       try {
         const result = await sendAnomalyAlertToSlack(testCtx.db, DEFAULT_USER_ID, anomalies);
         expect(result).toBe(true);
 
-        const mockFetch = globalThis.fetch as ReturnType<typeof vi.fn>;
-        const callBody = JSON.parse(
-          (mockFetch.mock.calls[0] as [string, { body: string }])[1].body,
-        );
+        // @ts-expect-error globalThis.fetch was replaced with a vi.fn mock above
+        const mockFetch: ReturnType<typeof vi.fn> = globalThis.fetch;
+        const callBody = JSON.parse(String((mockFetch.mock.calls[0] ?? [])[1]?.body ?? ""));
         // Warning header (not alert)
         expect(callBody.blocks[0].text.text).toBe("Health Warning");
         expect(callBody.text).toContain("warning");

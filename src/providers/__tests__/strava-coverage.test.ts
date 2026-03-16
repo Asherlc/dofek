@@ -120,30 +120,30 @@ describe("StravaProvider.authSetup()", () => {
 
 describe("StravaClient — error handling", () => {
   it("throws StravaRateLimitError on 429", async () => {
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Rate Limit Exceeded", { status: 429 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new StravaClient("token", mockFetch);
     await expect(client.getActivities(0)).rejects.toBeInstanceOf(StravaRateLimitError);
   });
 
   it("throws generic error on non-OK, non-429 response", async () => {
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Server Error", { status: 500 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new StravaClient("token", mockFetch);
     await expect(client.getActivities(0)).rejects.toThrow("Strava API error (500): Server Error");
   });
 
   it("shows clean message for HTML error responses instead of dumping HTML", async () => {
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("<html><body>Not Found</body></html>", {
         status: 404,
         headers: { "content-type": "text/html; charset=utf-8" },
       });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new StravaClient("token", mockFetch);
     await expect(client.getActivities(0)).rejects.toThrow(
@@ -152,12 +152,12 @@ describe("StravaClient — error handling", () => {
   });
 
   it("includes JSON body for JSON error responses", async () => {
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response(JSON.stringify({ message: "Not Found", errors: [] }), {
         status: 404,
         headers: { "content-type": "application/json; charset=utf-8" },
       });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new StravaClient("token", mockFetch);
     await expect(client.getActivities(0)).rejects.toThrow(
@@ -167,9 +167,9 @@ describe("StravaClient — error handling", () => {
 
   it("truncates long plain-text error responses", async () => {
     const longText = "x".repeat(300);
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response(longText, { status: 500 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new StravaClient("token", mockFetch);
     await expect(client.getActivities(0)).rejects.toThrow(
@@ -214,14 +214,14 @@ describe("StravaProvider.getUserIdentity()", () => {
     process.env.STRAVA_CLIENT_ID = "test-id";
     process.env.STRAVA_CLIENT_SECRET = "test-secret";
 
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return Response.json({
         id: 12345,
         email: "athlete@test.com",
         firstname: "Jane",
         lastname: "Doe",
       });
-    }) as typeof globalThis.fetch;
+    };
 
     const provider = new StravaProvider(mockFetch);
     const setup = provider.authSetup();
@@ -236,9 +236,9 @@ describe("StravaProvider.getUserIdentity()", () => {
     process.env.STRAVA_CLIENT_ID = "test-id";
     process.env.STRAVA_CLIENT_SECRET = "test-secret";
 
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return Response.json({ id: 99 });
-    }) as typeof globalThis.fetch;
+    };
 
     const provider = new StravaProvider(mockFetch);
     const setup = provider.authSetup();
@@ -253,9 +253,9 @@ describe("StravaProvider.getUserIdentity()", () => {
     process.env.STRAVA_CLIENT_ID = "test-id";
     process.env.STRAVA_CLIENT_SECRET = "test-secret";
 
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Forbidden", { status: 403 });
-    }) as typeof globalThis.fetch;
+    };
 
     const provider = new StravaProvider(mockFetch);
     const setup = provider.authSetup();

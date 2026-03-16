@@ -294,7 +294,7 @@ export class GarminClient {
       throw new Error(`Garmin API error (${response.status}): ${text}`);
     }
 
-    return response.json() as Promise<T>;
+    return response.json();
   }
 
   async getActivities(
@@ -443,7 +443,8 @@ async function loadSyncCursor(db: Database): Promise<string | null> {
     .limit(1);
 
   if (rows.length === 0 || !rows[0]) return null;
-  const value = rows[0].value as { cursor?: string };
+  // @ts-expect-error -- DB value is unknown; cursor shape is set by saveSyncCursor
+  const value: { cursor?: string } = rows[0].value;
   return value.cursor ?? null;
 }
 

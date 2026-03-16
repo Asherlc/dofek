@@ -72,12 +72,12 @@ export function buildAuthorizationUrl(
 }
 
 function parseTokenResponse(data: Record<string, unknown>): TokenSet {
-  const expiresIn = (data.expires_in as number) ?? 7200;
+  const expiresIn = typeof data.expires_in === "number" ? data.expires_in : 7200;
   return {
-    accessToken: data.access_token as string,
-    refreshToken: (data.refresh_token as string) ?? null,
+    accessToken: String(data.access_token),
+    refreshToken: typeof data.refresh_token === "string" ? data.refresh_token : null,
     expiresAt: new Date(Date.now() + expiresIn * 1000),
-    scopes: (data.scope as string) ?? null,
+    scopes: typeof data.scope === "string" ? data.scope : null,
   };
 }
 
@@ -119,7 +119,8 @@ export async function exchangeCodeForTokens(
   }
 
   const data = await response.json();
-  return parseTokenResponse(data as Record<string, unknown>);
+  const parsed: Record<string, unknown> = data;
+  return parseTokenResponse(parsed);
 }
 
 export async function refreshAccessToken(
@@ -157,5 +158,6 @@ export async function refreshAccessToken(
   }
 
   const data = await response.json();
-  return parseTokenResponse(data as Record<string, unknown>);
+  const parsed: Record<string, unknown> = data;
+  return parseTokenResponse(parsed);
 }

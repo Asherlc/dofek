@@ -52,7 +52,7 @@ function createMockFetch(
   weightEntries: FakeWgerWeightEntry[],
   opts?: { refreshError?: boolean },
 ): typeof globalThis.fetch {
-  return (async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
+  return async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
     const urlStr = input.toString();
 
     // Token refresh
@@ -90,7 +90,7 @@ function createMockFetch(
     }
 
     return new Response("Not found", { status: 404 });
-  }) as typeof globalThis.fetch;
+  };
 }
 
 describe("WgerProvider.sync() (integration)", () => {
@@ -227,7 +227,7 @@ describe("WgerProvider.sync() (integration)", () => {
     });
 
     let callCount = 0;
-    const paginatedFetch = (async (
+    const paginatedFetch: typeof globalThis.fetch = async (
       input: RequestInfo | URL,
       _init?: RequestInit,
     ): Promise<Response> => {
@@ -256,7 +256,7 @@ describe("WgerProvider.sync() (integration)", () => {
       }
 
       return new Response("Not found", { status: 404 });
-    }) as typeof globalThis.fetch;
+    };
 
     const provider = new WgerProvider(paginatedFetch);
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));

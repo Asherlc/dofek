@@ -41,7 +41,7 @@ function createMockFetch(
 ): typeof globalThis.fetch {
   let pageIndex = 0;
 
-  return (async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
+  return async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
     const urlStr = input.toString();
 
     // Token refresh
@@ -75,7 +75,7 @@ function createMockFetch(
     }
 
     return new Response("Not found", { status: 404 });
-  }) as typeof globalThis.fetch;
+  };
 }
 
 describe("DecathlonProvider.sync() (integration)", () => {

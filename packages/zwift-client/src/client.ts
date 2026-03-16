@@ -41,7 +41,7 @@ export class ZwiftClient {
       throw new Error(`Zwift API error (${response.status}): ${text}`);
     }
 
-    return response.json() as Promise<T>;
+    return response.json();
   }
 
   async getProfile(): Promise<ZwiftProfile> {
@@ -68,7 +68,8 @@ export class ZwiftClient {
     if (!response.ok) {
       throw new Error(`Zwift fitness data fetch failed (${response.status})`);
     }
-    return response.json() as Promise<ZwiftFitnessData>;
+    const result: Promise<ZwiftFitnessData> = response.json();
+    return result;
   }
 
   async getPowerCurve(): Promise<ZwiftPowerCurve> {
@@ -96,7 +97,7 @@ export class ZwiftClient {
       throw new Error(`Zwift sign-in failed (${response.status}): ${text}`);
     }
 
-    const data = (await response.json()) as ZwiftTokenResponse;
+    const data: ZwiftTokenResponse = await response.json();
     return {
       accessToken: data.access_token,
       refreshToken: data.refresh_token,
@@ -123,7 +124,7 @@ export class ZwiftClient {
       throw new Error(`Zwift token refresh failed (${response.status}): ${text}`);
     }
 
-    const data = (await response.json()) as ZwiftTokenResponse;
+    const data: ZwiftTokenResponse = await response.json();
     return {
       accessToken: data.access_token,
       refreshToken: data.refresh_token,
