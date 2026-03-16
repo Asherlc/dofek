@@ -11,7 +11,8 @@ import {
 
 /** Create a mock Express Request with optional cookies */
 function mockRequest(cookies?: Record<string, string | undefined>): Request {
-  return { cookies } satisfies Partial<Request> as Request;
+  const req: Request = Object.assign(Object.create(null), { cookies });
+  return req;
 }
 
 /** Create a mock Express Response that tracks cookie operations */
@@ -23,10 +24,11 @@ function mockResponse(): Response & {
     cookie: vi.fn().mockReturnThis(),
     clearCookie: vi.fn().mockReturnThis(),
   } satisfies Partial<Response>;
-  return res as Response & {
+  const result: Response & {
     cookie: ReturnType<typeof vi.fn>;
     clearCookie: ReturnType<typeof vi.fn>;
-  };
+  } = Object.assign(Object.create(null), res);
+  return result;
 }
 
 describe("Auth cookies", () => {

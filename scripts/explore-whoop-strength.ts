@@ -32,18 +32,20 @@ async function refreshAccessToken(rt: string): Promise<AuthResult> {
     }),
   });
 
-  const data = (await response.json()) as Record<string, unknown>;
-  const authResult = data.AuthenticationResult as Record<string, unknown>;
-  const accessToken = authResult.AccessToken as string;
+  const data: Record<string, unknown> = await response.json();
+  // @ts-expect-error — untyped API response, AuthenticationResult is a nested object
+  const authResult: Record<string, unknown> = data.AuthenticationResult;
+  const accessToken = String(authResult.AccessToken);
 
   // Get user ID from bootstrap
   const bootstrapResp = await fetch(
     `${WHOOP_API_BASE}/users-service/v2/bootstrap/?accountType=users&apiVersion=7&include=profile`,
     { headers: { Authorization: `Bearer ${accessToken}` } },
   );
-  const bootstrapData = (await bootstrapResp.json()) as Record<string, unknown>;
-  const user = bootstrapData.user as Record<string, unknown> | undefined;
-  const userId = (bootstrapData.id ?? bootstrapData.user_id ?? user?.id ?? user?.user_id) as number;
+  const bootstrapData: Record<string, unknown> = await bootstrapResp.json();
+  // @ts-expect-error — untyped API response, user is a nested object
+  const user: Record<string, unknown> | undefined = bootstrapData.user;
+  const userId = Number(bootstrapData.id ?? bootstrapData.user_id ?? user?.id ?? user?.user_id);
 
   return { accessToken, userId };
 }
@@ -54,7 +56,6 @@ interface EndpointConfig {
   method?: string;
   description?: string;
 }
-
 
 async function main() {
   const rt = process.env.WHOOP_REFRESH_TOKEN;
@@ -76,7 +77,11 @@ async function main() {
   const cyclesRaw = await cyclesResp.text();
 
   let cyclesData: unknown;
-  try { cyclesData = JSON.parse(cyclesRaw); } catch { cyclesData = null; }
+  try {
+    cyclesData = JSON.parse(cyclesRaw);
+  } catch {
+    cyclesData = null;
+  }
 
   // Extract workout IDs from cycles response
   const workouts: Array<{ activityId: string; sportId: number }> = [];
@@ -86,9 +91,10 @@ async function main() {
       for (const item of obj) extractWorkouts(item, depth + 1);
       return;
     }
-    const rec = obj as Record<string, unknown>;
+    // @ts-expect-error — obj is narrowed to non-null, non-array object
+    const rec: Record<string, unknown> = obj;
     if ("sport_id" in rec) {
-      const sportId = rec.sport_id as number;
+      const sportId = Number(rec.sport_id);
       const activityId = String(rec.activity_id ?? rec.id ?? "");
       console.log(`  Workout: sport_id=${sportId} activity_id=${activityId}`);
       if (activityId) workouts.push({ activityId, sportId });
@@ -112,39 +118,79 @@ async function main() {
     { path: `/weightlifting-service/v1/exercise`, description: "Exercise catalog v1" },
     { path: `/weightlifting-service/v2/exercise`, description: "Exercise catalog v2" },
     { path: `/weightlifting-service/v2/custom-exercise`, description: "Custom exercises" },
-    { path: `/weightlifting-service/v2/weightlifting-workout/activity`, description: "Workout by activity (likely needs query param)" },
-    { path: `/weightlifting-service/v2/weightlifting-workout/activity?activityId=${sampleActivityId}`, description: "Workout by activity ID param" },
-    { path: `/weightlifting-service/v2/weightlifting-workout/activity/${sampleActivityId}`, description: "Workout by activity ID path" },
+    {
+      path: `/weightlifting-service/v2/weightlifting-workout/activity`,
+      description: "Workout by activity (likely needs query param)",
+    },
+    {
+      path: `/weightlifting-service/v2/weightlifting-workout/activity?activityId=${sampleActivityId}`,
+      description: "Workout by activity ID param",
+    },
+    {
+      path: `/weightlifting-service/v2/weightlifting-workout/activity/${sampleActivityId}`,
+      description: "Workout by activity ID path",
+    },
     { path: `/weightlifting-service/v1/link-workout`, description: "Link workout" },
-    { path: `/weightlifting-service/v2/weightlifting-workout/link-cardio-workout`, description: "Link cardio workout" },
+    {
+      path: `/weightlifting-service/v2/weightlifting-workout/link-cardio-workout`,
+      description: "Link cardio workout",
+    },
     { path: `/weightlifting-service/v2/performance-profile`, description: "Performance profile" },
-    { path: `/weightlifting-service/v2/performance-profile/template`, description: "Performance profile template" },
+    {
+      path: `/weightlifting-service/v2/performance-profile/template`,
+      description: "Performance profile template",
+    },
     { path: `/weightlifting-service/v2/workout-library`, description: "Workout library v2" },
     { path: `/weightlifting-service/v3/workout-library`, description: "Workout library v3" },
     { path: `/weightlifting-service/v3/workout-template`, description: "Workout template v3" },
-    { path: `/weightlifting-service/v1/raw-data/protobuf`, description: "Raw sensor data (protobuf)" },
+    {
+      path: `/weightlifting-service/v1/raw-data/protobuf`,
+      description: "Raw sensor data (protobuf)",
+    },
     { path: `/weightlifting-service/v3/prs`, description: "Personal records" },
     { path: `/weightlifting-service/v1/share/test`, description: "Share workout (placeholder ID)" },
     // Try without apiVersion (mobile app might not send it for this service)
-    { path: `/weightlifting-service/v1/exercise`, noApiVersion: true, description: "Exercise catalog v1 (no apiVersion)" },
-    { path: `/weightlifting-service/v2/exercise`, noApiVersion: true, description: "Exercise catalog v2 (no apiVersion)" },
-    { path: `/weightlifting-service/v2/weightlifting-workout/activity`, noApiVersion: true, description: "Workout by activity (no apiVersion)" },
+    {
+      path: `/weightlifting-service/v1/exercise`,
+      noApiVersion: true,
+      description: "Exercise catalog v1 (no apiVersion)",
+    },
+    {
+      path: `/weightlifting-service/v2/exercise`,
+      noApiVersion: true,
+      description: "Exercise catalog v2 (no apiVersion)",
+    },
+    {
+      path: `/weightlifting-service/v2/weightlifting-workout/activity`,
+      noApiVersion: true,
+      description: "Workout by activity (no apiVersion)",
+    },
 
     // --- Also try each workout's activity ID against the workout endpoint ---
-    ...workouts.map(w => ({
+    ...workouts.map((w) => ({
       path: `/weightlifting-service/v2/weightlifting-workout/activity?activityId=${w.activityId}`,
       description: `Workout for activity ${w.activityId} (sport_id=${w.sportId})`,
     })),
 
     // --- Developer API strength trainer (CORS-blocked from browser) ---
-    { path: `/developer/v2/activity/strength-trainer`, noApiVersion: true, description: "Developer API strength trainer" },
-    { path: `/developer/v2/activity/strength-trainer?limit=10`, noApiVersion: true, description: "Developer API strength trainer with limit" },
+    {
+      path: `/developer/v2/activity/strength-trainer`,
+      noApiVersion: true,
+      description: "Developer API strength trainer",
+    },
+    {
+      path: `/developer/v2/activity/strength-trainer?limit=10`,
+      noApiVersion: true,
+      description: "Developer API strength trainer with limit",
+    },
   ];
 
   console.log(`\n--- Probing ${endpoints.length} endpoints ---\n`);
 
   for (const ep of endpoints) {
-    const apiVersionSuffix = ep.noApiVersion ? "" : `${ep.path.includes("?") ? "&" : "?"}apiVersion=7`;
+    const apiVersionSuffix = ep.noApiVersion
+      ? ""
+      : `${ep.path.includes("?") ? "&" : "?"}apiVersion=7`;
     const url = `${WHOOP_API_BASE}${ep.path}${apiVersionSuffix}`;
     try {
       const response = await fetch(url, {
@@ -169,7 +215,9 @@ async function main() {
         console.log(`⚠️  ${status} ${ep.description ?? ep.path}: ${preview.slice(0, 300)}`);
       }
     } catch (err) {
-      console.log(`💥 ${ep.description ?? ep.path}: ${err instanceof Error ? err.message : String(err)}`);
+      console.log(
+        `💥 ${ep.description ?? ep.path}: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 

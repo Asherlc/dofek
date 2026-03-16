@@ -95,14 +95,14 @@ function intOrUndef(val: unknown): number | undefined {
 
 function extractLeftRightBalance(val: unknown): number | undefined {
   if (typeof val === "object" && val !== null && "value" in val) {
-    return num((val as Record<string, unknown>).value);
+    return num(val.value);
   }
   return num(val);
 }
 
 export function parseFitRecord(raw: Record<string, unknown>): ParsedFitRecord {
   return {
-    recordedAt: new Date(raw.timestamp as string),
+    recordedAt: new Date(String(raw.timestamp)),
     heartRate: intOrUndef(raw.heart_rate),
     power: intOrUndef(raw.power),
     cadence: intOrUndef(raw.cadence),
@@ -140,9 +140,9 @@ export function parseFitRecord(raw: Record<string, unknown>): ParsedFitRecord {
 // Stryker disable all — internal function only reachable via parseFitFile with real FIT data
 function parseFitSession(raw: Record<string, unknown>): ParsedFitSession {
   return {
-    sport: (raw.sport as string) ?? "unknown",
-    subSport: raw.sub_sport as string | undefined,
-    startTime: new Date(raw.start_time as string),
+    sport: typeof raw.sport === "string" ? raw.sport : "unknown",
+    subSport: typeof raw.sub_sport === "string" ? raw.sub_sport : undefined,
+    startTime: new Date(String(raw.start_time)),
     totalElapsedTime: num(raw.total_elapsed_time) ?? 0,
     totalTimerTime: num(raw.total_timer_time) ?? 0,
     totalDistance: num(raw.total_distance) ?? 0,
@@ -180,7 +180,8 @@ function parseFitSession(raw: Record<string, unknown>): ParsedFitSession {
 /** Convert a typed library object to Record<string, unknown> with a single assertion. */
 function toRecord(obj: object): Record<string, unknown> {
   // Spread creates a plain object — safe single cast from index-signature-compatible shape.
-  return { ...obj } as Record<string, unknown>;
+  const record: Record<string, unknown> = { ...obj };
+  return record;
 }
 
 // ============================================================
@@ -205,7 +206,8 @@ export function parseFitFile(buffer: Buffer): Promise<ParsedFitActivity> {
       elapsedRecordField: true,
     });
 
-    parser.parse(Buffer.from(buffer) as Buffer<ArrayBuffer>, (err, data) => {
+    const buf: Buffer<ArrayBuffer> = Buffer.from(buffer);
+    parser.parse(buf, (err, data) => {
       clearTimeout(timer);
       if (err) {
         reject(new Error(String(err)));

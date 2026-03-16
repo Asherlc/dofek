@@ -376,7 +376,7 @@ describe("AppleHealthProvider", () => {
     process.env.APPLE_HEALTH_IMPORT_DIR = emptyDir;
 
     const provider = new AppleHealthProvider();
-    const mockDb = {} as Parameters<typeof provider.sync>[0];
+    const mockDb = Object.create(null);
     const result = await provider.sync(mockDb, new Date());
 
     expect(result.recordsSynced).toBe(0);

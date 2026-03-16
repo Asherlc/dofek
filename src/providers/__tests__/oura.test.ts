@@ -510,9 +510,9 @@ describe("OuraProvider properties", () => {
 
 describe("OuraClient", () => {
   it("throws on non-OK response for sleep", async () => {
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Unauthorized", { status: 401 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new OuraClient("bad-token", mockFetch);
     await expect(client.getSleep("2026-03-01", "2026-03-02")).rejects.toThrow(
@@ -522,10 +522,12 @@ describe("OuraClient", () => {
 
   it("fetches sleep data with correct URL", async () => {
     let capturedUrl = "";
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       capturedUrl = input.toString();
       return Response.json({ data: [sampleSleep], next_token: null });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new OuraClient("test-token", mockFetch);
     const result = await client.getSleep("2026-03-01", "2026-03-02");
@@ -539,10 +541,12 @@ describe("OuraClient", () => {
 
   it("passes next_token for pagination", async () => {
     let capturedUrl = "";
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       capturedUrl = input.toString();
       return Response.json({ data: [], next_token: null });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new OuraClient("test-token", mockFetch);
     await client.getSleep("2026-03-01", "2026-03-02", "page2token");
@@ -552,13 +556,13 @@ describe("OuraClient", () => {
 
   it("sends Authorization header with Bearer token", async () => {
     let capturedHeaders: Record<string, string> = {};
-    const mockFetch = (async (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-      capturedHeaders = Object.fromEntries(Object.entries(init?.headers ?? {})) as Record<
-        string,
-        string
-      >;
+    const mockFetch: typeof globalThis.fetch = async (
+      _input: RequestInfo | URL,
+      init?: RequestInit,
+    ): Promise<Response> => {
+      capturedHeaders = Object.fromEntries(Object.entries(init?.headers ?? {}));
       return Response.json({ data: [], next_token: null });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new OuraClient("my-secret-token", mockFetch);
     await client.getSleep("2026-03-01", "2026-03-02");
@@ -567,9 +571,9 @@ describe("OuraClient", () => {
   });
 
   it("includes error response body in error message", async () => {
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Invalid API key provided", { status: 403 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new OuraClient("bad-token", mockFetch);
     await expect(client.getSleep("2026-03-01", "2026-03-02")).rejects.toThrow(
@@ -579,10 +583,12 @@ describe("OuraClient", () => {
 
   it("fetches daily SpO2 data successfully", async () => {
     let capturedUrl = "";
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       capturedUrl = input.toString();
       return Response.json({ data: [sampleSpO2], next_token: null });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new OuraClient("test-token", mockFetch);
     const result = await client.getDailySpO2("2026-03-01", "2026-03-02");
@@ -595,10 +601,12 @@ describe("OuraClient", () => {
 
   it("passes next_token for SpO2 pagination", async () => {
     let capturedUrl = "";
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       capturedUrl = input.toString();
       return Response.json({ data: [], next_token: null });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new OuraClient("test-token", mockFetch);
     await client.getDailySpO2("2026-03-01", "2026-03-02", "spo2page");
@@ -607,9 +615,9 @@ describe("OuraClient", () => {
   });
 
   it("throws on non-OK response for SpO2", async () => {
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Forbidden", { status: 403 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new OuraClient("token", mockFetch);
     await expect(client.getDailySpO2("2026-03-01", "2026-03-02")).rejects.toThrow(
@@ -619,10 +627,12 @@ describe("OuraClient", () => {
 
   it("fetches VO2 max data successfully", async () => {
     let capturedUrl = "";
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       capturedUrl = input.toString();
       return Response.json({ data: [sampleVO2Max], next_token: null });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new OuraClient("test-token", mockFetch);
     const result = await client.getVO2Max("2026-03-01", "2026-03-02");
@@ -635,10 +645,12 @@ describe("OuraClient", () => {
 
   it("passes next_token for VO2 max pagination", async () => {
     let capturedUrl = "";
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       capturedUrl = input.toString();
       return Response.json({ data: [], next_token: null });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new OuraClient("test-token", mockFetch);
     await client.getVO2Max("2026-03-01", "2026-03-02", "vo2page");
@@ -647,9 +659,9 @@ describe("OuraClient", () => {
   });
 
   it("throws on non-OK response for VO2 max", async () => {
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Server Error", { status: 500 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new OuraClient("token", mockFetch);
     await expect(client.getVO2Max("2026-03-01", "2026-03-02")).rejects.toThrow(
@@ -659,10 +671,12 @@ describe("OuraClient", () => {
 
   it("fetches workouts with correct URL", async () => {
     let capturedUrl = "";
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       capturedUrl = input.toString();
       return Response.json({ data: [], next_token: null });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new OuraClient("test-token", mockFetch);
     await client.getWorkouts("2026-03-01", "2026-03-02");
@@ -672,10 +686,12 @@ describe("OuraClient", () => {
 
   it("fetches heart rate with datetime params", async () => {
     let capturedUrl = "";
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       capturedUrl = input.toString();
       return Response.json({ data: [] });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new OuraClient("test-token", mockFetch);
     await client.getHeartRate("2026-03-01", "2026-03-02");
@@ -686,10 +702,12 @@ describe("OuraClient", () => {
 
   it("fetches sessions with correct URL", async () => {
     let capturedUrl = "";
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       capturedUrl = input.toString();
       return Response.json({ data: [], next_token: null });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new OuraClient("test-token", mockFetch);
     await client.getSessions("2026-03-01", "2026-03-02");
@@ -698,10 +716,12 @@ describe("OuraClient", () => {
 
   it("fetches daily stress with correct URL", async () => {
     let capturedUrl = "";
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       capturedUrl = input.toString();
       return Response.json({ data: [], next_token: null });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new OuraClient("test-token", mockFetch);
     await client.getDailyStress("2026-03-01", "2026-03-02");
@@ -710,10 +730,12 @@ describe("OuraClient", () => {
 
   it("fetches daily resilience with correct URL", async () => {
     let capturedUrl = "";
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       capturedUrl = input.toString();
       return Response.json({ data: [], next_token: null });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new OuraClient("test-token", mockFetch);
     await client.getDailyResilience("2026-03-01", "2026-03-02");
@@ -722,10 +744,12 @@ describe("OuraClient", () => {
 
   it("fetches cardiovascular age with correct URL", async () => {
     let capturedUrl = "";
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       capturedUrl = input.toString();
       return Response.json({ data: [], next_token: null });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new OuraClient("test-token", mockFetch);
     await client.getDailyCardiovascularAge("2026-03-01", "2026-03-02");
@@ -734,10 +758,12 @@ describe("OuraClient", () => {
 
   it("fetches tags with correct URL", async () => {
     let capturedUrl = "";
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       capturedUrl = input.toString();
       return Response.json({ data: [], next_token: null });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new OuraClient("test-token", mockFetch);
     await client.getTags("2026-03-01", "2026-03-02");
@@ -746,10 +772,12 @@ describe("OuraClient", () => {
 
   it("fetches enhanced tags with correct URL", async () => {
     let capturedUrl = "";
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       capturedUrl = input.toString();
       return Response.json({ data: [], next_token: null });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new OuraClient("test-token", mockFetch);
     await client.getEnhancedTags("2026-03-01", "2026-03-02");
@@ -758,10 +786,12 @@ describe("OuraClient", () => {
 
   it("fetches rest mode periods with correct URL", async () => {
     let capturedUrl = "";
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       capturedUrl = input.toString();
       return Response.json({ data: [], next_token: null });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new OuraClient("test-token", mockFetch);
     await client.getRestModePeriods("2026-03-01", "2026-03-02");
@@ -770,10 +800,12 @@ describe("OuraClient", () => {
 
   it("fetches sleep time with correct URL", async () => {
     let capturedUrl = "";
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       capturedUrl = input.toString();
       return Response.json({ data: [], next_token: null });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new OuraClient("test-token", mockFetch);
     await client.getSleepTime("2026-03-01", "2026-03-02");

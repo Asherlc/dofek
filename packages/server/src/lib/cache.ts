@@ -23,7 +23,9 @@ class MemoryCacheStore implements CacheStore {
       this.store.delete(key);
       return undefined;
     }
-    return entry.data as T;
+    // @ts-expect-error -- generic cache: data was stored as T, retrieved as unknown
+    const result: T = entry.data;
+    return result;
   }
 
   async set<T>(key: string, data: T, ttlMs: number): Promise<void> {

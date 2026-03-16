@@ -1,14 +1,19 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  GarminConnectClient,
-  GarminAuthError,
   GarminApiError,
-  GarminRateLimitError,
+  GarminAuthError,
+  GarminConnectClient,
   GarminMfaRequiredError,
+  GarminRateLimitError,
 } from "../client.ts";
 import type { GarminTokens, OAuth2Token } from "../types.ts";
 
 type MockFetchFn = ReturnType<typeof vi.fn>;
+
+function asMock(fn: typeof globalThis.fetch): MockFetchFn {
+  // @ts-expect-error -- test helper: vi.fn() mock narrowing
+  return fn;
+}
 
 function makeOAuth2Token(overrides: Partial<OAuth2Token> = {}): OAuth2Token {
   return {
@@ -47,17 +52,18 @@ async function createAuthenticatedClient(
   const tokens = makeGarminTokens(tokenOverrides);
   const callCount = { value: 0 };
 
-  const setupFetchFn = vi.fn().mockImplementation(() => {
+  const setupFetchFn = vi.fn().mockImplementation((...args: Parameters<typeof fetch>) => {
     callCount.value++;
     if (callCount.value === 1) {
       // loadConsumer
       return Promise.resolve({
         ok: true,
         status: 200,
-        json: () => Promise.resolve({
-          consumer_key: "test-consumer-key",
-          consumer_secret: "test-consumer-secret",
-        }),
+        json: () =>
+          Promise.resolve({
+            consumer_key: "test-consumer-key",
+            consumer_secret: "test-consumer-secret",
+          }),
       });
     }
     if (callCount.value === 2) {
@@ -65,15 +71,16 @@ async function createAuthenticatedClient(
       return Promise.resolve({
         ok: true,
         status: 200,
-        json: () => Promise.resolve({
-          displayName: "testuser",
-          userName: "testuser",
-        }),
+        json: () =>
+          Promise.resolve({
+            displayName: "testuser",
+            userName: "testuser",
+          }),
       });
     }
     // Forward to the API mock
-    return (apiFetchFn as MockFetchFn)(...arguments);
-  }) as typeof globalThis.fetch;
+    return asMock(apiFetchFn)(...args);
+  });
 
   const client = await GarminConnectClient.fromTokens(tokens, "garmin.com", setupFetchFn);
 
@@ -82,8 +89,8 @@ async function createAuthenticatedClient(
   // We return the client from setupFetchFn which will delegate to apiFetchFn for calls 3+
   // But the internal fetchFn is still setupFetchFn, so subsequent calls go through it.
   // Let's just update the setupFetchFn to always forward to apiFetchFn now.
-  (setupFetchFn as MockFetchFn).mockImplementation((...args: unknown[]) => {
-    return (apiFetchFn as Function)(...args);
+  asMock(setupFetchFn).mockImplementation((...args: unknown[]) => {
+    return asMock(apiFetchFn)(...args);
   });
 
   return client;
@@ -157,22 +164,24 @@ describe("GarminConnectClient.fromTokens", () => {
         return Promise.resolve({
           ok: true,
           status: 200,
-          json: () => Promise.resolve({
-            consumer_key: "test-consumer-key",
-            consumer_secret: "test-consumer-secret",
-          }),
+          json: () =>
+            Promise.resolve({
+              consumer_key: "test-consumer-key",
+              consumer_secret: "test-consumer-secret",
+            }),
         });
       }
       // loadProfile
       return Promise.resolve({
         ok: true,
         status: 200,
-        json: () => Promise.resolve({
-          displayName: "testuser",
-          userName: "testuser",
-        }),
+        json: () =>
+          Promise.resolve({
+            displayName: "testuser",
+            userName: "testuser",
+          }),
       });
-    }) as typeof globalThis.fetch;
+    });
 
     const client = await GarminConnectClient.fromTokens(tokens, "garmin.com", fetchFn);
 
@@ -194,10 +203,11 @@ describe("GarminConnectClient.fromTokens", () => {
         return Promise.resolve({
           ok: true,
           status: 200,
-          json: () => Promise.resolve({
-            consumer_key: "test-consumer-key",
-            consumer_secret: "test-consumer-secret",
-          }),
+          json: () =>
+            Promise.resolve({
+              consumer_key: "test-consumer-key",
+              consumer_secret: "test-consumer-secret",
+            }),
         });
       }
       if (callCount.value === 2) {
@@ -205,27 +215,29 @@ describe("GarminConnectClient.fromTokens", () => {
         return Promise.resolve({
           ok: true,
           status: 200,
-          json: () => Promise.resolve({
-            scope: "refreshed-scope",
-            jti: "refreshed-jti",
-            token_type: "Bearer",
-            access_token: "refreshed-access-token",
-            refresh_token: "refreshed-refresh-token",
-            expires_in: 3600,
-            refresh_token_expires_in: 86400,
-          }),
+          json: () =>
+            Promise.resolve({
+              scope: "refreshed-scope",
+              jti: "refreshed-jti",
+              token_type: "Bearer",
+              access_token: "refreshed-access-token",
+              refresh_token: "refreshed-refresh-token",
+              expires_in: 3600,
+              refresh_token_expires_in: 86400,
+            }),
         });
       }
       // loadProfile
       return Promise.resolve({
         ok: true,
         status: 200,
-        json: () => Promise.resolve({
-          displayName: "testuser",
-          userName: "testuser",
-        }),
+        json: () =>
+          Promise.resolve({
+            displayName: "testuser",
+            userName: "testuser",
+          }),
       });
-    }) as typeof globalThis.fetch;
+    });
 
     const client = await GarminConnectClient.fromTokens(tokens, "garmin.com", fetchFn);
 
@@ -240,34 +252,33 @@ describe("GarminConnectClient.fromTokens", () => {
     const fetchFn = vi.fn().mockResolvedValue({
       ok: false,
       status: 500,
-    }) as typeof globalThis.fetch;
+    });
 
-    await expect(
-      GarminConnectClient.fromTokens(tokens, "garmin.com", fetchFn),
-    ).rejects.toThrow("Failed to fetch OAuth consumer credentials");
+    await expect(GarminConnectClient.fromTokens(tokens, "garmin.com", fetchFn)).rejects.toThrow(
+      "Failed to fetch OAuth consumer credentials",
+    );
   });
 });
 
 describe("GarminConnectClient API methods", () => {
   it("getActivities returns activity list", async () => {
-    const activities = [
-      { activityId: 1, activityName: "Morning Run", duration: 3600 },
-    ];
+    const activities = [{ activityId: 1, activityName: "Morning Run", duration: 3600 }];
 
     const apiFetchFn = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
       json: () => Promise.resolve(activities),
-    }) as typeof globalThis.fetch;
+    });
 
     const client = await createAuthenticatedClient(apiFetchFn);
     const result = await client.getActivities(0, 10);
 
     expect(result).toEqual(activities);
-    const [url] = (apiFetchFn as MockFetchFn).mock.calls[0] as [string];
-    expect(url).toContain("/activitylist-service/activities/search/activities");
-    expect(url).toContain("start=0");
-    expect(url).toContain("limit=10");
+    // @ts-expect-error -- mock.calls typed as unknown[][]
+    const [activitiesUrl]: [string] = asMock(apiFetchFn).mock.calls[0];
+    expect(activitiesUrl).toContain("/activitylist-service/activities/search/activities");
+    expect(activitiesUrl).toContain("start=0");
+    expect(activitiesUrl).toContain("limit=10");
   });
 
   it("getActivityDetail returns detail data", async () => {
@@ -277,14 +288,15 @@ describe("GarminConnectClient API methods", () => {
       ok: true,
       status: 200,
       json: () => Promise.resolve(detail),
-    }) as typeof globalThis.fetch;
+    });
 
     const client = await createAuthenticatedClient(apiFetchFn);
     const result = await client.getActivityDetail(123);
 
     expect(result).toEqual(detail);
-    const [url] = (apiFetchFn as MockFetchFn).mock.calls[0] as [string];
-    expect(url).toContain("/activity-service/activity/123/details");
+    // @ts-expect-error -- mock.calls typed as unknown[][]
+    const [detailUrl]: [string] = asMock(apiFetchFn).mock.calls[0];
+    expect(detailUrl).toContain("/activity-service/activity/123/details");
   });
 
   it("getSleepData returns sleep data", async () => {
@@ -294,15 +306,16 @@ describe("GarminConnectClient API methods", () => {
       ok: true,
       status: 200,
       json: () => Promise.resolve(sleepData),
-    }) as typeof globalThis.fetch;
+    });
 
     const client = await createAuthenticatedClient(apiFetchFn);
     const result = await client.getSleepData("2024-01-15");
 
     expect(result).toEqual(sleepData);
-    const [url] = (apiFetchFn as MockFetchFn).mock.calls[0] as [string];
-    expect(url).toContain("/wellness-service/wellness/dailySleepData/testuser");
-    expect(url).toContain("date=2024-01-15");
+    // @ts-expect-error -- mock.calls typed as unknown[][]
+    const [sleepUrl]: [string] = asMock(apiFetchFn).mock.calls[0];
+    expect(sleepUrl).toContain("/wellness-service/wellness/dailySleepData/testuser");
+    expect(sleepUrl).toContain("date=2024-01-15");
   });
 
   it("getDailyHeartRate returns heart rate data", async () => {
@@ -312,7 +325,7 @@ describe("GarminConnectClient API methods", () => {
       ok: true,
       status: 200,
       json: () => Promise.resolve(hrData),
-    }) as typeof globalThis.fetch;
+    });
 
     const client = await createAuthenticatedClient(apiFetchFn);
     const result = await client.getDailyHeartRate("2024-01-15");
@@ -327,7 +340,7 @@ describe("GarminConnectClient API methods", () => {
       ok: true,
       status: 200,
       json: () => Promise.resolve(stressData),
-    }) as typeof globalThis.fetch;
+    });
 
     const client = await createAuthenticatedClient(apiFetchFn);
     const result = await client.getDailyStress("2024-01-15");
@@ -342,14 +355,15 @@ describe("GarminConnectClient API methods", () => {
       ok: true,
       status: 200,
       json: () => Promise.resolve(hrvData),
-    }) as typeof globalThis.fetch;
+    });
 
     const client = await createAuthenticatedClient(apiFetchFn);
     const result = await client.getHrvSummary("2024-01-15");
 
     expect(result).toEqual(hrvData);
-    const [url] = (apiFetchFn as MockFetchFn).mock.calls[0] as [string];
-    expect(url).toContain("/hrv-service/hrv/2024-01-15");
+    // @ts-expect-error -- mock.calls typed as unknown[][]
+    const [hrvUrl]: [string] = asMock(apiFetchFn).mock.calls[0];
+    expect(hrvUrl).toContain("/hrv-service/hrv/2024-01-15");
   });
 
   it("throws GarminAuthError on 401 response", async () => {
@@ -357,7 +371,7 @@ describe("GarminConnectClient API methods", () => {
       ok: false,
       status: 401,
       text: () => Promise.resolve("Unauthorized"),
-    }) as typeof globalThis.fetch;
+    });
 
     const client = await createAuthenticatedClient(apiFetchFn);
 
@@ -370,7 +384,7 @@ describe("GarminConnectClient API methods", () => {
       ok: false,
       status: 429,
       text: () => Promise.resolve("Too Many Requests"),
-    }) as typeof globalThis.fetch;
+    });
 
     const client = await createAuthenticatedClient(apiFetchFn);
 
@@ -383,7 +397,7 @@ describe("GarminConnectClient API methods", () => {
       ok: false,
       status: 500,
       text: () => Promise.resolve("Internal Server Error"),
-    }) as typeof globalThis.fetch;
+    });
 
     const client = await createAuthenticatedClient(apiFetchFn);
 
@@ -396,7 +410,7 @@ describe("GarminConnectClient API methods", () => {
       ok: true,
       status: 204,
       json: () => Promise.resolve({}),
-    }) as typeof globalThis.fetch;
+    });
 
     const client = await createAuthenticatedClient(apiFetchFn);
     const result = await client.getDailyStress("2024-01-15");
@@ -411,14 +425,15 @@ describe("GarminConnectClient API methods", () => {
       ok: true,
       status: 200,
       json: () => Promise.resolve(summary),
-    }) as typeof globalThis.fetch;
+    });
 
     const client = await createAuthenticatedClient(apiFetchFn);
     const result = await client.getDailySummary("2024-01-15");
 
     expect(result).toEqual(summary);
-    const [url] = (apiFetchFn as MockFetchFn).mock.calls[0] as [string];
-    expect(url).toContain("/usersummary-service/usersummary/daily/testuser");
+    // @ts-expect-error -- mock.calls typed as unknown[][]
+    const [summaryUrl]: [string] = asMock(apiFetchFn).mock.calls[0];
+    expect(summaryUrl).toContain("/usersummary-service/usersummary/daily/testuser");
   });
 
   it("getTrainingStatus returns training status", async () => {
@@ -428,14 +443,15 @@ describe("GarminConnectClient API methods", () => {
       ok: true,
       status: 200,
       json: () => Promise.resolve(status),
-    }) as typeof globalThis.fetch;
+    });
 
     const client = await createAuthenticatedClient(apiFetchFn);
     const result = await client.getTrainingStatus("2024-01-15");
 
     expect(result).toEqual(status);
-    const [url] = (apiFetchFn as MockFetchFn).mock.calls[0] as [string];
-    expect(url).toContain("/metrics-service/metrics/trainingstatus/aggregated/2024-01-15");
+    // @ts-expect-error -- mock.calls typed as unknown[][]
+    const [statusUrl]: [string] = asMock(apiFetchFn).mock.calls[0];
+    expect(statusUrl).toContain("/metrics-service/metrics/trainingstatus/aggregated/2024-01-15");
   });
 
   it("getVo2Max returns VO2 max data", async () => {
@@ -445,14 +461,15 @@ describe("GarminConnectClient API methods", () => {
       ok: true,
       status: 200,
       json: () => Promise.resolve(vo2Data),
-    }) as typeof globalThis.fetch;
+    });
 
     const client = await createAuthenticatedClient(apiFetchFn);
     const result = await client.getVo2Max("2024-01-01", "2024-01-31");
 
     expect(result).toEqual(vo2Data);
-    const [url] = (apiFetchFn as MockFetchFn).mock.calls[0] as [string];
-    expect(url).toContain("/metrics-service/metrics/maxmet/daily/2024-01-01/2024-01-31");
+    // @ts-expect-error -- mock.calls typed as unknown[][]
+    const [vo2Url]: [string] = asMock(apiFetchFn).mock.calls[0];
+    expect(vo2Url).toContain("/metrics-service/metrics/maxmet/daily/2024-01-01/2024-01-31");
   });
 
   it("downloadFitFile returns ArrayBuffer", async () => {
@@ -462,21 +479,22 @@ describe("GarminConnectClient API methods", () => {
       ok: true,
       status: 200,
       arrayBuffer: () => Promise.resolve(buffer),
-    }) as typeof globalThis.fetch;
+    });
 
     const client = await createAuthenticatedClient(apiFetchFn);
     const result = await client.downloadFitFile(12345);
 
     expect(result).toEqual(buffer);
-    const [url] = (apiFetchFn as MockFetchFn).mock.calls[0] as [string];
-    expect(url).toContain("/download-service/files/activity/12345");
+    // @ts-expect-error -- mock.calls typed as unknown[][]
+    const [downloadUrl]: [string] = asMock(apiFetchFn).mock.calls[0];
+    expect(downloadUrl).toContain("/download-service/files/activity/12345");
   });
 
   it("downloadFitFile throws on failure", async () => {
     const apiFetchFn = vi.fn().mockResolvedValue({
       ok: false,
       status: 404,
-    }) as typeof globalThis.fetch;
+    });
 
     const client = await createAuthenticatedClient(apiFetchFn);
 
@@ -498,10 +516,11 @@ describe("GarminConnectClient token refresh on API call", () => {
         return Promise.resolve({
           ok: true,
           status: 200,
-          json: () => Promise.resolve({
-            consumer_key: "test-consumer-key",
-            consumer_secret: "test-consumer-secret",
-          }),
+          json: () =>
+            Promise.resolve({
+              consumer_key: "test-consumer-key",
+              consumer_secret: "test-consumer-secret",
+            }),
         });
       }
       if (callCount.value === 2) {
@@ -509,10 +528,11 @@ describe("GarminConnectClient token refresh on API call", () => {
         return Promise.resolve({
           ok: true,
           status: 200,
-          json: () => Promise.resolve({
-            displayName: "testuser",
-            userName: "testuser",
-          }),
+          json: () =>
+            Promise.resolve({
+              displayName: "testuser",
+              userName: "testuser",
+            }),
         });
       }
       if (String(url).includes("oauth-service/oauth/exchange")) {
@@ -520,12 +540,13 @@ describe("GarminConnectClient token refresh on API call", () => {
         return Promise.resolve({
           ok: true,
           status: 200,
-          json: () => Promise.resolve({
-            access_token: "new-access-token",
-            refresh_token: "new-refresh-token",
-            expires_in: 3600,
-            refresh_token_expires_in: 86400,
-          }),
+          json: () =>
+            Promise.resolve({
+              access_token: "new-access-token",
+              refresh_token: "new-refresh-token",
+              expires_in: 3600,
+              refresh_token_expires_in: 86400,
+            }),
         });
       }
       // API call
@@ -534,7 +555,7 @@ describe("GarminConnectClient token refresh on API call", () => {
         status: 200,
         json: () => Promise.resolve([]),
       });
-    }) as typeof globalThis.fetch;
+    });
 
     const client = await GarminConnectClient.fromTokens(tokens, "garmin.com", fetchFn);
 

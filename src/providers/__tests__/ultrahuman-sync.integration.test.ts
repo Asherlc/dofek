@@ -80,7 +80,7 @@ interface UltrahumanMockOptions {
 function createMockFetch(opts: UltrahumanMockOptions = {}): typeof globalThis.fetch {
   const dayResponses = opts.dayResponses ?? {};
 
-  return (async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
+  return async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
     const urlStr = input.toString();
 
     // Daily metrics endpoint
@@ -103,7 +103,7 @@ function createMockFetch(opts: UltrahumanMockOptions = {}): typeof globalThis.fe
     }
 
     return new Response("Not found", { status: 404 });
-  }) as typeof globalThis.fetch;
+  };
 }
 
 // ============================================================
@@ -234,18 +234,19 @@ describe("UltrahumanProvider.sync() (integration)", () => {
       });
 
       let capturedAuthHeader: string | null = null;
-      const capturingFetch = (async (
+      const capturingFetch: typeof globalThis.fetch = async (
         input: RequestInfo | URL,
         init?: RequestInit,
       ): Promise<Response> => {
         const urlStr = input.toString();
         if (urlStr.includes("/api/v1/partner/daily_metrics")) {
-          const headers = init?.headers as Record<string, string> | undefined;
+          // @ts-expect-error -- test: HeadersInit narrowed to Record for test assertions
+          const headers: Record<string, string> | undefined = init?.headers;
           capturedAuthHeader = headers?.Authorization ?? null;
           return Response.json(fakeUltrahumanDailyResponse("2026-03-15", []));
         }
         return new Response("Not found", { status: 404 });
-      }) as typeof globalThis.fetch;
+      };
 
       const provider = new UltrahumanProvider(capturingFetch);
       await provider.sync(ctx.db, new Date("2026-03-15T00:00:00Z"));

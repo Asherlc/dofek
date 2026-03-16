@@ -31,7 +31,8 @@ export function ExportPanel() {
         return;
       }
 
-      const { jobId } = (await triggerRes.json()) as { jobId: string };
+      const triggerData: { jobId: string } = await triggerRes.json();
+      const { jobId } = triggerData;
 
       // Poll for status
       const deadline = Date.now() + 10 * 60 * 1000; // 10 minute timeout
@@ -48,7 +49,7 @@ export function ExportPanel() {
           return;
         }
 
-        const status = (await statusRes.json()) as ExportStatus;
+        const status: ExportStatus = await statusRes.json();
         setProgress(status.progress ?? 0);
         setMessage(status.message ?? "");
 

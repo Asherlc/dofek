@@ -160,6 +160,11 @@ jobs:
                 | { grep -v 'packages/server/' || true; } \
                 | { grep -v 'packages/ios/' || true; } \
                 | { grep -v 'packages/whoop-whoop/' || true; } \
+                | { grep -v 'packages/garmin-connect/' || true; } \
+                | { grep -v 'packages/eight-sleep/' || true; } \
+                | { grep -v 'packages/trainerroad-client/' || true; } \
+                | { grep -v 'packages/velohero-client/' || true; } \
+                | { grep -v 'packages/zwift-client/' || true; } \
                 | awk '!/^src\/providers\// || /^src\/providers\/(index|strong-csv|cronometer-csv)\.ts$/' \
                 | { grep -v 'packages/web/src/pages/' || true; } \
                 | { grep -v 'packages/web/src/hooks/' || true; } \

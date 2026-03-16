@@ -24,7 +24,9 @@ type GenerateTextReturn = Awaited<ReturnType<typeof generateText>>;
 
 /** Build a mock generateText result with only the `output` field populated */
 function mockGenerateTextResult(output: unknown): GenerateTextReturn {
-  return { output } as GenerateTextReturn;
+  // @ts-expect-error partial mock — only populating the output field needed by tests
+  const result: GenerateTextReturn = { output };
+  return result;
 }
 
 const previousItems: NutritionItemWithMeal[] = [
@@ -111,7 +113,8 @@ describe("refineNutritionItems", () => {
 
     await refineNutritionItems(previousItems, "that's all", "Tuesday, 8:15 AM");
 
-    const callArgs = mockGenerateText.mock.calls[0]?.[0] as { system?: string } | undefined;
+    // @ts-expect-error mock call args type is wider than our narrow subset
+    const callArgs: { system?: string } | undefined = mockGenerateText.mock.calls[0]?.[0];
     expect(callArgs?.system).toContain("Tuesday, 8:15 AM");
   });
 
@@ -122,7 +125,8 @@ describe("refineNutritionItems", () => {
 
     await refineNutritionItems(previousItems, "that's correct");
 
-    const callArgs = mockGenerateText.mock.calls[0]?.[0] as { system?: string } | undefined;
+    // @ts-expect-error mock call args type is wider than our narrow subset
+    const callArgs: { system?: string } | undefined = mockGenerateText.mock.calls[0]?.[0];
     expect(callArgs?.system).not.toContain("local time is");
   });
 
@@ -133,11 +137,12 @@ describe("refineNutritionItems", () => {
 
     await refineNutritionItems(previousItems, "remove the toast");
 
-    const callArgs = mockGenerateText.mock.calls[0]?.[0] as
+    // @ts-expect-error mock call args type is wider than our narrow subset
+    const callArgs:
       | {
           messages?: Array<{ role: string; content: string }>;
         }
-      | undefined;
+      | undefined = mockGenerateText.mock.calls[0]?.[0];
 
     expect(callArgs?.messages).toBeDefined();
     expect(callArgs?.messages?.length).toBe(3);

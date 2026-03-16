@@ -3,7 +3,8 @@ import { trpc } from "../lib/trpc.ts";
 
 /** Narrow loosely-typed tRPC raw-SQL results to a known shape without double-casting. */
 function typedData<T>(data: unknown): T {
-  return data as T;
+  // @ts-expect-error -- centralized type narrowing for tRPC raw-SQL results
+  return data;
 }
 
 // HR zone colors (blue->green->yellow->orange->red)

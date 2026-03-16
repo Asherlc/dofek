@@ -1,26 +1,26 @@
 import { describe, expect, it } from "vitest";
 import {
   mapConnectActivityType,
+  parseActivityDetail,
   parseConnectActivity,
-  parseConnectSleep,
   parseConnectDailySummary,
-  parseTrainingStatus,
-  parseTrainingReadiness,
+  parseConnectSleep,
+  parseHeartRateTimeSeries,
   parseHrvSummary,
   parseStressTimeSeries,
-  parseHeartRateTimeSeries,
-  parseActivityDetail,
+  parseTrainingReadiness,
+  parseTrainingStatus,
 } from "../parsing.ts";
 import type {
-  ConnectActivitySummary,
-  ConnectSleepData,
-  ConnectDailySummary,
-  TrainingStatus,
-  TrainingReadiness,
-  HrvSummary,
-  DailyStress,
-  DailyHeartRate,
   ConnectActivityDetail,
+  ConnectActivitySummary,
+  ConnectDailySummary,
+  ConnectSleepData,
+  DailyHeartRate,
+  DailyStress,
+  HrvSummary,
+  TrainingReadiness,
+  TrainingStatus,
 } from "../types.ts";
 
 describe("mapConnectActivityType", () => {
@@ -100,8 +100,7 @@ describe("parseConnectActivity", () => {
 
   it("calculates end time from start + duration (ms)", () => {
     const parsed = parseConnectActivity(sampleActivity);
-    const durationMs =
-      parsed.endedAt.getTime() - parsed.startedAt.getTime();
+    const durationMs = parsed.endedAt.getTime() - parsed.startedAt.getTime();
     expect(durationMs).toBe(3600000);
   });
 
@@ -421,11 +420,7 @@ describe("parseActivityDetail", () => {
 
   it("maps metric descriptors to keys", () => {
     const parsed = parseActivityDetail(sampleDetail);
-    expect(parsed.metricKeys).toEqual([
-      "directTimestamp",
-      "directHeartRate",
-      "directPower",
-    ]);
+    expect(parsed.metricKeys).toEqual(["directTimestamp", "directHeartRate", "directPower"]);
   });
 
   it("creates samples with named keys from descriptors", () => {

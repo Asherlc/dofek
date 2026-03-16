@@ -17,7 +17,9 @@ import {
 describe("PelotonClient — getPerformanceGraph", () => {
   it("passes everyN parameter to the API", async () => {
     let capturedUrl = "";
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       const url = input.toString();
       if (url.includes("/api/me")) {
         return Response.json({ id: "user-123" });
@@ -34,7 +36,7 @@ describe("PelotonClient — getPerformanceGraph", () => {
         });
       }
       return new Response("Not found", { status: 404 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new PelotonClient("token", mockFetch);
     await client.getPerformanceGraph("workout-123", 10);
@@ -47,7 +49,9 @@ describe("PelotonClient — getPerformanceGraph", () => {
 describe("PelotonClient — getWorkouts", () => {
   it("passes page and limit parameters", async () => {
     let capturedUrl = "";
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       const url = input.toString();
       if (url.includes("/api/me")) {
         return Response.json({ id: "user-789" });
@@ -67,7 +71,7 @@ describe("PelotonClient — getWorkouts", () => {
         });
       }
       return new Response("Not found", { status: 404 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new PelotonClient("token", mockFetch);
     await client.getWorkouts(2, 50);

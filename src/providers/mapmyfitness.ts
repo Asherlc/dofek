@@ -157,7 +157,7 @@ export class MapMyFitnessClient {
       throw new Error(`MapMyFitness API error (${response.status}): ${text}`);
     }
 
-    return response.json() as Promise<T>;
+    return response.json();
   }
 
   async getWorkouts(

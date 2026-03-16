@@ -197,7 +197,7 @@ export class SuuntoProvider implements Provider {
           throw new Error(`Suunto API error (${response.status}): ${text}`);
         }
 
-        const data = (await response.json()) as SuuntoWorkoutsResponse;
+        const data: SuuntoWorkoutsResponse = await response.json();
         let count = 0;
 
         for (const raw of data.payload ?? []) {

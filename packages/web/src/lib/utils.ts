@@ -6,5 +6,7 @@
  * typing is added.
  */
 export function assertRows<T>(data: ReadonlyArray<Record<string, unknown>> | undefined): T[] {
-  return (data ?? []) as T[];
+  // @ts-expect-error -- centralized type narrowing for raw SQL results
+  const result: T[] = data ?? [];
+  return result;
 }

@@ -92,7 +92,7 @@ function createMockFetch(
   trendDays: FakeTrendDay[],
   opts?: { signInError?: boolean },
 ): typeof globalThis.fetch {
-  return (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const urlStr = input.toString();
 
     // Sign-in (re-auth)
@@ -115,7 +115,7 @@ function createMockFetch(
     }
 
     return new Response("Not found", { status: 404 });
-  }) as typeof globalThis.fetch;
+  };
 }
 
 describe("EightSleepProvider.sync() (integration)", () => {

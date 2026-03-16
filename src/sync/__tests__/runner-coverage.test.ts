@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Database } from "../../db/index.ts";
+
 import type { Provider } from "../../providers/types.ts";
 import { runSync } from "../runner.ts";
 
@@ -30,7 +30,7 @@ function createMockProvider(overrides: Partial<Provider> = {}): Provider {
   };
 }
 
-const mockDb = {} as Database;
+const mockDb = Object.create(null);
 const since = new Date("2024-01-01");
 
 describe("Sync Runner — refreshDedupViews error handling", () => {

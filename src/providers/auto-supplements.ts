@@ -130,7 +130,7 @@ export interface DailySupplementEntry {
   providerId: string;
   externalId: string;
   date: string;
-  meal: string;
+  meal: (typeof mealValues)[number];
   foodName: string;
   foodDescription: string | undefined;
   category: "supplement";
@@ -249,7 +249,7 @@ export class AutoSupplementsProvider implements Provider {
             providerId: entry.providerId,
             externalId: entry.externalId,
             date: entry.date,
-            meal: entry.meal as "breakfast" | "lunch" | "dinner" | "snack" | "other",
+            meal: entry.meal,
             foodName: entry.foodName,
             foodDescription: entry.foodDescription,
             category: "supplement",

@@ -135,7 +135,7 @@ export function parseWorkout(record: WhoopWorkoutRecord): ParsedWorkout {
   }
 
   return {
-    externalId: record.activity_id ?? String(record.id ?? ""),
+    externalId: record.activity_id || String(record.id ?? ""),
     activityType: mapSportId(record.sport_id),
     startedAt,
     endedAt,
@@ -227,7 +227,7 @@ export function parseWeightliftingWorkout(
 // Journal parsing — response shape discovered empirically
 // ============================================================
 
-interface ParsedJournalEntry {
+export interface ParsedJournalEntry {
   question: string; // e.g. "caffeine", "alcohol", "melatonin"
   answerText: string | null;
   answerNumeric: number | null;
@@ -242,7 +242,11 @@ interface ParsedJournalEntry {
  * - Wrapped object with entries under a known key
  * - Individual entry with nested answers
  */
-function parseJournalResponse(raw: unknown): ParsedJournalEntry[] {
+function toRecord(value: object): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(value));
+}
+
+export function parseJournalResponse(raw: unknown): ParsedJournalEntry[] {
   if (!raw || typeof raw !== "object") return [];
 
   // Unwrap if wrapped in a known key
@@ -250,7 +254,7 @@ function parseJournalResponse(raw: unknown): ParsedJournalEntry[] {
   if (Array.isArray(raw)) {
     items = raw;
   } else {
-    const obj = raw as Record<string, unknown>;
+    const obj = typeof raw === "object" && raw !== null ? toRecord(raw) : {};
     // Try common wrapper keys
     const wrapped =
       obj.impacts ?? obj.entries ?? obj.data ?? obj.results ?? obj.journal ?? obj.records;
@@ -265,35 +269,28 @@ function parseJournalResponse(raw: unknown): ParsedJournalEntry[] {
   const entries: ParsedJournalEntry[] = [];
   for (const item of items) {
     if (!item || typeof item !== "object") continue;
-    const obj = item as Record<string, unknown>;
+    const obj = toRecord(item);
 
     // Try to extract a date
-    const dateStr =
-      (obj.date as string) ??
-      (obj.created_at as string) ??
-      (obj.cycle_start as string) ??
-      (obj.start as string) ??
-      (obj.day as string);
+    const dateStr = [obj.date, obj.created_at, obj.cycle_start, obj.start, obj.day].find(
+      (v): v is string => typeof v === "string",
+    );
     const date = dateStr ? new Date(dateStr) : null;
     if (!date || Number.isNaN(date.getTime())) continue;
 
     // Check if it has nested answers/behaviors
-    const answers =
-      (obj.answers as unknown[]) ??
-      (obj.behaviors as unknown[]) ??
-      (obj.items as unknown[]) ??
-      (obj.journal_entries as unknown[]);
+    const answers = [obj.answers, obj.behaviors, obj.items, obj.journal_entries].find(
+      (v): v is unknown[] => Array.isArray(v),
+    );
 
     if (Array.isArray(answers)) {
       for (const answer of answers) {
         if (!answer || typeof answer !== "object") continue;
-        const a = answer as Record<string, unknown>;
+        const a = toRecord(answer);
         const question =
-          (a.name as string) ??
-          (a.behavior as string) ??
-          (a.question as string) ??
-          (a.type as string) ??
-          "unknown";
+          [a.name, a.behavior, a.question, a.type].find(
+            (v): v is string => typeof v === "string",
+          ) ?? "unknown";
         const answerNumeric =
           typeof a.value === "number" ? a.value : typeof a.score === "number" ? a.score : null;
         const answerText =
@@ -322,7 +319,8 @@ function parseJournalResponse(raw: unknown): ParsedJournalEntry[] {
     } else {
       // Flat entry — use available fields
       const question =
-        (obj.name as string) ?? (obj.behavior as string) ?? (obj.type as string) ?? "journal";
+        [obj.name, obj.behavior, obj.type].find((v): v is string => typeof v === "string") ??
+        "journal";
       const answerNumeric =
         typeof obj.value === "number"
           ? obj.value

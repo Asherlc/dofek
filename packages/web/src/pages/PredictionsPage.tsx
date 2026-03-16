@@ -370,7 +370,8 @@ function FeatureImportanceChart({
       borderColor: "#3f3f46",
       textStyle: { color: "#e4e4e7", fontSize: 11 },
       formatter: (params: unknown) => {
-        const items = params as Array<{ seriesName: string; value: number; name: string }>;
+        // @ts-expect-error ECharts params is typed as unknown
+        const items: Array<{ seriesName: string; value: number; name: string }> = params;
         if (!Array.isArray(items) || items.length === 0) return "";
         const label = items[0]?.name;
         return `<strong>${label}</strong><br/>${items

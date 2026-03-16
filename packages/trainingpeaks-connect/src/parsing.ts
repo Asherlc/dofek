@@ -1,8 +1,5 @@
 import { mapTrainingPeaksSport } from "./sports.ts";
-import type {
-  TrainingPeaksPmcEntry,
-  TrainingPeaksWorkout,
-} from "./types.ts";
+import type { TrainingPeaksPmcEntry, TrainingPeaksWorkout } from "./types.ts";
 
 // ============================================================
 // Parsed output types

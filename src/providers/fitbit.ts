@@ -274,7 +274,7 @@ export class FitbitClient {
       throw new Error(`Fitbit API error (${response.status}): ${text}`);
     }
 
-    return response.json() as Promise<T>;
+    return response.json();
   }
 
   async getActivities(afterDate: string, offset = 0): Promise<FitbitActivityListResponse> {
@@ -375,9 +375,9 @@ export class FitbitProvider implements Provider {
           const text = await response.text();
           throw new Error(`Fitbit profile API error (${response.status}): ${text}`);
         }
-        const data = (await response.json()) as {
+        const data: {
           user: { encodedId: string; displayName?: string | null };
-        };
+        } = await response.json();
         return {
           providerAccountId: data.user.encodedId,
           email: null,

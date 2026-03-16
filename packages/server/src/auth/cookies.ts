@@ -24,7 +24,8 @@ export function setSessionCookie(res: Response, sessionId: string, expiresAt: Da
 }
 
 export function getSessionCookie(req: Request): string | undefined {
-  return req.cookies?.[SESSION_COOKIE] as string | undefined;
+  const val = req.cookies?.[SESSION_COOKIE];
+  return typeof val === "string" ? val : undefined;
 }
 
 export function clearSessionCookie(res: Response): void {
@@ -44,9 +45,11 @@ export function getOAuthFlowCookies(req: Request): {
   state: string | undefined;
   codeVerifier: string | undefined;
 } {
+  const state = req.cookies?.[STATE_COOKIE];
+  const codeVerifier = req.cookies?.[CODE_VERIFIER_COOKIE];
   return {
-    state: req.cookies?.[STATE_COOKIE] as string | undefined,
-    codeVerifier: req.cookies?.[CODE_VERIFIER_COOKIE] as string | undefined,
+    state: typeof state === "string" ? state : undefined,
+    codeVerifier: typeof codeVerifier === "string" ? codeVerifier : undefined,
   };
 }
 
@@ -63,5 +66,6 @@ export function setLinkUserCookie(res: Response, userId: string): void {
 }
 
 export function getLinkUserCookie(req: Request): string | undefined {
-  return req.cookies?.[LINK_USER_COOKIE] as string | undefined;
+  const val = req.cookies?.[LINK_USER_COOKIE];
+  return typeof val === "string" ? val : undefined;
 }

@@ -54,7 +54,7 @@ function createMockFetch(opts?: {
   const measureGroups = opts?.measureGroups ?? [];
   const hasMore = opts?.hasMore ?? false;
 
-  return (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const urlStr = input.toString();
 
     // Token refresh (Withings uses v2/oauth2)
@@ -87,7 +87,7 @@ function createMockFetch(opts?: {
     }
 
     return new Response("Not found", { status: 404 });
-  }) as typeof globalThis.fetch;
+  };
 }
 
 describe("WithingsProvider.sync() (integration)", () => {

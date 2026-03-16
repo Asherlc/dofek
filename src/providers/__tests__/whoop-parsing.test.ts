@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   parseHeartRateValues,
+  parseJournalResponse,
   parseRecovery,
   parseSleep,
   parseWorkout,
@@ -297,7 +298,7 @@ describe("parseHeartRateValues — edge cases", () => {
 
 describe("WhoopClient.authenticate — MFA required path", () => {
   it("throws when MFA is required", async () => {
-    const mockFetch = ((input: RequestInfo | URL) => {
+    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL) => {
       const url = input.toString();
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(
@@ -308,7 +309,7 @@ describe("WhoopClient.authenticate — MFA required path", () => {
         );
       }
       return Promise.resolve(new Response("Not found", { status: 404 }));
-    }) as typeof globalThis.fetch;
+    };
 
     await expect(WhoopClient.authenticate("user@test.com", "pass", mockFetch)).rejects.toThrow(
       /MFA/,
@@ -316,7 +317,7 @@ describe("WhoopClient.authenticate — MFA required path", () => {
   });
 
   it("returns token when no MFA required", async () => {
-    const mockFetch = ((input: RequestInfo | URL) => {
+    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL) => {
       const url = input.toString();
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(
@@ -329,7 +330,7 @@ describe("WhoopClient.authenticate — MFA required path", () => {
         return Promise.resolve(Response.json({ id: 42 }));
       }
       return Promise.resolve(new Response("Not found", { status: 404 }));
-    }) as typeof globalThis.fetch;
+    };
 
     const token = await WhoopClient.authenticate("user@test.com", "pass", mockFetch);
     expect(token.accessToken).toBe("my-tok");
@@ -338,7 +339,7 @@ describe("WhoopClient.authenticate — MFA required path", () => {
   });
 
   it("throws when signIn gets token but no userId from bootstrap", async () => {
-    const mockFetch = ((input: RequestInfo | URL) => {
+    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL) => {
       const url = input.toString();
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(
@@ -351,7 +352,7 @@ describe("WhoopClient.authenticate — MFA required path", () => {
         return Promise.resolve(Response.json({ profile: {} }));
       }
       return Promise.resolve(new Response("Not found", { status: 404 }));
-    }) as typeof globalThis.fetch;
+    };
 
     await expect(WhoopClient.authenticate("user@test.com", "pass", mockFetch)).rejects.toThrow(
       /user ID/i,
@@ -361,52 +362,52 @@ describe("WhoopClient.authenticate — MFA required path", () => {
 
 describe("WhoopClient._fetchUserId — various response shapes", () => {
   it("extracts user_id from top level", async () => {
-    const mockFetch = ((input: RequestInfo | URL) => {
+    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL) => {
       const url = input.toString();
       if (url.includes("users-service/v2/bootstrap")) {
         return Promise.resolve(Response.json({ user_id: 123 }));
       }
       return Promise.resolve(new Response("Not found", { status: 404 }));
-    }) as typeof globalThis.fetch;
+    };
 
     const userId = await WhoopClient._fetchUserId("token", mockFetch);
     expect(userId).toBe(123);
   });
 
   it("extracts id from nested user object", async () => {
-    const mockFetch = ((input: RequestInfo | URL) => {
+    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL) => {
       const url = input.toString();
       if (url.includes("users-service/v2/bootstrap")) {
         return Promise.resolve(Response.json({ user: { id: 456 } }));
       }
       return Promise.resolve(new Response("Not found", { status: 404 }));
-    }) as typeof globalThis.fetch;
+    };
 
     const userId = await WhoopClient._fetchUserId("token", mockFetch);
     expect(userId).toBe(456);
   });
 
   it("extracts user_id from nested user object", async () => {
-    const mockFetch = ((input: RequestInfo | URL) => {
+    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL) => {
       const url = input.toString();
       if (url.includes("users-service/v2/bootstrap")) {
         return Promise.resolve(Response.json({ user: { user_id: 789 } }));
       }
       return Promise.resolve(new Response("Not found", { status: 404 }));
-    }) as typeof globalThis.fetch;
+    };
 
     const userId = await WhoopClient._fetchUserId("token", mockFetch);
     expect(userId).toBe(789);
   });
 
   it("returns null when no user ID can be extracted", async () => {
-    const mockFetch = ((input: RequestInfo | URL) => {
+    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL) => {
       const url = input.toString();
       if (url.includes("users-service/v2/bootstrap")) {
         return Promise.resolve(Response.json({ something: "else" }));
       }
       return Promise.resolve(new Response("Not found", { status: 404 }));
-    }) as typeof globalThis.fetch;
+    };
 
     const userId = await WhoopClient._fetchUserId("token", mockFetch);
     expect(userId).toBeNull();
@@ -415,7 +416,7 @@ describe("WhoopClient._fetchUserId — various response shapes", () => {
 
 describe("WhoopClient.refreshAccessToken — success path", () => {
   it("returns new access token and reuses old refresh token", async () => {
-    const mockFetch = ((input: RequestInfo | URL) => {
+    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL) => {
       const url = input.toString();
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(
@@ -428,7 +429,7 @@ describe("WhoopClient.refreshAccessToken — success path", () => {
         return Promise.resolve(Response.json({ id: 99 }));
       }
       return Promise.resolve(new Response("Not found", { status: 404 }));
-    }) as typeof globalThis.fetch;
+    };
 
     const result = await WhoopClient.refreshAccessToken("old-refresh", mockFetch);
     expect(result.accessToken).toBe("new-access");
@@ -438,7 +439,7 @@ describe("WhoopClient.refreshAccessToken — success path", () => {
   });
 
   it("returns new refresh token when Cognito provides one", async () => {
-    const mockFetch = ((input: RequestInfo | URL) => {
+    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL) => {
       const url = input.toString();
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(
@@ -451,9 +452,334 @@ describe("WhoopClient.refreshAccessToken — success path", () => {
         return Promise.resolve(Response.json({ id: 88 }));
       }
       return Promise.resolve(new Response("Not found", { status: 404 }));
-    }) as typeof globalThis.fetch;
+    };
 
     const result = await WhoopClient.refreshAccessToken("old-refresh", mockFetch);
     expect(result.refreshToken).toBe("new-refresh");
+  });
+});
+
+// ============================================================
+// parseWorkout — legacy format (no `during` field)
+// ============================================================
+
+describe("parseWorkout — legacy format without during", () => {
+  // These tests exercise defensive code paths for legacy API responses
+  // where fields now typed as required were absent in older API versions.
+
+  it("falls back to start/end fields when during is absent", () => {
+    // Legacy API response missing `during` — testing defensive fallback
+    const record: WhoopWorkoutRecord = {
+      activity_id: "uuid-legacy-1",
+      during: "", // empty — triggers fallback
+      timezone_offset: "-05:00",
+      sport_id: 0,
+      start: "2026-03-01T10:00:00Z",
+      end: "2026-03-01T11:00:00Z",
+    };
+
+    const parsed = parseWorkout(record);
+    expect(parsed.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
+    expect(parsed.endedAt).toEqual(new Date("2026-03-01T11:00:00Z"));
+    expect(parsed.durationSeconds).toBe(3600);
+  });
+
+  it("falls back to created_at/updated_at when start/end are also missing", () => {
+    // Legacy API response missing both `during` and `start`/`end` — testing deepest fallback
+    const record: WhoopWorkoutRecord = {
+      activity_id: "uuid-legacy-2",
+      during: "", // empty — triggers fallback
+      timezone_offset: "-05:00",
+      sport_id: 1,
+      created_at: "2026-03-01T09:00:00Z",
+      updated_at: "2026-03-01T10:30:00Z",
+    };
+
+    const parsed = parseWorkout(record);
+    expect(parsed.startedAt).toEqual(new Date("2026-03-01T09:00:00Z"));
+    expect(parsed.endedAt).toEqual(new Date("2026-03-01T10:30:00Z"));
+    expect(parsed.durationSeconds).toBe(5400);
+  });
+
+  it("uses record.id as externalId when activity_id is missing", () => {
+    // Legacy API response with numeric id instead of activity_id UUID
+    const record: WhoopWorkoutRecord = {
+      activity_id: "", // empty — triggers id fallback
+      id: 12345,
+      during: "['2026-03-01T10:00:00Z','2026-03-01T11:00:00Z')",
+      timezone_offset: "-05:00",
+      sport_id: 0,
+    };
+
+    const parsed = parseWorkout(record);
+    expect(parsed.externalId).toBe("12345");
+  });
+});
+
+// ============================================================
+// parseJournalResponse — branch coverage
+// ============================================================
+
+describe("parseJournalResponse", () => {
+  it("returns empty array for null input", () => {
+    expect(parseJournalResponse(null)).toEqual([]);
+  });
+
+  it("returns empty array for non-object input", () => {
+    expect(parseJournalResponse("string")).toEqual([]);
+    expect(parseJournalResponse(42)).toEqual([]);
+    expect(parseJournalResponse(undefined)).toEqual([]);
+  });
+
+  it("parses array of entries with answers", () => {
+    const raw = [
+      {
+        date: "2026-03-01",
+        answers: [
+          { name: "caffeine", value: 2, impact: 0.5 },
+          { name: "alcohol", value: 0 },
+        ],
+      },
+    ];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries).toHaveLength(2);
+    expect(entries[0]?.question).toBe("caffeine");
+    expect(entries[0]?.answerNumeric).toBe(2);
+    expect(entries[0]?.impactScore).toBe(0.5);
+    expect(entries[1]?.question).toBe("alcohol");
+    expect(entries[1]?.answerNumeric).toBe(0);
+    expect(entries[1]?.impactScore).toBeNull();
+  });
+
+  it("unwraps entries from impacts wrapper key", () => {
+    const raw = {
+      impacts: [{ date: "2026-03-01", name: "sleep_quality", score: 8 }],
+    };
+
+    const entries = parseJournalResponse(raw);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.question).toBe("sleep_quality");
+    expect(entries[0]?.answerNumeric).toBe(8);
+  });
+
+  it("unwraps entries from entries wrapper key", () => {
+    const raw = {
+      entries: [{ date: "2026-03-01", name: "mood", value: 7 }],
+    };
+
+    const entries = parseJournalResponse(raw);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.question).toBe("mood");
+  });
+
+  it("unwraps from data wrapper key", () => {
+    const raw = {
+      data: [{ date: "2026-03-01", name: "stress", score: 3 }],
+    };
+
+    const entries = parseJournalResponse(raw);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.question).toBe("stress");
+  });
+
+  it("unwraps from results wrapper key", () => {
+    const raw = {
+      results: [{ date: "2026-03-01", name: "energy", value: 5 }],
+    };
+
+    const entries = parseJournalResponse(raw);
+    expect(entries).toHaveLength(1);
+  });
+
+  it("unwraps from journal wrapper key", () => {
+    const raw = {
+      journal: [{ date: "2026-03-01", behavior: "meditation", value: 1 }],
+    };
+
+    const entries = parseJournalResponse(raw);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.question).toBe("meditation");
+  });
+
+  it("unwraps from records wrapper key", () => {
+    const raw = {
+      records: [{ date: "2026-03-01", type: "supplement", answer: "yes" }],
+    };
+
+    const entries = parseJournalResponse(raw);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.question).toBe("supplement");
+    expect(entries[0]?.answerText).toBe("yes");
+  });
+
+  it("wraps single non-array object as entry", () => {
+    const raw = { date: "2026-03-01", name: "caffeine", value: 3 };
+
+    const entries = parseJournalResponse(raw);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.question).toBe("caffeine");
+    expect(entries[0]?.answerNumeric).toBe(3);
+  });
+
+  it("extracts date from created_at fallback", () => {
+    const raw = [{ created_at: "2026-03-01T12:00:00Z", name: "test", value: 1 }];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.date).toEqual(new Date("2026-03-01T12:00:00Z"));
+  });
+
+  it("extracts date from cycle_start fallback", () => {
+    const raw = [{ cycle_start: "2026-03-01T00:00:00Z", name: "test", value: 1 }];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries).toHaveLength(1);
+  });
+
+  it("extracts date from start fallback", () => {
+    const raw = [{ start: "2026-03-01T00:00:00Z", name: "test", value: 1 }];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries).toHaveLength(1);
+  });
+
+  it("extracts date from day fallback", () => {
+    const raw = [{ day: "2026-03-01", name: "test", value: 1 }];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries).toHaveLength(1);
+  });
+
+  it("skips entries with invalid dates", () => {
+    const raw = [{ date: "not-a-date", name: "test", value: 1 }];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries).toHaveLength(0);
+  });
+
+  it("skips entries with no date fields at all", () => {
+    const raw = [{ name: "test", value: 1 }];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries).toHaveLength(0);
+  });
+
+  it("skips null and non-object items in array", () => {
+    const raw = [null, "string", { date: "2026-03-01", name: "valid", value: 1 }];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.question).toBe("valid");
+  });
+
+  it("parses nested behaviors array", () => {
+    const raw = [
+      {
+        date: "2026-03-01",
+        behaviors: [{ behavior: "stretching", value: 1, impact_score: 0.3 }],
+      },
+    ];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.question).toBe("stretching");
+    expect(entries[0]?.impactScore).toBe(0.3);
+  });
+
+  it("parses nested items array", () => {
+    const raw = [
+      {
+        date: "2026-03-01",
+        items: [{ question: "How stressed?", score: 4, response: "moderate" }],
+      },
+    ];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.question).toBe("how_stressed?");
+    expect(entries[0]?.answerNumeric).toBe(4);
+    expect(entries[0]?.answerText).toBe("moderate");
+  });
+
+  it("parses nested journal_entries array", () => {
+    const raw = [
+      {
+        date: "2026-03-01",
+        journal_entries: [{ type: "sleep_aid", value: "melatonin" }],
+      },
+    ];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.question).toBe("sleep_aid");
+    expect(entries[0]?.answerText).toBe("melatonin");
+  });
+
+  it("skips null/non-object answers in nested array", () => {
+    const raw = [
+      {
+        date: "2026-03-01",
+        answers: [null, "bad", { name: "valid", value: 1 }],
+      },
+    ];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries).toHaveLength(1);
+  });
+
+  it("uses fallback question name from type field", () => {
+    const raw = [
+      {
+        date: "2026-03-01",
+        answers: [{ type: "supplement_type", value: 1 }],
+      },
+    ];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries[0]?.question).toBe("supplement_type");
+  });
+
+  it("defaults question to unknown when no name fields exist", () => {
+    const raw = [
+      {
+        date: "2026-03-01",
+        answers: [{ value: 1 }],
+      },
+    ];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries[0]?.question).toBe("unknown");
+  });
+
+  it("handles flat entry with behavior field", () => {
+    const raw = [{ date: "2026-03-01", behavior: "cold_shower", score: 5 }];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.question).toBe("cold_shower");
+    expect(entries[0]?.answerNumeric).toBe(5);
+  });
+
+  it("handles flat entry with response as answer text", () => {
+    const raw = [{ date: "2026-03-01", name: "note", response: "felt good" }];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries[0]?.answerText).toBe("felt good");
+  });
+
+  it("handles flat entry with impact_score field", () => {
+    const raw = [{ date: "2026-03-01", name: "caffeine", impact_score: -0.2, value: 3 }];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries[0]?.impactScore).toBe(-0.2);
+    expect(entries[0]?.answerNumeric).toBe(3);
+  });
+
+  it("defaults flat entry question to journal when no name fields exist", () => {
+    const raw = [{ date: "2026-03-01", value: 1 }];
+
+    const entries = parseJournalResponse(raw);
+    expect(entries[0]?.question).toBe("journal");
   });
 });

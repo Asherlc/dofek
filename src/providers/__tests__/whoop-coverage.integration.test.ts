@@ -68,7 +68,9 @@ describe("WhoopProvider — HR stream error path", () => {
   });
 
   it("catches HR stream errors and continues to journal sync", async () => {
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       const urlStr = input.toString();
       if (urlStr.includes("auth-service/v3/whoop")) {
         return Response.json({
@@ -95,7 +97,7 @@ describe("WhoopProvider — HR stream error path", () => {
         ]);
       }
       return new Response("Not found", { status: 404 });
-    }) as typeof globalThis.fetch;
+    };
 
     const provider = new WhoopProvider(mockFetch);
     const result = await provider.sync(ctx.db, new Date("2026-02-28T00:00:00Z"));
@@ -114,7 +116,9 @@ describe("WhoopProvider — HR stream error path", () => {
   });
 
   it("catches journal errors gracefully", async () => {
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       const urlStr = input.toString();
       if (urlStr.includes("auth-service/v3/whoop")) {
         return Response.json({
@@ -135,7 +139,7 @@ describe("WhoopProvider — HR stream error path", () => {
         return new Response("Internal Server Error", { status: 500 });
       }
       return new Response("Not found", { status: 404 });
-    }) as typeof globalThis.fetch;
+    };
 
     const provider = new WhoopProvider(mockFetch);
     const result = await provider.sync(ctx.db, new Date("2026-02-28T00:00:00Z"));
@@ -149,11 +153,11 @@ describe("WhoopProvider — HR stream error path", () => {
 describe("WhoopClient — verifyCode", () => {
   it("verifies code via SMS_MFA challenge", async () => {
     let _attempts = 0;
-    const mockFetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
       const url = input.toString();
       if (url.includes("auth-service/v3/whoop")) {
         _attempts++;
-        const body = JSON.parse(init?.body as string) as Record<string, unknown>;
+        const body: Record<string, unknown> = JSON.parse(String(init?.body ?? ""));
         if (body.ChallengeName === "SMS_MFA") {
           return Promise.resolve(
             Response.json({
@@ -172,7 +176,7 @@ describe("WhoopClient — verifyCode", () => {
         return Promise.resolve(Response.json({ id: 55 }));
       }
       return Promise.resolve(new Response("Not found", { status: 404 }));
-    }) as typeof globalThis.fetch;
+    };
 
     const token = await WhoopClient.verifyCode("session-xyz", "123456", "user@test.com", mockFetch);
     expect(token.accessToken).toBe("verified-tok");
@@ -181,11 +185,11 @@ describe("WhoopClient — verifyCode", () => {
 
   it("falls back to SOFTWARE_TOKEN_MFA when SMS_MFA fails", async () => {
     const challengeNames: string[] = [];
-    const mockFetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
       const url = input.toString();
       if (url.includes("auth-service/v3/whoop")) {
-        const body = JSON.parse(init?.body as string) as Record<string, unknown>;
-        challengeNames.push(body.ChallengeName as string);
+        const body: Record<string, unknown> = JSON.parse(String(init?.body ?? ""));
+        challengeNames.push(String(body.ChallengeName));
         if (body.ChallengeName === "SMS_MFA") {
           return Promise.resolve(
             Response.json(
@@ -205,7 +209,7 @@ describe("WhoopClient — verifyCode", () => {
         return Promise.resolve(Response.json({ id: 77 }));
       }
       return Promise.resolve(new Response("Not found", { status: 404 }));
-    }) as typeof globalThis.fetch;
+    };
 
     const token = await WhoopClient.verifyCode("session-xyz", "654321", "user@test.com", mockFetch);
     expect(challengeNames).toContain("SMS_MFA");
@@ -215,13 +219,13 @@ describe("WhoopClient — verifyCode", () => {
   });
 
   it("throws when no tokens in verify response", async () => {
-    const mockFetch = ((input: RequestInfo | URL) => {
+    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL) => {
       const url = input.toString();
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(Response.json({ AuthenticationResult: {} }));
       }
       return Promise.resolve(new Response("Not found", { status: 404 }));
-    }) as typeof globalThis.fetch;
+    };
 
     await expect(
       WhoopClient.verifyCode("session", "123456", "user@test.com", mockFetch),
@@ -229,7 +233,7 @@ describe("WhoopClient — verifyCode", () => {
   });
 
   it("throws when bootstrap returns no userId during verifyCode", async () => {
-    const mockFetch = ((input: RequestInfo | URL) => {
+    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL) => {
       const url = input.toString();
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(
@@ -242,7 +246,7 @@ describe("WhoopClient — verifyCode", () => {
         return Promise.resolve(Response.json({ profile: {} }));
       }
       return Promise.resolve(new Response("Not found", { status: 404 }));
-    }) as typeof globalThis.fetch;
+    };
 
     await expect(
       WhoopClient.verifyCode("session", "123456", "user@test.com", mockFetch),
@@ -252,13 +256,13 @@ describe("WhoopClient — verifyCode", () => {
 
 describe("WhoopClient — cognitoCall error paths", () => {
   it("throws on non-JSON Cognito response", async () => {
-    const mockFetch = ((input: RequestInfo | URL) => {
+    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL) => {
       const url = input.toString();
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(new Response("Not JSON", { status: 200 }));
       }
       return Promise.resolve(new Response("Not found", { status: 404 }));
-    }) as typeof globalThis.fetch;
+    };
 
     await expect(WhoopClient.signIn("user@test.com", "pass", mockFetch)).rejects.toThrow(
       /WHOOP auth failed/,
@@ -266,7 +270,7 @@ describe("WhoopClient — cognitoCall error paths", () => {
   });
 
   it("throws with error type from Cognito error response", async () => {
-    const mockFetch = ((input: RequestInfo | URL) => {
+    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL) => {
       const url = input.toString();
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(
@@ -280,7 +284,7 @@ describe("WhoopClient — cognitoCall error paths", () => {
         );
       }
       return Promise.resolve(new Response("Not found", { status: 404 }));
-    }) as typeof globalThis.fetch;
+    };
 
     await expect(WhoopClient.signIn("nobody@test.com", "pass", mockFetch)).rejects.toThrow(
       /UserNotFoundException/,
@@ -288,13 +292,13 @@ describe("WhoopClient — cognitoCall error paths", () => {
   });
 
   it("throws when signIn gets no AccessToken", async () => {
-    const mockFetch = ((input: RequestInfo | URL) => {
+    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL) => {
       const url = input.toString();
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(Response.json({ AuthenticationResult: {} }));
       }
       return Promise.resolve(new Response("Not found", { status: 404 }));
-    }) as typeof globalThis.fetch;
+    };
 
     await expect(WhoopClient.signIn("user@test.com", "pass", mockFetch)).rejects.toThrow(
       /no tokens/i,
@@ -302,13 +306,13 @@ describe("WhoopClient — cognitoCall error paths", () => {
   });
 
   it("throws when refreshAccessToken gets no AccessToken", async () => {
-    const mockFetch = ((input: RequestInfo | URL) => {
+    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL) => {
       const url = input.toString();
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(Response.json({ AuthenticationResult: {} }));
       }
       return Promise.resolve(new Response("Not found", { status: 404 }));
-    }) as typeof globalThis.fetch;
+    };
 
     await expect(WhoopClient.refreshAccessToken("old-ref", mockFetch)).rejects.toThrow(
       /no tokens/i,
@@ -318,7 +322,7 @@ describe("WhoopClient — cognitoCall error paths", () => {
 
 describe("WhoopClient — signIn SOFTWARE_TOKEN_MFA", () => {
   it("returns totp method for SOFTWARE_TOKEN_MFA challenge", async () => {
-    const mockFetch = ((input: RequestInfo | URL) => {
+    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL) => {
       const url = input.toString();
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(
@@ -329,7 +333,7 @@ describe("WhoopClient — signIn SOFTWARE_TOKEN_MFA", () => {
         );
       }
       return Promise.resolve(new Response("Not found", { status: 404 }));
-    }) as typeof globalThis.fetch;
+    };
 
     const result = await WhoopClient.signIn("user@test.com", "pass", mockFetch);
     expect(result.type).toBe("verification_required");
@@ -342,13 +346,13 @@ describe("WhoopClient — signIn SOFTWARE_TOKEN_MFA", () => {
 
 describe("WhoopClient._fetchUserId — bootstrap HTTP failure", () => {
   it("returns null when bootstrap returns non-200", async () => {
-    const mockFetch = ((input: RequestInfo | URL) => {
+    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL) => {
       const url = input.toString();
       if (url.includes("users-service/v2/bootstrap")) {
         return Promise.resolve(new Response("Unauthorized", { status: 401 }));
       }
       return Promise.resolve(new Response("Not found", { status: 404 }));
-    }) as typeof globalThis.fetch;
+    };
 
     const userId = await WhoopClient._fetchUserId("bad-token", mockFetch);
     expect(userId).toBeNull();
@@ -357,13 +361,15 @@ describe("WhoopClient._fetchUserId — bootstrap HTTP failure", () => {
 
 describe("WhoopClient — getCycles response shapes", () => {
   it("handles wrapped object with 'records' key", async () => {
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       const urlStr = input.toString();
       if (urlStr.includes("/cycles")) {
         return Response.json({ records: [{ id: 1, user_id: 10, days: ["2026-03-01"] }] });
       }
       return new Response("Not found", { status: 404 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new WhoopClient(
       { accessToken: "tok", refreshToken: "ref", userId: 10 },
@@ -374,13 +380,15 @@ describe("WhoopClient — getCycles response shapes", () => {
   });
 
   it("handles wrapped object with 'data' key", async () => {
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       const urlStr = input.toString();
       if (urlStr.includes("/cycles")) {
         return Response.json({ data: [{ id: 2 }] });
       }
       return new Response("Not found", { status: 404 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new WhoopClient(
       { accessToken: "tok", refreshToken: "ref", userId: 10 },
@@ -391,13 +399,15 @@ describe("WhoopClient — getCycles response shapes", () => {
   });
 
   it("handles wrapped object with 'results' key", async () => {
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       const urlStr = input.toString();
       if (urlStr.includes("/cycles")) {
         return Response.json({ results: [{ id: 3 }] });
       }
       return new Response("Not found", { status: 404 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new WhoopClient(
       { accessToken: "tok", refreshToken: "ref", userId: 10 },
@@ -408,13 +418,15 @@ describe("WhoopClient — getCycles response shapes", () => {
   });
 
   it("returns empty array for unknown object shape", async () => {
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       const urlStr = input.toString();
       if (urlStr.includes("/cycles")) {
         return Response.json({ unknownKey: "value" });
       }
       return new Response("Not found", { status: 404 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new WhoopClient(
       { accessToken: "tok", refreshToken: "ref", userId: 10 },
@@ -425,13 +437,15 @@ describe("WhoopClient — getCycles response shapes", () => {
   });
 
   it("returns empty array for null response", async () => {
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       const urlStr = input.toString();
       if (urlStr.includes("/cycles")) {
         return Response.json(null);
       }
       return new Response("Not found", { status: 404 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new WhoopClient(
       { accessToken: "tok", refreshToken: "ref", userId: 10 },
@@ -444,13 +458,15 @@ describe("WhoopClient — getCycles response shapes", () => {
 
 describe("WhoopClient — API error handling", () => {
   it("throws on non-200 API response", async () => {
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       const urlStr = input.toString();
       if (urlStr.includes("/cycles")) {
         return new Response("Bad Request", { status: 400 });
       }
       return new Response("Not found", { status: 404 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new WhoopClient(
       { accessToken: "tok", refreshToken: "ref", userId: 10 },

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildOAuth1Header } from "../oauth1.ts";
-import type { OAuthConsumer, OAuth1Token } from "../types.ts";
+import type { OAuth1Token, OAuthConsumer } from "../types.ts";
 
 describe("buildOAuth1Header", () => {
   const consumer: OAuthConsumer = {
@@ -9,11 +9,7 @@ describe("buildOAuth1Header", () => {
   };
 
   it("produces a valid OAuth Authorization header", () => {
-    const header = buildOAuth1Header(
-      "GET",
-      "https://example.com/resource",
-      consumer,
-    );
+    const header = buildOAuth1Header("GET", "https://example.com/resource", consumer);
 
     expect(header).toMatch(/^OAuth /);
     expect(header).toContain('oauth_consumer_key="test_consumer_key"');
@@ -30,22 +26,13 @@ describe("buildOAuth1Header", () => {
       oauth_token_secret: "my_secret",
     };
 
-    const header = buildOAuth1Header(
-      "POST",
-      "https://example.com/exchange",
-      consumer,
-      token,
-    );
+    const header = buildOAuth1Header("POST", "https://example.com/exchange", consumer, token);
 
     expect(header).toContain('oauth_token="my_token"');
   });
 
   it("does not include oauth_token when no token provided", () => {
-    const header = buildOAuth1Header(
-      "GET",
-      "https://example.com/preauthorize",
-      consumer,
-    );
+    const header = buildOAuth1Header("GET", "https://example.com/preauthorize", consumer);
 
     expect(header).not.toContain("oauth_token=");
   });

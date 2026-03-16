@@ -33,7 +33,7 @@ export function HrvVariabilityChart({ data, loading }: HrvVariabilityChartProps)
     15,
     ...data
       .filter((d) => d.rollingCoefficientOfVariation != null)
-      .map((d) => d.rollingCoefficientOfVariation as number),
+      .map((d) => Number(d.rollingCoefficientOfVariation)),
   );
 
   const option = {

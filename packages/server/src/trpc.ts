@@ -29,7 +29,8 @@ const isAuthenticated = t.middleware(({ ctx, next }) => {
   if (!ctx.userId) {
     throw new TRPCError({ code: "UNAUTHORIZED", message: "Not authenticated" });
   }
-  return next({ ctx: { ...ctx, userId: ctx.userId } as AuthenticatedContext });
+  const authenticatedCtx: AuthenticatedContext = { ...ctx, userId: ctx.userId };
+  return next({ ctx: authenticatedCtx });
 });
 
 export const protectedProcedure = t.procedure.use(isAuthenticated);

@@ -57,7 +57,10 @@ describe("WithingsProvider.sync() — error paths (integration)", () => {
     // We'll use a provider that calls the real DB, but we'll make the second
     // group have a conflicting externalId pattern that triggers an error.
     // Instead, we can inject a null value for recordedAt to trigger a DB constraint error.
-    const mockFetch = (async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+      _init?: RequestInit,
+    ): Promise<Response> => {
       const urlStr = input.toString();
 
       if (urlStr.includes("/measure")) {
@@ -81,7 +84,7 @@ describe("WithingsProvider.sync() — error paths (integration)", () => {
       }
 
       return new Response("Not found", { status: 404 });
-    }) as typeof globalThis.fetch;
+    };
 
     const provider = new WithingsProvider(mockFetch);
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
@@ -101,7 +104,9 @@ describe("WithingsProvider.sync() — error paths (integration)", () => {
 
     // Create a mock fetch where the API returns a non-zero status (error)
     // which will cause the WithingsClient.post() to throw inside the withSyncLog callback
-    const mockFetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       const urlStr = input.toString();
 
       if (urlStr.includes("/measure")) {
@@ -112,7 +117,7 @@ describe("WithingsProvider.sync() — error paths (integration)", () => {
       }
 
       return new Response("Not found", { status: 404 });
-    }) as typeof globalThis.fetch;
+    };
 
     const provider = new WithingsProvider(mockFetch);
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));

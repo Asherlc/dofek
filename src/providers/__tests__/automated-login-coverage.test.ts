@@ -442,9 +442,9 @@ describe("UltrahumanProvider", () => {
 
 describe("UltrahumanClient — error handling", () => {
   it("throws on non-OK response with status and body", async () => {
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Forbidden", { status: 403 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new UltrahumanClient("bad-token", "user@example.com", mockFetch);
     await expect(client.getDailyMetrics("2026-03-01")).rejects.toThrow(
@@ -453,9 +453,9 @@ describe("UltrahumanClient — error handling", () => {
   });
 
   it("throws on 401 unauthorized", async () => {
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Unauthorized", { status: 401 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new UltrahumanClient("expired-token", "user@example.com", mockFetch);
     await expect(client.getDailyMetrics("2026-03-01")).rejects.toThrow(
@@ -464,9 +464,9 @@ describe("UltrahumanClient — error handling", () => {
   });
 
   it("throws on 500 server error", async () => {
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Internal Server Error", { status: 500 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new UltrahumanClient("token", "user@example.com", mockFetch);
     await expect(client.getDailyMetrics("2026-03-01")).rejects.toThrow(
@@ -480,9 +480,9 @@ describe("UltrahumanClient — error handling", () => {
       error: null,
       status: 200,
     };
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return Response.json(mockResponse);
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new UltrahumanClient("good-token", "user@example.com", mockFetch);
     const result = await client.getDailyMetrics("2026-03-01");
@@ -491,9 +491,9 @@ describe("UltrahumanClient — error handling", () => {
   });
 
   it("includes error body text in thrown error", async () => {
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Invalid API key", { status: 403 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new UltrahumanClient("bad-token", "user@example.com", mockFetch);
     await expect(client.getDailyMetrics("2026-03-01")).rejects.toThrow("Invalid API key");
@@ -512,9 +512,9 @@ describe("UltrahumanClient — error handling", () => {
       error: null,
       status: 200,
     };
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return Response.json(mockResponse);
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new UltrahumanClient("good-token", "user@example.com", mockFetch);
     const result = await client.getDailyMetrics("2026-03-01");

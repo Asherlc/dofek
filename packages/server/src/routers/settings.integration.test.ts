@@ -92,7 +92,7 @@ describe("Settings router", () => {
 
       const result = await query("settings.getAll");
       expect(result.result.data).toBeDefined();
-      const settings = result.result.data as Array<{ key: string; value: unknown }>;
+      const settings: Array<{ key: string; value: unknown }> = result.result.data;
       expect(settings.length).toBeGreaterThanOrEqual(2);
 
       const keys = settings.map((s) => s.key);

@@ -46,7 +46,7 @@ async function exchangeCookieForToken(
     throw new Error(`TrainingPeaks token exchange failed (${response.status}): ${text}`);
   }
 
-  const data = (await response.json()) as TrainingPeaksTokenResponse;
+  const data: TrainingPeaksTokenResponse = await response.json();
   if (!data.success) {
     throw new Error("TrainingPeaks token exchange returned success=false");
   }
@@ -72,9 +72,10 @@ async function refreshCookie(
     redirect: "manual",
   });
 
-  const setCookies = "getSetCookie" in response.headers && typeof response.headers.getSetCookie === "function"
-    ? response.headers.getSetCookie()
-    : (response.headers.get("set-cookie")?.split(/,(?=\s*\w+=)/) ?? []);
+  const setCookies =
+    "getSetCookie" in response.headers && typeof response.headers.getSetCookie === "function"
+      ? response.headers.getSetCookie()
+      : (response.headers.get("set-cookie")?.split(/,(?=\s*\w+=)/) ?? []);
 
   for (const header of setCookies) {
     if (header.includes("Production_tpAuth=")) {
@@ -139,7 +140,8 @@ export class TrainingPeaksConnectClient {
       throw new Error(`TrainingPeaks API error (${response.status}): ${text}`);
     }
 
-    return response.json() as Promise<T>;
+    const result: T = await response.json();
+    return result;
   }
 
   private async post<T>(base: string, path: string, body: unknown): Promise<T> {
@@ -161,7 +163,8 @@ export class TrainingPeaksConnectClient {
       throw new Error(`TrainingPeaks API error (${response.status}): ${text}`);
     }
 
-    return response.json() as Promise<T>;
+    const result: T = await response.json();
+    return result;
   }
 
   // ---- User profile ----
@@ -176,7 +179,11 @@ export class TrainingPeaksConnectClient {
    * Get workouts in a date range. Max 90 days per request.
    * Dates in YYYY-MM-DD format.
    */
-  async getWorkouts(athleteId: number, startDate: string, endDate: string): Promise<TrainingPeaksWorkout[]> {
+  async getWorkouts(
+    athleteId: number,
+    startDate: string,
+    endDate: string,
+  ): Promise<TrainingPeaksWorkout[]> {
     return this.get<TrainingPeaksWorkout[]>(
       TP_API_BASE,
       `/fitness/v6/athletes/${athleteId}/workouts/${startDate}/${endDate}`,

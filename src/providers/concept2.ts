@@ -211,7 +211,7 @@ export class Concept2Provider implements Provider {
             throw new Error(`Concept2 API error (${response.status}): ${text}`);
           }
 
-          const data = (await response.json()) as Concept2ResultsResponse;
+          const data: Concept2ResultsResponse = await response.json();
           totalPages = data.meta.pagination.total_pages;
 
           for (const raw of data.data) {

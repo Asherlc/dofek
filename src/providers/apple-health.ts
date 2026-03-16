@@ -537,7 +537,8 @@ export function streamHealthExport(
     }
 
     parser.on("opentag", (node) => {
-      const attrs = node.attributes as Record<string, string>;
+      // @ts-expect-error -- sax strict mode (no xmlns) always returns string attrs, but TS types include QualifiedAttribute
+      const attrs: Record<string, string> = node.attributes;
 
       // Records appear at top level and inside Correlations (e.g. BP pairs)
       if (node.name === "Record") {
@@ -756,7 +757,8 @@ async function upsertMetricStreamBatch(
         break;
     }
 
-    rows.push(row as typeof metricStream.$inferInsert);
+    // @ts-expect-error -- row is built dynamically but always contains providerId + recordedAt
+    rows.push(row);
   }
 
   for (let i = 0; i < rows.length; i += 1000) {
@@ -819,7 +821,8 @@ async function upsertBodyMeasurementBatch(
           break;
       }
     }
-    rows.push(row as typeof bodyMeasurement.$inferInsert);
+    // @ts-expect-error -- row is built dynamically but always contains providerId + recordedAt
+    rows.push(row);
   }
 
   // Multi-row upsert with COALESCE to preserve existing non-null values
@@ -936,10 +939,11 @@ async function upsertDailyMetricsBatch(
   }
 
   // Multi-row upsert with COALESCE to preserve existing non-null values
-  const insertRows = rows.map(({ row }) => row as typeof dailyMetrics.$inferInsert);
+  const insertRows = rows.map(({ row }) => row);
   for (let i = 0; i < insertRows.length; i += 500) {
     await db
       .insert(dailyMetrics)
+      // @ts-expect-error -- rows are dynamically built Records with required fields
       .values(insertRows.slice(i, i + 500))
       .onConflictDoUpdate({
         target: [dailyMetrics.date, dailyMetrics.providerId],
@@ -1020,10 +1024,11 @@ async function upsertNutritionBatch(
   }
 
   // Multi-row upsert with COALESCE to preserve existing non-null values
-  const insertRows = rows.map(({ row }) => row as typeof nutritionDaily.$inferInsert);
+  const insertRows = rows.map(({ row }) => row);
   for (let i = 0; i < insertRows.length; i += 500) {
     await db
       .insert(nutritionDaily)
+      // @ts-expect-error -- rows are dynamically built Records with required fields
       .values(insertRows.slice(i, i + 500))
       .onConflictDoUpdate({
         target: [nutritionDaily.date, nutritionDaily.providerId],
@@ -1502,8 +1507,10 @@ function buildSourceNameMap(xmlPath: string): Promise<Map<string, string>> {
 
     parser.on("opentag", (node) => {
       if (node.name === "ClinicalRecord") {
-        const sourceName = node.attributes.sourceName as string | undefined;
-        const resourcePath = node.attributes.resourceFilePath as string | undefined;
+        // @ts-expect-error -- sax strict mode (no xmlns) returns string attrs, but TS types include QualifiedAttribute
+        const sourceName: string | undefined = node.attributes.sourceName;
+        // @ts-expect-error -- sax strict mode (no xmlns) returns string attrs, but TS types include QualifiedAttribute
+        const resourcePath: string | undefined = node.attributes.resourceFilePath;
         if (sourceName && resourcePath) {
           map.set(resourcePath.replace(/^\//, ""), sourceName);
         }
@@ -1726,8 +1733,18 @@ export interface FhirDiagnosticReport {
   result?: { reference: string }[];
 }
 
-const VALID_LAB_STATUSES = new Set(["final", "preliminary", "corrected", "cancelled"]);
+const VALID_LAB_STATUSES = new Set<LabResultStatus>([
+  "final",
+  "preliminary",
+  "corrected",
+  "cancelled",
+]);
 type LabResultStatus = "final" | "preliminary" | "corrected" | "cancelled";
+
+function isLabResultStatus(s: string): s is LabResultStatus {
+  // @ts-expect-error -- checking membership of string in Set<LabResultStatus>
+  return VALID_LAB_STATUSES.has(s);
+}
 
 export interface ParsedLabResult {
   externalId: string;
@@ -1772,10 +1789,7 @@ export function parseFhirObservation(obs: FhirObservation, sourceName: string): 
     externalId: obs.id,
     testName: getDisplayName(obs.code),
     loincCode: extractLoincCode(obs.code),
-    status:
-      obs.status && VALID_LAB_STATUSES.has(obs.status)
-        ? (obs.status as LabResultStatus)
-        : undefined,
+    status: obs.status && isLabResultStatus(obs.status) ? obs.status : undefined,
     sourceName,
     recordedAt: (() => {
       const dateStr = obs.effectiveDateTime ?? obs.issued;
@@ -1784,7 +1798,7 @@ export function parseFhirObservation(obs: FhirObservation, sourceName: string): 
       return new Date(dateStr);
     })(),
     issuedAt: obs.issued ? new Date(obs.issued) : undefined,
-    raw: { ...obs } as Record<string, unknown>,
+    raw: { ...obs },
   };
 
   // Value: numeric or text

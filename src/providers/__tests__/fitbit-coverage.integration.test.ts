@@ -328,36 +328,36 @@ describe("parseFitbitActivity — edge cases", () => {
 
 describe("FitbitClient — error handling", () => {
   it("throws on non-OK response", async () => {
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Unauthorized", { status: 401 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new FitbitClient("bad-token", mockFetch);
     await expect(client.getActivities("2026-03-01")).rejects.toThrow("Fitbit API error (401)");
   });
 
   it("throws on non-OK sleep response", async () => {
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Server Error", { status: 500 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new FitbitClient("token", mockFetch);
     await expect(client.getSleepLogs("2026-03-01")).rejects.toThrow("Fitbit API error (500)");
   });
 
   it("throws on non-OK weight log response", async () => {
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Rate Limited", { status: 429 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new FitbitClient("token", mockFetch);
     await expect(client.getWeightLogs("2026-03-01")).rejects.toThrow("Fitbit API error (429)");
   });
 
   it("throws on non-OK daily summary response", async () => {
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Forbidden", { status: 403 });
-    }) as typeof globalThis.fetch;
+    };
 
     const client = new FitbitClient("token", mockFetch);
     await expect(client.getDailySummary("2026-03-01")).rejects.toThrow("Fitbit API error (403)");
@@ -372,7 +372,7 @@ function createMockFetchForWeightErrors(opts: {
   weightError?: boolean;
   weightThrow?: boolean;
 }): typeof globalThis.fetch {
-  return (async (input: RequestInfo | URL): Promise<Response> => {
+  return async (input: RequestInfo | URL): Promise<Response> => {
     const urlStr = input.toString();
 
     // Token refresh
@@ -428,7 +428,7 @@ function createMockFetchForWeightErrors(opts: {
     }
 
     return new Response("Not found", { status: 404 });
-  }) as typeof globalThis.fetch;
+  };
 }
 
 describe("FitbitProvider.sync() — weight error paths (integration)", () => {
@@ -477,9 +477,9 @@ describe("FitbitProvider.getUserIdentity()", () => {
     process.env.FITBIT_CLIENT_ID = "test-id";
     process.env.FITBIT_CLIENT_SECRET = "test-secret";
 
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return Response.json({ user: { encodedId: "ABC123", displayName: "Fit User" } });
-    }) as typeof globalThis.fetch;
+    };
 
     const provider = new FitbitProvider(mockFetch);
     const setup = provider.authSetup();
@@ -494,9 +494,9 @@ describe("FitbitProvider.getUserIdentity()", () => {
     process.env.FITBIT_CLIENT_ID = "test-id";
     process.env.FITBIT_CLIENT_SECRET = "test-secret";
 
-    const mockFetch = (async (): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Too Many Requests", { status: 429 });
-    }) as typeof globalThis.fetch;
+    };
 
     const provider = new FitbitProvider(mockFetch);
     const setup = provider.authSetup();

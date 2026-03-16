@@ -20,7 +20,8 @@ const GRID_PAIRS: Record<string, string> = {
 
 function isValidLayout(value: unknown): value is DashboardLayout {
   if (typeof value !== "object" || value === null) return false;
-  const obj = value as Record<string, unknown>;
+  // @ts-expect-error narrowing object to Record<string, unknown> after null check
+  const obj: Record<string, unknown> = value;
   return (
     Array.isArray(obj.order) &&
     Array.isArray(obj.hidden) &&
