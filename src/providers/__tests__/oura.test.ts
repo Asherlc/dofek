@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   mapOuraActivityType,
   OuraClient,
@@ -59,7 +59,9 @@ vi.mock("../../auth/oauth.ts", () => ({
     expiresAt: new Date("2027-01-01T00:00:00Z"),
     scopes: "daily",
   })),
-  getOAuthRedirectUri: vi.fn(() => "https://dofek.example.com/callback"),
+  getOAuthRedirectUri: vi.fn(
+    () => process.env.OAUTH_REDIRECT_URI_unencrypted ?? "https://dofek.example.com/callback",
+  ),
   refreshAccessToken: vi.fn(async () => ({
     accessToken: "refreshed-token",
     refreshToken: "refreshed-refresh",
@@ -72,7 +74,7 @@ vi.mock("../../auth/oauth.ts", () => ({
 // Mock DB (chainable insert pattern)
 // ============================================================
 
-function createMockDb() {
+function _createMockDb() {
   const onConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
   const onConflictDoNothing = vi.fn().mockResolvedValue(undefined);
   const values = vi.fn().mockReturnValue({ onConflictDoUpdate, onConflictDoNothing });
@@ -84,7 +86,7 @@ function createMockDb() {
 // Sample data factories (for sync tests)
 // ============================================================
 
-function fakeSleepDoc(overrides: Partial<OuraSleepDocument> = {}): OuraSleepDocument {
+function _fakeSleepDoc(overrides: Partial<OuraSleepDocument> = {}): OuraSleepDocument {
   return {
     id: "sleep-001",
     day: "2026-03-01",
@@ -107,7 +109,7 @@ function fakeSleepDoc(overrides: Partial<OuraSleepDocument> = {}): OuraSleepDocu
   };
 }
 
-function fakeWorkout(overrides: Partial<OuraWorkout> = {}): OuraWorkout {
+function _fakeWorkout(overrides: Partial<OuraWorkout> = {}): OuraWorkout {
   return {
     id: "workout-001",
     activity: "running",
@@ -123,7 +125,7 @@ function fakeWorkout(overrides: Partial<OuraWorkout> = {}): OuraWorkout {
   };
 }
 
-function fakeSession(overrides: Partial<OuraSession> = {}): OuraSession {
+function _fakeSession(overrides: Partial<OuraSession> = {}): OuraSession {
   return {
     id: "session-001",
     day: "2026-03-01",
@@ -135,7 +137,7 @@ function fakeSession(overrides: Partial<OuraSession> = {}): OuraSession {
   };
 }
 
-function fakeHeartRate(overrides: Partial<OuraHeartRate> = {}): OuraHeartRate {
+function _fakeHeartRate(overrides: Partial<OuraHeartRate> = {}): OuraHeartRate {
   return {
     bpm: 72,
     source: "awake",
@@ -144,7 +146,7 @@ function fakeHeartRate(overrides: Partial<OuraHeartRate> = {}): OuraHeartRate {
   };
 }
 
-function fakeReadiness(overrides: Partial<OuraDailyReadiness> = {}): OuraDailyReadiness {
+function _fakeReadiness(overrides: Partial<OuraDailyReadiness> = {}): OuraDailyReadiness {
   return {
     id: "readiness-001",
     day: "2026-03-01",
@@ -165,7 +167,7 @@ function fakeReadiness(overrides: Partial<OuraDailyReadiness> = {}): OuraDailyRe
   };
 }
 
-function fakeActivity(overrides: Partial<OuraDailyActivity> = {}): OuraDailyActivity {
+function _fakeActivity(overrides: Partial<OuraDailyActivity> = {}): OuraDailyActivity {
   return {
     id: "activity-001",
     day: "2026-03-01",
@@ -182,7 +184,7 @@ function fakeActivity(overrides: Partial<OuraDailyActivity> = {}): OuraDailyActi
   };
 }
 
-function fakeSpO2(overrides: Partial<OuraDailySpO2> = {}): OuraDailySpO2 {
+function _fakeSpO2(overrides: Partial<OuraDailySpO2> = {}): OuraDailySpO2 {
   return {
     id: "spo2-001",
     day: "2026-03-01",
@@ -192,7 +194,7 @@ function fakeSpO2(overrides: Partial<OuraDailySpO2> = {}): OuraDailySpO2 {
   };
 }
 
-function fakeVO2Max(overrides: Partial<OuraVO2Max> = {}): OuraVO2Max {
+function _fakeVO2Max(overrides: Partial<OuraVO2Max> = {}): OuraVO2Max {
   return {
     id: "vo2max-001",
     day: "2026-03-01",
@@ -202,7 +204,7 @@ function fakeVO2Max(overrides: Partial<OuraVO2Max> = {}): OuraVO2Max {
   };
 }
 
-function fakeStress(overrides: Partial<OuraDailyStress> = {}): OuraDailyStress {
+function _fakeStress(overrides: Partial<OuraDailyStress> = {}): OuraDailyStress {
   return {
     id: "stress-001",
     day: "2026-03-01",
@@ -213,7 +215,7 @@ function fakeStress(overrides: Partial<OuraDailyStress> = {}): OuraDailyStress {
   };
 }
 
-function fakeResilience(overrides: Partial<OuraDailyResilience> = {}): OuraDailyResilience {
+function _fakeResilience(overrides: Partial<OuraDailyResilience> = {}): OuraDailyResilience {
   return {
     id: "resilience-001",
     day: "2026-03-01",
@@ -227,7 +229,9 @@ function fakeResilience(overrides: Partial<OuraDailyResilience> = {}): OuraDaily
   };
 }
 
-function fakeCvAge(overrides: Partial<OuraDailyCardiovascularAge> = {}): OuraDailyCardiovascularAge {
+function _fakeCvAge(
+  overrides: Partial<OuraDailyCardiovascularAge> = {},
+): OuraDailyCardiovascularAge {
   return {
     day: "2026-03-01",
     vascular_age: 35,
@@ -235,7 +239,7 @@ function fakeCvAge(overrides: Partial<OuraDailyCardiovascularAge> = {}): OuraDai
   };
 }
 
-function fakeTag(overrides: Partial<OuraTag> = {}): OuraTag {
+function _fakeTag(overrides: Partial<OuraTag> = {}): OuraTag {
   return {
     id: "tag-001",
     day: "2026-03-01",
@@ -246,7 +250,7 @@ function fakeTag(overrides: Partial<OuraTag> = {}): OuraTag {
   };
 }
 
-function fakeEnhancedTag(overrides: Partial<OuraEnhancedTag> = {}): OuraEnhancedTag {
+function _fakeEnhancedTag(overrides: Partial<OuraEnhancedTag> = {}): OuraEnhancedTag {
   return {
     id: "etag-001",
     tag_type_code: "caffeine",
@@ -260,7 +264,7 @@ function fakeEnhancedTag(overrides: Partial<OuraEnhancedTag> = {}): OuraEnhanced
   };
 }
 
-function fakeRestMode(overrides: Partial<OuraRestModePeriod> = {}): OuraRestModePeriod {
+function _fakeRestMode(overrides: Partial<OuraRestModePeriod> = {}): OuraRestModePeriod {
   return {
     id: "rm-001",
     start_day: "2026-03-01",
@@ -271,7 +275,7 @@ function fakeRestMode(overrides: Partial<OuraRestModePeriod> = {}): OuraRestMode
   };
 }
 
-function fakeSleepTime(overrides: Partial<OuraSleepTime> = {}): OuraSleepTime {
+function _fakeSleepTime(overrides: Partial<OuraSleepTime> = {}): OuraSleepTime {
   return {
     id: "st-001",
     day: "2026-03-01",
@@ -308,7 +312,7 @@ interface MockApiData {
   sleepTime?: OuraSleepTime[];
 }
 
-function createMockApiFetch(data: MockApiData = {}): typeof globalThis.fetch {
+function _createMockApiFetch(data: MockApiData = {}): typeof globalThis.fetch {
   return async (input: RequestInfo | URL): Promise<Response> => {
     const urlStr = input.toString();
 

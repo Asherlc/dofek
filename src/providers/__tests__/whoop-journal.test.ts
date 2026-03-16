@@ -13,7 +13,7 @@ import { parseWorkout, type WhoopWorkoutRecord } from "../whoop.ts";
 
 describe("parseWorkout — fallback paths (no `during` field)", () => {
   it("falls back to start/end when `during` is missing", () => {
-    const record = {
+    const record: WhoopWorkoutRecord = {
       activity_id: "uuid-fallback-1",
       timezone_offset: "-05:00",
       sport_id: 0,
@@ -25,7 +25,6 @@ describe("parseWorkout — fallback paths (no `during` field)", () => {
       score: 10,
     };
 
-    // @ts-expect-error partial mock record
     const parsed = parseWorkout(record);
     expect(parsed.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
     expect(parsed.endedAt).toEqual(new Date("2026-03-01T11:00:00Z"));
@@ -36,7 +35,7 @@ describe("parseWorkout — fallback paths (no `during` field)", () => {
   });
 
   it("falls back to created_at/updated_at when start/end are missing", () => {
-    const record = {
+    const record: WhoopWorkoutRecord = {
       activity_id: "uuid-fallback-2",
       timezone_offset: "-05:00",
       sport_id: 1, // cycling
@@ -45,7 +44,6 @@ describe("parseWorkout — fallback paths (no `during` field)", () => {
       score: 8,
     };
 
-    // @ts-expect-error partial mock record
     const parsed = parseWorkout(record);
     expect(parsed.startedAt).toEqual(new Date("2026-03-01T09:00:00Z"));
     expect(parsed.endedAt).toEqual(new Date("2026-03-01T10:30:00Z"));
@@ -54,7 +52,7 @@ describe("parseWorkout — fallback paths (no `during` field)", () => {
   });
 
   it("uses record.id when activity_id is missing", () => {
-    const record = {
+    const record: WhoopWorkoutRecord = {
       id: 98765,
       during: "['2026-03-01T10:00:00Z','2026-03-01T10:30:00Z')",
       timezone_offset: "-05:00",
@@ -62,21 +60,19 @@ describe("parseWorkout — fallback paths (no `during` field)", () => {
       score: 3,
     };
 
-    // @ts-expect-error partial mock record
     const parsed = parseWorkout(record);
     expect(parsed.externalId).toBe("98765");
     expect(parsed.activityType).toBe("yoga");
   });
 
   it("uses empty string when both activity_id and id are missing", () => {
-    const record = {
+    const record: WhoopWorkoutRecord = {
       during: "['2026-03-01T10:00:00Z','2026-03-01T10:30:00Z')",
       timezone_offset: "-05:00",
       sport_id: 0,
       score: 5,
     };
 
-    // @ts-expect-error partial mock record
     const parsed = parseWorkout(record);
     expect(parsed.externalId).toBe("");
   });

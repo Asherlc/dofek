@@ -74,7 +74,7 @@ jobs:
       - store_artifacts:
           path: coverage
 
-  e2e:
+  test-e2e:
     executor: machine
     steps:
       - checkout
@@ -199,28 +199,13 @@ jobs:
           destination: mutation-report
 
 workflows:
-  lint:
+  ci:
     jobs:
       - lint
-
-  typescript:
-    jobs:
       - typescript
-
-  knip:
-    jobs:
       - knip
-
-  test:
-    jobs:
       - test-unit
-
-  e2e:
-    jobs:
-      - e2e
-
-  mutation:
-    jobs:
+      - test-e2e
       - mutation:
           filters:
             branches:

@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   exchangeWithingsCode,
   parseMeasureGroup,
-  WithingsProvider,
   type WithingsMeasureGroup,
+  WithingsProvider,
 } from "../withings.ts";
 
 // ============================================================
@@ -95,7 +95,7 @@ describe("Withings Provider — parsing", () => {
 // ============================================================
 
 function createMockDb({
-  tokensResult = [] as Record<string, unknown>[],
+  tokensResult = [] satisfies Record<string, unknown>[],
   insertErrorAfterCalls = 0,
   insertError,
 }: {
@@ -168,7 +168,7 @@ describe("WithingsProvider.sync() — unit tests", () => {
 
     const mockFetch: typeof globalThis.fetch = async (
       input: RequestInfo | URL,
-      init?: RequestInit,
+      _init?: RequestInit,
     ): Promise<Response> => {
       const url = input.toString();
       if (url.includes("/measure")) {

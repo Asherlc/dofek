@@ -45,27 +45,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
       tar xz --strip-components=1 -C /usr/local/bin docker/docker && \
     apt-get purge -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 
-COPY --from=source /app/src ./src
-COPY --from=source /app/drizzle ./drizzle
-COPY --from=source /app/package.json .
-COPY --from=source /app/pnpm-workspace.yaml .
-COPY --from=source /app/supplements.json .
-COPY --from=source /app/packages/server/src ./packages/server/src
-COPY --from=source /app/packages/server/package.json ./packages/server/
-COPY --from=source /app/packages/whoop-whoop/src ./packages/whoop-whoop/src
-COPY --from=source /app/packages/whoop-whoop/package.json ./packages/whoop-whoop/
-COPY --from=prod-deps /app/node_modules ./node_modules
+COPY --from=source --chown=node:node /app/src ./src
+COPY --from=source --chown=node:node /app/drizzle ./drizzle
+COPY --from=source --chown=node:node /app/package.json .
+COPY --from=source --chown=node:node /app/pnpm-workspace.yaml .
+COPY --from=source --chown=node:node /app/supplements.json .
+COPY --from=source --chown=node:node /app/packages/server/src ./packages/server/src
+COPY --from=source --chown=node:node /app/packages/server/package.json ./packages/server/
+COPY --from=source --chown=node:node /app/packages/whoop-whoop/src ./packages/whoop-whoop/src
+COPY --from=source --chown=node:node /app/packages/whoop-whoop/package.json ./packages/whoop-whoop/
+COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules
 # Link root workspace package so "import from 'dofek/...'" resolves
 RUN ln -s /app node_modules/dofek
 
 # SOPS-encrypted .env — decrypted at runtime via SOPS_AGE_KEY env var
-COPY --from=source /app/.env .
-COPY --from=source /app/.sops.yaml .
+COPY --from=source --chown=node:node /app/.env .
+COPY --from=source --chown=node:node /app/.sops.yaml .
 
-COPY entrypoint.sh .
+COPY --chown=node:node entrypoint.sh .
 
 # Run as non-root user (node user is built into node:22-slim, uid 1000)
-RUN chown -R node:node /app
 USER node
 
 ENTRYPOINT ["./entrypoint.sh"]

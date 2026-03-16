@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 // Mock modules (needed for sync tests)
 vi.mock("../../db/sync-log.ts", () => ({
@@ -27,9 +27,6 @@ vi.mock("../../auth/oauth.ts", () => ({
 }));
 
 import { CorosProvider, corosOAuthConfig, mapCorosSportType, parseCorosWorkout } from "../coros.ts";
-import { loadTokens, saveTokens } from "../../db/tokens.ts";
-import { refreshAccessToken } from "../../auth/oauth.ts";
-import { withSyncLog } from "../../db/sync-log.ts";
 
 // ============================================================
 // Tests targeting uncovered paths in coros.ts

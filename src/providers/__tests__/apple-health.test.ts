@@ -1,27 +1,13 @@
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
-  AppleHealthProvider,
-  buildPanelMap,
   enrichWorkoutFromStats,
-  type FhirDiagnosticReport,
-  type FhirObservation,
-  type HealthRecord,
-  type HealthWorkout,
-  importAppleHealthFile,
   parseActivitySummary,
   parseCategoryRecord,
-  parseFhirObservation,
-  parseHealthDate,
   parseRecord,
   parseRouteLocation,
   parseSleepAnalysis,
   parseWorkout,
   parseWorkoutStatistics,
-  type SleepAnalysisRecord,
-  streamHealthExport,
 } from "../apple-health.ts";
 
 // ============================================================
