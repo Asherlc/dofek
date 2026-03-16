@@ -1,5 +1,7 @@
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { http, HttpResponse } from "msw";
+import { setupServer } from "msw/node";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
 import { activity, oauthToken } from "../../db/schema.ts";
 import { ensureProvider, saveTokens } from "../../db/tokens.ts";
@@ -58,45 +60,47 @@ function fakeActivity(overrides: FakeActivityOverrides = {}) {
   };
 }
 
-function createMockFetch(
-  pages: Array<Array<ReturnType<typeof fakeActivity>>>,
-): typeof globalThis.fetch {
+function xertHandlers(pages: Array<Array<ReturnType<typeof fakeActivity>>>) {
   let pageIndex = 0;
 
-  return async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
-    const urlStr = input.toString();
-
+  return [
     // Token refresh
-    if (urlStr.includes("/oauth/token")) {
-      return Response.json({
+    http.post("https://www.xertonline.com/oauth/token", () => {
+      return HttpResponse.json({
         access_token: "refreshed-token",
         refresh_token: "new-refresh",
         expires_in: 7200,
       });
-    }
+    }),
 
     // Activity list (paginated)
-    if (urlStr.includes("/oauth/activity/")) {
+    http.get("https://www.xertonline.com/oauth/activity/", () => {
       const activities = pages[pageIndex] ?? [];
       pageIndex++;
-      return Response.json(activities);
-    }
-
-    return new Response("Not found", { status: 404 });
-  };
+      return HttpResponse.json(activities);
+    }),
+  ];
 }
+
+const server = setupServer();
 
 describe("XertProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
+    server.listen({ onUnhandledRequest: "error" });
     process.env.XERT_CLIENT_ID = "xert_public";
     process.env.XERT_CLIENT_SECRET = "xert_public";
     ctx = await setupTestDatabase();
     await ensureProvider(ctx.db, "xert", "Xert", "https://www.xertonline.com");
   }, 60_000);
 
+  afterEach(() => {
+    server.resetHandlers();
+  });
+
   afterAll(async () => {
+    server.close();
     if (ctx) await ctx.cleanup();
   });
 
@@ -119,7 +123,9 @@ describe("XertProvider.sync() (integration)", () => {
       }),
     ];
 
-    const provider = new XertProvider(createMockFetch([activities]));
+    server.use(...xertHandlers([activities]));
+
+    const provider = new XertProvider();
     const result = await provider.sync(ctx.db, new Date("2024-02-01T00:00:00Z"));
 
     expect(result.provider).toBe("xert");
@@ -151,11 +157,16 @@ describe("XertProvider.sync() (integration)", () => {
 
     const activities = [fakeActivity({ id: 9001 })];
 
-    const provider = new XertProvider(createMockFetch([activities]));
+    server.use(...xertHandlers([activities]));
+
+    const provider = new XertProvider();
     await provider.sync(ctx.db, new Date("2024-02-01T00:00:00Z"));
 
     // Sync again
-    const provider2 = new XertProvider(createMockFetch([activities]));
+    server.resetHandlers();
+    server.use(...xertHandlers([activities]));
+
+    const provider2 = new XertProvider();
     await provider2.sync(ctx.db, new Date("2024-02-01T00:00:00Z"));
 
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "xert"));
@@ -182,7 +193,9 @@ describe("XertProvider.sync() (integration)", () => {
     // Second page is empty, stopping pagination
     const page2: Array<ReturnType<typeof fakeActivity>> = [];
 
-    const provider = new XertProvider(createMockFetch([page1, page2]));
+    server.use(...xertHandlers([page1, page2]));
+
+    const provider = new XertProvider();
     const result = await provider.sync(ctx.db, new Date("2024-02-01T00:00:00Z"));
 
     // page1 has 2 items (< 50), so pagination stops after first page
@@ -206,7 +219,9 @@ describe("XertProvider.sync() (integration)", () => {
       fakeActivity({ id: 8005, sport: "SomethingUnknown", startTimestamp: 1709420000 }),
     ];
 
-    const provider = new XertProvider(createMockFetch([activities]));
+    server.use(...xertHandlers([activities]));
+
+    const provider = new XertProvider();
     const result = await provider.sync(ctx.db, new Date("2024-02-01T00:00:00Z"));
     expect(result.recordsSynced).toBe(5);
 
@@ -246,7 +261,9 @@ describe("XertProvider.sync() (integration)", () => {
       }),
     ];
 
-    const provider = new XertProvider(createMockFetch([activities]));
+    server.use(...xertHandlers([activities]));
+
+    const provider = new XertProvider();
     await provider.sync(ctx.db, new Date("2024-02-01T00:00:00Z"));
 
     const rows = await ctx.db.select().from(activity).where(eq(activity.externalId, "8801"));
@@ -267,7 +284,9 @@ describe("XertProvider.sync() (integration)", () => {
       scopes: null,
     });
 
-    const provider = new XertProvider(createMockFetch([[]]));
+    server.use(...xertHandlers([[]]));
+
+    const provider = new XertProvider();
     await provider.sync(ctx.db, new Date("2024-02-01T00:00:00Z"));
 
     const { loadTokens } = await import("../../db/tokens.ts");
@@ -278,7 +297,7 @@ describe("XertProvider.sync() (integration)", () => {
   it("returns error when no tokens exist", async () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "xert"));
 
-    const provider = new XertProvider(createMockFetch([[]]));
+    const provider = new XertProvider();
     const result = await provider.sync(ctx.db, new Date("2024-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);

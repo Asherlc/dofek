@@ -1,5 +1,7 @@
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { http, HttpResponse } from "msw";
+import { setupServer } from "msw/node";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../db/__tests__/test-helpers.ts";
 import { activity, bodyMeasurement, oauthToken } from "../../db/schema.ts";
 import { ensureProvider, saveTokens } from "../../db/tokens.ts";
@@ -47,63 +49,67 @@ function fakeWeightEntry(overrides: Partial<FakeWgerWeightEntry> = {}): FakeWger
   };
 }
 
-function createMockFetch(
+function wgerHandlers(
   sessions: FakeWgerWorkoutSession[],
   weightEntries: FakeWgerWeightEntry[],
   opts?: { refreshError?: boolean },
-): typeof globalThis.fetch {
-  return async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
-    const urlStr = input.toString();
-
+) {
+  return [
     // Token refresh
-    if (urlStr.includes("/api/v2/token")) {
+    http.post("https://wger.de/api/v2/token", () => {
       if (opts?.refreshError) {
-        return new Response("Unauthorized", { status: 401 });
+        return new HttpResponse("Unauthorized", { status: 401 });
       }
-      return Response.json({
+      return HttpResponse.json({
         access_token: "refreshed-token",
         refresh_token: "new-refresh",
         expires_in: 7200,
         scope: "read",
         token_type: "Bearer",
       });
-    }
+    }),
 
     // Workout sessions list
-    if (urlStr.includes("/workoutsession/")) {
-      return Response.json({
+    http.get("https://wger.de/api/v2/workoutsession/*", () => {
+      return HttpResponse.json({
         count: sessions.length,
         next: null,
         previous: null,
         results: sessions,
       });
-    }
+    }),
 
     // Weight entries list
-    if (urlStr.includes("/weightentry/")) {
-      return Response.json({
+    http.get("https://wger.de/api/v2/weightentry/*", () => {
+      return HttpResponse.json({
         count: weightEntries.length,
         next: null,
         previous: null,
         results: weightEntries,
       });
-    }
-
-    return new Response("Not found", { status: 404 });
-  };
+    }),
+  ];
 }
+
+const server = setupServer();
 
 describe("WgerProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
+    server.listen({ onUnhandledRequest: "error" });
     process.env.WGER_CLIENT_ID = "test-client-id";
     process.env.WGER_CLIENT_SECRET = "test-client-secret";
     ctx = await setupTestDatabase();
     await ensureProvider(ctx.db, "wger", "Wger", "https://wger.de/api/v2");
   }, 60_000);
 
+  afterEach(() => {
+    server.resetHandlers();
+  });
+
   afterAll(async () => {
+    server.close();
     if (ctx) await ctx.cleanup();
   });
 
@@ -124,7 +130,9 @@ describe("WgerProvider.sync() (integration)", () => {
       fakeWeightEntry({ id: 202, date: "2026-03-04", weight: "82.0" }),
     ];
 
-    const provider = new WgerProvider(createMockFetch(sessions, weights));
+    server.use(...wgerHandlers(sessions, weights));
+
+    const provider = new WgerProvider();
     const since = new Date("2026-02-01T00:00:00Z");
     const result = await provider.sync(ctx.db, since);
 
@@ -175,7 +183,9 @@ describe("WgerProvider.sync() (integration)", () => {
     const sessions = [fakeWorkoutSession({ id: 101, date: "2026-03-01" })];
     const weights = [fakeWeightEntry({ id: 201, date: "2026-03-01", weight: "83.0" })];
 
-    const provider = new WgerProvider(createMockFetch(sessions, weights));
+    server.use(...wgerHandlers(sessions, weights));
+
+    const provider = new WgerProvider();
     await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     // Sync again — should upsert, not duplicate
@@ -209,7 +219,9 @@ describe("WgerProvider.sync() (integration)", () => {
       scopes: "read",
     });
 
-    const provider = new WgerProvider(createMockFetch([], []));
+    server.use(...wgerHandlers([], []));
+
+    const provider = new WgerProvider();
     await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     // Verify token was refreshed in DB
@@ -227,38 +239,32 @@ describe("WgerProvider.sync() (integration)", () => {
     });
 
     let callCount = 0;
-    const paginatedFetch: typeof globalThis.fetch = async (
-      input: RequestInfo | URL,
-      _init?: RequestInit,
-    ): Promise<Response> => {
-      const urlStr = input.toString();
 
-      if (urlStr.includes("/workoutsession/")) {
+    server.use(
+      http.get("https://wger.de/api/v2/workoutsession/*", () => {
         callCount++;
         if (callCount === 1) {
-          return Response.json({
+          return HttpResponse.json({
             count: 2,
             next: "https://wger.de/api/v2/workoutsession/?format=json&ordering=-date&offset=50&limit=50",
             previous: null,
             results: [fakeWorkoutSession({ id: 301, date: "2026-03-10" })],
           });
         }
-        return Response.json({
+        return HttpResponse.json({
           count: 2,
           next: null,
           previous: null,
           results: [fakeWorkoutSession({ id: 302, date: "2026-03-08" })],
         });
-      }
+      }),
 
-      if (urlStr.includes("/weightentry/")) {
-        return Response.json({ count: 0, next: null, previous: null, results: [] });
-      }
+      http.get("https://wger.de/api/v2/weightentry/*", () => {
+        return HttpResponse.json({ count: 0, next: null, previous: null, results: [] });
+      }),
+    );
 
-      return new Response("Not found", { status: 404 });
-    };
-
-    const provider = new WgerProvider(paginatedFetch);
+    const provider = new WgerProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(0);
@@ -279,7 +285,9 @@ describe("WgerProvider.sync() (integration)", () => {
       fakeWorkoutSession({ id: 402, date: "2025-12-01" }), // before since
     ];
 
-    const provider = new WgerProvider(createMockFetch(sessions, []));
+    server.use(...wgerHandlers(sessions, []));
+
+    const provider = new WgerProvider();
     const result = await provider.sync(ctx.db, new Date("2026-01-01T00:00:00Z"));
 
     // Only the first session should be synced
@@ -289,7 +297,7 @@ describe("WgerProvider.sync() (integration)", () => {
   it("returns error when no tokens exist", async () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "wger"));
 
-    const provider = new WgerProvider(createMockFetch([], []));
+    const provider = new WgerProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);
