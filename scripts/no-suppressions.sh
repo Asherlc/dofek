@@ -12,13 +12,21 @@ PATTERNS=(
   'eslint-disable'
 )
 
-# Find all .ts/.tsx files, excluding generated files, node_modules, and this checker's companion script
-files=$(find src/ packages/*/src/ scripts/ \
+# Find all .ts/.tsx files, excluding generated files, node_modules, and this checker's companion script.
+# Includes cypress/ and root-level config files to prevent suppressions in unchecked paths.
+files=$(find src/ packages/*/src/ scripts/ cypress/ \
   -type f \( -name '*.ts' -o -name '*.tsx' \) \
   ! -name 'routeTree.gen.ts' \
   ! -name 'fix-ts-expect-errors.ts' \
   ! -path '*/node_modules/*' \
   2>/dev/null)
+
+# Also check root-level .ts config files (vitest.config.ts, cypress.config.ts, etc.)
+root_ts=$(find . -maxdepth 1 -name '*.ts' -type f 2>/dev/null)
+if [ -n "$root_ts" ]; then
+  files="$files
+$root_ts"
+fi
 
 if [ -z "$files" ]; then
   echo "No source files found to check."
