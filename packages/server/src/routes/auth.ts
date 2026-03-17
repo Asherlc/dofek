@@ -245,7 +245,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       logger.error(`[auth] Failed to start link flow: ${message}`);
-      res.status(500).send(`Auth error: ${message}`);
+      res.status(500).send("Auth error: failed to start link flow");
     }
   });
 

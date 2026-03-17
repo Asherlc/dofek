@@ -16,6 +16,13 @@ export const syncStatusInput = z.object({ jobId: z.string() });
 
 export const logsInput = z.object({ limit: z.number().default(100) });
 
+export const REDACTED_ERROR_MESSAGE = "Details hidden";
+
+function redactLogErrorMessage(errorMessage: string | null): string | null {
+  if (!errorMessage) return null;
+  return REDACTED_ERROR_MESSAGE;
+}
+
 // ── Provider registration (race-safe) ──
 let registrationPromise: Promise<void> | null = null;
 
@@ -234,12 +241,17 @@ export const syncRouter = router({
       const { syncLog } = await import("dofek/db/schema");
       const { desc, eq } = await import("drizzle-orm");
 
-      return ctx.db
+      const rows = await ctx.db
         .select()
         .from(syncLog)
         .where(eq(syncLog.userId, ctx.userId))
         .orderBy(desc(syncLog.syncedAt))
         .limit(input.limit);
+
+      return rows.map((row) => ({
+        ...row,
+        errorMessage: redactLogErrorMessage(row.errorMessage),
+      }));
     }),
 
   /** Per-provider record counts broken down by table */
