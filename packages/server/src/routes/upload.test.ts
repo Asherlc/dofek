@@ -211,6 +211,24 @@ describe("createUploadRouter", () => {
       expect(data.received).toBe(1);
       expect(data.total).toBe(3);
     });
+
+    it("keeps .xml extension when single-chunk upload falls back to non-chunked", async () => {
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/api/upload/apple-health", {
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "x-upload-id": "single-xml-upload",
+          "x-chunk-index": "0",
+          "x-chunk-total": "1",
+          "x-file-ext": ".xml",
+        },
+        body: Buffer.from("<HealthData></HealthData>"),
+      });
+
+      expect(res.status).toBe(200);
+      const filePath = vi.mocked(streamToFile).mock.calls[0][1];
+      expect(filePath.endsWith(".xml")).toBe(true);
+    });
   });
 
   describe("GET /api/upload/apple-health/status (job states)", () => {

@@ -164,7 +164,8 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
 
     // Non-chunked upload (single small file)
     if (!uploadId || Number.isNaN(chunkTotal) || chunkTotal <= 1) {
-      const ext = (req.headers["content-type"] ?? "").includes("xml") ? ".xml" : ".zip";
+      const ext =
+        fileExt === ".xml" || (req.headers["content-type"] ?? "").includes("xml") ? ".xml" : ".zip";
       const tmpId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
       const tmpFile = join(JOB_FILES_DIR, `apple-health-${tmpId}${ext}`);
       try {
