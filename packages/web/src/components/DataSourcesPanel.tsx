@@ -126,18 +126,30 @@ export function DataSourcesPanel() {
   const allProviders = providers.data ?? [];
   const enabledSyncable = allProviders.filter((p) => p.enabled && !p.importOnly);
 
-  // Track whether an OAuth window is open so we can refetch on focus
-  const oauthPendingRef = useRef(false);
-
+  // Listen for OAuth completion from the popup via BroadcastChannel + postMessage
   useEffect(() => {
-    const onFocus = () => {
-      if (oauthPendingRef.current) {
-        oauthPendingRef.current = false;
-        trpcUtils.sync.providers.invalidate();
+    const invalidateProviders = () => {
+      trpcUtils.sync.providers.invalidate();
+    };
+    // Primary: BroadcastChannel (same-origin, works even if window.opener is null)
+    let channel: BroadcastChannel | undefined;
+    try {
+      channel = new BroadcastChannel("oauth-complete");
+      channel.onmessage = invalidateProviders;
+    } catch {
+      // BroadcastChannel not supported — rely on postMessage fallback
+    }
+    // Fallback: window.postMessage from the popup via window.opener
+    const onMessage = (event: MessageEvent) => {
+      if (event.data?.type === "oauth-complete") {
+        invalidateProviders();
       }
     };
-    window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
+    window.addEventListener("message", onMessage);
+    return () => {
+      channel?.close();
+      window.removeEventListener("message", onMessage);
+    };
   }, [trpcUtils]);
 
   const handleProviderClick = useCallback(
@@ -150,7 +162,6 @@ export function DataSourcesPanel() {
         return;
       }
       if (p.needsOAuth && !p.authorized) {
-        oauthPendingRef.current = true;
         window.open(`/auth/provider/${p.id}`, "_blank");
         return;
       }
