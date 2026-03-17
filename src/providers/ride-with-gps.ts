@@ -1,11 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
-import {
-  exchangeCodeForTokens,
-  getOAuthRedirectUri,
-  refreshAccessToken,
-} from "../auth/oauth.ts";
+import { exchangeCodeForTokens, getOAuthRedirectUri, refreshAccessToken } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { activity, DEFAULT_USER_ID, metricStream, userSettings } from "../db/schema.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
