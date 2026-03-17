@@ -232,7 +232,7 @@ describe("UltrahumanProvider", () => {
 
       const provider = new UltrahumanProvider();
       const setup = provider.authSetup();
-      expect(setup.automatedLogin).toBeDefined();
+      if (!setup.automatedLogin) throw new Error("automatedLogin should be defined");
       const result = await setup.automatedLogin("", "");
       expect(result.accessToken).toBe("my-api-token");
       expect(result.refreshToken).toBeNull();
@@ -249,7 +249,7 @@ describe("UltrahumanProvider", () => {
 
       const provider = new UltrahumanProvider();
       const setup = provider.authSetup();
-      expect(setup.automatedLogin).toBeDefined();
+      if (!setup.automatedLogin) throw new Error("automatedLogin should be defined");
       await expect(setup.automatedLogin("", "")).rejects.toThrow(
         "ULTRAHUMAN_API_TOKEN and ULTRAHUMAN_EMAIL required",
       );
