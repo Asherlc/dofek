@@ -417,7 +417,7 @@ describe("createUploadRouter", () => {
         body: Buffer.from("fake-zip"),
       });
       const filePath = vi.mocked(streamToFile).mock.calls[0][1];
-      expect(filePath).toMatch(new RegExp(`^${EXPECTED_JOB_FILES_DIR}`));
+      expect(filePath.startsWith(EXPECTED_JOB_FILES_DIR)).toBe(true);
       expect(filePath).toContain("apple-health-");
     });
 
@@ -433,7 +433,7 @@ describe("createUploadRouter", () => {
         body: Buffer.from("chunk-0"),
       });
       const chunkPath = vi.mocked(streamToFile).mock.calls[0][1];
-      expect(chunkPath).toMatch(new RegExp(`^${EXPECTED_JOB_FILES_DIR}`));
+      expect(chunkPath.startsWith(EXPECTED_JOB_FILES_DIR)).toBe(true);
     });
 
     it("assembles chunked file into JOB_FILES_DIR", async () => {
@@ -458,7 +458,7 @@ describe("createUploadRouter", () => {
         body: Buffer.from("chunk-1"),
       });
       const assembledPath = vi.mocked(assembleChunks).mock.calls[0][1];
-      expect(assembledPath).toMatch(new RegExp(`^${EXPECTED_JOB_FILES_DIR}`));
+      expect(assembledPath.startsWith(EXPECTED_JOB_FILES_DIR)).toBe(true);
       expect(assembledPath).toContain("apple-health-upload-assemble-dir");
     });
 
@@ -469,7 +469,7 @@ describe("createUploadRouter", () => {
         body: Buffer.from("date,exercise\n2026-01-01,squat"),
       });
       const filePath = vi.mocked(streamToFile).mock.calls[0][1];
-      expect(filePath).toMatch(new RegExp(`^${EXPECTED_JOB_FILES_DIR}`));
+      expect(filePath.startsWith(EXPECTED_JOB_FILES_DIR)).toBe(true);
       expect(filePath).toContain("strong-csv-");
     });
 
@@ -480,7 +480,7 @@ describe("createUploadRouter", () => {
         body: Buffer.from("date,food\n2026-01-01,banana"),
       });
       const filePath = vi.mocked(streamToFile).mock.calls[0][1];
-      expect(filePath).toMatch(new RegExp(`^${EXPECTED_JOB_FILES_DIR}`));
+      expect(filePath.startsWith(EXPECTED_JOB_FILES_DIR)).toBe(true);
       expect(filePath).toContain("cronometer-csv-");
     });
   });
