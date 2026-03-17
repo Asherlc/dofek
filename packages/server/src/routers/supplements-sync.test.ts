@@ -42,7 +42,6 @@ vi.mock("../lib/start-worker.ts", () => ({
 }));
 
 vi.mock("../logger.ts", () => ({
-  getSystemLogs: vi.fn((limit: number) => [`log1`, `log2`].slice(0, limit)),
   logger: { warn: vi.fn() },
 }));
 
