@@ -27,6 +27,7 @@ services:
     environment:
       - DATABASE_URL=postgres://health:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/health
       - REDIS_URL=redis://redis:6379
+      - JOB_FILES_DIR=/app/job-files
       - PORT=3000
       - NODE_ENV=production
     volumes:
