@@ -40,7 +40,6 @@ vi.mock("../lib/start-worker.ts", () => ({
 }));
 
 vi.mock("../logger.ts", () => ({
-  getSystemLogs: vi.fn((limit: number) => [`log1`, `log2`].slice(0, limit)),
   logger: { warn: mockLoggerWarn, info: vi.fn() },
 }));
 
@@ -88,9 +87,9 @@ vi.mock("dofek/db/schema", () => ({
 import {
   ensureProvidersRegistered,
   logsInput,
+  REDACTED_ERROR_MESSAGE,
   syncRouter,
   syncStatusInput,
-  systemLogsInput,
   triggerSyncInput,
 } from "./sync.ts";
 
@@ -496,28 +495,6 @@ describe("syncRouter", () => {
     });
   });
 
-  describe("systemLogs", () => {
-    it("returns system logs with default limit", async () => {
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue([]) },
-        userId: "user-1",
-      });
-
-      const result = await caller.systemLogs({});
-      expect(result).toEqual(["log1", "log2"]);
-    });
-
-    it("respects limit parameter", async () => {
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue([]) },
-        userId: "user-1",
-      });
-
-      const result = await caller.systemLogs({ limit: 1 });
-      expect(result).toEqual(["log1"]);
-    });
-  });
-
   describe("providerStats", () => {
     it("maps database rows to provider stats", async () => {
       const caller = createCaller({
@@ -588,11 +565,6 @@ describe("syncRouter", () => {
       const result = logsInput.parse({});
       expect(result.limit).toBe(100);
     });
-
-    it("systemLogsInput defaults limit to 200", () => {
-      const result = systemLogsInput.parse({});
-      expect(result.limit).toBe(200);
-    });
   });
 
   describe("logs", () => {
@@ -601,9 +573,14 @@ describe("syncRouter", () => {
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
             orderBy: vi.fn().mockReturnValue({
-              limit: vi
-                .fn()
-                .mockResolvedValue([{ id: "log-1", providerId: "wahoo", syncedAt: "2024-01-01" }]),
+              limit: vi.fn().mockResolvedValue([
+                {
+                  id: "log-1",
+                  providerId: "wahoo",
+                  syncedAt: "2024-01-01",
+                  errorMessage: "provider stack trace here",
+                },
+              ]),
             }),
           }),
         }),
@@ -616,6 +593,7 @@ describe("syncRouter", () => {
 
       const result = await caller.logs({});
       expect(result).toHaveLength(1);
+      expect(result[0]?.errorMessage).toBe(REDACTED_ERROR_MESSAGE);
     });
   });
 });

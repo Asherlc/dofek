@@ -16,7 +16,7 @@ import { queryCache } from "../lib/cache.ts";
  * - supplements (list, save)
  * - trends (daily, weekly — via continuous aggregates)
  * - settings (get, set, getAll, slackStatus)
- * - sync (providers, providerStats, logs, systemLogs, syncStatus)
+ * - sync (providers, providerStats, logs, syncStatus)
  * - food (search, quickAdd, update, delete, list with meal filter)
  * - pmc (learned model path)
  * - healthspan (paceOfAging with weekly history)
@@ -749,7 +749,7 @@ describe("Router data coverage", () => {
   });
 
   // ══════════════════════════════════════════════════════════════
-  // Sync — providers, providerStats, logs, systemLogs, syncStatus
+  // Sync — providers, providerStats, logs, syncStatus
   // ══════════════════════════════════════════════════════════════
   describe("sync", () => {
     it("providerStats returns record counts per provider", async () => {
@@ -783,11 +783,6 @@ describe("Router data coverage", () => {
 
     it("logs returns sync log history (empty initially)", async () => {
       const result = await query<unknown[]>("sync.logs", { limit: 10 });
-      expect(Array.isArray(result)).toBe(true);
-    });
-
-    it("systemLogs returns recent log entries", async () => {
-      const result = await query<unknown[]>("sync.systemLogs", { limit: 10 });
       expect(Array.isArray(result)).toBe(true);
     });
 

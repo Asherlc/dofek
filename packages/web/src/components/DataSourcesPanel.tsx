@@ -445,7 +445,7 @@ function SyncProviderCard({
                 className={`w-1.5 h-1.5 rounded-full ${
                   l.status === "success" ? "bg-emerald-400" : "bg-red-400"
                 }`}
-                title={`${l.status} — ${formatTime(l.syncedAt)}${l.errorMessage ? `: ${l.errorMessage}` : ""}`}
+                title={`${l.status} — ${formatTime(l.syncedAt)}`}
               />
             ))}
             {recentLogs.length === 0 && (
@@ -953,7 +953,7 @@ function FileImportZone({
               className={`w-1.5 h-1.5 rounded-full ${
                 l.status === "success" ? "bg-emerald-400" : "bg-red-400"
               }`}
-              title={`${l.status} — ${formatTime(l.syncedAt)}${l.errorMessage ? `: ${l.errorMessage}` : ""}`}
+              title={`${l.status} — ${formatTime(l.syncedAt)}`}
             />
           ))}
         </div>
