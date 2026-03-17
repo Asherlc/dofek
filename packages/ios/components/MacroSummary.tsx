@@ -1,4 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
+import { colors } from "../theme";
 
 interface MacroSummaryProps {
   calories: number;
@@ -47,9 +48,9 @@ export function MacroSummary({
       </View>
 
       <View style={styles.macroSection}>
-        <MacroBar label="Protein" grams={proteinGrams} color="#00E676" />
-        <MacroBar label="Carbs" grams={carbsGrams} color="#FFD600" />
-        <MacroBar label="Fat" grams={fatGrams} color="#FF3D00" />
+        <MacroBar label="Protein" grams={proteinGrams} color={colors.positive} />
+        <MacroBar label="Carbs" grams={carbsGrams} color={colors.warning} />
+        <MacroBar label="Fat" grams={fatGrams} color={colors.danger} />
       </View>
     </View>
   );
@@ -57,7 +58,7 @@ export function MacroSummary({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: "#1c1c1e",
+    backgroundColor: colors.surface,
     borderRadius: 16,
     padding: 16,
     marginBottom: 16,
@@ -69,28 +70,28 @@ const styles = StyleSheet.create({
   calorieCount: {
     fontSize: 36,
     fontWeight: "700",
-    color: "#fff",
+    color: colors.text,
   },
   calorieLabel: {
     fontSize: 14,
-    color: "#8e8e93",
+    color: colors.textSecondary,
     marginBottom: 8,
   },
   progressBarBackground: {
     width: "100%",
     height: 8,
-    backgroundColor: "#2a2a2e",
+    backgroundColor: colors.surfaceSecondary,
     borderRadius: 4,
     overflow: "hidden",
   },
   progressBarFill: {
     height: "100%",
-    backgroundColor: "#007AFF",
+    backgroundColor: colors.accent,
     borderRadius: 4,
   },
   remainingText: {
     fontSize: 12,
-    color: "#636366",
+    color: colors.textTertiary,
     marginTop: 4,
   },
   macroSection: {
@@ -108,11 +109,11 @@ const styles = StyleSheet.create({
   },
   macroLabel: {
     fontSize: 12,
-    color: "#8e8e93",
+    color: colors.textSecondary,
   },
   macroValue: {
     fontSize: 16,
     fontWeight: "600",
-    color: "#fff",
+    color: colors.text,
   },
 });

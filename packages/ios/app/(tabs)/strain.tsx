@@ -2,26 +2,23 @@ import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { ActivityCard } from "../../components/ActivityCard";
 import { StrainGauge } from "../../components/charts/StrainGauge";
 import { SparkLine } from "../../components/charts/SparkLine";
+import { aggregateWeeklyVolume, workloadRatioColor, workloadRatioHint } from "../../lib/scoring";
+import type { WeekSummary } from "../../lib/scoring";
 import { trpc } from "../../lib/trpc";
-
-interface WorkloadRow {
-  date: string;
-  dailyLoad: number;
-  acuteLoad: number;
-  chronicLoad: number;
-  workloadRatio: number | null;
-}
+import type { ActivityRow, WorkloadRow } from "../../types/api";
+import { ActivityRowSchema, WeeklyVolumeRowSchema } from "../../types/api";
+import { colors } from "../../theme";
 
 export default function StrainScreen() {
   const workloadQuery = trpc.recovery.workloadRatio.useQuery({ days: 30 });
-  const workloadData = (workloadQuery.data ?? []) as WorkloadRow[];
+  const workloadData = workloadQuery.data ?? [];
   const todayWorkload = workloadData[workloadData.length - 1];
 
   const activitiesQuery = trpc.training.activityStats.useQuery({ days: 14 });
-  const activities = ((activitiesQuery.data ?? []) as Array<Record<string, unknown>>);
+  const activities = ActivityRowSchema.array().catch([]).parse(activitiesQuery.data ?? []);
 
   const weeklyVolumeQuery = trpc.training.weeklyVolume.useQuery({ days: 30 });
-  const weeklyVolume = ((weeklyVolumeQuery.data ?? []) as Array<Record<string, unknown>>);
+  const weeklyVolume = WeeklyVolumeRowSchema.array().catch([]).parse(weeklyVolumeQuery.data ?? []);
 
   const dailyStrain = todayWorkload?.dailyLoad ?? 0;
   const acuteLoad = todayWorkload?.acuteLoad ?? 0;
@@ -94,7 +91,7 @@ export default function StrainScreen() {
                   data={strainTrend}
                   width={320}
                   height={60}
-                  color="#007AFF"
+                  color={colors.accent}
                   showBaseline
                 />
               </View>
@@ -139,25 +136,13 @@ export default function StrainScreen() {
                 {activities.slice(0, 5).map((activity) => (
                   <ActivityCard
                     key={String(activity.id)}
-                    name={String(activity.name ?? "")}
-                    activityType={String(activity.activity_type ?? "")}
-                    startedAt={String(activity.started_at)}
-                    endedAt={
-                      activity.ended_at != null
-                        ? String(activity.ended_at)
-                        : null
-                    }
-                    avgHr={
-                      activity.avg_hr != null ? Number(activity.avg_hr) : null
-                    }
-                    maxHr={
-                      activity.max_hr != null ? Number(activity.max_hr) : null
-                    }
-                    avgPower={
-                      activity.avg_power != null
-                        ? Number(activity.avg_power)
-                        : null
-                    }
+                    name={activity.name ?? ""}
+                    activityType={activity.activity_type ?? ""}
+                    startedAt={activity.started_at}
+                    endedAt={activity.ended_at ?? null}
+                    avgHr={activity.avg_hr ?? null}
+                    maxHr={activity.max_hr ?? null}
+                    avgPower={activity.avg_power ?? null}
                   />
                 ))}
               </View>
@@ -169,50 +154,10 @@ export default function StrainScreen() {
   );
 }
 
-function workloadRatioColor(ratio: number | null): string {
-  if (ratio == null) return "#8e8e93";
-  if (ratio >= 0.8 && ratio <= 1.3) return "#00E676"; // sweet spot
-  if (ratio >= 0.5 && ratio <= 1.5) return "#FFD600"; // caution
-  return "#FF3D00"; // danger
-}
-
-function workloadRatioHint(ratio: number): string {
-  if (ratio >= 0.8 && ratio <= 1.3) return "Optimal training zone";
-  if (ratio < 0.8) return "Detraining risk - increase load gradually";
-  if (ratio <= 1.5) return "High load - monitor recovery closely";
-  return "Injury risk zone - consider rest";
-}
-
-interface WeekSummary {
-  week: string;
-  hours: number;
-  fraction: number;
-}
-
-function aggregateWeeklyVolume(
-  rows: Array<Record<string, unknown>>,
-): WeekSummary[] {
-  const weekMap = new Map<string, number>();
-  for (const row of rows) {
-    const week = String(row.week);
-    const hours = Number(row.hours ?? 0);
-    weekMap.set(week, (weekMap.get(week) ?? 0) + hours);
-  }
-  const entries = Array.from(weekMap.entries())
-    .sort(([a], [b]) => a.localeCompare(b))
-    .slice(-4);
-  const maxHours = Math.max(...entries.map(([, h]) => h), 1);
-  return entries.map(([week, hours]) => ({
-    week,
-    hours,
-    fraction: hours / maxHours,
-  }));
-}
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#000",
+    backgroundColor: colors.background,
   },
   content: {
     padding: 16,
@@ -227,14 +172,14 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     fontSize: 16,
-    color: "#636366",
+    color: colors.textTertiary,
   },
   gaugeSection: {
     alignItems: "center",
     paddingVertical: 16,
   },
   card: {
-    backgroundColor: "#1c1c1e",
+    backgroundColor: colors.surface,
     borderRadius: 16,
     padding: 16,
     gap: 12,
@@ -242,7 +187,7 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#8e8e93",
+    color: colors.textSecondary,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
@@ -257,16 +202,16 @@ const styles = StyleSheet.create({
   loadValue: {
     fontSize: 22,
     fontWeight: "700",
-    color: "#fff",
+    color: colors.text,
     fontVariant: ["tabular-nums"],
   },
   loadLabel: {
     fontSize: 11,
-    color: "#636366",
+    color: colors.textTertiary,
   },
   ratioHint: {
     fontSize: 12,
-    color: "#8e8e93",
+    color: colors.textSecondary,
     textAlign: "center",
   },
   sparkContainer: {
@@ -282,25 +227,25 @@ const styles = StyleSheet.create({
   },
   volumeDate: {
     fontSize: 12,
-    color: "#8e8e93",
+    color: colors.textSecondary,
     width: 50,
   },
   volumeBarTrack: {
     flex: 1,
     height: 8,
-    backgroundColor: "#2a2a2e",
+    backgroundColor: colors.surfaceSecondary,
     borderRadius: 4,
     overflow: "hidden",
   },
   volumeBarFill: {
     height: "100%",
-    backgroundColor: "#007AFF",
+    backgroundColor: colors.accent,
     borderRadius: 4,
   },
   volumeHours: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#fff",
+    color: colors.text,
     width: 40,
     textAlign: "right",
     fontVariant: ["tabular-nums"],
@@ -311,7 +256,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#8e8e93",
+    color: colors.textSecondary,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },

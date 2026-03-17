@@ -1,15 +1,11 @@
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import type { FoodEntry } from "../../components/FoodEntryCard";
 import { MacroSummary } from "../../components/MacroSummary";
 import { MealSection } from "../../components/MealSection";
 import { trpc } from "../../lib/trpc";
-
-/** Narrow loosely-typed tRPC raw-SQL results to a known shape without double-casting. */
-function typedData<T>(data: unknown): T {
-  return data as T;
-}
+import { colors } from "../../theme";
+import { type FoodEntryRow, FoodEntrySchema } from "../../types/api";
 
 const MEALS = [
   { key: "breakfast", label: "Breakfast" },
@@ -49,14 +45,14 @@ export default function FoodScreen() {
   const dateString = formatDateForQuery(selectedDate);
 
   const calorieGoalQuery = trpc.settings.get.useQuery({ key: "calorieGoal" });
-  const calorieGoal = (calorieGoalQuery.data?.value as number) ?? 2000;
+  const calorieGoal = typeof calorieGoalQuery.data?.value === "number" ? calorieGoalQuery.data.value : 2000;
 
   const foodQuery = trpc.food.byDate.useQuery({ date: dateString });
   const deleteMutation = trpc.food.delete.useMutation({
     onSuccess: () => foodQuery.refetch(),
   });
 
-  const entries = typedData<FoodEntry[]>(foodQuery.data ?? []);
+  const entries = FoodEntrySchema.array().catch([]).parse(foodQuery.data ?? []);
 
   const dailyTotals = useMemo(() => {
     let totalCalories = 0;
@@ -73,7 +69,7 @@ export default function FoodScreen() {
   }, [entries]);
 
   const mealGroups = useMemo(() => {
-    const groups = new Map<string, FoodEntry[]>();
+    const groups = new Map<string, FoodEntryRow[]>();
     for (const entry of entries) {
       const meal = entry.meal || "other";
       const existing = groups.get(meal) ?? [];
@@ -158,7 +154,7 @@ export default function FoodScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#000",
+    backgroundColor: colors.background,
   },
   scrollView: {
     flex: 1,
@@ -179,13 +175,13 @@ const styles = StyleSheet.create({
   },
   dateArrowText: {
     fontSize: 28,
-    color: "#007AFF",
+    color: colors.accent,
     fontWeight: "300",
   },
   dateHeader: {
     fontSize: 20,
     fontWeight: "700",
-    color: "#fff",
+    color: colors.text,
   },
   todayButton: {
     alignSelf: "center",
@@ -193,17 +189,17 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#007AFF",
+    borderColor: colors.accent,
     marginBottom: 12,
   },
   todayButtonText: {
     fontSize: 13,
-    color: "#007AFF",
+    color: colors.accent,
     fontWeight: "500",
   },
   loadingText: {
     textAlign: "center",
-    color: "#636366",
+    color: colors.textTertiary,
     paddingVertical: 24,
   },
 });

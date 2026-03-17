@@ -1,4 +1,6 @@
 import { StyleSheet, Text, View } from "react-native";
+import { formatDurationRange } from "../lib/format";
+import { colors } from "../theme";
 
 interface ActivityCardProps {
   name: string;
@@ -8,16 +10,6 @@ interface ActivityCardProps {
   avgHr: number | null;
   maxHr: number | null;
   avgPower: number | null;
-}
-
-function formatDuration(start: string, end: string | null): string {
-  if (!end) return "--";
-  const ms = new Date(end).getTime() - new Date(start).getTime();
-  const totalMinutes = Math.round(ms / 60000);
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  if (hours === 0) return `${minutes}m`;
-  return `${hours}h ${minutes}m`;
 }
 
 function formatTime(iso: string): string {
@@ -54,7 +46,7 @@ export function ActivityCard({
             {name || activityType}
           </Text>
           <Text style={styles.time}>
-            {formatTime(startedAt)} · {formatDuration(startedAt, endedAt)}
+            {formatTime(startedAt)} · {formatDurationRange(startedAt, endedAt)}
           </Text>
         </View>
       </View>
@@ -62,19 +54,19 @@ export function ActivityCard({
         {avgHr != null && (
           <View style={styles.stat}>
             <Text style={styles.statValue}>{Math.round(avgHr)}</Text>
-            <Text style={styles.statLabel}>Avg HR</Text>
+            <Text style={styles.statLabel}>Avg Heart Rate</Text>
           </View>
         )}
         {maxHr != null && (
           <View style={styles.stat}>
             <Text style={styles.statValue}>{Math.round(maxHr)}</Text>
-            <Text style={styles.statLabel}>Max HR</Text>
+            <Text style={styles.statLabel}>Max Heart Rate</Text>
           </View>
         )}
         {avgPower != null && (
           <View style={styles.stat}>
             <Text style={styles.statValue}>{Math.round(avgPower)}</Text>
-            <Text style={styles.statLabel}>Avg W</Text>
+            <Text style={styles.statLabel}>Avg Power</Text>
           </View>
         )}
       </View>
@@ -84,7 +76,7 @@ export function ActivityCard({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: "#1c1c1e",
+    backgroundColor: colors.surface,
     borderRadius: 16,
     padding: 16,
     gap: 12,
@@ -103,11 +95,11 @@ const styles = StyleSheet.create({
   name: {
     fontSize: 16,
     fontWeight: "600",
-    color: "#fff",
+    color: colors.text,
   },
   time: {
     fontSize: 13,
-    color: "#8e8e93",
+    color: colors.textSecondary,
     marginTop: 2,
   },
   stats: {
@@ -120,12 +112,12 @@ const styles = StyleSheet.create({
   statValue: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#fff",
+    color: colors.text,
     fontVariant: ["tabular-nums"],
   },
   statLabel: {
     fontSize: 11,
-    color: "#636366",
+    color: colors.textTertiary,
     marginTop: 2,
   },
 });

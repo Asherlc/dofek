@@ -4,51 +4,19 @@ import { MetricCard } from "../../components/MetricCard";
 import { RecoveryRing } from "../../components/charts/RecoveryRing";
 import { SleepBar } from "../../components/charts/SleepBar";
 import { StrainGauge } from "../../components/charts/StrainGauge";
+import { formatSleepDebtInline } from "../../lib/format";
+import { trendDirection as computeTrend } from "../../lib/scoring";
 import { trpc } from "../../lib/trpc";
-
-interface ReadinessRow {
-  date: string;
-  readinessScore: number;
-  components: {
-    hrvScore: number;
-    restingHrScore: number;
-    sleepScore: number;
-    loadBalanceScore: number;
-  };
-}
-
-interface SleepNightlyRow {
-  date: string;
-  durationMinutes: number;
-  deepPct: number;
-  remPct: number;
-  lightPct: number;
-  awakePct: number;
-  efficiency: number;
-  rollingAvgDuration: number | null;
-}
-
-interface WorkloadRow {
-  date: string;
-  dailyLoad: number;
-  acuteLoad: number;
-  chronicLoad: number;
-  workloadRatio: number | null;
-}
-
-interface HrvRow {
-  date: string;
-  hrv: number | null;
-  rollingCoefficientOfVariation: number | null;
-  rollingMean: number | null;
-}
-
-interface StressResult {
-  daily: Array<{ date: string; stressScore: number }>;
-  weekly: Array<{ weekStart: string; cumulativeStress: number; avgDailyStress: number; highStressDays: number }>;
-  latestScore: number | null;
-  trend: "improving" | "worsening" | "stable";
-}
+import type {
+  ActivityRow,
+  HeartRateVariabilityRow,
+  ReadinessRow,
+  SleepAnalyticsResult,
+  StressResult,
+  WorkloadRow,
+} from "../../types/api";
+import { ActivityRowSchema } from "../../types/api";
+import { colors } from "../../theme";
 
 function todayString(): string {
   const now = new Date();
@@ -62,32 +30,35 @@ function todayString(): string {
 export default function OverviewScreen() {
   // Fetch readiness/recovery score (last 7 days for trend)
   const readinessQuery = trpc.recovery.readinessScore.useQuery({ days: 7 });
-  const readinessData = (readinessQuery.data ?? []) as ReadinessRow[];
+  const readinessData = readinessQuery.data ?? [];
   const todayReadiness = readinessData[readinessData.length - 1];
 
   // Fetch sleep analytics for last night
   const sleepQuery = trpc.recovery.sleepAnalytics.useQuery({ days: 7 });
-  const sleepResult = sleepQuery.data as { nightly: SleepNightlyRow[]; sleepDebt: number } | undefined;
+  const sleepResult = sleepQuery.data;
   const lastNight = sleepResult?.nightly?.[sleepResult.nightly.length - 1];
   const sleepDebt = sleepResult?.sleepDebt ?? 0;
 
   // Fetch workload ratio for strain
   const workloadQuery = trpc.recovery.workloadRatio.useQuery({ days: 7 });
-  const workloadData = (workloadQuery.data ?? []) as WorkloadRow[];
+  const workloadData = workloadQuery.data ?? [];
   const todayWorkload = workloadData[workloadData.length - 1];
 
   // Fetch HRV trend
   const hrvQuery = trpc.recovery.hrvVariability.useQuery({ days: 14 });
-  const hrvData = (hrvQuery.data ?? []) as HrvRow[];
+  const hrvData = hrvQuery.data ?? [];
   const latestHrv = hrvData[hrvData.length - 1];
 
   // Fetch stress
   const stressQuery = trpc.stress.scores.useQuery({ days: 7 });
-  const stressData = stressQuery.data as StressResult | undefined;
+  const stressData = stressQuery.data;
 
   // Fetch recent activities
   const activitiesQuery = trpc.training.activityStats.useQuery({ days: 7 });
-  const recentActivities = ((activitiesQuery.data ?? []) as Array<Record<string, unknown>>).slice(0, 3);
+  const recentActivities = ActivityRowSchema.array()
+    .catch([])
+    .parse(activitiesQuery.data ?? [])
+    .slice(0, 3);
 
   const recoveryScore = todayReadiness?.readinessScore ?? 0;
   const dailyStrain = todayWorkload?.dailyLoad ?? 0;
@@ -160,7 +131,7 @@ export default function OverviewScreen() {
               />
               {sleepDebt > 0 && (
                 <Text style={styles.sleepDebt}>
-                  {Math.round(sleepDebt / 60)}h {sleepDebt % 60}m sleep debt (14 days)
+                  {formatSleepDebtInline(sleepDebt)}
                 </Text>
               )}
             </View>
@@ -172,14 +143,14 @@ export default function OverviewScreen() {
               title="Heart Rate Variability"
               value={latestHrv?.hrv != null ? String(Math.round(latestHrv.hrv)) : "--"}
               unit="ms"
-              trend={hrvData.filter((d: HrvRow) => d.hrv != null).map((d: HrvRow) => d.hrv as number)}
-              color="#00E676"
+              trend={hrvData.filter((d) => d.hrv != null).map((d) => d.hrv as number)}
+              color={colors.positive}
               trendDirection={
                 hrvData.length >= 2
-                  ? (hrvData[hrvData.length - 1]?.hrv ?? 0) >
-                    (hrvData[hrvData.length - 2]?.hrv ?? 0)
-                    ? "up"
-                    : "down"
+                  ? computeTrend(
+                      hrvData[hrvData.length - 1]?.hrv ?? 0,
+                      hrvData[hrvData.length - 2]?.hrv ?? 0,
+                    )
                   : undefined
               }
             />
@@ -193,10 +164,10 @@ export default function OverviewScreen() {
               unit="/ 3"
               color={
                 (stressData?.latestScore ?? 0) >= 2
-                  ? "#FF3D00"
+                  ? colors.danger
                   : (stressData?.latestScore ?? 0) >= 1
-                    ? "#FFD600"
-                    : "#00E676"
+                    ? colors.warning
+                    : colors.positive
               }
               subtitle={stressData?.trend ? `Trend: ${stressData.trend}` : undefined}
             />
@@ -207,28 +178,16 @@ export default function OverviewScreen() {
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Recent Activities</Text>
               <View style={styles.activitiesStack}>
-                {recentActivities.map((activity: Record<string, unknown>) => (
+                {recentActivities.map((activity) => (
                   <ActivityCard
                     key={String(activity.id)}
-                    name={String(activity.name ?? "")}
-                    activityType={String(activity.activity_type ?? "")}
-                    startedAt={String(activity.started_at)}
-                    endedAt={
-                      activity.ended_at != null
-                        ? String(activity.ended_at)
-                        : null
-                    }
-                    avgHr={
-                      activity.avg_hr != null ? Number(activity.avg_hr) : null
-                    }
-                    maxHr={
-                      activity.max_hr != null ? Number(activity.max_hr) : null
-                    }
-                    avgPower={
-                      activity.avg_power != null
-                        ? Number(activity.avg_power)
-                        : null
-                    }
+                    name={activity.name ?? ""}
+                    activityType={activity.activity_type ?? ""}
+                    startedAt={activity.started_at}
+                    endedAt={activity.ended_at ?? null}
+                    avgHr={activity.avg_hr ?? null}
+                    maxHr={activity.max_hr ?? null}
+                    avgPower={activity.avg_power ?? null}
                   />
                 ))}
               </View>
@@ -242,7 +201,7 @@ export default function OverviewScreen() {
 
 function ComponentRow({ label, score }: { label: string; score: number }) {
   const color =
-    score >= 67 ? "#00E676" : score >= 34 ? "#FFD600" : "#FF3D00";
+    score >= 67 ? colors.positive : score >= 34 ? colors.warning : colors.danger;
   return (
     <View style={componentStyles.row}>
       <Text style={componentStyles.label}>{label}</Text>
@@ -259,9 +218,7 @@ function ComponentRow({ label, score }: { label: string; score: number }) {
   );
 }
 
-import { StyleSheet as ComponentStyleSheet } from "react-native";
-
-const componentStyles = ComponentStyleSheet.create({
+const componentStyles = StyleSheet.create({
   row: {
     flexDirection: "row",
     alignItems: "center",
@@ -269,13 +226,13 @@ const componentStyles = ComponentStyleSheet.create({
   },
   label: {
     fontSize: 13,
-    color: "#8e8e93",
+    color: colors.textSecondary,
     width: 140,
   },
   barTrack: {
     flex: 1,
     height: 6,
-    backgroundColor: "#2a2a2e",
+    backgroundColor: colors.surfaceSecondary,
     borderRadius: 3,
     overflow: "hidden",
   },
@@ -295,7 +252,7 @@ const componentStyles = ComponentStyleSheet.create({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#000",
+    backgroundColor: colors.background,
   },
   content: {
     padding: 16,
@@ -304,7 +261,7 @@ const styles = StyleSheet.create({
   },
   date: {
     fontSize: 15,
-    color: "#8e8e93",
+    color: colors.textSecondary,
     fontWeight: "500",
   },
   loadingContainer: {
@@ -315,7 +272,7 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     fontSize: 16,
-    color: "#636366",
+    color: colors.textTertiary,
   },
   ringsRow: {
     flexDirection: "row",
@@ -329,13 +286,13 @@ const styles = StyleSheet.create({
   },
   sectionLabel: {
     fontSize: 13,
-    color: "#8e8e93",
+    color: colors.textSecondary,
     fontWeight: "600",
     textTransform: "uppercase",
     letterSpacing: 1,
   },
   card: {
-    backgroundColor: "#1c1c1e",
+    backgroundColor: colors.surface,
     borderRadius: 16,
     padding: 16,
     gap: 12,
@@ -343,7 +300,7 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#8e8e93",
+    color: colors.textSecondary,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
@@ -352,7 +309,7 @@ const styles = StyleSheet.create({
   },
   sleepDebt: {
     fontSize: 12,
-    color: "#FF8A65",
+    color: colors.orange,
     marginTop: 4,
   },
   metricsGrid: {
@@ -364,7 +321,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#8e8e93",
+    color: colors.textSecondary,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },

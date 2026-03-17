@@ -18,7 +18,11 @@ export default defineConfig({
         test: {
           ...sharedTestConfig,
           name: "unit",
-          include: ["src/**/*.test.ts", "packages/*/src/**/*.test.ts"],
+          include: [
+            "src/**/*.test.ts",
+            "packages/*/src/**/*.test.ts",
+            "packages/ios/lib/**/*.test.ts",
+          ],
           exclude: ["**/*.integration.test.ts"],
         },
       },

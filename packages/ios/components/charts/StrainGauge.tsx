@@ -1,5 +1,6 @@
 import { StyleSheet, Text, View } from "react-native";
 import Svg, { Circle } from "react-native-svg";
+import { colors } from "../../theme";
 
 interface StrainGaugeProps {
   /** Daily strain/load value */
@@ -11,10 +12,10 @@ interface StrainGaugeProps {
 }
 
 function strainColor(fraction: number): string {
-  if (fraction >= 0.75) return "#007AFF"; // high strain - blue
-  if (fraction >= 0.5) return "#5AC8FA"; // medium-high
-  if (fraction >= 0.25) return "#34C759"; // moderate
-  return "#8e8e93"; // light
+  if (fraction >= 0.75) return colors.accent; // high strain - blue
+  if (fraction >= 0.5) return colors.teal; // medium-high
+  if (fraction >= 0.25) return colors.green; // moderate
+  return colors.textSecondary; // light
 }
 
 export function StrainGauge({
@@ -37,7 +38,7 @@ export function StrainGauge({
           cx={center}
           cy={center}
           r={radius}
-          stroke="#2a2a2e"
+          stroke={colors.surfaceSecondary}
           strokeWidth={strokeWidth}
           fill="none"
         />
@@ -79,7 +80,7 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 11,
-    color: "#8e8e93",
+    color: colors.textSecondary,
     fontWeight: "600",
     textTransform: "uppercase",
     letterSpacing: 1,

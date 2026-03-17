@@ -1,5 +1,7 @@
 import { StyleSheet, Text, View } from "react-native";
 import Svg, { Circle } from "react-native-svg";
+import { scoreColor, scoreLabel } from "../../lib/scoring";
+import { colors } from "../../theme";
 
 interface RecoveryRingProps {
   /** 0-100 readiness/recovery score */
@@ -10,18 +12,6 @@ interface RecoveryRingProps {
   strokeWidth?: number;
   /** Optional label below score */
   label?: string;
-}
-
-function scoreColor(score: number): string {
-  if (score >= 67) return "#00E676"; // green - recovered
-  if (score >= 34) return "#FFD600"; // yellow - moderate
-  return "#FF3D00"; // red - poor recovery
-}
-
-function scoreLabel(score: number): string {
-  if (score >= 67) return "Recovered";
-  if (score >= 34) return "Moderate";
-  return "Poor";
 }
 
 export function RecoveryRing({
@@ -45,7 +35,7 @@ export function RecoveryRing({
           cx={center}
           cy={center}
           r={radius}
-          stroke="#2a2a2e"
+          stroke={colors.surfaceSecondary}
           strokeWidth={strokeWidth}
           fill="none"
         />
@@ -88,7 +78,7 @@ const styles = StyleSheet.create({
   },
   sublabel: {
     fontSize: 14,
-    color: "#8e8e93",
+    color: colors.textSecondary,
     fontWeight: "600",
     textTransform: "uppercase",
     letterSpacing: 1,

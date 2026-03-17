@@ -1,4 +1,6 @@
 import { StyleSheet, Text, View } from "react-native";
+import { formatDurationMinutes } from "../../lib/format";
+import { colors } from "../../theme";
 
 interface SleepBarProps {
   /** Total sleep duration in minutes */
@@ -19,12 +21,6 @@ const STAGE_COLORS = {
   awake: "#FF8A65", // orange
 };
 
-function formatDuration(minutes: number): string {
-  const hours = Math.floor(minutes / 60);
-  const mins = Math.round(minutes % 60);
-  return `${hours}h ${mins}m`;
-}
-
 export function SleepBar({
   durationMinutes,
   deepPct,
@@ -35,14 +31,14 @@ export function SleepBar({
 }: SleepBarProps) {
   const stages = [
     { key: "deep", label: "Deep", pct: deepPct, color: STAGE_COLORS.deep },
-    { key: "rem", label: "REM", pct: remPct, color: STAGE_COLORS.rem },
+    { key: "rem", label: "REM Sleep", pct: remPct, color: STAGE_COLORS.rem },
     { key: "light", label: "Light", pct: lightPct, color: STAGE_COLORS.light },
     { key: "awake", label: "Awake", pct: awakePct, color: STAGE_COLORS.awake },
   ];
 
   return (
     <View style={styles.container}>
-      <Text style={styles.duration}>{formatDuration(durationMinutes)}</Text>
+      <Text style={styles.duration}>{formatDurationMinutes(durationMinutes)}</Text>
       <View style={styles.bar}>
         {stages.map((stage) =>
           stage.pct > 0 ? (
@@ -82,7 +78,7 @@ const styles = StyleSheet.create({
   duration: {
     fontSize: 28,
     fontWeight: "700",
-    color: "#fff",
+    color: colors.text,
     fontVariant: ["tabular-nums"],
   },
   bar: {
@@ -90,7 +86,7 @@ const styles = StyleSheet.create({
     height: 12,
     borderRadius: 6,
     overflow: "hidden",
-    backgroundColor: "#2a2a2e",
+    backgroundColor: colors.surfaceSecondary,
   },
   segment: {
     height: "100%",
@@ -113,6 +109,6 @@ const styles = StyleSheet.create({
   },
   legendLabel: {
     fontSize: 12,
-    color: "#8e8e93",
+    color: colors.textSecondary,
   },
 });

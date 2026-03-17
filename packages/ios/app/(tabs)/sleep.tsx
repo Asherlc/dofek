@@ -2,44 +2,20 @@ import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { MetricCard } from "../../components/MetricCard";
 import { SleepBar } from "../../components/charts/SleepBar";
 import { SparkLine } from "../../components/charts/SparkLine";
+import { formatHour, formatSleepDebt } from "../../lib/format";
 import { trpc } from "../../lib/trpc";
-
-interface SleepNightlyRow {
-  date: string;
-  durationMinutes: number;
-  deepPct: number;
-  remPct: number;
-  lightPct: number;
-  awakePct: number;
-  efficiency: number;
-  rollingAvgDuration: number | null;
-}
-
-interface SleepConsistencyRow {
-  date: string;
-  bedtimeHour: number;
-  waketimeHour: number;
-  rollingBedtimeStddev: number | null;
-  rollingWaketimeStddev: number | null;
-  consistencyScore: number | null;
-}
-
-function formatDebt(minutes: number): string {
-  if (minutes <= 0) return "No sleep debt";
-  const hours = Math.floor(Math.abs(minutes) / 60);
-  const mins = Math.abs(minutes) % 60;
-  return `${hours}h ${mins}m debt`;
-}
+import type { SleepConsistencyRow, SleepNightlyRow } from "../../types/api";
+import { colors } from "../../theme";
 
 export default function SleepScreen() {
   const sleepQuery = trpc.recovery.sleepAnalytics.useQuery({ days: 30 });
   const consistencyQuery = trpc.recovery.sleepConsistency.useQuery({ days: 30 });
 
-  const sleepResult = sleepQuery.data as { nightly: SleepNightlyRow[]; sleepDebt: number } | undefined;
+  const sleepResult = sleepQuery.data;
   const nightly = sleepResult?.nightly ?? [];
   const sleepDebt = sleepResult?.sleepDebt ?? 0;
   const lastNight = nightly[nightly.length - 1];
-  const consistency = (consistencyQuery.data ?? []) as SleepConsistencyRow[];
+  const consistency = consistencyQuery.data ?? [];
   const latestConsistency = consistency[consistency.length - 1];
 
   const durationTrend = nightly
@@ -98,10 +74,10 @@ export default function SleepScreen() {
             <Text
               style={[
                 styles.debtValue,
-                { color: sleepDebt > 120 ? "#FF3D00" : sleepDebt > 60 ? "#FFD600" : "#00E676" },
+                { color: sleepDebt > 120 ? colors.danger : sleepDebt > 60 ? colors.warning : colors.positive },
               ]}
             >
-              {formatDebt(sleepDebt)}
+              {formatSleepDebt(sleepDebt)}
             </Text>
             <Text style={styles.debtSubtitle}>
               vs 8 hour target per night
@@ -114,7 +90,7 @@ export default function SleepScreen() {
               title="Average Duration"
               value={`${Math.floor(avgDuration / 60)}h ${Math.round(avgDuration % 60)}m`}
               trend={durationTrend}
-              color="#42A5F5"
+              color={colors.blue}
               subtitle="Last 30 nights"
             />
             <MetricCard
@@ -122,7 +98,7 @@ export default function SleepScreen() {
               value={`${Math.round(avgEfficiency)}`}
               unit="%"
               trend={efficiencyTrend}
-              color="#5E35B1"
+              color={colors.purple}
               subtitle="Last 30 nights"
             />
           </View>
@@ -155,11 +131,11 @@ export default function SleepScreen() {
                 <View style={styles.sparkContainer}>
                   <SparkLine
                     data={consistency
-                      .filter((c: SleepConsistencyRow) => c.consistencyScore != null)
-                      .map((c: SleepConsistencyRow) => c.consistencyScore as number)}
+                      .filter((c) => c.consistencyScore != null)
+                      .map((c) => c.consistencyScore as number)}
                     width={300}
                     height={50}
-                    color="#5E35B1"
+                    color={colors.purple}
                     showBaseline
                   />
                 </View>
@@ -202,19 +178,10 @@ export default function SleepScreen() {
   );
 }
 
-function formatHour(decimalHour: number): string {
-  // Handle hours that wrap past midnight (e.g., 23.5 = 11:30 PM)
-  const hour24 = Math.floor(decimalHour) % 24;
-  const minutes = Math.round((decimalHour % 1) * 60);
-  const period = hour24 >= 12 ? "PM" : "AM";
-  const hour12 = hour24 === 0 ? 12 : hour24 > 12 ? hour24 - 12 : hour24;
-  return `${hour12}:${String(minutes).padStart(2, "0")} ${period}`;
-}
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#000",
+    backgroundColor: colors.background,
   },
   content: {
     padding: 16,
@@ -229,10 +196,10 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     fontSize: 16,
-    color: "#636366",
+    color: colors.textTertiary,
   },
   card: {
-    backgroundColor: "#1c1c1e",
+    backgroundColor: colors.surface,
     borderRadius: 16,
     padding: 16,
     gap: 12,
@@ -240,7 +207,7 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#8e8e93",
+    color: colors.textSecondary,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
@@ -252,12 +219,12 @@ const styles = StyleSheet.create({
   },
   efficiencyLabel: {
     fontSize: 14,
-    color: "#8e8e93",
+    color: colors.textSecondary,
   },
   efficiencyValue: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#5E35B1",
+    color: colors.purple,
     fontVariant: ["tabular-nums"],
   },
   debtValue: {
@@ -266,7 +233,7 @@ const styles = StyleSheet.create({
   },
   debtSubtitle: {
     fontSize: 12,
-    color: "#636366",
+    color: colors.textTertiary,
   },
   metricsGrid: {
     gap: 12,
@@ -282,12 +249,12 @@ const styles = StyleSheet.create({
   consistencyValue: {
     fontSize: 20,
     fontWeight: "700",
-    color: "#fff",
+    color: colors.text,
     fontVariant: ["tabular-nums"],
   },
   consistencyLabel: {
     fontSize: 11,
-    color: "#636366",
+    color: colors.textTertiary,
   },
   sparkContainer: {
     alignItems: "center",
@@ -301,7 +268,7 @@ const styles = StyleSheet.create({
   },
   nightlyDate: {
     fontSize: 12,
-    color: "#636366",
+    color: colors.textTertiary,
   },
   nightlyBarContainer: {
     flex: 1,

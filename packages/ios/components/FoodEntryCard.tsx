@@ -1,4 +1,5 @@
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { colors } from "../theme";
 
 export interface FoodEntry {
   id: string;
@@ -37,7 +38,7 @@ export function FoodEntryCard({ entry, onDelete, deleting }: FoodEntryCardProps)
           <Text style={styles.description}>{entry.food_description}</Text>
         ) : null}
         <Text style={styles.macros}>
-          P: {entry.protein_g ?? 0}g · C: {entry.carbs_g ?? 0}g · F: {entry.fat_g ?? 0}g
+          Protein: {entry.protein_g ?? 0}g · Carbs: {entry.carbs_g ?? 0}g · Fat: {entry.fat_g ?? 0}g
         </Text>
       </View>
       <Text style={styles.calories}>{entry.calories ?? 0} cal</Text>
@@ -53,7 +54,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 4,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "#2a2a2e",
+    borderBottomColor: colors.surfaceSecondary,
   },
   deleting: {
     opacity: 0.5,
@@ -64,22 +65,22 @@ const styles = StyleSheet.create({
   },
   name: {
     fontSize: 16,
-    color: "#fff",
+    color: colors.text,
     fontWeight: "500",
   },
   description: {
     fontSize: 12,
-    color: "#636366",
+    color: colors.textTertiary,
     marginTop: 1,
   },
   macros: {
     fontSize: 12,
-    color: "#8e8e93",
+    color: colors.textSecondary,
     marginTop: 2,
   },
   calories: {
     fontSize: 16,
     fontWeight: "600",
-    color: "#8e8e93",
+    color: colors.textSecondary,
   },
 });

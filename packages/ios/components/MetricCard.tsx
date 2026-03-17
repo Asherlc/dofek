@@ -1,5 +1,6 @@
 import { StyleSheet, Text, View } from "react-native";
 import { SparkLine } from "./charts/SparkLine";
+import { colors } from "../theme";
 
 interface MetricCardProps {
   title: string;
@@ -26,7 +27,7 @@ export function MetricCard({
   value,
   unit,
   trend,
-  color = "#fff",
+  color = colors.text,
   subtitle,
   trendDirection,
 }: MetricCardProps) {
@@ -44,10 +45,10 @@ export function MetricCard({
                 {
                   color:
                     trendDirection === "up"
-                      ? "#00E676"
+                      ? colors.positive
                       : trendDirection === "down"
-                        ? "#FF3D00"
-                        : "#8e8e93",
+                        ? colors.danger
+                        : colors.textSecondary,
                 },
               ]}
             >
@@ -66,7 +67,7 @@ export function MetricCard({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: "#1c1c1e",
+    backgroundColor: colors.surface,
     borderRadius: 16,
     padding: 16,
     gap: 8,
@@ -74,7 +75,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#8e8e93",
+    color: colors.textSecondary,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
@@ -95,7 +96,7 @@ const styles = StyleSheet.create({
   },
   unit: {
     fontSize: 14,
-    color: "#8e8e93",
+    color: colors.textSecondary,
     fontWeight: "500",
   },
   trendArrow: {
@@ -105,6 +106,6 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: 12,
-    color: "#636366",
+    color: colors.textTertiary,
   },
 });

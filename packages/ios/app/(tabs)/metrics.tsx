@@ -1,58 +1,33 @@
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { MetricCard } from "../../components/MetricCard";
 import { SparkLine } from "../../components/charts/SparkLine";
+import { trendDirection as computeTrend } from "../../lib/scoring";
 import { trpc } from "../../lib/trpc";
-
-interface HrvRow {
-  date: string;
-  hrv: number | null;
-  rollingCoefficientOfVariation: number | null;
-  rollingMean: number | null;
-}
-
-interface ReadinessRow {
-  date: string;
-  readinessScore: number;
-  components: {
-    hrvScore: number;
-    restingHrScore: number;
-    sleepScore: number;
-    loadBalanceScore: number;
-  };
-}
-
-interface StressResult {
-  daily: Array<{ date: string; stressScore: number }>;
-  weekly: Array<{ weekStart: string; cumulativeStress: number; avgDailyStress: number; highStressDays: number }>;
-  latestScore: number | null;
-  trend: "improving" | "worsening" | "stable";
-}
-
-interface WorkloadRow {
-  date: string;
-  dailyLoad: number;
-  acuteLoad: number;
-  chronicLoad: number;
-  workloadRatio: number | null;
-}
+import type {
+  HeartRateVariabilityRow,
+  ReadinessRow,
+  StressResult,
+  WorkloadRow,
+} from "../../types/api";
+import { colors } from "../../theme";
 
 export default function MetricsScreen() {
   // HRV trend
   const hrvQuery = trpc.recovery.hrvVariability.useQuery({ days: 30 });
-  const hrvData = (hrvQuery.data ?? []) as HrvRow[];
+  const hrvData = hrvQuery.data ?? [];
   const latestHrv = hrvData[hrvData.length - 1];
-  const hrvValues = hrvData.filter((d: HrvRow) => d.hrv != null).map((d: HrvRow) => d.hrv as number);
+  const hrvValues = hrvData.filter((d) => d.hrv != null).map((d) => d.hrv as number);
   const hrvBaseline = latestHrv?.rollingMean;
 
   // Readiness trend
   const readinessQuery = trpc.recovery.readinessScore.useQuery({ days: 30 });
-  const readinessData = (readinessQuery.data ?? []) as ReadinessRow[];
-  const readinessValues = readinessData.map((d: ReadinessRow) => d.readinessScore);
+  const readinessData = readinessQuery.data ?? [];
+  const readinessValues = readinessData.map((d) => d.readinessScore);
   const latestReadiness = readinessData[readinessData.length - 1];
 
   // Stress trend
   const stressQuery = trpc.stress.scores.useQuery({ days: 30 });
-  const stressResult = stressQuery.data as StressResult | undefined;
+  const stressResult = stressQuery.data;
   const stressDaily = stressResult?.daily ?? [];
   const stressValues = stressDaily.map((d) => d.stressScore);
   const latestStress = stressResult?.latestScore;
@@ -60,10 +35,10 @@ export default function MetricsScreen() {
 
   // Workload ratio trend
   const workloadQuery = trpc.recovery.workloadRatio.useQuery({ days: 30 });
-  const workloadData = (workloadQuery.data ?? []) as WorkloadRow[];
+  const workloadData = workloadQuery.data ?? [];
   const workloadRatioValues = workloadData
-    .filter((d: WorkloadRow) => d.workloadRatio != null)
-    .map((d: WorkloadRow) => d.workloadRatio as number);
+    .filter((d) => d.workloadRatio != null)
+    .map((d) => d.workloadRatio as number);
   const latestRatio = workloadData[workloadData.length - 1]?.workloadRatio;
 
   const isLoading =
@@ -94,7 +69,7 @@ export default function MetricsScreen() {
                   data={readinessValues}
                   width={240}
                   height={60}
-                  color="#00E676"
+                  color={colors.positive}
                   showBaseline
                 />
               </View>
@@ -110,7 +85,7 @@ export default function MetricsScreen() {
             value={latestHrv?.hrv != null ? String(Math.round(latestHrv.hrv)) : "--"}
             unit="ms"
             trend={hrvValues.slice(-14)}
-            color="#00E676"
+            color={colors.positive}
             subtitle={
               hrvBaseline != null
                 ? `7-day baseline: ${Math.round(hrvBaseline)} ms`
@@ -118,10 +93,10 @@ export default function MetricsScreen() {
             }
             trendDirection={
               hrvValues.length >= 2
-                ? (hrvValues[hrvValues.length - 1] ?? 0) >
-                  (hrvValues[hrvValues.length - 2] ?? 0)
-                  ? "up"
-                  : "down"
+                ? computeTrend(
+                    hrvValues[hrvValues.length - 1] ?? 0,
+                    hrvValues[hrvValues.length - 2] ?? 0,
+                  )
                 : undefined
             }
           />
@@ -134,11 +109,11 @@ export default function MetricsScreen() {
               </Text>
               <SparkLine
                 data={hrvData
-                  .filter((d: HrvRow) => d.rollingCoefficientOfVariation != null)
-                  .map((d: HrvRow) => d.rollingCoefficientOfVariation as number)}
+                  .filter((d) => d.rollingCoefficientOfVariation != null)
+                  .map((d) => d.rollingCoefficientOfVariation as number)}
                 width={320}
                 height={50}
-                color="#5AC8FA"
+                color={colors.teal}
                 showBaseline
               />
               <Text style={styles.chartSubtitle}>
@@ -155,10 +130,10 @@ export default function MetricsScreen() {
             trend={stressValues.slice(-14)}
             color={
               (latestStress ?? 0) >= 2
-                ? "#FF3D00"
+                ? colors.danger
                 : (latestStress ?? 0) >= 1
-                  ? "#FFD600"
-                  : "#00E676"
+                  ? colors.warning
+                  : colors.positive
             }
             subtitle={stressTrend ? `Trend: ${stressTrend}` : undefined}
             trendDirection={
@@ -203,13 +178,13 @@ export default function MetricsScreen() {
             color={
               latestRatio != null
                 ? latestRatio >= 0.8 && latestRatio <= 1.3
-                  ? "#00E676"
+                  ? colors.positive
                   : latestRatio <= 1.5
-                    ? "#FFD600"
-                    : "#FF3D00"
-                : "#8e8e93"
+                    ? colors.warning
+                    : colors.danger
+                : colors.textSecondary
             }
-            subtitle="Acute:Chronic ratio (sweet spot: 0.8-1.3)"
+            subtitle="Short-term vs long-term training load ratio (sweet spot: 0.8-1.3)"
           />
         </>
       )}
@@ -220,7 +195,7 @@ export default function MetricsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#000",
+    backgroundColor: colors.background,
   },
   content: {
     padding: 16,
@@ -230,7 +205,7 @@ const styles = StyleSheet.create({
   header: {
     fontSize: 28,
     fontWeight: "800",
-    color: "#fff",
+    color: colors.text,
   },
   loadingContainer: {
     flex: 1,
@@ -240,10 +215,10 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     fontSize: 16,
-    color: "#636366",
+    color: colors.textTertiary,
   },
   card: {
-    backgroundColor: "#1c1c1e",
+    backgroundColor: colors.surface,
     borderRadius: 16,
     padding: 16,
     gap: 10,
@@ -251,7 +226,7 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#8e8e93",
+    color: colors.textSecondary,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
@@ -263,12 +238,12 @@ const styles = StyleSheet.create({
   bigValue: {
     fontSize: 36,
     fontWeight: "800",
-    color: "#00E676",
+    color: colors.positive,
     fontVariant: ["tabular-nums"],
   },
   chartSubtitle: {
     fontSize: 12,
-    color: "#636366",
+    color: colors.textTertiary,
   },
   weeklyGrid: {
     flexDirection: "row",
@@ -280,16 +255,16 @@ const styles = StyleSheet.create({
   },
   weeklyDate: {
     fontSize: 11,
-    color: "#636366",
+    color: colors.textTertiary,
   },
   weeklyValue: {
     fontSize: 20,
     fontWeight: "700",
-    color: "#fff",
+    color: colors.text,
     fontVariant: ["tabular-nums"],
   },
   weeklyLabel: {
     fontSize: 10,
-    color: "#636366",
+    color: colors.textTertiary,
   },
 });
