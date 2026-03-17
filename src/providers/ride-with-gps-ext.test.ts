@@ -113,7 +113,7 @@ describe("rideWithGpsOAuthConfig", () => {
     expect(config?.clientId).toBe("test-id");
     expect(config?.clientSecret).toBe("test-secret");
     expect(config?.scopes).toContain("user");
-    expect(config?.tokenAuthMethod).toBe("basic");
+    expect(config?.tokenAuthMethod).toBeUndefined();
     expect(config?.authorizeUrl).toContain("ridewithgps.com");
     expect(config?.tokenUrl).toContain("ridewithgps.com");
   });

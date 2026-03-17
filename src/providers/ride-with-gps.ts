@@ -83,7 +83,6 @@ export function rideWithGpsOAuthConfig(): OAuthConfig | null {
     tokenUrl: RWGPS_OAUTH_TOKEN_URL,
     redirectUri: getOAuthRedirectUri(),
     scopes: ["user"],
-    tokenAuthMethod: "basic",
   };
 }
 

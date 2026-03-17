@@ -75,7 +75,7 @@ function rwgpsHandlers(
 ) {
   return [
     // Token refresh
-    http.post("https://ridewithgps.com/oauth/token", () => {
+    http.post("https://ridewithgps.com/oauth/token.json", () => {
       return HttpResponse.json({
         access_token: "refreshed-token",
         refresh_token: "new-refresh",
