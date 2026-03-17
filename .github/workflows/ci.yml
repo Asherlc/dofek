@@ -155,6 +155,9 @@ jobs:
     name: E2E Tests
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
+    env:
+      DOCKER_BUILDKIT: "1"
+      COMPOSE_DOCKER_CLI_BUILD: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -162,10 +165,15 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm exec cypress install
-      - name: Build and start e2e stack
-        run: docker compose -f docker-compose.e2e.yml up -d --build --wait
+      - name: Parallel setup — Docker build + deps install
+        run: |
+          docker compose -f docker-compose.e2e.yml build &
+          DOCKER_PID=$!
+          pnpm install --frozen-lockfile
+          pnpm exec cypress install
+          wait $DOCKER_PID
+      - name: Start e2e stack
+        run: docker compose -f docker-compose.e2e.yml up -d --wait
       - run: pnpm e2e:run
       - uses: actions/upload-artifact@v4
         if: failure()
