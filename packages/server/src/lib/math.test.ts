@@ -8,6 +8,34 @@ describe("linearRegression", () => {
     expect(intercept).toBeCloseTo(0);
     expect(r2).toBeCloseTo(1);
   });
+
+  it("fits a line with nonzero intercept", () => {
+    // y = 3x + 5
+    const { slope, intercept, r2 } = linearRegression([1, 2, 3, 4], [8, 11, 14, 17]);
+    expect(slope).toBeCloseTo(3);
+    expect(intercept).toBeCloseTo(5);
+    expect(r2).toBeCloseTo(1);
+  });
+
+  it("returns zero slope and intercept for degenerate input", () => {
+    // All same x — denom is 0
+    const { slope, intercept, r2 } = linearRegression([5, 5, 5], [1, 2, 3]);
+    expect(slope).toBe(0);
+    expect(intercept).toBe(0);
+    expect(r2).toBe(0);
+  });
+
+  it("returns low r2 for noisy data", () => {
+    const { r2 } = linearRegression([1, 2, 3, 4, 5], [10, 1, 8, 2, 9]);
+    expect(r2).toBeLessThan(0.5);
+  });
+
+  it("handles negative slopes", () => {
+    // y = -2x + 10
+    const { slope, intercept } = linearRegression([1, 2, 3], [8, 6, 4]);
+    expect(slope).toBeCloseTo(-2);
+    expect(intercept).toBeCloseTo(10);
+  });
 });
 
 describe("fitCriticalPower", () => {
@@ -81,5 +109,47 @@ describe("fitCriticalPower", () => {
       { durationSeconds: 60, bestPower: 400 },
     ];
     expect(fitCriticalPower(points)).toBeNull();
+  });
+
+  it("excludes durations over 600s from fitting", () => {
+    const points = [
+      { durationSeconds: 700, bestPower: 230 },
+      { durationSeconds: 1200, bestPower: 220 },
+      { durationSeconds: 1800, bestPower: 210 },
+    ];
+    expect(fitCriticalPower(points)).toBeNull();
+  });
+
+  it("excludes points with zero power", () => {
+    const points = [
+      { durationSeconds: 120, bestPower: 0 },
+      { durationSeconds: 300, bestPower: 0 },
+      { durationSeconds: 600, bestPower: 0 },
+    ];
+    expect(fitCriticalPower(points)).toBeNull();
+  });
+
+  it("includes boundary durations 120s and 600s", () => {
+    const points = powerCurve(250, 20000, [120, 360, 600]);
+    const model = fitCriticalPower(points);
+    expect(model).not.toBeNull();
+    expect(model?.cp).toBeCloseTo(250, 0);
+  });
+
+  it("rounds cp, wPrime, and r2 values", () => {
+    const points = powerCurve(230, 15000, [120, 180, 240, 300, 420, 600]);
+    const model = fitCriticalPower(points);
+    expect(model).not.toBeNull();
+    // CP and wPrime should be rounded integers
+    expect(Number.isInteger(model?.cp)).toBe(true);
+    expect(Number.isInteger(model?.wPrime)).toBe(true);
+    // r2 should be rounded to 3 decimal places
+    const r2Str = String(model?.r2);
+    const decimals = r2Str.split(".")[1]?.length ?? 0;
+    expect(decimals).toBeLessThanOrEqual(3);
+  });
+
+  it("returns null for empty input", () => {
+    expect(fitCriticalPower([])).toBeNull();
   });
 });

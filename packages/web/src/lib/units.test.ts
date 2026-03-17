@@ -161,4 +161,16 @@ describe("detectUnitSystem", () => {
   it("returns imperial for en-MM (Myanmar)", () => {
     expect(detectUnitSystem("en-MM")).toBe("imperial");
   });
+
+  it("returns imperial for en-LR (Liberia)", () => {
+    expect(detectUnitSystem("en-LR")).toBe("imperial");
+  });
+
+  it("returns metric for locale without country code", () => {
+    expect(detectUnitSystem("en")).toBe("metric");
+  });
+
+  it("is case insensitive for country code", () => {
+    expect(detectUnitSystem("en-us")).toBe("imperial");
+  });
 });

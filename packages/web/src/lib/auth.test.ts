@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchConfiguredProviders, fetchCurrentUser } from "./auth.ts";
+import { fetchConfiguredProviders, fetchCurrentUser, logout } from "./auth.ts";
 
 describe("fetchCurrentUser", () => {
   afterEach(() => {
@@ -18,6 +18,14 @@ describe("fetchCurrentUser", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("Unauthorized", { status: 401 }));
     const result = await fetchCurrentUser();
     expect(result).toBeNull();
+  });
+
+  it("returns user with null email", async () => {
+    const user = { id: "u1", name: "Test", email: null };
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json(user));
+    const result = await fetchCurrentUser();
+    expect(result).toEqual(user);
+    expect(result?.email).toBeNull();
   });
 });
 
@@ -41,5 +49,33 @@ describe("fetchConfiguredProviders", () => {
     await expect(fetchConfiguredProviders()).rejects.toThrow(
       "Failed to fetch providers: 500 Internal Server Error",
     );
+  });
+
+  it("includes status code in error message", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("Not Found", { status: 404, statusText: "Not Found" }),
+    );
+    await expect(fetchConfiguredProviders()).rejects.toThrow("404");
+  });
+});
+
+describe("logout", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("calls POST /auth/logout with credentials", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null));
+
+    try {
+      await logout();
+    } catch {
+      // window.location assignment throws in Node — that's fine, we're testing the fetch call
+    }
+
+    expect(fetchSpy).toHaveBeenCalledWith("/auth/logout", {
+      method: "POST",
+      credentials: "include",
+    });
   });
 });
