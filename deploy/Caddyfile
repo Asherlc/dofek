@@ -3,5 +3,9 @@
 }
 
 portainer.dofek.asherlc.com {
-    reverse_proxy portainer:9000
+    reverse_proxy https://portainer:9443 {
+        transport http {
+            tls_insecure_skip_verify
+        }
+    }
 }
