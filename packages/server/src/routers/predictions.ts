@@ -15,25 +15,29 @@ import { getPredictionTarget, PREDICTION_TARGETS } from "../ml/features.ts";
 import { trainFromDataset, trainPredictor } from "../ml/predictor.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
+// Postgres returns numeric/decimal columns and aggregates (SUM, AVG, COUNT,
+// EXTRACT) as strings. Use z.coerce.number() for all numeric SQL result fields.
+const coerceNum = z.coerce.number().nullable();
+
 /** Zod schemas for SQL row validation */
 const dailyRowSchema = z.object({
   date: z.union([z.string(), z.coerce.date()]),
-  resting_hr: z.number().nullable(),
-  hrv: z.number().nullable(),
-  spo2_avg: z.number().nullable(),
-  steps: z.number().nullable(),
-  active_energy_kcal: z.number().nullable(),
-  skin_temp_c: z.number().nullable(),
+  resting_hr: coerceNum,
+  hrv: coerceNum,
+  spo2_avg: coerceNum,
+  steps: coerceNum,
+  active_energy_kcal: coerceNum,
+  skin_temp_c: coerceNum,
 });
 
 const sleepRowSchema = z.object({
   started_at: z.string(),
-  duration_minutes: z.number().nullable(),
-  deep_minutes: z.number().nullable(),
-  rem_minutes: z.number().nullable(),
-  light_minutes: z.number().nullable(),
-  awake_minutes: z.number().nullable(),
-  efficiency_pct: z.number().nullable(),
+  duration_minutes: coerceNum,
+  deep_minutes: coerceNum,
+  rem_minutes: coerceNum,
+  light_minutes: coerceNum,
+  awake_minutes: coerceNum,
+  efficiency_pct: coerceNum,
   is_nap: z.boolean(),
 });
 
@@ -45,45 +49,45 @@ const activityRowSchema = z.object({
 
 const nutritionRowSchema = z.object({
   date: z.union([z.string(), z.coerce.date()]),
-  calories: z.number().nullable(),
-  protein_g: z.number().nullable(),
-  carbs_g: z.number().nullable(),
-  fat_g: z.number().nullable(),
-  fiber_g: z.number().nullable(),
-  water_ml: z.number().nullable(),
+  calories: coerceNum,
+  protein_g: coerceNum,
+  carbs_g: coerceNum,
+  fat_g: coerceNum,
+  fiber_g: coerceNum,
+  water_ml: coerceNum,
 });
 
 const bodyCompRowSchema = z.object({
   recorded_at: z.string(),
-  weight_kg: z.number().nullable(),
-  body_fat_pct: z.number().nullable(),
+  weight_kg: coerceNum,
+  body_fat_pct: coerceNum,
 });
 
 const activitySummaryRowSchema = z.object({
   activity_id: z.string(),
   activity_type: z.string(),
   started_at: z.string(),
-  avg_hr: z.number().nullable(),
-  avg_power: z.number().nullable(),
-  avg_speed: z.number().nullable(),
-  total_distance: z.number().nullable(),
-  elevation_gain_m: z.number().nullable(),
-  avg_cadence: z.number().nullable(),
-  duration_min: z.coerce.number().nullable(),
+  avg_hr: coerceNum,
+  avg_power: coerceNum,
+  avg_speed: coerceNum,
+  total_distance: coerceNum,
+  elevation_gain_m: coerceNum,
+  avg_cadence: coerceNum,
+  duration_min: coerceNum,
 });
 
 const exerciseMinutesRowSchema = z.object({
   date: z.union([z.string(), z.coerce.date()]),
-  exercise_minutes: z.coerce.number().nullable(),
+  exercise_minutes: coerceNum,
 });
 
 const strengthVolumeRowSchema = z.object({
   workout_id: z.string(),
   started_at: z.string(),
-  total_volume: z.coerce.number().nullable(),
-  working_set_count: z.coerce.number().nullable(),
-  max_weight: z.coerce.number().nullable(),
-  avg_rpe: z.coerce.number().nullable(),
+  total_volume: coerceNum,
+  working_set_count: coerceNum,
+  max_weight: coerceNum,
+  avg_rpe: coerceNum,
 });
 
 /** SQL row for per-day exercise minutes (aggregated from activity_summary) */
