@@ -82,6 +82,7 @@ jobs:
         with:
           name: blob-unit
           path: .vitest-reports/
+          include-hidden-files: true
           retention-days: 1
 
   test-integration:
@@ -128,6 +129,7 @@ jobs:
         with:
           name: blob-integration
           path: .vitest-reports/
+          include-hidden-files: true
           retention-days: 1
 
   coverage:
