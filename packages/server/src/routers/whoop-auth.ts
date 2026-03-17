@@ -1,6 +1,7 @@
 import { ensureProvider, saveTokens } from "dofek/db/tokens";
 import { WhoopClient } from "whoop-whoop";
 import { z } from "zod";
+import { queryCache } from "../lib/cache.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 
 // In-memory store for pending MFA challenges (keyed by a random ID)
@@ -89,13 +90,14 @@ export const whoopAuthRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      await ensureProvider(ctx.db, "whoop", "WHOOP");
+      await ensureProvider(ctx.db, "whoop", "WHOOP", undefined, ctx.userId);
       await saveTokens(ctx.db, "whoop", {
         accessToken: input.accessToken,
         refreshToken: input.refreshToken,
         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
         scopes: `userId:${input.userId}`,
       });
+      await queryCache.invalidateByPrefix(`${ctx.userId}:sync.providers`);
       return { success: true };
     }),
 });
