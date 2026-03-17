@@ -547,6 +547,16 @@ describe("Oura Provider", () => {
       expect(result.durationMinutes).toBe(31);
       expect(result.deepMinutes).toBe(2);
     });
+
+    it("rounds 30 seconds up to 1 minute", () => {
+      const s: OuraSleepDocument = { ...sampleSleep, total_sleep_duration: 30 };
+      expect(parseOuraSleep(s).durationMinutes).toBe(1);
+    });
+
+    it("rounds 29 seconds down to 0 minutes", () => {
+      const s: OuraSleepDocument = { ...sampleSleep, total_sleep_duration: 29 };
+      expect(parseOuraSleep(s).durationMinutes).toBe(0);
+    });
   });
 
   describe("parseOuraDailyMetrics", () => {

@@ -433,6 +433,25 @@ describe("WHOOP Provider — parsing", () => {
       expect(result.efficiencyPct).toBeCloseTo(91.7);
       expect(result.isNap).toBe(false);
     });
+
+    it("defaults all stage times to 0 when score is missing", () => {
+      const noScore: WhoopSleepRecord = {
+        ...sampleSleep,
+        score: undefined,
+      };
+      const result = parseSleep(noScore);
+      expect(result.durationMinutes).toBe(0);
+      expect(result.deepMinutes).toBe(0);
+      expect(result.remMinutes).toBe(0);
+      expect(result.lightMinutes).toBe(0);
+      expect(result.awakeMinutes).toBe(0);
+      expect(result.efficiencyPct).toBeUndefined();
+    });
+
+    it("marks naps as isNap=true", () => {
+      const nap: WhoopSleepRecord = { ...sampleSleep, nap: true };
+      expect(parseSleep(nap).isNap).toBe(true);
+    });
   });
 
   describe("parseWorkout", () => {
