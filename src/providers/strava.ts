@@ -231,7 +231,7 @@ export function stravaStreamsToMetricStream(
 // Strava API client
 // ============================================================
 
-const STRAVA_API_BASE = "https://www.strava.com/api/v3";
+const STRAVA_API_BASE = "https://www.strava.com/api/v3/";
 
 export class StravaClient {
   private accessToken: string;
@@ -277,7 +277,7 @@ export class StravaClient {
   }
 
   async getActivities(after: number, page = 1, perPage = 30): Promise<StravaActivity[]> {
-    return this.get<StravaActivity[]>("/athlete/activities", {
+    return this.get<StravaActivity[]>("athlete/activities", {
       after: String(after),
       page: String(page),
       per_page: String(perPage),
@@ -299,7 +299,7 @@ export class StravaClient {
     ];
 
     const response = await this.get<Array<{ type: string } & StravaStream>>(
-      `/activities/${activityId}/streams`,
+      `activities/${activityId}/streams`,
       { keys: streamTypes.join(","), key_type: "time" },
     );
 
@@ -370,7 +370,7 @@ export class StravaProvider implements Provider {
       exchangeCode: (code) => exchangeCodeForTokens(config, code),
       apiBaseUrl: STRAVA_API_BASE,
       getUserIdentity: async (accessToken: string): Promise<ProviderIdentity> => {
-        const response = await this.fetchFn(`${STRAVA_API_BASE}/athlete`, {
+        const response = await this.fetchFn(`${STRAVA_API_BASE}athlete`, {
           headers: { Authorization: `Bearer ${accessToken}` },
         });
         if (!response.ok) {

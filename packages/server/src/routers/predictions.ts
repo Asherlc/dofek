@@ -69,21 +69,21 @@ const activitySummaryRowSchema = z.object({
   total_distance: z.number().nullable(),
   elevation_gain_m: z.number().nullable(),
   avg_cadence: z.number().nullable(),
-  duration_min: z.number().nullable(),
+  duration_min: z.coerce.number().nullable(),
 });
 
 const exerciseMinutesRowSchema = z.object({
   date: z.union([z.string(), z.coerce.date()]),
-  exercise_minutes: z.number().nullable(),
+  exercise_minutes: z.coerce.number().nullable(),
 });
 
 const strengthVolumeRowSchema = z.object({
   workout_id: z.string(),
   started_at: z.string(),
-  total_volume: z.number().nullable(),
-  working_set_count: z.number().nullable(),
-  max_weight: z.number().nullable(),
-  avg_rpe: z.number().nullable(),
+  total_volume: z.coerce.number().nullable(),
+  working_set_count: z.coerce.number().nullable(),
+  max_weight: z.coerce.number().nullable(),
+  avg_rpe: z.coerce.number().nullable(),
 });
 
 /** SQL row for per-day exercise minutes (aggregated from activity_summary) */
