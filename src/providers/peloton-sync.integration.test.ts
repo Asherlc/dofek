@@ -86,8 +86,8 @@ function pelotonHandlers(
   graph: PelotonPerformanceGraph = fakePerformanceGraph(),
 ) {
   return [
-    // Token refresh
-    http.post("https://api.onepeloton.com/oauth/token", () => {
+    // Token refresh (Auth0 domain, not API domain)
+    http.post("https://auth.onepeloton.com/oauth/token", () => {
       return HttpResponse.json({
         access_token: "refreshed-token",
         refresh_token: "new-refresh",

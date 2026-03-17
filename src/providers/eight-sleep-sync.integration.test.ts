@@ -105,7 +105,7 @@ function eightSleepHandlers(trendDays: FakeTrendDay[], opts?: { signInError?: bo
     }),
 
     // Trends API
-    http.get("https://app-api.8slp.net/v1/users/:userId/trends", () => {
+    http.get("https://client-api.8slp.net/v1/users/:userId/trends", () => {
       return HttpResponse.json({
         days: trendDays,
       });

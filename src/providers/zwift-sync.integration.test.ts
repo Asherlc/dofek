@@ -127,7 +127,7 @@ function zwiftHandlers(opts: ZwiftMockOptions = {}) {
     }),
 
     // Power curve
-    http.get("https://us-or-rly101.zwift.com/api/power-curve/power-profile/:profileId", () => {
+    http.get("https://us-or-rly101.zwift.com/api/power-curve/power-profile", () => {
       return HttpResponse.json(opts.powerCurve ?? fakeZwiftPowerCurve());
     }),
 
