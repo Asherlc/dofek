@@ -138,4 +138,64 @@ describe("createExportRouter", () => {
       expect(res.status).toBe(404);
     });
   });
+
+  describe("GET /api/export/status/:jobId (after export starts)", () => {
+    it("returns job status for known job", async () => {
+      vi.mocked(getSessionCookie).mockReturnValue("sess-1");
+      vi.mocked(validateSession).mockResolvedValue({
+        userId: "user-1",
+        expiresAt: new Date("2027-01-01"),
+      });
+      const { app } = createTestApp();
+
+      // Start an export to create a job
+      const postRes = await request(app, "post", "/api/export");
+      const { jobId } = JSON.parse(postRes.body);
+
+      // Check status — job exists and returns a known status
+      const statusRes = await request(app, "get", `/api/export/status/${jobId}`);
+      expect(statusRes.status).toBe(200);
+      const data = JSON.parse(statusRes.body);
+      // Status will be "processing" or "error" depending on timing of background task
+      expect(["processing", "error"]).toContain(data.status);
+    });
+  });
+
+  describe("GET /api/export/download/:jobId (forbidden/not ready)", () => {
+    it("returns 403 when job belongs to another user", async () => {
+      // Start export as user-1
+      vi.mocked(getSessionCookie).mockReturnValue("sess-1");
+      vi.mocked(validateSession).mockResolvedValue({
+        userId: "user-1",
+        expiresAt: new Date("2027-01-01"),
+      });
+      const { app } = createTestApp();
+      const postRes = await request(app, "post", "/api/export");
+      const { jobId } = JSON.parse(postRes.body);
+
+      // Try to download as user-2
+      vi.mocked(validateSession).mockResolvedValue({
+        userId: "user-2",
+        expiresAt: new Date("2027-01-01"),
+      });
+      const res = await request(app, "get", `/api/export/download/${jobId}`);
+      expect(res.status).toBe(403);
+    });
+
+    it("returns 400 when export is not done yet", async () => {
+      vi.mocked(getSessionCookie).mockReturnValue("sess-1");
+      vi.mocked(validateSession).mockResolvedValue({
+        userId: "user-1",
+        expiresAt: new Date("2027-01-01"),
+      });
+      const { app } = createTestApp();
+      const postRes = await request(app, "post", "/api/export");
+      const { jobId } = JSON.parse(postRes.body);
+
+      // Try to download while still processing
+      const res = await request(app, "get", `/api/export/download/${jobId}`);
+      expect(res.status).toBe(400);
+      expect(JSON.parse(res.body).error).toBe("Export not ready");
+    });
+  });
 });
