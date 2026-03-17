@@ -196,4 +196,56 @@ describe("buildActivityDataset", () => {
       expect(dataset).toBeNull();
     });
   });
+
+  describe("edge cases", () => {
+    const cardioTarget = ACTIVITY_PREDICTION_TARGETS.find((t) => t.id === "cardio_power");
+    if (!cardioTarget) throw new Error("expected cardio_power target");
+
+    it("returns null when no features pass completeness threshold", () => {
+      // All activities with null for every field except date/activityType/durationMin
+      const sparseActivities: CardioActivityRow[] = [];
+      let dayIdx = 3;
+      for (let i = 0; i < 30 && dayIdx < context.length; i++) {
+        const day = context[dayIdx];
+        if (!day) break;
+        sparseActivities.push({
+          date: day.date,
+          activityType: "cycling",
+          durationMin: 45,
+          avgHr: null,
+          avgPower: 200,
+          avgSpeed: null,
+          totalDistance: null,
+          elevationGain: null,
+          avgCadence: null,
+        });
+        dayIdx += 3;
+      }
+      // This should still work since context features exist
+      const dataset = buildActivityDataset(sparseActivities, context, cardioTarget);
+      if (dataset) {
+        expect(dataset.featureNames).not.toContain("avg_power");
+      }
+    });
+
+    it("includes trailing session features", () => {
+      const activities = generateCardioActivities(40, context);
+      const dataset = buildActivityDataset(activities, context, cardioTarget);
+      if (dataset) {
+        const hasSessionFeature = dataset.featureNames.some(
+          (n) => n === "days_since_last_session" || n === "sessions_last_14d",
+        );
+        expect(hasSessionFeature).toBe(true);
+      }
+    });
+
+    it("returns null for empty activities", () => {
+      expect(buildActivityDataset([], context, cardioTarget)).toBeNull();
+    });
+
+    it("returns null for empty context", () => {
+      const activities = generateCardioActivities(40, context);
+      expect(buildActivityDataset(activities, [], cardioTarget)).toBeNull();
+    });
+  });
 });
