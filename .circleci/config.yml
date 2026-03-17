@@ -99,21 +99,46 @@ jobs:
 
   test-e2e:
     executor: machine
+    environment:
+      DOCKER_BUILDKIT: "1"
+      COMPOSE_DOCKER_CLI_BUILD: "1"
     steps:
       - checkout
       - restore_cache:
           keys:
-            - docker-e2e-v1-{{ checksum "Dockerfile" }}-{{ checksum "docker-compose.e2e.yml" }}
-            - docker-e2e-v1-
+            - docker-e2e-v2-{{ checksum "Dockerfile" }}-{{ checksum "docker-compose.e2e.yml" }}
+            - docker-e2e-v2-
+      - restore_cache:
+          keys:
+            - pnpm-store-machine-v1-{{ checksum "pnpm-lock.yaml" }}
+            - pnpm-store-machine-v1-
+      - restore_cache:
+          keys:
+            - cypress-v1-{{ checksum "pnpm-lock.yaml" }}
       - run:
-          name: Load cached Docker images
+          name: Parallel setup — Docker build + Node/Cypress install
           command: |
+            # Load cached Docker images if available
             if [ -f /tmp/docker-cache/images.tar ]; then
               docker load -i /tmp/docker-cache/images.tar || true
             fi
+
+            # Start Docker build in background
+            docker compose -f docker-compose.e2e.yml build &
+            DOCKER_PID=$!
+
+            # Install Node.js + pnpm + Cypress in parallel
+            curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+            sudo apt-get install -y nodejs
+            corepack enable && corepack prepare pnpm@latest --activate
+            pnpm install --frozen-lockfile
+            pnpm exec cypress install
+
+            # Wait for Docker build to finish
+            wait $DOCKER_PID
       - run:
-          name: Build and start e2e stack
-          command: docker compose -f docker-compose.e2e.yml up -d --build --wait
+          name: Start e2e stack
+          command: docker compose -f docker-compose.e2e.yml up -d --wait
       - run:
           name: Save Docker images to cache
           command: |
@@ -121,30 +146,13 @@ jobs:
             docker save $(docker images --format '{{.Repository}}:{{.Tag}}' | grep -v '<none>') \
               -o /tmp/docker-cache/images.tar || true
       - save_cache:
-          key: docker-e2e-v1-{{ checksum "Dockerfile" }}-{{ checksum "docker-compose.e2e.yml" }}
+          key: docker-e2e-v2-{{ checksum "Dockerfile" }}-{{ checksum "docker-compose.e2e.yml" }}
           paths:
             - /tmp/docker-cache
-      - run:
-          name: Install Node.js 22
-          command: |
-            curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-            sudo apt-get install -y nodejs
-      - run:
-          name: Install pnpm
-          command: corepack enable && corepack prepare pnpm@latest --activate
-      - restore_cache:
-          keys:
-            - pnpm-store-machine-v1-{{ checksum "pnpm-lock.yaml" }}
-            - pnpm-store-machine-v1-
-      - run: pnpm install --frozen-lockfile
       - save_cache:
           key: pnpm-store-machine-v1-{{ checksum "pnpm-lock.yaml" }}
           paths:
             - ~/.local/share/pnpm/store
-      - restore_cache:
-          keys:
-            - cypress-v1-{{ checksum "pnpm-lock.yaml" }}
-      - run: pnpm exec cypress install
       - save_cache:
           key: cypress-v1-{{ checksum "pnpm-lock.yaml" }}
           paths:
