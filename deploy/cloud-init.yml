@@ -21,6 +21,7 @@ write_files:
     permissions: "0600"
     content: |
       SOPS_AGE_KEY=${sops_age_key}
+      CADDY_DOMAIN=${domain}
 
 runcmd:
   - curl -fsSL https://get.docker.com | sh

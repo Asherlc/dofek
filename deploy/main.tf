@@ -92,7 +92,7 @@ resource "hcloud_server" "dofek" {
     ghcr_token      = var.ghcr_token
     ghcr_username   = var.ghcr_username
     compose_content = file("${path.module}/docker-compose.yml")
-    caddy_content   = replace(file("${path.module}/Caddyfile"), "$${domain}", var.domain)
+    caddy_content   = file("${path.module}/Caddyfile")
   })
 }
 
