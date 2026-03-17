@@ -36,6 +36,7 @@ vi.mock("./routers/strength.ts", () => ({ strengthRouter: mockRouter }));
 vi.mock("./routers/stress.ts", () => ({ stressRouter: mockRouter }));
 vi.mock("./routers/supplements.ts", () => ({ supplementsRouter: mockRouter }));
 vi.mock("./routers/sync.ts", () => ({ syncRouter: mockRouter }));
+vi.mock("./routers/system.ts", () => ({ systemRouter: mockRouter }));
 vi.mock("./routers/training.ts", () => ({ trainingRouter: mockRouter }));
 vi.mock("./routers/trends.ts", () => ({ trendsRouter: mockRouter }));
 vi.mock("./routers/weekly-report.ts", () => ({ weeklyReportRouter: mockRouter }));
@@ -75,7 +76,7 @@ describe("appRouter", () => {
     expect(_typeCheck).toBe(appRouter);
   });
 
-  it("includes all 33 sub-routers in the definition", () => {
+  it("includes all 36 sub-routers in the definition", () => {
     const expectedRouters = [
       "activity",
       "anomalyDetection",
@@ -91,6 +92,7 @@ describe("appRouter", () => {
       "lifeEvents",
       "supplements",
       "sync",
+      "system",
       "training",
       "trends",
       "calendar",

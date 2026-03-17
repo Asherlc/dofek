@@ -29,6 +29,7 @@ import { strengthRouter } from "./routers/strength.ts";
 import { stressRouter } from "./routers/stress.ts";
 import { supplementsRouter } from "./routers/supplements.ts";
 import { syncRouter } from "./routers/sync.ts";
+import { systemRouter } from "./routers/system.ts";
 import { trainingRouter } from "./routers/training.ts";
 import { trendsRouter } from "./routers/trends.ts";
 import { weeklyReportRouter } from "./routers/weekly-report.ts";
@@ -50,6 +51,7 @@ export const appRouter = router({
   lifeEvents: lifeEventsRouter,
   supplements: supplementsRouter,
   sync: syncRouter,
+  system: systemRouter,
   training: trainingRouter,
   trends: trendsRouter,
   calendar: calendarRouter,
