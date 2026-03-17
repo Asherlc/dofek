@@ -1,8 +1,7 @@
-import { useState } from "react";
+import { useRouter } from "expo-router";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ActivityCard } from "../../components/ActivityCard";
 import { MetricCard } from "../../components/MetricCard";
-import { QuickAddFood } from "../../components/QuickAddFood";
 import { RecoveryRing } from "../../components/charts/RecoveryRing";
 import { SleepBar } from "../../components/charts/SleepBar";
 import { StrainGauge } from "../../components/charts/StrainGauge";
@@ -30,7 +29,7 @@ function todayString(): string {
 }
 
 export default function OverviewScreen() {
-  const [quickAddVisible, setQuickAddVisible] = useState(false);
+  const router = useRouter();
 
   // Fetch readiness/recovery score (last 7 days for trend)
   const readinessQuery = trpc.recovery.readinessScore.useQuery({ days: 7 });
@@ -80,20 +79,15 @@ export default function OverviewScreen() {
     >
       <Text style={styles.date}>{todayString()}</Text>
 
-      {/* Quick-add food */}
+      {/* Log food — navigates to full search/scan/quick-add screen */}
       <TouchableOpacity
         style={styles.quickAddButton}
-        onPress={() => setQuickAddVisible(true)}
+        onPress={() => router.push("/food/add")}
         activeOpacity={0.7}
       >
         <Text style={styles.quickAddPlus}>+</Text>
-        <Text style={styles.quickAddLabel}>Quick Add Food</Text>
+        <Text style={styles.quickAddLabel}>Log Food</Text>
       </TouchableOpacity>
-
-      <QuickAddFood
-        visible={quickAddVisible}
-        onClose={() => setQuickAddVisible(false)}
-      />
 
       {isLoading ? (
         <View style={styles.loadingContainer}>
