@@ -11,6 +11,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { BarcodeScanner } from "../../components/BarcodeScanner";
 
@@ -82,6 +83,8 @@ export default function AddFoodScreen() {
   // ── Recent foods (loaded once on mount) ──
   const [recentFoods, setRecentFoods] = useState<SearchResult[]>([]);
   const recentLoaded = useRef(false);
+  const { width } = useWindowDimensions();
+  const isWide = width >= 600;
 
   useEffect(() => {
     if (recentLoaded.current) return;
@@ -297,7 +300,7 @@ export default function AddFoodScreen() {
         style={styles.container}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
-        <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
+        <ScrollView style={styles.scrollView} contentContainerStyle={[styles.content, isWide && styles.contentWide]}>
           {/* Food name (editable) */}
           <Text style={styles.label}>Name</Text>
           <TextInput
@@ -513,6 +516,11 @@ const styles = StyleSheet.create({
   content: {
     padding: 16,
     paddingBottom: 40,
+  },
+  contentWide: {
+    maxWidth: 600,
+    alignSelf: "center",
+    width: "100%",
   },
 
   // ── Search bar ──

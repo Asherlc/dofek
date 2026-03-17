@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import {
   enableBackgroundDelivery,
   isAvailable,
@@ -141,8 +141,11 @@ export default function HealthScreen() {
     }
   }
 
+  const { width } = useWindowDimensions();
+  const isWide = width >= 600;
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={styles.container} contentContainerStyle={[styles.content, isWide && styles.contentWide]}>
       <Text style={styles.title}>HealthKit Sync</Text>
 
       {!available ? (
@@ -230,6 +233,11 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingTop: 24,
     paddingBottom: 40,
+  },
+  contentWide: {
+    maxWidth: 600,
+    alignSelf: "center",
+    width: "100%",
   },
   title: {
     fontSize: 24,
