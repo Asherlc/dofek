@@ -9,7 +9,7 @@ import { logger } from "../logger.ts";
 // can't be replicated in Zod). The transform narrows the output to Installation.
 const installationParser = z
   .object({
-    team: z.object({ id: z.string(), name: z.string().optional() }).passthrough(),
+    team: z.object({ id: z.string(), name: z.string().optional() }).passthrough().optional(),
     enterprise: z.object({ id: z.string(), name: z.string().optional() }).passthrough().optional(),
     bot: z
       .object({ token: z.string(), id: z.string().optional(), userId: z.string().optional() })
