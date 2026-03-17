@@ -4,7 +4,7 @@
     "slug": "dofek",
     "scheme": "dofek",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "splash": {
@@ -13,7 +13,7 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": false,
+      "supportsTablet": true,
       "bundleIdentifier": "com.dofek.app",
       "deploymentTarget": "16.0",
       "infoPlist": {

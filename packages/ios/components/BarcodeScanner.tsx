@@ -1,6 +1,6 @@
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useRef } from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
 
 interface BarcodeScannerProps {
   onScanned: (barcode: string) => void;
@@ -10,6 +10,8 @@ interface BarcodeScannerProps {
 export function BarcodeScanner({ onScanned, onClose }: BarcodeScannerProps) {
   const [permission, requestPermission] = useCameraPermissions();
   const scannedRef = useRef(false);
+  const { width, height } = useWindowDimensions();
+  const scanSize = Math.min(width, height) * 0.65;
 
   if (!permission) {
     return <View style={styles.container} />;
@@ -49,9 +51,9 @@ export function BarcodeScanner({ onScanned, onClose }: BarcodeScannerProps) {
       {/* Scan overlay */}
       <View style={styles.overlay}>
         <View style={styles.overlayTop} />
-        <View style={styles.overlayMiddle}>
+        <View style={[styles.overlayMiddle, { height: scanSize }]}>
           <View style={styles.overlaySide} />
-          <View style={styles.scanArea}>
+          <View style={[styles.scanArea, { width: scanSize, height: scanSize }]}>
             <View style={[styles.corner, styles.topLeft]} />
             <View style={[styles.corner, styles.topRight]} />
             <View style={[styles.corner, styles.bottomLeft]} />
@@ -69,8 +71,6 @@ export function BarcodeScanner({ onScanned, onClose }: BarcodeScannerProps) {
     </View>
   );
 }
-
-const SCAN_SIZE = 280;
 
 const styles = StyleSheet.create({
   container: {
@@ -90,16 +90,12 @@ const styles = StyleSheet.create({
   },
   overlayMiddle: {
     flexDirection: "row",
-    height: SCAN_SIZE,
   },
   overlaySide: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.6)",
   },
-  scanArea: {
-    width: SCAN_SIZE,
-    height: SCAN_SIZE,
-  },
+  scanArea: {},
   overlayBottom: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.6)",
