@@ -573,16 +573,14 @@ describe("syncRouter", () => {
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
             orderBy: vi.fn().mockReturnValue({
-              limit: vi
-                .fn()
-                .mockResolvedValue([
-                  {
-                    id: "log-1",
-                    providerId: "wahoo",
-                    syncedAt: "2024-01-01",
-                    errorMessage: "provider stack trace here",
-                  },
-                ]),
+              limit: vi.fn().mockResolvedValue([
+                {
+                  id: "log-1",
+                  providerId: "wahoo",
+                  syncedAt: "2024-01-01",
+                  errorMessage: "provider stack trace here",
+                },
+              ]),
             }),
           }),
         }),
