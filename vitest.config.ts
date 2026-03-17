@@ -13,12 +13,7 @@ export default defineConfig({
       provider: "v8",
       reporter: ["text", "json-summary"],
       include: ["src/**/*.ts", "packages/*/src/**/*.ts"],
-      exclude: [
-        "**/*.test.ts",
-        "**/test-helpers.ts",
-        "**/fixtures/**",
-        "**/node_modules/**",
-      ],
+      exclude: ["**/*.test.ts", "**/test-helpers.ts", "**/fixtures/**", "**/node_modules/**"],
       thresholds: {
         lines: 69,
         functions: 87,
