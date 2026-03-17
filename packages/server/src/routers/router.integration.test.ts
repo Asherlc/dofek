@@ -1121,11 +1121,6 @@ describe("Router coverage", () => {
       expect(Array.isArray(result)).toBe(true);
     });
 
-    it("systemLogs returns recent log entries", async () => {
-      const result = await query<unknown[]>("sync.systemLogs", { limit: 10 });
-      expect(Array.isArray(result)).toBe(true);
-    });
-
     it("syncStatus returns null for unknown job", async () => {
       const result = await query<null>("sync.syncStatus", { jobId: "nonexistent-job-id" });
       expect(result).toBeNull();

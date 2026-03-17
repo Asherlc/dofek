@@ -40,7 +40,6 @@ vi.mock("../lib/start-worker.ts", () => ({
 }));
 
 vi.mock("../logger.ts", () => ({
-  getSystemLogs: vi.fn((limit: number) => [`log1`, `log2`].slice(0, limit)),
   logger: { warn: mockLoggerWarn, info: vi.fn() },
 }));
 
@@ -90,7 +89,6 @@ import {
   logsInput,
   syncRouter,
   syncStatusInput,
-  systemLogsInput,
   triggerSyncInput,
 } from "./sync.ts";
 
@@ -496,28 +494,6 @@ describe("syncRouter", () => {
     });
   });
 
-  describe("systemLogs", () => {
-    it("returns system logs with default limit", async () => {
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue([]) },
-        userId: "user-1",
-      });
-
-      const result = await caller.systemLogs({});
-      expect(result).toEqual(["log1", "log2"]);
-    });
-
-    it("respects limit parameter", async () => {
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue([]) },
-        userId: "user-1",
-      });
-
-      const result = await caller.systemLogs({ limit: 1 });
-      expect(result).toEqual(["log1"]);
-    });
-  });
-
   describe("providerStats", () => {
     it("maps database rows to provider stats", async () => {
       const caller = createCaller({
@@ -587,11 +563,6 @@ describe("syncRouter", () => {
     it("logsInput defaults limit to 100", () => {
       const result = logsInput.parse({});
       expect(result.limit).toBe(100);
-    });
-
-    it("systemLogsInput defaults limit to 200", () => {
-      const result = systemLogsInput.parse({});
-      expect(result.limit).toBe(200);
     });
   });
 
