@@ -631,7 +631,63 @@ describe("createAuthRouter", () => {
     });
   });
 
-  describe("GET /api/auth/providers (error fallback)", () => {
+  describe("GET /api/auth/providers (data login providers)", () => {
+    it("returns data providers that have getUserIdentity and oauthConfig", async () => {
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "strava",
+          name: "Strava",
+          validate: () => null,
+          authSetup: () => ({
+            oauthConfig: { authorizationEndpoint: "https://strava.com/oauth" },
+            exchangeCode: vi.fn(),
+            getUserIdentity: vi.fn(),
+          }),
+        },
+        {
+          id: "polar",
+          name: "Polar",
+          validate: () => null,
+          authSetup: () => ({
+            oauthConfig: { authorizationEndpoint: "https://polar.com/oauth" },
+            exchangeCode: vi.fn(),
+            // no getUserIdentity — should not appear
+          }),
+        },
+      ]);
+      const { app } = createTestApp();
+      const res = await request(app, "get", "/api/auth/providers");
+      const data = JSON.parse(res.body);
+      expect(data.data).toEqual(["strava"]);
+    });
+
+    it("skips providers whose authSetup throws instead of crashing the list", async () => {
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "broken",
+          name: "Broken",
+          validate: () => "not configured",
+          authSetup: () => {
+            throw new Error("CLIENT_ID is not set");
+          },
+        },
+        {
+          id: "strava",
+          name: "Strava",
+          validate: () => null,
+          authSetup: () => ({
+            oauthConfig: { authorizationEndpoint: "https://strava.com/oauth" },
+            exchangeCode: vi.fn(),
+            getUserIdentity: vi.fn(),
+          }),
+        },
+      ]);
+      const { app } = createTestApp();
+      const res = await request(app, "get", "/api/auth/providers");
+      const data = JSON.parse(res.body);
+      expect(data.data).toEqual(["strava"]);
+    });
+
     it("returns fallback when provider listing throws", async () => {
       vi.mocked(getAllProviders).mockImplementation(() => {
         throw new Error("Registry error");
