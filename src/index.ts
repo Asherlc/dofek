@@ -229,7 +229,7 @@ async function main() {
       const days = parseSinceDays(process.argv);
       const since = computeSinceDate(days, fullSync);
 
-      const { importAppleHealthFile } = await import("./providers/apple-health.ts");
+      const { importAppleHealthFile } = await import("./providers/apple-health/index.ts");
       const db = createDatabaseFromEnv();
       const result = await importAppleHealthFile(db, filePath, since);
       console.log(

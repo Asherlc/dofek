@@ -3,8 +3,8 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import * as schema from "../db/schema.ts";
-import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
+import * as schema from "../../db/schema.ts";
+import { setupTestDatabase, type TestContext } from "../../db/test-helpers.ts";
 import {
   AppleHealthProvider,
   buildPanelMap,
@@ -16,7 +16,7 @@ import {
   importAppleHealthFile,
   parseFhirObservation,
   streamHealthExport,
-} from "./apple-health.ts";
+} from "./index.ts";
 
 // ============================================================
 // streamHealthExport — tests with minimal XML files

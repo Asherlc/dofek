@@ -10,7 +10,7 @@ import {
   parseWorkout,
   parseWorkoutStatistics,
   type WorkoutStatistics,
-} from "./apple-health.ts";
+} from "./index.ts";
 
 // ============================================================
 // Tests targeting uncovered parsing functions in apple-health.ts
