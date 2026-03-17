@@ -2,6 +2,6 @@
     reverse_proxy client:80
 }
 
-portainer.asherlc.com {
+portainer.dofek.asherlc.com {
     reverse_proxy portainer:9000
 }
