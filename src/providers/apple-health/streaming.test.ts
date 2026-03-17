@@ -10,7 +10,7 @@ import {
   type HealthWorkout,
   type SleepAnalysisRecord,
   streamHealthExport,
-} from "./apple-health.ts";
+} from "./index.ts";
 
 // ============================================================
 // Tests for streaming parser edge cases and backpressure

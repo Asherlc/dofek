@@ -1,4 +1,5 @@
 import { and as sqlAnd, eq as sqlEq } from "drizzle-orm";
+import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import {
   buildAuthorizationUrl,
@@ -396,11 +397,17 @@ export async function pelotonAutomatedLogin(
   if (!configBase64) {
     throw new Error("Could not extract injectedConfig value from Auth0 login page");
   }
-  const injectedConfig = JSON.parse(Buffer.from(configBase64, "base64").toString("utf-8"));
-  const extraParams: Record<string, string> = injectedConfig.extraParams;
-  if (!extraParams.state || !extraParams._csrf) {
-    throw new Error("Could not extract state/_csrf from Auth0 injectedConfig");
-  }
+  const auth0InjectedConfigSchema = z.object({
+    extraParams: z.object({
+      state: z.string().min(1),
+      _csrf: z.string().min(1),
+      nonce: z.string().optional(),
+    }),
+  });
+  const injectedConfig = auth0InjectedConfigSchema.parse(
+    JSON.parse(Buffer.from(configBase64, "base64").toString("utf-8")),
+  );
+  const extraParams = injectedConfig.extraParams;
 
   // Step 2: POST credentials to Auth0 login endpoint
   console.log("[peloton] Submitting credentials...");

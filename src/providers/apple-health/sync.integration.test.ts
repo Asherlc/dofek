@@ -2,9 +2,9 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import * as schema from "../db/schema.ts";
-import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
-import { type ProgressInfo, streamHealthExport } from "./apple-health.ts";
+import * as schema from "../../db/schema.ts";
+import { setupTestDatabase, type TestContext } from "../../db/test-helpers.ts";
+import { type ProgressInfo, streamHealthExport } from "./index.ts";
 
 // ============================================================
 // Integration test — stream Apple Health XML → DB
@@ -361,7 +361,7 @@ describe("Apple Health streaming import (integration)", () => {
 
   it("enriches workouts with WorkoutStatistics HR data", async () => {
     const since = new Date("2024-01-01");
-    const workouts: import("./apple-health.ts").HealthWorkout[] = [];
+    const workouts: import("./index.ts").HealthWorkout[] = [];
 
     await streamHealthExport(xmlPath, since, {
       onRecordBatch: async () => {},
@@ -378,7 +378,7 @@ describe("Apple Health streaming import (integration)", () => {
 
   it("parses WorkoutRoute GPS locations and attaches to workout", async () => {
     const since = new Date("2024-01-01");
-    const workouts: import("./apple-health.ts").HealthWorkout[] = [];
+    const workouts: import("./index.ts").HealthWorkout[] = [];
 
     await streamHealthExport(xmlPath, since, {
       onRecordBatch: async () => {},
@@ -406,7 +406,7 @@ describe("Apple Health streaming import (integration)", () => {
 
   it("parses blood glucose into record batch", async () => {
     const since = new Date("2024-01-01");
-    const bgRecords: import("./apple-health.ts").HealthRecord[] = [];
+    const bgRecords: import("./index.ts").HealthRecord[] = [];
 
     await streamHealthExport(xmlPath, since, {
       onRecordBatch: async (records) => {
@@ -426,7 +426,7 @@ describe("Apple Health streaming import (integration)", () => {
 
   it("parses nutrition records", async () => {
     const since = new Date("2024-01-01");
-    const nutritionRecords: import("./apple-health.ts").HealthRecord[] = [];
+    const nutritionRecords: import("./index.ts").HealthRecord[] = [];
 
     await streamHealthExport(xmlPath, since, {
       onRecordBatch: async (records) => {
@@ -451,7 +451,7 @@ describe("Apple Health streaming import (integration)", () => {
 
   it("parses category records (mindful sessions)", async () => {
     const since = new Date("2024-01-01");
-    const categories: import("./apple-health.ts").CategoryRecord[] = [];
+    const categories: import("./index.ts").CategoryRecord[] = [];
 
     await streamHealthExport(xmlPath, since, {
       onRecordBatch: async () => {},
@@ -470,8 +470,8 @@ describe("Apple Health streaming import (integration)", () => {
 
   it("routes walking distance and flights climbed", async () => {
     const since = new Date("2024-01-01");
-    const distanceRecords: import("./apple-health.ts").HealthRecord[] = [];
-    const flightRecords: import("./apple-health.ts").HealthRecord[] = [];
+    const distanceRecords: import("./index.ts").HealthRecord[] = [];
+    const flightRecords: import("./index.ts").HealthRecord[] = [];
 
     await streamHealthExport(xmlPath, since, {
       onRecordBatch: async (records) => {

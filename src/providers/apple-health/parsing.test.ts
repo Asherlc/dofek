@@ -10,10 +10,10 @@ import {
   parseSleepAnalysis,
   parseWorkout,
   parseWorkoutStatistics,
-} from "./apple-health.ts";
+} from "./index.ts";
 
 // ============================================================
-// Pure parsing unit tests — Apple Health XML element attributes
+// Pure parsing unit tests -- Apple Health XML element attributes
 // ============================================================
 
 // Record elements come as attribute maps from the SAX parser
@@ -70,7 +70,7 @@ const hrvAttrs: Record<string, string> = {
 const vo2maxAttrs: Record<string, string> = {
   type: "HKQuantityTypeIdentifierVO2Max",
   sourceName: "Apple Watch",
-  unit: "mL/min·kg",
+  unit: "mL/min\u00b7kg",
   creationDate: "2024-03-01 12:00:00 -0500",
   startDate: "2024-03-01 12:00:00 -0500",
   endDate: "2024-03-01 12:00:00 -0500",
@@ -147,7 +147,7 @@ const bodyTempAttrs: Record<string, string> = {
   value: "36.8",
 };
 
-// Sleep analysis — newer iOS uses named values
+// Sleep analysis -- newer iOS uses named values
 const sleepAsleepCoreAttrs: Record<string, string> = {
   type: "HKCategoryTypeIdentifierSleepAnalysis",
   sourceName: "Apple Watch",
@@ -209,7 +209,7 @@ const workoutAttrs: Record<string, string> = {
   endDate: "2024-03-01 18:30:30 -0500",
 };
 
-describe("Apple Health Provider — parsing", () => {
+describe("Apple Health Provider -- parsing", () => {
   describe("parseRecord", () => {
     it("parses heart rate records", () => {
       const result = parseRecord(heartRateAttrs);
@@ -539,7 +539,7 @@ describe("Apple Health Provider — parsing", () => {
     });
   });
 
-  describe("parseRecord — new types", () => {
+  describe("parseRecord -- new types", () => {
     it("parses blood glucose", () => {
       const attrs: Record<string, string> = {
         type: "HKQuantityTypeIdentifierBloodGlucose",
@@ -706,7 +706,7 @@ describe("Apple Health Provider — parsing", () => {
 // Tests merged from apple-health-coverage.test.ts
 // ============================================================
 
-describe("parseHealthDate — edge cases", () => {
+describe("parseHealthDate -- edge cases", () => {
   it("parses standard Apple Health format", () => {
     const date = parseHealthDate("2024-03-01 10:30:00 -0500");
     expect(date).toBeInstanceOf(Date);
@@ -731,7 +731,7 @@ describe("parseHealthDate — edge cases", () => {
   });
 });
 
-describe("parseRecord — edge cases", () => {
+describe("parseRecord -- edge cases", () => {
   it("returns null when type is missing", () => {
     const result = parseRecord({
       value: "72",
@@ -777,7 +777,7 @@ describe("parseRecord — edge cases", () => {
   });
 });
 
-describe("parseSleepAnalysis — legacy numeric values", () => {
+describe("parseSleepAnalysis -- legacy numeric values", () => {
   it("parses legacy '0' as inBed", () => {
     const result = parseSleepAnalysis({
       value: "0",
@@ -832,7 +832,7 @@ describe("parseSleepAnalysis — legacy numeric values", () => {
   });
 });
 
-describe("parseWorkout — distance and duration unit conversions", () => {
+describe("parseWorkout -- distance and duration unit conversions", () => {
   it("converts distance in km to meters", () => {
     const result = parseWorkout({
       workoutActivityType: "HKWorkoutActivityTypeRunning",
@@ -935,7 +935,7 @@ describe("parseWorkout — distance and duration unit conversions", () => {
   });
 });
 
-describe("parseWorkoutStatistics — edge cases", () => {
+describe("parseWorkoutStatistics -- edge cases", () => {
   it("returns null when type is missing", () => {
     const result = parseWorkoutStatistics({
       average: "145",
@@ -958,7 +958,7 @@ describe("parseWorkoutStatistics — edge cases", () => {
   });
 });
 
-describe("enrichWorkoutFromStats — edge cases", () => {
+describe("enrichWorkoutFromStats -- edge cases", () => {
   it("does not modify workout for unrecognized stat types", () => {
     const workout: HealthWorkout = {
       activityType: "running",
@@ -998,7 +998,7 @@ describe("enrichWorkoutFromStats — edge cases", () => {
   });
 });
 
-describe("parseActivitySummary — additional edge cases", () => {
+describe("parseActivitySummary -- additional edge cases", () => {
   it("handles zero values", () => {
     const result = parseActivitySummary({
       dateComponents: "2024-03-01",
@@ -1013,7 +1013,7 @@ describe("parseActivitySummary — additional edge cases", () => {
   });
 });
 
-describe("parseRouteLocation — NaN coordinates", () => {
+describe("parseRouteLocation -- NaN coordinates", () => {
   it("returns null for NaN latitude", () => {
     const result = parseRouteLocation({
       date: "2024-03-01 18:00:00 -0500",
