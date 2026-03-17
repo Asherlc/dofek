@@ -204,5 +204,37 @@ describe("whoopAuth router", () => {
       expect(tokenRows[0]?.access_token).toBe("saved-access-token");
       expect(tokenRows[0]?.scopes).toBe("userId:42");
     });
+
+    it("saves provider for non-default user", async () => {
+      // Create a non-default user to ensure the regression isn't masked
+      const testUserId = "11111111-1111-1111-1111-111111111111";
+      await testCtx.db.execute(
+        sql`INSERT INTO fitness.user_profile (id, name) VALUES (${testUserId}, 'Test User')`,
+      );
+
+      // Create a session for this non-default user
+      const session = await createSession(testCtx.db, testUserId);
+      const testSessionCookie = `session=${session.sessionId}`;
+
+      const response = await fetch(`${baseUrl}/api/trpc/whoopAuth.saveTokens?batch=1`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: testSessionCookie },
+        body: JSON.stringify({
+          "0": {
+            accessToken: "test-access-token",
+            refreshToken: "test-refresh-token",
+            userId: 99,
+          },
+        }),
+      });
+      expect(response.status).toBe(200);
+
+      // Verify provider was created with the test user's ID, not DEFAULT_USER_ID
+      const providerRows = await testCtx.db.execute<{ id: string; user_id: string }>(
+        sql`SELECT id, user_id FROM fitness.provider WHERE id = 'whoop'`,
+      );
+      expect(providerRows.length).toBe(1);
+      expect(providerRows[0]?.user_id).toBe(testUserId);
+    });
   });
 });

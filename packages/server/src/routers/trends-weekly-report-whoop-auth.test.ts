@@ -268,6 +268,7 @@ describe("whoopAuthRouter", () => {
   describe("saveTokens", () => {
     it("saves tokens to database with the session userId", async () => {
       const { ensureProvider, saveTokens } = await import("dofek/db/tokens");
+      const { queryCache } = await import("../lib/cache.ts");
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
@@ -288,6 +289,7 @@ describe("whoopAuthRouter", () => {
         "user-1",
       );
       expect(saveTokens).toHaveBeenCalled();
+      expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:sync.providers");
     });
   });
 });
