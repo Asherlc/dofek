@@ -1,18 +1,23 @@
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View, useWindowDimensions } from "react-native";
 
 // TODO: Add charts for weight, heart rate, HRV, resting HR, sleep, etc.
 // TODO: Use tRPC queries to fetch metric data from the server
 // TODO: Consider using react-native-chart-kit or victory-native for charts
 
 export default function MetricsScreen() {
+  const { width } = useWindowDimensions();
+  const isWide = width >= 600;
+
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Metrics</Text>
-      <Text style={styles.placeholder}>Charts and health metrics coming soon.</Text>
-      <Text style={styles.hint}>
-        This screen will show trends for weight, heart rate, HRV, and other health data synced from
-        your providers.
-      </Text>
+      <View style={[styles.innerContainer, isWide && styles.innerContainerWide]}>
+        <Text style={styles.title}>Metrics</Text>
+        <Text style={styles.placeholder}>Charts and health metrics coming soon.</Text>
+        <Text style={styles.hint}>
+          This screen will show trends for weight, heart rate, HRV, and other health data synced from
+          your providers.
+        </Text>
+      </View>
     </View>
   );
 }
@@ -24,6 +29,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     padding: 24,
+  },
+  innerContainer: {
+    alignItems: "center",
+  },
+  innerContainerWide: {
+    maxWidth: 600,
   },
   title: {
     fontSize: 24,

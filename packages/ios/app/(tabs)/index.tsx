@@ -1,6 +1,6 @@
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import type { FoodEntry } from "../../components/FoodEntryCard";
 import { MacroSummary } from "../../components/MacroSummary";
 import { MealSection } from "../../components/MealSection";
@@ -107,9 +107,12 @@ export default function TodayScreen() {
     deleteMutation.mutate({ id });
   }
 
+  const { width } = useWindowDimensions();
+  const isWide = width >= 600;
+
   return (
     <View style={styles.container}>
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
+      <ScrollView style={styles.scrollView} contentContainerStyle={[styles.content, isWide && styles.contentWide]}>
         {/* Date navigation */}
         <View style={styles.dateNav}>
           <TouchableOpacity onPress={goToPreviousDay} style={styles.dateArrow}>
@@ -166,6 +169,11 @@ const styles = StyleSheet.create({
   content: {
     padding: 16,
     paddingBottom: 100,
+  },
+  contentWide: {
+    maxWidth: 600,
+    alignSelf: "center",
+    width: "100%",
   },
   dateNav: {
     flexDirection: "row",
