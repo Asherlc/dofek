@@ -21,12 +21,7 @@
       "recommended": true,
       "suspicious": {
         "noExplicitAny": "error",
-        "noArrayIndexKey": "off",
         "noTsIgnore": "error"
-      },
-      "a11y": {
-        "noLabelWithoutControl": "off",
-        "useSemanticElements": "off"
       },
       "style": {
         "noNonNullAssertion": "error"

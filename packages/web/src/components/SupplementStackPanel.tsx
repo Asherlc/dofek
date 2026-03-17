@@ -162,7 +162,9 @@ export function SupplementStackPanel() {
       )}
 
       {supplements.map((supp, i) => (
-        <div key={`${supp.name}-${i}`}>
+        <div
+          key={`${supp.name}-${supp.amount ?? ""}-${supp.unit ?? ""}-${supp.form ?? ""}-${supp.meal ?? ""}`}
+        >
           {editingIndex === i ? (
             <SupplementForm
               initial={supp}
@@ -343,8 +345,11 @@ function SupplementForm({
     <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-3 space-y-3">
       <div className="grid grid-cols-12 gap-3">
         <div className="col-span-5">
-          <label className="text-xs text-zinc-500 block mb-1">Name</label>
+          <label htmlFor="supplement-name" className="text-xs text-zinc-500 block mb-1">
+            Name
+          </label>
           <input
+            id="supplement-name"
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -353,8 +358,11 @@ function SupplementForm({
           />
         </div>
         <div className="col-span-2">
-          <label className="text-xs text-zinc-500 block mb-1">Amount</label>
+          <label htmlFor="supplement-amount" className="text-xs text-zinc-500 block mb-1">
+            Amount
+          </label>
           <input
+            id="supplement-amount"
             type="number"
             step="any"
             value={amount}
@@ -364,8 +372,11 @@ function SupplementForm({
           />
         </div>
         <div className="col-span-1">
-          <label className="text-xs text-zinc-500 block mb-1">Unit</label>
+          <label htmlFor="supplement-unit" className="text-xs text-zinc-500 block mb-1">
+            Unit
+          </label>
           <select
+            id="supplement-unit"
             value={unit}
             onChange={(e) => setUnit(e.target.value)}
             className="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-zinc-500"
@@ -378,8 +389,11 @@ function SupplementForm({
           </select>
         </div>
         <div className="col-span-2">
-          <label className="text-xs text-zinc-500 block mb-1">Form</label>
+          <label htmlFor="supplement-form" className="text-xs text-zinc-500 block mb-1">
+            Form
+          </label>
           <select
+            id="supplement-form"
             value={form}
             onChange={(e) => setForm(e.target.value)}
             className="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-zinc-500"
@@ -393,8 +407,11 @@ function SupplementForm({
           </select>
         </div>
         <div className="col-span-2">
-          <label className="text-xs text-zinc-500 block mb-1">Meal</label>
+          <label htmlFor="supplement-meal" className="text-xs text-zinc-500 block mb-1">
+            Meal
+          </label>
           <select
+            id="supplement-meal"
             value={meal}
             onChange={(e) => setMeal(e.target.value)}
             className="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-zinc-500"
@@ -421,10 +438,14 @@ function SupplementForm({
           <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2 mt-2">
             {NUTRIENT_FIELDS.map((f) => (
               <div key={f.key}>
-                <label className="text-[10px] text-zinc-600 block mb-0.5">
+                <label
+                  htmlFor={`supplement-nutrient-${f.key}`}
+                  className="text-[10px] text-zinc-600 block mb-0.5"
+                >
                   {f.label} ({f.unit})
                 </label>
                 <input
+                  id={`supplement-nutrient-${f.key}`}
                   type="number"
                   step="any"
                   value={nutrients[f.key]}

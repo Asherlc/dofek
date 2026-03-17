@@ -144,8 +144,15 @@ export function InsightsPage() {
         {/* Loading */}
         {insightsData.isLoading && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <CorrelationCardSkeleton key={i} />
+            {[
+              "skeleton-1",
+              "skeleton-2",
+              "skeleton-3",
+              "skeleton-4",
+              "skeleton-5",
+              "skeleton-6",
+            ].map((id) => (
+              <CorrelationCardSkeleton key={id} />
             ))}
           </div>
         )}
