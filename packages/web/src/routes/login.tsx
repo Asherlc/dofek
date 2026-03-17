@@ -1,33 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { ProviderLogo, providerLabel } from "../components/ProviderLogo.tsx";
 import type { ConfiguredProviders } from "../lib/auth.ts";
 import { fetchConfiguredProviders } from "../lib/auth.ts";
-
-const providerLabels: Record<string, string> = {
-  google: "Google",
-  apple: "Apple",
-  authentik: "Homelab",
-  strava: "Strava",
-  wahoo: "Wahoo",
-  fitbit: "Fitbit",
-  "ride-with-gps": "Ride with GPS",
-  withings: "Withings",
-  garmin: "Garmin",
-  polar: "Polar",
-};
-
-const providerIcons: Record<string, string> = {
-  google: "G",
-  apple: "\uF8FF",
-  authentik: "⌂",
-  strava: "S",
-  wahoo: "W",
-  fitbit: "F",
-  "ride-with-gps": "R",
-  withings: "W",
-  garmin: "G",
-  polar: "P",
-};
 
 function LoginPage() {
   const [providers, setProviders] = useState<ConfiguredProviders | null>(null);
@@ -75,10 +50,8 @@ function LoginPage() {
                 href={type === "identity" ? `/auth/login/${id}` : `/auth/login/data/${id}`}
                 className="flex items-center justify-center gap-3 w-full px-4 py-3 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 hover:border-zinc-600 text-zinc-200 transition-colors text-sm font-medium"
               >
-                <span className="text-lg leading-none">
-                  {providerIcons[id] ?? id[0]?.toUpperCase()}
-                </span>
-                Sign in with {providerLabels[id] ?? id}
+                <ProviderLogo provider={id} size={20} />
+                Sign in with {providerLabel(id)}
               </a>
             ))}
           </div>
