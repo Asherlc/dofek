@@ -8,7 +8,8 @@ import express from "express";
 import { afterAll, describe, expect, it, vi } from "vitest";
 
 // Use a unique temp directory for each test run so parallel runs don't collide.
-const TEST_JOB_DIR = join(tmpdir(), `upload-integ-${Date.now()}`);
+const TEST_JOB_DIR = join(tmpdir(), `upload-integ-${process.pid}-${Date.now()}`);
+const ORIGINAL_JOB_FILES_DIR = process.env.JOB_FILES_DIR;
 process.env.JOB_FILES_DIR = TEST_JOB_DIR;
 
 // Dynamic import: upload.ts reads JOB_FILES_DIR at module scope, so it must
@@ -83,6 +84,11 @@ async function post(
 
 afterAll(async () => {
   await rm(TEST_JOB_DIR, { recursive: true, force: true });
+  if (ORIGINAL_JOB_FILES_DIR === undefined) {
+    delete process.env.JOB_FILES_DIR;
+  } else {
+    process.env.JOB_FILES_DIR = ORIGINAL_JOB_FILES_DIR;
+  }
 });
 
 // ── Tests ──
@@ -107,7 +113,7 @@ describe("upload integration (real file I/O)", () => {
       const filePath = queue.recorded[0].data.filePath;
       expect(filePath).toMatch(/\.zip$/);
       expect(existsSync(filePath)).toBe(true);
-      expect(readFileSync(filePath).toString()).toBe(payload.toString());
+      expect(readFileSync(filePath).equals(payload)).toBe(true);
     });
 
     it("saves an XML file with .xml extension when content-type is XML", async () => {
@@ -124,7 +130,7 @@ describe("upload integration (real file I/O)", () => {
       expect(res.status).toBe(200);
       const filePath = queue.recorded[0].data.filePath;
       expect(filePath).toMatch(/\.xml$/);
-      expect(readFileSync(filePath).toString()).toBe(xml.toString());
+      expect(readFileSync(filePath).equals(xml)).toBe(true);
     });
 
     it("saves .xml extension when x-file-ext is .xml on a single-chunk upload", async () => {
@@ -145,7 +151,7 @@ describe("upload integration (real file I/O)", () => {
       expect(res.status).toBe(200);
       const filePath = queue.recorded[0].data.filePath;
       expect(filePath).toMatch(/\.xml$/);
-      expect(readFileSync(filePath).toString()).toBe(xml.toString());
+      expect(readFileSync(filePath).equals(xml)).toBe(true);
     });
   });
 
@@ -188,7 +194,7 @@ describe("upload integration (real file I/O)", () => {
       expect(queue.recorded).toHaveLength(1);
       const filePath = queue.recorded[0].data.filePath;
       expect(existsSync(filePath)).toBe(true);
-      expect(readFileSync(filePath).toString()).toBe("AAAABBBBCCCC");
+      expect(readFileSync(filePath).equals(Buffer.from("AAAABBBBCCCC"))).toBe(true);
     });
 
     it("assembles chunks sent out of order", async () => {
@@ -222,7 +228,7 @@ describe("upload integration (real file I/O)", () => {
       // assembleChunks sorts by filename (chunk-000000, chunk-000001),
       // so the result should be in correct order regardless of upload order
       const filePath = queue.recorded[0].data.filePath;
-      expect(readFileSync(filePath).toString()).toBe("FIRSTSECOND");
+      expect(readFileSync(filePath).equals(Buffer.from("FIRSTSECOND"))).toBe(true);
     });
   });
 
@@ -320,7 +326,7 @@ describe("upload integration (real file I/O)", () => {
 
       const filePath = queue.recorded[0].data.filePath;
       expect(filePath).toMatch(/\.csv$/);
-      expect(readFileSync(filePath).toString()).toBe(csv.toString());
+      expect(readFileSync(filePath).equals(csv)).toBe(true);
     });
 
     it("passes lbs weight unit when units=lbs", async () => {
@@ -351,7 +357,7 @@ describe("upload integration (real file I/O)", () => {
 
       const filePath = queue.recorded[0].data.filePath;
       expect(filePath).toMatch(/\.csv$/);
-      expect(readFileSync(filePath).toString()).toBe(csv.toString());
+      expect(readFileSync(filePath).equals(csv)).toBe(true);
     });
   });
 });
