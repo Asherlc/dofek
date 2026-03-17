@@ -4,16 +4,25 @@ import {
   clearOAuthFlowCookies,
   clearSessionCookie,
   getLinkUserCookie,
+  getMobileSchemeCookie,
   getOAuthFlowCookies,
   getSessionCookie,
+  getSessionIdFromRequest,
   setLinkUserCookie,
+  setMobileSchemeCookie,
   setOAuthFlowCookies,
   setSessionCookie,
 } from "./cookies.ts";
 
-/** Create a mock Express Request with optional cookies */
-function mockRequest(cookies?: Record<string, string | undefined>): Request {
-  const req: Request = Object.assign(Object.create(null), { cookies });
+/** Create a mock Express Request with optional cookies and headers */
+function mockRequest(
+  cookies?: Record<string, string | undefined>,
+  headers?: Record<string, string | undefined>,
+): Request {
+  const req: Request = Object.assign(Object.create(null), {
+    cookies,
+    headers: headers ?? {},
+  });
   return req;
 }
 
@@ -154,17 +163,20 @@ describe("Auth cookies", () => {
   });
 
   describe("clearOAuthFlowCookies", () => {
-    it("clears state, code_verifier, and link_user cookies", () => {
+    it("clears state, code_verifier, link_user, and mobile_scheme cookies", () => {
       const res = mockResponse();
 
       clearOAuthFlowCookies(res);
 
-      expect(res.clearCookie).toHaveBeenCalledTimes(3);
+      expect(res.clearCookie).toHaveBeenCalledTimes(4);
       expect(res.clearCookie).toHaveBeenCalledWith("auth_state", { path: "/" });
       expect(res.clearCookie).toHaveBeenCalledWith("auth_code_verifier", {
         path: "/",
       });
       expect(res.clearCookie).toHaveBeenCalledWith("auth_link_user", {
+        path: "/",
+      });
+      expect(res.clearCookie).toHaveBeenCalledWith("auth_mobile_scheme", {
         path: "/",
       });
     });
@@ -198,6 +210,67 @@ describe("Auth cookies", () => {
     it("returns undefined for non-string cookie value", () => {
       const req = mockRequest(undefined);
       expect(getLinkUserCookie(req)).toBeUndefined();
+    });
+  });
+
+  describe("getSessionIdFromRequest", () => {
+    it("returns session from cookie when present", () => {
+      const req = mockRequest({ session: "cookie-session" });
+      expect(getSessionIdFromRequest(req)).toBe("cookie-session");
+    });
+
+    it("returns session from Authorization header when no cookie", () => {
+      const req = mockRequest({}, { authorization: "Bearer header-session" });
+      expect(getSessionIdFromRequest(req)).toBe("header-session");
+    });
+
+    it("prefers cookie over Authorization header", () => {
+      const req = mockRequest(
+        { session: "cookie-session" },
+        { authorization: "Bearer header-session" },
+      );
+      expect(getSessionIdFromRequest(req)).toBe("cookie-session");
+    });
+
+    it("returns undefined when neither cookie nor header is present", () => {
+      const req = mockRequest({});
+      expect(getSessionIdFromRequest(req)).toBeUndefined();
+    });
+
+    it("ignores non-Bearer authorization headers", () => {
+      const req = mockRequest({}, { authorization: "Basic dXNlcjpwYXNz" });
+      expect(getSessionIdFromRequest(req)).toBeUndefined();
+    });
+
+    it("ignores empty Bearer token", () => {
+      const req = mockRequest({}, { authorization: "Bearer " });
+      expect(getSessionIdFromRequest(req)).toBeUndefined();
+    });
+  });
+
+  describe("setMobileSchemeCookie", () => {
+    it("sets the mobile scheme cookie", () => {
+      const res = mockResponse();
+      setMobileSchemeCookie(res, "dofek");
+      expect(res.cookie).toHaveBeenCalledWith("auth_mobile_scheme", "dofek", {
+        httpOnly: true,
+        secure: false,
+        sameSite: "lax",
+        path: "/",
+        maxAge: 10 * 60 * 1000,
+      });
+    });
+  });
+
+  describe("getMobileSchemeCookie", () => {
+    it("returns the mobile scheme when present", () => {
+      const req = mockRequest({ auth_mobile_scheme: "dofek" });
+      expect(getMobileSchemeCookie(req)).toBe("dofek");
+    });
+
+    it("returns undefined when missing", () => {
+      const req = mockRequest({});
+      expect(getMobileSchemeCookie(req)).toBeUndefined();
     });
   });
 });

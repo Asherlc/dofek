@@ -8,7 +8,7 @@ import { createDatabaseFromEnv } from "dofek/db";
 import { runMigrations } from "dofek/db/migrate";
 import { createImportQueue, createSyncQueue } from "dofek/jobs/queues";
 import express from "express";
-import { getSessionCookie } from "./auth/cookies.ts";
+import { getSessionIdFromRequest } from "./auth/cookies.ts";
 import { validateSession } from "./auth/session.ts";
 import { httpRequestDuration, registry } from "./lib/metrics.ts";
 import { warmCache } from "./lib/warm-cache.ts";
@@ -100,7 +100,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
     createExpressMiddleware({
       router: appRouter,
       createContext: async ({ req }): Promise<Context> => {
-        const sessionId = getSessionCookie(req);
+        const sessionId = getSessionIdFromRequest(req);
         const session = sessionId ? await validateSession(db, sessionId) : null;
         return { db, userId: session?.userId ?? null };
       },
