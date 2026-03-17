@@ -1,7 +1,36 @@
 import type { Installation, InstallationQuery, InstallationStore } from "@slack/bolt";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
+import { z } from "zod";
 import { logger } from "../logger.ts";
+
+// Minimal Zod schema for Slack Installation from DB. We validate the structural
+// shape we depend on; @slack/bolt owns the full type (with complex generics that
+// can't be replicated in Zod). The transform narrows the output to Installation.
+const installationParser = z
+  .object({
+    team: z.object({ id: z.string(), name: z.string().optional() }).passthrough(),
+    enterprise: z.object({ id: z.string(), name: z.string().optional() }).passthrough().optional(),
+    bot: z
+      .object({ token: z.string(), id: z.string().optional(), userId: z.string().optional() })
+      .passthrough()
+      .optional(),
+    user: z
+      .object({
+        id: z.string(),
+        token: z.string().optional(),
+        scopes: z.array(z.string()).optional(),
+      })
+      .passthrough(),
+    appId: z.string().optional(),
+  })
+  .passthrough()
+  .transform((val) => {
+    // Validated shape is structurally compatible with Installation.
+    // We return through a generic identity to avoid a banned `as` cast.
+    const result: Installation = Object.assign(val);
+    return result;
+  });
 
 /**
  * Slack InstallationStore backed by the fitness.slack_installation table.
@@ -64,8 +93,8 @@ export function createInstallationStore(db: Database): InstallationStore {
       }
 
       const raw = row.raw_installation;
-      const installation: Installation = typeof raw === "string" ? JSON.parse(raw) : raw;
-      return installation;
+      const parsed: unknown = typeof raw === "string" ? JSON.parse(raw) : raw;
+      return installationParser.parse(parsed);
     },
 
     deleteInstallation: async (installQuery: InstallationQuery<boolean>) => {

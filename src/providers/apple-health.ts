@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { and, eq, gte, sql } from "drizzle-orm";
 import sax from "sax";
 import yauzl from "yauzl";
+import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
 import {
   activity,
@@ -1555,13 +1556,16 @@ async function importClinicalRecords(
 
   for (const file of clinicalFiles) {
     try {
-      const resource = JSON.parse(file.data.toString("utf-8"));
-      if (resource.resourceType === "Observation") {
-        observations.push({ obs: resource, fileName: file.name });
-      } else if (resource.resourceType === "DiagnosticReport") {
-        diagnosticReports.push(resource);
-      } else {
+      const raw: unknown = JSON.parse(file.data.toString("utf-8"));
+      const result = fhirResourceSchema.safeParse(raw);
+      if (!result.success) {
         skipped++;
+        continue;
+      }
+      if (result.data.resourceType === "Observation") {
+        observations.push({ obs: result.data, fileName: file.name });
+      } else {
+        diagnosticReports.push(result.data);
       }
     } catch (err) {
       errors.push({
@@ -1692,52 +1696,64 @@ export class AppleHealthProvider implements Provider {
 // FHIR Clinical Records — Lab Results
 // ============================================================
 
-export interface FhirCoding {
-  system?: string;
-  code?: string;
-  display?: string;
-}
+const fhirCodingSchema = z.object({
+  system: z.string().optional(),
+  code: z.string().optional(),
+  display: z.string().optional(),
+});
 
-export interface FhirCodeableConcept {
-  text?: string;
-  coding?: FhirCoding[];
-}
+const fhirCodeableConceptSchema = z.object({
+  text: z.string().optional(),
+  coding: z.array(fhirCodingSchema).optional(),
+});
 
-export interface FhirQuantity {
-  value?: number;
-  unit?: string;
-  system?: string;
-  code?: string;
-}
+const fhirQuantitySchema = z.object({
+  value: z.number().optional(),
+  unit: z.string().optional(),
+  system: z.string().optional(),
+  code: z.string().optional(),
+});
 
-export interface FhirReferenceRange {
-  low?: FhirQuantity;
-  high?: FhirQuantity;
-  text?: string;
-}
+const fhirReferenceRangeSchema = z.object({
+  low: fhirQuantitySchema.optional(),
+  high: fhirQuantitySchema.optional(),
+  text: z.string().optional(),
+});
 
-export interface FhirObservation {
-  resourceType: "Observation";
-  id: string;
-  status?: string;
-  category?: FhirCodeableConcept | FhirCodeableConcept[];
-  code: FhirCodeableConcept;
-  valueQuantity?: FhirQuantity;
-  valueString?: string;
-  referenceRange?: FhirReferenceRange[];
-  effectiveDateTime?: string;
-  issued?: string;
-}
+const fhirObservationSchema = z.object({
+  resourceType: z.literal("Observation"),
+  id: z.string(),
+  status: z.string().optional(),
+  category: z.union([fhirCodeableConceptSchema, z.array(fhirCodeableConceptSchema)]).optional(),
+  code: fhirCodeableConceptSchema,
+  valueQuantity: fhirQuantitySchema.optional(),
+  valueString: z.string().optional(),
+  referenceRange: z.array(fhirReferenceRangeSchema).optional(),
+  effectiveDateTime: z.string().optional(),
+  issued: z.string().optional(),
+});
 
-export interface FhirDiagnosticReport {
-  resourceType: "DiagnosticReport";
-  id: string;
-  status?: string;
-  code: FhirCodeableConcept;
-  effectiveDateTime?: string;
-  issued?: string;
-  result?: { reference: string }[];
-}
+const fhirDiagnosticReportSchema = z.object({
+  resourceType: z.literal("DiagnosticReport"),
+  id: z.string(),
+  status: z.string().optional(),
+  code: fhirCodeableConceptSchema,
+  effectiveDateTime: z.string().optional(),
+  issued: z.string().optional(),
+  result: z.array(z.object({ reference: z.string() })).optional(),
+});
+
+const fhirResourceSchema = z.discriminatedUnion("resourceType", [
+  fhirObservationSchema,
+  fhirDiagnosticReportSchema,
+]);
+
+export type FhirCoding = z.infer<typeof fhirCodingSchema>;
+export type FhirCodeableConcept = z.infer<typeof fhirCodeableConceptSchema>;
+export type FhirQuantity = z.infer<typeof fhirQuantitySchema>;
+export type FhirReferenceRange = z.infer<typeof fhirReferenceRangeSchema>;
+export type FhirObservation = z.infer<typeof fhirObservationSchema>;
+export type FhirDiagnosticReport = z.infer<typeof fhirDiagnosticReportSchema>;
 
 const VALID_LAB_STATUSES: ReadonlyArray<string> = [
   "final",

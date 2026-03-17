@@ -42,7 +42,8 @@ try {
   const { resolve } = await import("node:path");
   const jsonPath = resolve(import.meta.dirname, "../supplements.json");
   const raw = readFileSync(jsonPath, "utf-8");
-  supplementConfig = JSON.parse(raw);
+  const { supplementConfigSchema } = await import("./providers/auto-supplements.ts");
+  supplementConfig = supplementConfigSchema.parse(JSON.parse(raw));
 } catch (err) {
   // File not found is expected — auto-supplements provider will report validation error
   // Log other errors (e.g., corrupt JSON) so they're not silently swallowed

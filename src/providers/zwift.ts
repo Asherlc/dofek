@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
   parseZwiftActivity,
   parseZwiftFitnessData,
@@ -42,8 +43,9 @@ export class ZwiftProvider implements Provider {
         const result = await ZwiftClient.signIn(email, password, fetchFn);
 
         // Decode JWT to get athleteId
-        const payload: { sub?: string } = JSON.parse(
-          Buffer.from(result.accessToken.split(".")[1] ?? "", "base64").toString(),
+        const jwtPayloadSchema = z.object({ sub: z.string().optional() });
+        const payload = jwtPayloadSchema.parse(
+          JSON.parse(Buffer.from(result.accessToken.split(".")[1] ?? "", "base64").toString()),
         );
         const athleteId = payload.sub ?? "";
 

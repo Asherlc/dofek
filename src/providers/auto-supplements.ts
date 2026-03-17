@@ -61,7 +61,7 @@ const supplementDefinitionSchema = z.object({
   form: z.string().optional(),
 });
 
-const supplementConfigSchema = z.object({
+export const supplementConfigSchema = z.object({
   supplements: z.array(supplementDefinitionSchema).min(1),
 });
 
