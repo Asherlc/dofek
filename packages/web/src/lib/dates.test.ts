@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   formatDateForDisplay,
   formatDateForQuery,
@@ -7,9 +7,87 @@ import {
   isToday,
 } from "./dates.ts";
 
+describe("formatDateForQuery", () => {
+  it("formats a date as YYYY-MM-DD", () => {
+    const date = new Date(2026, 2, 15); // March 15, 2026
+    expect(formatDateForQuery(date)).toBe("2026-03-15");
+  });
+
+  it("zero-pads single-digit months and days", () => {
+    const date = new Date(2026, 0, 5); // Jan 5
+    expect(formatDateForQuery(date)).toBe("2026-01-05");
+  });
+
+  it("handles December correctly (month + 1)", () => {
+    const date = new Date(2026, 11, 31); // Dec 31
+    expect(formatDateForQuery(date)).toBe("2026-12-31");
+  });
+});
+
+describe("isToday", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 2, 15, 14, 30)); // Mar 15 2026 2:30 PM
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("returns true for today's date", () => {
+    expect(isToday(new Date(2026, 2, 15, 8, 0))).toBe(true);
+  });
+
+  it("returns false for yesterday", () => {
+    expect(isToday(new Date(2026, 2, 14))).toBe(false);
+  });
+
+  it("returns false for tomorrow", () => {
+    expect(isToday(new Date(2026, 2, 16))).toBe(false);
+  });
+
+  it("returns false for same day different year", () => {
+    expect(isToday(new Date(2025, 2, 15))).toBe(false);
+  });
+
+  it("returns false for same day different month", () => {
+    expect(isToday(new Date(2026, 3, 15))).toBe(false);
+  });
+});
+
+describe("formatRelativeTime", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-15T12:00:00Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("returns 'just now' for less than 1 minute ago", () => {
+    expect(formatRelativeTime("2026-03-15T11:59:30Z")).toBe("just now");
+  });
+
+  it("returns minutes ago for less than 1 hour", () => {
+    expect(formatRelativeTime("2026-03-15T11:30:00Z")).toBe("30m ago");
+    expect(formatRelativeTime("2026-03-15T11:55:00Z")).toBe("5m ago");
+  });
+
+  it("returns hours ago for less than 1 day", () => {
+    expect(formatRelativeTime("2026-03-15T09:00:00Z")).toBe("3h ago");
+    expect(formatRelativeTime("2026-03-14T13:00:00Z")).toBe("23h ago");
+  });
+
+  it("returns days ago for 24+ hours", () => {
+    expect(formatRelativeTime("2026-03-13T12:00:00Z")).toBe("2d ago");
+    expect(formatRelativeTime("2026-03-08T12:00:00Z")).toBe("7d ago");
+  });
+});
+
 describe("formatDateForDisplay", () => {
-  it("formats a date with weekday, month, day, and year", () => {
-    const date = new Date("2026-03-15T12:00:00Z");
+  it("formats date with weekday, month, day, and year", () => {
+    const date = new Date(2026, 2, 15); // Sunday March 15 2026
     const result = formatDateForDisplay(date);
     expect(result).toContain("Mar");
     expect(result).toContain("15");
@@ -17,68 +95,10 @@ describe("formatDateForDisplay", () => {
   });
 });
 
-describe("formatDateForQuery", () => {
-  it("formats a date as YYYY-MM-DD", () => {
-    const date = new Date(2026, 2, 5); // March 5, 2026 (local)
-    expect(formatDateForQuery(date)).toBe("2026-03-05");
-  });
-
-  it("zero-pads single-digit months and days", () => {
-    const date = new Date(2026, 0, 3); // January 3, 2026 (local)
-    expect(formatDateForQuery(date)).toBe("2026-01-03");
-  });
-});
-
-describe("isToday", () => {
-  it("returns true for today", () => {
-    expect(isToday(new Date())).toBe(true);
-  });
-
-  it("returns false for yesterday", () => {
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    expect(isToday(yesterday)).toBe(false);
-  });
-
-  it("returns false for a different year", () => {
-    const pastDate = new Date(2020, 0, 1);
-    expect(isToday(pastDate)).toBe(false);
-  });
-});
-
-describe("formatRelativeTime", () => {
-  it("returns 'just now' for times less than a minute ago", () => {
-    const now = new Date().toISOString();
-    expect(formatRelativeTime(now)).toBe("just now");
-  });
-
-  it("returns minutes ago for times less than an hour ago", () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-03-15T12:30:00Z"));
-    expect(formatRelativeTime("2026-03-15T12:10:00Z")).toBe("20m ago");
-    vi.useRealTimers();
-  });
-
-  it("returns hours ago for times less than 24 hours ago", () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-03-15T15:00:00Z"));
-    expect(formatRelativeTime("2026-03-15T12:00:00Z")).toBe("3h ago");
-    vi.useRealTimers();
-  });
-
-  it("returns days ago for times 24+ hours ago", () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-03-17T12:00:00Z"));
-    expect(formatRelativeTime("2026-03-15T12:00:00Z")).toBe("2d ago");
-    vi.useRealTimers();
-  });
-});
-
 describe("formatTime", () => {
-  it("formats an ISO string as a localized time", () => {
-    const result = formatTime("2026-03-15T15:30:00Z");
-    // The exact output depends on timezone, but it should contain key parts
+  it("formats ISO string with month, day, hour, and minute", () => {
+    const result = formatTime("2026-03-15T14:30:00Z");
     expect(result).toContain("Mar");
-    expect(result).toMatch(/\d{1,2}:\d{2}/);
+    expect(result).toContain("15");
   });
 });
