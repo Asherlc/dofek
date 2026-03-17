@@ -76,7 +76,11 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec vitest run --project unit --reporter=blob --coverage.enabled --coverage.reporter=json
+      - run: >-
+          pnpm exec vitest run --project unit --reporter=blob
+          --coverage.enabled --coverage.reporter=json
+          --coverage.thresholds.lines=0 --coverage.thresholds.functions=0
+          --coverage.thresholds.branches=0 --coverage.thresholds.statements=0
       - uses: actions/upload-artifact@v4
         with:
           name: blob-unit
@@ -120,7 +124,11 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec vitest run --project integration --reporter=blob --coverage.enabled --coverage.reporter=json
+      - run: >-
+          pnpm exec vitest run --project integration --reporter=blob
+          --coverage.enabled --coverage.reporter=json
+          --coverage.thresholds.lines=0 --coverage.thresholds.functions=0
+          --coverage.thresholds.branches=0 --coverage.thresholds.statements=0
         timeout-minutes: 10
       - uses: actions/upload-artifact@v4
         with:
