@@ -15,9 +15,8 @@ export function TimeRangeSelector({
   onChange: (days: number) => void;
 }) {
   return (
-    <div
+    <fieldset
       className="flex shrink-0 gap-0.5 sm:gap-1 bg-zinc-900 rounded-lg p-1 border border-zinc-800"
-      role="group"
       aria-label="Time range"
     >
       {TIME_RANGES.map((r) => (
@@ -32,6 +31,6 @@ export function TimeRangeSelector({
           {r.label}
         </button>
       ))}
-    </div>
+    </fieldset>
   );
 }

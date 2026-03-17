@@ -179,9 +179,9 @@ export function ProvidersPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {reversedSystemLogs.map((entry, i) => (
+                  {reversedSystemLogs.map((entry) => (
                     <tr
-                      key={`${entry.timestamp}-${i}`}
+                      key={`${entry.timestamp}-${entry.level}-${entry.message}`}
                       className="border-b border-zinc-800/50 hover:bg-zinc-800/30"
                     >
                       <td className="px-4 py-1.5 text-zinc-500 whitespace-nowrap">

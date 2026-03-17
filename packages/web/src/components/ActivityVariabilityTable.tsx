@@ -42,9 +42,9 @@ export function ActivityVariabilityTable({ data, loading }: ActivityVariabilityT
           </tr>
         </thead>
         <tbody>
-          {data.map((row, i) => (
+          {data.map((row) => (
             <tr
-              key={`${row.date}-${row.activityName}-${i}`}
+              key={`${row.date}-${row.activityName}-${row.normalizedPower}-${row.averagePower}`}
               className="border-b border-zinc-900 hover:bg-zinc-900/50"
             >
               <td className="py-2 px-3 text-zinc-300">

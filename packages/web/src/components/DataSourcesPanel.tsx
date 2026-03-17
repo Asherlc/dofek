@@ -244,8 +244,8 @@ export function DataSourcesPanel() {
 
       {providers.isLoading ? (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="h-24 rounded-lg bg-zinc-800/50 animate-pulse" />
+          {["skeleton-1", "skeleton-2", "skeleton-3"].map((id) => (
+            <div key={id} className="h-24 rounded-lg bg-zinc-800/50 animate-pulse" />
           ))}
         </div>
       ) : (
@@ -439,9 +439,9 @@ function SyncProviderCard({
       {!notConfigured && (
         <div className="flex items-center justify-between mt-2 pt-2 border-t border-zinc-800/50">
           <div className="flex items-center gap-1">
-            {recentLogs.map((l, i) => (
+            {recentLogs.map((l) => (
               <span
-                key={`${l.syncedAt}-${i}`}
+                key={`${l.syncedAt}-${l.status}-${l.recordCount}-${l.durationMs}`}
                 className={`w-1.5 h-1.5 rounded-full ${
                   l.status === "success" ? "bg-emerald-400" : "bg-red-400"
                 }`}
@@ -653,9 +653,8 @@ function StatusDot({ status }: { status: SyncStatus }) {
     error: "Error",
   };
   return (
-    <span
+    <output
       className={`inline-block w-2 h-2 rounded-full ${colors[status]}`}
-      role="status"
       aria-label={labels[status]}
     />
   );
@@ -870,8 +869,8 @@ function FileImportZone({
         <StatusDot status={state.status} />
         <span className="text-sm font-medium text-zinc-200">{title}</span>
       </div>
-      <div
-        role="button"
+      <button
+        type="button"
         tabIndex={0}
         onDragOver={(e) => {
           e.preventDefault();
@@ -914,7 +913,7 @@ function FileImportZone({
         ) : (
           <div className="text-xs text-zinc-600">{description}</div>
         )}
-      </div>
+      </button>
       {state.status !== "idle" && state.status !== "syncing" && (
         <div
           className={`mt-1.5 text-xs ${state.status === "error" ? "text-red-400" : "text-emerald-400"}`}
@@ -948,9 +947,9 @@ function FileImportZone({
       {/* Recent sync dots */}
       {recentLogs.length > 0 && (
         <div className="flex items-center gap-1 mt-2 pt-2 border-t border-zinc-800/50">
-          {recentLogs.map((l, i) => (
+          {recentLogs.map((l) => (
             <span
-              key={`${l.syncedAt}-${i}`}
+              key={`${l.syncedAt}-${l.status}-${l.recordCount}-${l.durationMs}`}
               className={`w-1.5 h-1.5 rounded-full ${
                 l.status === "success" ? "bg-emerald-400" : "bg-red-400"
               }`}

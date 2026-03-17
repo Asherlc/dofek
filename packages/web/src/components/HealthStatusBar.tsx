@@ -43,8 +43,8 @@ export function HealthStatusBar({ metrics, loading }: HealthStatusBarProps) {
   if (loading) {
     return (
       <div className="flex gap-3">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <div key={i} className="flex-1 h-16 rounded-lg bg-zinc-800 animate-pulse" />
+        {["skeleton-1", "skeleton-2", "skeleton-3", "skeleton-4", "skeleton-5"].map((id) => (
+          <div key={id} className="flex-1 h-16 rounded-lg bg-zinc-800 animate-pulse" />
         ))}
       </div>
     );

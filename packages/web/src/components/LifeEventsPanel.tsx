@@ -161,8 +161,11 @@ function AddEventForm({
     <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4 space-y-3">
       <div className="grid grid-cols-2 gap-3">
         <div className="col-span-2">
-          <label className="text-xs text-zinc-500 block mb-1">Label</label>
+          <label htmlFor="life-event-label" className="text-xs text-zinc-500 block mb-1">
+            Label
+          </label>
           <input
+            id="life-event-label"
             type="text"
             value={label}
             onChange={(e) => setLabel(e.target.value)}
@@ -172,7 +175,7 @@ function AddEventForm({
         </div>
 
         <div>
-          <label className="text-xs text-zinc-500 block mb-1">Type</label>
+          <span className="text-xs text-zinc-500 block mb-1">Type</span>
           <div className="flex gap-2">
             {(["point", "range", "ongoing"] as const).map((t) => (
               <button
@@ -192,8 +195,11 @@ function AddEventForm({
         </div>
 
         <div>
-          <label className="text-xs text-zinc-500 block mb-1">Category</label>
+          <label htmlFor="life-event-category" className="text-xs text-zinc-500 block mb-1">
+            Category
+          </label>
           <select
+            id="life-event-category"
             value={category}
             onChange={(e) => setCategory(e.target.value)}
             className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-zinc-500"
@@ -208,8 +214,11 @@ function AddEventForm({
         </div>
 
         <div>
-          <label className="text-xs text-zinc-500 block mb-1">Start date</label>
+          <label htmlFor="life-event-start-date" className="text-xs text-zinc-500 block mb-1">
+            Start date
+          </label>
           <input
+            id="life-event-start-date"
             type="date"
             value={startedAt}
             onChange={(e) => setStartedAt(e.target.value)}
@@ -219,8 +228,11 @@ function AddEventForm({
 
         {eventType === "range" && (
           <div>
-            <label className="text-xs text-zinc-500 block mb-1">End date</label>
+            <label htmlFor="life-event-end-date" className="text-xs text-zinc-500 block mb-1">
+              End date
+            </label>
             <input
+              id="life-event-end-date"
               type="date"
               value={endedAt}
               onChange={(e) => setEndedAt(e.target.value)}
@@ -230,8 +242,11 @@ function AddEventForm({
         )}
 
         <div className="col-span-2">
-          <label className="text-xs text-zinc-500 block mb-1">Notes (optional)</label>
+          <label htmlFor="life-event-notes" className="text-xs text-zinc-500 block mb-1">
+            Notes (optional)
+          </label>
           <input
+            id="life-event-notes"
             type="text"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
