@@ -14,9 +14,13 @@ vi.mock("../logger.ts", () => ({
 }));
 
 import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import express from "express";
-import { streamToFile } from "../lib/server-utils.ts";
+import { assembleChunks, streamToFile } from "../lib/server-utils.ts";
 import { createUploadRouter } from "./upload.ts";
+
+const EXPECTED_JOB_FILES_DIR = process.env.JOB_FILES_DIR || join(tmpdir(), "dofek-job-files");
 
 function mockQueue() {
   const mockJob = {
@@ -402,6 +406,82 @@ describe("createUploadRouter", () => {
         body: Buffer.from("chunk-0"),
       });
       expect(res.status).toBe(500);
+    });
+  });
+
+  describe("files are written to JOB_FILES_DIR", () => {
+    it("writes single Apple Health upload to JOB_FILES_DIR", async () => {
+      const { app } = createTestApp();
+      await request(app, "post", "/api/upload/apple-health", {
+        headers: { "Content-Type": "application/zip" },
+        body: Buffer.from("fake-zip"),
+      });
+      const filePath = vi.mocked(streamToFile).mock.calls[0][1];
+      expect(filePath).toMatch(new RegExp(`^${EXPECTED_JOB_FILES_DIR}`));
+      expect(filePath).toContain("apple-health-");
+    });
+
+    it("writes chunked Apple Health upload to JOB_FILES_DIR", async () => {
+      const { app } = createTestApp();
+      await request(app, "post", "/api/upload/apple-health", {
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "x-upload-id": "upload-dir-test",
+          "x-chunk-index": "0",
+          "x-chunk-total": "2",
+        },
+        body: Buffer.from("chunk-0"),
+      });
+      const chunkPath = vi.mocked(streamToFile).mock.calls[0][1];
+      expect(chunkPath).toMatch(new RegExp(`^${EXPECTED_JOB_FILES_DIR}`));
+    });
+
+    it("assembles chunked file into JOB_FILES_DIR", async () => {
+      const { app } = createTestApp();
+      // Send both chunks
+      await request(app, "post", "/api/upload/apple-health", {
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "x-upload-id": "upload-assemble-dir",
+          "x-chunk-index": "0",
+          "x-chunk-total": "2",
+        },
+        body: Buffer.from("chunk-0"),
+      });
+      await request(app, "post", "/api/upload/apple-health", {
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "x-upload-id": "upload-assemble-dir",
+          "x-chunk-index": "1",
+          "x-chunk-total": "2",
+        },
+        body: Buffer.from("chunk-1"),
+      });
+      const assembledPath = vi.mocked(assembleChunks).mock.calls[0][1];
+      expect(assembledPath).toMatch(new RegExp(`^${EXPECTED_JOB_FILES_DIR}`));
+      expect(assembledPath).toContain("apple-health-upload-assemble-dir");
+    });
+
+    it("writes Strong CSV upload to JOB_FILES_DIR", async () => {
+      const { app } = createTestApp();
+      await request(app, "post", "/api/upload/strong-csv", {
+        headers: { "Content-Type": "text/csv" },
+        body: Buffer.from("date,exercise\n2026-01-01,squat"),
+      });
+      const filePath = vi.mocked(streamToFile).mock.calls[0][1];
+      expect(filePath).toMatch(new RegExp(`^${EXPECTED_JOB_FILES_DIR}`));
+      expect(filePath).toContain("strong-csv-");
+    });
+
+    it("writes Cronometer CSV upload to JOB_FILES_DIR", async () => {
+      const { app } = createTestApp();
+      await request(app, "post", "/api/upload/cronometer-csv", {
+        headers: { "Content-Type": "text/csv" },
+        body: Buffer.from("date,food\n2026-01-01,banana"),
+      });
+      const filePath = vi.mocked(streamToFile).mock.calls[0][1];
+      expect(filePath).toMatch(new RegExp(`^${EXPECTED_JOB_FILES_DIR}`));
+      expect(filePath).toContain("cronometer-csv-");
     });
   });
 
