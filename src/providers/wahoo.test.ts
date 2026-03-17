@@ -66,6 +66,19 @@ describe("Wahoo Provider", () => {
       expect(result.endedAt).toBeUndefined();
     });
 
+    it("treats zero duration_total_accum as falsy (no endedAt)", () => {
+      const workout: WahooWorkout = {
+        ...sampleWorkout,
+        workout_summary: {
+          ...sampleWorkout.workout_summary,
+          duration_total_accum: 0,
+        },
+      };
+
+      const result = parseWorkoutSummary(workout);
+      expect(result.endedAt).toBeUndefined();
+    });
+
     it("maps workout_type_id to activity type", () => {
       expect(parseWorkoutSummary({ ...sampleWorkout, workout_type_id: 0 }).activityType).toBe(
         "cycling",
@@ -113,6 +126,21 @@ describe("Wahoo Provider", () => {
         per_page: 30,
         order: "descending",
         sort: "starts",
+      };
+
+      const result = parseWorkoutList(response);
+
+      expect(result.hasMore).toBe(false);
+    });
+
+    it("returns hasMore=false when page*perPage equals total exactly", () => {
+      const response = {
+        workouts: [sampleWorkout],
+        total: 30,
+        page: 1,
+        per_page: 30,
+        order: "descending" as const,
+        sort: "starts" as const,
       };
 
       const result = parseWorkoutList(response);
