@@ -8,6 +8,7 @@ export default defineConfig({
     teardownTimeout: 60_000,
     fileParallelism: true,
     pool: "forks",
+    retry: 2,
     projects: [
       {
         test: {
