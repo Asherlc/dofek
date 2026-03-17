@@ -530,7 +530,7 @@ describe("pelotonAutomatedLogin", () => {
   afterAll(() => {
     loginServer.close();
   });
-  it.skip("completes the full Auth0 automated login flow", async () => {
+  it("completes the full Auth0 automated login flow", async () => {
     const injectedConfig = {
       extraParams: {
         state: "test-state-123",
@@ -587,7 +587,7 @@ describe("pelotonAutomatedLogin", () => {
           },
         });
       }),
-      http.post("https://api.onepeloton.com/oauth/token", () => {
+      http.post("https://auth.onepeloton.com/oauth/token", () => {
         step = 6;
         return HttpResponse.json({
           access_token: "new-access-token",
