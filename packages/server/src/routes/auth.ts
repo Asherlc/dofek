@@ -37,9 +37,8 @@ export function oauthSuccessHtml(
   providerId?: string,
 ): string {
   const detailLine = detail ? `<p>${detail}</p>` : "";
-  const providerIdPart = providerId ? `,providerId:'${providerId}'` : "";
-  const broadcastPayload = `{type:'complete'${providerIdPart}}`;
-  const postMessagePayload = `{type:'oauth-complete'${providerIdPart}}`;
+  const broadcastPayload = JSON.stringify({ type: "complete", providerId });
+  const postMessagePayload = JSON.stringify({ type: "oauth-complete", providerId });
   return `<html><body style="font-family:system-ui;background:#111;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center"><h1>Authorized!</h1><p>${providerName} connected successfully.</p>${detailLine}<p><a href="/" style="color:#10b981">Return to dashboard</a></p></div><script>try{new BroadcastChannel('oauth-complete').postMessage(${broadcastPayload})}catch(e){}try{window.opener&&window.opener.postMessage(${postMessagePayload},'*')}catch(e){}setTimeout(function(){window.close()},1500)</script></body></html>`;
 }
 
