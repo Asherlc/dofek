@@ -64,6 +64,19 @@ describe("logSync", () => {
 
     expect(db.spies.values).toHaveBeenCalledWith(expect.objectContaining({ recordCount: 0 }));
   });
+
+  it("preserves non-zero recordCount", async () => {
+    const entry: SyncLogEntry = {
+      providerId: "wahoo",
+      dataType: "activities",
+      status: "success",
+      recordCount: 15,
+    };
+
+    await logSync(db.db, entry);
+
+    expect(db.spies.values).toHaveBeenCalledWith(expect.objectContaining({ recordCount: 15 }));
+  });
 });
 
 describe("withSyncLog", () => {
@@ -135,6 +148,38 @@ describe("withSyncLog", () => {
     expect(db.spies.values).toHaveBeenCalledWith(
       expect.objectContaining({
         durationMs: 500,
+      }),
+    );
+  });
+
+  it("records durationMs for error path", async () => {
+    vi.setSystemTime(new Date("2026-03-15T10:00:00Z"));
+
+    const fn = vi.fn().mockImplementation(async () => {
+      vi.advanceTimersByTime(300);
+      throw new Error("timeout");
+    });
+
+    await expect(withSyncLog(db.db, "whoop", "sleep", fn)).rejects.toThrow("timeout");
+
+    expect(db.spies.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "error",
+        durationMs: 300,
+      }),
+    );
+  });
+
+  it("passes correct providerId and dataType on success", async () => {
+    const fn = vi.fn().mockResolvedValue({ recordCount: 0, result: null });
+
+    await withSyncLog(db.db, "strava", "body_composition", fn);
+
+    expect(db.spies.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: "strava",
+        dataType: "body_composition",
+        status: "success",
       }),
     );
   });

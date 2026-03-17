@@ -96,4 +96,66 @@ describe("Sync Runner", () => {
 
     expect(result.duration).toBeGreaterThanOrEqual(40);
   });
+
+  it("sets recordsSynced to 0 for rejected providers", async () => {
+    const providers = [
+      createMockProvider({
+        id: "fail",
+        name: "Fail",
+        sync: async () => {
+          throw new Error("Network error");
+        },
+      }),
+    ];
+
+    const result = await runSync(mockDb, since, providers);
+
+    expect(result.results[0]?.recordsSynced).toBe(0);
+    expect(result.results[0]?.provider).toBe("fail");
+  });
+
+  it("aggregates errors from multiple failing providers", async () => {
+    const providers = [
+      createMockProvider({
+        id: "fail1",
+        name: "Fail1",
+        sync: async () => {
+          throw new Error("err1");
+        },
+      }),
+      createMockProvider({
+        id: "fail2",
+        name: "Fail2",
+        sync: async () => {
+          throw new Error("err2");
+        },
+      }),
+    ];
+
+    const result = await runSync(mockDb, since, providers);
+
+    expect(result.totalErrors).toBe(2);
+    expect(result.totalRecords).toBe(0);
+  });
+
+  it("includes provider errors in result array", async () => {
+    const providers = [
+      createMockProvider({
+        id: "ok",
+        name: "OK",
+        sync: async () => ({
+          provider: "ok",
+          recordsSynced: 5,
+          errors: [{ message: "partial failure" }],
+          duration: 10,
+        }),
+      }),
+    ];
+
+    const result = await runSync(mockDb, since, providers);
+
+    expect(result.totalRecords).toBe(5);
+    expect(result.totalErrors).toBe(1);
+    expect(result.results[0]?.errors).toHaveLength(1);
+  });
 });

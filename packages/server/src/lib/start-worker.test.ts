@@ -56,6 +56,37 @@ describe("startWorker", () => {
     getCallback()(new Error("permission denied"), "", "permission denied");
 
     expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("permission denied"));
+    expect(consoleErrorSpy).toHaveBeenCalledOnce();
+    consoleErrorSpy.mockRestore();
+  });
+
+  it("falls back to err.message when stderr is empty", () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    startWorker();
+    getCallback()(new Error("connection refused"), "", "");
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("connection refused"));
+    consoleErrorSpy.mockRestore();
+  });
+
+  it("prefers stderr over err.message", () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    startWorker();
+    getCallback()(new Error("generic error"), "", "specific stderr output");
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("specific stderr output"));
+    consoleErrorSpy.mockRestore();
+  });
+
+  it("does nothing when no error occurs", () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    startWorker();
+    getCallback()(null, "started", "");
+
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
     consoleErrorSpy.mockRestore();
   });
 });
