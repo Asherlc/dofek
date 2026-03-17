@@ -18,9 +18,8 @@ import { colors } from "../../theme";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000/api/trpc";
 import { lookupBarcode, searchFoods } from "../../lib/food-database";
+import { type MealType, autoMealType, formatDateYmd } from "../../lib/meal";
 import { trpc } from "../../lib/trpc";
-
-type MealType = "breakfast" | "lunch" | "dinner" | "snack" | "other";
 
 const MEAL_OPTIONS: { key: MealType; label: string }[] = [
   { key: "breakfast", label: "Breakfast" },
@@ -29,19 +28,6 @@ const MEAL_OPTIONS: { key: MealType; label: string }[] = [
   { key: "snack", label: "Snack" },
   { key: "other", label: "Other" },
 ];
-
-function todayString(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function autoMealType(): MealType {
-  const hour = new Date().getHours();
-  if (hour < 10) return "breakfast";
-  if (hour < 14) return "lunch";
-  if (hour < 17) return "snack";
-  return "dinner";
-}
 
 // Merged search result from our DB + Open Food Facts
 interface SearchResult {
@@ -59,7 +45,7 @@ interface SearchResult {
 export default function AddFoodScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ meal?: string; date?: string }>();
-  const date = params.date ?? todayString();
+  const date = params.date ?? formatDateYmd();
 
   // ── Search state ──
   const [searchQuery, setSearchQuery] = useState("");
