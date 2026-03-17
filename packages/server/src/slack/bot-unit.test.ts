@@ -283,6 +283,73 @@ describe("bot.ts — registerHandlers", () => {
       });
       expect(say).not.toHaveBeenCalled();
     });
+
+    it("replies with error when lookupOrCreateUserId fails", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+
+      // lookupOrCreateUserId: users.info fails
+      mockExecute.mockRejectedValueOnce(new Error("Slack API unavailable"));
+
+      const { messageHandler } = setupHandlers(db);
+
+      const say = vi.fn();
+      const client = {
+        users: {
+          info: vi.fn().mockRejectedValue(new Error("Slack API unavailable")),
+        },
+        chat: { postMessage: vi.fn() },
+      };
+
+      await messageHandler({
+        message: {
+          user: "U123",
+          text: "some food",
+          ts: "1700000000.000000",
+          channel: "C123",
+        },
+        say,
+        client,
+      });
+
+      // The top-level catch should send an error reply
+      expect(say).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining("Slack API unavailable"),
+          thread_ts: "1700000000.000000",
+        }),
+      );
+    });
+
+    it("handles failed say() in top-level error handler gracefully", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+
+      // lookupOrCreateUserId fails
+      mockExecute.mockRejectedValueOnce(new Error("DB error"));
+
+      const { messageHandler } = setupHandlers(db);
+
+      const say = vi.fn().mockRejectedValue(new Error("say failed"));
+      const client = {
+        users: { info: vi.fn().mockRejectedValue(new Error("API down")) },
+        chat: { postMessage: vi.fn() },
+      };
+
+      // Should not throw even if say() fails
+      await expect(
+        messageHandler({
+          message: {
+            user: "U123",
+            text: "food",
+            ts: "1700000000.000000",
+            channel: "C123",
+          },
+          say,
+          client,
+        }),
+      ).resolves.not.toThrow();
+    });
   });
 
   describe("message handler — thread reply (refinement)", () => {

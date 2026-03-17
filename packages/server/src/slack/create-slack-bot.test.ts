@@ -150,4 +150,5 @@ describe("startSlackBot", () => {
       expect.stringContaining("requires Express app reference"),
     );
   });
+
 });
