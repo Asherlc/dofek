@@ -85,7 +85,14 @@ vi.mock("dofek/db/schema", () => ({
   },
 }));
 
-import { ensureProvidersRegistered, syncRouter } from "./sync.ts";
+import {
+  ensureProvidersRegistered,
+  logsInput,
+  syncRouter,
+  syncStatusInput,
+  systemLogsInput,
+  triggerSyncInput,
+} from "./sync.ts";
 
 describe("syncRouter", () => {
   const createCaller = createTestCallerFactory(syncRouter);
@@ -561,6 +568,30 @@ describe("syncRouter", () => {
 
       const result = await caller.providerStats();
       expect(result).toEqual([]);
+    });
+  });
+
+  describe("input schemas", () => {
+    it("triggerSyncInput accepts providerId and sinceDays", () => {
+      const result = triggerSyncInput.parse({ providerId: "wahoo", sinceDays: 7 });
+      expect(result.providerId).toBe("wahoo");
+      expect(result.sinceDays).toBe(7);
+    });
+
+    it("syncStatusInput requires jobId string", () => {
+      const result = syncStatusInput.parse({ jobId: "abc-123" });
+      expect(result.jobId).toBe("abc-123");
+      expect(() => syncStatusInput.parse({})).toThrow();
+    });
+
+    it("logsInput defaults limit to 100", () => {
+      const result = logsInput.parse({});
+      expect(result.limit).toBe(100);
+    });
+
+    it("systemLogsInput defaults limit to 200", () => {
+      const result = systemLogsInput.parse({});
+      expect(result.limit).toBe(200);
     });
   });
 

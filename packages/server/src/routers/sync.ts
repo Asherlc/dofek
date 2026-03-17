@@ -6,6 +6,18 @@ import { startWorker } from "../lib/start-worker.ts";
 import { getSystemLogs, logger } from "../logger.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
+// ── Input schemas ──
+export const triggerSyncInput = z.object({
+  providerId: z.string().optional(),
+  sinceDays: z.number().optional(),
+});
+
+export const syncStatusInput = z.object({ jobId: z.string() });
+
+export const logsInput = z.object({ limit: z.number().default(100) });
+
+export const systemLogsInput = z.object({ limit: z.number().default(200) });
+
 // ── Provider registration (race-safe) ──
 let registrationPromise: Promise<void> | null = null;
 
@@ -158,81 +170,68 @@ export const syncRouter = router({
   }),
 
   /** Trigger sync — enqueues a BullMQ job, returns immediately with jobId */
-  triggerSync: protectedProcedure
-    .input(
-      z.object({
-        providerId: z.string().optional(),
-        sinceDays: z.number().optional(),
-      }),
-    )
-    .mutation(async ({ ctx, input }) => {
-      await ensureProvidersRegistered();
+  triggerSync: protectedProcedure.input(triggerSyncInput).mutation(async ({ ctx, input }) => {
+    await ensureProvidersRegistered();
 
-      // Validate provider exists and is configured before enqueuing
-      if (input.providerId) {
-        const provider = getAllProviders().find((p) => p.id === input.providerId);
-        if (!provider) throw new Error(`Unknown provider: ${input.providerId}`);
-        const validation = provider.validate();
-        if (validation) throw new Error(`Provider not configured: ${validation}`);
-      }
+    // Validate provider exists and is configured before enqueuing
+    if (input.providerId) {
+      const provider = getAllProviders().find((p) => p.id === input.providerId);
+      if (!provider) throw new Error(`Unknown provider: ${input.providerId}`);
+      const validation = provider.validate();
+      if (validation) throw new Error(`Provider not configured: ${validation}`);
+    }
 
-      const job = await getSyncQueue().add("sync", {
-        providerId: input.providerId,
-        sinceDays: input.sinceDays,
-        userId: ctx.userId,
-      });
+    const job = await getSyncQueue().add("sync", {
+      providerId: input.providerId,
+      sinceDays: input.sinceDays,
+      userId: ctx.userId,
+    });
 
-      startWorker();
-      return { jobId: job.id ?? `job-${Date.now()}` };
-    }),
+    startWorker();
+    return { jobId: job.id ?? `job-${Date.now()}` };
+  }),
 
   /** Poll sync job status — reads from BullMQ */
-  syncStatus: protectedProcedure
-    .input(z.object({ jobId: z.string() }))
-    .query(async ({ ctx, input }) => {
-      if (!input.jobId) return null;
+  syncStatus: protectedProcedure.input(syncStatusInput).query(async ({ ctx, input }) => {
+    if (!input.jobId) return null;
 
-      let job: Awaited<ReturnType<ReturnType<typeof getSyncQueue>["getJob"]>> | undefined;
-      try {
-        job = await getSyncQueue().getJob(input.jobId);
-      } catch {
-        return null; // Redis unavailable
-      }
-      if (!job) return null;
+    let job: Awaited<ReturnType<ReturnType<typeof getSyncQueue>["getJob"]>> | undefined;
+    try {
+      job = await getSyncQueue().getJob(input.jobId);
+    } catch {
+      return null; // Redis unavailable
+    }
+    if (!job) return null;
 
-      // Only return status for jobs belonging to the requesting user
-      if (job.data.userId !== ctx.userId) return null;
+    // Only return status for jobs belonging to the requesting user
+    if (job.data.userId !== ctx.userId) return null;
 
-      const state = await job.getState();
+    const state = await job.getState();
 
-      const progressSchema = z.object({
-        providers: z
-          .record(
-            z.object({
-              status: z.enum(["pending", "running", "done", "error"]),
-              message: z.string().optional(),
-            }),
-          )
-          .optional(),
-      });
-      const parsed = progressSchema.safeParse(job.progress);
-      const progress = parsed.success ? parsed.data : undefined;
+    const progressSchema = z.object({
+      providers: z
+        .record(
+          z.object({
+            status: z.enum(["pending", "running", "done", "error"]),
+            message: z.string().optional(),
+          }),
+        )
+        .optional(),
+    });
+    const parsed = progressSchema.safeParse(job.progress);
+    const progress = parsed.success ? parsed.data : undefined;
 
-      return {
-        status: mapBullMqStateToSyncStatus(state),
-        providers: progress?.providers ?? {},
-        message:
-          state === "failed"
-            ? job.failedReason
-            : state === "completed"
-              ? "Sync complete"
-              : undefined,
-      };
-    }),
+    return {
+      status: mapBullMqStateToSyncStatus(state),
+      providers: progress?.providers ?? {},
+      message:
+        state === "failed" ? job.failedReason : state === "completed" ? "Sync complete" : undefined,
+    };
+  }),
 
   /** Get sync log history */
   logs: cachedProtectedQuery(CacheTTL.SHORT)
-    .input(z.object({ limit: z.number().default(100) }))
+    .input(logsInput)
     .query(async ({ ctx, input }) => {
       const { syncLog } = await import("dofek/db/schema");
       const { desc, eq } = await import("drizzle-orm");
@@ -246,11 +245,9 @@ export const syncRouter = router({
     }),
 
   /** Get recent system logs (console output) */
-  systemLogs: protectedProcedure
-    .input(z.object({ limit: z.number().default(200) }))
-    .query(({ input }) => {
-      return getSystemLogs(input.limit);
-    }),
+  systemLogs: protectedProcedure.input(systemLogsInput).query(({ input }) => {
+    return getSystemLogs(input.limit);
+  }),
 
   /** Per-provider record counts broken down by table */
   providerStats: cachedProtectedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
