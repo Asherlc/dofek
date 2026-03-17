@@ -152,29 +152,17 @@ jobs:
           name: Get changed files
           command: |
             if [ -n "$CIRCLE_PULL_REQUEST" ]; then
+              # Only filter out test files, type definitions, and non-source paths.
+              # Stryker's own mutate config handles the rest.
               FILES=$(git diff --name-only origin/main...HEAD \
                 | { grep '\.ts$' || true; } \
                 | { grep -v '\.test\.ts$' || true; } \
                 | { grep -v 'test-helpers\.ts$' || true; } \
                 | { grep -v '\.d\.ts$' || true; } \
-                | { grep -v 'packages/server/' || true; } \
-                | { grep -v 'packages/ios/' || true; } \
-                | { grep -v 'packages/whoop-whoop/' || true; } \
-                | { grep -v 'packages/garmin-connect/' || true; } \
-                | { grep -v 'packages/eight-sleep/' || true; } \
-                | { grep -v 'packages/trainerroad-client/' || true; } \
-                | { grep -v 'packages/velohero-client/' || true; } \
-                | { grep -v 'packages/zwift-client/' || true; } \
-                | awk '!/^src\/providers\// || /^src\/providers\/(index|strong-csv|cronometer-csv)\.ts$/' \
-                | { grep -v 'packages/web/src/pages/' || true; } \
-                | { grep -v 'packages/web/src/hooks/' || true; } \
-                | { grep -v 'packages/web/src/components/' || true; } \
+                | { grep -v '\.config\.' || true; } \
                 | { grep -v 'drizzle/' || true; } \
                 | { grep -v 'scripts/' || true; } \
-                | { grep -v '\.config\.' || true; } \
-                | { grep -v 'src/jobs/worker\.ts$' || true; } \
-                | { grep -v '^src/index\.ts$' || true; } \
-                | { grep -v '^src/server\.ts$' || true; } \
+                | { grep -v 'packages/ios/' || true; } \
                 | tr '\n' ',' \
                 | sed 's/,$//')
               echo "export MUTATE_FILES=$FILES" >> "$BASH_ENV"

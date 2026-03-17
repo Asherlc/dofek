@@ -9,17 +9,18 @@
   "incremental": true,
   "incrementalFile": "reports/stryker-incremental.json",
   "mutate": [
-    "src/providers/index.ts",
-    "src/providers/strong-csv.ts",
-    "src/providers/cronometer-csv.ts",
-    "src/fit/*.ts",
-    "src/auth/*.ts",
-    "packages/web/src/lib/units.ts",
-    "packages/web/src/lib/poll-sync-job.ts",
+    "src/**/*.ts",
     "packages/server/src/**/*.ts",
-    "!src/**/*.test.ts",
-    "!src/**/test-helpers.ts",
-    "!packages/server/src/**/*.test.ts"
+    "packages/web/src/lib/**/*.ts",
+    "packages/garmin-connect/src/**/*.ts",
+    "packages/eight-sleep/src/**/*.ts",
+    "packages/whoop-whoop/src/**/*.ts",
+    "packages/trainerroad-client/src/**/*.ts",
+    "packages/velohero-client/src/**/*.ts",
+    "packages/zwift-client/src/**/*.ts",
+    "!**/*.test.ts",
+    "!**/test-helpers.ts",
+    "!**/fixtures/**"
   ],
   "ignorePatterns": [
     "packages/ios/**",
