@@ -70,7 +70,7 @@ describe("Wahoo Provider", () => {
       const workout: WahooWorkout = {
         ...sampleWorkout,
         workout_summary: {
-          ...sampleWorkout.workout_summary,
+          ...sampleWorkoutSummary,
           duration_total_accum: 0,
         },
       };
