@@ -189,11 +189,12 @@ describe("whoopAuth router", () => {
       const data: { success: boolean } = result?.result?.data;
       expect(data.success).toBe(true);
 
-      // Verify provider was created
-      const providerRows = await testCtx.db.execute<{ id: string }>(
-        sql`SELECT id FROM fitness.provider WHERE id = 'whoop'`,
+      // Verify provider was created with the session user's ID
+      const providerRows = await testCtx.db.execute<{ id: string; user_id: string }>(
+        sql`SELECT id, user_id FROM fitness.provider WHERE id = 'whoop'`,
       );
       expect(providerRows.length).toBe(1);
+      expect(providerRows[0]?.user_id).toBe(DEFAULT_USER_ID);
 
       // Verify token was saved
       const tokenRows = await testCtx.db.execute<{ access_token: string; scopes: string }>(

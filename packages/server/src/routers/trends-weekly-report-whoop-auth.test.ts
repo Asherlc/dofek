@@ -29,6 +29,10 @@ vi.mock("dofek/db/tokens", () => ({
   saveTokens: vi.fn(),
 }));
 
+vi.mock("../lib/cache.ts", () => ({
+  queryCache: { invalidateByPrefix: vi.fn() },
+}));
+
 import { trendsRouter } from "./trends.ts";
 import { weeklyReportRouter } from "./weekly-report.ts";
 import { whoopAuthRouter } from "./whoop-auth.ts";
@@ -262,7 +266,7 @@ describe("whoopAuthRouter", () => {
   });
 
   describe("saveTokens", () => {
-    it("saves tokens to database", async () => {
+    it("saves tokens to database with the session userId", async () => {
       const { ensureProvider, saveTokens } = await import("dofek/db/tokens");
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
@@ -276,7 +280,13 @@ describe("whoopAuthRouter", () => {
       });
 
       expect(result).toEqual({ success: true });
-      expect(ensureProvider).toHaveBeenCalled();
+      expect(ensureProvider).toHaveBeenCalledWith(
+        expect.anything(),
+        "whoop",
+        "WHOOP",
+        undefined,
+        "user-1",
+      );
       expect(saveTokens).toHaveBeenCalled();
     });
   });
