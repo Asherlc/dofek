@@ -76,13 +76,14 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec vitest run --config vitest.config.unit.ts --coverage
+      - run: pnpm exec vitest run --project unit --reporter=blob --coverage.enabled --coverage.reporter=json --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 --coverage.thresholds.statements=0
+      - run: mv .vitest-reports/blob.json .vitest-reports/unit.json
       - uses: actions/upload-artifact@v4
-        if: failure()
         with:
-          name: coverage
-          path: coverage/
-          retention-days: 7
+          name: blob-unit
+          path: .vitest-reports/
+          include-hidden-files: true
+          retention-days: 1
 
   test-integration:
     name: Integration Tests
@@ -121,8 +122,34 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec vitest run --config vitest.config.ts --pool=forks "integration.test"
+      - run: pnpm exec vitest run --project integration --reporter=blob --coverage.enabled --coverage.reporter=json --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 --coverage.thresholds.statements=0
         timeout-minutes: 10
+      - run: mv .vitest-reports/blob.json .vitest-reports/integration.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: blob-integration
+          path: .vitest-reports/
+          include-hidden-files: true
+          retention-days: 1
+
+  coverage:
+    name: Coverage
+    needs: [test-unit, test-integration]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: blob-*
+          path: .vitest-reports/
+          merge-multiple: true
+      - run: pnpm exec vitest --merge-reports --coverage
 
   test-e2e:
     name: E2E Tests
@@ -199,7 +226,7 @@ jobs:
 
   docker:
     name: Docker (${{ matrix.target }})
-    needs: [lint, typecheck, knip, test-unit, test-integration]
+    needs: [lint, typecheck, knip, coverage]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04-arm
     permissions:

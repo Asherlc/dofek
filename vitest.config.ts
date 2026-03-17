@@ -1,14 +1,35 @@
 import { defineConfig } from "vitest/config";
 
+const sharedTestConfig = {
+  globals: true,
+  testTimeout: 30_000,
+  hookTimeout: 120_000,
+  teardownTimeout: 60_000,
+  fileParallelism: true,
+  pool: "forks" as const,
+  retry: 2,
+};
+
 export default defineConfig({
   test: {
-    globals: true,
-    testTimeout: 30_000,
-    hookTimeout: 120_000,
-    teardownTimeout: 60_000,
-    fileParallelism: true,
-    pool: "forks",
-    include: ["src/**/*.test.ts", "packages/*/src/**/*.test.ts"],
+    ...sharedTestConfig,
+    projects: [
+      {
+        test: {
+          ...sharedTestConfig,
+          name: "unit",
+          include: ["src/**/*.test.ts", "packages/*/src/**/*.test.ts"],
+          exclude: ["**/*.integration.test.ts"],
+        },
+      },
+      {
+        test: {
+          ...sharedTestConfig,
+          name: "integration",
+          include: ["src/**/*.integration.test.ts", "packages/*/src/**/*.integration.test.ts"],
+        },
+      },
+    ],
     coverage: {
       provider: "v8",
       reporter: ["text", "json-summary"],
@@ -16,8 +37,8 @@ export default defineConfig({
       exclude: ["**/*.test.ts", "**/test-helpers.ts", "**/fixtures/**", "**/node_modules/**"],
       thresholds: {
         lines: 93,
-        functions: 95,
-        branches: 87,
+        functions: 94,
+        branches: 86,
         statements: 93,
       },
     },

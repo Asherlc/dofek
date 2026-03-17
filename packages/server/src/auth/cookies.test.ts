@@ -3,8 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 import {
   clearOAuthFlowCookies,
   clearSessionCookie,
+  getLinkUserCookie,
   getOAuthFlowCookies,
   getSessionCookie,
+  setLinkUserCookie,
   setOAuthFlowCookies,
   setSessionCookie,
 } from "./cookies.ts";
@@ -165,6 +167,37 @@ describe("Auth cookies", () => {
       expect(res.clearCookie).toHaveBeenCalledWith("auth_link_user", {
         path: "/",
       });
+    });
+  });
+
+  describe("setLinkUserCookie", () => {
+    it("sets the link user cookie", () => {
+      const res = mockResponse();
+      setLinkUserCookie(res, "user-123");
+      expect(res.cookie).toHaveBeenCalledWith("auth_link_user", "user-123", {
+        httpOnly: true,
+        secure: false,
+        sameSite: "lax",
+        path: "/",
+        maxAge: 10 * 60 * 1000,
+      });
+    });
+  });
+
+  describe("getLinkUserCookie", () => {
+    it("returns the link user cookie when present", () => {
+      const req = mockRequest({ auth_link_user: "user-456" });
+      expect(getLinkUserCookie(req)).toBe("user-456");
+    });
+
+    it("returns undefined when cookie is missing", () => {
+      const req = mockRequest({});
+      expect(getLinkUserCookie(req)).toBeUndefined();
+    });
+
+    it("returns undefined for non-string cookie value", () => {
+      const req = mockRequest(undefined);
+      expect(getLinkUserCookie(req)).toBeUndefined();
     });
   });
 });

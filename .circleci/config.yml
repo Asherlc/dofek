@@ -62,19 +62,7 @@ jobs:
       - setup
       - run: pnpm knip
 
-  test-unit:
-    executor: node
-    steps:
-      - setup
-      - run:
-          name: Run unit tests with coverage
-          command: pnpm exec vitest run --config vitest.config.unit.ts --coverage
-          environment:
-            NODE_OPTIONS: --max-old-space-size=3072
-      - store_artifacts:
-          path: coverage
-
-  test-integration:
+  test:
     docker:
       - image: cimg/node:22.14
       - image: timescale/timescaledb:latest-pg16
@@ -103,9 +91,11 @@ jobs:
             echo "Database did not become ready in time"
             exit 1
       - run:
-          name: Run integration tests
-          command: pnpm exec vitest run --config vitest.config.ts --pool=forks --teardownTimeout=10000 "integration.test"
+          name: Run full suite with coverage
+          command: pnpm exec vitest run --coverage
           no_output_timeout: 10m
+      - store_artifacts:
+          path: coverage
 
   test-e2e:
     executor: machine
@@ -225,8 +215,7 @@ workflows:
       - lint
       - typescript
       - knip
-      - test-unit
-      - test-integration
+      - test
       - test-e2e
       - mutation:
           filters:
