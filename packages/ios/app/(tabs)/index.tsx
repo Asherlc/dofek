@@ -36,7 +36,8 @@ export default function OverviewScreen() {
   // Fetch sleep analytics for last night
   const sleepQuery = trpc.recovery.sleepAnalytics.useQuery({ days: 7 });
   const sleepResult = sleepQuery.data;
-  const lastNight = sleepResult?.nightly?.[sleepResult.nightly.length - 1];
+  const nightly = sleepResult?.nightly ?? [];
+  const lastNight = nightly[nightly.length - 1];
   const sleepDebt = sleepResult?.sleepDebt ?? 0;
 
   // Fetch workload ratio for strain
