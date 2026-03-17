@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { oauthSuccessHtml } from "./auth.ts";
 
 // Mock all heavy dependencies
 vi.mock("../auth/cookies.ts", () => ({
@@ -737,5 +738,79 @@ describe("createAuthRouter", () => {
         validateCallback: vi.fn(),
       });
     });
+  });
+});
+
+describe("oauthSuccessHtml", () => {
+  it("includes provider name", () => {
+    const html = oauthSuccessHtml("Wahoo");
+    expect(html).toContain("Wahoo connected successfully.");
+  });
+
+  it("includes detail when provided", () => {
+    const html = oauthSuccessHtml("Wahoo", "Token expires: 2027-01-01");
+    expect(html).toContain("Token expires: 2027-01-01");
+  });
+
+  it("omits detail paragraph when not provided", () => {
+    const html = oauthSuccessHtml("Wahoo");
+    // Should have the provider message followed directly by the dashboard link
+    expect(html).toContain("connected successfully.</p><p><a href");
+  });
+
+  it("includes BroadcastChannel notification script", () => {
+    const html = oauthSuccessHtml("Wahoo");
+    expect(html).toContain("BroadcastChannel('oauth-complete')");
+    expect(html).toContain(".postMessage('complete')");
+  });
+
+  it("includes window.opener postMessage fallback", () => {
+    const html = oauthSuccessHtml("Wahoo");
+    expect(html).toContain("window.opener");
+    expect(html).toContain("postMessage({type:'oauth-complete'}");
+  });
+
+  it("includes window.close() for auto-closing the popup", () => {
+    const html = oauthSuccessHtml("Wahoo");
+    expect(html).toContain("window.close()");
+  });
+
+  it("includes a return-to-dashboard link", () => {
+    const html = oauthSuccessHtml("Wahoo");
+    expect(html).toContain('<a href="/"');
+    expect(html).toContain("Return to dashboard");
+  });
+});
+
+describe("OAuth callback success responses include notification script", () => {
+  it("automated login response includes BroadcastChannel script", async () => {
+    const mockAutoLogin = vi.fn(() =>
+      Promise.resolve({
+        accessToken: "tok-123",
+        refreshToken: null,
+        expiresAt: new Date("2027-01-01"),
+        scopes: "",
+      }),
+    );
+    vi.mocked(getAllProviders).mockReturnValue([
+      {
+        id: "peloton",
+        name: "Peloton",
+        authSetup: () => ({
+          oauthConfig: {},
+          automatedLogin: mockAutoLogin,
+          apiBaseUrl: "https://api.peloton.com",
+        }),
+      },
+    ]);
+    process.env.PELOTON_USERNAME = "user@test.com";
+    process.env.PELOTON_PASSWORD = "pass123";
+    const { app } = createTestApp();
+    const res = await request(app, "get", "/auth/provider/peloton");
+    expect(res.status).toBe(200);
+    expect(res.body).toContain("BroadcastChannel('oauth-complete')");
+    expect(res.body).toContain("window.close()");
+    delete process.env.PELOTON_USERNAME;
+    delete process.env.PELOTON_PASSWORD;
   });
 });
