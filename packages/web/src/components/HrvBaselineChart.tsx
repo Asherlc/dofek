@@ -23,7 +23,7 @@ export function HrvBaselineChart({ data, loading }: HrvBaselineChartProps) {
   if (data.length === 0) {
     return (
       <div className="flex items-center justify-center" style={{ height: 280 }}>
-        <span className="text-zinc-600 text-sm">No HRV data</span>
+        <span className="text-zinc-600 text-sm">No heart rate variability data</span>
       </div>
     );
   }
@@ -83,9 +83,9 @@ export function HrvBaselineChart({ data, loading }: HrvBaselineChartProps) {
       textStyle: { color: "#a1a1aa", fontSize: 11 },
       top: 0,
       data: [
-        { name: "HRV", icon: "circle" },
+        { name: "Heart Rate Variability", icon: "circle" },
         { name: "7d Avg", icon: "roundRect" },
-        { name: "Resting HR", icon: "roundRect" },
+        { name: "Resting Heart Rate", icon: "roundRect" },
       ],
     },
     xAxis: {
@@ -97,7 +97,7 @@ export function HrvBaselineChart({ data, loading }: HrvBaselineChartProps) {
     yAxis: [
       {
         type: "value" as const,
-        name: "HRV (ms)",
+        name: "Heart Rate Variability (ms)",
         min: "dataMin",
         splitLine: { lineStyle: { color: "#27272a" } },
         axisLabel: { color: "#71717a", fontSize: 11 },
@@ -107,7 +107,7 @@ export function HrvBaselineChart({ data, loading }: HrvBaselineChartProps) {
       },
       {
         type: "value" as const,
-        name: "RHR (bpm)",
+        name: "Resting Heart Rate (bpm)",
         min: "dataMin",
         splitLine: { show: false },
         axisLabel: { color: "#71717a", fontSize: 11 },
@@ -149,7 +149,7 @@ export function HrvBaselineChart({ data, loading }: HrvBaselineChartProps) {
       },
       // Daily HRV (dots + thin line)
       {
-        name: "HRV",
+        name: "Heart Rate Variability",
         type: "line",
         data: dailyHrvData,
         smooth: false,
@@ -174,7 +174,7 @@ export function HrvBaselineChart({ data, loading }: HrvBaselineChartProps) {
       },
       // Resting HR on second y-axis
       {
-        name: "Resting HR",
+        name: "Resting Heart Rate",
         type: "line",
         data: restingHrData,
         smooth: true,

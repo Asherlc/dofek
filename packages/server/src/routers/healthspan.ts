@@ -33,19 +33,15 @@ export interface HealthspanMetric {
 export interface HealthspanResult {
   /** Composite healthspan score 0-100 */
   healthspanScore: number;
-  /** Estimated biological age (null if birth_date not set) */
-  biologicalAge: number | null;
-  /** Chronological age (null if birth_date not set) */
-  chronologicalAge: number | null;
-  /** Pace of aging: <1.0 = aging slower, >1.0 = aging faster (null if insufficient history) */
-  paceOfAging: number | null;
   /** Individual metric breakdowns */
   metrics: HealthspanMetric[];
-  /** Historical weekly scores for trend */
+  /** Historical weekly scores derived from resting heart rate, steps, and VO2 max only */
   history: { weekStart: string; score: number }[];
+  /** Direction of weekly score trend: "improving" | "declining" | "stable" (null if < 4 weeks of data) */
+  trend: "improving" | "declining" | "stable" | null;
 }
 
-function scoreToStatus(score: number): "excellent" | "good" | "fair" | "poor" {
+export function scoreToStatus(score: number): "excellent" | "good" | "fair" | "poor" {
   if (score >= 80) return "excellent";
   if (score >= 60) return "good";
   if (score >= 40) return "fair";
@@ -53,14 +49,14 @@ function scoreToStatus(score: number): "excellent" | "good" | "fair" | "poor" {
 }
 
 /** Score sleep consistency: lower stddev of bedtime = better. <30min stddev = 100 */
-function scoreSleepConsistency(stddevMinutes: number | null): number {
+export function scoreSleepConsistency(stddevMinutes: number | null): number {
   if (stddevMinutes == null) return 50;
   // 0 stddev = 100, 90+ min stddev = 0
   return Math.max(0, Math.min(100, Math.round(100 - (stddevMinutes / 90) * 100)));
 }
 
 /** Score average sleep duration. Optimal is 7-9 hours. */
-function scoreSleepDuration(avgMinutes: number | null): number {
+export function scoreSleepDuration(avgMinutes: number | null): number {
   if (avgMinutes == null) return 50;
   const hours = avgMinutes / 60;
   if (hours >= 7 && hours <= 9) return 100;
@@ -71,7 +67,7 @@ function scoreSleepDuration(avgMinutes: number | null): number {
 }
 
 /** Score aerobic zone time (zones 1-3). WHO recommends 150-300 min/week. */
-function scoreAerobicMinutes(weeklyMin: number | null): number {
+export function scoreAerobicMinutes(weeklyMin: number | null): number {
   if (weeklyMin == null) return 50;
   if (weeklyMin >= 300) return 100;
   if (weeklyMin >= 150) return 70 + ((weeklyMin - 150) / 150) * 30;
@@ -80,7 +76,7 @@ function scoreAerobicMinutes(weeklyMin: number | null): number {
 }
 
 /** Score high-intensity zone time (zones 4-5). WHO recommends 75-150 min/week vigorous. */
-function scoreHighIntensityMinutes(weeklyMin: number | null): number {
+export function scoreHighIntensityMinutes(weeklyMin: number | null): number {
   if (weeklyMin == null) return 50;
   if (weeklyMin >= 150) return 100;
   if (weeklyMin >= 75) return 70 + ((weeklyMin - 75) / 75) * 30;
@@ -89,7 +85,7 @@ function scoreHighIntensityMinutes(weeklyMin: number | null): number {
 }
 
 /** Score strength training frequency. 2-4 sessions/week is optimal. */
-function scoreStrengthFrequency(sessionsPerWeek: number | null): number {
+export function scoreStrengthFrequency(sessionsPerWeek: number | null): number {
   if (sessionsPerWeek == null) return 50;
   if (sessionsPerWeek >= 2 && sessionsPerWeek <= 5) return 100;
   if (sessionsPerWeek >= 1) return 70;
@@ -97,7 +93,7 @@ function scoreStrengthFrequency(sessionsPerWeek: number | null): number {
 }
 
 /** Score daily steps. 8000-12000 is optimal per longevity research. */
-function scoreSteps(dailyAvg: number | null): number {
+export function scoreSteps(dailyAvg: number | null): number {
   if (dailyAvg == null) return 50;
   if (dailyAvg >= 10000) return 100;
   if (dailyAvg >= 8000) return 85;
@@ -107,7 +103,7 @@ function scoreSteps(dailyAvg: number | null): number {
 }
 
 /** Score VO2 max. Higher is better. Age-adjusted would be ideal but we use general thresholds. */
-function scoreVo2Max(vo2max: number | null): number {
+export function scoreVo2Max(vo2max: number | null): number {
   if (vo2max == null) return 50;
   if (vo2max >= 50) return 100;
   if (vo2max >= 45) return 85;
@@ -118,7 +114,7 @@ function scoreVo2Max(vo2max: number | null): number {
 }
 
 /** Score resting HR. Lower is better. Elite athletes: 40-50, good: 50-65, avg: 65-75. */
-function scoreRestingHr(rhr: number | null): number {
+export function scoreRestingHr(rhr: number | null): number {
   if (rhr == null) return 50;
   if (rhr <= 50) return 100;
   if (rhr <= 55) return 90;
@@ -130,7 +126,7 @@ function scoreRestingHr(rhr: number | null): number {
 }
 
 /** Score lean body mass percentage. Higher lean mass = better for longevity. */
-function scoreLeanMassPct(leanPct: number | null): number {
+export function scoreLeanMassPct(leanPct: number | null): number {
   if (leanPct == null) return 50;
   // Rough thresholds (gender-neutral)
   if (leanPct >= 85) return 100;
@@ -158,7 +154,6 @@ export const healthspanRouter = router({
       });
 
       const rawRowSchema = z.object({
-        birth_date: z.string().nullable(),
         avg_sleep_min: z.coerce.number().nullable(),
         bedtime_stddev_min: z.coerce.number().nullable(),
         avg_resting_hr: z.coerce.number().nullable(),
@@ -176,10 +171,7 @@ export const healthspanRouter = router({
       const rows = await executeWithSchema(
         ctx.db,
         rawRowSchema,
-        sql`WITH user_info AS (
-              SELECT birth_date, max_hr FROM fitness.user_profile WHERE id = ${ctx.userId}
-            ),
-            sleep_data AS (
+        sql`WITH sleep_data AS (
               SELECT
                 started_at::date AS date,
                 duration_minutes,
@@ -258,7 +250,6 @@ export const healthspanRouter = router({
               ORDER BY week_start ASC
             )
             SELECT
-              ui.birth_date,
               sa.avg_sleep_min,
               sa.bedtime_stddev_min,
               ma.avg_resting_hr,
@@ -275,8 +266,7 @@ export const healthspanRouter = router({
                 'avg_steps', wm.avg_steps,
                 'avg_vo2max', wm.avg_vo2max
               ) ORDER BY wm.week_start ASC) FROM weekly_metrics wm) AS weekly_history
-            FROM user_info ui
-            CROSS JOIN sleep_agg sa
+            FROM sleep_agg sa
             CROSS JOIN metrics_agg ma
             CROSS JOIN hr_zone_time hz
             CROSS JOIN strength_freq sf
@@ -287,11 +277,9 @@ export const healthspanRouter = router({
       if (!row) {
         return {
           healthspanScore: 50,
-          biologicalAge: null,
-          chronologicalAge: null,
-          paceOfAging: null,
           metrics: [],
           history: [],
+          trend: null,
         };
       }
 
@@ -389,36 +377,19 @@ export const healthspanRouter = router({
       const totalScore = metricDefs.reduce((sum, m) => sum + m.score, 0);
       const healthspanScore = Math.round(totalScore / metricDefs.length);
 
-      // Biological age: chronological age adjusted by healthspan score
-      // Score of 75 = aging at normal rate, each point above/below shifts bio age
-      let biologicalAge: number | null = null;
-      let chronologicalAge: number | null = null;
-
-      if (row.birth_date) {
-        const birthDate = new Date(row.birth_date);
-        const now = new Date();
-        chronologicalAge = Math.floor(
-          (now.getTime() - birthDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000),
-        );
-        // Each point away from 75 adjusts bio age by ~0.2 years
-        const ageDelta = (75 - healthspanScore) * 0.2;
-        biologicalAge = Math.round((chronologicalAge + ageDelta) * 10) / 10;
-      }
-
-      // Approximate weekly scores from the metrics we can easily aggregate weekly
+      // Weekly scores from the subset of metrics that aggregate weekly
+      // (resting heart rate, steps, VO2 max — 3 of 9 total metrics)
       const weeklyHistory = row.weekly_history ?? [];
       const history = weeklyHistory.map((h) => {
         const rhrScore = scoreRestingHr(h.avg_rhr != null ? Number(h.avg_rhr) : null);
         const stepsScore = scoreSteps(h.avg_steps != null ? Number(h.avg_steps) : null);
         const vo2Score = scoreVo2Max(h.avg_vo2max != null ? Number(h.avg_vo2max) : null);
-        // Use available metrics as proxy (3 of 9 — the others don't aggregate weekly easily)
         const weekScore = Math.round((rhrScore + stepsScore + vo2Score) / 3);
         return { weekStart: h.week_start, score: weekScore };
       });
 
-      // Pace of aging: slope of weekly scores over time
-      // Positive slope = improving = aging slower
-      let paceOfAging: number | null = null;
+      // Trend direction from linear regression slope of weekly scores
+      let trend: "improving" | "declining" | "stable" | null = null;
       if (history.length >= 4) {
         const n = history.length;
         const xMean = (n - 1) / 2;
@@ -431,19 +402,17 @@ export const healthspanRouter = router({
           den += (i - xMean) * (i - xMean);
         }
         const slope = den > 0 ? num / den : 0;
-        // Normalize: slope of 0 = pace 1.0, positive slope = < 1.0 (aging slower)
-        // Each point of weekly improvement ≈ 0.05 reduction in pace
-        paceOfAging = Math.round((1.0 - slope * 0.05) * 100) / 100;
-        paceOfAging = Math.max(0.5, Math.min(1.5, paceOfAging)); // clamp
+        // Threshold: ±0.5 points per week to count as improving/declining
+        if (slope > 0.5) trend = "improving";
+        else if (slope < -0.5) trend = "declining";
+        else trend = "stable";
       }
 
       return {
         healthspanScore,
-        biologicalAge,
-        chronologicalAge,
-        paceOfAging,
         metrics: metricDefs,
         history,
+        trend,
       };
     }),
 });

@@ -14,18 +14,16 @@ function statusColor(status: HealthspanMetric["status"]): string {
   return "#ef4444";
 }
 
-function paceColor(pace: number): string {
-  if (pace <= 0.9) return "#22c55e";
-  if (pace <= 1.05) return "#3b82f6";
-  if (pace <= 1.15) return "#eab308";
+function trendColor(trend: string): string {
+  if (trend === "improving") return "#22c55e";
+  if (trend === "stable") return "#3b82f6";
   return "#ef4444";
 }
 
-function paceLabel(pace: number): string {
-  if (pace <= 0.9) return "Aging slower";
-  if (pace <= 1.05) return "On track";
-  if (pace <= 1.15) return "Slightly fast";
-  return "Aging faster";
+function trendLabel(trend: string): string {
+  if (trend === "improving") return "Improving";
+  if (trend === "stable") return "Stable";
+  return "Declining";
 }
 
 export function HealthspanScoreCard({ data, loading }: HealthspanScoreCardProps) {
@@ -92,22 +90,15 @@ export function HealthspanScoreCard({ data, loading }: HealthspanScoreCardProps)
         </div>
 
         <div className="text-right">
-          {data.biologicalAge != null && data.chronologicalAge != null && (
-            <div className="mb-2">
-              <p className="text-zinc-500 text-xs">Biological Age</p>
-              <p className="text-2xl font-bold text-zinc-100">{data.biologicalAge}</p>
-              <p className="text-zinc-600 text-xs">Chronological: {data.chronologicalAge}</p>
-            </div>
-          )}
-          {data.paceOfAging != null && (
+          {data.trend != null && (
             <div
               className="inline-block px-2 py-1 rounded text-xs font-medium"
               style={{
-                color: paceColor(data.paceOfAging),
-                backgroundColor: `${paceColor(data.paceOfAging)}15`,
+                color: trendColor(data.trend),
+                backgroundColor: `${trendColor(data.trend)}15`,
               }}
             >
-              {paceLabel(data.paceOfAging)} ({data.paceOfAging.toFixed(2)}x)
+              {trendLabel(data.trend)}
             </div>
           )}
         </div>

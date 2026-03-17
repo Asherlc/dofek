@@ -613,11 +613,8 @@ describe("Router transformation logic", () => {
         expect(["excellent", "good", "fair", "poor"]).toContain(metric.status);
       }
 
-      // With birth_date set, biological age should be calculated
-      expect(data.chronologicalAge).toBeGreaterThan(30);
-      expect(data.chronologicalAge).toBeLessThan(40);
-      expect(data.biologicalAge).toBeDefined();
-      expect(data.biologicalAge).not.toBeNull();
+      // Trend should be defined (may be null with insufficient history)
+      expect(data.trend).toBeDefined();
     });
 
     it("lean body mass is scored from body fat percentage", async () => {

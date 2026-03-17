@@ -70,14 +70,20 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
         return [
           `<strong>${label}</strong>`,
           `<span style="color:#71717a">Load:</span> ${d.load.toFixed(1)}`,
-          `<span style="color:#3b82f6">Fitness (CTL):</span> ${d.ctl.toFixed(1)}`,
-          `<span style="color:#ec4899">Fatigue (ATL):</span> ${d.atl.toFixed(1)}`,
-          `<span style="color:${d.tsb >= 0 ? "#22c55e" : "#ef4444"}">Form (TSB):</span> ${d.tsb.toFixed(1)}`,
+          `<span style="color:#3b82f6">Fitness (Chronic Training Load):</span> ${d.ctl.toFixed(1)}`,
+          `<span style="color:#ec4899">Fatigue (Acute Training Load):</span> ${d.atl.toFixed(1)}`,
+          `<span style="color:${d.tsb >= 0 ? "#22c55e" : "#ef4444"}">Form (Training Stress Balance):</span> ${d.tsb.toFixed(1)}`,
         ].join("<br/>");
       },
     },
     legend: {
-      data: ["Load", "Fitness (CTL)", "Fatigue (ATL)", "Form +", "Form -"],
+      data: [
+        "Load",
+        "Fitness (Chronic Training Load)",
+        "Fatigue (Acute Training Load)",
+        "Form +",
+        "Form -",
+      ],
       textStyle: { color: "#a1a1aa", fontSize: 11 },
       top: 0,
     },
@@ -115,7 +121,7 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
         z: 1,
       },
       {
-        name: "Fitness (CTL)",
+        name: "Fitness (Chronic Training Load)",
         type: "line",
         data: data.map((d) => [d.date, d.ctl]),
         smooth: true,
@@ -126,7 +132,7 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
         z: 3,
       },
       {
-        name: "Fatigue (ATL)",
+        name: "Fatigue (Acute Training Load)",
         type: "line",
         data: data.map((d) => [d.date, d.atl]),
         smooth: true,

@@ -4,7 +4,7 @@ import { linearRegression } from "../lib/math.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
-type ActivityRow = {
+export type ActivityRow = {
   id: string;
   date: string;
   duration_min: number;
@@ -41,7 +41,7 @@ export interface PmcChartResult {
  * TRIMP = duration_minutes * deltaHR_ratio * 0.64 * e^(1.92 * deltaHR_ratio)
  *   where deltaHR_ratio = (avg_hr - resting_hr) / (max_hr - resting_hr)
  */
-function computeTrimp(
+export function computeTrimp(
   durationMin: number,
   avgHr: number,
   maxHr: number,
@@ -57,7 +57,7 @@ function computeTrimp(
  * Compute hrTSS using generic Bannister TRIMP normalized to 1hr at threshold.
  * This is the fallback when no learned model is available.
  */
-function computeHrTss(
+export function computeHrTss(
   durationMin: number,
   avgHr: number,
   maxHr: number,
@@ -77,12 +77,12 @@ function computeHrTss(
 
 /**
  * Compute power-based TSS.
- * TSS = (avg_power / ftp)^2 * duration_hours * 100
- * Uses avg_power as NP approximation — the regression absorbs systematic bias.
+ * TSS = (NP / FTP)^2 * duration_hours * 100
+ * Uses Normalized Power (4th root of mean of 4th powers of 30s rolling avg).
  */
-function computePowerTss(avgPower: number, ftp: number, durationMin: number): number {
-  if (ftp <= 0 || durationMin <= 0 || avgPower <= 0) return 0;
-  const intensityFactor = avgPower / ftp;
+export function computePowerTss(normalizedPower: number, ftp: number, durationMin: number): number {
+  if (ftp <= 0 || durationMin <= 0 || normalizedPower <= 0) return 0;
+  const intensityFactor = normalizedPower / ftp;
   return intensityFactor ** 2 * (durationMin / 60) * 100;
 }
 
@@ -90,7 +90,7 @@ function computePowerTss(avgPower: number, ftp: number, durationMin: number): nu
  * Build a linear regression model: powerTss = slope * trimp + intercept.
  * Returns null if insufficient data or poor fit.
  */
-function buildTssModel(
+export function buildTssModel(
   paired: { trimp: number; powerTss: number }[],
 ): { slope: number; intercept: number; r2: number } | null {
   // Require at least 10 paired activities
@@ -109,15 +109,23 @@ function buildTssModel(
 
 /**
  * Estimate FTP from activity data.
- * Uses highest avg_power from activities >= 20 min duration, multiplied by 0.95.
+ * Uses highest NP from activities >= 20 min duration, multiplied by 0.95.
+ * Falls back to avg_power when NP is not available.
  */
-function estimateFtp(activities: ActivityRow[]): number | null {
+export function estimateFtp(
+  activities: ActivityRow[],
+  npByActivity: Map<string, number>,
+): number | null {
   const qualifying = activities.filter(
-    (act) => act.avg_power != null && act.avg_power > 0 && act.duration_min >= 20,
+    (act) =>
+      (npByActivity.has(act.id) || (act.avg_power != null && act.avg_power > 0)) &&
+      act.duration_min >= 20,
   );
   if (qualifying.length === 0) return null;
-  const bestAvgPower = Math.max(...qualifying.map((act) => Number(act.avg_power)));
-  return Math.round(bestAvgPower * 0.95);
+  const bestPower = Math.max(
+    ...qualifying.map((act) => npByActivity.get(act.id) ?? Number(act.avg_power)),
+  );
+  return Math.round(bestPower * 0.95);
 }
 
 export const pmcRouter = router({
@@ -186,8 +194,40 @@ export const pmcRouter = router({
       const restingHr = allRows.length > 0 ? Number(allRows[0]?.resting_hr) : 60;
       const activities = allRows;
 
-      // Estimate FTP from the data
-      const ftp = estimateFtp(activities);
+      // Compute Normalized Power per activity from metric_stream
+      // NP = 4th root of mean of 4th powers of 30-second rolling average power
+      const npRowSchema = z.object({
+        activity_id: z.string(),
+        np: z.coerce.number(),
+      });
+      const npRows = await executeWithSchema(
+        ctx.db,
+        npRowSchema,
+        sql`WITH rolling AS (
+              SELECT
+                ms.activity_id,
+                AVG(ms.power) OVER (
+                  PARTITION BY ms.activity_id
+                  ORDER BY ms.recorded_at
+                  RANGE BETWEEN INTERVAL '29 seconds' PRECEDING AND CURRENT ROW
+                ) AS rolling_30s_power
+              FROM fitness.metric_stream ms
+              JOIN fitness.v_activity a ON a.id = ms.activity_id
+              WHERE a.user_id = ${ctx.userId}
+                AND a.started_at > NOW() - ${queryDays}::int * INTERVAL '1 day'
+                AND ms.power > 0
+            )
+            SELECT
+              r.activity_id,
+              ROUND(POWER(AVG(POWER(r.rolling_30s_power, 4)), 0.25)::numeric, 1) AS np
+            FROM rolling r
+            GROUP BY r.activity_id
+            HAVING COUNT(*) >= 60`,
+      );
+      const npByActivity = new Map(npRows.map((r) => [r.activity_id, Number(r.np)]));
+
+      // Estimate FTP from the data (prefers NP over avg_power)
+      const ftp = estimateFtp(activities, npByActivity);
 
       // Build regression model from activities with both power and HR
       let tssModel: { slope: number; intercept: number; r2: number } | null = null;
@@ -197,13 +237,12 @@ export const pmcRouter = router({
         for (const act of activities) {
           const durationMin = Number(act.duration_min);
           const avgHr = Number(act.avg_hr);
-          const avgPower = act.avg_power != null ? Number(act.avg_power) : null;
-          const powerSamples = Number(act.power_samples);
+          const np = npByActivity.get(act.id);
 
-          // Require meaningful power data (at least 60 samples ~ 1 min)
-          if (avgPower != null && avgPower > 0 && powerSamples >= 60) {
+          // Require NP (computed from metric_stream) for power TSS
+          if (np != null && np > 0) {
             const trimp = computeTrimp(durationMin, avgHr, globalMaxHr, restingHr);
-            const powerTss = computePowerTss(avgPower, ftp, durationMin);
+            const powerTss = computePowerTss(np, ftp, durationMin);
             if (trimp > 0 && powerTss > 0) {
               pairedData.push({ trimp, powerTss });
             }
@@ -217,14 +256,13 @@ export const pmcRouter = router({
       for (const act of activities) {
         const durationMin = Number(act.duration_min);
         const avgHr = Number(act.avg_hr);
-        const avgPower = act.avg_power != null ? Number(act.avg_power) : null;
-        const powerSamples = Number(act.power_samples);
+        const np = npByActivity.get(act.id);
 
         let tss: number;
 
-        if (ftp != null && avgPower != null && avgPower > 0 && powerSamples >= 60) {
-          // Activity has power data — use power TSS directly
-          tss = computePowerTss(avgPower, ftp, durationMin);
+        if (ftp != null && np != null && np > 0) {
+          // Activity has NP from metric_stream — use standard power TSS
+          tss = computePowerTss(np, ftp, durationMin);
         } else if (tssModel != null) {
           // Activity has only HR — use learned model to predict TSS from TRIMP
           const trimp = computeTrimp(durationMin, avgHr, globalMaxHr, restingHr);

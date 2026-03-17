@@ -70,11 +70,24 @@ export const cyclingAdvancedRouter = router({
         sql`SELECT
               asum.started_at::date AS day,
               SUM(
-                EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0
-                * asum.avg_hr / up.max_hr::float
+                CASE WHEN up.max_hr > rhr.val AND asum.avg_hr > rhr.val THEN
+                  -- Bannister TRIMP normalized to hrTSS (matches PMC router)
+                  EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0
+                  * ((asum.avg_hr - rhr.val)::float / (up.max_hr - rhr.val))
+                  * 0.64 * exp(1.92 * ((asum.avg_hr - rhr.val)::float / (up.max_hr - rhr.val)))
+                  / (60.0 * 0.85 * 0.64 * exp(1.92 * 0.85))
+                  * 100
+                ELSE 0 END
               ) AS trimp
             FROM fitness.activity_summary asum
             JOIN fitness.user_profile up ON up.id = asum.user_id
+            CROSS JOIN LATERAL (
+              SELECT COALESCE(up.resting_hr, (
+                SELECT dm.resting_hr FROM fitness.v_daily_metrics dm
+                WHERE dm.user_id = up.id AND dm.resting_hr IS NOT NULL
+                ORDER BY dm.date DESC LIMIT 1
+              ), 60)::float AS val
+            ) rhr
             WHERE up.id = ${ctx.userId}
               AND up.max_hr IS NOT NULL
               AND asum.started_at > NOW() - (${input.days} + 42)::int * INTERVAL '1 day'
@@ -102,7 +115,6 @@ export const cyclingAdvancedRouter = router({
       const startDate = new Date(firstLoad.day);
       const endDate = new Date(lastLoad.day);
       const ctlByDate = new Map<string, number>();
-      const alpha = 2 / (42 + 1);
       let ctl = 0;
 
       for (
@@ -112,7 +124,8 @@ export const cyclingAdvancedRouter = router({
       ) {
         const key = current.toISOString().slice(0, 10);
         const load = loadMap.get(key) ?? 0;
-        ctl = ctl * (1 - alpha) + load * alpha;
+        // Banister impulse-response EWMA: alpha = 1/N (matches PMC router)
+        ctl = ctl + (load - ctl) / 42;
         ctlByDate.set(key, ctl);
       }
 
@@ -199,11 +212,24 @@ export const cyclingAdvancedRouter = router({
               SELECT
                 asum.started_at::date AS day,
                 SUM(
-                  EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0
-                  * asum.avg_hr / up.max_hr::float
+                  CASE WHEN up.max_hr > rhr.val AND asum.avg_hr > rhr.val THEN
+                    -- Bannister TRIMP normalized to hrTSS (matches PMC router)
+                    EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0
+                    * ((asum.avg_hr - rhr.val)::float / (up.max_hr - rhr.val))
+                    * 0.64 * exp(1.92 * ((asum.avg_hr - rhr.val)::float / (up.max_hr - rhr.val)))
+                    / (60.0 * 0.85 * 0.64 * exp(1.92 * 0.85))
+                    * 100
+                  ELSE 0 END
                 ) AS trimp
               FROM fitness.activity_summary asum
               JOIN fitness.user_profile up ON up.id = asum.user_id
+              CROSS JOIN LATERAL (
+                SELECT COALESCE(up.resting_hr, (
+                  SELECT dm.resting_hr FROM fitness.v_daily_metrics dm
+                  WHERE dm.user_id = up.id AND dm.resting_hr IS NOT NULL
+                  ORDER BY dm.date DESC LIMIT 1
+                ), 60)::float AS val
+              ) rhr
               WHERE up.id = ${ctx.userId}
                 AND up.max_hr IS NOT NULL
                 AND asum.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'

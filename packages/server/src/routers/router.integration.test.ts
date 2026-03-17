@@ -1158,12 +1158,9 @@ describe("Router coverage", () => {
   // Healthspan — score with weekly history
   // ══════════════════════════════════════════════════════════════
   describe("healthspan", () => {
-    it("score returns composite with biological age and pace of aging", async () => {
+    it("score returns composite with trend and metrics", async () => {
       const result = await query<{
         healthspanScore: number;
-        biologicalAge: number | null;
-        chronologicalAge: number | null;
-        paceOfAging: number | null;
         metrics: {
           name: string;
           value: number | null;
@@ -1172,23 +1169,18 @@ describe("Router coverage", () => {
           status: string;
         }[];
         history: { weekStart: string; score: number }[];
+        trend: "improving" | "declining" | "stable" | null;
       }>("healthspan.score", { weeks: 12 });
 
       expect(result.healthspanScore).toBeGreaterThanOrEqual(0);
       expect(result.healthspanScore).toBeLessThanOrEqual(100);
       expect(result.metrics).toHaveLength(9);
 
-      expect(result.chronologicalAge).not.toBeNull();
-      expect(result.biologicalAge).not.toBeNull();
-
       expect(result.history.length).toBeGreaterThan(0);
 
       if (result.history.length >= 4) {
-        expect(result.paceOfAging).not.toBeNull();
-        if (result.paceOfAging != null) {
-          expect(result.paceOfAging).toBeGreaterThanOrEqual(0.5);
-          expect(result.paceOfAging).toBeLessThanOrEqual(1.5);
-        }
+        expect(result.trend).not.toBeNull();
+        expect(["improving", "declining", "stable"]).toContain(result.trend);
       }
 
       for (const metric of result.metrics) {
