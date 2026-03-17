@@ -265,7 +265,7 @@ ssh root@<SERVER_IP>
 
 ### Accessing logs
 
-**In-browser (easiest):** The Data Sources page has a "System Logs" panel that shows recent server logs from an in-memory ring buffer (last 500 entries). This is the fastest way to check OAuth errors, sync failures, etc.
+**API (easiest):** The `system.logs` tRPC endpoint returns recent server logs from an in-memory ring buffer (last 500 entries). Call it from the browser console (`trpc.system.logs.query({ limit: 100 })`) or from the web UI if a System Logs panel exists. This is the fastest way to check upload errors, OAuth failures, sync issues, etc. The ring buffer captures all Winston log output (info, warn, error, debug) with structured `{ timestamp, level, message }` entries.
 
 **Docker container logs (SSH):** The compose project is at `/opt/dofek`. Container names are prefixed with `dofek-`:
 
@@ -286,7 +286,7 @@ docker logs dofek-web-1 -f
 cd /opt/dofek && docker compose up -d web
 ```
 
-**Note:** There is no centralized log aggregation (Loki, CloudWatch, etc.). Logs only exist in Docker container stdout/stderr and the in-memory ring buffer. If a container restarts, its Docker logs reset. The ring buffer also resets on restart.
+**Note:** There is no centralized log aggregation (Loki, CloudWatch, etc.). Logs exist in Docker container stdout/stderr and the in-memory ring buffer (exposed via `system.logs` tRPC endpoint). Both reset when the container restarts. The Hetzner Cloud API does not provide Docker container logs — SSH or the API endpoint are the only ways to access them.
 
 ### Production secrets
 
