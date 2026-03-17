@@ -56,10 +56,10 @@ export const fhirResourceSchema = z.discriminatedUnion("resourceType", [
   fhirDiagnosticReportSchema,
 ]);
 
-export type FhirCoding = z.infer<typeof fhirCodingSchema>;
+type FhirCoding = z.infer<typeof fhirCodingSchema>;
 export type FhirCodeableConcept = z.infer<typeof fhirCodeableConceptSchema>;
-export type FhirQuantity = z.infer<typeof fhirQuantitySchema>;
-export type FhirReferenceRange = z.infer<typeof fhirReferenceRangeSchema>;
+type FhirQuantity = z.infer<typeof fhirQuantitySchema>;
+type FhirReferenceRange = z.infer<typeof fhirReferenceRangeSchema>;
 export type FhirObservation = z.infer<typeof fhirObservationSchema>;
 export type FhirDiagnosticReport = z.infer<typeof fhirDiagnosticReportSchema>;
 

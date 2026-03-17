@@ -18,11 +18,8 @@ export {
 export {
   buildPanelMap,
   type FhirCodeableConcept,
-  type FhirCoding,
   type FhirDiagnosticReport,
   type FhirObservation,
-  type FhirQuantity,
-  type FhirReferenceRange,
   fhirResourceSchema,
   type ParsedLabResult,
   parseFhirObservation,
