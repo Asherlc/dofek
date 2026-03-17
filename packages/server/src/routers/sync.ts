@@ -39,6 +39,37 @@ async function doRegisterProviders() {
       "cronometer-csv",
       () => import("dofek/providers/cronometer-csv").then((m) => new m.CronometerCsvProvider()),
     ],
+    ["oura", () => import("dofek/providers/oura").then((m) => new m.OuraProvider())],
+    [
+      "eight-sleep",
+      () => import("dofek/providers/eight-sleep").then((m) => new m.EightSleepProvider()),
+    ],
+    ["zwift", () => import("dofek/providers/zwift").then((m) => new m.ZwiftProvider())],
+    [
+      "trainerroad",
+      () => import("dofek/providers/trainerroad").then((m) => new m.TrainerRoadProvider()),
+    ],
+    [
+      "ultrahuman",
+      () => import("dofek/providers/ultrahuman").then((m) => new m.UltrahumanProvider()),
+    ],
+    [
+      "mapmyfitness",
+      () => import("dofek/providers/mapmyfitness").then((m) => new m.MapMyFitnessProvider()),
+    ],
+    ["suunto", () => import("dofek/providers/suunto").then((m) => new m.SuuntoProvider())],
+    ["coros", () => import("dofek/providers/coros").then((m) => new m.CorosProvider())],
+    ["concept2", () => import("dofek/providers/concept2").then((m) => new m.Concept2Provider())],
+    ["komoot", () => import("dofek/providers/komoot").then((m) => new m.KomootProvider())],
+    ["xert", () => import("dofek/providers/xert").then((m) => new m.XertProvider())],
+    [
+      "cycling-analytics",
+      () =>
+        import("dofek/providers/cycling-analytics").then((m) => new m.CyclingAnalyticsProvider()),
+    ],
+    ["wger", () => import("dofek/providers/wger").then((m) => new m.WgerProvider())],
+    ["decathlon", () => import("dofek/providers/decathlon").then((m) => new m.DecathlonProvider())],
+    ["velohero", () => import("dofek/providers/velohero").then((m) => new m.VeloHeroProvider())],
   ] as const;
 
   for (const [name, loadProvider] of providers) {

@@ -55,6 +55,21 @@ vi.mock("dofek/providers/fitbit", () => ({ FitbitProvider: vi.fn() }));
 vi.mock("dofek/providers/garmin", () => ({ GarminProvider: vi.fn() }));
 vi.mock("dofek/providers/strava", () => ({ StravaProvider: vi.fn() }));
 vi.mock("dofek/providers/cronometer-csv", () => ({ CronometerCsvProvider: vi.fn() }));
+vi.mock("dofek/providers/oura", () => ({ OuraProvider: vi.fn() }));
+vi.mock("dofek/providers/eight-sleep", () => ({ EightSleepProvider: vi.fn() }));
+vi.mock("dofek/providers/zwift", () => ({ ZwiftProvider: vi.fn() }));
+vi.mock("dofek/providers/trainerroad", () => ({ TrainerRoadProvider: vi.fn() }));
+vi.mock("dofek/providers/ultrahuman", () => ({ UltrahumanProvider: vi.fn() }));
+vi.mock("dofek/providers/mapmyfitness", () => ({ MapMyFitnessProvider: vi.fn() }));
+vi.mock("dofek/providers/suunto", () => ({ SuuntoProvider: vi.fn() }));
+vi.mock("dofek/providers/coros", () => ({ CorosProvider: vi.fn() }));
+vi.mock("dofek/providers/concept2", () => ({ Concept2Provider: vi.fn() }));
+vi.mock("dofek/providers/komoot", () => ({ KomootProvider: vi.fn() }));
+vi.mock("dofek/providers/xert", () => ({ XertProvider: vi.fn() }));
+vi.mock("dofek/providers/cycling-analytics", () => ({ CyclingAnalyticsProvider: vi.fn() }));
+vi.mock("dofek/providers/wger", () => ({ WgerProvider: vi.fn() }));
+vi.mock("dofek/providers/decathlon", () => ({ DecathlonProvider: vi.fn() }));
+vi.mock("dofek/providers/velohero", () => ({ VeloHeroProvider: vi.fn() }));
 
 // Mock schema and drizzle-orm for logs query
 vi.mock("dofek/db/schema", () => ({
