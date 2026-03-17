@@ -67,7 +67,7 @@ export function EstimatedMaxChart({ exercises, loading }: EstimatedMaxChartProps
     },
     yAxis: {
       type: "value",
-      name: "e1RM (kg)",
+      name: "Estimated 1-Rep Max (kg)",
       nameTextStyle: { color: "#71717a", fontSize: 11 },
       axisLabel: { color: "#71717a", fontSize: 11 },
       splitLine: { lineStyle: { color: "#27272a" } },

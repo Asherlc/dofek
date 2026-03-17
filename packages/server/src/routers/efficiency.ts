@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { enduranceTypeFilter } from "../lib/endurance-types.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export interface AerobicEfficiencyActivity {
@@ -51,16 +52,19 @@ export const efficiencyRouter = router({
   aerobicEfficiency: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(180) }))
     .query(async ({ ctx, input }): Promise<AerobicEfficiencyResult> => {
-      const rows = await ctx.db.execute<{
-        max_hr: number;
-        date: string;
-        activity_type: string;
-        name: string;
-        avg_power_z2: number;
-        avg_hr_z2: number;
-        efficiency_factor: number;
-        z2_samples: number;
-      }>(
+      const efficiencyRowSchema = z.object({
+        max_hr: z.coerce.number(),
+        date: z.string(),
+        activity_type: z.string(),
+        name: z.string(),
+        avg_power_z2: z.coerce.number(),
+        avg_hr_z2: z.coerce.number(),
+        efficiency_factor: z.coerce.number(),
+        z2_samples: z.coerce.number(),
+      });
+      const rows = await executeWithSchema(
+        ctx.db,
+        efficiencyRowSchema,
         sql`SELECT
               up.max_hr,
               a.started_at::date AS date,
@@ -119,15 +123,18 @@ export const efficiencyRouter = router({
   aerobicDecoupling: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(180) }))
     .query(async ({ ctx, input }): Promise<AerobicDecouplingActivity[]> => {
-      const rows = await ctx.db.execute<{
-        date: string;
-        activity_type: string;
-        name: string;
-        first_half_ratio: number;
-        second_half_ratio: number;
-        decoupling_pct: number;
-        total_samples: number;
-      }>(
+      const decouplingRowSchema = z.object({
+        date: z.string(),
+        activity_type: z.string(),
+        name: z.string(),
+        first_half_ratio: z.coerce.number(),
+        second_half_ratio: z.coerce.number(),
+        decoupling_pct: z.coerce.number(),
+        total_samples: z.coerce.number(),
+      });
+      const rows = await executeWithSchema(
+        ctx.db,
+        decouplingRowSchema,
         sql`WITH activity_halves AS (
               SELECT
                 ms.activity_id,
@@ -201,13 +208,16 @@ export const efficiencyRouter = router({
   polarizationTrend: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(180) }))
     .query(async ({ ctx, input }): Promise<PolarizationTrendResult> => {
-      const rows = await ctx.db.execute<{
-        max_hr: number;
-        week: string;
-        z1_seconds: number;
-        z2_seconds: number;
-        z3_seconds: number;
-      }>(
+      const polarizationRowSchema = z.object({
+        max_hr: z.coerce.number(),
+        week: z.string(),
+        z1_seconds: z.coerce.number(),
+        z2_seconds: z.coerce.number(),
+        z3_seconds: z.coerce.number(),
+      });
+      const rows = await executeWithSchema(
+        ctx.db,
+        polarizationRowSchema,
         sql`SELECT
               up.max_hr,
               date_trunc('week', a.started_at)::date AS week,

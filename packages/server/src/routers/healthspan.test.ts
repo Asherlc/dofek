@@ -36,17 +36,14 @@ describe("healthspanRouter", () => {
       const result = await caller.score({ weeks: 12 });
 
       expect(result.healthspanScore).toBe(50);
-      expect(result.biologicalAge).toBeNull();
-      expect(result.chronologicalAge).toBeNull();
-      expect(result.paceOfAging).toBeNull();
       expect(result.metrics).toEqual([]);
       expect(result.history).toEqual([]);
+      expect(result.trend).toBeNull();
     });
 
     it("computes healthspan score from metrics", async () => {
       const rows = [
         {
-          birth_date: "1990-01-01",
           avg_sleep_min: 480,
           bedtime_stddev_min: 20,
           avg_resting_hr: 55,
@@ -74,16 +71,13 @@ describe("healthspanRouter", () => {
       // All metrics are excellent, so score should be high
       expect(result.healthspanScore).toBeGreaterThan(70);
       expect(result.metrics).toHaveLength(9);
-      expect(result.biologicalAge).not.toBeNull();
-      expect(result.chronologicalAge).not.toBeNull();
       expect(result.history).toHaveLength(4);
-      expect(result.paceOfAging).not.toBeNull();
+      expect(result.trend).not.toBeNull();
     });
 
     it("handles null metrics gracefully", async () => {
       const rows = [
         {
-          birth_date: null,
           avg_sleep_min: null,
           bedtime_stddev_min: null,
           avg_resting_hr: null,
@@ -105,14 +99,12 @@ describe("healthspanRouter", () => {
 
       // All null metrics default to score 50
       expect(result.healthspanScore).toBe(50);
-      expect(result.biologicalAge).toBeNull();
-      expect(result.paceOfAging).toBeNull();
+      expect(result.trend).toBeNull();
     });
 
-    it("computes biological age adjustment", async () => {
+    it("computes improving trend from rising weekly scores", async () => {
       const rows = [
         {
-          birth_date: "1990-01-01",
           avg_sleep_min: 480,
           bedtime_stddev_min: 10,
           avg_resting_hr: 48,
@@ -123,7 +115,12 @@ describe("healthspanRouter", () => {
           sessions_per_week: 4,
           weight_kg: 70,
           body_fat_pct: 12,
-          weekly_history: null,
+          weekly_history: [
+            { week_start: "2024-01-01", avg_rhr: 65, avg_steps: 6000, avg_vo2max: 40 },
+            { week_start: "2024-01-08", avg_rhr: 60, avg_steps: 8000, avg_vo2max: 42 },
+            { week_start: "2024-01-15", avg_rhr: 55, avg_steps: 10000, avg_vo2max: 45 },
+            { week_start: "2024-01-22", avg_rhr: 50, avg_steps: 12000, avg_vo2max: 50 },
+          ],
         },
       ];
       const caller = createCaller({
@@ -132,8 +129,8 @@ describe("healthspanRouter", () => {
       });
       const result = await caller.score({ weeks: 12 });
 
-      // Very healthy metrics => biological age should be younger than chronological
-      expect(result.biologicalAge).toBeLessThan(result.chronologicalAge);
+      // Strongly improving metrics => trend should be "improving"
+      expect(result.trend).toBe("improving");
     });
   });
 });

@@ -19,7 +19,7 @@ import { queryCache } from "../lib/cache.ts";
  * - sync (providers, providerStats, logs, syncStatus)
  * - food (search, quickAdd, update, delete, list with meal filter)
  * - pmc (learned model path)
- * - healthspan (paceOfAging with weekly history)
+ * - healthspan (trend with weekly history)
  * - nutrition-analytics (micronutrientAdequacy, macroRatios)
  */
 describe("Router data coverage", () => {
@@ -935,15 +935,12 @@ describe("Router data coverage", () => {
   });
 
   // ══════════════════════════════════════════════════════════════
-  // Healthspan — pace of aging with history
+  // Healthspan — score with trend
   // ══════════════════════════════════════════════════════════════
   describe("healthspan", () => {
-    it("score returns composite with biological age and pace of aging", async () => {
+    it("score returns composite with trend and metrics", async () => {
       const result = await query<{
         healthspanScore: number;
-        biologicalAge: number | null;
-        chronologicalAge: number | null;
-        paceOfAging: number | null;
         metrics: {
           name: string;
           value: number | null;
@@ -952,30 +949,19 @@ describe("Router data coverage", () => {
           status: string;
         }[];
         history: { weekStart: string; score: number }[];
+        trend: "improving" | "declining" | "stable" | null;
       }>("healthspan.score", { weeks: 12 });
 
       expect(result.healthspanScore).toBeGreaterThanOrEqual(0);
       expect(result.healthspanScore).toBeLessThanOrEqual(100);
       expect(result.metrics).toHaveLength(9);
 
-      // Birth date is set, so biological age should be computed
-      expect(result.chronologicalAge).not.toBeNull();
-      expect(result.biologicalAge).not.toBeNull();
-      if (result.chronologicalAge != null) {
-        expect(result.chronologicalAge).toBeGreaterThan(30);
-        expect(result.chronologicalAge).toBeLessThan(40);
-      }
-
-      // History should have weekly entries — needed for paceOfAging
       expect(result.history.length).toBeGreaterThan(0);
 
-      // Pace of aging should be computed if 4+ weeks of history
+      // Trend should be computed if 4+ weeks of history
       if (result.history.length >= 4) {
-        expect(result.paceOfAging).not.toBeNull();
-        if (result.paceOfAging != null) {
-          expect(result.paceOfAging).toBeGreaterThanOrEqual(0.5);
-          expect(result.paceOfAging).toBeLessThanOrEqual(1.5);
-        }
+        expect(result.trend).not.toBeNull();
+        expect(["improving", "declining", "stable"]).toContain(result.trend);
       }
 
       // Check specific metric statuses

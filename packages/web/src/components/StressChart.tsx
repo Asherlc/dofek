@@ -76,9 +76,9 @@ export function StressChart({ data, loading }: StressChartProps) {
         let html = `<div style="font-weight:600;margin-bottom:4px">${date}</div>`;
         html += `<div>Stress: <b style="color:${stressColor(day.stressScore)}">${day.stressScore.toFixed(1)} (${stressLabel(day.stressScore)})</b></div>`;
         if (day.hrvDeviation != null)
-          html += `<div>HRV deviation: <b>${day.hrvDeviation > 0 ? "+" : ""}${day.hrvDeviation}</b>σ</div>`;
+          html += `<div>Heart rate variability deviation: <b>${day.hrvDeviation > 0 ? "+" : ""}${day.hrvDeviation}</b>σ</div>`;
         if (day.restingHrDeviation != null)
-          html += `<div>RHR deviation: <b>${day.restingHrDeviation > 0 ? "+" : ""}${day.restingHrDeviation}</b>σ</div>`;
+          html += `<div>Resting heart rate deviation: <b>${day.restingHrDeviation > 0 ? "+" : ""}${day.restingHrDeviation}</b>σ</div>`;
         if (day.sleepEfficiency != null)
           html += `<div>Sleep efficiency: <b>${day.sleepEfficiency}%</b></div>`;
         return html;
