@@ -18,6 +18,7 @@
     "packages/trainerroad-client/src/**/*.ts",
     "packages/velohero-client/src/**/*.ts",
     "packages/zwift-client/src/**/*.ts",
+    "packages/trainingpeaks-connect/src/**/*.ts",
     "!**/*.test.ts",
     "!**/test-helpers.ts",
     "!**/fixtures/**"
@@ -33,7 +34,7 @@
   "thresholds": {
     "high": 80,
     "low": 60,
-    "break": 25
+    "break": 55
   },
   "reporters": ["clear-text", "html", "progress"],
   "concurrency": 4
