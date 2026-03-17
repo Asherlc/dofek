@@ -1,6 +1,8 @@
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { useState } from "react";
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ActivityCard } from "../../components/ActivityCard";
 import { MetricCard } from "../../components/MetricCard";
+import { QuickAddFood } from "../../components/QuickAddFood";
 import { RecoveryRing } from "../../components/charts/RecoveryRing";
 import { SleepBar } from "../../components/charts/SleepBar";
 import { StrainGauge } from "../../components/charts/StrainGauge";
@@ -28,6 +30,8 @@ function todayString(): string {
 }
 
 export default function OverviewScreen() {
+  const [quickAddVisible, setQuickAddVisible] = useState(false);
+
   // Fetch readiness/recovery score (last 7 days for trend)
   const readinessQuery = trpc.recovery.readinessScore.useQuery({ days: 7 });
   const readinessData = readinessQuery.data ?? [];
@@ -75,6 +79,21 @@ export default function OverviewScreen() {
       contentContainerStyle={styles.content}
     >
       <Text style={styles.date}>{todayString()}</Text>
+
+      {/* Quick-add food */}
+      <TouchableOpacity
+        style={styles.quickAddButton}
+        onPress={() => setQuickAddVisible(true)}
+        activeOpacity={0.7}
+      >
+        <Text style={styles.quickAddPlus}>+</Text>
+        <Text style={styles.quickAddLabel}>Quick Add Food</Text>
+      </TouchableOpacity>
+
+      <QuickAddFood
+        visible={quickAddVisible}
+        onClose={() => setQuickAddVisible(false)}
+      />
 
       {isLoading ? (
         <View style={styles.loadingContainer}>
@@ -264,6 +283,26 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.textSecondary,
     fontWeight: "500",
+  },
+  quickAddButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: 14,
+    gap: 10,
+  },
+  quickAddPlus: {
+    fontSize: 22,
+    fontWeight: "600",
+    color: colors.accent,
+    width: 28,
+    textAlign: "center",
+  },
+  quickAddLabel: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.text,
   },
   loadingContainer: {
     flex: 1,
