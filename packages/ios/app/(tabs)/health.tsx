@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
+import { colors } from "../../theme";
 import {
   enableBackgroundDelivery,
   isAvailable,
@@ -160,7 +161,7 @@ export default function HealthScreen() {
             <Text style={styles.cardDescription}>
               {permissionsGranted
                 ? "HealthKit permissions granted."
-                : "Grant access to sync heart rate, HRV, steps, sleep, and other health data."}
+                : "Grant access to sync heart rate, heart rate variability, steps, sleep, and other health data."}
             </Text>
             {!permissionsGranted && (
               <TouchableOpacity style={styles.button} onPress={handleRequestPermissions} activeOpacity={0.7}>
@@ -227,7 +228,7 @@ export default function HealthScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f8f9fa",
+    backgroundColor: colors.background,
   },
   content: {
     padding: 16,
@@ -240,36 +241,31 @@ const styles = StyleSheet.create({
     width: "100%",
   },
   title: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: "#1a1a1a",
+    fontSize: 28,
+    fontWeight: "800",
+    color: colors.text,
     marginBottom: 16,
   },
   card: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderRadius: 16,
     padding: 16,
     marginBottom: 12,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
   },
   cardTitle: {
     fontSize: 16,
     fontWeight: "700",
-    color: "#1a1a1a",
+    color: colors.text,
     marginBottom: 4,
   },
   cardDescription: {
     fontSize: 14,
-    color: "#666",
+    color: colors.textSecondary,
     lineHeight: 20,
     marginBottom: 12,
   },
   button: {
-    backgroundColor: "#007AFF",
+    backgroundColor: colors.accent,
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderRadius: 8,
@@ -279,7 +275,7 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   buttonText: {
-    color: "#fff",
+    color: colors.text,
     fontSize: 16,
     fontWeight: "600",
   },
@@ -288,11 +284,11 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#007AFF",
+    borderColor: colors.accent,
     alignItems: "center",
   },
   buttonSecondaryText: {
-    color: "#007AFF",
+    color: colors.accent,
     fontSize: 16,
     fontWeight: "600",
   },
@@ -301,17 +297,17 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingVertical: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "#eee",
+    borderBottomColor: colors.surfaceSecondary,
   },
   statusLabel: {
     fontSize: 15,
-    color: "#333",
+    color: colors.textSecondary,
   },
   statusValue: {
     fontSize: 15,
-    color: "#666",
+    color: colors.text,
   },
   errorText: {
-    color: "#FF3B30",
+    color: colors.danger,
   },
 });

@@ -14,6 +14,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { BarcodeScanner } from "../../components/BarcodeScanner";
+import { colors } from "../../theme";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000/api/trpc";
 import { lookupBarcode, searchFoods } from "../../lib/food-database";
@@ -436,7 +437,7 @@ export default function AddFoodScreen() {
 
       {scanningBarcode && (
         <View style={styles.scanningOverlay}>
-          <ActivityIndicator size="large" color="#007AFF" />
+          <ActivityIndicator size="large" color={colors.accent} />
           <Text style={styles.scanningText}>Looking up barcode...</Text>
         </View>
       )}
@@ -449,7 +450,7 @@ export default function AddFoodScreen() {
 
         {searching && (
           <View style={styles.loadingRow}>
-            <ActivityIndicator size="small" color="#007AFF" />
+            <ActivityIndicator size="small" color={colors.accent} />
           </View>
         )}
 
@@ -475,7 +476,7 @@ export default function AddFoodScreen() {
                 <Text style={styles.resultCalories}>{result.calories} cal</Text>
               )}
               <Text style={styles.resultSource}>
-                {result.source === "history" ? "History" : "OFF"}
+                {result.source === "history" ? "History" : "Open Food Facts"}
               </Text>
             </View>
           </TouchableOpacity>
@@ -508,7 +509,7 @@ export default function AddFoodScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f8f9fa",
+    backgroundColor: colors.background,
   },
   scrollView: {
     flex: 1,
@@ -529,27 +530,27 @@ const styles = StyleSheet.create({
     padding: 12,
     paddingTop: 8,
     gap: 8,
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "#ddd",
+    borderBottomColor: colors.surfaceSecondary,
   },
   searchInput: {
     flex: 1,
-    backgroundColor: "#f0f0f0",
+    backgroundColor: colors.surfaceSecondary,
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 10,
     fontSize: 16,
-    color: "#1a1a1a",
+    color: colors.text,
   },
   barcodeButton: {
-    backgroundColor: "#007AFF",
+    backgroundColor: colors.accent,
     borderRadius: 10,
     paddingHorizontal: 16,
     justifyContent: "center",
   },
   barcodeButtonText: {
-    color: "#fff",
+    color: colors.text,
     fontSize: 15,
     fontWeight: "600",
   },
@@ -558,7 +559,7 @@ const styles = StyleSheet.create({
   sectionHeader: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#999",
+    color: colors.textSecondary,
     textTransform: "uppercase",
     letterSpacing: 0.5,
     paddingHorizontal: 16,
@@ -575,9 +576,9 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingVertical: 12,
     paddingHorizontal: 16,
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "#eee",
+    borderBottomColor: colors.surfaceSecondary,
   },
   resultLeft: {
     flex: 1,
@@ -585,12 +586,12 @@ const styles = StyleSheet.create({
   },
   resultName: {
     fontSize: 16,
-    color: "#1a1a1a",
+    color: colors.text,
     fontWeight: "500",
   },
   resultServing: {
     fontSize: 13,
-    color: "#888",
+    color: colors.textTertiary,
     marginTop: 2,
   },
   resultRight: {
@@ -599,16 +600,16 @@ const styles = StyleSheet.create({
   resultCalories: {
     fontSize: 15,
     fontWeight: "600",
-    color: "#333",
+    color: colors.textSecondary,
   },
   resultSource: {
     fontSize: 11,
-    color: "#bbb",
+    color: colors.textTertiary,
     marginTop: 2,
   },
   emptyText: {
     textAlign: "center",
-    color: "#999",
+    color: colors.textTertiary,
     paddingVertical: 24,
   },
   manualEntry: {
@@ -616,12 +617,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     alignItems: "center",
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "#ddd",
+    borderTopColor: colors.surfaceSecondary,
     marginTop: 8,
   },
   manualEntryText: {
     fontSize: 15,
-    color: "#007AFF",
+    color: colors.accent,
     fontWeight: "500",
   },
 
@@ -633,25 +634,25 @@ const styles = StyleSheet.create({
   },
   scanningText: {
     fontSize: 14,
-    color: "#666",
+    color: colors.textSecondary,
   },
 
   // ── Form (after selection) ──
   label: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#333",
+    color: colors.textSecondary,
     marginBottom: 4,
     marginTop: 14,
   },
   input: {
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#ddd",
+    borderColor: colors.surfaceSecondary,
     padding: 12,
     fontSize: 16,
-    color: "#1a1a1a",
+    color: colors.text,
   },
   calorieInput: {
     fontSize: 24,
@@ -661,7 +662,7 @@ const styles = StyleSheet.create({
   },
   servingHint: {
     fontSize: 13,
-    color: "#888",
+    color: colors.textTertiary,
     marginTop: 4,
     textAlign: "center",
   },
@@ -675,18 +676,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 18,
-    backgroundColor: "#e9ecef",
+    backgroundColor: colors.surfaceSecondary,
   },
   mealChipSelected: {
-    backgroundColor: "#007AFF",
+    backgroundColor: colors.accent,
   },
   mealChipText: {
     fontSize: 14,
-    color: "#666",
+    color: colors.textSecondary,
     fontWeight: "500",
   },
   mealChipTextSelected: {
-    color: "#fff",
+    color: colors.text,
   },
   macroRow: {
     flexDirection: "row",
@@ -700,17 +701,17 @@ const styles = StyleSheet.create({
   macroLabel: {
     fontSize: 12,
     fontWeight: "600",
-    color: "#888",
+    color: colors.textTertiary,
     marginBottom: 4,
   },
   macroInput: {
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#ddd",
+    borderColor: colors.surfaceSecondary,
     padding: 10,
     fontSize: 16,
-    color: "#1a1a1a",
+    color: colors.text,
     textAlign: "center",
     width: "100%",
   },
@@ -725,16 +726,16 @@ const styles = StyleSheet.create({
     padding: 16,
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#ddd",
+    borderColor: colors.surfaceSecondary,
   },
   backButtonText: {
-    color: "#666",
+    color: colors.textSecondary,
     fontSize: 16,
     fontWeight: "600",
   },
   saveButton: {
     flex: 2,
-    backgroundColor: "#007AFF",
+    backgroundColor: colors.accent,
     borderRadius: 12,
     padding: 16,
     alignItems: "center",
@@ -743,7 +744,7 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   saveButtonText: {
-    color: "#fff",
+    color: colors.text,
     fontSize: 16,
     fontWeight: "700",
   },

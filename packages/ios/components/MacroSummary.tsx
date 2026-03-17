@@ -1,4 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
+import { colors } from "../theme";
 
 interface MacroSummaryProps {
   calories: number;
@@ -47,9 +48,9 @@ export function MacroSummary({
       </View>
 
       <View style={styles.macroSection}>
-        <MacroBar label="Protein" grams={proteinGrams} color="#4CAF50" />
-        <MacroBar label="Carbs" grams={carbsGrams} color="#FF9800" />
-        <MacroBar label="Fat" grams={fatGrams} color="#F44336" />
+        <MacroBar label="Protein" grams={proteinGrams} color={colors.positive} />
+        <MacroBar label="Carbs" grams={carbsGrams} color={colors.warning} />
+        <MacroBar label="Fat" grams={fatGrams} color={colors.danger} />
       </View>
     </View>
   );
@@ -57,15 +58,10 @@ export function MacroSummary({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderRadius: 16,
     padding: 16,
     marginBottom: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
   },
   calorieSection: {
     alignItems: "center",
@@ -74,28 +70,28 @@ const styles = StyleSheet.create({
   calorieCount: {
     fontSize: 36,
     fontWeight: "700",
-    color: "#1a1a1a",
+    color: colors.text,
   },
   calorieLabel: {
     fontSize: 14,
-    color: "#666",
+    color: colors.textSecondary,
     marginBottom: 8,
   },
   progressBarBackground: {
     width: "100%",
     height: 8,
-    backgroundColor: "#e9ecef",
+    backgroundColor: colors.surfaceSecondary,
     borderRadius: 4,
     overflow: "hidden",
   },
   progressBarFill: {
     height: "100%",
-    backgroundColor: "#007AFF",
+    backgroundColor: colors.accent,
     borderRadius: 4,
   },
   remainingText: {
     fontSize: 12,
-    color: "#999",
+    color: colors.textTertiary,
     marginTop: 4,
   },
   macroSection: {
@@ -113,11 +109,11 @@ const styles = StyleSheet.create({
   },
   macroLabel: {
     fontSize: 12,
-    color: "#666",
+    color: colors.textSecondary,
   },
   macroValue: {
     fontSize: 16,
     fontWeight: "600",
-    color: "#1a1a1a",
+    color: colors.text,
   },
 });
