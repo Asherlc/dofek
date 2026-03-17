@@ -62,19 +62,7 @@ jobs:
       - setup
       - run: pnpm knip
 
-  test-unit:
-    executor: node
-    steps:
-      - setup
-      - run:
-          name: Run unit tests
-          command: pnpm exec vitest run --project unit
-          environment:
-            NODE_OPTIONS: --max-old-space-size=3072
-      - store_artifacts:
-          path: coverage
-
-  test-integration:
+  test:
     docker:
       - image: cimg/node:22.14
       - image: timescale/timescaledb:latest-pg16
@@ -106,6 +94,8 @@ jobs:
           name: Run full suite with coverage
           command: pnpm exec vitest run --coverage
           no_output_timeout: 10m
+      - store_artifacts:
+          path: coverage
 
   test-e2e:
     executor: machine
@@ -225,8 +215,7 @@ workflows:
       - lint
       - typescript
       - knip
-      - test-unit
-      - test-integration
+      - test
       - test-e2e
       - mutation:
           filters:

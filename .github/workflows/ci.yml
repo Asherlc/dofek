@@ -65,21 +65,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm knip
 
-  test-unit:
-    name: Unit Tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm exec vitest run --project unit
-
-  test-integration:
-    name: Full Suite + Coverage
+  test:
+    name: Tests + Coverage
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -193,7 +180,7 @@ jobs:
 
   docker:
     name: Docker (${{ matrix.target }})
-    needs: [lint, typecheck, knip, test-unit, test-integration]
+    needs: [lint, typecheck, knip, test]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04-arm
     permissions:
