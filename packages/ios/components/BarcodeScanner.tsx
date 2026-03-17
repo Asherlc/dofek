@@ -11,7 +11,8 @@ export function BarcodeScanner({ onScanned, onClose }: BarcodeScannerProps) {
   const [permission, requestPermission] = useCameraPermissions();
   const scannedRef = useRef(false);
   const { width, height } = useWindowDimensions();
-  const scanSize = Math.min(width, height) * 0.65;
+  const bottomReserved = 120;
+  const scanSize = Math.min(Math.min(width, height) * 0.65, height - bottomReserved);
 
   if (!permission) {
     return <View style={styles.container} />;
