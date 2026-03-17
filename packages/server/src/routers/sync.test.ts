@@ -87,6 +87,7 @@ vi.mock("dofek/db/schema", () => ({
 import {
   ensureProvidersRegistered,
   logsInput,
+  REDACTED_ERROR_MESSAGE,
   syncRouter,
   syncStatusInput,
   triggerSyncInput,
@@ -594,7 +595,7 @@ describe("syncRouter", () => {
 
       const result = await caller.logs({});
       expect(result).toHaveLength(1);
-      expect(result[0]?.errorMessage).toBe("Details hidden");
+      expect(result[0]?.errorMessage).toBe(REDACTED_ERROR_MESSAGE);
     });
   });
 });

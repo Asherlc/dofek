@@ -16,9 +16,11 @@ export const syncStatusInput = z.object({ jobId: z.string() });
 
 export const logsInput = z.object({ limit: z.number().default(100) });
 
+export const REDACTED_ERROR_MESSAGE = "Details hidden";
+
 function redactLogErrorMessage(errorMessage: string | null): string | null {
   if (!errorMessage) return null;
-  return "Details hidden";
+  return REDACTED_ERROR_MESSAGE;
 }
 
 // ── Provider registration (race-safe) ──
