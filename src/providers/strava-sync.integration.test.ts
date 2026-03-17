@@ -85,7 +85,7 @@ function stravaHandlers(
     }),
 
     // Streams endpoint
-    http.get("https://www.strava.com/activities/:activityId/streams", () => {
+    http.get("https://www.strava.com/api/v3/activities/:activityId/streams", () => {
       if (opts?.rateLimited) {
         return new HttpResponse("Rate Limit Exceeded", {
           status: 429,
@@ -99,7 +99,7 @@ function stravaHandlers(
     }),
 
     // Activities list
-    http.get("https://www.strava.com/athlete/activities", () => {
+    http.get("https://www.strava.com/api/v3/athlete/activities", () => {
       if (opts?.rateLimited) {
         return new HttpResponse("Rate Limit Exceeded", {
           status: 429,
