@@ -75,7 +75,7 @@ async function doRegisterProviders() {
     ["komoot", () => import("dofek/providers/komoot").then((m) => new m.KomootProvider())],
     ["xert", () => import("dofek/providers/xert").then((m) => new m.XertProvider())],
     [
-      "cycling-analytics",
+      "cycling_analytics",
       () =>
         import("dofek/providers/cycling-analytics").then((m) => new m.CyclingAnalyticsProvider()),
     ],
