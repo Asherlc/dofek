@@ -1,4 +1,4 @@
-${domain} {
+{$domain} {
     reverse_proxy client:80
 }
 
