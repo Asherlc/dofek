@@ -104,7 +104,8 @@ jobs:
             exit 1
       - run:
           name: Run integration tests
-          command: pnpm exec vitest run --config vitest.config.ts "integration.test"
+          command: pnpm exec vitest run --config vitest.config.ts --pool=forks "integration.test"
+          no_output_timeout: 10m
 
   test-e2e:
     executor: machine
