@@ -4,7 +4,7 @@ import { linearRegression } from "../lib/math.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
-type ActivityRow = {
+export type ActivityRow = {
   id: string;
   date: string;
   duration_min: number;
@@ -41,7 +41,7 @@ export interface PmcChartResult {
  * TRIMP = duration_minutes * deltaHR_ratio * 0.64 * e^(1.92 * deltaHR_ratio)
  *   where deltaHR_ratio = (avg_hr - resting_hr) / (max_hr - resting_hr)
  */
-function computeTrimp(
+export function computeTrimp(
   durationMin: number,
   avgHr: number,
   maxHr: number,
@@ -57,7 +57,7 @@ function computeTrimp(
  * Compute hrTSS using generic Bannister TRIMP normalized to 1hr at threshold.
  * This is the fallback when no learned model is available.
  */
-function computeHrTss(
+export function computeHrTss(
   durationMin: number,
   avgHr: number,
   maxHr: number,
@@ -80,7 +80,7 @@ function computeHrTss(
  * TSS = (NP / FTP)^2 * duration_hours * 100
  * Uses Normalized Power (4th root of mean of 4th powers of 30s rolling avg).
  */
-function computePowerTss(normalizedPower: number, ftp: number, durationMin: number): number {
+export function computePowerTss(normalizedPower: number, ftp: number, durationMin: number): number {
   if (ftp <= 0 || durationMin <= 0 || normalizedPower <= 0) return 0;
   const intensityFactor = normalizedPower / ftp;
   return intensityFactor ** 2 * (durationMin / 60) * 100;
@@ -90,7 +90,7 @@ function computePowerTss(normalizedPower: number, ftp: number, durationMin: numb
  * Build a linear regression model: powerTss = slope * trimp + intercept.
  * Returns null if insufficient data or poor fit.
  */
-function buildTssModel(
+export function buildTssModel(
   paired: { trimp: number; powerTss: number }[],
 ): { slope: number; intercept: number; r2: number } | null {
   // Require at least 10 paired activities
@@ -112,7 +112,10 @@ function buildTssModel(
  * Uses highest NP from activities >= 20 min duration, multiplied by 0.95.
  * Falls back to avg_power when NP is not available.
  */
-function estimateFtp(activities: ActivityRow[], npByActivity: Map<string, number>): number | null {
+export function estimateFtp(
+  activities: ActivityRow[],
+  npByActivity: Map<string, number>,
+): number | null {
   const qualifying = activities.filter(
     (act) =>
       (npByActivity.has(act.id) || (act.avg_power != null && act.avg_power > 0)) &&
