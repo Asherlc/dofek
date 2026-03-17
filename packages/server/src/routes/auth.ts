@@ -159,8 +159,12 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
 
       const dataLoginProviders = getAllProviders()
         .filter((p) => {
-          const setup = p.authSetup?.();
-          return setup?.getUserIdentity && setup.oauthConfig;
+          try {
+            const setup = p.authSetup?.();
+            return setup?.getUserIdentity && setup.oauthConfig;
+          } catch {
+            return false;
+          }
         })
         .map((p) => p.id);
 
