@@ -574,7 +574,14 @@ describe("syncRouter", () => {
             orderBy: vi.fn().mockReturnValue({
               limit: vi
                 .fn()
-                .mockResolvedValue([{ id: "log-1", providerId: "wahoo", syncedAt: "2024-01-01" }]),
+                .mockResolvedValue([
+                  {
+                    id: "log-1",
+                    providerId: "wahoo",
+                    syncedAt: "2024-01-01",
+                    errorMessage: "provider stack trace here",
+                  },
+                ]),
             }),
           }),
         }),
@@ -587,6 +594,7 @@ describe("syncRouter", () => {
 
       const result = await caller.logs({});
       expect(result).toHaveLength(1);
+      expect(result[0]?.errorMessage).toBe("Details hidden");
     });
   });
 });

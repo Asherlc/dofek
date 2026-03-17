@@ -127,7 +127,7 @@ export function ProvidersPage() {
                         {row.durationMs != null ? `${(row.durationMs / 1000).toFixed(1)}s` : "—"}
                       </td>
                       <td className="px-4 py-2 text-red-400/80 max-w-xs truncate">
-                        {row.errorMessage ?? ""}
+                        {row.errorMessage ? "Details hidden" : ""}
                       </td>
                     </tr>
                   ))}
