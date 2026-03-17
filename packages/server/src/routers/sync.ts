@@ -3,7 +3,7 @@ import { getAllProviders, registerProvider } from "dofek/providers/registry";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { startWorker } from "../lib/start-worker.ts";
-import { getSystemLogs, logger } from "../logger.ts";
+import { logger } from "../logger.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
 // ── Input schemas ──
@@ -15,8 +15,6 @@ export const triggerSyncInput = z.object({
 export const syncStatusInput = z.object({ jobId: z.string() });
 
 export const logsInput = z.object({ limit: z.number().default(100) });
-
-export const systemLogsInput = z.object({ limit: z.number().default(200) });
 
 // ── Provider registration (race-safe) ──
 let registrationPromise: Promise<void> | null = null;
@@ -243,11 +241,6 @@ export const syncRouter = router({
         .orderBy(desc(syncLog.syncedAt))
         .limit(input.limit);
     }),
-
-  /** Get recent system logs (console output) */
-  systemLogs: protectedProcedure.input(systemLogsInput).query(({ input }) => {
-    return getSystemLogs(input.limit);
-  }),
 
   /** Per-provider record counts broken down by table */
   providerStats: cachedProtectedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
