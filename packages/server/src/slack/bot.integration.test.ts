@@ -555,6 +555,17 @@ describe("Slack Bot — user resolution (integration)", () => {
     expect(resolved).toBe(userId);
   });
 
+  it("falls back to sole user when no email match and single user exists (MIN uuid regression)", async () => {
+    // Ensure exactly one user — exercises the MIN(id::text)::uuid query path
+    // which previously failed because PostgreSQL has no min() aggregate for uuid
+    await ctx.db.execute(sql`TRUNCATE fitness.user_profile CASCADE`);
+
+    const userId = await createUserProfile("Sole User");
+
+    const resolved = await resolveOrCreateUserId(null, "Unknown Slack User");
+    expect(resolved).toBe(userId);
+  });
+
   it("creates new user when email doesn't match and multiple users exist", async () => {
     // Ensure at least 2 users exist so the single-user fallback doesn't trigger
     await createUserProfile("User A", "a@test.com");

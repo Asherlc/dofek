@@ -209,6 +209,7 @@ describe("bot.ts — registerHandlers", () => {
         expect.objectContaining({
           ts: "thinking-ts",
           blocks: expect.any(Array),
+          text: expect.stringContaining("Test Food: 200 cal"),
         }),
       );
     });
@@ -607,6 +608,7 @@ describe("bot.ts — registerHandlers", () => {
         expect.objectContaining({
           channel: "C123",
           ts: "1700000000.000000",
+          text: expect.stringContaining("Toast: 80 cal"),
         }),
       );
       expect(vi.mocked(queryCache.invalidateByPrefix)).toHaveBeenCalledWith("user-123:food.");
@@ -769,14 +771,44 @@ describe("bot.ts — registerHandlers", () => {
       const { cancelHandler } = setupHandlers(db);
 
       const ack = vi.fn();
+      const chatUpdate = vi.fn();
       await cancelHandler({
         ack,
-        body: { type: "message_action" },
-        client: {},
+        body: {
+          type: "message_action",
+          message: {
+            ts: "1700000000.000000",
+            blocks: [{ type: "actions", elements: [{ action_id: "confirm_food", value: "e1" }] }],
+          },
+          channel: { id: "C123" },
+        },
+        client: { chat: { update: chatUpdate } },
       });
 
       expect(ack).toHaveBeenCalled();
       expect(getMockExecute(db)).not.toHaveBeenCalled();
+      expect(chatUpdate).not.toHaveBeenCalled();
+    });
+
+    it("handles cancel when body has no message", async () => {
+      const db = createMockDb();
+      const { cancelHandler } = setupHandlers(db);
+
+      const ack = vi.fn();
+      const chatUpdate = vi.fn();
+
+      await cancelHandler({
+        ack,
+        body: {
+          type: "block_actions",
+          channel: { id: "C123" },
+        },
+        client: { chat: { update: chatUpdate } },
+      });
+
+      expect(ack).toHaveBeenCalled();
+      expect(getMockExecute(db)).not.toHaveBeenCalled();
+      expect(chatUpdate).not.toHaveBeenCalled();
     });
 
     it("handles cancel when no blocks/elements match", async () => {
@@ -816,12 +848,28 @@ describe("bot.ts — registerHandlers", () => {
       expect(viewsPublish).toHaveBeenCalledWith(
         expect.objectContaining({
           user_id: "U123",
-          view: expect.objectContaining({
-            type: "home",
-            blocks: expect.any(Array),
-          }),
+          view: expect.objectContaining({ type: "home" }),
         }),
       );
+
+      const blocks = viewsPublish.mock.calls[0][0].view.blocks;
+      expect(blocks).toHaveLength(7);
+      expect(blocks[0]).toMatchObject({
+        type: "header",
+        text: { type: "plain_text", text: "Dofek — Nutrition Tracker" },
+      });
+      expect(blocks[1]).toMatchObject({ type: "section" });
+      expect(blocks[1].text.text).toContain("Track what you eat");
+      expect(blocks[2]).toMatchObject({ type: "divider" });
+      expect(blocks[3]).toMatchObject({ type: "section" });
+      expect(blocks[3].text.text).toContain("How it works");
+      expect(blocks[4]).toMatchObject({ type: "divider" });
+      expect(blocks[5]).toMatchObject({ type: "section" });
+      expect(blocks[5].text.text).toContain("Examples");
+      expect(blocks[6]).toMatchObject({ type: "context" });
+      expect(blocks[6].elements).toHaveLength(1);
+      expect(blocks[6].elements[0]).toMatchObject({ type: "mrkdwn" });
+      expect(blocks[6].elements[0].text).toContain("Tip:");
     });
 
     it("logs error when publishing home tab fails", async () => {
@@ -1177,6 +1225,8 @@ describe("bot.ts — registerHandlers", () => {
 
       expect(ack).toHaveBeenCalled();
       expect(chatUpdate).not.toHaveBeenCalled();
+      expect(vi.mocked(queryCache.invalidateByPrefix)).toHaveBeenCalledWith("user-1:food.");
+      expect(vi.mocked(queryCache.invalidateByPrefix)).toHaveBeenCalledWith("user-1:nutrition.");
     });
   });
 });

@@ -148,7 +148,7 @@ async function resolveOrCreateUserId(
   // This handles the common case where the Slack API doesn't return an email
   // but only one person uses the app.
   const userCount = await db.execute<{ count: string; id: string }>(
-    sql`SELECT COUNT(*)::text AS count, MIN(id) AS id FROM fitness.user_profile`,
+    sql`SELECT COUNT(*)::text AS count, MIN(id::text)::uuid AS id FROM fitness.user_profile`,
   );
   const countRow = userCount[0];
   if (countRow && parseInt(countRow.count, 10) === 1) {

@@ -39,6 +39,7 @@ vi.mock("../lib/cache.ts", () => ({
   },
 }));
 
+import bolt from "@slack/bolt";
 import { createSlackBot, startSlackBot } from "./bot.ts";
 
 /**
@@ -58,6 +59,7 @@ describe("createSlackBot", () => {
   const originalEnv = { ...process.env };
 
   beforeEach(() => {
+    vi.clearAllMocks();
     delete process.env.SLACK_BOT_TOKEN;
     delete process.env.SLACK_APP_TOKEN;
     delete process.env.SLACK_SIGNING_SECRET;
@@ -83,6 +85,23 @@ describe("createSlackBot", () => {
     expect(result).not.toBeNull();
     expect(result?.mode).toBe("socket");
     expect(result?.router).toBeUndefined();
+
+    expect(vi.mocked(bolt.App)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        token: "xoxb-test-token",
+        appToken: "xapp-test-token",
+        socketMode: true,
+      }),
+    );
+  });
+
+  it("returns null when only SLACK_BOT_TOKEN is set without SLACK_APP_TOKEN", () => {
+    process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
+
+    const db = createMockDb();
+    const result = createSlackBot(db);
+
+    expect(result).toBeNull();
   });
 
   it("creates HTTP mode bot when SLACK_SIGNING_SECRET is set", () => {
@@ -94,6 +113,21 @@ describe("createSlackBot", () => {
     expect(result).not.toBeNull();
     expect(result?.mode).toBe("http");
     expect(result?.router).toBeDefined();
+
+    expect(vi.mocked(bolt.ExpressReceiver)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        signingSecret: "test-signing-secret",
+        endpoints: "/events",
+        processBeforeResponse: false,
+      }),
+    );
+
+    expect(vi.mocked(bolt.App)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        receiver: expect.any(Object),
+        authorize: expect.any(Function),
+      }),
+    );
   });
 
   it("prefers HTTP mode when both signing secret and tokens are set", () => {
@@ -112,6 +146,7 @@ describe("startSlackBot", () => {
   const originalEnv = { ...process.env };
 
   beforeEach(() => {
+    vi.clearAllMocks();
     delete process.env.SLACK_BOT_TOKEN;
     delete process.env.SLACK_APP_TOKEN;
     delete process.env.SLACK_SIGNING_SECRET;
