@@ -758,15 +758,21 @@ describe("oauthSuccessHtml", () => {
     expect(html).toContain("connected successfully.</p><p><a href");
   });
 
-  it("includes BroadcastChannel notification script", () => {
-    const html = oauthSuccessHtml("Wahoo");
+  it("includes BroadcastChannel notification script with providerId", () => {
+    const html = oauthSuccessHtml("Wahoo", undefined, "wahoo");
     expect(html).toContain("BroadcastChannel('oauth-complete')");
-    expect(html).toContain(".postMessage('complete')");
+    expect(html).toContain(".postMessage({type:'complete',providerId:'wahoo'})");
   });
 
-  it("includes window.opener postMessage fallback", () => {
-    const html = oauthSuccessHtml("Wahoo");
+  it("includes window.opener postMessage fallback with providerId", () => {
+    const html = oauthSuccessHtml("Wahoo", undefined, "wahoo");
     expect(html).toContain("window.opener");
+    expect(html).toContain("postMessage({type:'oauth-complete',providerId:'wahoo'}");
+  });
+
+  it("falls back to simple message when no providerId", () => {
+    const html = oauthSuccessHtml("Slack");
+    expect(html).toContain(".postMessage({type:'complete'})");
     expect(html).toContain("postMessage({type:'oauth-complete'}");
   });
 
@@ -809,6 +815,7 @@ describe("OAuth callback success responses include notification script", () => {
     const res = await request(app, "get", "/auth/provider/peloton");
     expect(res.status).toBe(200);
     expect(res.body).toContain("BroadcastChannel('oauth-complete')");
+    expect(res.body).toContain(",providerId:'peloton'");
     expect(res.body).toContain("window.close()");
     delete process.env.PELOTON_USERNAME;
     delete process.env.PELOTON_PASSWORD;

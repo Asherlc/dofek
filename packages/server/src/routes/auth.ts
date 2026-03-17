@@ -31,9 +31,16 @@ import { logger } from "../logger.ts";
  * Includes a BroadcastChannel message + window.close() so the parent window
  * detects the completion and refreshes provider status automatically.
  */
-export function oauthSuccessHtml(providerName: string, detail?: string): string {
+export function oauthSuccessHtml(
+  providerName: string,
+  detail?: string,
+  providerId?: string,
+): string {
   const detailLine = detail ? `<p>${detail}</p>` : "";
-  return `<html><body style="font-family:system-ui;background:#111;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center"><h1>Authorized!</h1><p>${providerName} connected successfully.</p>${detailLine}<p><a href="/" style="color:#10b981">Return to dashboard</a></p></div><script>try{new BroadcastChannel('oauth-complete').postMessage('complete')}catch(e){}try{window.opener&&window.opener.postMessage({type:'oauth-complete'},'*')}catch(e){}setTimeout(function(){window.close()},1500)</script></body></html>`;
+  const providerIdPart = providerId ? `,providerId:'${providerId}'` : "";
+  const broadcastPayload = `{type:'complete'${providerIdPart}}`;
+  const postMessagePayload = `{type:'oauth-complete'${providerIdPart}}`;
+  return `<html><body style="font-family:system-ui;background:#111;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center"><h1>Authorized!</h1><p>${providerName} connected successfully.</p>${detailLine}<p><a href="/" style="color:#10b981">Return to dashboard</a></p></div><script>try{new BroadcastChannel('oauth-complete').postMessage(${broadcastPayload})}catch(e){}try{window.opener&&window.opener.postMessage(${postMessagePayload},'*')}catch(e){}setTimeout(function(){window.close()},1500)</script></body></html>`;
 }
 
 interface OAuthStateEntry {
@@ -111,7 +118,13 @@ async function startDataProviderOAuth(
     await queryCache.invalidateByPrefix(`${stateEntry.userId}:sync.providers`);
 
     logger.info(`[auth] ${providerId} tokens saved. Expires: ${tokens.expiresAt.toISOString()}`);
-    res.send(oauthSuccessHtml(provider.name, `Token expires: ${tokens.expiresAt.toISOString()}`));
+    res.send(
+      oauthSuccessHtml(
+        provider.name,
+        `Token expires: ${tokens.expiresAt.toISOString()}`,
+        provider.id,
+      ),
+    );
     return;
   }
 
@@ -500,7 +513,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         await queryCache.invalidateByPrefix(`${stored.userId}:sync.providers`);
 
         logger.info(`[auth] ${stored.providerId} OAuth 1.0 tokens saved.`);
-        res.send(oauthSuccessHtml(provider.name));
+        res.send(oauthSuccessHtml(provider.name, undefined, provider.id));
         return;
       }
 
@@ -664,7 +677,13 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         }
       }
 
-      res.send(oauthSuccessHtml(provider.name, `Token expires: ${tokens.expiresAt.toISOString()}`));
+      res.send(
+        oauthSuccessHtml(
+          provider.name,
+          `Token expires: ${tokens.expiresAt.toISOString()}`,
+          provider.id,
+        ),
+      );
     } catch (err: unknown) {
       logger.error(`[auth] OAuth callback failed: ${err}`);
       res.status(500).send("Token exchange failed");

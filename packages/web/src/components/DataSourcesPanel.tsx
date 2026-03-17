@@ -128,21 +128,29 @@ export function DataSourcesPanel() {
 
   // Listen for OAuth completion from the popup via BroadcastChannel + postMessage
   useEffect(() => {
-    const invalidateProviders = () => {
+    const onOAuthComplete = (providerId?: string) => {
       trpcUtils.sync.providers.invalidate();
+      // Auto-trigger a full sync for the newly connected provider
+      if (providerId) {
+        handleSync(providerId, true);
+      }
     };
     // Primary: BroadcastChannel (same-origin, works even if window.opener is null)
     let channel: BroadcastChannel | undefined;
     try {
       channel = new BroadcastChannel("oauth-complete");
-      channel.onmessage = invalidateProviders;
+      channel.onmessage = (event: MessageEvent) => {
+        const providerId =
+          typeof event.data === "object" && event.data !== null ? event.data.providerId : undefined;
+        onOAuthComplete(providerId);
+      };
     } catch {
       // BroadcastChannel not supported — rely on postMessage fallback
     }
     // Fallback: window.postMessage from the popup via window.opener
     const onMessage = (event: MessageEvent) => {
       if (event.data?.type === "oauth-complete") {
-        invalidateProviders();
+        onOAuthComplete(event.data.providerId);
       }
     };
     window.addEventListener("message", onMessage);
@@ -150,7 +158,7 @@ export function DataSourcesPanel() {
       channel?.close();
       window.removeEventListener("message", onMessage);
     };
-  }, [trpcUtils]);
+  }, [trpcUtils, handleSync]);
 
   const handleProviderClick = useCallback(
     (
