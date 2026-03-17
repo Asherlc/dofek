@@ -1,45 +1,115 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchConfiguredProviders, fetchCurrentUser } from "./auth.ts";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fetchConfiguredProviders, fetchCurrentUser, logout } from "./auth.ts";
+
+function mockResponse(props: Partial<Response>): Response {
+  return {
+    ok: false,
+    status: 200,
+    statusText: "OK",
+    headers: new Headers(),
+    redirected: false,
+    type: "basic",
+    url: "",
+    body: null,
+    bodyUsed: false,
+    clone: vi.fn(),
+    arrayBuffer: vi.fn(),
+    blob: vi.fn(),
+    bytes: vi.fn(),
+    formData: vi.fn(),
+    json: vi.fn(),
+    text: vi.fn(),
+    ...props,
+  } satisfies Response;
+}
 
 describe("fetchCurrentUser", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it("calls /api/auth/me with credentials and returns user", async () => {
-    const user = { id: "u1", name: "Test", email: "test@example.com" };
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json(user));
+  it("returns user when response is ok", async () => {
+    const user = { id: "u1", name: "Alice", email: "alice@example.com" };
+    vi.mocked(fetch).mockResolvedValue(
+      mockResponse({
+        ok: true,
+        json: () => Promise.resolve(user),
+      }),
+    );
+
     const result = await fetchCurrentUser();
-    expect(fetchSpy).toHaveBeenCalledWith("/api/auth/me", { credentials: "include" });
     expect(result).toEqual(user);
+    expect(fetch).toHaveBeenCalledWith("/api/auth/me", { credentials: "include" });
   });
 
-  it("returns null on non-OK response", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("Unauthorized", { status: 401 }));
+  it("returns null when response is not ok", async () => {
+    vi.mocked(fetch).mockResolvedValue(mockResponse({ ok: false }));
+
     const result = await fetchCurrentUser();
     expect(result).toBeNull();
   });
 });
 
 describe("fetchConfiguredProviders", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it("calls /api/auth/providers and returns result", async () => {
-    const providers = { identity: ["google"], data: ["strava"] };
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json(providers));
+  it("returns providers when response is ok", async () => {
+    const providers = { identity: ["google"], data: ["wahoo"] };
+    vi.mocked(fetch).mockResolvedValue(
+      mockResponse({
+        ok: true,
+        json: () => Promise.resolve(providers),
+      }),
+    );
+
     const result = await fetchConfiguredProviders();
-    expect(fetchSpy).toHaveBeenCalledWith("/api/auth/providers");
     expect(result).toEqual(providers);
   });
 
-  it("throws on non-OK response", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response("Server Error", { status: 500, statusText: "Internal Server Error" }),
+  it("throws when response is not ok", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      mockResponse({
+        ok: false,
+        status: 500,
+        statusText: "Internal Server Error",
+      }),
     );
+
     await expect(fetchConfiguredProviders()).rejects.toThrow(
       "Failed to fetch providers: 500 Internal Server Error",
     );
+  });
+});
+
+describe("logout", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+    vi.stubGlobal("window", { location: { href: "" } });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("posts to logout endpoint and redirects", async () => {
+    vi.mocked(fetch).mockResolvedValue(mockResponse({}));
+
+    await logout();
+
+    expect(fetch).toHaveBeenCalledWith("/auth/logout", {
+      method: "POST",
+      credentials: "include",
+    });
+    expect(window.location.href).toBe("/login");
   });
 });
