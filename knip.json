@@ -11,20 +11,20 @@
       "ignoreDependencies": ["tsx"],
       "ignoreBinaries": ["tsr"],
       "vitest": {
-        "config": ["vitest.config.ts", "vitest.config.unit.ts"],
+        "config": ["vitest.config.ts"],
         "entry": ["src/**/*.test.ts", "src/**/*.integration.test.ts"]
       }
     },
     "packages/server": {
       "vitest": {
-        "config": ["../../vitest.config.ts", "../../vitest.config.unit.ts"],
+        "config": ["../../vitest.config.ts"],
         "entry": ["src/**/*.test.ts", "src/**/*.integration.test.ts"]
       }
     },
     "packages/web": {
       "ignoreDependencies": ["@tanstack/router-cli"],
       "vitest": {
-        "config": ["../../vitest.config.ts", "../../vitest.config.unit.ts"],
+        "config": ["../../vitest.config.ts"],
         "entry": ["src/**/*.test.{ts,tsx}"]
       }
     },
@@ -33,33 +33,33 @@
     },
     "packages/whoop-whoop": {
       "vitest": {
-        "config": ["../../vitest.config.ts", "../../vitest.config.unit.ts"],
+        "config": ["../../vitest.config.ts"],
         "entry": ["src/**/*.test.ts"]
       }
     },
     "packages/eight-sleep": {},
     "packages/zwift-client": {
       "vitest": {
-        "config": ["../../vitest.config.ts", "../../vitest.config.unit.ts"],
+        "config": ["../../vitest.config.ts"],
         "entry": ["src/**/*.test.ts"]
       }
     },
     "packages/trainerroad-client": {},
     "packages/velohero-client": {
       "vitest": {
-        "config": ["../../vitest.config.ts", "../../vitest.config.unit.ts"],
+        "config": ["../../vitest.config.ts"],
         "entry": ["src/**/*.test.ts"]
       }
     },
     "packages/garmin-connect": {
       "vitest": {
-        "config": ["../../vitest.config.ts", "../../vitest.config.unit.ts"],
+        "config": ["../../vitest.config.ts"],
         "entry": ["src/**/*.test.ts"]
       }
     },
     "packages/trainingpeaks-connect": {
       "vitest": {
-        "config": ["../../vitest.config.ts", "../../vitest.config.unit.ts"],
+        "config": ["../../vitest.config.ts"],
         "entry": ["src/**/*.test.ts"]
       }
     }

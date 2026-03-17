@@ -76,16 +76,10 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec vitest run --config vitest.config.unit.ts --coverage
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: coverage
-          path: coverage/
-          retention-days: 7
+      - run: pnpm exec vitest run --project unit
 
   test-integration:
-    name: Integration Tests + Coverage
+    name: Full Suite + Coverage
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -121,7 +115,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec vitest run --config vitest.config.ts --pool=forks --coverage
+      - run: pnpm exec vitest run --coverage
         timeout-minutes: 10
 
   test-e2e:

@@ -8,7 +8,21 @@ export default defineConfig({
     teardownTimeout: 60_000,
     fileParallelism: true,
     pool: "forks",
-    include: ["src/**/*.test.ts", "packages/*/src/**/*.test.ts"],
+    projects: [
+      {
+        test: {
+          name: "unit",
+          include: ["src/**/*.test.ts", "packages/*/src/**/*.test.ts"],
+          exclude: ["**/*.integration.test.ts"],
+        },
+      },
+      {
+        test: {
+          name: "integration",
+          include: ["src/**/*.integration.test.ts", "packages/*/src/**/*.integration.test.ts"],
+        },
+      },
+    ],
     coverage: {
       provider: "v8",
       reporter: ["text", "json-summary"],

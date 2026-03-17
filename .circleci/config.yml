@@ -67,8 +67,8 @@ jobs:
     steps:
       - setup
       - run:
-          name: Run unit tests with coverage
-          command: pnpm exec vitest run --config vitest.config.unit.ts --coverage
+          name: Run unit tests
+          command: pnpm exec vitest run --project unit
           environment:
             NODE_OPTIONS: --max-old-space-size=3072
       - store_artifacts:
@@ -103,8 +103,8 @@ jobs:
             echo "Database did not become ready in time"
             exit 1
       - run:
-          name: Run integration tests
-          command: pnpm exec vitest run --config vitest.config.ts --pool=forks --teardownTimeout=10000 "integration.test"
+          name: Run full suite with coverage
+          command: pnpm exec vitest run --coverage
           no_output_timeout: 10m
 
   test-e2e:
