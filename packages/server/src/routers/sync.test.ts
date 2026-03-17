@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
-const { mockAdd, mockGetJob, mockGetAllProviders, mockRegisterProvider } = vi.hoisted(() => ({
-  mockAdd: vi.fn().mockResolvedValue({ id: "job-123" }),
-  mockGetJob: vi.fn(),
-  mockGetAllProviders: vi.fn(() => []),
-  mockRegisterProvider: vi.fn(),
-}));
+const { mockAdd, mockGetJob, mockGetAllProviders, mockRegisterProvider, mockLoggerWarn } =
+  vi.hoisted(() => ({
+    mockAdd: vi.fn().mockResolvedValue({ id: "job-123" }),
+    mockGetJob: vi.fn(),
+    mockGetAllProviders: vi.fn(() => []),
+    mockRegisterProvider: vi.fn(),
+    mockLoggerWarn: vi.fn(),
+  }));
 
 // Mock trpc
 vi.mock("../trpc.ts", async () => {
@@ -39,7 +41,7 @@ vi.mock("../lib/start-worker.ts", () => ({
 
 vi.mock("../logger.ts", () => ({
   getSystemLogs: vi.fn((limit: number) => [`log1`, `log2`].slice(0, limit)),
-  logger: { warn: vi.fn(), info: vi.fn() },
+  logger: { warn: mockLoggerWarn, info: vi.fn() },
 }));
 
 // Mock the dynamic provider imports used in doRegisterProviders
@@ -69,7 +71,11 @@ vi.mock("dofek/providers/xert", () => ({ XertProvider: vi.fn() }));
 vi.mock("dofek/providers/cycling-analytics", () => ({ CyclingAnalyticsProvider: vi.fn() }));
 vi.mock("dofek/providers/wger", () => ({ WgerProvider: vi.fn() }));
 vi.mock("dofek/providers/decathlon", () => ({ DecathlonProvider: vi.fn() }));
-vi.mock("dofek/providers/velohero", () => ({ VeloHeroProvider: vi.fn() }));
+vi.mock("dofek/providers/velohero", () => ({
+  VeloHeroProvider: vi.fn(() => {
+    throw new Error("test-registration-error");
+  }),
+}));
 
 // Mock schema and drizzle-orm for logs query
 vi.mock("dofek/db/schema", () => ({
@@ -89,9 +95,22 @@ describe("syncRouter", () => {
   });
 
   describe("ensureProvidersRegistered", () => {
-    it("returns a promise", () => {
-      const result = ensureProvidersRegistered();
-      expect(result).toBeInstanceOf(Promise);
+    it("registers all providers and returns the same promise on subsequent calls", async () => {
+      const first = ensureProvidersRegistered();
+      expect(first).toBeInstanceOf(Promise);
+
+      // Second call should return the cached promise (not create a new one)
+      const second = ensureProvidersRegistered();
+      expect(second).toBe(first);
+
+      await first;
+      // Verify registerProvider was called for each provider in the list
+      // (minus 1 for velohero which throws during construction)
+      expect(mockRegisterProvider).toHaveBeenCalled();
+      expect(mockRegisterProvider.mock.calls.length).toBeGreaterThanOrEqual(12);
+
+      // Verify error handling: velohero throws but doesn't prevent other providers
+      expect(mockLoggerWarn).toHaveBeenCalledWith(expect.stringContaining("velohero"));
     });
   });
 
@@ -122,6 +141,12 @@ describe("syncRouter", () => {
           validate: () => null,
           authSetup: undefined,
         },
+        {
+          id: "cronometer-csv",
+          name: "Cronometer CSV",
+          validate: () => null,
+          authSetup: undefined,
+        },
       ]);
 
       const caller = createCaller({
@@ -138,29 +163,38 @@ describe("syncRouter", () => {
 
       const result = await caller.providers();
 
-      expect(result).toHaveLength(4);
+      expect(result).toHaveLength(5);
 
       // Wahoo: enabled, needs OAuth, authorized (has token)
       const wahoo = result.find((p: { id: string }) => p.id === "wahoo");
       expect(wahoo?.enabled).toBe(true);
       expect(wahoo?.needsOAuth).toBe(true);
+      expect(wahoo?.needsCustomAuth).toBe(false);
       expect(wahoo?.authorized).toBe(true);
       expect(wahoo?.lastSyncedAt).toBe("2024-01-01");
       expect(wahoo?.importOnly).toBe(false);
 
-      // Peloton: not enabled (validation error), no OAuth needed
+      // Peloton: not enabled (validation error), no OAuth needed, still authorized (no auth required)
       const peloton = result.find((p: { id: string }) => p.id === "peloton");
       expect(peloton?.enabled).toBe(false);
       expect(peloton?.error).toBe("Missing credentials");
+      expect(peloton?.needsOAuth).toBe(false);
+      expect(peloton?.needsCustomAuth).toBe(false);
+      expect(peloton?.authorized).toBe(true);
 
       // WHOOP: needs custom auth, not authorized (no token)
       const whoop = result.find((p: { id: string }) => p.id === "whoop");
       expect(whoop?.needsCustomAuth).toBe(true);
+      expect(whoop?.needsOAuth).toBe(false);
       expect(whoop?.authorized).toBe(false);
 
       // Strong CSV: import only
       const strongCsv = result.find((p: { id: string }) => p.id === "strong-csv");
       expect(strongCsv?.importOnly).toBe(true);
+
+      // Cronometer CSV: import only
+      const cronometerCsv = result.find((p: { id: string }) => p.id === "cronometer-csv");
+      expect(cronometerCsv?.importOnly).toBe(true);
     });
 
     it("handles authSetup throwing", async () => {
@@ -216,6 +250,43 @@ describe("syncRouter", () => {
 
       const result = await caller.triggerSync({ providerId: "wahoo" });
       expect(result.jobId).toBe("job-123");
+      expect(mockAdd).toHaveBeenCalledWith("sync", {
+        providerId: "wahoo",
+        sinceDays: undefined,
+        userId: "user-1",
+      });
+    });
+
+    it("finds the correct provider among multiple", async () => {
+      mockGetAllProviders.mockReturnValue([
+        { id: "peloton", name: "Peloton", validate: () => "Not configured" },
+        { id: "wahoo", name: "Wahoo", validate: () => null },
+      ]);
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+      });
+
+      // Should find wahoo specifically, not just the first provider
+      const result = await caller.triggerSync({ providerId: "wahoo" });
+      expect(result.jobId).toBe("job-123");
+    });
+
+    it("reuses the sync queue across calls", async () => {
+      const { createSyncQueue } = await import("dofek/jobs/queues");
+      mockGetAllProviders.mockReturnValue([]);
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+      });
+
+      await caller.triggerSync({});
+      await caller.triggerSync({});
+
+      // Queue should be created at most once (lazy singleton)
+      expect(vi.mocked(createSyncQueue).mock.calls.length).toBeLessThanOrEqual(1);
     });
 
     it("throws for unknown provider", async () => {
@@ -261,7 +332,7 @@ describe("syncRouter", () => {
   });
 
   describe("syncStatus", () => {
-    it("returns null for empty jobId", async () => {
+    it("returns null for empty jobId without querying the queue", async () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
@@ -269,6 +340,8 @@ describe("syncRouter", () => {
 
       const result = await caller.syncStatus({ jobId: "" });
       expect(result).toBeNull();
+      // Early return should prevent any queue interaction
+      expect(mockGetJob).not.toHaveBeenCalled();
     });
 
     it("returns null when job not found", async () => {
@@ -329,8 +402,37 @@ describe("syncRouter", () => {
 
       const result = await caller.syncStatus({ jobId: "active-job" });
       expect(result?.status).toBe("running");
+      expect(result?.message).toBeUndefined();
       expect(result?.providers).toEqual({
         wahoo: { status: "running", message: "Syncing..." },
+      });
+    });
+
+    it("parses progress with all valid status values", async () => {
+      mockGetJob.mockResolvedValueOnce({
+        data: { userId: "user-1" },
+        getState: vi.fn().mockResolvedValue("active"),
+        progress: {
+          providers: {
+            a: { status: "pending" },
+            b: { status: "running" },
+            c: { status: "done" },
+            d: { status: "error", message: "Failed" },
+          },
+        },
+      });
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+      });
+
+      const result = await caller.syncStatus({ jobId: "multi-status" });
+      expect(result?.providers).toEqual({
+        a: { status: "pending" },
+        b: { status: "running" },
+        c: { status: "done" },
+        d: { status: "error", message: "Failed" },
       });
     });
 
