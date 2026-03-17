@@ -83,6 +83,8 @@ export default function AddFoodScreen() {
   // ── Recent foods (loaded once on mount) ──
   const [recentFoods, setRecentFoods] = useState<SearchResult[]>([]);
   const recentLoaded = useRef(false);
+  const { width } = useWindowDimensions();
+  const isWide = width >= 600;
 
   useEffect(() => {
     if (recentLoaded.current) return;
@@ -290,9 +292,6 @@ export default function AddFoodScreen() {
   if (showScanner) {
     return <BarcodeScanner onScanned={handleBarcodeScan} onClose={() => setShowScanner(false)} />;
   }
-
-  const { width } = useWindowDimensions();
-  const isWide = width >= 600;
 
   // ── Pre-filled form (after selecting a search result) ──
   if (showForm) {
