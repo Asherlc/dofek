@@ -1,3 +1,4 @@
+import { mkdirSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,6 +8,14 @@ import { Router } from "express";
 import { assembleChunks, streamToFile } from "../lib/server-utils.ts";
 import { startWorker } from "../lib/start-worker.ts";
 import { logger } from "../logger.ts";
+
+/**
+ * Shared directory for uploaded files that the worker container can access.
+ * In production, both web and worker containers mount the `job_files` volume
+ * at /app/job-files. Falls back to OS temp dir for local development.
+ */
+const JOB_FILES_DIR = process.env.JOB_FILES_DIR || join(tmpdir(), "dofek-job-files");
+mkdirSync(JOB_FILES_DIR, { recursive: true });
 
 interface UploadChunks {
   received: Set<number>;
@@ -157,7 +166,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
     if (!uploadId || Number.isNaN(chunkTotal) || chunkTotal <= 1) {
       const ext = (req.headers["content-type"] ?? "").includes("xml") ? ".xml" : ".zip";
       const tmpId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-      const tmpFile = join(tmpdir(), `apple-health-${tmpId}${ext}`);
+      const tmpFile = join(JOB_FILES_DIR, `apple-health-${tmpId}${ext}`);
       try {
         await streamToFile(req, tmpFile);
         const jobId = await enqueueImport(
@@ -179,7 +188,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
     try {
       let upload = activeUploads.get(uploadId);
       if (!upload) {
-        const dir = join(tmpdir(), `apple-health-chunked-${uploadId}`);
+        const dir = join(JOB_FILES_DIR, `apple-health-chunked-${uploadId}`);
         await mkdir(dir, { recursive: true });
         upload = { received: new Set(), total: chunkTotal, dir };
         activeUploads.set(uploadId, upload);
@@ -235,7 +244,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
         progress: 0,
         message: "Assembling file...",
       });
-      const assembledFile = join(tmpdir(), `apple-health-${uploadId}${fileExt}`);
+      const assembledFile = join(JOB_FILES_DIR, `apple-health-${uploadId}${fileExt}`);
       await assembleChunks(upload.dir, assembledFile);
       activeUploads.delete(uploadId);
       await rm(upload.dir, { recursive: true, force: true });
@@ -288,7 +297,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
 
     const weightUnit = req.query.units === "lbs" ? "lbs" : "kg";
     const tmpId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    const tmpFile = join(tmpdir(), `strong-csv-${tmpId}.csv`);
+    const tmpFile = join(JOB_FILES_DIR, `strong-csv-${tmpId}.csv`);
 
     try {
       await streamToFile(req, tmpFile);
@@ -331,7 +340,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
     }
 
     const tmpId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    const tmpFile = join(tmpdir(), `cronometer-csv-${tmpId}.csv`);
+    const tmpFile = join(JOB_FILES_DIR, `cronometer-csv-${tmpId}.csv`);
 
     try {
       await streamToFile(req, tmpFile);
