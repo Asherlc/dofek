@@ -1,11 +1,12 @@
-name: Docker Build & Push
+name: CI
 
 on:
   push:
     branches: [main]
+  pull_request:
 
 concurrency:
-  group: docker-${{ github.ref }}
+  group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -13,66 +14,166 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  wait-for-ci:
-    name: Wait for CircleCI
+  check:
+    name: Lint, Typecheck & Knip
     runs-on: ubuntu-latest
-    permissions:
-      statuses: read
     steps:
-      - name: Wait for CircleCI checks to pass
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - name: Typecheck all packages
         run: |
-          SHA="${{ github.sha }}"
-          REPO="${{ github.repository }}"
-          PATTERN="^ci/circleci:"
-          MAX_WAIT=1800  # 30 minutes
-          INTERVAL=30
-          elapsed=0
+          pnpm tsc --noEmit &
+          pid1=$!
+          (cd packages/server && pnpm tsc --noEmit) &
+          pid2=$!
+          (cd packages/web && pnpm exec tsr generate && pnpm tsc --noEmit) &
+          pid3=$!
+          fail=0
+          wait $pid1 || fail=1
+          wait $pid2 || fail=1
+          wait $pid3 || fail=1
+          exit $fail
+      - run: pnpm knip
 
-          echo "Waiting for CircleCI statuses matching '$PATTERN' on $SHA"
+  test-unit:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec vitest run --config vitest.config.unit.ts --coverage
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage
+          path: coverage/
 
-          while [ $elapsed -lt $MAX_WAIT ]; do
-            # Get all commit statuses (CircleCI reports via status API, not checks API)
-            statuses=$(gh api "repos/$REPO/commits/$SHA/status" --jq '
-              .statuses | map(select(.context | test("^ci/circleci:")))
-            ')
+  test-integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: timescale/timescaledb:latest-pg16
+        env:
+          POSTGRES_DB: test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d test"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      TEST_DATABASE_URL: postgres://test:test@localhost:5432/test
+      REDIS_URL: redis://localhost:6379
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec vitest run --config vitest.config.ts --pool=forks "integration.test"
+        timeout-minutes: 10
 
-            count=$(echo "$statuses" | jq 'length')
-            if [ "$count" -eq 0 ]; then
-              echo "No CircleCI statuses found yet, waiting ${INTERVAL}s... (${elapsed}s elapsed)"
-              sleep $INTERVAL
-              elapsed=$((elapsed + INTERVAL))
-              continue
-            fi
+  test-e2e:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec cypress install
+      - name: Build and start e2e stack
+        run: docker compose -f docker-compose.e2e.yml up -d --build --wait
+      - run: pnpm e2e:run
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: cypress-screenshots
+          path: cypress/screenshots/
+      - name: Teardown
+        if: always()
+        run: docker compose -f docker-compose.e2e.yml down -v
 
-            pending=$(echo "$statuses" | jq '[.[] | select(.state == "pending")] | length')
-            failed=$(echo "$statuses" | jq '[.[] | select(.state == "failure" or .state == "error")] | length')
-            success=$(echo "$statuses" | jq '[.[] | select(.state == "success")] | length')
-
-            echo "CircleCI statuses: $success success, $pending pending, $failed failed (of $count total)"
-
-            if [ "$failed" -gt 0 ]; then
-              echo "::error::CircleCI checks failed"
-              echo "$statuses" | jq '.[] | select(.state == "failure" or .state == "error") | "\(.context): \(.state)"'
-              exit 1
-            fi
-
-            if [ "$pending" -eq 0 ]; then
-              echo "All $count CircleCI checks passed!"
-              exit 0
-            fi
-
-            sleep $INTERVAL
-            elapsed=$((elapsed + INTERVAL))
-          done
-
-          echo "::error::Timed out waiting for CircleCI checks after ${MAX_WAIT}s"
-          exit 1
+  mutation:
+    name: Mutation Testing
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Restore Stryker incremental cache
+        uses: actions/cache@v4
+        with:
+          path: reports/stryker-incremental.json
+          key: stryker-${{ github.head_ref }}
+          restore-keys: |
+            stryker-main
+      - name: Get changed files
+        id: changed
+        run: |
+          FILES=$(git diff --name-only origin/main...HEAD \
+            | { grep '\.ts$' || true; } \
+            | { grep -v '\.test\.ts$' || true; } \
+            | { grep -v 'test-helpers\.ts$' || true; } \
+            | { grep -v '\.d\.ts$' || true; } \
+            | { grep -v '\.config\.' || true; } \
+            | { grep -v 'drizzle/' || true; } \
+            | { grep -v 'scripts/' || true; } \
+            | { grep -v 'packages/ios/' || true; } \
+            | tr '\n' ',' \
+            | sed 's/,$//')
+          echo "files=$FILES" >> "$GITHUB_OUTPUT"
+          echo "Mutating changed files: $FILES"
+      - name: Run Stryker
+        if: steps.changed.outputs.files != ''
+        run: pnpm test:mutation --mutate "${{ steps.changed.outputs.files }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mutation-report
+          path: reports/mutation/
 
   docker:
     name: Docker (${{ matrix.target }})
-    needs: [wait-for-ci]
+    needs: [check, test-unit, test-integration]
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
@@ -85,16 +186,13 @@ jobs:
           - target: client
             suffix: "-client"
     steps:
-      - uses: actions/checkout@v5
-
+      - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
-
       - uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
       - uses: docker/metadata-action@v5
         id: meta
         with:
@@ -102,7 +200,6 @@ jobs:
           tags: |
             type=sha
             type=raw,value=latest
-
       - uses: docker/build-push-action@v6
         with:
           context: .
