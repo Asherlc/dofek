@@ -85,7 +85,7 @@ jobs:
           retention-days: 7
 
   test-integration:
-    name: Integration Tests
+    name: Integration Tests + Coverage
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -121,7 +121,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec vitest run --config vitest.config.ts --pool=forks "integration.test"
+      - run: pnpm exec vitest run --config vitest.config.ts --pool=forks --coverage
         timeout-minutes: 10
 
   test-e2e:
