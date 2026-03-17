@@ -116,6 +116,15 @@ services:
       db:
         condition: service_healthy
 
+  portainer:
+    image: portainer/portainer-ce:lts
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    labels:
+      - "com.centurylinklabs.watchtower.enable=false"
+
   watchtower:
     image: containrrr/watchtower
     restart: unless-stopped
@@ -135,3 +144,4 @@ volumes:
   caddy_config:
   redis_data:
   job_files:
+  portainer_data:

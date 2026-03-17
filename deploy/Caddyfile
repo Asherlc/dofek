@@ -1,3 +1,7 @@
 ${domain} {
     reverse_proxy client:80
 }
+
+portainer.asherlc.com {
+    reverse_proxy portainer:9000
+}
