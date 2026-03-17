@@ -52,6 +52,19 @@ describe("fetchCurrentUser", () => {
     const result = await fetchCurrentUser();
     expect(result).toBeNull();
   });
+
+  it("returns user with null email", async () => {
+    const user = { id: "u1", name: "Test", email: null };
+    vi.mocked(fetch).mockResolvedValue(
+      mockResponse({
+        ok: true,
+        json: () => Promise.resolve(user),
+      }),
+    );
+    const result = await fetchCurrentUser();
+    expect(result).toEqual(user);
+    expect(result?.email).toBeNull();
+  });
 });
 
 describe("fetchConfiguredProviders", () => {
@@ -88,6 +101,17 @@ describe("fetchConfiguredProviders", () => {
     await expect(fetchConfiguredProviders()).rejects.toThrow(
       "Failed to fetch providers: 500 Internal Server Error",
     );
+  });
+
+  it("includes status code in error message", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      mockResponse({
+        ok: false,
+        status: 404,
+        statusText: "Not Found",
+      }),
+    );
+    await expect(fetchConfiguredProviders()).rejects.toThrow("404");
   });
 });
 

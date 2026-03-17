@@ -96,6 +96,42 @@ describe("refreshDedupViews", () => {
 
     await expect(refreshDedupViews(mockDb)).rejects.toThrow("connection refused");
   });
+
+  it("re-throws non-Error exceptions", async () => {
+    const { refreshDedupViews } = await import("./dedup.ts");
+    const mockDb = createMockDb();
+
+    mockExecute.mockRejectedValue("string error");
+
+    await expect(refreshDedupViews(mockDb)).rejects.toBe("string error");
+  });
+
+  it("uses CONCURRENTLY in initial refresh attempt", async () => {
+    const { refreshDedupViews } = await import("./dedup.ts");
+    const mockDb = createMockDb();
+
+    await refreshDedupViews(mockDb);
+
+    const firstCall = mockExecute.mock.calls[0]?.[0];
+    expect(firstCall).toContain("CONCURRENTLY");
+  });
+
+  it("omits CONCURRENTLY in fallback refresh", async () => {
+    const { refreshDedupViews } = await import("./dedup.ts");
+    const mockDb = createMockDb();
+
+    // First call fails with "has not been populated", second succeeds
+    mockExecute
+      .mockRejectedValueOnce(new Error("has not been populated"))
+      .mockResolvedValue(undefined);
+
+    await refreshDedupViews(mockDb);
+
+    // Second call (fallback) should NOT contain CONCURRENTLY
+    const secondCall = mockExecute.mock.calls[1]?.[0];
+    expect(secondCall).not.toContain("CONCURRENTLY");
+    expect(secondCall).toContain("REFRESH MATERIALIZED VIEW");
+  });
 });
 
 describe("updateUserMaxHr", () => {
