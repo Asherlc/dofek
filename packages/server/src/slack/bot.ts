@@ -387,145 +387,162 @@ function registerHandlers(app: AppType, db: Database) {
     const msgChannel = message.channel;
     const msgThreadTs = "thread_ts" in message ? message.thread_ts : undefined;
 
-    const { userId, timezone: userTimezone } = await lookupOrCreateUserId(db, msgUser, client);
+    try {
+      const { userId, timezone: userTimezone } = await lookupOrCreateUserId(db, msgUser, client);
 
-    const date = slackTimestampToDateString(msgTs, userTimezone);
+      const date = slackTimestampToDateString(msgTs, userTimezone);
 
-    // Thread reply — look for previous items to refine
-    if (msgThreadTs && msgThreadTs !== msgTs) {
-      logger.info(`[slack] Thread reply from ${msgUser}: "${msgText}"`);
+      // Thread reply — look for previous items to refine
+      if (msgThreadTs && msgThreadTs !== msgTs) {
+        logger.info(`[slack] Thread reply from ${msgUser}: "${msgText}"`);
+
+        try {
+          const thread = await client.conversations.replies({
+            channel: msgChannel,
+            ts: msgThreadTs,
+          });
+          const previousEntryIds = extractEntryIdsFromThread(thread.messages ?? []);
+
+          if (previousEntryIds) {
+            // Load the previous items from the database for refinement context
+            const previousRows = await db.execute<{
+              food_name: string;
+              food_description: string | null;
+              category: NutritionItemWithMeal["category"] | null;
+              calories: number | null;
+              protein_g: number | null;
+              carbs_g: number | null;
+              fat_g: number | null;
+              fiber_g: number | null;
+              saturated_fat_g: number | null;
+              sugar_g: number | null;
+              sodium_mg: number | null;
+              meal: string | null;
+            }>(
+              sql`SELECT food_name, food_description, category, calories,
+                         protein_g, carbs_g, fat_g, fiber_g,
+                         saturated_fat_g, sugar_g, sodium_mg, meal
+                  FROM fitness.food_entry
+                  WHERE id IN (${sqlIdList(previousEntryIds)})`,
+            );
+
+            const previousItems: NutritionItemWithMeal[] = previousRows.map((r) => ({
+              foodName: r.food_name,
+              foodDescription: r.food_description ?? "",
+              category: categorySchema.parse(r.category ?? "other"),
+              calories: r.calories ?? 0,
+              proteinG: r.protein_g ?? 0,
+              carbsG: r.carbs_g ?? 0,
+              fatG: r.fat_g ?? 0,
+              fiberG: r.fiber_g ?? 0,
+              saturatedFatG: r.saturated_fat_g ?? 0,
+              sugarG: r.sugar_g ?? 0,
+              sodiumMg: r.sodium_mg ?? 0,
+              meal: mealSchema.parse(r.meal ?? "other"),
+            }));
+
+            if (previousItems.length > 0) {
+              logger.info(`[slack] Refining ${previousItems.length} items with: "${msgText}"`);
+
+              // Post a temporary "thinking" message so the user knows we're working
+              const thinkingMsg = await client.chat.postMessage({
+                channel: msgChannel,
+                thread_ts: msgThreadTs,
+                text: "Updating your entries...",
+              });
+
+              const localTime = slackTimestampToLocalTime(msgTs, userTimezone);
+              const result = await refineNutritionItems(previousItems, msgText, localTime);
+
+              // Delete old unconfirmed entries and save new refined ones
+              await deleteUnconfirmedEntries(db, previousEntryIds);
+              const newEntryIds = await saveUnconfirmedFoodEntries(db, userId, date, result.items);
+
+              const entryIdsValue = newEntryIds.join(",");
+              const confirmation = formatConfirmationMessage(result.items, entryIdsValue);
+
+              // Replace the "thinking" message with the actual result
+              if (thinkingMsg.ts) {
+                await client.chat.update({
+                  channel: msgChannel,
+                  ts: thinkingMsg.ts,
+                  ...confirmation,
+                });
+              } else {
+                await say({ ...confirmation, thread_ts: msgThreadTs });
+              }
+              return;
+            }
+          }
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          logger.error(`[slack] Refinement failed: ${errorMessage}`);
+          await say({
+            text: `Sorry, I couldn't refine that.\n\`${errorMessage}\``,
+            thread_ts: msgThreadTs,
+          });
+          return;
+        }
+      }
+
+      // Top-level message — fresh analysis (reply in thread so user can refine)
+      logger.info(`[slack] Parsing food from ${msgUser}: "${msgText}"`);
+
+      // Post a temporary "thinking" message so the user knows we're working
+      const thinkingMsg = await client.chat.postMessage({
+        channel: msgChannel,
+        thread_ts: msgTs,
+        text: "Analyzing what you ate...",
+      });
 
       try {
-        const thread = await client.conversations.replies({
-          channel: msgChannel,
-          ts: msgThreadTs,
-        });
-        const previousEntryIds = extractEntryIdsFromThread(thread.messages ?? []);
+        const localTime = slackTimestampToLocalTime(msgTs, userTimezone);
+        const result = await analyzeNutritionItems(msgText, localTime);
+        const entryIds = await saveUnconfirmedFoodEntries(db, userId, date, result.items);
+        const entryIdsValue = entryIds.join(",");
+        const confirmation = formatConfirmationMessage(result.items, entryIdsValue);
 
-        if (previousEntryIds) {
-          // Load the previous items from the database for refinement context
-          const previousRows = await db.execute<{
-            food_name: string;
-            food_description: string | null;
-            category: NutritionItemWithMeal["category"] | null;
-            calories: number | null;
-            protein_g: number | null;
-            carbs_g: number | null;
-            fat_g: number | null;
-            fiber_g: number | null;
-            saturated_fat_g: number | null;
-            sugar_g: number | null;
-            sodium_mg: number | null;
-            meal: string | null;
-          }>(
-            sql`SELECT food_name, food_description, category, calories,
-                       protein_g, carbs_g, fat_g, fiber_g,
-                       saturated_fat_g, sugar_g, sodium_mg, meal
-                FROM fitness.food_entry
-                WHERE id IN (${sqlIdList(previousEntryIds)})`,
-          );
-
-          const previousItems: NutritionItemWithMeal[] = previousRows.map((r) => ({
-            foodName: r.food_name,
-            foodDescription: r.food_description ?? "",
-            category: categorySchema.parse(r.category ?? "other"),
-            calories: r.calories ?? 0,
-            proteinG: r.protein_g ?? 0,
-            carbsG: r.carbs_g ?? 0,
-            fatG: r.fat_g ?? 0,
-            fiberG: r.fiber_g ?? 0,
-            saturatedFatG: r.saturated_fat_g ?? 0,
-            sugarG: r.sugar_g ?? 0,
-            sodiumMg: r.sodium_mg ?? 0,
-            meal: mealSchema.parse(r.meal ?? "other"),
-          }));
-
-          if (previousItems.length > 0) {
-            logger.info(`[slack] Refining ${previousItems.length} items with: "${msgText}"`);
-
-            // Post a temporary "thinking" message so the user knows we're working
-            const thinkingMsg = await client.chat.postMessage({
-              channel: msgChannel,
-              thread_ts: msgThreadTs,
-              text: "Updating your entries...",
-            });
-
-            const localTime = slackTimestampToLocalTime(msgTs, userTimezone);
-            const result = await refineNutritionItems(previousItems, msgText, localTime);
-
-            // Delete old unconfirmed entries and save new refined ones
-            await deleteUnconfirmedEntries(db, previousEntryIds);
-            const newEntryIds = await saveUnconfirmedFoodEntries(db, userId, date, result.items);
-
-            const entryIdsValue = newEntryIds.join(",");
-            const confirmation = formatConfirmationMessage(result.items, entryIdsValue);
-
-            // Replace the "thinking" message with the actual result
-            if (thinkingMsg.ts) {
-              await client.chat.update({
-                channel: msgChannel,
-                ts: thinkingMsg.ts,
-                ...confirmation,
-              });
-            } else {
-              await say({ ...confirmation, thread_ts: msgThreadTs });
-            }
-            return;
-          }
+        // Replace the "thinking" message with the actual result
+        if (thinkingMsg.ts) {
+          await client.chat.update({
+            channel: msgChannel,
+            ts: thinkingMsg.ts,
+            ...confirmation,
+          });
+        } else {
+          await say({ ...confirmation, thread_ts: msgTs });
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
-        logger.error(`[slack] Refinement failed: ${errorMessage}`);
-        await say({
-          text: `Sorry, I couldn't refine that.\n\`${errorMessage}\``,
-          thread_ts: msgThreadTs,
-        });
-        return;
-      }
-    }
+        logger.error(`[slack] AI analysis failed: ${errorMessage}`);
 
-    // Top-level message — fresh analysis (reply in thread so user can refine)
-    logger.info(`[slack] Parsing food from ${msgUser}: "${msgText}"`);
-
-    // Post a temporary "thinking" message so the user knows we're working
-    const thinkingMsg = await client.chat.postMessage({
-      channel: msgChannel,
-      thread_ts: msgTs,
-      text: "Analyzing what you ate...",
-    });
-
-    try {
-      const localTime = slackTimestampToLocalTime(msgTs, userTimezone);
-      const result = await analyzeNutritionItems(msgText, localTime);
-      const entryIds = await saveUnconfirmedFoodEntries(db, userId, date, result.items);
-      const entryIdsValue = entryIds.join(",");
-      const confirmation = formatConfirmationMessage(result.items, entryIdsValue);
-
-      // Replace the "thinking" message with the actual result
-      if (thinkingMsg.ts) {
-        await client.chat.update({
-          channel: msgChannel,
-          ts: thinkingMsg.ts,
-          ...confirmation,
-        });
-      } else {
-        await say({ ...confirmation, thread_ts: msgTs });
+        // Replace "thinking" message with error, or post new one
+        const errorText = `Sorry, I couldn't parse that. Try describing what you ate more specifically.\n\`${errorMessage}\``;
+        if (thinkingMsg.ts) {
+          await client.chat.update({
+            channel: msgChannel,
+            ts: thinkingMsg.ts,
+            text: errorText,
+            blocks: [],
+          });
+        } else {
+          await say({ text: errorText, thread_ts: msgTs });
+        }
       }
     } catch (error) {
+      // Top-level catch: handles failures in lookupOrCreateUserId or posting the thinking message.
+      // Without this, these errors would silently fail with no reply to the user.
       const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.error(`[slack] AI analysis failed: ${errorMessage}`);
-
-      // Replace "thinking" message with error, or post new one
-      const errorText = `Sorry, I couldn't parse that. Try describing what you ate more specifically.\n\`${errorMessage}\``;
-      if (thinkingMsg.ts) {
-        await client.chat.update({
-          channel: msgChannel,
-          ts: thinkingMsg.ts,
-          text: errorText,
-          blocks: [],
+      logger.error(`[slack] Message handler failed: ${errorMessage}`);
+      try {
+        await say({
+          text: `Sorry, something went wrong.\n\`${errorMessage}\``,
+          thread_ts: msgThreadTs ?? msgTs,
         });
-      } else {
-        await say({ text: errorText, thread_ts: msgTs });
+      } catch (sayError) {
+        logger.error(
+          `[slack] Failed to send error reply: ${sayError instanceof Error ? sayError.message : String(sayError)}`,
+        );
       }
     }
   });
@@ -752,7 +769,11 @@ export function createSlackBot(db: Database): SlackBotResult | null {
     const app = new App({
       receiver,
       authorize: async ({ teamId }) => {
-        if (!teamId) throw new Error("Missing teamId in Slack event");
+        if (!teamId) {
+          logger.error("[slack] authorize: missing teamId in event");
+          throw new Error("Missing teamId in Slack event");
+        }
+        logger.info(`[slack] authorize: looking up installation for team ${teamId}`);
         const rows = await db.execute<{
           bot_token: string;
           bot_id: string | null;
@@ -765,8 +786,10 @@ export function createSlackBot(db: Database): SlackBotResult | null {
         );
         const row = rows[0];
         if (rows.length === 0 || !row) {
+          logger.error(`[slack] authorize: no installation found for team ${teamId}`);
           throw new Error(`No Slack installation found for team ${teamId}`);
         }
+        logger.info(`[slack] authorize: found installation for team ${teamId}`);
         return {
           botToken: row.bot_token,
           botId: row.bot_id ?? undefined,
