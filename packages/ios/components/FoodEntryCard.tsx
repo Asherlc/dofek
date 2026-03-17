@@ -53,7 +53,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 4,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "#eee",
+    borderBottomColor: "#2a2a2e",
   },
   deleting: {
     opacity: 0.5,
@@ -64,22 +64,22 @@ const styles = StyleSheet.create({
   },
   name: {
     fontSize: 16,
-    color: "#1a1a1a",
+    color: "#fff",
     fontWeight: "500",
   },
   description: {
     fontSize: 12,
-    color: "#888",
+    color: "#636366",
     marginTop: 1,
   },
   macros: {
     fontSize: 12,
-    color: "#999",
+    color: "#8e8e93",
     marginTop: 2,
   },
   calories: {
     fontSize: 16,
     fontWeight: "600",
-    color: "#666",
+    color: "#8e8e93",
   },
 });

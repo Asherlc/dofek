@@ -38,15 +38,10 @@ export function MealSection({ mealName, mealKey, entries, onAddFood, onDeleteFoo
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
+    backgroundColor: "#1c1c1e",
+    borderRadius: 16,
     padding: 12,
     marginBottom: 12,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
   },
   header: {
     flexDirection: "row",
@@ -57,23 +52,23 @@ const styles = StyleSheet.create({
   mealName: {
     fontSize: 16,
     fontWeight: "700",
-    color: "#1a1a1a",
+    color: "#fff",
   },
   totalCalories: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#666",
+    color: "#8e8e93",
   },
   emptyText: {
     fontSize: 14,
-    color: "#ccc",
+    color: "#636366",
     fontStyle: "italic",
     paddingVertical: 8,
   },
   addButton: {
     paddingTop: 8,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "#eee",
+    borderTopColor: "#2a2a2e",
     marginTop: 4,
   },
   addButtonText: {

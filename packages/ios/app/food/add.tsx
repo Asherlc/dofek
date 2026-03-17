@@ -505,7 +505,7 @@ export default function AddFoodScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f8f9fa",
+    backgroundColor: "#000",
   },
   scrollView: {
     flex: 1,
@@ -521,18 +521,18 @@ const styles = StyleSheet.create({
     padding: 12,
     paddingTop: 8,
     gap: 8,
-    backgroundColor: "#fff",
+    backgroundColor: "#1c1c1e",
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "#ddd",
+    borderBottomColor: "#2a2a2e",
   },
   searchInput: {
     flex: 1,
-    backgroundColor: "#f0f0f0",
+    backgroundColor: "#2a2a2e",
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 10,
     fontSize: 16,
-    color: "#1a1a1a",
+    color: "#fff",
   },
   barcodeButton: {
     backgroundColor: "#007AFF",
@@ -550,7 +550,7 @@ const styles = StyleSheet.create({
   sectionHeader: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#999",
+    color: "#8e8e93",
     textTransform: "uppercase",
     letterSpacing: 0.5,
     paddingHorizontal: 16,
@@ -567,9 +567,9 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingVertical: 12,
     paddingHorizontal: 16,
-    backgroundColor: "#fff",
+    backgroundColor: "#1c1c1e",
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "#eee",
+    borderBottomColor: "#2a2a2e",
   },
   resultLeft: {
     flex: 1,
@@ -577,12 +577,12 @@ const styles = StyleSheet.create({
   },
   resultName: {
     fontSize: 16,
-    color: "#1a1a1a",
+    color: "#fff",
     fontWeight: "500",
   },
   resultServing: {
     fontSize: 13,
-    color: "#888",
+    color: "#636366",
     marginTop: 2,
   },
   resultRight: {
@@ -591,16 +591,16 @@ const styles = StyleSheet.create({
   resultCalories: {
     fontSize: 15,
     fontWeight: "600",
-    color: "#333",
+    color: "#8e8e93",
   },
   resultSource: {
     fontSize: 11,
-    color: "#bbb",
+    color: "#636366",
     marginTop: 2,
   },
   emptyText: {
     textAlign: "center",
-    color: "#999",
+    color: "#636366",
     paddingVertical: 24,
   },
   manualEntry: {
@@ -608,7 +608,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     alignItems: "center",
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "#ddd",
+    borderTopColor: "#2a2a2e",
     marginTop: 8,
   },
   manualEntryText: {
@@ -625,25 +625,25 @@ const styles = StyleSheet.create({
   },
   scanningText: {
     fontSize: 14,
-    color: "#666",
+    color: "#8e8e93",
   },
 
   // ── Form (after selection) ──
   label: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#333",
+    color: "#8e8e93",
     marginBottom: 4,
     marginTop: 14,
   },
   input: {
-    backgroundColor: "#fff",
+    backgroundColor: "#1c1c1e",
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#ddd",
+    borderColor: "#2a2a2e",
     padding: 12,
     fontSize: 16,
-    color: "#1a1a1a",
+    color: "#fff",
   },
   calorieInput: {
     fontSize: 24,
@@ -653,7 +653,7 @@ const styles = StyleSheet.create({
   },
   servingHint: {
     fontSize: 13,
-    color: "#888",
+    color: "#636366",
     marginTop: 4,
     textAlign: "center",
   },
@@ -667,14 +667,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 18,
-    backgroundColor: "#e9ecef",
+    backgroundColor: "#2a2a2e",
   },
   mealChipSelected: {
     backgroundColor: "#007AFF",
   },
   mealChipText: {
     fontSize: 14,
-    color: "#666",
+    color: "#8e8e93",
     fontWeight: "500",
   },
   mealChipTextSelected: {
@@ -692,17 +692,17 @@ const styles = StyleSheet.create({
   macroLabel: {
     fontSize: 12,
     fontWeight: "600",
-    color: "#888",
+    color: "#636366",
     marginBottom: 4,
   },
   macroInput: {
-    backgroundColor: "#fff",
+    backgroundColor: "#1c1c1e",
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#ddd",
+    borderColor: "#2a2a2e",
     padding: 10,
     fontSize: 16,
-    color: "#1a1a1a",
+    color: "#fff",
     textAlign: "center",
     width: "100%",
   },
@@ -717,10 +717,10 @@ const styles = StyleSheet.create({
     padding: 16,
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#ddd",
+    borderColor: "#2a2a2e",
   },
   backButtonText: {
-    color: "#666",
+    color: "#8e8e93",
     fontSize: 16,
     fontWeight: "600",
   },

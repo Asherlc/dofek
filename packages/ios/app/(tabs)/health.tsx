@@ -224,7 +224,7 @@ export default function HealthScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f8f9fa",
+    backgroundColor: "#000",
   },
   content: {
     padding: 16,
@@ -232,31 +232,26 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   title: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: "#1a1a1a",
+    fontSize: 28,
+    fontWeight: "800",
+    color: "#fff",
     marginBottom: 16,
   },
   card: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
+    backgroundColor: "#1c1c1e",
+    borderRadius: 16,
     padding: 16,
     marginBottom: 12,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
   },
   cardTitle: {
     fontSize: 16,
     fontWeight: "700",
-    color: "#1a1a1a",
+    color: "#fff",
     marginBottom: 4,
   },
   cardDescription: {
     fontSize: 14,
-    color: "#666",
+    color: "#8e8e93",
     lineHeight: 20,
     marginBottom: 12,
   },
@@ -293,17 +288,17 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingVertical: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "#eee",
+    borderBottomColor: "#2a2a2e",
   },
   statusLabel: {
     fontSize: 15,
-    color: "#333",
+    color: "#8e8e93",
   },
   statusValue: {
     fontSize: 15,
-    color: "#666",
+    color: "#fff",
   },
   errorText: {
-    color: "#FF3B30",
+    color: "#FF3D00",
   },
 });

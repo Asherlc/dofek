@@ -47,9 +47,9 @@ export function MacroSummary({
       </View>
 
       <View style={styles.macroSection}>
-        <MacroBar label="Protein" grams={proteinGrams} color="#4CAF50" />
-        <MacroBar label="Carbs" grams={carbsGrams} color="#FF9800" />
-        <MacroBar label="Fat" grams={fatGrams} color="#F44336" />
+        <MacroBar label="Protein" grams={proteinGrams} color="#00E676" />
+        <MacroBar label="Carbs" grams={carbsGrams} color="#FFD600" />
+        <MacroBar label="Fat" grams={fatGrams} color="#FF3D00" />
       </View>
     </View>
   );
@@ -57,15 +57,10 @@ export function MacroSummary({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
+    backgroundColor: "#1c1c1e",
+    borderRadius: 16,
     padding: 16,
     marginBottom: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
   },
   calorieSection: {
     alignItems: "center",
@@ -74,17 +69,17 @@ const styles = StyleSheet.create({
   calorieCount: {
     fontSize: 36,
     fontWeight: "700",
-    color: "#1a1a1a",
+    color: "#fff",
   },
   calorieLabel: {
     fontSize: 14,
-    color: "#666",
+    color: "#8e8e93",
     marginBottom: 8,
   },
   progressBarBackground: {
     width: "100%",
     height: 8,
-    backgroundColor: "#e9ecef",
+    backgroundColor: "#2a2a2e",
     borderRadius: 4,
     overflow: "hidden",
   },
@@ -95,7 +90,7 @@ const styles = StyleSheet.create({
   },
   remainingText: {
     fontSize: 12,
-    color: "#999",
+    color: "#636366",
     marginTop: 4,
   },
   macroSection: {
@@ -113,11 +108,11 @@ const styles = StyleSheet.create({
   },
   macroLabel: {
     fontSize: 12,
-    color: "#666",
+    color: "#8e8e93",
   },
   macroValue: {
     fontSize: 16,
     fontWeight: "600",
-    color: "#1a1a1a",
+    color: "#fff",
   },
 });
