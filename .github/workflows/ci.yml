@@ -54,10 +54,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec vitest run --config vitest.config.unit.ts --coverage
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: failure()
         with:
           name: coverage
           path: coverage/
+          retention-days: 7
 
   test-integration:
     name: Integration Tests
@@ -120,6 +121,7 @@ jobs:
         with:
           name: cypress-screenshots
           path: cypress/screenshots/
+          retention-days: 7
       - name: Teardown
         if: always()
         run: docker compose -f docker-compose.e2e.yml down -v
@@ -165,10 +167,11 @@ jobs:
         if: steps.changed.outputs.files != ''
         run: pnpm test:mutation --mutate "${{ steps.changed.outputs.files }}"
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: failure()
         with:
           name: mutation-report
           path: reports/mutation/
+          retention-days: 7
 
   docker:
     name: Docker (${{ matrix.target }})

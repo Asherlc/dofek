@@ -1,6 +1,22 @@
-# CircleCI Cost Optimization
+# CI Cost Optimization
 
 As of March 2026, we paused CircleCI in favor of GitHub Actions due to credit exhaustion. The CircleCI config is preserved at `.circleci/config.yml` for potential future use. Below is the audit of what was consuming credits, and what to fix before re-enabling.
+
+## GitHub Actions Optimizations (current)
+
+### What we've done
+- **Artifacts only on failure**: Coverage, mutation reports, and Cypress screenshots only upload when the job fails, with 7-day retention. This prevents storage bloat from successful runs.
+- **Concurrency with cancel-in-progress**: Force-pushes cancel stale runs so we don't pay for abandoned pipelines.
+- **E2E gated to main**: The Docker-compose e2e job only runs on main merges, not every PR push.
+- **Mutation scoped to changed files**: Stryker only mutates `.ts` files that changed in the PR, with incremental caching.
+- **Docker builds gated to main**: Server and client images only build/push after tests pass on main.
+- **GHA build cache for Docker**: Uses `cache-from: type=gha` to avoid rebuilding layers.
+
+### Future optimizations if needed
+- **ARM runners cost more**: `ubuntu-24.04-arm` is used for Docker builds (needed for arm64 deploy target). If cost becomes an issue, could cross-compile on x64 with QEMU or build less frequently.
+- **Consolidate check + test-unit**: These could share a single checkout/install if pnpm cache misses become expensive. Tradeoff: lose separate status checks on PRs.
+- **Mutation as non-blocking**: Make mutation `continue-on-error: true` so it doesn't block PRs but still reports. Saves re-run costs when mutation fails on non-critical code.
+- **Path filters**: Skip CI entirely for docs-only or config-only changes using `paths-ignore`.
 
 ## Usage Breakdown (billing period ending March 2026)
 
