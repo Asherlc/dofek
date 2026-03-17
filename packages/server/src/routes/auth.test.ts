@@ -534,14 +534,152 @@ describe("createAuthRouter", () => {
 
   describe("GET /callback (Slack OAuth)", () => {
     it("returns 400 when SLACK_CLIENT_ID/SECRET not set for slack callback", async () => {
-      // This test would need internal state manipulation to set up a slack state token.
-      // The slack callback path is checked via the "slack:" prefix in state.
       delete process.env.SLACK_CLIENT_ID;
       delete process.env.SLACK_CLIENT_SECRET;
       const { app } = createTestApp();
-      // Without a valid state token in the internal map, this just returns "Unknown or expired"
       const res = await request(app, "get", "/callback?code=abc&state=slack:fake-state");
       expect(res.status).toBe(400);
+    });
+  });
+
+  describe("GET /auth/provider/:provider (PKCE flow)", () => {
+    it("redirects with PKCE code challenge when provider uses PKCE", async () => {
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "strava",
+          name: "Strava",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://www.strava.com/oauth/authorize",
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["read"],
+              usePkce: true,
+            },
+          }),
+        },
+      ]);
+      const { app } = createTestApp();
+      const res = await request(app, "get", "/auth/provider/strava");
+      expect(res.status).toBe(302);
+    });
+  });
+
+  describe("GET /auth/provider/:provider (automated login error)", () => {
+    it("returns 500 when automated login throws", async () => {
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "peloton",
+          name: "Peloton",
+          authSetup: () => ({
+            oauthConfig: {},
+            automatedLogin: vi.fn().mockRejectedValue(new Error("Login failed")),
+            apiBaseUrl: "https://api.peloton.com",
+          }),
+        },
+      ]);
+      process.env.PELOTON_USERNAME = "user@test.com";
+      process.env.PELOTON_PASSWORD = "pass123";
+      const { app } = createTestApp();
+      const res = await request(app, "get", "/auth/provider/peloton");
+      expect(res.status).toBe(500);
+      delete process.env.PELOTON_USERNAME;
+      delete process.env.PELOTON_PASSWORD;
+    });
+  });
+
+  describe("GET /auth/callback/:provider (link flow)", () => {
+    it("redirects to /settings on successful link callback", async () => {
+      const mockValidate = vi.fn(() =>
+        Promise.resolve({
+          tokens: {},
+          user: { sub: "goog-1", email: "alice@test.com", name: "Alice" },
+        }),
+      );
+      vi.mocked(getIdentityProvider).mockReturnValue({
+        createAuthorizationUrl: vi.fn(() => new URL("https://accounts.google.com/authorize")),
+        validateCallback: mockValidate,
+      });
+      vi.mocked(getOAuthFlowCookies).mockReturnValue({
+        state: "google:link-state",
+        codeVerifier: "verifier",
+      });
+      // Simulate link cookie present
+      const { getLinkUserCookie } = await import("../auth/cookies.ts");
+      vi.mocked(getLinkUserCookie).mockReturnValue("user-1");
+      const { app } = createTestApp();
+      const res = await request(
+        app,
+        "get",
+        "/auth/callback/google?code=authcode&state=google:link-state",
+      );
+      expect(res.status).toBe(302);
+    });
+  });
+
+  describe("GET /auth/link/data/:provider", () => {
+    it("returns 404 for unknown provider when authenticated", async () => {
+      vi.mocked(getSessionCookie).mockReturnValue("sess-1");
+      vi.mocked(validateSession).mockResolvedValue({
+        userId: "user-1",
+        expiresAt: new Date("2027-01-01"),
+      });
+      vi.mocked(getAllProviders).mockReturnValue([]);
+      const { app } = createTestApp();
+      const res = await request(app, "get", "/auth/link/data/nonexistent");
+      expect(res.status).toBe(404);
+    });
+  });
+
+  describe("GET /api/auth/providers (error fallback)", () => {
+    it("returns fallback when provider listing throws", async () => {
+      vi.mocked(getAllProviders).mockImplementation(() => {
+        throw new Error("Registry error");
+      });
+      const { app } = createTestApp();
+      const res = await request(app, "get", "/api/auth/providers");
+      expect(res.status).toBe(200);
+      const data = JSON.parse(res.body);
+      expect(data.identity).toEqual(["google"]);
+      expect(data.data).toEqual([]);
+    });
+  });
+
+  describe("GET /auth/login/:provider (error handling)", () => {
+    it("returns 500 when login flow throws", async () => {
+      vi.mocked(getIdentityProvider).mockImplementation(() => {
+        throw new Error("Provider init failed");
+      });
+      const { app } = createTestApp();
+      const res = await request(app, "get", "/auth/login/google");
+      expect(res.status).toBe(500);
+      expect(res.body).toContain("Auth error");
+      // Restore
+      vi.mocked(getIdentityProvider).mockReturnValue({
+        createAuthorizationUrl: vi.fn(() => new URL("https://accounts.google.com/authorize")),
+        validateCallback: vi.fn(),
+      });
+    });
+  });
+
+  describe("GET /auth/link/:provider (error handling)", () => {
+    it("returns 500 when link flow throws", async () => {
+      vi.mocked(getSessionCookie).mockReturnValue("sess-1");
+      vi.mocked(validateSession).mockResolvedValue({
+        userId: "user-1",
+        expiresAt: new Date("2027-01-01"),
+      });
+      vi.mocked(getIdentityProvider).mockImplementation(() => {
+        throw new Error("Provider init failed");
+      });
+      const { app } = createTestApp();
+      const res = await request(app, "get", "/auth/link/google");
+      expect(res.status).toBe(500);
+      // Restore
+      vi.mocked(getIdentityProvider).mockReturnValue({
+        createAuthorizationUrl: vi.fn(() => new URL("https://accounts.google.com/authorize")),
+        validateCallback: vi.fn(),
+      });
     });
   });
 });
