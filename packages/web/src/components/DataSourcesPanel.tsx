@@ -214,7 +214,7 @@ export function DataSourcesPanel() {
     const importConfig = fileImportConfigs[p.id];
     if (importConfig) {
       unifiedProviders.push({ kind: "import", id: p.id, config: importConfig });
-    } else {
+    } else if (p.enabled) {
       unifiedProviders.push({ kind: "sync", provider: p });
     }
   }
