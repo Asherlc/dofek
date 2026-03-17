@@ -37,5 +37,5 @@
     "break": 55
   },
   "reporters": ["clear-text", "html", "progress"],
-  "concurrency": 4
+  "concurrency": 3
 }
