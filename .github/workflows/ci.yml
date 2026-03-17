@@ -14,8 +14,8 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  check:
-    name: Lint, Typecheck & Knip
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,6 +26,18 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
+
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
       - name: Typecheck all packages
         run: |
           pnpm tsc --noEmit &
@@ -39,6 +51,18 @@ jobs:
           wait $pid2 || fail=1
           wait $pid3 || fail=1
           exit $fail
+
+  knip:
+    name: Knip
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
       - run: pnpm knip
 
   test-unit:
@@ -175,7 +199,7 @@ jobs:
 
   docker:
     name: Docker (${{ matrix.target }})
-    needs: [check, test-unit, test-integration]
+    needs: [lint, typecheck, knip, test-unit, test-integration]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04-arm
     permissions:
