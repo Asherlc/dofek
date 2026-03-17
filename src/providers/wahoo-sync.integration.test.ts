@@ -39,7 +39,7 @@ function fakeWorkout(overrides: Partial<WahooWorkout> = {}): WahooWorkout {
 }
 
 // Load a real FIT fixture for testing
-const FIT_FIXTURE_PATH = resolve(import.meta.dirname, "../../fit/fixtures/test.fit");
+const FIT_FIXTURE_PATH = resolve(import.meta.dirname, "../fit/fixtures/test.fit");
 const fitFileBuffer = readFileSync(FIT_FIXTURE_PATH);
 
 function wahooHandlers(workouts: WahooWorkout[], opts?: { fitFileError?: boolean }) {

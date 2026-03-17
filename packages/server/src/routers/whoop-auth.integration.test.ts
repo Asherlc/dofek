@@ -128,7 +128,7 @@ describe("whoopAuth router", () => {
       } = result?.result?.data;
       expect(data.status).toBe("verification_required");
       expect(data.challengeId).toMatch(/^whoop-/);
-      expect(data.method).toBe("SMS_MFA");
+      expect(data.method).toBe("sms");
     });
   });
 
