@@ -11,7 +11,12 @@ import {
   TouchableWithoutFeedback,
   View,
 } from "react-native";
-import { type MealType, autoMealType, formatDateYmd } from "../lib/meal";
+import {
+  type MealType,
+  autoMealType,
+  formatDateYmd,
+  parseQuickAddForm,
+} from "../lib/meal";
 import { colors } from "../theme";
 import { trpc } from "../lib/trpc";
 
@@ -36,11 +41,10 @@ export function QuickAddFood({ visible, onClose }: QuickAddFoodProps) {
   const [fatGrams, setFatGrams] = useState("");
 
   const utils = trpc.useUtils();
-  const date = formatDateYmd();
 
   const quickAddMutation = trpc.food.quickAdd.useMutation({
-    onSuccess: () => {
-      utils.food.byDate.invalidate({ date });
+    onSuccess: (_, variables) => {
+      utils.food.byDate.invalidate({ date: variables.date });
       resetAndClose();
     },
     onError: (error) => {
@@ -59,21 +63,23 @@ export function QuickAddFood({ visible, onClose }: QuickAddFoodProps) {
   }
 
   function handleSave() {
-    const parsedCalories = Number.parseInt(calories, 10);
-    if (Number.isNaN(parsedCalories) || parsedCalories <= 0) {
-      Alert.alert("Missing field", "Enter a calorie amount.");
+    const date = formatDateYmd();
+    const result = parseQuickAddForm({
+      foodName,
+      calories,
+      proteinGrams,
+      carbsGrams,
+      fatGrams,
+      meal: selectedMeal,
+      date,
+    });
+
+    if ("error" in result) {
+      Alert.alert("Missing field", result.error);
       return;
     }
 
-    quickAddMutation.mutate({
-      date,
-      meal: selectedMeal,
-      foodName: foodName.trim() || "Quick Add",
-      calories: parsedCalories,
-      proteinG: proteinGrams ? Number.parseFloat(proteinGrams) : null,
-      carbsG: carbsGrams ? Number.parseFloat(carbsGrams) : null,
-      fatG: fatGrams ? Number.parseFloat(fatGrams) : null,
-    });
+    quickAddMutation.mutate(result);
   }
 
   return (
@@ -83,14 +89,15 @@ export function QuickAddFood({ visible, onClose }: QuickAddFoodProps) {
       transparent
       onRequestClose={resetAndClose}
     >
-      <TouchableWithoutFeedback onPress={resetAndClose}>
-        <View style={styles.backdrop} />
-      </TouchableWithoutFeedback>
+      <View style={styles.container}>
+        <TouchableWithoutFeedback onPress={resetAndClose}>
+          <View style={StyleSheet.absoluteFillObject} />
+        </TouchableWithoutFeedback>
 
-      <KeyboardAvoidingView
-        style={styles.sheetWrapper}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-      >
+        <KeyboardAvoidingView
+          style={styles.sheetWrapper}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
         <View style={styles.sheet}>
           {/* Drag handle */}
           <View style={styles.handle} />
@@ -183,6 +190,7 @@ export function QuickAddFood({ visible, onClose }: QuickAddFoodProps) {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 }
@@ -217,12 +225,13 @@ function MacroField({
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
+  container: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
   },
   sheetWrapper: {
-    justifyContent: "flex-end",
+    flex: 1,
   },
   sheet: {
     backgroundColor: colors.surface,
