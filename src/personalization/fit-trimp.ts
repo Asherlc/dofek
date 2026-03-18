@@ -1,4 +1,4 @@
-export interface TrimpInput {
+export interface TrainingImpulseInput {
   durationMin: number;
   avgHr: number;
   maxHr: number;
@@ -7,7 +7,7 @@ export interface TrimpInput {
   powerTss: number;
 }
 
-export interface TrimpFitResult {
+export interface TrainingImpulseFitResult {
   genderFactor: number;
   exponent: number;
   sampleCount: number;
@@ -27,7 +27,9 @@ const EXPONENT_CANDIDATES = [1.5, 1.6, 1.7, 1.8, 1.92, 2.0, 2.1, 2.2, 2.5];
  * Grid searches over physiologically reasonable values.
  * Returns null if insufficient data or no candidate passes quality gate.
  */
-export function fitTrimpConstants(data: TrimpInput[]): TrimpFitResult | null {
+export function fitTrainingImpulseConstants(
+  data: TrainingImpulseInput[],
+): TrainingImpulseFitResult | null {
   if (data.length < MIN_ACTIVITIES) return null;
 
   let bestR2 = -Infinity;
@@ -59,7 +61,11 @@ export function fitTrimpConstants(data: TrimpInput[]): TrimpFitResult | null {
  * Compute R² between TRIMP (computed with given constants) and power TSS.
  * Uses a linear model: powerTss = a * trimp + b
  */
-function computeTrimpR2(data: TrimpInput[], genderFactor: number, exponent: number): number {
+function computeTrimpR2(
+  data: TrainingImpulseInput[],
+  genderFactor: number,
+  exponent: number,
+): number {
   const trimps: number[] = [];
   const targets: number[] = [];
 

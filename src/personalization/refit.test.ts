@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  parseEwmaRows,
+  parseExponentialMovingAverageRows,
   parseReadinessRows,
   parseSleepRows,
   parseStressRows,
-  parseTrimpRows,
+  parseTrainingImpulseRows,
   refitAllParams,
 } from "./refit.ts";
 
@@ -27,11 +27,11 @@ describe("refitAllParams", () => {
 
     expect(result).not.toBeNull();
     expect(result.version).toBe(1);
-    expect(result.ewma).toBeNull();
+    expect(result.exponentialMovingAverage).toBeNull();
     expect(result.readinessWeights).toBeNull();
     expect(result.sleepTarget).toBeNull();
     expect(result.stressThresholds).toBeNull();
-    expect(result.trimpConstants).toBeNull();
+    expect(result.trainingImpulseConstants).toBeNull();
     expect(result.fittedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
@@ -101,11 +101,11 @@ describe("refitAllParams", () => {
     // Promise.allSettled catches all rejections
     const result = await refitAllParams(db, "user-1");
     expect(result.version).toBe(1);
-    expect(result.ewma).toBeNull();
+    expect(result.exponentialMovingAverage).toBeNull();
     expect(result.readinessWeights).toBeNull();
     expect(result.sleepTarget).toBeNull();
     expect(result.stressThresholds).toBeNull();
-    expect(result.trimpConstants).toBeNull();
+    expect(result.trainingImpulseConstants).toBeNull();
   });
 
   it("sets rejected fitters to null", async () => {
@@ -121,11 +121,11 @@ describe("refitAllParams", () => {
 
     const result = await refitAllParams(db, "user-1");
     // All should be null (either rejected or insufficient data)
-    expect(result.ewma).toBeNull();
+    expect(result.exponentialMovingAverage).toBeNull();
     expect(result.readinessWeights).toBeNull();
     expect(result.sleepTarget).toBeNull();
     expect(result.stressThresholds).toBeNull();
-    expect(result.trimpConstants).toBeNull();
+    expect(result.trainingImpulseConstants).toBeNull();
   });
 
   it("version is always 1", async () => {
@@ -135,19 +135,19 @@ describe("refitAllParams", () => {
   });
 });
 
-// --- parseEwmaRows ---
+// --- parseExponentialMovingAverageRows ---
 
-describe("parseEwmaRows", () => {
+describe("parseExponentialMovingAverageRows", () => {
   it("returns empty array for empty input", () => {
-    expect(parseEwmaRows([])).toEqual([]);
+    expect(parseExponentialMovingAverageRows([])).toEqual([]);
   });
 
-  it("parses valid rows into EwmaInput", () => {
+  it("parses valid rows into ExponentialMovingAverageInput", () => {
     const rows = [
       { date: "2026-01-01", daily_load: 50, avg_performance: 150 },
       { date: "2026-01-02", daily_load: 60, avg_performance: 160 },
     ];
-    const result = parseEwmaRows(rows);
+    const result = parseExponentialMovingAverageRows(rows);
     expect(result).toEqual([
       { date: "2026-01-01", load: 50, performance: 150 },
       { date: "2026-01-02", load: 60, performance: 160 },
@@ -159,14 +159,14 @@ describe("parseEwmaRows", () => {
       { date: "2026-01-01", daily_load: 50, avg_performance: 0 },
       { date: "2026-01-02", daily_load: 60, avg_performance: 160 },
     ];
-    const result = parseEwmaRows(rows);
+    const result = parseExponentialMovingAverageRows(rows);
     expect(result).toHaveLength(1);
     expect(result[0]?.date).toBe("2026-01-02");
   });
 
   it("includes rows with avg_performance of non-zero value (even small)", () => {
     const rows = [{ date: "2026-01-01", daily_load: 50, avg_performance: 0.001 }];
-    const result = parseEwmaRows(rows);
+    const result = parseExponentialMovingAverageRows(rows);
     expect(result).toHaveLength(1);
   });
 
@@ -176,14 +176,14 @@ describe("parseEwmaRows", () => {
       { daily_load: 60, avg_performance: 160 }, // missing date
       { date: "2026-01-03", daily_load: 70, avg_performance: 170 }, // valid
     ];
-    const result = parseEwmaRows(rows);
+    const result = parseExponentialMovingAverageRows(rows);
     expect(result).toHaveLength(1);
     expect(result[0]?.date).toBe("2026-01-03");
   });
 
   it("coerces string numbers to numbers", () => {
     const rows = [{ date: "2026-01-01", daily_load: "50.5", avg_performance: "160.3" }];
-    const result = parseEwmaRows(rows);
+    const result = parseExponentialMovingAverageRows(rows);
     expect(result).toHaveLength(1);
     expect(result[0]?.load).toBe(50.5);
     expect(result[0]?.performance).toBe(160.3);
@@ -191,13 +191,13 @@ describe("parseEwmaRows", () => {
 
   it("maps daily_load to load and avg_performance to performance", () => {
     const rows = [{ date: "2026-01-01", daily_load: 42, avg_performance: 200 }];
-    const result = parseEwmaRows(rows);
+    const result = parseExponentialMovingAverageRows(rows);
     expect(result[0]).toEqual({ date: "2026-01-01", load: 42, performance: 200 });
   });
 
   it("includes rows with daily_load of 0", () => {
     const rows = [{ date: "2026-01-01", daily_load: 0, avg_performance: 100 }];
-    const result = parseEwmaRows(rows);
+    const result = parseExponentialMovingAverageRows(rows);
     expect(result).toHaveLength(1);
     expect(result[0]?.load).toBe(0);
   });
@@ -205,7 +205,7 @@ describe("parseEwmaRows", () => {
   it("includes rows with negative avg_performance", () => {
     // Negative performance is not 0, so it passes the filter
     const rows = [{ date: "2026-01-01", daily_load: 10, avg_performance: -5 }];
-    const result = parseEwmaRows(rows);
+    const result = parseExponentialMovingAverageRows(rows);
     expect(result).toHaveLength(1);
   });
 });
@@ -487,9 +487,9 @@ describe("parseStressRows", () => {
   });
 });
 
-// --- parseTrimpRows ---
+// --- parseTrainingImpulseRows ---
 
-describe("parseTrimpRows", () => {
+describe("parseTrainingImpulseRows", () => {
   function validTrimpRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
     return {
       duration_min: 60,
@@ -502,50 +502,56 @@ describe("parseTrimpRows", () => {
   }
 
   it("returns empty array for empty input", () => {
-    expect(parseTrimpRows([])).toEqual([]);
+    expect(parseTrainingImpulseRows([])).toEqual([]);
   });
 
   it("parses valid rows", () => {
-    const result = parseTrimpRows([validTrimpRow()]);
+    const result = parseTrainingImpulseRows([validTrimpRow()]);
     expect(result).toEqual([
       { durationMin: 60, avgHr: 155, maxHr: 190, restingHr: 55, powerTss: 80 },
     ]);
   });
 
   it("filters rows where duration_min is 0", () => {
-    expect(parseTrimpRows([validTrimpRow({ duration_min: 0 })])).toHaveLength(0);
+    expect(parseTrainingImpulseRows([validTrimpRow({ duration_min: 0 })])).toHaveLength(0);
   });
 
   it("filters rows where duration_min is negative", () => {
-    expect(parseTrimpRows([validTrimpRow({ duration_min: -10 })])).toHaveLength(0);
+    expect(parseTrainingImpulseRows([validTrimpRow({ duration_min: -10 })])).toHaveLength(0);
   });
 
   it("includes rows where duration_min is positive", () => {
-    expect(parseTrimpRows([validTrimpRow({ duration_min: 0.1 })])).toHaveLength(1);
+    expect(parseTrainingImpulseRows([validTrimpRow({ duration_min: 0.1 })])).toHaveLength(1);
   });
 
   it("filters rows where max_hr equals resting_hr", () => {
-    expect(parseTrimpRows([validTrimpRow({ max_hr: 60, resting_hr: 60 })])).toHaveLength(0);
+    expect(parseTrainingImpulseRows([validTrimpRow({ max_hr: 60, resting_hr: 60 })])).toHaveLength(
+      0,
+    );
   });
 
   it("filters rows where max_hr is less than resting_hr", () => {
-    expect(parseTrimpRows([validTrimpRow({ max_hr: 50, resting_hr: 60 })])).toHaveLength(0);
+    expect(parseTrainingImpulseRows([validTrimpRow({ max_hr: 50, resting_hr: 60 })])).toHaveLength(
+      0,
+    );
   });
 
   it("includes rows where max_hr is greater than resting_hr", () => {
-    expect(parseTrimpRows([validTrimpRow({ max_hr: 61, resting_hr: 60 })])).toHaveLength(1);
+    expect(parseTrainingImpulseRows([validTrimpRow({ max_hr: 61, resting_hr: 60 })])).toHaveLength(
+      1,
+    );
   });
 
   it("filters rows where power_tss is 0", () => {
-    expect(parseTrimpRows([validTrimpRow({ power_tss: 0 })])).toHaveLength(0);
+    expect(parseTrainingImpulseRows([validTrimpRow({ power_tss: 0 })])).toHaveLength(0);
   });
 
   it("filters rows where power_tss is negative", () => {
-    expect(parseTrimpRows([validTrimpRow({ power_tss: -5 })])).toHaveLength(0);
+    expect(parseTrainingImpulseRows([validTrimpRow({ power_tss: -5 })])).toHaveLength(0);
   });
 
   it("includes rows where power_tss is positive", () => {
-    expect(parseTrimpRows([validTrimpRow({ power_tss: 0.1 })])).toHaveLength(1);
+    expect(parseTrainingImpulseRows([validTrimpRow({ power_tss: 0.1 })])).toHaveLength(1);
   });
 
   it("coerces string numbers to numbers", () => {
@@ -556,7 +562,7 @@ describe("parseTrimpRows", () => {
       resting_hr: "55",
       power_tss: "80",
     });
-    const result = parseTrimpRows([row]);
+    const result = parseTrainingImpulseRows([row]);
     expect(result).toHaveLength(1);
     expect(result[0]?.durationMin).toBe(60);
   });
@@ -566,12 +572,12 @@ describe("parseTrimpRows", () => {
       { duration_min: 60, avg_hr: 155 }, // missing max_hr, resting_hr, power_tss
       validTrimpRow(), // valid
     ];
-    const result = parseTrimpRows(rows);
+    const result = parseTrainingImpulseRows(rows);
     expect(result).toHaveLength(1);
   });
 
   it("maps snake_case fields to camelCase", () => {
-    const result = parseTrimpRows([validTrimpRow()]);
+    const result = parseTrainingImpulseRows([validTrimpRow()]);
     expect(result[0]).toEqual({
       durationMin: 60,
       avgHr: 155,

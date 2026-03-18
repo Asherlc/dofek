@@ -1,8 +1,8 @@
 import { z } from "zod";
 
-const ewmaParamsSchema = z.object({
-  ctlDays: z.number().int().min(21).max(63),
-  atlDays: z.number().int().min(5).max(14),
+const exponentialMovingAverageParamsSchema = z.object({
+  chronicTrainingLoadDays: z.number().int().min(21).max(63),
+  acuteTrainingLoadDays: z.number().int().min(5).max(14),
   sampleCount: z.number().int().nonnegative(),
   correlation: z.number(),
 });
@@ -48,7 +48,7 @@ const stressThresholdsSchema = z
     { message: "RHR thresholds must be in descending order (most positive first)" },
   );
 
-const trimpConstantsSchema = z.object({
+const trainingImpulseConstantsSchema = z.object({
   genderFactor: z.number().min(0.3).max(1.0),
   exponent: z.number().min(1.0).max(3.0),
   sampleCount: z.number().int().nonnegative(),
@@ -58,35 +58,35 @@ const trimpConstantsSchema = z.object({
 export const personalizedParamsSchema = z.object({
   version: z.number().int().min(1),
   fittedAt: z.string(),
-  ewma: ewmaParamsSchema.nullable(),
+  exponentialMovingAverage: exponentialMovingAverageParamsSchema.nullable(),
   readinessWeights: readinessWeightsSchema.nullable(),
   sleepTarget: sleepTargetSchema.nullable(),
   stressThresholds: stressThresholdsSchema.nullable(),
-  trimpConstants: trimpConstantsSchema.nullable(),
+  trainingImpulseConstants: trainingImpulseConstantsSchema.nullable(),
 });
 
 export type PersonalizedParams = z.infer<typeof personalizedParamsSchema>;
 
 export interface EffectiveParams {
-  ewma: { ctlDays: number; atlDays: number };
+  exponentialMovingAverage: { chronicTrainingLoadDays: number; acuteTrainingLoadDays: number };
   readinessWeights: { hrv: number; restingHr: number; sleep: number; loadBalance: number };
   sleepTarget: { minutes: number };
   stressThresholds: {
     hrvThresholds: [number, number, number];
     rhrThresholds: [number, number, number];
   };
-  trimpConstants: { genderFactor: number; exponent: number };
+  trainingImpulseConstants: { genderFactor: number; exponent: number };
 }
 
 export const DEFAULT_PARAMS: EffectiveParams = {
-  ewma: { ctlDays: 42, atlDays: 7 },
+  exponentialMovingAverage: { chronicTrainingLoadDays: 42, acuteTrainingLoadDays: 7 },
   readinessWeights: { hrv: 0.4, restingHr: 0.2, sleep: 0.2, loadBalance: 0.2 },
   sleepTarget: { minutes: 480 },
   stressThresholds: {
     hrvThresholds: [-1.5, -1.0, -0.5],
     rhrThresholds: [1.5, 1.0, 0.5],
   },
-  trimpConstants: { genderFactor: 0.64, exponent: 1.92 },
+  trainingImpulseConstants: { genderFactor: 0.64, exponent: 1.92 },
 };
 
 /**
@@ -98,9 +98,12 @@ export function getEffectiveParams(stored: PersonalizedParams | null): Effective
   if (stored == null) return DEFAULT_PARAMS;
 
   return {
-    ewma: stored.ewma
-      ? { ctlDays: stored.ewma.ctlDays, atlDays: stored.ewma.atlDays }
-      : DEFAULT_PARAMS.ewma,
+    exponentialMovingAverage: stored.exponentialMovingAverage
+      ? {
+          chronicTrainingLoadDays: stored.exponentialMovingAverage.chronicTrainingLoadDays,
+          acuteTrainingLoadDays: stored.exponentialMovingAverage.acuteTrainingLoadDays,
+        }
+      : DEFAULT_PARAMS.exponentialMovingAverage,
     readinessWeights: stored.readinessWeights
       ? {
           hrv: stored.readinessWeights.hrv,
@@ -118,11 +121,11 @@ export function getEffectiveParams(stored: PersonalizedParams | null): Effective
           rhrThresholds: stored.stressThresholds.rhrThresholds,
         }
       : DEFAULT_PARAMS.stressThresholds,
-    trimpConstants: stored.trimpConstants
+    trainingImpulseConstants: stored.trainingImpulseConstants
       ? {
-          genderFactor: stored.trimpConstants.genderFactor,
-          exponent: stored.trimpConstants.exponent,
+          genderFactor: stored.trainingImpulseConstants.genderFactor,
+          exponent: stored.trainingImpulseConstants.exponent,
         }
-      : DEFAULT_PARAMS.trimpConstants,
+      : DEFAULT_PARAMS.trainingImpulseConstants,
   };
 }

@@ -1,15 +1,15 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import type { EwmaInput } from "./fit-ewma.ts";
-import { fitEwma } from "./fit-ewma.ts";
+import type { ExponentialMovingAverageInput } from "./fit-ewma.ts";
+import { fitExponentialMovingAverage } from "./fit-ewma.ts";
 import type { ReadinessWeightsInput } from "./fit-readiness-weights.ts";
 import { fitReadinessWeights } from "./fit-readiness-weights.ts";
 import type { SleepTargetInput } from "./fit-sleep-target.ts";
 import { fitSleepTarget } from "./fit-sleep-target.ts";
 import type { StressThresholdsInput } from "./fit-stress-thresholds.ts";
 import { fitStressThresholds } from "./fit-stress-thresholds.ts";
-import type { TrimpInput } from "./fit-trimp.ts";
-import { fitTrimpConstants } from "./fit-trimp.ts";
+import type { TrainingImpulseInput } from "./fit-trimp.ts";
+import { fitTrainingImpulseConstants } from "./fit-trimp.ts";
 import type { PersonalizedParams } from "./params.ts";
 import { savePersonalizedParams } from "./storage.ts";
 
@@ -35,11 +35,11 @@ export async function refitAllParams(db: Database, userId: string): Promise<Pers
   const params: PersonalizedParams = {
     version: 1,
     fittedAt: new Date().toISOString(),
-    ewma: ewmaResult.status === "fulfilled" ? ewmaResult.value : null,
+    exponentialMovingAverage: ewmaResult.status === "fulfilled" ? ewmaResult.value : null,
     readinessWeights: readinessResult.status === "fulfilled" ? readinessResult.value : null,
     sleepTarget: sleepResult.status === "fulfilled" ? sleepResult.value : null,
     stressThresholds: stressResult.status === "fulfilled" ? stressResult.value : null,
-    trimpConstants: trimpResult.status === "fulfilled" ? trimpResult.value : null,
+    trainingImpulseConstants: trimpResult.status === "fulfilled" ? trimpResult.value : null,
   };
 
   try {
@@ -53,17 +53,19 @@ export async function refitAllParams(db: Database, userId: string): Promise<Pers
 
 // --- Exported Zod schemas and row-parsing functions for testability ---
 
-export const ewmaRowSchema = z.object({
+export const exponentialMovingAverageRowSchema = z.object({
   date: z.string(),
   daily_load: z.coerce.number(),
   avg_performance: z.coerce.number(),
 });
 
 /** Parse raw EWMA query rows into fitter input, filtering invalid/zero-performance rows. */
-export function parseEwmaRows(rows: Record<string, unknown>[]): EwmaInput[] {
-  const data: EwmaInput[] = [];
+export function parseExponentialMovingAverageRows(
+  rows: Record<string, unknown>[],
+): ExponentialMovingAverageInput[] {
+  const data: ExponentialMovingAverageInput[] = [];
   for (const row of rows) {
-    const parsed = ewmaRowSchema.safeParse(row);
+    const parsed = exponentialMovingAverageRowSchema.safeParse(row);
     if (!parsed.success) continue;
     if (parsed.data.avg_performance === 0) continue;
     data.push({
@@ -120,7 +122,7 @@ async function fitEwmaFromDb(db: Database, userId: string) {
         ORDER BY ds.date ASC`,
   );
 
-  return fitEwma(parseEwmaRows(rows));
+  return fitExponentialMovingAverage(parseExponentialMovingAverageRows(rows));
 }
 
 export const readinessRowSchema = z.object({
@@ -343,7 +345,7 @@ async function fitStressFromDb(db: Database, userId: string) {
   return fitStressThresholds(parseStressRows(rows));
 }
 
-export const trimpActivityRowSchema = z.object({
+export const trainingImpulseActivityRowSchema = z.object({
   duration_min: z.coerce.number(),
   avg_hr: z.coerce.number(),
   max_hr: z.coerce.number(),
@@ -352,10 +354,10 @@ export const trimpActivityRowSchema = z.object({
 });
 
 /** Parse raw TRIMP query rows into fitter input, filtering invalid rows. */
-export function parseTrimpRows(rows: Record<string, unknown>[]): TrimpInput[] {
-  const data: TrimpInput[] = [];
+export function parseTrainingImpulseRows(rows: Record<string, unknown>[]): TrainingImpulseInput[] {
+  const data: TrainingImpulseInput[] = [];
   for (const row of rows) {
-    const parsed = trimpActivityRowSchema.safeParse(row);
+    const parsed = trainingImpulseActivityRowSchema.safeParse(row);
     if (!parsed.success) continue;
     const p = parsed.data;
     if (p.duration_min <= 0 || p.max_hr <= p.resting_hr || p.power_tss <= 0) continue;
@@ -412,5 +414,5 @@ async function fitTrimpFromDb(db: Database, userId: string) {
           AND asum.avg_hr > 0`,
   );
 
-  return fitTrimpConstants(parseTrimpRows(rows));
+  return fitTrainingImpulseConstants(parseTrainingImpulseRows(rows));
 }

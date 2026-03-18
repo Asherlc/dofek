@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fitTrimpConstants, type TrimpInput } from "./fit-trimp.ts";
+import { fitTrainingImpulseConstants, type TrainingImpulseInput } from "./fit-trimp.ts";
 
 function mulberry32(seed: number): () => number {
   let s = seed;
@@ -21,9 +21,9 @@ function generateTrimpData(
   trueGenderFactor: number,
   trueExponent: number,
   seed: number = 42,
-): TrimpInput[] {
+): TrainingImpulseInput[] {
   const rng = mulberry32(seed);
-  const data: TrimpInput[] = [];
+  const data: TrainingImpulseInput[] = [];
 
   const maxHr = 190;
   const restingHr = 55;
@@ -51,20 +51,20 @@ function generateTrimpData(
   return data;
 }
 
-describe("fitTrimpConstants", () => {
+describe("fitTrainingImpulseConstants", () => {
   it("returns null with insufficient data (< 20 activities)", () => {
     const data = generateTrimpData(10, 0.64, 1.92);
-    expect(fitTrimpConstants(data)).toBeNull();
+    expect(fitTrainingImpulseConstants(data)).toBeNull();
   });
 
   it("returns null with exactly 19 activities (boundary below MIN_ACTIVITIES)", () => {
     const data = generateTrimpData(19, 0.64, 1.92);
-    expect(fitTrimpConstants(data)).toBeNull();
+    expect(fitTrainingImpulseConstants(data)).toBeNull();
   });
 
   it("processes exactly 20 activities (boundary at MIN_ACTIVITIES)", () => {
     const data = generateTrimpData(20, 0.64, 1.92, 555);
-    const result = fitTrimpConstants(data);
+    const result = fitTrainingImpulseConstants(data);
     // Should not short-circuit on length check
     if (result) {
       expect(result.sampleCount).toBe(20);
@@ -72,12 +72,12 @@ describe("fitTrimpConstants", () => {
   });
 
   it("returns null with empty data", () => {
-    expect(fitTrimpConstants([])).toBeNull();
+    expect(fitTrainingImpulseConstants([])).toBeNull();
   });
 
   it("finds constants near the true generating parameters", () => {
     const data = generateTrimpData(50, 0.7, 1.8, 123);
-    const result = fitTrimpConstants(data);
+    const result = fitTrainingImpulseConstants(data);
 
     expect(result).not.toBeNull();
     if (!result) return;
@@ -93,7 +93,7 @@ describe("fitTrimpConstants", () => {
 
   it("returns null when power TSS has no correlation with HR load", () => {
     const rng = mulberry32(789);
-    const data: TrimpInput[] = [];
+    const data: TrainingImpulseInput[] = [];
     for (let i = 0; i < 30; i++) {
       data.push({
         durationMin: 30 + rng() * 90,
@@ -104,13 +104,13 @@ describe("fitTrimpConstants", () => {
       });
     }
 
-    const result = fitTrimpConstants(data);
+    const result = fitTrainingImpulseConstants(data);
     expect(result).toBeNull();
   });
 
   it("produces reasonable R² values for well-correlated data", () => {
     const data = generateTrimpData(40, 0.64, 1.92, 456);
-    const result = fitTrimpConstants(data);
+    const result = fitTrainingImpulseConstants(data);
 
     expect(result).not.toBeNull();
     if (!result) return;
@@ -121,7 +121,7 @@ describe("fitTrimpConstants", () => {
 
   it("output has correct shape", () => {
     const data = generateTrimpData(30, 0.64, 1.92);
-    const result = fitTrimpConstants(data);
+    const result = fitTrainingImpulseConstants(data);
     if (!result) return;
 
     expect(typeof result.genderFactor).toBe("number");
@@ -132,7 +132,7 @@ describe("fitTrimpConstants", () => {
 
   it("R² is rounded to 3 decimal places", () => {
     const data = generateTrimpData(50, 0.64, 1.92, 456);
-    const result = fitTrimpConstants(data);
+    const result = fitTrainingImpulseConstants(data);
 
     expect(result).not.toBeNull();
     if (!result) return;
@@ -143,7 +143,7 @@ describe("fitTrimpConstants", () => {
 
   it("skips activities where maxHr <= restingHr", () => {
     const rng = mulberry32(111);
-    const data: TrimpInput[] = [];
+    const data: TrainingImpulseInput[] = [];
 
     // Add 25 valid activities
     for (let i = 0; i < 25; i++) {
@@ -171,16 +171,16 @@ describe("fitTrimpConstants", () => {
       });
     }
 
-    const result = fitTrimpConstants(data);
+    const result = fitTrainingImpulseConstants(data);
     // Should still produce a result if valid activities meet threshold
     if (result) {
-      expect(result.sampleCount).toBe(35); // all 35 passed to fitTrimpConstants
+      expect(result.sampleCount).toBe(35); // all 35 passed to fitTrainingImpulseConstants
     }
   });
 
   it("skips activities where durationMin <= 0", () => {
     const rng = mulberry32(222);
-    const data: TrimpInput[] = [];
+    const data: TrainingImpulseInput[] = [];
 
     // Add valid activities
     for (let i = 0; i < 25; i++) {
@@ -202,7 +202,7 @@ describe("fitTrimpConstants", () => {
       data.push({ durationMin: 0, avgHr: 140, maxHr: 190, restingHr: 55, powerTss: 100 });
     }
 
-    const result = fitTrimpConstants(data);
+    const result = fitTrainingImpulseConstants(data);
     // The function should still work with the valid activities
     if (result) {
       expect(result.r2).toBeGreaterThan(0.3);
@@ -211,7 +211,7 @@ describe("fitTrimpConstants", () => {
 
   it("skips activities where deltaHrRatio <= 0 (avgHr <= restingHr)", () => {
     const rng = mulberry32(333);
-    const data: TrimpInput[] = [];
+    const data: TrainingImpulseInput[] = [];
 
     // Add valid activities
     for (let i = 0; i < 25; i++) {
@@ -233,7 +233,7 @@ describe("fitTrimpConstants", () => {
       data.push({ durationMin: 60, avgHr: 40, maxHr: 190, restingHr: 55, powerTss: 100 });
     }
 
-    const result = fitTrimpConstants(data);
+    const result = fitTrainingImpulseConstants(data);
     if (result) {
       expect(result.r2).toBeGreaterThan(0.3);
     }
@@ -242,7 +242,7 @@ describe("fitTrimpConstants", () => {
   it("requires positive slope (more HR effort → more load)", () => {
     // Generate inversely correlated data: more TRIMP → less power TSS
     const rng = mulberry32(444);
-    const data: TrimpInput[] = [];
+    const data: TrainingImpulseInput[] = [];
     for (let i = 0; i < 30; i++) {
       const durationMin = 30 + rng() * 90;
       const avgHr = 120 + rng() * 50;
@@ -258,7 +258,7 @@ describe("fitTrimpConstants", () => {
       });
     }
 
-    const result = fitTrimpConstants(data);
+    const result = fitTrainingImpulseConstants(data);
     // With an inverse relationship, all grid candidates should produce negative slope
     // and be rejected. The result depends on whether any candidate has positive slope.
     // The key assertion is it doesn't crash.
@@ -268,7 +268,7 @@ describe("fitTrimpConstants", () => {
   });
 
   it("handles all constant HR data (zero denomX)", () => {
-    const data: TrimpInput[] = [];
+    const data: TrainingImpulseInput[] = [];
     for (let i = 0; i < 25; i++) {
       data.push({
         durationMin: 60,
@@ -280,13 +280,13 @@ describe("fitTrimpConstants", () => {
     }
 
     // With constant TRIMP values, the regression denominator (denomX) will be 0
-    const result = fitTrimpConstants(data);
+    const result = fitTrainingImpulseConstants(data);
     expect(result).toBeNull();
   });
 
   it("handles all constant power TSS (zero ssTot)", () => {
     const rng = mulberry32(555);
-    const data: TrimpInput[] = [];
+    const data: TrainingImpulseInput[] = [];
     for (let i = 0; i < 25; i++) {
       data.push({
         durationMin: 30 + rng() * 90,
@@ -297,14 +297,14 @@ describe("fitTrimpConstants", () => {
       });
     }
 
-    const result = fitTrimpConstants(data);
+    const result = fitTrainingImpulseConstants(data);
     // ssTot will be 0 since all targets are equal → returns -Infinity for R²
     expect(result).toBeNull();
   });
 
   it("R² must be >= MIN_R2 (0.3) to produce a result", () => {
     const data = generateTrimpData(50, 0.64, 1.92, 789);
-    const result = fitTrimpConstants(data);
+    const result = fitTrainingImpulseConstants(data);
 
     expect(result).not.toBeNull();
     if (!result) return;
@@ -314,7 +314,7 @@ describe("fitTrimpConstants", () => {
 
   it("sampleCount matches input length", () => {
     const data = generateTrimpData(50, 0.64, 1.92, 321);
-    const result = fitTrimpConstants(data);
+    const result = fitTrainingImpulseConstants(data);
 
     expect(result).not.toBeNull();
     if (!result) return;
@@ -325,7 +325,7 @@ describe("fitTrimpConstants", () => {
   it("bestR2 starts at -Infinity so any valid R2 can win", () => {
     // Generate data where only some grid points produce valid R²
     const data = generateTrimpData(30, 0.55, 1.6, 888);
-    const result = fitTrimpConstants(data);
+    const result = fitTrainingImpulseConstants(data);
 
     if (result) {
       // The fact that a result was produced means at least one grid candidate

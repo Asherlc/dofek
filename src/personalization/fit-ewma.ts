@@ -1,19 +1,19 @@
-export interface EwmaInput {
+export interface ExponentialMovingAverageInput {
   date: string;
   load: number;
   performance: number;
 }
 
-export interface EwmaFitResult {
-  ctlDays: number;
-  atlDays: number;
+export interface ExponentialMovingAverageFitResult {
+  chronicTrainingLoadDays: number;
+  acuteTrainingLoadDays: number;
   sampleCount: number;
   /** Absolute Pearson correlation between TSB and next-7-day performance */
   correlation: number;
 }
 
-const CTL_CANDIDATES = [21, 28, 35, 42, 49, 56, 63];
-const ATL_CANDIDATES = [5, 7, 9, 11, 14];
+const CHRONIC_LOAD_CANDIDATES = [21, 28, 35, 42, 49, 56, 63];
+const ACUTE_LOAD_CANDIDATES = [5, 7, 9, 11, 14];
 const MIN_DAYS = 90;
 const MIN_CORRELATION = 0.2;
 
@@ -24,23 +24,29 @@ const MIN_CORRELATION = 0.2;
  * Grid searches over physiologically reasonable CTL/ATL pairs.
  * Returns null if insufficient data or no candidate passes quality gate.
  */
-export function fitEwma(data: EwmaInput[]): EwmaFitResult | null {
+export function fitExponentialMovingAverage(
+  data: ExponentialMovingAverageInput[],
+): ExponentialMovingAverageFitResult | null {
   if (data.length < MIN_DAYS) return null;
 
   let bestCorrelation = 0;
   let bestCtl = 42;
   let bestAtl = 7;
 
-  for (const ctlDays of CTL_CANDIDATES) {
-    for (const atlDays of ATL_CANDIDATES) {
+  for (const chronicTrainingLoadDays of CHRONIC_LOAD_CANDIDATES) {
+    for (const acuteTrainingLoadDays of ACUTE_LOAD_CANDIDATES) {
       // CTL window must be longer than ATL
-      if (ctlDays <= atlDays) continue;
+      if (chronicTrainingLoadDays <= acuteTrainingLoadDays) continue;
 
-      const correlation = computeTsbPerformanceCorrelation(data, ctlDays, atlDays);
+      const correlation = computeTsbPerformanceCorrelation(
+        data,
+        chronicTrainingLoadDays,
+        acuteTrainingLoadDays,
+      );
       if (Math.abs(correlation) > Math.abs(bestCorrelation)) {
         bestCorrelation = correlation;
-        bestCtl = ctlDays;
-        bestAtl = atlDays;
+        bestCtl = chronicTrainingLoadDays;
+        bestAtl = acuteTrainingLoadDays;
       }
     }
   }
@@ -48,8 +54,8 @@ export function fitEwma(data: EwmaInput[]): EwmaFitResult | null {
   if (Math.abs(bestCorrelation) < MIN_CORRELATION) return null;
 
   return {
-    ctlDays: bestCtl,
-    atlDays: bestAtl,
+    chronicTrainingLoadDays: bestCtl,
+    acuteTrainingLoadDays: bestAtl,
     sampleCount: data.length,
     correlation: Math.round(bestCorrelation * 1000) / 1000,
   };
@@ -60,9 +66,9 @@ export function fitEwma(data: EwmaInput[]): EwmaFitResult | null {
  * and the average performance over the next 7 days.
  */
 function computeTsbPerformanceCorrelation(
-  data: EwmaInput[],
-  ctlDays: number,
-  atlDays: number,
+  data: ExponentialMovingAverageInput[],
+  chronicTrainingLoadDays: number,
+  acuteTrainingLoadDays: number,
 ): number {
   // Compute TSB for each day
   let ctl = 0;
@@ -70,8 +76,8 @@ function computeTsbPerformanceCorrelation(
   const tsbValues: number[] = [];
 
   for (const point of data) {
-    ctl = ctl + (point.load - ctl) / ctlDays;
-    atl = atl + (point.load - atl) / atlDays;
+    ctl = ctl + (point.load - ctl) / chronicTrainingLoadDays;
+    atl = atl + (point.load - atl) / acuteTrainingLoadDays;
     tsbValues.push(ctl - atl);
   }
 

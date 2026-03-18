@@ -10,7 +10,7 @@ import { colors } from "../theme";
 import { trpc } from "../lib/trpc";
 
 const PARAM_LABELS: Record<string, { label: string; description: string }> = {
-  ewma: {
+  exponentialMovingAverage: {
     label: "Training Load Windows",
     description: "Days of training history used for fitness and fatigue",
   },
@@ -24,9 +24,9 @@ const PARAM_LABELS: Record<string, { label: string; description: string }> = {
   },
   stressThresholds: {
     label: "Stress Sensitivity",
-    description: "How HRV and resting HR map to stress levels",
+    description: "How heart rate variability and resting heart rate map to stress levels",
   },
-  trimpConstants: {
+  trainingImpulseConstants: {
     label: "Heart Rate Effort Model",
     description: "How heart rate intensity translates to load",
   },
@@ -102,13 +102,13 @@ export function PersonalizationPanel() {
 
       {/* Parameter cards */}
       <ParamCard
-        paramKey="ewma"
-        personalized={data.parameters.ewma}
-        value={`Fitness: ${data.effective.ewma.ctlDays}d, Fatigue: ${data.effective.ewma.atlDays}d`}
-        defaultValue={`Fitness: ${data.defaults.ewma.ctlDays}d, Fatigue: ${data.defaults.ewma.atlDays}d`}
+        paramKey="exponentialMovingAverage"
+        personalized={data.parameters.exponentialMovingAverage}
+        value={`Fitness: ${data.effective.exponentialMovingAverage.chronicTrainingLoadDays}d, Fatigue: ${data.effective.exponentialMovingAverage.acuteTrainingLoadDays}d`}
+        defaultValue={`Fitness: ${data.defaults.exponentialMovingAverage.chronicTrainingLoadDays}d, Fatigue: ${data.defaults.exponentialMovingAverage.acuteTrainingLoadDays}d`}
         quality={
-          data.parameters.ewma
-            ? `${data.parameters.ewma.sampleCount} days, r=${data.parameters.ewma.correlation}`
+          data.parameters.exponentialMovingAverage
+            ? `${data.parameters.exponentialMovingAverage.sampleCount} days, r=${data.parameters.exponentialMovingAverage.correlation}`
             : undefined
         }
       />
@@ -116,8 +116,8 @@ export function PersonalizationPanel() {
       <ParamCard
         paramKey="readinessWeights"
         personalized={data.parameters.readinessWeights}
-        value={`HRV ${Math.round(data.effective.readinessWeights.hrv * 100)}%, RHR ${Math.round(data.effective.readinessWeights.restingHr * 100)}%, Sleep ${Math.round(data.effective.readinessWeights.sleep * 100)}%, Load ${Math.round(data.effective.readinessWeights.loadBalance * 100)}%`}
-        defaultValue={`HRV ${Math.round(data.defaults.readinessWeights.hrv * 100)}%, RHR ${Math.round(data.defaults.readinessWeights.restingHr * 100)}%, Sleep ${Math.round(data.defaults.readinessWeights.sleep * 100)}%, Load ${Math.round(data.defaults.readinessWeights.loadBalance * 100)}%`}
+        value={`Heart Rate Variability ${Math.round(data.effective.readinessWeights.hrv * 100)}%, Resting Heart Rate ${Math.round(data.effective.readinessWeights.restingHr * 100)}%, Sleep ${Math.round(data.effective.readinessWeights.sleep * 100)}%, Load ${Math.round(data.effective.readinessWeights.loadBalance * 100)}%`}
+        defaultValue={`Heart Rate Variability ${Math.round(data.defaults.readinessWeights.hrv * 100)}%, Resting Heart Rate ${Math.round(data.defaults.readinessWeights.restingHr * 100)}%, Sleep ${Math.round(data.defaults.readinessWeights.sleep * 100)}%, Load ${Math.round(data.defaults.readinessWeights.loadBalance * 100)}%`}
         quality={
           data.parameters.readinessWeights
             ? `${data.parameters.readinessWeights.sampleCount} days, r=${data.parameters.readinessWeights.correlation}`
@@ -140,8 +140,8 @@ export function PersonalizationPanel() {
       <ParamCard
         paramKey="stressThresholds"
         personalized={data.parameters.stressThresholds}
-        value={`HRV: ${data.effective.stressThresholds.hrvThresholds.map((t) => t.toFixed(1)).join(", ")}`}
-        defaultValue={`HRV: ${data.defaults.stressThresholds.hrvThresholds.map((t) => t.toFixed(1)).join(", ")}`}
+        value={`Heart Rate Variability: ${data.effective.stressThresholds.hrvThresholds.map((t) => t.toFixed(1)).join(", ")}`}
+        defaultValue={`Heart Rate Variability: ${data.defaults.stressThresholds.hrvThresholds.map((t) => t.toFixed(1)).join(", ")}`}
         quality={
           data.parameters.stressThresholds
             ? `${data.parameters.stressThresholds.sampleCount} days`
@@ -150,13 +150,13 @@ export function PersonalizationPanel() {
       />
 
       <ParamCard
-        paramKey="trimpConstants"
-        personalized={data.parameters.trimpConstants}
-        value={`Factor: ${data.effective.trimpConstants.genderFactor}, Exp: ${data.effective.trimpConstants.exponent}`}
-        defaultValue={`Factor: ${data.defaults.trimpConstants.genderFactor}, Exp: ${data.defaults.trimpConstants.exponent}`}
+        paramKey="trainingImpulseConstants"
+        personalized={data.parameters.trainingImpulseConstants}
+        value={`Factor: ${data.effective.trainingImpulseConstants.genderFactor}, Exp: ${data.effective.trainingImpulseConstants.exponent}`}
+        defaultValue={`Factor: ${data.defaults.trainingImpulseConstants.genderFactor}, Exp: ${data.defaults.trainingImpulseConstants.exponent}`}
         quality={
-          data.parameters.trimpConstants
-            ? `${data.parameters.trimpConstants.sampleCount} activities, R²=${data.parameters.trimpConstants.r2}`
+          data.parameters.trainingImpulseConstants
+            ? `${data.parameters.trainingImpulseConstants.sampleCount} activities, R²=${data.parameters.trainingImpulseConstants.r2}`
             : undefined
         }
       />

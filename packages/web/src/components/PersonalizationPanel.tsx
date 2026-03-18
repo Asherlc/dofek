@@ -1,7 +1,7 @@
 import { trpc } from "../lib/trpc.ts";
 
 const PARAM_LABELS: Record<string, { label: string; description: string }> = {
-  ewma: {
+  exponentialMovingAverage: {
     label: "Training Load Windows",
     description: "How many days of training history are used to compute fitness and fatigue",
   },
@@ -17,7 +17,7 @@ const PARAM_LABELS: Record<string, { label: string; description: string }> = {
     label: "Stress Sensitivity",
     description: "How your heart rate variability and resting heart rate map to stress levels",
   },
-  trimpConstants: {
+  trainingImpulseConstants: {
     label: "Heart Rate Effort Model",
     description: "How heart rate intensity translates to training load",
   },
@@ -81,16 +81,16 @@ export function PersonalizationPanel() {
       {/* Parameter cards */}
       <div className="space-y-3">
         <ParamCard
-          paramKey="ewma"
-          personalized={data.parameters.ewma}
-          effective={data.effective.ewma}
-          defaults={data.defaults.ewma}
-          renderValue={(v: { ctlDays: number; atlDays: number }) =>
-            `Fitness: ${v.ctlDays} days, Fatigue: ${v.atlDays} days`
+          paramKey="exponentialMovingAverage"
+          personalized={data.parameters.exponentialMovingAverage}
+          effective={data.effective.exponentialMovingAverage}
+          defaults={data.defaults.exponentialMovingAverage}
+          renderValue={(v: { chronicTrainingLoadDays: number; acuteTrainingLoadDays: number }) =>
+            `Fitness: ${v.chronicTrainingLoadDays} days, Fatigue: ${v.acuteTrainingLoadDays} days`
           }
           renderQuality={
-            data.parameters.ewma
-              ? `${data.parameters.ewma.sampleCount} days, r=${data.parameters.ewma.correlation}`
+            data.parameters.exponentialMovingAverage
+              ? `${data.parameters.exponentialMovingAverage.sampleCount} days, r=${data.parameters.exponentialMovingAverage.correlation}`
               : undefined
           }
         />
@@ -106,7 +106,7 @@ export function PersonalizationPanel() {
             sleep: number;
             loadBalance: number;
           }) =>
-            `HRV ${Math.round(v.hrv * 100)}%, Resting HR ${Math.round(v.restingHr * 100)}%, Sleep ${Math.round(v.sleep * 100)}%, Load ${Math.round(v.loadBalance * 100)}%`
+            `Heart Rate Variability ${Math.round(v.hrv * 100)}%, Resting Heart Rate ${Math.round(v.restingHr * 100)}%, Sleep ${Math.round(v.sleep * 100)}%, Load ${Math.round(v.loadBalance * 100)}%`
           }
           renderQuality={
             data.parameters.readinessWeights
@@ -137,7 +137,7 @@ export function PersonalizationPanel() {
             hrvThresholds: [number, number, number];
             rhrThresholds: [number, number, number];
           }) =>
-            `HRV: ${v.hrvThresholds.map((t) => t.toFixed(1)).join(", ")} · RHR: ${v.rhrThresholds.map((t) => t.toFixed(1)).join(", ")}`
+            `Heart Rate Variability: ${v.hrvThresholds.map((t) => t.toFixed(1)).join(", ")} · Resting Heart Rate: ${v.rhrThresholds.map((t) => t.toFixed(1)).join(", ")}`
           }
           renderQuality={
             data.parameters.stressThresholds
@@ -147,16 +147,16 @@ export function PersonalizationPanel() {
         />
 
         <ParamCard
-          paramKey="trimpConstants"
-          personalized={data.parameters.trimpConstants}
-          effective={data.effective.trimpConstants}
-          defaults={data.defaults.trimpConstants}
+          paramKey="trainingImpulseConstants"
+          personalized={data.parameters.trainingImpulseConstants}
+          effective={data.effective.trainingImpulseConstants}
+          defaults={data.defaults.trainingImpulseConstants}
           renderValue={(v: { genderFactor: number; exponent: number }) =>
             `Factor: ${v.genderFactor}, Exponent: ${v.exponent}`
           }
           renderQuality={
-            data.parameters.trimpConstants
-              ? `${data.parameters.trimpConstants.sampleCount} activities, R²=${data.parameters.trimpConstants.r2}`
+            data.parameters.trainingImpulseConstants
+              ? `${data.parameters.trainingImpulseConstants.sampleCount} activities, R²=${data.parameters.trainingImpulseConstants.r2}`
               : undefined
           }
         />

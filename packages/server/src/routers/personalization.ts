@@ -13,20 +13,20 @@ export const personalizationRouter = router({
     return {
       isPersonalized:
         stored !== null &&
-        (stored.ewma !== null ||
+        (stored.exponentialMovingAverage !== null ||
           stored.readinessWeights !== null ||
           stored.sleepTarget !== null ||
           stored.stressThresholds !== null ||
-          stored.trimpConstants !== null),
+          stored.trainingImpulseConstants !== null),
       fittedAt: stored?.fittedAt ?? null,
       defaults: DEFAULT_PARAMS,
       effective,
       parameters: {
-        ewma: stored?.ewma ?? null,
+        exponentialMovingAverage: stored?.exponentialMovingAverage ?? null,
         readinessWeights: stored?.readinessWeights ?? null,
         sleepTarget: stored?.sleepTarget ?? null,
         stressThresholds: stored?.stressThresholds ?? null,
-        trimpConstants: stored?.trimpConstants ?? null,
+        trainingImpulseConstants: stored?.trainingImpulseConstants ?? null,
       },
     };
   }),
@@ -40,11 +40,11 @@ export const personalizationRouter = router({
       fittedAt: params.fittedAt,
       effective,
       parameters: {
-        ewma: params.ewma,
+        exponentialMovingAverage: params.exponentialMovingAverage,
         readinessWeights: params.readinessWeights,
         sleepTarget: params.sleepTarget,
         stressThresholds: params.stressThresholds,
-        trimpConstants: params.trimpConstants,
+        trainingImpulseConstants: params.trainingImpulseConstants,
       },
     };
   }),

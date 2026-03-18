@@ -11,16 +11,16 @@ function createMockDb(rows: Record<string, unknown>[] = []) {
 const sampleParams: PersonalizedParams = {
   version: 1,
   fittedAt: "2026-03-18T12:00:00Z",
-  ewma: {
-    ctlDays: 35,
-    atlDays: 9,
+  exponentialMovingAverage: {
+    chronicTrainingLoadDays: 35,
+    acuteTrainingLoadDays: 9,
     sampleCount: 120,
     correlation: 0.35,
   },
   readinessWeights: null,
   sleepTarget: { minutes: 450, sampleCount: 30 },
   stressThresholds: null,
-  trimpConstants: null,
+  trainingImpulseConstants: null,
 };
 
 describe("loadPersonalizedParams", () => {
@@ -72,7 +72,12 @@ describe("loadPersonalizedParams", () => {
     const fullParams: PersonalizedParams = {
       version: 1,
       fittedAt: "2026-03-18T12:00:00Z",
-      ewma: { ctlDays: 35, atlDays: 9, sampleCount: 120, correlation: 0.35 },
+      exponentialMovingAverage: {
+        chronicTrainingLoadDays: 35,
+        acuteTrainingLoadDays: 9,
+        sampleCount: 120,
+        correlation: 0.35,
+      },
       readinessWeights: {
         hrv: 0.5,
         restingHr: 0.15,
@@ -87,7 +92,7 @@ describe("loadPersonalizedParams", () => {
         rhrThresholds: [1.2, 0.8, 0.3],
         sampleCount: 80,
       },
-      trimpConstants: { genderFactor: 0.7, exponent: 1.8, sampleCount: 25, r2: 0.45 },
+      trainingImpulseConstants: { genderFactor: 0.7, exponent: 1.8, sampleCount: 25, r2: 0.45 },
     };
     const db = createMockDb([{ value: fullParams }]);
     const result = await loadPersonalizedParams(db, "user-1");
@@ -109,11 +114,11 @@ describe("savePersonalizedParams", () => {
     const invalidParams: PersonalizedParams = {
       version: 1, // will be overwritten below
       fittedAt: "2026-03-18T12:00:00Z",
-      ewma: null,
+      exponentialMovingAverage: null,
       readinessWeights: null,
       sleepTarget: null,
       stressThresholds: null,
-      trimpConstants: null,
+      trainingImpulseConstants: null,
     };
     // Corrupt the version at runtime so Zod rejects it
     Object.assign(invalidParams, { version: 0 });
@@ -128,11 +133,11 @@ describe("savePersonalizedParams", () => {
     const invalidParams: PersonalizedParams = {
       version: 1,
       fittedAt: "2026-03-18T12:00:00Z",
-      ewma: null,
+      exponentialMovingAverage: null,
       readinessWeights: null,
       sleepTarget: null,
       stressThresholds: null,
-      trimpConstants: null,
+      trainingImpulseConstants: null,
     };
     Object.assign(invalidParams, { version: -1 });
 
@@ -150,11 +155,11 @@ describe("savePersonalizedParams", () => {
     const nullParams: PersonalizedParams = {
       version: 1,
       fittedAt: "2026-03-18T12:00:00Z",
-      ewma: null,
+      exponentialMovingAverage: null,
       readinessWeights: null,
       sleepTarget: null,
       stressThresholds: null,
-      trimpConstants: null,
+      trainingImpulseConstants: null,
     };
 
     await savePersonalizedParams(db, "user-1", nullParams);

@@ -50,22 +50,27 @@ describe("personalizationRouter", () => {
       expect(result.fittedAt).toBeNull();
       expect(result.defaults).toEqual(DEFAULT_PARAMS);
       expect(result.effective).toEqual(DEFAULT_PARAMS);
-      expect(result.parameters.ewma).toBeNull();
+      expect(result.parameters.exponentialMovingAverage).toBeNull();
       expect(result.parameters.readinessWeights).toBeNull();
       expect(result.parameters.sleepTarget).toBeNull();
       expect(result.parameters.stressThresholds).toBeNull();
-      expect(result.parameters.trimpConstants).toBeNull();
+      expect(result.parameters.trainingImpulseConstants).toBeNull();
     });
 
     it("returns isPersonalized=true when at least one sub-param is non-null", async () => {
       const stored: PersonalizedParams = {
         version: 1,
         fittedAt: "2026-03-18T12:00:00Z",
-        ewma: { ctlDays: 35, atlDays: 9, sampleCount: 120, correlation: 0.35 },
+        exponentialMovingAverage: {
+          chronicTrainingLoadDays: 35,
+          acuteTrainingLoadDays: 9,
+          sampleCount: 120,
+          correlation: 0.35,
+        },
         readinessWeights: null,
         sleepTarget: null,
         stressThresholds: null,
-        trimpConstants: null,
+        trainingImpulseConstants: null,
       };
       mockLoadPersonalizedParams.mockResolvedValue(stored);
       const caller = createCaller({
@@ -77,19 +82,19 @@ describe("personalizationRouter", () => {
 
       expect(result.isPersonalized).toBe(true);
       expect(result.fittedAt).toBe("2026-03-18T12:00:00Z");
-      expect(result.effective.ewma.ctlDays).toBe(35);
-      expect(result.parameters.ewma).not.toBeNull();
+      expect(result.effective.exponentialMovingAverage.chronicTrainingLoadDays).toBe(35);
+      expect(result.parameters.exponentialMovingAverage).not.toBeNull();
     });
 
     it("returns isPersonalized=false when all sub-params are null", async () => {
       const stored: PersonalizedParams = {
         version: 1,
         fittedAt: "2026-03-18T12:00:00Z",
-        ewma: null,
+        exponentialMovingAverage: null,
         readinessWeights: null,
         sleepTarget: null,
         stressThresholds: null,
-        trimpConstants: null,
+        trainingImpulseConstants: null,
       };
       mockLoadPersonalizedParams.mockResolvedValue(stored);
       const caller = createCaller({
@@ -117,11 +122,16 @@ describe("personalizationRouter", () => {
       const stored: PersonalizedParams = {
         version: 1,
         fittedAt: "2026-03-18T12:00:00Z",
-        ewma: { ctlDays: 28, atlDays: 5, sampleCount: 100, correlation: 0.3 },
+        exponentialMovingAverage: {
+          chronicTrainingLoadDays: 28,
+          acuteTrainingLoadDays: 5,
+          sampleCount: 100,
+          correlation: 0.3,
+        },
         readinessWeights: null,
         sleepTarget: { minutes: 450, sampleCount: 30 },
         stressThresholds: null,
-        trimpConstants: null,
+        trainingImpulseConstants: null,
       };
       mockLoadPersonalizedParams.mockResolvedValue(stored);
       const caller = createCaller({
@@ -131,12 +141,14 @@ describe("personalizationRouter", () => {
 
       const result = await caller.status();
 
-      expect(result.effective.ewma.ctlDays).toBe(28);
-      expect(result.effective.ewma.atlDays).toBe(5);
+      expect(result.effective.exponentialMovingAverage.chronicTrainingLoadDays).toBe(28);
+      expect(result.effective.exponentialMovingAverage.acuteTrainingLoadDays).toBe(5);
       expect(result.effective.readinessWeights).toEqual(DEFAULT_PARAMS.readinessWeights);
       expect(result.effective.sleepTarget.minutes).toBe(450);
       expect(result.effective.stressThresholds).toEqual(DEFAULT_PARAMS.stressThresholds);
-      expect(result.effective.trimpConstants).toEqual(DEFAULT_PARAMS.trimpConstants);
+      expect(result.effective.trainingImpulseConstants).toEqual(
+        DEFAULT_PARAMS.trainingImpulseConstants,
+      );
     });
   });
 
@@ -145,11 +157,16 @@ describe("personalizationRouter", () => {
       const refitResult: PersonalizedParams = {
         version: 1,
         fittedAt: "2026-03-18T14:00:00Z",
-        ewma: { ctlDays: 35, atlDays: 9, sampleCount: 120, correlation: 0.35 },
+        exponentialMovingAverage: {
+          chronicTrainingLoadDays: 35,
+          acuteTrainingLoadDays: 9,
+          sampleCount: 120,
+          correlation: 0.35,
+        },
         readinessWeights: null,
         sleepTarget: null,
         stressThresholds: null,
-        trimpConstants: null,
+        trainingImpulseConstants: null,
       };
       mockRefitAllParams.mockResolvedValue(refitResult);
       const mockDb = { execute: vi.fn() };
@@ -159,19 +176,19 @@ describe("personalizationRouter", () => {
 
       expect(mockRefitAllParams).toHaveBeenCalledWith(mockDb, "user-1");
       expect(result.fittedAt).toBe("2026-03-18T14:00:00Z");
-      expect(result.effective.ewma.ctlDays).toBe(35);
-      expect(result.parameters.ewma).not.toBeNull();
+      expect(result.effective.exponentialMovingAverage.chronicTrainingLoadDays).toBe(35);
+      expect(result.parameters.exponentialMovingAverage).not.toBeNull();
     });
 
     it("returns defaults for null sub-params in effective", async () => {
       const refitResult: PersonalizedParams = {
         version: 1,
         fittedAt: "2026-03-18T14:00:00Z",
-        ewma: null,
+        exponentialMovingAverage: null,
         readinessWeights: null,
         sleepTarget: null,
         stressThresholds: null,
-        trimpConstants: null,
+        trainingImpulseConstants: null,
       };
       mockRefitAllParams.mockResolvedValue(refitResult);
       const caller = createCaller({
@@ -182,22 +199,22 @@ describe("personalizationRouter", () => {
       const result = await caller.refit();
 
       expect(result.effective).toEqual(DEFAULT_PARAMS);
-      expect(result.parameters.ewma).toBeNull();
+      expect(result.parameters.exponentialMovingAverage).toBeNull();
       expect(result.parameters.readinessWeights).toBeNull();
       expect(result.parameters.sleepTarget).toBeNull();
       expect(result.parameters.stressThresholds).toBeNull();
-      expect(result.parameters.trimpConstants).toBeNull();
+      expect(result.parameters.trainingImpulseConstants).toBeNull();
     });
 
     it("passes db and userId to refitAllParams", async () => {
       const refitResult: PersonalizedParams = {
         version: 1,
         fittedAt: "2026-03-18T14:00:00Z",
-        ewma: null,
+        exponentialMovingAverage: null,
         readinessWeights: null,
         sleepTarget: null,
         stressThresholds: null,
-        trimpConstants: null,
+        trainingImpulseConstants: null,
       };
       mockRefitAllParams.mockResolvedValue(refitResult);
       const mockDb = { execute: vi.fn() };

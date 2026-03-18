@@ -151,11 +151,11 @@ export const pmcRouter = router({
       // Load personalized algorithm parameters
       const storedParams = await loadPersonalizedParams(ctx.db, ctx.userId);
       const effective = getEffectiveParams(storedParams);
-      const { ctlDays, atlDays } = effective.ewma;
-      const { genderFactor, exponent } = effective.trimpConstants;
+      const { chronicTrainingLoadDays, acuteTrainingLoadDays } = effective.exponentialMovingAverage;
+      const { genderFactor, exponent } = effective.trainingImpulseConstants;
 
       // Fetch extra history for EWMA warm-up
-      const queryDays = input.days + ctlDays;
+      const queryDays = input.days + chronicTrainingLoadDays;
 
       // Get max HR, resting HR from user_profile + per-activity stats from activity_summary
       const combinedActivityRowSchema = z.object({
@@ -315,7 +315,7 @@ export const pmcRouter = router({
       let atl = 0;
 
       const current = new Date(startDate);
-      const warmUpDays = ctlDays; // skip warm-up from final output
+      const warmUpDays = chronicTrainingLoadDays; // skip warm-up from final output
       let dayIndex = 0;
 
       while (current <= endDate) {
@@ -323,8 +323,8 @@ export const pmcRouter = router({
         const load = dailyLoad.get(dateStr) ?? 0;
 
         // EWMA update with personalized windows
-        ctl = ctl + (load - ctl) / ctlDays;
-        atl = atl + (load - atl) / atlDays;
+        ctl = ctl + (load - ctl) / chronicTrainingLoadDays;
+        atl = atl + (load - atl) / acuteTrainingLoadDays;
         const tsb = ctl - atl;
 
         if (dayIndex >= warmUpDays) {
