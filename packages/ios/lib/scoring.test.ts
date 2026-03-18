@@ -10,19 +10,19 @@ import {
 } from "./scoring";
 
 describe("scoreColor", () => {
-  it("returns positive for high scores", () => {
+  it("returns positive for scores > 70", () => {
     expect(scoreColor(80)).toBe(colors.positive);
-    expect(scoreColor(67)).toBe(colors.positive);
+    expect(scoreColor(71)).toBe(colors.positive);
   });
 
-  it("returns warning for moderate scores", () => {
+  it("returns warning for scores 50-70", () => {
     expect(scoreColor(50)).toBe(colors.warning);
-    expect(scoreColor(34)).toBe(colors.warning);
+    expect(scoreColor(70)).toBe(colors.warning);
   });
 
-  it("returns danger for low scores", () => {
+  it("returns danger for scores < 50", () => {
     expect(scoreColor(10)).toBe(colors.danger);
-    expect(scoreColor(33)).toBe(colors.danger);
+    expect(scoreColor(49)).toBe(colors.danger);
   });
 });
 
