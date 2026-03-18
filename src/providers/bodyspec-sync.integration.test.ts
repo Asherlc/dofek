@@ -3,7 +3,7 @@ import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { dexaScan, dexaScanRegion } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
-import { saveTokens } from "../db/tokens.ts";
+import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { BodySpecProvider } from "./bodyspec.ts";
 
 // ============================================================
@@ -232,6 +232,8 @@ describe("BodySpecProvider.sync() (integration)", () => {
   it("syncs DEXA scan results with regions", async () => {
     const provider = new BodySpecProvider();
 
+    // Ensure provider exists
+    await ensureProvider(ctx.db, "bodyspec", "BodySpec", "https://app.bodyspec.com");
     // Set up auth token
     await saveTokens(ctx.db, "bodyspec", {
       accessToken: "test-token",
@@ -250,7 +252,9 @@ describe("BodySpecProvider.sync() (integration)", () => {
     // Verify scan was stored
     const scans = await ctx.db.select().from(dexaScan);
     expect(scans).toHaveLength(1);
-    const scan = scans[0]!;
+    const scan = scans[0];
+    expect(scan).toBeDefined();
+    if (!scan) return;
     expect(scan.externalId).toBe("result-1");
     expect(scan.totalFatMassKg).toBe(15.2);
     expect(scan.totalLeanMassKg).toBe(55.8);
@@ -273,6 +277,7 @@ describe("BodySpecProvider.sync() (integration)", () => {
 
     const provider = new BodySpecProvider();
 
+    await ensureProvider(ctx.db, "bodyspec", "BodySpec", "https://app.bodyspec.com");
     await saveTokens(ctx.db, "bodyspec", {
       accessToken: "test-token",
       refreshToken: "test-refresh",
@@ -289,6 +294,7 @@ describe("BodySpecProvider.sync() (integration)", () => {
   it("skips scans before the since date", async () => {
     const provider = new BodySpecProvider();
 
+    await ensureProvider(ctx.db, "bodyspec", "BodySpec", "https://app.bodyspec.com");
     await saveTokens(ctx.db, "bodyspec", {
       accessToken: "test-token",
       refreshToken: "test-refresh",
