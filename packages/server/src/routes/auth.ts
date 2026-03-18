@@ -365,18 +365,24 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
   });
 
   // ── Slack OAuth (Add to Slack) ──
-  router.get("/auth/provider/slack", (_req, res) => {
+  router.get("/auth/provider/slack", async (req, res) => {
     const clientId = process.env.SLACK_CLIENT_ID;
     if (!clientId) {
       res.status(400).send("SLACK_CLIENT_ID is not configured");
       return;
     }
+
+    // Resolve the logged-in user so we can link the Slack identity to them
+    const sessionId = getSessionCookie(req);
+    const session = sessionId ? await validateSession(db, sessionId) : null;
+    const userId = session?.userId ?? DEFAULT_USER_ID;
+
     const redirectUri = getOAuthRedirectUri();
     const stateToken = `slack:${randomBytes(16).toString("hex")}`;
     oauthStateMap.set(stateToken, {
       providerId: "slack",
       intent: "data",
-      userId: DEFAULT_USER_ID,
+      userId,
     });
     setTimeout(() => oauthStateMap.delete(stateToken), 10 * 60 * 1000);
     const url = new URL("https://slack.com/oauth/v2/authorize");
@@ -524,6 +530,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
 
       // ── Slack OAuth callback (Add to Slack) ──
       if (state.startsWith("slack:") && oauthStateMap.has(state)) {
+        const slackState = oauthStateMap.get(state);
         oauthStateMap.delete(state);
         const clientId = process.env.SLACK_CLIENT_ID;
         const clientSecret = process.env.SLACK_CLIENT_SECRET;
@@ -584,6 +591,46 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
                 raw_installation = EXCLUDED.raw_installation,
                 updated_at = NOW()`,
         );
+
+        // Link the installer's Slack identity to the logged-in dofek user
+        // so the bot can immediately identify them when they send a message
+        const installerSlackUserId = tokenData.authed_user?.id;
+        if (installerSlackUserId && slackState) {
+          // Check for existing orphaned auth_account pointing to wrong user
+          const existingLink = await db.execute<{ user_id: string }>(
+            sql`SELECT user_id FROM fitness.auth_account
+                WHERE auth_provider = 'slack' AND provider_account_id = ${installerSlackUserId}
+                LIMIT 1`,
+          );
+          const existingLinkRow = existingLink[0];
+          const orphanUserId =
+            existingLinkRow && existingLinkRow.user_id !== slackState.userId
+              ? existingLinkRow.user_id
+              : null;
+
+          // Create or update the auth_account link
+          await db.execute(
+            sql`INSERT INTO fitness.auth_account (user_id, auth_provider, provider_account_id)
+                VALUES (${slackState.userId}, 'slack', ${installerSlackUserId})
+                ON CONFLICT (auth_provider, provider_account_id)
+                DO UPDATE SET user_id = EXCLUDED.user_id`,
+          );
+
+          // Migrate food entries from orphan user if needed
+          if (orphanUserId) {
+            await db.execute(
+              sql`UPDATE fitness.food_entry SET user_id = ${slackState.userId}
+                  WHERE user_id = ${orphanUserId}`,
+            );
+            logger.info(
+              `[auth] Migrated food entries from orphan ${orphanUserId} to ${slackState.userId}`,
+            );
+          }
+
+          logger.info(
+            `[auth] Linked Slack user ${installerSlackUserId} to dofek user ${slackState.userId}`,
+          );
+        }
 
         logger.info(
           `[auth] Slack installed for team ${tokenData.team.id} (${tokenData.team.name})`,
