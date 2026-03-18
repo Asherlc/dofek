@@ -71,6 +71,7 @@
     "ios:device": "pnpm --filter dofek-ios ios"
   },
   "dependencies": {
+    "@axiomhq/winston": "^1.4.0",
     "@bull-board/api": "^6.20.5",
     "@bull-board/express": "^6.20.5",
     "bullmq": "^5.71.0",
