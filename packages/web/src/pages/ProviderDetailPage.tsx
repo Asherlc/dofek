@@ -607,7 +607,7 @@ function RecordsTable({ providerId, dataType }: { providerId: string; dataType: 
 
 // ── Record Detail Modal ──
 
-function RecordDetailModal({
+export function RecordDetailModal({
   record,
   onClose,
 }: {
@@ -693,11 +693,11 @@ function RecordDetailModal({
 
 // ── Helpers ──
 
-function formatColumnName(col: string): string {
+export function formatColumnName(col: string): string {
   return col.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function formatCellValue(value: unknown): string {
+export function formatCellValue(value: unknown): string {
   if (value === null || value === undefined) return "—";
   if (typeof value === "boolean") return value ? "Yes" : "No";
   if (typeof value === "object") return JSON.stringify(value);

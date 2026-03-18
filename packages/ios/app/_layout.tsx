@@ -107,6 +107,14 @@ function AuthGate() {
             }}
           />
           <Stack.Screen
+            name="providers/[id]"
+            options={{
+              title: "Provider Detail",
+              headerStyle: { backgroundColor: colors.background },
+              headerTintColor: colors.text,
+            }}
+          />
+          <Stack.Screen
             name="activity/[id]"
             options={{
               title: "Activity",
