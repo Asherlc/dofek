@@ -6,6 +6,11 @@
 -- - metric_stream.calories: device-computed from HR/power, not a raw measurement
 -- - activity_interval summary columns: computable from metric_stream at query time
 
+-- Must drop the materialized view FIRST because it depends on metric_stream.distance
+DROP MATERIALIZED VIEW IF EXISTS fitness.activity_summary;
+
+--> statement-breakpoint
+
 -- Drop distance and calories from metric_stream
 ALTER TABLE fitness.metric_stream DROP COLUMN IF EXISTS distance;
 ALTER TABLE fitness.metric_stream DROP COLUMN IF EXISTS calories;
@@ -27,10 +32,6 @@ ALTER TABLE fitness.activity_interval DROP COLUMN IF EXISTS elevation_gain;
 
 -- Recreate activity_summary with GPS-computed distance instead of stored distance.
 -- Uses haversine formula over consecutive (lat, lng) pairs.
-
-DROP MATERIALIZED VIEW IF EXISTS fitness.activity_summary;
-
---> statement-breakpoint
 
 CREATE MATERIALIZED VIEW fitness.activity_summary AS
 WITH altitude_deltas AS (
