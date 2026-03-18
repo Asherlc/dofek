@@ -43,6 +43,8 @@ export interface RideWithGpsTripSummary {
   elevation_loss: number;
   created_at: string;
   updated_at: string;
+  /** Recording source/device — e.g., "ridewithgps_iphone", "garmin_connect". */
+  source?: string | null;
 }
 
 export interface RideWithGpsTripDetail extends RideWithGpsTripSummary {
@@ -116,6 +118,7 @@ export interface ParsedActivity {
   startedAt: Date;
   endedAt: Date | undefined;
   notes: string | undefined;
+  sourceName: string | undefined;
   raw: RideWithGpsTripSummary;
 }
 
@@ -143,6 +146,7 @@ export function parseTripToActivity(trip: RideWithGpsTripSummary): ParsedActivit
     startedAt,
     endedAt,
     notes: trip.description ?? undefined,
+    sourceName: trip.source ?? undefined,
     raw: trip,
   };
 }
@@ -408,6 +412,7 @@ export class RideWithGpsProvider implements Provider {
             endedAt: parsed.endedAt,
             name: parsed.name,
             notes: parsed.notes,
+            sourceName: parsed.sourceName,
             raw: parsed.raw,
           })
           .onConflictDoUpdate({
@@ -418,6 +423,7 @@ export class RideWithGpsProvider implements Provider {
               endedAt: parsed.endedAt,
               name: parsed.name,
               notes: parsed.notes,
+              sourceName: parsed.sourceName,
               raw: parsed.raw,
             },
           })
