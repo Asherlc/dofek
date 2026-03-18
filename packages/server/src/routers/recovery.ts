@@ -1,3 +1,5 @@
+import { getEffectiveParams } from "dofek/personalization/params";
+import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { executeWithSchema } from "../lib/typed-sql.ts";
@@ -330,9 +332,11 @@ export const recoveryRouter = router({
             : null,
       }));
 
-      // Compute 14-day sleep debt vs 8hr (480 min) target
+      // Compute 14-day sleep debt vs personalized target
+      const storedParams = await loadPersonalizedParams(ctx.db, ctx.userId);
+      const effective = getEffectiveParams(storedParams);
       const last14 = nightly.slice(-14);
-      const targetMinutes = 480;
+      const targetMinutes = effective.sleepTarget.minutes;
       const sleepDebt = last14.reduce((debt, night) => {
         return debt + (targetMinutes - night.durationMinutes);
       }, 0);
@@ -352,6 +356,11 @@ export const recoveryRouter = router({
   readinessScore: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({ days: z.number().default(30) }))
     .query(async ({ ctx, input }): Promise<ReadinessRow[]> => {
+      // Load personalized readiness weights
+      const storedParams = await loadPersonalizedParams(ctx.db, ctx.userId);
+      const effective = getEffectiveParams(storedParams);
+      const weights = effective.readinessWeights;
+
       const queryDays = input.days + 60;
 
       // Fetch HRV + resting HR baselines, sleep efficiency, and ACWR in one query
@@ -511,7 +520,10 @@ export const recoveryRouter = router({
         const loadBalanceScore = acwrToScore(acwr);
 
         const readinessScore = Math.round(
-          hrvScore * 0.4 + restingHrScore * 0.2 + sleepScore * 0.2 + loadBalanceScore * 0.2,
+          hrvScore * weights.hrv +
+            restingHrScore * weights.restingHr +
+            sleepScore * weights.sleep +
+            loadBalanceScore * weights.loadBalance,
         );
 
         results.push({

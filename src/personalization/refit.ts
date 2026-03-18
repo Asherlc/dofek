@@ -1,0 +1,384 @@
+import { sql } from "drizzle-orm";
+import { z } from "zod";
+import type { EwmaInput } from "./fit-ewma.ts";
+import { fitEwma } from "./fit-ewma.ts";
+import type { ReadinessWeightsInput } from "./fit-readiness-weights.ts";
+import { fitReadinessWeights } from "./fit-readiness-weights.ts";
+import type { SleepTargetInput } from "./fit-sleep-target.ts";
+import { fitSleepTarget } from "./fit-sleep-target.ts";
+import type { StressThresholdsInput } from "./fit-stress-thresholds.ts";
+import { fitStressThresholds } from "./fit-stress-thresholds.ts";
+import type { TrimpInput } from "./fit-trimp.ts";
+import { fitTrimpConstants } from "./fit-trimp.ts";
+import type { PersonalizedParams } from "./params.ts";
+import { savePersonalizedParams } from "./storage.ts";
+
+interface Database {
+  execute: (query: ReturnType<typeof sql>) => Promise<Record<string, unknown>[]>;
+}
+
+/**
+ * Refit all personalized parameters for a user from their historical data.
+ * Each fitter runs independently — one failure doesn't block others.
+ * Saves the result to user_settings and returns it.
+ */
+export async function refitAllParams(db: Database, userId: string): Promise<PersonalizedParams> {
+  const [ewmaResult, readinessResult, sleepResult, stressResult, trimpResult] =
+    await Promise.allSettled([
+      fitEwmaFromDb(db, userId),
+      fitReadinessFromDb(db, userId),
+      fitSleepFromDb(db, userId),
+      fitStressFromDb(db, userId),
+      fitTrimpFromDb(db, userId),
+    ]);
+
+  const params: PersonalizedParams = {
+    version: 1,
+    fittedAt: new Date().toISOString(),
+    ewma: ewmaResult.status === "fulfilled" ? ewmaResult.value : null,
+    readinessWeights: readinessResult.status === "fulfilled" ? readinessResult.value : null,
+    sleepTarget: sleepResult.status === "fulfilled" ? sleepResult.value : null,
+    stressThresholds: stressResult.status === "fulfilled" ? stressResult.value : null,
+    trimpConstants: trimpResult.status === "fulfilled" ? trimpResult.value : null,
+  };
+
+  try {
+    await savePersonalizedParams(db, userId, params);
+  } catch (err) {
+    console.error("[personalization] Failed to save params:", err);
+  }
+
+  return params;
+}
+
+const ewmaRowSchema = z.object({
+  date: z.string(),
+  daily_load: z.coerce.number(),
+  avg_performance: z.coerce.number(),
+});
+
+async function fitEwmaFromDb(db: Database, userId: string) {
+  const rows = await db.execute(
+    sql`WITH daily_load AS (
+          SELECT
+            asum.started_at::date AS date,
+            SUM(
+              EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0
+              * asum.avg_hr / NULLIF(asum.max_hr, 0)
+            ) AS daily_load
+          FROM fitness.activity_summary asum
+          WHERE asum.user_id = ${userId}
+            AND asum.started_at > NOW() - INTERVAL '365 days'
+            AND asum.ended_at IS NOT NULL
+            AND asum.avg_hr IS NOT NULL
+          GROUP BY asum.started_at::date
+        ),
+        daily_perf AS (
+          SELECT
+            asum.started_at::date AS date,
+            AVG(
+              CASE
+                WHEN asum.avg_power > 0 THEN asum.avg_power
+                ELSE asum.avg_hr
+              END
+            ) AS avg_performance
+          FROM fitness.activity_summary asum
+          WHERE asum.user_id = ${userId}
+            AND asum.started_at > NOW() - INTERVAL '365 days'
+            AND asum.ended_at IS NOT NULL
+          GROUP BY asum.started_at::date
+        )
+        SELECT
+          ds.date::text AS date,
+          COALESCE(dl.daily_load, 0) AS daily_load,
+          COALESCE(dp.avg_performance, 0) AS avg_performance
+        FROM generate_series(
+          CURRENT_DATE - 365,
+          CURRENT_DATE,
+          '1 day'::interval
+        ) AS ds(date)
+        LEFT JOIN daily_load dl ON dl.date = ds.date
+        LEFT JOIN daily_perf dp ON dp.date = ds.date
+        ORDER BY ds.date ASC`,
+  );
+
+  const data: EwmaInput[] = [];
+  for (const row of rows) {
+    const parsed = ewmaRowSchema.safeParse(row);
+    if (!parsed.success) continue;
+    if (parsed.data.avg_performance === 0) continue;
+    data.push({
+      date: parsed.data.date,
+      load: parsed.data.daily_load,
+      performance: parsed.data.avg_performance,
+    });
+  }
+
+  return fitEwma(data);
+}
+
+const readinessRowSchema = z.object({
+  hrv: z.coerce.number().nullable(),
+  resting_hr: z.coerce.number().nullable(),
+  hrv_mean: z.coerce.number().nullable(),
+  hrv_sd: z.coerce.number().nullable(),
+  rhr_mean: z.coerce.number().nullable(),
+  rhr_sd: z.coerce.number().nullable(),
+  efficiency_pct: z.coerce.number().nullable(),
+  acwr: z.coerce.number().nullable(),
+  next_day_hrv: z.coerce.number().nullable(),
+  next_day_hrv_mean: z.coerce.number().nullable(),
+  next_day_hrv_sd: z.coerce.number().nullable(),
+});
+
+async function fitReadinessFromDb(db: Database, userId: string) {
+  const rows = await db.execute(
+    sql`WITH metrics AS (
+          SELECT
+            date,
+            hrv,
+            resting_hr,
+            AVG(hrv) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS hrv_mean,
+            STDDEV_POP(hrv) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS hrv_sd,
+            AVG(resting_hr) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS rhr_mean,
+            STDDEV_POP(resting_hr) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS rhr_sd,
+            LEAD(hrv) OVER (ORDER BY date) AS next_day_hrv,
+            LEAD(AVG(hrv) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW)) OVER (ORDER BY date) AS next_day_hrv_mean,
+            LEAD(STDDEV_POP(hrv) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW)) OVER (ORDER BY date) AS next_day_hrv_sd
+          FROM fitness.v_daily_metrics
+          WHERE user_id = ${userId}
+            AND date > CURRENT_DATE - 425
+        ),
+        sleep_eff AS (
+          SELECT DISTINCT ON (COALESCE(ended_at, started_at + interval '8 hours')::date)
+            COALESCE(ended_at, started_at + interval '8 hours')::date AS date,
+            efficiency_pct
+          FROM fitness.v_sleep
+          WHERE user_id = ${userId}
+            AND is_nap = false
+            AND started_at > NOW() - INTERVAL '425 days'
+          ORDER BY COALESCE(ended_at, started_at + interval '8 hours')::date, started_at DESC
+        ),
+        date_series AS (
+          SELECT generate_series(CURRENT_DATE - 425, CURRENT_DATE, '1 day'::interval)::date AS date
+        ),
+        per_activity AS (
+          SELECT
+            asum.started_at::date AS date,
+            EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0
+              * asum.avg_hr / NULLIF(asum.max_hr, 0) AS load
+          FROM fitness.activity_summary asum
+          WHERE asum.user_id = ${userId}
+            AND asum.started_at::date >= CURRENT_DATE - 425
+            AND asum.ended_at IS NOT NULL
+            AND asum.avg_hr IS NOT NULL
+        ),
+        activity_load AS (
+          SELECT date, SUM(load) AS daily_load FROM per_activity GROUP BY date
+        ),
+        daily AS (
+          SELECT ds.date, COALESCE(al.daily_load, 0) AS daily_load
+          FROM date_series ds LEFT JOIN activity_load al ON al.date = ds.date
+        ),
+        acwr_daily AS (
+          SELECT
+            date,
+            CASE
+              WHEN AVG(daily_load) OVER (ORDER BY date ROWS BETWEEN 27 PRECEDING AND CURRENT ROW) * 7 > 0
+              THEN SUM(daily_load) OVER (ORDER BY date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW)
+                   / (AVG(daily_load) OVER (ORDER BY date ROWS BETWEEN 27 PRECEDING AND CURRENT ROW) * 7)
+              ELSE NULL
+            END AS acwr
+          FROM daily
+        )
+        SELECT
+          m.hrv, m.resting_hr, m.hrv_mean, m.hrv_sd, m.rhr_mean, m.rhr_sd,
+          s.efficiency_pct, ac.acwr,
+          m.next_day_hrv, m.next_day_hrv_mean, m.next_day_hrv_sd
+        FROM metrics m
+        LEFT JOIN sleep_eff s ON s.date = m.date
+        LEFT JOIN acwr_daily ac ON ac.date = m.date
+        WHERE m.date > CURRENT_DATE - 365
+        ORDER BY m.date ASC`,
+  );
+
+  const data: ReadinessWeightsInput[] = [];
+  for (const row of rows) {
+    const parsed = readinessRowSchema.safeParse(row);
+    if (!parsed.success) continue;
+    const p = parsed.data;
+
+    if (
+      p.hrv == null ||
+      p.hrv_mean == null ||
+      p.hrv_sd == null ||
+      Number(p.hrv_sd) === 0 ||
+      p.resting_hr == null ||
+      p.rhr_mean == null ||
+      p.rhr_sd == null ||
+      Number(p.rhr_sd) === 0 ||
+      p.next_day_hrv == null ||
+      p.next_day_hrv_mean == null ||
+      p.next_day_hrv_sd == null ||
+      Number(p.next_day_hrv_sd) === 0
+    )
+      continue;
+
+    const zHrv = (Number(p.hrv) - Number(p.hrv_mean)) / Number(p.hrv_sd);
+    const zRhr = (Number(p.resting_hr) - Number(p.rhr_mean)) / Number(p.rhr_sd);
+    const hrvScore = Math.max(0, Math.min(100, 50 + zHrv * 15));
+    const rhrScore = Math.max(0, Math.min(100, 50 + -zRhr * 15));
+    const sleepScore =
+      p.efficiency_pct != null ? Math.max(0, Math.min(100, Number(p.efficiency_pct))) : 50;
+    const loadBalanceScore =
+      p.acwr != null ? Math.max(0, Math.min(100, (1 - Math.abs(Number(p.acwr) - 1.0)) * 100)) : 50;
+
+    const nextDayHrvZScore =
+      (Number(p.next_day_hrv) - Number(p.next_day_hrv_mean)) / Number(p.next_day_hrv_sd);
+
+    data.push({ hrvScore, rhrScore: rhrScore, sleepScore, loadBalanceScore, nextDayHrvZScore });
+  }
+
+  return fitReadinessWeights(data);
+}
+
+const sleepRowSchema = z.object({
+  duration_minutes: z.coerce.number(),
+  hrv_above_median: z.coerce.boolean(),
+});
+
+async function fitSleepFromDb(db: Database, userId: string) {
+  const rows = await db.execute(
+    sql`WITH nightly AS (
+          SELECT
+            COALESCE(s.ended_at, s.started_at + interval '8 hours')::date AS date,
+            s.duration_minutes
+          FROM fitness.v_sleep s
+          WHERE s.user_id = ${userId}
+            AND s.is_nap = false
+            AND s.started_at > NOW() - INTERVAL '365 days'
+        ),
+        hrv_with_median AS (
+          SELECT
+            date,
+            hrv,
+            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY hrv)
+              OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS median_hrv
+          FROM fitness.v_daily_metrics
+          WHERE user_id = ${userId}
+            AND date > CURRENT_DATE - 425
+            AND hrv IS NOT NULL
+        )
+        SELECT
+          n.duration_minutes,
+          CASE WHEN h.hrv >= h.median_hrv THEN true ELSE false END AS hrv_above_median
+        FROM nightly n
+        JOIN hrv_with_median h ON h.date = n.date + 1
+        ORDER BY n.date ASC`,
+  );
+
+  const data: SleepTargetInput[] = [];
+  for (const row of rows) {
+    const parsed = sleepRowSchema.safeParse(row);
+    if (!parsed.success) continue;
+    data.push({
+      durationMinutes: parsed.data.duration_minutes,
+      nextDayHrvAboveMedian: parsed.data.hrv_above_median,
+    });
+  }
+
+  return fitSleepTarget(data);
+}
+
+const stressRowSchema = z.object({
+  hrv_z: z.coerce.number(),
+  rhr_z: z.coerce.number(),
+});
+
+async function fitStressFromDb(db: Database, userId: string) {
+  const rows = await db.execute(
+    sql`SELECT
+          (hrv - AVG(hrv) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW))
+            / NULLIF(STDDEV_POP(hrv) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW), 0) AS hrv_z,
+          (resting_hr - AVG(resting_hr) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW))
+            / NULLIF(STDDEV_POP(resting_hr) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW), 0) AS rhr_z
+        FROM fitness.v_daily_metrics
+        WHERE user_id = ${userId}
+          AND date > CURRENT_DATE - 425
+          AND hrv IS NOT NULL
+          AND resting_hr IS NOT NULL
+        ORDER BY date ASC`,
+  );
+
+  const data: StressThresholdsInput[] = [];
+  for (const row of rows) {
+    const parsed = stressRowSchema.safeParse(row);
+    if (!parsed.success) continue;
+    data.push({ hrvZScore: parsed.data.hrv_z, rhrZScore: parsed.data.rhr_z });
+  }
+
+  return fitStressThresholds(data);
+}
+
+const trimpActivityRowSchema = z.object({
+  duration_min: z.coerce.number(),
+  avg_hr: z.coerce.number(),
+  max_hr: z.coerce.number(),
+  resting_hr: z.coerce.number(),
+  power_tss: z.coerce.number(),
+});
+
+async function fitTrimpFromDb(db: Database, userId: string) {
+  const rows = await db.execute(
+    sql`WITH np_data AS (
+          SELECT
+            ms.activity_id,
+            ROUND(POWER(AVG(POWER(
+              AVG(ms.power) OVER (
+                PARTITION BY ms.activity_id
+                ORDER BY ms.recorded_at
+                RANGE BETWEEN INTERVAL '29 seconds' PRECEDING AND CURRENT ROW
+              ), 4)), 0.25)::numeric, 1) AS np
+          FROM fitness.metric_stream ms
+          JOIN fitness.v_activity a ON a.id = ms.activity_id
+          WHERE a.user_id = ${userId}
+            AND a.started_at > NOW() - INTERVAL '365 days'
+            AND ms.power > 0
+          GROUP BY ms.activity_id
+          HAVING COUNT(*) >= 60
+        )
+        SELECT
+          EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60 AS duration_min,
+          asum.avg_hr,
+          GREATEST(asum.max_hr, up.max_hr) AS max_hr,
+          COALESCE(up.resting_hr, 60) AS resting_hr,
+          POWER(n.np / NULLIF(
+            (SELECT MAX(n2.np) * 0.95 FROM np_data n2
+             JOIN fitness.activity_summary a2 ON a2.activity_id = n2.activity_id
+             WHERE EXTRACT(EPOCH FROM (a2.ended_at - a2.started_at)) / 60 >= 20),
+          0), 2) * (EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 3600.0) * 100 AS power_tss
+        FROM fitness.activity_summary asum
+        JOIN fitness.user_profile up ON up.id = asum.user_id
+        JOIN np_data n ON n.activity_id = asum.activity_id
+        WHERE asum.user_id = ${userId}
+          AND asum.hr_sample_count > 0
+          AND asum.avg_hr > 0`,
+  );
+
+  const data: TrimpInput[] = [];
+  for (const row of rows) {
+    const parsed = trimpActivityRowSchema.safeParse(row);
+    if (!parsed.success) continue;
+    const p = parsed.data;
+    if (p.duration_min <= 0 || p.max_hr <= p.resting_hr || p.power_tss <= 0) continue;
+    data.push({
+      durationMin: p.duration_min,
+      avgHr: p.avg_hr,
+      maxHr: p.max_hr,
+      restingHr: p.resting_hr,
+      powerTss: p.power_tss,
+    });
+  }
+
+  return fitTrimpConstants(data);
+}

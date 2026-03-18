@@ -18,6 +18,7 @@ import { intervalsRouter } from "./routers/intervals.ts";
 import { lifeEventsRouter } from "./routers/life-events.ts";
 import { nutritionRouter } from "./routers/nutrition.ts";
 import { nutritionAnalyticsRouter } from "./routers/nutrition-analytics.ts";
+import { personalizationRouter } from "./routers/personalization.ts";
 import { pmcRouter } from "./routers/pmc.ts";
 import { powerRouter } from "./routers/power.ts";
 import { predictionsRouter } from "./routers/predictions.ts";
@@ -40,6 +41,7 @@ import { router } from "./trpc.ts";
 export const appRouter = router({
   activity: activityRouter,
   anomalyDetection: anomalyDetectionRouter,
+  personalization: personalizationRouter,
   auth: authRouter,
   sleep: sleepRouter,
   sleepNeed: sleepNeedRouter,

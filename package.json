@@ -42,7 +42,10 @@
     "./db/tokens": "./src/db/tokens.ts",
     "./auth/oauth": "./src/auth/oauth.ts",
     "./db/sync-log": "./src/db/sync-log.ts",
-    "./jobs/queues": "./src/jobs/queues.ts"
+    "./jobs/queues": "./src/jobs/queues.ts",
+    "./personalization/params": "./src/personalization/params.ts",
+    "./personalization/storage": "./src/personalization/storage.ts",
+    "./personalization/refit": "./src/personalization/refit.ts"
   },
   "scripts": {
     "dev": "./scripts/with-env.sh tsx src/index.ts",
