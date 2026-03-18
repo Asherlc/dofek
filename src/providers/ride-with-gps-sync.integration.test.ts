@@ -75,7 +75,7 @@ function rwgpsHandlers(
 ) {
   return [
     // Token refresh
-    http.post("https://ridewithgps.com/oauth/token", () => {
+    http.post("https://ridewithgps.com/oauth/token.json", () => {
       return HttpResponse.json({
         access_token: "refreshed-token",
         refresh_token: "new-refresh",
@@ -398,6 +398,75 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
 
     // Delete of non-existent trip should not error
     expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(0);
+  });
+
+  it("refreshes expired token before syncing", async () => {
+    // Store an expired token
+    await saveTokens(ctx.db, "ride-with-gps", {
+      accessToken: "expired-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2020-01-01T00:00:00Z"), // expired
+      scopes: "user",
+    });
+
+    const syncResp = fakeSyncResponse([{ item_id: 11001 }]);
+    const trips = new Map<number, RideWithGpsTripDetail>();
+    trips.set(11001, fakeTripDetail(11001));
+
+    let tokenUsedForSync: string | null = null;
+    server.use(
+      // Token refresh endpoint
+      http.post("https://ridewithgps.com/oauth/token.json", () => {
+        return HttpResponse.json({
+          access_token: "refreshed-token",
+          refresh_token: "new-refresh",
+          expires_in: 7200,
+        });
+      }),
+      // Sync endpoint — capture the token used
+      http.get("https://ridewithgps.com/api/v1/sync.json", ({ request }) => {
+        tokenUsedForSync = request.headers.get("Authorization");
+        return HttpResponse.json(syncResp);
+      }),
+      http.get("https://ridewithgps.com/api/v1/trips/:tripId.json", ({ params }) => {
+        const tripId = Number(params.tripId);
+        const trip = trips.get(tripId);
+        if (trip) return HttpResponse.json({ trip });
+        return new HttpResponse("Not found", { status: 404 });
+      }),
+    );
+
+    const provider = new RideWithGpsProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(1);
+    // The refreshed token should have been used for the sync API call
+    expect(tokenUsedForSync).toBe("Bearer refreshed-token");
+
+    // Verify the refreshed token was persisted to the database
+    const rows = await ctx.db
+      .select()
+      .from(oauthToken)
+      .where(eq(oauthToken.providerId, "ride-with-gps"));
+    expect(rows[0]?.accessToken).toBe("refreshed-token");
+    expect(rows[0]?.refreshToken).toBe("new-refresh");
+  });
+
+  it("returns error when token is expired and no refresh token exists", async () => {
+    await saveTokens(ctx.db, "ride-with-gps", {
+      accessToken: "expired-token",
+      refreshToken: null,
+      expiresAt: new Date("2020-01-01T00:00:00Z"), // expired
+      scopes: "user",
+    });
+
+    const provider = new RideWithGpsProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain("refresh");
     expect(result.recordsSynced).toBe(0);
   });
 

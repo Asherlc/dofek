@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   mapActivityType,
   parseTrackPoints,
@@ -10,11 +10,36 @@ import {
   rideWithGpsOAuthConfig,
 } from "./ride-with-gps.ts";
 
+vi.mock("../db/tokens.ts", () => ({
+  loadTokens: vi.fn(),
+  saveTokens: vi.fn(),
+  ensureProvider: vi.fn(),
+}));
+
+vi.mock("../auth/oauth.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../auth/oauth.ts")>();
+  return {
+    ...actual,
+    exchangeCodeForTokens: vi.fn().mockResolvedValue({
+      accessToken: "exchanged-token",
+      refreshToken: "exchanged-refresh",
+      expiresAt: new Date("2099-01-01"),
+      scopes: "user",
+    }),
+    refreshAccessToken: vi.fn().mockResolvedValue({
+      accessToken: "refreshed-token",
+      refreshToken: "new-refresh",
+      expiresAt: new Date("2099-01-01"),
+      scopes: "user",
+    }),
+  };
+});
+
 // ============================================================
 // Extended Ride with GPS tests covering:
 // - RideWithGpsClient API calls and error handling
 // - rideWithGpsOAuthConfig with/without env vars
-// - RideWithGpsProvider validate/authSetup
+// - RideWithGpsProvider validate/authSetup/getUserIdentity/sync
 // - parseTripToActivity with zero duration
 // - parseTrackPoints with speed = 0
 // ============================================================
@@ -113,7 +138,7 @@ describe("rideWithGpsOAuthConfig", () => {
     expect(config?.clientId).toBe("test-id");
     expect(config?.clientSecret).toBe("test-secret");
     expect(config?.scopes).toContain("user");
-    expect(config?.tokenAuthMethod).toBe("basic");
+    expect(config?.tokenAuthMethod).toBeUndefined();
     expect(config?.authorizeUrl).toContain("ridewithgps.com");
     expect(config?.tokenUrl).toContain("ridewithgps.com");
   });
@@ -218,5 +243,527 @@ describe("parseTrackPoints — speed edge cases", () => {
     const points: RideWithGpsTrackPoint[] = [{ x: -122.6, y: 45.5, d: 0, t: 1723276200 }];
     const result = parseTrackPoints(points);
     expect(result[0]?.speed).toBeUndefined();
+  });
+});
+
+describe("RideWithGpsClient — Content-Type header", () => {
+  it("sends Content-Type: application/json on requests", async () => {
+    let capturedHeaders: Record<string, string> = {};
+    const mockFetch: typeof globalThis.fetch = async (
+      _input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      capturedHeaders = Object.fromEntries(Object.entries(init?.headers ?? {}));
+      return Response.json({ items: [], meta: { rwgps_datetime: "2026-01-01T00:00:00Z" } });
+    };
+
+    const client = new RideWithGpsClient("tok", mockFetch);
+    await client.sync("2026-01-01");
+    expect(capturedHeaders["Content-Type"]).toBe("application/json");
+  });
+});
+
+describe("RideWithGpsProvider — constructor stores fetchFn", () => {
+  it("uses the injected fetch function for API calls", () => {
+    const customFetch = vi.fn().mockResolvedValue(Response.json({}));
+    const provider = new RideWithGpsProvider(customFetch);
+    process.env.RWGPS_CLIENT_ID = "test-id";
+    process.env.RWGPS_CLIENT_SECRET = "test-secret";
+    const setup = provider.authSetup();
+    const getUserIdentity = setup.getUserIdentity;
+    expect(getUserIdentity).toBeDefined();
+    getUserIdentity?.("tok").catch(() => {});
+    expect(customFetch).toHaveBeenCalled();
+  });
+});
+
+describe("RideWithGpsProvider — exchangeCode calls exchangeCodeForTokens", () => {
+  const originalEnv = { ...process.env };
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it("exchangeCode invokes exchangeCodeForTokens with correct args", async () => {
+    process.env.RWGPS_CLIENT_ID = "test-id";
+    process.env.RWGPS_CLIENT_SECRET = "test-secret";
+    const provider = new RideWithGpsProvider();
+    const setup = provider.authSetup();
+
+    const { exchangeCodeForTokens: mockExchange } = await import("../auth/oauth.ts");
+    const result = await setup.exchangeCode("auth-code", "verifier");
+
+    expect(mockExchange).toHaveBeenCalledWith(
+      expect.objectContaining({ clientId: "test-id" }),
+      "auth-code",
+      expect.any(Function),
+      { codeVerifier: "verifier" },
+    );
+    expect(result).toEqual(expect.objectContaining({ accessToken: "exchanged-token" }));
+  });
+
+  it("exchangeCode passes undefined options when no codeVerifier", async () => {
+    process.env.RWGPS_CLIENT_ID = "test-id";
+    process.env.RWGPS_CLIENT_SECRET = "test-secret";
+    const provider = new RideWithGpsProvider();
+    const setup = provider.authSetup();
+
+    const { exchangeCodeForTokens: mockExchange } = await import("../auth/oauth.ts");
+    await setup.exchangeCode("auth-code");
+
+    expect(mockExchange).toHaveBeenCalledWith(
+      expect.objectContaining({ clientId: "test-id" }),
+      "auth-code",
+      expect.any(Function),
+      undefined,
+    );
+  });
+});
+
+describe("RideWithGpsProvider — getUserIdentity", () => {
+  const originalEnv = { ...process.env };
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it("returns user identity from RWGPS API", async () => {
+    process.env.RWGPS_CLIENT_ID = "test-id";
+    process.env.RWGPS_CLIENT_SECRET = "test-secret";
+
+    const mockFetch: typeof globalThis.fetch = async () => {
+      return Response.json({ user: { id: 42, email: "test@example.com", name: "Test User" } });
+    };
+
+    const provider = new RideWithGpsProvider(mockFetch);
+    const setup = provider.authSetup();
+    const getUserIdentity = setup.getUserIdentity;
+    expect(getUserIdentity).toBeDefined();
+    const identity = await getUserIdentity?.("my-token");
+
+    expect(identity?.providerAccountId).toBe("42");
+    expect(identity?.email).toBe("test@example.com");
+    expect(identity?.name).toBe("Test User");
+  });
+
+  it("handles null email and name", async () => {
+    process.env.RWGPS_CLIENT_ID = "test-id";
+    const mockFetch: typeof globalThis.fetch = async () => {
+      return Response.json({ user: { id: 99, email: null, name: null } });
+    };
+
+    const provider = new RideWithGpsProvider(mockFetch);
+    const setup = provider.authSetup();
+    const getUserIdentity = setup.getUserIdentity;
+    expect(getUserIdentity).toBeDefined();
+    const identity = await getUserIdentity?.("tok");
+
+    expect(identity?.providerAccountId).toBe("99");
+    expect(identity?.email).toBeNull();
+    expect(identity?.name).toBeNull();
+  });
+
+  it("throws on non-OK response", async () => {
+    process.env.RWGPS_CLIENT_ID = "test-id";
+    const mockFetch: typeof globalThis.fetch = async () => {
+      return new Response("Forbidden", { status: 403 });
+    };
+
+    const provider = new RideWithGpsProvider(mockFetch);
+    const setup = provider.authSetup();
+    const getUserIdentity = setup.getUserIdentity;
+    expect(getUserIdentity).toBeDefined();
+    await expect(getUserIdentity?.("bad")).rejects.toThrow("RWGPS user API error (403)");
+  });
+});
+
+// Chainable Drizzle mock via Proxy — handles any chain of .select().from().where() etc.
+// Object.create(null) returns `any` which satisfies SyncDatabase without `as` casts.
+function createChainProxy() {
+  const handler: ProxyHandler<object> = {
+    get(_target, prop) {
+      // Return undefined for 'then' so it's not treated as a thenable
+      if (prop === "then") return undefined;
+      return (..._args: unknown[]) => new Proxy(Object.create(null), handler);
+    },
+  };
+  return new Proxy(Object.create(null), handler);
+}
+
+// Configurable mock DB with select/insert/delete behavior for sync tests
+function createSyncMockDb(opts: { syncCursor?: string | null; activityId?: number } = {}) {
+  const selectResult = opts.syncCursor ? [{ value: { cursor: opts.syncCursor } }] : [];
+  const activityId = opts.activityId ?? 1;
+
+  const onConflictResult = Object.create(null);
+  onConflictResult.returning = vi.fn().mockResolvedValue([{ id: activityId }]);
+
+  const valuesResult = Object.create(null);
+  valuesResult.onConflictDoUpdate = vi.fn().mockReturnValue(onConflictResult);
+
+  const db = Object.create(null);
+  db.select = vi.fn().mockReturnValue({
+    from: vi.fn().mockReturnValue({
+      where: vi.fn().mockReturnValue({
+        limit: vi.fn().mockResolvedValue(selectResult),
+      }),
+    }),
+  });
+  db.insert = vi.fn().mockReturnValue({
+    values: vi.fn().mockReturnValue(valuesResult),
+  });
+  db.delete = vi.fn().mockReturnValue({
+    where: vi.fn().mockResolvedValue(undefined),
+  });
+  db.execute = vi.fn();
+  return db;
+}
+
+describe("RideWithGpsProvider — sync", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    vi.clearAllMocks();
+  });
+
+  it("returns error when no tokens are found", async () => {
+    process.env.RWGPS_CLIENT_ID = "test-id";
+    const { loadTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValue(null);
+
+    const provider = new RideWithGpsProvider();
+    const db = createChainProxy();
+    const result = await provider.sync(db, new Date("2026-01-01"));
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain("No RWGPS credentials found");
+  });
+
+  it("returns valid tokens when not expired", async () => {
+    process.env.RWGPS_CLIENT_ID = "test-id";
+    const { loadTokens, ensureProvider } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValue({
+      accessToken: "valid-token",
+      refreshToken: "refresh",
+      expiresAt: new Date("2099-01-01"),
+      scopes: "user",
+    });
+    vi.mocked(ensureProvider).mockResolvedValue("");
+
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.includes("/sync.json")) {
+        return Response.json({ items: [], meta: { rwgps_datetime: "2026-03-15T00:00:00Z" } });
+      }
+      return Response.json({});
+    };
+
+    const provider = new RideWithGpsProvider(mockFetch);
+    const db = createSyncMockDb();
+    const result = await provider.sync(db, new Date("2026-01-01"));
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toHaveLength(0);
+    expect(result.provider).toBe("ride-with-gps");
+    expect(result.duration).toBeGreaterThanOrEqual(0);
+  });
+
+  it("refreshes expired token", async () => {
+    process.env.RWGPS_CLIENT_ID = "test-id";
+    process.env.RWGPS_CLIENT_SECRET = "test-secret";
+    const { loadTokens, saveTokens, ensureProvider } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValue({
+      accessToken: "expired-token",
+      refreshToken: "refresh-tok",
+      expiresAt: new Date("2020-01-01"),
+      scopes: "user",
+    });
+    vi.mocked(saveTokens).mockResolvedValue();
+    vi.mocked(ensureProvider).mockResolvedValue("");
+
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      if (input.toString().includes("/sync.json")) {
+        return Response.json({ items: [], meta: {} });
+      }
+      return Response.json({});
+    };
+
+    const provider = new RideWithGpsProvider(mockFetch);
+    const db = createSyncMockDb();
+    const result = await provider.sync(db, new Date("2026-01-01"));
+
+    const { refreshAccessToken } = await import("../auth/oauth.ts");
+    expect(refreshAccessToken).toHaveBeenCalled();
+    expect(saveTokens).toHaveBeenCalled();
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it("returns error when token expired and no refresh token", async () => {
+    process.env.RWGPS_CLIENT_ID = "test-id";
+    const { loadTokens, ensureProvider } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValue({
+      accessToken: "expired",
+      refreshToken: null,
+      expiresAt: new Date("2020-01-01"),
+      scopes: "user",
+    });
+    vi.mocked(ensureProvider).mockResolvedValue("");
+
+    const provider = new RideWithGpsProvider();
+    const db = createChainProxy();
+    const result = await provider.sync(db, new Date("2026-01-01"));
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain("No refresh token");
+  });
+
+  it("returns error when sync API call fails", async () => {
+    process.env.RWGPS_CLIENT_ID = "test-id";
+    const { loadTokens, ensureProvider } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValue({
+      accessToken: "valid",
+      refreshToken: "refresh",
+      expiresAt: new Date("2099-01-01"),
+      scopes: "user",
+    });
+    vi.mocked(ensureProvider).mockResolvedValue("");
+
+    const mockFetch: typeof globalThis.fetch = async () => {
+      return new Response("Server Error", { status: 500 });
+    };
+
+    const provider = new RideWithGpsProvider(mockFetch);
+    const db = createSyncMockDb();
+    const result = await provider.sync(db, new Date("2026-01-01"));
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain("Sync endpoint failed");
+  });
+
+  it("uses since param when no sync cursor exists", async () => {
+    process.env.RWGPS_CLIENT_ID = "test-id";
+    const { loadTokens, ensureProvider } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValue({
+      accessToken: "valid",
+      refreshToken: "refresh",
+      expiresAt: new Date("2099-01-01"),
+      scopes: "user",
+    });
+    vi.mocked(ensureProvider).mockResolvedValue("");
+
+    let capturedUrl = "";
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      capturedUrl = input.toString();
+      return Response.json({ items: [], meta: { rwgps_datetime: "2026-03-15T00:00:00Z" } });
+    };
+
+    const provider = new RideWithGpsProvider(mockFetch);
+    const db = createSyncMockDb({ syncCursor: null });
+    await provider.sync(db, new Date("2026-03-01T00:00:00Z"));
+
+    expect(capturedUrl).toContain("since=2026-03-01");
+  });
+
+  it("syncs a trip with track points", async () => {
+    process.env.RWGPS_CLIENT_ID = "test-id";
+    const { loadTokens, ensureProvider } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValue({
+      accessToken: "valid",
+      refreshToken: "refresh",
+      expiresAt: new Date("2099-01-01"),
+      scopes: "user",
+    });
+    vi.mocked(ensureProvider).mockResolvedValue("");
+
+    const tripDetail = {
+      id: 42,
+      name: "Morning Ride",
+      description: null,
+      departed_at: "2026-03-15T07:00:00Z",
+      activity_type: "cycling",
+      distance: 50000,
+      duration: 7200,
+      moving_time: 6800,
+      elevation_gain: 500,
+      elevation_loss: 500,
+      created_at: "2026-03-15T10:00:00Z",
+      updated_at: "2026-03-15T10:00:00Z",
+      track_points: [
+        { x: -122.6, y: 45.5, d: 0, t: 1742025600, s: 25, h: 140, p: 200 },
+        { x: -122.61, y: 45.51, d: 100, t: 1742025610, s: 30 },
+      ],
+    };
+
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.includes("/sync.json")) {
+        return Response.json({
+          items: [{ item_type: "trip", item_id: 42, action: "created" }],
+          meta: { rwgps_datetime: "2026-03-15T12:00:00Z" },
+        });
+      }
+      if (url.includes("/trips/42.json")) {
+        return Response.json({ trip: tripDetail });
+      }
+      return Response.json({});
+    };
+
+    const provider = new RideWithGpsProvider(mockFetch);
+    const db = createSyncMockDb({ activityId: 7 });
+    const result = await provider.sync(db, new Date("2026-03-01"));
+
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toHaveLength(0);
+    expect(db.insert).toHaveBeenCalled();
+    expect(db.delete).toHaveBeenCalled();
+  });
+
+  it("handles deleted trip items", async () => {
+    process.env.RWGPS_CLIENT_ID = "test-id";
+    const { loadTokens, ensureProvider } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValue({
+      accessToken: "valid",
+      refreshToken: "refresh",
+      expiresAt: new Date("2099-01-01"),
+      scopes: "user",
+    });
+    vi.mocked(ensureProvider).mockResolvedValue("");
+
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      if (input.toString().includes("/sync.json")) {
+        return Response.json({
+          items: [{ item_type: "trip", item_id: 99, action: "deleted" }],
+          meta: { rwgps_datetime: "2026-03-15T12:00:00Z" },
+        });
+      }
+      return Response.json({});
+    };
+
+    const provider = new RideWithGpsProvider(mockFetch);
+    const db = createSyncMockDb();
+    const result = await provider.sync(db, new Date("2026-03-01"));
+
+    expect(result.errors).toHaveLength(0);
+    expect(db.delete).toHaveBeenCalled();
+  });
+
+  it("skips non-trip items", async () => {
+    process.env.RWGPS_CLIENT_ID = "test-id";
+    const { loadTokens, ensureProvider } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValue({
+      accessToken: "valid",
+      refreshToken: "refresh",
+      expiresAt: new Date("2099-01-01"),
+      scopes: "user",
+    });
+    vi.mocked(ensureProvider).mockResolvedValue("");
+
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      if (input.toString().includes("/sync.json")) {
+        return Response.json({
+          items: [{ item_type: "route", item_id: 50, action: "created" }],
+          meta: {},
+        });
+      }
+      return Response.json({});
+    };
+
+    const provider = new RideWithGpsProvider(mockFetch);
+    const db = createSyncMockDb();
+    const result = await provider.sync(db, new Date("2026-03-01"));
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it("catches and records trip sync errors", async () => {
+    process.env.RWGPS_CLIENT_ID = "test-id";
+    const { loadTokens, ensureProvider } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValue({
+      accessToken: "valid",
+      refreshToken: "refresh",
+      expiresAt: new Date("2099-01-01"),
+      scopes: "user",
+    });
+    vi.mocked(ensureProvider).mockResolvedValue("");
+
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.includes("/sync.json")) {
+        return Response.json({
+          items: [{ item_type: "trip", item_id: 42, action: "created" }],
+          meta: {},
+        });
+      }
+      return new Response("Not Found", { status: 404 });
+    };
+
+    const provider = new RideWithGpsProvider(mockFetch);
+    const db = createSyncMockDb();
+    const result = await provider.sync(db, new Date("2026-03-01"));
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain("Failed to sync trip 42");
+  });
+
+  it("catches and records delete errors", async () => {
+    process.env.RWGPS_CLIENT_ID = "test-id";
+    const { loadTokens, ensureProvider } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValue({
+      accessToken: "valid",
+      refreshToken: "refresh",
+      expiresAt: new Date("2099-01-01"),
+      scopes: "user",
+    });
+    vi.mocked(ensureProvider).mockResolvedValue("");
+
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      if (input.toString().includes("/sync.json")) {
+        return Response.json({
+          items: [{ item_type: "trip", item_id: 77, action: "removed" }],
+          meta: {},
+        });
+      }
+      return Response.json({});
+    };
+
+    const provider = new RideWithGpsProvider(mockFetch);
+    const db = createSyncMockDb();
+    db.delete.mockReturnValue({
+      where: vi.fn().mockRejectedValue(new Error("DB error")),
+    });
+    const result = await provider.sync(db, new Date("2026-03-01"));
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain("Failed to delete trip 77");
+  });
+
+  it("saves sync cursor when rwgps_datetime is present", async () => {
+    process.env.RWGPS_CLIENT_ID = "test-id";
+    const { loadTokens, ensureProvider } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValue({
+      accessToken: "valid",
+      refreshToken: "refresh",
+      expiresAt: new Date("2099-01-01"),
+      scopes: "user",
+    });
+    vi.mocked(ensureProvider).mockResolvedValue("");
+
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      if (input.toString().includes("/sync.json")) {
+        return Response.json({
+          items: [],
+          meta: { rwgps_datetime: "2026-03-15T12:00:00Z" },
+        });
+      }
+      return Response.json({});
+    };
+
+    const provider = new RideWithGpsProvider(mockFetch);
+    const db = createSyncMockDb();
+    await provider.sync(db, new Date("2026-03-01"));
+
+    expect(db.insert).toHaveBeenCalled();
   });
 });

@@ -1,10 +1,10 @@
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import type { OAuthConfig } from "../auth/oauth.ts";
-import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
+import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
+import { exchangeCodeForTokens, getOAuthRedirectUri, refreshAccessToken } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { activity, DEFAULT_USER_ID, metricStream, userSettings } from "../db/schema.ts";
-import { ensureProvider, loadTokens } from "../db/tokens.ts";
+import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import type {
   Provider,
   ProviderAuthSetup,
@@ -79,7 +79,6 @@ export function rideWithGpsOAuthConfig(): OAuthConfig | null {
     tokenUrl: RWGPS_OAUTH_TOKEN_URL,
     redirectUri: getOAuthRedirectUri(),
     scopes: ["user"],
-    tokenAuthMethod: "basic",
   };
 }
 
@@ -308,6 +307,25 @@ export class RideWithGpsProvider implements Provider {
     };
   }
 
+  private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
+    const tokens = await loadTokens(db, this.id);
+    if (!tokens) {
+      throw new Error("No RWGPS credentials found. Connect via the Data Sources page.");
+    }
+
+    if (tokens.expiresAt > new Date()) {
+      return tokens;
+    }
+
+    console.log("[ride-with-gps] Access token expired, refreshing...");
+    const config = rideWithGpsOAuthConfig();
+    if (!config) throw new Error("RWGPS_CLIENT_ID is required to refresh tokens");
+    if (!tokens.refreshToken) throw new Error("No refresh token for RideWithGPS");
+    const refreshed = await refreshAccessToken(config, tokens.refreshToken, this.fetchFn);
+    await saveTokens(db, this.id, refreshed);
+    return refreshed;
+  }
+
   async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
@@ -315,12 +333,18 @@ export class RideWithGpsProvider implements Provider {
 
     await ensureProvider(db, this.id, this.name, RWGPS_API_BASE);
 
-    const tokens = await loadTokens(db, this.id);
-    if (!tokens) {
+    let tokens: TokenSet;
+    try {
+      tokens = await this.resolveTokens(db);
+    } catch (err) {
       return {
         provider: this.id,
         recordsSynced: 0,
-        errors: [{ message: "No RWGPS credentials found. Connect via the Data Sources page." }],
+        errors: [
+          {
+            message: err instanceof Error ? err.message : String(err),
+          },
+        ],
         duration: Date.now() - start,
       };
     }
