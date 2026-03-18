@@ -37,6 +37,13 @@ const TABS: { key: LoggerTab; label: string }[] = [
   { key: "quickadd", label: "Quick Add" },
 ];
 
+/** Parse a numeric string, returning null for empty/invalid input instead of NaN. */
+function safeParseFloat(value: string): number | null {
+  if (!value) return null;
+  const n = Number.parseFloat(value);
+  return Number.isNaN(n) ? null : n;
+}
+
 // Merged search result from our DB + Open Food Facts
 interface SearchResult {
   source: "history" | "openfoodfacts";
@@ -65,7 +72,7 @@ export default function AddFoodScreen() {
   const [scanningBarcode, setScanningBarcode] = useState(false);
   const searchTimeout = useRef<ReturnType<typeof setTimeout>>();
 
-  // ── Form state (shown after selecting a result) ──
+  // ── Form state (shown after selecting a result or manual entry) ──
   const [showForm, setShowForm] = useState(false);
   const [foodName, setFoodName] = useState("");
   const [selectedMeal, setSelectedMeal] = useState<MealType>(
@@ -272,8 +279,8 @@ export default function AddFoodScreen() {
       Alert.alert("Missing field", "Food name is required.");
       return;
     }
-    if (Number.isNaN(parsedCalories)) {
-      Alert.alert("Missing field", "Calories is required.");
+    if (Number.isNaN(parsedCalories) || parsedCalories <= 0) {
+      Alert.alert("Missing field", "Enter a calorie amount.");
       return;
     }
 
@@ -282,9 +289,9 @@ export default function AddFoodScreen() {
       foodName: foodName.trim(),
       meal: selectedMeal,
       calories: parsedCalories,
-      proteinG: proteinGrams ? Number.parseFloat(proteinGrams) : null,
-      carbsG: carbsGrams ? Number.parseFloat(carbsGrams) : null,
-      fatG: fatGrams ? Number.parseFloat(fatGrams) : null,
+      proteinG: safeParseFloat(proteinGrams),
+      carbsG: safeParseFloat(carbsGrams),
+      fatG: safeParseFloat(fatGrams),
       foodDescription: servingDescription.trim() || null,
     });
   }
@@ -302,9 +309,9 @@ export default function AddFoodScreen() {
       meal: selectedMeal,
       foodName: foodName.trim() || "Quick Add",
       calories: parsedCalories,
-      proteinG: proteinGrams ? Number.parseFloat(proteinGrams) : null,
-      carbsG: carbsGrams ? Number.parseFloat(carbsGrams) : null,
-      fatG: fatGrams ? Number.parseFloat(fatGrams) : null,
+      proteinG: safeParseFloat(proteinGrams),
+      carbsG: safeParseFloat(carbsGrams),
+      fatG: safeParseFloat(fatGrams),
     });
   }
 
@@ -467,7 +474,7 @@ export default function AddFoodScreen() {
               onChangeText={setSearchQuery}
               placeholder="Search foods..."
               placeholderTextColor="#999"
-              autoFocus
+              autoFocus={!scanningBarcode}
               returnKeyType="search"
             />
           </View>
@@ -536,7 +543,12 @@ export default function AddFoodScreen() {
             <TouchableOpacity
               style={styles.manualEntry}
               onPress={() => {
-                if (searchQuery.trim()) setFoodName(searchQuery.trim());
+                setFoodName(searchQuery.trim());
+                setCalories("");
+                setProteinGrams("");
+                setCarbsGrams("");
+                setFatGrams("");
+                setServingDescription("");
                 setShowForm(true);
               }}
               activeOpacity={0.7}
@@ -646,7 +658,7 @@ export default function AddFoodScreen() {
 
           {/* Log button */}
           <TouchableOpacity
-            style={[styles.saveButton, quickAddMutation.isPending && styles.saveButtonDisabled]}
+            style={[styles.saveButton, { marginTop: 16 }, quickAddMutation.isPending && styles.saveButtonDisabled]}
             onPress={handleQuickAddSave}
             activeOpacity={0.8}
             disabled={quickAddMutation.isPending}
@@ -920,7 +932,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     alignItems: "center",
-    marginTop: 4,
   },
   saveButtonDisabled: {
     opacity: 0.5,
