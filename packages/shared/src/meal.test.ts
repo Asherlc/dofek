@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MEAL_OPTIONS, autoMealType, parseQuickAddForm } from "./meal.ts";
+import { autoMealType, MEAL_OPTIONS, parseQuickAddForm } from "./meal.ts";
 
 describe("autoMealType", () => {
   it("returns breakfast before 10am", () => {

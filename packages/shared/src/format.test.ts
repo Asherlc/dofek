@@ -41,9 +41,7 @@ describe("formatDurationRange", () => {
   });
 
   it("formats duration between timestamps", () => {
-    expect(
-      formatDurationRange("2024-01-01T10:00:00Z", "2024-01-01T11:30:00Z"),
-    ).toBe("1h 30m");
+    expect(formatDurationRange("2024-01-01T10:00:00Z", "2024-01-01T11:30:00Z")).toBe("1h 30m");
   });
 });
 

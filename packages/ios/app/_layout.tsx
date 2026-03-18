@@ -58,6 +58,30 @@ function AuthGate() {
             name="food/add"
             options={{ presentation: "modal", title: "Add Food" }}
           />
+          <Stack.Screen
+            name="providers"
+            options={{
+              title: "Data Sources",
+              headerStyle: { backgroundColor: colors.background },
+              headerTintColor: colors.text,
+            }}
+          />
+          <Stack.Screen
+            name="settings"
+            options={{
+              title: "Settings",
+              headerStyle: { backgroundColor: colors.background },
+              headerTintColor: colors.text,
+            }}
+          />
+          <Stack.Screen
+            name="tracking"
+            options={{
+              title: "Tracking",
+              headerStyle: { backgroundColor: colors.background },
+              headerTintColor: colors.text,
+            }}
+          />
         </Stack>
       </QueryClientProvider>
     </trpc.Provider>
