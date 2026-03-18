@@ -21,6 +21,7 @@ COPY packages/trainerroad-client/package.json ./packages/trainerroad-client/
 COPY packages/velohero-client/package.json ./packages/velohero-client/
 COPY packages/garmin-connect/package.json ./packages/garmin-connect/
 COPY packages/trainingpeaks-connect/package.json ./packages/trainingpeaks-connect/
+COPY packages/shared/package.json ./packages/shared/
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile --prod --node-linker=hoisted
 
@@ -37,6 +38,7 @@ COPY packages/trainerroad-client/package.json ./packages/trainerroad-client/
 COPY packages/velohero-client/package.json ./packages/velohero-client/
 COPY packages/garmin-connect/package.json ./packages/garmin-connect/
 COPY packages/trainingpeaks-connect/package.json ./packages/trainingpeaks-connect/
+COPY packages/shared/package.json ./packages/shared/
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile
 COPY . .
@@ -82,6 +84,8 @@ COPY --from=source --chown=node:node /app/packages/garmin-connect/src ./packages
 COPY --from=source --chown=node:node /app/packages/garmin-connect/package.json ./packages/garmin-connect/
 COPY --from=source --chown=node:node /app/packages/trainingpeaks-connect/src ./packages/trainingpeaks-connect/src
 COPY --from=source --chown=node:node /app/packages/trainingpeaks-connect/package.json ./packages/trainingpeaks-connect/
+COPY --from=source --chown=node:node /app/packages/shared/src ./packages/shared/src
+COPY --from=source --chown=node:node /app/packages/shared/package.json ./packages/shared/
 COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules
 # Link workspace packages so bare-specifier imports resolve
 RUN ln -s /app node_modules/dofek && \
@@ -91,7 +95,9 @@ RUN ln -s /app node_modules/dofek && \
     ln -s /app/packages/velohero-client node_modules/velohero-client && \
     ln -s /app/packages/garmin-connect node_modules/garmin-connect && \
     ln -s /app/packages/trainingpeaks-connect node_modules/trainingpeaks-connect && \
-    ln -s /app/packages/whoop-whoop node_modules/whoop-whoop
+    ln -s /app/packages/whoop-whoop node_modules/whoop-whoop && \
+    mkdir -p node_modules/@dofek && \
+    ln -s /app/packages/shared node_modules/@dofek/shared
 
 # SOPS-encrypted .env — decrypted at runtime via SOPS_AGE_KEY env var
 COPY --from=source --chown=node:node /app/.env .
