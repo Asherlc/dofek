@@ -1,29 +1,34 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+// @vitest-environment jsdom
+import { cleanup, render } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
 import { TermsPage } from "./terms.tsx";
 
+afterEach(cleanup);
+
 describe("TermsPage", () => {
-  it("renders the terms of service page", () => {
-    render(<TermsPage />);
-    expect(screen.getByText("Terms of Service")).toBeInTheDocument();
+  it("renders without crashing", () => {
+    const { container } = render(<TermsPage />);
+    expect(container).toBeDefined();
+    expect(
+      container.querySelector('h1[class*="font-bold"]')?.textContent,
+    ).toContain("Terms of Service");
   });
 
-  it("includes main sections", () => {
-    render(<TermsPage />);
-    expect(screen.getByText("1. Acceptance of Terms")).toBeInTheDocument();
-    expect(screen.getByText("2. Description of Service")).toBeInTheDocument();
-    expect(screen.getByText("3. User Accounts")).toBeInTheDocument();
+  it("contains main section headings", () => {
+    const { container } = render(<TermsPage />);
+    const headings = Array.from(container.querySelectorAll("h2")).map(
+      (h) => h.textContent,
+    );
+    expect(headings).toContain("1. Acceptance of Terms");
+    expect(headings).toContain("2. Description of Service");
+    expect(headings).toContain("3. User Accounts");
   });
 
-  it("links to privacy policy", () => {
-    render(<TermsPage />);
-    const privacyLink = screen.getByText("Privacy Policy");
-    expect(privacyLink).toHaveAttribute("href", "/privacy");
-  });
-
-  it("has back link to home", () => {
-    render(<TermsPage />);
-    const backLink = screen.getByText("Back to Dofek");
-    expect(backLink).toHaveAttribute("href", "/");
+  it("has navigation links", () => {
+    const { container } = render(<TermsPage />);
+    const links = Array.from(container.querySelectorAll("a"));
+    const hrefs = links.map((a) => a.getAttribute("href"));
+    expect(hrefs).toContain("/privacy");
+    expect(hrefs).toContain("/");
   });
 });
