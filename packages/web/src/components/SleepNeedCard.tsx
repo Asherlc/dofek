@@ -1,3 +1,4 @@
+import { sleepDebtColor } from "@dofek/shared/scoring";
 import type { SleepNeedResult } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
@@ -11,12 +12,6 @@ function formatHoursMinutes(minutes: number): string {
   const h = Math.floor(minutes / 60);
   const m = Math.round(minutes % 60);
   return `${h}h ${m}m`;
-}
-
-function debtColor(debt: number): string {
-  if (debt <= 0) return "#22c55e";
-  if (debt < 120) return "#eab308";
-  return "#ef4444";
 }
 
 export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
@@ -134,7 +129,7 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
         </div>
         <div className="flex-1 bg-zinc-900 rounded-lg p-2">
           <p className="text-zinc-500">Sleep Debt</p>
-          <p className="font-medium" style={{ color: debtColor(data.accumulatedDebtMinutes) }}>
+          <p className="font-medium" style={{ color: sleepDebtColor(data.accumulatedDebtMinutes) }}>
             {formatHoursMinutes(data.accumulatedDebtMinutes)}
           </p>
         </div>

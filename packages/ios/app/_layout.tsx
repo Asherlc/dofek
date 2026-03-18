@@ -58,6 +58,70 @@ function AuthGate() {
             name="food/add"
             options={{ presentation: "modal", title: "Add Food" }}
           />
+          <Stack.Screen
+            name="providers"
+            options={{
+              title: "Data Sources",
+              headerStyle: { backgroundColor: colors.background },
+              headerTintColor: colors.text,
+            }}
+          />
+          <Stack.Screen
+            name="settings"
+            options={{
+              title: "Settings",
+              headerStyle: { backgroundColor: colors.background },
+              headerTintColor: colors.text,
+            }}
+          />
+          <Stack.Screen
+            name="tracking"
+            options={{
+              title: "Tracking",
+              headerStyle: { backgroundColor: colors.background },
+              headerTintColor: colors.text,
+            }}
+          />
+          <Stack.Screen
+            name="training"
+            options={{
+              title: "Training",
+              headerStyle: { backgroundColor: colors.background },
+              headerTintColor: colors.text,
+            }}
+          />
+          <Stack.Screen
+            name="nutrition-analytics"
+            options={{
+              title: "Nutrition Analytics",
+              headerStyle: { backgroundColor: colors.background },
+              headerTintColor: colors.text,
+            }}
+          />
+          <Stack.Screen
+            name="insights"
+            options={{
+              title: "Insights",
+              headerStyle: { backgroundColor: colors.background },
+              headerTintColor: colors.text,
+            }}
+          />
+          <Stack.Screen
+            name="activity/[id]"
+            options={{
+              title: "Activity",
+              headerStyle: { backgroundColor: colors.background },
+              headerTintColor: colors.text,
+            }}
+          />
+          <Stack.Screen
+            name="predictions"
+            options={{
+              title: "Predictions",
+              headerStyle: { backgroundColor: colors.background },
+              headerTintColor: colors.text,
+            }}
+          />
         </Stack>
       </QueryClientProvider>
     </trpc.Provider>

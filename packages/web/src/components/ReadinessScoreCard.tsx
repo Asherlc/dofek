@@ -1,3 +1,4 @@
+import { scoreColor } from "@dofek/shared/scoring";
 import type { ReadinessRow } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
@@ -7,14 +8,8 @@ interface ReadinessScoreCardProps {
   loading?: boolean;
 }
 
-function ScoreColor(score: number): string {
-  if (score > 70) return "#22c55e";
-  if (score >= 50) return "#eab308";
-  return "#ef4444";
-}
-
 function ComponentBar({ label, value }: { label: string; value: number }) {
-  const color = ScoreColor(value);
+  const color = scoreColor(value);
   return (
     <div className="flex items-center gap-3">
       <span className="text-zinc-400 text-xs w-24 shrink-0">{label}</span>
@@ -45,7 +40,7 @@ export function ReadinessScoreCard({ data, loading }: ReadinessScoreCardProps) {
   const latest = data[data.length - 1];
   if (!latest) return null;
   const score = latest.readinessScore;
-  const color = ScoreColor(score);
+  const color = scoreColor(score);
 
   // Sparkline data for the mini chart
   const sparklineOption = {

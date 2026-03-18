@@ -1,0 +1,918 @@
+import { useState } from "react";
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
+import Svg, { Rect, Text as SvgText, Path } from "react-native-svg";
+import { trpc } from "../lib/trpc";
+import { colors } from "../theme";
+import { scoreColor, scoreLabel, workloadRatioColor, workloadRatioHint, rampRateColor } from "@dofek/shared/scoring";
+import { statusColors } from "@dofek/shared/colors";
+
+// ── Types ──
+
+type TabKey = "overview" | "endurance" | "strength" | "hiking" | "recovery";
+
+interface TabDef {
+  key: TabKey;
+  label: string;
+}
+
+const TABS: TabDef[] = [
+  { key: "overview", label: "Overview" },
+  { key: "endurance", label: "Endurance" },
+  { key: "strength", label: "Strength" },
+  { key: "hiking", label: "Hiking" },
+  { key: "recovery", label: "Recovery" },
+];
+
+const DAY_OPTIONS = [
+  { label: "7d", value: 7 },
+  { label: "14d", value: 14 },
+  { label: "30d", value: 30 },
+  { label: "90d", value: 90 },
+  { label: "1y", value: 365 },
+];
+
+// ── Helpers ──
+
+function sparklinePath(data: number[], width: number, height: number): string {
+  if (data.length < 2) return "";
+  const min = Math.min(...data);
+  const max = Math.max(...data) || 1;
+  const range = max - min || 1;
+  const stepX = width / (data.length - 1);
+  return data
+    .map((v, i) => {
+      const x = i * stepX;
+      const y = height - ((v - min) / range) * height;
+      return `${i === 0 ? "M" : "L"} ${x} ${y}`;
+    })
+    .join(" ");
+}
+
+function formatNumber(value: number | null | undefined, decimals = 0): string {
+  if (value == null || Number.isNaN(value)) return "--";
+  return value.toFixed(decimals);
+}
+
+function Sparkline({ data, width, height, color }: { data: number[]; width: number; height: number; color: string }) {
+  const path = sparklinePath(data, width, height);
+  if (!path) return null;
+  return (
+    <Svg width={width} height={height}>
+      <Path d={path} stroke={color} strokeWidth={2} fill="none" />
+    </Svg>
+  );
+}
+
+function BarChart({
+  data,
+  width,
+  height,
+  color,
+  labels,
+}: {
+  data: number[];
+  width: number;
+  height: number;
+  color: string;
+  labels?: string[];
+}) {
+  if (data.length === 0) return null;
+  const maxVal = Math.max(...data, 1);
+  const barWidth = Math.max(4, (width - data.length * 4) / data.length);
+  const labelHeight = labels ? 14 : 0;
+  const chartHeight = height - labelHeight;
+
+  return (
+    <Svg width={width} height={height}>
+      {data.map((v, i) => {
+        const barH = (v / maxVal) * (chartHeight - 4);
+        const x = i * (barWidth + 4) + 2;
+        const y = chartHeight - barH;
+        return (
+          <Rect key={`bar-${i}`} x={x} y={y} width={barWidth} height={barH} rx={2} fill={color} />
+        );
+      })}
+      {labels?.map((label, i) => {
+        const x = i * (barWidth + 4) + 2 + barWidth / 2;
+        return (
+          <SvgText
+            key={`label-${i}`}
+            x={x}
+            y={height - 1}
+            fontSize={8}
+            fill={colors.textTertiary}
+            textAnchor="middle"
+          >
+            {label}
+          </SvgText>
+        );
+      })}
+    </Svg>
+  );
+}
+
+function LoadingText() {
+  return <Text style={styles.loadingText}>Loading...</Text>;
+}
+
+function EmptyText({ message }: { message: string }) {
+  return <Text style={styles.emptyText}>{message}</Text>;
+}
+
+// ── Main Screen ──
+
+export default function TrainingScreen() {
+  const [activeTab, setActiveTab] = useState<TabKey>("overview");
+  const [days, setDays] = useState(30);
+
+  return (
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      {/* Tab bar */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabBar} contentContainerStyle={styles.tabBarContent}>
+        {TABS.map((tab) => (
+          <TouchableOpacity
+            key={tab.key}
+            style={[styles.tab, activeTab === tab.key && styles.tabActive]}
+            onPress={() => setActiveTab(tab.key)}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.tabText, activeTab === tab.key && styles.tabTextActive]}>{tab.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
+      {/* Days selector */}
+      <View style={styles.daysRow}>
+        {DAY_OPTIONS.map((opt) => (
+          <TouchableOpacity
+            key={opt.value}
+            style={[styles.dayButton, days === opt.value && styles.dayButtonActive]}
+            onPress={() => setDays(opt.value)}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.dayButtonText, days === opt.value && styles.dayButtonTextActive]}>
+              {opt.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* Tab content */}
+      {activeTab === "overview" && <OverviewTab days={days} />}
+      {activeTab === "endurance" && <EnduranceTab days={days} />}
+      {activeTab === "strength" && <StrengthTab days={days} />}
+      {activeTab === "hiking" && <HikingTab days={days} />}
+      {activeTab === "recovery" && <RecoveryTab days={days} />}
+    </ScrollView>
+  );
+}
+
+// ── Tab 1: Overview ──
+
+function OverviewTab({ days }: { days: number }) {
+  const pmc = trpc.pmc.chart.useQuery({ days });
+  const calendar = trpc.calendar.calendarData.useQuery({ days });
+
+  const pmcData = pmc.data?.data ?? [];
+  const latest = pmcData[pmcData.length - 1];
+  const model = pmc.data?.model;
+  const calendarData = calendar.data ?? [];
+
+  if (pmc.isLoading || calendar.isLoading) return <LoadingText />;
+
+  return (
+    <View>
+      {/* PMC Summary */}
+      <Text style={styles.sectionTitle}>Performance Management</Text>
+      <View style={styles.summaryRow}>
+        <View style={styles.summaryCard}>
+          <Text style={styles.summaryLabel}>Fitness (CTL)</Text>
+          <Text style={[styles.summaryValue, { color: colors.blue }]}>{formatNumber(latest?.ctl, 1)}</Text>
+        </View>
+        <View style={styles.summaryCard}>
+          <Text style={styles.summaryLabel}>Fatigue (ATL)</Text>
+          <Text style={[styles.summaryValue, { color: colors.orange }]}>{formatNumber(latest?.atl, 1)}</Text>
+        </View>
+        <View style={styles.summaryCard}>
+          <Text style={styles.summaryLabel}>Form (TSB)</Text>
+          <Text
+            style={[
+              styles.summaryValue,
+              { color: latest?.tsb != null && latest.tsb >= 0 ? statusColors.positive : statusColors.danger },
+            ]}
+          >
+            {formatNumber(latest?.tsb, 1)}
+          </Text>
+        </View>
+      </View>
+
+      {/* Estimated FTP */}
+      {model?.ftp != null && (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Estimated Functional Threshold Power</Text>
+          <Text style={styles.bigValue}>{Math.round(model.ftp)} W</Text>
+          {model.r2 != null && (
+            <Text style={styles.cardSubtext}>
+              Model fit: {(model.r2 * 100).toFixed(0)}% (from {model.pairedActivities} samples)
+            </Text>
+          )}
+        </View>
+      )}
+
+      {/* Activity Calendar */}
+      {calendarData.length > 0 && (
+        <View>
+          <Text style={styles.sectionTitle}>Activity Calendar</Text>
+          <View style={styles.calendarGrid}>
+            {calendarData.map((day) => {
+              const intensity = Math.min(day.activityCount, 4);
+              const bgColor =
+                intensity === 0
+                  ? colors.surfaceSecondary
+                  : intensity === 1
+                    ? colors.green
+                    : intensity === 2
+                      ? colors.teal
+                      : intensity === 3
+                        ? colors.blue
+                        : colors.purple;
+              return (
+                <View
+                  key={day.date}
+                  style={[styles.calendarSquare, { backgroundColor: bgColor, opacity: intensity === 0 ? 0.3 : 0.7 + intensity * 0.075 }]}
+                />
+              );
+            })}
+          </View>
+        </View>
+      )}
+    </View>
+  );
+}
+
+// ── Tab 2: Endurance ──
+
+function EnduranceTab({ days }: { days: number }) {
+  const { width: screenWidth } = useWindowDimensions();
+  const chartWidth = screenWidth - 64;
+
+  const eftp = trpc.power.eftpTrend.useQuery({ days });
+  const polarization = trpc.efficiency.polarizationTrend.useQuery({ days });
+  const ramp = trpc.cyclingAdvanced.rampRate.useQuery({ days });
+
+  if (eftp.isLoading || polarization.isLoading || ramp.isLoading) return <LoadingText />;
+
+  const eftpData = eftp.data?.trend ?? [];
+  const currentEftp = eftp.data?.currentEftp;
+  const polarizationWeeks = polarization.data?.weeks ?? [];
+  const rampData = ramp.data?.weeks ?? [];
+  const currentRampRate = ramp.data?.currentRampRate;
+
+  return (
+    <View>
+      {/* eFTP */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Estimated Functional Threshold Power</Text>
+        <Text style={styles.bigValue}>
+          {currentEftp != null ? `${Math.round(currentEftp)} W` : "--"}
+        </Text>
+        {eftpData.length > 1 && (
+          <View style={styles.sparklineContainer}>
+            <Sparkline
+              data={eftpData.map((d) => d.eftp)}
+              width={chartWidth}
+              height={60}
+              color={colors.teal}
+            />
+          </View>
+        )}
+      </View>
+
+      {/* Polarization */}
+      {polarizationWeeks.length > 0 && (
+        <View>
+          <Text style={styles.sectionTitle}>Training Polarization</Text>
+          {polarizationWeeks.slice(-6).map((week) => {
+            const total = week.z1Seconds + week.z2Seconds + week.z3Seconds || 1;
+            return (
+              <View key={week.week} style={styles.polarizationRow}>
+                <Text style={styles.polarizationLabel}>{week.week.slice(5)}</Text>
+                <View style={styles.polarizationBar}>
+                  <View style={[styles.polarizationSegment, { flex: week.z1Seconds / total, backgroundColor: statusColors.positive }]} />
+                  <View style={[styles.polarizationSegment, { flex: (week.z2Seconds / total) || 0.01, backgroundColor: statusColors.warning }]} />
+                  <View style={[styles.polarizationSegment, { flex: week.z3Seconds / total, backgroundColor: statusColors.danger }]} />
+                </View>
+              </View>
+            );
+          })}
+          <View style={styles.legendRow}>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: statusColors.positive }]} />
+              <Text style={styles.legendText}>Low</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: statusColors.warning }]} />
+              <Text style={styles.legendText}>Medium</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: statusColors.danger }]} />
+              <Text style={styles.legendText}>High</Text>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* Ramp Rate */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Ramp Rate</Text>
+        <Text style={[styles.bigValue, { color: currentRampRate != null ? rampRateColor(Math.abs(currentRampRate)) : colors.text }]}>
+          {currentRampRate != null ? `${currentRampRate > 0 ? "+" : ""}${currentRampRate.toFixed(1)}%` : "--"}
+        </Text>
+        <Text style={styles.cardSubtext}>Weekly training load change rate</Text>
+      </View>
+    </View>
+  );
+}
+
+// ── Tab 3: Strength ──
+
+function StrengthTab({ days }: { days: number }) {
+  const { width: screenWidth } = useWindowDimensions();
+  const chartWidth = screenWidth - 64;
+
+  const volume = trpc.strength.volumeOverTime.useQuery({ days });
+  const oneRepMax = trpc.strength.estimatedOneRepMax.useQuery({ days });
+  const overload = trpc.strength.progressiveOverload.useQuery({ days });
+
+  if (volume.isLoading || oneRepMax.isLoading || overload.isLoading) return <LoadingText />;
+
+  const volumeData = volume.data ?? [];
+  const oneRepMaxData = oneRepMax.data ?? [];
+  const overloadData = overload.data ?? [];
+
+  return (
+    <View>
+      {/* Weekly Volume */}
+      {volumeData.length > 0 && (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Weekly Volume</Text>
+          <View style={styles.chartContainer}>
+            <BarChart
+              data={volumeData.map((w) => w.totalVolumeKg)}
+              width={chartWidth}
+              height={100}
+              color={colors.purple}
+              labels={volumeData.map((w) => w.week.slice(5))}
+            />
+          </View>
+        </View>
+      )}
+
+      {/* Estimated 1RM */}
+      {oneRepMaxData.length > 0 && (
+        <View>
+          <Text style={styles.sectionTitle}>Estimated 1-Rep Max</Text>
+          {oneRepMaxData.map((exercise) => {
+            const latestEstimate = exercise.history[exercise.history.length - 1];
+            return (
+              <View key={exercise.exerciseName} style={styles.card}>
+                <Text style={styles.cardTitle}>{exercise.exerciseName}</Text>
+                <Text style={styles.bigValue}>
+                  {latestEstimate ? `${Math.round(latestEstimate.estimatedMax)} kg` : "--"}
+                </Text>
+                {exercise.history.length > 1 && (
+                  <View style={styles.sparklineContainer}>
+                    <Sparkline
+                      data={exercise.history.map((e) => e.estimatedMax)}
+                      width={chartWidth}
+                      height={40}
+                      color={colors.purple}
+                    />
+                  </View>
+                )}
+              </View>
+            );
+          })}
+        </View>
+      )}
+
+      {/* Progressive Overload */}
+      {overloadData.length > 0 && (
+        <View>
+          <Text style={styles.sectionTitle}>Progressive Overload</Text>
+          {overloadData.map((exercise) => (
+              <View key={exercise.exerciseName} style={styles.card}>
+                <View style={styles.overloadRow}>
+                  <View style={styles.overloadInfo}>
+                    <Text style={styles.cardTitle}>{exercise.exerciseName}</Text>
+                    <Text style={styles.cardSubtext}>
+                      Slope: {exercise.slopeKgPerWeek > 0 ? "+" : ""}{exercise.slopeKgPerWeek} kg/week
+                    </Text>
+                  </View>
+                  <View style={styles.overloadChange}>
+                    <Text style={[styles.changeArrow, { color: exercise.isProgressing ? statusColors.positive : statusColors.danger }]}>
+                      {exercise.isProgressing ? "\u2191" : "\u2193"}
+                    </Text>
+                    <Text style={[styles.changePercent, { color: exercise.isProgressing ? statusColors.positive : statusColors.danger }]}>
+                      {exercise.isProgressing ? "Progressing" : "Declining"}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+          ))}
+        </View>
+      )}
+
+      {volumeData.length === 0 && oneRepMaxData.length === 0 && overloadData.length === 0 && (
+        <EmptyText message="No strength data available for this period." />
+      )}
+    </View>
+  );
+}
+
+// ── Tab 4: Hiking ──
+
+function HikingTab({ days }: { days: number }) {
+  const { width: screenWidth } = useWindowDimensions();
+  const chartWidth = screenWidth - 64;
+
+  const gap = trpc.hiking.gradeAdjustedPace.useQuery({ days });
+  const elevation = trpc.hiking.elevationProfile.useQuery({ days: Math.max(days, 365) });
+
+  if (gap.isLoading || elevation.isLoading) return <LoadingText />;
+
+  const gapData = gap.data ?? [];
+  const elevationData = elevation.data ?? [];
+
+  return (
+    <View>
+      {/* Grade-Adjusted Pace Table */}
+      {gapData.length > 0 && (
+        <View>
+          <Text style={styles.sectionTitle}>Grade-Adjusted Pace</Text>
+          {/* Header */}
+          <View style={styles.tableHeader}>
+            <Text style={[styles.tableHeaderCell, { flex: 2 }]}>Hike</Text>
+            <Text style={[styles.tableHeaderCell, { flex: 1 }]}>Distance</Text>
+            <Text style={[styles.tableHeaderCell, { flex: 1 }]}>GAP</Text>
+            <Text style={[styles.tableHeaderCell, { flex: 1 }]}>Gain</Text>
+          </View>
+          {gapData.slice(0, 20).map((hike, index) => (
+            <View key={`${hike.date}-${index}`} style={styles.tableRow}>
+              <View style={{ flex: 2 }}>
+                <Text style={styles.tableCellPrimary} numberOfLines={1}>{hike.activityName || hike.date}</Text>
+                <Text style={styles.tableCellSecondary}>{hike.date}</Text>
+              </View>
+              <Text style={[styles.tableCell, { flex: 1 }]}>
+                {hike.distanceKm.toFixed(1)} km
+              </Text>
+              <Text style={[styles.tableCell, { flex: 1 }]}>
+                {hike.gradeAdjustedPaceMinPerKm.toFixed(1)} min/km
+              </Text>
+              <Text style={[styles.tableCell, { flex: 1 }]}>
+                {Math.round(hike.elevationGainMeters)} m
+              </Text>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {/* Weekly Elevation Gain */}
+      {elevationData.length > 0 && (
+        <View style={[styles.card, { marginTop: 16 }]}>
+          <Text style={styles.cardTitle}>Weekly Elevation Gain</Text>
+          <View style={styles.chartContainer}>
+            <BarChart
+              data={elevationData.map((w) => w.elevationGainMeters)}
+              width={chartWidth}
+              height={100}
+              color={colors.green}
+              labels={elevationData.slice(-12).map((w) => w.week.slice(5))}
+            />
+          </View>
+        </View>
+      )}
+
+      {gapData.length === 0 && elevationData.length === 0 && (
+        <EmptyText message="No hiking data available for this period." />
+      )}
+    </View>
+  );
+}
+
+// ── Tab 5: Recovery ──
+
+function RecoveryTab({ days }: { days: number }) {
+  const { width: screenWidth } = useWindowDimensions();
+  const chartWidth = screenWidth - 64;
+
+  const readiness = trpc.recovery.readinessScore.useQuery({ days });
+  const workload = trpc.recovery.workloadRatio.useQuery({ days });
+  const hrv = trpc.recovery.hrvVariability.useQuery({ days });
+
+  if (readiness.isLoading || workload.isLoading || hrv.isLoading) return <LoadingText />;
+
+  const readinessData = readiness.data ?? [];
+  const workloadData = workload.data ?? [];
+  const hrvData = hrv.data ?? [];
+
+  const latestReadiness = readinessData[readinessData.length - 1];
+  const latestWorkload = workloadData[workloadData.length - 1];
+
+  return (
+    <View>
+      {/* Readiness Score */}
+      {latestReadiness && (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Readiness</Text>
+          <View style={styles.readinessHeader}>
+            <Text style={[styles.bigValue, { color: scoreColor(latestReadiness.readinessScore) }]}>
+              {Math.round(latestReadiness.readinessScore)}
+            </Text>
+            <View style={[styles.scoreBadge, { backgroundColor: scoreColor(latestReadiness.readinessScore) }]}>
+              <Text style={styles.scoreBadgeText}>{scoreLabel(latestReadiness.readinessScore)}</Text>
+            </View>
+          </View>
+
+          {/* Component scores */}
+          <View style={styles.componentsContainer}>
+            {[
+              { label: "Heart Rate Variability", value: latestReadiness.components.hrvScore },
+              { label: "Resting Heart Rate", value: latestReadiness.components.restingHrScore },
+              { label: "Sleep", value: latestReadiness.components.sleepScore },
+              { label: "Load Balance", value: latestReadiness.components.loadBalanceScore },
+            ].map((comp) => (
+              <View key={comp.label} style={styles.componentRow}>
+                <Text style={styles.componentLabel}>{comp.label}</Text>
+                <View style={styles.componentBarTrack}>
+                  <View
+                    style={[
+                      styles.componentBarFill,
+                      {
+                        width: `${Math.min(comp.value, 100)}%`,
+                        backgroundColor: scoreColor(comp.value),
+                      },
+                    ]}
+                  />
+                </View>
+                <Text style={[styles.componentValue, { color: scoreColor(comp.value) }]}>
+                  {Math.round(comp.value)}
+                </Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {/* Workload Ratio */}
+      {latestWorkload && latestWorkload.workloadRatio != null && (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Acute:Chronic Workload Ratio</Text>
+          <Text style={[styles.bigValue, { color: workloadRatioColor(latestWorkload.workloadRatio) }]}>
+            {latestWorkload.workloadRatio.toFixed(2)}
+          </Text>
+          <Text style={[styles.cardSubtext, { color: workloadRatioColor(latestWorkload.workloadRatio) }]}>
+            {workloadRatioHint(latestWorkload.workloadRatio)}
+          </Text>
+        </View>
+      )}
+
+      {/* HRV Trends */}
+      {hrvData.length > 1 && (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Heart Rate Variability Trend</Text>
+          <Text style={styles.cardSubtext}>Rolling Mean</Text>
+          <View style={styles.sparklineContainer}>
+            <Sparkline
+              data={hrvData.filter((d) => d.rollingMean != null).map((d) => d.rollingMean as number)}
+              width={chartWidth}
+              height={50}
+              color={colors.teal}
+            />
+          </View>
+          <Text style={[styles.cardSubtext, { marginTop: 12 }]}>Coefficient of Variation</Text>
+          <View style={styles.sparklineContainer}>
+            <Sparkline
+              data={hrvData.filter((d) => d.rollingCoefficientOfVariation != null).map((d) => d.rollingCoefficientOfVariation as number)}
+              width={chartWidth}
+              height={50}
+              color={colors.orange}
+            />
+          </View>
+        </View>
+      )}
+
+      {!latestReadiness && !latestWorkload && hrvData.length === 0 && (
+        <EmptyText message="No recovery data available for this period." />
+      )}
+    </View>
+  );
+}
+
+// ── Styles ──
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  content: {
+    padding: 16,
+    paddingBottom: 40,
+  },
+
+  // ── Tab bar ──
+  tabBar: {
+    marginBottom: 8,
+    flexGrow: 0,
+  },
+  tabBarContent: {
+    gap: 8,
+    paddingVertical: 4,
+  },
+  tab: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: colors.surface,
+  },
+  tabActive: {
+    backgroundColor: colors.accent,
+  },
+  tabText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.textSecondary,
+  },
+  tabTextActive: {
+    color: colors.text,
+  },
+
+  // ── Days selector ──
+  daysRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 16,
+  },
+  dayButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: colors.surface,
+  },
+  dayButtonActive: {
+    backgroundColor: colors.accent,
+  },
+  dayButtonText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.textSecondary,
+  },
+  dayButtonTextActive: {
+    color: colors.text,
+  },
+
+  // ── Sections ──
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: colors.text,
+    marginBottom: 12,
+    marginTop: 16,
+  },
+
+  // ── Summary row ──
+  summaryRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 12,
+  },
+  summaryCard: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: 12,
+    alignItems: "center",
+  },
+  summaryLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: colors.textSecondary,
+    marginBottom: 4,
+    textAlign: "center",
+  },
+  summaryValue: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: colors.text,
+  },
+
+  // ── Cards ──
+  card: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+  },
+  cardTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: colors.text,
+    marginBottom: 4,
+  },
+  cardSubtext: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 4,
+  },
+  bigValue: {
+    fontSize: 28,
+    fontWeight: "800",
+    color: colors.text,
+  },
+
+  // ── Charts ──
+  chartContainer: {
+    marginTop: 12,
+    alignItems: "center",
+  },
+  sparklineContainer: {
+    marginTop: 8,
+  },
+
+  // ── Calendar grid ──
+  calendarGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 3,
+  },
+  calendarSquare: {
+    width: 12,
+    height: 12,
+    borderRadius: 2,
+  },
+
+  // ── Polarization ──
+  polarizationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  polarizationLabel: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    width: 40,
+    fontVariant: ["tabular-nums"],
+  },
+  polarizationBar: {
+    flex: 1,
+    flexDirection: "row",
+    height: 16,
+    borderRadius: 4,
+    overflow: "hidden",
+    marginLeft: 8,
+  },
+  polarizationSegment: {
+    height: "100%",
+  },
+  legendRow: {
+    flexDirection: "row",
+    gap: 16,
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  legendItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  legendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  legendText: {
+    fontSize: 11,
+    color: colors.textSecondary,
+  },
+
+  // ── Overload ──
+  overloadRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  overloadInfo: {
+    flex: 1,
+  },
+  overloadChange: {
+    alignItems: "center",
+    minWidth: 60,
+  },
+  changeArrow: {
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  changePercent: {
+    fontSize: 14,
+    fontWeight: "700",
+  },
+
+  // ── Table ──
+  tableHeader: {
+    flexDirection: "row",
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.surfaceSecondary,
+  },
+  tableHeaderCell: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: colors.textTertiary,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  tableRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.surfaceSecondary,
+  },
+  tableCell: {
+    fontSize: 13,
+    color: colors.text,
+    fontVariant: ["tabular-nums"],
+  },
+  tableCellPrimary: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.text,
+  },
+  tableCellSecondary: {
+    fontSize: 11,
+    color: colors.textTertiary,
+    marginTop: 1,
+  },
+
+  // ── Readiness ──
+  readinessHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  scoreBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  scoreBadgeText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.text,
+  },
+  componentsContainer: {
+    marginTop: 16,
+    gap: 10,
+  },
+  componentRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  componentLabel: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    width: 130,
+  },
+  componentBarTrack: {
+    flex: 1,
+    height: 8,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: 4,
+    overflow: "hidden",
+  },
+  componentBarFill: {
+    height: "100%",
+    borderRadius: 4,
+  },
+  componentValue: {
+    fontSize: 12,
+    fontWeight: "700",
+    width: 28,
+    textAlign: "right",
+  },
+
+  // ── Status text ──
+  loadingText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: "center",
+    paddingVertical: 32,
+  },
+  emptyText: {
+    fontSize: 14,
+    color: colors.textTertiary,
+    textAlign: "center",
+    paddingVertical: 32,
+  },
+});
