@@ -37,7 +37,17 @@ describe("instrumentation", () => {
     });
 
     expect(sdk).toBeDefined();
-    // Clean up
+    await sdk?.shutdown();
+  });
+
+  it("picks up OTEL_EXPORTER_OTLP_ENDPOINT_unencrypted (SOPS convention)", async () => {
+    const { startInstrumentation } = await import("./instrumentation.ts");
+
+    const sdk = startInstrumentation({
+      OTEL_EXPORTER_OTLP_ENDPOINT_unencrypted: "http://localhost:4318",
+    });
+
+    expect(sdk).toBeDefined();
     await sdk?.shutdown();
   });
 });
