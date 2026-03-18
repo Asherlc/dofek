@@ -505,7 +505,8 @@ describe("Deduplication materialized views", () => {
       await ensureProvider(ctx.db, "garmin", "Garmin");
 
       // Garmin records a sleep session — should use generic priority as fallback
-      // Garmin's generic priority defaults to 100 (not seeded), so WHOOP (30) should still win
+      // Garmin has no sleep_priority in config, so it falls back to its generic priority (15)
+      // WHOOP has sleep_priority 20, so Garmin (15) actually wins here
       await ctx.db.insert(sleepSession).values([
         {
           providerId: "whoop",

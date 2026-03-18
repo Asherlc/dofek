@@ -84,6 +84,18 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
   }
 
   try {
+    const { loadProviderPriorityConfig, syncProviderPriorities } = await import(
+      "../db/provider-priority.ts"
+    );
+    const config = loadProviderPriorityConfig();
+    if (config) {
+      await syncProviderPriorities(db, config);
+    }
+  } catch (err) {
+    console.error(`[worker] Failed to sync provider priorities: ${err}`);
+  }
+
+  try {
     const { refreshDedupViews } = await import("../db/dedup.ts");
     await refreshDedupViews(db);
   } catch (err) {

@@ -66,14 +66,20 @@ export function loadProviderPriorityConfig(basePath?: string): ProviderPriorityC
 }
 
 /**
- * Upsert provider priorities and device overrides from config into the DB.
- * This makes the JSON file the source of truth — DB is updated to match on every sync.
+ * Upsert provider priorities and device overrides from config into the DB,
+ * then delete any rows not present in the config. The JSON file is the
+ * single source of truth — the DB is made to match on every sync.
  */
 export async function syncProviderPriorities(
   db: SyncDatabase,
   config: ProviderPriorityConfig,
 ): Promise<void> {
+  const configProviderIds: string[] = [];
+  const configDevicePatterns: Array<{ providerId: string; pattern: string }> = [];
+
   for (const [providerId, entry] of Object.entries(config.providers)) {
+    configProviderIds.push(providerId);
+
     // Upsert provider-level priorities
     await db.execute(
       sql`INSERT INTO fitness.provider_priority
@@ -97,6 +103,7 @@ export async function syncProviderPriorities(
     // Upsert device-level priority overrides
     if (entry.devices) {
       for (const [pattern, overrides] of Object.entries(entry.devices)) {
+        configDevicePatterns.push({ providerId, pattern });
         await db.execute(
           sql`INSERT INTO fitness.device_priority
                 (provider_id, source_name_pattern, priority, sleep_priority, body_priority, recovery_priority, daily_activity_priority)
@@ -118,5 +125,30 @@ export async function syncProviderPriorities(
         );
       }
     }
+  }
+
+  // Delete device priorities not in the config
+  if (configDevicePatterns.length === 0) {
+    await db.execute(sql`DELETE FROM fitness.device_priority`);
+  } else {
+    const keepConditions = configDevicePatterns.map(
+      ({ providerId, pattern }) =>
+        sql`(provider_id = ${providerId} AND source_name_pattern = ${pattern})`,
+    );
+    await db.execute(
+      sql`DELETE FROM fitness.device_priority WHERE NOT (${sql.join(keepConditions, sql` OR `)})`,
+    );
+  }
+
+  // Delete provider priorities not in the config
+  if (configProviderIds.length === 0) {
+    await db.execute(sql`DELETE FROM fitness.provider_priority`);
+  } else {
+    await db.execute(
+      sql`DELETE FROM fitness.provider_priority WHERE provider_id NOT IN (${sql.join(
+        configProviderIds.map((id) => sql`${id}`),
+        sql`, `,
+      )})`,
+    );
   }
 }
