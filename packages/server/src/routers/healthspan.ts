@@ -31,8 +31,8 @@ export interface HealthspanMetric {
 }
 
 export interface HealthspanResult {
-  /** Composite healthspan score 0-100 */
-  healthspanScore: number;
+  /** Composite healthspan score 0-100, or null when there is no data */
+  healthspanScore: number | null;
   /** Individual metric breakdowns */
   metrics: HealthspanMetric[];
   /** Historical weekly scores derived from resting heart rate, steps, and VO2 max only */
@@ -276,7 +276,7 @@ export const healthspanRouter = router({
       const row = rows[0];
       if (!row) {
         return {
-          healthspanScore: 50,
+          healthspanScore: null,
           metrics: [],
           history: [],
           trend: null,

@@ -356,14 +356,14 @@ const createCaller = createTestCallerFactory(healthspanRouter);
 
 describe("healthspanRouter", () => {
   describe("score", () => {
-    it("returns default score when no data", async () => {
+    it("returns null score when no data", async () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
       const result = await caller.score({ weeks: 12 });
 
-      expect(result.healthspanScore).toBe(50);
+      expect(result.healthspanScore).toBeNull();
       expect(result.metrics).toEqual([]);
       expect(result.history).toEqual([]);
       expect(result.trend).toBeNull();

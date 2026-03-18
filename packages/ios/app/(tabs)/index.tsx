@@ -136,7 +136,7 @@ export default function OverviewScreen() {
   const stepsQuery = trpc.dailyMetrics.list.useQuery({ days: 7 });
   const stepsData = stepsQuery.data ?? [];
 
-  const recoveryScore = todayReadiness?.readinessScore ?? 0;
+  const recoveryScore = todayReadiness?.readinessScore ?? null;
   const dailyStrain = todayWorkload?.dailyLoad ?? 0;
 
   const isLoading =
@@ -204,7 +204,14 @@ export default function OverviewScreen() {
           <View style={styles.ringsRow}>
             <View style={styles.ringSection}>
               <Text style={styles.sectionLabel}>Recovery</Text>
-              <RecoveryRing score={recoveryScore} size={180} />
+              {recoveryScore != null ? (
+                <RecoveryRing score={recoveryScore} size={180} />
+              ) : (
+                <View style={[styles.emptyRing, { width: 180, height: 180 }]}>
+                  <Text style={styles.emptyRingText}>--</Text>
+                  <Text style={styles.emptyRingSubtext}>No data yet</Text>
+                </View>
+              )}
             </View>
             <View style={styles.ringSection}>
               <Text style={styles.sectionLabel}>Strain</Text>
@@ -446,7 +453,7 @@ export default function OverviewScreen() {
           )}
 
           {/* Healthspan Score */}
-          {healthspan != null && healthspan.healthspanScore > 0 && (
+          {healthspan != null && healthspan.healthspanScore != null && healthspan.metrics.length > 0 && (
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Healthspan Score</Text>
               <View style={styles.healthspanRow}>
@@ -826,6 +833,25 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 16,
     color: colors.textTertiary,
+  },
+  emptyRing: {
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 999,
+    borderWidth: 14,
+    borderColor: colors.surfaceSecondary,
+  },
+  emptyRingText: {
+    fontSize: 48,
+    fontWeight: "800",
+    color: colors.textTertiary,
+  },
+  emptyRingSubtext: {
+    fontSize: 14,
+    color: colors.textTertiary,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 1,
   },
   ringsRow: {
     flexDirection: "row",
