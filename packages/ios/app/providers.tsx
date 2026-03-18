@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useRouter } from "expo-router";
 import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
 import { formatRelativeTime } from "@dofek/shared/format";
@@ -82,16 +83,18 @@ function ProviderCard({
   stats,
   syncing,
   onSync,
+  onPress,
 }: {
   provider: Provider;
   stats: ProviderStats | undefined;
   syncing: boolean;
   onSync: () => void;
+  onPress: () => void;
 }) {
   const dotColor = statusDotColor(provider.authStatus);
 
   return (
-    <View style={styles.card}>
+    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.7}>
       <View style={styles.cardHeader}>
         <View style={styles.cardTitleRow}>
           <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
@@ -131,7 +134,7 @@ function ProviderCard({
           <StatBadge label="metrics" count={stats.metrics} />
         </View>
       )}
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -171,6 +174,7 @@ function SyncLogRow({ log }: { log: SyncLog }) {
 }
 
 export default function ProvidersScreen() {
+  const router = useRouter();
   const providers = trpc.sync.providers.useQuery();
   const stats = trpc.sync.providerStats.useQuery();
   const logs = trpc.sync.logs.useQuery({ limit: 50 });
@@ -241,6 +245,7 @@ export default function ProvidersScreen() {
             stats={statsMap[provider.id]}
             syncing={syncMutation.isPending && syncMutation.variables?.providerId === provider.id}
             onSync={() => handleSyncProvider(provider.id)}
+            onPress={() => router.push(`/providers/${provider.id}`)}
           />
         ))
       )}
