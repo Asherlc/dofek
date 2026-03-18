@@ -91,9 +91,33 @@ function AuthGate() {
             }}
           />
           <Stack.Screen
+            name="nutrition-analytics"
+            options={{
+              title: "Nutrition Analytics",
+              headerStyle: { backgroundColor: colors.background },
+              headerTintColor: colors.text,
+            }}
+          />
+          <Stack.Screen
+            name="insights"
+            options={{
+              title: "Insights",
+              headerStyle: { backgroundColor: colors.background },
+              headerTintColor: colors.text,
+            }}
+          />
+          <Stack.Screen
             name="activity/[id]"
             options={{
               title: "Activity",
+              headerStyle: { backgroundColor: colors.background },
+              headerTintColor: colors.text,
+            }}
+          />
+          <Stack.Screen
+            name="predictions"
+            options={{
+              title: "Predictions",
               headerStyle: { backgroundColor: colors.background },
               headerTintColor: colors.text,
             }}
