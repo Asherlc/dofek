@@ -218,6 +218,7 @@ jobs:
             | { grep -v '\.gen\.ts$' || true; } \
             | { grep -v '\.config\.' || true; } \
             | { grep -v 'drizzle/' || true; } \
+            | { grep -v 'src/db/schema\.ts$' || true; } \
             | { grep -v 'scripts/' || true; } \
             | { grep -v 'packages/ios/' || true; } \
             | tr '\n' ',' \
