@@ -617,12 +617,21 @@ function RecordDetailModal({
   const rawValue = record.raw;
   const raw = typeof rawValue === "object" && rawValue !== null ? rawValue : null;
 
-  // All fields except raw
+  // All fields except raw and user_id
   const fields = Object.entries(record).filter(([key]) => key !== "raw" && key !== "user_id");
+  // Split into non-null and null fields so populated data is easy to find
+  const populatedFields = fields.filter(([, value]) => value !== null && value !== undefined);
+  const nullFields = fields.filter(([, value]) => value === null || value === undefined);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto shadow-2xl">
+      <button
+        type="button"
+        className="absolute inset-0 w-full h-full cursor-default"
+        onClick={onClose}
+        aria-label="Close dialog"
+      />
+      <div className="relative bg-zinc-900 border border-zinc-700 rounded-xl p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-semibold text-zinc-200">Record Detail</h3>
           <button
@@ -635,19 +644,16 @@ function RecordDetailModal({
           </button>
         </div>
 
-        {/* Structured fields */}
-        <div className="space-y-1 mb-4">
+        {/* Populated fields */}
+        <div className="mb-4">
           <h4 className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2">
             Fields
           </h4>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
-            {fields.map(([key, value]) => (
-              <div key={key} className="flex justify-between text-xs py-0.5">
-                <span className="text-zinc-500">{formatColumnName(key)}</span>
-                <span
-                  className="text-zinc-300 text-right max-w-[60%] truncate"
-                  title={String(value ?? "")}
-                >
+          <div className="rounded-lg border border-zinc-800 bg-zinc-950 divide-y divide-zinc-800/50">
+            {populatedFields.map(([key, value]) => (
+              <div key={key} className="flex gap-4 px-3 py-1.5 text-xs">
+                <span className="text-zinc-500 shrink-0 w-48">{formatColumnName(key)}</span>
+                <span className="text-zinc-300 break-all whitespace-pre-wrap min-w-0">
                   {formatCellValue(value)}
                 </span>
               </div>
@@ -655,16 +661,30 @@ function RecordDetailModal({
           </div>
         </div>
 
-        {/* Raw data */}
+        {/* Null fields — collapsed by default */}
+        {nullFields.length > 0 && (
+          <details className="mb-4">
+            <summary className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2 cursor-pointer hover:text-zinc-400">
+              Empty Fields ({nullFields.length})
+            </summary>
+            <div className="text-xs text-zinc-600 flex flex-wrap gap-x-4 gap-y-0.5 mt-1">
+              {nullFields.map(([key]) => (
+                <span key={key}>{formatColumnName(key)}</span>
+              ))}
+            </div>
+          </details>
+        )}
+
+        {/* Raw provider data */}
         {raw && (
-          <div>
-            <h4 className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2">
-              Raw Data
-            </h4>
-            <pre className="text-xs text-zinc-400 bg-zinc-950 rounded-lg p-3 overflow-x-auto max-h-80 overflow-y-auto">
+          <details open>
+            <summary className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2 cursor-pointer hover:text-zinc-300">
+              Raw Provider Data
+            </summary>
+            <pre className="text-xs text-zinc-400 bg-zinc-950 rounded-lg p-3 overflow-x-auto overflow-y-auto max-h-[60vh]">
               {JSON.stringify(raw, null, 2)}
             </pre>
-          </div>
+          </details>
         )}
       </div>
     </div>
