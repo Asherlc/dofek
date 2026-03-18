@@ -26,9 +26,11 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as TrainingIndexRouteImport } from './routes/training/index'
 import { Route as ProvidersIndexRouteImport } from './routes/providers/index'
 import { Route as TrainingStrengthRouteImport } from './routes/training/strength'
+import { Route as TrainingRunningRouteImport } from './routes/training/running'
 import { Route as TrainingRecoveryRouteImport } from './routes/training/recovery'
 import { Route as TrainingHikingRouteImport } from './routes/training/hiking'
 import { Route as TrainingEnduranceRouteImport } from './routes/training/endurance'
+import { Route as TrainingCyclingRouteImport } from './routes/training/cycling'
 import { Route as ProvidersIdRouteImport } from './routes/providers/$id'
 import { Route as ActivityIdRouteImport } from './routes/activity.$id'
 
@@ -117,6 +119,11 @@ const TrainingStrengthRoute = TrainingStrengthRouteImport.update({
   path: '/strength',
   getParentRoute: () => TrainingRoute,
 } as any)
+const TrainingRunningRoute = TrainingRunningRouteImport.update({
+  id: '/running',
+  path: '/running',
+  getParentRoute: () => TrainingRoute,
+} as any)
 const TrainingRecoveryRoute = TrainingRecoveryRouteImport.update({
   id: '/recovery',
   path: '/recovery',
@@ -130,6 +137,11 @@ const TrainingHikingRoute = TrainingHikingRouteImport.update({
 const TrainingEnduranceRoute = TrainingEnduranceRouteImport.update({
   id: '/endurance',
   path: '/endurance',
+  getParentRoute: () => TrainingRoute,
+} as any)
+const TrainingCyclingRoute = TrainingCyclingRouteImport.update({
+  id: '/cycling',
+  path: '/cycling',
   getParentRoute: () => TrainingRoute,
 } as any)
 const ProvidersIdRoute = ProvidersIdRouteImport.update({
@@ -160,9 +172,11 @@ export interface FileRoutesByFullPath {
   '/training': typeof TrainingRouteWithChildren
   '/activity/$id': typeof ActivityIdRoute
   '/providers/$id': typeof ProvidersIdRoute
+  '/training/cycling': typeof TrainingCyclingRoute
   '/training/endurance': typeof TrainingEnduranceRoute
   '/training/hiking': typeof TrainingHikingRoute
   '/training/recovery': typeof TrainingRecoveryRoute
+  '/training/running': typeof TrainingRunningRoute
   '/training/strength': typeof TrainingStrengthRoute
   '/providers/': typeof ProvidersIndexRoute
   '/training/': typeof TrainingIndexRoute
@@ -182,9 +196,11 @@ export interface FileRoutesByTo {
   '/tracking': typeof TrackingRoute
   '/activity/$id': typeof ActivityIdRoute
   '/providers/$id': typeof ProvidersIdRoute
+  '/training/cycling': typeof TrainingCyclingRoute
   '/training/endurance': typeof TrainingEnduranceRoute
   '/training/hiking': typeof TrainingHikingRoute
   '/training/recovery': typeof TrainingRecoveryRoute
+  '/training/running': typeof TrainingRunningRoute
   '/training/strength': typeof TrainingStrengthRoute
   '/providers': typeof ProvidersIndexRoute
   '/training': typeof TrainingIndexRoute
@@ -207,9 +223,11 @@ export interface FileRoutesById {
   '/training': typeof TrainingRouteWithChildren
   '/activity/$id': typeof ActivityIdRoute
   '/providers/$id': typeof ProvidersIdRoute
+  '/training/cycling': typeof TrainingCyclingRoute
   '/training/endurance': typeof TrainingEnduranceRoute
   '/training/hiking': typeof TrainingHikingRoute
   '/training/recovery': typeof TrainingRecoveryRoute
+  '/training/running': typeof TrainingRunningRoute
   '/training/strength': typeof TrainingStrengthRoute
   '/providers/': typeof ProvidersIndexRoute
   '/training/': typeof TrainingIndexRoute
@@ -233,9 +251,11 @@ export interface FileRouteTypes {
     | '/training'
     | '/activity/$id'
     | '/providers/$id'
+    | '/training/cycling'
     | '/training/endurance'
     | '/training/hiking'
     | '/training/recovery'
+    | '/training/running'
     | '/training/strength'
     | '/providers/'
     | '/training/'
@@ -255,9 +275,11 @@ export interface FileRouteTypes {
     | '/tracking'
     | '/activity/$id'
     | '/providers/$id'
+    | '/training/cycling'
     | '/training/endurance'
     | '/training/hiking'
     | '/training/recovery'
+    | '/training/running'
     | '/training/strength'
     | '/providers'
     | '/training'
@@ -279,9 +301,11 @@ export interface FileRouteTypes {
     | '/training'
     | '/activity/$id'
     | '/providers/$id'
+    | '/training/cycling'
     | '/training/endurance'
     | '/training/hiking'
     | '/training/recovery'
+    | '/training/running'
     | '/training/strength'
     | '/providers/'
     | '/training/'
@@ -426,6 +450,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TrainingStrengthRouteImport
       parentRoute: typeof TrainingRoute
     }
+    '/training/running': {
+      id: '/training/running'
+      path: '/running'
+      fullPath: '/training/running'
+      preLoaderRoute: typeof TrainingRunningRouteImport
+      parentRoute: typeof TrainingRoute
+    }
     '/training/recovery': {
       id: '/training/recovery'
       path: '/recovery'
@@ -445,6 +476,13 @@ declare module '@tanstack/react-router' {
       path: '/endurance'
       fullPath: '/training/endurance'
       preLoaderRoute: typeof TrainingEnduranceRouteImport
+      parentRoute: typeof TrainingRoute
+    }
+    '/training/cycling': {
+      id: '/training/cycling'
+      path: '/cycling'
+      fullPath: '/training/cycling'
+      preLoaderRoute: typeof TrainingCyclingRouteImport
       parentRoute: typeof TrainingRoute
     }
     '/providers/$id': {
@@ -479,17 +517,21 @@ const ProvidersRouteWithChildren = ProvidersRoute._addFileChildren(
 )
 
 interface TrainingRouteChildren {
+  TrainingCyclingRoute: typeof TrainingCyclingRoute
   TrainingEnduranceRoute: typeof TrainingEnduranceRoute
   TrainingHikingRoute: typeof TrainingHikingRoute
   TrainingRecoveryRoute: typeof TrainingRecoveryRoute
+  TrainingRunningRoute: typeof TrainingRunningRoute
   TrainingStrengthRoute: typeof TrainingStrengthRoute
   TrainingIndexRoute: typeof TrainingIndexRoute
 }
 
 const TrainingRouteChildren: TrainingRouteChildren = {
+  TrainingCyclingRoute: TrainingCyclingRoute,
   TrainingEnduranceRoute: TrainingEnduranceRoute,
   TrainingHikingRoute: TrainingHikingRoute,
   TrainingRecoveryRoute: TrainingRecoveryRoute,
+  TrainingRunningRoute: TrainingRunningRoute,
   TrainingStrengthRoute: TrainingStrengthRoute,
   TrainingIndexRoute: TrainingIndexRoute,
 }

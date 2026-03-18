@@ -7,6 +7,8 @@ import { TrainingDaysContext } from "../lib/trainingDaysContext.ts";
 const subtabs = [
   { to: "/training", label: "Overview", exact: true },
   { to: "/training/endurance", label: "Endurance", exact: false },
+  { to: "/training/cycling", label: "Cycling", exact: false },
+  { to: "/training/running", label: "Running", exact: false },
   { to: "/training/strength", label: "Strength", exact: false },
   { to: "/training/hiking", label: "Hiking", exact: false },
   { to: "/training/recovery", label: "Recovery", exact: false },
