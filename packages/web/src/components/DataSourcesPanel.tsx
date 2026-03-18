@@ -81,9 +81,7 @@ export function DataSourcesPanel() {
   const handleSyncAll = useCallback(
     async (fullSync = false) => {
       setSyncAllMode(fullSync ? "full" : "sync");
-      const enabled = (providers.data ?? []).filter(
-        (p) => p.enabled && p.authorized && !p.importOnly,
-      );
+      const enabled = (providers.data ?? []).filter((p) => p.authorized && !p.importOnly);
       const ids = enabled.map((p) => p.id);
       for (const p of enabled) {
         updateState(p.id, { status: "syncing" });
@@ -138,7 +136,7 @@ export function DataSourcesPanel() {
   }, [syncRows]);
 
   const allProviders = providers.data ?? [];
-  const enabledSyncable = allProviders.filter((p) => p.enabled && !p.importOnly);
+  const enabledSyncable = allProviders.filter((p) => !p.importOnly);
 
   // Listen for OAuth completion from the popup via BroadcastChannel + postMessage.
   // Both channels may fire for the same event, so deduplicate with a timestamp.
@@ -315,7 +313,6 @@ export function DataSourcesPanel() {
             const p = entry.provider;
             const state = providerStates[p.id] ?? { status: "idle" };
             const needsAuth = (p.needsOAuth || p.needsCustomAuth) && !p.authorized;
-            const notConfigured = !p.enabled;
             const providerStats = statsByProvider.get(p.id);
             const recentLogs = (logsByProvider.get(p.id) ?? []).slice(0, 5);
 
@@ -325,7 +322,6 @@ export function DataSourcesPanel() {
                 provider={p}
                 state={state}
                 needsAuth={needsAuth}
-                notConfigured={notConfigured}
                 stats={providerStats}
                 recentLogs={recentLogs}
                 onSync={() => handleProviderClick(p)}
@@ -388,7 +384,6 @@ function SyncProviderCard({
   provider,
   state,
   needsAuth,
-  notConfigured,
   stats,
   recentLogs,
   onSync,
@@ -397,7 +392,6 @@ function SyncProviderCard({
   provider: { id: string; name: string; lastSyncedAt: string | null; authorized: boolean };
   state: ProviderState;
   needsAuth: boolean;
-  notConfigured: boolean;
   stats: ProviderStats | undefined;
   recentLogs: SyncLogEntry[];
   onSync: () => void;
@@ -432,34 +426,23 @@ function SyncProviderCard({
     : [];
 
   return (
-    <div
-      className={`flex flex-col rounded-lg border px-4 py-3 transition-colors ${
-        notConfigured
-          ? "border-zinc-800/50 bg-zinc-900/20 opacity-60"
-          : "border-zinc-800 bg-zinc-900/50"
-      }`}
-    >
+    <div className="flex flex-col rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-3 transition-colors">
       {/* Header with sync trigger */}
       <button
         type="button"
-        onClick={() => !notConfigured && onSync()}
-        disabled={notConfigured || state.status === "syncing"}
+        onClick={onSync}
+        disabled={state.status === "syncing"}
         className="flex items-center gap-2 hover:opacity-80 disabled:opacity-50"
-        title={
-          notConfigured ? "Not configured" : needsAuth ? "Click to connect" : "Sync last 7 days"
-        }
+        title={needsAuth ? "Click to connect" : "Sync last 7 days"}
       >
         <ProviderLogo provider={provider.id} size={18} />
-        {notConfigured ? (
-          <span className="inline-block w-2 h-2 rounded-full bg-zinc-700" />
-        ) : needsAuth ? (
+        {needsAuth ? (
           <span className="inline-block w-2 h-2 rounded-full bg-blue-400" />
         ) : (
           <StatusDot status={state.status} />
         )}
         <span className="text-sm font-medium text-zinc-200">{provider.name}</span>
-        {notConfigured && <span className="text-xs text-zinc-600">Not configured</span>}
-        {!notConfigured && needsAuth && <span className="text-xs text-blue-400">Connect</span>}
+        {needsAuth && <span className="text-xs text-blue-400">Connect</span>}
         {state.status === "syncing" && <span className="text-xs text-zinc-500">...</span>}
       </button>
 
@@ -467,7 +450,7 @@ function SyncProviderCard({
       {state.message && state.status !== "syncing" && (
         <span className="text-xs text-zinc-500 mt-1">{state.message}</span>
       )}
-      {!notConfigured && !state.message && provider.lastSyncedAt && (
+      {!state.message && provider.lastSyncedAt && (
         <span className="text-xs text-zinc-600 mt-1">
           Last sync: {formatRelativeTime(provider.lastSyncedAt)}
         </span>
@@ -495,43 +478,41 @@ function SyncProviderCard({
         </div>
       )}
 
-      {/* Recent sync dots + full sync button */}
-      {!notConfigured && (
-        <div className="flex items-center justify-between mt-2 pt-2 border-t border-zinc-800/50">
-          <div className="flex items-center gap-1">
-            {recentLogs.map((l) => (
-              <span
-                key={`${l.syncedAt}-${l.status}-${l.recordCount}-${l.durationMs}`}
-                className={`w-1.5 h-1.5 rounded-full ${
-                  l.status === "success" ? "bg-emerald-400" : "bg-red-400"
-                }`}
-                title={`${l.status} — ${formatTime(l.syncedAt)}`}
-              />
-            ))}
-            {recentLogs.length === 0 && (
-              <span className="text-xs text-zinc-600">No sync history</span>
-            )}
-          </div>
-          <div className="flex items-center gap-3">
-            {!needsAuth && state.status !== "syncing" && (
-              <button
-                type="button"
-                onClick={onFullSync}
-                className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
-              >
-                Full sync
-              </button>
-            )}
-            <Link
-              to="/providers/$id"
-              params={{ id: provider.id }}
+      {/* Recent sync dots + full sync button + details link */}
+      <div className="flex items-center justify-between mt-2 pt-2 border-t border-zinc-800/50">
+        <div className="flex items-center gap-1">
+          {recentLogs.map((l) => (
+            <span
+              key={`${l.syncedAt}-${l.status}-${l.recordCount}-${l.durationMs}`}
+              className={`w-1.5 h-1.5 rounded-full ${
+                l.status === "success" ? "bg-emerald-400" : "bg-red-400"
+              }`}
+              title={`${l.status} — ${formatTime(l.syncedAt)}`}
+            />
+          ))}
+          {recentLogs.length === 0 && (
+            <span className="text-xs text-zinc-600">No sync history</span>
+          )}
+        </div>
+        <div className="flex items-center gap-3">
+          {!needsAuth && state.status !== "syncing" && (
+            <button
+              type="button"
+              onClick={onFullSync}
               className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
             >
-              Details
-            </Link>
-          </div>
+              Full sync
+            </button>
+          )}
+          <Link
+            to="/providers/$id"
+            params={{ id: provider.id }}
+            className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+          >
+            Details
+          </Link>
         </div>
-      )}
+      </div>
     </div>
   );
 }
