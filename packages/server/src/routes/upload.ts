@@ -43,15 +43,19 @@ async function enqueueImport(
   since: Date,
   importType: "apple-health" | "strong-csv" | "cronometer-csv",
   userId: string,
-  opts?: { weightUnit?: "kg" | "lbs" },
+  opts?: { weightUnit?: "kg" | "lbs"; jobId?: string },
 ): Promise<string> {
-  const job = await getImportQueue().add(importType, {
-    filePath,
-    since: since.toISOString(),
-    userId,
+  const job = await getImportQueue().add(
     importType,
-    weightUnit: opts?.weightUnit,
-  });
+    {
+      filePath,
+      since: since.toISOString(),
+      userId,
+      importType,
+      weightUnit: opts?.weightUnit,
+    },
+    opts?.jobId ? { jobId: opts.jobId } : undefined,
+  );
   startWorker();
   return job.id ?? `job-${Date.now()}`;
 }
@@ -238,27 +242,47 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
         return;
       }
 
-      // All chunks received — assemble then enqueue
+      // All chunks received — respond immediately, assemble in background.
+      // This prevents gateway timeouts when assembly takes a long time for large files.
+      const chunkDir = upload.dir;
+      activeUploads.delete(uploadId);
       setUploadStatus(uploadId, {
         status: "assembling",
         progress: 0,
         message: "Assembling file...",
       });
-      const assembledFile = join(JOB_FILES_DIR, `apple-health-${uploadId}${fileExt}`);
-      await assembleChunks(upload.dir, assembledFile);
-      activeUploads.delete(uploadId);
-      await rm(upload.dir, { recursive: true, force: true });
+      res.json({ status: "assembling", jobId: uploadId });
 
-      // Clear upload status — BullMQ job status takes over from here
-      uploadStatuses.delete(uploadId);
-      const jobId = await enqueueImport(
-        getImportQueue,
-        assembledFile,
-        since,
-        "apple-health",
-        DEFAULT_USER_ID,
-      );
-      res.json({ status: "processing", jobId });
+      // Fire-and-forget: assemble chunks → enqueue import
+      (async () => {
+        try {
+          const assembledFile = join(JOB_FILES_DIR, `apple-health-${uploadId}${fileExt}`);
+          await assembleChunks(chunkDir, assembledFile);
+          await rm(chunkDir, { recursive: true, force: true });
+          // Use uploadId as the BullMQ job ID so the client can poll the same ID
+          await enqueueImport(
+            getImportQueue,
+            assembledFile,
+            since,
+            "apple-health",
+            DEFAULT_USER_ID,
+            {
+              jobId: uploadId,
+            },
+          );
+          // Clear upload status — BullMQ job status takes over
+          uploadStatuses.delete(uploadId);
+        } catch (err: unknown) {
+          logger.error(`[upload] Assembly/enqueue failed for ${uploadId}: ${err}`);
+          await rm(chunkDir, { recursive: true, force: true }).catch(() => {});
+          setUploadStatus(uploadId, {
+            status: "error",
+            progress: 0,
+            message: "Failed to assemble uploaded file",
+          });
+          cleanupUploadStatus(uploadId);
+        }
+      })();
     } catch (err: unknown) {
       logger.error(`[upload] Chunked upload failed: ${err}`);
       const upload = activeUploads.get(uploadId);

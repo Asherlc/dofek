@@ -84,28 +84,32 @@ describe("cyclingAdvancedRouter", () => {
     });
 
     it("gives danger recommendation for very high ramp rate", async () => {
-      // Dramatic load increase → high ramp rate.
-      // Use TRIMP=1000 so even a 1-day partial week exceeds the ramp threshold
-      // (42-day EWMA changes CTL by ~(1000-CTL)/42 ≈ 17+/day at CTL~300).
-      const rows: { day: string; trimp: number }[] = [];
-      const base = new Date();
-      // First 3 weeks: low load
-      for (let i = 28; i >= 14; i--) {
-        const d = new Date(base);
-        d.setDate(d.getDate() - i);
-        rows.push({ day: d.toISOString().slice(0, 10), trimp: 10 });
-      }
-      // Last 2 weeks: very high load
-      for (let i = 13; i >= 0; i--) {
-        const d = new Date(base);
-        d.setDate(d.getDate() - i);
-        rows.push({ day: d.toISOString().slice(0, 10), trimp: 1000 });
-      }
-      const caller = makeCaller(rows);
-      const result = await caller.rampRate({ days: 90 });
+      // Freeze time to a Sunday so week grouping is deterministic
+      // (avoids flaky failures when a partial week has too few days)
+      vi.useFakeTimers({ now: new Date("2026-01-25T12:00:00Z") });
+      try {
+        const rows: { day: string; trimp: number }[] = [];
+        const base = new Date();
+        // First 3 weeks: low load
+        for (let i = 28; i >= 14; i--) {
+          const d = new Date(base);
+          d.setDate(d.getDate() - i);
+          rows.push({ day: d.toISOString().slice(0, 10), trimp: 10 });
+        }
+        // Last 2 weeks: very high load
+        for (let i = 13; i >= 0; i--) {
+          const d = new Date(base);
+          d.setDate(d.getDate() - i);
+          rows.push({ day: d.toISOString().slice(0, 10), trimp: 1000 });
+        }
+        const caller = makeCaller(rows);
+        const result = await caller.rampRate({ days: 90 });
 
-      // Large jump should trigger danger or aggressive
-      expect(result.recommendation).toMatch(/Danger|Aggressive/);
+        // Large jump should trigger danger or aggressive
+        expect(result.recommendation).toMatch(/Danger|Aggressive/);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it("currentRampRate matches last week's ramp rate", async () => {
