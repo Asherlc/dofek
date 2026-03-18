@@ -11,7 +11,7 @@ CREATE TABLE fitness.dexa_scan (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   provider_id TEXT NOT NULL REFERENCES fitness.provider(id),
   user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001' REFERENCES fitness.user_profile(id),
-  external_id TEXT,
+  external_id TEXT NOT NULL,
   recorded_at TIMESTAMPTZ NOT NULL,
   scanner_model TEXT,
   -- Total body composition

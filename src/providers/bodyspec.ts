@@ -263,7 +263,8 @@ class BodySpecClient {
 
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(`BodySpec API error (${response.status}): ${text}`);
+      const truncated = text.length > 200 ? `${text.slice(0, 200)}…` : text;
+      throw new Error(`BodySpec API error (${response.status}): ${truncated}`);
     }
 
     const json: unknown = await response.json();

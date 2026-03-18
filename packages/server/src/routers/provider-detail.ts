@@ -72,6 +72,7 @@ export const DISCONNECT_CHILD_TABLES = [
   "fitness.lab_result",
   "fitness.health_event",
   "fitness.journal_entry",
+  "fitness.dexa_scan",
   "fitness.sync_log",
   "fitness.activity",
   "fitness.oauth_token",

@@ -832,7 +832,7 @@ export const dexaScan = fitness.table(
       .notNull()
       .default(DEFAULT_USER_ID)
       .references(() => userProfile.id),
-    externalId: text("external_id"),
+    externalId: text("external_id").notNull(),
     recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
     scannerModel: text("scanner_model"),
     // Total body composition
@@ -862,7 +862,7 @@ export const dexaScan = fitness.table(
   (table) => [
     uniqueIndex("dexa_scan_provider_external_idx").on(table.providerId, table.externalId),
     index("dexa_scan_user_provider_idx").on(table.userId, table.providerId),
-    index("dexa_scan_recorded_at_idx").on(table.recordedAt),
+    index("dexa_scan_recorded_at_idx").on(table.recordedAt.desc()),
   ],
 );
 
