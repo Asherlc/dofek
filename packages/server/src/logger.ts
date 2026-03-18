@@ -1,6 +1,7 @@
 import * as winston from "winston";
 
 // ── Logger instance ──
+// OTel's WinstonInstrumentation auto-captures log records when active.
 
 export const logger = winston.createLogger({
   level: "debug",
