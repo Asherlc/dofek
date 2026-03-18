@@ -1,8 +1,19 @@
 import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { z } from "zod";
 import { formatRelativeTime, formatTime } from "../lib/dates.ts";
 import { pollSyncJob } from "../lib/poll-sync-job.ts";
 import { trpc } from "../lib/trpc.ts";
+
+const oauthBroadcastMessage = z.object({
+  type: z.literal("complete"),
+  providerId: z.string().optional(),
+});
+
+const oauthPostMessage = z.object({
+  type: z.literal("oauth-complete"),
+  providerId: z.string().optional(),
+});
 
 type SyncStatus = "idle" | "syncing" | "done" | "error";
 
@@ -126,23 +137,41 @@ export function DataSourcesPanel() {
   const allProviders = providers.data ?? [];
   const enabledSyncable = allProviders.filter((p) => p.enabled && !p.importOnly);
 
-  // Listen for OAuth completion from the popup via BroadcastChannel + postMessage
+  // Listen for OAuth completion from the popup via BroadcastChannel + postMessage.
+  // Both channels may fire for the same event, so deduplicate with a timestamp.
+  const lastOAuthHandledAt = useRef(0);
   useEffect(() => {
-    const invalidateProviders = () => {
+    const onOAuthComplete = (providerId?: string) => {
+      const now = Date.now();
+      if (now - lastOAuthHandledAt.current < 2000) return;
+      lastOAuthHandledAt.current = now;
+
       trpcUtils.sync.providers.invalidate();
+      // Auto-trigger a full sync for the newly connected provider
+      if (providerId) {
+        handleSync(providerId, true);
+      }
     };
     // Primary: BroadcastChannel (same-origin, works even if window.opener is null)
     let channel: BroadcastChannel | undefined;
     try {
       channel = new BroadcastChannel("oauth-complete");
-      channel.onmessage = invalidateProviders;
+      channel.onmessage = (event: MessageEvent) => {
+        const parsed = oauthBroadcastMessage.safeParse(event.data);
+        if (parsed.success) {
+          onOAuthComplete(parsed.data.providerId);
+        }
+      };
     } catch {
       // BroadcastChannel not supported — rely on postMessage fallback
     }
     // Fallback: window.postMessage from the popup via window.opener
     const onMessage = (event: MessageEvent) => {
-      if (event.data?.type === "oauth-complete") {
-        invalidateProviders();
+      // Validate origin to prevent accepting messages from malicious scripts
+      if (event.origin !== window.location.origin) return;
+      const parsed = oauthPostMessage.safeParse(event.data);
+      if (parsed.success) {
+        onOAuthComplete(parsed.data.providerId);
       }
     };
     window.addEventListener("message", onMessage);
@@ -150,7 +179,7 @@ export function DataSourcesPanel() {
       channel?.close();
       window.removeEventListener("message", onMessage);
     };
-  }, [trpcUtils]);
+  }, [trpcUtils, handleSync]);
 
   const handleProviderClick = useCallback(
     (
