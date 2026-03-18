@@ -32,7 +32,7 @@ export function getRedisConnection(): ConnectionOptions {
     host: parsed.hostname,
     port: parseInt(parsed.port || "6379", 10),
     password: parsed.password || undefined,
-    maxRetriesPerRequest: 1,
+    maxRetriesPerRequest: null,
     connectTimeout: 5000,
     lazyConnect: true,
   };
