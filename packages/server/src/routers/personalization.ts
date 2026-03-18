@@ -1,6 +1,6 @@
 import { DEFAULT_PARAMS, getEffectiveParams } from "dofek/personalization/params";
 import { refitAllParams } from "dofek/personalization/refit";
-import { loadPersonalizedParams } from "dofek/personalization/storage";
+import { loadPersonalizedParams, SETTINGS_KEY } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
 import { CacheTTL, cachedProtectedQueryLight, protectedProcedure, router } from "../trpc.ts";
 
@@ -53,7 +53,7 @@ export const personalizationRouter = router({
   reset: protectedProcedure.mutation(async ({ ctx }) => {
     await ctx.db.execute(
       sql`DELETE FROM fitness.user_settings
-          WHERE user_id = ${ctx.userId} AND key = 'personalized_params'`,
+          WHERE user_id = ${ctx.userId} AND key = ${SETTINGS_KEY}`,
     );
     return { effective: DEFAULT_PARAMS };
   }),

@@ -74,6 +74,7 @@ export async function runSync(
   // Refit personalized algorithm parameters from updated data
   try {
     const { refitAllParams } = await import("../personalization/refit.ts");
+    // CLI sync uses DEFAULT_USER_ID; worker sync uses process-sync-job.ts with job.data.userId
     const { DEFAULT_USER_ID } = await import("../db/schema.ts");
     console.log("[sync] Refitting personalized parameters...");
     await refitAllParams(db, DEFAULT_USER_ID);

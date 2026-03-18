@@ -15,6 +15,7 @@ vi.mock("../trpc.ts", async () => {
 const mockLoadPersonalizedParams = vi.fn();
 vi.mock("dofek/personalization/storage", () => ({
   loadPersonalizedParams: (...args: unknown[]) => mockLoadPersonalizedParams(...args),
+  SETTINGS_KEY: "personalized_params",
 }));
 
 const mockRefitAllParams = vi.fn();

@@ -41,12 +41,15 @@ function formatMinutes(min: number): string {
 export function PersonalizationPanel() {
   const status = trpc.personalization.status.useQuery();
   const utils = trpc.useUtils();
-  const refitMutation = trpc.personalization.refit.useMutation({
-    onSuccess: () => utils.personalization.status.invalidate(),
-  });
-  const resetMutation = trpc.personalization.reset.useMutation({
-    onSuccess: () => utils.personalization.status.invalidate(),
-  });
+  const invalidateAll = () => {
+    utils.personalization.status.invalidate();
+    // Invalidate queries that depend on personalized params
+    utils.pmc.invalidate();
+    utils.recovery.invalidate();
+    utils.stress.invalidate();
+  };
+  const refitMutation = trpc.personalization.refit.useMutation({ onSuccess: invalidateAll });
+  const resetMutation = trpc.personalization.reset.useMutation({ onSuccess: invalidateAll });
 
   if (status.isLoading) {
     return (

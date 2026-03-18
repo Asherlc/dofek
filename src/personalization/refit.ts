@@ -180,7 +180,7 @@ export function parseReadinessRows(rows: Record<string, unknown>[]): ReadinessWe
 
 async function fitReadinessFromDb(db: Database, userId: string) {
   const rows = await db.execute(
-    sql`WITH metrics AS (
+    sql`WITH metrics_base AS (
           SELECT
             date,
             hrv,
@@ -188,13 +188,18 @@ async function fitReadinessFromDb(db: Database, userId: string) {
             AVG(hrv) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS hrv_mean,
             STDDEV_POP(hrv) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS hrv_sd,
             AVG(resting_hr) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS rhr_mean,
-            STDDEV_POP(resting_hr) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS rhr_sd,
-            LEAD(hrv) OVER (ORDER BY date) AS next_day_hrv,
-            LEAD(AVG(hrv) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW)) OVER (ORDER BY date) AS next_day_hrv_mean,
-            LEAD(STDDEV_POP(hrv) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW)) OVER (ORDER BY date) AS next_day_hrv_sd
+            STDDEV_POP(resting_hr) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS rhr_sd
           FROM fitness.v_daily_metrics
           WHERE user_id = ${userId}
             AND date > CURRENT_DATE - 425
+        ),
+        metrics AS (
+          SELECT
+            *,
+            LEAD(hrv) OVER (ORDER BY date) AS next_day_hrv,
+            LEAD(hrv_mean) OVER (ORDER BY date) AS next_day_hrv_mean,
+            LEAD(hrv_sd) OVER (ORDER BY date) AS next_day_hrv_sd
+          FROM metrics_base
         ),
         sleep_eff AS (
           SELECT DISTINCT ON (COALESCE(ended_at, started_at + interval '8 hours')::date)
@@ -367,21 +372,26 @@ export function parseTrimpRows(rows: Record<string, unknown>[]): TrimpInput[] {
 
 async function fitTrimpFromDb(db: Database, userId: string) {
   const rows = await db.execute(
-    sql`WITH np_data AS (
+    sql`WITH rolling_power AS (
           SELECT
             ms.activity_id,
-            ROUND(POWER(AVG(POWER(
-              AVG(ms.power) OVER (
-                PARTITION BY ms.activity_id
-                ORDER BY ms.recorded_at
-                RANGE BETWEEN INTERVAL '29 seconds' PRECEDING AND CURRENT ROW
-              ), 4)), 0.25)::numeric, 1) AS np
+            AVG(ms.power) OVER (
+              PARTITION BY ms.activity_id
+              ORDER BY ms.recorded_at
+              RANGE BETWEEN INTERVAL '29 seconds' PRECEDING AND CURRENT ROW
+            ) AS rolling_30s_power
           FROM fitness.metric_stream ms
           JOIN fitness.v_activity a ON a.id = ms.activity_id
           WHERE a.user_id = ${userId}
             AND a.started_at > NOW() - INTERVAL '365 days'
             AND ms.power > 0
-          GROUP BY ms.activity_id
+        ),
+        np_data AS (
+          SELECT
+            activity_id,
+            ROUND(POWER(AVG(POWER(rolling_30s_power, 4)), 0.25)::numeric, 1) AS np
+          FROM rolling_power
+          GROUP BY activity_id
           HAVING COUNT(*) >= 60
         )
         SELECT
