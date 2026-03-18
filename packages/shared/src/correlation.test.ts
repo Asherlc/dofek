@@ -62,6 +62,18 @@ describe("describeCorrelation", () => {
     expect(describeCorrelation(-0.5)).toBe("moderate negative");
     expect(describeCorrelation(-0.3)).toBe("weak negative");
   });
+
+  it("returns 'moderate positive' at exact boundary 0.4", () => {
+    expect(describeCorrelation(0.4)).toBe("moderate positive");
+  });
+
+  it("returns 'weak positive' at exact boundary 0.2", () => {
+    expect(describeCorrelation(0.2)).toBe("weak positive");
+  });
+
+  it("returns 'negligible' at exactly 0", () => {
+    expect(describeCorrelation(0)).toBe("negligible");
+  });
 });
 
 describe("correlationConfidence", () => {
@@ -81,6 +93,18 @@ describe("correlationConfidence", () => {
     expect(correlationConfidence(0.1, 5)).toBe("insufficient");
     expect(correlationConfidence(0.5, 5)).toBe("insufficient");
   });
+
+  it("returns 'strong' at exact boundaries rho=0.5 and n=30", () => {
+    expect(correlationConfidence(0.5, 30)).toBe("strong");
+  });
+
+  it("returns 'emerging' at exact boundaries rho=0.35 and n=15", () => {
+    expect(correlationConfidence(0.35, 15)).toBe("emerging");
+  });
+
+  it("returns 'early' at exact boundaries rho=0.2 and n=10", () => {
+    expect(correlationConfidence(0.2, 10)).toBe("early");
+  });
 });
 
 describe("correlationColor", () => {
@@ -94,6 +118,14 @@ describe("correlationColor", () => {
 
   it("returns neutral for negligible correlation", () => {
     expect(correlationColor(0.05)).toBe("#71717a");
+  });
+
+  it("returns emerald at exact boundary rho=0.2", () => {
+    expect(correlationColor(0.2)).toBe("#10b981");
+  });
+
+  it("returns neutral at exactly zero", () => {
+    expect(correlationColor(0)).toBe("#71717a");
   });
 });
 
@@ -137,6 +169,55 @@ describe("generateCorrelationInsight", () => {
     });
     expect(result).toMatch(/next.day|1.day later/i);
   });
+
+  it("uses 'lower' for negative correlation", () => {
+    const result = generateCorrelationInsight({
+      xLabel: "alcohol intake",
+      yLabel: "sleep quality",
+      rho: -0.5,
+      pValue: 0.001,
+      n: 100,
+      lag: 0,
+    });
+    expect(result).toContain("lower");
+  });
+
+  it("does not contain lag text when lag is 0", () => {
+    const result = generateCorrelationInsight({
+      xLabel: "protein intake",
+      yLabel: "recovery score",
+      rho: 0.45,
+      pValue: 0.001,
+      n: 100,
+      lag: 0,
+    });
+    expect(result).not.toContain("day later");
+    expect(result).not.toContain("next day");
+  });
+
+  it("uses 'strongly' for high correlation", () => {
+    const result = generateCorrelationInsight({
+      xLabel: "sleep duration",
+      yLabel: "heart rate variability",
+      rho: 0.8,
+      pValue: 0.001,
+      n: 100,
+      lag: 0,
+    });
+    expect(result).toContain("strongly");
+  });
+
+  it("uses 'weakly' for weak correlation", () => {
+    const result = generateCorrelationInsight({
+      xLabel: "caffeine",
+      yLabel: "resting heart rate",
+      rho: 0.25,
+      pValue: 0.05,
+      n: 50,
+      lag: 0,
+    });
+    expect(result).toContain("weakly");
+  });
 });
 
 describe("pearsonCorrelation", () => {
@@ -167,6 +248,22 @@ describe("pearsonCorrelation", () => {
     expect(result.r).toBe(0);
     expect(result.pValue).toBe(1);
   });
+
+  it("returns valid r for exactly 3 data points (boundary)", () => {
+    const x = [1, 2, 3];
+    const y = [2, 4, 6];
+    const result = pearsonCorrelation(x, y);
+    expect(result.r).toBeCloseTo(1, 5);
+    expect(result.n).toBe(3);
+  });
+
+  it("returns reasonable pValue for non-perfectly-correlated data", () => {
+    const x = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    const y = [2, 3, 5, 4, 7, 6, 9, 8, 10, 11];
+    const result = pearsonCorrelation(x, y);
+    expect(result.pValue).toBeGreaterThan(0);
+    expect(result.pValue).toBeLessThan(1);
+  });
 });
 
 describe("linearRegression", () => {
@@ -184,5 +281,14 @@ describe("linearRegression", () => {
     expect(result.slope).toBe(0);
     expect(result.intercept).toBe(0);
     expect(result.rSquared).toBe(0);
+  });
+
+  it("computes correct results for exactly 2 data points (boundary)", () => {
+    const x = [1, 2];
+    const y = [3, 5];
+    const result = linearRegression(x, y);
+    expect(result.slope).toBeCloseTo(2, 5);
+    expect(result.intercept).toBeCloseTo(1, 5);
+    expect(result.rSquared).toBeCloseTo(1, 5);
   });
 });

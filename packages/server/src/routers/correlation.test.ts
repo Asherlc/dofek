@@ -262,4 +262,28 @@ describe("computeCorrelation", () => {
     expect(result0.dataPoints.length).toBeGreaterThan(0);
     expect(result1.dataPoints.length).toBeGreaterThan(0);
   });
+
+  it("returns neutral color for insufficient data", () => {
+    const days = generateCorrelatedDays(3);
+    const result = computeCorrelation(days, {
+      metricX: "protein",
+      metricY: "hrv",
+      days: 365,
+      lag: 0,
+    });
+    expect(result.correlationColor).toBe("#71717a");
+  });
+
+  it("uses metric labels in insight text", () => {
+    const days = generateCorrelatedDays(30);
+    const result = computeCorrelation(days, {
+      metricX: "protein",
+      metricY: "hrv",
+      days: 365,
+      lag: 0,
+    });
+    // Verify labels are used (not raw IDs)
+    expect(result.insight).toContain("protein");
+    expect(result.insight).not.toContain("protein_g");
+  });
 });

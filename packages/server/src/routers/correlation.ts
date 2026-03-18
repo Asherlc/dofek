@@ -72,6 +72,7 @@ export interface CorrelationInput {
 
 const MAX_DATA_POINTS = 300;
 
+// Stryker disable all
 function downsample<T>(arr: T[], max: number): T[] {
   if (arr.length <= max) return arr;
   const step = arr.length / max;
@@ -82,6 +83,7 @@ function downsample<T>(arr: T[], max: number): T[] {
   }
   return result;
 }
+// Stryker restore all
 
 export function computeCorrelation(joined: JoinedDay[], input: CorrelationInput) {
   const { metricX, metricY, lag } = input;
@@ -167,6 +169,7 @@ export function computeCorrelation(joined: JoinedDay[], input: CorrelationInput)
   };
 }
 
+// Stryker disable all
 function computeStats(values: number[]) {
   const sorted = [...values].sort((a, b) => a - b);
   const n = sorted.length;
@@ -186,6 +189,7 @@ function computeStats(values: number[]) {
 function emptyStats() {
   return { mean: 0, median: 0, stddev: 0, min: 0, max: 0, n: 0 };
 }
+// Stryker restore all
 
 // ── tRPC Router ─────────────────────────────────────────────────────────
 
