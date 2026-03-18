@@ -30,14 +30,19 @@ export async function runSync(
       console.log(
         `[sync] ${provider.name}: ${result.recordsSynced} records, ${result.errors.length} errors`,
       );
+      for (const err of result.errors) {
+        console.error(`  [${provider.id}] ${err.message}`);
+      }
       return result;
     }),
   );
 
   const settled: SyncResult[] = results.map((result, index) => {
     if (result.status === "fulfilled") return result.value;
+    const providerId = toSync[index]?.id ?? "unknown";
+    console.error(`  [${providerId}] Unhandled: ${String(result.reason)}`);
     return {
-      provider: toSync[index]?.id ?? "unknown",
+      provider: providerId,
       recordsSynced: 0,
       errors: [{ message: String(result.reason) }],
       duration: 0,
