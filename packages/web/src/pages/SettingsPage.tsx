@@ -1,6 +1,7 @@
 import { AppHeader } from "../components/AppHeader.tsx";
 import { ExportPanel } from "../components/ExportPanel.tsx";
 import { LinkedAccountsPanel } from "../components/LinkedAccountsPanel.tsx";
+import { PersonalizationPanel } from "../components/PersonalizationPanel.tsx";
 import { SlackIntegrationPanel } from "../components/SlackIntegrationPanel.tsx";
 import { UnitSystemToggle } from "../components/UnitSystemToggle.tsx";
 import { SECTION_LABELS, useDashboardLayout } from "../lib/dashboardLayoutContext.ts";
@@ -72,6 +73,18 @@ export function SettingsPage() {
             >
               Reset to Default
             </button>
+          </div>
+        </section>
+
+        <section>
+          <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-1">
+            Algorithm Personalization
+          </h2>
+          <p className="text-xs text-zinc-600 mb-4">
+            Parameters are automatically learned from your data to improve accuracy
+          </p>
+          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+            <PersonalizationPanel />
           </div>
         </section>
 
