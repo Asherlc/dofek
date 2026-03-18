@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type BodySpecBoneDensityResponse,
   type BodySpecCompositionResponse,
@@ -16,6 +16,53 @@ import {
   parseScanInfo,
   parseVisceralFat,
 } from "./bodyspec.ts";
+
+// ============================================================
+// Mocks for unit-testing sync orchestration
+// ============================================================
+
+vi.mock("../db/tokens.ts", () => ({
+  ensureProvider: vi.fn(),
+  loadTokens: vi.fn(),
+  saveTokens: vi.fn(),
+}));
+
+vi.mock("../db/sync-log.ts", () => ({
+  withSyncLog: vi.fn(
+    async (
+      _db: unknown,
+      _providerId: string,
+      _dataType: string,
+      fn: () => Promise<{ recordCount: number; result: number }>,
+    ) => {
+      const { result } = await fn();
+      return result;
+    },
+  ),
+}));
+
+vi.mock("../auth/oauth.ts", () => ({
+  getOAuthRedirectUri: vi.fn(() => "http://localhost/callback"),
+  exchangeCodeForTokens: vi.fn(),
+  refreshAccessToken: vi.fn(),
+}));
+
+// We need to mock the Drizzle schema imports so they don't pull in the real DB
+vi.mock("../db/schema.ts", () => ({
+  dexaScan: {
+    providerId: "provider_id",
+    externalId: "external_id",
+    id: "id",
+  },
+  dexaScanRegion: {
+    scanId: "scan_id",
+    region: "region",
+  },
+}));
+
+import { refreshAccessToken } from "../auth/oauth.ts";
+import type { SyncDatabase } from "../db/index.ts";
+import { loadTokens, saveTokens } from "../db/tokens.ts";
 
 // ============================================================
 // Fixtures
@@ -375,6 +422,474 @@ describe("BodySpecProvider", () => {
       await expect(catchNotFound(Promise.reject(new Error("fetch failed")))).rejects.toThrow(
         "fetch failed",
       );
+    });
+  });
+
+  describe("authSetup", () => {
+    const originalEnv = process.env;
+
+    beforeEach(() => {
+      process.env = { ...originalEnv };
+    });
+
+    afterEach(() => {
+      process.env = originalEnv;
+    });
+
+    it("returns undefined when OAuth env vars are missing", () => {
+      delete process.env.BODYSPEC_CLIENT_ID;
+      delete process.env.BODYSPEC_CLIENT_SECRET;
+      const provider = new BodySpecProvider();
+      expect(provider.authSetup()).toBeUndefined();
+    });
+
+    it("returns auth setup with correct OAuth config when env vars are set", () => {
+      process.env.BODYSPEC_CLIENT_ID = "test-id";
+      process.env.BODYSPEC_CLIENT_SECRET = "test-secret";
+      const provider = new BodySpecProvider();
+      const setup = provider.authSetup();
+      expect(setup).toBeDefined();
+      expect(setup?.oauthConfig.clientId).toBe("test-id");
+      expect(setup?.oauthConfig.clientSecret).toBe("test-secret");
+      expect(setup?.oauthConfig.authorizeUrl).toContain("bodyspec.com/oauth/authorize");
+      expect(setup?.oauthConfig.tokenUrl).toContain("bodyspec.com/oauth/token");
+      expect(setup?.oauthConfig.scopes).toEqual(["read:results"]);
+      expect(setup?.apiBaseUrl).toBe("https://app.bodyspec.com");
+      expect(setup?.exchangeCode).toBeTypeOf("function");
+    });
+  });
+
+  describe("sync", () => {
+    const originalEnv = process.env;
+
+    beforeEach(() => {
+      vi.clearAllMocks();
+      process.env = {
+        ...originalEnv,
+        BODYSPEC_CLIENT_ID: "test-id",
+        BODYSPEC_CLIENT_SECRET: "test-secret",
+      };
+    });
+
+    afterEach(() => {
+      process.env = originalEnv;
+    });
+
+    function mockDb(): SyncDatabase {
+      const returningFn = vi.fn().mockResolvedValue([{ id: "scan-uuid-1" }]);
+      const onConflictDoUpdateFn = vi.fn().mockReturnValue({ returning: returningFn });
+      const valuesFn = vi.fn().mockReturnValue({ onConflictDoUpdate: onConflictDoUpdateFn });
+      const insertFn = vi.fn().mockReturnValue({ values: valuesFn });
+      return { insert: insertFn, select: vi.fn(), delete: vi.fn(), execute: vi.fn() };
+    }
+
+    function jsonResponse(body: unknown, status = 200): Response {
+      return new Response(JSON.stringify(body), {
+        status,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    function errorResponse(status: number, text = "Error"): Response {
+      return new Response(text, { status });
+    }
+
+    it("returns error when no tokens exist", async () => {
+      vi.mocked(loadTokens).mockResolvedValue(null);
+      const provider = new BodySpecProvider();
+      const result = await provider.sync(mockDb(), new Date("2025-01-01"));
+      expect(result.provider).toBe("bodyspec");
+      expect(result.recordsSynced).toBe(0);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0].message).toContain("No OAuth tokens found");
+    });
+
+    it("refreshes expired tokens and saves them", async () => {
+      const expiredTokens = {
+        accessToken: "expired",
+        refreshToken: "refresh-token",
+        expiresAt: new Date("2020-01-01"),
+        scopes: "read:results",
+      };
+      const refreshedTokens = {
+        accessToken: "new-token",
+        refreshToken: "new-refresh",
+        expiresAt: new Date("2030-01-01"),
+        scopes: "read:results",
+      };
+      vi.mocked(loadTokens).mockResolvedValue(expiredTokens);
+      vi.mocked(refreshAccessToken).mockResolvedValue(refreshedTokens);
+
+      const fetchFn = vi.fn().mockResolvedValue(
+        jsonResponse({
+          results: [],
+          pagination: { page: 1, page_size: 100, results: 0, has_more: false },
+        }),
+      );
+      const provider = new BodySpecProvider(fetchFn);
+      const result = await provider.sync(mockDb(), new Date("2025-01-01"));
+
+      expect(refreshAccessToken).toHaveBeenCalled();
+      expect(saveTokens).toHaveBeenCalled();
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it("syncs a single result successfully", async () => {
+      const validTokens = {
+        accessToken: "valid-token",
+        refreshToken: "refresh",
+        expiresAt: new Date("2030-01-01"),
+        scopes: "read:results",
+      };
+      vi.mocked(loadTokens).mockResolvedValue(validTokens);
+
+      const fetchFn = vi.fn().mockImplementation((url: string) => {
+        if (url.includes("/results/?")) {
+          return Promise.resolve(
+            jsonResponse({
+              results: [{ result_id: "r1", start_time: "2025-06-15T10:00:00Z" }],
+              pagination: { page: 1, page_size: 100, results: 1, has_more: false },
+            }),
+          );
+        }
+        if (url.includes("/scan-info")) {
+          return Promise.resolve(jsonResponse(SCAN_INFO_RESPONSE));
+        }
+        if (url.includes("/composition")) {
+          return Promise.resolve(jsonResponse(COMPOSITION_RESPONSE));
+        }
+        if (url.includes("/bone-density")) {
+          return Promise.resolve(jsonResponse(BONE_DENSITY_RESPONSE));
+        }
+        if (url.includes("/visceral-fat")) {
+          return Promise.resolve(jsonResponse(VISCERAL_FAT_RESPONSE));
+        }
+        if (url.includes("/rmr")) {
+          return Promise.resolve(jsonResponse(RMR_RESPONSE));
+        }
+        if (url.includes("/percentiles")) {
+          return Promise.resolve(jsonResponse(PERCENTILES_RESPONSE));
+        }
+        return Promise.resolve(errorResponse(404, "Not Found"));
+      });
+
+      const db = mockDb();
+      const provider = new BodySpecProvider(fetchFn);
+      const result = await provider.sync(db, new Date("2025-01-01"));
+
+      expect(result.provider).toBe("bodyspec");
+      expect(result.recordsSynced).toBe(1);
+      expect(result.errors).toHaveLength(0);
+      // Verify DB inserts were called
+      expect(db.insert).toHaveBeenCalled();
+    });
+
+    it("skips results older than since date", async () => {
+      const validTokens = {
+        accessToken: "valid-token",
+        refreshToken: "refresh",
+        expiresAt: new Date("2030-01-01"),
+        scopes: "read:results",
+      };
+      vi.mocked(loadTokens).mockResolvedValue(validTokens);
+
+      const fetchFn = vi.fn().mockResolvedValue(
+        jsonResponse({
+          results: [{ result_id: "r1", start_time: "2024-01-01T10:00:00Z" }],
+          pagination: { page: 1, page_size: 100, results: 1, has_more: false },
+        }),
+      );
+
+      const provider = new BodySpecProvider(fetchFn);
+      const result = await provider.sync(mockDb(), new Date("2025-06-01"));
+
+      expect(result.recordsSynced).toBe(0);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it("handles missing composition (returns 0 records)", async () => {
+      const validTokens = {
+        accessToken: "valid-token",
+        refreshToken: "refresh",
+        expiresAt: new Date("2030-01-01"),
+        scopes: "read:results",
+      };
+      vi.mocked(loadTokens).mockResolvedValue(validTokens);
+
+      const fetchFn = vi.fn().mockImplementation((url: string) => {
+        if (url.includes("/results/?")) {
+          return Promise.resolve(
+            jsonResponse({
+              results: [{ result_id: "r1", start_time: "2025-06-15T10:00:00Z" }],
+              pagination: { page: 1, page_size: 100, results: 1, has_more: false },
+            }),
+          );
+        }
+        // All section endpoints return 404
+        return Promise.resolve(errorResponse(404, "Not Found"));
+      });
+
+      const provider = new BodySpecProvider(fetchFn);
+      const result = await provider.sync(mockDb(), new Date("2025-01-01"));
+
+      expect(result.recordsSynced).toBe(0);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it("handles per-result API errors gracefully", async () => {
+      const validTokens = {
+        accessToken: "valid-token",
+        refreshToken: "refresh",
+        expiresAt: new Date("2030-01-01"),
+        scopes: "read:results",
+      };
+      vi.mocked(loadTokens).mockResolvedValue(validTokens);
+
+      const fetchFn = vi.fn().mockImplementation((url: string) => {
+        if (url.includes("/results/?")) {
+          return Promise.resolve(
+            jsonResponse({
+              results: [{ result_id: "r1", start_time: "2025-06-15T10:00:00Z" }],
+              pagination: { page: 1, page_size: 100, results: 1, has_more: false },
+            }),
+          );
+        }
+        // composition returns 500 — non-404 error propagates
+        if (url.includes("/composition")) {
+          return Promise.resolve(errorResponse(500, "Internal Server Error"));
+        }
+        return Promise.resolve(errorResponse(404, "Not Found"));
+      });
+
+      const provider = new BodySpecProvider(fetchFn);
+      const result = await provider.sync(mockDb(), new Date("2025-01-01"));
+
+      expect(result.recordsSynced).toBe(0);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0].message).toContain("500");
+      expect(result.errors[0].externalId).toBe("r1");
+    });
+
+    it("paginates through multiple pages of results", async () => {
+      const validTokens = {
+        accessToken: "valid-token",
+        refreshToken: "refresh",
+        expiresAt: new Date("2030-01-01"),
+        scopes: "read:results",
+      };
+      vi.mocked(loadTokens).mockResolvedValue(validTokens);
+
+      let listCallCount = 0;
+      const fetchFn = vi.fn().mockImplementation((url: string) => {
+        if (url.includes("/results/?")) {
+          listCallCount++;
+          if (listCallCount === 1) {
+            return Promise.resolve(
+              jsonResponse({
+                results: [{ result_id: "r1", start_time: "2025-06-15T10:00:00Z" }],
+                pagination: { page: 1, page_size: 1, results: 2, has_more: true },
+              }),
+            );
+          }
+          return Promise.resolve(
+            jsonResponse({
+              results: [{ result_id: "r2", start_time: "2025-06-16T10:00:00Z" }],
+              pagination: { page: 2, page_size: 1, results: 2, has_more: false },
+            }),
+          );
+        }
+        if (url.includes("/composition")) {
+          return Promise.resolve(jsonResponse(COMPOSITION_RESPONSE));
+        }
+        if (url.includes("/scan-info")) {
+          return Promise.resolve(jsonResponse(SCAN_INFO_RESPONSE));
+        }
+        return Promise.resolve(errorResponse(404, "Not Found"));
+      });
+
+      const provider = new BodySpecProvider(fetchFn);
+      const result = await provider.sync(mockDb(), new Date("2025-01-01"));
+
+      expect(result.recordsSynced).toBe(2);
+      expect(listCallCount).toBe(2);
+    });
+
+    it("syncs with only composition (optional endpoints 404)", async () => {
+      const validTokens = {
+        accessToken: "valid-token",
+        refreshToken: "refresh",
+        expiresAt: new Date("2030-01-01"),
+        scopes: "read:results",
+      };
+      vi.mocked(loadTokens).mockResolvedValue(validTokens);
+
+      const fetchFn = vi.fn().mockImplementation((url: string) => {
+        if (url.includes("/results/?")) {
+          return Promise.resolve(
+            jsonResponse({
+              results: [{ result_id: "r1", start_time: "2025-06-15T10:00:00Z" }],
+              pagination: { page: 1, page_size: 100, results: 1, has_more: false },
+            }),
+          );
+        }
+        if (url.includes("/composition")) {
+          return Promise.resolve(jsonResponse(COMPOSITION_RESPONSE));
+        }
+        // Everything else is 404
+        return Promise.resolve(errorResponse(404, "Not Found"));
+      });
+
+      const db = mockDb();
+      const provider = new BodySpecProvider(fetchFn);
+      const result = await provider.sync(db, new Date("2025-01-01"));
+
+      expect(result.recordsSynced).toBe(1);
+      expect(result.errors).toHaveLength(0);
+      // Verify scan insert was called
+      expect(db.insert).toHaveBeenCalled();
+    });
+
+    it("handles DB insert returning empty (no inserted row)", async () => {
+      const validTokens = {
+        accessToken: "valid-token",
+        refreshToken: "refresh",
+        expiresAt: new Date("2030-01-01"),
+        scopes: "read:results",
+      };
+      vi.mocked(loadTokens).mockResolvedValue(validTokens);
+
+      const fetchFn = vi.fn().mockImplementation((url: string) => {
+        if (url.includes("/results/?")) {
+          return Promise.resolve(
+            jsonResponse({
+              results: [{ result_id: "r1", start_time: "2025-06-15T10:00:00Z" }],
+              pagination: { page: 1, page_size: 100, results: 1, has_more: false },
+            }),
+          );
+        }
+        if (url.includes("/composition")) {
+          return Promise.resolve(jsonResponse(COMPOSITION_RESPONSE));
+        }
+        return Promise.resolve(errorResponse(404, "Not Found"));
+      });
+
+      // DB returns empty array from returning()
+      const returningFn = vi.fn().mockResolvedValue([]);
+      const onConflictDoUpdateFn = vi.fn().mockReturnValue({ returning: returningFn });
+      const valuesFn = vi.fn().mockReturnValue({ onConflictDoUpdate: onConflictDoUpdateFn });
+      const insertFn = vi.fn().mockReturnValue({ values: valuesFn });
+      const db: SyncDatabase = {
+        insert: insertFn,
+        select: vi.fn(),
+        delete: vi.fn(),
+        execute: vi.fn(),
+      };
+
+      const provider = new BodySpecProvider(fetchFn);
+      const result = await provider.sync(db, new Date("2025-01-01"));
+
+      expect(result.recordsSynced).toBe(0);
+    });
+
+    it("handles token refresh failure when no config available", async () => {
+      process.env = { ...originalEnv };
+      delete process.env.BODYSPEC_CLIENT_ID;
+      delete process.env.BODYSPEC_CLIENT_SECRET;
+
+      const expiredTokens = {
+        accessToken: "expired",
+        refreshToken: "refresh-token",
+        expiresAt: new Date("2020-01-01"),
+        scopes: "read:results",
+      };
+      vi.mocked(loadTokens).mockResolvedValue(expiredTokens);
+
+      const provider = new BodySpecProvider();
+      const result = await provider.sync(mockDb(), new Date("2025-01-01"));
+
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0].message).toContain("BODYSPEC_CLIENT_ID");
+    });
+
+    it("handles token refresh failure when no refresh token", async () => {
+      const expiredTokens = {
+        accessToken: "expired",
+        refreshToken: null,
+        expiresAt: new Date("2020-01-01"),
+        scopes: "read:results",
+      };
+      vi.mocked(loadTokens).mockResolvedValue(expiredTokens);
+
+      const provider = new BodySpecProvider();
+      const result = await provider.sync(mockDb(), new Date("2025-01-01"));
+
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0].message).toContain("No refresh token");
+    });
+
+    it("returns correct duration in result", async () => {
+      vi.mocked(loadTokens).mockResolvedValue(null);
+      const provider = new BodySpecProvider();
+      const result = await provider.sync(mockDb(), new Date("2025-01-01"));
+      expect(result.duration).toBeGreaterThanOrEqual(0);
+    });
+
+    it("includes fetch URL with correct auth header", async () => {
+      const validTokens = {
+        accessToken: "my-secret-token",
+        refreshToken: "refresh",
+        expiresAt: new Date("2030-01-01"),
+        scopes: "read:results",
+      };
+      vi.mocked(loadTokens).mockResolvedValue(validTokens);
+
+      const fetchFn = vi.fn().mockResolvedValue(
+        jsonResponse({
+          results: [],
+          pagination: { page: 1, page_size: 100, results: 0, has_more: false },
+        }),
+      );
+
+      const provider = new BodySpecProvider(fetchFn);
+      await provider.sync(mockDb(), new Date("2025-01-01"));
+
+      expect(fetchFn).toHaveBeenCalledWith(
+        expect.stringContaining("https://app.bodyspec.com/api/v1/users/me/results/"),
+        expect.objectContaining({
+          headers: { Authorization: "Bearer my-secret-token" },
+        }),
+      );
+    });
+
+    it("truncates long error response bodies", async () => {
+      const validTokens = {
+        accessToken: "valid-token",
+        refreshToken: "refresh",
+        expiresAt: new Date("2030-01-01"),
+        scopes: "read:results",
+      };
+      vi.mocked(loadTokens).mockResolvedValue(validTokens);
+
+      const longBody = "x".repeat(500);
+      const fetchFn = vi.fn().mockImplementation((url: string) => {
+        if (url.includes("/results/?")) {
+          return Promise.resolve(
+            jsonResponse({
+              results: [{ result_id: "r1", start_time: "2025-06-15T10:00:00Z" }],
+              pagination: { page: 1, page_size: 100, results: 1, has_more: false },
+            }),
+          );
+        }
+        // All endpoints return error with long body
+        return Promise.resolve(new Response(longBody, { status: 500 }));
+      });
+
+      const provider = new BodySpecProvider(fetchFn);
+      const result = await provider.sync(mockDb(), new Date("2025-01-01"));
+
+      expect(result.errors).toHaveLength(1);
+      // Error message should be truncated
+      expect(result.errors[0].message.length).toBeLessThan(400);
     });
   });
 });
