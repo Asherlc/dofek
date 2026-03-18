@@ -10,7 +10,7 @@ function redactLogErrorMessage(errorMessage: string | null): string | null {
   return REDACTED_ERROR_MESSAGE;
 }
 
-const dataTypeEnum = z.enum([
+export const dataTypeEnum = z.enum([
   "activities",
   "dailyMetrics",
   "sleepSessions",
@@ -26,7 +26,11 @@ const dataTypeEnum = z.enum([
 type DataType = z.infer<typeof dataTypeEnum>;
 
 /** Map data type enum to SQL table name and ordering column */
-function tableInfo(dataType: DataType): { table: string; orderColumn: string; idColumn: string } {
+export function tableInfo(dataType: DataType): {
+  table: string;
+  orderColumn: string;
+  idColumn: string;
+} {
   switch (dataType) {
     case "activities":
       return { table: "fitness.activity", orderColumn: "started_at", idColumn: "id" };
@@ -54,6 +58,24 @@ function tableInfo(dataType: DataType): { table: string; orderColumn: string; id
       return { table: "fitness.journal_entry", orderColumn: "date", idColumn: "id" };
   }
 }
+
+/** Tables to cascade-delete when disconnecting a provider, in deletion order. */
+export const DISCONNECT_CHILD_TABLES = [
+  "fitness.metric_stream",
+  "fitness.exercise_alias",
+  "fitness.strength_workout",
+  "fitness.body_measurement",
+  "fitness.daily_metrics",
+  "fitness.sleep_session",
+  "fitness.nutrition_daily",
+  "fitness.food_entry",
+  "fitness.lab_result",
+  "fitness.health_event",
+  "fitness.journal_entry",
+  "fitness.sync_log",
+  "fitness.activity",
+  "fitness.oauth_token",
+];
 
 export const providerDetailRouter = router({
   /** Paginated sync logs for a specific provider */
@@ -156,22 +178,7 @@ export const providerDetailRouter = router({
 
       // Delete all child table rows referencing this provider, then the provider itself.
       // No inter-child FK dependencies exist, so order only matters for the final provider delete.
-      const childTables = [
-        "fitness.metric_stream",
-        "fitness.exercise_alias",
-        "fitness.strength_workout",
-        "fitness.body_measurement",
-        "fitness.daily_metrics",
-        "fitness.sleep_session",
-        "fitness.nutrition_daily",
-        "fitness.food_entry",
-        "fitness.lab_result",
-        "fitness.health_event",
-        "fitness.journal_entry",
-        "fitness.sync_log",
-        "fitness.activity",
-        "fitness.oauth_token",
-      ];
+      const childTables = DISCONNECT_CHILD_TABLES;
 
       await ctx.db.transaction(async (tx) => {
         for (const table of childTables) {
