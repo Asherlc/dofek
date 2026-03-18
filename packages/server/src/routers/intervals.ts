@@ -178,7 +178,7 @@ export const intervalsRouter = router({
     }),
 });
 
-function summarizeSegment(
+export function summarizeSegment(
   segmentRows: {
     avg_power: number | null;
     avg_hr: number | null;
@@ -213,13 +213,13 @@ function summarizeSegment(
   };
 }
 
-function average(values: (number | null)[]): number | null {
+export function average(values: (number | null)[]): number | null {
   const valid = values.filter((v): v is number => v != null && v > 0);
   if (valid.length === 0) return null;
   return Math.round((valid.reduce((a, b) => a + b, 0) / valid.length) * 10) / 10;
 }
 
-function maxVal(values: (number | null)[]): number | null {
+export function maxVal(values: (number | null)[]): number | null {
   const valid = values.filter((v): v is number => v != null);
   if (valid.length === 0) return null;
   return Math.max(...valid);
