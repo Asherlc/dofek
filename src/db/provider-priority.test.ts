@@ -270,4 +270,97 @@ describe("syncProviderPriorities", () => {
     // The first call is the provider upsert — verify it was called
     expect(mockExecute).toHaveBeenCalled();
   });
+
+  it("SQL includes provider_priority table for provider upserts", async () => {
+    const config: ProviderPriorityConfig = {
+      providers: { wahoo: { activity: 10, sleep: 20, recovery: 15 } },
+    };
+
+    await syncProviderPriorities(mockDb, config);
+
+    // First call is the provider upsert — inspect the Drizzle SQL object
+    const firstCall = mockExecute.mock.calls[0]?.[0];
+    const sqlStr = JSON.stringify(firstCall);
+    expect(sqlStr).toContain("provider_priority");
+    expect(sqlStr).toContain("ON CONFLICT");
+  });
+
+  it("SQL includes device_priority table for device upserts", async () => {
+    const config: ProviderPriorityConfig = {
+      providers: {
+        apple_health: {
+          activity: 90,
+          devices: { "Apple Watch%": { activity: 30, sleep: 25 } },
+        },
+      },
+    };
+
+    await syncProviderPriorities(mockDb, config);
+
+    // Second call (after provider upsert) should be device upsert
+    const deviceCall = mockExecute.mock.calls[1]?.[0];
+    const sqlStr = JSON.stringify(deviceCall);
+    expect(sqlStr).toContain("device_priority");
+    expect(sqlStr).toContain("source_name_pattern");
+  });
+
+  it("issues DELETE for device_priority cleanup", async () => {
+    const config: ProviderPriorityConfig = {
+      providers: {
+        wahoo: { activity: 10 },
+      },
+    };
+
+    await syncProviderPriorities(mockDb, config);
+
+    const allSql = mockExecute.mock.calls.map((c: unknown[]) => JSON.stringify(c[0]));
+    const hasDeviceDelete = allSql.some(
+      (s: string) => s.includes("DELETE") && s.includes("device_priority"),
+    );
+    expect(hasDeviceDelete).toBe(true);
+  });
+
+  it("issues DELETE for provider_priority cleanup", async () => {
+    const config: ProviderPriorityConfig = {
+      providers: {
+        wahoo: { activity: 10 },
+      },
+    };
+
+    await syncProviderPriorities(mockDb, config);
+
+    const allSql = mockExecute.mock.calls.map((c: unknown[]) => JSON.stringify(c[0]));
+    const hasProviderDelete = allSql.some(
+      (s: string) =>
+        s.includes("DELETE") && s.includes("provider_priority") && s.includes("NOT IN"),
+    );
+    expect(hasProviderDelete).toBe(true);
+  });
+
+  it("iterates over all device patterns in a provider", async () => {
+    const config: ProviderPriorityConfig = {
+      providers: {
+        garmin: {
+          activity: 15,
+          devices: {
+            "Edge%": { activity: 8 },
+            "Forerunner%": { activity: 12 },
+            "Venu%": { activity: 14, sleep: 25 },
+          },
+        },
+      },
+    };
+
+    await syncProviderPriorities(mockDb, config);
+
+    // 1 provider upsert + 3 device upserts + 1 device delete + 1 provider delete = 6
+    expect(mockExecute).toHaveBeenCalledTimes(6);
+
+    // Verify each device pattern was upserted
+    const deviceCalls = mockExecute.mock.calls
+      .slice(1, 4)
+      .map((c: unknown[]) => JSON.stringify(c[0]));
+    const allDeviceSql = deviceCalls.join(" ");
+    expect(allDeviceSql).toContain("device_priority");
+  });
 });
