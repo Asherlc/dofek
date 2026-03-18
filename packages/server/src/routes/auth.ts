@@ -11,6 +11,7 @@ import {
   getMobileSchemeCookie,
   getOAuthFlowCookies,
   getSessionIdFromRequest,
+  isValidMobileScheme,
   setLinkUserCookie,
   setMobileSchemeCookie,
   setOAuthFlowCookies,
@@ -214,7 +215,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       // Mobile apps pass redirect_scheme so the callback redirects via deep link
       const redirectScheme =
         typeof req.query.redirect_scheme === "string" ? req.query.redirect_scheme : undefined;
-      if (redirectScheme) {
+      if (redirectScheme && isValidMobileScheme(redirectScheme)) {
         setMobileSchemeCookie(res, redirectScheme);
       }
 
@@ -322,7 +323,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         const sessionInfo = await createSession(db, userId);
 
         // Mobile: redirect to app via deep link with session token
-        if (mobileScheme) {
+        if (mobileScheme && isValidMobileScheme(mobileScheme)) {
           logger.info(`[auth] User ${userId} logged in via ${providerName} (mobile)`);
           res.redirect(`${mobileScheme}://auth/callback?session=${sessionInfo.sessionId}`);
           return;
@@ -399,8 +400,10 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
   // ── Data provider login: use a data provider as an identity/login provider ──
   router.get("/auth/login/data/:provider", async (req, res) => {
     try {
-      const mobileScheme =
+      const redirectScheme =
         typeof req.query.redirect_scheme === "string" ? req.query.redirect_scheme : undefined;
+      const mobileScheme =
+        redirectScheme && isValidMobileScheme(redirectScheme) ? redirectScheme : undefined;
       await startDataProviderOAuth(res, req.params.provider, {
         providerId: req.params.provider,
         intent: "login",
@@ -663,7 +666,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
             const sessionInfo = await createSession(db, userId);
 
             // Mobile: redirect to app via deep link with session token
-            if (stateEntry.mobileScheme) {
+            if (stateEntry.mobileScheme && isValidMobileScheme(stateEntry.mobileScheme)) {
               logger.info(
                 `[auth] User ${userId} logged in via data provider ${providerId} (mobile)`,
               );

@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -49,9 +49,10 @@ export default function AddFoodScreen() {
   const date = params.date ?? formatDateYmd();
   const { serverUrl, sessionToken } = useAuth();
   const apiUrl = serverUrl ? getTrpcUrl(serverUrl) : "http://localhost:3000/api/trpc";
-  const authHeaders: Record<string, string> = sessionToken
-    ? { Authorization: `Bearer ${sessionToken}` }
-    : {};
+  const authHeaders = useMemo<Record<string, string>>(
+    () => (sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {}),
+    [sessionToken],
+  );
 
   // ── Search state ──
   const [searchQuery, setSearchQuery] = useState("");

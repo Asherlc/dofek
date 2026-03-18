@@ -91,6 +91,14 @@ export function getSessionIdFromRequest(req: Request): string | undefined {
 
 // ── Mobile redirect scheme cookie ──
 
+/** Known mobile app URL schemes (allowlist for security). */
+const ALLOWED_MOBILE_SCHEMES = ["dofek"];
+
+/** Validate a redirect scheme against the allowlist. */
+export function isValidMobileScheme(scheme: unknown): boolean {
+  return typeof scheme === "string" && ALLOWED_MOBILE_SCHEMES.includes(scheme);
+}
+
 /** Store the mobile app's URL scheme during OAuth flow so the callback can redirect back. */
 export function setMobileSchemeCookie(res: Response, scheme: string): void {
   res.cookie(MOBILE_SCHEME_COOKIE, scheme, { ...cookieDefaults, maxAge: FLOW_MAX_AGE });
