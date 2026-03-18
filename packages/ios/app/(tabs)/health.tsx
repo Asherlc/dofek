@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
+import { useAuth } from "../../lib/auth-context";
 import { colors } from "../../theme";
 import {
   enableBackgroundDelivery,
@@ -41,6 +42,7 @@ function daysAgo(days: number): string {
 }
 
 export default function HealthScreen() {
+  const { user, serverUrl, logout, disconnectServer } = useAuth();
   const [permissionsGranted, setPermissionsGranted] = useState(false);
   const [status, setStatus] = useState<SyncStatus>({
     lastSync: null,
@@ -221,6 +223,37 @@ export default function HealthScreen() {
           </View>
         </>
       )}
+
+      {/* Account */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Account</Text>
+        {user ? (
+          <View style={styles.statusRow}>
+            <Text style={styles.statusLabel}>Signed in as</Text>
+            <Text style={styles.statusValue}>{user.name}</Text>
+          </View>
+        ) : null}
+        {serverUrl ? (
+          <View style={styles.statusRow}>
+            <Text style={styles.statusLabel}>Server</Text>
+            <Text style={styles.statusValue} numberOfLines={1}>
+              {serverUrl}
+            </Text>
+          </View>
+        ) : null}
+        <TouchableOpacity style={styles.buttonSecondary} onPress={logout} activeOpacity={0.7}>
+          <Text style={styles.buttonSecondaryText}>Sign Out</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.buttonSecondary, { marginTop: 8 }]}
+          onPress={disconnectServer}
+          activeOpacity={0.7}
+        >
+          <Text style={[styles.buttonSecondaryText, { color: colors.danger }]}>
+            Disconnect Server
+          </Text>
+        </TouchableOpacity>
+      </View>
     </ScrollView>
   );
 }

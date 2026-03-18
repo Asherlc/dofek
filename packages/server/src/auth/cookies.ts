@@ -4,6 +4,7 @@ const SESSION_COOKIE = "session";
 const CODE_VERIFIER_COOKIE = "auth_code_verifier";
 const STATE_COOKIE = "auth_state";
 const LINK_USER_COOKIE = "auth_link_user";
+const MOBILE_SCHEME_COOKIE = "auth_mobile_scheme";
 
 const isProduction = process.env.NODE_ENV === "production";
 
@@ -57,6 +58,7 @@ export function clearOAuthFlowCookies(res: Response): void {
   res.clearCookie(STATE_COOKIE, { path: "/" });
   res.clearCookie(CODE_VERIFIER_COOKIE, { path: "/" });
   res.clearCookie(LINK_USER_COOKIE, { path: "/" });
+  res.clearCookie(MOBILE_SCHEME_COOKIE, { path: "/" });
 }
 
 // ── Account linking cookie (marks OAuth flow as "link to existing user") ──
@@ -67,5 +69,42 @@ export function setLinkUserCookie(res: Response, userId: string): void {
 
 export function getLinkUserCookie(req: Request): string | undefined {
   const val = req.cookies?.[LINK_USER_COOKIE];
+  return typeof val === "string" ? val : undefined;
+}
+
+// ── Session from request (cookie or Authorization header) ──
+
+/** Extract session ID from either the session cookie or an Authorization: Bearer header.
+ *  Prefers cookie when both are present. Used for mobile clients that can't rely on cookies. */
+export function getSessionIdFromRequest(req: Request): string | undefined {
+  const cookieSession = getSessionCookie(req);
+  if (cookieSession) return cookieSession;
+
+  const authHeader = req.headers?.authorization;
+  if (typeof authHeader === "string" && authHeader.startsWith("Bearer ")) {
+    const token = authHeader.slice(7);
+    return token.length > 0 ? token : undefined;
+  }
+
+  return undefined;
+}
+
+// ── Mobile redirect scheme cookie ──
+
+/** Known mobile app URL schemes (allowlist for security). */
+const ALLOWED_MOBILE_SCHEMES = ["dofek"];
+
+/** Validate a redirect scheme against the allowlist. */
+export function isValidMobileScheme(scheme: unknown): boolean {
+  return typeof scheme === "string" && ALLOWED_MOBILE_SCHEMES.includes(scheme);
+}
+
+/** Store the mobile app's URL scheme during OAuth flow so the callback can redirect back. */
+export function setMobileSchemeCookie(res: Response, scheme: string): void {
+  res.cookie(MOBILE_SCHEME_COOKIE, scheme, { ...cookieDefaults, maxAge: FLOW_MAX_AGE });
+}
+
+export function getMobileSchemeCookie(req: Request): string | undefined {
+  const val = req.cookies?.[MOBILE_SCHEME_COOKIE];
   return typeof val === "string" ? val : undefined;
 }
