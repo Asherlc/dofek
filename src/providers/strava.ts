@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri, refreshAccessToken } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
@@ -509,7 +510,7 @@ export class StravaProvider implements Provider {
                 startedAt: act.startedAt,
                 endedAt: act.endedAt,
                 name: act.name,
-                sourceName,
+                sourceName: sql`coalesce(excluded.source_name, ${activity.sourceName})`,
                 raw: rawActivities.find((r) => String(r.id) === act.externalId),
               },
             })
