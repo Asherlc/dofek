@@ -130,25 +130,16 @@ describe("rideWithGpsOAuthConfig", () => {
     expect(rideWithGpsOAuthConfig()).toBeNull();
   });
 
-  it("returns config when RWGPS_CLIENT_ID is set", () => {
+  it("returns config with PKCE enabled and no client secret (public client)", () => {
     process.env.RWGPS_CLIENT_ID = "test-id";
-    process.env.RWGPS_CLIENT_SECRET = "test-secret";
     const config = rideWithGpsOAuthConfig();
     expect(config).not.toBeNull();
     expect(config?.clientId).toBe("test-id");
-    expect(config?.clientSecret).toBe("test-secret");
+    expect(config?.clientSecret).toBeUndefined();
+    expect(config?.usePkce).toBe(true);
     expect(config?.scopes).toContain("user");
-    expect(config?.tokenAuthMethod).toBeUndefined();
     expect(config?.authorizeUrl).toContain("ridewithgps.com");
     expect(config?.tokenUrl).toContain("ridewithgps.com");
-  });
-
-  it("returns config without clientSecret when not set", () => {
-    process.env.RWGPS_CLIENT_ID = "test-id";
-    delete process.env.RWGPS_CLIENT_SECRET;
-    const config = rideWithGpsOAuthConfig();
-    expect(config).not.toBeNull();
-    expect(config?.clientSecret).toBeUndefined();
   });
 });
 
@@ -185,12 +176,13 @@ describe("RideWithGpsProvider — authSetup", () => {
     process.env = { ...originalEnv };
   });
 
-  it("returns auth setup with correct config", () => {
+  it("returns auth setup with PKCE and no secret (public client)", () => {
     process.env.RWGPS_CLIENT_ID = "test-id";
-    process.env.RWGPS_CLIENT_SECRET = "test-secret";
     const provider = new RideWithGpsProvider();
     const setup = provider.authSetup();
     expect(setup.oauthConfig.clientId).toBe("test-id");
+    expect(setup.oauthConfig.usePkce).toBe(true);
+    expect(setup.oauthConfig.clientSecret).toBeUndefined();
     expect(setup.exchangeCode).toBeTypeOf("function");
     expect(setup.apiBaseUrl).toContain("ridewithgps.com");
     expect(setup.getUserIdentity).toBeTypeOf("function");
@@ -268,7 +260,6 @@ describe("RideWithGpsProvider — constructor stores fetchFn", () => {
     const customFetch = vi.fn().mockResolvedValue(Response.json({}));
     const provider = new RideWithGpsProvider(customFetch);
     process.env.RWGPS_CLIENT_ID = "test-id";
-    process.env.RWGPS_CLIENT_SECRET = "test-secret";
     const setup = provider.authSetup();
     const getUserIdentity = setup.getUserIdentity;
     expect(getUserIdentity).toBeDefined();
@@ -285,7 +276,6 @@ describe("RideWithGpsProvider — exchangeCode calls exchangeCodeForTokens", () 
 
   it("exchangeCode invokes exchangeCodeForTokens with correct args", async () => {
     process.env.RWGPS_CLIENT_ID = "test-id";
-    process.env.RWGPS_CLIENT_SECRET = "test-secret";
     const provider = new RideWithGpsProvider();
     const setup = provider.authSetup();
 
@@ -293,7 +283,7 @@ describe("RideWithGpsProvider — exchangeCode calls exchangeCodeForTokens", () 
     const result = await setup.exchangeCode("auth-code", "verifier");
 
     expect(mockExchange).toHaveBeenCalledWith(
-      expect.objectContaining({ clientId: "test-id" }),
+      expect.objectContaining({ clientId: "test-id", usePkce: true }),
       "auth-code",
       expect.any(Function),
       { codeVerifier: "verifier" },
@@ -303,7 +293,6 @@ describe("RideWithGpsProvider — exchangeCode calls exchangeCodeForTokens", () 
 
   it("exchangeCode passes undefined options when no codeVerifier", async () => {
     process.env.RWGPS_CLIENT_ID = "test-id";
-    process.env.RWGPS_CLIENT_SECRET = "test-secret";
     const provider = new RideWithGpsProvider();
     const setup = provider.authSetup();
 
@@ -327,7 +316,6 @@ describe("RideWithGpsProvider — getUserIdentity", () => {
 
   it("returns user identity from RWGPS API", async () => {
     process.env.RWGPS_CLIENT_ID = "test-id";
-    process.env.RWGPS_CLIENT_SECRET = "test-secret";
 
     const mockFetch: typeof globalThis.fetch = async () => {
       return Response.json({ user: { id: 42, email: "test@example.com", name: "Test User" } });
@@ -470,7 +458,6 @@ describe("RideWithGpsProvider — sync", () => {
 
   it("refreshes expired token", async () => {
     process.env.RWGPS_CLIENT_ID = "test-id";
-    process.env.RWGPS_CLIENT_SECRET = "test-secret";
     const { loadTokens, saveTokens, ensureProvider } = await import("../db/tokens.ts");
     vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "expired-token",
