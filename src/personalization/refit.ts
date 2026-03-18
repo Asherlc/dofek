@@ -51,11 +51,29 @@ export async function refitAllParams(db: Database, userId: string): Promise<Pers
   return params;
 }
 
-const ewmaRowSchema = z.object({
+// --- Exported Zod schemas and row-parsing functions for testability ---
+
+export const ewmaRowSchema = z.object({
   date: z.string(),
   daily_load: z.coerce.number(),
   avg_performance: z.coerce.number(),
 });
+
+/** Parse raw EWMA query rows into fitter input, filtering invalid/zero-performance rows. */
+export function parseEwmaRows(rows: Record<string, unknown>[]): EwmaInput[] {
+  const data: EwmaInput[] = [];
+  for (const row of rows) {
+    const parsed = ewmaRowSchema.safeParse(row);
+    if (!parsed.success) continue;
+    if (parsed.data.avg_performance === 0) continue;
+    data.push({
+      date: parsed.data.date,
+      load: parsed.data.daily_load,
+      performance: parsed.data.avg_performance,
+    });
+  }
+  return data;
+}
 
 async function fitEwmaFromDb(db: Database, userId: string) {
   const rows = await db.execute(
@@ -102,22 +120,10 @@ async function fitEwmaFromDb(db: Database, userId: string) {
         ORDER BY ds.date ASC`,
   );
 
-  const data: EwmaInput[] = [];
-  for (const row of rows) {
-    const parsed = ewmaRowSchema.safeParse(row);
-    if (!parsed.success) continue;
-    if (parsed.data.avg_performance === 0) continue;
-    data.push({
-      date: parsed.data.date,
-      load: parsed.data.daily_load,
-      performance: parsed.data.avg_performance,
-    });
-  }
-
-  return fitEwma(data);
+  return fitEwma(parseEwmaRows(rows));
 }
 
-const readinessRowSchema = z.object({
+export const readinessRowSchema = z.object({
   hrv: z.coerce.number().nullable(),
   resting_hr: z.coerce.number().nullable(),
   hrv_mean: z.coerce.number().nullable(),
@@ -130,6 +136,47 @@ const readinessRowSchema = z.object({
   next_day_hrv_mean: z.coerce.number().nullable(),
   next_day_hrv_sd: z.coerce.number().nullable(),
 });
+
+/** Parse raw readiness query rows into fitter input, computing z-scores and component scores. */
+export function parseReadinessRows(rows: Record<string, unknown>[]): ReadinessWeightsInput[] {
+  const data: ReadinessWeightsInput[] = [];
+  for (const row of rows) {
+    const parsed = readinessRowSchema.safeParse(row);
+    if (!parsed.success) continue;
+    const p = parsed.data;
+
+    if (
+      p.hrv == null ||
+      p.hrv_mean == null ||
+      p.hrv_sd == null ||
+      Number(p.hrv_sd) === 0 ||
+      p.resting_hr == null ||
+      p.rhr_mean == null ||
+      p.rhr_sd == null ||
+      Number(p.rhr_sd) === 0 ||
+      p.next_day_hrv == null ||
+      p.next_day_hrv_mean == null ||
+      p.next_day_hrv_sd == null ||
+      Number(p.next_day_hrv_sd) === 0
+    )
+      continue;
+
+    const zHrv = (Number(p.hrv) - Number(p.hrv_mean)) / Number(p.hrv_sd);
+    const zRhr = (Number(p.resting_hr) - Number(p.rhr_mean)) / Number(p.rhr_sd);
+    const hrvScore = Math.max(0, Math.min(100, 50 + zHrv * 15));
+    const rhrScore = Math.max(0, Math.min(100, 50 + -zRhr * 15));
+    const sleepScore =
+      p.efficiency_pct != null ? Math.max(0, Math.min(100, Number(p.efficiency_pct))) : 50;
+    const loadBalanceScore =
+      p.acwr != null ? Math.max(0, Math.min(100, (1 - Math.abs(Number(p.acwr) - 1.0)) * 100)) : 50;
+
+    const nextDayHrvZScore =
+      (Number(p.next_day_hrv) - Number(p.next_day_hrv_mean)) / Number(p.next_day_hrv_sd);
+
+    data.push({ hrvScore, rhrScore: rhrScore, sleepScore, loadBalanceScore, nextDayHrvZScore });
+  }
+  return data;
+}
 
 async function fitReadinessFromDb(db: Database, userId: string) {
   const rows = await db.execute(
@@ -202,50 +249,27 @@ async function fitReadinessFromDb(db: Database, userId: string) {
         ORDER BY m.date ASC`,
   );
 
-  const data: ReadinessWeightsInput[] = [];
-  for (const row of rows) {
-    const parsed = readinessRowSchema.safeParse(row);
-    if (!parsed.success) continue;
-    const p = parsed.data;
-
-    if (
-      p.hrv == null ||
-      p.hrv_mean == null ||
-      p.hrv_sd == null ||
-      Number(p.hrv_sd) === 0 ||
-      p.resting_hr == null ||
-      p.rhr_mean == null ||
-      p.rhr_sd == null ||
-      Number(p.rhr_sd) === 0 ||
-      p.next_day_hrv == null ||
-      p.next_day_hrv_mean == null ||
-      p.next_day_hrv_sd == null ||
-      Number(p.next_day_hrv_sd) === 0
-    )
-      continue;
-
-    const zHrv = (Number(p.hrv) - Number(p.hrv_mean)) / Number(p.hrv_sd);
-    const zRhr = (Number(p.resting_hr) - Number(p.rhr_mean)) / Number(p.rhr_sd);
-    const hrvScore = Math.max(0, Math.min(100, 50 + zHrv * 15));
-    const rhrScore = Math.max(0, Math.min(100, 50 + -zRhr * 15));
-    const sleepScore =
-      p.efficiency_pct != null ? Math.max(0, Math.min(100, Number(p.efficiency_pct))) : 50;
-    const loadBalanceScore =
-      p.acwr != null ? Math.max(0, Math.min(100, (1 - Math.abs(Number(p.acwr) - 1.0)) * 100)) : 50;
-
-    const nextDayHrvZScore =
-      (Number(p.next_day_hrv) - Number(p.next_day_hrv_mean)) / Number(p.next_day_hrv_sd);
-
-    data.push({ hrvScore, rhrScore: rhrScore, sleepScore, loadBalanceScore, nextDayHrvZScore });
-  }
-
-  return fitReadinessWeights(data);
+  return fitReadinessWeights(parseReadinessRows(rows));
 }
 
-const sleepRowSchema = z.object({
+export const sleepRowSchema = z.object({
   duration_minutes: z.coerce.number(),
   hrv_above_median: z.coerce.boolean(),
 });
+
+/** Parse raw sleep query rows into fitter input. */
+export function parseSleepRows(rows: Record<string, unknown>[]): SleepTargetInput[] {
+  const data: SleepTargetInput[] = [];
+  for (const row of rows) {
+    const parsed = sleepRowSchema.safeParse(row);
+    if (!parsed.success) continue;
+    data.push({
+      durationMinutes: parsed.data.duration_minutes,
+      nextDayHrvAboveMedian: parsed.data.hrv_above_median,
+    });
+  }
+  return data;
+}
 
 async function fitSleepFromDb(db: Database, userId: string) {
   const rows = await db.execute(
@@ -277,23 +301,24 @@ async function fitSleepFromDb(db: Database, userId: string) {
         ORDER BY n.date ASC`,
   );
 
-  const data: SleepTargetInput[] = [];
-  for (const row of rows) {
-    const parsed = sleepRowSchema.safeParse(row);
-    if (!parsed.success) continue;
-    data.push({
-      durationMinutes: parsed.data.duration_minutes,
-      nextDayHrvAboveMedian: parsed.data.hrv_above_median,
-    });
-  }
-
-  return fitSleepTarget(data);
+  return fitSleepTarget(parseSleepRows(rows));
 }
 
-const stressRowSchema = z.object({
+export const stressRowSchema = z.object({
   hrv_z: z.coerce.number(),
   rhr_z: z.coerce.number(),
 });
+
+/** Parse raw stress query rows into fitter input. */
+export function parseStressRows(rows: Record<string, unknown>[]): StressThresholdsInput[] {
+  const data: StressThresholdsInput[] = [];
+  for (const row of rows) {
+    const parsed = stressRowSchema.safeParse(row);
+    if (!parsed.success) continue;
+    data.push({ hrvZScore: parsed.data.hrv_z, rhrZScore: parsed.data.rhr_z });
+  }
+  return data;
+}
 
 async function fitStressFromDb(db: Database, userId: string) {
   const rows = await db.execute(
@@ -310,23 +335,35 @@ async function fitStressFromDb(db: Database, userId: string) {
         ORDER BY date ASC`,
   );
 
-  const data: StressThresholdsInput[] = [];
-  for (const row of rows) {
-    const parsed = stressRowSchema.safeParse(row);
-    if (!parsed.success) continue;
-    data.push({ hrvZScore: parsed.data.hrv_z, rhrZScore: parsed.data.rhr_z });
-  }
-
-  return fitStressThresholds(data);
+  return fitStressThresholds(parseStressRows(rows));
 }
 
-const trimpActivityRowSchema = z.object({
+export const trimpActivityRowSchema = z.object({
   duration_min: z.coerce.number(),
   avg_hr: z.coerce.number(),
   max_hr: z.coerce.number(),
   resting_hr: z.coerce.number(),
   power_tss: z.coerce.number(),
 });
+
+/** Parse raw TRIMP query rows into fitter input, filtering invalid rows. */
+export function parseTrimpRows(rows: Record<string, unknown>[]): TrimpInput[] {
+  const data: TrimpInput[] = [];
+  for (const row of rows) {
+    const parsed = trimpActivityRowSchema.safeParse(row);
+    if (!parsed.success) continue;
+    const p = parsed.data;
+    if (p.duration_min <= 0 || p.max_hr <= p.resting_hr || p.power_tss <= 0) continue;
+    data.push({
+      durationMin: p.duration_min,
+      avgHr: p.avg_hr,
+      maxHr: p.max_hr,
+      restingHr: p.resting_hr,
+      powerTss: p.power_tss,
+    });
+  }
+  return data;
+}
 
 async function fitTrimpFromDb(db: Database, userId: string) {
   const rows = await db.execute(
@@ -365,20 +402,5 @@ async function fitTrimpFromDb(db: Database, userId: string) {
           AND asum.avg_hr > 0`,
   );
 
-  const data: TrimpInput[] = [];
-  for (const row of rows) {
-    const parsed = trimpActivityRowSchema.safeParse(row);
-    if (!parsed.success) continue;
-    const p = parsed.data;
-    if (p.duration_min <= 0 || p.max_hr <= p.resting_hr || p.power_tss <= 0) continue;
-    data.push({
-      durationMin: p.duration_min,
-      avgHr: p.avg_hr,
-      maxHr: p.max_hr,
-      restingHr: p.resting_hr,
-      powerTss: p.power_tss,
-    });
-  }
-
-  return fitTrimpConstants(data);
+  return fitTrimpConstants(parseTrimpRows(rows));
 }

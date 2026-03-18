@@ -259,6 +259,41 @@ describe("personalizedParamsSchema", () => {
       expect(result.readinessWeights).not.toBeNull();
     });
 
+    it("accepts weights summing to 1.009 (within 0.01 tolerance)", () => {
+      // sum = 0.409 + 0.2 + 0.2 + 0.2 = 1.009 => abs(1.009-1.0)=0.009 < 0.01
+      const result = personalizedParamsSchema.parse(
+        baseParams({
+          readinessWeights: {
+            hrv: 0.409,
+            restingHr: 0.2,
+            sleep: 0.2,
+            loadBalance: 0.2,
+            sampleCount: 60,
+            correlation: 0.2,
+          },
+        }),
+      );
+      expect(result.readinessWeights).not.toBeNull();
+    });
+
+    it("rejects weights summing to 1.011 (outside 0.01 tolerance)", () => {
+      // sum = 0.411 + 0.2 + 0.2 + 0.2 = 1.011 => abs(1.011-1.0)=0.011 >= 0.01
+      expect(() =>
+        personalizedParamsSchema.parse(
+          baseParams({
+            readinessWeights: {
+              hrv: 0.411,
+              restingHr: 0.2,
+              sleep: 0.2,
+              loadBalance: 0.2,
+              sampleCount: 60,
+              correlation: 0.2,
+            },
+          }),
+        ),
+      ).toThrow();
+    });
+
     it("rejects weights summing to 0.98 (outside tolerance)", () => {
       expect(() =>
         personalizedParamsSchema.parse(
@@ -541,6 +576,33 @@ describe("personalizedParamsSchema", () => {
         }),
       );
       expect(result.stressThresholds?.hrvThresholds).toEqual([-2.0, -1.0, -0.1]);
+    });
+
+    it("accepts HRV thresholds with minimal gap (strict, not <=)", () => {
+      // h0 < h1 < h2 with tiny gaps to prove strict inequality
+      const result = personalizedParamsSchema.parse(
+        baseParams({
+          stressThresholds: {
+            hrvThresholds: [-1.0, -0.999, -0.998],
+            rhrThresholds: [1.0, 0.999, 0.998],
+            sampleCount: 60,
+          },
+        }),
+      );
+      expect(result.stressThresholds?.hrvThresholds).toEqual([-1.0, -0.999, -0.998]);
+    });
+
+    it("accepts RHR thresholds with minimal gap (strict, not >=)", () => {
+      const result = personalizedParamsSchema.parse(
+        baseParams({
+          stressThresholds: {
+            hrvThresholds: [-1.0, -0.999, -0.998],
+            rhrThresholds: [1.0, 0.999, 0.998],
+            sampleCount: 60,
+          },
+        }),
+      );
+      expect(result.stressThresholds?.rhrThresholds).toEqual([1.0, 0.999, 0.998]);
     });
 
     it("rejects RHR thresholds not in descending order", () => {
@@ -1057,5 +1119,98 @@ describe("getEffectiveParams", () => {
     expect(result.sleepTarget).toEqual(DEFAULT_PARAMS.sleepTarget);
     expect(result.stressThresholds).toEqual(DEFAULT_PARAMS.stressThresholds);
     expect(result.trimpConstants).toEqual(DEFAULT_PARAMS.trimpConstants);
+  });
+
+  it("picks stored ctlDays not atlDays for ewma.ctlDays", () => {
+    const stored: PersonalizedParams = {
+      version: 1,
+      fittedAt: "2026-03-18T12:00:00Z",
+      ewma: { ctlDays: 49, atlDays: 11, sampleCount: 100, correlation: 0.3 },
+      readinessWeights: null,
+      sleepTarget: null,
+      stressThresholds: null,
+      trimpConstants: null,
+    };
+    const result = getEffectiveParams(stored);
+    // Must be ctlDays, not atlDays
+    expect(result.ewma.ctlDays).toBe(49);
+    expect(result.ewma.ctlDays).not.toBe(11);
+  });
+
+  it("picks stored atlDays not ctlDays for ewma.atlDays", () => {
+    const stored: PersonalizedParams = {
+      version: 1,
+      fittedAt: "2026-03-18T12:00:00Z",
+      ewma: { ctlDays: 49, atlDays: 11, sampleCount: 100, correlation: 0.3 },
+      readinessWeights: null,
+      sleepTarget: null,
+      stressThresholds: null,
+      trimpConstants: null,
+    };
+    const result = getEffectiveParams(stored);
+    expect(result.ewma.atlDays).toBe(11);
+    expect(result.ewma.atlDays).not.toBe(49);
+  });
+
+  it("picks stored hrv weight, not restingHr/sleep/loadBalance for readiness hrv", () => {
+    const stored: PersonalizedParams = {
+      version: 1,
+      fittedAt: "2026-03-18T12:00:00Z",
+      ewma: null,
+      readinessWeights: {
+        hrv: 0.5,
+        restingHr: 0.15,
+        sleep: 0.2,
+        loadBalance: 0.15,
+        sampleCount: 90,
+        correlation: 0.25,
+      },
+      sleepTarget: null,
+      stressThresholds: null,
+      trimpConstants: null,
+    };
+    const result = getEffectiveParams(stored);
+    expect(result.readinessWeights.hrv).toBe(0.5);
+    expect(result.readinessWeights.restingHr).toBe(0.15);
+    expect(result.readinessWeights.sleep).toBe(0.2);
+    expect(result.readinessWeights.loadBalance).toBe(0.15);
+  });
+
+  it("picks stored genderFactor not exponent for trimpConstants", () => {
+    const stored: PersonalizedParams = {
+      version: 1,
+      fittedAt: "2026-03-18T12:00:00Z",
+      ewma: null,
+      readinessWeights: null,
+      sleepTarget: null,
+      stressThresholds: null,
+      trimpConstants: { genderFactor: 0.5, exponent: 2.5, sampleCount: 30, r2: 0.6 },
+    };
+    const result = getEffectiveParams(stored);
+    expect(result.trimpConstants.genderFactor).toBe(0.5);
+    expect(result.trimpConstants.genderFactor).not.toBe(2.5);
+    expect(result.trimpConstants.exponent).toBe(2.5);
+    expect(result.trimpConstants.exponent).not.toBe(0.5);
+  });
+
+  it("picks stored hrvThresholds not rhrThresholds", () => {
+    const stored: PersonalizedParams = {
+      version: 1,
+      fittedAt: "2026-03-18T12:00:00Z",
+      ewma: null,
+      readinessWeights: null,
+      sleepTarget: null,
+      stressThresholds: {
+        hrvThresholds: [-2.0, -1.3, -0.7],
+        rhrThresholds: [2.0, 1.3, 0.7],
+        sampleCount: 100,
+      },
+      trimpConstants: null,
+    };
+    const result = getEffectiveParams(stored);
+    expect(result.stressThresholds.hrvThresholds).toEqual([-2.0, -1.3, -0.7]);
+    expect(result.stressThresholds.hrvThresholds).not.toEqual([2.0, 1.3, 0.7]);
+    expect(result.stressThresholds.rhrThresholds).toEqual([2.0, 1.3, 0.7]);
+    expect(result.stressThresholds.rhrThresholds).not.toEqual([-2.0, -1.3, -0.7]);
   });
 });
