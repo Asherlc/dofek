@@ -312,7 +312,11 @@ export class WahooProvider implements Provider {
     return refreshed;
   }
 
-  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
+  async sync(
+    db: SyncDatabase,
+    since: Date,
+    onProgress?: import("./types.ts").SyncProgressCallback,
+  ): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -334,6 +338,8 @@ export class WahooProvider implements Provider {
     while (hasMore) {
       const response = await client.getWorkouts(page);
       const parsed = parseWorkoutList(response);
+
+      const total = parsed.total;
 
       for (const workout of parsed.workouts) {
         // Skip workouts before our sync window
@@ -365,6 +371,12 @@ export class WahooProvider implements Provider {
             .returning({ id: activity.id });
 
           recordsSynced++;
+          if (onProgress && total > 0) {
+            onProgress(
+              Math.round((recordsSynced / total) * 100),
+              `${recordsSynced}/${total} workouts`,
+            );
+          }
 
           // Download and parse FIT file for raw sensor data
           if (workout.fitFileUrl) {

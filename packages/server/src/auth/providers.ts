@@ -25,6 +25,7 @@ const authentikClaimsSchema = z.object({
   email: z.string().optional(),
   preferred_username: z.string().optional(),
   name: z.string().optional(),
+  groups: z.array(z.string()).optional(),
 });
 
 // ── Provider types ──
@@ -35,9 +36,10 @@ export interface IdentityUser {
   sub: string;
   email: string | null;
   name: string | null;
+  groups: string[] | null;
 }
 
-interface IdentityProvider {
+export interface IdentityProvider {
   createAuthorizationUrl(state: string, codeVerifier: string): URL;
   validateCallback(
     code: string,
@@ -70,7 +72,12 @@ function initGoogle(): IdentityProvider {
       const claims = googleClaimsSchema.parse(decodeIdToken(tokens.idToken()));
       return {
         tokens,
-        user: { sub: claims.sub, email: claims.email ?? null, name: claims.name ?? null },
+        user: {
+          sub: claims.sub,
+          email: claims.email ?? null,
+          name: claims.name ?? null,
+          groups: null,
+        },
       };
     },
   };
@@ -98,7 +105,7 @@ function initApple(): IdentityProvider {
       return {
         tokens,
         // Apple only sends name on first authorization, not in the ID token
-        user: { sub: claims.sub, email: claims.email ?? null, name: null },
+        user: { sub: claims.sub, email: claims.email ?? null, name: null, groups: null },
       };
     },
   };
@@ -113,7 +120,12 @@ function initAuthentik(): IdentityProvider {
   );
   return {
     createAuthorizationUrl(state, codeVerifier) {
-      return client.createAuthorizationURL(state, codeVerifier, ["openid", "email", "profile"]);
+      return client.createAuthorizationURL(state, codeVerifier, [
+        "openid",
+        "email",
+        "profile",
+        "groups",
+      ]);
     },
     async validateCallback(code, codeVerifier) {
       const tokens = await client.validateAuthorizationCode(code, codeVerifier);
@@ -124,6 +136,7 @@ function initAuthentik(): IdentityProvider {
           sub: claims.sub,
           email: claims.email ?? null,
           name: claims.name ?? claims.preferred_username ?? null,
+          groups: claims.groups ?? null,
         },
       };
     },

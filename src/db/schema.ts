@@ -665,6 +665,7 @@ export const authAccount = fitness.table(
     providerAccountId: text("provider_account_id").notNull(),
     email: text("email"),
     name: text("name"),
+    groups: text("groups").array(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [

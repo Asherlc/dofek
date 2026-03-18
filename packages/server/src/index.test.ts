@@ -19,6 +19,9 @@ vi.mock("dofek/jobs/queues", () => ({
   createImportQueue: vi.fn(),
   createSyncQueue: vi.fn(),
 }));
+vi.mock("./auth/admin.ts", () => ({
+  isAdmin: vi.fn().mockResolvedValue(false),
+}));
 vi.mock("./auth/cookies.ts", () => ({
   getSessionIdFromRequest: vi.fn(),
 }));
