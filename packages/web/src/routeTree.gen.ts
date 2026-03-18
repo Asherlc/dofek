@@ -27,6 +27,7 @@ import { Route as TrainingStrengthRouteImport } from './routes/training/strength
 import { Route as TrainingRecoveryRouteImport } from './routes/training/recovery'
 import { Route as TrainingHikingRouteImport } from './routes/training/hiking'
 import { Route as TrainingEnduranceRouteImport } from './routes/training/endurance'
+import { Route as ProvidersIdRouteImport } from './routes/providers.$id'
 import { Route as ActivityIdRouteImport } from './routes/activity.$id'
 
 const TrainingRoute = TrainingRouteImport.update({
@@ -119,6 +120,11 @@ const TrainingEnduranceRoute = TrainingEnduranceRouteImport.update({
   path: '/endurance',
   getParentRoute: () => TrainingRoute,
 } as any)
+const ProvidersIdRoute = ProvidersIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ProvidersRoute,
+} as any)
 const ActivityIdRoute = ActivityIdRouteImport.update({
   id: '/activity/$id',
   path: '/activity/$id',
@@ -134,12 +140,13 @@ export interface FileRoutesByFullPath {
   '/nutrition-analytics': typeof NutritionAnalyticsRoute
   '/predictions': typeof PredictionsRoute
   '/privacy': typeof PrivacyRoute
-  '/providers': typeof ProvidersRoute
+  '/providers': typeof ProvidersRouteWithChildren
   '/settings': typeof SettingsRoute
   '/terms': typeof TermsRoute
   '/tracking': typeof TrackingRoute
   '/training': typeof TrainingRouteWithChildren
   '/activity/$id': typeof ActivityIdRoute
+  '/providers/$id': typeof ProvidersIdRoute
   '/training/endurance': typeof TrainingEnduranceRoute
   '/training/hiking': typeof TrainingHikingRoute
   '/training/recovery': typeof TrainingRecoveryRoute
@@ -155,11 +162,12 @@ export interface FileRoutesByTo {
   '/nutrition-analytics': typeof NutritionAnalyticsRoute
   '/predictions': typeof PredictionsRoute
   '/privacy': typeof PrivacyRoute
-  '/providers': typeof ProvidersRoute
+  '/providers': typeof ProvidersRouteWithChildren
   '/settings': typeof SettingsRoute
   '/terms': typeof TermsRoute
   '/tracking': typeof TrackingRoute
   '/activity/$id': typeof ActivityIdRoute
+  '/providers/$id': typeof ProvidersIdRoute
   '/training/endurance': typeof TrainingEnduranceRoute
   '/training/hiking': typeof TrainingHikingRoute
   '/training/recovery': typeof TrainingRecoveryRoute
@@ -176,12 +184,13 @@ export interface FileRoutesById {
   '/nutrition-analytics': typeof NutritionAnalyticsRoute
   '/predictions': typeof PredictionsRoute
   '/privacy': typeof PrivacyRoute
-  '/providers': typeof ProvidersRoute
+  '/providers': typeof ProvidersRouteWithChildren
   '/settings': typeof SettingsRoute
   '/terms': typeof TermsRoute
   '/tracking': typeof TrackingRoute
   '/training': typeof TrainingRouteWithChildren
   '/activity/$id': typeof ActivityIdRoute
+  '/providers/$id': typeof ProvidersIdRoute
   '/training/endurance': typeof TrainingEnduranceRoute
   '/training/hiking': typeof TrainingHikingRoute
   '/training/recovery': typeof TrainingRecoveryRoute
@@ -205,6 +214,7 @@ export interface FileRouteTypes {
     | '/tracking'
     | '/training'
     | '/activity/$id'
+    | '/providers/$id'
     | '/training/endurance'
     | '/training/hiking'
     | '/training/recovery'
@@ -225,6 +235,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/tracking'
     | '/activity/$id'
+    | '/providers/$id'
     | '/training/endurance'
     | '/training/hiking'
     | '/training/recovery'
@@ -246,6 +257,7 @@ export interface FileRouteTypes {
     | '/tracking'
     | '/training'
     | '/activity/$id'
+    | '/providers/$id'
     | '/training/endurance'
     | '/training/hiking'
     | '/training/recovery'
@@ -262,7 +274,7 @@ export interface RootRouteChildren {
   NutritionAnalyticsRoute: typeof NutritionAnalyticsRoute
   PredictionsRoute: typeof PredictionsRoute
   PrivacyRoute: typeof PrivacyRoute
-  ProvidersRoute: typeof ProvidersRoute
+  ProvidersRoute: typeof ProvidersRouteWithChildren
   SettingsRoute: typeof SettingsRoute
   TermsRoute: typeof TermsRoute
   TrackingRoute: typeof TrackingRoute
@@ -398,6 +410,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TrainingEnduranceRouteImport
       parentRoute: typeof TrainingRoute
     }
+    '/providers/$id': {
+      id: '/providers/$id'
+      path: '/$id'
+      fullPath: '/providers/$id'
+      preLoaderRoute: typeof ProvidersIdRouteImport
+      parentRoute: typeof ProvidersRoute
+    }
     '/activity/$id': {
       id: '/activity/$id'
       path: '/activity/$id'
@@ -407,6 +426,18 @@ declare module '@tanstack/react-router' {
     }
   }
 }
+
+interface ProvidersRouteChildren {
+  ProvidersIdRoute: typeof ProvidersIdRoute
+}
+
+const ProvidersRouteChildren: ProvidersRouteChildren = {
+  ProvidersIdRoute: ProvidersIdRoute,
+}
+
+const ProvidersRouteWithChildren = ProvidersRoute._addFileChildren(
+  ProvidersRouteChildren,
+)
 
 interface TrainingRouteChildren {
   TrainingEnduranceRoute: typeof TrainingEnduranceRoute
@@ -437,7 +468,7 @@ const rootRouteChildren: RootRouteChildren = {
   NutritionAnalyticsRoute: NutritionAnalyticsRoute,
   PredictionsRoute: PredictionsRoute,
   PrivacyRoute: PrivacyRoute,
-  ProvidersRoute: ProvidersRoute,
+  ProvidersRoute: ProvidersRouteWithChildren,
   SettingsRoute: SettingsRoute,
   TermsRoute: TermsRoute,
   TrackingRoute: TrackingRoute,
