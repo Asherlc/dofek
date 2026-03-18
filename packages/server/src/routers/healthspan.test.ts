@@ -356,14 +356,14 @@ const createCaller = createTestCallerFactory(healthspanRouter);
 
 describe("healthspanRouter", () => {
   describe("score", () => {
-    it("returns default score when no data", async () => {
+    it("returns null score when no data", async () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
       });
       const result = await caller.score({ weeks: 12 });
 
-      expect(result.healthspanScore).toBe(50);
+      expect(result.healthspanScore).toBeNull();
       expect(result.metrics).toEqual([]);
       expect(result.history).toEqual([]);
       expect(result.trend).toBeNull();
@@ -422,12 +422,14 @@ describe("healthspanRouter", () => {
       const lean = result.metrics.find((m) => m.name === "Lean Body Mass");
       expect(lean?.score).toBe(100);
 
-      // Composite: average of all 9 scores
-      const totalScore = result.metrics.reduce((sum, m) => sum + m.score, 0);
-      expect(result.healthspanScore).toBe(Math.round(totalScore / 9));
+      // Composite: average of metrics with real data (all 9 here)
+      const metricsWithData = result.metrics.filter((m) => m.value != null);
+      expect(metricsWithData).toHaveLength(9);
+      const totalScore = metricsWithData.reduce((sum, m) => sum + m.score, 0);
+      expect(result.healthspanScore).toBe(Math.round(totalScore / metricsWithData.length));
     });
 
-    it("handles all null metrics with default score 50", async () => {
+    it("returns null score when all metrics are null", async () => {
       const rows = [
         {
           avg_sleep_min: null,
@@ -449,12 +451,67 @@ describe("healthspanRouter", () => {
       });
       const result = await caller.score({ weeks: 12 });
 
-      expect(result.healthspanScore).toBe(50);
+      expect(result.healthspanScore).toBeNull();
+      expect(result.metrics).toHaveLength(9);
       for (const m of result.metrics) {
-        expect(m.score).toBe(50);
         expect(m.value).toBeNull();
       }
       expect(result.trend).toBeNull();
+    });
+
+    it("returns null score when fewer than 3 metrics have data", async () => {
+      const rows = [
+        {
+          avg_sleep_min: null,
+          bedtime_stddev_min: null,
+          avg_resting_hr: 55, // → 90
+          avg_steps: 10000, // → 100
+          latest_vo2max: null,
+          weekly_aerobic_min: null,
+          weekly_high_intensity_min: null,
+          sessions_per_week: null,
+          weight_kg: null,
+          body_fat_pct: null,
+          weekly_history: null,
+        },
+      ];
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue(rows) },
+        userId: "user-1",
+      });
+      const result = await caller.score({ weeks: 12 });
+
+      // Only 2 metrics have real data — below minimum threshold
+      expect(result.healthspanScore).toBeNull();
+      // Individual metrics are still returned so the UI can show them
+      expect(result.metrics).toHaveLength(9);
+    });
+
+    it("computes composite from only metrics with real data when above threshold", async () => {
+      const rows = [
+        {
+          avg_sleep_min: 480, // → 100
+          bedtime_stddev_min: 20, // → 78
+          avg_resting_hr: 55, // → 90
+          avg_steps: null,
+          latest_vo2max: null,
+          weekly_aerobic_min: null,
+          weekly_high_intensity_min: null,
+          sessions_per_week: null,
+          weight_kg: null,
+          body_fat_pct: null,
+          weekly_history: null,
+        },
+      ];
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue(rows) },
+        userId: "user-1",
+      });
+      const result = await caller.score({ weeks: 12 });
+
+      // 3 metrics with real data: sleep duration (100), sleep consistency (78), resting HR (90)
+      const expected = Math.round((100 + 78 + 90) / 3);
+      expect(result.healthspanScore).toBe(expected);
     });
 
     it("sets correct status based on score", async () => {
