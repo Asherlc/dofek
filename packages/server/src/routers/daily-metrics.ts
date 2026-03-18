@@ -77,7 +77,28 @@ export const dailyMetricsRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const rows = await ctx.db.execute(
+      const trendsRowSchema = z.object({
+        avg_resting_hr: z.coerce.number().nullable(),
+        avg_hrv: z.coerce.number().nullable(),
+        avg_spo2: z.coerce.number().nullable(),
+        avg_steps: z.coerce.number().nullable(),
+        avg_active_energy: z.coerce.number().nullable(),
+        avg_skin_temp: z.coerce.number().nullable(),
+        stddev_resting_hr: z.coerce.number().nullable(),
+        stddev_hrv: z.coerce.number().nullable(),
+        stddev_spo2: z.coerce.number().nullable(),
+        stddev_skin_temp: z.coerce.number().nullable(),
+        latest_resting_hr: z.coerce.number().nullable(),
+        latest_hrv: z.coerce.number().nullable(),
+        latest_spo2: z.coerce.number().nullable(),
+        latest_steps: z.coerce.number().nullable(),
+        latest_active_energy: z.coerce.number().nullable(),
+        latest_skin_temp: z.coerce.number().nullable(),
+        latest_date: z.string().nullable(),
+      });
+      const rows = await executeWithSchema(
+        ctx.db,
+        trendsRowSchema,
         sql`WITH current AS (
               SELECT * FROM fitness.v_daily_metrics
               WHERE user_id = ${ctx.userId}
