@@ -135,6 +135,9 @@ importers:
 
   packages/ios:
     dependencies:
+      '@dofek/shared':
+        specifier: workspace:*
+        version: link:../shared
       '@tanstack/react-query':
         specifier: 5.90.21
         version: 5.90.21(react@19.2.4)
@@ -261,6 +264,8 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
+  packages/shared: {}
+
   packages/trainerroad-client:
     devDependencies:
       typescript:
@@ -290,6 +295,9 @@ importers:
 
   packages/web:
     dependencies:
+      '@dofek/shared':
+        specifier: workspace:*
+        version: link:../shared
       '@tailwindcss/vite':
         specifier: 4.2.1
         version: 4.2.1(vite@6.4.1(@types/node@22.19.15)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))

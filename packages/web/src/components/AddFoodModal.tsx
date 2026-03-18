@@ -1,7 +1,8 @@
+import { MEAL_OPTIONS, type MealType } from "@dofek/shared/meal";
 import { useEffect, useRef, useState } from "react";
 import { trpc } from "../lib/trpc.ts";
 
-export type MealType = "breakfast" | "lunch" | "dinner" | "snack" | "other";
+export type { MealType } from "@dofek/shared/meal";
 
 export interface FoodFormData {
   foodName: string;
@@ -20,14 +21,6 @@ interface AddFoodModalProps {
   defaultMealType?: MealType;
   submitting?: boolean;
 }
-
-const mealOptions: { value: MealType; label: string }[] = [
-  { value: "breakfast", label: "Breakfast" },
-  { value: "lunch", label: "Lunch" },
-  { value: "dinner", label: "Dinner" },
-  { value: "snack", label: "Snack" },
-  { value: "other", label: "Other" },
-];
 
 export function AddFoodModal({
   isOpen,
@@ -239,7 +232,7 @@ export function AddFoodModal({
               }}
               className={inputClass}
             >
-              {mealOptions.map((opt) => (
+              {MEAL_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
                   {opt.label}
                 </option>

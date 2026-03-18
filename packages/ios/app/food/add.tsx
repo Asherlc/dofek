@@ -18,17 +18,10 @@ import { useAuth } from "../../lib/auth-context";
 import { colors } from "../../theme";
 
 import { lookupBarcode, searchFoods } from "../../lib/food-database";
-import { type MealType, autoMealType, formatDateYmd } from "../../lib/meal";
+import { MEAL_OPTIONS, type MealType, autoMealType } from "@dofek/shared/meal";
+import { formatDateYmd } from "@dofek/shared/format";
 import { getTrpcUrl } from "../../lib/server";
 import { trpc } from "../../lib/trpc";
-
-const MEAL_OPTIONS: { key: MealType; label: string }[] = [
-  { key: "breakfast", label: "Breakfast" },
-  { key: "lunch", label: "Lunch" },
-  { key: "dinner", label: "Dinner" },
-  { key: "snack", label: "Snack" },
-  { key: "other", label: "Other" },
-];
 
 type LoggerTab = "search" | "scan" | "quickadd";
 
@@ -357,14 +350,14 @@ export default function AddFoodScreen() {
           {/* Meal selector */}
           <Text style={styles.label}>Meal</Text>
           <View style={styles.mealSelector}>
-            {MEAL_OPTIONS.map(({ key, label }) => (
+            {MEAL_OPTIONS.map(({ value, label }) => (
               <TouchableOpacity
-                key={key}
-                style={[styles.mealChip, selectedMeal === key && styles.mealChipSelected]}
-                onPress={() => setSelectedMeal(key)}
+                key={value}
+                style={[styles.mealChip, selectedMeal === value && styles.mealChipSelected]}
+                onPress={() => setSelectedMeal(value)}
                 activeOpacity={0.7}
               >
-                <Text style={[styles.mealChipText, selectedMeal === key && styles.mealChipTextSelected]}>
+                <Text style={[styles.mealChipText, selectedMeal === value && styles.mealChipTextSelected]}>
                   {label}
                 </Text>
               </TouchableOpacity>
@@ -592,14 +585,14 @@ export default function AddFoodScreen() {
 
           {/* Meal selector */}
           <View style={styles.mealSelector}>
-            {MEAL_OPTIONS.map(({ key, label }) => (
+            {MEAL_OPTIONS.map(({ value, label }) => (
               <TouchableOpacity
-                key={key}
-                style={[styles.mealChip, selectedMeal === key && styles.mealChipSelected]}
-                onPress={() => setSelectedMeal(key)}
+                key={value}
+                style={[styles.mealChip, selectedMeal === value && styles.mealChipSelected]}
+                onPress={() => setSelectedMeal(value)}
                 activeOpacity={0.7}
               >
-                <Text style={[styles.mealChipText, selectedMeal === key && styles.mealChipTextSelected]}>
+                <Text style={[styles.mealChipText, selectedMeal === value && styles.mealChipTextSelected]}>
                   {label}
                 </Text>
               </TouchableOpacity>

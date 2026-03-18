@@ -12,6 +12,7 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 - **Read README.md first**: Before working on deployment, infrastructure, or operational tasks, always read the README for current architecture, deployment procedures, and operational runbooks. The README is the source of truth for how the production system works.
 
 ## Development Rules
+- **Dual-platform parity (web + iOS)**: Every feature, bug fix, and UI change must be implemented on both `packages/web` and `packages/ios`. When adding a new page, chart, or data view to one platform, implement the equivalent on the other in the same PR. Shared logic (scoring, formatting, meal utilities, color palettes) lives in `packages/shared` — import from there instead of duplicating. Platform-specific code (HealthKit, barcode scanning, Expo secure storage, ECharts vs react-native-svg) stays in the respective package. When reviewing PRs, check that both platforms are updated.
 - **Fix properly, no workarounds**: When encountering an issue, fix the root cause. Lint rules, type checks, and CI gates exist for a reason — don't disable them, skip them, add ignores, or use workarounds to make problems go away. Always do the harder thing that actually solves the problem. If you genuinely cannot fix the root cause, **stop and ask the user before** resorting to any shortcut, disable, or workaround. Never take the "easy" or "efficient" way out without explicit approval.
 - **TDD**: Write tests first, then implement. Every new feature or provider starts with a failing test. When fixing bugs, write a failing test that reproduces the bug before writing the fix.
 - **Colocated unit tests**: Unit test files live next to the source file they test, named `<source>.test.ts`. Do not use `__tests__/` directories. For example, `src/db/tokens.ts` has its unit test at `src/db/tokens.test.ts`. Integration tests (`*.integration.test.ts`) can live wherever makes sense.
@@ -88,6 +89,11 @@ src/                         — Root package: sync runner, providers, DB schema
   sync/runner.ts             — Sync orchestrator
   index.ts                   — CLI entry point
 packages/
+  shared/src/                — @dofek/shared: platform-agnostic utilities
+    scoring.ts               — Score colors, labels, workload ratio helpers
+    format.ts                — Duration, date, number formatting
+    meal.ts                  — Meal types, auto-meal detection, constants
+    colors.ts                — Semantic color palette (shared across platforms)
   server/src/                — dofek-server: Express + tRPC API (Node)
     routers/                 — tRPC route handlers
     index.ts                 — Express server entry point
@@ -95,6 +101,11 @@ packages/
     components/              — React components (ECharts, shadcn/ui, Tailwind)
     pages/                   — Route pages
     lib/trpc.ts              — tRPC client (imports AppRouter from dofek-server)
+  ios/                       — dofek-ios: Expo + React Native app
+    app/                     — Expo Router screens (file-based routing)
+    components/              — React Native components (SVG charts)
+    lib/                     — Auth, tRPC client, HealthKit integration
+    modules/health-kit/      — Native Swift HealthKit module
 drizzle/                     — SQL migrations
 Dockerfile                   — Multi-stage: server + client targets
 nginx.conf                   — Nginx config (static files + API proxy)

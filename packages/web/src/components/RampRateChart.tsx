@@ -1,3 +1,4 @@
+import { rampRateColor } from "@dofek/shared/scoring";
 import type { RampRateWeek } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
 
@@ -6,13 +7,6 @@ interface RampRateChartProps {
   currentRampRate: number;
   recommendation: string;
   loading?: boolean;
-}
-
-function getRampColor(rate: number): string {
-  const absRate = Math.abs(rate);
-  if (absRate < 5) return "#22c55e";
-  if (absRate <= 7) return "#eab308";
-  return "#ef4444";
 }
 
 interface RampRateWeekData {
@@ -36,7 +30,7 @@ export function buildRampRateOption(data: RampRateWeekData[]) {
         const idx = first.dataIndex;
         const d = data[idx];
         if (!d) return "";
-        const color = getRampColor(d.rampRate);
+        const color = rampRateColor(d.rampRate);
         const dateLabel = new Date(d.week).toLocaleDateString("en-US", {
           month: "short",
           day: "numeric",
@@ -67,7 +61,7 @@ export function buildRampRateOption(data: RampRateWeekData[]) {
         type: "bar",
         data: data.map((d) => ({
           value: [d.week, d.rampRate],
-          itemStyle: { color: getRampColor(d.rampRate) },
+          itemStyle: { color: rampRateColor(d.rampRate) },
         })),
       },
       {
@@ -111,7 +105,7 @@ export function RampRateChart({
 
   const option = buildRampRateOption(data);
 
-  const badgeColor = getRampColor(currentRampRate);
+  const badgeColor = rampRateColor(currentRampRate);
 
   return (
     <div>

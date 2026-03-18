@@ -1,0 +1,12 @@
+{
+  "name": "@dofek/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./colors": "./src/colors.ts",
+    "./scoring": "./src/scoring.ts",
+    "./meal": "./src/meal.ts",
+    "./format": "./src/format.ts"
+  }
+}
