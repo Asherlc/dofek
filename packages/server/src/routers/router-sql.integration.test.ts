@@ -238,6 +238,11 @@ describe("Router SQL validity", () => {
   describe("correlation", () => {
     it("metrics", () => expectValidSql("correlation.metrics"));
     it("compute", () =>
-      expectValidSql("correlation.compute", { metricX: "protein", metricY: "hrv", days: 30, lag: 0 }));
+      expectValidSql("correlation.compute", {
+        metricX: "protein",
+        metricY: "hrv",
+        days: 30,
+        lag: 0,
+      }));
   });
 });
