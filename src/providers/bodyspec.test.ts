@@ -501,7 +501,10 @@ describe("BodySpecProvider", () => {
       expect(result.provider).toBe("bodyspec");
       expect(result.recordsSynced).toBe(0);
       expect(result.errors).toHaveLength(1);
-      expect(result.errors[0].message).toContain("No OAuth tokens found");
+      const err = result.errors[0];
+      expect(err).toBeDefined();
+      if (!err) return;
+      expect(err.message).toContain("No OAuth tokens found");
     });
 
     it("refreshes expired tokens and saves them", async () => {
@@ -666,8 +669,11 @@ describe("BodySpecProvider", () => {
 
       expect(result.recordsSynced).toBe(0);
       expect(result.errors).toHaveLength(1);
-      expect(result.errors[0].message).toContain("500");
-      expect(result.errors[0].externalId).toBe("r1");
+      const err = result.errors[0];
+      expect(err).toBeDefined();
+      if (!err) return;
+      expect(err.message).toContain("500");
+      expect(err.externalId).toBe("r1");
     });
 
     it("paginates through multiple pages of results", async () => {
@@ -808,7 +814,10 @@ describe("BodySpecProvider", () => {
       const result = await provider.sync(mockDb(), new Date("2025-01-01"));
 
       expect(result.errors).toHaveLength(1);
-      expect(result.errors[0].message).toContain("BODYSPEC_CLIENT_ID");
+      const err = result.errors[0];
+      expect(err).toBeDefined();
+      if (!err) return;
+      expect(err.message).toContain("BODYSPEC_CLIENT_ID");
     });
 
     it("handles token refresh failure when no refresh token", async () => {
@@ -824,7 +833,10 @@ describe("BodySpecProvider", () => {
       const result = await provider.sync(mockDb(), new Date("2025-01-01"));
 
       expect(result.errors).toHaveLength(1);
-      expect(result.errors[0].message).toContain("No refresh token");
+      const err = result.errors[0];
+      expect(err).toBeDefined();
+      if (!err) return;
+      expect(err.message).toContain("No refresh token");
     });
 
     it("returns correct duration in result", async () => {
@@ -888,8 +900,11 @@ describe("BodySpecProvider", () => {
       const result = await provider.sync(mockDb(), new Date("2025-01-01"));
 
       expect(result.errors).toHaveLength(1);
+      const err = result.errors[0];
+      expect(err).toBeDefined();
+      if (!err) return;
       // Error message should be truncated
-      expect(result.errors[0].message.length).toBeLessThan(400);
+      expect(err.message.length).toBeLessThan(400);
     });
   });
 });
