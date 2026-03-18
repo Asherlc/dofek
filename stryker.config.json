@@ -21,7 +21,8 @@
     "packages/trainingpeaks-connect/src/**/*.ts",
     "!**/*.test.ts",
     "!**/test-helpers.ts",
-    "!**/fixtures/**"
+    "!**/fixtures/**",
+    "!src/db/schema.ts"
   ],
   "ignorePatterns": [
     "packages/ios/**",
