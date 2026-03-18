@@ -21,7 +21,7 @@ const MEAL_LABELS: Record<MealType, string> = {
   other: "Other",
 };
 
-const foodEntrySchema = z.object({
+export const foodEntrySchema = z.object({
   id: z.string(),
   food_name: z.string(),
   meal: z.string(),
@@ -31,7 +31,27 @@ const foodEntrySchema = z.object({
   fat_g: z.number().nullable(),
   food_description: z.string().nullable(),
 });
-type FoodEntry = z.infer<typeof foodEntrySchema>;
+export type FoodEntry = z.infer<typeof foodEntrySchema>;
+
+export function computeDailyTotals(entries: FoodEntry[]) {
+  let totalCalories = 0;
+  let totalProtein = 0;
+  let totalCarbs = 0;
+  let totalFat = 0;
+
+  for (const entry of entries) {
+    totalCalories += entry.calories ?? 0;
+    totalProtein += entry.protein_g ?? 0;
+    totalCarbs += entry.carbs_g ?? 0;
+    totalFat += entry.fat_g ?? 0;
+  }
+
+  return { totalCalories, totalProtein, totalCarbs, totalFat };
+}
+
+export function computeMealCalories(entries: FoodEntry[]): number {
+  return entries.reduce((sum, e) => sum + (e.calories ?? 0), 0);
+}
 
 export function NutritionPage() {
   const [selectedDate, setSelectedDate] = useState(() => new Date());
@@ -59,21 +79,7 @@ export function NutritionPage() {
 
   const entries = z.array(foodEntrySchema).parse(foodQuery.data ?? []);
 
-  const dailyTotals = useMemo(() => {
-    let totalCalories = 0;
-    let totalProtein = 0;
-    let totalCarbs = 0;
-    let totalFat = 0;
-
-    for (const entry of entries) {
-      totalCalories += entry.calories ?? 0;
-      totalProtein += entry.protein_g ?? 0;
-      totalCarbs += entry.carbs_g ?? 0;
-      totalFat += entry.fat_g ?? 0;
-    }
-
-    return { totalCalories, totalProtein, totalCarbs, totalFat };
-  }, [entries]);
+  const dailyTotals = useMemo(() => computeDailyTotals(entries), [entries]);
 
   const mealGroups = useMemo(() => {
     const groups = new Map<string, FoodEntry[]>();
@@ -261,7 +267,7 @@ export function NutritionPage() {
         {!foodQuery.isLoading &&
           MEAL_ORDER.map((mealType) => {
             const mealEntries = mealGroups.get(mealType) ?? [];
-            const mealCalories = mealEntries.reduce((sum, e) => sum + (e.calories ?? 0), 0);
+            const mealCalories = computeMealCalories(mealEntries);
             const isCollapsed = collapsedMeals.has(mealType);
 
             return (
