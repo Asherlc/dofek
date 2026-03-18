@@ -32,7 +32,7 @@ describe("queues", () => {
         host: "myredis.host",
         port: 6380,
         password: "secret",
-        maxRetriesPerRequest: 1,
+        maxRetriesPerRequest: null,
         connectTimeout: 5000,
         lazyConnect: true,
       });
@@ -48,7 +48,7 @@ describe("queues", () => {
         host: "localhost",
         port: 6379,
         password: undefined,
-        maxRetriesPerRequest: 1,
+        maxRetriesPerRequest: null,
         connectTimeout: 5000,
         lazyConnect: true,
       });
