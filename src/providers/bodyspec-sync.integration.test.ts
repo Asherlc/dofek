@@ -307,4 +307,79 @@ describe("BodySpecProvider.sync() (integration)", () => {
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(0);
   });
+
+  it("syncs scans with missing optional endpoints (404s)", async () => {
+    // Mock handlers that return 404 for optional endpoints
+    server.use(
+      http.post("https://app.bodyspec.com/oauth/token", () => {
+        return HttpResponse.json({
+          access_token: "refreshed-token",
+          refresh_token: "new-refresh",
+          expires_in: 7200,
+          scope: "read:results",
+        });
+      }),
+      http.get("https://app.bodyspec.com/api/v1/users/me/results/", () => {
+        return HttpResponse.json({
+          results: [fakeResult],
+          pagination: { page: 1, page_size: 100, results: 1, has_more: false },
+        });
+      }),
+      http.get("https://app.bodyspec.com/api/v1/users/me/results/result-1/dexa/scan-info", () => {
+        return HttpResponse.json(fakeScanInfo);
+      }),
+      http.get("https://app.bodyspec.com/api/v1/users/me/results/result-1/dexa/composition", () => {
+        return HttpResponse.json(fakeComposition);
+      }),
+      // All optional endpoints return 404
+      http.get(
+        "https://app.bodyspec.com/api/v1/users/me/results/result-1/dexa/bone-density",
+        () => {
+          return new HttpResponse(null, { status: 404 });
+        },
+      ),
+      http.get(
+        "https://app.bodyspec.com/api/v1/users/me/results/result-1/dexa/visceral-fat",
+        () => {
+          return new HttpResponse(null, { status: 404 });
+        },
+      ),
+      http.get("https://app.bodyspec.com/api/v1/users/me/results/result-1/dexa/rmr", () => {
+        return new HttpResponse(null, { status: 404 });
+      }),
+      http.get("https://app.bodyspec.com/api/v1/users/me/results/result-1/dexa/percentiles", () => {
+        return new HttpResponse(null, { status: 404 });
+      }),
+    );
+
+    const provider = new BodySpecProvider();
+
+    await ensureProvider(ctx.db, "bodyspec", "BodySpec", "https://app.bodyspec.com");
+    await saveTokens(ctx.db, "bodyspec", {
+      accessToken: "test-token",
+      refreshToken: "test-refresh",
+      expiresAt: new Date(Date.now() + 7200000),
+      scopes: "read:results",
+    });
+
+    const result = await provider.sync(ctx.db, new Date("2026-02-01"));
+
+    expect(result.provider).toBe("bodyspec");
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toHaveLength(0);
+
+    // Verify scan was stored with only required + scan-info fields
+    const scans = await ctx.db.select().from(dexaScan);
+    expect(scans).toHaveLength(1);
+    const scan = scans[0];
+    expect(scan).toBeDefined();
+    if (!scan) return;
+    expect(scan.externalId).toBe("result-1");
+    expect(scan.totalFatMassKg).toBe(15.2);
+    // Optional fields should be null
+    expect(scan.totalBoneMineralDensity).toBeNull();
+    expect(scan.visceralFatMassKg).toBeNull();
+    expect(scan.restingMetabolicRateKcal).toBeNull();
+    expect(scan.percentiles).toBeNull();
+  });
 });
