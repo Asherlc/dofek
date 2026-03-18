@@ -337,6 +337,63 @@ describe("syncProviderPriorities", () => {
     expect(hasProviderDelete).toBe(true);
   });
 
+  it("deletes all priorities when config has empty providers", async () => {
+    const config: ProviderPriorityConfig = { providers: {} };
+
+    await syncProviderPriorities(mockDb, config);
+
+    // Should issue 2 DELETE statements (all device + all provider priorities)
+    expect(mockExecute).toHaveBeenCalledTimes(2);
+    const allSql = mockExecute.mock.calls.map((c: unknown[]) => JSON.stringify(c[0]));
+    expect(allSql.some((s: string) => s.includes("DELETE") && s.includes("device_priority"))).toBe(
+      true,
+    );
+    expect(
+      allSql.some((s: string) => s.includes("DELETE") && s.includes("provider_priority")),
+    ).toBe(true);
+  });
+
+  it("passes non-null optional priorities to SQL", async () => {
+    const config: ProviderPriorityConfig = {
+      providers: {
+        oura: { activity: 80, sleep: 10, body: 50, recovery: 15, dailyActivity: 60 },
+      },
+    };
+
+    await syncProviderPriorities(mockDb, config);
+
+    // The provider upsert (first call) should have been invoked
+    expect(mockExecute).toHaveBeenCalled();
+    // With all 5 categories specified, none should be null
+    const firstCallSql = JSON.stringify(mockExecute.mock.calls[0]?.[0]);
+    // Verify the actual priority values appear in the SQL
+    expect(firstCallSql).toContain("80");
+    expect(firstCallSql).toContain("10");
+    expect(firstCallSql).toContain("15");
+    expect(firstCallSql).toContain("60");
+  });
+
+  it("passes device override values correctly to SQL", async () => {
+    const config: ProviderPriorityConfig = {
+      providers: {
+        garmin: {
+          activity: 15,
+          devices: {
+            "Edge%": { activity: 8, recovery: 12, dailyActivity: 18 },
+          },
+        },
+      },
+    };
+
+    await syncProviderPriorities(mockDb, config);
+
+    // Second call is the device upsert
+    const deviceSql = JSON.stringify(mockExecute.mock.calls[1]?.[0]);
+    expect(deviceSql).toContain("8");
+    expect(deviceSql).toContain("12");
+    expect(deviceSql).toContain("18");
+  });
+
   it("iterates over all device patterns in a provider", async () => {
     const config: ProviderPriorityConfig = {
       providers: {
