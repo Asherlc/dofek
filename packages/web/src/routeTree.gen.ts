@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as TrainingRouteImport } from './routes/training'
 import { Route as TrackingRouteImport } from './routes/tracking'
+import { Route as TermsRouteImport } from './routes/terms'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ProvidersRouteImport } from './routes/providers'
 import { Route as PrivacyRouteImport } from './routes/privacy'
@@ -36,6 +37,11 @@ const TrainingRoute = TrainingRouteImport.update({
 const TrackingRoute = TrackingRouteImport.update({
   id: '/tracking',
   path: '/tracking',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsRoute = SettingsRouteImport.update({
@@ -130,6 +136,7 @@ export interface FileRoutesByFullPath {
   '/privacy': typeof PrivacyRoute
   '/providers': typeof ProvidersRoute
   '/settings': typeof SettingsRoute
+  '/terms': typeof TermsRoute
   '/tracking': typeof TrackingRoute
   '/training': typeof TrainingRouteWithChildren
   '/activity/$id': typeof ActivityIdRoute
@@ -150,6 +157,7 @@ export interface FileRoutesByTo {
   '/privacy': typeof PrivacyRoute
   '/providers': typeof ProvidersRoute
   '/settings': typeof SettingsRoute
+  '/terms': typeof TermsRoute
   '/tracking': typeof TrackingRoute
   '/activity/$id': typeof ActivityIdRoute
   '/training/endurance': typeof TrainingEnduranceRoute
@@ -170,6 +178,7 @@ export interface FileRoutesById {
   '/privacy': typeof PrivacyRoute
   '/providers': typeof ProvidersRoute
   '/settings': typeof SettingsRoute
+  '/terms': typeof TermsRoute
   '/tracking': typeof TrackingRoute
   '/training': typeof TrainingRouteWithChildren
   '/activity/$id': typeof ActivityIdRoute
@@ -192,6 +201,7 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/providers'
     | '/settings'
+    | '/terms'
     | '/tracking'
     | '/training'
     | '/activity/$id'
@@ -212,6 +222,7 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/providers'
     | '/settings'
+    | '/terms'
     | '/tracking'
     | '/activity/$id'
     | '/training/endurance'
@@ -231,6 +242,7 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/providers'
     | '/settings'
+    | '/terms'
     | '/tracking'
     | '/training'
     | '/activity/$id'
@@ -252,6 +264,7 @@ export interface RootRouteChildren {
   PrivacyRoute: typeof PrivacyRoute
   ProvidersRoute: typeof ProvidersRoute
   SettingsRoute: typeof SettingsRoute
+  TermsRoute: typeof TermsRoute
   TrackingRoute: typeof TrackingRoute
   TrainingRoute: typeof TrainingRouteWithChildren
   ActivityIdRoute: typeof ActivityIdRoute
@@ -271,6 +284,13 @@ declare module '@tanstack/react-router' {
       path: '/tracking'
       fullPath: '/tracking'
       preLoaderRoute: typeof TrackingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings': {
@@ -419,6 +439,7 @@ const rootRouteChildren: RootRouteChildren = {
   PrivacyRoute: PrivacyRoute,
   ProvidersRoute: ProvidersRoute,
   SettingsRoute: SettingsRoute,
+  TermsRoute: TermsRoute,
   TrackingRoute: TrackingRoute,
   TrainingRoute: TrainingRouteWithChildren,
   ActivityIdRoute: ActivityIdRoute,
