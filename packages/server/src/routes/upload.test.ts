@@ -381,7 +381,7 @@ describe("createUploadRouter", () => {
   });
 
   describe("POST /api/upload/apple-health (chunked - all chunks)", () => {
-    it("assembles file when all chunks received", async () => {
+    it("responds immediately with assembling status when all chunks received", async () => {
       const { app } = createTestApp();
 
       // Send chunk 0 of 2
@@ -395,7 +395,7 @@ describe("createUploadRouter", () => {
         body: Buffer.from("chunk-0"),
       });
 
-      // Send chunk 1 of 2 (final)
+      // Send chunk 1 of 2 (final) — should respond immediately without blocking on assembly
       const res = await request(app, "post", "/api/upload/apple-health", {
         headers: {
           "Content-Type": "application/octet-stream",
@@ -408,7 +408,8 @@ describe("createUploadRouter", () => {
 
       expect(res.status).toBe(200);
       const data = JSON.parse(res.body);
-      expect(data.status).toBe("processing");
+      expect(data.status).toBe("assembling");
+      expect(data.jobId).toBe("upload-full");
     });
 
     it("handles chunked upload error", async () => {
@@ -424,6 +425,84 @@ describe("createUploadRouter", () => {
         body: Buffer.from("chunk-0"),
       });
       expect(res.status).toBe(500);
+    });
+
+    it("sets error status when background assembly fails", async () => {
+      vi.mocked(assembleChunks).mockRejectedValueOnce(new Error("disk full"));
+      const { app } = createTestApp();
+
+      // Send chunk 0 of 2
+      await request(app, "post", "/api/upload/apple-health", {
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "x-upload-id": "upload-assembly-err",
+          "x-chunk-index": "0",
+          "x-chunk-total": "2",
+        },
+        body: Buffer.from("chunk-0"),
+      });
+
+      // Send chunk 1 of 2 (final) — responds immediately
+      const res = await request(app, "post", "/api/upload/apple-health", {
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "x-upload-id": "upload-assembly-err",
+          "x-chunk-index": "1",
+          "x-chunk-total": "2",
+        },
+        body: Buffer.from("chunk-1"),
+      });
+
+      expect(res.status).toBe(200);
+      expect(JSON.parse(res.body).status).toBe("assembling");
+
+      // Let background assembly error propagate through microtasks
+      await new Promise((r) => setTimeout(r, 10));
+
+      // Verify error status is set — poll the status endpoint
+      const statusRes = await request(
+        app,
+        "get",
+        "/api/upload/apple-health/status/upload-assembly-err",
+      );
+      expect(statusRes.status).toBe(200);
+      const statusData = JSON.parse(statusRes.body);
+      expect(statusData.status).toBe("error");
+      expect(statusData.message).toBe("Failed to assemble uploaded file");
+    });
+
+    it("uses upload ID as BullMQ job ID for seamless polling", async () => {
+      const { app, queue } = createTestApp();
+
+      await request(app, "post", "/api/upload/apple-health", {
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "x-upload-id": "upload-jobid-test",
+          "x-chunk-index": "0",
+          "x-chunk-total": "2",
+        },
+        body: Buffer.from("chunk-0"),
+      });
+
+      await request(app, "post", "/api/upload/apple-health", {
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "x-upload-id": "upload-jobid-test",
+          "x-chunk-index": "1",
+          "x-chunk-total": "2",
+        },
+        body: Buffer.from("chunk-1"),
+      });
+
+      // Let background assembly + enqueue complete
+      await new Promise((r) => setTimeout(r, 10));
+
+      // Verify queue.add was called with the upload ID as the job ID
+      expect(queue.add).toHaveBeenCalledWith(
+        "apple-health",
+        expect.objectContaining({ importType: "apple-health" }),
+        { jobId: "upload-jobid-test" },
+      );
     });
   });
 

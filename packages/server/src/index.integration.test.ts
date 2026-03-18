@@ -432,10 +432,10 @@ describe("tRPC API", () => {
         if (i === 0) {
           expect(data.status).toBe("uploading");
         } else {
-          // Last chunk triggers assembly + enqueue to BullMQ
-          expect(data.status).toBe("processing");
-          // BullMQ assigns its own job ID, not the upload ID
-          expect(typeof data.jobId).toBe("string");
+          // Last chunk responds immediately with "assembling" status
+          expect(data.status).toBe("assembling");
+          // jobId is the upload ID for seamless polling
+          expect(data.jobId).toBe(uploadId);
         }
       }
     });

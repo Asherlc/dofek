@@ -16,6 +16,7 @@ vi.mock("./routers/daily-metrics.ts", () => ({ dailyMetricsRouter: mockRouter })
 vi.mock("./routers/duration-curves.ts", () => ({ durationCurvesRouter: mockRouter }));
 vi.mock("./routers/efficiency.ts", () => ({ efficiencyRouter: mockRouter }));
 vi.mock("./routers/food.ts", () => ({ foodRouter: mockRouter }));
+vi.mock("./routers/garmin-auth.ts", () => ({ garminAuthRouter: mockRouter }));
 vi.mock("./routers/health-kit-sync.ts", () => ({ healthKitSyncRouter: mockRouter }));
 vi.mock("./routers/healthspan.ts", () => ({ healthspanRouter: mockRouter }));
 vi.mock("./routers/hiking.ts", () => ({ hikingRouter: mockRouter }));
@@ -75,7 +76,7 @@ describe("appRouter", () => {
     expect(_typeCheck).toBe(appRouter);
   });
 
-  it("includes all 33 sub-routers in the definition", () => {
+  it("includes all sub-routers in the definition", () => {
     const expectedRouters = [
       "activity",
       "anomalyDetection",
@@ -99,6 +100,7 @@ describe("appRouter", () => {
       "durationCurves",
       "efficiency",
       "food",
+      "garminAuth",
       "healthKitSync",
       "whoopAuth",
       "strength",
