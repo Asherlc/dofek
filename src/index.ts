@@ -4,6 +4,7 @@ import { buildAuthorizationUrl } from "./auth/index.ts";
 import { computeSinceDate, parseSinceDays } from "./cli.ts";
 import { createDatabaseFromEnv } from "./db/index.ts";
 import { ensureProvider, saveTokens } from "./db/tokens.ts";
+import { logger } from "./logger.ts";
 import { AutoSupplementsProvider } from "./providers/auto-supplements.ts";
 import { BodySpecProvider } from "./providers/bodyspec.ts";
 import { Concept2Provider } from "./providers/concept2.ts";
@@ -100,14 +101,14 @@ async function main() {
 
     const enabled = getEnabledProviders();
     if (enabled.length === 0) {
-      console.log("[sync] No providers enabled. Set API keys in .env to enable providers.");
+      logger.info("[sync] No providers enabled. Set API keys in .env to enable providers.");
       process.exit(0);
     }
 
     const label = fullSync ? "all time" : `since ${since.toISOString()}`;
-    console.log(`[sync] Running sync for ${enabled.length} provider(s) — ${label}`);
+    logger.info(`[sync] Running sync for ${enabled.length} provider(s) — ${label}`);
     const result = await runSync(db, since);
-    console.log(
+    logger.info(
       `[sync] Done: ${result.totalRecords} records, ${result.totalErrors} errors in ${result.duration}ms`,
     );
 

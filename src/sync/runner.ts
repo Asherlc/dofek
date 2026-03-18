@@ -1,6 +1,7 @@
 import { refreshDedupViews, updateUserMaxHr } from "../db/dedup.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { loadProviderPriorityConfig, syncProviderPriorities } from "../db/provider-priority.ts";
+import { logger } from "../logger.ts";
 import { getEnabledProviders } from "../providers/index.ts";
 import type { Provider, SyncResult } from "../providers/types.ts";
 
@@ -25,13 +26,13 @@ export async function runSync(
 
   const results = await Promise.allSettled(
     toSync.map(async (provider) => {
-      console.log(`[sync] Starting ${provider.name}...`);
+      logger.info(`[sync] Starting ${provider.name}...`);
       const result = await provider.sync(db, since);
-      console.log(
+      logger.info(
         `[sync] ${provider.name}: ${result.recordsSynced} records, ${result.errors.length} errors`,
       );
       for (const err of result.errors) {
-        console.error(`  [${provider.id}] ${err.message}`);
+        logger.error(`[${provider.id}] ${err.message}`);
       }
       return result;
     }),
@@ -40,7 +41,7 @@ export async function runSync(
   const settled: SyncResult[] = results.map((result, index) => {
     if (result.status === "fulfilled") return result.value;
     const providerId = toSync[index]?.id ?? "unknown";
-    console.error(`  [${providerId}] Unhandled: ${String(result.reason)}`);
+    logger.error(`[${providerId}] Unhandled: ${String(result.reason)}`);
     return {
       provider: providerId,
       recordsSynced: 0,
@@ -51,10 +52,10 @@ export async function runSync(
 
   // Update max HR from newly synced data
   try {
-    console.log("[sync] Updating user max HR...");
+    logger.info("[sync] Updating user max HR...");
     await updateUserMaxHr(db);
   } catch (err) {
-    console.error("[sync] Failed to update max HR:", err);
+    logger.error(`[sync] Failed to update max HR: ${err}`);
   }
 
   // Apply provider priority config from JSON before refreshing views
@@ -64,16 +65,16 @@ export async function runSync(
       await syncProviderPriorities(db, priorityConfig);
     }
   } catch (err) {
-    console.error("[sync] Failed to apply provider priorities:", err);
+    logger.error(`[sync] Failed to apply provider priorities: ${err}`);
   }
 
   // Refresh deduplication + rollup views after all providers have synced
   try {
-    console.log("[sync] Refreshing materialized views...");
+    logger.info("[sync] Refreshing materialized views...");
     await refreshDedupViews(db);
-    console.log("[sync] Materialized views refreshed.");
+    logger.info("[sync] Materialized views refreshed.");
   } catch (err) {
-    console.error("[sync] Failed to refresh views:", err);
+    logger.error(`[sync] Failed to refresh views: ${err}`);
   }
 
   // Refit personalized algorithm parameters from updated data
@@ -81,11 +82,11 @@ export async function runSync(
     const { refitAllParams } = await import("../personalization/refit.ts");
     // CLI sync uses DEFAULT_USER_ID; worker sync uses process-sync-job.ts with job.data.userId
     const { DEFAULT_USER_ID } = await import("../db/schema.ts");
-    console.log("[sync] Refitting personalized parameters...");
+    logger.info("[sync] Refitting personalized parameters...");
     await refitAllParams(db, DEFAULT_USER_ID);
-    console.log("[sync] Personalized parameters updated.");
+    logger.info("[sync] Personalized parameters updated.");
   } catch (err) {
-    console.error("[sync] Failed to refit parameters:", err);
+    logger.error(`[sync] Failed to refit parameters: ${err}`);
   }
 
   return {

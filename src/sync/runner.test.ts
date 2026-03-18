@@ -21,6 +21,7 @@ vi.mock("../providers/index.ts", () => ({
   getEnabledProviders: () => [],
 }));
 
+import { logger } from "../logger.ts";
 import { runSync } from "./runner.ts";
 
 function createMockProvider(overrides: Partial<Provider> = {}): Provider {
@@ -224,16 +225,13 @@ describe("Sync Runner — provider priority sync", () => {
     mockLoadConfig.mockImplementation(() => {
       throw new Error("ENOENT: file read error");
     });
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const spy = vi.spyOn(logger, "error").mockImplementation(() => logger);
 
     const result = await runSync(mockDb, since, [createMockProvider()]);
 
     expect(result.results).toHaveLength(1);
     expect(result.totalRecords).toBe(5);
-    expect(spy).toHaveBeenCalledWith(
-      expect.stringContaining("provider priorities"),
-      expect.any(Error),
-    );
+    expect(spy).toHaveBeenCalledWith(expect.stringContaining("provider priorities"));
     spy.mockRestore();
   });
 
@@ -265,7 +263,7 @@ describe("Sync Runner — provider priority sync", () => {
 
   it("logs refresh messages", async () => {
     mockLoadConfig.mockReturnValue(null);
-    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const spy = vi.spyOn(logger, "info").mockImplementation(() => logger);
 
     await runSync(mockDb, since, []);
 
@@ -277,24 +275,24 @@ describe("Sync Runner — provider priority sync", () => {
   it("continues when refreshDedupViews throws", async () => {
     mockLoadConfig.mockReturnValue(null);
     mockRefreshViews.mockRejectedValue(new Error("connection lost"));
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const spy = vi.spyOn(logger, "error").mockImplementation(() => logger);
 
     const result = await runSync(mockDb, since, []);
 
     expect(result.results).toHaveLength(0);
-    expect(spy).toHaveBeenCalledWith(expect.stringContaining("refresh views"), expect.any(Error));
+    expect(spy).toHaveBeenCalledWith(expect.stringContaining("refresh views"));
     spy.mockRestore();
   });
 
   it("continues when updateUserMaxHr throws", async () => {
     mockLoadConfig.mockReturnValue(null);
     mockUpdateMaxHr.mockRejectedValue(new Error("max HR failed"));
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const spy = vi.spyOn(logger, "error").mockImplementation(() => logger);
 
     const result = await runSync(mockDb, since, []);
 
     expect(result.results).toHaveLength(0);
-    expect(spy).toHaveBeenCalledWith(expect.stringContaining("max HR"), expect.any(Error));
+    expect(spy).toHaveBeenCalledWith(expect.stringContaining("max HR"));
     spy.mockRestore();
   });
 });
