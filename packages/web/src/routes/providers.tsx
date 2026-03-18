@@ -1,6 +1,9 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { ProvidersPage } from "../pages/ProvidersPage.tsx";
+import { createFileRoute, Outlet } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/providers")({
-  component: ProvidersPage,
+  component: ProvidersLayout,
 });
+
+function ProvidersLayout() {
+  return <Outlet />;
+}
