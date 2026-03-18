@@ -475,6 +475,23 @@ describe("processImportJob", () => {
     });
   });
 
+  describe("handles undefined errors gracefully", () => {
+    it("apple-health import with undefined errors logs success", async () => {
+      mockImportAppleHealthFile.mockResolvedValue({
+        recordsSynced: 5,
+        errors: undefined,
+      });
+
+      const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
+      await runImportJob(job, mockDb);
+
+      expect(mockLogSync).toHaveBeenCalledWith(
+        mockDb,
+        expect.objectContaining({ status: "success", recordCount: 5 }),
+      );
+    });
+  });
+
   describe("error counting", () => {
     it("reports correct error count for apple-health import with errors", async () => {
       mockImportAppleHealthFile.mockResolvedValue({
