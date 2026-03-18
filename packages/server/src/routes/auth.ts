@@ -8,9 +8,12 @@ import {
   clearOAuthFlowCookies,
   clearSessionCookie,
   getLinkUserCookie,
+  getMobileSchemeCookie,
   getOAuthFlowCookies,
-  getSessionCookie,
+  getSessionIdFromRequest,
+  isValidMobileScheme,
   setLinkUserCookie,
+  setMobileSchemeCookie,
   setOAuthFlowCookies,
   setSessionCookie,
 } from "../auth/cookies.ts";
@@ -48,6 +51,8 @@ interface OAuthStateEntry {
   intent: "data" | "login" | "link";
   linkUserId?: string;
   userId: string;
+  /** Mobile app URL scheme for deep link redirect after OAuth. */
+  mobileScheme?: string;
 }
 
 const oauthStateMap = new Map<string, OAuthStateEntry>();
@@ -218,6 +223,14 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       const url = provider.createAuthorizationUrl(statePayload, codeVerifier);
 
       setOAuthFlowCookies(res, statePayload, codeVerifier);
+
+      // Mobile apps pass redirect_scheme so the callback redirects via deep link
+      const redirectScheme =
+        typeof req.query.redirect_scheme === "string" ? req.query.redirect_scheme : undefined;
+      if (redirectScheme && isValidMobileScheme(redirectScheme)) {
+        setMobileSchemeCookie(res, redirectScheme);
+      }
+
       res.redirect(url.toString());
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -241,7 +254,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       }
 
       // Require valid session
-      const sessionId = getSessionCookie(req);
+      const sessionId = getSessionIdFromRequest(req);
       if (!sessionId) {
         res.status(401).send("You must be logged in to link an account");
         return;
@@ -293,6 +306,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
 
       const { state: storedState, codeVerifier } = getOAuthFlowCookies(req);
       const linkUserId = getLinkUserCookie(req);
+      const mobileScheme = getMobileSchemeCookie(req);
       clearOAuthFlowCookies(res);
 
       if (!storedState || !codeVerifier || stateParam !== storedState) {
@@ -319,6 +333,14 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       // Create session (or keep existing if linking)
       if (!linkUserId) {
         const sessionInfo = await createSession(db, userId);
+
+        // Mobile: redirect to app via deep link with session token
+        if (mobileScheme && isValidMobileScheme(mobileScheme)) {
+          logger.info(`[auth] User ${userId} logged in via ${providerName} (mobile)`);
+          res.redirect(`${mobileScheme}://auth/callback?session=${sessionInfo.sessionId}`);
+          return;
+        }
+
         setSessionCookie(res, sessionInfo.sessionId, sessionInfo.expiresAt);
       }
 
@@ -334,7 +356,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
   });
 
   router.post("/auth/logout", async (req, res) => {
-    const sessionId = getSessionCookie(req);
+    const sessionId = getSessionIdFromRequest(req);
     if (sessionId) {
       await deleteSession(db, sessionId);
       clearSessionCookie(res);
@@ -343,7 +365,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
   });
 
   router.get("/api/auth/me", async (req, res) => {
-    const sessionId = getSessionCookie(req);
+    const sessionId = getSessionIdFromRequest(req);
     if (!sessionId) {
       res.status(401).json({ error: "Not authenticated" });
       return;
@@ -365,18 +387,24 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
   });
 
   // ── Slack OAuth (Add to Slack) ──
-  router.get("/auth/provider/slack", (_req, res) => {
+  router.get("/auth/provider/slack", async (req, res) => {
     const clientId = process.env.SLACK_CLIENT_ID;
     if (!clientId) {
       res.status(400).send("SLACK_CLIENT_ID is not configured");
       return;
     }
+
+    // Resolve the logged-in user so we can link the Slack identity to them
+    const sessionId = getSessionCookie(req);
+    const session = sessionId ? await validateSession(db, sessionId) : null;
+    const userId = session?.userId ?? DEFAULT_USER_ID;
+
     const redirectUri = getOAuthRedirectUri();
     const stateToken = `slack:${randomBytes(16).toString("hex")}`;
     oauthStateMap.set(stateToken, {
       providerId: "slack",
       intent: "data",
-      userId: DEFAULT_USER_ID,
+      userId,
     });
     setTimeout(() => oauthStateMap.delete(stateToken), 10 * 60 * 1000);
     const url = new URL("https://slack.com/oauth/v2/authorize");
@@ -390,10 +418,15 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
   // ── Data provider login: use a data provider as an identity/login provider ──
   router.get("/auth/login/data/:provider", async (req, res) => {
     try {
+      const redirectScheme =
+        typeof req.query.redirect_scheme === "string" ? req.query.redirect_scheme : undefined;
+      const mobileScheme =
+        redirectScheme && isValidMobileScheme(redirectScheme) ? redirectScheme : undefined;
       await startDataProviderOAuth(res, req.params.provider, {
         providerId: req.params.provider,
         intent: "login",
         userId: DEFAULT_USER_ID,
+        mobileScheme,
       });
     } catch (err: unknown) {
       logger.error(`[auth] Failed to start data provider login: ${err}`);
@@ -404,7 +437,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
   // ── Data provider link: link a data provider as identity while already logged in ──
   router.get("/auth/link/data/:provider", async (req, res) => {
     try {
-      const sessionId = getSessionCookie(req);
+      const sessionId = getSessionIdFromRequest(req);
       if (!sessionId) {
         res.status(401).send("You must be logged in to link an account");
         return;
@@ -431,7 +464,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
   router.get("/auth/provider/:provider", async (req, res) => {
     try {
       // Resolve the logged-in user so the provider record is linked to them
-      const sessionId = getSessionCookie(req);
+      const sessionId = getSessionIdFromRequest(req);
       const session = sessionId ? await validateSession(db, sessionId) : null;
       const userId = session?.userId ?? DEFAULT_USER_ID;
 
@@ -524,6 +557,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
 
       // ── Slack OAuth callback (Add to Slack) ──
       if (state.startsWith("slack:") && oauthStateMap.has(state)) {
+        const slackState = oauthStateMap.get(state);
         oauthStateMap.delete(state);
         const clientId = process.env.SLACK_CLIENT_ID;
         const clientSecret = process.env.SLACK_CLIENT_SECRET;
@@ -584,6 +618,46 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
                 raw_installation = EXCLUDED.raw_installation,
                 updated_at = NOW()`,
         );
+
+        // Link the installer's Slack identity to the logged-in dofek user
+        // so the bot can immediately identify them when they send a message
+        const installerSlackUserId = tokenData.authed_user?.id;
+        if (installerSlackUserId && slackState) {
+          // Check for existing orphaned auth_account pointing to wrong user
+          const existingLink = await db.execute<{ user_id: string }>(
+            sql`SELECT user_id FROM fitness.auth_account
+                WHERE auth_provider = 'slack' AND provider_account_id = ${installerSlackUserId}
+                LIMIT 1`,
+          );
+          const existingLinkRow = existingLink[0];
+          const orphanUserId =
+            existingLinkRow && existingLinkRow.user_id !== slackState.userId
+              ? existingLinkRow.user_id
+              : null;
+
+          // Create or update the auth_account link
+          await db.execute(
+            sql`INSERT INTO fitness.auth_account (user_id, auth_provider, provider_account_id)
+                VALUES (${slackState.userId}, 'slack', ${installerSlackUserId})
+                ON CONFLICT (auth_provider, provider_account_id)
+                DO UPDATE SET user_id = EXCLUDED.user_id`,
+          );
+
+          // Migrate food entries from orphan user if needed
+          if (orphanUserId) {
+            await db.execute(
+              sql`UPDATE fitness.food_entry SET user_id = ${slackState.userId}
+                  WHERE user_id = ${orphanUserId}`,
+            );
+            logger.info(
+              `[auth] Migrated food entries from orphan ${orphanUserId} to ${slackState.userId}`,
+            );
+          }
+
+          logger.info(
+            `[auth] Linked Slack user ${installerSlackUserId} to dofek user ${slackState.userId}`,
+          );
+        }
 
         logger.info(
           `[auth] Slack installed for team ${tokenData.team.id} (${tokenData.team.name})`,
@@ -649,6 +723,18 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
             // Data provider login: resolve/create user and create session
             const { userId } = await resolveOrCreateUser(db, providerId, identity);
             const sessionInfo = await createSession(db, userId);
+
+            // Mobile: redirect to app via deep link with session token
+            if (stateEntry.mobileScheme && isValidMobileScheme(stateEntry.mobileScheme)) {
+              logger.info(
+                `[auth] User ${userId} logged in via data provider ${providerId} (mobile)`,
+              );
+              res.redirect(
+                `${stateEntry.mobileScheme}://auth/callback?session=${sessionInfo.sessionId}`,
+              );
+              return;
+            }
+
             setSessionCookie(res, sessionInfo.sessionId, sessionInfo.expiresAt);
             logger.info(`[auth] User ${userId} logged in via data provider ${providerId}`);
             res.redirect("/");
@@ -664,7 +750,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
           }
 
           // intent === "data": auto-link identity to the current session user (if logged in)
-          const sessionId = getSessionCookie(req);
+          const sessionId = getSessionIdFromRequest(req);
           const session = sessionId ? await validateSession(db, sessionId) : null;
           if (session) {
             await resolveOrCreateUser(db, providerId, identity, session.userId);

@@ -3,7 +3,7 @@ import { oauthSuccessHtml } from "./auth.ts";
 
 // Mock all heavy dependencies
 vi.mock("../auth/cookies.ts", () => ({
-  getSessionCookie: vi.fn(),
+  getSessionIdFromRequest: vi.fn(),
   setSessionCookie: vi.fn(),
   clearSessionCookie: vi.fn(),
   getOAuthFlowCookies: vi.fn(() => ({ state: null, codeVerifier: null })),
@@ -11,6 +11,9 @@ vi.mock("../auth/cookies.ts", () => ({
   clearOAuthFlowCookies: vi.fn(),
   getLinkUserCookie: vi.fn(() => null),
   setLinkUserCookie: vi.fn(),
+  getMobileSchemeCookie: vi.fn(() => undefined),
+  setMobileSchemeCookie: vi.fn(),
+  isValidMobileScheme: (scheme: unknown) => scheme === "dofek",
 }));
 
 vi.mock("../auth/providers.ts", () => ({
@@ -75,7 +78,11 @@ import cookieParser from "cookie-parser";
 import { createDatabaseFromEnv } from "dofek/db";
 import { getAllProviders } from "dofek/providers/registry";
 import express from "express";
-import { getOAuthFlowCookies, getSessionCookie } from "../auth/cookies.ts";
+import {
+  getMobileSchemeCookie,
+  getOAuthFlowCookies,
+  getSessionIdFromRequest,
+} from "../auth/cookies.ts";
 import { getIdentityProvider, isProviderConfigured } from "../auth/providers.ts";
 import { deleteSession, validateSession } from "../auth/session.ts";
 import { createAuthRouter } from "./auth.ts";
@@ -179,7 +186,7 @@ describe("createAuthRouter", () => {
 
   describe("POST /auth/logout", () => {
     it("logs out and returns ok", async () => {
-      vi.mocked(getSessionCookie).mockReturnValue("sess-1");
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
       const { app } = createTestApp();
       const res = await request(app, "post", "/auth/logout");
       expect(res.status).toBe(200);
@@ -189,7 +196,7 @@ describe("createAuthRouter", () => {
     });
 
     it("returns ok even without session", async () => {
-      vi.mocked(getSessionCookie).mockReturnValue(undefined);
+      vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
       const { app } = createTestApp();
       const res = await request(app, "post", "/auth/logout");
       expect(res.status).toBe(200);
@@ -199,14 +206,14 @@ describe("createAuthRouter", () => {
 
   describe("GET /api/auth/me", () => {
     it("returns 401 when no session cookie", async () => {
-      vi.mocked(getSessionCookie).mockReturnValue(undefined);
+      vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
       const { app } = createTestApp();
       const res = await request(app, "get", "/api/auth/me");
       expect(res.status).toBe(401);
     });
 
     it("returns 401 when session is invalid", async () => {
-      vi.mocked(getSessionCookie).mockReturnValue("bad-session");
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("bad-session");
       vi.mocked(validateSession).mockResolvedValue(null);
       const { app } = createTestApp();
       const res = await request(app, "get", "/api/auth/me");
@@ -214,7 +221,7 @@ describe("createAuthRouter", () => {
     });
 
     it("returns user when session is valid", async () => {
-      vi.mocked(getSessionCookie).mockReturnValue("good-session");
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("good-session");
       vi.mocked(validateSession).mockResolvedValue({
         userId: "user-1",
         expiresAt: new Date("2027-01-01"),
@@ -230,7 +237,7 @@ describe("createAuthRouter", () => {
     });
 
     it("returns 401 when user not found in DB", async () => {
-      vi.mocked(getSessionCookie).mockReturnValue("good-session");
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("good-session");
       vi.mocked(validateSession).mockResolvedValue({
         userId: "user-1",
         expiresAt: new Date("2027-01-01"),
@@ -353,14 +360,14 @@ describe("createAuthRouter", () => {
     });
 
     it("returns 401 when not logged in", async () => {
-      vi.mocked(getSessionCookie).mockReturnValue(undefined);
+      vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
       const { app } = createTestApp();
       const res = await request(app, "get", "/auth/link/google");
       expect(res.status).toBe(401);
     });
 
     it("returns 400 for unconfigured provider", async () => {
-      vi.mocked(getSessionCookie).mockReturnValue("sess-1");
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
       vi.mocked(validateSession).mockResolvedValue({
         userId: "user-1",
         expiresAt: new Date("2027-01-01"),
@@ -373,7 +380,7 @@ describe("createAuthRouter", () => {
     });
 
     it("returns 401 when session is expired", async () => {
-      vi.mocked(getSessionCookie).mockReturnValue("sess-1");
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
       vi.mocked(validateSession).mockResolvedValue(null);
       const { app } = createTestApp();
       const res = await request(app, "get", "/auth/link/google");
@@ -381,7 +388,7 @@ describe("createAuthRouter", () => {
     });
 
     it("redirects when logged in with valid session", async () => {
-      vi.mocked(getSessionCookie).mockReturnValue("sess-1");
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
       vi.mocked(validateSession).mockResolvedValue({
         userId: "user-1",
         expiresAt: new Date("2027-01-01"),
@@ -430,14 +437,14 @@ describe("createAuthRouter", () => {
 
   describe("GET /auth/link/data/:provider", () => {
     it("returns 401 when not logged in", async () => {
-      vi.mocked(getSessionCookie).mockReturnValue(undefined);
+      vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
       const { app } = createTestApp();
       const res = await request(app, "get", "/auth/link/data/wahoo");
       expect(res.status).toBe(401);
     });
 
     it("returns 401 when session is expired", async () => {
-      vi.mocked(getSessionCookie).mockReturnValue("sess-1");
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
       vi.mocked(validateSession).mockResolvedValue(null);
       const { app } = createTestApp();
       const res = await request(app, "get", "/auth/link/data/wahoo");
@@ -541,6 +548,74 @@ describe("createAuthRouter", () => {
       const res = await request(app, "get", "/callback?code=abc&state=slack:fake-state");
       expect(res.status).toBe(400);
     });
+
+    it("creates auth_account linking installer Slack ID to logged-in user", async () => {
+      process.env.SLACK_CLIENT_ID = "test-client-id";
+      process.env.SLACK_CLIENT_SECRET = "test-client-secret";
+
+      // Simulate logged-in user
+      vi.mocked(getSessionCookie).mockReturnValue("sess-1");
+      vi.mocked(validateSession).mockResolvedValue({
+        userId: "real-user-id",
+        expiresAt: new Date("2027-01-01"),
+      });
+
+      const { app, fakeDb } = createTestApp();
+
+      // Step 1: Hit /auth/provider/slack to populate the state map
+      const slackRes = await request(app, "get", "/auth/provider/slack");
+      expect(slackRes.status).toBe(302);
+
+      // Extract state token from redirect Location header
+      const location = slackRes.headers.location;
+      expect(location).toBeDefined();
+      if (typeof location !== "string") throw new Error("Expected location header to be a string");
+      const redirectUrl = new URL(location);
+      const state = redirectUrl.searchParams.get("state");
+      expect(state).toBeTruthy();
+      expect(state).toMatch(/^slack:/);
+
+      // Step 2: Mock Slack API fetch for token exchange, while letting
+      // the test's own HTTP requests through
+      const realFetch = globalThis.fetch;
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+        const url =
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input instanceof Request
+                ? input.url
+                : String(input);
+        if (url.includes("slack.com/api/oauth.v2.access")) {
+          return new Response(
+            JSON.stringify({
+              ok: true,
+              access_token: "xoxb-test-bot-token",
+              team: { id: "T_TEAM", name: "Test Workspace" },
+              bot_user_id: "U_BOT",
+              authed_user: { id: "U_INSTALLER" },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        return realFetch(input, init);
+      });
+
+      // Step 3: Hit callback with the state
+      const callbackRes = await request(app, "get", `/callback?code=slack-code&state=${state}`);
+      expect(callbackRes.status).toBe(200);
+      expect(callbackRes.body).toContain("Authorized!");
+
+      // Step 4: Verify db.execute was called to store installation AND create auth_account
+      const executeCalls = vi.mocked(fakeDb.execute).mock.calls;
+      // Should have at least 2 calls: installation insert + auth_account insert
+      expect(executeCalls.length).toBeGreaterThanOrEqual(2);
+
+      fetchSpy.mockRestore();
+      delete process.env.SLACK_CLIENT_ID;
+      delete process.env.SLACK_CLIENT_SECRET;
+    });
   });
 
   describe("GET /auth/provider/:provider (PKCE flow)", () => {
@@ -589,6 +664,38 @@ describe("createAuthRouter", () => {
     });
   });
 
+  describe("GET /auth/callback/:provider (mobile redirect)", () => {
+    it("redirects to deep link with session token when mobile scheme is set", async () => {
+      const mockValidate = vi.fn(() =>
+        Promise.resolve({
+          tokens: {},
+          user: { sub: "goog-1", email: "alice@test.com", name: "Alice" },
+        }),
+      );
+      vi.mocked(getIdentityProvider).mockReturnValue({
+        createAuthorizationUrl: vi.fn(() => new URL("https://accounts.google.com/authorize")),
+        validateCallback: mockValidate,
+      });
+      vi.mocked(getOAuthFlowCookies).mockReturnValue({
+        state: "google:state-mobile",
+        codeVerifier: "verifier",
+      });
+      vi.mocked(getMobileSchemeCookie).mockReturnValue("dofek");
+      const { app } = createTestApp();
+      const res = await request(
+        app,
+        "get",
+        "/auth/callback/google?code=authcode&state=google:state-mobile",
+      );
+      expect(res.status).toBe(302);
+      const location = res.headers.location;
+      expect(typeof location).toBe("string");
+      expect(location).toContain("dofek://auth/callback?session=");
+      // Restore
+      vi.mocked(getMobileSchemeCookie).mockReturnValue(undefined);
+    });
+  });
+
   describe("GET /auth/callback/:provider (link flow)", () => {
     it("redirects to /settings on successful link callback", async () => {
       const mockValidate = vi.fn(() =>
@@ -620,7 +727,7 @@ describe("createAuthRouter", () => {
 
   describe("GET /auth/link/data/:provider", () => {
     it("returns 404 for unknown provider when authenticated", async () => {
-      vi.mocked(getSessionCookie).mockReturnValue("sess-1");
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
       vi.mocked(validateSession).mockResolvedValue({
         userId: "user-1",
         expiresAt: new Date("2027-01-01"),
@@ -721,7 +828,7 @@ describe("createAuthRouter", () => {
 
   describe("GET /auth/link/:provider (error handling)", () => {
     it("returns 500 when link flow throws", async () => {
-      vi.mocked(getSessionCookie).mockReturnValue("sess-1");
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
       vi.mocked(validateSession).mockResolvedValue({
         userId: "user-1",
         expiresAt: new Date("2027-01-01"),

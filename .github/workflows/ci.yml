@@ -214,6 +214,7 @@ jobs:
             | { grep -v '\.test\.ts$' || true; } \
             | { grep -v 'test-helpers\.ts$' || true; } \
             | { grep -v '\.d\.ts$' || true; } \
+            | { grep -v '\.gen\.ts$' || true; } \
             | { grep -v '\.config\.' || true; } \
             | { grep -v 'drizzle/' || true; } \
             | { grep -v 'scripts/' || true; } \

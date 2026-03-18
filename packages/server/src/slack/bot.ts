@@ -122,7 +122,7 @@ async function resolveOrCreateUserId(
     // Check auth_account first (Google/Apple login creates these)
     const existingByAuthEmail = await db.execute<{ user_id: string }>(
       sql`SELECT user_id FROM fitness.auth_account
-          WHERE email = ${email}
+          WHERE LOWER(email) = LOWER(${email})
           LIMIT 1`,
     );
     const authRow = existingByAuthEmail[0];
@@ -134,7 +134,7 @@ async function resolveOrCreateUserId(
     // Also check user_profile.email (web login updates this for DEFAULT_USER_ID)
     const existingByProfileEmail = await db.execute<{ id: string }>(
       sql`SELECT id FROM fitness.user_profile
-          WHERE email = ${email}
+          WHERE LOWER(email) = LOWER(${email})
           LIMIT 1`,
     );
     const profileRow = existingByProfileEmail[0];
@@ -158,7 +158,21 @@ async function resolveOrCreateUserId(
     return countRow.id;
   }
 
-  // No match and multiple users — create a new one
+  // Multiple user_profiles exist (possibly including orphans from previous Slack
+  // interactions). Check for users with non-slack auth_accounts — these are "real"
+  // users who logged in via the web. If exactly one exists, use them.
+  const realUsers = await db.execute<{ user_id: string }>(
+    sql`SELECT DISTINCT user_id FROM fitness.auth_account
+        WHERE auth_provider != 'slack'`,
+  );
+  if (realUsers.length === 1 && realUsers[0]) {
+    logger.info(
+      `[slack] No email match — falling back to sole authenticated user ${realUsers[0].user_id}`,
+    );
+    return realUsers[0].user_id;
+  }
+
+  // No match and multiple real users — create a new one
   logger.warn(
     `[slack] Could not match Slack user to existing account (email=${email ?? "null"}), creating new user`,
   );
@@ -214,7 +228,7 @@ async function lookupOrCreateUserId(
     if (email) {
       const canonical = await db.execute<{ user_id: string }>(
         sql`SELECT user_id FROM fitness.auth_account
-            WHERE email = ${email} AND auth_provider != 'slack'
+            WHERE LOWER(email) = LOWER(${email}) AND auth_provider != 'slack'
             LIMIT 1`,
       );
       const canonicalRow = canonical[0];
