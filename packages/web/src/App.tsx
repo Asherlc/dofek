@@ -4,10 +4,17 @@ import { useState } from "react";
 import { DashboardLayoutProvider } from "./components/DashboardLayoutProvider.tsx";
 import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
 import { UnitProvider } from "./components/UnitProvider.tsx";
+import { capturePageView, initPostHog } from "./lib/posthog.ts";
 import { createTRPCClient, trpc } from "./lib/trpc.ts";
 import { routeTree } from "./routeTree.gen.ts";
 
+initPostHog();
+
 const router = createRouter({ routeTree });
+
+router.subscribe("onResolved", ({ toLocation }) => {
+  capturePageView(toLocation.href);
+});
 
 declare module "@tanstack/react-router" {
   interface Register {
