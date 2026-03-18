@@ -191,13 +191,24 @@ describe("Sync Runner — provider priority sync", () => {
 
   it("loads and applies provider priority config before refreshing views", async () => {
     const fakeConfig = { providers: { wahoo: { activity: 10 } } };
-    mockLoadConfig.mockReturnValue(fakeConfig);
+    const callOrder: string[] = [];
+    mockLoadConfig.mockImplementation(() => {
+      callOrder.push("loadConfig");
+      return fakeConfig;
+    });
+    mockSyncPriorities.mockImplementation(() => {
+      callOrder.push("syncPriorities");
+    });
+    mockRefreshViews.mockImplementation(() => {
+      callOrder.push("refreshViews");
+    });
 
     await runSync(mockDb, since, []);
 
     expect(mockLoadConfig).toHaveBeenCalled();
     expect(mockSyncPriorities).toHaveBeenCalledWith(mockDb, fakeConfig);
     expect(mockRefreshViews).toHaveBeenCalledWith(mockDb);
+    expect(callOrder.indexOf("syncPriorities")).toBeLessThan(callOrder.indexOf("refreshViews"));
   });
 
   it("skips priority sync when config file is missing", async () => {

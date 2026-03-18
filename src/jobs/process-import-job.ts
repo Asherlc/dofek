@@ -103,7 +103,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
       await syncProviderPriorities(db, config);
     }
   } catch (err) {
-    console.error(`[worker] Failed to sync provider priorities: ${err}`);
+    console.error("[worker] Failed to sync provider priorities:", err);
   }
 
   try {

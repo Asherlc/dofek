@@ -32,44 +32,35 @@ export const intervalsRouter = router({
         JOIN fitness.activity a ON a.id = ai.activity_id
         LEFT JOIN LATERAL (
           SELECT
-            AVG(ms.heart_rate)::REAL AS avg_heart_rate,
-            MAX(ms.heart_rate)::SMALLINT AS max_heart_rate,
-            AVG(ms.power) FILTER (WHERE ms.power > 0)::REAL AS avg_power,
-            MAX(ms.power) FILTER (WHERE ms.power > 0)::SMALLINT AS max_power,
-            AVG(ms.speed)::REAL AS avg_speed,
-            MAX(ms.speed)::REAL AS max_speed,
-            AVG(ms.cadence) FILTER (WHERE ms.cadence > 0)::REAL AS avg_cadence,
-            (SELECT SUM(
+            AVG(d.heart_rate)::REAL AS avg_heart_rate,
+            MAX(d.heart_rate)::SMALLINT AS max_heart_rate,
+            AVG(d.power) FILTER (WHERE d.power > 0)::REAL AS avg_power,
+            MAX(d.power) FILTER (WHERE d.power > 0)::SMALLINT AS max_power,
+            AVG(d.speed)::REAL AS avg_speed,
+            MAX(d.speed)::REAL AS max_speed,
+            AVG(d.cadence) FILTER (WHERE d.cadence > 0)::REAL AS avg_cadence,
+            SUM(CASE WHEN d.prev_lat IS NOT NULL THEN
               2 * 6371000 * ASIN(SQRT(
-                POWER(SIN(RADIANS(g.lat - g.prev_lat) / 2), 2) +
-                COS(RADIANS(g.prev_lat)) * COS(RADIANS(g.lat)) *
-                POWER(SIN(RADIANS(g.lng - g.prev_lng) / 2), 2)
+                POWER(SIN(RADIANS(d.lat - d.prev_lat) / 2), 2) +
+                COS(RADIANS(d.prev_lat)) * COS(RADIANS(d.lat)) *
+                POWER(SIN(RADIANS(d.lng - d.prev_lng) / 2), 2)
               ))
-            )::REAL
-            FROM (
-              SELECT lat, lng,
-                LAG(lat) OVER (ORDER BY recorded_at) AS prev_lat,
-                LAG(lng) OVER (ORDER BY recorded_at) AS prev_lng
-              FROM fitness.metric_stream ms2
-              WHERE ms2.activity_id = ai.activity_id
-                AND ms2.recorded_at >= ai.started_at
-                AND (ai.ended_at IS NULL OR ms2.recorded_at <= ai.ended_at)
-                AND ms2.lat IS NOT NULL AND ms2.lng IS NOT NULL
-            ) g WHERE g.prev_lat IS NOT NULL) AS distance_meters,
-            (SELECT SUM(CASE WHEN alt.altitude - alt.prev_alt > 0 THEN alt.altitude - alt.prev_alt ELSE 0 END)::REAL
-            FROM (
-              SELECT altitude,
-                LAG(altitude) OVER (ORDER BY recorded_at) AS prev_alt
-              FROM fitness.metric_stream ms3
-              WHERE ms3.activity_id = ai.activity_id
-                AND ms3.recorded_at >= ai.started_at
-                AND (ai.ended_at IS NULL OR ms3.recorded_at <= ai.ended_at)
-                AND ms3.altitude IS NOT NULL
-            ) alt WHERE alt.prev_alt IS NOT NULL) AS elevation_gain
-          FROM fitness.metric_stream ms
-          WHERE ms.activity_id = ai.activity_id
-            AND ms.recorded_at >= ai.started_at
-            AND (ai.ended_at IS NULL OR ms.recorded_at <= ai.ended_at)
+            ELSE 0 END)::REAL AS distance_meters,
+            SUM(CASE WHEN d.prev_alt IS NOT NULL AND d.altitude - d.prev_alt > 0
+              THEN d.altitude - d.prev_alt ELSE 0 END)::REAL AS elevation_gain
+          FROM (
+            SELECT
+              ms.heart_rate, ms.power, ms.speed, ms.cadence,
+              ms.lat, ms.lng, ms.altitude,
+              LAG(ms.lat) OVER w AS prev_lat,
+              LAG(ms.lng) OVER w AS prev_lng,
+              LAG(ms.altitude) OVER w AS prev_alt
+            FROM fitness.metric_stream ms
+            WHERE ms.activity_id = ai.activity_id
+              AND ms.recorded_at >= ai.started_at
+              AND (ai.ended_at IS NULL OR ms.recorded_at <= ai.ended_at)
+            WINDOW w AS (ORDER BY ms.recorded_at)
+          ) d
         ) im ON true
         WHERE ai.activity_id = ${input.activityId}::uuid
           AND a.user_id = ${ctx.userId}

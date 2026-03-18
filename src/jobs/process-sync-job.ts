@@ -92,7 +92,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
       await syncProviderPriorities(db, config);
     }
   } catch (err) {
-    console.error(`[worker] Failed to sync provider priorities: ${err}`);
+    console.error("[worker] Failed to sync provider priorities:", err);
   }
 
   try {

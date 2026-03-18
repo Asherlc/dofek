@@ -120,4 +120,4 @@ The `activity_summary` materialized view computes all of these at refresh time f
 
 All provider-sourced tables have a `(provider_id, external_id)` unique index. Syncs use upsert to avoid duplicates.
 
-Daily metrics use per-category dedup priority (see `src/sync/dedup.ts`) to prefer the most accurate source for each metric when multiple providers report the same data.
+Daily metrics use per-category dedup priority (see `src/db/dedup.ts`) to prefer the most accurate source for each metric when multiple providers report the same data.
