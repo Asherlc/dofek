@@ -20,7 +20,7 @@ export default defineConfig({
           name: "unit",
           include: [
             "src/**/*.test.ts",
-            "packages/*/src/**/*.test.ts",
+            "packages/*/src/**/*.test.{ts,tsx}",
             "packages/ios/lib/**/*.test.ts",
           ],
           exclude: ["**/*.integration.test.ts"],

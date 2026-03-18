@@ -1,6 +1,6 @@
 /**
  * Brand logos for data providers and identity providers.
- * SVGs from Simple Icons (MIT license), PNGs from Google favicon service.
+ * SVGs from Simple Icons (MIT license), PNGs from Apple App Store / provider websites.
  * Files live in public/logos/ and are served by Vite as static assets.
  */
 
@@ -26,7 +26,7 @@ const SVG_LOGOS = new Set([
   "authentik",
 ]);
 
-// Providers that have a PNG logo file (Google favicon service)
+// Providers that have a PNG logo file (App Store icons / provider websites)
 const PNG_LOGOS = new Set([
   "polar",
   "zwift",
