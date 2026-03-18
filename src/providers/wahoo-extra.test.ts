@@ -288,7 +288,12 @@ function makeInsertMock(returnId = "act-uuid") {
 }
 
 function makeSelectMock(
-  tokenRow: { accessToken: string; refreshToken: string | null; expiresAt: Date; scopes: string } | null,
+  tokenRow: {
+    accessToken: string;
+    refreshToken: string | null;
+    expiresAt: Date;
+    scopes: string;
+  } | null,
 ) {
   const rows = tokenRow ? [tokenRow] : [];
   return vi.fn().mockReturnValue({

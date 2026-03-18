@@ -14,10 +14,9 @@ vi.mock("@bull-board/express", () => ({
 }));
 vi.mock("@trpc/server/adapters/express", () => ({
   createExpressMiddleware: vi.fn(
-    () =>
-      (_req: unknown, res: { status: (code: number) => { json: (body: unknown) => void } }) => {
-        res.status(404).json({ error: "not found" });
-      },
+    () => (_req: unknown, res: { status: (code: number) => { json: (body: unknown) => void } }) => {
+      res.status(404).json({ error: "not found" });
+    },
   ),
 }));
 vi.mock("dofek/jobs/queues", () => ({
