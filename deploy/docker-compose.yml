@@ -32,6 +32,7 @@ services:
       - JOB_FILES_DIR=/app/job-files
       - PORT=3000
       - NODE_ENV=production
+      - OTEL_SERVICE_NAME=dofek-web
     volumes:
       - job_files:/app/job-files
       - /var/run/docker.sock:/var/run/docker.sock
@@ -51,6 +52,7 @@ services:
       - DATABASE_URL=postgres://health:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/health
       - REDIS_URL=redis://redis:6379
       - NODE_ENV=production
+      - OTEL_SERVICE_NAME=dofek-worker
     volumes:
       - job_files:/app/job-files
     depends_on:
@@ -70,6 +72,7 @@ services:
     environment:
       - DATABASE_URL=postgres://health:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/health
       - NODE_ENV=production
+      - OTEL_SERVICE_NAME=dofek-sync
     depends_on:
       db:
         condition: service_healthy

@@ -2,7 +2,7 @@
 set -e
 
 # Node 22+ natively handles TypeScript — transform-types also rewrites .ts imports
-NODE="node --experimental-transform-types --enable-source-maps --disable-warning=ExperimentalWarning"
+NODE="node --experimental-transform-types --enable-source-maps --disable-warning=ExperimentalWarning --import ./src/instrumentation.ts"
 
 # If SOPS age key is available and .env exists, decrypt secrets into the environment
 if { [ -n "$SOPS_AGE_KEY" ] || [ -n "$SOPS_AGE_KEY_FILE" ]; } && [ -f .env ]; then
