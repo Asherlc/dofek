@@ -206,8 +206,8 @@ describe("syncProviderPriorities", () => {
 
     await syncProviderPriorities(mockDb, config);
 
-    // 1 provider upsert + 2 device upserts + 1 device delete + 1 provider delete = 5
-    expect(mockExecute).toHaveBeenCalledTimes(5);
+    // 1 batched provider upsert + 1 batched device upsert + 1 device delete + 1 provider delete = 4
+    expect(mockExecute).toHaveBeenCalledTimes(4);
   });
 
   it("deletes stale device priorities not in config", async () => {
@@ -233,8 +233,8 @@ describe("syncProviderPriorities", () => {
 
     await syncProviderPriorities(mockDb, config);
 
-    // 2 provider upserts + 1 DELETE all device_priority + 1 DELETE stale providers = 4
-    expect(mockExecute).toHaveBeenCalledTimes(4);
+    // 1 batched provider upsert + 1 DELETE all device_priority + 1 DELETE stale providers = 3
+    expect(mockExecute).toHaveBeenCalledTimes(3);
   });
 
   it("handles multiple providers with mixed device configs", async () => {
@@ -254,8 +254,8 @@ describe("syncProviderPriorities", () => {
 
     await syncProviderPriorities(mockDb, config);
 
-    // 3 provider upserts + 3 device upserts + 1 device delete + 1 provider delete = 8
-    expect(mockExecute).toHaveBeenCalledTimes(8);
+    // 1 batched provider upsert + 1 batched device upsert + 1 device delete + 1 provider delete = 4
+    expect(mockExecute).toHaveBeenCalledTimes(4);
   });
 
   it("passes null for optional category priorities", async () => {
@@ -394,7 +394,7 @@ describe("syncProviderPriorities", () => {
     expect(deviceSql).toContain("18");
   });
 
-  it("iterates over all device patterns in a provider", async () => {
+  it("batches all device patterns in a single upsert", async () => {
     const config: ProviderPriorityConfig = {
       providers: {
         garmin: {
@@ -410,14 +410,11 @@ describe("syncProviderPriorities", () => {
 
     await syncProviderPriorities(mockDb, config);
 
-    // 1 provider upsert + 3 device upserts + 1 device delete + 1 provider delete = 6
-    expect(mockExecute).toHaveBeenCalledTimes(6);
+    // 1 batched provider upsert + 1 batched device upsert + 1 device delete + 1 provider delete = 4
+    expect(mockExecute).toHaveBeenCalledTimes(4);
 
-    // Verify each device pattern was upserted
-    const deviceCalls = mockExecute.mock.calls
-      .slice(1, 4)
-      .map((c: unknown[]) => JSON.stringify(c[0]));
-    const allDeviceSql = deviceCalls.join(" ");
-    expect(allDeviceSql).toContain("device_priority");
+    // Verify device upsert (second call) contains all patterns
+    const deviceSql = JSON.stringify(mockExecute.mock.calls[1]?.[0]);
+    expect(deviceSql).toContain("device_priority");
   });
 });

@@ -314,15 +314,6 @@ export const activityInterval = fitness.table(
     intervalType: text("interval_type"),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
     endedAt: timestamp("ended_at", { withTimezone: true }),
-    avgHeartRate: real("avg_heart_rate"),
-    maxHeartRate: smallint("max_heart_rate"),
-    avgPower: real("avg_power"),
-    maxPower: smallint("max_power"),
-    avgSpeed: real("avg_speed"),
-    maxSpeed: real("max_speed"),
-    avgCadence: real("avg_cadence"),
-    distanceMeters: real("distance_meters"),
-    elevationGain: real("elevation_gain"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index("activity_interval_activity_idx").on(table.activityId, table.intervalIndex)],
@@ -354,9 +345,7 @@ export const metricStream = fitness.table(
     lng: real("lng"), // degrees
     altitude: real("altitude"), // meters
     temperature: real("temperature"), // celsius
-    distance: real("distance"), // cumulative meters
     grade: real("grade"), // percent
-    calories: real("calories"), // cumulative kcal
     verticalSpeed: real("vertical_speed"), // m/s
     spo2: real("spo2"), // percent (0-1)
     respiratoryRate: real("respiratory_rate"), // breaths/min

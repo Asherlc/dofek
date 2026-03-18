@@ -232,7 +232,6 @@ describe("Strava Provider", () => {
       expect(rows[0]?.lng).toBe(-74.006);
       expect(rows[0]?.altitude).toBe(15.2);
       expect(rows[0]?.temperature).toBe(22);
-      expect(rows[0]?.distance).toBe(0);
       expect(rows[0]?.grade).toBe(0.5);
     });
 

@@ -395,7 +395,10 @@ describe("processImportJob", () => {
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
       await runImportJob(job, mockDb);
 
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("provider priorities"));
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining("provider priorities"),
+        expect.any(Error),
+      );
       consoleSpy.mockRestore();
     });
   });

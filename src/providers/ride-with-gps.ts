@@ -127,7 +127,6 @@ export interface ParsedTrackPoint {
   lat: number;
   lng: number;
   altitude: number | undefined;
-  distance: number | undefined;
   speed: number | undefined;
   temperature: number | undefined;
   heartRate: number | undefined;
@@ -162,7 +161,6 @@ export function parseTrackPoints(points: RideWithGpsTrackPoint[]): ParsedTrackPo
       lat: point.y,
       lng: point.x,
       altitude: point.e,
-      distance: point.d,
       speed: point.s !== undefined ? point.s / 3.6 : undefined,
       temperature: point.T,
       heartRate: point.h,
@@ -447,7 +445,6 @@ export class RideWithGpsProvider implements Provider {
               lat: point.lat,
               lng: point.lng,
               altitude: point.altitude,
-              distance: point.distance,
               speed: point.speed,
               temperature: point.temperature,
               heartRate: point.heartRate,

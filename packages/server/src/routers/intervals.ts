@@ -5,7 +5,7 @@ import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 export const intervalsRouter = router({
   /**
    * Get intervals/laps for a specific activity.
-   * Returns structured breakdown with per-interval metrics.
+   * Computes per-interval metrics from metric_stream based on interval time ranges.
    */
   byActivity: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ activityId: z.string().uuid() }))
@@ -18,18 +18,50 @@ export const intervalsRouter = router({
           ai.interval_type,
           ai.started_at,
           ai.ended_at,
-          ai.avg_heart_rate,
-          ai.max_heart_rate,
-          ai.avg_power,
-          ai.max_power,
-          ai.avg_speed,
-          ai.max_speed,
-          ai.avg_cadence,
-          ai.distance_meters,
-          ai.elevation_gain,
-          EXTRACT(EPOCH FROM (ai.ended_at - ai.started_at)) AS duration_seconds
+          EXTRACT(EPOCH FROM (ai.ended_at - ai.started_at)) AS duration_seconds,
+          im.avg_heart_rate,
+          im.max_heart_rate,
+          im.avg_power,
+          im.max_power,
+          im.avg_speed,
+          im.max_speed,
+          im.avg_cadence,
+          im.distance_meters,
+          im.elevation_gain
         FROM fitness.activity_interval ai
         JOIN fitness.activity a ON a.id = ai.activity_id
+        LEFT JOIN LATERAL (
+          SELECT
+            AVG(d.heart_rate)::REAL AS avg_heart_rate,
+            MAX(d.heart_rate)::SMALLINT AS max_heart_rate,
+            AVG(d.power) FILTER (WHERE d.power > 0)::REAL AS avg_power,
+            MAX(d.power) FILTER (WHERE d.power > 0)::SMALLINT AS max_power,
+            AVG(d.speed)::REAL AS avg_speed,
+            MAX(d.speed)::REAL AS max_speed,
+            AVG(d.cadence) FILTER (WHERE d.cadence > 0)::REAL AS avg_cadence,
+            SUM(CASE WHEN d.prev_lat IS NOT NULL THEN
+              2 * 6371000 * ASIN(SQRT(
+                POWER(SIN(RADIANS(d.lat - d.prev_lat) / 2), 2) +
+                COS(RADIANS(d.prev_lat)) * COS(RADIANS(d.lat)) *
+                POWER(SIN(RADIANS(d.lng - d.prev_lng) / 2), 2)
+              ))
+            ELSE 0 END)::REAL AS distance_meters,
+            SUM(CASE WHEN d.prev_alt IS NOT NULL AND d.altitude - d.prev_alt > 0
+              THEN d.altitude - d.prev_alt ELSE 0 END)::REAL AS elevation_gain
+          FROM (
+            SELECT
+              ms.heart_rate, ms.power, ms.speed, ms.cadence,
+              ms.lat, ms.lng, ms.altitude,
+              LAG(ms.lat) OVER w AS prev_lat,
+              LAG(ms.lng) OVER w AS prev_lng,
+              LAG(ms.altitude) OVER w AS prev_alt
+            FROM fitness.metric_stream ms
+            WHERE ms.activity_id = ai.activity_id
+              AND ms.recorded_at >= ai.started_at
+              AND (ai.ended_at IS NULL OR ms.recorded_at <= ai.ended_at)
+            WINDOW w AS (ORDER BY ms.recorded_at)
+          ) d
+        ) im ON true
         WHERE ai.activity_id = ${input.activityId}::uuid
           AND a.user_id = ${ctx.userId}
         ORDER BY ai.interval_index
@@ -58,7 +90,6 @@ export const intervalsRouter = router({
         max_power: number | null;
         max_hr: number | null;
         max_speed: number | null;
-        distance: number | null;
       }>(sql`
         SELECT
           date_trunc('minute', ms.recorded_at) AS minute_start,
@@ -68,8 +99,7 @@ export const intervalsRouter = router({
           ROUND(AVG(ms.cadence) FILTER (WHERE ms.cadence > 0)::numeric, 1) AS avg_cadence,
           MAX(ms.power) AS max_power,
           MAX(ms.heart_rate) AS max_hr,
-          MAX(ms.speed) AS max_speed,
-          MAX(ms.distance) AS distance
+          MAX(ms.speed) AS max_speed
         FROM fitness.metric_stream ms
         JOIN fitness.activity a ON a.id = ms.activity_id
         WHERE ms.activity_id = ${input.activityId}::uuid
@@ -91,7 +121,6 @@ export const intervalsRouter = router({
         avgSpeed: number | null;
         maxSpeed: number | null;
         avgCadence: number | null;
-        distanceMeters: number | null;
       }[] = [];
 
       let segmentStart = 0;
@@ -140,7 +169,7 @@ export const intervalsRouter = router({
     }),
 });
 
-function summarizeSegment(
+export function summarizeSegment(
   segmentRows: {
     avg_power: number | null;
     avg_hr: number | null;
@@ -149,7 +178,6 @@ function summarizeSegment(
     max_power: number | null;
     max_hr: number | null;
     max_speed: number | null;
-    distance: number | null;
   }[],
   first: { minute_start: string },
   last: { minute_start: string },
@@ -163,10 +191,6 @@ function summarizeSegment(
   const maxHr = maxVal(segmentRows.map((r) => r.max_hr));
   const maxSpeed = maxVal(segmentRows.map((r) => r.max_speed));
 
-  const distances = segmentRows.map((r) => r.distance).filter((d): d is number => d != null);
-  const distanceMeters =
-    distances.length >= 2 ? (distances[distances.length - 1] ?? 0) - (distances[0] ?? 0) : null;
-
   return {
     startedAt: String(first.minute_start),
     endedAt: String(last.minute_start),
@@ -177,17 +201,16 @@ function summarizeSegment(
     avgSpeed,
     maxSpeed,
     avgCadence,
-    distanceMeters,
   };
 }
 
-function average(values: (number | null)[]): number | null {
+export function average(values: (number | null)[]): number | null {
   const valid = values.filter((v): v is number => v != null && v > 0);
   if (valid.length === 0) return null;
   return Math.round((valid.reduce((a, b) => a + b, 0) / valid.length) * 10) / 10;
 }
 
-function maxVal(values: (number | null)[]): number | null {
+export function maxVal(values: (number | null)[]): number | null {
   const valid = values.filter((v): v is number => v != null);
   if (valid.length === 0) return null;
   return Math.max(...valid);

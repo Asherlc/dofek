@@ -58,7 +58,7 @@ export function loadProviderPriorityConfig(basePath?: string): ProviderPriorityC
     const raw = readFileSync(filePath, "utf-8");
     return providerPriorityConfigSchema.parse(JSON.parse(raw));
   } catch (err) {
-    if (err instanceof Error && err.message.includes("ENOENT")) {
+    if (err != null && typeof err === "object" && "code" in err && err.code === "ENOENT") {
       return null;
     }
     throw err;
@@ -77,21 +77,39 @@ export async function syncProviderPriorities(
   const configProviderIds: string[] = [];
   const configDevicePatterns: Array<{ providerId: string; pattern: string }> = [];
 
+  // Collect all values for batched upserts
+  const providerValues: Array<{
+    id: string;
+    entry: ProviderPriorityEntry;
+  }> = [];
+  const deviceValues: Array<{
+    providerId: string;
+    pattern: string;
+    overrides: Partial<PriorityCategories>;
+  }> = [];
+
   for (const [providerId, entry] of Object.entries(config.providers)) {
     configProviderIds.push(providerId);
+    providerValues.push({ id: providerId, entry });
 
-    // Upsert provider-level priorities
+    if (entry.devices) {
+      for (const [pattern, overrides] of Object.entries(entry.devices)) {
+        configDevicePatterns.push({ providerId, pattern });
+        deviceValues.push({ providerId, pattern, overrides });
+      }
+    }
+  }
+
+  // Batch upsert provider priorities
+  if (providerValues.length > 0) {
+    const valueFragments = providerValues.map(
+      ({ id, entry }) =>
+        sql`(${id}, ${entry.activity}, ${entry.sleep ?? null}, ${entry.body ?? null}, ${entry.recovery ?? null}, ${entry.dailyActivity ?? null})`,
+    );
     await db.execute(
       sql`INSERT INTO fitness.provider_priority
             (provider_id, priority, sleep_priority, body_priority, recovery_priority, daily_activity_priority)
-          VALUES (
-            ${providerId},
-            ${entry.activity},
-            ${entry.sleep ?? null},
-            ${entry.body ?? null},
-            ${entry.recovery ?? null},
-            ${entry.dailyActivity ?? null}
-          )
+          VALUES ${sql.join(valueFragments, sql`, `)}
           ON CONFLICT (provider_id) DO UPDATE SET
             priority = EXCLUDED.priority,
             sleep_priority = EXCLUDED.sleep_priority,
@@ -99,32 +117,25 @@ export async function syncProviderPriorities(
             recovery_priority = EXCLUDED.recovery_priority,
             daily_activity_priority = EXCLUDED.daily_activity_priority`,
     );
+  }
 
-    // Upsert device-level priority overrides
-    if (entry.devices) {
-      for (const [pattern, overrides] of Object.entries(entry.devices)) {
-        configDevicePatterns.push({ providerId, pattern });
-        await db.execute(
-          sql`INSERT INTO fitness.device_priority
-                (provider_id, source_name_pattern, priority, sleep_priority, body_priority, recovery_priority, daily_activity_priority)
-              VALUES (
-                ${providerId},
-                ${pattern},
-                ${overrides.activity ?? null},
-                ${overrides.sleep ?? null},
-                ${overrides.body ?? null},
-                ${overrides.recovery ?? null},
-                ${overrides.dailyActivity ?? null}
-              )
-              ON CONFLICT (provider_id, source_name_pattern) DO UPDATE SET
-                priority = EXCLUDED.priority,
-                sleep_priority = EXCLUDED.sleep_priority,
-                body_priority = EXCLUDED.body_priority,
-                recovery_priority = EXCLUDED.recovery_priority,
-                daily_activity_priority = EXCLUDED.daily_activity_priority`,
-        );
-      }
-    }
+  // Batch upsert device priorities
+  if (deviceValues.length > 0) {
+    const deviceFragments = deviceValues.map(
+      ({ providerId, pattern, overrides }) =>
+        sql`(${providerId}, ${pattern}, ${overrides.activity ?? null}, ${overrides.sleep ?? null}, ${overrides.body ?? null}, ${overrides.recovery ?? null}, ${overrides.dailyActivity ?? null})`,
+    );
+    await db.execute(
+      sql`INSERT INTO fitness.device_priority
+            (provider_id, source_name_pattern, priority, sleep_priority, body_priority, recovery_priority, daily_activity_priority)
+          VALUES ${sql.join(deviceFragments, sql`, `)}
+          ON CONFLICT (provider_id, source_name_pattern) DO UPDATE SET
+            priority = EXCLUDED.priority,
+            sleep_priority = EXCLUDED.sleep_priority,
+            body_priority = EXCLUDED.body_priority,
+            recovery_priority = EXCLUDED.recovery_priority,
+            daily_activity_priority = EXCLUDED.daily_activity_priority`,
+    );
   }
 
   // Delete device priorities not in the config

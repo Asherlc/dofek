@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { describe, expect, it, vi } from "vitest";
 
+import { mapActivityDetail, mapHrZones, mapStreamPoint } from "./activity.ts";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
 // Mock tRPC infrastructure
@@ -201,5 +202,166 @@ describe("activityRouter", () => {
       expect(result[1]?.seconds).toBe(500);
       expect(result[2]?.seconds).toBe(0);
     });
+  });
+});
+
+describe("mapActivityDetail", () => {
+  const fullRow = {
+    id: "abc-123",
+    activity_type: "cycling",
+    started_at: "2026-03-01T10:00:00+00:00",
+    ended_at: "2026-03-01T11:30:00+00:00",
+    name: "Morning Ride",
+    notes: "Felt good",
+    provider_id: "wahoo",
+    source_providers: ["wahoo", "strava"],
+    avg_hr: 145,
+    max_hr: 175,
+    avg_power: 220,
+    max_power: 450,
+    avg_speed: 8.5,
+    max_speed: 15.2,
+    avg_cadence: 85,
+    total_distance: 42000,
+    elevation_gain_m: 350,
+    elevation_loss_m: 340,
+    sample_count: 5400,
+  };
+
+  it("maps all fields correctly", () => {
+    const r = mapActivityDetail(fullRow);
+    expect(r.id).toBe("abc-123");
+    expect(r.activityType).toBe("cycling");
+    expect(r.startedAt).toBe("2026-03-01T10:00:00+00:00");
+    expect(r.endedAt).toBe("2026-03-01T11:30:00+00:00");
+    expect(r.name).toBe("Morning Ride");
+    expect(r.notes).toBe("Felt good");
+    expect(r.providerId).toBe("wahoo");
+    expect(r.sourceProviders).toEqual(["wahoo", "strava"]);
+    expect(r.avgHr).toBe(145);
+    expect(r.maxHr).toBe(175);
+    expect(r.avgPower).toBe(220);
+    expect(r.maxPower).toBe(450);
+    expect(r.avgSpeed).toBe(8.5);
+    expect(r.maxSpeed).toBe(15.2);
+    expect(r.avgCadence).toBe(85);
+    expect(r.totalDistance).toBe(42000);
+    expect(r.elevationGain).toBe(350);
+    expect(r.elevationLoss).toBe(340);
+    expect(r.sampleCount).toBe(5400);
+  });
+
+  it("returns null for all nullable fields when null", () => {
+    const r = mapActivityDetail({
+      ...fullRow,
+      ended_at: null,
+      name: null,
+      notes: null,
+      avg_hr: null,
+      max_hr: null,
+      avg_power: null,
+      max_power: null,
+      avg_speed: null,
+      max_speed: null,
+      avg_cadence: null,
+      total_distance: null,
+      elevation_gain_m: null,
+      elevation_loss_m: null,
+      sample_count: null,
+    });
+    expect(r.endedAt).toBeNull();
+    expect(r.name).toBeNull();
+    expect(r.notes).toBeNull();
+    expect(r.avgHr).toBeNull();
+    expect(r.maxHr).toBeNull();
+    expect(r.avgPower).toBeNull();
+    expect(r.maxPower).toBeNull();
+    expect(r.avgSpeed).toBeNull();
+    expect(r.maxSpeed).toBeNull();
+    expect(r.avgCadence).toBeNull();
+    expect(r.totalDistance).toBeNull();
+    expect(r.elevationGain).toBeNull();
+    expect(r.elevationLoss).toBeNull();
+    expect(r.sampleCount).toBeNull();
+  });
+});
+
+describe("mapStreamPoint", () => {
+  it("maps all populated fields", () => {
+    const r = mapStreamPoint({
+      recorded_at: "2026-03-01T10:00:00Z",
+      heart_rate: 145,
+      power: 220,
+      speed: 8.5,
+      cadence: 85,
+      altitude: 350.5,
+      lat: 40.7128,
+      lng: -74.006,
+    });
+    expect(r.recordedAt).toBe("2026-03-01T10:00:00Z");
+    expect(r.heartRate).toBe(145);
+    expect(r.power).toBe(220);
+    expect(r.speed).toBe(8.5);
+    expect(r.cadence).toBe(85);
+    expect(r.altitude).toBe(350.5);
+    expect(r.lat).toBe(40.7128);
+    expect(r.lng).toBe(-74.006);
+  });
+
+  it("returns null for all nullable fields when null", () => {
+    const r = mapStreamPoint({
+      recorded_at: "2026-03-01T10:00:00Z",
+      heart_rate: null,
+      power: null,
+      speed: null,
+      cadence: null,
+      altitude: null,
+      lat: null,
+      lng: null,
+    });
+    expect(r.heartRate).toBeNull();
+    expect(r.power).toBeNull();
+    expect(r.speed).toBeNull();
+    expect(r.cadence).toBeNull();
+    expect(r.altitude).toBeNull();
+    expect(r.lat).toBeNull();
+    expect(r.lng).toBeNull();
+  });
+});
+
+describe("mapHrZones", () => {
+  it("maps all 5 zones with correct labels and ranges", () => {
+    const rows = [
+      { zone: 1, seconds: 120 },
+      { zone: 2, seconds: 600 },
+      { zone: 3, seconds: 900 },
+      { zone: 4, seconds: 300 },
+      { zone: 5, seconds: 60 },
+    ];
+    const result = mapHrZones(rows);
+    expect(result).toEqual([
+      { zone: 1, label: "Recovery", minPct: 50, maxPct: 60, seconds: 120 },
+      { zone: 2, label: "Aerobic", minPct: 60, maxPct: 70, seconds: 600 },
+      { zone: 3, label: "Tempo", minPct: 70, maxPct: 80, seconds: 900 },
+      { zone: 4, label: "Threshold", minPct: 80, maxPct: 90, seconds: 300 },
+      { zone: 5, label: "Anaerobic", minPct: 90, maxPct: 100, seconds: 60 },
+    ]);
+  });
+
+  it("defaults to 0 for missing zones", () => {
+    const result = mapHrZones([{ zone: 3, seconds: 500 }]);
+    expect(result[0]?.seconds).toBe(0);
+    expect(result[1]?.seconds).toBe(0);
+    expect(result[2]?.seconds).toBe(500);
+    expect(result[3]?.seconds).toBe(0);
+    expect(result[4]?.seconds).toBe(0);
+  });
+
+  it("returns all zeros for empty input", () => {
+    const result = mapHrZones([]);
+    expect(result).toHaveLength(5);
+    for (const zone of result) {
+      expect(zone.seconds).toBe(0);
+    }
   });
 });

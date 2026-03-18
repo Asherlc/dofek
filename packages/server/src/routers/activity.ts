@@ -34,7 +34,6 @@ export interface StreamPoint {
   altitude: number | null;
   lat: number | null;
   lng: number | null;
-  distance: number | null;
 }
 
 export interface ActivityHrZone {
@@ -123,27 +122,7 @@ export const activityRouter = router({
         throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
       }
 
-      return {
-        id: String(row.id),
-        activityType: String(row.activity_type),
-        startedAt: String(row.started_at),
-        endedAt: row.ended_at ? String(row.ended_at) : null,
-        name: row.name ? String(row.name) : null,
-        notes: row.notes ? String(row.notes) : null,
-        providerId: String(row.provider_id),
-        sourceProviders: row.source_providers ?? [],
-        avgHr: row.avg_hr != null ? Number(row.avg_hr) : null,
-        maxHr: row.max_hr != null ? Number(row.max_hr) : null,
-        avgPower: row.avg_power != null ? Number(row.avg_power) : null,
-        maxPower: row.max_power != null ? Number(row.max_power) : null,
-        avgSpeed: row.avg_speed != null ? Number(row.avg_speed) : null,
-        maxSpeed: row.max_speed != null ? Number(row.max_speed) : null,
-        avgCadence: row.avg_cadence != null ? Number(row.avg_cadence) : null,
-        totalDistance: row.total_distance != null ? Number(row.total_distance) : null,
-        elevationGain: row.elevation_gain_m != null ? Number(row.elevation_gain_m) : null,
-        elevationLoss: row.elevation_loss_m != null ? Number(row.elevation_loss_m) : null,
-        sampleCount: row.sample_count != null ? Number(row.sample_count) : null,
-      };
+      return mapActivityDetail(row);
     }),
 
   /**
@@ -167,7 +146,6 @@ export const activityRouter = router({
         altitude: number | null;
         lat: number | null;
         lng: number | null;
-        distance: number | null;
       }>(
         sql`WITH numbered AS (
               SELECT ms.*, ROW_NUMBER() OVER (ORDER BY ms.recorded_at) AS rn,
@@ -177,23 +155,13 @@ export const activityRouter = router({
               WHERE ms.activity_id = ${input.id}
             )
             SELECT recorded_at::text AS recorded_at,
-                   heart_rate, power, speed, cadence, altitude, lat, lng, distance
+                   heart_rate, power, speed, cadence, altitude, lat, lng
             FROM numbered
             WHERE rn % GREATEST(1, total / ${input.maxPoints}) = 0
             ORDER BY recorded_at`,
       );
 
-      return rows.map((row) => ({
-        recordedAt: String(row.recorded_at),
-        heartRate: row.heart_rate != null ? Number(row.heart_rate) : null,
-        power: row.power != null ? Number(row.power) : null,
-        speed: row.speed != null ? Number(row.speed) : null,
-        cadence: row.cadence != null ? Number(row.cadence) : null,
-        altitude: row.altitude != null ? Number(row.altitude) : null,
-        lat: row.lat != null ? Number(row.lat) : null,
-        lng: row.lng != null ? Number(row.lng) : null,
-        distance: row.distance != null ? Number(row.distance) : null,
-      }));
+      return rows.map(mapStreamPoint);
     }),
 
   /**
@@ -264,23 +232,96 @@ export const activityRouter = router({
             ORDER BY z.zone`,
       );
 
-      const zoneLabels = [
-        { zone: 1, label: "Recovery", minPct: 50, maxPct: 60 },
-        { zone: 2, label: "Aerobic", minPct: 60, maxPct: 70 },
-        { zone: 3, label: "Tempo", minPct: 70, maxPct: 80 },
-        { zone: 4, label: "Threshold", minPct: 80, maxPct: 90 },
-        { zone: 5, label: "Anaerobic", minPct: 90, maxPct: 100 },
-      ];
-
-      return zoneLabels.map((zl) => {
-        const row = rows.find((r) => Number(r.zone) === zl.zone);
-        return {
-          zone: zl.zone,
-          label: zl.label,
-          minPct: zl.minPct,
-          maxPct: zl.maxPct,
-          seconds: row ? Number(row.seconds) : 0,
-        };
-      });
+      return mapHrZones(rows);
     }),
 });
+
+/** Map a raw DB row to an ActivityDetail. Exported for unit testing. */
+export function mapActivityDetail(row: {
+  id: string;
+  activity_type: string;
+  started_at: string;
+  ended_at: string | null;
+  name: string | null;
+  notes: string | null;
+  provider_id: string;
+  source_providers: string[];
+  avg_hr: number | null;
+  max_hr: number | null;
+  avg_power: number | null;
+  max_power: number | null;
+  avg_speed: number | null;
+  max_speed: number | null;
+  avg_cadence: number | null;
+  total_distance: number | null;
+  elevation_gain_m: number | null;
+  elevation_loss_m: number | null;
+  sample_count: number | null;
+}): ActivityDetail {
+  return {
+    id: String(row.id),
+    activityType: String(row.activity_type),
+    startedAt: String(row.started_at),
+    endedAt: row.ended_at ? String(row.ended_at) : null,
+    name: row.name ? String(row.name) : null,
+    notes: row.notes ? String(row.notes) : null,
+    providerId: String(row.provider_id),
+    sourceProviders: row.source_providers ?? [],
+    avgHr: row.avg_hr != null ? Number(row.avg_hr) : null,
+    maxHr: row.max_hr != null ? Number(row.max_hr) : null,
+    avgPower: row.avg_power != null ? Number(row.avg_power) : null,
+    maxPower: row.max_power != null ? Number(row.max_power) : null,
+    avgSpeed: row.avg_speed != null ? Number(row.avg_speed) : null,
+    maxSpeed: row.max_speed != null ? Number(row.max_speed) : null,
+    avgCadence: row.avg_cadence != null ? Number(row.avg_cadence) : null,
+    totalDistance: row.total_distance != null ? Number(row.total_distance) : null,
+    elevationGain: row.elevation_gain_m != null ? Number(row.elevation_gain_m) : null,
+    elevationLoss: row.elevation_loss_m != null ? Number(row.elevation_loss_m) : null,
+    sampleCount: row.sample_count != null ? Number(row.sample_count) : null,
+  };
+}
+
+/** Map a raw stream row to a StreamPoint. Exported for unit testing. */
+export function mapStreamPoint(row: {
+  recorded_at: string;
+  heart_rate: number | null;
+  power: number | null;
+  speed: number | null;
+  cadence: number | null;
+  altitude: number | null;
+  lat: number | null;
+  lng: number | null;
+}): StreamPoint {
+  return {
+    recordedAt: String(row.recorded_at),
+    heartRate: row.heart_rate != null ? Number(row.heart_rate) : null,
+    power: row.power != null ? Number(row.power) : null,
+    speed: row.speed != null ? Number(row.speed) : null,
+    cadence: row.cadence != null ? Number(row.cadence) : null,
+    altitude: row.altitude != null ? Number(row.altitude) : null,
+    lat: row.lat != null ? Number(row.lat) : null,
+    lng: row.lng != null ? Number(row.lng) : null,
+  };
+}
+
+/** Map raw HR zone rows to the full 5-zone structure. Exported for unit testing. */
+export function mapHrZones(rows: { zone: number; seconds: number }[]): ActivityHrZones {
+  const zoneLabels = [
+    { zone: 1, label: "Recovery", minPct: 50, maxPct: 60 },
+    { zone: 2, label: "Aerobic", minPct: 60, maxPct: 70 },
+    { zone: 3, label: "Tempo", minPct: 70, maxPct: 80 },
+    { zone: 4, label: "Threshold", minPct: 80, maxPct: 90 },
+    { zone: 5, label: "Anaerobic", minPct: 90, maxPct: 100 },
+  ];
+
+  return zoneLabels.map((zl) => {
+    const row = rows.find((r) => Number(r.zone) === zl.zone);
+    return {
+      zone: zl.zone,
+      label: zl.label,
+      minPct: zl.minPct,
+      maxPct: zl.maxPct,
+      seconds: row ? Number(row.seconds) : 0,
+    };
+  });
+}

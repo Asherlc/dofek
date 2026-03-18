@@ -787,18 +787,22 @@ describe("Router transformation logic", () => {
         );
         const activityId = activityRows[0]?.id;
         if (activityId) {
-          // Insert metric_stream with altitude data for elevation calculations
+          // Insert metric_stream with altitude + GPS data for elevation/distance calculations
+          // Simulate a straight-line hike heading north (~1.2 m/s for 90 minutes ≈ 6.5 km)
+          const baseLat = 40.7;
+          const baseLng = -74.0;
           for (let minute = 0; minute < 90; minute++) {
             const sampleTime = new Date(startedAt.getTime() + minute * 60 * 1000);
             // Simulate climbing: altitude goes from 500m to 900m
             const altitude = 500 + (minute / 90) * 400;
             const speed = 1.2 + Math.random() * 0.3; // ~1.2-1.5 m/s
-            const distance = minute * 60 * speed; // cumulative
+            // Move north ~72m per minute (≈0.00065° lat)
+            const lat = baseLat + minute * 0.00065;
 
             await testCtx.db.execute(
               sql`INSERT INTO fitness.metric_stream
-                  (recorded_at, user_id, activity_id, provider_id, heart_rate, speed, altitude, distance, grade)
-                  VALUES (${sampleTime.toISOString()}, ${DEFAULT_USER_ID}, ${activityId}::uuid, 'test-provider', ${130 + Math.round(Math.random() * 15)}, ${speed}, ${altitude}, ${distance}, ${5 + Math.random() * 3})`,
+                  (recorded_at, user_id, activity_id, provider_id, heart_rate, speed, altitude, grade, lat, lng)
+                  VALUES (${sampleTime.toISOString()}, ${DEFAULT_USER_ID}, ${activityId}::uuid, 'test-provider', ${130 + Math.round(Math.random() * 15)}, ${speed}, ${altitude}, ${5 + Math.random() * 3}, ${lat}, ${baseLng})`,
             );
           }
         }
@@ -877,16 +881,18 @@ describe("Router transformation logic", () => {
         );
         const activityId = activityRows[0]?.id;
         if (activityId) {
+          const baseLat = 40.7;
+          const baseLng = -74.0;
           for (let minute = 0; minute < 75; minute++) {
             const sampleTime = new Date(startedAt.getTime() + minute * 60 * 1000);
             const altitude = 300 + (minute / 75) * 200;
             const speed = 1.3 + Math.random() * 0.2;
-            const distance = minute * 60 * speed;
+            const lat = baseLat + minute * 0.00065;
 
             await testCtx.db.execute(
               sql`INSERT INTO fitness.metric_stream
-                  (recorded_at, user_id, activity_id, provider_id, heart_rate, speed, altitude, distance, grade)
-                  VALUES (${sampleTime.toISOString()}, ${DEFAULT_USER_ID}, ${activityId}::uuid, 'test-provider', ${125 + Math.round(Math.random() * 10)}, ${speed}, ${altitude}, ${distance}, ${3 + Math.random() * 2})`,
+                  (recorded_at, user_id, activity_id, provider_id, heart_rate, speed, altitude, grade, lat, lng)
+                  VALUES (${sampleTime.toISOString()}, ${DEFAULT_USER_ID}, ${activityId}::uuid, 'test-provider', ${125 + Math.round(Math.random() * 10)}, ${speed}, ${altitude}, ${3 + Math.random() * 2}, ${lat}, ${baseLng})`,
             );
           }
         }
@@ -989,8 +995,8 @@ describe("Router transformation logic", () => {
       // Insert an interval for the activity
       await testCtx.db.execute(
         sql`INSERT INTO fitness.activity_interval
-            (activity_id, interval_index, label, started_at, ended_at, avg_power, avg_heart_rate, distance_meters)
-            VALUES (${intervalActivityId}::uuid, 0, 'Warmup', NOW() - INTERVAL '1 hour', NOW() - INTERVAL '50 minutes', 150, 130, 2000)`,
+            (activity_id, interval_index, label, started_at, ended_at)
+            VALUES (${intervalActivityId}::uuid, 0, 'Warmup', NOW() - INTERVAL '1 hour', NOW() - INTERVAL '50 minutes')`,
       );
 
       const { status, result } = await query("intervals.byActivity", {
@@ -1001,7 +1007,6 @@ describe("Router transformation logic", () => {
 
       expect(data.length).toBeGreaterThanOrEqual(1);
       expect(data[0].label).toBe("Warmup");
-      expect(Number(data[0].avg_power)).toBe(150);
     });
   });
 

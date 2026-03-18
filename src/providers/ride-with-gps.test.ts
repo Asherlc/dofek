@@ -120,7 +120,6 @@ describe("parseTrackPoints", () => {
       lat: 45.5,
       lng: -122.6,
       altitude: 150,
-      distance: 1000,
       temperature: 22,
       heartRate: 145,
       cadence: 90,

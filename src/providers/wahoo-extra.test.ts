@@ -94,9 +94,7 @@ describe("fitRecordsToMetricStream", () => {
     expect(rows[0]?.lng).toBe(-74.0);
     expect(rows[0]?.altitude).toBe(50);
     expect(rows[0]?.temperature).toBe(22);
-    expect(rows[0]?.distance).toBe(1000);
     expect(rows[0]?.grade).toBe(1.5);
-    expect(rows[0]?.calories).toBe(100);
     expect(rows[0]?.verticalSpeed).toBe(0.5);
     expect(rows[0]?.leftTorqueEffectiveness).toBe(75);
     expect(rows[0]?.combinedPedalSmoothness).toBe(19.5);

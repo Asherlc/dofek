@@ -504,9 +504,8 @@ describe("Deduplication materialized views", () => {
       // Provider without category-specific priorities should use generic priority
       await ensureProvider(ctx.db, "garmin", "Garmin");
 
-      // Garmin records a sleep session — should use generic priority as fallback
-      // Garmin has no sleep_priority in config, so it falls back to its generic priority (15)
-      // WHOOP has sleep_priority 20, so Garmin (15) actually wins here
+      // Garmin has sleep_priority: 40, WHOOP has sleep_priority: 20
+      // WHOOP wins because lower priority number = higher preference
       await ctx.db.insert(sleepSession).values([
         {
           providerId: "whoop",
@@ -536,7 +535,7 @@ describe("Deduplication materialized views", () => {
 
       const mainSleep = rows.filter((r) => !r.is_nap);
       expect(mainSleep.length).toBe(1);
-      // WHOOP's sleep_priority (20) beats Garmin's fallback (sleep_priority: 40, since Garmin is now seeded)
+      // WHOOP sleep_priority (20) < Garmin sleep_priority (40) → WHOOP wins
       expect(mainSleep[0]?.provider_id).toBe("whoop");
     });
 
