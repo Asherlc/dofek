@@ -1,5 +1,6 @@
 import { refreshDedupViews, updateUserMaxHr } from "../db/dedup.ts";
 import type { SyncDatabase } from "../db/index.ts";
+import { loadProviderPriorityConfig, syncProviderPriorities } from "../db/provider-priority.ts";
 import { getEnabledProviders } from "../providers/index.ts";
 import type { Provider, SyncResult } from "../providers/types.ts";
 
@@ -49,6 +50,16 @@ export async function runSync(
     await updateUserMaxHr(db);
   } catch (err) {
     console.error("[sync] Failed to update max HR:", err);
+  }
+
+  // Apply provider priority config from JSON before refreshing views
+  try {
+    const priorityConfig = loadProviderPriorityConfig();
+    if (priorityConfig) {
+      await syncProviderPriorities(db, priorityConfig);
+    }
+  } catch (err) {
+    console.error("[sync] Failed to apply provider priorities:", err);
   }
 
   // Refresh deduplication + rollup views after all providers have synced

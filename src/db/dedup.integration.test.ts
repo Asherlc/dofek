@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { refreshDedupViews } from "./dedup.ts";
+import { loadProviderPriorityConfig, syncProviderPriorities } from "./provider-priority.ts";
 import { activity, bodyMeasurement, dailyMetrics, metricStream, sleepSession } from "./schema.ts";
 import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
 import { ensureProvider } from "./tokens.ts";
@@ -99,11 +100,16 @@ describe("Deduplication materialized views", () => {
 
   beforeAll(async () => {
     ctx = await setupTestDatabase();
-    // Seed providers with priorities
+    // Seed providers
     await ensureProvider(ctx.db, "wahoo", "Wahoo");
     await ensureProvider(ctx.db, "whoop", "WHOOP");
     await ensureProvider(ctx.db, "apple_health", "Apple Health");
     await ensureProvider(ctx.db, "withings", "Withings");
+    // Apply per-category priorities from config file
+    const priorityConfig = loadProviderPriorityConfig();
+    if (priorityConfig) {
+      await syncProviderPriorities(ctx.db, priorityConfig);
+    }
   }, 60_000);
 
   afterAll(async () => {

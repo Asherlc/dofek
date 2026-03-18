@@ -22,49 +22,8 @@ ALTER TABLE fitness.provider_priority
   ADD COLUMN IF NOT EXISTS recovery_priority INTEGER,
   ADD COLUMN IF NOT EXISTS daily_activity_priority INTEGER;
 
---> statement-breakpoint
-
--- 2. Seed category priorities for all known providers
--- Use ON CONFLICT DO UPDATE to set category priorities on existing rows
-INSERT INTO fitness.provider_priority
-  (provider_id, priority, sleep_priority, body_priority, recovery_priority, daily_activity_priority)
-VALUES
-  -- Wahoo: dedicated bike computer + paired sensors — best for cycling activities
-  ('wahoo', 10, NULL, NULL, NULL, NULL),
-  -- Oura: gold standard for sleep staging and nocturnal HRV/resting HR
-  ('oura', 80, 10, NULL, 10, 80),
-  -- Withings: medical-grade body composition scales
-  ('withings', 15, NULL, 10, NULL, NULL),
-  -- Peloton: indoor cycling — estimated power, no sleep/recovery
-  ('peloton', 20, NULL, NULL, NULL, NULL),
-  -- FatSecret: nutrition tracking only
-  ('fatsecret', 25, NULL, NULL, NULL, NULL),
-  -- WHOOP: excellent 24/7 HR/HRV recovery tracking, decent sleep, poor daily activity
-  ('whoop', 30, 20, NULL, 15, 80),
-  -- Apple Health: best all-day activity tracking (steps, calories, distance), decent sleep/recovery
-  ('apple_health', 90, 25, 80, 25, 15),
-  -- Garmin: great for activities and daily tracking, decent recovery, moderate sleep
-  ('garmin', 15, 40, NULL, 30, 20),
-  -- Fitbit: decent all-around wearable
-  ('fitbit', 50, 30, NULL, 40, 30),
-  -- Polar: great chest strap HR, decent watch
-  ('polar', 15, 50, NULL, 30, 50),
-  -- Eight Sleep: mattress-based sleep tracking (ballistocardiography)
-  ('eight_sleep', 100, 50, NULL, NULL, NULL),
-  -- Suunto: outdoor sports watch
-  ('suunto', 20, 50, NULL, 40, 40),
-  -- Coros: sports watch
-  ('coros', 20, 50, NULL, 40, 40),
-  -- Strava: aggregation platform — inherits accuracy from source device
-  ('strava', 40, NULL, NULL, NULL, NULL),
-  -- Intervals.icu: analytics platform — inherits accuracy from source device
-  ('intervals', 40, NULL, NULL, NULL, NULL)
-ON CONFLICT (provider_id) DO UPDATE SET
-  priority = EXCLUDED.priority,
-  sleep_priority = EXCLUDED.sleep_priority,
-  body_priority = EXCLUDED.body_priority,
-  recovery_priority = EXCLUDED.recovery_priority,
-  daily_activity_priority = EXCLUDED.daily_activity_priority;
+-- Priority data is now loaded from provider-priority.json at runtime
+-- (see src/db/provider-priority.ts). The JSON file is the source of truth.
 
 --> statement-breakpoint
 
