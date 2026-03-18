@@ -239,16 +239,10 @@ export function streamHealthExport(
       // Flush any in-progress workout
       flushWorkout();
 
-      // Flush remaining batches
-      const finalFlushes: Promise<void>[] = [];
-      if (recordBatch.length > 0) finalFlushes.push(callbacks.onRecordBatch(recordBatch));
-      if (sleepBatch.length > 0) finalFlushes.push(callbacks.onSleepBatch(sleepBatch));
-      if (workoutBatch.length > 0) finalFlushes.push(callbacks.onWorkoutBatch(workoutBatch));
-      if (categoryBatch.length > 0 && callbacks.onCategoryBatch) {
-        finalFlushes.push(callbacks.onCategoryBatch(categoryBatch));
-      }
-
-      // Wait for all pending flushes to drain, then run final flushes
+      // Wait for all pending flushes to drain, then run final flushes.
+      // Final flushes must be created AFTER drain completes so that
+      // Promise.all immediately attaches rejection handlers — otherwise
+      // a rejection during the drain window would be unhandled.
       const waitForDrain = (): Promise<void> => {
         if (pendingFlushes === 0) return Promise.resolve();
         return new Promise<void>((res) => {
@@ -257,7 +251,16 @@ export function streamHealthExport(
       };
 
       waitForDrain()
-        .then(() => Promise.all(finalFlushes))
+        .then(() => {
+          const finalFlushes: Promise<void>[] = [];
+          if (recordBatch.length > 0) finalFlushes.push(callbacks.onRecordBatch(recordBatch));
+          if (sleepBatch.length > 0) finalFlushes.push(callbacks.onSleepBatch(sleepBatch));
+          if (workoutBatch.length > 0) finalFlushes.push(callbacks.onWorkoutBatch(workoutBatch));
+          if (categoryBatch.length > 0 && callbacks.onCategoryBatch) {
+            finalFlushes.push(callbacks.onCategoryBatch(categoryBatch));
+          }
+          return Promise.all(finalFlushes);
+        })
         .then(() => resolve({ recordCount, workoutCount, sleepCount, categoryCount }))
         .catch(reject);
     });

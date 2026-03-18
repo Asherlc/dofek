@@ -18,7 +18,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
       const { importAppleHealthFile } = await import("../providers/apple-health/index.ts");
       let lastLoggedPct = 0;
       const result = await importAppleHealthFile(db, filePath, sinceDate, (info) => {
-        job.updateProgress({ pct: info.pct, message: `Processing: ${info.pct}%` });
+        job.updateProgress({ pct: info.pct, message: `Processing: ${info.pct}%` }).catch(() => {});
         if (info.pct >= lastLoggedPct + 10) {
           console.log(`[worker] Apple Health import progress: ${info.pct}%`);
           lastLoggedPct = info.pct;

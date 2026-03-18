@@ -452,11 +452,21 @@ export async function upsertWorkoutBatch(
   providerId: string,
   workouts: HealthWorkout[],
 ): Promise<number> {
+  // Deduplicate by externalId — Apple Health can export duplicate workouts
+  // from multiple sources (Apple Watch + iPhone) with the same start time.
+  // PostgreSQL rejects ON CONFLICT DO UPDATE when the same row appears twice
+  // in a single INSERT statement.
+  const dedupMap = new Map<string, HealthWorkout>();
+  for (const w of workouts) {
+    dedupMap.set(`ah:workout:${w.startDate.toISOString()}`, w);
+  }
+  const uniqueWorkouts = [...dedupMap.values()];
+
   // Multi-row upsert with RETURNING to get all activity IDs in one statement
   const activityResults: { activityId: string; workout: HealthWorkout }[] = [];
 
-  for (let i = 0; i < workouts.length; i += 500) {
-    const batch = workouts.slice(i, i + 500);
+  for (let i = 0; i < uniqueWorkouts.length; i += 500) {
+    const batch = uniqueWorkouts.slice(i, i + 500);
     const insertRows = batch.map((w) => ({
       providerId,
       externalId: `ah:workout:${w.startDate.toISOString()}`,
@@ -524,8 +534,16 @@ export async function upsertSleepBatch(
 ): Promise<number> {
   // Group sleep segments into sessions by finding "inBed" spans
   // Each inBed record is one session; we aggregate stage durations within it
-  const inBedRecords = records.filter((r) => r.stage === "inBed");
+  const allInBed = records.filter((r) => r.stage === "inBed");
   const stageRecords = records.filter((r) => r.stage !== "inBed");
+
+  // Deduplicate inBed records by externalId — Apple Health can export
+  // duplicate sleep sessions from multiple sources with the same start time.
+  const inBedDedup = new Map<string, SleepAnalysisRecord>();
+  for (const bed of allInBed) {
+    inBedDedup.set(`ah:sleep:${bed.startDate.toISOString()}`, bed);
+  }
+  const inBedRecords = [...inBedDedup.values()];
 
   // Build all sleep session rows, then upsert in parallel
   const sleepRows = inBedRecords.map((bed) => {

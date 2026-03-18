@@ -1,0 +1,186 @@
+import { eq } from "drizzle-orm";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import * as schema from "../../db/schema.ts";
+import { setupTestDatabase, type TestContext } from "../../db/test-helpers.ts";
+import { upsertSleepBatch, upsertWorkoutBatch } from "./db-insertion.ts";
+import type { SleepAnalysisRecord } from "./sleep.ts";
+import type { HealthWorkout } from "./workouts.ts";
+
+const PROVIDER_ID = "apple_health";
+
+let ctx: TestContext;
+
+describe("db-insertion deduplication (integration)", () => {
+  beforeAll(async () => {
+    ctx = await setupTestDatabase();
+
+    await ctx.db.insert(schema.provider).values({
+      id: PROVIDER_ID,
+      name: "Apple Health",
+    });
+  }, 60_000);
+
+  afterAll(async () => {
+    if (ctx) await ctx.cleanup();
+  });
+
+  describe("upsertWorkoutBatch", () => {
+    it("deduplicates workouts with the same startDate in a single batch", async () => {
+      const sharedStart = new Date("2024-06-01T08:00:00Z");
+      const sharedEnd = new Date("2024-06-01T08:30:00Z");
+
+      const workouts: HealthWorkout[] = [
+        {
+          activityType: "running",
+          sourceName: "Apple Watch",
+          durationSeconds: 1800,
+          startDate: sharedStart,
+          endDate: sharedEnd,
+          calories: 300,
+        },
+        {
+          activityType: "running",
+          sourceName: "iPhone",
+          durationSeconds: 1800,
+          startDate: sharedStart,
+          endDate: sharedEnd,
+          calories: 310,
+        },
+      ];
+
+      const count = await upsertWorkoutBatch(ctx.db, PROVIDER_ID, workouts);
+
+      // Only 1 workout should be inserted (the second duplicate wins the Map dedup)
+      expect(count).toBe(1);
+
+      const matching = await ctx.db
+        .select()
+        .from(schema.activity)
+        .where(eq(schema.activity.externalId, `ah:workout:${sharedStart.toISOString()}`));
+
+      expect(matching).toHaveLength(1);
+    });
+
+    it("preserves unique workouts while deduplicating duplicates", async () => {
+      const start1 = new Date("2024-07-01T08:00:00Z");
+      const start2 = new Date("2024-07-01T10:00:00Z");
+
+      const workouts: HealthWorkout[] = [
+        {
+          activityType: "running",
+          sourceName: "Apple Watch",
+          durationSeconds: 1800,
+          startDate: start1,
+          endDate: new Date("2024-07-01T08:30:00Z"),
+        },
+        {
+          activityType: "running",
+          sourceName: "iPhone",
+          durationSeconds: 1800,
+          startDate: start1,
+          endDate: new Date("2024-07-01T08:30:00Z"),
+        },
+        {
+          activityType: "cycling",
+          sourceName: "Apple Watch",
+          durationSeconds: 3600,
+          startDate: start2,
+          endDate: new Date("2024-07-01T11:00:00Z"),
+        },
+      ];
+
+      const count = await upsertWorkoutBatch(ctx.db, PROVIDER_ID, workouts);
+
+      // 2 unique workouts (the two running dupes collapse into 1, plus the cycling)
+      expect(count).toBe(2);
+    });
+  });
+
+  describe("upsertSleepBatch", () => {
+    it("deduplicates inBed records with the same startDate in a single batch", async () => {
+      const bedStart = new Date("2024-06-15T23:00:00Z");
+      const bedEnd = new Date("2024-06-16T07:00:00Z");
+      const durationMinutes = 480;
+
+      const records: SleepAnalysisRecord[] = [
+        {
+          stage: "inBed",
+          sourceName: "Apple Watch",
+          startDate: bedStart,
+          endDate: bedEnd,
+          durationMinutes,
+        },
+        {
+          stage: "inBed",
+          sourceName: "iPhone",
+          startDate: bedStart,
+          endDate: bedEnd,
+          durationMinutes,
+        },
+        {
+          stage: "deep",
+          sourceName: "Apple Watch",
+          startDate: new Date("2024-06-16T00:00:00Z"),
+          endDate: new Date("2024-06-16T01:30:00Z"),
+          durationMinutes: 90,
+        },
+        {
+          stage: "rem",
+          sourceName: "Apple Watch",
+          startDate: new Date("2024-06-16T01:30:00Z"),
+          endDate: new Date("2024-06-16T03:00:00Z"),
+          durationMinutes: 90,
+        },
+      ];
+
+      const count = await upsertSleepBatch(ctx.db, PROVIDER_ID, records);
+
+      // Only 1 sleep session (2 duplicate inBed records collapse into 1)
+      expect(count).toBe(1);
+
+      const matching = await ctx.db
+        .select()
+        .from(schema.sleepSession)
+        .where(eq(schema.sleepSession.externalId, `ah:sleep:${bedStart.toISOString()}`));
+
+      expect(matching).toHaveLength(1);
+      // Stage aggregation should still work on the deduplicated session
+      expect(matching[0]?.deepMinutes).toBe(90);
+      expect(matching[0]?.remMinutes).toBe(90);
+    });
+
+    it("preserves unique sleep sessions while deduplicating duplicates", async () => {
+      const bedStart1 = new Date("2024-07-15T23:00:00Z");
+      const bedStart2 = new Date("2024-07-16T23:00:00Z");
+
+      const records: SleepAnalysisRecord[] = [
+        {
+          stage: "inBed",
+          sourceName: "Apple Watch",
+          startDate: bedStart1,
+          endDate: new Date("2024-07-16T07:00:00Z"),
+          durationMinutes: 480,
+        },
+        {
+          stage: "inBed",
+          sourceName: "iPhone",
+          startDate: bedStart1,
+          endDate: new Date("2024-07-16T07:00:00Z"),
+          durationMinutes: 480,
+        },
+        {
+          stage: "inBed",
+          sourceName: "Apple Watch",
+          startDate: bedStart2,
+          endDate: new Date("2024-07-17T06:30:00Z"),
+          durationMinutes: 450,
+        },
+      ];
+
+      const count = await upsertSleepBatch(ctx.db, PROVIDER_ID, records);
+
+      // 2 unique sessions (the two duplicate night-1 records collapse into 1, plus night-2)
+      expect(count).toBe(2);
+    });
+  });
+});
