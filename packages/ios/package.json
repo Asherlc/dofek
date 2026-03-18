@@ -5,7 +5,7 @@
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
-    "ios": "expo run:ios",
+    "ios": "expo run:ios --device",
     "prebuild": "expo prebuild --platform ios --clean",
     "lint": "biome check .",
     "lint:fix": "biome check --write ."
