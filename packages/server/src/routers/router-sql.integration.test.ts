@@ -233,4 +233,11 @@ describe("Router SQL validity", () => {
     it("providerStats", () => expectValidSql("sync.providerStats"));
     it("logs", () => expectValidSql("sync.logs", { limit: 10 }));
   });
+
+  // ── Correlation ──
+  describe("correlation", () => {
+    it("metrics", () => expectValidSql("correlation.metrics"));
+    it("compute", () =>
+      expectValidSql("correlation.compute", { metricX: "protein", metricY: "hrv", days: 30, lag: 0 }));
+  });
 });

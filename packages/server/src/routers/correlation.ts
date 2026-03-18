@@ -193,8 +193,6 @@ function emptyStats() {
 
 // ── tRPC Router ─────────────────────────────────────────────────────────
 
-// tRPC handlers are thin DB wrappers; business logic tested via computeCorrelation
-/* c8 ignore start */
 export const correlationRouter = router({
   metrics: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({}).optional())
@@ -264,4 +262,3 @@ export const correlationRouter = router({
       return computeCorrelation(joined, input);
     }),
 });
-/* c8 ignore stop */
