@@ -213,6 +213,7 @@ jobs:
           FILES=$(git diff --name-only origin/main...HEAD \
             | { grep '\.ts$' || true; } \
             | { grep -v '\.test\.ts$' || true; } \
+            | { grep -v '\.cy\.ts$' || true; } \
             | { grep -v 'test-helpers\.ts$' || true; } \
             | { grep -v '\.d\.ts$' || true; } \
             | { grep -v '\.gen\.ts$' || true; } \
