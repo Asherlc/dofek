@@ -38,6 +38,19 @@ describe("fitStressThresholds", () => {
     expect(fitStressThresholds(data)).toBeNull();
   });
 
+  it("returns null with exactly 59 days (boundary below MIN_DAYS)", () => {
+    const data = generateZScores(59);
+    expect(fitStressThresholds(data)).toBeNull();
+  });
+
+  it("processes exactly 60 days (boundary at MIN_DAYS)", () => {
+    const data = generateZScores(60, 555);
+    const result = fitStressThresholds(data);
+    expect(result).not.toBeNull();
+    if (!result) return;
+    expect(result.sampleCount).toBe(60);
+  });
+
   it("returns null with empty data", () => {
     expect(fitStressThresholds([])).toBeNull();
   });
@@ -105,5 +118,86 @@ describe("fitStressThresholds", () => {
     for (const t of result.rhrThresholds) {
       expect(Math.round(t * 100) / 100).toBe(t);
     }
+  });
+
+  it("uses p10, p30, p60 for HRV thresholds", () => {
+    // Use a known sorted distribution: 0 to 99 (100 data points)
+    const data: StressThresholdsInput[] = [];
+    for (let i = 0; i < 100; i++) {
+      data.push({ hrvZScore: i, rhrZScore: i });
+    }
+
+    const result = fitStressThresholds(data);
+    expect(result).not.toBeNull();
+    if (!result) return;
+
+    // With 100 data points indexed 0..99:
+    // p10: index = 0.10 * 99 = 9.9 → interpolate between 9 and 10 → 9.9
+    // p30: index = 0.30 * 99 = 29.7 → interpolate between 29 and 30 → 29.7
+    // p60: index = 0.60 * 99 = 59.4 → interpolate between 59 and 60 → 59.4
+    expect(result.hrvThresholds[0]).toBeCloseTo(9.9, 1);
+    expect(result.hrvThresholds[1]).toBeCloseTo(29.7, 1);
+    expect(result.hrvThresholds[2]).toBeCloseTo(59.4, 1);
+  });
+
+  it("uses p90, p70, p40 for RHR thresholds", () => {
+    const data: StressThresholdsInput[] = [];
+    for (let i = 0; i < 100; i++) {
+      data.push({ hrvZScore: i, rhrZScore: i });
+    }
+
+    const result = fitStressThresholds(data);
+    expect(result).not.toBeNull();
+    if (!result) return;
+
+    // p90: index = 0.90 * 99 = 89.1
+    // p70: index = 0.70 * 99 = 69.3
+    // p40: index = 0.40 * 99 = 39.6
+    expect(result.rhrThresholds[0]).toBeCloseTo(89.1, 1);
+    expect(result.rhrThresholds[1]).toBeCloseTo(69.3, 1);
+    expect(result.rhrThresholds[2]).toBeCloseTo(39.6, 1);
+  });
+
+  it("handles identical z-score values", () => {
+    const data: StressThresholdsInput[] = [];
+    for (let i = 0; i < 100; i++) {
+      data.push({ hrvZScore: 0, rhrZScore: 0 });
+    }
+
+    const result = fitStressThresholds(data);
+    expect(result).not.toBeNull();
+    if (!result) return;
+
+    // All percentiles should be 0
+    expect(result.hrvThresholds).toEqual([0, 0, 0]);
+    expect(result.rhrThresholds).toEqual([0, 0, 0]);
+  });
+
+  it("sampleCount matches input length", () => {
+    const data = generateZScores(150, 321);
+    const result = fitStressThresholds(data);
+    expect(result).not.toBeNull();
+    if (!result) return;
+    expect(result.sampleCount).toBe(150);
+  });
+
+  it("sorts HRV and RHR z-scores independently", () => {
+    // Create data where HRV and RHR distributions are very different
+    const data: StressThresholdsInput[] = [];
+    for (let i = 0; i < 100; i++) {
+      data.push({
+        hrvZScore: -3 + i * 0.06, // range -3 to 2.94
+        rhrZScore: i * 0.02, // range 0 to 1.98
+      });
+    }
+
+    const result = fitStressThresholds(data);
+    expect(result).not.toBeNull();
+    if (!result) return;
+
+    // HRV thresholds should be in the negative range (10th percentile)
+    expect(result.hrvThresholds[0]).toBeLessThan(0);
+    // RHR thresholds should all be positive
+    expect(result.rhrThresholds[2]).toBeGreaterThanOrEqual(0);
   });
 });

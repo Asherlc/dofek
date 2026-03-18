@@ -51,4 +51,79 @@ describe("refitAllParams", () => {
     expect(result).not.toBeNull();
     expect(result.version).toBe(1);
   });
+
+  it("fittedAt is a valid ISO timestamp", async () => {
+    const db = createMockDb([[], [], [], [], []]);
+    const result = await refitAllParams(db, "user-1");
+
+    // Should be a valid ISO date string
+    const parsed = new Date(result.fittedAt);
+    expect(parsed.toISOString()).toBe(result.fittedAt);
+  });
+
+  it("handles save failure gracefully (logs but does not throw)", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    let callCount = 0;
+    const db = {
+      execute: vi.fn().mockImplementation(() => {
+        callCount++;
+        // First 5 calls are data queries (one per fitter), 6th is save
+        if (callCount === 6) return Promise.reject(new Error("Save failed"));
+        return Promise.resolve([]);
+      }),
+    };
+
+    const result = await refitAllParams(db, "user-1");
+
+    // Should still return params despite save failure
+    expect(result).not.toBeNull();
+    expect(result.version).toBe(1);
+    expect(consoleSpy).toHaveBeenCalledWith(
+      "[personalization] Failed to save params:",
+      expect.objectContaining({ message: "Save failed" }),
+    );
+
+    consoleSpy.mockRestore();
+  });
+
+  it("handles all fitters rejecting simultaneously", async () => {
+    const db = {
+      execute: vi.fn().mockRejectedValue(new Error("All queries fail")),
+    };
+
+    // Promise.allSettled catches all rejections
+    const result = await refitAllParams(db, "user-1");
+    expect(result.version).toBe(1);
+    expect(result.ewma).toBeNull();
+    expect(result.readinessWeights).toBeNull();
+    expect(result.sleepTarget).toBeNull();
+    expect(result.stressThresholds).toBeNull();
+    expect(result.trimpConstants).toBeNull();
+  });
+
+  it("sets rejected fitters to null", async () => {
+    let callCount = 0;
+    const db = {
+      execute: vi.fn().mockImplementation(() => {
+        callCount++;
+        // First two queries fail, rest succeed with empty data
+        if (callCount <= 2) return Promise.reject(new Error("Partial failure"));
+        return Promise.resolve([]);
+      }),
+    };
+
+    const result = await refitAllParams(db, "user-1");
+    // All should be null (either rejected or insufficient data)
+    expect(result.ewma).toBeNull();
+    expect(result.readinessWeights).toBeNull();
+    expect(result.sleepTarget).toBeNull();
+    expect(result.stressThresholds).toBeNull();
+    expect(result.trimpConstants).toBeNull();
+  });
+
+  it("version is always 1", async () => {
+    const db = createMockDb([[], [], [], [], []]);
+    const result = await refitAllParams(db, "user-1");
+    expect(result.version).toBe(1);
+  });
 });

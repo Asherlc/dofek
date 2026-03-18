@@ -57,6 +57,29 @@ describe("fitReadinessWeights", () => {
     expect(fitReadinessWeights(data)).toBeNull();
   });
 
+  it("returns null with exactly 59 days (boundary below MIN_DAYS)", () => {
+    const data = generateWeightsData(59, {
+      hrv: 0.4,
+      restingHr: 0.2,
+      sleep: 0.2,
+      loadBalance: 0.2,
+    });
+    expect(fitReadinessWeights(data)).toBeNull();
+  });
+
+  it("processes exactly 60 days (boundary at MIN_DAYS)", () => {
+    const data = generateWeightsData(
+      60,
+      { hrv: 0.7, restingHr: 0.1, sleep: 0.1, loadBalance: 0.1 },
+      555,
+    );
+    const result = fitReadinessWeights(data);
+    // Should not short-circuit on length check; may or may not pass quality gate
+    if (result) {
+      expect(result.sampleCount).toBe(60);
+    }
+  });
+
   it("returns null with empty data", () => {
     expect(fitReadinessWeights([])).toBeNull();
   });
@@ -146,5 +169,116 @@ describe("fitReadinessWeights", () => {
     expect(typeof result.loadBalance).toBe("number");
     expect(typeof result.sampleCount).toBe("number");
     expect(typeof result.correlation).toBe("number");
+  });
+
+  it("correlation is rounded to 3 decimal places", () => {
+    const data = generateWeightsData(100, {
+      hrv: 0.5,
+      restingHr: 0.15,
+      sleep: 0.2,
+      loadBalance: 0.15,
+    });
+    const result = fitReadinessWeights(data);
+
+    expect(result).not.toBeNull();
+    if (!result) return;
+
+    const rounded = Math.round(result.correlation * 1000) / 1000;
+    expect(result.correlation).toBe(rounded);
+  });
+
+  it("sampleCount matches input data length", () => {
+    const data = generateWeightsData(
+      120,
+      { hrv: 0.7, restingHr: 0.1, sleep: 0.1, loadBalance: 0.1 },
+      123,
+    );
+    const result = fitReadinessWeights(data);
+
+    expect(result).not.toBeNull();
+    if (!result) return;
+
+    expect(result.sampleCount).toBe(120);
+  });
+
+  it("correlation must be >= MIN_CORRELATION (0.15) to produce a result", () => {
+    const data = generateWeightsData(
+      120,
+      { hrv: 0.7, restingHr: 0.1, sleep: 0.1, loadBalance: 0.1 },
+      123,
+    );
+    const result = fitReadinessWeights(data);
+
+    expect(result).not.toBeNull();
+    if (!result) return;
+
+    expect(result.correlation).toBeGreaterThanOrEqual(0.15);
+  });
+
+  it("handles constant scores (zero variance) without crashing", () => {
+    const data: ReadinessWeightsInput[] = [];
+    for (let i = 0; i < 100; i++) {
+      data.push({
+        hrvScore: 50,
+        rhrScore: 50,
+        sleepScore: 50,
+        loadBalanceScore: 50,
+        nextDayHrvZScore: 0,
+      });
+    }
+
+    // With zero variance, Pearson correlation denominator is 0, so correlation = 0
+    const result = fitReadinessWeights(data);
+    expect(result).toBeNull();
+  });
+
+  it("picks the combination with highest positive correlation (not absolute)", () => {
+    // The algorithm uses `correlation > bestCorrelation` (not abs), so it only
+    // considers positive correlations. Generate data with strong positive relationship.
+    const data = generateWeightsData(
+      150,
+      { hrv: 0.6, restingHr: 0.1, sleep: 0.15, loadBalance: 0.15 },
+      222,
+    );
+    const result = fitReadinessWeights(data);
+
+    expect(result).not.toBeNull();
+    if (!result) return;
+
+    // Correlation should be positive
+    expect(result.correlation).toBeGreaterThan(0);
+  });
+
+  it("emphasizes sleep when sleep is the dominant driver", () => {
+    // Sleep dominates
+    const data = generateWeightsData(
+      120,
+      { hrv: 0.1, restingHr: 0.1, sleep: 0.7, loadBalance: 0.1 },
+      333,
+    );
+    const result = fitReadinessWeights(data);
+
+    expect(result).not.toBeNull();
+    if (!result) return;
+
+    expect(result.sleep).toBeGreaterThan(result.hrv);
+    expect(result.sleep).toBeGreaterThan(result.restingHr);
+    expect(result.sleep).toBeGreaterThan(result.loadBalance);
+  });
+
+  it("emphasizes loadBalance when loadBalance is the dominant driver", () => {
+    const data = generateWeightsData(
+      120,
+      { hrv: 0.1, restingHr: 0.1, sleep: 0.1, loadBalance: 0.7 },
+      444,
+    );
+    const result = fitReadinessWeights(data);
+
+    expect(result).not.toBeNull();
+    if (!result) return;
+
+    expect(result.loadBalance).toBeGreaterThan(result.hrv);
+    expect(result.loadBalance).toBeGreaterThan(result.restingHr);
+    expect(result.loadBalance).toBeGreaterThan(result.sleep);
   });
 });

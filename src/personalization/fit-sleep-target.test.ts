@@ -22,8 +22,44 @@ describe("fitSleepTarget", () => {
     expect(fitSleepTarget(data)).toBeNull();
   });
 
+  it("returns null with exactly 13 qualifying nights (boundary below MIN_QUALIFYING)", () => {
+    const data: SleepTargetInput[] = [];
+    for (let i = 0; i < 13; i++) {
+      data.push({ durationMinutes: 450, nextDayHrvAboveMedian: true });
+    }
+    for (let i = 0; i < 20; i++) {
+      data.push({ durationMinutes: 360, nextDayHrvAboveMedian: false });
+    }
+    expect(fitSleepTarget(data)).toBeNull();
+  });
+
+  it("processes exactly 14 qualifying nights (boundary at MIN_QUALIFYING)", () => {
+    const data: SleepTargetInput[] = [];
+    for (let i = 0; i < 14; i++) {
+      data.push({ durationMinutes: 450, nextDayHrvAboveMedian: true });
+    }
+    for (let i = 0; i < 20; i++) {
+      data.push({ durationMinutes: 360, nextDayHrvAboveMedian: false });
+    }
+
+    const result = fitSleepTarget(data);
+    expect(result).not.toBeNull();
+    if (!result) return;
+
+    expect(result.minutes).toBe(450);
+    expect(result.sampleCount).toBe(14);
+  });
+
   it("returns null with empty data", () => {
     expect(fitSleepTarget([])).toBeNull();
+  });
+
+  it("returns null when all nights are bad recovery", () => {
+    const data: SleepTargetInput[] = [];
+    for (let i = 0; i < 30; i++) {
+      data.push({ durationMinutes: 360, nextDayHrvAboveMedian: false });
+    }
+    expect(fitSleepTarget(data)).toBeNull();
   });
 
   it("computes target from good-recovery nights", () => {
@@ -43,6 +79,26 @@ describe("fitSleepTarget", () => {
 
     // Target should be ~450 minutes (average of good nights)
     expect(result.minutes).toBe(450);
+    expect(result.sampleCount).toBe(20);
+  });
+
+  it("ignores bad-recovery nights when computing average", () => {
+    const data: SleepTargetInput[] = [];
+    // Good nights: all at 480 min
+    for (let i = 0; i < 20; i++) {
+      data.push({ durationMinutes: 480, nextDayHrvAboveMedian: true });
+    }
+    // Bad nights: very different duration, but should be excluded
+    for (let i = 0; i < 100; i++) {
+      data.push({ durationMinutes: 300, nextDayHrvAboveMedian: false });
+    }
+
+    const result = fitSleepTarget(data);
+    expect(result).not.toBeNull();
+    if (!result) return;
+
+    // Only good nights contribute, so target should be exactly 480
+    expect(result.minutes).toBe(480);
     expect(result.sampleCount).toBe(20);
   });
 
@@ -83,5 +139,39 @@ describe("fitSleepTarget", () => {
     if (!result) return;
 
     expect(Number.isInteger(result.minutes)).toBe(true);
+  });
+
+  it("rounds 453.5 average to 454 (standard rounding)", () => {
+    const data: SleepTargetInput[] = [];
+    // Equal split of 453 and 454 → average is 453.5 → rounds to 454
+    for (let i = 0; i < 15; i++) {
+      data.push({ durationMinutes: 453, nextDayHrvAboveMedian: true });
+    }
+    for (let i = 0; i < 15; i++) {
+      data.push({ durationMinutes: 454, nextDayHrvAboveMedian: true });
+    }
+
+    const result = fitSleepTarget(data);
+    expect(result).not.toBeNull();
+    if (!result) return;
+
+    expect(result.minutes).toBe(454); // Math.round(453.5) = 454
+    expect(result.sampleCount).toBe(30);
+  });
+
+  it("sampleCount only counts qualifying (good recovery) nights", () => {
+    const data: SleepTargetInput[] = [];
+    for (let i = 0; i < 25; i++) {
+      data.push({ durationMinutes: 450, nextDayHrvAboveMedian: true });
+    }
+    for (let i = 0; i < 50; i++) {
+      data.push({ durationMinutes: 360, nextDayHrvAboveMedian: false });
+    }
+
+    const result = fitSleepTarget(data);
+    expect(result).not.toBeNull();
+    if (!result) return;
+
+    expect(result.sampleCount).toBe(25); // only the good nights
   });
 });
