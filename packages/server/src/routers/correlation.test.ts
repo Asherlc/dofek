@@ -208,16 +208,32 @@ describe("computeCorrelation", () => {
       weight_30d_avg: 74.5,
     });
 
+    // Recovery
     expect(extractMetricValue(day, "resting_hr")).toBe(60);
     expect(extractMetricValue(day, "hrv")).toBe(50);
     expect(extractMetricValue(day, "spo2")).toBe(98);
     expect(extractMetricValue(day, "skin_temp")).toBe(36.5);
+    // Sleep
     expect(extractMetricValue(day, "sleep_duration")).toBe(480);
+    expect(extractMetricValue(day, "deep_sleep")).toBe(100);
+    expect(extractMetricValue(day, "rem_sleep")).toBe(80);
+    expect(extractMetricValue(day, "sleep_efficiency")).toBe(85);
+    // Nutrition
     expect(extractMetricValue(day, "calories")).toBe(2000);
     expect(extractMetricValue(day, "protein")).toBe(100);
+    expect(extractMetricValue(day, "carbs")).toBe(250);
+    expect(extractMetricValue(day, "fat")).toBe(70);
+    expect(extractMetricValue(day, "fiber")).toBe(30);
+    // Activity
     expect(extractMetricValue(day, "steps")).toBe(10000);
+    expect(extractMetricValue(day, "active_calories")).toBe(500);
+    expect(extractMetricValue(day, "exercise_duration")).toBe(60);
+    expect(extractMetricValue(day, "cardio_duration")).toBe(30);
+    expect(extractMetricValue(day, "strength_duration")).toBe(20);
+    // Body
     expect(extractMetricValue(day, "weight")).toBe(75);
     expect(extractMetricValue(day, "body_fat")).toBe(20);
+    expect(extractMetricValue(day, "weight_30d")).toBe(74.5);
   });
 
   it("handles edge case with exactly MAX_DATA_POINTS data points", () => {
