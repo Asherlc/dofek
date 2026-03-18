@@ -398,6 +398,11 @@ export class WhoopProvider implements Provider {
     return null;
   }
 
+  /**
+   * Returns OAuth setup for login via Whoop.
+   * Returns undefined if WHOOP_CLIENT_ID or WHOOP_CLIENT_SECRET are not set.
+   * Whoop supports OAuth for login, but data sync can continue using Cognito tokens.
+   */
   authSetup(): ProviderAuthSetup | undefined {
     const clientId = process.env.WHOOP_CLIENT_ID;
     const clientSecret = process.env.WHOOP_CLIENT_SECRET;

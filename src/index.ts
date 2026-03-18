@@ -120,7 +120,7 @@ async function main() {
     const oauthProviders = allProviders.filter((p) => p.authSetup);
     const provider = oauthProviders.find((p) => p.id === providerArg);
 
-    if (!provider || !provider.authSetup) {
+    if (!providerArg || !provider || !provider.authSetup) {
       const supported = oauthProviders.map((p) => p.id).join("|");
       console.error(`Usage: health-data auth <${supported}>`);
       process.exit(1);
@@ -134,7 +134,10 @@ async function main() {
 
     const setup = provider.authSetup?.();
     if (!setup) {
-      console.error(`[auth] Provider ${providerArg} does not support OAuth`);
+      console.error(
+        `[auth] Provider ${providerArg} is not configured for OAuth. ` +
+          `Check environment variables for credentials (e.g., ${providerArg.toUpperCase()}_CLIENT_ID).`,
+      );
       process.exit(1);
     }
     const { oauthConfig, exchangeCode, apiBaseUrl } = setup;
