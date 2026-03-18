@@ -4,7 +4,13 @@ import type { SyncDatabase } from "../db/index.ts";
 import { activity, dailyMetrics, healthEvent, metricStream, sleepSession } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
-import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
+import type {
+  Provider,
+  ProviderAuthSetup,
+  ProviderIdentity,
+  SyncError,
+  SyncResult,
+} from "./types.ts";
 
 // ============================================================
 // Oura API v2 types
@@ -495,7 +501,7 @@ export function ouraOAuthConfig(): OAuthConfig | null {
     authorizeUrl: "https://cloud.ouraring.com/oauth/authorize",
     tokenUrl: `${OURA_API_BASE}/oauth/token`,
     redirectUri: getOAuthRedirectUri(),
-    scopes: ["daily", "heartrate", "personal", "session", "spo2", "workout", "tag"],
+    scopes: ["daily", "email", "heartrate", "personal", "session", "spo2", "workout", "tag"],
   };
 }
 
@@ -561,6 +567,21 @@ export class OuraProvider implements Provider {
       oauthConfig: config,
       exchangeCode: (code) => exchangeCodeForTokens(config, code, fetchFn),
       apiBaseUrl: OURA_API_BASE,
+      getUserIdentity: async (accessToken: string): Promise<ProviderIdentity> => {
+        const response = await fetchFn(`${OURA_API_BASE}/v2/usercollection/personal_info`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Oura personal info API error (${response.status}): ${text}`);
+        }
+        const data: { id: string; email?: string | null } = await response.json();
+        return {
+          providerAccountId: data.id,
+          email: data.email ?? null,
+          name: null,
+        };
+      },
     };
   }
 

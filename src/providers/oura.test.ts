@@ -859,6 +859,77 @@ describe("OuraProvider.authSetup()", () => {
   });
 });
 
+describe("OuraProvider.getUserIdentity()", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it("returns identity from personal_info API", async () => {
+    process.env.OURA_CLIENT_ID = "test-id";
+    process.env.OURA_CLIENT_SECRET = "test-secret";
+
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return Response.json({
+        id: "abc-123",
+        email: "ring@test.com",
+        age: 30,
+      });
+    };
+
+    const provider = new OuraProvider(mockFetch);
+    const setup = provider.authSetup();
+    if (!setup.getUserIdentity) throw new Error("getUserIdentity not defined");
+    const identity = await setup.getUserIdentity("test-token");
+    expect(identity.providerAccountId).toBe("abc-123");
+    expect(identity.email).toBe("ring@test.com");
+    expect(identity.name).toBeNull();
+  });
+
+  it("handles missing email", async () => {
+    process.env.OURA_CLIENT_ID = "test-id";
+    process.env.OURA_CLIENT_SECRET = "test-secret";
+
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return Response.json({ id: "xyz-456" });
+    };
+
+    const provider = new OuraProvider(mockFetch);
+    const setup = provider.authSetup();
+    if (!setup.getUserIdentity) throw new Error("getUserIdentity not defined");
+    const identity = await setup.getUserIdentity("test-token");
+    expect(identity.providerAccountId).toBe("xyz-456");
+    expect(identity.email).toBeNull();
+    expect(identity.name).toBeNull();
+  });
+
+  it("throws on API error", async () => {
+    process.env.OURA_CLIENT_ID = "test-id";
+    process.env.OURA_CLIENT_SECRET = "test-secret";
+
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response("Forbidden", { status: 403 });
+    };
+
+    const provider = new OuraProvider(mockFetch);
+    const setup = provider.authSetup();
+    if (!setup.getUserIdentity) throw new Error("getUserIdentity not defined");
+    await expect(setup.getUserIdentity("bad-token")).rejects.toThrow(
+      "Oura personal info API error (403)",
+    );
+  });
+
+  it("includes email scope in OAuth config", () => {
+    process.env.OURA_CLIENT_ID = "test-id";
+    process.env.OURA_CLIENT_SECRET = "test-secret";
+
+    const provider = new OuraProvider();
+    const setup = provider.authSetup();
+    expect(setup.oauthConfig.scopes).toContain("email");
+  });
+});
+
 describe("OuraProvider properties", () => {
   it("has correct id and name", () => {
     const provider = new OuraProvider();

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
 import {
   parseHeartRateValues,
@@ -1138,5 +1138,98 @@ describe("parseJournalResponse — answer text extraction", () => {
     const raw = [{ date: "2026-03-01", name: "caffeine", value: 3, impact: 0.1 }];
     const entries = parseJournalResponse(raw);
     expect(entries[0]?.impactScore).toBe(0.1);
+  });
+});
+
+// ============================================================
+// Provider authSetup / getUserIdentity tests
+// ============================================================
+
+describe("WhoopProvider.authSetup()", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it("returns auth setup with OAuth config when env vars are set", () => {
+    process.env.WHOOP_CLIENT_ID = "test-id";
+    process.env.WHOOP_CLIENT_SECRET = "test-secret";
+    const provider = new WhoopProvider();
+    const setup = provider.authSetup();
+    expect(setup).toBeDefined();
+    expect(setup?.oauthConfig.clientId).toBe("test-id");
+    expect(setup?.oauthConfig.scopes).toContain("read:profile");
+    expect(setup?.exchangeCode).toBeTypeOf("function");
+  });
+
+  it("returns undefined when env vars are missing", () => {
+    delete process.env.WHOOP_CLIENT_ID;
+    delete process.env.WHOOP_CLIENT_SECRET;
+    const provider = new WhoopProvider();
+    expect(provider.authSetup()).toBeUndefined();
+  });
+});
+
+describe("WhoopProvider.getUserIdentity()", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it("returns identity from profile API", async () => {
+    process.env.WHOOP_CLIENT_ID = "test-id";
+    process.env.WHOOP_CLIENT_SECRET = "test-secret";
+
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return Response.json({
+        user_id: 12345,
+        email: "whoop@test.com",
+        first_name: "John",
+        last_name: "Doe",
+      });
+    };
+
+    const provider = new WhoopProvider(mockFetch);
+    const setup = provider.authSetup();
+    if (!setup?.getUserIdentity) throw new Error("getUserIdentity not defined");
+    const identity = await setup.getUserIdentity("test-token");
+    expect(identity.providerAccountId).toBe("12345");
+    expect(identity.email).toBe("whoop@test.com");
+    expect(identity.name).toBe("John Doe");
+  });
+
+  it("handles missing name fields", async () => {
+    process.env.WHOOP_CLIENT_ID = "test-id";
+    process.env.WHOOP_CLIENT_SECRET = "test-secret";
+
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return Response.json({ user_id: 99 });
+    };
+
+    const provider = new WhoopProvider(mockFetch);
+    const setup = provider.authSetup();
+    if (!setup?.getUserIdentity) throw new Error("getUserIdentity not defined");
+    const identity = await setup.getUserIdentity("test-token");
+    expect(identity.providerAccountId).toBe("99");
+    expect(identity.email).toBeNull();
+    expect(identity.name).toBeNull();
+  });
+
+  it("throws on API error", async () => {
+    process.env.WHOOP_CLIENT_ID = "test-id";
+    process.env.WHOOP_CLIENT_SECRET = "test-secret";
+
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response("Forbidden", { status: 403 });
+    };
+
+    const provider = new WhoopProvider(mockFetch);
+    const setup = provider.authSetup();
+    if (!setup?.getUserIdentity) throw new Error("getUserIdentity not defined");
+    await expect(setup.getUserIdentity("bad-token")).rejects.toThrow(
+      "Whoop profile API error (403)",
+    );
   });
 });

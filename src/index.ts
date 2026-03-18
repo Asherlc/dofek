@@ -132,7 +132,11 @@ async function main() {
       process.exit(1);
     }
 
-    const setup = provider.authSetup();
+    const setup = provider.authSetup?.();
+    if (!setup) {
+      console.error(`[auth] Provider ${providerArg} does not support OAuth`);
+      process.exit(1);
+    }
     const { oauthConfig, exchangeCode, apiBaseUrl } = setup;
 
     let tokens: import("./auth/oauth.ts").TokenSet;
