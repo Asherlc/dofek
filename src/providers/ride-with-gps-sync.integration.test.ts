@@ -111,7 +111,6 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
 
   beforeAll(async () => {
     process.env.RWGPS_CLIENT_ID = "test-client-id";
-    process.env.RWGPS_CLIENT_SECRET = "test-client-secret";
     ctx = await setupTestDatabase();
     server.listen({ onUnhandledRequest: "error" });
     await ensureProvider(ctx.db, "ride-with-gps", "RideWithGPS", "https://ridewithgps.com");
@@ -523,7 +522,6 @@ describe("RideWithGpsProvider.getUserIdentity()", () => {
 
   it("returns identity from user API", async () => {
     process.env.RWGPS_CLIENT_ID = "test-id";
-    process.env.RWGPS_CLIENT_SECRET = "test-secret";
 
     identityServer.use(
       http.get("https://ridewithgps.com/users/current.json", () => {
@@ -544,7 +542,6 @@ describe("RideWithGpsProvider.getUserIdentity()", () => {
 
   it("throws on API error", async () => {
     process.env.RWGPS_CLIENT_ID = "test-id";
-    process.env.RWGPS_CLIENT_SECRET = "test-secret";
 
     identityServer.use(
       http.get("https://ridewithgps.com/users/current.json", () => {
