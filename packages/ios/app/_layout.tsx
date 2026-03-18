@@ -130,6 +130,14 @@ function AuthGate() {
               headerTintColor: colors.text,
             }}
           />
+          <Stack.Screen
+            name="correlation"
+            options={{
+              title: "Correlation Explorer",
+              headerStyle: { backgroundColor: colors.background },
+              headerTintColor: colors.text,
+            }}
+          />
         </Stack>
       </QueryClientProvider>
     </trpc.Provider>

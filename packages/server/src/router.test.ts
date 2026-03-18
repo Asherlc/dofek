@@ -11,6 +11,7 @@ vi.mock("./routers/auth.ts", () => ({ authRouter: mockRouter }));
 vi.mock("./routers/body.ts", () => ({ bodyRouter: mockRouter }));
 vi.mock("./routers/body-analytics.ts", () => ({ bodyAnalyticsRouter: mockRouter }));
 vi.mock("./routers/calendar.ts", () => ({ calendarRouter: mockRouter }));
+vi.mock("./routers/correlation.ts", () => ({ correlationRouter: mockRouter }));
 vi.mock("./routers/cycling-advanced.ts", () => ({ cyclingAdvancedRouter: mockRouter }));
 vi.mock("./routers/daily-metrics.ts", () => ({ dailyMetricsRouter: mockRouter }));
 vi.mock("./routers/duration-curves.ts", () => ({ durationCurvesRouter: mockRouter }));
@@ -97,6 +98,7 @@ describe("appRouter", () => {
       "training",
       "trends",
       "calendar",
+      "correlation",
       "pmc",
       "power",
       "durationCurves",
