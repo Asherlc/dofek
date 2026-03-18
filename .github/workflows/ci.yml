@@ -210,7 +210,9 @@ jobs:
       - name: Get changed files
         id: changed
         run: |
-          FILES=$(git diff --name-only origin/main...HEAD \
+          # Filter to .ts source files, excluding tests, config, etc.
+          # Also skip files with < 5 changed lines (trivial changes like removing a column)
+          CANDIDATES=$(git diff --name-only origin/main...HEAD \
             | { grep '\.ts$' || true; } \
             | { grep -v '\.test\.ts$' || true; } \
             | { grep -v '\.cy\.ts$' || true; } \
@@ -221,9 +223,14 @@ jobs:
             | { grep -v 'drizzle/' || true; } \
             | { grep -v 'src/db/schema\.ts$' || true; } \
             | { grep -v 'scripts/' || true; } \
-            | { grep -v 'packages/ios/' || true; } \
-            | tr '\n' ',' \
-            | sed 's/,$//')
+            | { grep -v 'packages/ios/' || true; })
+          FILES=""
+          for f in $CANDIDATES; do
+            LINES=$(git diff origin/main...HEAD -- "$f" | grep -c '^[+-]' || true)
+            if [ "$LINES" -ge 5 ]; then
+              FILES="${FILES:+$FILES,}$f"
+            fi
+          done
           echo "files=$FILES" >> "$GITHUB_OUTPUT"
           echo "Mutating changed files: $FILES"
       - name: Run Stryker
