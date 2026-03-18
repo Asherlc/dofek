@@ -57,7 +57,7 @@ export async function resolveOrCreateUser(
   if (identity.email) {
     const emailMatch = await db.execute<{ id: string }>(
       sql`SELECT id FROM fitness.user_profile
-          WHERE email = ${identity.email}
+          WHERE LOWER(email) = LOWER(${identity.email})
           LIMIT 1`,
     );
     const matchedUser = emailMatch[0];

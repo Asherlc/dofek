@@ -541,6 +541,74 @@ describe("createAuthRouter", () => {
       const res = await request(app, "get", "/callback?code=abc&state=slack:fake-state");
       expect(res.status).toBe(400);
     });
+
+    it("creates auth_account linking installer Slack ID to logged-in user", async () => {
+      process.env.SLACK_CLIENT_ID = "test-client-id";
+      process.env.SLACK_CLIENT_SECRET = "test-client-secret";
+
+      // Simulate logged-in user
+      vi.mocked(getSessionCookie).mockReturnValue("sess-1");
+      vi.mocked(validateSession).mockResolvedValue({
+        userId: "real-user-id",
+        expiresAt: new Date("2027-01-01"),
+      });
+
+      const { app, fakeDb } = createTestApp();
+
+      // Step 1: Hit /auth/provider/slack to populate the state map
+      const slackRes = await request(app, "get", "/auth/provider/slack");
+      expect(slackRes.status).toBe(302);
+
+      // Extract state token from redirect Location header
+      const location = slackRes.headers.location;
+      expect(location).toBeDefined();
+      if (typeof location !== "string") throw new Error("Expected location header to be a string");
+      const redirectUrl = new URL(location);
+      const state = redirectUrl.searchParams.get("state");
+      expect(state).toBeTruthy();
+      expect(state).toMatch(/^slack:/);
+
+      // Step 2: Mock Slack API fetch for token exchange, while letting
+      // the test's own HTTP requests through
+      const realFetch = globalThis.fetch;
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+        const url =
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input instanceof Request
+                ? input.url
+                : String(input);
+        if (url.includes("slack.com/api/oauth.v2.access")) {
+          return new Response(
+            JSON.stringify({
+              ok: true,
+              access_token: "xoxb-test-bot-token",
+              team: { id: "T_TEAM", name: "Test Workspace" },
+              bot_user_id: "U_BOT",
+              authed_user: { id: "U_INSTALLER" },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        return realFetch(input, init);
+      });
+
+      // Step 3: Hit callback with the state
+      const callbackRes = await request(app, "get", `/callback?code=slack-code&state=${state}`);
+      expect(callbackRes.status).toBe(200);
+      expect(callbackRes.body).toContain("Authorized!");
+
+      // Step 4: Verify db.execute was called to store installation AND create auth_account
+      const executeCalls = vi.mocked(fakeDb.execute).mock.calls;
+      // Should have at least 2 calls: installation insert + auth_account insert
+      expect(executeCalls.length).toBeGreaterThanOrEqual(2);
+
+      fetchSpy.mockRestore();
+      delete process.env.SLACK_CLIENT_ID;
+      delete process.env.SLACK_CLIENT_SECRET;
+    });
   });
 
   describe("GET /auth/provider/:provider (PKCE flow)", () => {
