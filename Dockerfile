@@ -15,6 +15,12 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/server/package.json ./packages/server/
 COPY packages/web/package.json ./packages/web/
 COPY packages/whoop-whoop/package.json ./packages/whoop-whoop/
+COPY packages/eight-sleep/package.json ./packages/eight-sleep/
+COPY packages/zwift-client/package.json ./packages/zwift-client/
+COPY packages/trainerroad-client/package.json ./packages/trainerroad-client/
+COPY packages/velohero-client/package.json ./packages/velohero-client/
+COPY packages/garmin-connect/package.json ./packages/garmin-connect/
+COPY packages/trainingpeaks-connect/package.json ./packages/trainingpeaks-connect/
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile --prod --node-linker=hoisted
 
@@ -25,6 +31,12 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/server/package.json ./packages/server/
 COPY packages/web/package.json ./packages/web/
 COPY packages/whoop-whoop/package.json ./packages/whoop-whoop/
+COPY packages/eight-sleep/package.json ./packages/eight-sleep/
+COPY packages/zwift-client/package.json ./packages/zwift-client/
+COPY packages/trainerroad-client/package.json ./packages/trainerroad-client/
+COPY packages/velohero-client/package.json ./packages/velohero-client/
+COPY packages/garmin-connect/package.json ./packages/garmin-connect/
+COPY packages/trainingpeaks-connect/package.json ./packages/trainingpeaks-connect/
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile
 COPY . .
@@ -58,9 +70,28 @@ COPY --from=source --chown=node:node /app/packages/server/src ./packages/server/
 COPY --from=source --chown=node:node /app/packages/server/package.json ./packages/server/
 COPY --from=source --chown=node:node /app/packages/whoop-whoop/src ./packages/whoop-whoop/src
 COPY --from=source --chown=node:node /app/packages/whoop-whoop/package.json ./packages/whoop-whoop/
+COPY --from=source --chown=node:node /app/packages/eight-sleep/src ./packages/eight-sleep/src
+COPY --from=source --chown=node:node /app/packages/eight-sleep/package.json ./packages/eight-sleep/
+COPY --from=source --chown=node:node /app/packages/zwift-client/src ./packages/zwift-client/src
+COPY --from=source --chown=node:node /app/packages/zwift-client/package.json ./packages/zwift-client/
+COPY --from=source --chown=node:node /app/packages/trainerroad-client/src ./packages/trainerroad-client/src
+COPY --from=source --chown=node:node /app/packages/trainerroad-client/package.json ./packages/trainerroad-client/
+COPY --from=source --chown=node:node /app/packages/velohero-client/src ./packages/velohero-client/src
+COPY --from=source --chown=node:node /app/packages/velohero-client/package.json ./packages/velohero-client/
+COPY --from=source --chown=node:node /app/packages/garmin-connect/src ./packages/garmin-connect/src
+COPY --from=source --chown=node:node /app/packages/garmin-connect/package.json ./packages/garmin-connect/
+COPY --from=source --chown=node:node /app/packages/trainingpeaks-connect/src ./packages/trainingpeaks-connect/src
+COPY --from=source --chown=node:node /app/packages/trainingpeaks-connect/package.json ./packages/trainingpeaks-connect/
 COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules
-# Link root workspace package so "import from 'dofek/...'" resolves
-RUN ln -s /app node_modules/dofek
+# Link workspace packages so bare-specifier imports resolve
+RUN ln -s /app node_modules/dofek && \
+    ln -s /app/packages/eight-sleep node_modules/eight-sleep-client && \
+    ln -s /app/packages/zwift-client node_modules/zwift-client && \
+    ln -s /app/packages/trainerroad-client node_modules/trainerroad-client && \
+    ln -s /app/packages/velohero-client node_modules/velohero-client && \
+    ln -s /app/packages/garmin-connect node_modules/garmin-connect && \
+    ln -s /app/packages/trainingpeaks-connect node_modules/trainingpeaks-connect && \
+    ln -s /app/packages/whoop-whoop node_modules/whoop-whoop
 
 # SOPS-encrypted .env — decrypted at runtime via SOPS_AGE_KEY env var
 COPY --from=source --chown=node:node /app/.env .

@@ -84,7 +84,9 @@ describe("cyclingAdvancedRouter", () => {
     });
 
     it("gives danger recommendation for very high ramp rate", async () => {
-      // Dramatic load increase → high ramp rate
+      // Dramatic load increase → high ramp rate.
+      // Use TRIMP=1000 so even a 1-day partial week exceeds the ramp threshold
+      // (42-day EWMA changes CTL by ~(1000-CTL)/42 ≈ 17+/day at CTL~300).
       const rows: { day: string; trimp: number }[] = [];
       const base = new Date();
       // First 3 weeks: low load
@@ -97,7 +99,7 @@ describe("cyclingAdvancedRouter", () => {
       for (let i = 13; i >= 0; i--) {
         const d = new Date(base);
         d.setDate(d.getDate() - i);
-        rows.push({ day: d.toISOString().slice(0, 10), trimp: 200 });
+        rows.push({ day: d.toISOString().slice(0, 10), trimp: 1000 });
       }
       const caller = makeCaller(rows);
       const result = await caller.rampRate({ days: 90 });
