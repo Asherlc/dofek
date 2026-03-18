@@ -401,36 +401,77 @@ describe("processImportJob", () => {
   });
 
   describe("duration tracking", () => {
-    it("logs durationMs in sync log", async () => {
+    it("computes correct durationMs for apple-health (kills Date.now arithmetic mutations)", async () => {
+      let callCount = 0;
+      const dateNowSpy = vi.spyOn(Date, "now").mockImplementation(() => {
+        // First call (importStart) = 10000, subsequent calls = 10500
+        return callCount++ === 0 ? 10000 : 10500;
+      });
+
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
       await runImportJob(job, mockDb);
 
-      expect(mockLogSync).toHaveBeenCalledWith(
-        mockDb,
-        expect.objectContaining({
-          durationMs: expect.any(Number),
-        }),
-      );
       const logCall = mockLogSync.mock.calls[0]?.[1];
+      // durationMs = 10500 - 10000 = 500 (not 20500 if + was used)
+      expect(logCall.durationMs).toBeLessThan(5000);
       expect(logCall.durationMs).toBeGreaterThanOrEqual(0);
+
+      dateNowSpy.mockRestore();
     });
 
-    it("records non-negative duration for strong-csv import", async () => {
+    it("computes correct duration string for apple-health log message", async () => {
+      let callCount = 0;
+      const dateNowSpy = vi.spyOn(Date, "now").mockImplementation(() => {
+        return callCount++ === 0 ? 10000 : 12000;
+      });
+      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+      const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
+      await runImportJob(job, mockDb);
+
+      // Duration = (12000 - 10000) / 1000 = 2.0s (not 2000000.0 if * was used)
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("2.0s"));
+
+      dateNowSpy.mockRestore();
+      consoleSpy.mockRestore();
+    });
+
+    it("computes correct duration for strong-csv import", async () => {
+      let callCount = 0;
+      const dateNowSpy = vi.spyOn(Date, "now").mockImplementation(() => {
+        return callCount++ === 0 ? 10000 : 13000;
+      });
+      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
       await writeFile(tempFilePath, "csv data");
       const job = createMockJob({ filePath: tempFilePath, importType: "strong-csv" });
       await runImportJob(job, mockDb);
 
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("3.0s"));
       const logCall = mockLogSync.mock.calls[0]?.[1];
-      expect(logCall.durationMs).toBeGreaterThanOrEqual(0);
+      expect(logCall.durationMs).toBeLessThan(5000);
+
+      dateNowSpy.mockRestore();
+      consoleSpy.mockRestore();
     });
 
-    it("records non-negative duration for cronometer-csv import", async () => {
+    it("computes correct duration for cronometer-csv import", async () => {
+      let callCount = 0;
+      const dateNowSpy = vi.spyOn(Date, "now").mockImplementation(() => {
+        return callCount++ === 0 ? 10000 : 11500;
+      });
+      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
       await writeFile(tempFilePath, "csv data");
       const job = createMockJob({ filePath: tempFilePath, importType: "cronometer-csv" });
       await runImportJob(job, mockDb);
 
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("1.5s"));
       const logCall = mockLogSync.mock.calls[0]?.[1];
-      expect(logCall.durationMs).toBeGreaterThanOrEqual(0);
+      expect(logCall.durationMs).toBeLessThan(5000);
+
+      dateNowSpy.mockRestore();
+      consoleSpy.mockRestore();
     });
   });
 
