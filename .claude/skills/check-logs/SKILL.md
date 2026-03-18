@@ -5,10 +5,11 @@ description: Check production logs for errors — queries Axiom (structured logs
 
 # Check Production Logs
 
-Query production logs to diagnose errors. Two sources are available:
+Query production logs to diagnose errors. Three sources are available (in priority order):
 
-1. **Axiom** (structured OTel logs) — preferred, searchable, persistent
+1. **Axiom MCP tools** — preferred, use `mcp__axiom__*` tools to query directly
 2. **Docker container logs** (SSH) — fallback, ephemeral, reset on container restart
+3. **In-app system logs** — last 500 entries in the web UI
 
 ## Arguments
 
@@ -16,37 +17,24 @@ Query production logs to diagnose errors. Two sources are available:
 
 ## Steps
 
-### 1. Query Axiom (preferred)
+### 1. Query Axiom via MCP tools (preferred)
 
-Axiom receives structured logs via OpenTelemetry. The dataset is `dofek-logs`.
+The Axiom MCP server is configured in `.mcp.json`. Use the `mcp__axiom__*` tools to query logs directly. The dataset is `dofek-logs`. Service names are `dofek-web`, `dofek-worker`, `dofek-sync`.
 
-Decrypt the read token from the SOPS `.env` on the server:
+Use `ToolSearch` to load the Axiom MCP tools, then query with APL (Axiom Processing Language):
 
-```bash
-ssh root@159.69.3.40 'docker exec dofek-web-1 sh -c "sops -d .env 2>/dev/null | grep AXIOM_READ_TOKEN"'
+```apl
+// Search for errors in the last 24 hours
+['dofek-logs'] | where _time > ago(24h) | search "<SEARCH_TERM>" | sort by _time desc | limit 50
+
+// Filter by service
+['dofek-logs'] | where _time > ago(24h) and ['service.name'] == "dofek-web" | where severity_text == "ERROR" | sort by _time desc | limit 50
+
+// Apple Health import errors
+['dofek-logs'] | where _time > ago(7d) | search "apple" or search "health" or search "import" | sort by _time desc | limit 50
 ```
 
-If `AXIOM_READ_TOKEN` is set, query Axiom using APL (Axiom Processing Language):
-
-```bash
-# Search for errors in the last 24 hours
-curl -s 'https://api.axiom.co/v1/datasets/_apl' \
-  -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "apl": "['\'dofek-logs\''] | where _time > ago(24h) | search \"<SEARCH_TERM>\" | sort by _time desc | limit 50"
-  }'
-
-# Filter by service (dofek-web, dofek-sync, dofek-worker)
-curl -s 'https://api.axiom.co/v1/datasets/_apl' \
-  -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "apl": "['\'dofek-logs\''] | where _time > ago(24h) and ['service.name'] == \"dofek-web\" | where severity_text == \"ERROR\" | sort by _time desc | limit 50"
-  }'
-```
-
-**Note:** The OTEL ingest token (in `OTEL_EXPORTER_OTLP_HEADERS`) is write-only and cannot query. You need a separate read token (`AXIOM_READ_TOKEN`). If it doesn't exist yet, ask the user to create one in Axiom (Settings > API Tokens > New Token with "Query" permission on `dofek-logs`), then add it to the SOPS `.env`.
+If the Axiom MCP server is not connected, fall back to step 2.
 
 ### 2. Docker container logs (SSH fallback)
 
