@@ -58,25 +58,27 @@ describe("maxVal", () => {
 });
 
 describe("summarizeSegment", () => {
-  const makeRows = (overrides: Partial<Parameters<typeof summarizeSegment>[0][number]> = {}) => [
+  type SegmentRow = Parameters<typeof summarizeSegment>[0][number];
+
+  const makeRows = (overrides: Partial<SegmentRow> = {}): SegmentRow[] => [
     {
-      avg_power: 200 as number | null,
-      avg_hr: 140 as number | null,
-      avg_speed: 8.5 as number | null,
-      avg_cadence: 85 as number | null,
-      max_power: 250 as number | null,
-      max_hr: 155 as number | null,
-      max_speed: 10.0 as number | null,
+      avg_power: 200,
+      avg_hr: 140,
+      avg_speed: 8.5,
+      avg_cadence: 85,
+      max_power: 250,
+      max_hr: 155,
+      max_speed: 10.0,
       ...overrides,
     },
     {
-      avg_power: 210 as number | null,
-      avg_hr: 145 as number | null,
-      avg_speed: 8.7 as number | null,
-      avg_cadence: 88 as number | null,
-      max_power: 260 as number | null,
-      max_hr: 160 as number | null,
-      max_speed: 10.5 as number | null,
+      avg_power: 210,
+      avg_hr: 145,
+      avg_speed: 8.7,
+      avg_cadence: 88,
+      max_power: 260,
+      max_hr: 160,
+      max_speed: 10.5,
       ...overrides,
     },
   ];
