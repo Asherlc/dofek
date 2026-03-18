@@ -816,3 +816,80 @@ export const lifeEvents = fitness.table(
   },
   (table) => [index("life_events_started_at_idx").on(table.startedAt)],
 );
+
+// ============================================================
+// DEXA scans (BodySpec, etc.)
+// ============================================================
+
+export const dexaScan = fitness.table(
+  "dexa_scan",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    providerId: text("provider_id")
+      .notNull()
+      .references(() => provider.id),
+    userId: uuid("user_id")
+      .notNull()
+      .default(DEFAULT_USER_ID)
+      .references(() => userProfile.id),
+    externalId: text("external_id").notNull(),
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+    scannerModel: text("scanner_model"),
+    // Total body composition
+    totalFatMassKg: real("total_fat_mass_kg"),
+    totalLeanMassKg: real("total_lean_mass_kg"),
+    totalBoneMassKg: real("total_bone_mass_kg"),
+    totalMassKg: real("total_mass_kg"),
+    bodyFatPct: real("body_fat_pct"),
+    androidGynoidRatio: real("android_gynoid_ratio"),
+    // Visceral fat
+    visceralFatMassKg: real("visceral_fat_mass_kg"),
+    visceralFatVolumeCm3: real("visceral_fat_volume_cm3"),
+    // Total bone density
+    totalBoneMineralDensity: real("total_bone_mineral_density"), // g/cm2
+    boneDensityTPercentile: real("bone_density_t_percentile"), // vs peak (30yo), 1-99
+    boneDensityZPercentile: real("bone_density_z_percentile"), // vs age/sex matched, 1-99
+    // Resting metabolic rate
+    restingMetabolicRateKcal: real("resting_metabolic_rate_kcal"), // primary estimate
+    restingMetabolicRateRaw: jsonb("resting_metabolic_rate_raw"), // all formula estimates (proprietary)
+    // Percentiles (proprietary reference populations)
+    percentiles: jsonb("percentiles"),
+    // Patient intake
+    heightInches: real("height_inches"),
+    weightPounds: real("weight_pounds"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("dexa_scan_provider_external_idx").on(table.providerId, table.externalId),
+    index("dexa_scan_user_provider_idx").on(table.userId, table.providerId),
+    index("dexa_scan_recorded_at_idx").on(table.recordedAt.desc()),
+  ],
+);
+
+export const dexaScanRegion = fitness.table(
+  "dexa_scan_region",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    scanId: uuid("scan_id")
+      .notNull()
+      .references(() => dexaScan.id, { onDelete: "cascade" }),
+    region: text("region").notNull(), // android, gynoid, left_arm, right_arm, left_leg, right_leg, trunk
+    // Body composition
+    fatMassKg: real("fat_mass_kg"),
+    leanMassKg: real("lean_mass_kg"),
+    boneMassKg: real("bone_mass_kg"),
+    totalMassKg: real("total_mass_kg"),
+    tissueFatPct: real("tissue_fat_pct"), // fat % of soft tissue in region
+    regionFatPct: real("region_fat_pct"), // this region's fat as % of total body fat
+    // Bone density
+    boneMineralDensity: real("bone_mineral_density"), // g/cm2
+    boneAreaCm2: real("bone_area_cm2"),
+    boneMineralContentG: real("bone_mineral_content_g"),
+    zScorePercentile: real("z_score_percentile"), // age/sex matched, 1-99
+    tScorePercentile: real("t_score_percentile"), // vs peak (30yo), 1-99
+  },
+  (table) => [
+    uniqueIndex("dexa_scan_region_scan_region_idx").on(table.scanId, table.region),
+    index("dexa_scan_region_scan_idx").on(table.scanId),
+  ],
+);

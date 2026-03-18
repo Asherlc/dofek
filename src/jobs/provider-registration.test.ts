@@ -21,6 +21,7 @@ const mockProviders = {
   strava: { id: "strava" },
   "cronometer-csv": { id: "cronometer-csv" },
   oura: { id: "oura" },
+  bodyspec: { id: "bodyspec" },
 };
 
 vi.mock("../providers/wahoo.ts", () => ({
@@ -62,6 +63,9 @@ vi.mock("../providers/cronometer-csv.ts", () => ({
 vi.mock("../providers/oura.ts", () => ({
   OuraProvider: vi.fn(() => mockProviders.oura),
 }));
+vi.mock("../providers/bodyspec.ts", () => ({
+  BodySpecProvider: vi.fn(() => mockProviders.bodyspec),
+}));
 
 describe("provider-registration", () => {
   beforeEach(() => {
@@ -78,7 +82,7 @@ describe("provider-registration", () => {
     const { ensureProvidersRegistered } = await import("./provider-registration.ts");
     await ensureProvidersRegistered();
 
-    expect(mockRegisterProvider).toHaveBeenCalledTimes(13);
+    expect(mockRegisterProvider).toHaveBeenCalledTimes(14);
   });
 
   it("only registers once (memoization)", async () => {
@@ -86,7 +90,7 @@ describe("provider-registration", () => {
     await ensureProvidersRegistered();
     await ensureProvidersRegistered();
 
-    expect(mockRegisterProvider).toHaveBeenCalledTimes(13);
+    expect(mockRegisterProvider).toHaveBeenCalledTimes(14);
   });
 
   it("continues registering other providers when one fails", async () => {
@@ -100,6 +104,6 @@ describe("provider-registration", () => {
     await ensureProvidersRegistered();
 
     // Should have attempted all 13 registrations even though peloton failed
-    expect(mockRegisterProvider).toHaveBeenCalledTimes(13);
+    expect(mockRegisterProvider).toHaveBeenCalledTimes(14);
   });
 });
