@@ -82,6 +82,22 @@ function AuthGate() {
               headerTintColor: colors.text,
             }}
           />
+          <Stack.Screen
+            name="training"
+            options={{
+              title: "Training",
+              headerStyle: { backgroundColor: colors.background },
+              headerTintColor: colors.text,
+            }}
+          />
+          <Stack.Screen
+            name="activity/[id]"
+            options={{
+              title: "Activity",
+              headerStyle: { backgroundColor: colors.background },
+              headerTintColor: colors.text,
+            }}
+          />
         </Stack>
       </QueryClientProvider>
     </trpc.Provider>

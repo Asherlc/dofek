@@ -43,6 +43,7 @@ function daysAgo(days: number): string {
 }
 
 const NAV_LINKS = [
+  { route: "/training" as const, label: "Training", emoji: "\u{1F3CB}\u{FE0F}", description: "Performance, endurance & recovery" },
   { route: "/providers" as const, label: "Data Sources", emoji: "🔗", description: "Manage providers & sync history" },
   { route: "/tracking" as const, label: "Tracking", emoji: "📋", description: "Life events & supplements" },
   { route: "/settings" as const, label: "Settings", emoji: "⚙️", description: "Accounts, units & export" },

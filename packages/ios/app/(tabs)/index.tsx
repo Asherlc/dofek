@@ -193,16 +193,21 @@ export default function OverviewScreen() {
               <Text style={styles.sectionTitle}>Recent Activities</Text>
               <View style={styles.activitiesStack}>
                 {recentActivities.map((activity) => (
-                  <ActivityCard
+                  <TouchableOpacity
                     key={String(activity.id)}
-                    name={activity.name ?? ""}
-                    activityType={activity.activity_type ?? ""}
-                    startedAt={activity.started_at}
-                    endedAt={activity.ended_at ?? null}
-                    avgHr={activity.avg_hr ?? null}
-                    maxHr={activity.max_hr ?? null}
-                    avgPower={activity.avg_power ?? null}
-                  />
+                    activeOpacity={0.7}
+                    onPress={() => router.push(`/activity/${activity.id}`)}
+                  >
+                    <ActivityCard
+                      name={activity.name ?? ""}
+                      activityType={activity.activity_type ?? ""}
+                      startedAt={activity.started_at}
+                      endedAt={activity.ended_at ?? null}
+                      avgHr={activity.avg_hr ?? null}
+                      maxHr={activity.max_hr ?? null}
+                      avgPower={activity.avg_power ?? null}
+                    />
+                  </TouchableOpacity>
                 ))}
               </View>
             </View>
