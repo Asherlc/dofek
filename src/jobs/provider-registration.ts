@@ -33,6 +33,7 @@ async function doRegisterProviders() {
       () => import("../providers/cronometer-csv.ts").then((m) => new m.CronometerCsvProvider()),
     ],
     ["oura", () => import("../providers/oura.ts").then((m) => new m.OuraProvider())],
+    ["bodyspec", () => import("../providers/bodyspec.ts").then((m) => new m.BodySpecProvider())],
   ] as const;
 
   for (const [name, loadProvider] of providers) {

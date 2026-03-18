@@ -5,6 +5,7 @@ import { computeSinceDate, parseSinceDays } from "./cli.ts";
 import { createDatabaseFromEnv } from "./db/index.ts";
 import { ensureProvider, saveTokens } from "./db/tokens.ts";
 import { AutoSupplementsProvider } from "./providers/auto-supplements.ts";
+import { BodySpecProvider } from "./providers/bodyspec.ts";
 import { Concept2Provider } from "./providers/concept2.ts";
 import { CorosProvider } from "./providers/coros.ts";
 import { CronometerCsvProvider } from "./providers/cronometer-csv.ts";
@@ -80,6 +81,7 @@ registerProvider(new CyclingAnalyticsProvider());
 registerProvider(new WgerProvider());
 registerProvider(new DecathlonProvider());
 registerProvider(new VeloHeroProvider());
+registerProvider(new BodySpecProvider());
 if (supplementConfig) {
   registerProvider(new AutoSupplementsProvider(supplementConfig));
 }
