@@ -384,18 +384,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InsightsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/correlation': {
-      id: '/correlation'
-      path: '/correlation'
-      fullPath: '/correlation'
-      preLoaderRoute: typeof CorrelationRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/dashboard': {
       id: '/dashboard'
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof DashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/correlation': {
+      id: '/correlation'
+      path: '/correlation'
+      fullPath: '/correlation'
+      preLoaderRoute: typeof CorrelationRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {

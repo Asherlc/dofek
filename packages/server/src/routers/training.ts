@@ -1,7 +1,15 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { enduranceTypeFilter } from "../lib/endurance-types.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+
+const weeklyVolumeRowSchema = z.object({
+  week: z.string(),
+  activity_type: z.string(),
+  count: z.number(),
+  hours: z.coerce.number(),
+});
 
 export const trainingRouter = router({
   /**
@@ -11,7 +19,9 @@ export const trainingRouter = router({
   weeklyVolume: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
-      const rows = await ctx.db.execute(
+      return executeWithSchema(
+        ctx.db,
+        weeklyVolumeRowSchema,
         sql`SELECT
               date_trunc('week', started_at)::date AS week,
               activity_type,
@@ -24,7 +34,6 @@ export const trainingRouter = router({
             GROUP BY date_trunc('week', started_at), activity_type
             ORDER BY week`,
       );
-      return rows;
     }),
 
   /**
