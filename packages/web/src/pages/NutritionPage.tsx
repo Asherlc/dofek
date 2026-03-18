@@ -25,7 +25,7 @@ const foodEntrySchema = z.object({
   id: z.string(),
   food_name: z.string(),
   meal: z.string(),
-  calories: z.number(),
+  calories: z.number().nullable(),
   protein_g: z.number().nullable(),
   carbs_g: z.number().nullable(),
   fat_g: z.number().nullable(),
@@ -66,7 +66,7 @@ export function NutritionPage() {
     let totalFat = 0;
 
     for (const entry of entries) {
-      totalCalories += entry.calories;
+      totalCalories += entry.calories ?? 0;
       totalProtein += entry.protein_g ?? 0;
       totalCarbs += entry.carbs_g ?? 0;
       totalFat += entry.fat_g ?? 0;
@@ -261,7 +261,7 @@ export function NutritionPage() {
         {!foodQuery.isLoading &&
           MEAL_ORDER.map((mealType) => {
             const mealEntries = mealGroups.get(mealType) ?? [];
-            const mealCalories = mealEntries.reduce((sum, e) => sum + e.calories, 0);
+            const mealCalories = mealEntries.reduce((sum, e) => sum + (e.calories ?? 0), 0);
             const isCollapsed = collapsedMeals.has(mealType);
 
             return (
@@ -313,7 +313,7 @@ export function NutritionPage() {
                             key={entry.id}
                             foodName={entry.food_name}
                             servingDescription={entry.food_description}
-                            calories={entry.calories}
+                            calories={entry.calories ?? 0}
                             onDelete={() => handleDeleteFood(entry.id)}
                             deleting={deleteMutation.isPending}
                           />
