@@ -53,6 +53,7 @@ const PNG_LOGOS = new Set([
 // Brand colors used for the styled-letter fallback
 const BRAND_COLORS: Record<string, string> = {
   velohero: "#FF6600",
+  bodyspec: "#00B4D8",
 };
 
 // ── Display labels ──
@@ -90,6 +91,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   "apple-health": "Apple Health",
   "strong-csv": "Strong",
   "cronometer-csv": "Cronometer",
+  bodyspec: "BodySpec",
 };
 
 export function providerLabel(id: string): string {
