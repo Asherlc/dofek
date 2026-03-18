@@ -88,16 +88,17 @@ COPY --from=source --chown=node:node /app/packages/shared/src ./packages/shared/
 COPY --from=source --chown=node:node /app/packages/shared/package.json ./packages/shared/
 COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules
 # Link workspace packages so bare-specifier imports resolve
-RUN ln -s /app node_modules/dofek && \
-    ln -s /app/packages/eight-sleep node_modules/eight-sleep-client && \
-    ln -s /app/packages/zwift-client node_modules/zwift-client && \
-    ln -s /app/packages/trainerroad-client node_modules/trainerroad-client && \
-    ln -s /app/packages/velohero-client node_modules/velohero-client && \
-    ln -s /app/packages/garmin-connect node_modules/garmin-connect && \
-    ln -s /app/packages/trainingpeaks-connect node_modules/trainingpeaks-connect && \
-    ln -s /app/packages/whoop-whoop node_modules/whoop-whoop && \
+# Use ln -sf to overwrite any links pnpm's hoisted mode may have created
+RUN ln -sf /app node_modules/dofek && \
+    ln -sf /app/packages/eight-sleep node_modules/eight-sleep-client && \
+    ln -sf /app/packages/zwift-client node_modules/zwift-client && \
+    ln -sf /app/packages/trainerroad-client node_modules/trainerroad-client && \
+    ln -sf /app/packages/velohero-client node_modules/velohero-client && \
+    ln -sf /app/packages/garmin-connect node_modules/garmin-connect && \
+    ln -sf /app/packages/trainingpeaks-connect node_modules/trainingpeaks-connect && \
+    ln -sf /app/packages/whoop-whoop node_modules/whoop-whoop && \
     mkdir -p node_modules/@dofek && \
-    ln -s /app/packages/shared node_modules/@dofek/shared
+    ln -sf /app/packages/shared node_modules/@dofek/shared
 
 # SOPS-encrypted .env — decrypted at runtime via SOPS_AGE_KEY env var
 COPY --from=source --chown=node:node /app/.env .
