@@ -1,3 +1,4 @@
+import { stressColor, stressLabel, trendColor } from "@dofek/shared/scoring";
 import type { StressResult } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
@@ -7,30 +8,10 @@ interface StressChartProps {
   loading?: boolean;
 }
 
-function stressColor(score: number): string {
-  if (score <= 0.5) return "#22c55e";
-  if (score <= 1.5) return "#eab308";
-  if (score <= 2.5) return "#f97316";
-  return "#ef4444";
-}
-
-function stressLabel(score: number): string {
-  if (score <= 0.5) return "Low";
-  if (score <= 1.5) return "Moderate";
-  if (score <= 2.5) return "High";
-  return "Very High";
-}
-
 function trendIcon(trend: StressResult["trend"]): string {
   if (trend === "improving") return "↓";
   if (trend === "worsening") return "↑";
   return "→";
-}
-
-function trendColor(trend: StressResult["trend"]): string {
-  if (trend === "improving") return "#22c55e";
-  if (trend === "worsening") return "#ef4444";
-  return "#71717a";
 }
 
 export function StressChart({ data, loading }: StressChartProps) {

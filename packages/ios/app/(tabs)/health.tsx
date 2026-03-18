@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
+import { useRouter } from "expo-router";
 import { useAuth } from "../../lib/auth-context";
 import { colors } from "../../theme";
 import {
@@ -41,7 +42,15 @@ function daysAgo(days: number): string {
   return d.toISOString();
 }
 
+const NAV_LINKS = [
+  { route: "/training" as const, label: "Training", emoji: "\u{1F3CB}\u{FE0F}", description: "Performance, endurance & recovery" },
+  { route: "/providers" as const, label: "Data Sources", emoji: "🔗", description: "Manage providers & sync history" },
+  { route: "/tracking" as const, label: "Tracking", emoji: "📋", description: "Life events & supplements" },
+  { route: "/settings" as const, label: "Settings", emoji: "⚙️", description: "Accounts, units & export" },
+];
+
 export default function HealthScreen() {
+  const router = useRouter();
   const { user, serverUrl, logout, disconnectServer } = useAuth();
   const [permissionsGranted, setPermissionsGranted] = useState(false);
   const [status, setStatus] = useState<SyncStatus>({
@@ -149,7 +158,24 @@ export default function HealthScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={[styles.content, isWide && styles.contentWide]}>
-      <Text style={styles.title}>HealthKit Sync</Text>
+      {/* Navigation links */}
+      {NAV_LINKS.map((link) => (
+        <TouchableOpacity
+          key={link.route}
+          style={styles.navCard}
+          onPress={() => router.push(link.route)}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.navEmoji}>{link.emoji}</Text>
+          <View style={styles.navTextContainer}>
+            <Text style={styles.navLabel}>{link.label}</Text>
+            <Text style={styles.navDescription}>{link.description}</Text>
+          </View>
+          <Text style={styles.navChevron}>›</Text>
+        </TouchableOpacity>
+      ))}
+
+      <Text style={[styles.title, { marginTop: 16 }]}>HealthKit Sync</Text>
 
       {!available ? (
         <View style={styles.card}>
@@ -342,5 +368,35 @@ const styles = StyleSheet.create({
   },
   errorText: {
     color: colors.danger,
+  },
+  navCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 8,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  navEmoji: {
+    fontSize: 24,
+    marginRight: 12,
+  },
+  navTextContainer: {
+    flex: 1,
+  },
+  navLabel: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: colors.text,
+  },
+  navDescription: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  navChevron: {
+    fontSize: 24,
+    color: colors.textTertiary,
+    marginLeft: 8,
   },
 });

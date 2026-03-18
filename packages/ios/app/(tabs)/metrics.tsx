@@ -1,4 +1,5 @@
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useRouter } from "expo-router";
 import { MetricCard } from "../../components/MetricCard";
 import { SparkLine } from "../../components/charts/SparkLine";
 import { trendDirection as computeTrend } from "../../lib/scoring";
@@ -12,6 +13,8 @@ import type {
 import { colors } from "../../theme";
 
 export default function MetricsScreen() {
+  const router = useRouter();
+
   // HRV trend
   const hrvQuery = trpc.recovery.hrvVariability.useQuery({ days: 30 });
   const hrvData = hrvQuery.data ?? [];
@@ -50,6 +53,32 @@ export default function MetricsScreen() {
       contentContainerStyle={styles.content}
     >
       <Text style={styles.header}>30-Day Trends</Text>
+
+      <TouchableOpacity
+        style={styles.insightsButton}
+        onPress={() => router.push("/insights")}
+        activeOpacity={0.7}
+      >
+        <Text style={styles.insightsButtonEmoji}>{"\uD83D\uDCA1"}</Text>
+        <View style={styles.insightsButtonText}>
+          <Text style={styles.insightsButtonLabel}>Insights</Text>
+          <Text style={styles.insightsButtonDescription}>Patterns and correlations in your data</Text>
+        </View>
+        <Text style={styles.insightsButtonChevron}>{"\u203A"}</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.insightsButton}
+        onPress={() => router.push("/predictions")}
+        activeOpacity={0.7}
+      >
+        <Text style={styles.insightsButtonEmoji}>{"\uD83D\uDD2E"}</Text>
+        <View style={styles.insightsButtonText}>
+          <Text style={styles.insightsButtonLabel}>Predictions</Text>
+          <Text style={styles.insightsButtonDescription}>Machine learning forecasts for your metrics</Text>
+        </View>
+        <Text style={styles.insightsButtonChevron}>{"\u203A"}</Text>
+      </TouchableOpacity>
 
       {isLoading ? (
         <View style={styles.loadingContainer}>
@@ -266,5 +295,34 @@ const styles = StyleSheet.create({
   weeklyLabel: {
     fontSize: 10,
     color: colors.textTertiary,
+  },
+  insightsButton: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 16,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  insightsButtonEmoji: {
+    fontSize: 24,
+    marginRight: 12,
+  },
+  insightsButtonText: {
+    flex: 1,
+  },
+  insightsButtonLabel: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: colors.text,
+  },
+  insightsButtonDescription: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  insightsButtonChevron: {
+    fontSize: 24,
+    color: colors.textTertiary,
+    marginLeft: 8,
   },
 });

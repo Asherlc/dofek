@@ -76,11 +76,11 @@ export function rideWithGpsOAuthConfig(): OAuthConfig | null {
 
   return {
     clientId,
+    clientSecret: process.env.RWGPS_CLIENT_SECRET,
     authorizeUrl: RWGPS_OAUTH_AUTHORIZE_URL,
     tokenUrl: RWGPS_OAUTH_TOKEN_URL,
     redirectUri: getOAuthRedirectUri(),
     scopes: ["user"],
-    usePkce: true,
   };
 }
 

@@ -1,0 +1,225 @@
+import { describe, expect, it } from "vitest";
+import {
+  formatDateForDisplay,
+  formatDateYmd,
+  formatDurationMinutes,
+  formatDurationRange,
+  formatHour,
+  formatRelativeTime,
+  formatSleepDebt,
+  formatSleepDebtInline,
+  formatTime,
+  isToday,
+} from "./format.ts";
+
+describe("formatDateYmd", () => {
+  it("formats a date as YYYY-MM-DD", () => {
+    expect(formatDateYmd(new Date(2024, 0, 5))).toBe("2024-01-05");
+  });
+
+  it("pads single-digit month and day", () => {
+    expect(formatDateYmd(new Date(2024, 2, 3))).toBe("2024-03-03");
+  });
+
+  it("handles double-digit month and day", () => {
+    expect(formatDateYmd(new Date(2024, 11, 25))).toBe("2024-12-25");
+  });
+
+  it("defaults to current date when no argument", () => {
+    const now = new Date();
+    const expected = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    expect(formatDateYmd()).toBe(expected);
+  });
+});
+
+describe("formatDurationMinutes", () => {
+  it("formats minutes only when < 60", () => {
+    expect(formatDurationMinutes(45)).toBe("45m");
+  });
+
+  it("formats 0 minutes", () => {
+    expect(formatDurationMinutes(0)).toBe("0m");
+  });
+
+  it("formats exactly 59 minutes without hours", () => {
+    expect(formatDurationMinutes(59)).toBe("59m");
+  });
+
+  it("formats exactly 60 minutes as 1h 0m", () => {
+    expect(formatDurationMinutes(60)).toBe("1h 0m");
+  });
+
+  it("formats hours and minutes", () => {
+    expect(formatDurationMinutes(90)).toBe("1h 30m");
+  });
+
+  it("rounds fractional minutes", () => {
+    expect(formatDurationMinutes(90.7)).toBe("1h 31m");
+  });
+});
+
+describe("formatDurationRange", () => {
+  it("returns -- for null end", () => {
+    expect(formatDurationRange("2024-01-01T10:00:00Z", null)).toBe("--");
+  });
+
+  it("formats duration between timestamps", () => {
+    expect(formatDurationRange("2024-01-01T10:00:00Z", "2024-01-01T11:30:00Z")).toBe("1h 30m");
+  });
+
+  it("formats short durations", () => {
+    expect(formatDurationRange("2024-01-01T10:00:00Z", "2024-01-01T10:15:00Z")).toBe("15m");
+  });
+});
+
+describe("formatSleepDebt", () => {
+  it("returns no debt for zero", () => {
+    expect(formatSleepDebt(0)).toBe("No sleep debt");
+  });
+
+  it("returns no debt for negative", () => {
+    expect(formatSleepDebt(-30)).toBe("No sleep debt");
+  });
+
+  it("formats positive debt in hours and minutes", () => {
+    expect(formatSleepDebt(90)).toBe("1h 30m debt");
+  });
+
+  it("formats small debt", () => {
+    expect(formatSleepDebt(15)).toBe("0h 15m debt");
+  });
+
+  it("returns no debt at exactly 0", () => {
+    expect(formatSleepDebt(0)).toBe("No sleep debt");
+  });
+
+  it("formats debt at exactly 1 minute", () => {
+    expect(formatSleepDebt(1)).toBe("0h 1m debt");
+  });
+});
+
+describe("formatHour", () => {
+  it("formats midnight (0) as 12:00 AM", () => {
+    expect(formatHour(0)).toBe("12:00 AM");
+  });
+
+  it("formats 1am", () => {
+    expect(formatHour(1)).toBe("1:00 AM");
+  });
+
+  it("formats 11am", () => {
+    expect(formatHour(11)).toBe("11:00 AM");
+  });
+
+  it("formats noon (12) as 12:00 PM", () => {
+    expect(formatHour(12)).toBe("12:00 PM");
+  });
+
+  it("formats 1pm", () => {
+    expect(formatHour(13)).toBe("1:00 PM");
+  });
+
+  it("formats decimal hours with minutes", () => {
+    expect(formatHour(22.5)).toBe("10:30 PM");
+  });
+
+  it("pads minutes to 2 digits", () => {
+    expect(formatHour(9.083)).toBe("9:05 AM");
+  });
+});
+
+describe("formatSleepDebtInline", () => {
+  it("formats with 14-day context", () => {
+    expect(formatSleepDebtInline(90)).toBe("1h 30m sleep debt (14 days)");
+  });
+
+  it("formats zero minutes", () => {
+    expect(formatSleepDebtInline(0)).toBe("0h 0m sleep debt (14 days)");
+  });
+});
+
+describe("isToday", () => {
+  it("returns true for today", () => {
+    expect(isToday(new Date())).toBe(true);
+  });
+
+  it("returns false for yesterday", () => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    expect(isToday(yesterday)).toBe(false);
+  });
+
+  it("returns false for tomorrow", () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    expect(isToday(tomorrow)).toBe(false);
+  });
+
+  it("returns false for same day different year", () => {
+    const sameDay = new Date();
+    sameDay.setFullYear(sameDay.getFullYear() - 1);
+    expect(isToday(sameDay)).toBe(false);
+  });
+
+  it("returns false for same day different month", () => {
+    const sameDay = new Date();
+    sameDay.setMonth(sameDay.getMonth() - 1);
+    expect(isToday(sameDay)).toBe(false);
+  });
+});
+
+describe("formatDateForDisplay", () => {
+  it("formats with weekday, month, day, year", () => {
+    // Jan 15, 2024 is a Monday
+    const result = formatDateForDisplay(new Date(2024, 0, 15));
+    expect(result).toContain("Mon");
+    expect(result).toContain("Jan");
+    expect(result).toContain("15");
+    expect(result).toContain("2024");
+  });
+});
+
+describe("formatRelativeTime", () => {
+  it("returns just now for recent times", () => {
+    expect(formatRelativeTime(new Date().toISOString())).toBe("just now");
+  });
+
+  it("returns 1m ago at exactly 1 minute", () => {
+    const oneMinAgo = new Date(Date.now() - 60000).toISOString();
+    expect(formatRelativeTime(oneMinAgo)).toBe("1m ago");
+  });
+
+  it("returns minutes ago for < 60 minutes", () => {
+    const ago = new Date(Date.now() - 59 * 60000).toISOString();
+    expect(formatRelativeTime(ago)).toBe("59m ago");
+  });
+
+  it("returns 1h ago at exactly 60 minutes", () => {
+    const ago = new Date(Date.now() - 60 * 60000).toISOString();
+    expect(formatRelativeTime(ago)).toBe("1h ago");
+  });
+
+  it("returns hours ago for < 24 hours", () => {
+    const ago = new Date(Date.now() - 23 * 3600000).toISOString();
+    expect(formatRelativeTime(ago)).toBe("23h ago");
+  });
+
+  it("returns 1d ago at exactly 24 hours", () => {
+    const ago = new Date(Date.now() - 24 * 3600000).toISOString();
+    expect(formatRelativeTime(ago)).toBe("1d ago");
+  });
+
+  it("returns days ago for multi-day diffs", () => {
+    const ago = new Date(Date.now() - 3 * 86400000).toISOString();
+    expect(formatRelativeTime(ago)).toBe("3d ago");
+  });
+});
+
+describe("formatTime", () => {
+  it("formats an ISO string with month, day, and time", () => {
+    const result = formatTime("2024-03-15T14:30:00Z");
+    // The exact output depends on timezone, but should contain key parts
+    expect(result).toContain("Mar");
+    expect(result).toContain("15");
+  });
+});

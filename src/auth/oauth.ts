@@ -71,8 +71,16 @@ export function buildAuthorizationUrl(
   return url.toString();
 }
 
+/** Default expiry when the provider omits `expires_in` — 1 year.
+ *  Providers that don't return `expires_in` typically issue non-expiring tokens
+ *  (e.g. Doorkeeper with `access_token_expires_in nil`). Using a conservative
+ *  1-year fallback avoids premature refresh attempts while still eventually
+ *  re-validating. */
+const DEFAULT_EXPIRES_IN_SECONDS = 365 * 24 * 60 * 60;
+
 function parseTokenResponse(data: Record<string, unknown>): TokenSet {
-  const expiresIn = typeof data.expires_in === "number" ? data.expires_in : 7200;
+  const expiresIn =
+    typeof data.expires_in === "number" ? data.expires_in : DEFAULT_EXPIRES_IN_SECONDS;
   return {
     accessToken: String(data.access_token),
     refreshToken: typeof data.refresh_token === "string" ? data.refresh_token : null,

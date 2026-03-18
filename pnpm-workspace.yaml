@@ -1,5 +1,6 @@
 packages:
   - .
+  - packages/shared
   - packages/server
   - packages/web
   - packages/ios

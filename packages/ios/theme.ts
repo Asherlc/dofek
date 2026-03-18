@@ -1,36 +1,45 @@
-/** Shared color palette for the dark Whoop-style UI */
+/**
+ * Shared color palette for the dark Whoop-style UI.
+ *
+ * Re-exported from @dofek/shared — this module composes the shared semantic
+ * color tokens into the flat `colors` object that iOS components expect.
+ */
+import { chartColors, statusColors, surfaceColors, textColors } from "@dofek/shared/colors";
+
+export { chartColors, statusColors, surfaceColors, textColors };
+
 export const colors = {
   /** Pure black background */
-  background: "#000",
+  background: surfaceColors.background,
   /** Elevated surface (cards) */
-  surface: "#1c1c1e",
+  surface: surfaceColors.surface,
   /** Subtle divider / secondary surface */
-  surfaceSecondary: "#2a2a2e",
+  surfaceSecondary: surfaceColors.surfaceSecondary,
   /** Primary accent (links, buttons) */
-  accent: "#007AFF",
+  accent: surfaceColors.accent,
 
   /** Positive / good / green */
-  positive: "#00E676",
+  positive: statusColors.positive,
   /** Warning / moderate / yellow */
-  warning: "#FFD600",
+  warning: statusColors.warning,
   /** Danger / poor / red */
-  danger: "#FF3D00",
+  danger: statusColors.danger,
 
   /** Light teal accent */
-  teal: "#5AC8FA",
+  teal: chartColors.teal,
   /** Deep purple accent */
-  purple: "#5E35B1",
+  purple: chartColors.purple,
   /** Blue accent */
-  blue: "#42A5F5",
+  blue: chartColors.blue,
   /** Green accent */
-  green: "#34C759",
+  green: chartColors.green,
   /** Orange accent */
-  orange: "#FF8A65",
+  orange: chartColors.orange,
 
   /** Primary text */
-  text: "#fff",
+  text: textColors.primary,
   /** Secondary text / labels */
-  textSecondary: "#8e8e93",
+  textSecondary: textColors.secondary,
   /** Tertiary text / dimmed */
-  textTertiary: "#636366",
+  textTertiary: textColors.tertiary,
 } as const;

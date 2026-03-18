@@ -169,24 +169,17 @@ describe("syncRouter", () => {
 
       const result = await caller.providers();
 
-      expect(result).toHaveLength(5);
+      // Peloton is filtered out because its validate() fails
+      expect(result).toHaveLength(4);
+      expect(result.find((p: { id: string }) => p.id === "peloton")).toBeUndefined();
 
-      // Wahoo: enabled, needs OAuth, authorized (has token)
+      // Wahoo: needs OAuth, authorized (has token)
       const wahoo = result.find((p: { id: string }) => p.id === "wahoo");
-      expect(wahoo?.enabled).toBe(true);
       expect(wahoo?.needsOAuth).toBe(true);
       expect(wahoo?.needsCustomAuth).toBe(false);
       expect(wahoo?.authorized).toBe(true);
       expect(wahoo?.lastSyncedAt).toBe("2024-01-01");
       expect(wahoo?.importOnly).toBe(false);
-
-      // Peloton: not enabled (validation error), no OAuth needed, still authorized (no auth required)
-      const peloton = result.find((p: { id: string }) => p.id === "peloton");
-      expect(peloton?.enabled).toBe(false);
-      expect(peloton?.error).toBe("Missing credentials");
-      expect(peloton?.needsOAuth).toBe(false);
-      expect(peloton?.needsCustomAuth).toBe(false);
-      expect(peloton?.authorized).toBe(true);
 
       // WHOOP: needs custom auth, not authorized (no token)
       const whoop = result.find((p: { id: string }) => p.id === "whoop");

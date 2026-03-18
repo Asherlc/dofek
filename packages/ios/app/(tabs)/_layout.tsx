@@ -68,7 +68,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="health"
         options={{
-          title: "Sync",
+          title: "More",
           tabBarIcon: ({ focused }) => (
             <TabIcon label={"\u2699\uFE0F"} focused={focused} />
           ),
