@@ -506,6 +506,47 @@ describe("streamHealthExport — error handling", () => {
       }),
     ).rejects.toThrow("DB connection failed");
   });
+
+  it("rejects when final flush callback throws (no unhandled rejection)", async () => {
+    // Generate records that will only be flushed in the final flush (< BATCH_SIZE)
+    // along with enough records to create pending mid-stream flushes.
+    // This tests that errors in final flushes are properly caught even when
+    // there are pending mid-stream flushes draining concurrently.
+    const recordLines: string[] = [];
+    for (let i = 0; i < 5500; i++) {
+      const hour = String(Math.floor(i / 60) % 24).padStart(2, "0");
+      const min = String(i % 60).padStart(2, "0");
+      recordLines.push(
+        `<Record type="HKQuantityTypeIdentifierHeartRate" sourceName="Watch" unit="count/min" ` +
+          `value="${60 + (i % 40)}" ` +
+          `startDate="2024-03-01 ${hour}:${min}:00 -0500" ` +
+          `endDate="2024-03-01 ${hour}:${min}:05 -0500" ` +
+          `creationDate="2024-03-01 ${hour}:${min}:00 -0500"/>`,
+      );
+    }
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<HealthData locale="en_US">
+${recordLines.join("\n")}
+</HealthData>`;
+    const path = writeXml("final-flush-error.xml", xml);
+
+    let callCount = 0;
+    await expect(
+      streamHealthExport(path, new Date("2020-01-01"), {
+        onRecordBatch: async () => {
+          callCount++;
+          // Simulate slow DB write on mid-stream flushes, then fail on final
+          if (callCount === 1) {
+            await new Promise((resolve) => setTimeout(resolve, 50));
+          } else {
+            throw new Error("Final flush DB error");
+          }
+        },
+        onSleepBatch: async () => {},
+        onWorkoutBatch: async () => {},
+      }),
+    ).rejects.toThrow();
+  }, 30_000);
 });
 
 // ============================================================
