@@ -50,7 +50,10 @@ export default function AddFoodScreen() {
   const { serverUrl, sessionToken } = useAuth();
   const apiUrl = serverUrl ? getTrpcUrl(serverUrl) : "http://localhost:3000/api/trpc";
   const authHeaders = useMemo<Record<string, string>>(
-    () => (sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {}),
+    () =>
+      sessionToken
+        ? { Authorization: `Bearer ${sessionToken}` }
+        : ({} as Record<string, string>),
     [sessionToken],
   );
 
