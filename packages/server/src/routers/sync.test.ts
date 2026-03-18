@@ -169,13 +169,12 @@ describe("syncRouter", () => {
 
       const result = await caller.providers();
 
-      // Peloton is filtered out because it fails validation (not enabled)
+      // Peloton is filtered out because its validate() fails
       expect(result).toHaveLength(4);
       expect(result.find((p: { id: string }) => p.id === "peloton")).toBeUndefined();
 
-      // Wahoo: enabled, needs OAuth, authorized (has token)
+      // Wahoo: needs OAuth, authorized (has token)
       const wahoo = result.find((p: { id: string }) => p.id === "wahoo");
-      expect(wahoo?.enabled).toBe(true);
       expect(wahoo?.needsOAuth).toBe(true);
       expect(wahoo?.needsCustomAuth).toBe(false);
       expect(wahoo?.authorized).toBe(true);

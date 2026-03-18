@@ -32,13 +32,15 @@ Read the provider's `validate()` method to understand what config/env vars it re
 
 ### 3. Check the server environment
 
-SSH into the production server and check if the required env vars are set:
+SSH into the production server and check if the required env vars are set (check presence only — never print values):
 
 ```bash
-ssh dofek 'docker exec dofek-web env | grep -i <PROVIDER_NAME>'
+ssh dofek 'docker exec dofek-web env | grep -i <PROVIDER_NAME> | cut -d= -f1'
 ```
 
-Compare what's set against what `validate()` requires.
+**Warning**: Do not paste env var values into issues, PRs, or chat — they may contain secrets. Check presence only.
+
+Compare the variable names against what `validate()` requires.
 
 ### 4. Check the provider registration
 

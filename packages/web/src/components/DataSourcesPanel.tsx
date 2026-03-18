@@ -80,9 +80,7 @@ export function DataSourcesPanel() {
   const handleSyncAll = useCallback(
     async (fullSync = false) => {
       setSyncAllMode(fullSync ? "full" : "sync");
-      const enabled = (providers.data ?? []).filter(
-        (p) => p.enabled && p.authorized && !p.importOnly,
-      );
+      const enabled = (providers.data ?? []).filter((p) => p.authorized && !p.importOnly);
       const ids = enabled.map((p) => p.id);
       for (const p of enabled) {
         updateState(p.id, { status: "syncing" });
@@ -137,7 +135,7 @@ export function DataSourcesPanel() {
   }, [syncRows]);
 
   const allProviders = providers.data ?? [];
-  const enabledSyncable = allProviders.filter((p) => p.enabled && !p.importOnly);
+  const enabledSyncable = allProviders.filter((p) => !p.importOnly);
 
   // Listen for OAuth completion from the popup via BroadcastChannel + postMessage.
   // Both channels may fire for the same event, so deduplicate with a timestamp.

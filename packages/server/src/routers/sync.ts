@@ -164,7 +164,6 @@ export const syncRouter = router({
         return {
           id: p.id,
           name: p.name,
-          enabled: true,
           needsOAuth,
           needsCustomAuth,
           authorized,
