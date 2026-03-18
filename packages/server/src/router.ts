@@ -9,6 +9,7 @@ import { dailyMetricsRouter } from "./routers/daily-metrics.ts";
 import { durationCurvesRouter } from "./routers/duration-curves.ts";
 import { efficiencyRouter } from "./routers/efficiency.ts";
 import { foodRouter } from "./routers/food.ts";
+import { garminAuthRouter } from "./routers/garmin-auth.ts";
 import { healthKitSyncRouter } from "./routers/health-kit-sync.ts";
 import { healthspanRouter } from "./routers/healthspan.ts";
 import { hikingRouter } from "./routers/hiking.ts";
@@ -20,6 +21,7 @@ import { nutritionAnalyticsRouter } from "./routers/nutrition-analytics.ts";
 import { pmcRouter } from "./routers/pmc.ts";
 import { powerRouter } from "./routers/power.ts";
 import { predictionsRouter } from "./routers/predictions.ts";
+import { providerDetailRouter } from "./routers/provider-detail.ts";
 import { recoveryRouter } from "./routers/recovery.ts";
 import { settingsRouter } from "./routers/settings.ts";
 import { sleepRouter } from "./routers/sleep.ts";
@@ -49,6 +51,7 @@ export const appRouter = router({
   insights: insightsRouter,
   lifeEvents: lifeEventsRouter,
   supplements: supplementsRouter,
+  providerDetail: providerDetailRouter,
   sync: syncRouter,
   training: trainingRouter,
   trends: trendsRouter,
@@ -58,6 +61,7 @@ export const appRouter = router({
   durationCurves: durationCurvesRouter,
   efficiency: efficiencyRouter,
   food: foodRouter,
+  garminAuth: garminAuthRouter,
   healthKitSync: healthKitSyncRouter,
   whoopAuth: whoopAuthRouter,
   strength: strengthRouter,

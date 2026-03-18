@@ -18,6 +18,7 @@
     "echarts": "5.6.0",
     "echarts-for-react": "3.0.6",
     "leaflet": "^1.9.4",
+    "posthog-js": "^1.361.1",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "tailwindcss": "4.2.1",

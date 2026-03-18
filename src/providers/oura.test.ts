@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
+import type { SyncDatabase } from "../db/index.ts";
 import {
   mapOuraActivityType,
   OuraClient,
@@ -74,19 +76,83 @@ vi.mock("../auth/oauth.ts", () => ({
 // Mock DB (chainable insert pattern)
 // ============================================================
 
-function _createMockDb() {
-  const onConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
-  const onConflictDoNothing = vi.fn().mockResolvedValue(undefined);
-  const values = vi.fn().mockReturnValue({ onConflictDoUpdate, onConflictDoNothing });
-  const insert = vi.fn().mockReturnValue({ values });
-  return { insert, values, onConflictDoUpdate, onConflictDoNothing };
+function createMockDb() {
+  const chain = {
+    values: vi.fn(),
+    onConflictDoUpdate: vi.fn(),
+    onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+  };
+
+  // Make each chain method return the chain for fluent chaining
+  for (const fn of Object.values(chain)) {
+    fn.mockReturnValue(chain);
+  }
+
+  const insertFn = vi.fn().mockReturnValue(chain);
+
+  const db: SyncDatabase = {
+    select: vi.fn(),
+    insert: insertFn,
+    delete: vi.fn(),
+    execute: vi.fn(),
+  };
+
+  return Object.assign(db, chain);
+}
+
+const recordSchema = z.record(z.string(), z.unknown());
+const recordArraySchema = z.array(recordSchema);
+
+/**
+ * Finds a mock call argument matching a predicate and returns it as a record.
+ * Uses Zod parsing instead of `as` casts (per lint rules).
+ */
+function findValuesCall(
+  db: ReturnType<typeof createMockDb>,
+  predicate: (val: Record<string, unknown>) => boolean,
+): Record<string, unknown> {
+  for (const c of db.values.mock.calls) {
+    const parsed = recordSchema.safeParse(c[0]);
+    if (parsed.success && predicate(parsed.data)) return parsed.data;
+  }
+  throw new Error("No matching values call found");
+}
+
+/**
+ * Finds a mock call argument matching a predicate, where the argument is an array.
+ * Returns the array of records.
+ */
+function findBatchValuesCall(
+  db: ReturnType<typeof createMockDb>,
+  predicate: (val: Array<Record<string, unknown>>) => boolean,
+): Array<Record<string, unknown>> {
+  for (const c of db.values.mock.calls) {
+    const parsed = recordArraySchema.safeParse(c[0]);
+    if (parsed.success && predicate(parsed.data)) return parsed.data;
+  }
+  throw new Error("No matching batch values call found");
+}
+
+/**
+ * Filters mock call arguments matching a predicate and returns all matching records.
+ */
+function filterValuesCalls(
+  db: ReturnType<typeof createMockDb>,
+  predicate: (val: Record<string, unknown>) => boolean,
+): Array<Record<string, unknown>> {
+  const results: Array<Record<string, unknown>> = [];
+  for (const c of db.values.mock.calls) {
+    const parsed = recordSchema.safeParse(c[0]);
+    if (parsed.success && predicate(parsed.data)) results.push(parsed.data);
+  }
+  return results;
 }
 
 // ============================================================
 // Sample data factories (for sync tests)
 // ============================================================
 
-function _fakeSleepDoc(overrides: Partial<OuraSleepDocument> = {}): OuraSleepDocument {
+function fakeSleepDoc(overrides: Partial<OuraSleepDocument> = {}): OuraSleepDocument {
   return {
     id: "sleep-001",
     day: "2026-03-01",
@@ -109,7 +175,7 @@ function _fakeSleepDoc(overrides: Partial<OuraSleepDocument> = {}): OuraSleepDoc
   };
 }
 
-function _fakeWorkout(overrides: Partial<OuraWorkout> = {}): OuraWorkout {
+function fakeWorkout(overrides: Partial<OuraWorkout> = {}): OuraWorkout {
   return {
     id: "workout-001",
     activity: "running",
@@ -125,7 +191,7 @@ function _fakeWorkout(overrides: Partial<OuraWorkout> = {}): OuraWorkout {
   };
 }
 
-function _fakeSession(overrides: Partial<OuraSession> = {}): OuraSession {
+function fakeSession(overrides: Partial<OuraSession> = {}): OuraSession {
   return {
     id: "session-001",
     day: "2026-03-01",
@@ -137,7 +203,7 @@ function _fakeSession(overrides: Partial<OuraSession> = {}): OuraSession {
   };
 }
 
-function _fakeHeartRate(overrides: Partial<OuraHeartRate> = {}): OuraHeartRate {
+function fakeHeartRate(overrides: Partial<OuraHeartRate> = {}): OuraHeartRate {
   return {
     bpm: 72,
     source: "awake",
@@ -146,7 +212,7 @@ function _fakeHeartRate(overrides: Partial<OuraHeartRate> = {}): OuraHeartRate {
   };
 }
 
-function _fakeReadiness(overrides: Partial<OuraDailyReadiness> = {}): OuraDailyReadiness {
+function fakeReadiness(overrides: Partial<OuraDailyReadiness> = {}): OuraDailyReadiness {
   return {
     id: "readiness-001",
     day: "2026-03-01",
@@ -167,7 +233,7 @@ function _fakeReadiness(overrides: Partial<OuraDailyReadiness> = {}): OuraDailyR
   };
 }
 
-function _fakeActivity(overrides: Partial<OuraDailyActivity> = {}): OuraDailyActivity {
+function fakeActivity(overrides: Partial<OuraDailyActivity> = {}): OuraDailyActivity {
   return {
     id: "activity-001",
     day: "2026-03-01",
@@ -184,7 +250,7 @@ function _fakeActivity(overrides: Partial<OuraDailyActivity> = {}): OuraDailyAct
   };
 }
 
-function _fakeSpO2(overrides: Partial<OuraDailySpO2> = {}): OuraDailySpO2 {
+function fakeSpO2(overrides: Partial<OuraDailySpO2> = {}): OuraDailySpO2 {
   return {
     id: "spo2-001",
     day: "2026-03-01",
@@ -194,7 +260,7 @@ function _fakeSpO2(overrides: Partial<OuraDailySpO2> = {}): OuraDailySpO2 {
   };
 }
 
-function _fakeVO2Max(overrides: Partial<OuraVO2Max> = {}): OuraVO2Max {
+function fakeVO2Max(overrides: Partial<OuraVO2Max> = {}): OuraVO2Max {
   return {
     id: "vo2max-001",
     day: "2026-03-01",
@@ -204,7 +270,7 @@ function _fakeVO2Max(overrides: Partial<OuraVO2Max> = {}): OuraVO2Max {
   };
 }
 
-function _fakeStress(overrides: Partial<OuraDailyStress> = {}): OuraDailyStress {
+function fakeStress(overrides: Partial<OuraDailyStress> = {}): OuraDailyStress {
   return {
     id: "stress-001",
     day: "2026-03-01",
@@ -215,7 +281,7 @@ function _fakeStress(overrides: Partial<OuraDailyStress> = {}): OuraDailyStress 
   };
 }
 
-function _fakeResilience(overrides: Partial<OuraDailyResilience> = {}): OuraDailyResilience {
+function fakeResilience(overrides: Partial<OuraDailyResilience> = {}): OuraDailyResilience {
   return {
     id: "resilience-001",
     day: "2026-03-01",
@@ -229,7 +295,7 @@ function _fakeResilience(overrides: Partial<OuraDailyResilience> = {}): OuraDail
   };
 }
 
-function _fakeCvAge(
+function fakeCvAge(
   overrides: Partial<OuraDailyCardiovascularAge> = {},
 ): OuraDailyCardiovascularAge {
   return {
@@ -239,7 +305,7 @@ function _fakeCvAge(
   };
 }
 
-function _fakeTag(overrides: Partial<OuraTag> = {}): OuraTag {
+function fakeTag(overrides: Partial<OuraTag> = {}): OuraTag {
   return {
     id: "tag-001",
     day: "2026-03-01",
@@ -250,7 +316,7 @@ function _fakeTag(overrides: Partial<OuraTag> = {}): OuraTag {
   };
 }
 
-function _fakeEnhancedTag(overrides: Partial<OuraEnhancedTag> = {}): OuraEnhancedTag {
+function fakeEnhancedTag(overrides: Partial<OuraEnhancedTag> = {}): OuraEnhancedTag {
   return {
     id: "etag-001",
     tag_type_code: "caffeine",
@@ -264,7 +330,7 @@ function _fakeEnhancedTag(overrides: Partial<OuraEnhancedTag> = {}): OuraEnhance
   };
 }
 
-function _fakeRestMode(overrides: Partial<OuraRestModePeriod> = {}): OuraRestModePeriod {
+function fakeRestMode(overrides: Partial<OuraRestModePeriod> = {}): OuraRestModePeriod {
   return {
     id: "rm-001",
     start_day: "2026-03-01",
@@ -275,7 +341,7 @@ function _fakeRestMode(overrides: Partial<OuraRestModePeriod> = {}): OuraRestMod
   };
 }
 
-function _fakeSleepTime(overrides: Partial<OuraSleepTime> = {}): OuraSleepTime {
+function fakeSleepTime(overrides: Partial<OuraSleepTime> = {}): OuraSleepTime {
   return {
     id: "st-001",
     day: "2026-03-01",
@@ -312,7 +378,7 @@ interface MockApiData {
   sleepTime?: OuraSleepTime[];
 }
 
-function _createMockApiFetch(data: MockApiData = {}): typeof globalThis.fetch {
+function createMockApiFetch(data: MockApiData = {}): typeof globalThis.fetch {
   return async (input: RequestInfo | URL): Promise<Response> => {
     const urlStr = input.toString();
 
@@ -859,6 +925,77 @@ describe("OuraProvider.authSetup()", () => {
   });
 });
 
+describe("OuraProvider.getUserIdentity()", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it("returns identity from personal_info API", async () => {
+    process.env.OURA_CLIENT_ID = "test-id";
+    process.env.OURA_CLIENT_SECRET = "test-secret";
+
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return Response.json({
+        id: "abc-123",
+        email: "ring@test.com",
+        age: 30,
+      });
+    };
+
+    const provider = new OuraProvider(mockFetch);
+    const setup = provider.authSetup();
+    if (!setup.getUserIdentity) throw new Error("getUserIdentity not defined");
+    const identity = await setup.getUserIdentity("test-token");
+    expect(identity.providerAccountId).toBe("abc-123");
+    expect(identity.email).toBe("ring@test.com");
+    expect(identity.name).toBeNull();
+  });
+
+  it("handles missing email", async () => {
+    process.env.OURA_CLIENT_ID = "test-id";
+    process.env.OURA_CLIENT_SECRET = "test-secret";
+
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return Response.json({ id: "xyz-456" });
+    };
+
+    const provider = new OuraProvider(mockFetch);
+    const setup = provider.authSetup();
+    if (!setup.getUserIdentity) throw new Error("getUserIdentity not defined");
+    const identity = await setup.getUserIdentity("test-token");
+    expect(identity.providerAccountId).toBe("xyz-456");
+    expect(identity.email).toBeNull();
+    expect(identity.name).toBeNull();
+  });
+
+  it("throws on API error", async () => {
+    process.env.OURA_CLIENT_ID = "test-id";
+    process.env.OURA_CLIENT_SECRET = "test-secret";
+
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response("Forbidden", { status: 403 });
+    };
+
+    const provider = new OuraProvider(mockFetch);
+    const setup = provider.authSetup();
+    if (!setup.getUserIdentity) throw new Error("getUserIdentity not defined");
+    await expect(setup.getUserIdentity("bad-token")).rejects.toThrow(
+      "Oura personal info API error (403)",
+    );
+  });
+
+  it("includes email scope in OAuth config", () => {
+    process.env.OURA_CLIENT_ID = "test-id";
+    process.env.OURA_CLIENT_SECRET = "test-secret";
+
+    const provider = new OuraProvider();
+    const setup = provider.authSetup();
+    expect(setup.oauthConfig.scopes).toContain("email");
+  });
+});
+
 describe("OuraProvider properties", () => {
   it("has correct id and name", () => {
     const provider = new OuraProvider();
@@ -1197,5 +1334,421 @@ describe("mapOuraActivityType", () => {
   it("passes through unknown types lowercase", () => {
     expect(mapOuraActivityType("kickboxing")).toBe("kickboxing");
     expect(mapOuraActivityType("CrossFit")).toBe("crossfit");
+  });
+});
+
+// ============================================================
+// Sync tests
+// ============================================================
+
+describe("OuraProvider.sync()", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  function setupEnv() {
+    process.env.OURA_CLIENT_ID = "test-id";
+    process.env.OURA_CLIENT_SECRET = "test-secret";
+  }
+
+  it("syncs sleep sessions", async () => {
+    setupEnv();
+    const sleep = fakeSleepDoc();
+    const mockFetch = createMockApiFetch({ sleep: [sleep] });
+    const provider = new OuraProvider(mockFetch);
+    const db = createMockDb();
+
+    const result = await provider.sync(db, new Date("2026-03-01"));
+
+    expect(result.provider).toBe("oura");
+    expect(result.errors).toHaveLength(0);
+    // Sleep phase produces 1 record + daily_metrics phase produces 0 (no readiness/activity/etc.)
+    expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
+
+    // Verify values were passed with correct sleep data
+    const sleepValues = findValuesCall(
+      db,
+      (v) => v.externalId === "sleep-001" && v.providerId === "oura",
+    );
+    expect(sleepValues.durationMinutes).toBe(480);
+    expect(sleepValues.deepMinutes).toBe(90);
+    expect(sleepValues.remMinutes).toBe(95);
+    expect(sleepValues.lightMinutes).toBe(240);
+    expect(sleepValues.awakeMinutes).toBe(55);
+    expect(sleepValues.efficiencyPct).toBe(87);
+    expect(sleepValues.isNap).toBe(false);
+    expect(sleepValues.startedAt).toEqual(new Date("2026-02-28T22:30:00+00:00"));
+    expect(sleepValues.endedAt).toEqual(new Date("2026-03-01T06:45:00+00:00"));
+  });
+
+  it("syncs workouts to activity table", async () => {
+    setupEnv();
+    const workout = fakeWorkout();
+    const mockFetch = createMockApiFetch({ workouts: [workout] });
+    const provider = new OuraProvider(mockFetch);
+    const db = createMockDb();
+
+    const result = await provider.sync(db, new Date("2026-03-01"));
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
+
+    // Verify workout values
+    const val = findValuesCall(
+      db,
+      (v) => v.externalId === "workout-001" && v.activityType === "running",
+    );
+    expect(val.providerId).toBe("oura");
+    expect(val.name).toBe("Morning Run");
+    expect(val.startedAt).toEqual(new Date("2026-03-01T08:00:00+00:00"));
+    expect(val.endedAt).toEqual(new Date("2026-03-01T08:30:00+00:00"));
+    expect(val.raw).toEqual(workout);
+  });
+
+  it("syncs sessions to activity table", async () => {
+    setupEnv();
+    const session = fakeSession();
+    const mockFetch = createMockApiFetch({ sessions: [session] });
+    const provider = new OuraProvider(mockFetch);
+    const db = createMockDb();
+
+    const result = await provider.sync(db, new Date("2026-03-01"));
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
+
+    const val = findValuesCall(
+      db,
+      (v) => v.externalId === "session-001" && v.activityType === "meditation",
+    );
+    expect(val.providerId).toBe("oura");
+    expect(val.name).toBe("meditation");
+    expect(val.startedAt).toEqual(new Date("2026-03-01T07:00:00+00:00"));
+    expect(val.endedAt).toEqual(new Date("2026-03-01T07:15:00+00:00"));
+    expect(val.raw).toEqual(session);
+  });
+
+  it("syncs heart rate data", async () => {
+    setupEnv();
+    const hr1 = fakeHeartRate({ bpm: 72, timestamp: "2026-03-01T10:00:00+00:00" });
+    const hr2 = fakeHeartRate({ bpm: 85, timestamp: "2026-03-01T10:05:00+00:00" });
+    const mockFetch = createMockApiFetch({ heartRate: [hr1, hr2] });
+    const provider = new OuraProvider(mockFetch);
+    const db = createMockDb();
+
+    const result = await provider.sync(db, new Date("2026-03-01"));
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBeGreaterThanOrEqual(2);
+
+    // Verify HR values are batched
+    const hrRows = findBatchValuesCall(db, (arr) => arr.length === 2 && arr[0]?.heartRate === 72);
+    expect(hrRows[0]?.heartRate).toBe(72);
+    expect(hrRows[0]?.providerId).toBe("oura");
+    expect(hrRows[0]?.recordedAt).toEqual(new Date("2026-03-01T10:00:00+00:00"));
+    expect(hrRows[1]?.heartRate).toBe(85);
+    expect(hrRows[1]?.recordedAt).toEqual(new Date("2026-03-01T10:05:00+00:00"));
+
+    // HR uses onConflictDoNothing, not onConflictDoUpdate
+    expect(db.onConflictDoNothing).toHaveBeenCalled();
+  });
+
+  it("syncs daily stress", async () => {
+    setupEnv();
+    const stress = fakeStress();
+    const mockFetch = createMockApiFetch({ stress: [stress] });
+    const provider = new OuraProvider(mockFetch);
+    const db = createMockDb();
+
+    const result = await provider.sync(db, new Date("2026-03-01"));
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
+
+    // Stress is batched as an array in the values call
+    const stressRows = findBatchValuesCall(db, (arr) =>
+      arr.some((v) => v.type === "oura_daily_stress"),
+    );
+    const stressRow = stressRows.find((r) => r.type === "oura_daily_stress");
+    expect(stressRow).toBeDefined();
+    expect(stressRow?.providerId).toBe("oura");
+    expect(stressRow?.externalId).toBe("stress-001");
+    expect(stressRow?.value).toBe(5400);
+    expect(stressRow?.valueText).toBe("restored");
+    expect(stressRow?.startDate).toEqual(new Date("2026-03-01T00:00:00"));
+  });
+
+  it("syncs daily resilience", async () => {
+    setupEnv();
+    const resilience = fakeResilience();
+    const mockFetch = createMockApiFetch({ resilience: [resilience] });
+    const provider = new OuraProvider(mockFetch);
+    const db = createMockDb();
+
+    const result = await provider.sync(db, new Date("2026-03-01"));
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
+
+    const val = findValuesCall(
+      db,
+      (v) => v.type === "oura_daily_resilience" && v.externalId === "resilience-001",
+    );
+    expect(val.providerId).toBe("oura");
+    expect(val.valueText).toBe("solid");
+    expect(val.startDate).toEqual(new Date("2026-03-01T00:00:00"));
+  });
+
+  it("syncs cardiovascular age and skips null values", async () => {
+    setupEnv();
+    const cvAgeValid = fakeCvAge({ day: "2026-03-01", vascular_age: 35 });
+    const cvAgeNull = fakeCvAge({ day: "2026-03-02", vascular_age: null });
+    const mockFetch = createMockApiFetch({ cvAge: [cvAgeValid, cvAgeNull] });
+    const provider = new OuraProvider(mockFetch);
+    const db = createMockDb();
+
+    const result = await provider.sync(db, new Date("2026-03-01"));
+
+    expect(result.errors).toHaveLength(0);
+
+    // Should only have one CV age insert (the null one is skipped)
+    const cvAgeValues = filterValuesCalls(db, (v) => v.type === "oura_cardiovascular_age");
+    expect(cvAgeValues).toHaveLength(1);
+    expect(cvAgeValues[0]?.externalId).toBe("oura_cv_age:2026-03-01");
+    expect(cvAgeValues[0]?.value).toBe(35);
+    expect(cvAgeValues[0]?.startDate).toEqual(new Date("2026-03-01T00:00:00"));
+  });
+
+  it("syncs tags", async () => {
+    setupEnv();
+    const tag = fakeTag();
+    const mockFetch = createMockApiFetch({ tags: [tag] });
+    const provider = new OuraProvider(mockFetch);
+    const db = createMockDb();
+
+    const result = await provider.sync(db, new Date("2026-03-01"));
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
+
+    const val = findValuesCall(db, (v) => v.type === "oura_tag" && v.externalId === "tag-001");
+    expect(val.providerId).toBe("oura");
+    expect(val.valueText).toBe("caffeine, morning");
+    expect(val.startDate).toEqual(new Date("2026-03-01T09:00:00+00:00"));
+  });
+
+  it("syncs enhanced tags with custom_name fallback", async () => {
+    setupEnv();
+    // One with custom_name, one without (falls back to tag_type_code)
+    const tagWithCustom = fakeEnhancedTag({
+      id: "etag-custom",
+      custom_name: "My Custom Tag",
+      tag_type_code: "generic",
+    });
+    const tagWithoutCustom = fakeEnhancedTag({
+      id: "etag-code",
+      custom_name: null,
+      tag_type_code: "caffeine",
+    });
+    const mockFetch = createMockApiFetch({
+      enhancedTags: [tagWithCustom, tagWithoutCustom],
+    });
+    const provider = new OuraProvider(mockFetch);
+    const db = createMockDb();
+
+    const result = await provider.sync(db, new Date("2026-03-01"));
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBeGreaterThanOrEqual(2);
+
+    // custom_name takes precedence
+    const customVal = findValuesCall(
+      db,
+      (v) => v.externalId === "etag-custom" && v.type === "oura_enhanced_tag",
+    );
+    expect(customVal.valueText).toBe("My Custom Tag");
+
+    // Falls back to tag_type_code when custom_name is null
+    const codeVal = findValuesCall(
+      db,
+      (v) => v.externalId === "etag-code" && v.type === "oura_enhanced_tag",
+    );
+    expect(codeVal.valueText).toBe("caffeine");
+  });
+
+  it("syncs rest mode periods", async () => {
+    setupEnv();
+    const restMode = fakeRestMode();
+    const mockFetch = createMockApiFetch({ restMode: [restMode] });
+    const provider = new OuraProvider(mockFetch);
+    const db = createMockDb();
+
+    const result = await provider.sync(db, new Date("2026-03-01"));
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
+
+    const val = findValuesCall(db, (v) => v.type === "oura_rest_mode" && v.externalId === "rm-001");
+    expect(val.providerId).toBe("oura");
+    expect(val.startDate).toEqual(new Date("2026-03-01T08:00:00+00:00"));
+    expect(val.endDate).toEqual(new Date("2026-03-02T08:00:00+00:00"));
+  });
+
+  it("syncs sleep time recommendations", async () => {
+    setupEnv();
+    const sleepTime = fakeSleepTime();
+    const mockFetch = createMockApiFetch({ sleepTime: [sleepTime] });
+    const provider = new OuraProvider(mockFetch);
+    const db = createMockDb();
+
+    const result = await provider.sync(db, new Date("2026-03-01"));
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
+
+    const val = findValuesCall(
+      db,
+      (v) => v.type === "oura_sleep_time" && v.externalId === "st-001",
+    );
+    expect(val.providerId).toBe("oura");
+    expect(val.valueText).toBe("follow_optimal_bedtime");
+    expect(val.startDate).toEqual(new Date("2026-03-01T00:00:00"));
+  });
+
+  it("syncs daily metrics from multiple sources", async () => {
+    setupEnv();
+    const readiness = fakeReadiness();
+    const dailyActivity = fakeActivity();
+    const spo2 = fakeSpO2();
+    const vo2max = fakeVO2Max();
+    const stress = fakeStress();
+    const resilience = fakeResilience();
+    const mockFetch = createMockApiFetch({
+      readiness: [readiness],
+      dailyActivity: [dailyActivity],
+      spo2: [spo2],
+      vo2max: [vo2max],
+      stress: [stress],
+      resilience: [resilience],
+    });
+    const provider = new OuraProvider(mockFetch);
+    const db = createMockDb();
+
+    const result = await provider.sync(db, new Date("2026-03-01"));
+
+    expect(result.errors).toHaveLength(0);
+    // daily_metrics phase should produce 1 record (all sources merge by day)
+    expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
+
+    // Find the daily metrics values call
+    const val = findValuesCall(
+      db,
+      (v) => v.date === "2026-03-01" && v.providerId === "oura" && v.steps === 9500,
+    );
+    expect(val.steps).toBe(9500);
+    expect(val.activeEnergyKcal).toBe(450);
+    expect(val.hrv).toBe(78);
+    expect(val.restingHr).toBe(85);
+    expect(val.exerciseMinutes).toBe(75);
+    expect(val.skinTempC).toBe(-0.15);
+    expect(val.spo2Avg).toBe(97.5);
+    expect(val.vo2max).toBe(42.5);
+    expect(val.stressHighMinutes).toBe(90);
+    expect(val.recoveryHighMinutes).toBe(180);
+    expect(val.resilienceLevel).toBe("solid");
+  });
+
+  it("returns error when token resolution fails", async () => {
+    setupEnv();
+    const { loadTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValueOnce(null);
+
+    const mockFetch = createMockApiFetch();
+    const provider = new OuraProvider(mockFetch);
+    const db = createMockDb();
+
+    const result = await provider.sync(db, new Date("2026-03-01"));
+
+    expect(result.provider).toBe("oura");
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain("No OAuth tokens found for Oura");
+
+    // No inserts should have been attempted
+    expect(db.insert).not.toHaveBeenCalled();
+  });
+
+  it("continues syncing when one phase fails", async () => {
+    setupEnv();
+    // Provide sleep data (will succeed) but make workout endpoint fail
+    const sleep = fakeSleepDoc();
+    const tag = fakeTag();
+
+    let callCount = 0;
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
+      const urlStr = input.toString();
+
+      // Sleep time must come before sleep check
+      if (urlStr.includes("/v2/usercollection/sleep_time")) {
+        return Response.json({ data: [], next_token: null });
+      }
+      if (urlStr.includes("/v2/usercollection/sleep")) {
+        return Response.json({ data: [sleep], next_token: null });
+      }
+      if (urlStr.includes("/v2/usercollection/workout")) {
+        // Simulate a server error for workouts
+        return new Response("Internal Server Error", { status: 500 });
+      }
+      // Enhanced tags must come before tags
+      if (urlStr.includes("/v2/usercollection/enhanced_tag")) {
+        return Response.json({ data: [], next_token: null });
+      }
+      if (urlStr.includes("/v2/usercollection/tag")) {
+        callCount++;
+        return Response.json({ data: [tag], next_token: null });
+      }
+      // Return empty for all other endpoints
+      if (urlStr.includes("/v2/usercollection/")) {
+        return Response.json({ data: [], next_token: null });
+      }
+      return new Response("Not found", { status: 404 });
+    };
+
+    const provider = new OuraProvider(mockFetch);
+    const db = createMockDb();
+
+    const result = await provider.sync(db, new Date("2026-03-01"));
+
+    // Should have errors from the workout phase
+    expect(result.errors.length).toBeGreaterThan(0);
+    const workoutError = result.errors.find((e) => e.message.includes("workouts"));
+    expect(workoutError).toBeDefined();
+
+    // But sleep and tags should still have succeeded
+    expect(result.recordsSynced).toBeGreaterThanOrEqual(2);
+
+    // Verify tags endpoint was actually called (phases after workout still ran)
+    expect(callCount).toBe(1);
+  });
+
+  it("handles empty API responses gracefully", async () => {
+    setupEnv();
+    // All endpoints return empty arrays (default behavior of createMockApiFetch)
+    const mockFetch = createMockApiFetch();
+    const provider = new OuraProvider(mockFetch);
+    const db = createMockDb();
+
+    const result = await provider.sync(db, new Date("2026-03-01"));
+
+    expect(result.provider).toBe("oura");
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(0);
+    // No data inserts should happen when all responses are empty
+    // values() should never have been called with actual data
+    expect(db.values).not.toHaveBeenCalled();
   });
 });

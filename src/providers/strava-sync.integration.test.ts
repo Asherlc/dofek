@@ -5,7 +5,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { activity, metricStream } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
-import type { StravaActivity, StravaStreamSet } from "./strava.ts";
+import type { StravaActivity, StravaDetailedActivity, StravaStreamSet } from "./strava.ts";
 import { StravaProvider } from "./strava.ts";
 
 function fakeActivity(overrides: Partial<StravaActivity> = {}): StravaActivity {
@@ -82,6 +82,23 @@ function stravaHandlers(
         expires_in: 21600,
         token_type: "Bearer",
       });
+    }),
+
+    // Detailed activity endpoint (for device_name/source tracking)
+    http.get("https://www.strava.com/api/v3/activities/:activityId", ({ params }) => {
+      if (opts?.rateLimited) {
+        return new HttpResponse("Rate Limit Exceeded", {
+          status: 429,
+          headers: { "X-RateLimit-Limit": "100,1000", "X-RateLimit-Usage": "100,950" },
+        });
+      }
+      const activityId = Number(params.activityId);
+      const act = activities.find((a) => a.id === activityId);
+      if (!act) {
+        return new HttpResponse("Not Found", { status: 404 });
+      }
+      const detail: StravaDetailedActivity = { ...act, device_name: "Garmin Edge 530" };
+      return HttpResponse.json(detail);
     }),
 
     // Streams endpoint
