@@ -5,6 +5,7 @@ import {
   parseStravaActivityList,
   type StravaActivity,
   StravaClient,
+  type StravaDetailedActivity,
   StravaProvider,
   StravaRateLimitError,
   type StravaStreamSet,
@@ -129,6 +130,25 @@ describe("Strava Provider", () => {
       expect(result.endedAt).toEqual(
         new Date(new Date("2026-03-01T08:00:00Z").getTime() + 3700 * 1000),
       );
+      expect(result.sourceName).toBeUndefined();
+    });
+
+    it("extracts sourceName from device_name on detailed activity", () => {
+      const detailed: StravaDetailedActivity = {
+        ...sampleActivity,
+        device_name: "Garmin Edge 530",
+      };
+      const result = parseStravaActivity(detailed);
+      expect(result.sourceName).toBe("Garmin Edge 530");
+    });
+
+    it("extracts sourceName for iPhone recordings", () => {
+      const detailed: StravaDetailedActivity = {
+        ...sampleActivity,
+        device_name: "iPhone",
+      };
+      const result = parseStravaActivity(detailed);
+      expect(result.sourceName).toBe("iPhone");
     });
 
     it("handles missing optional fields", () => {
@@ -152,6 +172,7 @@ describe("Strava Provider", () => {
       expect(result.externalId).toBe("99999");
       expect(result.activityType).toBe("running");
       expect(result.startedAt).toEqual(new Date("2026-03-05T14:00:00Z"));
+      expect(result.sourceName).toBeUndefined();
     });
 
     it("uses sport_type for type mapping", () => {
@@ -426,6 +447,34 @@ describe("StravaProvider.authSetup()", () => {
     delete process.env.STRAVA_CLIENT_SECRET;
     const provider = new StravaProvider();
     expect(() => provider.authSetup()).toThrow("STRAVA_CLIENT_ID");
+  });
+});
+
+describe("StravaClient.getActivity", () => {
+  it("fetches the detailed activity by ID", async () => {
+    const mockFetch: typeof globalThis.fetch = async (url): Promise<Response> => {
+      expect(String(url)).toContain("activities/12345678");
+      return Response.json({
+        ...sampleActivity,
+        device_name: "Garmin Edge 530",
+        description: "Great ride",
+      });
+    };
+
+    const client = new StravaClient("token", mockFetch);
+    const result = await client.getActivity(12345678);
+    expect(result.device_name).toBe("Garmin Edge 530");
+    expect(result.id).toBe(12345678);
+  });
+
+  it("returns undefined device_name when not present", async () => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return Response.json(sampleActivity);
+    };
+
+    const client = new StravaClient("token", mockFetch);
+    const result = await client.getActivity(12345678);
+    expect(result.device_name).toBeUndefined();
   });
 });
 

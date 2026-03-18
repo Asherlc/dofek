@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri, refreshAccessToken } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
@@ -43,6 +44,13 @@ export interface StravaActivity {
   manual: boolean;
   gear_id?: string;
   device_watts?: boolean;
+  /** Recording device name — only present on detailed activity responses. */
+  device_name?: string;
+}
+
+/** Detailed activity response from GET /activities/{id}. */
+export interface StravaDetailedActivity extends StravaActivity {
+  device_name?: string;
 }
 
 export interface StravaStream {
@@ -128,6 +136,7 @@ export interface ParsedStravaActivity {
   name: string;
   startedAt: Date;
   endedAt: Date;
+  sourceName: string | undefined;
 }
 
 export function parseStravaActivity(act: StravaActivity): ParsedStravaActivity {
@@ -138,6 +147,7 @@ export function parseStravaActivity(act: StravaActivity): ParsedStravaActivity {
     name: act.name,
     startedAt,
     endedAt: new Date(startedAt.getTime() + act.elapsed_time * 1000),
+    sourceName: act.device_name,
   };
 }
 
@@ -274,6 +284,10 @@ export class StravaClient {
     }
 
     return response.json();
+  }
+
+  async getActivity(activityId: number): Promise<StravaDetailedActivity> {
+    return this.get<StravaDetailedActivity>(`activities/${activityId}`);
   }
 
   async getActivities(after: number, page = 1, perPage = 30): Promise<StravaActivity[]> {
@@ -455,6 +469,28 @@ export class StravaProvider implements Provider {
 
       for (const act of parsed.activities) {
         try {
+          // Fetch detailed activity to get device_name for source tracking
+          let sourceName: string | undefined = act.sourceName;
+          try {
+            const detail = await client.getActivity(Number(act.externalId));
+            sourceName = detail.device_name;
+          } catch (detailErr) {
+            if (detailErr instanceof StravaRateLimitError) {
+              errors.push({
+                message:
+                  "Strava API rate limit hit while fetching activity detail — stopping sync.",
+                cause: detailErr,
+              });
+              rateLimited = true;
+              break;
+            }
+            errors.push({
+              message: `Detail for activity ${act.externalId}: ${detailErr instanceof Error ? detailErr.message : String(detailErr)}`,
+              externalId: act.externalId,
+              cause: detailErr,
+            });
+          }
+
           const [row] = await db
             .insert(activity)
             .values({
@@ -464,6 +500,7 @@ export class StravaProvider implements Provider {
               startedAt: act.startedAt,
               endedAt: act.endedAt,
               name: act.name,
+              sourceName,
               raw: rawActivities.find((r) => String(r.id) === act.externalId),
             })
             .onConflictDoUpdate({
@@ -473,6 +510,7 @@ export class StravaProvider implements Provider {
                 startedAt: act.startedAt,
                 endedAt: act.endedAt,
                 name: act.name,
+                sourceName: sql`coalesce(excluded.source_name, ${activity.sourceName})`,
                 raw: rawActivities.find((r) => String(r.id) === act.externalId),
               },
             })

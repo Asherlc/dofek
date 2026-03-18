@@ -220,8 +220,6 @@ jobs:
             | { grep -v 'drizzle/' || true; } \
             | { grep -v 'scripts/' || true; } \
             | { grep -v 'packages/ios/' || true; } \
-            | { grep -v 'src/db/schema\.ts$' || true; } \
-            | { grep -v 'db-insertion\.ts$' || true; } \
             | tr '\n' ',' \
             | sed 's/,$//')
           echo "files=$FILES" >> "$GITHUB_OUTPUT"
