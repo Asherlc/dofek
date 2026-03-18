@@ -26,6 +26,10 @@ services:
     command: web
     restart: unless-stopped
     env_file: .env
+    # Add docker group so node user (uid 1000) can access /var/run/docker.sock
+    # DOCKER_GID should be set via .env (run `getent group docker | cut -d: -f3` to find host docker GID)
+    group_add:
+      - "${DOCKER_GID:-988}"
     environment:
       - DATABASE_URL=postgres://health:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/health
       - REDIS_URL=redis://redis:6379
