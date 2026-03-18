@@ -417,7 +417,7 @@ export default function AddFoodScreen() {
               <Text style={styles.backButtonText}>Back</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.saveButton, isSaving && styles.saveButtonDisabled]}
+              style={[styles.saveButton, { flex: 2 }, isSaving && styles.saveButtonDisabled]}
               onPress={handleSave}
               activeOpacity={0.8}
               disabled={isSaving}
@@ -514,7 +514,7 @@ export default function AddFoodScreen() {
                   )}
                   {result.proteinG != null && result.carbsG != null && result.fatG != null && (
                     <Text style={styles.resultMacros}>
-                      P {result.proteinG}g · C {result.carbsG}g · F {result.fatG}g
+                      Protein {result.proteinG}g · Carbs {result.carbsG}g · Fat {result.fatG}g
                     </Text>
                   )}
                   <Text style={styles.resultSource}>
