@@ -176,7 +176,6 @@ export class ZwiftProvider implements Provider {
                           cadence: s.cadence,
                           speed: s.speed,
                           altitude: s.altitude,
-                          distance: s.distance,
                           lat: s.lat,
                           lng: s.lng,
                         })),

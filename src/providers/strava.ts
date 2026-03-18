@@ -228,7 +228,6 @@ export function stravaStreamsToMetricStream(
       lat: latlng?.[0],
       lng: latlng?.[1],
       altitude: altitudes?.[i],
-      distance: distances?.[i],
       temperature: temps?.[i],
       grade: grades?.[i],
       raw,

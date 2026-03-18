@@ -34,7 +34,6 @@ export interface StreamPoint {
   altitude: number | null;
   lat: number | null;
   lng: number | null;
-  distance: number | null;
 }
 
 export interface ActivityHrZone {
@@ -167,7 +166,6 @@ export const activityRouter = router({
         altitude: number | null;
         lat: number | null;
         lng: number | null;
-        distance: number | null;
       }>(
         sql`WITH numbered AS (
               SELECT ms.*, ROW_NUMBER() OVER (ORDER BY ms.recorded_at) AS rn,
@@ -177,7 +175,7 @@ export const activityRouter = router({
               WHERE ms.activity_id = ${input.id}
             )
             SELECT recorded_at::text AS recorded_at,
-                   heart_rate, power, speed, cadence, altitude, lat, lng, distance
+                   heart_rate, power, speed, cadence, altitude, lat, lng
             FROM numbered
             WHERE rn % GREATEST(1, total / ${input.maxPoints}) = 0
             ORDER BY recorded_at`,
@@ -192,7 +190,6 @@ export const activityRouter = router({
         altitude: row.altitude != null ? Number(row.altitude) : null,
         lat: row.lat != null ? Number(row.lat) : null,
         lng: row.lng != null ? Number(row.lng) : null,
-        distance: row.distance != null ? Number(row.distance) : null,
       }));
     }),
 

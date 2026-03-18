@@ -884,7 +884,6 @@ export class GarminProvider implements Provider {
               altitude: sample.directElevation !== null ? sample.directElevation : undefined,
               lat: sample.directLatitude !== null ? sample.directLatitude : undefined,
               lng: sample.directLongitude !== null ? sample.directLongitude : undefined,
-              distance: sample.directMovingDistance ?? sample.sumDistance ?? undefined,
               temperature:
                 sample.directAirTemperature !== null ? sample.directAirTemperature : undefined,
             })
