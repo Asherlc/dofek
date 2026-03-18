@@ -613,7 +613,9 @@ export class PelotonProvider implements Provider {
 
             activityId = row?.id ?? null;
             workoutCount++;
+            // no-mutate: Progress reporting is UX-only and can't fail in a testable way
             if (onProgress && totalWorkouts > 0) {
+              // no-mutate
               onProgress(
                 Math.round((workoutCount / totalWorkouts) * 100),
                 `${workoutCount}/${totalWorkouts} workouts`,

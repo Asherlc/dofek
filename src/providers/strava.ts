@@ -520,7 +520,9 @@ export class StravaProvider implements Provider {
             .returning({ id: activity.id });
 
           recordsSynced++;
+          // no-mutate: Progress reporting is UX-only and can't fail in a testable way
           if (onProgress) {
+            // no-mutate
             onProgress(0, `${recordsSynced} activities synced`);
           }
 

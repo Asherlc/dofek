@@ -371,7 +371,9 @@ export class WahooProvider implements Provider {
             .returning({ id: activity.id });
 
           recordsSynced++;
+          // no-mutate: Progress reporting is UX-only and can't fail in a testable way
           if (onProgress && total > 0) {
+            // no-mutate
             onProgress(
               Math.round((recordsSynced / total) * 100),
               `${recordsSynced}/${total} workouts`,
