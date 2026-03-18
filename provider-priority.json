@@ -100,7 +100,21 @@
       "dailyActivity": 40
     },
     "strava": {
-      "activity": 40
+      "activity": 40,
+      "devices": {
+        "Garmin Edge%": { "activity": 10 },
+        "Wahoo ELEMNT%": { "activity": 10 },
+        "Fenix%": { "activity": 12 },
+        "Forerunner%": { "activity": 15 },
+        "iPhone%": { "activity": 50 },
+        "Apple Watch%": { "activity": 30 }
+      }
+    },
+    "ride-with-gps": {
+      "activity": 40,
+      "devices": {
+        "%iphone%": { "activity": 50 }
+      }
     },
     "intervals": {
       "activity": 40

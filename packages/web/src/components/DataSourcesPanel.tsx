@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
@@ -477,7 +478,7 @@ function SyncProviderCard({
         </div>
       )}
 
-      {/* Recent sync dots + full sync button */}
+      {/* Recent sync dots + full sync button + details link */}
       <div className="flex items-center justify-between mt-2 pt-2 border-t border-zinc-800/50">
         <div className="flex items-center gap-1">
           {recentLogs.map((l) => (
@@ -493,15 +494,24 @@ function SyncProviderCard({
             <span className="text-xs text-zinc-600">No sync history</span>
           )}
         </div>
-        {!needsAuth && state.status !== "syncing" && (
-          <button
-            type="button"
-            onClick={onFullSync}
+        <div className="flex items-center gap-3">
+          {!needsAuth && state.status !== "syncing" && (
+            <button
+              type="button"
+              onClick={onFullSync}
+              className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+            >
+              Full sync
+            </button>
+          )}
+          <Link
+            to="/providers/$id"
+            params={{ id: provider.id }}
             className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
           >
-            Full sync
-          </button>
-        )}
+            Details
+          </Link>
+        </div>
       </div>
     </div>
   );
@@ -1080,9 +1090,9 @@ function FileImportZone({
         </div>
       )}
 
-      {/* Recent sync dots */}
-      {recentLogs.length > 0 && (
-        <div className="flex items-center gap-1 mt-2 pt-2 border-t border-zinc-800/50">
+      {/* Recent sync dots + details link */}
+      <div className="flex items-center justify-between mt-2 pt-2 border-t border-zinc-800/50">
+        <div className="flex items-center gap-1">
           {recentLogs.map((l) => (
             <span
               key={`${l.syncedAt}-${l.status}-${l.recordCount}-${l.durationMs}`}
@@ -1093,7 +1103,16 @@ function FileImportZone({
             />
           ))}
         </div>
-      )}
+        {providerId && (
+          <Link
+            to="/providers/$id"
+            params={{ id: providerId }}
+            className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+          >
+            Details
+          </Link>
+        )}
+      </div>
     </div>
   );
 }

@@ -21,6 +21,7 @@ import { nutritionAnalyticsRouter } from "./routers/nutrition-analytics.ts";
 import { pmcRouter } from "./routers/pmc.ts";
 import { powerRouter } from "./routers/power.ts";
 import { predictionsRouter } from "./routers/predictions.ts";
+import { providerDetailRouter } from "./routers/provider-detail.ts";
 import { recoveryRouter } from "./routers/recovery.ts";
 import { settingsRouter } from "./routers/settings.ts";
 import { sleepRouter } from "./routers/sleep.ts";
@@ -50,6 +51,7 @@ export const appRouter = router({
   insights: insightsRouter,
   lifeEvents: lifeEventsRouter,
   supplements: supplementsRouter,
+  providerDetail: providerDetailRouter,
   sync: syncRouter,
   training: trainingRouter,
   trends: trendsRouter,

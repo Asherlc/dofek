@@ -61,6 +61,18 @@ describe("parseTripToActivity", () => {
     expect(result.endedAt).toEqual(new Date("2024-08-10T09:30:00Z")); // +7200s
     expect(result.notes).toBe("Nice loop");
     expect(result.raw).toBe(baseTrip);
+    expect(result.sourceName).toBeUndefined();
+  });
+
+  it("extracts sourceName from source field", () => {
+    const trip = { ...baseTrip, source: "ridewithgps_iphone" };
+    const result = parseTripToActivity(trip);
+    expect(result.sourceName).toBe("ridewithgps_iphone");
+  });
+
+  it("handles missing source field", () => {
+    const result = parseTripToActivity(baseTrip);
+    expect(result.sourceName).toBeUndefined();
   });
 
   it("falls back to created_at when departed_at is null", () => {
