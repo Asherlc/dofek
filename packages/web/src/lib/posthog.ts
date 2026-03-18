@@ -10,6 +10,6 @@ export function initPostHog() {
   });
 }
 
-export function capturePageView(path: string) {
-  posthog.capture("$pageview", { $current_url: path });
+export function capturePageView() {
+  posthog.capture("$pageview");
 }

@@ -12,8 +12,8 @@ initPostHog();
 
 const router = createRouter({ routeTree });
 
-router.subscribe("onResolved", ({ toLocation }) => {
-  capturePageView(toLocation.href);
+router.subscribe("onResolved", () => {
+  capturePageView();
 });
 
 declare module "@tanstack/react-router" {
