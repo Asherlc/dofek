@@ -134,6 +134,18 @@ describe("trainingRouter", () => {
       const result = await caller.weeklyVolume({ days: 90 });
       expect(result).toEqual(rows);
     });
+
+    it("coerces string hours from Postgres numeric type", async () => {
+      // Postgres ROUND(...)::numeric returns strings via the pg driver
+      const rows = [{ week: "2024-01-15", activity_type: "cycling", count: 3, hours: "5.50" }];
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue(rows) },
+        userId: "user-1",
+      });
+      const result = await caller.weeklyVolume({ days: 90 });
+      expect(result[0]?.hours).toBe(5.5);
+      expect(typeof result[0]?.hours).toBe("number");
+    });
   });
 
   describe("hrZones", () => {
