@@ -439,16 +439,51 @@ describe("GarminProvider.validate()", () => {
     process.env = { ...originalEnv };
   });
 
-  it("always returns null (auth is per-user, checked at sync time)", () => {
+  it("returns error when neither GARMIN_CLIENT_ID nor credentials are set", () => {
     delete process.env.GARMIN_CLIENT_ID;
     delete process.env.GARMIN_USERNAME;
     delete process.env.GARMIN_PASSWORD;
     const provider = new GarminProvider();
-    expect(provider.validate()).toBeNull();
+    expect(provider.validate()).toContain("GARMIN_CLIENT_ID");
   });
 
   it("returns null when GARMIN_CLIENT_ID is set", () => {
     process.env.GARMIN_CLIENT_ID = "test-id";
+    const provider = new GarminProvider();
+    expect(provider.validate()).toBeNull();
+  });
+
+  it("returns null when GARMIN_USERNAME and GARMIN_PASSWORD are set", () => {
+    delete process.env.GARMIN_CLIENT_ID;
+    process.env.GARMIN_USERNAME = "user@test.com";
+    process.env.GARMIN_PASSWORD = "pass123";
+    const provider = new GarminProvider();
+    expect(provider.validate()).toBeNull();
+  });
+
+  it("returns error when only GARMIN_USERNAME is set (no password)", () => {
+    delete process.env.GARMIN_CLIENT_ID;
+    process.env.GARMIN_USERNAME = "user@test.com";
+    delete process.env.GARMIN_PASSWORD;
+    const provider = new GarminProvider();
+    const result = provider.validate();
+    expect(result).not.toBeNull();
+    expect(result).toContain("GARMIN_CLIENT_ID");
+  });
+
+  it("returns error when only GARMIN_PASSWORD is set (no username)", () => {
+    delete process.env.GARMIN_CLIENT_ID;
+    delete process.env.GARMIN_USERNAME;
+    process.env.GARMIN_PASSWORD = "secret123";
+    const provider = new GarminProvider();
+    const result = provider.validate();
+    expect(result).not.toBeNull();
+  });
+
+  it("returns null when both official API and credentials are set", () => {
+    process.env.GARMIN_CLIENT_ID = "test-id";
+    process.env.GARMIN_USERNAME = "user@test.com";
+    process.env.GARMIN_PASSWORD = "pass123";
     const provider = new GarminProvider();
     expect(provider.validate()).toBeNull();
   });
@@ -461,21 +496,58 @@ describe("GarminProvider.authSetup()", () => {
     process.env = { ...originalEnv };
   });
 
-  it("returns OAuth config when GARMIN_CLIENT_ID is set", () => {
+  it("returns auth setup with OAuth config", () => {
     process.env.GARMIN_CLIENT_ID = "test-id";
     process.env.GARMIN_CLIENT_SECRET = "test-secret";
     const provider = new GarminProvider();
     const setup = provider.authSetup();
-    expect(setup).toBeDefined();
-    expect(setup?.oauthConfig.clientId).toBe("test-id");
-    expect(setup?.exchangeCode).toBeTypeOf("function");
-    expect(setup?.apiBaseUrl).toBe("https://apis.garmin.com/wellness-api/rest");
+    expect(setup.oauthConfig.clientId).toBe("test-id");
+    expect(setup.exchangeCode).toBeTypeOf("function");
+    expect(setup.apiBaseUrl).toContain("garmin.com");
   });
 
-  it("throws when GARMIN_CLIENT_ID is missing (custom auth mode)", () => {
+  it("returns setup with automatedLogin when GARMIN_CLIENT_ID is missing", () => {
     delete process.env.GARMIN_CLIENT_ID;
     const provider = new GarminProvider();
-    expect(() => provider.authSetup()).toThrow("GARMIN_CLIENT_ID is required");
+    const setup = provider.authSetup();
+    expect(setup.automatedLogin).toBeTypeOf("function");
+    expect(() => {
+      void setup.exchangeCode("code").catch(() => {});
+    }).not.toThrow();
+  });
+
+  it("exchangeCode rejects when GARMIN_CLIENT_ID is not set", async () => {
+    delete process.env.GARMIN_CLIENT_ID;
+    const provider = new GarminProvider();
+    const setup = provider.authSetup();
+    await expect(setup.exchangeCode("some-code", "some-verifier")).rejects.toThrow(
+      "GARMIN_CLIENT_ID is required for OAuth flow",
+    );
+  });
+
+  it("uses dummy OAuth config when GARMIN_CLIENT_ID is missing", () => {
+    delete process.env.GARMIN_CLIENT_ID;
+    const provider = new GarminProvider();
+    const setup = provider.authSetup();
+    expect(setup.oauthConfig.clientId).toBe("garmin-connect-internal");
+    expect(setup.oauthConfig.authorizeUrl).toBe("");
+    expect(setup.oauthConfig.tokenUrl).toBe("");
+    expect(setup.oauthConfig.redirectUri).toBe("");
+    expect(setup.oauthConfig.scopes).toEqual([]);
+  });
+
+  it("sets apiBaseUrl to Garmin Health API base", () => {
+    process.env.GARMIN_CLIENT_ID = "test-id";
+    const provider = new GarminProvider();
+    const setup = provider.authSetup();
+    expect(setup.apiBaseUrl).toBe("https://apis.garmin.com/wellness-api/rest");
+  });
+
+  it("always provides automatedLogin function", () => {
+    process.env.GARMIN_CLIENT_ID = "test-id";
+    const provider = new GarminProvider();
+    const setup = provider.authSetup();
+    expect(setup.automatedLogin).toBeTypeOf("function");
   });
 });
 
