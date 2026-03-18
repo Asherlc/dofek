@@ -109,6 +109,7 @@ export async function upsertMetricStreamBatch(
     const base = {
       providerId,
       recordedAt: record.startDate,
+      sourceName: record.sourceName,
     };
 
     switch (field) {
@@ -160,6 +161,7 @@ export async function upsertBodyMeasurementBatch(
       providerId,
       externalId,
       recordedAt: first.startDate,
+      sourceName: first.sourceName,
     };
 
     for (const r of group) {
@@ -214,6 +216,7 @@ export async function upsertBodyMeasurementBatch(
           diastolicBp: sql`coalesce(excluded.diastolic_bp, ${bodyMeasurement.diastolicBp})`,
           heartPulse: sql`coalesce(excluded.heart_pulse, ${bodyMeasurement.heartPulse})`,
           temperatureC: sql`coalesce(excluded.temperature_c, ${bodyMeasurement.temperatureC})`,
+          sourceName: sql`coalesce(excluded.source_name, ${bodyMeasurement.sourceName})`,
         },
       });
   }
@@ -461,6 +464,7 @@ export async function upsertWorkoutBatch(
       startedAt: w.startDate,
       endedAt: w.endDate,
       name: w.activityType,
+      sourceName: w.sourceName,
     }));
 
     const returned = await db
@@ -471,6 +475,7 @@ export async function upsertWorkoutBatch(
         set: {
           activityType: sql`excluded.activity_type`,
           endedAt: sql`excluded.ended_at`,
+          sourceName: sql`coalesce(excluded.source_name, ${activity.sourceName})`,
         },
       })
       .returning({ id: activity.id });
@@ -499,6 +504,7 @@ export async function upsertWorkoutBatch(
           speed: loc.speed,
           gpsAccuracy:
             loc.horizontalAccuracy != null ? Math.round(loc.horizontalAccuracy) : undefined,
+          sourceName: workout.sourceName,
         });
       }
     }
@@ -581,6 +587,7 @@ export async function upsertSleepBatch(
         ? Math.round((s.totalSleepMinutes / s.bed.durationMinutes) * 100) / 100
         : undefined,
     isNap: s.isNap,
+    sourceName: s.bed.sourceName,
   }));
 
   for (let i = 0; i < insertRows.length; i += 500) {
@@ -597,6 +604,7 @@ export async function upsertSleepBatch(
           lightMinutes: sql`excluded.light_minutes`,
           awakeMinutes: sql`excluded.awake_minutes`,
           isNap: sql`excluded.is_nap`,
+          sourceName: sql`coalesce(excluded.source_name, ${sleepSession.sourceName})`,
         },
       });
   }

@@ -203,8 +203,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: reports/stryker-incremental.json
-          key: stryker-${{ github.head_ref }}
+          key: stryker-${{ github.head_ref }}-${{ github.sha }}
           restore-keys: |
+            stryker-${{ github.head_ref }}-
             stryker-main
       - name: Get changed files
         id: changed
@@ -219,6 +220,8 @@ jobs:
             | { grep -v 'drizzle/' || true; } \
             | { grep -v 'scripts/' || true; } \
             | { grep -v 'packages/ios/' || true; } \
+            | { grep -v 'src/db/schema\.ts$' || true; } \
+            | { grep -v 'db-insertion\.ts$' || true; } \
             | tr '\n' ',' \
             | sed 's/,$//')
           echo "files=$FILES" >> "$GITHUB_OUTPUT"

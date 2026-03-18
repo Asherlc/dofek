@@ -34,6 +34,15 @@ function makeCaller(rows: Record<string, unknown>[] = []) {
 
 describe("cyclingAdvancedRouter", () => {
   describe("rampRate", () => {
+    // Pin system clock so week-boundary grouping is deterministic across environments
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-03-11T12:00:00Z")); // Wednesday mid-week
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
     it("returns empty when no data", async () => {
       const caller = makeCaller([]);
       const result = await caller.rampRate({ days: 90 });

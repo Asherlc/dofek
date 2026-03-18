@@ -1,0 +1,109 @@
+{
+  "providers": {
+    "wahoo": {
+      "activity": 10
+    },
+    "oura": {
+      "activity": 80,
+      "sleep": 10,
+      "recovery": 10,
+      "dailyActivity": 80
+    },
+    "withings": {
+      "activity": 15,
+      "body": 10
+    },
+    "peloton": {
+      "activity": 20
+    },
+    "fatsecret": {
+      "activity": 25
+    },
+    "whoop": {
+      "activity": 30,
+      "sleep": 20,
+      "recovery": 15,
+      "dailyActivity": 80
+    },
+    "apple_health": {
+      "activity": 90,
+      "sleep": 25,
+      "body": 80,
+      "recovery": 25,
+      "dailyActivity": 15,
+      "devices": {
+        "Apple Watch%": {
+          "activity": 30,
+          "sleep": 25,
+          "recovery": 20,
+          "dailyActivity": 15
+        },
+        "Wahoo TICKR%": {
+          "activity": 5,
+          "recovery": 5
+        },
+        "Polar H%": {
+          "activity": 5,
+          "recovery": 5
+        },
+        "Withings%": {
+          "body": 10
+        }
+      }
+    },
+    "garmin": {
+      "activity": 15,
+      "sleep": 40,
+      "recovery": 30,
+      "dailyActivity": 20,
+      "devices": {
+        "Edge%": {
+          "activity": 10
+        },
+        "Forerunner%": {
+          "activity": 15
+        },
+        "Fenix%": {
+          "activity": 12
+        },
+        "Venu%": {
+          "activity": 25
+        }
+      }
+    },
+    "fitbit": {
+      "activity": 50,
+      "sleep": 30,
+      "recovery": 40,
+      "dailyActivity": 30
+    },
+    "polar": {
+      "activity": 15,
+      "sleep": 50,
+      "recovery": 30,
+      "dailyActivity": 50
+    },
+    "eight_sleep": {
+      "activity": 100,
+      "sleep": 50
+    },
+    "suunto": {
+      "activity": 20,
+      "sleep": 50,
+      "recovery": 40,
+      "dailyActivity": 40
+    },
+    "coros": {
+      "activity": 20,
+      "sleep": 50,
+      "recovery": 40,
+      "dailyActivity": 40
+    },
+    "strava": {
+      "activity": 40
+    },
+    "intervals": {
+      "activity": 40
+    }
+  }
+}

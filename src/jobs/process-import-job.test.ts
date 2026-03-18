@@ -18,6 +18,13 @@ vi.mock("../db/dedup.ts", () => ({
   refreshDedupViews: (...args: unknown[]) => mockRefreshDedupViews(...args),
 }));
 
+const mockLoadPriorityConfig = vi.fn().mockReturnValue(null);
+const mockSyncProviderPriorities = vi.fn().mockResolvedValue(undefined);
+vi.mock("../db/provider-priority.ts", () => ({
+  loadProviderPriorityConfig: (...args: unknown[]) => mockLoadPriorityConfig(...args),
+  syncProviderPriorities: (...args: unknown[]) => mockSyncProviderPriorities(...args),
+}));
+
 const mockImportAppleHealthFile = vi.fn().mockResolvedValue({
   recordsSynced: 42,
   errors: [],
@@ -94,6 +101,8 @@ describe("processImportJob", () => {
     mockImportAppleHealthFile.mockResolvedValue({ recordsSynced: 42, errors: [] });
     mockImportStrongCsv.mockResolvedValue({ recordsSynced: 10, errors: [] });
     mockImportCronometerCsv.mockResolvedValue({ recordsSynced: 7, errors: [] });
+    mockLoadPriorityConfig.mockReturnValue(null);
+    mockSyncProviderPriorities.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -354,6 +363,181 @@ describe("processImportJob", () => {
       expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("Failed to update max HR"));
       expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("Failed to refresh views"));
       consoleSpy.mockRestore();
+    });
+
+    it("syncs provider priorities before refreshing views", async () => {
+      const fakeConfig = { providers: { wahoo: { activity: 10 } } };
+      mockLoadPriorityConfig.mockReturnValue(fakeConfig);
+
+      const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
+      await runImportJob(job, mockDb);
+
+      expect(mockLoadPriorityConfig).toHaveBeenCalled();
+      expect(mockSyncProviderPriorities).toHaveBeenCalledWith(mockDb, fakeConfig);
+    });
+
+    it("skips priority sync when config is null", async () => {
+      mockLoadPriorityConfig.mockReturnValue(null);
+
+      const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
+      await runImportJob(job, mockDb);
+
+      expect(mockLoadPriorityConfig).toHaveBeenCalled();
+      expect(mockSyncProviderPriorities).not.toHaveBeenCalled();
+    });
+
+    it("handles priority sync errors gracefully", async () => {
+      mockLoadPriorityConfig.mockImplementation(() => {
+        throw new Error("config read failed");
+      });
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
+      await runImportJob(job, mockDb);
+
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("provider priorities"));
+      consoleSpy.mockRestore();
+    });
+  });
+
+  describe("duration tracking", () => {
+    it("computes correct durationMs for apple-health (kills Date.now arithmetic mutations)", async () => {
+      let callCount = 0;
+      const dateNowSpy = vi.spyOn(Date, "now").mockImplementation(() => {
+        // First call (importStart) = 10000, subsequent calls = 10500
+        return callCount++ === 0 ? 10000 : 10500;
+      });
+
+      const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
+      await runImportJob(job, mockDb);
+
+      const logCall = mockLogSync.mock.calls[0]?.[1];
+      // durationMs = 10500 - 10000 = 500 (not 20500 if + was used)
+      expect(logCall.durationMs).toBeLessThan(5000);
+      expect(logCall.durationMs).toBeGreaterThanOrEqual(0);
+
+      dateNowSpy.mockRestore();
+    });
+
+    it("computes correct duration string for apple-health log message", async () => {
+      let callCount = 0;
+      const dateNowSpy = vi.spyOn(Date, "now").mockImplementation(() => {
+        return callCount++ === 0 ? 10000 : 12000;
+      });
+      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+      const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
+      await runImportJob(job, mockDb);
+
+      // Duration = (12000 - 10000) / 1000 = 2.0s (not 2000000.0 if * was used)
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("2.0s"));
+
+      dateNowSpy.mockRestore();
+      consoleSpy.mockRestore();
+    });
+
+    it("computes correct duration for strong-csv import", async () => {
+      let callCount = 0;
+      const dateNowSpy = vi.spyOn(Date, "now").mockImplementation(() => {
+        return callCount++ === 0 ? 10000 : 13000;
+      });
+      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+      await writeFile(tempFilePath, "csv data");
+      const job = createMockJob({ filePath: tempFilePath, importType: "strong-csv" });
+      await runImportJob(job, mockDb);
+
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("3.0s"));
+      const logCall = mockLogSync.mock.calls[0]?.[1];
+      expect(logCall.durationMs).toBeLessThan(5000);
+
+      dateNowSpy.mockRestore();
+      consoleSpy.mockRestore();
+    });
+
+    it("computes correct duration for cronometer-csv import", async () => {
+      let callCount = 0;
+      const dateNowSpy = vi.spyOn(Date, "now").mockImplementation(() => {
+        return callCount++ === 0 ? 10000 : 11500;
+      });
+      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+      await writeFile(tempFilePath, "csv data");
+      const job = createMockJob({ filePath: tempFilePath, importType: "cronometer-csv" });
+      await runImportJob(job, mockDb);
+
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("1.5s"));
+      const logCall = mockLogSync.mock.calls[0]?.[1];
+      expect(logCall.durationMs).toBeLessThan(5000);
+
+      dateNowSpy.mockRestore();
+      consoleSpy.mockRestore();
+    });
+  });
+
+  describe("handles undefined errors gracefully", () => {
+    it("apple-health import with undefined errors logs success", async () => {
+      mockImportAppleHealthFile.mockResolvedValue({
+        recordsSynced: 5,
+        errors: undefined,
+      });
+
+      const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
+      await runImportJob(job, mockDb);
+
+      expect(mockLogSync).toHaveBeenCalledWith(
+        mockDb,
+        expect.objectContaining({ status: "success", recordCount: 5 }),
+      );
+    });
+  });
+
+  describe("error counting", () => {
+    it("reports correct error count for apple-health import with errors", async () => {
+      mockImportAppleHealthFile.mockResolvedValue({
+        recordsSynced: 5,
+        errors: [{ message: "err1" }, { message: "err2" }, { message: "err3" }],
+      });
+
+      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
+      await runImportJob(job, mockDb);
+
+      // Console log should contain error count
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("3 errors"));
+      consoleSpy.mockRestore();
+    });
+
+    it("reports error status for strong-csv with errors", async () => {
+      mockImportStrongCsv.mockResolvedValue({
+        recordsSynced: 0,
+        errors: [{ message: "parse error" }],
+      });
+
+      await writeFile(tempFilePath, "bad csv");
+      const job = createMockJob({ filePath: tempFilePath, importType: "strong-csv" });
+      await runImportJob(job, mockDb);
+
+      expect(mockLogSync).toHaveBeenCalledWith(
+        mockDb,
+        expect.objectContaining({ status: "error", errorMessage: "parse error" }),
+      );
+    });
+
+    it("reports error status for cronometer-csv with errors", async () => {
+      mockImportCronometerCsv.mockResolvedValue({
+        recordsSynced: 0,
+        errors: [{ message: "invalid format" }],
+      });
+
+      await writeFile(tempFilePath, "bad csv");
+      const job = createMockJob({ filePath: tempFilePath, importType: "cronometer-csv" });
+      await runImportJob(job, mockDb);
+
+      expect(mockLogSync).toHaveBeenCalledWith(
+        mockDb,
+        expect.objectContaining({ status: "error", errorMessage: "invalid format" }),
+      );
     });
   });
 });

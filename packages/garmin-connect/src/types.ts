@@ -360,6 +360,7 @@ export interface ConnectActivitySummary {
   anaerobicTrainingEffectMessage?: string;
   moderateIntensityMinutes?: number;
   vigorousIntensityMinutes?: number;
+  deviceName?: string;
   manualActivity?: boolean;
   pr?: boolean;
 }

@@ -114,6 +114,7 @@ export interface ParsedGarminActivity {
   name: string;
   startedAt: Date;
   endedAt: Date;
+  deviceName: string | null;
   raw: GarminActivitySummary;
 }
 
@@ -204,6 +205,7 @@ export function parseGarminActivity(raw: GarminActivitySummary): ParsedGarminAct
     name: raw.activityName,
     startedAt,
     endedAt,
+    deviceName: raw.deviceName ?? null,
     raw,
   };
 }
@@ -818,6 +820,8 @@ export class GarminProvider implements Provider {
     for (const raw of activities) {
       const parsed = parseConnectActivity(raw);
 
+      const connectDeviceName = raw.deviceName ?? null;
+
       await db
         .insert(activity)
         .values({
@@ -827,6 +831,7 @@ export class GarminProvider implements Provider {
           startedAt: parsed.startedAt,
           endedAt: parsed.endedAt,
           name: parsed.name,
+          sourceName: connectDeviceName,
           raw: parsed.raw,
         })
         .onConflictDoUpdate({
@@ -836,6 +841,7 @@ export class GarminProvider implements Provider {
             startedAt: parsed.startedAt,
             endedAt: parsed.endedAt,
             name: parsed.name,
+            sourceName: connectDeviceName,
             raw: parsed.raw,
           },
         });
@@ -1108,6 +1114,7 @@ export class GarminProvider implements Provider {
           startedAt: parsed.startedAt,
           endedAt: parsed.endedAt,
           name: parsed.name,
+          sourceName: parsed.deviceName,
           raw: parsed.raw,
         })
         .onConflictDoUpdate({
@@ -1117,6 +1124,7 @@ export class GarminProvider implements Provider {
             startedAt: parsed.startedAt,
             endedAt: parsed.endedAt,
             name: parsed.name,
+            sourceName: parsed.deviceName,
             raw: parsed.raw,
           },
         });
