@@ -55,8 +55,8 @@ CREATE TABLE IF NOT EXISTS fitness.device_priority (
 -- ============================================================
 -- Priority resolution order (first non-null wins):
 --   1. device_priority category-specific (e.g., "Apple Watch" sleep_priority)
---   2. device_priority generic (e.g., "Apple Watch" priority)
---   3. provider_priority category-specific (e.g., apple_health sleep_priority)
+--   2. provider_priority category-specific (e.g., apple_health sleep_priority)
+--   3. device_priority generic (e.g., "Apple Watch" priority)
 --   4. provider_priority generic (e.g., apple_health priority)
 --   5. Default: 100
 
@@ -186,7 +186,7 @@ CREATE MATERIALIZED VIEW fitness.v_sleep AS
 WITH RECURSIVE ranked AS (
   SELECT
     s.*,
-    COALESCE(dp.sleep_priority, dp.priority, pp.sleep_priority, pp.priority, 100) AS prio
+    COALESCE(dp.sleep_priority, pp.sleep_priority, dp.priority, pp.priority, 100) AS prio
   FROM fitness.sleep_session s
   LEFT JOIN fitness.provider_priority pp ON pp.provider_id = s.provider_id
   LEFT JOIN LATERAL (
@@ -270,7 +270,7 @@ CREATE MATERIALIZED VIEW fitness.v_body_measurement AS
 WITH RECURSIVE ranked AS (
   SELECT
     b.*,
-    COALESCE(dp.body_priority, dp.priority, pp.body_priority, pp.priority, 100) AS prio
+    COALESCE(dp.body_priority, pp.body_priority, dp.priority, pp.priority, 100) AS prio
   FROM fitness.body_measurement b
   LEFT JOIN fitness.provider_priority pp ON pp.provider_id = b.provider_id
   LEFT JOIN LATERAL (
@@ -346,8 +346,8 @@ CREATE MATERIALIZED VIEW fitness.v_daily_metrics AS
 WITH ranked AS (
   SELECT
     d.*,
-    COALESCE(dp.recovery_priority, dp.priority, pp.recovery_priority, pp.priority, 100) AS recovery_prio,
-    COALESCE(dp.daily_activity_priority, dp.priority, pp.daily_activity_priority, pp.priority, 100) AS activity_prio
+    COALESCE(dp.recovery_priority, pp.recovery_priority, dp.priority, pp.priority, 100) AS recovery_prio,
+    COALESCE(dp.daily_activity_priority, pp.daily_activity_priority, dp.priority, pp.priority, 100) AS activity_prio
   FROM fitness.daily_metrics d
   LEFT JOIN fitness.provider_priority pp ON pp.provider_id = d.provider_id
   LEFT JOIN LATERAL (

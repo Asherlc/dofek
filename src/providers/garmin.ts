@@ -820,11 +820,7 @@ export class GarminProvider implements Provider {
     for (const raw of activities) {
       const parsed = parseConnectActivity(raw);
 
-      // Extract device name from raw Connect API response if available
-      const connectDeviceName =
-        raw && typeof raw === "object" && "deviceName" in raw && typeof raw.deviceName === "string"
-          ? raw.deviceName
-          : null;
+      const connectDeviceName = raw.deviceName ?? null;
 
       await db
         .insert(activity)

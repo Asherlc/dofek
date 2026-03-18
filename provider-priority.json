@@ -32,7 +32,7 @@
       "recovery": 25,
       "dailyActivity": 15,
       "devices": {
-        "Apple Watch": {
+        "Apple Watch%": {
           "activity": 30,
           "sleep": 25,
           "recovery": 20,

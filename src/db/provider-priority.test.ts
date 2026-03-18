@@ -66,14 +66,14 @@ describe("providerPriorityConfigSchema", () => {
         apple_health: {
           activity: 90,
           devices: {
-            "Apple Watch": { activity: 30, recovery: 20 },
+            "Apple Watch%": { activity: 30, recovery: 20 },
             "Wahoo TICKR%": { activity: 5 },
           },
         },
       },
     };
     const parsed = providerPriorityConfigSchema.parse(config);
-    expect(parsed.providers.apple_health?.devices?.["Apple Watch"]?.activity).toBe(30);
+    expect(parsed.providers.apple_health?.devices?.["Apple Watch%"]?.activity).toBe(30);
     expect(parsed.providers.apple_health?.devices?.["Wahoo TICKR%"]?.activity).toBe(5);
   });
 
@@ -150,7 +150,7 @@ describe("loadProviderPriorityConfig", () => {
     expect(config?.providers.oura?.sleep).toBe(10);
     expect(config?.providers.apple_health?.dailyActivity).toBe(15);
     // Verify device overrides are loaded
-    expect(config?.providers.apple_health?.devices?.["Apple Watch"]?.activity).toBe(30);
+    expect(config?.providers.apple_health?.devices?.["Apple Watch%"]?.activity).toBe(30);
     expect(config?.providers.apple_health?.devices?.["Wahoo TICKR%"]?.activity).toBe(5);
   });
 });
