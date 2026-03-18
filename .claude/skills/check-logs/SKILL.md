@@ -40,7 +40,7 @@ If the Axiom MCP server is not connected, fall back to step 2.
 
 If Axiom isn't available, SSH into the server and read Docker logs directly.
 
-**Server:** `root@159.69.3.40`
+**Server:** SSH to your production server (e.g., `ssh root@<SERVER_IP>` or use alias `ssh dofek` if configured)
 **Compose project:** `/opt/dofek`
 
 Container names and what they handle:
@@ -52,17 +52,19 @@ Container names and what they handle:
 
 ```bash
 # Recent logs from the web server (filter out noisy polling endpoints)
-ssh root@159.69.3.40 'docker logs dofek-web-1 --since 24h 2>&1 | grep -iv "syncStatus\|providers" | tail -100'
+ssh <SERVER> 'docker logs dofek-web-1 --since 24h 2>&1 | grep -iv "syncStatus\|providers" | tail -100'
 
 # Worker logs (Apple Health import, sync jobs)
-ssh root@159.69.3.40 'docker logs dofek-worker --since 24h 2>&1 | tail -100'
+ssh <SERVER> 'docker logs dofek-worker --since 24h 2>&1 | tail -100'
 
 # Search for specific errors
-ssh root@159.69.3.40 'docker logs dofek-web-1 --since 24h 2>&1 | grep -i "error\|fail\|<SEARCH_TERM>"'
+ssh <SERVER> 'docker logs dofek-web-1 --since 24h 2>&1 | grep -i "error\|fail\|<SEARCH_TERM>"'
 
 # Follow logs in real-time
-ssh root@159.69.3.40 'docker logs dofek-web-1 -f 2>&1'
+ssh <SERVER> 'docker logs dofek-web-1 -f 2>&1'
 ```
+
+Replace `<SERVER>` with your production server address (e.g., `root@159.69.3.40` or the configured SSH alias).
 
 ### 3. In-app system logs
 
@@ -78,10 +80,11 @@ The Data Sources page has a "System Logs" panel showing the last 500 log entries
 
 ## Environment details
 
-- **SOPS decryption**: The container's `.env` is SOPS-encrypted and decrypted at runtime via `sops exec-env`. Variables injected by SOPS are NOT visible via `docker exec printenv` — they only exist in the Node process. To see decrypted values, use:
+- **SOPS decryption**: The container's `.env` is SOPS-encrypted and decrypted at runtime via `sops exec-env`. Variables injected by SOPS are NOT visible via `docker exec printenv` — they only exist in the Node process. To check if a variable is set (without displaying the value), use:
   ```bash
-  ssh root@159.69.3.40 'docker exec dofek-web-1 sh -c "sops -d .env 2>/dev/null | grep <VAR_NAME>"'
+  ssh <SERVER> 'docker exec dofek-web-1 sh -c "sops -d .env 2>/dev/null | grep -q <VAR_NAME> && echo present || echo missing"'
   ```
+  **Warning:** Do not use `| grep <VAR_NAME>` without `-q` or redirect, as it will print decrypted values to the terminal.
 - **OTel config**: Endpoint is `https://api.axiom.co`, headers contain the ingest token and dataset (`dofek-logs`). Service names: `dofek-web`, `dofek-worker`, `dofek-sync`.
 
 ## Important
