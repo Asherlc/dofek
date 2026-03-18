@@ -7,6 +7,7 @@ import {
   type BodySpecRmrResponse,
   type BodySpecScanInfoResponse,
   type BodySpecVisceralFatResponse,
+  catchNotFound,
   parseBoneDensity,
   parseComposition,
   parsePercentiles,
@@ -348,6 +349,32 @@ describe("BodySpecProvider", () => {
       const provider = new BodySpecProvider();
       expect(provider.id).toBe("bodyspec");
       expect(provider.name).toBe("BodySpec");
+    });
+  });
+
+  describe("catchNotFound", () => {
+    it("returns the resolved value for successful promises", async () => {
+      const result = await catchNotFound(Promise.resolve("hello"));
+      expect(result).toBe("hello");
+    });
+
+    it("returns null for 404 errors", async () => {
+      const result = await catchNotFound(
+        Promise.reject(new Error("BodySpec API error (404): Not Found")),
+      );
+      expect(result).toBeNull();
+    });
+
+    it("rethrows non-404 errors", async () => {
+      await expect(
+        catchNotFound(Promise.reject(new Error("BodySpec API error (500): Internal Server Error"))),
+      ).rejects.toThrow("BodySpec API error (500): Internal Server Error");
+    });
+
+    it("rethrows network errors", async () => {
+      await expect(catchNotFound(Promise.reject(new Error("fetch failed")))).rejects.toThrow(
+        "fetch failed",
+      );
     });
   });
 });

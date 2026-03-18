@@ -216,6 +216,15 @@ export function parseScanInfo(response: BodySpecScanInfoResponse) {
   };
 }
 
+export async function catchNotFound<T>(promise: Promise<T>): Promise<T | null> {
+  try {
+    return await promise;
+  } catch (err) {
+    if (err instanceof Error && err.message.includes("(404)")) return null;
+    throw err;
+  }
+}
+
 // ============================================================
 // BodySpec OAuth
 // ============================================================
@@ -428,12 +437,12 @@ export class BodySpecProvider implements Provider {
   ): Promise<number> {
     // Fetch all sections for this result. Some may not be available (404).
     const [scanInfo, composition, boneDensity, visceralFat, rmr, percentiles] = await Promise.all([
-      client.getScanInfo(resultId).catch(() => null),
-      client.getComposition(resultId).catch(() => null),
-      client.getBoneDensity(resultId).catch(() => null),
-      client.getVisceralFat(resultId).catch(() => null),
-      client.getRmr(resultId).catch(() => null),
-      client.getPercentiles(resultId).catch(() => null),
+      catchNotFound(client.getScanInfo(resultId)),
+      catchNotFound(client.getComposition(resultId)),
+      catchNotFound(client.getBoneDensity(resultId)),
+      catchNotFound(client.getVisceralFat(resultId)),
+      catchNotFound(client.getRmr(resultId)),
+      catchNotFound(client.getPercentiles(resultId)),
     ]);
 
     // Composition is required — without it there's no meaningful scan data

@@ -382,4 +382,66 @@ describe("BodySpecProvider.sync() (integration)", () => {
     expect(scan.restingMetabolicRateKcal).toBeNull();
     expect(scan.percentiles).toBeNull();
   });
+
+  it("propagates non-404 errors from section endpoints", async () => {
+    // Mock handlers where composition returns 500 (not 404)
+    server.use(
+      http.post("https://app.bodyspec.com/oauth/token", () => {
+        return HttpResponse.json({
+          access_token: "refreshed-token",
+          refresh_token: "new-refresh",
+          expires_in: 7200,
+          scope: "read:results",
+        });
+      }),
+      http.get("https://app.bodyspec.com/api/v1/users/me/results/", () => {
+        return HttpResponse.json({
+          results: [fakeResult],
+          pagination: { page: 1, page_size: 100, results: 1, has_more: false },
+        });
+      }),
+      http.get("https://app.bodyspec.com/api/v1/users/me/results/result-1/dexa/scan-info", () => {
+        return HttpResponse.json(fakeScanInfo);
+      }),
+      // Composition returns 500 — this should NOT be silently swallowed
+      http.get("https://app.bodyspec.com/api/v1/users/me/results/result-1/dexa/composition", () => {
+        return new HttpResponse("Internal Server Error", { status: 500 });
+      }),
+      http.get(
+        "https://app.bodyspec.com/api/v1/users/me/results/result-1/dexa/bone-density",
+        () => {
+          return HttpResponse.json(fakeBoneDensity);
+        },
+      ),
+      http.get(
+        "https://app.bodyspec.com/api/v1/users/me/results/result-1/dexa/visceral-fat",
+        () => {
+          return HttpResponse.json(fakeVisceralFat);
+        },
+      ),
+      http.get("https://app.bodyspec.com/api/v1/users/me/results/result-1/dexa/rmr", () => {
+        return HttpResponse.json(fakeRmr);
+      }),
+      http.get("https://app.bodyspec.com/api/v1/users/me/results/result-1/dexa/percentiles", () => {
+        return new HttpResponse(null, { status: 404 });
+      }),
+    );
+
+    const provider = new BodySpecProvider();
+
+    await ensureProvider(ctx.db, "bodyspec", "BodySpec", "https://app.bodyspec.com");
+    await saveTokens(ctx.db, "bodyspec", {
+      accessToken: "test-token",
+      refreshToken: "test-refresh",
+      expiresAt: new Date(Date.now() + 7200000),
+      scopes: "read:results",
+    });
+
+    const result = await provider.sync(ctx.db, new Date("2026-02-01"));
+
+    // The 500 error should be captured, not silently swallowed
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.errors[0]?.message).toContain("500");
+  });
 });
