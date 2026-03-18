@@ -203,10 +203,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: reports/stryker-incremental.json
-          key: stryker-${{ github.head_ref }}-${{ github.sha }}
+          key: stryker-v2-${{ github.head_ref }}-${{ github.sha }}
           restore-keys: |
-            stryker-${{ github.head_ref }}-
-            stryker-main
+            stryker-v2-${{ github.head_ref }}-
+            stryker-v2-main
       - name: Get changed files
         id: changed
         run: |
