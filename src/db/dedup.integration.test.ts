@@ -397,4 +397,140 @@ describe("Deduplication materialized views", () => {
     await refreshDedupViews(ctx.db);
     await refreshDedupViews(ctx.db);
   });
+
+  describe("per-category device accuracy priority", () => {
+    it("v_daily_metrics uses recovery priority for HR/HRV and activity priority for steps", async () => {
+      // Both providers have values for ALL fields — tests that per-category priority picks different winners
+      await ctx.db.insert(dailyMetrics).values([
+        {
+          date: "2026-03-15",
+          providerId: "whoop",
+          restingHr: 52,
+          hrv: 65.5,
+          spo2Avg: 97.2,
+          skinTempC: 33.7,
+          steps: 5000, // WHOOP's step estimate (less accurate, uses wrist accelerometer)
+          activeEnergyKcal: 380,
+          distanceKm: 4.2,
+        },
+        {
+          date: "2026-03-15",
+          providerId: "apple_health",
+          restingHr: 54,
+          hrv: 62.0,
+          spo2Avg: 96.8,
+          skinTempC: null,
+          steps: 8421, // Apple Watch step count (more accurate all-day tracking)
+          activeEnergyKcal: 450,
+          distanceKm: 6.8,
+        },
+      ]);
+
+      await refreshDedupViews(ctx.db);
+
+      const rows = await ctx.db.execute<DailyMetricsViewRow>(
+        sql`SELECT * FROM fitness.v_daily_metrics WHERE date = '2026-03-15'`,
+      );
+
+      expect(rows.length).toBe(1);
+      const day = rows[0];
+      expect(day).toBeDefined();
+      // Recovery metrics: WHOOP should win (better 24/7 HR/HRV monitoring)
+      expect(day?.resting_hr).toBe(52);
+      expect(Number(day?.hrv)).toBeCloseTo(65.5);
+      expect(Number(day?.spo2_avg)).toBeCloseTo(97.2);
+      expect(Number(day?.skin_temp_c)).toBeCloseTo(33.7);
+      // Daily activity metrics: Apple Health should win (better step/activity tracking)
+      expect(day?.steps).toBe(8421);
+      expect(Number(day?.active_energy_kcal)).toBeCloseTo(450);
+      expect(Number(day?.distance_km)).toBeCloseTo(6.8);
+    });
+
+    it("v_sleep uses sleep-specific priority: Oura wins over WHOOP", async () => {
+      await ensureProvider(ctx.db, "oura", "Oura");
+
+      await ctx.db.insert(sleepSession).values([
+        {
+          providerId: "whoop",
+          externalId: "whoop-sleep-cat-prio",
+          startedAt: new Date("2026-03-15T23:00:00Z"),
+          endedAt: new Date("2026-03-16T06:30:00Z"),
+          durationMinutes: 420,
+          deepMinutes: 110,
+          remMinutes: 80,
+          lightMinutes: 200,
+          awakeMinutes: 30,
+          efficiencyPct: 89.5,
+          isNap: false,
+        },
+        {
+          providerId: "oura",
+          externalId: "oura-sleep-cat-prio",
+          startedAt: new Date("2026-03-15T23:05:00Z"),
+          endedAt: new Date("2026-03-16T06:25:00Z"),
+          durationMinutes: 415,
+          deepMinutes: 125,
+          remMinutes: 95,
+          lightMinutes: 170,
+          awakeMinutes: 25,
+          efficiencyPct: 92.1,
+          isNap: false,
+        },
+      ]);
+
+      await refreshDedupViews(ctx.db);
+
+      const rows = await ctx.db.execute<SleepViewRow>(
+        sql`SELECT * FROM fitness.v_sleep WHERE started_at::date = '2026-03-15'`,
+      );
+
+      const mainSleep = rows.filter((r) => !r.is_nap);
+      expect(mainSleep.length).toBe(1);
+      // Oura should win over WHOOP for sleep (best sleep staging accuracy per research)
+      expect(mainSleep[0]?.provider_id).toBe("oura");
+      expect(mainSleep[0]?.deep_minutes).toBe(125);
+      expect(mainSleep[0]?.rem_minutes).toBe(95);
+      expect(mainSleep[0]?.source_providers).toContain("oura");
+      expect(mainSleep[0]?.source_providers).toContain("whoop");
+    });
+
+    it("category priority falls back to generic priority when not set", async () => {
+      // Provider without category-specific priorities should use generic priority
+      await ensureProvider(ctx.db, "garmin", "Garmin");
+
+      // Garmin records a sleep session — should use generic priority as fallback
+      // Garmin's generic priority defaults to 100 (not seeded), so WHOOP (30) should still win
+      await ctx.db.insert(sleepSession).values([
+        {
+          providerId: "whoop",
+          externalId: "whoop-sleep-fallback",
+          startedAt: new Date("2026-03-20T23:00:00Z"),
+          endedAt: new Date("2026-03-21T06:30:00Z"),
+          durationMinutes: 420,
+          deepMinutes: 110,
+          isNap: false,
+        },
+        {
+          providerId: "garmin",
+          externalId: "garmin-sleep-fallback",
+          startedAt: new Date("2026-03-20T23:05:00Z"),
+          endedAt: new Date("2026-03-21T06:25:00Z"),
+          durationMinutes: 415,
+          deepMinutes: 100,
+          isNap: false,
+        },
+      ]);
+
+      await refreshDedupViews(ctx.db);
+
+      const rows = await ctx.db.execute<SleepViewRow>(
+        sql`SELECT * FROM fitness.v_sleep WHERE started_at::date = '2026-03-20'`,
+      );
+
+      const mainSleep = rows.filter((r) => !r.is_nap);
+      expect(mainSleep.length).toBe(1);
+      // WHOOP's sleep_priority (20) beats Garmin's fallback (sleep_priority: 40, since Garmin is now seeded)
+      expect(mainSleep[0]?.provider_id).toBe("whoop");
+    });
+  });
 });
