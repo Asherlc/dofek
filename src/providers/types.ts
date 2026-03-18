@@ -77,9 +77,10 @@ export interface Provider {
 
   /**
    * Returns OAuth configuration for providers that support the `auth` command.
-   * Providers without OAuth (e.g. API-key-only) return undefined.
+   * Returns undefined if OAuth is not supported or not configured (e.g. missing env vars).
+   * Call sites should treat undefined as "not available for login" and surface configuration errors to the user.
    */
-  authSetup?(): ProviderAuthSetup;
+  authSetup?(): ProviderAuthSetup | undefined;
 
   /**
    * Pull data from the provider API and upsert into the database.
