@@ -10,6 +10,7 @@ import {
   type WhoopWeightliftingWorkoutResponse,
   type WhoopWorkoutRecord,
 } from "whoop-whoop";
+import { z } from "zod";
 import type { OAuthConfig } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
@@ -430,12 +431,13 @@ export class WhoopProvider implements Provider {
           const text = await response.text();
           throw new Error(`Whoop profile API error (${response.status}): ${text}`);
         }
-        const data: {
-          user_id: number;
-          email?: string | null;
-          first_name?: string | null;
-          last_name?: string | null;
-        } = await response.json();
+        const whoopProfileSchema = z.object({
+          user_id: z.number(),
+          email: z.string().nullish(),
+          first_name: z.string().nullish(),
+          last_name: z.string().nullish(),
+        });
+        const data = whoopProfileSchema.parse(await response.json());
         const nameParts = [data.first_name, data.last_name].filter(Boolean);
         return {
           providerAccountId: String(data.user_id),
