@@ -373,9 +373,14 @@ export const healthspanRouter = router({
         m.status = scoreToStatus(m.score);
       }
 
-      // Composite: equal weight across all 9 metrics
-      const totalScore = metricDefs.reduce((sum, m) => sum + m.score, 0);
-      const healthspanScore = Math.round(totalScore / metricDefs.length);
+      // Composite: equal weight across metrics that have real data
+      const metricsWithData = metricDefs.filter((m) => m.value != null);
+      const healthspanScore =
+        metricsWithData.length > 0
+          ? Math.round(
+              metricsWithData.reduce((sum, m) => sum + m.score, 0) / metricsWithData.length,
+            )
+          : null;
 
       // Weekly scores from the subset of metrics that aggregate weekly
       // (resting heart rate, steps, VO2 max — 3 of 9 total metrics)
