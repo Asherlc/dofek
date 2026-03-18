@@ -1119,6 +1119,56 @@ describe("bot.ts — registerHandlers", () => {
     });
   });
 
+  describe("resolveOrCreateUserId — authenticated user fallback with orphans", () => {
+    it("falls back to sole authenticated user when orphan user_profiles exist", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+
+      // lookupOrCreateUserId: no existing slack auth link
+      mockExecute.mockResolvedValueOnce([]);
+      // resolveOrCreateUserId: no auth_account by email
+      mockExecute.mockResolvedValueOnce([]);
+      // no user_profile by email
+      mockExecute.mockResolvedValueOnce([]);
+      // multiple users in user_profile (real user + orphan from previous Slack DM)
+      mockExecute.mockResolvedValueOnce([{ count: "2", id: "orphan-user" }]);
+      // sole authenticated user (one non-slack auth_account)
+      mockExecute.mockResolvedValueOnce([{ user_id: "real-user" }]);
+      // link slack auth_account
+      mockExecute.mockResolvedValueOnce([]);
+
+      const { messageHandler } = setupHandlers(db);
+
+      // ensureDofekProvider
+      mockExecute.mockResolvedValueOnce([]);
+      // insert food_entry
+      mockExecute.mockResolvedValueOnce([{ id: "entry-1" }]);
+
+      mockAnalyze.mockResolvedValueOnce({ items: [makeFoodItem()], provider: "gemini" });
+
+      const say = vi.fn();
+      const chatPostMessage = vi.fn().mockResolvedValue({ ts: "thinking-ts" });
+      const chatUpdate = vi.fn().mockResolvedValue({});
+      const client = {
+        users: {
+          info: vi.fn().mockResolvedValue({
+            user: { tz: "UTC", real_name: "Test User", profile: { email: "different@email.com" } },
+          }),
+        },
+        chat: { postMessage: chatPostMessage, update: chatUpdate },
+      };
+
+      await messageHandler({
+        message: { user: "U_NEW", text: "a burrito", ts: "1700000000.000000", channel: "C1" },
+        say,
+        client,
+      });
+
+      // Should succeed — food logged to the real user, not a new orphan
+      expect(chatUpdate).toHaveBeenCalled();
+    });
+  });
+
   describe("lookupOrCreateUserId — Slack API failure fallback", () => {
     it("uses fallback timezone when Slack users.info fails", async () => {
       const db = createMockDb();

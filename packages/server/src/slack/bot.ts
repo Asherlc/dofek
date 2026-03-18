@@ -158,7 +158,21 @@ async function resolveOrCreateUserId(
     return countRow.id;
   }
 
-  // No match and multiple users — create a new one
+  // Multiple user_profiles exist (possibly including orphans from previous Slack
+  // interactions). Check for users with non-slack auth_accounts — these are "real"
+  // users who logged in via the web. If exactly one exists, use them.
+  const realUsers = await db.execute<{ user_id: string }>(
+    sql`SELECT DISTINCT user_id FROM fitness.auth_account
+        WHERE auth_provider != 'slack'`,
+  );
+  if (realUsers.length === 1 && realUsers[0]) {
+    logger.info(
+      `[slack] No email match — falling back to sole authenticated user ${realUsers[0].user_id}`,
+    );
+    return realUsers[0].user_id;
+  }
+
+  // No match and multiple real users — create a new one
   logger.warn(
     `[slack] Could not match Slack user to existing account (email=${email ?? "null"}), creating new user`,
   );
