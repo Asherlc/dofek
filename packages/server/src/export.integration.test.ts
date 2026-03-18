@@ -74,8 +74,8 @@ describe("Data Export", () => {
 
     // Activity interval (depends on activity existing)
     await testCtx.db.execute(
-      sql`INSERT INTO fitness.activity_interval (activity_id, interval_index, started_at, avg_heart_rate, avg_power)
-          VALUES ('11111111-1111-1111-1111-111111111111', 0, '2024-01-15T10:00:00Z', 142, 195)`,
+      sql`INSERT INTO fitness.activity_interval (activity_id, interval_index, started_at)
+          VALUES ('11111111-1111-1111-1111-111111111111', 0, '2024-01-15T10:00:00Z')`,
     );
 
     // Create session
