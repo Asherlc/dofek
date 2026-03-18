@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { PersonalizedParams } from "./params.ts";
 import { personalizedParamsSchema } from "./params.ts";
 import { loadPersonalizedParams, savePersonalizedParams } from "./storage.ts";
 
