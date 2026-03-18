@@ -250,7 +250,7 @@ describe("BodySpecProvider.sync() (integration)", () => {
     // Verify scan was stored
     const scans = await ctx.db.select().from(dexaScan);
     expect(scans).toHaveLength(1);
-    const scan = scans[0];
+    const scan = scans[0]!;
     expect(scan.externalId).toBe("result-1");
     expect(scan.totalFatMassKg).toBe(15.2);
     expect(scan.totalLeanMassKg).toBe(55.8);
