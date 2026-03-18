@@ -479,9 +479,13 @@ export class GarminProvider implements Provider {
     return null;
   }
 
-  authSetup(): ProviderAuthSetup | undefined {
+  authSetup(): ProviderAuthSetup {
     const config = garminOAuthConfig();
-    if (!config) return undefined;
+    if (!config) {
+      throw new Error(
+        "GARMIN_CLIENT_ID is required for OAuth — use the web UI for credential auth",
+      );
+    }
 
     return {
       oauthConfig: config,

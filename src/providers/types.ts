@@ -77,9 +77,9 @@ export interface Provider {
 
   /**
    * Returns OAuth configuration for providers that support the `auth` command.
-   * Providers without OAuth (e.g. API-key-only or custom-auth-only) return undefined.
+   * Providers without OAuth (e.g. API-key-only) return undefined.
    */
-  authSetup?(): ProviderAuthSetup | undefined;
+  authSetup?(): ProviderAuthSetup;
 
   /**
    * Pull data from the provider API and upsert into the database.

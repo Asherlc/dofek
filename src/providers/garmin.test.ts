@@ -472,11 +472,10 @@ describe("GarminProvider.authSetup()", () => {
     expect(setup?.apiBaseUrl).toBe("https://apis.garmin.com/wellness-api/rest");
   });
 
-  it("returns undefined when GARMIN_CLIENT_ID is missing (custom auth mode)", () => {
+  it("throws when GARMIN_CLIENT_ID is missing (custom auth mode)", () => {
     delete process.env.GARMIN_CLIENT_ID;
     const provider = new GarminProvider();
-    const setup = provider.authSetup();
-    expect(setup).toBeUndefined();
+    expect(() => provider.authSetup()).toThrow("GARMIN_CLIENT_ID is required");
   });
 });
 
