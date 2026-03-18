@@ -395,7 +395,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
     }
 
     // Resolve the logged-in user so we can link the Slack identity to them
-    const sessionId = getSessionCookie(req);
+    const sessionId = getSessionIdFromRequest(req);
     const session = sessionId ? await validateSession(db, sessionId) : null;
     const userId = session?.userId ?? DEFAULT_USER_ID;
 

@@ -554,7 +554,7 @@ describe("createAuthRouter", () => {
       process.env.SLACK_CLIENT_SECRET = "test-client-secret";
 
       // Simulate logged-in user
-      vi.mocked(getSessionCookie).mockReturnValue("sess-1");
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
       vi.mocked(validateSession).mockResolvedValue({
         userId: "real-user-id",
         expiresAt: new Date("2027-01-01"),
