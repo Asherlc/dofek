@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
 const REDACTED_ERROR_MESSAGE = "Details hidden";
@@ -97,7 +98,10 @@ export const providerDetailRouter = router({
 
       // Table/column names come from our own enum mapping (safe for sql.raw),
       // while user inputs are parameterized via the sql template tag.
-      const rows = await ctx.db.execute<Record<string, unknown>>(
+      const rowSchema = z.record(z.string(), z.unknown());
+      const rows = await executeWithSchema(
+        ctx.db,
+        rowSchema,
         sql`SELECT * FROM ${sql.raw(info.table)}
             WHERE user_id = ${ctx.userId}
               AND provider_id = ${input.providerId}
@@ -113,6 +117,7 @@ export const providerDetailRouter = router({
   recordDetail: cachedProtectedQuery(CacheTTL.SHORT)
     .input(
       z.object({
+        providerId: z.string(),
         dataType: dataTypeEnum,
         recordId: z.string(),
       }),
@@ -120,9 +125,13 @@ export const providerDetailRouter = router({
     .query(async ({ ctx, input }) => {
       const info = tableInfo(input.dataType);
 
-      const rows = await ctx.db.execute<Record<string, unknown>>(
+      const rowSchema = z.record(z.string(), z.unknown());
+      const rows = await executeWithSchema(
+        ctx.db,
+        rowSchema,
         sql`SELECT * FROM ${sql.raw(info.table)}
             WHERE user_id = ${ctx.userId}
+              AND provider_id = ${input.providerId}
               AND ${sql.raw(info.idColumn)} = ${input.recordId}
             LIMIT 1`,
       );
@@ -130,26 +139,51 @@ export const providerDetailRouter = router({
       return rows[0] ?? null;
     }),
 
-  /** Disconnect a provider — removes OAuth tokens and provider row */
+  /** Disconnect a provider — removes all data, OAuth tokens, and provider row */
   disconnect: protectedProcedure
     .input(z.object({ providerId: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      // Delete tokens first (FK dependency), then the provider row
-      // Use raw SQL to delete tokens for a provider owned by this user
-      await ctx.db.execute(sql`
-        DELETE FROM fitness.oauth_token
-        WHERE provider_id = ${input.providerId}
-          AND provider_id IN (
-            SELECT id FROM fitness.provider
-            WHERE id = ${input.providerId} AND user_id = ${ctx.userId}
-          )
-      `);
+      // Verify ownership first
+      const ownerCheck = await executeWithSchema(
+        ctx.db,
+        z.object({ id: z.string() }),
+        sql`SELECT id FROM fitness.provider
+            WHERE id = ${input.providerId} AND user_id = ${ctx.userId}`,
+      );
+      if (ownerCheck.length === 0) {
+        throw new Error("Provider not found or not owned by user");
+      }
 
-      // Delete the provider row itself
-      await ctx.db.execute(sql`
-        DELETE FROM fitness.provider
-        WHERE id = ${input.providerId} AND user_id = ${ctx.userId}
-      `);
+      // Delete all child table rows referencing this provider, then the provider itself.
+      // No inter-child FK dependencies exist, so order only matters for the final provider delete.
+      const childTables = [
+        "fitness.metric_stream",
+        "fitness.exercise_alias",
+        "fitness.strength_workout",
+        "fitness.body_measurement",
+        "fitness.daily_metrics",
+        "fitness.sleep_session",
+        "fitness.nutrition_daily",
+        "fitness.food_entry",
+        "fitness.lab_result",
+        "fitness.health_event",
+        "fitness.journal_entry",
+        "fitness.sync_log",
+        "fitness.activity",
+        "fitness.oauth_token",
+      ];
+
+      await ctx.db.transaction(async (tx) => {
+        for (const table of childTables) {
+          await tx.execute(
+            sql`DELETE FROM ${sql.raw(table)} WHERE provider_id = ${input.providerId}`,
+          );
+        }
+        await tx.execute(
+          sql`DELETE FROM fitness.provider
+              WHERE id = ${input.providerId} AND user_id = ${ctx.userId}`,
+        );
+      });
 
       return { success: true };
     }),

@@ -13,6 +13,14 @@ vi.mock("../trpc.ts", async () => {
   };
 });
 
+vi.mock("../lib/typed-sql.ts", () => ({
+  executeWithSchema: async (
+    db: { execute: (query: unknown) => Promise<unknown[]> },
+    _schema: unknown,
+    query: unknown,
+  ) => db.execute(query),
+}));
+
 vi.mock("dofek/db/schema", () => ({
   syncLog: {
     userId: "userId",
@@ -240,6 +248,7 @@ describe("providerDetailRouter", () => {
       });
 
       const result = await caller.recordDetail({
+        providerId: "strava",
         dataType: "activities",
         recordId: "act-1",
       });
@@ -255,6 +264,7 @@ describe("providerDetailRouter", () => {
       });
 
       const result = await caller.recordDetail({
+        providerId: "strava",
         dataType: "activities",
         recordId: "nonexistent",
       });
@@ -264,24 +274,48 @@ describe("providerDetailRouter", () => {
   });
 
   describe("disconnect", () => {
-    it("deletes oauth tokens and provider row", async () => {
-      const mockExecute = vi.fn().mockResolvedValue([]);
-      const mockDelete = vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([]),
-      });
+    it("deletes all child table rows and provider row in a transaction", async () => {
+      const txExecute = vi.fn().mockResolvedValue([]);
+      const mockTransaction = vi
+        .fn()
+        .mockImplementation(async (fn: (tx: { execute: typeof txExecute }) => Promise<void>) => {
+          await fn({ execute: txExecute });
+        });
+      // First execute call is the ownership check, returns the provider
+      const mockExecute = vi.fn().mockResolvedValue([{ id: "strava" }]);
 
       const caller = createCaller({
         db: {
           execute: mockExecute,
-          delete: mockDelete,
+          transaction: mockTransaction,
         },
         userId: "user-1",
       });
 
       const result = await caller.disconnect({ providerId: "strava" });
       expect(result).toEqual({ success: true });
-      // Should have deleted tokens (via execute for raw SQL)
-      expect(mockExecute).toHaveBeenCalled();
+      // Ownership check
+      expect(mockExecute).toHaveBeenCalledTimes(1);
+      // Transaction should have been called
+      expect(mockTransaction).toHaveBeenCalledTimes(1);
+      // 14 child tables + 1 provider delete = 15 deletes inside the transaction
+      expect(txExecute).toHaveBeenCalledTimes(15);
+    });
+
+    it("throws when provider is not owned by user", async () => {
+      const mockExecute = vi.fn().mockResolvedValue([]);
+
+      const caller = createCaller({
+        db: {
+          execute: mockExecute,
+          transaction: vi.fn(),
+        },
+        userId: "user-1",
+      });
+
+      await expect(caller.disconnect({ providerId: "unknown" })).rejects.toThrow(
+        "Provider not found or not owned by user",
+      );
     });
   });
 });
