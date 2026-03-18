@@ -537,4 +537,29 @@ describe("tRPC API", () => {
       expect(body).toContain("Missing code or state");
     });
   });
+
+  describe("Admin middleware (/admin/queues)", () => {
+    it("returns 401 when no session cookie is provided", async () => {
+      const res = await fetch(`${baseUrl}/admin/queues`);
+      expect(res.status).toBe(401);
+      expect(await res.text()).toBe("Authentication required");
+    });
+
+    it("returns 401 when session is invalid or expired", async () => {
+      const res = await fetch(`${baseUrl}/admin/queues`, {
+        headers: { Cookie: "session=invalid-session" },
+      });
+      expect(res.status).toBe(401);
+      expect(await res.text()).toBe("Session expired");
+    });
+
+    it("returns 403 when user is not admin", async () => {
+      // Non-admin user session
+      const res = await fetch(`${baseUrl}/admin/queues`, {
+        headers: { Cookie: sessionCookie },
+      });
+      expect(res.status).toBe(403);
+      expect(await res.text()).toBe("Admin access required");
+    });
+  });
 });

@@ -59,6 +59,13 @@ export interface SyncError {
 }
 
 /**
+ * Progress callback for reporting sync progress from within a provider.
+ * @param pct - Percentage complete (0–100)
+ * @param message - Human-readable status message
+ */
+export type SyncProgressCallback = (pct: number, message: string) => void;
+
+/**
  * Every provider implements this interface.
  * The sync framework calls `sync()` on a schedule.
  */
@@ -86,6 +93,7 @@ export interface Provider {
    * Pull data from the provider API and upsert into the database.
    * @param db - Drizzle database instance
    * @param since - Only sync data after this date (incremental sync)
+   * @param onProgress - Optional callback to report progress (0–100%)
    */
-  sync(db: SyncDatabase, since: Date): Promise<SyncResult>;
+  sync(db: SyncDatabase, since: Date, onProgress?: SyncProgressCallback): Promise<SyncResult>;
 }

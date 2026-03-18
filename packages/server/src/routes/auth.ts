@@ -326,6 +326,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
           providerAccountId: identityUser.sub,
           email: identityUser.email,
           name: identityUser.name,
+          groups: identityUser.groups,
         },
         linkUserId,
       );

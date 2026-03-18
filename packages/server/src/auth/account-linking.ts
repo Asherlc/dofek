@@ -7,6 +7,7 @@ export interface ProviderIdentity {
   providerAccountId: string;
   email: string | null;
   name: string | null;
+  groups?: string[] | null;
 }
 
 export interface ResolveUserResult {
@@ -114,9 +115,9 @@ async function upsertAuthAccount(
   identity: ProviderIdentity,
 ): Promise<void> {
   await db.execute(
-    sql`INSERT INTO fitness.auth_account (user_id, auth_provider, provider_account_id, email, name)
-        VALUES (${userId}, ${providerName}, ${identity.providerAccountId}, ${identity.email}, ${identity.name})
+    sql`INSERT INTO fitness.auth_account (user_id, auth_provider, provider_account_id, email, name, groups)
+        VALUES (${userId}, ${providerName}, ${identity.providerAccountId}, ${identity.email}, ${identity.name}, ${identity.groups ?? null})
         ON CONFLICT (auth_provider, provider_account_id)
-        DO UPDATE SET email = EXCLUDED.email, name = EXCLUDED.name`,
+        DO UPDATE SET email = EXCLUDED.email, name = EXCLUDED.name, groups = EXCLUDED.groups`,
   );
 }

@@ -426,7 +426,11 @@ export class StravaProvider implements Provider {
     return refreshed;
   }
 
-  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
+  async sync(
+    db: SyncDatabase,
+    since: Date,
+    onProgress?: import("./types.ts").SyncProgressCallback,
+  ): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -516,6 +520,11 @@ export class StravaProvider implements Provider {
             .returning({ id: activity.id });
 
           recordsSynced++;
+          // no-mutate: Progress reporting is UX-only and can't fail in a testable way
+          if (onProgress) {
+            // no-mutate
+            onProgress(0, `${recordsSynced} activities synced`);
+          }
 
           // Fetch streams for sensor data
           const activityId = row?.id;

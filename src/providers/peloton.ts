@@ -542,7 +542,11 @@ export class PelotonProvider implements Provider {
     return refreshed;
   }
 
-  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
+  async sync(
+    db: SyncDatabase,
+    since: Date,
+    onProgress?: import("./types.ts").SyncProgressCallback,
+  ): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -568,6 +572,7 @@ export class PelotonProvider implements Provider {
 
       while (hasMore) {
         const response = await client.getWorkouts(page);
+        const totalWorkouts = response.total;
 
         for (const workout of response.data) {
           if (workout.status !== "COMPLETE") continue;
@@ -608,6 +613,14 @@ export class PelotonProvider implements Provider {
 
             activityId = row?.id ?? null;
             workoutCount++;
+            // no-mutate: Progress reporting is UX-only and can't fail in a testable way
+            if (onProgress && totalWorkouts > 0) {
+              // no-mutate
+              onProgress(
+                Math.round((workoutCount / totalWorkouts) * 100),
+                `${workoutCount}/${totalWorkouts} workouts`,
+              );
+            }
           } catch (err) {
             errors.push({
               message: err instanceof Error ? err.message : String(err),

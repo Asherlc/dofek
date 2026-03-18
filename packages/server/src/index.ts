@@ -8,6 +8,7 @@ import { createDatabaseFromEnv } from "dofek/db";
 import { runMigrations } from "dofek/db/migrate";
 import { createImportQueue, createSyncQueue } from "dofek/jobs/queues";
 import express from "express";
+import { isAdmin } from "./auth/admin.ts";
 import { getSessionIdFromRequest } from "./auth/cookies.ts";
 import { validateSession } from "./auth/session.ts";
 import { httpRequestDuration, registry } from "./lib/metrics.ts";
@@ -73,12 +74,28 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
     return _syncQueue;
   }
 
-  // ── Bull Board dashboard ──
+  // ── Bull Board dashboard (admin-only) ──
   const bullBoardAdapter = new ExpressAdapter();
   bullBoardAdapter.setBasePath("/admin/queues");
-  // Bull Board uses lazy adapters — queues are created on first dashboard visit
   const lazyBullBoard = { initialized: false };
-  app.use("/admin/queues", (req, res, next) => {
+  app.use("/admin/queues", async (req, res, next) => {
+    // Require authenticated admin user
+    const sessionId = getSessionIdFromRequest(req);
+    if (!sessionId) {
+      res.status(401).send("Authentication required");
+      return;
+    }
+    const session = await validateSession(db, sessionId);
+    if (!session) {
+      res.status(401).send("Session expired");
+      return;
+    }
+    const admin = await isAdmin(db, session.userId);
+    if (!admin) {
+      res.status(403).send("Admin access required");
+      return;
+    }
+
     if (!lazyBullBoard.initialized) {
       createBullBoard({
         queues: [new BullMQAdapter(getSyncQueue()), new BullMQAdapter(getImportQueue())],

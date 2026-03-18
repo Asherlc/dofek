@@ -3,6 +3,21 @@ import { logSync } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import type { SyncJobData } from "./queues.ts";
 
+/**
+ * Compute overall job percentage from completed providers + within-provider progress.
+ * Each provider gets an equal slice of the total (e.g., 3 providers = 33% each).
+ * Within-provider progress subdivides that slice.
+ */
+function computePct(
+  completedProviders: number,
+  withinProviderPct: number,
+  totalProviders: number,
+): number {
+  if (totalProviders === 0) return 100;
+  const perProvider = 100 / totalProviders;
+  return Math.round(completedProviders * perProvider + (withinProviderPct / 100) * perProvider);
+}
+
 /** Minimal Job interface — only the subset processSyncJob actually uses. */
 interface SyncJob {
   data: SyncJobData;
@@ -30,18 +45,31 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
   for (const p of providers) {
     providerStatus[p.id] = { status: "pending" };
   }
-  await job.updateProgress({ providers: providerStatus });
+  await job.updateProgress({ providers: providerStatus, pct: 0 });
+
+  let completedCount = 0;
+  const totalProviders = providers.length;
 
   for (const provider of providers) {
     providerStatus[provider.id] = { status: "running" };
-    await job.updateProgress({ providers: providerStatus });
+    await job.updateProgress({
+      providers: providerStatus,
+      pct: computePct(completedCount, 0, totalProviders),
+    });
 
     await ensureProvider(db, provider.id, provider.name);
     const syncStart = Date.now();
 
     try {
       console.log(`[worker] Starting ${provider.name}...`);
-      const result = await provider.sync(db, since);
+      const result = await provider.sync(db, since, (pct, message) => {
+        providerStatus[provider.id] = { status: "running", message };
+        job.updateProgress({
+          providers: providerStatus,
+          pct: computePct(completedCount, pct, totalProviders),
+        });
+      });
+      completedCount++;
       const hasErrors = result.errors.length > 0;
       const parts = [`${result.recordsSynced} synced`];
       if (hasErrors) parts.push(`${result.errors.length} errors`);
@@ -50,7 +78,10 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
         status: hasErrors ? "error" : "done",
         message: parts.join(", "),
       };
-      await job.updateProgress({ providers: providerStatus });
+      await job.updateProgress({
+        providers: providerStatus,
+        pct: computePct(completedCount, 0, totalProviders),
+      });
 
       await logSync(db, {
         providerId: provider.id,
@@ -61,9 +92,13 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
         durationMs: Date.now() - syncStart,
       });
     } catch (err: unknown) {
+      completedCount++;
       const message = err instanceof Error ? err.message : String(err);
       providerStatus[provider.id] = { status: "error", message };
-      await job.updateProgress({ providers: providerStatus });
+      await job.updateProgress({
+        providers: providerStatus,
+        pct: computePct(completedCount, 0, totalProviders),
+      });
 
       await logSync(db, {
         providerId: provider.id,
