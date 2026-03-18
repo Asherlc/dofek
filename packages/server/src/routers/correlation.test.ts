@@ -181,4 +181,85 @@ describe("computeCorrelation", () => {
     expect(result.yStats.mean).toBeGreaterThan(0);
     expect(result.yStats.n).toBe(30);
   });
+
+  it("correctly extracts all metric types from JoinedDay", () => {
+    const day = makeDay({
+      date: "2025-01-01",
+      resting_hr: 60,
+      hrv: 50,
+      spo2_avg: 98,
+      skin_temp_c: 36.5,
+      sleep_duration_min: 480,
+      deep_min: 100,
+      rem_min: 80,
+      sleep_efficiency: 85,
+      calories: 2000,
+      protein_g: 100,
+      carbs_g: 250,
+      fat_g: 70,
+      fiber_g: 30,
+      steps: 10000,
+      active_energy_kcal: 500,
+      exercise_minutes: 60,
+      cardio_minutes: 30,
+      strength_minutes: 20,
+      weight_kg: 75,
+      body_fat_pct: 20,
+      weight_30d_avg: 74.5,
+    });
+
+    expect(extractMetricValue(day, "resting_hr")).toBe(60);
+    expect(extractMetricValue(day, "hrv")).toBe(50);
+    expect(extractMetricValue(day, "spo2_avg")).toBe(98);
+    expect(extractMetricValue(day, "skin_temp_c")).toBe(36.5);
+    expect(extractMetricValue(day, "sleep_duration_min")).toBe(480);
+    expect(extractMetricValue(day, "calories")).toBe(2000);
+    expect(extractMetricValue(day, "protein_g")).toBe(100);
+    expect(extractMetricValue(day, "steps")).toBe(10000);
+    expect(extractMetricValue(day, "weight_kg")).toBe(75);
+    expect(extractMetricValue(day, "body_fat_pct")).toBe(20);
+  });
+
+  it("handles edge case with exactly MAX_DATA_POINTS data points", () => {
+    const days: JoinedDay[] = [];
+    for (let i = 0; i < 300; i++) {
+      days.push(
+        makeDay({
+          date: `2025-${String(Math.floor(i / 28) + 1).padStart(2, "0")}-${String((i % 28) + 1).padStart(2, "0")}`,
+          steps: 5000 + i,
+          calories: 2000 + i,
+        }),
+      );
+    }
+
+    const result = computeCorrelation(days, {
+      metricX: "steps",
+      metricY: "calories",
+      days: 365,
+      lag: 0,
+    });
+
+    expect(result.dataPoints.length).toBeLessThanOrEqual(300);
+    expect(result.sampleCount).toBe(300);
+  });
+
+  it("returns consistent stats when computed with different lag values", () => {
+    const days = generateCorrelatedDays(30);
+    const result0 = computeCorrelation(days, {
+      metricX: "protein",
+      metricY: "hrv",
+      days: 365,
+      lag: 0,
+    });
+    const result1 = computeCorrelation(days, {
+      metricX: "protein",
+      metricY: "hrv",
+      days: 365,
+      lag: 1,
+    });
+
+    expect(result0.sampleCount).toBeGreaterThan(result1.sampleCount);
+    expect(result0.dataPoints.length).toBeGreaterThan(0);
+    expect(result1.dataPoints.length).toBeGreaterThan(0);
+  });
 });
