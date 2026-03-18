@@ -122,7 +122,7 @@ async function resolveOrCreateUserId(
     // Check auth_account first (Google/Apple login creates these)
     const existingByAuthEmail = await db.execute<{ user_id: string }>(
       sql`SELECT user_id FROM fitness.auth_account
-          WHERE email = ${email}
+          WHERE LOWER(email) = LOWER(${email})
           LIMIT 1`,
     );
     const authRow = existingByAuthEmail[0];
@@ -134,7 +134,7 @@ async function resolveOrCreateUserId(
     // Also check user_profile.email (web login updates this for DEFAULT_USER_ID)
     const existingByProfileEmail = await db.execute<{ id: string }>(
       sql`SELECT id FROM fitness.user_profile
-          WHERE email = ${email}
+          WHERE LOWER(email) = LOWER(${email})
           LIMIT 1`,
     );
     const profileRow = existingByProfileEmail[0];
@@ -228,7 +228,7 @@ async function lookupOrCreateUserId(
     if (email) {
       const canonical = await db.execute<{ user_id: string }>(
         sql`SELECT user_id FROM fitness.auth_account
-            WHERE email = ${email} AND auth_provider != 'slack'
+            WHERE LOWER(email) = LOWER(${email}) AND auth_provider != 'slack'
             LIMIT 1`,
       );
       const canonicalRow = canonical[0];
