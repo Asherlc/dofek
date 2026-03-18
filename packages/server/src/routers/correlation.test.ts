@@ -210,14 +210,14 @@ describe("computeCorrelation", () => {
 
     expect(extractMetricValue(day, "resting_hr")).toBe(60);
     expect(extractMetricValue(day, "hrv")).toBe(50);
-    expect(extractMetricValue(day, "spo2_avg")).toBe(98);
-    expect(extractMetricValue(day, "skin_temp_c")).toBe(36.5);
-    expect(extractMetricValue(day, "sleep_duration_min")).toBe(480);
+    expect(extractMetricValue(day, "spo2")).toBe(98);
+    expect(extractMetricValue(day, "skin_temp")).toBe(36.5);
+    expect(extractMetricValue(day, "sleep_duration")).toBe(480);
     expect(extractMetricValue(day, "calories")).toBe(2000);
-    expect(extractMetricValue(day, "protein_g")).toBe(100);
+    expect(extractMetricValue(day, "protein")).toBe(100);
     expect(extractMetricValue(day, "steps")).toBe(10000);
-    expect(extractMetricValue(day, "weight_kg")).toBe(75);
-    expect(extractMetricValue(day, "body_fat_pct")).toBe(20);
+    expect(extractMetricValue(day, "weight")).toBe(75);
+    expect(extractMetricValue(day, "body_fat")).toBe(20);
   });
 
   it("handles edge case with exactly MAX_DATA_POINTS data points", () => {
