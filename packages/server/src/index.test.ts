@@ -20,7 +20,7 @@ vi.mock("dofek/jobs/queues", () => ({
   createSyncQueue: vi.fn(),
 }));
 vi.mock("./auth/cookies.ts", () => ({
-  getSessionCookie: vi.fn(),
+  getSessionIdFromRequest: vi.fn(),
 }));
 vi.mock("./auth/session.ts", () => ({
   validateSession: vi.fn(),

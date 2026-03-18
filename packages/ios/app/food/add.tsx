@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -14,11 +14,12 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { BarcodeScanner } from "../../components/BarcodeScanner";
+import { useAuth } from "../../lib/auth-context";
 import { colors } from "../../theme";
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000/api/trpc";
 import { lookupBarcode, searchFoods } from "../../lib/food-database";
 import { type MealType, autoMealType, formatDateYmd } from "../../lib/meal";
+import { getTrpcUrl } from "../../lib/server";
 import { trpc } from "../../lib/trpc";
 
 const MEAL_OPTIONS: { key: MealType; label: string }[] = [
@@ -61,6 +62,15 @@ export default function AddFoodScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ meal?: string; date?: string }>();
   const date = params.date ?? formatDateYmd();
+  const { serverUrl, sessionToken } = useAuth();
+  const apiUrl = serverUrl ? getTrpcUrl(serverUrl) : "http://localhost:3000/api/trpc";
+  const authHeaders = useMemo<Record<string, string>>(
+    () =>
+      sessionToken
+        ? { Authorization: `Bearer ${sessionToken}` }
+        : ({} as Record<string, string>),
+    [sessionToken],
+  );
 
   // ── Tab state ──
   const [activeTab, setActiveTab] = useState<LoggerTab>("search");
@@ -100,14 +110,14 @@ export default function AddFoodScreen() {
     const yStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, "0")}-${String(yesterday.getDate()).padStart(2, "0")}`;
 
     Promise.all([
-      fetch(`${API_URL}/food.byDate?batch=1`, {
+      fetch(`${apiUrl}/food.byDate?batch=1`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders },
         body: JSON.stringify({ "0": { date } }),
       }).then((r) => r.json()).catch(() => null),
-      fetch(`${API_URL}/food.byDate?batch=1`, {
+      fetch(`${apiUrl}/food.byDate?batch=1`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders },
         body: JSON.stringify({ "0": { date: yStr } }),
       }).then((r) => r.json()).catch(() => null),
     ]).then(([todayData, yesterdayData]) => {
@@ -171,9 +181,9 @@ export default function AddFoodScreen() {
     // Search our history and Open Food Facts in parallel
     const [historyResults, offResults] = await Promise.all([
       // Our DB search via tRPC - we call it directly
-      fetch(`${API_URL}/food.search?batch=1`, {
+      fetch(`${apiUrl}/food.search?batch=1`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders },
         body: JSON.stringify({ "0": { query, limit: 5 } }),
       })
         .then((r) => r.json())
@@ -210,7 +220,7 @@ export default function AddFoodScreen() {
     // History first, then Open Food Facts
     setSearchResults([...historyResults, ...offMapped]);
     setSearching(false);
-  }, []);
+  }, [apiUrl, authHeaders]);
 
   // Debounced search
   useEffect(() => {
