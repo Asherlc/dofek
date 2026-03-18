@@ -48,4 +48,16 @@ class MemoryCacheStore implements CacheStore {
   }
 }
 
-export const queryCache: CacheStore = new MemoryCacheStore();
+/** No-op cache store — always misses. Used in e2e test environments where
+ *  Cypress inserts data directly into the DB and expects immediate visibility. */
+class NullCacheStore implements CacheStore {
+  async get(): Promise<undefined> {
+    return undefined;
+  }
+  async set(): Promise<void> {}
+  async invalidateByPrefix(): Promise<void> {}
+  async invalidateAll(): Promise<void> {}
+}
+
+export const queryCache: CacheStore =
+  process.env.DISABLE_QUERY_CACHE === "true" ? new NullCacheStore() : new MemoryCacheStore();

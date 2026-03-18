@@ -51,7 +51,7 @@ describe("Training Page", () => {
       const body = res.body;
       expect(body).to.have.property("result");
       expect(body.result).to.have.property("data");
-      const rows = body.result.data.json;
+      const rows = body.result.data;
       expect(rows).to.be.an("array");
       // Verify hours is always a number (not a string) if rows exist
       for (const row of rows) {
