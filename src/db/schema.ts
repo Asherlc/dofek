@@ -173,6 +173,7 @@ export const bodyMeasurement = fitness.table(
     diastolicBp: integer("diastolic_bp"),
     heartPulse: integer("heart_pulse"),
     temperatureC: real("temperature_c"),
+    sourceName: text("source_name"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
@@ -254,6 +255,7 @@ export const activity = fitness.table(
     name: text("name"),
     notes: text("notes"),
     perceivedExertion: real("perceived_exertion"),
+    sourceName: text("source_name"),
     raw: jsonb("raw"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -384,6 +386,8 @@ export const metricStream = fitness.table(
     bloodGlucose: real("blood_glucose"), // mmol/L
     audioExposure: real("audio_exposure"), // dBASPL
     skinTemperature: real("skin_temperature"), // celsius
+    // Source device/app name (e.g., "Apple Watch", "Wahoo TICKR")
+    sourceName: text("source_name"),
     // Complete raw record — every field, no data loss
     raw: jsonb("raw"),
   },
@@ -434,6 +438,7 @@ export const dailyMetrics = fitness.table(
     stressHighMinutes: integer("stress_high_minutes"), // minutes of high stress (Oura)
     recoveryHighMinutes: integer("recovery_high_minutes"), // minutes of high recovery (Oura)
     resilienceLevel: text("resilience_level"), // e.g. "limited", "adequate", "solid", "strong", "exceptional"
+    sourceName: text("source_name"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
@@ -467,6 +472,7 @@ export const sleepSession = fitness.table(
     awakeMinutes: integer("awake_minutes"),
     efficiencyPct: real("efficiency_pct"),
     isNap: boolean("is_nap").default(false),
+    sourceName: text("source_name"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [

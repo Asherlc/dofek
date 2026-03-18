@@ -5,11 +5,10 @@ import { z } from "zod";
 import type { SyncDatabase } from "./index.ts";
 
 /**
- * Per-category priority for a single provider.
- * Lower number = higher priority. Categories without a value
- * fall back to `activity` (generic), then to 100.
+ * Per-category priority values. Lower number = higher priority.
+ * Categories without a value fall back to `activity` (generic), then to 100.
  */
-const providerPriorityEntrySchema = z.object({
+const priorityCategoriesSchema = z.object({
   /** Generic / activity-level priority (used by v_activity). */
   activity: z.number().int().positive(),
   /** Sleep tracking accuracy (used by v_sleep). */
@@ -20,6 +19,23 @@ const providerPriorityEntrySchema = z.object({
   recovery: z.number().int().positive().optional(),
   /** Daily activity metric accuracy: steps, calories, distance, flights (used by v_daily_metrics). */
   dailyActivity: z.number().int().positive().optional(),
+});
+
+export type PriorityCategories = z.infer<typeof priorityCategoriesSchema>;
+
+/**
+ * Device-level priority override within a provider.
+ * Keys are source_name patterns (matched with SQL LIKE), values are category overrides.
+ * Only specified categories override the provider default; others fall through.
+ */
+const devicePrioritySchema = z.record(z.string(), priorityCategoriesSchema.partial());
+
+/**
+ * Per-provider priority entry with optional device overrides.
+ */
+const providerPriorityEntrySchema = priorityCategoriesSchema.extend({
+  /** Device-specific priority overrides keyed by source_name pattern (SQL LIKE). */
+  devices: devicePrioritySchema.optional(),
 });
 
 export type ProviderPriorityEntry = z.infer<typeof providerPriorityEntrySchema>;
@@ -50,7 +66,7 @@ export function loadProviderPriorityConfig(basePath?: string): ProviderPriorityC
 }
 
 /**
- * Upsert provider priorities from config into the provider_priority table.
+ * Upsert provider priorities and device overrides from config into the DB.
  * This makes the JSON file the source of truth — DB is updated to match on every sync.
  */
 export async function syncProviderPriorities(
@@ -58,6 +74,7 @@ export async function syncProviderPriorities(
   config: ProviderPriorityConfig,
 ): Promise<void> {
   for (const [providerId, entry] of Object.entries(config.providers)) {
+    // Upsert provider-level priorities
     await db.execute(
       sql`INSERT INTO fitness.provider_priority
             (provider_id, priority, sleep_priority, body_priority, recovery_priority, daily_activity_priority)
@@ -76,5 +93,30 @@ export async function syncProviderPriorities(
             recovery_priority = EXCLUDED.recovery_priority,
             daily_activity_priority = EXCLUDED.daily_activity_priority`,
     );
+
+    // Upsert device-level priority overrides
+    if (entry.devices) {
+      for (const [pattern, overrides] of Object.entries(entry.devices)) {
+        await db.execute(
+          sql`INSERT INTO fitness.device_priority
+                (provider_id, source_name_pattern, priority, sleep_priority, body_priority, recovery_priority, daily_activity_priority)
+              VALUES (
+                ${providerId},
+                ${pattern},
+                ${overrides.activity ?? null},
+                ${overrides.sleep ?? null},
+                ${overrides.body ?? null},
+                ${overrides.recovery ?? null},
+                ${overrides.dailyActivity ?? null}
+              )
+              ON CONFLICT (provider_id, source_name_pattern) DO UPDATE SET
+                priority = EXCLUDED.priority,
+                sleep_priority = EXCLUDED.sleep_priority,
+                body_priority = EXCLUDED.body_priority,
+                recovery_priority = EXCLUDED.recovery_priority,
+                daily_activity_priority = EXCLUDED.daily_activity_priority`,
+        );
+      }
+    }
   }
 }

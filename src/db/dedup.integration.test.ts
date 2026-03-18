@@ -110,7 +110,7 @@ describe("Deduplication materialized views", () => {
     if (priorityConfig) {
       await syncProviderPriorities(ctx.db, priorityConfig);
     }
-  }, 60_000);
+  }, 120_000);
 
   afterAll(async () => {
     await ctx?.cleanup();
@@ -537,6 +537,77 @@ describe("Deduplication materialized views", () => {
       expect(mainSleep.length).toBe(1);
       // WHOOP's sleep_priority (20) beats Garmin's fallback (sleep_priority: 40, since Garmin is now seeded)
       expect(mainSleep[0]?.provider_id).toBe("whoop");
+    });
+
+    it("v_activity uses device priority: Apple Health + Wahoo TICKR beats WHOOP", async () => {
+      // Apple Health with source_name="Wahoo TICKR" should get device priority (5)
+      // which beats WHOOP's provider-level activity priority (30)
+      await ctx.db.insert(activity).values([
+        {
+          providerId: "apple_health",
+          externalId: "ah-tickr-run",
+          activityType: "running",
+          startedAt: new Date("2026-03-25T10:00:00Z"),
+          endedAt: new Date("2026-03-25T11:00:00Z"),
+          name: "TICKR Run",
+          sourceName: "Wahoo TICKR X",
+        },
+        {
+          providerId: "whoop",
+          externalId: "whoop-run-dev",
+          activityType: "running",
+          startedAt: new Date("2026-03-25T10:00:30Z"),
+          endedAt: new Date("2026-03-25T10:59:00Z"),
+          name: null,
+          sourceName: null,
+        },
+      ]);
+
+      await refreshDedupViews(ctx.db);
+
+      const rows = await ctx.db.execute<ActivityViewRow>(
+        sql`SELECT * FROM fitness.v_activity WHERE started_at::date = '2026-03-25'`,
+      );
+
+      expect(rows.length).toBe(1);
+      // Apple Health with "Wahoo TICKR%" device pattern (priority 5) beats WHOOP (priority 30)
+      expect(rows[0]?.provider_id).toBe("apple_health");
+      expect(rows[0]?.name).toBe("TICKR Run");
+    });
+
+    it("v_activity falls back to provider priority when no device match", async () => {
+      // Apple Health without source_name should use provider-level priority (90)
+      // which loses to WHOOP's provider-level priority (30)
+      await ctx.db.insert(activity).values([
+        {
+          providerId: "apple_health",
+          externalId: "ah-no-device-run",
+          activityType: "running",
+          startedAt: new Date("2026-03-26T10:00:00Z"),
+          endedAt: new Date("2026-03-26T11:00:00Z"),
+          name: "Unknown Run",
+          sourceName: null,
+        },
+        {
+          providerId: "whoop",
+          externalId: "whoop-run-dev2",
+          activityType: "running",
+          startedAt: new Date("2026-03-26T10:00:30Z"),
+          endedAt: new Date("2026-03-26T10:59:00Z"),
+          name: "WHOOP Run",
+          sourceName: null,
+        },
+      ]);
+
+      await refreshDedupViews(ctx.db);
+
+      const rows = await ctx.db.execute<ActivityViewRow>(
+        sql`SELECT * FROM fitness.v_activity WHERE started_at::date = '2026-03-26'`,
+      );
+
+      expect(rows.length).toBe(1);
+      // WHOOP (30) beats Apple Health (90) when no device match
+      expect(rows[0]?.provider_id).toBe("whoop");
     });
   });
 });

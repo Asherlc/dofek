@@ -109,6 +109,7 @@ export async function upsertMetricStreamBatch(
     const base = {
       providerId,
       recordedAt: record.startDate,
+      sourceName: record.sourceName,
     };
 
     switch (field) {
@@ -160,6 +161,7 @@ export async function upsertBodyMeasurementBatch(
       providerId,
       externalId,
       recordedAt: first.startDate,
+      sourceName: first.sourceName,
     };
 
     for (const r of group) {
@@ -461,6 +463,7 @@ export async function upsertWorkoutBatch(
       startedAt: w.startDate,
       endedAt: w.endDate,
       name: w.activityType,
+      sourceName: w.sourceName,
     }));
 
     const returned = await db
@@ -499,6 +502,7 @@ export async function upsertWorkoutBatch(
           speed: loc.speed,
           gpsAccuracy:
             loc.horizontalAccuracy != null ? Math.round(loc.horizontalAccuracy) : undefined,
+          sourceName: workout.sourceName,
         });
       }
     }
@@ -581,6 +585,7 @@ export async function upsertSleepBatch(
         ? Math.round((s.totalSleepMinutes / s.bed.durationMinutes) * 100) / 100
         : undefined,
     isNap: s.isNap,
+    sourceName: s.bed.sourceName,
   }));
 
   for (let i = 0; i < insertRows.length; i += 500) {

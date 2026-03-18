@@ -59,6 +59,39 @@ describe("providerPriorityConfigSchema", () => {
     };
     expect(() => providerPriorityConfigSchema.parse(config)).toThrow();
   });
+
+  it("validates config with device overrides", () => {
+    const config = {
+      providers: {
+        apple_health: {
+          activity: 90,
+          devices: {
+            "Apple Watch": { activity: 30, recovery: 20 },
+            "Wahoo TICKR%": { activity: 5 },
+          },
+        },
+      },
+    };
+    const parsed = providerPriorityConfigSchema.parse(config);
+    expect(parsed.providers.apple_health?.devices?.["Apple Watch"]?.activity).toBe(30);
+    expect(parsed.providers.apple_health?.devices?.["Wahoo TICKR%"]?.activity).toBe(5);
+  });
+
+  it("allows device overrides with only some categories", () => {
+    const config = {
+      providers: {
+        garmin: {
+          activity: 15,
+          devices: {
+            "Edge%": { activity: 10 },
+          },
+        },
+      },
+    };
+    const parsed = providerPriorityConfigSchema.parse(config);
+    expect(parsed.providers.garmin?.devices?.["Edge%"]?.activity).toBe(10);
+    expect(parsed.providers.garmin?.devices?.["Edge%"]?.sleep).toBeUndefined();
+  });
 });
 
 describe("loadProviderPriorityConfig", () => {
@@ -116,5 +149,8 @@ describe("loadProviderPriorityConfig", () => {
     expect(config?.providers.wahoo?.activity).toBe(10);
     expect(config?.providers.oura?.sleep).toBe(10);
     expect(config?.providers.apple_health?.dailyActivity).toBe(15);
+    // Verify device overrides are loaded
+    expect(config?.providers.apple_health?.devices?.["Apple Watch"]?.activity).toBe(30);
+    expect(config?.providers.apple_health?.devices?.["Wahoo TICKR%"]?.activity).toBe(5);
   });
 });

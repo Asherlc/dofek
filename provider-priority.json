@@ -30,13 +30,46 @@
       "sleep": 25,
       "body": 80,
       "recovery": 25,
-      "dailyActivity": 15
+      "dailyActivity": 15,
+      "devices": {
+        "Apple Watch": {
+          "activity": 30,
+          "sleep": 25,
+          "recovery": 20,
+          "dailyActivity": 15
+        },
+        "Wahoo TICKR%": {
+          "activity": 5,
+          "recovery": 5
+        },
+        "Polar H%": {
+          "activity": 5,
+          "recovery": 5
+        },
+        "Withings%": {
+          "body": 10
+        }
+      }
     },
     "garmin": {
       "activity": 15,
       "sleep": 40,
       "recovery": 30,
-      "dailyActivity": 20
+      "dailyActivity": 20,
+      "devices": {
+        "Edge%": {
+          "activity": 10
+        },
+        "Forerunner%": {
+          "activity": 15
+        },
+        "Fenix%": {
+          "activity": 12
+        },
+        "Venu%": {
+          "activity": 25
+        }
+      }
     },
     "fitbit": {
       "activity": 50,
