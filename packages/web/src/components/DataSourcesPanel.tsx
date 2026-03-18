@@ -35,6 +35,7 @@ export function DataSourcesPanel() {
 
   // Custom auth modal state
   const [whoopAuthOpen, setWhoopAuthOpen] = useState(false);
+  const [garminAuthOpen, setGarminAuthOpen] = useState(false);
 
   const updateState = useCallback(
     (id: string, state: ProviderState) => setProviderStates((prev) => ({ ...prev, [id]: state })),
@@ -188,7 +189,11 @@ export function DataSourcesPanel() {
       fullSync = false,
     ) => {
       if (p.needsCustomAuth && !p.authorized) {
-        setWhoopAuthOpen(true);
+        if (p.id === "garmin") {
+          setGarminAuthOpen(true);
+        } else {
+          setWhoopAuthOpen(true);
+        }
         return;
       }
       if (p.needsOAuth && !p.authorized) {
@@ -336,6 +341,17 @@ export function DataSourcesPanel() {
           onClose={() => setWhoopAuthOpen(false)}
           onSuccess={() => {
             setWhoopAuthOpen(false);
+            trpcUtils.sync.providers.invalidate();
+          }}
+        />
+      )}
+
+      {/* Garmin Auth Modal */}
+      {garminAuthOpen && (
+        <GarminAuthModal
+          onClose={() => setGarminAuthOpen(false)}
+          onSuccess={() => {
+            setGarminAuthOpen(false);
             trpcUtils.sync.providers.invalidate();
           }}
         />
@@ -506,6 +522,99 @@ function SyncProviderCard({
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Garmin Auth Modal ──
+
+function GarminAuthModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const emailRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    emailRef.current?.focus();
+  }, []);
+
+  const signInMutation = trpc.garminAuth.signIn.useMutation();
+
+  const handleSignIn = useCallback(
+    async (e: React.FormEvent<HTMLFormElement>) => {
+      e.preventDefault();
+      setError("");
+      setLoading(true);
+      try {
+        await signInMutation.mutateAsync({ username, password });
+        onSuccess();
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : "Sign in failed");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [username, password, signInMutation, onSuccess],
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 w-full max-w-sm shadow-2xl">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-semibold text-zinc-200">Connect Garmin</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-zinc-500 hover:text-zinc-300 text-lg leading-none p-1"
+            aria-label="Close"
+          >
+            &times;
+          </button>
+        </div>
+
+        {error && (
+          <div className="mb-3 text-xs text-red-400 bg-red-400/10 rounded px-3 py-2">{error}</div>
+        )}
+
+        <form onSubmit={handleSignIn} className="space-y-3">
+          <div>
+            <label htmlFor="garmin-email" className="block text-xs text-zinc-400 mb-1">
+              Email
+            </label>
+            <input
+              ref={emailRef}
+              id="garmin-email"
+              type="email"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              required
+              className="w-full px-3 py-2 text-sm bg-zinc-800 border border-zinc-700 rounded text-zinc-200 focus:outline-none focus:border-zinc-500"
+              placeholder="you@example.com"
+            />
+          </div>
+          <div>
+            <label htmlFor="garmin-password" className="block text-xs text-zinc-400 mb-1">
+              Password
+            </label>
+            <input
+              id="garmin-password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              className="w-full px-3 py-2 text-sm bg-zinc-800 border border-zinc-700 rounded text-zinc-200 focus:outline-none focus:border-zinc-500"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full py-2 text-sm font-medium rounded bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
+          >
+            {loading ? "Signing in..." : "Sign In"}
+          </button>
+        </form>
+      </div>
     </div>
   );
 }

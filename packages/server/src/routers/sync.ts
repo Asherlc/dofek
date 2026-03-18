@@ -154,7 +154,7 @@ export const syncRouter = router({
         /* credentials not configured */
       }
       const needsOAuth = !!setup?.oauthConfig;
-      const needsCustomAuth = p.id === "whoop";
+      const needsCustomAuth = p.id === "whoop" || (p.id === "garmin" && !needsOAuth);
       const needsAuth = needsOAuth || needsCustomAuth;
       const authorized = needsAuth ? tokenSet.has(p.id) : true;
       const lastSyncedAt = lastSyncMap.get(p.id) ?? null;

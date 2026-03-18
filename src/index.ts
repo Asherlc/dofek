@@ -133,6 +133,10 @@ async function main() {
     }
 
     const setup = provider.authSetup();
+    if (!setup) {
+      console.error(`[auth] Provider ${provider.id} does not support CLI auth — use the web UI`);
+      process.exit(1);
+    }
     const { oauthConfig, exchangeCode, apiBaseUrl } = setup;
 
     let tokens: import("./auth/oauth.ts").TokenSet;

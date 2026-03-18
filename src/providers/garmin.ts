@@ -476,30 +476,16 @@ export class GarminProvider implements Provider {
   }
 
   validate(): string | null {
-    const hasOfficialApi = !!process.env.GARMIN_CLIENT_ID;
-    const hasCredentials = !!process.env.GARMIN_USERNAME && !!process.env.GARMIN_PASSWORD;
-    if (!hasOfficialApi && !hasCredentials) {
-      return "Either GARMIN_CLIENT_ID (official API) or GARMIN_USERNAME + GARMIN_PASSWORD (Connect internal API) must be set";
-    }
     return null;
   }
 
-  authSetup(): ProviderAuthSetup {
+  authSetup(): ProviderAuthSetup | undefined {
     const config = garminOAuthConfig();
+    if (!config) return undefined;
 
-    // Build a minimal OAuthConfig even for internal-only mode so the interface is satisfied
-    const oauthConfig: OAuthConfig = config ?? {
-      clientId: "garmin-connect-internal",
-      authorizeUrl: "",
-      tokenUrl: "",
-      redirectUri: "",
-      scopes: [],
-    };
-
-    const setup: ProviderAuthSetup = {
-      oauthConfig,
+    return {
+      oauthConfig: config,
       exchangeCode: async (code, codeVerifier) => {
-        if (!config) throw new Error("GARMIN_CLIENT_ID is required for OAuth flow");
         return exchangeCodeForTokens(
           config,
           code,
@@ -509,19 +495,6 @@ export class GarminProvider implements Provider {
       },
       apiBaseUrl: GARMIN_HEALTH_API_BASE,
     };
-
-    // Add automated login for internal Connect API
-    setup.automatedLogin = async (email: string, password: string): Promise<TokenSet> => {
-      const { tokens } = await GarminConnectClient.signIn(
-        email,
-        password,
-        "garmin.com",
-        this.fetchFn,
-      );
-      return serializeInternalTokens(tokens);
-    };
-
-    return setup;
   }
 
   private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
