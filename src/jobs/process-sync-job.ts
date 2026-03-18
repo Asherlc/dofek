@@ -101,4 +101,14 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
   } catch (err) {
     console.error(`[worker] Failed to refresh views: ${err}`);
   }
+
+  // Refit personalized algorithm parameters from updated data
+  try {
+    const { refitAllParams } = await import("../personalization/refit.ts");
+    console.log("[worker] Refitting personalized parameters...");
+    await refitAllParams(db, job.data.userId);
+    console.log("[worker] Personalized parameters updated.");
+  } catch (err) {
+    console.error(`[worker] Failed to refit parameters: ${err}`);
+  }
 }

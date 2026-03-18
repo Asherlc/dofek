@@ -1,3 +1,5 @@
+import { getEffectiveParams } from "dofek/personalization/params";
+import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { linearRegression } from "../lib/math.ts";
@@ -38,23 +40,28 @@ export interface PmcChartResult {
 /**
  * Compute Bannister TRIMP for an activity.
  *
- * TRIMP = duration_minutes * deltaHR_ratio * 0.64 * e^(1.92 * deltaHR_ratio)
+ * TRIMP = duration_minutes * deltaHR_ratio * genderFactor * e^(exponent * deltaHR_ratio)
  *   where deltaHR_ratio = (avg_hr - resting_hr) / (max_hr - resting_hr)
+ *
+ * genderFactor and exponent default to 0.64 and 1.92 (Bannister generic)
+ * but can be personalized per user.
  */
 export function computeTrimp(
   durationMin: number,
   avgHr: number,
   maxHr: number,
   restingHr: number,
+  genderFactor = 0.64,
+  exponent = 1.92,
 ): number {
   if (maxHr <= restingHr || durationMin <= 0) return 0;
   const deltaHrRatio = (avgHr - restingHr) / (maxHr - restingHr);
   if (deltaHrRatio <= 0) return 0;
-  return durationMin * deltaHrRatio * 0.64 * Math.exp(1.92 * deltaHrRatio);
+  return durationMin * deltaHrRatio * genderFactor * Math.exp(exponent * deltaHrRatio);
 }
 
 /**
- * Compute hrTSS using generic Bannister TRIMP normalized to 1hr at threshold.
+ * Compute hrTSS using Bannister TRIMP normalized to 1hr at threshold.
  * This is the fallback when no learned model is available.
  */
 export function computeHrTss(
@@ -62,14 +69,16 @@ export function computeHrTss(
   avgHr: number,
   maxHr: number,
   restingHr: number,
+  genderFactor = 0.64,
+  exponent = 1.92,
 ): number {
-  const trimp = computeTrimp(durationMin, avgHr, maxHr, restingHr);
+  const trimp = computeTrimp(durationMin, avgHr, maxHr, restingHr, genderFactor, exponent);
   if (trimp === 0) return 0;
 
   // Threshold HR at 85% of max HR
   const thresholdDeltaRatio = 0.85;
   const trimpOneHourAtThreshold =
-    60 * thresholdDeltaRatio * 0.64 * Math.exp(1.92 * thresholdDeltaRatio);
+    60 * thresholdDeltaRatio * genderFactor * Math.exp(exponent * thresholdDeltaRatio);
 
   if (trimpOneHourAtThreshold === 0) return 0;
   return (trimp / trimpOneHourAtThreshold) * 100;
@@ -139,8 +148,14 @@ export const pmcRouter = router({
   chart: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(180) }))
     .query(async ({ ctx, input }): Promise<PmcChartResult> => {
-      // Fetch extra history for EWMA warm-up (42 days for CTL)
-      const queryDays = input.days + 42;
+      // Load personalized algorithm parameters
+      const storedParams = await loadPersonalizedParams(ctx.db, ctx.userId);
+      const effective = getEffectiveParams(storedParams);
+      const { chronicTrainingLoadDays, acuteTrainingLoadDays } = effective.exponentialMovingAverage;
+      const { genderFactor, exponent } = effective.trainingImpulseConstants;
+
+      // Fetch extra history for EWMA warm-up
+      const queryDays = input.days + chronicTrainingLoadDays;
 
       // Get max HR, resting HR from user_profile + per-activity stats from activity_summary
       const combinedActivityRowSchema = z.object({
@@ -241,7 +256,14 @@ export const pmcRouter = router({
 
           // Require NP (computed from metric_stream) for power TSS
           if (np != null && np > 0) {
-            const trimp = computeTrimp(durationMin, avgHr, globalMaxHr, restingHr);
+            const trimp = computeTrimp(
+              durationMin,
+              avgHr,
+              globalMaxHr,
+              restingHr,
+              genderFactor,
+              exponent,
+            );
             const powerTss = computePowerTss(np, ftp, durationMin);
             if (trimp > 0 && powerTss > 0) {
               pairedData.push({ trimp, powerTss });
@@ -265,11 +287,18 @@ export const pmcRouter = router({
           tss = computePowerTss(np, ftp, durationMin);
         } else if (tssModel != null) {
           // Activity has only HR — use learned model to predict TSS from TRIMP
-          const trimp = computeTrimp(durationMin, avgHr, globalMaxHr, restingHr);
+          const trimp = computeTrimp(
+            durationMin,
+            avgHr,
+            globalMaxHr,
+            restingHr,
+            genderFactor,
+            exponent,
+          );
           tss = Math.max(0, tssModel.slope * trimp + tssModel.intercept);
         } else {
-          // Fallback: generic Bannister hrTSS
-          tss = computeHrTss(durationMin, avgHr, globalMaxHr, restingHr);
+          // Fallback: Bannister hrTSS with personalized constants
+          tss = computeHrTss(durationMin, avgHr, globalMaxHr, restingHr, genderFactor, exponent);
         }
 
         const dateStr = String(act.date);
@@ -286,16 +315,16 @@ export const pmcRouter = router({
       let atl = 0;
 
       const current = new Date(startDate);
-      const warmUpDays = 42; // skip these from final output
+      const warmUpDays = chronicTrainingLoadDays; // skip warm-up from final output
       let dayIndex = 0;
 
       while (current <= endDate) {
         const dateStr = current.toISOString().split("T")[0] ?? "";
         const load = dailyLoad.get(dateStr) ?? 0;
 
-        // EWMA update
-        ctl = ctl + (load - ctl) / 42;
-        atl = atl + (load - atl) / 7;
+        // EWMA update with personalized windows
+        ctl = ctl + (load - ctl) / chronicTrainingLoadDays;
+        atl = atl + (load - atl) / acuteTrainingLoadDays;
         const tsb = ctl - atl;
 
         if (dayIndex >= warmUpDays) {

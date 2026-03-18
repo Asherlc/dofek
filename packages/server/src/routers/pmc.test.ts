@@ -21,6 +21,10 @@ vi.mock("../lib/math.ts", () => ({
   linearRegression: (...args: unknown[]) => mockLinearRegression(...args),
 }));
 
+vi.mock("dofek/personalization/storage", () => ({
+  loadPersonalizedParams: vi.fn().mockResolvedValue(null),
+}));
+
 import {
   type ActivityRow,
   buildTssModel,

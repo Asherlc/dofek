@@ -26,6 +26,7 @@ vi.mock("./routers/intervals.ts", () => ({ intervalsRouter: mockRouter }));
 vi.mock("./routers/life-events.ts", () => ({ lifeEventsRouter: mockRouter }));
 vi.mock("./routers/nutrition.ts", () => ({ nutritionRouter: mockRouter }));
 vi.mock("./routers/nutrition-analytics.ts", () => ({ nutritionAnalyticsRouter: mockRouter }));
+vi.mock("./routers/personalization.ts", () => ({ personalizationRouter: mockRouter }));
 vi.mock("./routers/provider-detail.ts", () => ({ providerDetailRouter: mockRouter }));
 vi.mock("./routers/pmc.ts", () => ({ pmcRouter: mockRouter }));
 vi.mock("./routers/power.ts", () => ({ powerRouter: mockRouter }));
@@ -90,6 +91,7 @@ describe("appRouter", () => {
       "bodyAnalytics",
       "nutrition",
       "nutritionAnalytics",
+      "personalization",
       "insights",
       "lifeEvents",
       "supplements",

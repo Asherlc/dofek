@@ -71,6 +71,18 @@ export async function runSync(
     console.error("[sync] Failed to refresh views:", err);
   }
 
+  // Refit personalized algorithm parameters from updated data
+  try {
+    const { refitAllParams } = await import("../personalization/refit.ts");
+    // CLI sync uses DEFAULT_USER_ID; worker sync uses process-sync-job.ts with job.data.userId
+    const { DEFAULT_USER_ID } = await import("../db/schema.ts");
+    console.log("[sync] Refitting personalized parameters...");
+    await refitAllParams(db, DEFAULT_USER_ID);
+    console.log("[sync] Personalized parameters updated.");
+  } catch (err) {
+    console.error("[sync] Failed to refit parameters:", err);
+  }
+
   return {
     results: settled,
     totalRecords: settled.reduce((sum, result) => sum + result.recordsSynced, 0),

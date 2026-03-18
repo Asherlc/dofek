@@ -1,3 +1,5 @@
+import { getEffectiveParams } from "dofek/personalization/params";
+import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { executeWithSchema } from "../lib/typed-sql.ts";
@@ -111,6 +113,12 @@ export const stressRouter = router({
             ORDER BY m.date ASC`,
       );
 
+      // Load personalized stress thresholds
+      const storedParams = await loadPersonalizedParams(ctx.db, ctx.userId);
+      const effective = getEffectiveParams(storedParams);
+      const [hrvHigh, hrvMed, hrvLow] = effective.stressThresholds.hrvThresholds;
+      const [rhrHigh, rhrMed, rhrLow] = effective.stressThresholds.rhrThresholds;
+
       const daily: DailyStressRow[] = rows.map((row) => {
         // HRV deviation: negative z-score = below baseline = stressed
         let hrvDeviation: number | null = null;
@@ -125,10 +133,10 @@ export const stressRouter = router({
             Math.round(
               ((Number(row.hrv) - Number(row.hrv_mean_60d)) / Number(row.hrv_sd_60d)) * 100,
             ) / 100;
-          // More negative = more stress. z < -1 = high stress
-          if (hrvDeviation < -1.5) hrvStress = 1.5;
-          else if (hrvDeviation < -1.0) hrvStress = 1.2;
-          else if (hrvDeviation < -0.5) hrvStress = 0.8;
+          // More negative = more stress (personalized thresholds)
+          if (hrvDeviation < hrvHigh) hrvStress = 1.5;
+          else if (hrvDeviation < hrvMed) hrvStress = 1.2;
+          else if (hrvDeviation < hrvLow) hrvStress = 0.8;
           else if (hrvDeviation < 0) hrvStress = 0.3;
         }
 
@@ -145,9 +153,9 @@ export const stressRouter = router({
             Math.round(
               ((Number(row.resting_hr) - Number(row.rhr_mean_60d)) / Number(row.rhr_sd_60d)) * 100,
             ) / 100;
-          if (restingHrDeviation > 1.5) rhrStress = 1.0;
-          else if (restingHrDeviation > 1.0) rhrStress = 0.8;
-          else if (restingHrDeviation > 0.5) rhrStress = 0.5;
+          if (restingHrDeviation > rhrHigh) rhrStress = 1.0;
+          else if (restingHrDeviation > rhrMed) rhrStress = 0.8;
+          else if (restingHrDeviation > rhrLow) rhrStress = 0.5;
           else if (restingHrDeviation > 0) rhrStress = 0.2;
         }
 
