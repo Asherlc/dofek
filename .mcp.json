@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "axiom": {
-      "command": "npx",
-      "args": ["-y", "mcp-remote", "https://mcp.axiom.co/sse"]
+      "command": "pnpm",
+      "args": ["dlx", "mcp-remote", "https://mcp.axiom.co/sse"]
     }
   }
 }
