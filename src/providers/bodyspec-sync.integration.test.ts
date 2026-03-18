@@ -178,28 +178,19 @@ function bodyspecHandlers(opts?: { apiError?: boolean }) {
     }),
 
     // Composition
-    http.get(
-      "https://app.bodyspec.com/api/v1/users/me/results/result-1/dexa/composition",
-      () => {
-        return HttpResponse.json(fakeComposition);
-      },
-    ),
+    http.get("https://app.bodyspec.com/api/v1/users/me/results/result-1/dexa/composition", () => {
+      return HttpResponse.json(fakeComposition);
+    }),
 
     // Bone density
-    http.get(
-      "https://app.bodyspec.com/api/v1/users/me/results/result-1/dexa/bone-density",
-      () => {
-        return HttpResponse.json(fakeBoneDensity);
-      },
-    ),
+    http.get("https://app.bodyspec.com/api/v1/users/me/results/result-1/dexa/bone-density", () => {
+      return HttpResponse.json(fakeBoneDensity);
+    }),
 
     // Visceral fat
-    http.get(
-      "https://app.bodyspec.com/api/v1/users/me/results/result-1/dexa/visceral-fat",
-      () => {
-        return HttpResponse.json(fakeVisceralFat);
-      },
-    ),
+    http.get("https://app.bodyspec.com/api/v1/users/me/results/result-1/dexa/visceral-fat", () => {
+      return HttpResponse.json(fakeVisceralFat);
+    }),
 
     // RMR
     http.get("https://app.bodyspec.com/api/v1/users/me/results/result-1/dexa/rmr", () => {
@@ -207,12 +198,9 @@ function bodyspecHandlers(opts?: { apiError?: boolean }) {
     }),
 
     // Percentiles (404 is ok, optional endpoint)
-    http.get(
-      "https://app.bodyspec.com/api/v1/users/me/results/result-1/dexa/percentiles",
-      () => {
-        return new HttpResponse(null, { status: 404 });
-      },
-    ),
+    http.get("https://app.bodyspec.com/api/v1/users/me/results/result-1/dexa/percentiles", () => {
+      return new HttpResponse(null, { status: 404 });
+    }),
   ];
 }
 
