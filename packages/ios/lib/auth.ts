@@ -1,5 +1,6 @@
 import * as SecureStore from "expo-secure-store";
 import * as WebBrowser from "expo-web-browser";
+import { z } from "zod";
 
 const SESSION_TOKEN_KEY = "dofek_session_token";
 const APP_SCHEME = "dofek";
@@ -19,11 +20,22 @@ export async function clearSessionToken(): Promise<void> {
   await SecureStore.deleteItemAsync(SESSION_TOKEN_KEY);
 }
 
-export interface AuthUser {
-  id: string;
-  name: string;
-  email: string | null;
-}
+export const AuthUserSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  email: z.string().nullable(),
+});
+
+export type AuthUser = z.infer<typeof AuthUserSchema>;
+
+const identityProviderNames = ["google", "apple", "authentik"] as const;
+
+export const ConfiguredProvidersSchema = z.object({
+  identity: z.array(z.enum(identityProviderNames)),
+  data: z.array(z.string()),
+});
+
+export type ConfiguredProviders = z.infer<typeof ConfiguredProvidersSchema>;
 
 /** Validate the stored session token by calling /api/auth/me. Returns the user or null. */
 export async function fetchCurrentUser(
@@ -35,18 +47,14 @@ export async function fetchCurrentUser(
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) return null;
-    return res.json();
+    const data: unknown = await res.json();
+    return AuthUserSchema.parse(data);
   } catch {
     return null;
   }
 }
 
-export type IdentityProviderName = "google" | "apple" | "authentik";
-
-export interface ConfiguredProviders {
-  identity: IdentityProviderName[];
-  data: string[];
-}
+export type IdentityProviderName = (typeof identityProviderNames)[number];
 
 /** Fetch available login providers from the server. */
 export async function fetchConfiguredProviders(
@@ -56,7 +64,8 @@ export async function fetchConfiguredProviders(
   if (!res.ok) {
     throw new Error(`Failed to fetch providers: ${res.status} ${res.statusText}`);
   }
-  return res.json();
+  const data: unknown = await res.json();
+  return ConfiguredProvidersSchema.parse(data);
 }
 
 /** Start OAuth login via system browser. Returns the session token on success, null if cancelled. */

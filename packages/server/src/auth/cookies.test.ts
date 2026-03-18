@@ -8,6 +8,7 @@ import {
   getOAuthFlowCookies,
   getSessionCookie,
   getSessionIdFromRequest,
+  isValidMobileScheme,
   setLinkUserCookie,
   setMobileSchemeCookie,
   setOAuthFlowCookies,
@@ -271,6 +272,26 @@ describe("Auth cookies", () => {
     it("returns undefined when missing", () => {
       const req = mockRequest({});
       expect(getMobileSchemeCookie(req)).toBeUndefined();
+    });
+  });
+
+  describe("isValidMobileScheme", () => {
+    it("accepts the allowed 'dofek' scheme", () => {
+      expect(isValidMobileScheme("dofek")).toBe(true);
+    });
+
+    it("rejects arbitrary strings", () => {
+      expect(isValidMobileScheme("https://evil.com")).toBe(false);
+    });
+
+    it("rejects empty string", () => {
+      expect(isValidMobileScheme("")).toBe(false);
+    });
+
+    it("rejects non-string values", () => {
+      expect(isValidMobileScheme(undefined)).toBe(false);
+      expect(isValidMobileScheme(null)).toBe(false);
+      expect(isValidMobileScheme(123)).toBe(false);
     });
   });
 });
