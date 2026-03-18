@@ -21,7 +21,7 @@ const priorityCategoriesSchema = z.object({
   dailyActivity: z.number().int().positive().optional(),
 });
 
-export type PriorityCategories = z.infer<typeof priorityCategoriesSchema>;
+type PriorityCategories = z.infer<typeof priorityCategoriesSchema>;
 
 /**
  * Device-level priority override within a provider.
@@ -38,7 +38,7 @@ const providerPriorityEntrySchema = priorityCategoriesSchema.extend({
   devices: devicePrioritySchema.optional(),
 });
 
-export type ProviderPriorityEntry = z.infer<typeof providerPriorityEntrySchema>;
+type ProviderPriorityEntry = z.infer<typeof providerPriorityEntrySchema>;
 
 export const providerPriorityConfigSchema = z.object({
   providers: z.record(z.string(), providerPriorityEntrySchema),
