@@ -146,32 +146,32 @@ export const syncRouter = router({
     // Import-only providers have no real sync — they only work via file upload
     const importOnlyIds = new Set(["strong-csv", "cronometer-csv"]);
 
-    return all.map((p) => {
-      let setup: ReturnType<NonNullable<typeof p.authSetup>> | undefined;
-      try {
-        setup = p.authSetup?.();
-      } catch {
-        /* credentials not configured */
-      }
-      const needsOAuth = !!setup?.oauthConfig;
-      const needsCustomAuth = p.id === "whoop" || p.id === "garmin";
-      const needsAuth = needsOAuth || needsCustomAuth;
-      const authorized = needsAuth ? tokenSet.has(p.id) : true;
-      const lastSyncedAt = lastSyncMap.get(p.id) ?? null;
-      const validation = p.validate();
+    return all
+      .filter((p) => p.validate() === null)
+      .map((p) => {
+        let setup: ReturnType<NonNullable<typeof p.authSetup>> | undefined;
+        try {
+          setup = p.authSetup?.();
+        } catch {
+          /* credentials not configured */
+        }
+        const needsOAuth = !!setup?.oauthConfig;
+        const needsCustomAuth = p.id === "whoop" || p.id === "garmin";
+        const needsAuth = needsOAuth || needsCustomAuth;
+        const authorized = needsAuth ? tokenSet.has(p.id) : true;
+        const lastSyncedAt = lastSyncMap.get(p.id) ?? null;
 
-      return {
-        id: p.id,
-        name: p.name,
-        enabled: validation === null,
-        error: validation,
-        needsOAuth,
-        needsCustomAuth,
-        authorized,
-        lastSyncedAt,
-        importOnly: importOnlyIds.has(p.id),
-      };
-    });
+        return {
+          id: p.id,
+          name: p.name,
+          enabled: true,
+          needsOAuth,
+          needsCustomAuth,
+          authorized,
+          lastSyncedAt,
+          importOnly: importOnlyIds.has(p.id),
+        };
+      });
   }),
 
   /** Trigger sync — enqueues a BullMQ job, returns immediately with jobId */
