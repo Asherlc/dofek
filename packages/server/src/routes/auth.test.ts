@@ -13,6 +13,7 @@ vi.mock("../auth/cookies.ts", () => ({
   setLinkUserCookie: vi.fn(),
   getMobileSchemeCookie: vi.fn(() => undefined),
   setMobileSchemeCookie: vi.fn(),
+  isValidMobileScheme: (scheme: unknown) => scheme === "dofek",
 }));
 
 vi.mock("../auth/providers.ts", () => ({
