@@ -9,10 +9,22 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { z } from "zod";
 import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
 import { MEAL_OPTIONS } from "@dofek/shared/meal";
 import type { MealType } from "@dofek/shared/meal";
+
+const lifeEventSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  started_at: z.string(),
+  ended_at: z.string().nullable(),
+  category: z.string().nullable(),
+  ongoing: z.boolean(),
+  notes: z.string().nullable(),
+});
+type LifeEvent = z.infer<typeof lifeEventSchema>;
 
 // ── Life Events ──
 
@@ -49,14 +61,15 @@ function todayString(): string {
 const UNITS = ["mg", "g", "mcg", "IU", "ml", "oz"] as const;
 const FORMS = ["capsule", "softgel", "tablet", "powder", "liquid", "gummy", "drop"] as const;
 
-interface Supplement {
-  name: string;
-  amount?: number;
-  unit?: string;
-  form?: string;
-  meal?: MealType;
-  description?: string;
-}
+const supplementSchema = z.object({
+  name: z.string(),
+  amount: z.number().optional(),
+  unit: z.string().optional(),
+  form: z.string().optional(),
+  meal: z.enum(["breakfast", "lunch", "dinner", "snack", "other"]).optional(),
+  description: z.string().optional(),
+});
+type Supplement = z.infer<typeof supplementSchema>;
 
 function formatDose(supp: Supplement): string {
   const parts: string[] = [];
@@ -130,15 +143,7 @@ function LifeEventsSection() {
     onError: (error) => Alert.alert("Error", error.message),
   });
 
-  const eventList = (events.data ?? []) as Array<{
-    id: string;
-    label: string;
-    started_at: string;
-    ended_at: string | null;
-    category: string | null;
-    ongoing: boolean;
-    notes: string | null;
-  }>;
+  const eventList: LifeEvent[] = z.array(lifeEventSchema).parse(events.data ?? []);
 
   function handleDelete(id: string) {
     Alert.alert("Delete Event", "Are you sure you want to delete this event?", [
@@ -331,7 +336,7 @@ function SupplementsSection() {
     onError: (error) => Alert.alert("Error", error.message),
   });
 
-  const supplements: Supplement[] = (stack.data ?? []) as Supplement[];
+  const supplements = z.array(supplementSchema).parse(stack.data ?? []);
 
   function handleSave(updated: Supplement[]) {
     saveMutation.mutate({ supplements: updated });

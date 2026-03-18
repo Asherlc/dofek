@@ -333,12 +333,12 @@ export default function OverviewScreen() {
                   unit="bpm"
                 />
                 <MiniMetricCard
-                  label="HRV"
+                  label="Heart Rate Variability"
                   value={metrics.latest_hrv != null ? String(Math.round(metrics.latest_hrv)) : "--"}
                   unit="ms"
                 />
                 <MiniMetricCard
-                  label="SpO2"
+                  label="Blood Oxygen"
                   value={metrics.latest_spo2 != null ? String(Math.round(metrics.latest_spo2)) : "--"}
                   unit="%"
                 />
@@ -404,7 +404,7 @@ export default function OverviewScreen() {
                 )}
                 {currentWeek.avgHrv != null && (
                   <View style={styles.weeklyReportRow}>
-                    <Text style={styles.weeklyLabel}>Avg HRV</Text>
+                    <Text style={styles.weeklyLabel}>Avg Heart Rate Variability</Text>
                     <Text style={styles.weeklyValue}>
                       {Math.round(currentWeek.avgHrv)} ms
                     </Text>

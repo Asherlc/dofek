@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { statusColors } from "./colors.ts";
+import { statusColors, textColors } from "./colors.ts";
 import {
   aggregateWeeklyVolume,
   rampRateColor,
@@ -15,32 +15,32 @@ import {
 } from "./scoring.ts";
 
 describe("scoreColor", () => {
-  it("returns positive for scores >= 67", () => {
-    expect(scoreColor(67)).toBe(statusColors.positive);
+  it("returns positive for scores > 70", () => {
+    expect(scoreColor(71)).toBe(statusColors.positive);
     expect(scoreColor(100)).toBe(statusColors.positive);
   });
 
-  it("returns warning for scores 34-66", () => {
-    expect(scoreColor(34)).toBe(statusColors.warning);
-    expect(scoreColor(66)).toBe(statusColors.warning);
+  it("returns warning for scores 50-70", () => {
+    expect(scoreColor(50)).toBe(statusColors.warning);
+    expect(scoreColor(70)).toBe(statusColors.warning);
   });
 
-  it("returns danger for scores < 34", () => {
+  it("returns danger for scores < 50", () => {
     expect(scoreColor(0)).toBe(statusColors.danger);
-    expect(scoreColor(33)).toBe(statusColors.danger);
+    expect(scoreColor(49)).toBe(statusColors.danger);
   });
 });
 
 describe("scoreLabel", () => {
-  it("returns Recovered for scores >= 67", () => {
+  it("returns Recovered for scores > 70", () => {
     expect(scoreLabel(80)).toBe("Recovered");
   });
 
-  it("returns Moderate for scores 34-66", () => {
+  it("returns Moderate for scores 50-70", () => {
     expect(scoreLabel(50)).toBe("Moderate");
   });
 
-  it("returns Poor for scores < 34", () => {
+  it("returns Poor for scores < 50", () => {
     expect(scoreLabel(10)).toBe("Poor");
   });
 });
@@ -152,43 +152,52 @@ describe("trendColor", () => {
     expect(trendColor("improving")).toBe(statusColors.positive);
   });
 
-  it("returns info for stable", () => {
-    expect(trendColor("stable")).toBe(statusColors.info);
+  it("returns neutral for stable", () => {
+    expect(trendColor("stable")).toBe(textColors.neutral);
+  });
+
+  it("returns neutral for declining", () => {
+    expect(trendColor("declining")).toBe(textColors.neutral);
   });
 
   it("returns danger for worsening", () => {
     expect(trendColor("worsening")).toBe(statusColors.danger);
   });
-
-  it("returns danger for declining", () => {
-    expect(trendColor("declining")).toBe(statusColors.danger);
-  });
 });
 
 describe("rampRateColor", () => {
-  it("returns positive for safe rates", () => {
+  it("returns positive for safe rates (abs < 5)", () => {
     expect(rampRateColor(3)).toBe(statusColors.positive);
   });
 
-  it("returns warning for moderate rates", () => {
-    expect(rampRateColor(8)).toBe(statusColors.warning);
+  it("returns warning for moderate rates (abs <= 7)", () => {
+    expect(rampRateColor(6)).toBe(statusColors.warning);
   });
 
-  it("returns danger for high rates", () => {
+  it("returns danger for high rates (abs > 7)", () => {
     expect(rampRateColor(15)).toBe(statusColors.danger);
+  });
+
+  it("uses absolute value for negative rates", () => {
+    expect(rampRateColor(-3)).toBe(statusColors.positive);
+    expect(rampRateColor(-6)).toBe(statusColors.warning);
+    expect(rampRateColor(-15)).toBe(statusColors.danger);
   });
 });
 
 describe("sleepDebtColor", () => {
-  it("returns positive for low debt", () => {
-    expect(sleepDebtColor(20)).toBe(statusColors.positive);
+  it("returns positive for zero or negative debt", () => {
+    expect(sleepDebtColor(0)).toBe(statusColors.positive);
+    expect(sleepDebtColor(-10)).toBe(statusColors.positive);
   });
 
-  it("returns warning for moderate debt", () => {
+  it("returns warning for moderate debt (< 120)", () => {
+    expect(sleepDebtColor(1)).toBe(statusColors.warning);
     expect(sleepDebtColor(60)).toBe(statusColors.warning);
+    expect(sleepDebtColor(119)).toBe(statusColors.warning);
   });
 
-  it("returns danger for high debt", () => {
+  it("returns danger for high debt (>= 120)", () => {
     expect(sleepDebtColor(120)).toBe(statusColors.danger);
   });
 });

@@ -14,7 +14,7 @@ export const statusColors = {
   warning: "#eab308",
   /** Danger / poor / red — scores <34, injury risk */
   danger: "#ef4444",
-  /** Informational / neutral / blue — stable trends */
+  /** Informational / neutral / blue */
   info: "#3b82f6",
   /** Orange — elevated warnings (e.g. high ramp rate) */
   elevated: "#f97316",
@@ -45,4 +45,6 @@ export const textColors = {
   primary: "#fff",
   secondary: "#8e8e93",
   tertiary: "#636366",
+  /** Neutral gray — used for stable/unchanged trends */
+  neutral: "#71717a",
 } as const;

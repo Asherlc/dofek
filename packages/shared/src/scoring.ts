@@ -1,16 +1,16 @@
-import { statusColors } from "./colors.ts";
+import { statusColors, textColors } from "./colors.ts";
 
 /** Get the color for a recovery/readiness score (0-100) */
 export function scoreColor(score: number): string {
-  if (score >= 67) return statusColors.positive;
-  if (score >= 34) return statusColors.warning;
+  if (score > 70) return statusColors.positive;
+  if (score >= 50) return statusColors.warning;
   return statusColors.danger;
 }
 
 /** Get a human-readable label for a recovery score (0-100) */
 export function scoreLabel(score: number): string {
-  if (score >= 67) return "Recovered";
-  if (score >= 34) return "Moderate";
+  if (score > 70) return "Recovered";
+  if (score >= 50) return "Moderate";
   return "Poor";
 }
 
@@ -62,40 +62,38 @@ export function trendDirection(current: number, previous: number): "up" | "down"
 
 /** Get the color for a stress score (0-3 scale) */
 export function stressColor(score: number): string {
-  if (score < 1) return statusColors.positive;
-  if (score < 2) return statusColors.warning;
-  if (score < 3) return statusColors.elevated;
+  if (score <= 0.5) return statusColors.positive;
+  if (score <= 1.5) return statusColors.warning;
+  if (score <= 2.5) return statusColors.elevated;
   return statusColors.danger;
 }
 
 /** Get a human-readable label for a stress score (0-3 scale) */
 export function stressLabel(score: number): string {
-  if (score < 1) return "Low";
-  if (score < 2) return "Moderate";
-  if (score < 3) return "High";
+  if (score <= 0.5) return "Low";
+  if (score <= 1.5) return "Moderate";
+  if (score <= 2.5) return "High";
   return "Very High";
 }
 
 /** Get the color for a trend direction */
 export function trendColor(trend: "improving" | "worsening" | "stable" | "declining"): string {
   if (trend === "improving") return statusColors.positive;
-  if (trend === "stable") return statusColors.info;
-  return statusColors.danger;
+  if (trend === "worsening") return statusColors.danger;
+  return textColors.neutral;
 }
 
-/** Get the color for a ramp rate value */
+/** Get the color for a ramp rate value (always uses absolute value) */
 export function rampRateColor(rate: number): string {
-  if (rate <= 5) return statusColors.positive;
-  if (rate <= 10) return statusColors.warning;
+  const absRate = Math.abs(rate);
+  if (absRate < 5) return statusColors.positive;
+  if (absRate <= 7) return statusColors.warning;
   return statusColors.danger;
 }
 
 /** Get the color for sleep debt in minutes */
 export function sleepDebtColor(minutes: number): string {
-  if (minutes <= 30) return statusColors.positive;
-  if (minutes <= 90) return statusColors.warning;
+  if (minutes <= 0) return statusColors.positive;
+  if (minutes < 120) return statusColors.warning;
   return statusColors.danger;
 }
-
-// Re-export for convenience — needed by workloadRatioColor's null case
-import { textColors } from "./colors.ts";

@@ -209,7 +209,7 @@ function OverviewTab({ days }: { days: number }) {
       {/* Estimated FTP */}
       {model?.ftp != null && (
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Estimated FTP</Text>
+          <Text style={styles.cardTitle}>Estimated Functional Threshold Power</Text>
           <Text style={styles.bigValue}>{Math.round(model.ftp)} W</Text>
           {model.r2 != null && (
             <Text style={styles.cardSubtext}>
