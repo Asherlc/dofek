@@ -231,21 +231,21 @@ describe("OAuth", () => {
       expect(options?.headers?.Authorization).toMatch(/^Basic /);
     });
 
-    it("defaults expires_in to 7200 when not in response", async () => {
+    it("defaults expires_in to 1 year when not in response", async () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
         json: () =>
           Promise.resolve({
             access_token: "access",
             refresh_token: "refresh",
-            // No expires_in
+            // No expires_in — e.g. RWGPS tokens don't expire
           }),
       });
 
       const result = await exchangeCodeForTokens(config, "code", mockFetch);
-      // Should default to 7200s (2 hours) from now
-      const expectedMin = Date.now() + 7100 * 1000;
-      const expectedMax = Date.now() + 7300 * 1000;
+      const oneYearSeconds = 365 * 24 * 60 * 60;
+      const expectedMin = Date.now() + (oneYearSeconds - 100) * 1000;
+      const expectedMax = Date.now() + (oneYearSeconds + 100) * 1000;
       expect(result.expiresAt.getTime()).toBeGreaterThan(expectedMin);
       expect(result.expiresAt.getTime()).toBeLessThan(expectedMax);
       expect(result.scopes).toBeNull(); // No scope in response

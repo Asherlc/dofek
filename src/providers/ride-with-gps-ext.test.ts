@@ -130,13 +130,14 @@ describe("rideWithGpsOAuthConfig", () => {
     expect(rideWithGpsOAuthConfig()).toBeNull();
   });
 
-  it("returns config with PKCE enabled and no client secret (public client)", () => {
+  it("returns config with client secret (confidential client, no PKCE)", () => {
     process.env.RWGPS_CLIENT_ID = "test-id";
+    process.env.RWGPS_CLIENT_SECRET = "test-secret";
     const config = rideWithGpsOAuthConfig();
     expect(config).not.toBeNull();
     expect(config?.clientId).toBe("test-id");
-    expect(config?.clientSecret).toBeUndefined();
-    expect(config?.usePkce).toBe(true);
+    expect(config?.clientSecret).toBe("test-secret");
+    expect(config?.usePkce).toBeUndefined();
     expect(config?.scopes).toContain("user");
     expect(config?.authorizeUrl).toContain("ridewithgps.com");
     expect(config?.tokenUrl).toContain("ridewithgps.com");
@@ -176,13 +177,14 @@ describe("RideWithGpsProvider — authSetup", () => {
     process.env = { ...originalEnv };
   });
 
-  it("returns auth setup with PKCE and no secret (public client)", () => {
+  it("returns auth setup with client secret (confidential client, no PKCE)", () => {
     process.env.RWGPS_CLIENT_ID = "test-id";
+    process.env.RWGPS_CLIENT_SECRET = "test-secret";
     const provider = new RideWithGpsProvider();
     const setup = provider.authSetup();
     expect(setup.oauthConfig.clientId).toBe("test-id");
-    expect(setup.oauthConfig.usePkce).toBe(true);
-    expect(setup.oauthConfig.clientSecret).toBeUndefined();
+    expect(setup.oauthConfig.usePkce).toBeUndefined();
+    expect(setup.oauthConfig.clientSecret).toBe("test-secret");
     expect(setup.exchangeCode).toBeTypeOf("function");
     expect(setup.apiBaseUrl).toContain("ridewithgps.com");
     expect(setup.getUserIdentity).toBeTypeOf("function");
@@ -274,16 +276,18 @@ describe("RideWithGpsProvider — exchangeCode calls exchangeCodeForTokens", () 
     process.env = { ...originalEnv };
   });
 
-  it("exchangeCode invokes exchangeCodeForTokens with correct args", async () => {
+  it("exchangeCode invokes exchangeCodeForTokens with correct args (no PKCE)", async () => {
     process.env.RWGPS_CLIENT_ID = "test-id";
+    process.env.RWGPS_CLIENT_SECRET = "test-secret";
     const provider = new RideWithGpsProvider();
     const setup = provider.authSetup();
 
     const { exchangeCodeForTokens: mockExchange } = await import("../auth/oauth.ts");
     const result = await setup.exchangeCode("auth-code", "verifier");
 
+    // RWGPS is a confidential client — codeVerifier is passed through but PKCE is not enabled
     expect(mockExchange).toHaveBeenCalledWith(
-      expect.objectContaining({ clientId: "test-id", usePkce: true }),
+      expect.objectContaining({ clientId: "test-id", clientSecret: "test-secret" }),
       "auth-code",
       expect.any(Function),
       { codeVerifier: "verifier" },
@@ -293,6 +297,7 @@ describe("RideWithGpsProvider — exchangeCode calls exchangeCodeForTokens", () 
 
   it("exchangeCode passes undefined options when no codeVerifier", async () => {
     process.env.RWGPS_CLIENT_ID = "test-id";
+    process.env.RWGPS_CLIENT_SECRET = "test-secret";
     const provider = new RideWithGpsProvider();
     const setup = provider.authSetup();
 
@@ -300,7 +305,7 @@ describe("RideWithGpsProvider — exchangeCode calls exchangeCodeForTokens", () 
     await setup.exchangeCode("auth-code");
 
     expect(mockExchange).toHaveBeenCalledWith(
-      expect.objectContaining({ clientId: "test-id" }),
+      expect.objectContaining({ clientId: "test-id", clientSecret: "test-secret" }),
       "auth-code",
       expect.any(Function),
       undefined,

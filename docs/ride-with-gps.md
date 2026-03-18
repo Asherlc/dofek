@@ -2,15 +2,19 @@
 
 ## Authentication
 
-Public OAuth 2.0 client with PKCE — no client secret. The RWGPS app is registered as a public client, so sending a `client_secret` in the token exchange request fails with `invalid_client`. Instead, the authorization flow uses PKCE (`code_challenge` + `code_verifier`) to authenticate the token exchange.
+Confidential OAuth 2.0 client — requires `client_secret`. PKCE is **not** supported.
+
+The token response does **not** include `expires_in` or `refresh_token`, meaning tokens are long-lived (effectively permanent until revoked).
 
 - **Authorize URL**: `https://ridewithgps.com/oauth/authorize`
 - **Token URL**: `https://ridewithgps.com/oauth/token.json`
 - **Scopes**: `user`
+- **Token exchange params**: `grant_type`, `code`, `client_id`, `client_secret`, `redirect_uri`
 
 ## Environment Variables
 
-- `RWGPS_CLIENT_ID` — From RideWithGPS developer settings (no secret needed)
+- `RWGPS_CLIENT_ID` — From RideWithGPS developer settings
+- `RWGPS_CLIENT_SECRET` — From RideWithGPS developer settings
 
 ## API
 
