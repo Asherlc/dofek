@@ -4,6 +4,7 @@ import { authRouter } from "./routers/auth.ts";
 import { bodyRouter } from "./routers/body.ts";
 import { bodyAnalyticsRouter } from "./routers/body-analytics.ts";
 import { calendarRouter } from "./routers/calendar.ts";
+import { correlationRouter } from "./routers/correlation.ts";
 import { cyclingAdvancedRouter } from "./routers/cycling-advanced.ts";
 import { dailyMetricsRouter } from "./routers/daily-metrics.ts";
 import { durationCurvesRouter } from "./routers/duration-curves.ts";
@@ -56,6 +57,7 @@ export const appRouter = router({
   training: trainingRouter,
   trends: trendsRouter,
   calendar: calendarRouter,
+  correlation: correlationRouter,
   pmc: pmcRouter,
   power: powerRouter,
   durationCurves: durationCurvesRouter,

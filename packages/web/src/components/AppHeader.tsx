@@ -8,6 +8,7 @@ const navItems = [
   { to: "/nutrition", label: "Nutrition" },
   { to: "/nutrition-analytics", label: "Nutrition Analytics" },
   { to: "/insights", label: "Insights" },
+  { to: "/correlation", label: "Correlation" },
   { to: "/predictions", label: "ML" },
   { to: "/providers", label: "Providers" },
   { to: "/tracking", label: "Tracking" },
