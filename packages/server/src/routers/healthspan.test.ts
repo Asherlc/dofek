@@ -459,7 +459,7 @@ describe("healthspanRouter", () => {
       expect(result.trend).toBeNull();
     });
 
-    it("computes composite from only metrics with real data", async () => {
+    it("returns null score when fewer than 3 metrics have data", async () => {
       const rows = [
         {
           avg_sleep_min: null,
@@ -481,8 +481,37 @@ describe("healthspanRouter", () => {
       });
       const result = await caller.score({ weeks: 12 });
 
-      // Only resting HR (90) and steps (100) have real data → average of those two
-      expect(result.healthspanScore).toBe(Math.round((90 + 100) / 2));
+      // Only 2 metrics have real data — below minimum threshold
+      expect(result.healthspanScore).toBeNull();
+      // Individual metrics are still returned so the UI can show them
+      expect(result.metrics).toHaveLength(9);
+    });
+
+    it("computes composite from only metrics with real data when above threshold", async () => {
+      const rows = [
+        {
+          avg_sleep_min: 480, // → 100
+          bedtime_stddev_min: 20, // → 78
+          avg_resting_hr: 55, // → 90
+          avg_steps: null,
+          latest_vo2max: null,
+          weekly_aerobic_min: null,
+          weekly_high_intensity_min: null,
+          sessions_per_week: null,
+          weight_kg: null,
+          body_fat_pct: null,
+          weekly_history: null,
+        },
+      ];
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue(rows) },
+        userId: "user-1",
+      });
+      const result = await caller.score({ weeks: 12 });
+
+      // 3 metrics with real data: sleep duration (100), sleep consistency (78), resting HR (90)
+      const expected = Math.round((100 + 78 + 90) / 3);
+      expect(result.healthspanScore).toBe(expected);
     });
 
     it("sets correct status based on score", async () => {

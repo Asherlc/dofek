@@ -200,12 +200,16 @@ export const healthspanRouter = router({
             ),
             hr_zone_time AS (
               SELECT
-                COALESCE(COUNT(*) FILTER (
-                  WHERE ms.heart_rate < rhr.resting_hr + (up2.max_hr - rhr.resting_hr) * 0.8
-                ), 0)::real / 60.0 AS aerobic_minutes,
-                COALESCE(COUNT(*) FILTER (
-                  WHERE ms.heart_rate >= rhr.resting_hr + (up2.max_hr - rhr.resting_hr) * 0.8
-                ), 0)::real / 60.0 AS high_intensity_minutes
+                CASE WHEN COUNT(*) = 0 THEN NULL
+                  ELSE COUNT(*) FILTER (
+                    WHERE ms.heart_rate < rhr.resting_hr + (up2.max_hr - rhr.resting_hr) * 0.8
+                  )::real / 60.0
+                END AS aerobic_minutes,
+                CASE WHEN COUNT(*) = 0 THEN NULL
+                  ELSE COUNT(*) FILTER (
+                    WHERE ms.heart_rate >= rhr.resting_hr + (up2.max_hr - rhr.resting_hr) * 0.8
+                  )::real / 60.0
+                END AS high_intensity_minutes
               FROM fitness.user_profile up2
               JOIN fitness.v_activity a ON a.user_id = up2.id
               JOIN fitness.metric_stream ms ON ms.activity_id = a.id
@@ -224,7 +228,7 @@ export const healthspanRouter = router({
                 AND up2.max_hr IS NOT NULL
             ),
             strength_freq AS (
-              SELECT COUNT(*)::real / GREATEST(${totalDays}::real / 7, 1) AS sessions_per_week
+              SELECT NULLIF(COUNT(*), 0)::real / GREATEST(${totalDays}::real / 7, 1) AS sessions_per_week
               FROM fitness.strength_workout
               WHERE user_id = ${ctx.userId}
                 AND started_at > NOW() - ${totalDays}::int * INTERVAL '1 day'
@@ -373,10 +377,11 @@ export const healthspanRouter = router({
         m.status = scoreToStatus(m.score);
       }
 
-      // Composite: equal weight across metrics that have real data
+      // Composite: equal weight across metrics that have real data.
+      // Require at least 3 metrics — fewer than that is not a meaningful composite.
       const metricsWithData = metricDefs.filter((m) => m.value != null);
       const healthspanScore =
-        metricsWithData.length > 0
+        metricsWithData.length >= 3
           ? Math.round(
               metricsWithData.reduce((sum, m) => sum + m.score, 0) / metricsWithData.length,
             )
