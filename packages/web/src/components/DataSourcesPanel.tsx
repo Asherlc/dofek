@@ -4,6 +4,7 @@ import { z } from "zod";
 import { formatRelativeTime, formatTime } from "../lib/dates.ts";
 import { pollSyncJob } from "../lib/poll-sync-job.ts";
 import { trpc } from "../lib/trpc.ts";
+import { ProviderLogo } from "./ProviderLogo.tsx";
 
 const oauthBroadcastMessage = z.object({
   type: z.literal("complete"),
@@ -297,6 +298,7 @@ export function DataSourcesPanel() {
               return (
                 <FileImportZone
                   key={entry.id}
+                  providerId={entry.id}
                   {...entry.config}
                   stats={providerStats}
                   recentLogs={recentLogs}
@@ -430,6 +432,7 @@ function SyncProviderCard({
           notConfigured ? "Not configured" : needsAuth ? "Click to connect" : "Sync last 7 days"
         }
       >
+        <ProviderLogo provider={provider.id} size={18} />
         {notConfigured ? (
           <span className="inline-block w-2 h-2 rounded-full bg-zinc-700" />
         ) : needsAuth ? (
@@ -703,6 +706,7 @@ function StatusDot({ status }: { status: SyncStatus }) {
 // ── File Import Zone (reusable for Apple Health, Strong CSV, Cronometer CSV) ──
 
 interface FileImportZoneProps {
+  providerId?: string;
   title: string;
   description: string;
   accept: string;
@@ -714,6 +718,7 @@ interface FileImportZoneProps {
 }
 
 function FileImportZone({
+  providerId,
   title,
   description,
   accept,
@@ -906,6 +911,7 @@ function FileImportZone({
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-3">
       <div className="flex items-center gap-2 mb-2">
+        {providerId && <ProviderLogo provider={providerId} size={18} />}
         <StatusDot status={state.status} />
         <span className="text-sm font-medium text-zinc-200">{title}</span>
       </div>

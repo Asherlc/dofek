@@ -2,19 +2,7 @@ import { useEffect, useState } from "react";
 import type { ConfiguredProviders } from "../lib/auth.ts";
 import { fetchConfiguredProviders } from "../lib/auth.ts";
 import { trpc } from "../lib/trpc.ts";
-
-const PROVIDER_LABELS: Record<string, string> = {
-  google: "Google",
-  apple: "Apple",
-  authentik: "Homelab",
-  strava: "Strava",
-  wahoo: "Wahoo",
-  fitbit: "Fitbit",
-  "ride-with-gps": "Ride with GPS",
-  withings: "Withings",
-  garmin: "Garmin",
-  polar: "Polar",
-};
+import { ProviderLogo, providerLabel } from "./ProviderLogo.tsx";
 
 export function LinkedAccountsPanel() {
   const linkedAccounts = trpc.auth.linkedAccounts.useQuery();
@@ -57,14 +45,9 @@ export function LinkedAccountsPanel() {
               className="flex items-center justify-between py-2 px-3 rounded bg-zinc-800/50"
             >
               <div className="flex items-center gap-3">
-                <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-zinc-700 text-zinc-300 text-sm font-medium">
-                  {(PROVIDER_LABELS[account.authProvider] ??
-                    account.authProvider)[0]?.toUpperCase()}
-                </span>
+                <ProviderLogo provider={account.authProvider} size={28} />
                 <div>
-                  <p className="text-sm text-zinc-200">
-                    {PROVIDER_LABELS[account.authProvider] ?? account.authProvider}
-                  </p>
+                  <p className="text-sm text-zinc-200">{providerLabel(account.authProvider)}</p>
                   {account.email && <p className="text-xs text-zinc-500">{account.email}</p>}
                 </div>
               </div>
@@ -96,7 +79,7 @@ export function LinkedAccountsPanel() {
                 href={`/auth/link/${id}`}
                 className="text-xs px-3 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 hover:border-zinc-600 text-zinc-300 transition-colors"
               >
-                {PROVIDER_LABELS[id] ?? id}
+                {providerLabel(id)}
               </a>
             ))}
             {unlinkableData.map((id) => (
@@ -105,7 +88,7 @@ export function LinkedAccountsPanel() {
                 href={`/auth/link/data/${id}`}
                 className="text-xs px-3 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 hover:border-zinc-600 text-zinc-300 transition-colors"
               >
-                {PROVIDER_LABELS[id] ?? id}
+                {providerLabel(id)}
               </a>
             ))}
           </div>
