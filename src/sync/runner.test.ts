@@ -183,6 +183,48 @@ describe("Sync Runner", () => {
     expect(result.totalErrors).toBe(1);
     expect(result.results[0]?.errors).toHaveLength(1);
   });
+
+  it("logs each individual provider error", async () => {
+    const spy = vi.spyOn(logger, "error").mockImplementation(() => logger);
+    const providers = [
+      createMockProvider({
+        id: "flaky",
+        name: "Flaky",
+        sync: async () => ({
+          provider: "flaky",
+          recordsSynced: 3,
+          errors: [{ message: "timeout on page 2" }, { message: "404 on activity 99" }],
+          duration: 10,
+        }),
+      }),
+    ];
+
+    await runSync(mockDb, since, providers);
+
+    expect(spy).toHaveBeenCalledWith("[flaky] timeout on page 2");
+    expect(spy).toHaveBeenCalledWith("[flaky] 404 on activity 99");
+    spy.mockRestore();
+  });
+
+  it("logs unhandled provider rejections", async () => {
+    const spy = vi.spyOn(logger, "error").mockImplementation(() => logger);
+    const providers = [
+      createMockProvider({
+        id: "crash",
+        name: "Crash",
+        sync: async () => {
+          throw new Error("unexpected null");
+        },
+      }),
+    ];
+
+    await runSync(mockDb, since, providers);
+
+    expect(spy).toHaveBeenCalledWith(
+      expect.stringContaining("[crash] Unhandled: Error: unexpected null"),
+    );
+    spy.mockRestore();
+  });
 });
 
 describe("Sync Runner — provider priority sync", () => {
