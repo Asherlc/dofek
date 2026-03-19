@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
 import { ActivityVariabilityTable } from "../../components/ActivityVariabilityTable.tsx";
 import { AerobicEfficiencyChart } from "../../components/AerobicEfficiencyChart.tsx";
 import { EftpTrendChart } from "../../components/EftpTrendChart.tsx";
@@ -41,8 +42,11 @@ function formatTte(seconds: number | null): string {
   return `${mins}m`;
 }
 
+const VARIABILITY_PAGE_SIZE = 20;
+
 function CyclingTab() {
   const { days } = useTrainingDays();
+  const [variabilityOffset, setVariabilityOffset] = useState(0);
 
   // Recent period = user-selected range
   const recentCurve = trpc.power.powerCurve.useQuery({ days });
@@ -50,7 +54,11 @@ function CyclingTab() {
   const eftpTrend = trpc.power.eftpTrend.useQuery({ days: 365 });
   const pmc = trpc.pmc.chart.useQuery({ days });
   const efficiency = trpc.efficiency.aerobicEfficiency.useQuery({ days });
-  const variability = trpc.cyclingAdvanced.activityVariability.useQuery({ days });
+  const variability = trpc.cyclingAdvanced.activityVariability.useQuery({
+    days,
+    limit: VARIABILITY_PAGE_SIZE,
+    offset: variabilityOffset,
+  });
   const verticalAscent = trpc.cyclingAdvanced.verticalAscentRate.useQuery({ days });
   const bodyData = trpc.body.list.useQuery({ days: 365 });
 
@@ -168,7 +176,14 @@ function CyclingTab() {
         title="Activity Variability Index"
         subtitle="Normalized power vs average power ratio per activity"
       >
-        <ActivityVariabilityTable data={variability.data ?? []} loading={variability.isLoading} />
+        <ActivityVariabilityTable
+          data={variability.data?.rows ?? []}
+          totalCount={variability.data?.totalCount ?? 0}
+          offset={variabilityOffset}
+          limit={VARIABILITY_PAGE_SIZE}
+          onPageChange={setVariabilityOffset}
+          loading={variability.isLoading}
+        />
       </Section>
     </>
   );

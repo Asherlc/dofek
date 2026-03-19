@@ -207,6 +207,7 @@ export interface ParsedOuraSleep {
   lightMinutes?: number;
   awakeMinutes?: number;
   efficiencyPct: number;
+  sleepType: OuraSleepDocument["type"];
   isNap: boolean;
 }
 
@@ -245,6 +246,7 @@ export function parseOuraSleep(sleep: OuraSleepDocument): ParsedOuraSleep {
     lightMinutes: secondsToMinutes(sleep.light_sleep_duration),
     awakeMinutes: secondsToMinutes(sleep.awake_time),
     efficiencyPct: sleep.efficiency,
+    sleepType: sleep.type,
     isNap: sleep.type !== "long_sleep" && sleep.type !== "sleep",
   };
 }
@@ -668,7 +670,7 @@ export class OuraProvider implements Provider {
                 lightMinutes: parsed.lightMinutes,
                 awakeMinutes: parsed.awakeMinutes,
                 efficiencyPct: parsed.efficiencyPct,
-                isNap: parsed.isNap,
+                sleepType: parsed.sleepType,
               })
               .onConflictDoUpdate({
                 target: [sleepSession.providerId, sleepSession.externalId],
@@ -681,7 +683,7 @@ export class OuraProvider implements Provider {
                   lightMinutes: parsed.lightMinutes,
                   awakeMinutes: parsed.awakeMinutes,
                   efficiencyPct: parsed.efficiencyPct,
-                  isNap: parsed.isNap,
+                  sleepType: parsed.sleepType,
                 },
               });
             count++;

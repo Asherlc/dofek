@@ -202,7 +202,7 @@ export const efficiencyRouter = router({
    *   Z2 (threshold) = 80-90% HRR (Karvonen zone 4)
    *   Z3 (high intensity) = ≥ 90% HRR (Karvonen zone 5)
    *
-   * PI = log10((Z1_time / (Z2_time * Z3_time)) * 100)
+   * PI = log10((f1 / (f2 * f3)) * 100) where f = fraction of total training time
    * PI > 2.0 indicates a well-polarized training distribution.
    */
   polarizationTrend: cachedProtectedQuery(CacheTTL.LONG)
@@ -257,11 +257,15 @@ export const efficiencyRouter = router({
         const z2 = Number(row.z2_seconds);
         const z3 = Number(row.z3_seconds);
 
-        // Compute Polarization Index: log10((z1 / (z2 * z3)) * 100)
-        // Handle division by zero: if z2 or z3 is 0, PI is undefined
+        // Treff Polarization Index: log10((f1 / (f2 * f3)) * 100)
+        // where f = fraction of total training time (not raw seconds)
         let polarizationIndex: number | null = null;
-        if (z2 > 0 && z3 > 0 && z1 > 0) {
-          const ratio = (z1 / (z2 * z3)) * 100;
+        const total = z1 + z2 + z3;
+        if (z2 > 0 && z3 > 0 && z1 > 0 && total > 0) {
+          const f1 = z1 / total;
+          const f2 = z2 / total;
+          const f3 = z3 / total;
+          const ratio = (f1 / (f2 * f3)) * 100;
           polarizationIndex = Math.round(Math.log10(ratio) * 1000) / 1000;
         }
 

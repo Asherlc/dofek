@@ -5,6 +5,7 @@ const CODE_VERIFIER_COOKIE = "auth_code_verifier";
 const STATE_COOKIE = "auth_state";
 const LINK_USER_COOKIE = "auth_link_user";
 const MOBILE_SCHEME_COOKIE = "auth_mobile_scheme";
+const POST_LOGIN_REDIRECT_COOKIE = "auth_post_login_redirect";
 
 const isProduction = process.env.NODE_ENV === "production";
 
@@ -59,6 +60,7 @@ export function clearOAuthFlowCookies(res: Response): void {
   res.clearCookie(CODE_VERIFIER_COOKIE, { path: "/" });
   res.clearCookie(LINK_USER_COOKIE, { path: "/" });
   res.clearCookie(MOBILE_SCHEME_COOKIE, { path: "/" });
+  res.clearCookie(POST_LOGIN_REDIRECT_COOKIE, { path: "/" });
 }
 
 // ── Account linking cookie (marks OAuth flow as "link to existing user") ──
@@ -111,4 +113,33 @@ export function setMobileSchemeCookie(res: Response, scheme: string): void {
 export function getMobileSchemeCookie(req: Request): string | undefined {
   const val = req.cookies?.[MOBILE_SCHEME_COOKIE];
   return typeof val === "string" ? val : undefined;
+}
+
+// ── Post-login redirect cookie ──
+
+function sanitizeReturnTo(returnTo: string | undefined): string | undefined {
+  if (!returnTo) return undefined;
+  if (!returnTo.startsWith("/") || returnTo.startsWith("//")) return undefined;
+  return returnTo;
+}
+
+export function setPostLoginRedirectCookie(res: Response, returnTo: string | undefined): void {
+  const sanitizedReturnTo = sanitizeReturnTo(returnTo);
+  if (!sanitizedReturnTo) {
+    clearPostLoginRedirectCookie(res);
+    return;
+  }
+  res.cookie(POST_LOGIN_REDIRECT_COOKIE, sanitizedReturnTo, {
+    ...cookieDefaults,
+    maxAge: FLOW_MAX_AGE,
+  });
+}
+
+export function getPostLoginRedirectCookie(req: Request): string | undefined {
+  const val = req.cookies?.[POST_LOGIN_REDIRECT_COOKIE];
+  return sanitizeReturnTo(typeof val === "string" ? val : undefined);
+}
+
+export function clearPostLoginRedirectCookie(res: Response): void {
+  res.clearCookie(POST_LOGIN_REDIRECT_COOKIE, { path: "/" });
 }

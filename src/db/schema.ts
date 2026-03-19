@@ -460,7 +460,7 @@ export const sleepSession = fitness.table(
     lightMinutes: integer("light_minutes"),
     awakeMinutes: integer("awake_minutes"),
     efficiencyPct: real("efficiency_pct"),
-    isNap: boolean("is_nap").default(false),
+    sleepType: text("sleep_type"),
     sourceName: text("source_name"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

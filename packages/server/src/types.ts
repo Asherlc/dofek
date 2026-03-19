@@ -11,6 +11,7 @@ export type {
 export type { CalendarDay } from "./routers/calendar.ts";
 // Cycling advanced router types
 export type {
+  ActivityVariabilityResult,
   ActivityVariabilityRow,
   PedalDynamicsRow,
   RampRateResult,

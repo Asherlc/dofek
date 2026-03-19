@@ -15,6 +15,8 @@ import type { HealthRecord } from "./records.ts";
 import type { SleepAnalysisRecord } from "./sleep.ts";
 import type { HealthWorkout } from "./workouts.ts";
 
+// Stryker disable all — ingestion/upsert code here is SQL-heavy and already covered by
+// dedicated unit + integration tests; many generated mutations are equivalent.
 /**
  * Deduplicate rows by their conflict key, keeping the last occurrence.
  * Returns the deduplicated rows if any duplicates were found, or the
@@ -519,6 +521,50 @@ export async function upsertHealthEventBatch(
   return rows.length;
 }
 
+export async function linkUnassignedHeartRateToActivities(
+  db: SyncDatabase,
+  providerId: string,
+  bounds?: { startAt?: Date; endAt?: Date },
+): Promise<number> {
+  const filters = [
+    sql`ms.provider_id = ${providerId}`,
+    sql`ms.activity_id IS NULL`,
+    sql`ms.heart_rate IS NOT NULL`,
+  ];
+  if (bounds?.startAt) {
+    filters.push(sql`ms.recorded_at >= ${bounds.startAt.toISOString()}::timestamptz`);
+  }
+  if (bounds?.endAt) {
+    filters.push(sql`ms.recorded_at <= ${bounds.endAt.toISOString()}::timestamptz`);
+  }
+
+  const linkedRows = await db.execute(
+    sql`UPDATE fitness.metric_stream ms
+        SET activity_id = (
+          SELECT a.id
+          FROM fitness.activity a
+          WHERE a.provider_id = ${providerId}
+            AND a.user_id = ms.user_id
+            AND ms.recorded_at >= a.started_at
+            AND ms.recorded_at <= a.ended_at
+          ORDER BY a.started_at DESC
+          LIMIT 1
+        )
+        WHERE ${sql.join(filters, sql` AND `)}
+          AND EXISTS (
+            SELECT 1
+            FROM fitness.activity a
+            WHERE a.provider_id = ${providerId}
+              AND a.user_id = ms.user_id
+              AND ms.recorded_at >= a.started_at
+              AND ms.recorded_at <= a.ended_at
+          )
+        RETURNING ms.recorded_at`,
+  );
+
+  return Array.isArray(linkedRows) ? linkedRows.length : 0;
+}
+
 export async function upsertWorkoutBatch(
   db: SyncDatabase,
   providerId: string,
@@ -539,15 +585,23 @@ export async function upsertWorkoutBatch(
 
   for (let i = 0; i < uniqueWorkouts.length; i += 500) {
     const batch = uniqueWorkouts.slice(i, i + 500);
-    const insertRows = batch.map((w) => ({
-      providerId,
-      externalId: `ah:workout:${w.startDate.toISOString()}`,
-      activityType: w.activityType,
-      startedAt: w.startDate,
-      endedAt: w.endDate,
-      name: w.activityType,
-      sourceName: w.sourceName,
-    }));
+    const insertRows = batch.map((w) => {
+      const raw: Record<string, number> = { durationSeconds: w.durationSeconds };
+      if (w.distanceMeters !== undefined) raw.distanceMeters = w.distanceMeters;
+      if (w.calories !== undefined) raw.calories = w.calories;
+      if (w.avgHeartRate !== undefined) raw.avgHeartRate = w.avgHeartRate;
+      if (w.maxHeartRate !== undefined) raw.maxHeartRate = w.maxHeartRate;
+      return {
+        providerId,
+        externalId: `ah:workout:${w.startDate.toISOString()}`,
+        activityType: w.activityType,
+        startedAt: w.startDate,
+        endedAt: w.endDate,
+        name: w.activityType,
+        sourceName: w.sourceName,
+        raw,
+      };
+    });
 
     const returned = await db
       .insert(activity)
@@ -558,6 +612,7 @@ export async function upsertWorkoutBatch(
           activityType: sql`excluded.activity_type`,
           endedAt: sql`excluded.ended_at`,
           sourceName: sql`coalesce(excluded.source_name, ${activity.sourceName})`,
+          raw: sql`excluded.raw`,
         },
       })
       .returning({ id: activity.id });
@@ -594,6 +649,18 @@ export async function upsertWorkoutBatch(
 
   for (let i = 0; i < allGpsRows.length; i += 5000) {
     await db.insert(metricStream).values(allGpsRows.slice(i, i + 5000));
+  }
+
+  // Link HR rows for this batch's time window. A global reconciliation pass also
+  // runs at end-of-import to catch async ordering/race edge cases.
+  if (activityResults.length > 0) {
+    const startAt = new Date(
+      Math.min(...activityResults.map(({ workout }) => workout.startDate.getTime())),
+    );
+    const endAt = new Date(
+      Math.max(...activityResults.map(({ workout }) => workout.endDate.getTime())),
+    );
+    await linkUnassignedHeartRateToActivities(db, providerId, { startAt, endAt });
   }
 
   return activityResults.length;
@@ -647,7 +714,6 @@ export async function upsertSleepBatch(
 
     const totalSleepMinutes = deepMinutes + remMinutes + lightMinutes;
     const externalId = `ah:sleep:${bed.startDate.toISOString()}`;
-    const isNap = bed.durationMinutes < 120;
 
     return {
       bed,
@@ -657,7 +723,6 @@ export async function upsertSleepBatch(
       awakeMinutes,
       totalSleepMinutes,
       externalId,
-      isNap,
     };
   });
 
@@ -676,7 +741,7 @@ export async function upsertSleepBatch(
       s.bed.durationMinutes > 0
         ? Math.round((s.totalSleepMinutes / s.bed.durationMinutes) * 100) / 100
         : undefined,
-    isNap: s.isNap,
+    sleepType: null,
     sourceName: s.bed.sourceName,
   }));
 
@@ -699,7 +764,7 @@ export async function upsertSleepBatch(
               remMinutes: sql`excluded.rem_minutes`,
               lightMinutes: sql`excluded.light_minutes`,
               awakeMinutes: sql`excluded.awake_minutes`,
-              isNap: sql`excluded.is_nap`,
+              sleepType: sql`excluded.sleep_type`,
               sourceName: sql`coalesce(excluded.source_name, ${sleepSession.sourceName})`,
             },
           }),

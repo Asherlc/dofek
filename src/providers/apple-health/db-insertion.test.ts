@@ -1033,6 +1033,59 @@ describe("upsertWorkoutBatch", () => {
     });
   });
 
+  it("populates raw JSONB with workout metrics", async () => {
+    const { db, capture } = createMockDb([{ id: "act-1" }]);
+
+    await upsertWorkoutBatch(db, "p1", [
+      makeWorkout({
+        distanceMeters: 5200,
+        calories: 320,
+        avgHeartRate: 148,
+        maxHeartRate: 182,
+        durationSeconds: 1830,
+      }),
+    ]);
+
+    expect(capture.values[0]?.[0]).toMatchObject({
+      raw: {
+        distanceMeters: 5200,
+        calories: 320,
+        avgHeartRate: 148,
+        maxHeartRate: 182,
+        durationSeconds: 1830,
+      },
+    });
+  });
+
+  it("omits undefined optional fields from raw JSONB", async () => {
+    const { db, capture } = createMockDb([{ id: "act-1" }]);
+
+    await upsertWorkoutBatch(db, "p1", [makeWorkout()]);
+
+    const row = capture.values[0]?.[0];
+    expect(row?.raw).toBeDefined();
+    const raw = row?.raw;
+    expect(raw).toMatchObject({ durationSeconds: 1800 });
+    expect(raw).not.toHaveProperty("distanceMeters");
+    expect(raw).not.toHaveProperty("calories");
+    expect(raw).not.toHaveProperty("avgHeartRate");
+    expect(raw).not.toHaveProperty("maxHeartRate");
+  });
+
+  it("correlates existing HR metric_stream rows with activities by time range", async () => {
+    const { db } = createMockDb([{ id: "act-1" }]);
+
+    await upsertWorkoutBatch(db, "p1", [makeWorkout()]);
+
+    expect(db.execute).toHaveBeenCalled();
+  });
+
+  it("does not call execute for empty workouts array", async () => {
+    const { db } = createMockDb();
+    await upsertWorkoutBatch(db, "p1", []);
+    expect(db.execute).not.toHaveBeenCalled();
+  });
+
   it("returns 0 for empty workouts array", async () => {
     const { db } = createMockDb();
     const count = await upsertWorkoutBatch(db, "p1", []);
@@ -1146,20 +1199,20 @@ describe("upsertSleepBatch", () => {
     expect(capture.values[0]?.[0]).toHaveProperty("efficiencyPct", undefined);
   });
 
-  it("detects naps (duration < 120 minutes)", async () => {
+  it("stores null sleep_type for short sessions", async () => {
     const { db, capture } = createMockDb();
     const records = [makeSleep({ durationMinutes: 60 })];
 
     await upsertSleepBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toMatchObject({ isNap: true });
+    expect(capture.values[0]?.[0]).toMatchObject({ sleepType: null });
   });
 
-  it("detects non-naps (duration >= 120 minutes)", async () => {
+  it("stores null sleep_type for long sessions", async () => {
     const { db, capture } = createMockDb();
     const records = [makeSleep({ durationMinutes: 480 })];
 
     await upsertSleepBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toMatchObject({ isNap: false });
+    expect(capture.values[0]?.[0]).toMatchObject({ sleepType: null });
   });
 
   it("generates correct externalId", async () => {

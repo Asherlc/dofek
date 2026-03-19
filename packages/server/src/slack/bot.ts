@@ -1,7 +1,8 @@
 import type { App as AppType } from "@slack/bolt";
 import bolt from "@slack/bolt";
+import { SocketModeClient } from "@slack/socket-mode";
 
-const { App, ExpressReceiver } = bolt;
+const { App, ExpressReceiver, SocketModeReceiver } = bolt;
 
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
@@ -333,8 +334,21 @@ function slackTimestampToDateString(slackTs: string, timezone: string): string {
 
 /** Register message and action handlers on a Bolt app */
 function registerHandlers(app: AppType, db: Database) {
+  // Log all incoming events so we can diagnose silent failures
+  app.use(async (args) => {
+    if ("event" in args && args.event && typeof args.event === "object" && "type" in args.event) {
+      logger.info(`[slack] Received event type=${String(args.event.type)}`);
+    } else {
+      logger.info("[slack] Received non-event payload (action/shortcut/command)");
+    }
+    await args.next();
+  });
+
   // Handle direct messages (both top-level and thread replies)
   app.message(async ({ message, say, client }) => {
+    logger.info(
+      `[slack] Message handler invoked: type=${message.type ?? "unknown"}, subtype=${"subtype" in message ? message.subtype : "none"}, has_text=${"text" in message && !!message.text}, has_user=${"user" in message && !!message.user}, has_bot_id=${"bot_id" in message && !!message.bot_id}`,
+    );
     // Filter non-user messages: bots, subtypes (edits, deletes, etc.)
     if (!("text" in message) || !message.text) return;
     if ("subtype" in message && message.subtype) return;
@@ -539,38 +553,16 @@ function registerHandlers(app: AppType, db: Database) {
       // Load items for the saved message display
       const rows = await db.execute<{
         food_name: string;
-        food_description: string | null;
-        category: string | null;
         calories: number | null;
-        protein_g: number | null;
-        carbs_g: number | null;
-        fat_g: number | null;
-        fiber_g: number | null;
-        saturated_fat_g: number | null;
-        sugar_g: number | null;
-        sodium_mg: number | null;
-        meal: string | null;
       }>(
-        sql`SELECT food_name, food_description, category, calories,
-                   protein_g, carbs_g, fat_g, fiber_g,
-                   saturated_fat_g, sugar_g, sodium_mg, meal
+        sql`SELECT food_name, calories
             FROM fitness.food_entry
             WHERE id IN (${sqlIdList(entryIds)})`,
       );
 
-      const items: NutritionItemWithMeal[] = rows.map((r) => ({
+      const items = rows.map((r) => ({
         foodName: r.food_name,
-        foodDescription: r.food_description ?? "",
-        category: categorySchema.parse(r.category ?? "other"),
         calories: r.calories ?? 0,
-        proteinG: r.protein_g ?? 0,
-        carbsG: r.carbs_g ?? 0,
-        fatG: r.fat_g ?? 0,
-        fiberG: r.fiber_g ?? 0,
-        saturatedFatG: r.saturated_fat_g ?? 0,
-        sugarG: r.sugar_g ?? 0,
-        sodiumMg: r.sodium_mg ?? 0,
-        meal: mealSchema.parse(r.meal ?? "other"),
       }));
 
       const savedMessage = formatSavedMessage(items);
@@ -759,6 +751,9 @@ export function createSlackBot(db: Database): SlackBotResult | null {
         };
       },
     });
+    app.error(async (error) => {
+      logger.error(`[slack] Unhandled Bolt error: ${error.message ?? error}`);
+    });
     registerHandlers(app, db);
 
     logger.info(
@@ -772,10 +767,24 @@ export function createSlackBot(db: Database): SlackBotResult | null {
   const appToken = process.env.SLACK_APP_TOKEN;
 
   if (botToken && appToken) {
+    const receiver = new SocketModeReceiver({ appToken });
+    // Increase WebSocket ping timeout from the 5s default to 30s.
+    // The default causes rapid reconnection failures during container startup
+    // because pong responses aren't processed in time.
+    // SocketModeReceiver doesn't forward clientPingTimeout, so we construct
+    // a properly configured client and assign it before init() runs.
+    receiver.client = new SocketModeClient({
+      appToken,
+      clientPingTimeout: 30_000,
+    });
+
     const app = new App({
       token: botToken,
-      appToken,
-      socketMode: true,
+      receiver,
+    });
+
+    app.error(async (error) => {
+      logger.error(`[slack] Unhandled Bolt error: ${error.message ?? error}`);
     });
 
     registerHandlers(app, db);

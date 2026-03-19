@@ -370,7 +370,7 @@ describe("providerDetailRouter", () => {
       expect(params).toContain(5);
     });
 
-    it("joins activity_summary for activities data type", async () => {
+    it("does not join activity_summary for activities (raw data only)", async () => {
       const mockExecute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({
         db: { execute: mockExecute },
@@ -381,25 +381,9 @@ describe("providerDetailRouter", () => {
 
       const sqlObj = mockExecute.mock.calls[0][0];
       const sqlText = extractSqlText(sqlObj);
-      expect(sqlText).toContain("activity_summary");
-      expect(sqlText).toContain("LEFT JOIN");
-      expect(sqlText).toContain("avg_hr");
-      expect(sqlText).toContain("total_distance");
-      expect(sqlText).toContain("elevation_gain");
-    });
-
-    it("does not join activity_summary for non-activity data types", async () => {
-      const mockExecute = vi.fn().mockResolvedValue([]);
-      const caller = createCaller({
-        db: { execute: mockExecute },
-        userId: "user-1",
-      });
-
-      await caller.records({ providerId: "strava", dataType: "dailyMetrics" });
-
-      const sqlObj = mockExecute.mock.calls[0][0];
-      const sqlText = extractSqlText(sqlObj);
       expect(sqlText).not.toContain("activity_summary");
+      expect(sqlText).not.toContain("LEFT JOIN");
+      expect(sqlText).not.toContain("avg_hr");
     });
 
     it("defaults offset to 0 and limit to 50", async () => {
@@ -509,7 +493,7 @@ describe("providerDetailRouter", () => {
       expect(params).toContain("abc-123");
     });
 
-    it("joins activity_summary for activities data type", async () => {
+    it("does not join activity_summary for activities (raw data only)", async () => {
       const mockExecute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({
         db: { execute: mockExecute },
@@ -524,28 +508,9 @@ describe("providerDetailRouter", () => {
 
       const sqlObj = mockExecute.mock.calls[0][0];
       const sqlText = extractSqlText(sqlObj);
-      expect(sqlText).toContain("activity_summary");
-      expect(sqlText).toContain("LEFT JOIN");
-      expect(sqlText).toContain("avg_hr");
-      expect(sqlText).toContain("total_distance");
-    });
-
-    it("does not join activity_summary for non-activity data types", async () => {
-      const mockExecute = vi.fn().mockResolvedValue([]);
-      const caller = createCaller({
-        db: { execute: mockExecute },
-        userId: "user-1",
-      });
-
-      await caller.recordDetail({
-        providerId: "strava",
-        dataType: "sleepSessions",
-        recordId: "sleep-1",
-      });
-
-      const sqlObj = mockExecute.mock.calls[0][0];
-      const sqlText = extractSqlText(sqlObj);
       expect(sqlText).not.toContain("activity_summary");
+      expect(sqlText).not.toContain("LEFT JOIN");
+      expect(sqlText).not.toContain("avg_hr");
     });
   });
 

@@ -30,17 +30,31 @@ function makeCaller(rows: Record<string, unknown>[] = []) {
 
 describe("activityRouter", () => {
   describe("list", () => {
-    it("returns rows from db", async () => {
-      const rows = [{ id: "a1", started_at: "2024-01-01" }];
+    it("returns paginated items with totalCount", async () => {
+      const rows = [{ id: "a1", started_at: "2024-01-01", total_count: 5 }];
       const caller = makeCaller(rows);
-      const result = await caller.list({ days: 30 });
-      expect(result).toEqual(rows);
+      const result = await caller.list({ days: 30, limit: 20, offset: 0 });
+      expect(result).toEqual({
+        items: [{ id: "a1", started_at: "2024-01-01" }],
+        totalCount: 5,
+      });
     });
 
-    it("returns empty array when no activities", async () => {
+    it("returns empty items and zero totalCount when no activities", async () => {
       const caller = makeCaller([]);
       const result = await caller.list({ days: 30 });
-      expect(result).toEqual([]);
+      expect(result).toEqual({ items: [], totalCount: 0 });
+    });
+
+    it("uses default limit of 20 and offset of 0", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+      });
+      await caller.list({ days: 30 });
+      // Verify the query was called (default params applied)
+      expect(execute).toHaveBeenCalledTimes(1);
     });
   });
 

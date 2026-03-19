@@ -154,7 +154,7 @@ export class EightSleepProvider implements Provider {
                 lightMinutes: parsed.lightMinutes,
                 awakeMinutes: parsed.awakeMinutes,
                 efficiencyPct: parsed.efficiencyPct,
-                isNap: parsed.isNap,
+                sleepType: parsed.sleepType,
               })
               .onConflictDoUpdate({
                 target: [sleepSession.providerId, sleepSession.externalId],
@@ -167,6 +167,7 @@ export class EightSleepProvider implements Provider {
                   lightMinutes: parsed.lightMinutes,
                   awakeMinutes: parsed.awakeMinutes,
                   efficiencyPct: parsed.efficiencyPct,
+                  sleepType: parsed.sleepType,
                 },
               });
             count++;

@@ -10,11 +10,13 @@ import {
   getLinkUserCookie,
   getMobileSchemeCookie,
   getOAuthFlowCookies,
+  getPostLoginRedirectCookie,
   getSessionIdFromRequest,
   isValidMobileScheme,
   setLinkUserCookie,
   setMobileSchemeCookie,
   setOAuthFlowCookies,
+  setPostLoginRedirectCookie,
   setSessionCookie,
 } from "../auth/cookies.ts";
 import {
@@ -231,6 +233,11 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         setMobileSchemeCookie(res, redirectScheme);
       }
 
+      setPostLoginRedirectCookie(
+        res,
+        typeof req.query.return_to === "string" ? req.query.return_to : undefined,
+      );
+
       res.redirect(url.toString());
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -307,6 +314,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       const { state: storedState, codeVerifier } = getOAuthFlowCookies(req);
       const linkUserId = getLinkUserCookie(req);
       const mobileScheme = getMobileSchemeCookie(req);
+      const returnTo = getPostLoginRedirectCookie(req);
       clearOAuthFlowCookies(res);
 
       if (!storedState || !codeVerifier || stateParam !== storedState) {
@@ -348,7 +356,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       logger.info(
         `[auth] User ${userId} ${linkUserId ? "linked" : "logged in via"} ${providerName}`,
       );
-      res.redirect(linkUserId ? "/settings" : "/");
+      res.redirect(linkUserId ? "/settings" : (returnTo ?? "/"));
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       logger.error(`[auth] Identity callback failed: ${message}`);

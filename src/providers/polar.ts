@@ -260,7 +260,21 @@ function polarOAuthConfig(): OAuthConfig | null {
 // Polar API client
 // ============================================================
 
-class PolarClient {
+export class PolarNotFoundError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PolarNotFoundError";
+  }
+}
+
+export class PolarUnauthorizedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PolarUnauthorizedError";
+  }
+}
+
+export class PolarClient {
   private accessToken: string;
   private fetchFn: typeof globalThis.fetch;
 
@@ -277,9 +291,27 @@ class PolarClient {
       },
     });
 
+    if (response.status === 401 || response.status === 403) {
+      throw new PolarUnauthorizedError(`Polar API unauthorized (${response.status}): ${path}`);
+    }
+
+    if (response.status === 404) {
+      throw new PolarNotFoundError(`Polar API 404: ${path}`);
+    }
+
     if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`Polar API error (${response.status}): ${text}`);
+      const contentType = response.headers.get("content-type") ?? "";
+      let detail: string;
+      if (contentType.includes("application/json")) {
+        const json = await response.json();
+        detail = JSON.stringify(json);
+      } else if (contentType.includes("text/html")) {
+        detail = "(HTML error page)";
+      } else {
+        const text = await response.text();
+        detail = text.length > 200 ? `${text.slice(0, 200)}…` : text;
+      }
+      throw new Error(`Polar API error (${response.status}): ${detail}`);
     }
 
     return response.json();
@@ -417,10 +449,23 @@ export class PolarProvider implements Provider {
       });
       recordsSynced += exerciseCount;
     } catch (err) {
-      errors.push({
-        message: `exercises: ${err instanceof Error ? err.message : String(err)}`,
-        cause: err,
-      });
+      if (err instanceof PolarUnauthorizedError) {
+        errors.push({
+          message:
+            "Polar authorization failed while syncing exercises — run: health-data auth polar",
+          cause: err,
+        });
+      } else if (err instanceof PolarNotFoundError) {
+        errors.push({
+          message: "Polar exercises endpoint returned 404 — try re-authenticating with Polar",
+          cause: err,
+        });
+      } else {
+        errors.push({
+          message: `exercises: ${err instanceof Error ? err.message : String(err)}`,
+          cause: err,
+        });
+      }
     }
 
     // --- Sync sleep ---
@@ -476,10 +521,22 @@ export class PolarProvider implements Provider {
       });
       recordsSynced += sleepCount;
     } catch (err) {
-      errors.push({
-        message: `sleep: ${err instanceof Error ? err.message : String(err)}`,
-        cause: err,
-      });
+      if (err instanceof PolarUnauthorizedError) {
+        errors.push({
+          message: "Polar authorization failed while syncing sleep — run: health-data auth polar",
+          cause: err,
+        });
+      } else if (err instanceof PolarNotFoundError) {
+        errors.push({
+          message: "Polar sleep endpoint returned 404 — try re-authenticating with Polar",
+          cause: err,
+        });
+      } else {
+        errors.push({
+          message: `sleep: ${err instanceof Error ? err.message : String(err)}`,
+          cause: err,
+        });
+      }
     }
 
     // --- Sync daily activity + nightly recharge ---
@@ -539,10 +596,23 @@ export class PolarProvider implements Provider {
       });
       recordsSynced += dailyCount;
     } catch (err) {
-      errors.push({
-        message: `daily_activity: ${err instanceof Error ? err.message : String(err)}`,
-        cause: err,
-      });
+      if (err instanceof PolarUnauthorizedError) {
+        errors.push({
+          message:
+            "Polar authorization failed while syncing daily activity — run: health-data auth polar",
+          cause: err,
+        });
+      } else if (err instanceof PolarNotFoundError) {
+        errors.push({
+          message: "Polar daily activity endpoint returned 404 — try re-authenticating with Polar",
+          cause: err,
+        });
+      } else {
+        errors.push({
+          message: `daily_activity: ${err instanceof Error ? err.message : String(err)}`,
+          cause: err,
+        });
+      }
     }
 
     return {
