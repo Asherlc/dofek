@@ -444,12 +444,25 @@ function createChainProxy() {
 }
 
 // Configurable mock DB with select/insert/delete behavior for sync tests
-function createSyncMockDb(opts: { syncCursor?: string | null; activityId?: number } = {}) {
-  const selectResult = opts.syncCursor ? [{ value: { cursor: opts.syncCursor } }] : [];
+function createSyncMockDb(
+  opts: {
+    syncCursor?: string | null;
+    settingsValue?: unknown;
+    activityId?: number;
+    returningRows?: Array<{ id?: number }>;
+  } = {},
+) {
+  const selectResult =
+    "settingsValue" in opts
+      ? [{ value: opts.settingsValue }]
+      : opts.syncCursor
+        ? [{ value: { cursor: opts.syncCursor } }]
+        : [];
   const activityId = opts.activityId ?? 1;
+  const returningRows = opts.returningRows ?? [{ id: activityId }];
 
   const onConflictResult = Object.create(null);
-  onConflictResult.returning = vi.fn().mockResolvedValue([{ id: activityId }]);
+  onConflictResult.returning = vi.fn().mockResolvedValue(returningRows);
 
   const valuesResult = Object.create(null);
   valuesResult.onConflictDoUpdate = vi.fn().mockReturnValue(onConflictResult);
@@ -492,6 +505,8 @@ describe("RideWithGpsProvider — sync", () => {
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No RWGPS credentials found");
+    expect(result.duration).toBeGreaterThanOrEqual(0);
+    expect(result.duration).toBeLessThan(10_000);
   });
 
   it("returns valid tokens when not expired", async () => {
@@ -521,6 +536,7 @@ describe("RideWithGpsProvider — sync", () => {
     expect(result.errors).toHaveLength(0);
     expect(result.provider).toBe("ride-with-gps");
     expect(result.duration).toBeGreaterThanOrEqual(0);
+    expect(result.duration).toBeLessThan(10_000);
   });
 
   it("refreshes expired token", async () => {
@@ -592,6 +608,8 @@ describe("RideWithGpsProvider — sync", () => {
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("Sync endpoint failed");
+    expect(result.duration).toBeGreaterThanOrEqual(0);
+    expect(result.duration).toBeLessThan(10_000);
   });
 
   it("uses since param when no sync cursor exists", async () => {
@@ -616,6 +634,77 @@ describe("RideWithGpsProvider — sync", () => {
     await provider.sync(db, new Date("2026-03-01T00:00:00Z"));
 
     expect(capturedUrl).toContain("since=2026-03-01");
+  });
+
+  it("uses stored sync cursor when available", async () => {
+    process.env.RWGPS_CLIENT_ID = "test-id";
+    const { loadTokens, ensureProvider } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValue({
+      accessToken: "valid",
+      refreshToken: "refresh",
+      expiresAt: new Date("2099-01-01"),
+      scopes: "user",
+    });
+    vi.mocked(ensureProvider).mockResolvedValue("");
+
+    let capturedUrl = "";
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      capturedUrl = input.toString();
+      return Response.json({ items: [], meta: { rwgps_datetime: "2026-03-15T00:00:00Z" } });
+    };
+
+    const provider = new RideWithGpsProvider(mockFetch);
+    const db = createSyncMockDb({ syncCursor: "2026-02-14T03:00:00Z" });
+    await provider.sync(db, new Date("2026-03-01T00:00:00Z"));
+
+    expect(capturedUrl).toContain("since=2026-02-14");
+  });
+
+  it("falls back to since when stored cursor payload is malformed", async () => {
+    process.env.RWGPS_CLIENT_ID = "test-id";
+    const { loadTokens, ensureProvider } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValue({
+      accessToken: "valid",
+      refreshToken: "refresh",
+      expiresAt: new Date("2099-01-01"),
+      scopes: "user",
+    });
+    vi.mocked(ensureProvider).mockResolvedValue("");
+
+    let capturedUrl = "";
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      capturedUrl = input.toString();
+      return Response.json({ items: [], meta: { rwgps_datetime: "2026-03-15T00:00:00Z" } });
+    };
+
+    const provider = new RideWithGpsProvider(mockFetch);
+    const db = createSyncMockDb({ settingsValue: {} });
+    await provider.sync(db, new Date("2026-03-01T00:00:00Z"));
+
+    expect(capturedUrl).toContain("since=2026-03-01");
+  });
+
+  it("does not fail when sync response omits meta", async () => {
+    process.env.RWGPS_CLIENT_ID = "test-id";
+    const { loadTokens, ensureProvider } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValue({
+      accessToken: "valid",
+      refreshToken: "refresh",
+      expiresAt: new Date("2099-01-01"),
+      scopes: "user",
+    });
+    vi.mocked(ensureProvider).mockResolvedValue("");
+
+    const mockFetch: typeof globalThis.fetch = async () => {
+      return Response.json({ items: [] });
+    };
+
+    const provider = new RideWithGpsProvider(mockFetch);
+    const db = createSyncMockDb();
+    const result = await provider.sync(db, new Date("2026-03-01T00:00:00Z"));
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(0);
   });
 
   it("syncs a trip with track points", async () => {
@@ -672,11 +761,16 @@ describe("RideWithGpsProvider — sync", () => {
     expect(db.delete).toHaveBeenCalled();
 
     const valuesMock = db.insert.mock.results[0]?.value.values;
+    const onConflictDoUpdateMock = valuesMock.mock.results[0]?.value.onConflictDoUpdate;
+    const returningMock = onConflictDoUpdateMock.mock.results[0]?.value.returning;
     const activityInsertArg = valuesMock.mock.calls
       .map((call: unknown[]) => call[0])
       .find(
         (value: unknown) => typeof value === "object" && value !== null && "externalId" in value,
       );
+    const metricInsertArg = valuesMock.mock.calls
+      .map((call: unknown[]) => call[0])
+      .find((value: unknown) => Array.isArray(value));
     const raw = activityInsertArg ? Reflect.get(activityInsertArg, "raw") : undefined;
     const rawTrackPoints = raw ? Reflect.get(raw, "track_points") : undefined;
     const firstRawPoint = Array.isArray(rawTrackPoints) ? rawTrackPoints[0] : undefined;
@@ -694,6 +788,147 @@ describe("RideWithGpsProvider — sync", () => {
     expect(firstRawPoint).not.toHaveProperty("y");
     expect(firstRawPoint).not.toHaveProperty("t");
     expect(firstRawPoint).not.toHaveProperty("s");
+    expect(onConflictDoUpdateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: expect.any(Array),
+        set: expect.objectContaining({
+          activityType: "cycling",
+          name: "Morning Ride",
+        }),
+      }),
+    );
+    expect(returningMock).toHaveBeenCalledWith(expect.objectContaining({ id: expect.anything() }));
+
+    expect(Array.isArray(metricInsertArg)).toBe(true);
+    if (!Array.isArray(metricInsertArg)) {
+      throw new Error("Expected metric insert payload");
+    }
+    expect(metricInsertArg).toHaveLength(2);
+    expect(metricInsertArg[0]).toMatchObject({
+      activityId: 7,
+      providerId: "ride-with-gps",
+      lat: 45.5,
+      lng: -122.6,
+      speed: 25 / 3.6,
+      heartRate: 140,
+      power: 200,
+    });
+    expect(metricInsertArg[1]).toMatchObject({
+      activityId: 7,
+      providerId: "ride-with-gps",
+      lat: 45.51,
+      lng: -122.61,
+      speed: 30 / 3.6,
+    });
+  });
+
+  it("skips metric inserts when activity upsert returns no id", async () => {
+    process.env.RWGPS_CLIENT_ID = "test-id";
+    const { loadTokens, ensureProvider } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValue({
+      accessToken: "valid",
+      refreshToken: "refresh",
+      expiresAt: new Date("2099-01-01"),
+      scopes: "user",
+    });
+    vi.mocked(ensureProvider).mockResolvedValue("");
+
+    const tripDetail = {
+      id: 42,
+      name: "No Activity Row",
+      distance: 50000,
+      duration: 7200,
+      moving_time: 6800,
+      elevation_gain: 500,
+      elevation_loss: 500,
+      created_at: "2026-03-15T10:00:00Z",
+      updated_at: "2026-03-15T10:00:00Z",
+      track_points: [{ x: -122.6, y: 45.5, d: 0, t: 1742025600 }],
+    };
+
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.includes("/sync.json")) {
+        return Response.json({
+          items: [{ item_type: "trip", item_id: 42, action: "created" }],
+          meta: {},
+        });
+      }
+      if (url.includes("/trips/42.json")) {
+        return Response.json({ trip: tripDetail });
+      }
+      return Response.json({});
+    };
+
+    const provider = new RideWithGpsProvider(mockFetch);
+    const db = createSyncMockDb({ returningRows: [] });
+    const result = await provider.sync(db, new Date("2026-03-01"));
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toHaveLength(0);
+    expect(db.delete).not.toHaveBeenCalled();
+  });
+
+  it("batches metric inserts in chunks of 500", async () => {
+    process.env.RWGPS_CLIENT_ID = "test-id";
+    const { loadTokens, ensureProvider } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValue({
+      accessToken: "valid",
+      refreshToken: "refresh",
+      expiresAt: new Date("2099-01-01"),
+      scopes: "user",
+    });
+    vi.mocked(ensureProvider).mockResolvedValue("");
+
+    const trackPoints = Array.from({ length: 501 }, (_, i) => ({
+      x: -122.6 - i * 0.0001,
+      y: 45.5 + i * 0.0001,
+      d: i * 10,
+      t: 1742025600 + i * 5,
+      s: 20 + (i % 5),
+    }));
+    const tripDetail = {
+      id: 99,
+      name: "Batch Ride",
+      distance: 50000,
+      duration: 7200,
+      moving_time: 6800,
+      elevation_gain: 500,
+      elevation_loss: 500,
+      created_at: "2026-03-15T10:00:00Z",
+      updated_at: "2026-03-15T10:00:00Z",
+      track_points: trackPoints,
+    };
+
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.includes("/sync.json")) {
+        return Response.json({
+          items: [{ item_type: "trip", item_id: 99, action: "created" }],
+          meta: {},
+        });
+      }
+      if (url.includes("/trips/99.json")) {
+        return Response.json({ trip: tripDetail });
+      }
+      return Response.json({});
+    };
+
+    const provider = new RideWithGpsProvider(mockFetch);
+    const db = createSyncMockDb({ activityId: 11 });
+    const result = await provider.sync(db, new Date("2026-03-01"));
+
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toHaveLength(0);
+
+    const valuesMock = db.insert.mock.results[0]?.value.values;
+    const metricInsertCalls = valuesMock.mock.calls
+      .map((call: unknown[]) => call[0])
+      .filter((value: unknown) => Array.isArray(value));
+
+    expect(metricInsertCalls).toHaveLength(2);
+    expect(metricInsertCalls[0]).toHaveLength(500);
+    expect(metricInsertCalls[1]).toHaveLength(1);
   });
 
   it("handles deleted trip items", async () => {
