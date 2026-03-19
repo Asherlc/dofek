@@ -812,7 +812,7 @@ describe("importAppleHealthFile — full DB integration", () => {
     expect(session?.lightMinutes).toBe(90);
     expect(session?.deepMinutes).toBe(60);
     expect(session?.remMinutes).toBe(90);
-    expect(session?.isNap).toBe(false);
+    expect(session?.sleepType).toBeNull();
   });
 
   it("creates activity rows for workouts with GPS in metric_stream", async () => {

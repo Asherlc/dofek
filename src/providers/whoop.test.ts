@@ -1365,7 +1365,7 @@ describe("WhoopProvider.sync() — sleep sync", () => {
     expect(sleepInsert?.remMinutes).toBe(90);
     expect(sleepInsert?.lightMinutes).toBe(180);
     expect(sleepInsert?.awakeMinutes).toBe(30);
-    expect(sleepInsert?.isNap).toBe(false);
+    expect(sleepInsert?.sleepType).toBe("sleep");
     expect(sleepInsert?.efficiencyPct).toBeCloseTo(91.7);
   });
 
@@ -1490,7 +1490,7 @@ describe("WhoopProvider.sync() — sleep sync", () => {
     const valuesCallArgs = getValuesCallArgs(db);
     const sleepInsert = findValuesRecord(
       valuesCallArgs,
-      (rec) => typeof rec.externalId === "string" && rec.isNap !== undefined,
+      (rec) => typeof rec.externalId === "string" && rec.sleepType !== undefined,
     );
     expect(sleepInsert).toBeUndefined();
   });

@@ -138,6 +138,7 @@ export interface ParsedFitbitSleep {
   remMinutes?: number;
   awakeMinutes?: number;
   efficiencyPct: number;
+  sleepType: "main" | "not_main";
   isNap: boolean;
 }
 
@@ -218,6 +219,7 @@ export function parseFitbitSleep(sleep: FitbitSleepLog): ParsedFitbitSleep {
     remMinutes: summary.rem?.minutes,
     awakeMinutes: summary.wake?.minutes,
     efficiencyPct: sleep.efficiency,
+    sleepType: sleep.isMainSleep ? "main" : "not_main",
     isNap: !sleep.isMainSleep,
   };
 }
@@ -514,7 +516,7 @@ export class FitbitProvider implements Provider {
                   lightMinutes: parsed.lightMinutes,
                   awakeMinutes: parsed.awakeMinutes,
                   efficiencyPct: parsed.efficiencyPct,
-                  isNap: parsed.isNap,
+                  sleepType: parsed.sleepType,
                 })
                 .onConflictDoUpdate({
                   target: [sleepSession.providerId, sleepSession.externalId],
@@ -527,7 +529,7 @@ export class FitbitProvider implements Provider {
                     lightMinutes: parsed.lightMinutes,
                     awakeMinutes: parsed.awakeMinutes,
                     efficiencyPct: parsed.efficiencyPct,
-                    isNap: parsed.isNap,
+                    sleepType: parsed.sleepType,
                   },
                 });
               count++;

@@ -325,7 +325,7 @@ describe("healthKitSyncRouter", () => {
       expect(result.inserted).toBe(1);
     });
 
-    it("includes duration_minutes and is_nap in SQL", async () => {
+    it("includes duration_minutes and sleep_type in SQL", async () => {
       const execute = makeExecute();
       const caller = createCaller({
         db: { execute },
@@ -352,10 +352,10 @@ describe("healthKitSyncRouter", () => {
       expect(sleepCall).toBeDefined();
       const serialized = JSON.stringify(sleepCall?.[0]);
       expect(serialized).toContain("duration_minutes");
-      expect(serialized).toContain("is_nap");
+      expect(serialized).toContain("sleep_type");
     });
 
-    it("marks short sessions as naps", async () => {
+    it("stores null sleep_type for short sessions", async () => {
       const execute = makeExecute();
       const caller = createCaller({
         db: { execute },
@@ -374,14 +374,14 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      // The 45-minute session should be marked as a nap
+      // HealthKit has no native nap flag; raw sleep_type is stored as null.
       const sleepCall = execute.mock.calls.find((call: unknown[]) => {
         const serialized = JSON.stringify(call[0]);
         return serialized.includes("sleep_session");
       });
       expect(sleepCall).toBeDefined();
       const serialized = JSON.stringify(sleepCall?.[0]);
-      expect(serialized).toContain("is_nap");
+      expect(serialized).toContain("sleep_type");
     });
 
     it("returns 0 when no inBed samples", async () => {

@@ -1146,20 +1146,20 @@ describe("upsertSleepBatch", () => {
     expect(capture.values[0]?.[0]).toHaveProperty("efficiencyPct", undefined);
   });
 
-  it("detects naps (duration < 120 minutes)", async () => {
+  it("stores null sleep_type for short sessions", async () => {
     const { db, capture } = createMockDb();
     const records = [makeSleep({ durationMinutes: 60 })];
 
     await upsertSleepBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toMatchObject({ isNap: true });
+    expect(capture.values[0]?.[0]).toMatchObject({ sleepType: null });
   });
 
-  it("detects non-naps (duration >= 120 minutes)", async () => {
+  it("stores null sleep_type for long sessions", async () => {
     const { db, capture } = createMockDb();
     const records = [makeSleep({ durationMinutes: 480 })];
 
     await upsertSleepBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toMatchObject({ isNap: false });
+    expect(capture.values[0]?.[0]).toMatchObject({ sleepType: null });
   });
 
   it("generates correct externalId", async () => {
