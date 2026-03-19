@@ -64,13 +64,13 @@ describe("Predictions router (integration)", () => {
         sql`INSERT INTO fitness.sleep_session (
               provider_id, user_id, started_at, ended_at,
               duration_minutes, deep_minutes, rem_minutes, light_minutes,
-              awake_minutes, efficiency_pct, is_nap
+              awake_minutes, efficiency_pct, sleep_type
             ) VALUES (
               'test_provider', ${DEFAULT_USER_ID},
               (CURRENT_DATE - ${i}::int)::timestamp + INTERVAL '22 hours',
               (CURRENT_DATE - ${i}::int + 1)::timestamp + INTERVAL '6 hours',
               ${Math.round(duration)}, ${deep}, ${rem}, ${light},
-              ${awake}, ${Math.round(efficiency * 10) / 10}, false
+              ${awake}, ${Math.round(efficiency * 10) / 10}, 'sleep'
             )`,
       );
     }

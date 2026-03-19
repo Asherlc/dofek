@@ -1,6 +1,14 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { CacheTTL, cachedProtectedQueryLight, protectedProcedure, router } from "../trpc.ts";
+import { DISCONNECT_CHILD_TABLES } from "./provider-detail.ts";
+
+const USER_SCOPED_DELETE_TABLES = [
+  "fitness.user_settings",
+  "fitness.life_events",
+  "fitness.sport_settings",
+  "fitness.supplement",
+];
 
 export const settingsRouter = router({
   get: cachedProtectedQueryLight(CacheTTL.LONG)
@@ -48,5 +56,26 @@ export const settingsRouter = router({
       configured,
       connected: rows.length > 0,
     };
+  }),
+
+  deleteAllUserData: protectedProcedure.mutation(async ({ ctx }) => {
+    await ctx.db.transaction(async (tx) => {
+      for (const table of DISCONNECT_CHILD_TABLES) {
+        await tx.execute(
+          sql`DELETE FROM ${sql.raw(table)}
+              WHERE provider_id IN (
+                SELECT id FROM fitness.provider WHERE user_id = ${ctx.userId}
+              )`,
+        );
+      }
+
+      await tx.execute(sql`DELETE FROM fitness.provider WHERE user_id = ${ctx.userId}`);
+
+      for (const table of USER_SCOPED_DELETE_TABLES) {
+        await tx.execute(sql`DELETE FROM ${sql.raw(table)} WHERE user_id = ${ctx.userId}`);
+      }
+    });
+
+    return { success: true };
   }),
 });

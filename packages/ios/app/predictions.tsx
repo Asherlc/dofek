@@ -34,6 +34,7 @@ interface Diagnostics {
   crossValidatedRSquared: number;
   sampleCount: number;
   featureCount: number;
+  linearFallbackUsed?: boolean;
 }
 
 // ── Helpers ──
@@ -138,12 +139,30 @@ export default function PredictionsScreen() {
   const tomorrowAvg = prediction?.tomorrowPrediction
     ? (prediction.tomorrowPrediction.linear + prediction.tomorrowPrediction.tree) / 2
     : null;
+  const linearFallbackUsed = prediction?.diagnostics.linearFallbackUsed === true;
 
   const modelsAgree = prediction?.tomorrowPrediction
-    ? Math.abs(prediction.tomorrowPrediction.linear - prediction.tomorrowPrediction.tree) /
-        Math.max(Math.abs(prediction.tomorrowPrediction.linear), Math.abs(prediction.tomorrowPrediction.tree), 1) <=
-      0.1
+    ? linearFallbackUsed
+      ? false
+      : Math.abs(prediction.tomorrowPrediction.linear - prediction.tomorrowPrediction.tree) /
+          Math.max(
+            Math.abs(prediction.tomorrowPrediction.linear),
+            Math.abs(prediction.tomorrowPrediction.tree),
+            1,
+          ) <=
+        0.1
     : false;
+
+  const agreementLabel = linearFallbackUsed
+    ? "Tree model only"
+    : modelsAgree
+      ? "Models agree"
+      : "Models diverge";
+  const agreementColor = linearFallbackUsed
+    ? colors.textSecondary
+    : modelsAgree
+      ? statusColors.positive
+      : statusColors.warning;
 
   // Diagnostics
   const diagnostics = prediction?.diagnostics;
@@ -223,16 +242,16 @@ export default function PredictionsScreen() {
                 <View
                   style={[
                     styles.agreementDot,
-                    { backgroundColor: modelsAgree ? statusColors.positive : statusColors.warning },
+                    { backgroundColor: agreementColor },
                   ]}
                 />
                 <Text
                   style={[
                     styles.agreementText,
-                    { color: modelsAgree ? statusColors.positive : statusColors.warning },
+                    { color: agreementColor },
                   ]}
                 >
-                  {modelsAgree ? "Models agree" : "Models diverge"}
+                  {agreementLabel}
                 </Text>
               </View>
             </View>
@@ -243,39 +262,44 @@ export default function PredictionsScreen() {
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Key Factors</Text>
               <View style={styles.factorsContainer}>
-                {topFeatures.map((feature) => (
-                  <View key={feature.name} style={styles.factorRow}>
-                    <View style={styles.factorInfo}>
-                      <Text style={styles.factorName}>
-                        {humanizeFeatureName(feature.name)}
+                {topFeatures.map((feature) => {
+                  const directionSymbol =
+                    feature.linearCoefficient > 0
+                      ? "\u2191"
+                      : feature.linearCoefficient < 0
+                        ? "\u2193"
+                        : "\u2022";
+                  const directionColor =
+                    feature.linearCoefficient > 0
+                      ? statusColors.positive
+                      : feature.linearCoefficient < 0
+                        ? statusColors.danger
+                        : colors.textSecondary;
+
+                  return (
+                    <View key={feature.name} style={styles.factorRow}>
+                      <View style={styles.factorInfo}>
+                        <Text style={styles.factorName}>
+                          {humanizeFeatureName(feature.name)}
+                        </Text>
+                      </View>
+                      <View style={styles.factorBarTrack}>
+                        <View
+                          style={[
+                            styles.factorBarFill,
+                            {
+                              width: `${(feature.treeImportance / maxImportance) * 100}%`,
+                              backgroundColor: colors.accent,
+                            },
+                          ]}
+                        />
+                      </View>
+                      <Text style={[styles.directionArrow, { color: directionColor }]}>
+                        {directionSymbol}
                       </Text>
                     </View>
-                    <View style={styles.factorBarTrack}>
-                      <View
-                        style={[
-                          styles.factorBarFill,
-                          {
-                            width: `${(feature.treeImportance / maxImportance) * 100}%`,
-                            backgroundColor: colors.accent,
-                          },
-                        ]}
-                      />
-                    </View>
-                    <Text
-                      style={[
-                        styles.directionArrow,
-                        {
-                          color:
-                            feature.linearCoefficient > 0
-                              ? statusColors.positive
-                              : statusColors.danger,
-                        },
-                      ]}
-                    >
-                      {feature.linearCoefficient > 0 ? "\u2191" : "\u2193"}
-                    </Text>
-                  </View>
-                ))}
+                  );
+                })}
               </View>
             </View>
           )}
@@ -313,6 +337,12 @@ export default function PredictionsScreen() {
                   <Text style={styles.diagnosticLabel}>Features</Text>
                 </View>
               </View>
+              {diagnostics.linearFallbackUsed && (
+                <Text style={styles.fallbackNote}>
+                  The linear model could not be fit for this target because the inputs overlap too
+                  much. Impact ranking and confidence are based on the tree model.
+                </Text>
+              )}
             </View>
           )}
 
@@ -557,6 +587,12 @@ const styles = StyleSheet.create({
   diagnosticLabel: {
     fontSize: 11,
     color: colors.textSecondary,
+  },
+  fallbackNote: {
+    marginTop: 10,
+    fontSize: 11,
+    lineHeight: 16,
+    color: colors.textTertiary,
   },
 
   // ── Timeline chart ──

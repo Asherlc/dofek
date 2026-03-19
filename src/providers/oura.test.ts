@@ -1378,7 +1378,7 @@ describe("OuraProvider.sync()", () => {
     expect(sleepValues.lightMinutes).toBe(240);
     expect(sleepValues.awakeMinutes).toBe(55);
     expect(sleepValues.efficiencyPct).toBe(87);
-    expect(sleepValues.isNap).toBe(false);
+    expect(sleepValues.sleepType).toBe("long_sleep");
     expect(sleepValues.startedAt).toEqual(new Date("2026-02-28T22:30:00+00:00"));
     expect(sleepValues.endedAt).toEqual(new Date("2026-03-01T06:45:00+00:00"));
   });

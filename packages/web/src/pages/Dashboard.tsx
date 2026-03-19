@@ -1,4 +1,4 @@
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useMemo, useState } from "react";
 import { z } from "zod";
 import { ActivityList } from "../components/ActivityList.tsx";
 import { AnomalyAlertBanner } from "../components/AnomalyAlertBanner.tsx";
@@ -8,6 +8,7 @@ import { CorrelationCard, type Insight } from "../components/CorrelationCard.tsx
 import { HealthStatusBar } from "../components/HealthStatusBar.tsx";
 import { HealthspanScoreCard } from "../components/HealthspanScoreCard.tsx";
 import { HrvBaselineChart } from "../components/HrvBaselineChart.tsx";
+import { NextWorkoutCard } from "../components/NextWorkoutCard.tsx";
 import { NutritionChart } from "../components/NutritionChart.tsx";
 import { OnboardingWelcome } from "../components/OnboardingWelcome.tsx";
 import { SleepChart } from "../components/SleepChart.tsx";
@@ -110,12 +111,22 @@ const GRID_PAIR_SECONDARY: Record<string, string> = {
 export function Dashboard() {
   const { unitSystem } = useUnitSystem();
   const { layout, toggleCollapsed, toggleHidden, moveSection } = useDashboardLayout();
-  const [days, setDays] = useState(30);
+  const [days, setDaysRaw] = useState(30);
+  const [activityPage, setActivityPage] = useState(0);
+  const activityPageSize = 20;
+  const setDays = useCallback((d: number) => {
+    setDaysRaw(d);
+    setActivityPage(0);
+  }, []);
   const onboarding = useOnboarding();
 
   const trends = trpc.dailyMetrics.trends.useQuery({ days });
   const dailyMetrics = trpc.dailyMetrics.list.useQuery({ days });
-  const activities = trpc.activity.list.useQuery({ days });
+  const activities = trpc.activity.list.useQuery({
+    days,
+    limit: activityPageSize,
+    offset: activityPage * activityPageSize,
+  });
   const sleepData = trpc.sleep.list.useQuery({ days });
   const hrvBaseline = trpc.dailyMetrics.hrvBaseline.useQuery({ days });
   const nutritionData = trpc.nutrition.daily.useQuery({ days });
@@ -123,6 +134,7 @@ export function Dashboard() {
   const sleepNeed = trpc.sleepNeed.calculate.useQuery();
   const stressData = trpc.stress.scores.useQuery({ days });
   const weeklyReport = trpc.weeklyReport.report.useQuery({ weeks: Math.ceil(days / 7) });
+  const nextWorkout = trpc.training.nextWorkout.useQuery();
   const healthspan = trpc.healthspan.score.useQuery({ weeks: Math.max(Math.ceil(days / 7), 4) });
   const anomalyCheck = trpc.anomalyDetection.check.useQuery({});
   const smoothedWeight = trpc.bodyAnalytics.smoothedWeight.useQuery({ days: Math.max(days, 90) });
@@ -262,6 +274,11 @@ export function Dashboard() {
       subtitle: "Strain balance, sleep vs average, key vitals",
       content: <WeeklyReportCard data={weeklyReport.data} loading={weeklyReport.isLoading} />,
     },
+    nextWorkout: {
+      title: "Next Workout",
+      subtitle: "Daily recommendation based on readiness and training balance",
+      content: <NextWorkoutCard data={nextWorkout.data} loading={nextWorkout.isLoading} />,
+    },
     sleepNeed: {
       title: "Sleep Coach",
       subtitle: "Personalized sleep need based on strain and debt",
@@ -368,8 +385,12 @@ export function Dashboard() {
       content: (
         <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
           <ActivityList
-            activities={assertRows(activities.data, activityRowSchema)}
+            activities={assertRows(activities.data?.items, activityRowSchema)}
             loading={activities.isLoading}
+            totalCount={activities.data?.totalCount}
+            page={activityPage}
+            pageSize={activityPageSize}
+            onPageChange={setActivityPage}
           />
         </div>
       ),

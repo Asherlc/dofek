@@ -229,7 +229,7 @@ describe("Deduplication materialized views", () => {
         lightMinutes: 180,
         awakeMinutes: 30,
         efficiencyPct: 91.7,
-        isNap: false,
+        sleepType: "sleep",
       },
       {
         providerId: "apple_health",
@@ -242,7 +242,7 @@ describe("Deduplication materialized views", () => {
         lightMinutes: 175,
         awakeMinutes: 35,
         efficiencyPct: 89.0,
-        isNap: false,
+        sleepType: "sleep",
       },
     ]);
 
@@ -467,7 +467,7 @@ describe("Deduplication materialized views", () => {
           lightMinutes: 200,
           awakeMinutes: 30,
           efficiencyPct: 89.5,
-          isNap: false,
+          sleepType: "sleep",
         },
         {
           providerId: "oura",
@@ -480,7 +480,7 @@ describe("Deduplication materialized views", () => {
           lightMinutes: 170,
           awakeMinutes: 25,
           efficiencyPct: 92.1,
-          isNap: false,
+          sleepType: "sleep",
         },
       ]);
 
@@ -514,7 +514,7 @@ describe("Deduplication materialized views", () => {
           endedAt: new Date("2026-03-21T06:30:00Z"),
           durationMinutes: 420,
           deepMinutes: 110,
-          isNap: false,
+          sleepType: "sleep",
         },
         {
           providerId: "garmin",
@@ -523,7 +523,7 @@ describe("Deduplication materialized views", () => {
           endedAt: new Date("2026-03-21T06:25:00Z"),
           durationMinutes: 415,
           deepMinutes: 100,
-          isNap: false,
+          sleepType: "sleep",
         },
       ]);
 

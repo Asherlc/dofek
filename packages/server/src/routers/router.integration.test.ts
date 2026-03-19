@@ -77,12 +77,12 @@ describe("Router coverage", () => {
         sql`INSERT INTO fitness.sleep_session (
               provider_id, user_id, started_at, ended_at,
               duration_minutes, deep_minutes, rem_minutes, light_minutes,
-              awake_minutes, efficiency_pct, is_nap
+              awake_minutes, efficiency_pct, sleep_type
             ) VALUES (
               'test_provider', ${DEFAULT_USER_ID},
               (CURRENT_DATE - ${i}::int)::timestamp + INTERVAL '22 hours 30 minutes',
               (CURRENT_DATE - ${i}::int + 1)::timestamp + INTERVAL '6 hours',
-              ${duration}, ${deep}, ${rem}, ${light}, ${awake}, ${efficiency}, false
+              ${duration}, ${deep}, ${rem}, ${light}, ${awake}, ${efficiency}, 'sleep'
             )`,
       );
     }
@@ -988,19 +988,23 @@ describe("Router coverage", () => {
   // ══════════════════════════════════════════════════════════════
   describe("activity", () => {
     it("list returns recent activities", async () => {
-      const result = await query<{ id: string; activity_type: string }[]>("activity.list", {
+      const result = await query<{
+        items: { id: string; activity_type: string }[];
+        totalCount: number;
+      }>("activity.list", {
         days: 90,
       });
 
-      expect(Array.isArray(result)).toBe(true);
-      expect(result.length).toBeGreaterThan(0);
+      expect(Array.isArray(result.items)).toBe(true);
+      expect(result.items.length).toBeGreaterThan(0);
+      expect(result.totalCount).toBeGreaterThanOrEqual(result.items.length);
     });
 
     it("byId returns activity detail with summary data", async () => {
       // First get an activity id from list
-      const list = await query<{ id: string }[]>("activity.list", { days: 90 });
-      expect(list.length).toBeGreaterThan(0);
-      const activityId = list[0]?.id;
+      const list = await query<{ items: { id: string }[] }>("activity.list", { days: 90 });
+      expect(list.items.length).toBeGreaterThan(0);
+      const activityId = list.items[0]?.id;
       expect(activityId).toBeTruthy();
 
       const result = await query<{
@@ -1032,8 +1036,8 @@ describe("Router coverage", () => {
     });
 
     it("stream returns downsampled metric data for an activity", async () => {
-      const list = await query<{ id: string }[]>("activity.list", { days: 90 });
-      const activityId = list[0]?.id;
+      const list = await query<{ items: { id: string }[] }>("activity.list", { days: 90 });
+      const activityId = list.items[0]?.id;
       expect(activityId).toBeTruthy();
 
       const result = await query<
@@ -1055,8 +1059,8 @@ describe("Router coverage", () => {
     });
 
     it("hrZones returns 5-zone distribution for an activity", async () => {
-      const list = await query<{ id: string }[]>("activity.list", { days: 90 });
-      const activityId = list[0]?.id;
+      const list = await query<{ items: { id: string }[] }>("activity.list", { days: 90 });
+      const activityId = list.items[0]?.id;
       expect(activityId).toBeTruthy();
 
       const result = await query<

@@ -13,6 +13,9 @@ vi.mock("../auth/cookies.ts", () => ({
   setLinkUserCookie: vi.fn(),
   getMobileSchemeCookie: vi.fn(() => undefined),
   setMobileSchemeCookie: vi.fn(),
+  getPostLoginRedirectCookie: vi.fn(() => undefined),
+  setPostLoginRedirectCookie: vi.fn(),
+  clearPostLoginRedirectCookie: vi.fn(),
   isValidMobileScheme: (scheme: unknown) => scheme === "dofek",
 }));
 
@@ -81,7 +84,9 @@ import express from "express";
 import {
   getMobileSchemeCookie,
   getOAuthFlowCookies,
+  getPostLoginRedirectCookie,
   getSessionIdFromRequest,
+  setPostLoginRedirectCookie,
 } from "../auth/cookies.ts";
 import { getIdentityProvider, isProviderConfigured } from "../auth/providers.ts";
 import { deleteSession, validateSession } from "../auth/session.ts";
@@ -159,6 +164,31 @@ describe("createAuthRouter", () => {
       const { app } = createTestApp();
       const res = await request(app, "get", "/auth/login/google");
       expect(res.status).toBe(302);
+      expect(setPostLoginRedirectCookie).toHaveBeenCalledWith(expect.anything(), undefined);
+    });
+
+    it("stores validated return_to when provided", async () => {
+      const { app } = createTestApp();
+      const res = await request(
+        app,
+        "get",
+        "/auth/login/google?return_to=%2Fdashboard%3Fonboarding%3Dtrue",
+      );
+      expect(res.status).toBe(302);
+      expect(setPostLoginRedirectCookie).toHaveBeenCalledWith(
+        expect.anything(),
+        "/dashboard?onboarding=true",
+      );
+    });
+
+    it("ignores invalid return_to values", async () => {
+      const { app } = createTestApp();
+      const res = await request(app, "get", "/auth/login/google?return_to=https%3A%2F%2Fevil.test");
+      expect(res.status).toBe(302);
+      expect(setPostLoginRedirectCookie).toHaveBeenCalledWith(
+        expect.anything(),
+        "https://evil.test",
+      );
     });
   });
 
@@ -349,6 +379,33 @@ describe("createAuthRouter", () => {
         "/auth/callback/google?code=authcode&state=google:state123",
       );
       expect(res.status).toBe(302); // redirect to /
+    });
+
+    it("uses stored return_to for successful callback", async () => {
+      const mockValidate = vi.fn(() =>
+        Promise.resolve({
+          tokens: {},
+          user: { sub: "goog-1", email: "alice@test.com", name: "Alice" },
+        }),
+      );
+      vi.mocked(getIdentityProvider).mockReturnValue({
+        createAuthorizationUrl: vi.fn(() => new URL("https://accounts.google.com/authorize")),
+        validateCallback: mockValidate,
+      });
+      vi.mocked(getOAuthFlowCookies).mockReturnValue({
+        state: "google:state123",
+        codeVerifier: "verifier123",
+      });
+      vi.mocked(getPostLoginRedirectCookie).mockReturnValue("/dashboard?onboarding=true");
+
+      const { app } = createTestApp();
+      const res = await request(
+        app,
+        "get",
+        "/auth/callback/google?code=authcode&state=google:state123",
+      );
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toBe("/dashboard?onboarding=true");
     });
   });
 

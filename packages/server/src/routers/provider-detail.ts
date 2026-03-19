@@ -78,23 +78,6 @@ export const DISCONNECT_CHILD_TABLES = [
   "fitness.oauth_token",
 ];
 
-/** Columns to select from activity_summary when joining (avoids conflicts with activity table) */
-const ACTIVITY_SUMMARY_COLUMNS = `
-  s.avg_hr, s.max_hr, s.min_hr,
-  s.avg_power, s.max_power,
-  s.avg_speed, s.max_speed,
-  s.avg_cadence,
-  s.total_distance,
-  s.max_altitude, s.min_altitude,
-  s.elevation_gain_m, s.elevation_loss_m,
-  s.avg_left_balance,
-  s.avg_left_torque_eff, s.avg_right_torque_eff,
-  s.avg_left_pedal_smooth, s.avg_right_pedal_smooth,
-  s.avg_stance_time, s.avg_vertical_osc,
-  s.avg_ground_contact_time, s.avg_stride_length,
-  s.sample_count, s.hr_sample_count, s.power_sample_count,
-  s.first_sample_at, s.last_sample_at`;
-
 export const providerDetailRouter = router({
   /** Paginated sync logs for a specific provider */
   logs: cachedProtectedQuery(CacheTTL.SHORT)
@@ -140,17 +123,7 @@ export const providerDetailRouter = router({
       // while user inputs are parameterized via the sql template tag.
       const rowSchema = z.record(z.string(), z.unknown());
 
-      const query =
-        input.dataType === "activities"
-          ? sql`SELECT a.*, ${sql.raw(ACTIVITY_SUMMARY_COLUMNS)}
-                FROM ${sql.raw(info.table)} a
-                LEFT JOIN fitness.activity_summary s ON s.activity_id = a.id
-                WHERE a.user_id = ${ctx.userId}
-                  AND a.provider_id = ${input.providerId}
-                ORDER BY a.${sql.raw(info.orderColumn)} DESC
-                LIMIT ${input.limit}
-                OFFSET ${input.offset}`
-          : sql`SELECT * FROM ${sql.raw(info.table)}
+      const query = sql`SELECT * FROM ${sql.raw(info.table)}
                 WHERE user_id = ${ctx.userId}
                   AND provider_id = ${input.providerId}
                 ORDER BY ${sql.raw(info.orderColumn)} DESC
@@ -175,16 +148,7 @@ export const providerDetailRouter = router({
 
       const rowSchema = z.record(z.string(), z.unknown());
 
-      const query =
-        input.dataType === "activities"
-          ? sql`SELECT a.*, ${sql.raw(ACTIVITY_SUMMARY_COLUMNS)}
-                FROM ${sql.raw(info.table)} a
-                LEFT JOIN fitness.activity_summary s ON s.activity_id = a.id
-                WHERE a.user_id = ${ctx.userId}
-                  AND a.provider_id = ${input.providerId}
-                  AND a.${sql.raw(info.idColumn)} = ${input.recordId}
-                LIMIT 1`
-          : sql`SELECT * FROM ${sql.raw(info.table)}
+      const query = sql`SELECT * FROM ${sql.raw(info.table)}
                 WHERE user_id = ${ctx.userId}
                   AND provider_id = ${input.providerId}
                   AND ${sql.raw(info.idColumn)} = ${input.recordId}

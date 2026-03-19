@@ -5,6 +5,7 @@ export {
   ALL_ROUTED_TYPES,
   BODY_MEASUREMENT_TYPES,
   DAILY_METRIC_TYPES,
+  linkUnassignedHeartRateToActivities,
   METRIC_STREAM_TYPES,
   NUTRITION_TYPES,
   upsertBodyMeasurementBatch,

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import type { NextWorkoutRecommendation } from "dofek-server/types";
 import { useRouter } from "expo-router";
 import {
   ScrollView,
@@ -20,14 +21,6 @@ import { scoreColor, scoreLabel, trendDirection as computeTrend } from "../../li
 import { trpc } from "../../lib/trpc";
 import { convertTemperature, convertWeight, temperatureLabel, useUnitSystem, weightLabel } from "../../lib/units";
 import { useOnboarding } from "../../lib/useOnboarding";
-import type {
-  ActivityRow,
-  HeartRateVariabilityRow,
-  ReadinessRow,
-  SleepAnalyticsResult,
-  StressResult,
-  WorkloadRow,
-} from "../../types/api";
 import { ActivityRowSchema } from "../../types/api";
 import { colors, statusColors } from "../../theme";
 
@@ -39,6 +32,8 @@ function todayString(): string {
     day: "numeric",
   });
 }
+
+const RECENT_ACTIVITY_PAGE_SIZE = 3;
 
 /** Strain zone label for weekly report */
 function strainZoneLabel(zone: string): string {
@@ -73,11 +68,33 @@ function trendArrow(trend: string | null): string {
   return "";
 }
 
+function recommendationTypeColor(
+  type: NextWorkoutRecommendation["recommendationType"],
+): string {
+  if (type === "rest") return colors.orange;
+  if (type === "strength") return colors.positive;
+  return colors.blue;
+}
+
+function readinessLevelColor(
+  level: NextWorkoutRecommendation["readiness"]["level"],
+): string {
+  if (level === "high") return colors.positive;
+  if (level === "moderate") return colors.warning;
+  if (level === "low") return colors.danger;
+  return colors.textSecondary;
+}
+
+function capitalize(value: string): string {
+  return value.slice(0, 1).toUpperCase() + value.slice(1);
+}
+
 export default function OverviewScreen() {
   const router = useRouter();
   const onboarding = useOnboarding();
   const unitSystem = useUnitSystem();
   const [days, setDays] = useState(7);
+  const [recentActivityPage, setRecentActivityPage] = useState(0);
 
   // Fetch readiness/recovery score
   const readinessQuery = trpc.recovery.readinessScore.useQuery({ days });
@@ -106,11 +123,23 @@ export default function OverviewScreen() {
   const stressData = stressQuery.data;
 
   // Fetch recent activities
-  const activitiesQuery = trpc.training.activityStats.useQuery({ days });
+  const activitiesQuery = trpc.activity.list.useQuery({
+    days,
+    limit: RECENT_ACTIVITY_PAGE_SIZE,
+    offset: recentActivityPage * RECENT_ACTIVITY_PAGE_SIZE,
+  });
+
+  useEffect(() => {
+    setRecentActivityPage(0);
+  }, [days]);
+
   const recentActivities = ActivityRowSchema.array()
     .catch([])
-    .parse(activitiesQuery.data ?? [])
-    .slice(0, 3);
+    .parse(activitiesQuery.data?.items ?? []);
+  const recentActivitiesTotalCount = activitiesQuery.data?.totalCount ?? 0;
+  const recentActivitiesTotalPages = Math.ceil(
+    recentActivitiesTotalCount / RECENT_ACTIVITY_PAGE_SIZE,
+  );
 
   // Health metrics (latest)
   const dailyMetricsQuery = trpc.dailyMetrics.trends.useQuery({ days });
@@ -119,6 +148,10 @@ export default function OverviewScreen() {
   // Weekly report
   const weeklyReportQuery = trpc.weeklyReport.report.useQuery({ weeks: Math.max(Math.ceil(days / 7), 1) });
   const weeklyReport = weeklyReportQuery.data;
+
+  // Next workout recommendation
+  const nextWorkoutQuery = trpc.training.nextWorkout.useQuery();
+  const nextWorkout = nextWorkoutQuery.data;
 
   // Sleep need
   const sleepNeedQuery = trpc.sleepNeed.calculate.useQuery();
@@ -320,7 +353,12 @@ export default function OverviewScreen() {
           {/* Recent activities */}
           {recentActivities.length > 0 && (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Recent Activities</Text>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Recent Activities</Text>
+                <TouchableOpacity onPress={() => router.push("/activities")}>
+                  <Text style={styles.viewAllLink}>View All</Text>
+                </TouchableOpacity>
+              </View>
               <View style={styles.activitiesStack}>
                 {recentActivities.map((activity) => (
                   <TouchableOpacity
@@ -340,6 +378,53 @@ export default function OverviewScreen() {
                   </TouchableOpacity>
                 ))}
               </View>
+              {recentActivitiesTotalPages > 1 && (
+                <View style={styles.paginationRow}>
+                  <TouchableOpacity
+                    onPress={() => setRecentActivityPage((p) => Math.max(0, p - 1))}
+                    disabled={recentActivityPage <= 0}
+                    style={[
+                      styles.pageButton,
+                      recentActivityPage <= 0 && styles.pageButtonDisabled,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.pageButtonText,
+                        recentActivityPage <= 0 && styles.pageButtonTextDisabled,
+                      ]}
+                    >
+                      Previous
+                    </Text>
+                  </TouchableOpacity>
+                  <Text style={styles.pageInfo}>
+                    {recentActivityPage + 1} / {recentActivitiesTotalPages}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() =>
+                      setRecentActivityPage((p) =>
+                        Math.min(recentActivitiesTotalPages - 1, p + 1),
+                      )
+                    }
+                    disabled={recentActivityPage >= recentActivitiesTotalPages - 1}
+                    style={[
+                      styles.pageButton,
+                      recentActivityPage >= recentActivitiesTotalPages - 1 &&
+                        styles.pageButtonDisabled,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.pageButtonText,
+                        recentActivityPage >= recentActivitiesTotalPages - 1 &&
+                          styles.pageButtonTextDisabled,
+                      ]}
+                    >
+                      Next
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
           )}
 
@@ -436,6 +521,71 @@ export default function OverviewScreen() {
                   </View>
                 )}
               </View>
+            </View>
+          )}
+
+          {/* Next Workout */}
+          {nextWorkout != null && (
+            <View style={styles.card}>
+              <View style={styles.nextWorkoutHeader}>
+                <View style={styles.nextWorkoutTitleWrap}>
+                  <Text style={styles.cardTitle}>Next Workout</Text>
+                  <Text style={styles.nextWorkoutTitle}>{nextWorkout.title}</Text>
+                </View>
+                <View
+                  style={[
+                    styles.nextWorkoutTypeBadge,
+                    {
+                      borderColor: recommendationTypeColor(nextWorkout.recommendationType),
+                      backgroundColor: `${recommendationTypeColor(nextWorkout.recommendationType)}20`,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.nextWorkoutTypeLabel,
+                      { color: recommendationTypeColor(nextWorkout.recommendationType) },
+                    ]}
+                  >
+                    {capitalize(nextWorkout.recommendationType)}
+                  </Text>
+                </View>
+              </View>
+
+              <Text style={styles.nextWorkoutSummary}>{nextWorkout.shortBlurb}</Text>
+              <Text
+                style={[
+                  styles.nextWorkoutReadiness,
+                  { color: readinessLevelColor(nextWorkout.readiness.level) },
+                ]}
+              >
+                Readiness:{" "}
+                {nextWorkout.readiness.score != null
+                  ? `${nextWorkout.readiness.score}/100 (${nextWorkout.readiness.level})`
+                  : "Unavailable"}
+              </Text>
+
+              {nextWorkout.cardio != null && (
+                <Text style={styles.nextWorkoutMeta}>
+                  Cardio: {nextWorkout.cardio.durationMinutes} minutes ({nextWorkout.cardio.focus})
+                </Text>
+              )}
+              {nextWorkout.strength != null && nextWorkout.strength.focusMuscles.length > 0 && (
+                <Text style={styles.nextWorkoutMeta}>
+                  Strength focus: {nextWorkout.strength.focusMuscles.join(", ")}
+                </Text>
+              )}
+
+              {nextWorkout.details.length > 0 && (
+                <View style={styles.nextWorkoutList}>
+                  <Text style={styles.nextWorkoutListTitle}>Plan</Text>
+                  {nextWorkout.details.slice(0, 3).map((detail, index) => (
+                    <Text key={`next-workout-detail-${index}`} style={styles.nextWorkoutListItem}>
+                      {"\u2022"} {detail}
+                    </Text>
+                  ))}
+                </View>
+              )}
             </View>
           )}
 
@@ -915,6 +1065,11 @@ const styles = StyleSheet.create({
   section: {
     gap: 12,
   },
+  sectionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
   sectionTitle: {
     fontSize: 13,
     fontWeight: "600",
@@ -922,8 +1077,42 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
+  viewAllLink: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: colors.accent,
+  },
   activitiesStack: {
     gap: 8,
+  },
+  paginationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+    paddingTop: 4,
+  },
+  pageButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: colors.surface,
+    borderRadius: 8,
+  },
+  pageButtonDisabled: {
+    opacity: 0.4,
+  },
+  pageButtonText: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "500",
+  },
+  pageButtonTextDisabled: {
+    color: colors.textTertiary,
+  },
+  pageInfo: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontVariant: ["tabular-nums"],
   },
   // Anomaly banner
   anomalyBanner: {
@@ -967,6 +1156,63 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: colors.text,
+  },
+  // Next workout
+  nextWorkoutHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  nextWorkoutTitleWrap: {
+    flex: 1,
+    gap: 6,
+  },
+  nextWorkoutTitle: {
+    fontSize: 22,
+    fontWeight: "700",
+    color: colors.text,
+  },
+  nextWorkoutTypeBadge: {
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    marginTop: 2,
+  },
+  nextWorkoutTypeLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.3,
+  },
+  nextWorkoutSummary: {
+    fontSize: 14,
+    color: colors.text,
+    lineHeight: 20,
+  },
+  nextWorkoutReadiness: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  nextWorkoutMeta: {
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
+  nextWorkoutList: {
+    gap: 6,
+    marginTop: 2,
+  },
+  nextWorkoutListTitle: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.textSecondary,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  nextWorkoutListItem: {
+    fontSize: 13,
+    color: colors.text,
+    lineHeight: 19,
   },
   // Sleep coach
   sleepNeedTotal: {

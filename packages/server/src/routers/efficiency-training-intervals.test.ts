@@ -17,6 +17,21 @@ vi.mock("../lib/endurance-types.ts", () => ({
   enduranceTypeFilter: () => ({ sql: "true" }),
 }));
 
+vi.mock("dofek/personalization/storage", () => ({
+  loadPersonalizedParams: vi.fn(async () => null),
+}));
+
+vi.mock("dofek/personalization/params", () => ({
+  getEffectiveParams: vi.fn(() => ({
+    readinessWeights: {
+      hrv: 0.4,
+      restingHr: 0.2,
+      sleep: 0.2,
+      loadBalance: 0.2,
+    },
+  })),
+}));
+
 import { efficiencyRouter } from "./efficiency.ts";
 import { intervalsRouter } from "./intervals.ts";
 import { trainingRouter } from "./training.ts";
@@ -190,6 +205,172 @@ describe("trainingRouter", () => {
       });
       const result = await caller.activityStats({ days: 90 });
       expect(result).toEqual(rows);
+    });
+  });
+
+  describe("nextWorkout", () => {
+    function dateDaysAgo(days: number): string {
+      const d = new Date();
+      d.setUTCDate(d.getUTCDate() - days);
+      return d.toISOString().slice(0, 10);
+    }
+
+    it("recommends rest when readiness is low", async () => {
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([
+          {
+            date: dateDaysAgo(0),
+            hrv: 30,
+            resting_hr: 72,
+            hrv_mean_60d: 50,
+            hrv_sd_60d: 10,
+            rhr_mean_60d: 60,
+            rhr_sd_60d: 6,
+          },
+        ])
+        .mockResolvedValueOnce([{ efficiency_pct: 45 }])
+        .mockResolvedValueOnce([{ acwr: 1.6 }])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([
+          {
+            strength_7d: 1,
+            endurance_7d: 2,
+            last_strength_date: dateDaysAgo(2),
+            last_endurance_date: dateDaysAgo(1),
+          },
+        ])
+        .mockResolvedValueOnce([{ zone1: 1000, zone2: 500, zone3: 100, zone4: 300, zone5: 100 }])
+        .mockResolvedValueOnce([{ hiit_count_7d: 1, last_hiit_date: dateDaysAgo(1) }])
+        .mockResolvedValueOnce([]);
+
+      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const result = await caller.nextWorkout();
+
+      expect(result.recommendationType).toBe("rest");
+      expect(result.cardio?.focus).toBe("recovery");
+      expect(result.shortBlurb.toLowerCase()).toContain("lighter day");
+    });
+
+    it("recommends strength when strength frequency is low and muscles are recovered", async () => {
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([
+          {
+            date: dateDaysAgo(0),
+            hrv: 58,
+            resting_hr: 55,
+            hrv_mean_60d: 50,
+            hrv_sd_60d: 8,
+            rhr_mean_60d: 60,
+            rhr_sd_60d: 5,
+          },
+        ])
+        .mockResolvedValueOnce([{ efficiency_pct: 90 }])
+        .mockResolvedValueOnce([{ acwr: 1.0 }])
+        .mockResolvedValueOnce([
+          { muscle_group: "chest", last_trained_date: dateDaysAgo(3) },
+          { muscle_group: "back", last_trained_date: dateDaysAgo(4) },
+        ])
+        .mockResolvedValueOnce([
+          {
+            strength_7d: 0,
+            endurance_7d: 4,
+            last_strength_date: dateDaysAgo(3),
+            last_endurance_date: dateDaysAgo(1),
+          },
+        ])
+        .mockResolvedValueOnce([{ zone1: 4000, zone2: 3000, zone3: 600, zone4: 300, zone5: 100 }])
+        .mockResolvedValueOnce([{ hiit_count_7d: 1, last_hiit_date: dateDaysAgo(3) }])
+        .mockResolvedValueOnce([{ training_date: dateDaysAgo(1) }]);
+
+      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const result = await caller.nextWorkout();
+
+      expect(result.recommendationType).toBe("strength");
+      expect(result.strength).not.toBeNull();
+      expect(result.strength?.focusMuscles).toContain("chest");
+    });
+
+    it("recommends z2 cardio when readiness is moderate", async () => {
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([
+          {
+            date: dateDaysAgo(0),
+            hrv: 50,
+            resting_hr: 60,
+            hrv_mean_60d: 50,
+            hrv_sd_60d: 10,
+            rhr_mean_60d: 60,
+            rhr_sd_60d: 6,
+          },
+        ])
+        .mockResolvedValueOnce([{ efficiency_pct: 70 }])
+        .mockResolvedValueOnce([{ acwr: 1.1 }])
+        .mockResolvedValueOnce([{ muscle_group: "chest", last_trained_date: dateDaysAgo(0) }])
+        .mockResolvedValueOnce([
+          {
+            strength_7d: 3,
+            endurance_7d: 4,
+            last_strength_date: dateDaysAgo(0),
+            last_endurance_date: dateDaysAgo(2),
+          },
+        ])
+        .mockResolvedValueOnce([{ zone1: 3000, zone2: 2200, zone3: 900, zone4: 500, zone5: 150 }])
+        .mockResolvedValueOnce([{ hiit_count_7d: 2, last_hiit_date: dateDaysAgo(2) }])
+        .mockResolvedValueOnce([{ training_date: dateDaysAgo(0) }]);
+
+      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const result = await caller.nextWorkout();
+
+      expect(result.recommendationType).toBe("cardio");
+      expect(result.cardio?.focus).toBe("z2");
+    });
+
+    it("recommends interval cardio when high-intensity volume is low and readiness is high", async () => {
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([
+          {
+            date: dateDaysAgo(0),
+            hrv: 60,
+            resting_hr: 54,
+            hrv_mean_60d: 50,
+            hrv_sd_60d: 8,
+            rhr_mean_60d: 60,
+            rhr_sd_60d: 5,
+          },
+        ])
+        .mockResolvedValueOnce([{ efficiency_pct: 92 }])
+        .mockResolvedValueOnce([{ acwr: 1.0 }])
+        .mockResolvedValueOnce([{ muscle_group: "chest", last_trained_date: dateDaysAgo(0) }])
+        .mockResolvedValueOnce([
+          {
+            strength_7d: 3,
+            endurance_7d: 4,
+            last_strength_date: dateDaysAgo(0),
+            last_endurance_date: dateDaysAgo(2),
+          },
+        ])
+        .mockResolvedValueOnce([
+          {
+            zone1: 5000,
+            zone2: 3000,
+            zone3: 500,
+            zone4: 700,
+            zone5: 250,
+          },
+        ])
+        .mockResolvedValueOnce([{ hiit_count_7d: 1, last_hiit_date: dateDaysAgo(3) }])
+        .mockResolvedValueOnce([{ training_date: dateDaysAgo(0) }]);
+
+      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const result = await caller.nextWorkout();
+
+      expect(result.recommendationType).toBe("cardio");
+      expect(result.cardio?.focus).toBe("intervals");
+      expect(result.cardio?.targetZones).toContain("Z4");
     });
   });
 });

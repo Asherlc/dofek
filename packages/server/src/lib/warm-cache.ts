@@ -11,6 +11,7 @@ export async function warmCache(db: import("dofek/db").Database): Promise<void> 
     ["dailyMetrics.list(30)", () => caller.dailyMetrics.list({ days: 30 })],
     ["dailyMetrics.list(90)", () => caller.dailyMetrics.list({ days: 90 })],
     ["dailyMetrics.trends(30)", () => caller.dailyMetrics.trends({ days: 30 })],
+    ["training.nextWorkout", () => caller.training.nextWorkout()],
     ["dailyMetrics.latest", () => caller.dailyMetrics.latest()],
     ["sleep.list(30)", () => caller.sleep.list({ days: 30 })],
     ["sync.providers", () => caller.sync.providers()],
@@ -32,7 +33,7 @@ export async function warmCache(db: import("dofek/db").Database): Promise<void> 
     ],
     [
       "cyclingAdvanced.activityVariability(90)",
-      () => caller.cyclingAdvanced.activityVariability({ days: 90 }),
+      () => caller.cyclingAdvanced.activityVariability({ days: 90, limit: 20, offset: 0 }),
     ],
     [
       "cyclingAdvanced.verticalAscentRate(90)",

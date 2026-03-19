@@ -268,6 +268,12 @@ export class StravaClient {
       throw new StravaRateLimitError(`Strava API rate limit exceeded (429)`);
     }
 
+    if (response.status === 401 || response.status === 403) {
+      throw new StravaUnauthorizedError(
+        `Strava API unauthorized (${response.status}): ${url.pathname}`,
+      );
+    }
+
     if (response.status === 404) {
       throw new StravaNotFoundError(`Strava API 404: ${url.pathname}`);
     }
@@ -341,6 +347,13 @@ export class StravaRateLimitError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "StravaRateLimitError";
+  }
+}
+
+export class StravaUnauthorizedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "StravaUnauthorizedError";
   }
 }
 
@@ -463,9 +476,9 @@ export class StravaProvider implements Provider {
     let page = 1;
     const perPage = 30;
     let hasMore = true;
-    let rateLimited = false;
+    let shouldStop = false;
 
-    while (hasMore && !rateLimited) {
+    while (hasMore && !shouldStop) {
       let rawActivities: StravaActivity[];
       try {
         rawActivities = await client.getActivities(afterEpoch, page, perPage);
@@ -475,9 +488,31 @@ export class StravaProvider implements Provider {
             message: "Strava API rate limit exceeded — stopping sync. Will resume on next run.",
             cause: err,
           });
+          shouldStop = true;
           break;
         }
-        throw err;
+        if (err instanceof StravaUnauthorizedError) {
+          errors.push({
+            message: "Strava authorization failed — run: health-data auth strava",
+            cause: err,
+          });
+          shouldStop = true;
+          break;
+        }
+        if (err instanceof StravaNotFoundError) {
+          errors.push({
+            message: "Strava activities endpoint returned 404 — run: health-data auth strava",
+            cause: err,
+          });
+          shouldStop = true;
+          break;
+        }
+        errors.push({
+          message: `Strava activities fetch failed: ${err instanceof Error ? err.message : String(err)}`,
+          cause: err,
+        });
+        shouldStop = true;
+        break;
       }
 
       const parsed = parseStravaActivityList(rawActivities, perPage);
@@ -496,7 +531,16 @@ export class StravaProvider implements Provider {
                   "Strava API rate limit hit while fetching activity detail — stopping sync.",
                 cause: detailErr,
               });
-              rateLimited = true;
+              shouldStop = true;
+              break;
+            }
+            if (detailErr instanceof StravaUnauthorizedError) {
+              errors.push({
+                message:
+                  "Strava authorization failed while fetching activity detail — run: health-data auth strava",
+                cause: detailErr,
+              });
+              shouldStop = true;
               break;
             }
             if (detailErr instanceof StravaNotFoundError) {
@@ -570,7 +614,16 @@ export class StravaProvider implements Provider {
                 message: "Strava API rate limit hit while fetching streams — stopping stream sync.",
                 cause: streamErr,
               });
-              rateLimited = true;
+              shouldStop = true;
+              break;
+            }
+            if (streamErr instanceof StravaUnauthorizedError) {
+              errors.push({
+                message:
+                  "Strava authorization failed while fetching streams — run: health-data auth strava",
+                cause: streamErr,
+              });
+              shouldStop = true;
               break;
             }
             if (streamErr instanceof StravaNotFoundError) {
@@ -592,7 +645,7 @@ export class StravaProvider implements Provider {
         }
       }
 
-      hasMore = parsed.hasMore && !rateLimited;
+      hasMore = parsed.hasMore && !shouldStop;
       page++;
     }
 

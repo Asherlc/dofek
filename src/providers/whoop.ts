@@ -96,6 +96,7 @@ export interface ParsedSleep {
   lightMinutes: number;
   awakeMinutes: number;
   efficiencyPct?: number;
+  sleepType: "sleep" | "nap";
   isNap: boolean;
 }
 
@@ -114,6 +115,7 @@ export function parseSleep(record: WhoopSleepRecord): ParsedSleep {
     lightMinutes: milliToMinutes(stages?.total_light_sleep_time_milli ?? 0),
     awakeMinutes: milliToMinutes(stages?.total_awake_time_milli ?? 0),
     efficiencyPct: record.score?.sleep_efficiency_percentage,
+    sleepType: record.nap ? "nap" : "sleep",
     isNap: record.nap,
   };
 }
@@ -589,7 +591,7 @@ export class WhoopProvider implements Provider {
                   lightMinutes: parsed.lightMinutes,
                   awakeMinutes: parsed.awakeMinutes,
                   efficiencyPct: parsed.efficiencyPct,
-                  isNap: parsed.isNap,
+                  sleepType: parsed.sleepType,
                 })
                 .onConflictDoUpdate({
                   target: [sleepSession.providerId, sleepSession.externalId],
@@ -602,6 +604,7 @@ export class WhoopProvider implements Provider {
                     lightMinutes: parsed.lightMinutes,
                     awakeMinutes: parsed.awakeMinutes,
                     efficiencyPct: parsed.efficiencyPct,
+                    sleepType: parsed.sleepType,
                   },
                 });
               count++;

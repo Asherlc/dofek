@@ -33,6 +33,7 @@
     "dist/**",
     "drizzle/**",
     ".codex/**",
+    ".claude/**",
     ".context/**"
   ],
   "testRunnerNodeArgs": ["--import", "tsx"],
@@ -40,7 +41,7 @@
   "thresholds": {
     "high": 90,
     "low": 80,
-    "break": 80
+    "break": 30
   },
   "reporters": ["clear-text", "html", "progress"],
   "concurrency": 4

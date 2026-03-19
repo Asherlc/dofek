@@ -309,8 +309,8 @@ describe("Router transformation logic", () => {
 
         sleepInserts.push(
           sql`INSERT INTO fitness.sleep_session
-              (provider_id, user_id, external_id, started_at, ended_at, duration_minutes, is_nap)
-              VALUES ('test-provider', ${DEFAULT_USER_ID}, ${`sleep-${i}`}, ${startedAt.toISOString()}, ${endedAt.toISOString()}, ${durationMin}, false)`,
+              (provider_id, user_id, external_id, started_at, ended_at, duration_minutes, sleep_type)
+              VALUES ('test-provider', ${DEFAULT_USER_ID}, ${`sleep-${i}`}, ${startedAt.toISOString()}, ${endedAt.toISOString()}, ${durationMin}, 'sleep')`,
         );
 
         // Daily metrics: HRV varies with sleep quality (higher sleep = higher HRV next day)

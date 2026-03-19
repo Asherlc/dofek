@@ -235,7 +235,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     expect(session.deepMinutes).toBe(120);
     expect(session.remMinutes).toBe(90);
     expect(session.efficiencyPct).toBeCloseTo(91.7);
-    expect(session.isNap).toBe(false);
+    expect(session.sleepType).toBe("sleep");
   });
 
   it("syncs workouts from cycles into cardio_activity", async () => {

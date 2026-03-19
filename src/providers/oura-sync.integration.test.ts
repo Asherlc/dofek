@@ -372,7 +372,7 @@ describe("OuraProvider.sync() (integration)", () => {
     expect(sleepRows).toHaveLength(2);
     const mainSleep = sleepRows.find((r) => r.externalId === "sleep-001");
     expect(mainSleep?.deepMinutes).toBe(90);
-    expect(mainSleep?.isNap).toBe(false);
+    expect(mainSleep?.sleepType).toBe("long_sleep");
 
     // Verify workouts → activity table
     const activityRows = await ctx.db

@@ -812,7 +812,7 @@ describe("importAppleHealthFile — full DB integration", () => {
     expect(session?.lightMinutes).toBe(90);
     expect(session?.deepMinutes).toBe(60);
     expect(session?.remMinutes).toBe(90);
-    expect(session?.isNap).toBe(false);
+    expect(session?.sleepType).toBeNull();
   });
 
   it("creates activity rows for workouts with GPS in metric_stream", async () => {
@@ -820,6 +820,13 @@ describe("importAppleHealthFile — full DB integration", () => {
     const run = activities.find((a) => a.activityType === "running");
     expect(run).toBeDefined();
     expect(run?.externalId).toContain("ah:workout:");
+    expect(run?.raw).toMatchObject({
+      durationSeconds: 1830,
+      distanceMeters: 5200,
+      calories: 320,
+      avgHeartRate: 148,
+      maxHeartRate: 175,
+    });
 
     // Check GPS metric_stream rows linked to the activity
     const allMetrics = await ctx.db.select().from(schema.metricStream);

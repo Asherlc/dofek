@@ -2,16 +2,19 @@ import type { Request, Response } from "express";
 import { describe, expect, it, vi } from "vitest";
 import {
   clearOAuthFlowCookies,
+  clearPostLoginRedirectCookie,
   clearSessionCookie,
   getLinkUserCookie,
   getMobileSchemeCookie,
   getOAuthFlowCookies,
+  getPostLoginRedirectCookie,
   getSessionCookie,
   getSessionIdFromRequest,
   isValidMobileScheme,
   setLinkUserCookie,
   setMobileSchemeCookie,
   setOAuthFlowCookies,
+  setPostLoginRedirectCookie,
   setSessionCookie,
 } from "./cookies.ts";
 
@@ -164,12 +167,12 @@ describe("Auth cookies", () => {
   });
 
   describe("clearOAuthFlowCookies", () => {
-    it("clears state, code_verifier, link_user, and mobile_scheme cookies", () => {
+    it("clears state, code_verifier, link_user, mobile_scheme, and post_login_redirect cookies", () => {
       const res = mockResponse();
 
       clearOAuthFlowCookies(res);
 
-      expect(res.clearCookie).toHaveBeenCalledTimes(4);
+      expect(res.clearCookie).toHaveBeenCalledTimes(5);
       expect(res.clearCookie).toHaveBeenCalledWith("auth_state", { path: "/" });
       expect(res.clearCookie).toHaveBeenCalledWith("auth_code_verifier", {
         path: "/",
@@ -178,6 +181,9 @@ describe("Auth cookies", () => {
         path: "/",
       });
       expect(res.clearCookie).toHaveBeenCalledWith("auth_mobile_scheme", {
+        path: "/",
+      });
+      expect(res.clearCookie).toHaveBeenCalledWith("auth_post_login_redirect", {
         path: "/",
       });
     });
@@ -211,6 +217,50 @@ describe("Auth cookies", () => {
     it("returns undefined for non-string cookie value", () => {
       const req = mockRequest(undefined);
       expect(getLinkUserCookie(req)).toBeUndefined();
+    });
+  });
+
+  describe("post-login redirect cookie", () => {
+    it("sets and reads the post-login redirect cookie", () => {
+      const res = mockResponse();
+      setPostLoginRedirectCookie(res, "/dashboard?onboarding=true");
+      expect(res.cookie).toHaveBeenCalledWith(
+        "auth_post_login_redirect",
+        "/dashboard?onboarding=true",
+        {
+          httpOnly: true,
+          secure: false,
+          sameSite: "lax",
+          path: "/",
+          maxAge: 10 * 60 * 1000,
+        },
+      );
+
+      const req = mockRequest({ auth_post_login_redirect: "/dashboard?onboarding=true" });
+      expect(getPostLoginRedirectCookie(req)).toBe("/dashboard?onboarding=true");
+    });
+
+    it("clears the cookie when return_to is missing or invalid", () => {
+      const res = mockResponse();
+      setPostLoginRedirectCookie(res, undefined);
+      setPostLoginRedirectCookie(res, "https://evil.test");
+      setPostLoginRedirectCookie(res, "//evil.test/path");
+      expect(res.clearCookie).toHaveBeenCalledTimes(3);
+      expect(res.clearCookie).toHaveBeenCalledWith("auth_post_login_redirect", { path: "/" });
+    });
+
+    it("returns undefined for invalid cookie values", () => {
+      const req1 = mockRequest({ auth_post_login_redirect: "https://evil.test" });
+      expect(getPostLoginRedirectCookie(req1)).toBeUndefined();
+
+      const req2 = mockRequest({ auth_post_login_redirect: "//evil.test/path" });
+      expect(getPostLoginRedirectCookie(req2)).toBeUndefined();
+    });
+
+    it("clears the post-login redirect cookie", () => {
+      const res = mockResponse();
+      clearPostLoginRedirectCookie(res);
+      expect(res.clearCookie).toHaveBeenCalledWith("auth_post_login_redirect", { path: "/" });
     });
   });
 

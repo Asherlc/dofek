@@ -31,6 +31,22 @@ function isValidLayout(value: unknown): value is DashboardLayout {
   );
 }
 
+function normalizeLayout(layout: DashboardLayout): DashboardLayout {
+  const knownSections = new Set(DEFAULT_LAYOUT.order);
+  const order = [...new Set(layout.order.filter((id) => knownSections.has(id)))];
+  for (const id of DEFAULT_LAYOUT.order) {
+    if (!order.includes(id)) order.push(id);
+  }
+
+  const hidden = [...new Set(layout.hidden.filter((id) => knownSections.has(id)))];
+  const collapsed: Record<string, boolean> = {};
+  for (const id of DEFAULT_LAYOUT.order) {
+    collapsed[id] = layout.collapsed[id] ?? DEFAULT_LAYOUT.collapsed[id] ?? false;
+  }
+
+  return { order, hidden, collapsed };
+}
+
 export function DashboardLayoutProvider({ children }: { children: React.ReactNode }) {
   const [layout, setLayoutState] = useState<DashboardLayout>(DEFAULT_LAYOUT);
 
@@ -46,7 +62,8 @@ export function DashboardLayoutProvider({ children }: { children: React.ReactNod
           ? JSON.parse(setting.data.value)
           : setting.data.value;
       if (isValidLayout(parsed)) {
-        setLayoutState(parsed);
+        const normalized = normalizeLayout(parsed);
+        setLayoutState(normalized);
       }
     }
   }, [setting.data]);

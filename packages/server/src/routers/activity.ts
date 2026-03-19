@@ -46,21 +46,32 @@ export interface ActivityHrZone {
 
 export type ActivityHrZones = ActivityHrZone[];
 
+type ActivityListRow = Record<string, unknown> & { total_count: number };
+
 export const activityRouter = router({
   list: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(
       z.object({
         days: z.number().default(30),
+        limit: z.number().min(1).max(100).default(20),
+        offset: z.number().min(0).default(0),
       }),
     )
     .query(async ({ ctx, input }) => {
-      const rows = await ctx.db.execute(
-        sql`SELECT * FROM fitness.v_activity
+      const rows = await ctx.db.execute<ActivityListRow>(
+        sql`SELECT *, COUNT(*) OVER()::int AS total_count
+            FROM fitness.v_activity
             WHERE user_id = ${ctx.userId}
               AND started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
-            ORDER BY started_at DESC`,
+            ORDER BY started_at DESC
+            LIMIT ${input.limit} OFFSET ${input.offset}`,
       );
-      return rows;
+      const totalCount = rows.length > 0 ? Number(rows[0]?.total_count) : 0;
+      const items = rows.map((row) => {
+        const { total_count, ...rest } = row;
+        return rest;
+      });
+      return { items, totalCount };
     }),
 
   /**
