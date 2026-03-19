@@ -11,11 +11,16 @@ vi.mock("@slack/bolt", () => {
     start: vi.fn().mockResolvedValue(undefined),
   };
   const mockRouter = { get: vi.fn(), post: vi.fn() };
+  const mockSocketModeClient = { clientPingTimeoutMS: 5000 };
   return {
     default: {
       App: vi.fn().mockImplementation(() => mockApp),
       ExpressReceiver: vi.fn().mockImplementation(() => ({
         router: mockRouter,
+      })),
+      SocketModeReceiver: vi.fn().mockImplementation(() => ({
+        client: mockSocketModeClient,
+        start: vi.fn().mockResolvedValue(undefined),
       })),
     },
   };
@@ -88,11 +93,13 @@ describe("createSlackBot", () => {
     expect(result?.mode).toBe("socket");
     expect(result?.router).toBeUndefined();
 
+    expect(vi.mocked(bolt.SocketModeReceiver)).toHaveBeenCalledWith(
+      expect.objectContaining({ appToken: "xapp-test-token" }),
+    );
     expect(vi.mocked(bolt.App)).toHaveBeenCalledWith(
       expect.objectContaining({
         token: "xoxb-test-token",
-        appToken: "xapp-test-token",
-        socketMode: true,
+        receiver: expect.any(Object),
       }),
     );
   });

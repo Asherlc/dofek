@@ -16,6 +16,10 @@ vi.mock("@slack/bolt", () => {
       ExpressReceiver: vi.fn().mockImplementation(() => ({
         router: { get: vi.fn(), post: vi.fn() },
       })),
+      SocketModeReceiver: vi.fn().mockImplementation(() => ({
+        client: { clientPingTimeoutMS: 5000 },
+        start: vi.fn().mockResolvedValue(undefined),
+      })),
     },
   };
 });

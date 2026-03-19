@@ -1,7 +1,7 @@
 import type { App as AppType } from "@slack/bolt";
 import bolt from "@slack/bolt";
 
-const { App, ExpressReceiver } = bolt;
+const { App, ExpressReceiver, SocketModeReceiver } = bolt;
 
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
@@ -335,9 +335,8 @@ function slackTimestampToDateString(slackTs: string, timezone: string): string {
 function registerHandlers(app: AppType, db: Database) {
   // Log all incoming events so we can diagnose silent failures
   app.use(async (args) => {
-    if ("event" in args) {
-      const event = args.event as { type?: string };
-      logger.info(`[slack] Received event type=${event.type}`);
+    if ("event" in args && args.event && typeof args.event === "object" && "type" in args.event) {
+      logger.info(`[slack] Received event type=${String(args.event.type)}`);
     } else {
       logger.info("[slack] Received non-event payload (action/shortcut/command)");
     }
@@ -789,10 +788,15 @@ export function createSlackBot(db: Database): SlackBotResult | null {
   const appToken = process.env.SLACK_APP_TOKEN;
 
   if (botToken && appToken) {
+    const receiver = new SocketModeReceiver({ appToken });
+    // Increase WebSocket ping timeout from the 5s default to 30s.
+    // The default causes rapid reconnection failures during container startup
+    // because pong responses aren't processed in time.
+    Object.assign(receiver.client, { clientPingTimeoutMS: 30_000 });
+
     const app = new App({
       token: botToken,
-      appToken,
-      socketMode: true,
+      receiver,
     });
 
     app.error(async (error) => {
