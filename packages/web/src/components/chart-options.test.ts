@@ -42,6 +42,68 @@ describe("PolarizationTrendChart option builder", () => {
     // Pass empty params to test robustness (formatter should handle gracefully)
     expect(formatter([{ axisValue: "", value: ["", 0], dataIndex: -1, color: "" }])).toBeDefined();
   });
+
+  it("keeps week points even when polarization index is null", () => {
+    const weeksWithGap = [
+      {
+        week: "2024-01-01",
+        polarizationIndex: null,
+        z1Seconds: 3600,
+        z2Seconds: 0,
+        z3Seconds: 900,
+      },
+      {
+        week: "2024-01-08",
+        polarizationIndex: 1.9,
+        z1Seconds: 2400,
+        z2Seconds: 1200,
+        z3Seconds: 600,
+      },
+    ];
+
+    const option = buildPolarizationTrendOption(weeksWithGap);
+    const polarizationSeries = option.series.find((series: { name?: string }) => {
+      return series.name === "Polarization Index";
+    });
+    expect(polarizationSeries).toBeDefined();
+    expect(polarizationSeries?.data).toEqual([
+      ["2024-01-01", null],
+      ["2024-01-08", 1.9],
+    ]);
+  });
+
+  it("explains missing zones when PI is unavailable", () => {
+    const weeksWithGap = [
+      {
+        week: "2024-01-01",
+        polarizationIndex: null,
+        z1Seconds: 3600,
+        z2Seconds: 0,
+        z3Seconds: 900,
+      },
+      {
+        week: "2024-01-08",
+        polarizationIndex: 1.9,
+        z1Seconds: 2400,
+        z2Seconds: 1200,
+        z3Seconds: 600,
+      },
+    ];
+
+    const option = buildPolarizationTrendOption(weeksWithGap);
+    const formatter = option.tooltip.formatter;
+    const html = formatter([
+      {
+        axisValue: "2024-01-01",
+        value: ["2024-01-01", null],
+        dataIndex: 0,
+        color: "",
+        seriesName: "Polarization Index",
+      },
+    ]);
+    expect(html).toContain("Insufficient zone coverage");
+    expect(html).toContain("Missing zones this week: Zone 2");
+  });
 });
 
 describe("RampRateChart option builder", () => {

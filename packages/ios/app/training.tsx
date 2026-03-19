@@ -266,6 +266,13 @@ function EnduranceTab({ days }: { days: number }) {
 
   const polarizationWeeks = polarization.data?.weeks ?? [];
   const currentRampRate = ramp.data?.currentRampRate;
+  const missingZonesLabel = (week: { z1Seconds: number; z2Seconds: number; z3Seconds: number }) => {
+    const missing: string[] = [];
+    if (week.z1Seconds <= 0) missing.push("Zone 1");
+    if (week.z2Seconds <= 0) missing.push("Zone 2");
+    if (week.z3Seconds <= 0) missing.push("Zone 3");
+    return missing.length > 0 ? `Missing ${missing.join(", ")}` : "Polarization score unavailable";
+  };
 
   return (
     <View>
@@ -275,6 +282,10 @@ function EnduranceTab({ days }: { days: number }) {
           <Text style={styles.sectionTitle}>Training Polarization</Text>
           {polarizationWeeks.slice(-6).map((week) => {
             const total = week.z1Seconds + week.z2Seconds + week.z3Seconds || 1;
+            const hasPolarizationIndex = week.polarizationIndex !== null;
+            const polarizationIndexText = week.polarizationIndex !== null
+              ? `Polarization score ${week.polarizationIndex.toFixed(2)}`
+              : missingZonesLabel(week);
             return (
               <View key={week.week} style={styles.polarizationRow}>
                 <Text style={styles.polarizationLabel}>{week.week.slice(5)}</Text>
@@ -283,6 +294,14 @@ function EnduranceTab({ days }: { days: number }) {
                   <View style={[styles.polarizationSegment, { flex: (week.z2Seconds / total) || 0.01, backgroundColor: statusColors.warning }]} />
                   <View style={[styles.polarizationSegment, { flex: week.z3Seconds / total, backgroundColor: statusColors.danger }]} />
                 </View>
+                <Text
+                  style={[
+                    styles.polarizationMeta,
+                    { color: hasPolarizationIndex ? statusColors.info : statusColors.warning },
+                  ]}
+                >
+                  {polarizationIndexText}
+                </Text>
               </View>
             );
           })}
@@ -1016,6 +1035,12 @@ const styles = StyleSheet.create({
   },
   polarizationSegment: {
     height: "100%",
+  },
+  polarizationMeta: {
+    width: 100,
+    marginLeft: 8,
+    fontSize: 10,
+    textAlign: "right",
   },
   legendRow: {
     flexDirection: "row",
