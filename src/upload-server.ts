@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { computeSinceDate } from "./cli.ts";
 import type { Database, SyncDatabase } from "./db/index.ts";
+import { logger } from "./logger.ts";
 import type { SyncResult } from "./providers/types.ts";
 
 /** Parse `since-days` and `full-sync` query params into a cutoff Date. */
@@ -62,7 +63,7 @@ export function createUploadHandler(deps: UploadHandlerDependencies): RequestLis
           req.on("error", reject);
         });
 
-        console.log(`[server] Received upload, saved to ${filePath}`);
+        logger.info(`[server] Received upload, saved to ${filePath}`);
 
         // Run import
         const db = deps.createDatabase();
@@ -86,7 +87,7 @@ export function createUploadHandler(deps: UploadHandlerDependencies): RequestLis
           }),
         );
       } catch (err) {
-        console.error("[server] Import failed:", err);
+        logger.error(`[server] Import failed: ${err}`);
         res.writeHead(500, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
       }

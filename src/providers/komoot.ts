@@ -4,6 +4,7 @@ import type { SyncDatabase } from "../db/index.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import { logger } from "../logger.ts";
 import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
 
 // ============================================================
@@ -157,7 +158,7 @@ export class KomootProvider implements Provider {
     if (!tokens) throw new Error("No OAuth tokens for Komoot. Run: health-data auth komoot");
     if (tokens.expiresAt > new Date()) return tokens;
 
-    console.log("[komoot] Token expired, refreshing...");
+    logger.info("[komoot] Token expired, refreshing...");
     const config = komootOAuthConfig();
     if (!config || !tokens.refreshToken) throw new Error("Cannot refresh Komoot tokens");
     const refreshed = await refreshAccessToken(config, tokens.refreshToken, this.fetchFn);

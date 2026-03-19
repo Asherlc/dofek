@@ -5,6 +5,7 @@ import { exchangeCodeForTokens, getOAuthRedirectUri, refreshAccessToken } from "
 import type { SyncDatabase } from "../db/index.ts";
 import { activity, DEFAULT_USER_ID, metricStream, userSettings } from "../db/schema.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import { logger } from "../logger.ts";
 import type {
   Provider,
   ProviderAuthSetup,
@@ -319,7 +320,7 @@ export class RideWithGpsProvider implements Provider {
       return tokens;
     }
 
-    console.log("[ride-with-gps] Access token expired, refreshing...");
+    logger.info("[ride-with-gps] Access token expired, refreshing...");
     const config = rideWithGpsOAuthConfig();
     if (!config) throw new Error("RWGPS_CLIENT_ID is required to refresh tokens");
     if (!tokens.refreshToken) throw new Error("No refresh token for RideWithGPS");

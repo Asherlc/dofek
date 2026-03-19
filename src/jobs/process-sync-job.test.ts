@@ -2,6 +2,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
 import type { Provider, SyncResult } from "../providers/types.ts";
 
+const mockLoggerInfo = vi.fn();
+const mockLoggerError = vi.fn();
+const mockLoggerWarn = vi.fn();
+
+vi.mock("../logger.ts", () => ({
+  logger: {
+    info: (...args: unknown[]) => mockLoggerInfo(...args),
+    error: (...args: unknown[]) => mockLoggerError(...args),
+    warn: (...args: unknown[]) => mockLoggerWarn(...args),
+    debug: vi.fn(),
+  },
+}));
+
 // Mock dependencies — the mock functions are accessed via module-level refs
 vi.mock("./provider-registration.ts", () => ({
   ensureProvidersRegistered: vi.fn().mockResolvedValue(undefined),
@@ -282,16 +295,17 @@ describe("processSyncJob", () => {
     mockUpdateUserMaxHr.mockRejectedValue(new Error("db gone"));
     mockRefreshDedupViews.mockRejectedValue(new Error("db gone"));
 
-    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-
     // Should not throw
     await runSyncJob(createMockJob(), mockDb);
 
     expect(mockUpdateUserMaxHr).toHaveBeenCalled();
     expect(mockRefreshDedupViews).toHaveBeenCalled();
-    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("Failed to update max HR"));
-    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("Failed to refresh views"));
-    consoleSpy.mockRestore();
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      expect.stringContaining("Failed to update max HR"),
+    );
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      expect.stringContaining("Failed to refresh views"),
+    );
   });
 
   it("relays within-provider progress to job.updateProgress with correct pct", async () => {

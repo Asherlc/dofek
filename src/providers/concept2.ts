@@ -4,6 +4,7 @@ import type { SyncDatabase } from "../db/index.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import { logger } from "../logger.ts";
 import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
 
 // ============================================================
@@ -166,7 +167,7 @@ export class Concept2Provider implements Provider {
     if (!tokens) throw new Error("No OAuth tokens for Concept2. Run: health-data auth concept2");
     if (tokens.expiresAt > new Date()) return tokens;
 
-    console.log("[concept2] Token expired, refreshing...");
+    logger.info("[concept2] Token expired, refreshing...");
     const config = concept2OAuthConfig();
     if (!config || !tokens.refreshToken) throw new Error("Cannot refresh Concept2 tokens");
     const refreshed = await refreshAccessToken(config, tokens.refreshToken, this.fetchFn);

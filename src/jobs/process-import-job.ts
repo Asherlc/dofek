@@ -1,5 +1,6 @@
 import type { SyncDatabase } from "../db/index.ts";
 import { logSync } from "../db/sync-log.ts";
+import { logger } from "../logger.ts";
 import type { ImportJobData } from "./queues.ts";
 
 /** Minimal Job interface — only the subset processImportJob actually uses. */
@@ -20,14 +21,14 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
       const result = await importAppleHealthFile(db, filePath, sinceDate, (info) => {
         job.updateProgress({ pct: info.pct, message: `Processing: ${info.pct}%` }).catch(() => {});
         if (info.pct >= lastLoggedPct + 10) {
-          console.log(`[worker] Apple Health import progress: ${info.pct}%`);
+          logger.info(`[worker] Apple Health import progress: ${info.pct}%`);
           lastLoggedPct = info.pct;
         }
       });
 
       const durationSec = ((Date.now() - importStart) / 1000).toFixed(1);
       const msg = `${result.recordsSynced} records imported, ${result.errors?.length ?? 0} errors in ${durationSec}s`;
-      console.log(`[worker] Apple Health import complete: ${msg}`);
+      logger.info(`[worker] Apple Health import complete: ${msg}`);
 
       await logSync(db, {
         providerId: "apple_health",
@@ -47,7 +48,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
 
       const durationSec = ((Date.now() - importStart) / 1000).toFixed(1);
       const msg = `${result.recordsSynced} workouts imported, ${result.errors.length} errors in ${durationSec}s`;
-      console.log(`[worker] Strong CSV import complete: ${msg}`);
+      logger.info(`[worker] Strong CSV import complete: ${msg}`);
 
       await logSync(db, {
         providerId: "strong-csv",
@@ -67,7 +68,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
 
       const durationSec = ((Date.now() - importStart) / 1000).toFixed(1);
       const msg = `${result.recordsSynced} food entries imported, ${result.errors.length} errors in ${durationSec}s`;
-      console.log(`[worker] Cronometer CSV import complete: ${msg}`);
+      logger.info(`[worker] Cronometer CSV import complete: ${msg}`);
 
       await logSync(db, {
         providerId: "cronometer-csv",
@@ -91,7 +92,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
     const { updateUserMaxHr } = await import("../db/dedup.ts");
     await updateUserMaxHr(db);
   } catch (err) {
-    console.error(`[worker] Failed to update max HR: ${err}`);
+    logger.error(`[worker] Failed to update max HR: ${err}`);
   }
 
   try {
@@ -103,13 +104,13 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
       await syncProviderPriorities(db, config);
     }
   } catch (err) {
-    console.error("[worker] Failed to sync provider priorities:", err);
+    logger.error(`[worker] Failed to sync provider priorities: ${err}`);
   }
 
   try {
     const { refreshDedupViews } = await import("../db/dedup.ts");
     await refreshDedupViews(db);
   } catch (err) {
-    console.error(`[worker] Failed to refresh views: ${err}`);
+    logger.error(`[worker] Failed to refresh views: ${err}`);
   }
 }

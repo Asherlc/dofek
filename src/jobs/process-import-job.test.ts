@@ -5,6 +5,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
 import type { ImportJobData } from "./queues.ts";
 
+const mockLoggerInfo = vi.fn();
+const mockLoggerError = vi.fn();
+const mockLoggerWarn = vi.fn();
+
+vi.mock("../logger.ts", () => ({
+  logger: {
+    info: (...args: unknown[]) => mockLoggerInfo(...args),
+    error: (...args: unknown[]) => mockLoggerError(...args),
+    warn: (...args: unknown[]) => mockLoggerWarn(...args),
+    debug: vi.fn(),
+  },
+}));
+
 // Mock dependencies with module-level mock functions (avoids `as` casts)
 const mockLogSync = vi.fn().mockResolvedValue(undefined);
 vi.mock("../db/sync-log.ts", () => ({
@@ -179,8 +192,6 @@ describe("processImportJob", () => {
     });
 
     it("only logs progress at 10% increments", async () => {
-      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-
       mockImportAppleHealthFile.mockImplementation(
         async (
           _db: unknown,
@@ -201,26 +212,22 @@ describe("processImportJob", () => {
       await runImportJob(job, mockDb);
 
       // Should log at 10% and 20%, but not at 5%, 9%, or 15%
-      const progressLogs = consoleSpy.mock.calls.filter((call) =>
+      const progressLogs = mockLoggerInfo.mock.calls.filter((call) =>
         String(call[0]).includes("progress"),
       );
       expect(progressLogs).toHaveLength(2);
       expect(String(progressLogs.at(0))).toContain("10%");
       expect(String(progressLogs.at(1))).toContain("20%");
-      consoleSpy.mockRestore();
     });
 
     it("logs completion message with record count", async () => {
-      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
       await runImportJob(job, mockDb);
 
-      expect(consoleSpy).toHaveBeenCalledWith(
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
         expect.stringContaining("Apple Health import complete"),
       );
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("42 records imported"));
-      consoleSpy.mockRestore();
+      expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("42 records imported"));
     });
   });
 
@@ -258,7 +265,6 @@ describe("processImportJob", () => {
 
     it("logs sync and completion message on success", async () => {
       await writeFile(tempFilePath, "csv data");
-      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
       const job = createMockJob({ filePath: tempFilePath, importType: "strong-csv" });
       await runImportJob(job, mockDb);
@@ -272,11 +278,10 @@ describe("processImportJob", () => {
           recordCount: 10,
         }),
       );
-      expect(consoleSpy).toHaveBeenCalledWith(
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
         expect.stringContaining("Strong CSV import complete"),
       );
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("10 workouts imported"));
-      consoleSpy.mockRestore();
+      expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("10 workouts imported"));
     });
   });
 
@@ -296,7 +301,6 @@ describe("processImportJob", () => {
 
     it("logs sync and completion message on success", async () => {
       await writeFile(tempFilePath, "csv data");
-      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
       const job = createMockJob({ filePath: tempFilePath, importType: "cronometer-csv" });
       await runImportJob(job, mockDb);
@@ -310,11 +314,12 @@ describe("processImportJob", () => {
           recordCount: 7,
         }),
       );
-      expect(consoleSpy).toHaveBeenCalledWith(
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
         expect.stringContaining("Cronometer CSV import complete"),
       );
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("7 food entries imported"));
-      consoleSpy.mockRestore();
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        expect.stringContaining("7 food entries imported"),
+      );
     });
   });
 
@@ -352,7 +357,6 @@ describe("processImportJob", () => {
     it("handles post-import refresh failures gracefully and logs errors", async () => {
       mockUpdateUserMaxHr.mockRejectedValue(new Error("db gone"));
       mockRefreshDedupViews.mockRejectedValue(new Error("db gone"));
-      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
       // Should not throw
@@ -360,9 +364,12 @@ describe("processImportJob", () => {
 
       expect(mockUpdateUserMaxHr).toHaveBeenCalled();
       expect(mockRefreshDedupViews).toHaveBeenCalled();
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("Failed to update max HR"));
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("Failed to refresh views"));
-      consoleSpy.mockRestore();
+      expect(mockLoggerError).toHaveBeenCalledWith(
+        expect.stringContaining("Failed to update max HR"),
+      );
+      expect(mockLoggerError).toHaveBeenCalledWith(
+        expect.stringContaining("Failed to refresh views"),
+      );
     });
 
     it("syncs provider priorities before refreshing views", async () => {
@@ -390,16 +397,11 @@ describe("processImportJob", () => {
       mockLoadPriorityConfig.mockImplementation(() => {
         throw new Error("config read failed");
       });
-      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
       await runImportJob(job, mockDb);
 
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining("provider priorities"),
-        expect.any(Error),
-      );
-      consoleSpy.mockRestore();
+      expect(mockLoggerError).toHaveBeenCalledWith(expect.stringContaining("provider priorities"));
     });
   });
 
@@ -427,16 +429,14 @@ describe("processImportJob", () => {
       const dateNowSpy = vi.spyOn(Date, "now").mockImplementation(() => {
         return callCount++ === 0 ? 10000 : 12000;
       });
-      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
       await runImportJob(job, mockDb);
 
       // Duration = (12000 - 10000) / 1000 = 2.0s (not 2000000.0 if * was used)
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("2.0s"));
+      expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("2.0s"));
 
       dateNowSpy.mockRestore();
-      consoleSpy.mockRestore();
     });
 
     it("computes correct duration for strong-csv import", async () => {
@@ -444,18 +444,16 @@ describe("processImportJob", () => {
       const dateNowSpy = vi.spyOn(Date, "now").mockImplementation(() => {
         return callCount++ === 0 ? 10000 : 13000;
       });
-      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
       await writeFile(tempFilePath, "csv data");
       const job = createMockJob({ filePath: tempFilePath, importType: "strong-csv" });
       await runImportJob(job, mockDb);
 
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("3.0s"));
+      expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("3.0s"));
       const logCall = mockLogSync.mock.calls[0]?.[1];
       expect(logCall.durationMs).toBeLessThan(5000);
 
       dateNowSpy.mockRestore();
-      consoleSpy.mockRestore();
     });
 
     it("computes correct duration for cronometer-csv import", async () => {
@@ -463,18 +461,16 @@ describe("processImportJob", () => {
       const dateNowSpy = vi.spyOn(Date, "now").mockImplementation(() => {
         return callCount++ === 0 ? 10000 : 11500;
       });
-      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
       await writeFile(tempFilePath, "csv data");
       const job = createMockJob({ filePath: tempFilePath, importType: "cronometer-csv" });
       await runImportJob(job, mockDb);
 
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("1.5s"));
+      expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("1.5s"));
       const logCall = mockLogSync.mock.calls[0]?.[1];
       expect(logCall.durationMs).toBeLessThan(5000);
 
       dateNowSpy.mockRestore();
-      consoleSpy.mockRestore();
     });
   });
 
@@ -502,13 +498,11 @@ describe("processImportJob", () => {
         errors: [{ message: "err1" }, { message: "err2" }, { message: "err3" }],
       });
 
-      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
       await runImportJob(job, mockDb);
 
-      // Console log should contain error count
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("3 errors"));
-      consoleSpy.mockRestore();
+      // Logger info should contain error count
+      expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("3 errors"));
     });
 
     it("reports error status for strong-csv with errors", async () => {

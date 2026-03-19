@@ -1,4 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
+
+const mockLoggerInfo = vi.fn();
+const mockLoggerError = vi.fn();
+const mockLoggerWarn = vi.fn();
+
+vi.mock("../logger.ts", () => ({
+  logger: {
+    info: (...args: unknown[]) => mockLoggerInfo(...args),
+    error: (...args: unknown[]) => mockLoggerError(...args),
+    warn: (...args: unknown[]) => mockLoggerWarn(...args),
+    debug: vi.fn(),
+  },
+}));
+
 import {
   parseExponentialMovingAverageRows,
   parseReadinessRows,
@@ -69,7 +83,6 @@ describe("refitAllParams", () => {
   });
 
   it("handles save failure gracefully (logs but does not throw)", async () => {
-    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     let callCount = 0;
     const db = {
       execute: vi.fn().mockImplementation(() => {
@@ -85,12 +98,7 @@ describe("refitAllParams", () => {
     // Should still return params despite save failure
     expect(result).not.toBeNull();
     expect(result.version).toBe(1);
-    expect(consoleSpy).toHaveBeenCalledWith(
-      "[personalization] Failed to save params:",
-      expect.objectContaining({ message: "Save failed" }),
-    );
-
-    consoleSpy.mockRestore();
+    expect(mockLoggerError).toHaveBeenCalledWith(expect.stringContaining("Failed to save params"));
   });
 
   it("handles all fitters rejecting simultaneously", async () => {

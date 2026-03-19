@@ -5,6 +5,7 @@ import type { SyncDatabase } from "../db/index.ts";
 import { activity, dailyMetrics, healthEvent, metricStream, sleepSession } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import { logger } from "../logger.ts";
 import type {
   Provider,
   ProviderAuthSetup,
@@ -600,7 +601,7 @@ export class OuraProvider implements Provider {
       return tokens.accessToken;
     }
 
-    console.log("[oura] Access token expired, refreshing...");
+    logger.info("[oura] Access token expired, refreshing...");
     const config = ouraOAuthConfig();
     if (!config) {
       throw new Error("OURA_CLIENT_ID and OURA_CLIENT_SECRET are required to refresh tokens");

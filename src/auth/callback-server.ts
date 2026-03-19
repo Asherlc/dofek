@@ -4,6 +4,7 @@ import { createServer as createHttpServer, type Server } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { logger } from "../logger.ts";
 
 /**
  * Generate a self-signed cert for localhost. Returns key + cert PEM strings.
@@ -94,9 +95,9 @@ export function waitForAuthCode(
 
     const proto = useHttps ? "https" : "http";
     server.listen(port, () => {
-      console.log(`[auth] Callback server listening on ${proto}://localhost:${port}/callback`);
+      logger.info(`[auth] Callback server listening on ${proto}://localhost:${port}/callback`);
       if (useHttps) {
-        console.log("[auth] Using self-signed cert — accept the browser warning to complete auth.");
+        logger.info("[auth] Using self-signed cert — accept the browser warning to complete auth.");
       }
     });
 

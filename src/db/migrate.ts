@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import postgres from "postgres";
+import { logger } from "../logger.ts";
 
 /**
  * Run pending migrations from the drizzle/ directory.
@@ -30,7 +31,7 @@ export async function runMigrations(databaseUrl: string, migrationsDir?: string)
     let count = 0;
     for (const file of files) {
       if (appliedSet.has(file)) continue;
-      console.log(`[migrate] Applying: ${file}`);
+      logger.info(`[migrate] Applying: ${file}`);
       const content = readFileSync(join(dir, file), "utf-8");
       const statements = content
         .split("--> statement-breakpoint")
@@ -44,7 +45,7 @@ export async function runMigrations(databaseUrl: string, migrationsDir?: string)
     }
 
     if (count > 0) {
-      console.log(`[migrate] Applied ${count} migration(s)`);
+      logger.info(`[migrate] Applied ${count} migration(s)`);
     }
     return count;
   } finally {

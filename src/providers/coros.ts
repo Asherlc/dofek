@@ -4,6 +4,7 @@ import type { SyncDatabase } from "../db/index.ts";
 import { activity, dailyMetrics, sleepSession } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import { logger } from "../logger.ts";
 import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
 
 // ============================================================
@@ -189,7 +190,7 @@ export class CorosProvider implements Provider {
     if (!tokens) throw new Error("No OAuth tokens for COROS. Run: health-data auth coros");
     if (tokens.expiresAt > new Date()) return tokens;
 
-    console.log("[coros] Token expired, refreshing...");
+    logger.info("[coros] Token expired, refreshing...");
     const config = corosOAuthConfig();
     if (!config || !tokens.refreshToken) throw new Error("Cannot refresh COROS tokens");
     const refreshed = await refreshAccessToken(config, tokens.refreshToken, this.fetchFn);

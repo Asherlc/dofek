@@ -4,6 +4,7 @@ import { buildAuthorizationUrl } from "./auth/index.ts";
 import { computeSinceDate, parseSinceDays } from "./cli.ts";
 import { createDatabaseFromEnv } from "./db/index.ts";
 import { ensureProvider, saveTokens } from "./db/tokens.ts";
+import { logger } from "./logger.ts";
 import { AutoSupplementsProvider } from "./providers/auto-supplements.ts";
 import { BodySpecProvider } from "./providers/bodyspec.ts";
 import { Concept2Provider } from "./providers/concept2.ts";
@@ -49,7 +50,7 @@ try {
   // File not found is expected — auto-supplements provider will report validation error
   // Log other errors (e.g., corrupt JSON) so they're not silently swallowed
   if (err instanceof Error && !err.message.includes("ENOENT")) {
-    console.error(`[supplements] Failed to load config: ${err.message}`);
+    logger.error(`[supplements] Failed to load config: ${err.message}`);
   }
 }
 
@@ -100,14 +101,14 @@ async function main() {
 
     const enabled = getEnabledProviders();
     if (enabled.length === 0) {
-      console.log("[sync] No providers enabled. Set API keys in .env to enable providers.");
+      logger.info("[sync] No providers enabled. Set API keys in .env to enable providers.");
       process.exit(0);
     }
 
     const label = fullSync ? "all time" : `since ${since.toISOString()}`;
-    console.log(`[sync] Running sync for ${enabled.length} provider(s) — ${label}`);
+    logger.info(`[sync] Running sync for ${enabled.length} provider(s) — ${label}`);
     const result = await runSync(db, since);
-    console.log(
+    logger.info(
       `[sync] Done: ${result.totalRecords} records, ${result.totalErrors} errors in ${result.duration}ms`,
     );
 
@@ -124,19 +125,19 @@ async function main() {
 
     if (!providerArg || !provider || !provider.authSetup) {
       const supported = oauthProviders.map((p) => p.id).join("|");
-      console.error(`Usage: health-data auth <${supported}>`);
+      logger.error(`Usage: health-data auth <${supported}>`);
       process.exit(1);
     }
 
     const validation = provider.validate();
     if (validation) {
-      console.error(`[auth] ${validation}`);
+      logger.error(`[auth] ${validation}`);
       process.exit(1);
     }
 
     const setup = provider.authSetup?.();
     if (!setup) {
-      console.error(
+      logger.error(
         `[auth] Provider ${providerArg} is not configured for OAuth. ` +
           `Check environment variables for credentials (e.g., ${providerArg.toUpperCase()}_CLIENT_ID).`,
       );
@@ -154,12 +155,12 @@ async function main() {
       const callbackParsed = new URL(callbackUrl);
       const callbackPort = parseInt(callbackParsed.port || "9876", 10);
 
-      console.log("[auth] Requesting OAuth 1.0 request token...");
+      logger.info("[auth] Requesting OAuth 1.0 request token...");
       const requestToken = await oauth1.getRequestToken(callbackUrl);
 
-      console.log(`[auth] Opening browser...\n\n  ${requestToken.authorizeUrl}\n`);
+      logger.info(`[auth] Opening browser...\n\n  ${requestToken.authorizeUrl}\n`);
       execFile("open", [requestToken.authorizeUrl]);
-      console.log("[auth] Waiting for callback...");
+      logger.info("[auth] Waiting for callback...");
 
       const { code: verifier, cleanup: cleanupServer } = await waitForAuthCode(callbackPort, {
         https: false,
@@ -167,7 +168,7 @@ async function main() {
       });
       cleanupServer();
 
-      console.log("[auth] Exchanging for access token...");
+      logger.info("[auth] Exchanging for access token...");
       const accessToken = await oauth1.exchangeForAccessToken(
         requestToken.oauthToken,
         requestToken.oauthTokenSecret,
@@ -187,19 +188,19 @@ async function main() {
       const email = process.env[`${provider.id.toUpperCase()}_USERNAME`];
       const password = process.env[`${provider.id.toUpperCase()}_PASSWORD`];
       if (!email || !password) {
-        console.error(
+        logger.error(
           `[auth] ${provider.id.toUpperCase()}_USERNAME and ${provider.id.toUpperCase()}_PASSWORD required`,
         );
         process.exit(1);
       }
-      console.log(`[auth] Logging in as ${email}...`);
+      logger.info(`[auth] Logging in as ${email}...`);
       tokens = await setup.automatedLogin(email, password);
     } else {
       // Browser-based OAuth 2.0 flow
       const authUrl = setup.authUrl ?? buildAuthorizationUrl(oauthConfig);
-      console.log(`[auth] Opening browser...\n\n  ${authUrl}\n`);
+      logger.info(`[auth] Opening browser...\n\n  ${authUrl}\n`);
       execFile("open", [authUrl]);
-      console.log("[auth] Waiting for callback...");
+      logger.info("[auth] Waiting for callback...");
 
       const callbackUrl = new URL(oauthConfig.redirectUri);
       const callbackPort = parseInt(callbackUrl.port || "9876", 10);
@@ -207,17 +208,17 @@ async function main() {
       const { code, cleanup: cleanupServer } = await waitForAuthCode(callbackPort, {
         https: useHttps,
       });
-      console.log("[auth] Received authorization code. Exchanging for tokens...");
+      logger.info("[auth] Received authorization code. Exchanging for tokens...");
       tokens = await exchangeCode(code);
       cleanupServer();
     }
 
-    console.log(`[auth] Authorized! Token expires at ${tokens.expiresAt.toISOString()}`);
+    logger.info(`[auth] Authorized! Token expires at ${tokens.expiresAt.toISOString()}`);
 
     const db = createDatabaseFromEnv();
     await ensureProvider(db, provider.id, provider.name, apiBaseUrl);
     await saveTokens(db, provider.id, tokens);
-    console.log("[auth] Tokens saved to database.");
+    logger.info("[auth] Tokens saved to database.");
 
     process.exit(0);
   }
@@ -228,7 +229,7 @@ async function main() {
     if (subcommand === "apple-health") {
       const filePath = process.argv[4];
       if (!filePath) {
-        console.error(
+        logger.error(
           "Usage: health-data import apple-health <path-to-export.zip|xml> [--full-sync] [--since-days=N]",
         );
         process.exit(1);
@@ -241,20 +242,20 @@ async function main() {
       const { importAppleHealthFile } = await import("./providers/apple-health/index.ts");
       const db = createDatabaseFromEnv();
       const result = await importAppleHealthFile(db, filePath, since);
-      console.log(
+      logger.info(
         `[import] Done: ${result.recordsSynced} records, ${result.errors.length} errors in ${result.duration}ms`,
       );
       if (result.errors.length > 0) {
-        for (const err of result.errors) console.error(`  - ${err.message}`);
+        for (const err of result.errors) logger.error(`  - ${err.message}`);
       }
       process.exit(result.errors.length > 0 ? 1 : 0);
     }
 
-    console.error("Usage: health-data import <apple-health> <file>");
+    logger.error("Usage: health-data import <apple-health> <file>");
     process.exit(1);
   }
 
-  console.error(`Unknown command: ${command}\nUsage: health-data <sync|auth|import>`);
+  logger.error(`Unknown command: ${command}\nUsage: health-data <sync|auth|import>`);
   process.exit(1);
 }
 
