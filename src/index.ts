@@ -15,6 +15,53 @@ import {
 } from "./jobs/queues.ts";
 import { getAllProviders, getEnabledProviders } from "./providers/index.ts";
 
+export async function handleSyncCommand(args: string[]): Promise<number> {
+  const fullSync = args.includes("--full-sync");
+  const days = parseSinceDays(args);
+
+  // Register all providers so processSyncJob can use them
+  await ensureProvidersRegistered();
+
+  const enabled = getEnabledProviders();
+  if (enabled.length === 0) {
+    console.log("[sync] No providers enabled. Set API keys in .env to enable providers.");
+    return 0;
+  }
+
+  const db = createDatabaseFromEnv();
+  const connection = getRedisConnection();
+  const queue = createSyncQueue(connection);
+  const { DEFAULT_USER_ID } = await import("./db/schema.ts");
+
+  const jobData: SyncJobData = {
+    sinceDays: fullSync ? undefined : days,
+    userId: DEFAULT_USER_ID,
+  };
+
+  const job = await queue.add("sync", jobData);
+  const label = fullSync ? "all time" : `last ${days} days`;
+  console.log(`[sync] Enqueued sync job for ${enabled.length} provider(s) — ${label}`);
+
+  // Process the job inline with a temporary worker
+  const worker = new Worker<SyncJobData>(SYNC_QUEUE, (j) => processSyncJob(j, db), {
+    connection,
+  });
+  const queueEvents = new QueueEvents(SYNC_QUEUE, { connection });
+
+  try {
+    await job.waitUntilFinished(queueEvents);
+    console.log("[sync] Done.");
+    return 0;
+  } catch (err) {
+    console.error(`[sync] Failed: ${err}`);
+    return 1;
+  } finally {
+    await worker.close();
+    await queueEvents.close();
+    await queue.close();
+  }
+}
+
 async function main() {
   const command = process.argv[2] ?? "sync";
 
@@ -22,50 +69,7 @@ async function main() {
   // The sync CLI skips migrations to avoid racing the web container.
 
   if (command === "sync") {
-    const fullSync = process.argv.includes("--full-sync");
-    const days = parseSinceDays(process.argv);
-
-    // Register all providers so processSyncJob can use them
-    await ensureProvidersRegistered();
-
-    const enabled = getEnabledProviders();
-    if (enabled.length === 0) {
-      console.log("[sync] No providers enabled. Set API keys in .env to enable providers.");
-      process.exit(0);
-    }
-
-    const db = createDatabaseFromEnv();
-    const connection = getRedisConnection();
-    const queue = createSyncQueue(connection);
-    const { DEFAULT_USER_ID } = await import("./db/schema.ts");
-
-    const jobData: SyncJobData = {
-      sinceDays: fullSync ? undefined : days,
-      userId: DEFAULT_USER_ID,
-    };
-
-    const job = await queue.add("sync", jobData);
-    const label = fullSync ? "all time" : `last ${days} days`;
-    console.log(`[sync] Enqueued sync job for ${enabled.length} provider(s) — ${label}`);
-
-    // Process the job inline with a temporary worker
-    const worker = new Worker<SyncJobData>(SYNC_QUEUE, (j) => processSyncJob(j, db), {
-      connection,
-    });
-    const queueEvents = new QueueEvents(SYNC_QUEUE, { connection });
-
-    try {
-      await job.waitUntilFinished(queueEvents);
-      console.log("[sync] Done.");
-      process.exit(0);
-    } catch (err) {
-      console.error(`[sync] Failed: ${err}`);
-      process.exit(1);
-    } finally {
-      await worker.close();
-      await queueEvents.close();
-      await queue.close();
-    }
+    process.exit(await handleSyncCommand(process.argv));
   }
 
   if (command === "auth") {
