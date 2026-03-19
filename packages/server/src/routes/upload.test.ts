@@ -13,10 +13,20 @@ vi.mock("../logger.ts", () => ({
   logger: { info: vi.fn(), error: vi.fn() },
 }));
 
+vi.mock("../auth/cookies.ts", () => ({
+  getSessionIdFromRequest: vi.fn(),
+}));
+
+vi.mock("../auth/session.ts", () => ({
+  validateSession: vi.fn(() => Promise.resolve(null)),
+}));
+
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import express from "express";
+import { getSessionIdFromRequest } from "../auth/cookies.ts";
+import { validateSession } from "../auth/session.ts";
 import { assembleChunks, streamToFile } from "../lib/server-utils.ts";
 import { createUploadRouter } from "./upload.ts";
 
@@ -38,8 +48,9 @@ function mockQueue() {
 
 function createTestApp() {
   const queue = mockQueue();
+  const fakeDb = {} as import("dofek/db").Database;
   const app = express();
-  app.use("/api/upload", createUploadRouter({ getImportQueue: () => queue }));
+  app.use("/api/upload", createUploadRouter({ getImportQueue: () => queue, db: fakeDb }));
   return { app, queue };
 }
 
@@ -81,6 +92,110 @@ async function request(
 describe("createUploadRouter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
+    vi.mocked(validateSession).mockResolvedValue({ userId: "user-1" });
+  });
+
+  describe("authentication", () => {
+    it("returns 401 for unauthenticated POST /apple-health", async () => {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/api/upload/apple-health", {
+        headers: { "Content-Type": "application/zip" },
+        body: Buffer.from("data"),
+      });
+      expect(res.status).toBe(401);
+    });
+
+    it("returns 401 for expired session on POST /apple-health", async () => {
+      vi.mocked(validateSession).mockResolvedValue(null);
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/api/upload/apple-health", {
+        headers: { "Content-Type": "application/zip" },
+        body: Buffer.from("data"),
+      });
+      expect(res.status).toBe(401);
+    });
+
+    it("returns 401 for unauthenticated POST /strong-csv", async () => {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/api/upload/strong-csv", {
+        headers: { "Content-Type": "text/csv" },
+        body: Buffer.from("data"),
+      });
+      expect(res.status).toBe(401);
+    });
+
+    it("returns 401 for unauthenticated POST /cronometer-csv", async () => {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/api/upload/cronometer-csv", {
+        headers: { "Content-Type": "text/csv" },
+        body: Buffer.from("data"),
+      });
+      expect(res.status).toBe(401);
+    });
+
+    it("returns 401 for unauthenticated GET /apple-health/status", async () => {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
+      const { app } = createTestApp();
+      const res = await request(app, "get", "/api/upload/apple-health/status/job-1");
+      expect(res.status).toBe(401);
+    });
+
+    it("returns 401 for unauthenticated GET /strong-csv/status", async () => {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
+      const { app } = createTestApp();
+      const res = await request(app, "get", "/api/upload/strong-csv/status/job-1");
+      expect(res.status).toBe(401);
+    });
+
+    it("returns 401 for unauthenticated GET /cronometer-csv/status", async () => {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
+      const { app } = createTestApp();
+      const res = await request(app, "get", "/api/upload/cronometer-csv/status/job-1");
+      expect(res.status).toBe(401);
+    });
+
+    it("uses authenticated userId for apple-health upload", async () => {
+      const { app, queue } = createTestApp();
+      await request(app, "post", "/api/upload/apple-health", {
+        headers: { "Content-Type": "application/zip" },
+        body: Buffer.from("data"),
+      });
+      expect(queue.add).toHaveBeenCalledWith(
+        "apple-health",
+        expect.objectContaining({ userId: "user-1" }),
+        undefined,
+      );
+    });
+
+    it("uses authenticated userId for strong-csv upload", async () => {
+      const { app, queue } = createTestApp();
+      await request(app, "post", "/api/upload/strong-csv", {
+        headers: { "Content-Type": "text/csv" },
+        body: Buffer.from("data"),
+      });
+      expect(queue.add).toHaveBeenCalledWith(
+        "strong-csv",
+        expect.objectContaining({ userId: "user-1" }),
+        undefined,
+      );
+    });
+
+    it("uses authenticated userId for cronometer-csv upload", async () => {
+      const { app, queue } = createTestApp();
+      await request(app, "post", "/api/upload/cronometer-csv", {
+        headers: { "Content-Type": "text/csv" },
+        body: Buffer.from("data"),
+      });
+      expect(queue.add).toHaveBeenCalledWith(
+        "cronometer-csv",
+        expect.objectContaining({ userId: "user-1" }),
+        undefined,
+      );
+    });
   });
 
   describe("POST /api/upload/apple-health", () => {

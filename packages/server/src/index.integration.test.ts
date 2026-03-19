@@ -258,24 +258,35 @@ describe("tRPC API", () => {
 
   describe("Upload status endpoints", () => {
     it("GET /api/upload/apple-health/status/:jobId returns 404 for unknown job", async () => {
-      const res = await fetch(`${baseUrl}/api/upload/apple-health/status/nonexistent`);
+      const res = await fetch(`${baseUrl}/api/upload/apple-health/status/nonexistent`, {
+        headers: { Cookie: sessionCookie },
+      });
       expect(res.status).toBe(404);
       const data = await res.json();
       expect(data.error).toBe("Unknown job");
     });
 
     it("GET /api/upload/strong-csv/status/:jobId returns 404 for unknown job", async () => {
-      const res = await fetch(`${baseUrl}/api/upload/strong-csv/status/nonexistent`);
+      const res = await fetch(`${baseUrl}/api/upload/strong-csv/status/nonexistent`, {
+        headers: { Cookie: sessionCookie },
+      });
       expect(res.status).toBe(404);
       const data = await res.json();
       expect(data.error).toBe("Unknown job");
     });
 
     it("GET /api/upload/cronometer-csv/status/:jobId returns 404 for unknown job", async () => {
-      const res = await fetch(`${baseUrl}/api/upload/cronometer-csv/status/nonexistent`);
+      const res = await fetch(`${baseUrl}/api/upload/cronometer-csv/status/nonexistent`, {
+        headers: { Cookie: sessionCookie },
+      });
       expect(res.status).toBe(404);
       const data = await res.json();
       expect(data.error).toBe("Unknown job");
+    });
+
+    it("GET /api/upload/apple-health/status/:jobId returns 401 without session", async () => {
+      const res = await fetch(`${baseUrl}/api/upload/apple-health/status/nonexistent`);
+      expect(res.status).toBe(401);
     });
   });
 
@@ -364,7 +375,7 @@ describe("tRPC API", () => {
       // Send a small body — the background import will fail but the endpoint should respond
       const res = await fetch(`${baseUrl}/api/upload/apple-health`, {
         method: "POST",
-        headers: { "Content-Type": "application/octet-stream" },
+        headers: { "Content-Type": "application/octet-stream", Cookie: sessionCookie },
         body: Buffer.from("fake-zip-data"),
       });
       expect(res.status).toBe(200);
@@ -373,7 +384,9 @@ describe("tRPC API", () => {
       expect(typeof data.jobId).toBe("string");
 
       // The job should now appear in BullMQ status endpoint
-      const statusRes = await fetch(`${baseUrl}/api/upload/apple-health/status/${data.jobId}`);
+      const statusRes = await fetch(`${baseUrl}/api/upload/apple-health/status/${data.jobId}`, {
+        headers: { Cookie: sessionCookie },
+      });
       expect(statusRes.status).toBe(200);
       const statusData = await statusRes.json();
       // BullMQ job is enqueued but worker may not be running — status is "processing"
@@ -383,7 +396,7 @@ describe("tRPC API", () => {
     it("POST /api/upload/apple-health with fullSync=true uses epoch as since", async () => {
       const res = await fetch(`${baseUrl}/api/upload/apple-health?fullSync=true`, {
         method: "POST",
-        headers: { "Content-Type": "application/octet-stream" },
+        headers: { "Content-Type": "application/octet-stream", Cookie: sessionCookie },
         body: Buffer.from("fake-zip-data"),
       });
       expect(res.status).toBe(200);
@@ -392,12 +405,22 @@ describe("tRPC API", () => {
       expect(data.jobId).toBeDefined();
     });
 
+    it("POST /api/upload/apple-health returns 401 without session", async () => {
+      const res = await fetch(`${baseUrl}/api/upload/apple-health`, {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: Buffer.from("fake-zip-data"),
+      });
+      expect(res.status).toBe(401);
+    });
+
     it("POST /api/upload/apple-health chunked upload receives first chunk", async () => {
       const uploadId = `test-upload-${Date.now()}`;
       const res = await fetch(`${baseUrl}/api/upload/apple-health`, {
         method: "POST",
         headers: {
           "Content-Type": "application/octet-stream",
+          Cookie: sessionCookie,
           "x-upload-id": uploadId,
           "x-chunk-index": "0",
           "x-chunk-total": "3",
@@ -421,6 +444,7 @@ describe("tRPC API", () => {
           method: "POST",
           headers: {
             "Content-Type": "application/octet-stream",
+            Cookie: sessionCookie,
             "x-upload-id": uploadId,
             "x-chunk-index": String(i),
             "x-chunk-total": "2",
@@ -447,7 +471,7 @@ describe("tRPC API", () => {
         "Date,Workout Name,Exercise Name,Set Order,Weight,Reps\n2024-01-01,Morning,Bench Press,1,100,10\n";
       const res = await fetch(`${baseUrl}/api/upload/strong-csv`, {
         method: "POST",
-        headers: { "Content-Type": "text/csv" },
+        headers: { "Content-Type": "text/csv", Cookie: sessionCookie },
         body: csvData,
       });
       expect(res.status).toBe(200);
@@ -456,7 +480,9 @@ describe("tRPC API", () => {
       expect(typeof data.jobId).toBe("string");
 
       // BullMQ job status should be available
-      const statusRes = await fetch(`${baseUrl}/api/upload/strong-csv/status/${data.jobId}`);
+      const statusRes = await fetch(`${baseUrl}/api/upload/strong-csv/status/${data.jobId}`, {
+        headers: { Cookie: sessionCookie },
+      });
       expect(statusRes.status).toBe(200);
     });
 
@@ -465,7 +491,7 @@ describe("tRPC API", () => {
         "Date,Workout Name,Exercise Name,Set Order,Weight,Reps\n2024-01-01,Morning,Squat,1,225,5\n";
       const res = await fetch(`${baseUrl}/api/upload/strong-csv?units=lbs`, {
         method: "POST",
-        headers: { "Content-Type": "text/csv" },
+        headers: { "Content-Type": "text/csv", Cookie: sessionCookie },
         body: csvData,
       });
       expect(res.status).toBe(200);
@@ -479,7 +505,7 @@ describe("tRPC API", () => {
       const csvData = "Day,Food Name,Amount,Energy (kcal)\n2024-01-01,Oatmeal,1 cup,150\n";
       const res = await fetch(`${baseUrl}/api/upload/cronometer-csv`, {
         method: "POST",
-        headers: { "Content-Type": "text/csv" },
+        headers: { "Content-Type": "text/csv", Cookie: sessionCookie },
         body: csvData,
       });
       expect(res.status).toBe(200);
@@ -488,7 +514,9 @@ describe("tRPC API", () => {
       expect(typeof data.jobId).toBe("string");
 
       // BullMQ job status should be available
-      const statusRes = await fetch(`${baseUrl}/api/upload/cronometer-csv/status/${data.jobId}`);
+      const statusRes = await fetch(`${baseUrl}/api/upload/cronometer-csv/status/${data.jobId}`, {
+        headers: { Cookie: sessionCookie },
+      });
       expect(statusRes.status).toBe(200);
     });
   });

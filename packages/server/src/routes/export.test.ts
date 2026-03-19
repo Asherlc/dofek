@@ -88,7 +88,38 @@ describe("createExportRouter", () => {
   });
 
   describe("GET /api/export/status/:jobId", () => {
+    it("returns 401 when not authenticated", async () => {
+      // First create a job while authenticated
+      vi.mocked(getSessionCookie).mockReturnValue("sess-1");
+      vi.mocked(validateSession).mockResolvedValue({ userId: "user-1" });
+      const { app } = createTestApp();
+      const postRes = await request(app, "post", "/api/export");
+      const { jobId } = JSON.parse(postRes.body);
+
+      // Now try to access status without auth
+      vi.mocked(getSessionCookie).mockReturnValue(undefined);
+      const statusRes = await request(app, "get", `/api/export/status/${jobId}`);
+      expect(statusRes.status).toBe(401);
+    });
+
+    it("returns 403 when job belongs to another user", async () => {
+      // Create a job as user-1
+      vi.mocked(getSessionCookie).mockReturnValue("sess-1");
+      vi.mocked(validateSession).mockResolvedValue({ userId: "user-1" });
+      const { app } = createTestApp();
+      const postRes = await request(app, "post", "/api/export");
+      const { jobId } = JSON.parse(postRes.body);
+
+      // Try to access status as user-2
+      vi.mocked(getSessionCookie).mockReturnValue("sess-2");
+      vi.mocked(validateSession).mockResolvedValue({ userId: "user-2" });
+      const statusRes = await request(app, "get", `/api/export/status/${jobId}`);
+      expect(statusRes.status).toBe(403);
+    });
+
     it("returns 404 for unknown job", async () => {
+      vi.mocked(getSessionCookie).mockReturnValue("sess-1");
+      vi.mocked(validateSession).mockResolvedValue({ userId: "user-1" });
       const { app } = createTestApp();
       const res = await request(app, "get", "/api/export/status/unknown-job");
       expect(res.status).toBe(404);
