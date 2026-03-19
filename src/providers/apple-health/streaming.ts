@@ -97,7 +97,10 @@ export function streamHealthExport(
     // Max concurrent flushes before we pause.
     const MAX_PENDING = 5;
 
+    let errored = false;
+
     function trackFlush(fn: () => Promise<void>) {
+      if (errored) return; // Don't start new flushes after an error
       pendingFlushes++;
       if (pendingFlushes >= MAX_PENDING) {
         fileStream.pause();
@@ -105,7 +108,7 @@ export function streamHealthExport(
       fn()
         .then(() => {
           pendingFlushes--;
-          if (pendingFlushes < MAX_PENDING) {
+          if (pendingFlushes < MAX_PENDING && !errored) {
             fileStream.resume();
           }
           if (pendingFlushes === 0 && drainResolve) {
@@ -114,7 +117,12 @@ export function streamHealthExport(
           }
         })
         .catch((err) => {
-          reject(err);
+          if (!errored) {
+            errored = true;
+            fileStream.destroy();
+            reject(err);
+          }
+          // If already errored, swallow — the first error was already reported
         });
     }
 

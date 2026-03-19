@@ -32,6 +32,7 @@ vi.mock("./routers/pmc.ts", () => ({ pmcRouter: mockRouter }));
 vi.mock("./routers/power.ts", () => ({ powerRouter: mockRouter }));
 vi.mock("./routers/predictions.ts", () => ({ predictionsRouter: mockRouter }));
 vi.mock("./routers/recovery.ts", () => ({ recoveryRouter: mockRouter }));
+vi.mock("./routers/running.ts", () => ({ runningRouter: mockRouter }));
 vi.mock("./routers/settings.ts", () => ({ settingsRouter: mockRouter }));
 vi.mock("./routers/sleep.ts", () => ({ sleepRouter: mockRouter }));
 vi.mock("./routers/sleep-need.ts", () => ({ sleepNeedRouter: mockRouter }));
@@ -114,6 +115,7 @@ describe("appRouter", () => {
       "hiking",
       "predictions",
       "recovery",
+      "running",
       "settings",
       "stress",
       "healthspan",

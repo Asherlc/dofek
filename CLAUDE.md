@@ -87,8 +87,7 @@ src/                         — Root package: sync runner, providers, DB schema
   db/index.ts                — DB connection
   providers/types.ts         — Provider plugin interface
   providers/                 — Provider implementations
-  sync/runner.ts             — Sync orchestrator
-  index.ts                   — CLI entry point
+  index.ts                   — CLI entry point (enqueues sync via BullMQ)
 packages/
   shared/src/                — @dofek/shared: platform-agnostic utilities
     scoring.ts               — Score colors, labels, workload ratio helpers

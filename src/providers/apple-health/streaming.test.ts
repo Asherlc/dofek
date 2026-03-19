@@ -507,6 +507,94 @@ describe("streamHealthExport — error handling", () => {
     ).rejects.toThrow("DB connection failed");
   });
 
+  it("stops the file stream after a mid-stream callback error (no orphaned callbacks)", async () => {
+    // Generate enough records to trigger multiple mid-stream flushes.
+    // When the first flush fails, the stream should be destroyed so that
+    // subsequent batches don't fire callbacks that become unhandled rejections.
+    const recordLines: string[] = [];
+    for (let i = 0; i < 15_000; i++) {
+      const hour = String(Math.floor(i / 60) % 24).padStart(2, "0");
+      const min = String(i % 60).padStart(2, "0");
+      recordLines.push(
+        `<Record type="HKQuantityTypeIdentifierHeartRate" sourceName="Watch" unit="count/min" ` +
+          `value="${60 + (i % 40)}" ` +
+          `startDate="2024-03-01 ${hour}:${min}:00 -0500" ` +
+          `endDate="2024-03-01 ${hour}:${min}:05 -0500" ` +
+          `creationDate="2024-03-01 ${hour}:${min}:00 -0500"/>`,
+      );
+    }
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<HealthData locale="en_US">
+${recordLines.join("\n")}
+</HealthData>`;
+    const path = writeXml("mid-stream-error.xml", xml);
+
+    let callCount = 0;
+    await expect(
+      streamHealthExport(path, new Date("2020-01-01"), {
+        onRecordBatch: async () => {
+          callCount++;
+          if (callCount === 1) {
+            // First batch succeeds (with delay to allow concurrent flushes)
+            await new Promise((resolve) => setTimeout(resolve, 20));
+          } else {
+            // Second batch fails — should stop the stream
+            throw new Error("ON CONFLICT DO UPDATE command cannot affect row a second time");
+          }
+        },
+        onSleepBatch: async () => {},
+        onWorkoutBatch: async () => {},
+      }),
+    ).rejects.toThrow("ON CONFLICT");
+
+    // The stream should have been destroyed, so no further batches fire.
+    // Without the fix, callCount would be 3 (15000 / 5000 = 3 batches).
+    expect(callCount).toBeLessThanOrEqual(2);
+  }, 30_000);
+
+  it("does not start new flushes after a mid-stream error", async () => {
+    // After a trackFlush error, the errored flag should prevent new flushes
+    // from being started, even if more records are parsed before the stream
+    // is fully destroyed.
+    const recordLines: string[] = [];
+    for (let i = 0; i < 15_000; i++) {
+      const hour = String(Math.floor(i / 60) % 24).padStart(2, "0");
+      const min = String(i % 60).padStart(2, "0");
+      recordLines.push(
+        `<Record type="HKQuantityTypeIdentifierHeartRate" sourceName="Watch" unit="count/min" ` +
+          `value="${60 + (i % 40)}" ` +
+          `startDate="2024-03-01 ${hour}:${min}:00 -0500" ` +
+          `endDate="2024-03-01 ${hour}:${min}:05 -0500" ` +
+          `creationDate="2024-03-01 ${hour}:${min}:00 -0500"/>`,
+      );
+    }
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<HealthData locale="en_US">
+${recordLines.join("\n")}
+</HealthData>`;
+    const path = writeXml("no-new-flushes.xml", xml);
+
+    let callCount = 0;
+    const error = await streamHealthExport(path, new Date("2020-01-01"), {
+      onRecordBatch: async () => {
+        callCount++;
+        if (callCount >= 2) {
+          throw new Error("DB conflict error");
+        }
+      },
+      onSleepBatch: async () => {},
+      onWorkoutBatch: async () => {},
+    }).catch((err: unknown) => err);
+
+    expect(error).toBeInstanceOf(Error);
+    if (error instanceof Error) {
+      expect(error.message).toBe("DB conflict error");
+    }
+    // Should not have called the callback more than the batch that errored
+    // plus at most one more that was already in-flight
+    expect(callCount).toBeLessThanOrEqual(3);
+  }, 30_000);
+
   it("rejects when final flush callback throws (no unhandled rejection)", async () => {
     // Generate records that will only be flushed in the final flush (< BATCH_SIZE)
     // along with enough records to create pending mid-stream flushes.

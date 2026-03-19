@@ -32,6 +32,9 @@ function AuthGate() {
 }
 
 export const Route = createRootRoute({
+  validateSearch: (search: Record<string, unknown>): { onboarding?: boolean } => ({
+    onboarding: search.onboarding === "true" || undefined,
+  }),
   component: () => (
     <AuthProvider>
       <AuthGate />

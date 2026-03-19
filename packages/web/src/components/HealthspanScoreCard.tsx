@@ -31,7 +31,7 @@ export function HealthspanScoreCard({ data, loading }: HealthspanScoreCardProps)
     return <ChartLoadingSkeleton height={400} />;
   }
 
-  if (!data || data.metrics.length === 0) {
+  if (!data || data.healthspanScore == null || data.metrics.length === 0) {
     return (
       <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-6 flex items-center justify-center h-[400px]">
         <span className="text-zinc-600 text-sm">Insufficient data for healthspan analysis</span>

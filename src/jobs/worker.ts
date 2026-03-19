@@ -90,4 +90,12 @@ async function shutdown() {
 process.on("SIGTERM", shutdown);
 process.on("SIGINT", shutdown);
 
+// Prevent unhandled promise rejections from crashing the worker process.
+// BullMQ and DB operations can produce rejections that escape the job
+// processor's try/catch (e.g., from concurrent batch inserts via postgres.js).
+// Log the error but keep the worker alive so it can process the next job.
+process.on("unhandledRejection", (err) => {
+  logger.error(`[worker] Unhandled rejection (worker still running): ${err}`);
+});
+
 logger.info("[worker] Started, waiting for jobs...");
