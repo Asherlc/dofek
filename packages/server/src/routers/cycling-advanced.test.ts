@@ -14,11 +14,25 @@ vi.mock("../trpc.ts", async () => {
 });
 
 vi.mock("../lib/typed-sql.ts", () => ({
-  executeWithSchema: vi.fn(async (db: { execute: () => Promise<unknown[]> }) => db.execute()),
+  executeWithSchema: vi.fn(
+    async (
+      db: { execute: (query: unknown) => Promise<unknown[]> },
+      schema: { parse: (row: unknown) => unknown },
+      query: unknown,
+    ) => {
+      const rows = await db.execute(query);
+      return rows.map((row) => schema.parse(row));
+    },
+  ),
 }));
 
 vi.mock("../lib/endurance-types.ts", () => ({
-  enduranceTypeFilter: () => ({ sql: "true" }),
+  enduranceTypeFilter: (alias: string) => {
+    if (alias !== "a" && alias !== "asum") {
+      throw new Error(`Unexpected alias: ${alias}`);
+    }
+    return { sql: `true_${alias}` };
+  },
 }));
 
 import { cyclingAdvancedRouter } from "./cycling-advanced.ts";
@@ -30,6 +44,12 @@ function makeCaller(rows: Record<string, unknown>[] = []) {
     db: { execute: vi.fn().mockResolvedValue(rows) },
     userId: "user-1",
   });
+}
+
+function expectNonEmptySqlQuery(execute: ReturnType<typeof vi.fn>, callIndex: number): void {
+  const query = execute.mock.calls[callIndex]?.[0] as { queryChunks?: unknown[] } | undefined;
+  expect(Array.isArray(query?.queryChunks)).toBe(true);
+  expect(query?.queryChunks?.length ?? 0).toBeGreaterThan(0);
 }
 
 describe("cyclingAdvancedRouter", () => {
@@ -63,17 +83,14 @@ describe("cyclingAdvancedRouter", () => {
       const caller = makeCaller(rows);
       const result = await caller.rampRate({ days: 90 });
 
-      expect(result.recommendation).toBeDefined();
-      expect(typeof result.currentRampRate).toBe("number");
-      // Should have at least 1 week of ramp rate data
-      expect(result.weeks.length).toBeGreaterThan(0);
-      // Each week should have numeric ctlStart, ctlEnd, rampRate
-      for (const w of result.weeks) {
-        expect(typeof w.ctlStart).toBe("number");
-        expect(typeof w.ctlEnd).toBe("number");
-        expect(typeof w.rampRate).toBe("number");
-        expect(w.rampRate).toBe(Math.round((w.ctlEnd - w.ctlStart) * 100) / 100);
-      }
+      expect(result).toEqual({
+        weeks: [
+          { week: "2026-03-03", ctlStart: 9.81, ctlEnd: 18.48, rampRate: 8.67 },
+          { week: "2026-03-10", ctlStart: 18.48, ctlEnd: 19.28, rampRate: 0.8 },
+        ],
+        currentRampRate: 0.8,
+        recommendation: "Safe: ramp rate is within sustainable range",
+      });
     });
 
     it("gives safe recommendation for low ramp rate", async () => {
@@ -114,11 +131,34 @@ describe("cyclingAdvancedRouter", () => {
         const caller = makeCaller(rows);
         const result = await caller.rampRate({ days: 90 });
 
-        // Large jump should trigger danger or aggressive
-        expect(result.recommendation).toMatch(/Danger|Aggressive/);
+        // Large jump should trigger danger
+        expect(result.recommendation).toContain("Danger");
       } finally {
         vi.useRealTimers();
       }
+    });
+
+    it("gives aggressive recommendation for moderate-high ramp rate", async () => {
+      const rows: { day: string; trimp: number }[] = [];
+      const base = new Date();
+      // First 3 weeks: low load
+      for (let i = 28; i >= 14; i--) {
+        const d = new Date(base);
+        d.setDate(d.getDate() - i);
+        rows.push({ day: d.toISOString().slice(0, 10), trimp: 10 });
+      }
+      // Last 2 weeks: enough increase to land in aggressive range
+      for (let i = 13; i >= 0; i--) {
+        const d = new Date(base);
+        d.setDate(d.getDate() - i);
+        rows.push({ day: d.toISOString().slice(0, 10), trimp: 350 });
+      }
+
+      const caller = makeCaller(rows);
+      const result = await caller.rampRate({ days: 90 });
+
+      expect(result.currentRampRate).toBe(6.04);
+      expect(result.recommendation).toContain("Aggressive");
     });
 
     it("currentRampRate matches last week's ramp rate", async () => {
@@ -136,6 +176,15 @@ describe("cyclingAdvancedRouter", () => {
         const lastWeek = result.weeks[result.weeks.length - 1];
         expect(result.currentRampRate).toBe(lastWeek?.rampRate ?? 0);
       }
+    });
+
+    it("executes a non-empty SQL query", async () => {
+      const execute = vi.fn().mockResolvedValue([{ day: "2026-03-11", trimp: 75 }]);
+      const caller = createCaller({ db: { execute }, userId: "user-1" });
+
+      await caller.rampRate({ days: 90 });
+
+      expectNonEmptySqlQuery(execute, 0);
     });
   });
 
@@ -181,6 +230,17 @@ describe("cyclingAdvancedRouter", () => {
       expect(result[0]?.week).toBe("2024-01-08");
       expect(result[1]?.week).toBe("2024-01-15");
     });
+
+    it("executes a non-empty SQL query", async () => {
+      const execute = vi.fn().mockResolvedValue([
+        { week: "2024-01-08", monotony: 1.2, strain: 200, weekly_load: 150 },
+      ]);
+      const caller = createCaller({ db: { execute }, userId: "user-1" });
+
+      await caller.trainingMonotony({ days: 90 });
+
+      expectNonEmptySqlQuery(execute, 0);
+    });
   });
 
   describe("activityVariability", () => {
@@ -210,6 +270,8 @@ describe("cyclingAdvancedRouter", () => {
       expect(result.rows[0]?.normalizedPower).toBe(230);
       expect(result.rows[0]?.variabilityIndex).toBe(1.15); // 230/200
       expect(result.rows[0]?.intensityFactor).toBe(0.92); // 230/250
+      expectNonEmptySqlQuery(execute, 0);
+      expectNonEmptySqlQuery(execute, 1);
     });
 
     it("computes variability index as NP / avgPower", async () => {
@@ -256,6 +318,31 @@ describe("cyclingAdvancedRouter", () => {
 
       expect(result.rows).toHaveLength(2);
       expect(result.totalCount).toBe(5);
+    });
+
+    it("returns empty rows safely when page offset has no rows", async () => {
+      const execute = vi.fn();
+      execute.mockResolvedValueOnce([{ ftp: 250 }]);
+      execute.mockResolvedValueOnce([]);
+
+      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const result = await caller.activityVariability({ days: 90, limit: 20, offset: 200 });
+
+      expect(result).toEqual({ rows: [], totalCount: 0 });
+    });
+
+    it("does not execute the activity query when FTP is missing", async () => {
+      const execute = vi.fn();
+      execute.mockResolvedValueOnce([]);
+      execute.mockResolvedValueOnce([
+        { date: "2024-01-15", name: "Ride", np: 230, avg_power: 200, total_count: 1 },
+      ]);
+
+      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const result = await caller.activityVariability({ days: 90, limit: 20, offset: 0 });
+
+      expect(result).toEqual({ rows: [], totalCount: 0 });
+      expect(execute).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -315,6 +402,17 @@ describe("cyclingAdvancedRouter", () => {
       expect(result[0]?.date).toBe("2024-02-20");
       expect(result[0]?.activityName).toBe("Col du Galibier");
     });
+
+    it("executes a non-empty SQL query", async () => {
+      const execute = vi.fn().mockResolvedValue([
+        { date: "2024-01-15", name: "Climb", elevation_gain: 500, climbing_seconds: 3600 },
+      ]);
+      const caller = createCaller({ db: { execute }, userId: "user-1" });
+
+      await caller.verticalAscentRate({ days: 90 });
+
+      expectNonEmptySqlQuery(execute, 0);
+    });
   });
 
   describe("pedalDynamics", () => {
@@ -339,6 +437,23 @@ describe("cyclingAdvancedRouter", () => {
         avgTorqueEffectiveness: 85.3,
         avgPedalSmoothness: 22.1,
       });
+    });
+
+    it("executes a non-empty SQL query", async () => {
+      const execute = vi.fn().mockResolvedValue([
+        {
+          date: "2024-01-15",
+          name: "Trainer Ride",
+          avg_balance: 49.5,
+          avg_torque_effectiveness: 85.3,
+          avg_pedal_smoothness: 22.1,
+        },
+      ]);
+      const caller = createCaller({ db: { execute }, userId: "user-1" });
+
+      await caller.pedalDynamics({ days: 90 });
+
+      expectNonEmptySqlQuery(execute, 0);
     });
   });
 });
