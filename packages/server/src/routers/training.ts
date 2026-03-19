@@ -417,7 +417,7 @@ export const trainingRouter = router({
               WHERE had_high_intensity
                 AND activity_date > CURRENT_DATE - 7
             )::int AS hiit_count_7d,
-            MAX(activity_date)::text FILTER (WHERE had_high_intensity) AS last_hiit_date
+            (MAX(activity_date) FILTER (WHERE had_high_intensity))::text AS last_hiit_date
           FROM per_activity`,
     );
     const hiitLoad = hiitLoadRows[0] ?? { hiit_count_7d: 0, last_hiit_date: null };
