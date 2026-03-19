@@ -56,3 +56,8 @@ CREATE TABLE IF NOT EXISTS fitness.supplement (
 
 CREATE UNIQUE INDEX IF NOT EXISTS supplement_user_name_idx ON fitness.supplement (user_id, name);
 CREATE INDEX IF NOT EXISTS supplement_user_idx ON fitness.supplement (user_id);
+
+-- Clean up old food_entry rows that used the previous externalId format
+-- (auto:<slug>:<date>). The new format is auto:<slug>:<userId>:<date>,
+-- so old rows would never match and cause duplicates on the next sync.
+DELETE FROM fitness.food_entry WHERE provider_id = 'auto-supplements';

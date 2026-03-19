@@ -195,13 +195,15 @@ describe("Auto-Supplements Provider", () => {
       expect(entries[0]?.foodDescription).toBeNull();
     });
 
-    it("only includes defined nutrient values in nutrients object", () => {
+    it("includes all nutrient keys, with null for undefined nutrients", () => {
       const entries = buildDailyEntries(
         [makeRow({ name: "Test", calories: 10, proteinG: 5 })],
         ["2024-03-15"],
       );
-      expect(entries[0]?.nutrients).toEqual({ calories: 10, proteinG: 5 });
-      expect(entries[0]?.nutrients.fatG).toBeUndefined();
+      expect(entries[0]?.nutrients.calories).toBe(10);
+      expect(entries[0]?.nutrients.proteinG).toBe(5);
+      expect(entries[0]?.nutrients.fatG).toBeNull();
+      expect(entries[0]?.nutrients.omega3Mg).toBeNull();
     });
   });
 

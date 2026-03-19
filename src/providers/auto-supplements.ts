@@ -71,7 +71,7 @@ export interface DailySupplementEntry {
   foodDescription: string | null;
   category: "supplement";
   numberOfUnits: number;
-  nutrients: Partial<Record<(typeof NUTRIENT_KEYS)[number], number>>;
+  nutrients: Record<(typeof NUTRIENT_KEYS)[number], number | null>;
 }
 
 /**
@@ -85,9 +85,12 @@ export function buildDailyEntries(
 
   for (const date of dates) {
     for (const supp of supplements) {
-      const nutrients: DailySupplementEntry["nutrients"] = {};
+      const nutrients: Record<(typeof NUTRIENT_KEYS)[number], number | null> = {} as Record<
+        (typeof NUTRIENT_KEYS)[number],
+        number | null
+      >;
       for (const key of NUTRIENT_KEYS) {
-        if (supp[key] != null) nutrients[key] = supp[key];
+        nutrients[key] = supp[key] ?? null;
       }
       entries.push({
         providerId: "auto-supplements",
