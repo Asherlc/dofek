@@ -14,6 +14,38 @@ import type { HealthRecord } from "./records.ts";
 import type { SleepAnalysisRecord } from "./sleep.ts";
 import type { HealthWorkout } from "./workouts.ts";
 
+/**
+ * Helper to catch and re-throw the "ON CONFLICT DO UPDATE command cannot affect
+ * row a second time" PostgreSQL error with diagnostic information about which
+ * table and which duplicate keys caused it. This error means a single INSERT
+ * batch contained duplicate conflict-target values.
+ */
+async function insertWithDuplicateDiag<T extends Record<string, unknown>>(
+  label: string,
+  conflictKey: (row: T) => string,
+  rows: T[],
+  doInsert: (rows: T[]) => Promise<unknown>,
+): Promise<void> {
+  try {
+    await doInsert(rows);
+  } catch (err) {
+    if (err instanceof Error && err.message.includes("cannot affect row a second time")) {
+      const seen = new Map<string, number>();
+      const dupes: string[] = [];
+      for (const row of rows) {
+        const key = conflictKey(row);
+        const count = (seen.get(key) ?? 0) + 1;
+        seen.set(key, count);
+        if (count === 2) dupes.push(key);
+      }
+      console.error(
+        `[apple_health] Duplicate conflict keys in ${label} batch (${rows.length} rows, ${dupes.length} dupes): ${dupes.slice(0, 5).join(", ")}`,
+      );
+    }
+    throw err;
+  }
+}
+
 // Records that map to metric_stream (granular time-series)
 export const METRIC_STREAM_TYPES: Record<string, string> = {
   HKQuantityTypeIdentifierHeartRate: "heartRate",
@@ -197,28 +229,35 @@ export async function upsertBodyMeasurementBatch(
 
   // Multi-row upsert with COALESCE to preserve existing non-null values
   for (let i = 0; i < rows.length; i += 500) {
-    await db
-      .insert(bodyMeasurement)
-      .values(rows.slice(i, i + 500))
-      .onConflictDoUpdate({
-        target: [bodyMeasurement.providerId, bodyMeasurement.externalId],
-        set: {
-          recordedAt: sql`excluded.recorded_at`,
-          weightKg: sql`coalesce(excluded.weight_kg, ${bodyMeasurement.weightKg})`,
-          bodyFatPct: sql`coalesce(excluded.body_fat_pct, ${bodyMeasurement.bodyFatPct})`,
-          muscleMassKg: sql`coalesce(excluded.muscle_mass_kg, ${bodyMeasurement.muscleMassKg})`,
-          boneMassKg: sql`coalesce(excluded.bone_mass_kg, ${bodyMeasurement.boneMassKg})`,
-          waterPct: sql`coalesce(excluded.water_pct, ${bodyMeasurement.waterPct})`,
-          bmi: sql`coalesce(excluded.bmi, ${bodyMeasurement.bmi})`,
-          heightCm: sql`coalesce(excluded.height_cm, ${bodyMeasurement.heightCm})`,
-          waistCircumferenceCm: sql`coalesce(excluded.waist_circumference_cm, ${bodyMeasurement.waistCircumferenceCm})`,
-          systolicBp: sql`coalesce(excluded.systolic_bp, ${bodyMeasurement.systolicBp})`,
-          diastolicBp: sql`coalesce(excluded.diastolic_bp, ${bodyMeasurement.diastolicBp})`,
-          heartPulse: sql`coalesce(excluded.heart_pulse, ${bodyMeasurement.heartPulse})`,
-          temperatureC: sql`coalesce(excluded.temperature_c, ${bodyMeasurement.temperatureC})`,
-          sourceName: sql`coalesce(excluded.source_name, ${bodyMeasurement.sourceName})`,
-        },
-      });
+    const batch = rows.slice(i, i + 500);
+    await insertWithDuplicateDiag(
+      "body_measurement",
+      (row) => `${row.providerId}:${row.externalId}`,
+      batch,
+      (b) =>
+        db
+          .insert(bodyMeasurement)
+          .values(b)
+          .onConflictDoUpdate({
+            target: [bodyMeasurement.providerId, bodyMeasurement.externalId],
+            set: {
+              recordedAt: sql`excluded.recorded_at`,
+              weightKg: sql`coalesce(excluded.weight_kg, ${bodyMeasurement.weightKg})`,
+              bodyFatPct: sql`coalesce(excluded.body_fat_pct, ${bodyMeasurement.bodyFatPct})`,
+              muscleMassKg: sql`coalesce(excluded.muscle_mass_kg, ${bodyMeasurement.muscleMassKg})`,
+              boneMassKg: sql`coalesce(excluded.bone_mass_kg, ${bodyMeasurement.boneMassKg})`,
+              waterPct: sql`coalesce(excluded.water_pct, ${bodyMeasurement.waterPct})`,
+              bmi: sql`coalesce(excluded.bmi, ${bodyMeasurement.bmi})`,
+              heightCm: sql`coalesce(excluded.height_cm, ${bodyMeasurement.heightCm})`,
+              waistCircumferenceCm: sql`coalesce(excluded.waist_circumference_cm, ${bodyMeasurement.waistCircumferenceCm})`,
+              systolicBp: sql`coalesce(excluded.systolic_bp, ${bodyMeasurement.systolicBp})`,
+              diastolicBp: sql`coalesce(excluded.diastolic_bp, ${bodyMeasurement.diastolicBp})`,
+              heartPulse: sql`coalesce(excluded.heart_pulse, ${bodyMeasurement.heartPulse})`,
+              temperatureC: sql`coalesce(excluded.temperature_c, ${bodyMeasurement.temperatureC})`,
+              sourceName: sql`coalesce(excluded.source_name, ${bodyMeasurement.sourceName})`,
+            },
+          }),
+    );
   }
   return rows.length;
 }
@@ -312,35 +351,42 @@ export async function upsertDailyMetricsBatch(
   // Multi-row upsert with COALESCE to preserve existing non-null values
   const insertRows = rows.map(({ row }) => row);
   for (let i = 0; i < insertRows.length; i += 500) {
-    await db
-      .insert(dailyMetrics)
-      .values(insertRows.slice(i, i + 500))
-      .onConflictDoUpdate({
-        target: [dailyMetrics.date, dailyMetrics.providerId],
-        set: {
-          restingHr: sql`coalesce(excluded.resting_hr, ${dailyMetrics.restingHr})`,
-          hrv: sql`coalesce(excluded.hrv, ${dailyMetrics.hrv})`,
-          vo2max: sql`coalesce(excluded.vo2max, ${dailyMetrics.vo2max})`,
-          spo2Avg: sql`coalesce(excluded.spo2_avg, ${dailyMetrics.spo2Avg})`,
-          respiratoryRateAvg: sql`coalesce(excluded.respiratory_rate_avg, ${dailyMetrics.respiratoryRateAvg})`,
-          steps: sql`coalesce(excluded.steps, ${dailyMetrics.steps})`,
-          activeEnergyKcal: sql`coalesce(excluded.active_energy_kcal, ${dailyMetrics.activeEnergyKcal})`,
-          basalEnergyKcal: sql`coalesce(excluded.basal_energy_kcal, ${dailyMetrics.basalEnergyKcal})`,
-          distanceKm: sql`coalesce(excluded.distance_km, ${dailyMetrics.distanceKm})`,
-          cyclingDistanceKm: sql`coalesce(excluded.cycling_distance_km, ${dailyMetrics.cyclingDistanceKm})`,
-          flightsClimbed: sql`coalesce(excluded.flights_climbed, ${dailyMetrics.flightsClimbed})`,
-          exerciseMinutes: sql`coalesce(excluded.exercise_minutes, ${dailyMetrics.exerciseMinutes})`,
-          walkingSpeed: sql`coalesce(excluded.walking_speed, ${dailyMetrics.walkingSpeed})`,
-          walkingStepLength: sql`coalesce(excluded.walking_step_length, ${dailyMetrics.walkingStepLength})`,
-          walkingDoubleSupportPct: sql`coalesce(excluded.walking_double_support_pct, ${dailyMetrics.walkingDoubleSupportPct})`,
-          walkingAsymmetryPct: sql`coalesce(excluded.walking_asymmetry_pct, ${dailyMetrics.walkingAsymmetryPct})`,
-          walkingSteadiness: sql`coalesce(excluded.walking_steadiness, ${dailyMetrics.walkingSteadiness})`,
-          standHours: sql`coalesce(excluded.stand_hours, ${dailyMetrics.standHours})`,
-          environmentalAudioExposure: sql`coalesce(excluded.environmental_audio_exposure, ${dailyMetrics.environmentalAudioExposure})`,
-          headphoneAudioExposure: sql`coalesce(excluded.headphone_audio_exposure, ${dailyMetrics.headphoneAudioExposure})`,
-          skinTempC: sql`coalesce(excluded.skin_temp_c, ${dailyMetrics.skinTempC})`,
-        },
-      });
+    const batch = insertRows.slice(i, i + 500);
+    await insertWithDuplicateDiag(
+      "daily_metrics",
+      (row) => `${row.date}:${row.providerId}`,
+      batch,
+      (b) =>
+        db
+          .insert(dailyMetrics)
+          .values(b)
+          .onConflictDoUpdate({
+            target: [dailyMetrics.date, dailyMetrics.providerId],
+            set: {
+              restingHr: sql`coalesce(excluded.resting_hr, ${dailyMetrics.restingHr})`,
+              hrv: sql`coalesce(excluded.hrv, ${dailyMetrics.hrv})`,
+              vo2max: sql`coalesce(excluded.vo2max, ${dailyMetrics.vo2max})`,
+              spo2Avg: sql`coalesce(excluded.spo2_avg, ${dailyMetrics.spo2Avg})`,
+              respiratoryRateAvg: sql`coalesce(excluded.respiratory_rate_avg, ${dailyMetrics.respiratoryRateAvg})`,
+              steps: sql`coalesce(excluded.steps, ${dailyMetrics.steps})`,
+              activeEnergyKcal: sql`coalesce(excluded.active_energy_kcal, ${dailyMetrics.activeEnergyKcal})`,
+              basalEnergyKcal: sql`coalesce(excluded.basal_energy_kcal, ${dailyMetrics.basalEnergyKcal})`,
+              distanceKm: sql`coalesce(excluded.distance_km, ${dailyMetrics.distanceKm})`,
+              cyclingDistanceKm: sql`coalesce(excluded.cycling_distance_km, ${dailyMetrics.cyclingDistanceKm})`,
+              flightsClimbed: sql`coalesce(excluded.flights_climbed, ${dailyMetrics.flightsClimbed})`,
+              exerciseMinutes: sql`coalesce(excluded.exercise_minutes, ${dailyMetrics.exerciseMinutes})`,
+              walkingSpeed: sql`coalesce(excluded.walking_speed, ${dailyMetrics.walkingSpeed})`,
+              walkingStepLength: sql`coalesce(excluded.walking_step_length, ${dailyMetrics.walkingStepLength})`,
+              walkingDoubleSupportPct: sql`coalesce(excluded.walking_double_support_pct, ${dailyMetrics.walkingDoubleSupportPct})`,
+              walkingAsymmetryPct: sql`coalesce(excluded.walking_asymmetry_pct, ${dailyMetrics.walkingAsymmetryPct})`,
+              walkingSteadiness: sql`coalesce(excluded.walking_steadiness, ${dailyMetrics.walkingSteadiness})`,
+              standHours: sql`coalesce(excluded.stand_hours, ${dailyMetrics.standHours})`,
+              environmentalAudioExposure: sql`coalesce(excluded.environmental_audio_exposure, ${dailyMetrics.environmentalAudioExposure})`,
+              headphoneAudioExposure: sql`coalesce(excluded.headphone_audio_exposure, ${dailyMetrics.headphoneAudioExposure})`,
+              skinTempC: sql`coalesce(excluded.skin_temp_c, ${dailyMetrics.skinTempC})`,
+            },
+          }),
+    );
   }
   return insertRows.length;
 }
@@ -396,20 +442,27 @@ export async function upsertNutritionBatch(
   // Multi-row upsert with COALESCE to preserve existing non-null values
   const insertRows = rows.map(({ row }) => row);
   for (let i = 0; i < insertRows.length; i += 500) {
-    await db
-      .insert(nutritionDaily)
-      .values(insertRows.slice(i, i + 500))
-      .onConflictDoUpdate({
-        target: [nutritionDaily.date, nutritionDaily.providerId],
-        set: {
-          calories: sql`coalesce(excluded.calories, ${nutritionDaily.calories})`,
-          proteinG: sql`coalesce(excluded.protein_g, ${nutritionDaily.proteinG})`,
-          carbsG: sql`coalesce(excluded.carbs_g, ${nutritionDaily.carbsG})`,
-          fatG: sql`coalesce(excluded.fat_g, ${nutritionDaily.fatG})`,
-          fiberG: sql`coalesce(excluded.fiber_g, ${nutritionDaily.fiberG})`,
-          waterMl: sql`coalesce(excluded.water_ml, ${nutritionDaily.waterMl})`,
-        },
-      });
+    const batch = insertRows.slice(i, i + 500);
+    await insertWithDuplicateDiag(
+      "nutrition_daily",
+      (row) => `${row.date}:${row.providerId}`,
+      batch,
+      (b) =>
+        db
+          .insert(nutritionDaily)
+          .values(b)
+          .onConflictDoUpdate({
+            target: [nutritionDaily.date, nutritionDaily.providerId],
+            set: {
+              calories: sql`coalesce(excluded.calories, ${nutritionDaily.calories})`,
+              proteinG: sql`coalesce(excluded.protein_g, ${nutritionDaily.proteinG})`,
+              carbsG: sql`coalesce(excluded.carbs_g, ${nutritionDaily.carbsG})`,
+              fatG: sql`coalesce(excluded.fat_g, ${nutritionDaily.fatG})`,
+              fiberG: sql`coalesce(excluded.fiber_g, ${nutritionDaily.fiberG})`,
+              waterMl: sql`coalesce(excluded.water_ml, ${nutritionDaily.waterMl})`,
+            },
+          }),
+    );
   }
   return insertRows.length;
 }
@@ -609,22 +662,29 @@ export async function upsertSleepBatch(
   }));
 
   for (let i = 0; i < insertRows.length; i += 500) {
-    await db
-      .insert(sleepSession)
-      .values(insertRows.slice(i, i + 500))
-      .onConflictDoUpdate({
-        target: [sleepSession.providerId, sleepSession.externalId],
-        set: {
-          endedAt: sql`excluded.ended_at`,
-          durationMinutes: sql`excluded.duration_minutes`,
-          deepMinutes: sql`excluded.deep_minutes`,
-          remMinutes: sql`excluded.rem_minutes`,
-          lightMinutes: sql`excluded.light_minutes`,
-          awakeMinutes: sql`excluded.awake_minutes`,
-          isNap: sql`excluded.is_nap`,
-          sourceName: sql`coalesce(excluded.source_name, ${sleepSession.sourceName})`,
-        },
-      });
+    const batch = insertRows.slice(i, i + 500);
+    await insertWithDuplicateDiag(
+      "sleep_session",
+      (row) => `${row.providerId}:${row.externalId}`,
+      batch,
+      (b) =>
+        db
+          .insert(sleepSession)
+          .values(b)
+          .onConflictDoUpdate({
+            target: [sleepSession.providerId, sleepSession.externalId],
+            set: {
+              endedAt: sql`excluded.ended_at`,
+              durationMinutes: sql`excluded.duration_minutes`,
+              deepMinutes: sql`excluded.deep_minutes`,
+              remMinutes: sql`excluded.rem_minutes`,
+              lightMinutes: sql`excluded.light_minutes`,
+              awakeMinutes: sql`excluded.awake_minutes`,
+              isNap: sql`excluded.is_nap`,
+              sourceName: sql`coalesce(excluded.source_name, ${sleepSession.sourceName})`,
+            },
+          }),
+    );
   }
   return insertRows.length;
 }
