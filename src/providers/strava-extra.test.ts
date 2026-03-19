@@ -32,10 +32,14 @@ describe("StravaClient", () => {
 
     expect(mockFetch).toHaveBeenCalledOnce();
     const callUrl = String(mockFetch.mock.calls[0]?.[0]);
+    const callOptions = mockFetch.mock.calls[0]?.[1] as RequestInit | undefined;
     expect(callUrl).toContain("/athlete/activities");
     expect(callUrl).toContain("after=1000");
     expect(callUrl).toContain("page=2");
     expect(callUrl).toContain("per_page=50");
+    expect(callOptions?.headers).toEqual(
+      expect.objectContaining({ Authorization: "Bearer test-token" }),
+    );
     expect(result).toHaveLength(1);
     expect(result[0]?.id).toBe(1);
   });
@@ -64,15 +68,29 @@ describe("StravaClient", () => {
           resolution: "high",
           original_size: 3,
         },
+        {
+          type: "mystery_stream",
+          data: [1, 2, 3],
+          series_type: "time",
+          resolution: "high",
+          original_size: 3,
+        },
       ]),
     );
 
     const client = new StravaClient("test-token", mockFetch);
     const streams = await client.getActivityStreams(12345);
 
+    const calledUrl = String(mockFetch.mock.calls[0]?.[0]);
+    const url = new URL(calledUrl);
+    expect(url.searchParams.get("keys")).toBe(
+      "time,heartrate,watts,cadence,velocity_smooth,latlng,altitude,distance,temp,grade_smooth",
+    );
+    expect(url.searchParams.get("key_type")).toBe("time");
     expect(streams.time?.data).toEqual([0, 1, 2]);
     expect(streams.heartrate?.data).toEqual([130, 132, 135]);
     expect(streams.watts?.data).toEqual([200, 210, 205]);
+    expect("mystery_stream" in streams).toBe(false);
   });
 });
 
@@ -270,6 +288,106 @@ describe("StravaProvider.sync — additional coverage", () => {
     expect(result.provider).toBe("strava");
     expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
     expect(result.errors).toHaveLength(0);
+    expect(
+      mockFetch.mock.calls.some(([url]) =>
+        String(url).includes(`/activities/${MOCK_ACTIVITY.id}/streams`),
+      ),
+    ).toBe(true);
+  });
+
+  it("writes expected upsert payloads for activity records", async () => {
+    setupEnv();
+
+    const secondActivity = {
+      ...MOCK_ACTIVITY,
+      id: 87654321,
+      name: "Evening Ride",
+    };
+
+    const mockFetch = vi.fn().mockImplementation((url: string) => {
+      const urlStr = String(url);
+      if (urlStr.includes("/athlete/activities")) {
+        return Promise.resolve(Response.json([MOCK_ACTIVITY, secondActivity]));
+      }
+      if (urlStr.includes(`/activities/${MOCK_ACTIVITY.id}/streams`)) {
+        return Promise.resolve(Response.json(MOCK_STREAMS));
+      }
+      if (urlStr.includes(`/activities/${secondActivity.id}/streams`)) {
+        return Promise.resolve(Response.json(MOCK_STREAMS));
+      }
+      if (urlStr.includes(`/activities/${MOCK_ACTIVITY.id}`)) {
+        return Promise.resolve(Response.json({ ...MOCK_ACTIVITY, device_name: "Garmin Edge" }));
+      }
+      if (urlStr.includes(`/activities/${secondActivity.id}`)) {
+        return Promise.resolve(Response.json({ ...secondActivity, device_name: "Garmin Edge" }));
+      }
+      return Promise.resolve(Response.json([]));
+    });
+
+    const activityInsertPayloads: unknown[] = [];
+    const upsertConfigs: unknown[] = [];
+    const insertValuesMock = vi.fn().mockImplementation((payload: unknown) => {
+      if (Array.isArray(payload)) return Promise.resolve();
+      const maybeActivity = payload as { providerId?: string; raw?: { id?: number } };
+      if (maybeActivity.providerId === "strava") {
+        activityInsertPayloads.push(payload);
+      }
+      return {
+        onConflictDoUpdate: vi.fn().mockImplementation((config: unknown) => {
+          upsertConfigs.push(config);
+          return {
+            returning: vi.fn().mockResolvedValue([{ id: "activity-row-id" }]),
+          };
+        }),
+        onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+      };
+    });
+
+    const mockDb: SyncDatabase = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([VALID_TOKEN]),
+          }),
+        }),
+      }),
+      insert: vi.fn().mockReturnValue({
+        values: insertValuesMock,
+      }),
+      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      execute: vi.fn().mockResolvedValue([]),
+    };
+
+    const provider = new StravaProvider(mockFetch);
+    const result = await provider.sync(mockDb, new Date("2026-01-01"));
+
+    expect(result.errors).toHaveLength(0);
+    expect(activityInsertPayloads).toHaveLength(2);
+    expect(activityInsertPayloads[0]).toMatchObject({
+      providerId: "strava",
+      externalId: String(MOCK_ACTIVITY.id),
+      raw: { id: MOCK_ACTIVITY.id },
+    });
+    expect(activityInsertPayloads[1]).toMatchObject({
+      providerId: "strava",
+      externalId: String(secondActivity.id),
+      raw: { id: secondActivity.id },
+    });
+    expect(upsertConfigs).toHaveLength(2);
+    expect(upsertConfigs[0]).toMatchObject({
+      target: expect.arrayContaining([expect.anything(), expect.anything()]),
+      set: expect.objectContaining({
+        raw: expect.objectContaining({ id: MOCK_ACTIVITY.id }),
+      }),
+    });
+    expect(upsertConfigs[1]).toMatchObject({
+      target: expect.arrayContaining([expect.anything(), expect.anything()]),
+      set: expect.objectContaining({
+        raw: expect.objectContaining({ id: secondActivity.id }),
+      }),
+    });
+    const firstSetSourceName = (upsertConfigs[0] as { set?: { sourceName?: unknown } })?.set?.sourceName;
+    expect(firstSetSourceName).toBeDefined();
   });
 
   it("converts since date to epoch seconds using division by 1000", async () => {
@@ -406,6 +524,11 @@ describe("StravaProvider.sync — additional coverage", () => {
 
     expect(activitiesCallCount).toBe(2);
     expect(result.recordsSynced).toBe(30);
+    const activityPages = mockFetch.mock.calls
+      .map(([url]) => String(url))
+      .filter((url) => url.includes("/athlete/activities"))
+      .map((url) => Number(new URL(url).searchParams.get("page")));
+    expect(activityPages).toEqual([1, 2]);
   });
 
   it("invokes onProgress callback with synced activity count message", async () => {
@@ -543,6 +666,28 @@ describe("StravaProvider.sync — additional coverage", () => {
     expect(oauthCall).toBeDefined();
   });
 
+  it("does not call OAuth token refresh when access token is still valid", async () => {
+    setupEnv();
+
+    const mockFetch = vi.fn().mockImplementation((url: string) => {
+      const urlStr = String(url);
+      if (urlStr.includes("/athlete/activities")) {
+        return Promise.resolve(Response.json([]));
+      }
+      return Promise.resolve(Response.json([]));
+    });
+
+    const mockDb = createMockDb([VALID_TOKEN]);
+    const provider = new StravaProvider(mockFetch);
+
+    await provider.sync(mockDb, new Date("2026-01-01"));
+
+    const oauthCall = mockFetch.mock.calls.find(([url]) =>
+      String(url).includes("strava.com/oauth/token"),
+    );
+    expect(oauthCall).toBeUndefined();
+  });
+
   it("hasMore is false when rateLimited is true even if page was full", async () => {
     setupEnv();
 
@@ -616,6 +761,82 @@ describe("StravaProvider.sync — additional coverage", () => {
     expect(result.errors[0]?.message).toContain("run: health-data auth strava");
   });
 
+  it("generic getActivities failures are returned as fetch errors", async () => {
+    setupEnv();
+
+    const mockFetch = vi.fn().mockImplementation((url: string) => {
+      if (String(url).includes("/athlete/activities")) {
+        return Promise.resolve(new Response("Server Error", { status: 500 }));
+      }
+      return Promise.resolve(Response.json([]));
+    });
+
+    const mockDb = createMockDb();
+    const provider = new StravaProvider(mockFetch);
+    const result = await provider.sync(mockDb, new Date("2026-01-01"));
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain("Strava activities fetch failed");
+  });
+
+  it("skips stream fetch when activity upsert does not return an id", async () => {
+    setupEnv();
+
+    const mockFetch = vi.fn().mockImplementation((url: string) => {
+      const urlStr = String(url);
+      if (urlStr.includes("/athlete/activities")) {
+        return Promise.resolve(Response.json([MOCK_ACTIVITY]));
+      }
+      if (urlStr.includes(`/activities/${MOCK_ACTIVITY.id}`) && !urlStr.includes("/streams")) {
+        return Promise.resolve(Response.json(MOCK_ACTIVITY));
+      }
+      return Promise.resolve(Response.json([]));
+    });
+
+    const returningMock = vi.fn().mockResolvedValue([]);
+    const insertValuesMock = vi.fn().mockImplementation((payload: unknown) => {
+      if (Array.isArray(payload)) return Promise.resolve();
+      return {
+        onConflictDoUpdate: vi.fn().mockReturnValue({
+          returning: returningMock,
+        }),
+        onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+      };
+    });
+
+    const mockDb: SyncDatabase = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([VALID_TOKEN]),
+          }),
+        }),
+      }),
+      insert: vi.fn().mockReturnValue({
+        values: insertValuesMock,
+      }),
+      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      execute: vi.fn().mockResolvedValue([]),
+    };
+
+    const provider = new StravaProvider(mockFetch);
+    const result = await provider.sync(mockDb, new Date("2026-01-01"));
+
+    expect(returningMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: expect.anything(),
+      }),
+    );
+    expect(
+      mockFetch.mock.calls.some(([url]) =>
+        String(url).includes(`/activities/${MOCK_ACTIVITY.id}/streams`),
+      ),
+    ).toBe(false);
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toHaveLength(0);
+  });
+
   it("activity with no streams (empty streams response) still increments recordsSynced", async () => {
     setupEnv();
 
@@ -637,6 +858,183 @@ describe("StravaProvider.sync — additional coverage", () => {
     const mockDb = createMockDb();
     const provider = new StravaProvider(mockFetch);
 
+    const result = await provider.sync(mockDb, new Date("2026-01-01"));
+
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it("does not insert metric rows when streams are empty", async () => {
+    setupEnv();
+
+    const mockFetch = vi.fn().mockImplementation((url: string) => {
+      const urlStr = String(url);
+      if (urlStr.includes("/athlete/activities")) {
+        return Promise.resolve(Response.json([MOCK_ACTIVITY]));
+      }
+      if (urlStr.includes(`/activities/${MOCK_ACTIVITY.id}/streams`)) {
+        return Promise.resolve(Response.json([]));
+      }
+      if (urlStr.includes(`/activities/${MOCK_ACTIVITY.id}`)) {
+        return Promise.resolve(Response.json(MOCK_ACTIVITY));
+      }
+      return Promise.resolve(Response.json([]));
+    });
+
+    const metricBatchSizes: number[] = [];
+    const insertValuesMock = vi.fn().mockImplementation((payload: unknown) => {
+      if (Array.isArray(payload)) {
+        metricBatchSizes.push(payload.length);
+        return Promise.resolve();
+      }
+      return {
+        onConflictDoUpdate: vi.fn().mockReturnValue({
+          returning: vi.fn().mockResolvedValue([{ id: "activity-row-id" }]),
+        }),
+        onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+      };
+    });
+
+    const mockDb: SyncDatabase = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([VALID_TOKEN]),
+          }),
+        }),
+      }),
+      insert: vi.fn().mockReturnValue({
+        values: insertValuesMock,
+      }),
+      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      execute: vi.fn().mockResolvedValue([]),
+    };
+
+    const provider = new StravaProvider(mockFetch);
+    const result = await provider.sync(mockDb, new Date("2026-01-01"));
+
+    expect(result.recordsSynced).toBe(1);
+    expect(metricBatchSizes).toEqual([]);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it("inserts metric rows in 500-record batches", async () => {
+    setupEnv();
+
+    const rowCount = 1001;
+    const largeStreams = [
+      {
+        type: "time",
+        data: Array.from({ length: rowCount }, (_, i) => i),
+        series_type: "time",
+        resolution: "high",
+        original_size: rowCount,
+      },
+      {
+        type: "heartrate",
+        data: Array.from({ length: rowCount }, () => 140),
+        series_type: "time",
+        resolution: "high",
+        original_size: rowCount,
+      },
+    ];
+
+    const mockFetch = vi.fn().mockImplementation((url: string) => {
+      const urlStr = String(url);
+      if (urlStr.includes("/athlete/activities")) {
+        return Promise.resolve(Response.json([MOCK_ACTIVITY]));
+      }
+      if (urlStr.includes(`/activities/${MOCK_ACTIVITY.id}/streams`)) {
+        return Promise.resolve(Response.json(largeStreams));
+      }
+      if (urlStr.includes(`/activities/${MOCK_ACTIVITY.id}`)) {
+        return Promise.resolve(Response.json(MOCK_ACTIVITY));
+      }
+      return Promise.resolve(Response.json([]));
+    });
+
+    const metricBatchSizes: number[] = [];
+    const insertValuesMock = vi.fn().mockImplementation((payload: unknown) => {
+      if (Array.isArray(payload)) {
+        metricBatchSizes.push(payload.length);
+        return Promise.resolve();
+      }
+      return {
+        onConflictDoUpdate: vi.fn().mockReturnValue({
+          returning: vi.fn().mockResolvedValue([{ id: "activity-row-id" }]),
+        }),
+        onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+      };
+    });
+
+    const mockDb: SyncDatabase = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([VALID_TOKEN]),
+          }),
+        }),
+      }),
+      insert: vi.fn().mockReturnValue({
+        values: insertValuesMock,
+      }),
+      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      execute: vi.fn().mockResolvedValue([]),
+    };
+
+    const provider = new StravaProvider(mockFetch);
+    const result = await provider.sync(mockDb, new Date("2026-01-01"));
+
+    expect(result.recordsSynced).toBe(1);
+    expect(metricBatchSizes).toEqual([500, 500, 1]);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it("authorization error while fetching streams is returned with auth guidance", async () => {
+    setupEnv();
+
+    const mockFetch = vi.fn().mockImplementation((url: string) => {
+      const urlStr = String(url);
+      if (urlStr.includes("/athlete/activities")) {
+        return Promise.resolve(Response.json([MOCK_ACTIVITY]));
+      }
+      if (urlStr.includes("/streams")) {
+        return Promise.resolve(new Response("Unauthorized", { status: 401 }));
+      }
+      if (urlStr.includes(`/activities/${MOCK_ACTIVITY.id}`)) {
+        return Promise.resolve(Response.json(MOCK_ACTIVITY));
+      }
+      return Promise.resolve(Response.json([]));
+    });
+
+    const mockDb = createMockDb();
+    const provider = new StravaProvider(mockFetch);
+    const result = await provider.sync(mockDb, new Date("2026-01-01"));
+
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain("authorization failed while fetching streams");
+  });
+
+  it("404 while fetching streams is treated as missing streams, not an error", async () => {
+    setupEnv();
+
+    const mockFetch = vi.fn().mockImplementation((url: string) => {
+      const urlStr = String(url);
+      if (urlStr.includes("/athlete/activities")) {
+        return Promise.resolve(Response.json([MOCK_ACTIVITY]));
+      }
+      if (urlStr.includes("/streams")) {
+        return Promise.resolve(new Response("Not Found", { status: 404 }));
+      }
+      if (urlStr.includes(`/activities/${MOCK_ACTIVITY.id}`)) {
+        return Promise.resolve(Response.json(MOCK_ACTIVITY));
+      }
+      return Promise.resolve(Response.json([]));
+    });
+
+    const mockDb = createMockDb();
+    const provider = new StravaProvider(mockFetch);
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
 
     expect(result.recordsSynced).toBe(1);

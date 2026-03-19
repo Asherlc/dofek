@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { SyncDatabase } from "../db/index.ts";
 import {
   mapPolarSport,
   PolarClient,
@@ -6,6 +7,7 @@ import {
   type PolarExercise,
   type PolarNightlyRecharge,
   PolarNotFoundError,
+  PolarProvider,
   type PolarSleep,
   PolarUnauthorizedError,
   parsePolarDailyActivity,
@@ -313,6 +315,21 @@ describe("PolarClient", () => {
     const result = await client.getExercises();
     expect(result).toEqual([]);
   });
+
+  it("truncates long plain-text error responses", async () => {
+    const longText = "x".repeat(300);
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response(longText, {
+        status: 500,
+        headers: { "content-type": "text/plain; charset=utf-8" },
+      });
+    };
+
+    const client = new PolarClient("token", mockFetch);
+    await expect(client.getExercises()).rejects.toThrow(
+      `Polar API error (500): ${"x".repeat(200)}…`,
+    );
+  });
 });
 
 describe("PolarNotFoundError", () => {
@@ -330,5 +347,259 @@ describe("PolarUnauthorizedError", () => {
     expect(error.name).toBe("PolarUnauthorizedError");
     expect(error.message).toBe("Unauthorized");
     expect(error).toBeInstanceOf(Error);
+  });
+});
+
+// ============================================================
+// PolarProvider auth setup
+// ============================================================
+
+describe("PolarProvider.authSetup", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    vi.restoreAllMocks();
+  });
+
+  it("throws when only POLAR_CLIENT_ID is set", () => {
+    process.env.POLAR_CLIENT_ID = "polar-id";
+    delete process.env.POLAR_CLIENT_SECRET;
+
+    const provider = new PolarProvider();
+    expect(() => provider.authSetup()).toThrow("POLAR_CLIENT_ID and POLAR_CLIENT_SECRET are required");
+  });
+
+  it("throws when only POLAR_CLIENT_SECRET is set", () => {
+    delete process.env.POLAR_CLIENT_ID;
+    process.env.POLAR_CLIENT_SECRET = "polar-secret";
+
+    const provider = new PolarProvider();
+    expect(() => provider.authSetup()).toThrow("POLAR_CLIENT_ID and POLAR_CLIENT_SECRET are required");
+  });
+
+  it("returns expected OAuth config fields for Polar", () => {
+    process.env.POLAR_CLIENT_ID = "polar-id";
+    process.env.POLAR_CLIENT_SECRET = "polar-secret";
+
+    const provider = new PolarProvider();
+    const setup = provider.authSetup();
+    expect(setup.oauthConfig.scopes).toEqual(["accesslink.read_all"]);
+    expect(setup.oauthConfig.tokenAuthMethod).toBe("basic");
+  });
+
+  it("exchangeCode function returns a token response promise", async () => {
+    process.env.POLAR_CLIENT_ID = "polar-id";
+    process.env.POLAR_CLIENT_SECRET = "polar-secret";
+
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        Response.json({
+          access_token: "new-access-token",
+          refresh_token: "new-refresh-token",
+          expires_in: 3600,
+        }),
+      );
+
+    const provider = new PolarProvider();
+    const setup = provider.authSetup();
+    const tokens = await setup.exchangeCode("oauth-code");
+
+    expect(fetchMock).toHaveBeenCalled();
+    expect(tokens.accessToken).toBe("new-access-token");
+  });
+});
+
+// ============================================================
+// PolarProvider.sync error handling
+// ============================================================
+
+const POLAR_VALID_TOKEN = {
+  providerId: "polar",
+  accessToken: "polar-access-token",
+  refreshToken: "polar-refresh-token",
+  expiresAt: new Date("2099-01-01"),
+  scopes: null,
+};
+
+function createPolarMockDb(tokenRows = [POLAR_VALID_TOKEN]): SyncDatabase {
+  return {
+    select: vi.fn().mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          limit: vi.fn().mockResolvedValue(tokenRows),
+        }),
+      }),
+    }),
+    insert: vi.fn().mockReturnValue({
+      values: vi.fn().mockImplementation(() => {
+        return Object.assign(Promise.resolve(), {
+          onConflictDoUpdate: vi.fn().mockResolvedValue(undefined),
+          onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+          returning: vi.fn().mockResolvedValue([{ id: "activity-row-id" }]),
+        });
+      }),
+    }),
+    delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+    execute: vi.fn().mockResolvedValue([]),
+  };
+}
+
+function createPolarFetchWithEndpointStatus(
+  endpointStatus: Partial<Record<"/exercises" | "/sleep" | "/activity" | "/nightly-recharge", number>>,
+): typeof globalThis.fetch {
+  return async (url: string | URL | Request): Promise<Response> => {
+    const urlString = String(url);
+    const endpoints = ["/exercises", "/sleep", "/activity", "/nightly-recharge"] as const;
+    const endpoint = endpoints.find((path) => urlString.endsWith(path));
+    if (!endpoint) return Response.json([]);
+    const status = endpointStatus[endpoint] ?? 200;
+    if (status === 200) return Response.json([]);
+    return new Response(status === 404 ? "Not Found" : "Unauthorized", { status });
+  };
+}
+
+describe("PolarProvider.sync — error handling", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("captures unauthorized exercises endpoint errors with auth guidance", async () => {
+    const provider = new PolarProvider(createPolarFetchWithEndpointStatus({ "/exercises": 401 }));
+    const result = await provider.sync(createPolarMockDb(), new Date("2026-01-01"));
+
+    expect(result.errors.some((e) => e.message.includes("authorization failed while syncing exercises"))).toBe(true);
+  });
+
+  it("captures 404 exercises endpoint errors with re-auth guidance", async () => {
+    const provider = new PolarProvider(createPolarFetchWithEndpointStatus({ "/exercises": 404 }));
+    const result = await provider.sync(createPolarMockDb(), new Date("2026-01-01"));
+
+    expect(result.errors.some((e) => e.message.includes("exercises endpoint returned 404"))).toBe(true);
+  });
+
+  it("captures unauthorized sleep endpoint errors with auth guidance", async () => {
+    const provider = new PolarProvider(createPolarFetchWithEndpointStatus({ "/sleep": 401 }));
+    const result = await provider.sync(createPolarMockDb(), new Date("2026-01-01"));
+
+    expect(result.errors.some((e) => e.message.includes("authorization failed while syncing sleep"))).toBe(true);
+  });
+
+  it("captures 404 sleep endpoint errors with re-auth guidance", async () => {
+    const provider = new PolarProvider(createPolarFetchWithEndpointStatus({ "/sleep": 404 }));
+    const result = await provider.sync(createPolarMockDb(), new Date("2026-01-01"));
+
+    expect(result.errors.some((e) => e.message.includes("sleep endpoint returned 404"))).toBe(true);
+  });
+
+  it("captures unauthorized daily activity endpoint errors with auth guidance", async () => {
+    const provider = new PolarProvider(createPolarFetchWithEndpointStatus({ "/activity": 401 }));
+    const result = await provider.sync(createPolarMockDb(), new Date("2026-01-01"));
+
+    expect(
+      result.errors.some((e) => e.message.includes("authorization failed while syncing daily activity")),
+    ).toBe(true);
+  });
+
+  it("captures 404 daily activity endpoint errors with re-auth guidance", async () => {
+    const provider = new PolarProvider(createPolarFetchWithEndpointStatus({ "/activity": 404 }));
+    const result = await provider.sync(createPolarMockDb(), new Date("2026-01-01"));
+
+    expect(result.errors.some((e) => e.message.includes("daily activity endpoint returned 404"))).toBe(true);
+  });
+
+  it("returns a token error when no Polar tokens are stored", async () => {
+    const provider = new PolarProvider(createPolarFetchWithEndpointStatus({}));
+    const result = await provider.sync(createPolarMockDb([]), new Date("2026-01-01"));
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain("No OAuth tokens found for Polar");
+  });
+
+  it("syncs exercises, sleep, and daily activity on happy path", async () => {
+    const mockFetch: typeof globalThis.fetch = async (
+      url: string | URL | Request,
+    ): Promise<Response> => {
+      const urlString = String(url);
+      if (urlString.endsWith("/exercises")) return Response.json([sampleExercise]);
+      if (urlString.endsWith("/sleep")) return Response.json([sampleSleep]);
+      if (urlString.endsWith("/activity")) return Response.json([sampleDailyActivity]);
+      if (urlString.endsWith("/nightly-recharge")) return Response.json([sampleNightlyRecharge]);
+      return Response.json([]);
+    };
+
+    const provider = new PolarProvider(mockFetch);
+    const result = await provider.sync(createPolarMockDb(), new Date("2024-01-01"));
+
+    expect(result.recordsSynced).toBe(3);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it("captures generic API failures for each Polar data type", async () => {
+    const provider = new PolarProvider(
+      createPolarFetchWithEndpointStatus({
+        "/exercises": 500,
+        "/sleep": 500,
+        "/activity": 500,
+      }),
+    );
+    const result = await provider.sync(createPolarMockDb(), new Date("2026-01-01"));
+
+    expect(result.errors.some((e) => e.message.startsWith("exercises: "))).toBe(true);
+    expect(result.errors.some((e) => e.message.startsWith("sleep: "))).toBe(true);
+    expect(result.errors.some((e) => e.message.startsWith("daily_activity: "))).toBe(true);
+  });
+
+  it("captures per-record insert failures for exercises, sleep, and daily metrics", async () => {
+    const mockFetch: typeof globalThis.fetch = async (
+      url: string | URL | Request,
+    ): Promise<Response> => {
+      const urlString = String(url);
+      if (urlString.endsWith("/exercises")) return Response.json([sampleExercise]);
+      if (urlString.endsWith("/sleep")) return Response.json([sampleSleep]);
+      if (urlString.endsWith("/activity")) return Response.json([sampleDailyActivity]);
+      if (urlString.endsWith("/nightly-recharge")) return Response.json([sampleNightlyRecharge]);
+      return Response.json([]);
+    };
+
+    const failingDb: SyncDatabase = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([POLAR_VALID_TOKEN]),
+          }),
+        }),
+      }),
+      insert: vi.fn().mockReturnValue({
+        values: vi.fn().mockImplementation((payload: unknown) => {
+          if (
+            typeof payload === "object" &&
+            payload !== null &&
+            "providerId" in payload &&
+            (payload as { providerId?: string }).providerId === "polar"
+          ) {
+            return {
+              onConflictDoUpdate: vi.fn().mockRejectedValue(new Error("forced insert failure")),
+            };
+          }
+          return Object.assign(Promise.resolve(), {
+            onConflictDoUpdate: vi.fn().mockResolvedValue(undefined),
+            onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+            returning: vi.fn().mockResolvedValue([{ id: "activity-row-id" }]),
+          });
+        }),
+      }),
+      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      execute: vi.fn().mockResolvedValue([]),
+    };
+
+    const provider = new PolarProvider(mockFetch);
+    const result = await provider.sync(failingDb, new Date("2024-01-01"));
+
+    expect(result.errors.some((e) => e.message.startsWith("Exercise "))).toBe(true);
+    expect(result.errors.some((e) => e.message.startsWith("Sleep "))).toBe(true);
+    expect(result.errors.some((e) => e.message.startsWith("Daily "))).toBe(true);
   });
 });

@@ -441,6 +441,8 @@ describe("StravaProvider.authSetup()", () => {
     expect(setup.oauthConfig.clientId).toBe("test-id");
     expect(setup.exchangeCode).toBeTypeOf("function");
     expect(setup.apiBaseUrl).toContain("strava.com");
+    expect(setup.oauthConfig.authorizeUrl).toContain("/authorize");
+    expect(setup.oauthConfig.scopes).toEqual(["read", "activity:read_all"]);
   });
 
   it("throws when env vars are missing", () => {
@@ -487,6 +489,7 @@ describe("StravaClient — error handling", () => {
 
     const client = new StravaClient("token", mockFetch);
     await expect(client.getActivities(0)).rejects.toBeInstanceOf(StravaRateLimitError);
+    await expect(client.getActivities(0)).rejects.toThrow("(429)");
   });
 
   it("throws generic error on non-OK, non-429 response", async () => {
@@ -508,6 +511,7 @@ describe("StravaClient — error handling", () => {
 
     const client = new StravaClient("token", mockFetch);
     await expect(client.getActivities(0)).rejects.toThrow(StravaNotFoundError);
+    await expect(client.getActivities(0)).rejects.toThrow("/athlete/activities");
   });
 
   it("throws StravaNotFoundError for JSON 404 responses", async () => {
@@ -520,6 +524,7 @@ describe("StravaClient — error handling", () => {
 
     const client = new StravaClient("token", mockFetch);
     await expect(client.getActivities(0)).rejects.toThrow(StravaNotFoundError);
+    await expect(client.getActivities(0)).rejects.toThrow("/athlete/activities");
   });
 
   it("throws StravaUnauthorizedError for 401 responses", async () => {
@@ -532,6 +537,45 @@ describe("StravaClient — error handling", () => {
 
     const client = new StravaClient("token", mockFetch);
     await expect(client.getActivities(0)).rejects.toThrow(StravaUnauthorizedError);
+    await expect(client.getActivities(0)).rejects.toThrow("unauthorized (401)");
+  });
+
+  it("throws StravaUnauthorizedError for 403 responses", async () => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response("Forbidden", { status: 403 });
+    };
+
+    const client = new StravaClient("token", mockFetch);
+    await expect(client.getActivities(0)).rejects.toThrow(StravaUnauthorizedError);
+    await expect(client.getActivities(0)).rejects.toThrow("unauthorized (403)");
+  });
+
+  it("formats JSON error payloads in generic API errors", async () => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response(JSON.stringify({ message: "bad request" }), {
+        status: 500,
+        headers: { "content-type": "application/json" },
+      });
+    };
+
+    const client = new StravaClient("token", mockFetch);
+    await expect(client.getActivities(0)).rejects.toThrow(
+      'Strava API error (500): {"message":"bad request"}',
+    );
+  });
+
+  it("redacts HTML error payloads in generic API errors", async () => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response("<html><body>Oops</body></html>", {
+        status: 500,
+        headers: { "content-type": "text/html; charset=utf-8" },
+      });
+    };
+
+    const client = new StravaClient("token", mockFetch);
+    await expect(client.getActivities(0)).rejects.toThrow(
+      "Strava API error (500): (HTML error page)",
+    );
   });
 
   it("truncates long plain-text error responses", async () => {
@@ -585,7 +629,14 @@ describe("StravaProvider.getUserIdentity()", () => {
     process.env.STRAVA_CLIENT_ID = "test-id";
     process.env.STRAVA_CLIENT_SECRET = "test-secret";
 
-    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+    let calledUrl = "";
+    let calledHeaders: HeadersInit | undefined;
+    const mockFetch: typeof globalThis.fetch = async (
+      input: string | URL | Request,
+      init?: RequestInit,
+    ): Promise<Response> => {
+      calledUrl = String(input);
+      calledHeaders = init?.headers;
       return Response.json({
         id: 12345,
         email: "athlete@test.com",
@@ -598,6 +649,8 @@ describe("StravaProvider.getUserIdentity()", () => {
     const setup = provider.authSetup();
     if (!setup.getUserIdentity) throw new Error("getUserIdentity not defined");
     const identity = await setup.getUserIdentity("test-token");
+    expect(calledUrl).toContain("https://www.strava.com/api/v3/athlete");
+    expect(calledHeaders).toEqual(expect.objectContaining({ Authorization: "Bearer test-token" }));
     expect(identity.providerAccountId).toBe("12345");
     expect(identity.email).toBe("athlete@test.com");
     expect(identity.name).toBe("Jane Doe");
