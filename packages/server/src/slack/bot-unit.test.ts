@@ -61,6 +61,7 @@ interface MockSlackApp {
   action: ReturnType<typeof vi.fn>;
   event: ReturnType<typeof vi.fn>;
   start: ReturnType<typeof vi.fn>;
+  use: ReturnType<typeof vi.fn>;
 }
 
 /**
@@ -136,7 +137,13 @@ function setupHandlers(db: ReturnType<typeof createMockDb>) {
   expect(cancelHandler).toBeDefined();
   expect(homeOpenedHandler).toBeDefined();
 
-  return { messageHandler, confirmHandler, cancelHandler, homeOpenedHandler };
+  // Capture the app.use() middleware(s) for direct invocation in tests
+  type MiddlewareFn = (args: Record<string, unknown>) => Promise<void>;
+  const useMiddlewares: MiddlewareFn[] = app.use.mock.calls.map((call: [unknown]) =>
+    castMock<MiddlewareFn>(call[0] ?? {}),
+  );
+
+  return { messageHandler, confirmHandler, cancelHandler, homeOpenedHandler, useMiddlewares, app };
 }
 
 describe("bot.ts — registerHandlers", () => {
@@ -2128,6 +2135,1416 @@ describe("bot.ts — registerHandlers", () => {
       for (const section of sectionBlocks) {
         expect(section.text.type).toBe("mrkdwn");
       }
+    });
+  });
+
+  describe("app.use middleware — event logging", () => {
+    it("logs event type for event payloads", async () => {
+      const { logger } = await import("../logger.ts");
+      const db = createMockDb();
+      const { useMiddlewares } = setupHandlers(db);
+
+      const middleware = useMiddlewares[0];
+      expect(middleware).toBeDefined();
+
+      const next = vi.fn().mockResolvedValue(undefined);
+      await middleware({
+        event: { type: "message" },
+        next,
+      });
+
+      expect(logger.info).toHaveBeenCalledWith("[slack] Received event type=message");
+      expect(next).toHaveBeenCalled();
+    });
+
+    it("logs non-event payload for actions/shortcuts/commands", async () => {
+      const { logger } = await import("../logger.ts");
+      const db = createMockDb();
+      const { useMiddlewares } = setupHandlers(db);
+
+      const middleware = useMiddlewares[0];
+      expect(middleware).toBeDefined();
+
+      const next = vi.fn().mockResolvedValue(undefined);
+      await middleware({
+        body: { type: "block_actions" },
+        next,
+      });
+
+      expect(logger.info).toHaveBeenCalledWith(
+        "[slack] Received non-event payload (action/shortcut/command)",
+      );
+      expect(next).toHaveBeenCalled();
+    });
+
+    it("treats payload with event=null as non-event", async () => {
+      const { logger } = await import("../logger.ts");
+      const db = createMockDb();
+      const { useMiddlewares } = setupHandlers(db);
+
+      const middleware = useMiddlewares[0];
+      const next = vi.fn().mockResolvedValue(undefined);
+      await middleware({
+        event: null,
+        next,
+      });
+
+      expect(logger.info).toHaveBeenCalledWith(
+        "[slack] Received non-event payload (action/shortcut/command)",
+      );
+      expect(next).toHaveBeenCalled();
+    });
+
+    it("treats payload with event as non-object as non-event", async () => {
+      const { logger } = await import("../logger.ts");
+      const db = createMockDb();
+      const { useMiddlewares } = setupHandlers(db);
+
+      const middleware = useMiddlewares[0];
+      const next = vi.fn().mockResolvedValue(undefined);
+      await middleware({
+        event: "string-event",
+        next,
+      });
+
+      expect(logger.info).toHaveBeenCalledWith(
+        "[slack] Received non-event payload (action/shortcut/command)",
+      );
+      expect(next).toHaveBeenCalled();
+    });
+
+    it("treats event object without type property as non-event", async () => {
+      const { logger } = await import("../logger.ts");
+      const db = createMockDb();
+      const { useMiddlewares } = setupHandlers(db);
+
+      const middleware = useMiddlewares[0];
+      const next = vi.fn().mockResolvedValue(undefined);
+      await middleware({
+        event: { subtype: "something" },
+        next,
+      });
+
+      expect(logger.info).toHaveBeenCalledWith(
+        "[slack] Received non-event payload (action/shortcut/command)",
+      );
+      expect(next).toHaveBeenCalled();
+    });
+  });
+
+  describe("diagnostic logger.info — message handler invoked", () => {
+    it("logs diagnostic info including type, subtype, text, user, bot_id fields", async () => {
+      const { logger } = await import("../logger.ts");
+      const db = createMockDb();
+      const { messageHandler } = setupHandlers(db);
+
+      // Message with all fields present
+      await messageHandler({
+        message: {
+          type: "message",
+          user: "U1",
+          text: "hello",
+          ts: "1700000000.000000",
+          channel: "C1",
+          bot_id: "B1",
+        },
+        say: vi.fn(),
+        client: { users: { info: vi.fn() } },
+      });
+
+      // The handler should log the diagnostic info including the fields
+      expect(logger.info).toHaveBeenCalledWith(
+        expect.stringMatching(
+          /\[slack\] Message handler invoked:.*type=message.*subtype=.*has_text=true.*has_user=true.*has_bot_id=true/,
+        ),
+      );
+    });
+
+    it("logs type=unknown when message.type is undefined", async () => {
+      const { logger } = await import("../logger.ts");
+      const db = createMockDb();
+      const { messageHandler } = setupHandlers(db);
+
+      await messageHandler({
+        message: {
+          user: "U1",
+          text: "hello",
+          ts: "1700000000.000000",
+          channel: "C1",
+        },
+        say: vi.fn(),
+        client: { users: { info: vi.fn() } },
+      });
+
+      expect(logger.info).toHaveBeenCalledWith(expect.stringContaining("type=unknown"));
+    });
+
+    it("logs subtype=none when message has no subtype", async () => {
+      const { logger } = await import("../logger.ts");
+      const db = createMockDb();
+      const { messageHandler } = setupHandlers(db);
+
+      await messageHandler({
+        message: {
+          user: "U1",
+          text: "hello",
+          ts: "1700000000.000000",
+          channel: "C1",
+        },
+        say: vi.fn(),
+        client: { users: { info: vi.fn() } },
+      });
+
+      expect(logger.info).toHaveBeenCalledWith(expect.stringContaining("subtype=none"));
+    });
+
+    it("logs subtype value when message has subtype", async () => {
+      const { logger } = await import("../logger.ts");
+      const db = createMockDb();
+      const { messageHandler } = setupHandlers(db);
+
+      await messageHandler({
+        message: {
+          user: "U1",
+          text: "hello",
+          ts: "1700000000.000000",
+          channel: "C1",
+          subtype: "channel_join",
+        },
+        say: vi.fn(),
+        client: { users: { info: vi.fn() } },
+      });
+
+      expect(logger.info).toHaveBeenCalledWith(expect.stringContaining("subtype=channel_join"));
+    });
+
+    it("logs has_text=false when message has no text", async () => {
+      const { logger } = await import("../logger.ts");
+      const db = createMockDb();
+      const { messageHandler } = setupHandlers(db);
+
+      await messageHandler({
+        message: {
+          user: "U1",
+          ts: "1700000000.000000",
+          channel: "C1",
+        },
+        say: vi.fn(),
+        client: { users: { info: vi.fn() } },
+      });
+
+      expect(logger.info).toHaveBeenCalledWith(expect.stringContaining("has_text=false"));
+    });
+
+    it("logs has_user=false when message has no user", async () => {
+      const { logger } = await import("../logger.ts");
+      const db = createMockDb();
+      const { messageHandler } = setupHandlers(db);
+
+      await messageHandler({
+        message: {
+          text: "hello",
+          ts: "1700000000.000000",
+          channel: "C1",
+        },
+        say: vi.fn(),
+        client: { users: { info: vi.fn() } },
+      });
+
+      expect(logger.info).toHaveBeenCalledWith(expect.stringContaining("has_user=false"));
+    });
+
+    it("logs has_bot_id=false when message has no bot_id", async () => {
+      const { logger } = await import("../logger.ts");
+      const db = createMockDb();
+      const { messageHandler } = setupHandlers(db);
+
+      await messageHandler({
+        message: {
+          user: "U1",
+          text: "hello",
+          ts: "1700000000.000000",
+          channel: "C1",
+        },
+        say: vi.fn(),
+        client: { users: { info: vi.fn() } },
+      });
+
+      expect(logger.info).toHaveBeenCalledWith(expect.stringContaining("has_bot_id=false"));
+    });
+  });
+
+  describe("guard clause edge cases — empty string values", () => {
+    it("skips message with text present but empty string", async () => {
+      const db = createMockDb();
+      const { messageHandler } = setupHandlers(db);
+      const say = vi.fn();
+      const client = { users: { info: vi.fn() }, chat: { postMessage: vi.fn() } };
+
+      // text key exists but value is empty string — should return early
+      await messageHandler({
+        message: { user: "U1", text: "", ts: "1700000000.000000", channel: "C1" },
+        say,
+        client,
+      });
+
+      expect(say).not.toHaveBeenCalled();
+      expect(client.users.info).not.toHaveBeenCalled();
+    });
+
+    it("skips message with user present but empty string", async () => {
+      const db = createMockDb();
+      const { messageHandler } = setupHandlers(db);
+      const say = vi.fn();
+      const client = { users: { info: vi.fn() }, chat: { postMessage: vi.fn() } };
+
+      // user key exists but value is empty string — should return early
+      await messageHandler({
+        message: { user: "", text: "food", ts: "1700000000.000000", channel: "C1" },
+        say,
+        client,
+      });
+
+      expect(say).not.toHaveBeenCalled();
+      expect(client.users.info).not.toHaveBeenCalled();
+    });
+
+    it("skips message with ts present but empty string", async () => {
+      const db = createMockDb();
+      const { messageHandler } = setupHandlers(db);
+      const say = vi.fn();
+      const client = { users: { info: vi.fn() }, chat: { postMessage: vi.fn() } };
+
+      // ts key exists but value is empty string — should return early
+      await messageHandler({
+        message: { user: "U1", text: "food", ts: "", channel: "C1" },
+        say,
+        client,
+      });
+
+      expect(say).not.toHaveBeenCalled();
+      expect(client.users.info).not.toHaveBeenCalled();
+    });
+
+    it("skips message with channel present but empty string", async () => {
+      const db = createMockDb();
+      const { messageHandler } = setupHandlers(db);
+      const say = vi.fn();
+      const client = { users: { info: vi.fn() }, chat: { postMessage: vi.fn() } };
+
+      // channel key exists but value is empty string — should return early
+      await messageHandler({
+        message: { user: "U1", text: "food", ts: "1700000000.000000", channel: "" },
+        say,
+        client,
+      });
+
+      expect(say).not.toHaveBeenCalled();
+      expect(client.users.info).not.toHaveBeenCalled();
+    });
+
+    it("skips message with subtype present but falsy (empty string)", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+
+      // subtype is present but empty string — should NOT skip (falsy subtype is allowed)
+      // existing slack auth_account found
+      mockExecute.mockResolvedValueOnce([{ user_id: "user-123" }]);
+      // ensureDofekProvider
+      mockExecute.mockResolvedValueOnce([]);
+      // insert food_entry
+      mockExecute.mockResolvedValueOnce([{ id: "entry-1" }]);
+
+      mockAnalyze.mockResolvedValueOnce({ items: [makeFoodItem()], provider: "gemini" });
+
+      const { messageHandler } = setupHandlers(db);
+
+      const say = vi.fn();
+      const chatPostMessage = vi.fn().mockResolvedValue({ ts: "t" });
+      const chatUpdate = vi.fn().mockResolvedValue({});
+      const client = {
+        users: {
+          info: vi.fn().mockResolvedValue({ user: { tz: "UTC" } }),
+        },
+        chat: { postMessage: chatPostMessage, update: chatUpdate },
+      };
+
+      await messageHandler({
+        message: { user: "U1", text: "food", ts: "1700000000.000000", channel: "C1", subtype: "" },
+        say,
+        client,
+      });
+
+      // Empty string subtype is falsy, so the guard should NOT filter it out
+      expect(mockAnalyze).toHaveBeenCalled();
+    });
+  });
+
+  describe("thread reply — thread_ts === ts (not a reply)", () => {
+    it("treats message where thread_ts === ts as top-level (not a thread reply)", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+
+      // lookupOrCreateUserId: existing slack link
+      mockExecute.mockResolvedValueOnce([{ user_id: "user-123" }]);
+      // ensureDofekProvider
+      mockExecute.mockResolvedValueOnce([]);
+      // insert food_entry
+      mockExecute.mockResolvedValueOnce([{ id: "entry-1" }]);
+
+      mockAnalyze.mockResolvedValueOnce({ items: [makeFoodItem()], provider: "gemini" });
+
+      const { messageHandler } = setupHandlers(db);
+
+      const say = vi.fn();
+      const chatPostMessage = vi.fn().mockResolvedValue({ ts: "t" });
+      const chatUpdate = vi.fn().mockResolvedValue({});
+      const conversationsReplies = vi.fn();
+      const client = {
+        users: {
+          info: vi.fn().mockResolvedValue({ user: { tz: "UTC" } }),
+        },
+        conversations: { replies: conversationsReplies },
+        chat: { postMessage: chatPostMessage, update: chatUpdate },
+      };
+
+      // thread_ts === ts means it's the parent message, not a reply
+      await messageHandler({
+        message: {
+          user: "U1",
+          text: "some food",
+          ts: "1700000000.000000",
+          thread_ts: "1700000000.000000",
+          channel: "C1",
+        },
+        say,
+        client,
+      });
+
+      // Should NOT have tried to load thread replies
+      expect(conversationsReplies).not.toHaveBeenCalled();
+      // Should have gone to fresh analysis
+      expect(mockAnalyze).toHaveBeenCalled();
+      expect(mockRefine).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("thread reply — conversations.replies arguments", () => {
+    it("calls conversations.replies with correct channel and ts", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+
+      // lookupOrCreateUserId: existing slack link
+      mockExecute.mockResolvedValueOnce([{ user_id: "user-123" }]);
+      // ensureDofekProvider (for fallthrough to fresh analysis)
+      mockExecute.mockResolvedValueOnce([]);
+      // insert food_entry
+      mockExecute.mockResolvedValueOnce([{ id: "entry-1" }]);
+
+      mockAnalyze.mockResolvedValueOnce({ items: [makeFoodItem()], provider: "gemini" });
+
+      const { messageHandler } = setupHandlers(db);
+
+      const say = vi.fn();
+      const chatPostMessage = vi.fn().mockResolvedValue({ ts: "t" });
+      const chatUpdate = vi.fn().mockResolvedValue({});
+      const conversationsReplies = vi.fn().mockResolvedValue({ messages: [] });
+      const client = {
+        users: {
+          info: vi.fn().mockResolvedValue({ user: { tz: "UTC" } }),
+        },
+        conversations: { replies: conversationsReplies },
+        chat: { postMessage: chatPostMessage, update: chatUpdate },
+      };
+
+      await messageHandler({
+        message: {
+          user: "U1",
+          text: "update this",
+          ts: "1700000010.000000",
+          thread_ts: "1700000000.000000",
+          channel: "C_THREAD",
+        },
+        say,
+        client,
+      });
+
+      expect(conversationsReplies).toHaveBeenCalledWith({
+        channel: "C_THREAD",
+        ts: "1700000000.000000",
+      });
+    });
+  });
+
+  describe("thread reply — empty previousItems fallthrough", () => {
+    it("falls through to fresh analysis when DB returns empty rows for previous entries", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+
+      // lookupOrCreateUserId
+      mockExecute.mockResolvedValueOnce([{ user_id: "user-123" }]);
+      // load previous items — empty result (IDs existed in thread but no DB rows)
+      mockExecute.mockResolvedValueOnce([]);
+      // ensureDofekProvider (for fresh analysis fallthrough)
+      mockExecute.mockResolvedValueOnce([]);
+      // insert food_entry
+      mockExecute.mockResolvedValueOnce([{ id: "entry-1" }]);
+
+      mockAnalyze.mockResolvedValueOnce({ items: [makeFoodItem()], provider: "gemini" });
+
+      const { messageHandler } = setupHandlers(db);
+
+      const say = vi.fn();
+      const chatPostMessage = vi.fn().mockResolvedValue({ ts: "t" });
+      const chatUpdate = vi.fn().mockResolvedValue({});
+      const client = {
+        users: {
+          info: vi.fn().mockResolvedValue({ user: { tz: "UTC" } }),
+        },
+        conversations: {
+          replies: vi.fn().mockResolvedValue({
+            messages: [
+              {
+                bot_id: "B1",
+                blocks: [
+                  {
+                    type: "actions",
+                    elements: [{ action_id: "confirm_food", value: "entry-old" }],
+                  },
+                ],
+              },
+            ],
+          }),
+        },
+        chat: { postMessage: chatPostMessage, update: chatUpdate },
+      };
+
+      await messageHandler({
+        message: {
+          user: "U1",
+          text: "update to pizza",
+          ts: "1700000010.000000",
+          thread_ts: "1700000000.000000",
+          channel: "C1",
+        },
+        say,
+        client,
+      });
+
+      // previousItems.length === 0, so should fall through to fresh analysis
+      expect(mockRefine).not.toHaveBeenCalled();
+      expect(mockAnalyze).toHaveBeenCalled();
+    });
+  });
+
+  describe("thread reply — multiple entry IDs join with comma in refinement", () => {
+    it("produces comma-separated entry IDs for multiple refined entries", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+
+      // lookupOrCreateUserId
+      mockExecute.mockResolvedValueOnce([{ user_id: "user-123" }]);
+      // load previous items
+      mockExecute.mockResolvedValueOnce([
+        {
+          food_name: "Eggs",
+          food_description: "2 eggs",
+          category: "eggs",
+          calories: 140,
+          protein_g: 12,
+          carbs_g: 1,
+          fat_g: 10,
+          fiber_g: 0,
+          saturated_fat_g: 3,
+          sugar_g: 0,
+          sodium_mg: 120,
+          meal: "breakfast",
+        },
+      ]);
+      // deleteUnconfirmedEntries
+      mockExecute.mockResolvedValueOnce([]);
+      // ensureDofekProvider
+      mockExecute.mockResolvedValueOnce([]);
+      // insert first refined food_entry
+      mockExecute.mockResolvedValueOnce([{ id: "new-1" }]);
+      // insert second refined food_entry
+      mockExecute.mockResolvedValueOnce([{ id: "new-2" }]);
+
+      const refinedItems = [
+        makeFoodItem({ foodName: "Scrambled Eggs" }),
+        makeFoodItem({ foodName: "Toast" }),
+      ];
+      mockRefine.mockResolvedValueOnce({ items: refinedItems, provider: "gemini" });
+
+      const { messageHandler } = setupHandlers(db);
+
+      const say = vi.fn();
+      const chatPostMessage = vi.fn().mockResolvedValue({ ts: "thinking-ts" });
+      const chatUpdate = vi.fn().mockResolvedValue({});
+      const client = {
+        users: {
+          info: vi.fn().mockResolvedValue({ user: { tz: "UTC" } }),
+        },
+        conversations: {
+          replies: vi.fn().mockResolvedValue({
+            messages: [
+              {
+                bot_id: "B1",
+                blocks: [
+                  {
+                    type: "actions",
+                    elements: [{ action_id: "confirm_food", value: "old-entry" }],
+                  },
+                ],
+              },
+            ],
+          }),
+        },
+        chat: { postMessage: chatPostMessage, update: chatUpdate },
+      };
+
+      await messageHandler({
+        message: {
+          user: "U1",
+          text: "actually scrambled eggs and toast",
+          ts: "1700000010.000000",
+          thread_ts: "1700000000.000000",
+          channel: "C1",
+        },
+        say,
+        client,
+      });
+
+      // Verify the confirm button value contains comma-separated IDs
+      const updateCall = chatUpdate.mock.calls[0][0];
+      const actionsBlock = updateCall.blocks?.find((b: { type: string }) => b.type === "actions");
+      expect(actionsBlock).toBeDefined();
+      if (actionsBlock) {
+        const confirmButton = actionsBlock.elements?.find(
+          (e: { action_id: string }) => e.action_id === "confirm_food",
+        );
+        expect(confirmButton?.value).toBe("new-1,new-2");
+      }
+    });
+  });
+
+  describe("confirm_food — split/filter edge cases", () => {
+    it("handles entry IDs with trailing comma (filter removes empty strings)", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+
+      const { confirmHandler } = setupHandlers(db);
+
+      // confirmFoodEntries — returns confirmed rows
+      mockExecute.mockResolvedValueOnce([{ id: "entry-1" }]);
+      // load items for saved message
+      mockExecute.mockResolvedValueOnce([
+        {
+          food_name: "Apple",
+          food_description: "1 medium",
+          category: "fruit",
+          calories: 95,
+          protein_g: 0,
+          carbs_g: 25,
+          fat_g: 0,
+          fiber_g: 4,
+          saturated_fat_g: 0,
+          sugar_g: 19,
+          sodium_mg: 2,
+          meal: "snack",
+        },
+      ]);
+      // user_id lookup for cache invalidation
+      mockExecute.mockResolvedValueOnce([{ user_id: "user-1" }]);
+
+      const ack = vi.fn();
+      const chatUpdate = vi.fn().mockResolvedValue({});
+
+      await confirmHandler({
+        ack,
+        body: {
+          type: "block_actions",
+          actions: [{ action_id: "confirm_food", value: "entry-1," }], // trailing comma
+          channel: { id: "C123" },
+          message: { ts: "1700000000.000000" },
+        },
+        client: { chat: { update: chatUpdate } },
+      });
+
+      expect(ack).toHaveBeenCalled();
+      // filter(Boolean) removes empty strings from split
+      expect(chatUpdate).toHaveBeenCalled();
+    });
+
+    it("handles confirm action with multiple comma-separated IDs", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+
+      const { confirmHandler } = setupHandlers(db);
+
+      // confirmFoodEntries returns confirmed rows
+      mockExecute.mockResolvedValueOnce([{ id: "e1" }, { id: "e2" }]);
+      // load items
+      mockExecute.mockResolvedValueOnce([
+        {
+          food_name: "Eggs",
+          food_description: "2 eggs",
+          category: "eggs",
+          calories: 140,
+          protein_g: 12,
+          carbs_g: 1,
+          fat_g: 10,
+          fiber_g: 0,
+          saturated_fat_g: 3,
+          sugar_g: 0,
+          sodium_mg: 120,
+          meal: "breakfast",
+        },
+        {
+          food_name: "Toast",
+          food_description: "1 slice",
+          category: "breads_and_cereals",
+          calories: 80,
+          protein_g: 3,
+          carbs_g: 15,
+          fat_g: 1,
+          fiber_g: 1,
+          saturated_fat_g: 0,
+          sugar_g: 1,
+          sodium_mg: 150,
+          meal: "breakfast",
+        },
+      ]);
+      // user_id for cache
+      mockExecute.mockResolvedValueOnce([{ user_id: "user-1" }]);
+
+      const ack = vi.fn();
+      const chatUpdate = vi.fn().mockResolvedValue({});
+
+      await confirmHandler({
+        ack,
+        body: {
+          type: "block_actions",
+          actions: [{ action_id: "confirm_food", value: "e1,e2" }],
+          channel: { id: "C1" },
+          message: { ts: "123" },
+        },
+        client: { chat: { update: chatUpdate } },
+      });
+
+      expect(ack).toHaveBeenCalled();
+      // Both items should be in the saved message
+      expect(chatUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining("Eggs"),
+        }),
+      );
+    });
+  });
+
+  describe("confirm_food — already confirmed without channel/message context", () => {
+    it("returns early when confirmedCount is 0 and no channel/message available", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+
+      const { confirmHandler } = setupHandlers(db);
+
+      // confirmFoodEntries returns empty (already confirmed)
+      mockExecute.mockResolvedValueOnce([]);
+
+      const ack = vi.fn();
+      const chatUpdate = vi.fn();
+
+      await confirmHandler({
+        ack,
+        body: {
+          type: "block_actions",
+          actions: [{ action_id: "confirm_food", value: "entry-1" }],
+          // no channel or message
+        },
+        client: { chat: { update: chatUpdate } },
+      });
+
+      expect(ack).toHaveBeenCalled();
+      // Without channel/message, chat.update should not be called
+      expect(chatUpdate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("confirm_food — no user row for cache invalidation", () => {
+    it("skips cache invalidation when no user_id found for entries", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+
+      const { confirmHandler } = setupHandlers(db);
+
+      // confirmFoodEntries returns 1 confirmed
+      mockExecute.mockResolvedValueOnce([{ id: "entry-1" }]);
+      // load items
+      mockExecute.mockResolvedValueOnce([
+        {
+          food_name: "Apple",
+          food_description: "1 medium",
+          category: "fruit",
+          calories: 95,
+          protein_g: 0,
+          carbs_g: 25,
+          fat_g: 0,
+          fiber_g: 4,
+          saturated_fat_g: 0,
+          sugar_g: 19,
+          sodium_mg: 2,
+          meal: "snack",
+        },
+      ]);
+      // user_id lookup returns empty
+      mockExecute.mockResolvedValueOnce([]);
+
+      const ack = vi.fn();
+      const chatUpdate = vi.fn().mockResolvedValue({});
+
+      await confirmHandler({
+        ack,
+        body: {
+          type: "block_actions",
+          actions: [{ action_id: "confirm_food", value: "entry-1" }],
+          channel: { id: "C1" },
+          message: { ts: "123" },
+        },
+        client: { chat: { update: chatUpdate } },
+      });
+
+      expect(ack).toHaveBeenCalled();
+      expect(chatUpdate).toHaveBeenCalled();
+      // Cache invalidation should not have been called because no user row was found
+      expect(vi.mocked(queryCache.invalidateByPrefix)).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("cancel_food — blocks with non-matching action_id", () => {
+    it("does not delete entries when blocks have non-matching action_id", async () => {
+      const db = createMockDb();
+      const { cancelHandler } = setupHandlers(db);
+
+      const ack = vi.fn();
+      const chatUpdate = vi.fn().mockResolvedValue({});
+
+      await cancelHandler({
+        ack,
+        body: {
+          type: "block_actions",
+          message: {
+            ts: "1700000000.000000",
+            blocks: [
+              {
+                type: "actions",
+                elements: [{ action_id: "other_action", value: "entry-1" }],
+              },
+            ],
+          },
+          channel: { id: "C123" },
+        },
+        client: { chat: { update: chatUpdate } },
+      });
+
+      expect(ack).toHaveBeenCalled();
+      expect(getMockExecute(db)).not.toHaveBeenCalled();
+      // Should still update the message with "Cancelled."
+      expect(chatUpdate).toHaveBeenCalledWith(expect.objectContaining({ text: "Cancelled." }));
+    });
+
+    it("does not delete entries when block type is not actions", async () => {
+      const db = createMockDb();
+      const { cancelHandler } = setupHandlers(db);
+
+      const ack = vi.fn();
+      const chatUpdate = vi.fn().mockResolvedValue({});
+
+      await cancelHandler({
+        ack,
+        body: {
+          type: "block_actions",
+          message: {
+            ts: "1700000000.000000",
+            blocks: [
+              {
+                type: "section",
+                elements: [{ action_id: "confirm_food", value: "entry-1" }],
+              },
+            ],
+          },
+          channel: { id: "C123" },
+        },
+        client: { chat: { update: chatUpdate } },
+      });
+
+      expect(ack).toHaveBeenCalled();
+      expect(getMockExecute(db)).not.toHaveBeenCalled();
+      expect(chatUpdate).toHaveBeenCalledWith(expect.objectContaining({ text: "Cancelled." }));
+    });
+  });
+
+  describe("cancel_food — no channel for chat.update", () => {
+    it("does not call chat.update when no channel available", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+      const { cancelHandler } = setupHandlers(db);
+
+      // deleteUnconfirmedEntries
+      mockExecute.mockResolvedValueOnce([]);
+
+      const ack = vi.fn();
+      const chatUpdate = vi.fn();
+
+      await cancelHandler({
+        ack,
+        body: {
+          type: "block_actions",
+          message: {
+            ts: "1700000000.000000",
+            blocks: [
+              {
+                type: "actions",
+                elements: [{ action_id: "confirm_food", value: "entry-1" }],
+              },
+            ],
+          },
+          // no channel
+        },
+        client: { chat: { update: chatUpdate } },
+      });
+
+      expect(ack).toHaveBeenCalled();
+      expect(chatUpdate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("thread reply — refinement with refine item count logging", () => {
+    it("logs refining item count when previous items are found", async () => {
+      const { logger } = await import("../logger.ts");
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+
+      // lookupOrCreateUserId
+      mockExecute.mockResolvedValueOnce([{ user_id: "user-123" }]);
+      // load previous items from DB — 2 items
+      mockExecute.mockResolvedValueOnce([
+        {
+          food_name: "Eggs",
+          food_description: "2 eggs",
+          category: "eggs",
+          calories: 140,
+          protein_g: 12,
+          carbs_g: 1,
+          fat_g: 10,
+          fiber_g: 0,
+          saturated_fat_g: 3,
+          sugar_g: 0,
+          sodium_mg: 120,
+          meal: "breakfast",
+        },
+        {
+          food_name: "Toast",
+          food_description: "1 slice",
+          category: "breads_and_cereals",
+          calories: 80,
+          protein_g: 3,
+          carbs_g: 15,
+          fat_g: 1,
+          fiber_g: 1,
+          saturated_fat_g: 0,
+          sugar_g: 1,
+          sodium_mg: 150,
+          meal: "breakfast",
+        },
+      ]);
+      // deleteUnconfirmedEntries
+      mockExecute.mockResolvedValueOnce([]);
+      // ensureDofekProvider
+      mockExecute.mockResolvedValueOnce([]);
+      // insert new refined food_entry
+      mockExecute.mockResolvedValueOnce([{ id: "entry-new" }]);
+
+      const refinedItem = makeFoodItem({ foodName: "Scrambled Eggs and Toast" });
+      mockRefine.mockResolvedValueOnce({ items: [refinedItem], provider: "gemini" });
+
+      const { messageHandler } = setupHandlers(db);
+
+      const say = vi.fn();
+      const chatPostMessage = vi.fn().mockResolvedValue({ ts: "thinking-ts" });
+      const chatUpdate = vi.fn().mockResolvedValue({});
+      const client = {
+        users: {
+          info: vi.fn().mockResolvedValue({ user: { tz: "UTC" } }),
+        },
+        conversations: {
+          replies: vi.fn().mockResolvedValue({
+            messages: [
+              {
+                bot_id: "B1",
+                blocks: [
+                  {
+                    type: "actions",
+                    elements: [{ action_id: "confirm_food", value: "old-1,old-2" }],
+                  },
+                ],
+              },
+            ],
+          }),
+        },
+        chat: { postMessage: chatPostMessage, update: chatUpdate },
+      };
+
+      await messageHandler({
+        message: {
+          user: "U1",
+          text: "combine into one",
+          ts: "1700000010.000000",
+          thread_ts: "1700000000.000000",
+          channel: "C1",
+        },
+        say,
+        client,
+      });
+
+      expect(logger.info).toHaveBeenCalledWith(expect.stringContaining("[slack] Refining 2 items"));
+    });
+  });
+
+  describe("extractEntryIdsFromThread — edge cases", () => {
+    it("handles thread with no messages (undefined)", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+
+      // lookupOrCreateUserId
+      mockExecute.mockResolvedValueOnce([{ user_id: "user-123" }]);
+      // ensureDofekProvider
+      mockExecute.mockResolvedValueOnce([]);
+      // insert
+      mockExecute.mockResolvedValueOnce([{ id: "e1" }]);
+
+      mockAnalyze.mockResolvedValueOnce({ items: [makeFoodItem()], provider: "gemini" });
+
+      const { messageHandler } = setupHandlers(db);
+
+      const say = vi.fn();
+      const chatPostMessage = vi.fn().mockResolvedValue({ ts: "t" });
+      const chatUpdate = vi.fn().mockResolvedValue({});
+      const client = {
+        users: {
+          info: vi.fn().mockResolvedValue({ user: { tz: "UTC" } }),
+        },
+        conversations: {
+          // messages is undefined
+          replies: vi.fn().mockResolvedValue({}),
+        },
+        chat: { postMessage: chatPostMessage, update: chatUpdate },
+      };
+
+      await messageHandler({
+        message: {
+          user: "U1",
+          text: "food",
+          ts: "1700000010.000000",
+          thread_ts: "1700000000.000000",
+          channel: "C1",
+        },
+        say,
+        client,
+      });
+
+      // No previous entries found, falls through to fresh analysis
+      expect(mockAnalyze).toHaveBeenCalled();
+      expect(mockRefine).not.toHaveBeenCalled();
+    });
+
+    it("skips thread messages without bot_id", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+
+      // lookupOrCreateUserId
+      mockExecute.mockResolvedValueOnce([{ user_id: "user-123" }]);
+      // ensureDofekProvider
+      mockExecute.mockResolvedValueOnce([]);
+      // insert
+      mockExecute.mockResolvedValueOnce([{ id: "e1" }]);
+
+      mockAnalyze.mockResolvedValueOnce({ items: [makeFoodItem()], provider: "gemini" });
+
+      const { messageHandler } = setupHandlers(db);
+
+      const say = vi.fn();
+      const chatPostMessage = vi.fn().mockResolvedValue({ ts: "t" });
+      const chatUpdate = vi.fn().mockResolvedValue({});
+      const client = {
+        users: {
+          info: vi.fn().mockResolvedValue({ user: { tz: "UTC" } }),
+        },
+        conversations: {
+          replies: vi.fn().mockResolvedValue({
+            messages: [
+              // User message without bot_id — should be skipped
+              { text: "food description", blocks: [] },
+              // Message with bot_id but no blocks
+              { bot_id: "B1" },
+            ],
+          }),
+        },
+        chat: { postMessage: chatPostMessage, update: chatUpdate },
+      };
+
+      await messageHandler({
+        message: {
+          user: "U1",
+          text: "refine",
+          ts: "1700000010.000000",
+          thread_ts: "1700000000.000000",
+          channel: "C1",
+        },
+        say,
+        client,
+      });
+
+      // No valid entry IDs found, falls through
+      expect(mockAnalyze).toHaveBeenCalled();
+      expect(mockRefine).not.toHaveBeenCalled();
+    });
+
+    it("skips blocks that fail schema validation", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+
+      // lookupOrCreateUserId
+      mockExecute.mockResolvedValueOnce([{ user_id: "user-123" }]);
+      // ensureDofekProvider
+      mockExecute.mockResolvedValueOnce([]);
+      // insert
+      mockExecute.mockResolvedValueOnce([{ id: "e1" }]);
+
+      mockAnalyze.mockResolvedValueOnce({ items: [makeFoodItem()], provider: "gemini" });
+
+      const { messageHandler } = setupHandlers(db);
+
+      const say = vi.fn();
+      const chatPostMessage = vi.fn().mockResolvedValue({ ts: "t" });
+      const chatUpdate = vi.fn().mockResolvedValue({});
+      const client = {
+        users: {
+          info: vi.fn().mockResolvedValue({ user: { tz: "UTC" } }),
+        },
+        conversations: {
+          replies: vi.fn().mockResolvedValue({
+            messages: [
+              {
+                bot_id: "B1",
+                blocks: [
+                  // actions block but with non-matching action_id
+                  {
+                    type: "actions",
+                    elements: [{ action_id: "other_action", value: "entry-1" }],
+                  },
+                ],
+              },
+            ],
+          }),
+        },
+        chat: { postMessage: chatPostMessage, update: chatUpdate },
+      };
+
+      await messageHandler({
+        message: {
+          user: "U1",
+          text: "refine",
+          ts: "1700000010.000000",
+          thread_ts: "1700000000.000000",
+          channel: "C1",
+        },
+        say,
+        client,
+      });
+
+      // No confirm_food action found, falls through
+      expect(mockAnalyze).toHaveBeenCalled();
+      expect(mockRefine).not.toHaveBeenCalled();
+    });
+
+    it("skips elements with empty value", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+
+      // lookupOrCreateUserId
+      mockExecute.mockResolvedValueOnce([{ user_id: "user-123" }]);
+      // ensureDofekProvider
+      mockExecute.mockResolvedValueOnce([]);
+      // insert
+      mockExecute.mockResolvedValueOnce([{ id: "e1" }]);
+
+      mockAnalyze.mockResolvedValueOnce({ items: [makeFoodItem()], provider: "gemini" });
+
+      const { messageHandler } = setupHandlers(db);
+
+      const say = vi.fn();
+      const chatPostMessage = vi.fn().mockResolvedValue({ ts: "t" });
+      const chatUpdate = vi.fn().mockResolvedValue({});
+      const client = {
+        users: {
+          info: vi.fn().mockResolvedValue({ user: { tz: "UTC" } }),
+        },
+        conversations: {
+          replies: vi.fn().mockResolvedValue({
+            messages: [
+              {
+                bot_id: "B1",
+                blocks: [
+                  {
+                    type: "actions",
+                    elements: [{ action_id: "confirm_food", value: "" }],
+                  },
+                ],
+              },
+            ],
+          }),
+        },
+        chat: { postMessage: chatPostMessage, update: chatUpdate },
+      };
+
+      await messageHandler({
+        message: {
+          user: "U1",
+          text: "refine",
+          ts: "1700000010.000000",
+          thread_ts: "1700000000.000000",
+          channel: "C1",
+        },
+        say,
+        client,
+      });
+
+      // Empty value after filter(Boolean), falls through
+      expect(mockAnalyze).toHaveBeenCalled();
+      expect(mockRefine).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("non-Error objects in catch blocks", () => {
+    it("handles non-Error thrown in AI analysis catch block", async () => {
+      const { logger } = await import("../logger.ts");
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+
+      mockExecute.mockResolvedValueOnce([{ user_id: "user-123" }]);
+      mockAnalyze.mockRejectedValueOnce("string error");
+
+      const { messageHandler } = setupHandlers(db);
+
+      const say = vi.fn();
+      const chatPostMessage = vi.fn().mockResolvedValue({ ts: "t" });
+      const chatUpdate = vi.fn().mockResolvedValue({});
+      const client = {
+        users: {
+          info: vi.fn().mockResolvedValue({ user: { tz: "UTC" } }),
+        },
+        chat: { postMessage: chatPostMessage, update: chatUpdate },
+      };
+
+      await messageHandler({
+        message: { user: "U1", text: "food", ts: "1700000000.000000", channel: "C1" },
+        say,
+        client,
+      });
+
+      expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("string error"));
+    });
+
+    it("handles non-Error thrown in refinement catch block", async () => {
+      const { logger } = await import("../logger.ts");
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+
+      mockExecute.mockResolvedValueOnce([{ user_id: "user-123" }]);
+      mockExecute.mockResolvedValueOnce([
+        {
+          food_name: "Eggs",
+          food_description: "2",
+          category: "eggs",
+          calories: 140,
+          protein_g: 12,
+          carbs_g: 1,
+          fat_g: 10,
+          fiber_g: 0,
+          saturated_fat_g: 3,
+          sugar_g: 0,
+          sodium_mg: 120,
+          meal: "breakfast",
+        },
+      ]);
+
+      mockRefine.mockRejectedValueOnce(42);
+
+      const { messageHandler } = setupHandlers(db);
+
+      const say = vi.fn();
+      const chatPostMessage = vi.fn().mockResolvedValue({ ts: "t" });
+      const client = {
+        users: {
+          info: vi.fn().mockResolvedValue({ user: { tz: "UTC" } }),
+        },
+        conversations: {
+          replies: vi.fn().mockResolvedValue({
+            messages: [
+              {
+                bot_id: "B1",
+                blocks: [
+                  {
+                    type: "actions",
+                    elements: [{ action_id: "confirm_food", value: "entry-1" }],
+                  },
+                ],
+              },
+            ],
+          }),
+        },
+        chat: { postMessage: chatPostMessage },
+      };
+
+      await messageHandler({
+        message: {
+          user: "U1",
+          text: "change it",
+          ts: "1700000010.000000",
+          thread_ts: "1700000000.000000",
+          channel: "C1",
+        },
+        say,
+        client,
+      });
+
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining("[slack] Refinement failed: 42"),
+      );
+      expect(say).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining("42"),
+        }),
+      );
+    });
+
+    it("handles non-Error thrown in top-level message handler catch", async () => {
+      const { logger } = await import("../logger.ts");
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+
+      mockExecute.mockRejectedValueOnce("raw string error");
+
+      const { messageHandler } = setupHandlers(db);
+
+      const say = vi.fn();
+      const client = {
+        users: { info: vi.fn().mockRejectedValue("api failure") },
+        chat: { postMessage: vi.fn() },
+      };
+
+      await messageHandler({
+        message: { user: "U1", text: "food", ts: "1700000000.000000", channel: "C1" },
+        say,
+        client,
+      });
+
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining("[slack] Message handler failed: raw string error"),
+      );
+    });
+
+    it("handles non-Error thrown in say error catch", async () => {
+      const { logger } = await import("../logger.ts");
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+
+      mockExecute.mockRejectedValueOnce(new Error("DB error"));
+
+      const { messageHandler } = setupHandlers(db);
+
+      const say = vi.fn().mockRejectedValue("say failed string");
+      const client = {
+        users: { info: vi.fn().mockRejectedValue(new Error("API down")) },
+        chat: { postMessage: vi.fn() },
+      };
+
+      await messageHandler({
+        message: { user: "U1", text: "food", ts: "1700000000.000000", channel: "C1" },
+        say,
+        client,
+      });
+
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining("[slack] Failed to send error reply: say failed string"),
+      );
+    });
+
+    it("handles non-Error thrown in confirm food catch", async () => {
+      const { logger } = await import("../logger.ts");
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+
+      const { confirmHandler } = setupHandlers(db);
+
+      mockExecute.mockRejectedValueOnce("confirm DB string error");
+
+      const ack = vi.fn();
+      const chatUpdate = vi.fn().mockResolvedValue({});
+
+      await confirmHandler({
+        ack,
+        body: {
+          type: "block_actions",
+          actions: [{ action_id: "confirm_food", value: "entry-1" }],
+          channel: { id: "C1" },
+          message: { ts: "123" },
+        },
+        client: { chat: { update: chatUpdate } },
+      });
+
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining("[slack] Failed to confirm food entries: confirm DB string error"),
+      );
+    });
+  });
+
+  describe("lookupOrCreateUserId — users.info warns with non-Error", () => {
+    it("logs warning with non-Error thrown by users.info", async () => {
+      const { logger } = await import("../logger.ts");
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+
+      // existing slack auth link
+      mockExecute.mockResolvedValueOnce([{ user_id: "user-123" }]);
+
+      const { messageHandler } = setupHandlers(db);
+
+      // ensureDofekProvider
+      mockExecute.mockResolvedValueOnce([]);
+      // insert
+      mockExecute.mockResolvedValueOnce([{ id: "e1" }]);
+
+      mockAnalyze.mockResolvedValueOnce({ items: [makeFoodItem()], provider: "gemini" });
+
+      const say = vi.fn();
+      const chatPostMessage = vi.fn().mockResolvedValue({ ts: "t" });
+      const chatUpdate = vi.fn().mockResolvedValue({});
+      const client = {
+        users: { info: vi.fn().mockRejectedValue(42) },
+        chat: { postMessage: chatPostMessage, update: chatUpdate },
+      };
+
+      await messageHandler({
+        message: { user: "U1", text: "food", ts: "1700000000.000000", channel: "C1" },
+        say,
+        client,
+      });
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining("[slack] Could not fetch Slack profile for U1: 42"),
+      );
     });
   });
 });
