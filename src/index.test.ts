@@ -2,6 +2,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // ── Mock setup ──
 
+const mockLoggerInfo = vi.fn();
+const mockLoggerError = vi.fn();
+const mockLoggerWarn = vi.fn();
+
+vi.mock("./logger.ts", () => ({
+  logger: {
+    info: (...args: unknown[]) => mockLoggerInfo(...args),
+    error: (...args: unknown[]) => mockLoggerError(...args),
+    warn: (...args: unknown[]) => mockLoggerWarn(...args),
+    debug: vi.fn(),
+  },
+}));
+
 const mockWaitUntilFinished = vi.fn<() => Promise<void>>(() => Promise.resolve());
 const mockAdd = vi.fn(() => Promise.resolve({ waitUntilFinished: mockWaitUntilFinished }));
 const mockQueueClose = vi.fn(() => Promise.resolve());
@@ -117,12 +130,10 @@ describe("handleSyncCommand", () => {
 
   it("logs message when no providers enabled", async () => {
     mockGetEnabledProviders.mockReturnValue([]);
-    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
     await handleSyncCommand(["node", "index.ts", "sync"]);
-    expect(spy).toHaveBeenCalledWith(
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
       "[sync] No providers enabled. Set API keys in .env to enable providers.",
     );
-    spy.mockRestore();
   });
 
   it("registers providers before checking enabled list", async () => {
@@ -143,21 +154,17 @@ describe("handleSyncCommand", () => {
 
   it("logs enqueue message with provider count and day range", async () => {
     mockGetEnabledProviders.mockReturnValue([{ id: "strava" }, { id: "wahoo" }]);
-    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
     await handleSyncCommand(["node", "index.ts", "sync"]);
-    expect(spy).toHaveBeenCalledWith(
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
       expect.stringContaining("[sync] Enqueued sync job for 2 provider(s)"),
     );
-    expect(spy).toHaveBeenCalledWith(expect.stringContaining("last 7 days"));
-    spy.mockRestore();
+    expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("last 7 days"));
   });
 
   it("logs 'all time' label for full sync", async () => {
     mockGetEnabledProviders.mockReturnValue([{ id: "strava" }]);
-    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
     await handleSyncCommand(["node", "index.ts", "sync", "--full-sync"]);
-    expect(spy).toHaveBeenCalledWith(expect.stringContaining("all time"));
-    spy.mockRestore();
+    expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("all time"));
   });
 
   it("creates Worker with processSyncJob callback and connection", async () => {
@@ -185,10 +192,8 @@ describe("handleSyncCommand", () => {
 
   it("logs done message on success", async () => {
     mockGetEnabledProviders.mockReturnValue([{ id: "strava" }]);
-    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
     await handleSyncCommand(["node", "index.ts", "sync"]);
-    expect(spy).toHaveBeenCalledWith("[sync] Done.");
-    spy.mockRestore();
+    expect(mockLoggerInfo).toHaveBeenCalledWith("[sync] Done.");
   });
 
   it("returns 1 when job fails", async () => {
@@ -201,10 +206,8 @@ describe("handleSyncCommand", () => {
   it("logs error message on failure", async () => {
     mockGetEnabledProviders.mockReturnValue([{ id: "strava" }]);
     mockWaitUntilFinished.mockRejectedValue(new Error("sync failed"));
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     await handleSyncCommand(["node", "index.ts", "sync"]);
-    expect(spy).toHaveBeenCalledWith(expect.stringContaining("[sync] Failed:"));
-    spy.mockRestore();
+    expect(mockLoggerError).toHaveBeenCalledWith(expect.stringContaining("[sync] Failed:"));
   });
 
   it("passes undefined sinceDays for --full-sync", async () => {
@@ -259,20 +262,16 @@ describe("handleAuthCommand", () => {
 
   it("returns 1 when no provider arg given", async () => {
     mockGetAllProviders.mockReturnValue([]);
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const code = await handleAuthCommand(["node", "index.ts", "auth"]);
     expect(code).toBe(1);
-    expect(spy).toHaveBeenCalledWith(expect.stringContaining("Usage: health-data auth"));
-    spy.mockRestore();
+    expect(mockLoggerError).toHaveBeenCalledWith(expect.stringContaining("Usage: health-data auth"));
   });
 
   it("returns 1 when provider not found", async () => {
     mockGetAllProviders.mockReturnValue([{ id: "strava", authSetup: () => ({}) }]);
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const code = await handleAuthCommand(["node", "index.ts", "auth", "unknown"]);
     expect(code).toBe(1);
-    expect(spy).toHaveBeenCalledWith(expect.stringContaining("Usage: health-data auth <strava>"));
-    spy.mockRestore();
+    expect(mockLoggerError).toHaveBeenCalledWith(expect.stringContaining("Usage: health-data auth <strava>"));
   });
 
   it("returns 1 when provider validation fails", async () => {
@@ -284,11 +283,9 @@ describe("handleAuthCommand", () => {
         validate: () => "Missing STRAVA_CLIENT_ID",
       },
     ]);
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const code = await handleAuthCommand(["node", "index.ts", "auth", "strava"]);
     expect(code).toBe(1);
-    expect(spy).toHaveBeenCalledWith("[auth] Missing STRAVA_CLIENT_ID");
-    spy.mockRestore();
+    expect(mockLoggerError).toHaveBeenCalledWith("[auth] Missing STRAVA_CLIENT_ID");
   });
 
   it("returns 1 when authSetup() returns undefined", async () => {
@@ -300,14 +297,12 @@ describe("handleAuthCommand", () => {
         validate: () => null,
       },
     ]);
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const code = await handleAuthCommand(["node", "index.ts", "auth", "strava"]);
     expect(code).toBe(1);
-    expect(spy).toHaveBeenCalledWith(
+    expect(mockLoggerError).toHaveBeenCalledWith(
       expect.stringContaining("[auth] Provider strava is not configured for OAuth"),
     );
-    expect(spy).toHaveBeenCalledWith(expect.stringContaining("STRAVA_CLIENT_ID"));
-    spy.mockRestore();
+    expect(mockLoggerError).toHaveBeenCalledWith(expect.stringContaining("STRAVA_CLIENT_ID"));
   });
 
   it("handles OAuth 2.0 browser flow and saves tokens", async () => {
@@ -328,7 +323,6 @@ describe("handleAuthCommand", () => {
     ]);
     mockWaitForAuthCode.mockResolvedValue({ code: "auth-code-123", cleanup: mockCleanup });
 
-    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
     const code = await handleAuthCommand(["node", "index.ts", "auth", "strava"]);
 
     expect(code).toBe(0);
@@ -341,9 +335,8 @@ describe("handleAuthCommand", () => {
       "https://www.strava.com/api/v3",
     );
     expect(mockSaveTokens).toHaveBeenCalledWith(expect.any(Object), "strava", mockTokens);
-    expect(spy).toHaveBeenCalledWith(expect.stringContaining("[auth] Authorized!"));
-    expect(spy).toHaveBeenCalledWith("[auth] Tokens saved to database.");
-    spy.mockRestore();
+    expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("[auth] Authorized!"));
+    expect(mockLoggerInfo).toHaveBeenCalledWith("[auth] Tokens saved to database.");
   });
 
   it("uses buildAuthorizationUrl when setup.authUrl is not provided", async () => {
@@ -382,11 +375,9 @@ describe("handleAuthCommand", () => {
     ]);
     mockWaitForAuthCode.mockResolvedValue({ code: "code", cleanup: mockCleanup });
 
-    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
     await handleAuthCommand(["node", "index.ts", "auth", "strava"]);
     expect(mockBuildAuthorizationUrl).not.toHaveBeenCalled();
-    expect(spy).toHaveBeenCalledWith(expect.stringContaining("https://custom-auth.example.com"));
-    spy.mockRestore();
+    expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("https://custom-auth.example.com"));
   });
 
   it("detects https callback URL", async () => {
@@ -438,7 +429,6 @@ describe("handleAuthCommand", () => {
     ]);
     mockWaitForAuthCode.mockResolvedValue({ code: "verifier-123", cleanup: mockCleanup });
 
-    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
     const code = await handleAuthCommand(["node", "index.ts", "auth", "fatsecret"]);
 
     expect(code).toBe(0);
@@ -459,9 +449,8 @@ describe("handleAuthCommand", () => {
       expiresAt: new Date("2099-12-31T23:59:59Z"),
       scopes: "",
     });
-    expect(spy).toHaveBeenCalledWith("[auth] Requesting OAuth 1.0 request token...");
-    expect(spy).toHaveBeenCalledWith("[auth] Exchanging for access token...");
-    spy.mockRestore();
+    expect(mockLoggerInfo).toHaveBeenCalledWith("[auth] Requesting OAuth 1.0 request token...");
+    expect(mockLoggerInfo).toHaveBeenCalledWith("[auth] Exchanging for access token...");
   });
 
   it("handles automated login flow", async () => {
@@ -483,15 +472,13 @@ describe("handleAuthCommand", () => {
     process.env.PELOTON_USERNAME = "user@test.com";
     process.env.PELOTON_PASSWORD = "secret123";
 
-    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
     const code = await handleAuthCommand(["node", "index.ts", "auth", "peloton"]);
 
     expect(code).toBe(0);
     expect(mockAutomatedLogin).toHaveBeenCalledWith("user@test.com", "secret123");
-    expect(spy).toHaveBeenCalledWith("[auth] Logging in as user@test.com...");
+    expect(mockLoggerInfo).toHaveBeenCalledWith("[auth] Logging in as user@test.com...");
 
     process.env = savedEnv;
-    spy.mockRestore();
   });
 
   it("returns 1 when automated login credentials missing", async () => {
@@ -512,16 +499,14 @@ describe("handleAuthCommand", () => {
     delete process.env.PELOTON_USERNAME;
     delete process.env.PELOTON_PASSWORD;
 
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const code = await handleAuthCommand(["node", "index.ts", "auth", "peloton"]);
 
     expect(code).toBe(1);
-    expect(spy).toHaveBeenCalledWith(
+    expect(mockLoggerError).toHaveBeenCalledWith(
       expect.stringContaining("PELOTON_USERNAME and PELOTON_PASSWORD required"),
     );
 
     process.env = savedEnv;
-    spy.mockRestore();
   });
 
   it("registers providers before checking auth", async () => {
@@ -546,10 +531,8 @@ describe("handleAuthCommand", () => {
     mockWaitForAuthCode.mockResolvedValue({ code: "code", cleanup: mockCleanup });
     mockBuildAuthorizationUrl.mockReturnValue("https://auth.example.com/oauth");
 
-    vi.spyOn(console, "log").mockImplementation(() => {});
     await handleAuthCommand(["node", "index.ts", "auth", "strava"]);
     expect(mockExecFile).toHaveBeenCalledWith("open", ["https://auth.example.com/oauth"]);
-    vi.restoreAllMocks();
   });
 });
 
@@ -559,21 +542,17 @@ describe("handleImportCommand", () => {
   });
 
   it("returns 1 when subcommand is not recognized", async () => {
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const code = await handleImportCommand(["node", "index.ts", "import"]);
     expect(code).toBe(1);
-    expect(spy).toHaveBeenCalledWith("Usage: health-data import <apple-health> <file>");
-    spy.mockRestore();
+    expect(mockLoggerError).toHaveBeenCalledWith("Usage: health-data import <apple-health> <file>");
   });
 
   it("returns 1 when apple-health file path missing", async () => {
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const code = await handleImportCommand(["node", "index.ts", "import", "apple-health"]);
     expect(code).toBe(1);
-    expect(spy).toHaveBeenCalledWith(
+    expect(mockLoggerError).toHaveBeenCalledWith(
       expect.stringContaining("Usage: health-data import apple-health"),
     );
-    spy.mockRestore();
   });
 
   it("imports apple-health file and returns 0 on success", async () => {
@@ -583,7 +562,6 @@ describe("handleImportCommand", () => {
       duration: 1234,
     });
 
-    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
     const code = await handleImportCommand([
       "node",
       "index.ts",
@@ -598,8 +576,7 @@ describe("handleImportCommand", () => {
       "/path/to/export.zip",
       expect.any(Date),
     );
-    expect(spy).toHaveBeenCalledWith("[import] Done: 42 records, 0 errors in 1234ms");
-    spy.mockRestore();
+    expect(mockLoggerInfo).toHaveBeenCalledWith("[import] Done: 42 records, 0 errors in 1234ms");
   });
 
   it("returns 1 and logs errors when import has errors", async () => {
@@ -609,8 +586,6 @@ describe("handleImportCommand", () => {
       duration: 500,
     });
 
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const code = await handleImportCommand([
       "node",
       "index.ts",
@@ -620,10 +595,8 @@ describe("handleImportCommand", () => {
     ]);
 
     expect(code).toBe(1);
-    expect(errSpy).toHaveBeenCalledWith("  - bad record");
-    expect(errSpy).toHaveBeenCalledWith("  - another bad");
-    logSpy.mockRestore();
-    errSpy.mockRestore();
+    expect(mockLoggerError).toHaveBeenCalledWith("  - bad record");
+    expect(mockLoggerError).toHaveBeenCalledWith("  - another bad");
   });
 
   it("uses full sync when --full-sync flag present", async () => {
@@ -633,7 +606,6 @@ describe("handleImportCommand", () => {
       duration: 2000,
     });
 
-    vi.spyOn(console, "log").mockImplementation(() => {});
     await handleImportCommand([
       "node",
       "index.ts",
@@ -649,7 +621,6 @@ describe("handleImportCommand", () => {
       "/path/to/export.zip",
       new Date(0),
     );
-    vi.restoreAllMocks();
   });
 
   it("uses --since-days for import", async () => {
@@ -659,7 +630,6 @@ describe("handleImportCommand", () => {
       duration: 1000,
     });
 
-    vi.spyOn(console, "log").mockImplementation(() => {});
     const before = Date.now();
     await handleImportCommand([
       "node",
@@ -674,6 +644,5 @@ describe("handleImportCommand", () => {
     const sinceArg: Date = mockImportAppleHealthFile.mock.calls[0]?.[2];
     const expectedSince = before - 30 * 24 * 60 * 60 * 1000;
     expect(Math.abs(sinceArg.getTime() - expectedSince)).toBeLessThan(1000);
-    vi.restoreAllMocks();
   });
 });
