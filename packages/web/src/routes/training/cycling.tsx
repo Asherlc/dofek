@@ -323,7 +323,8 @@ function PeriodLabel({
       <span style={{ color }}>{label}</span>
       {model && (
         <span className="text-zinc-600">
-          eFTP {model.cp}w · W' {Math.round(model.wPrime)}J
+          Estimated Threshold Power {model.cp}w · Anaerobic Reserve (W'){" "}
+          {Math.round(model.wPrime / 1000)}kJ
         </span>
       )}
     </span>

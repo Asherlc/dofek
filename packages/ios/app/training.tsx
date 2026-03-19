@@ -4,6 +4,7 @@ import Svg, { Rect, Text as SvgText, Path } from "react-native-svg";
 import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
 import { scoreColor, scoreLabel, workloadRatioColor, workloadRatioHint, rampRateColor } from "@dofek/shared/scoring";
+import { formatPace } from "@dofek/shared/format";
 import { statusColors } from "@dofek/shared/colors";
 
 // ── Types ──
@@ -467,12 +468,6 @@ function RunningTab({ days }: { days: number }) {
 
   const paceData = paceTrend.data ?? [];
   const dynamicsData = dynamics.data ?? [];
-
-  const formatPace = (secondsPerKm: number) => {
-    const mins = Math.floor(secondsPerKm / 60);
-    const secs = Math.round(secondsPerKm % 60);
-    return `${mins}:${secs.toString().padStart(2, "0")}`;
-  };
 
   return (
     <View>
