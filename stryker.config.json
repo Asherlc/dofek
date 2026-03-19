@@ -31,7 +31,9 @@
   ],
   "ignorePatterns": [
     "dist/**",
-    "drizzle/**"
+    "drizzle/**",
+    ".codex/**",
+    ".context/**"
   ],
   "testRunnerNodeArgs": ["--import", "tsx"],
   "timeoutMS": 30000,

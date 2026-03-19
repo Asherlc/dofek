@@ -205,6 +205,39 @@ describe("instrumentation", () => {
     expect(ExpressInstrumentation).toHaveBeenCalled();
   });
 
+  it("only configures log processors/instrumentations when only logs endpoint exists", async () => {
+    const { startInstrumentation } = await import("./instrumentation.ts");
+
+    startInstrumentation({
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: "http://localhost:4318/v1/logs",
+    });
+
+    expect(NodeSDK).toHaveBeenCalledOnce();
+    const calls = vi.mocked(NodeSDK).mock.calls;
+    const config = calls[0]?.[0];
+    expect(config).toBeDefined();
+    expect(config?.spanProcessors).toHaveLength(0);
+    expect(config?.logRecordProcessors).toHaveLength(1);
+    expect(config?.instrumentations).toHaveLength(1);
+    expect(BatchSpanProcessor).not.toHaveBeenCalled();
+    expect(BatchLogRecordProcessor).toHaveBeenCalledWith(expect.any(OTLPLogExporter));
+    expect(WinstonInstrumentation).toHaveBeenCalled();
+    expect(HttpInstrumentation).not.toHaveBeenCalled();
+    expect(ExpressInstrumentation).not.toHaveBeenCalled();
+  });
+
+  it("does not override configured endpoint with *_unencrypted fallback", async () => {
+    const { startInstrumentation } = await import("./instrumentation.ts");
+    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://process.example";
+
+    startInstrumentation({
+      OTEL_EXPORTER_OTLP_ENDPOINT: "https://configured.example",
+      OTEL_EXPORTER_OTLP_ENDPOINT_unencrypted: "https://fallback.example",
+    });
+
+    expect(process.env.OTEL_EXPORTER_OTLP_ENDPOINT).toBe("https://process.example");
+  });
+
   it("registers SIGTERM and SIGINT handlers that call sdk.shutdown", async () => {
     const { startInstrumentation } = await import("./instrumentation.ts");
 
