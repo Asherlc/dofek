@@ -15,6 +15,9 @@ export default defineConfig({
     ...sharedTestConfig,
     projects: [
       {
+        esbuild: {
+          jsx: "automatic",
+        },
         test: {
           ...sharedTestConfig,
           name: "unit",
