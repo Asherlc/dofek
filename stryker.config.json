@@ -32,8 +32,9 @@
   "ignorePatterns": [
     "dist/**",
     "drizzle/**",
-    "packages/server/src/routers/training.ts",
-    "packages/shared/src/workout-recommendation.ts"
+    ".codex/**",
+    ".claude/**",
+    ".context/**"
   ],
   "testRunnerNodeArgs": ["--import", "tsx"],
   "timeoutMS": 30000,
