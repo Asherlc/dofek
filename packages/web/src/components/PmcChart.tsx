@@ -42,13 +42,17 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
     );
   }
 
-  // Split TSB into positive (green) and negative (red) for area coloring
-  const tsbPositive = data.map((d) => (d.tsb >= 0 ? d.tsb : 0));
-  const tsbNegative = data.map((d) => (d.tsb < 0 ? d.tsb : 0));
+  const formZoneLabel = (name: string) => ({
+    show: true,
+    position: "insideRight" as const,
+    color: "#a1a1aa",
+    fontSize: 10,
+    formatter: () => name,
+  });
 
   const option = {
     backgroundColor: "transparent",
-    grid: { top: 40, right: 70, bottom: 50, left: 60 },
+    grid: { top: 40, right: 120, bottom: 50, left: 60 },
     tooltip: {
       trigger: "axis" as const,
       backgroundColor: "#18181b",
@@ -67,12 +71,14 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
           day: "numeric",
           year: "numeric",
         });
+        const zone =
+          d.tsb > 25 ? "Transition" : d.tsb > 5 ? "Fresh" : d.tsb > -10 ? "Grey" : "High Risk";
         return [
           `<strong>${label}</strong>`,
           `<span style="color:#71717a">Load:</span> ${d.load.toFixed(1)}`,
           `<span style="color:#3b82f6">Fitness (Chronic Training Load):</span> ${d.ctl.toFixed(1)}`,
           `<span style="color:#ec4899">Fatigue (Acute Training Load):</span> ${d.atl.toFixed(1)}`,
-          `<span style="color:${d.tsb >= 0 ? "#22c55e" : "#ef4444"}">Form (Training Stress Balance):</span> ${d.tsb.toFixed(1)}`,
+          `<span style="color:#f97316">Form (Training Stress Balance):</span> ${d.tsb.toFixed(1)} (${zone})`,
         ].join("<br/>");
       },
     },
@@ -81,8 +87,7 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
         "Load",
         "Fitness (Chronic Training Load)",
         "Fatigue (Acute Training Load)",
-        "Form +",
-        "Form -",
+        "Form (Training Stress Balance)",
       ],
       textStyle: { color: "#a1a1aa", fontSize: 11 },
       top: 0,
@@ -118,7 +123,7 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
         data: data.map((d) => [d.date, d.load]),
         itemStyle: { color: "#71717a", opacity: 0.35 },
         yAxisIndex: 0,
-        z: 1,
+        z: 2,
       },
       {
         name: "Fitness (Chronic Training Load)",
@@ -143,28 +148,52 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
         z: 3,
       },
       {
-        name: "Form +",
+        name: "Form (Training Stress Balance)",
         type: "line",
-        data: data.map((d, i) => [d.date, tsbPositive[i]]),
+        data: data.map((d) => [d.date, d.tsb]),
         smooth: true,
         symbol: "none",
-        lineStyle: { width: 0 },
-        areaStyle: { color: "#22c55e", opacity: 0.25 },
-        itemStyle: { color: "#22c55e" },
+        lineStyle: { color: "#f97316", width: 2 },
+        itemStyle: { color: "#f97316" },
         yAxisIndex: 1,
-        z: 2,
-      },
-      {
-        name: "Form -",
-        type: "line",
-        data: data.map((d, i) => [d.date, tsbNegative[i]]),
-        smooth: true,
-        symbol: "none",
-        lineStyle: { width: 0 },
-        areaStyle: { color: "#ef4444", opacity: 0.25 },
-        itemStyle: { color: "#ef4444" },
-        yAxisIndex: 1,
-        z: 2,
+        z: 3,
+        markArea: {
+          silent: true,
+          data: [
+            [
+              {
+                yAxis: 25,
+                itemStyle: { color: "rgba(96, 165, 250, 0.12)" },
+                label: formZoneLabel("Transition"),
+              },
+              { yAxis: 100 },
+            ],
+            [
+              {
+                yAxis: 5,
+                itemStyle: { color: "rgba(74, 222, 128, 0.12)" },
+                label: formZoneLabel("Fresh"),
+              },
+              { yAxis: 25 },
+            ],
+            [
+              {
+                yAxis: -10,
+                itemStyle: { color: "rgba(161, 161, 170, 0.08)" },
+                label: formZoneLabel("Grey"),
+              },
+              { yAxis: 5 },
+            ],
+            [
+              {
+                yAxis: -100,
+                itemStyle: { color: "rgba(248, 113, 113, 0.12)" },
+                label: formZoneLabel("High Risk"),
+              },
+              { yAxis: -10 },
+            ],
+          ],
+        },
       },
     ],
   };
