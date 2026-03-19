@@ -10,6 +10,7 @@ import {
   nutritionDaily,
   sleepSession,
 } from "../../db/schema.ts";
+import { logger } from "../../logger.ts";
 import type { HealthRecord } from "./records.ts";
 import type { SleepAnalysisRecord } from "./sleep.ts";
 import type { HealthWorkout } from "./workouts.ts";
@@ -44,7 +45,7 @@ export async function insertWithDuplicateDiag<T extends Record<string, unknown>>
   } catch (err) {
     if (err instanceof Error && err.message.includes("cannot affect row a second time")) {
       const uniqueRows = deduplicateByKey(rows, conflictKey);
-      console.warn(
+      logger.warn(
         `[apple_health] Deduplicated ${label} batch: ${rows.length} → ${uniqueRows.length} rows (${rows.length - uniqueRows.length} duplicates removed)`,
       );
       await doInsert(uniqueRows);
