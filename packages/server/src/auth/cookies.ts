@@ -74,8 +74,9 @@ export function getLinkUserCookie(req: Request): string | undefined {
 
 // ── Session from request (cookie or Authorization header) ──
 
-/** Extract session ID from either the session cookie or an Authorization: Bearer header.
- *  Prefers cookie when both are present. Used for mobile clients that can't rely on cookies. */
+/** Extract session ID from the session cookie, Authorization: Bearer header, or `session` query parameter.
+ *  Priority: cookie > header > query param. Query param fallback supports mobile in-app browsers
+ *  (e.g. SFSafariViewController) that cannot send cookies or custom headers. */
 export function getSessionIdFromRequest(req: Request): string | undefined {
   const cookieSession = getSessionCookie(req);
   if (cookieSession) return cookieSession;
@@ -83,8 +84,11 @@ export function getSessionIdFromRequest(req: Request): string | undefined {
   const authHeader = req.headers?.authorization;
   if (typeof authHeader === "string" && authHeader.startsWith("Bearer ")) {
     const token = authHeader.slice(7);
-    return token.length > 0 ? token : undefined;
+    if (token.length > 0) return token;
   }
+
+  const querySession = req.query?.session;
+  if (typeof querySession === "string" && querySession.length > 0) return querySession;
 
   return undefined;
 }

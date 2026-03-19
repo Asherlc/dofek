@@ -74,7 +74,7 @@ describe("SlackIntegrationPanel", () => {
 
     await waitFor(() => {
       expect(WebBrowser.openBrowserAsync).toHaveBeenCalledWith(
-        "https://dofek.test/auth/provider/slack",
+        "https://dofek.test/auth/provider/slack?session=test-session-token",
         expect.objectContaining({
           presentationStyle: "pageSheet",
         }),

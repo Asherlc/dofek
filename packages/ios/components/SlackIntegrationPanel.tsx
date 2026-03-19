@@ -1,14 +1,18 @@
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import * as WebBrowser from "expo-web-browser";
 import { trpc } from "../lib/trpc";
+import { useAuth } from "../lib/auth-context";
 import { SERVER_URL } from "../lib/server";
 import { colors } from "../theme";
 
 export function SlackIntegrationPanel() {
   const { data, isLoading, refetch } = trpc.settings.slackStatus.useQuery();
+  const { sessionToken } = useAuth();
 
   async function handleConnect() {
-    await WebBrowser.openBrowserAsync(`${SERVER_URL}/auth/provider/slack`, {
+    const url = new URL(`${SERVER_URL}/auth/provider/slack`);
+    if (sessionToken) url.searchParams.set("session", sessionToken);
+    await WebBrowser.openBrowserAsync(url.toString(), {
       presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
     });
     refetch();

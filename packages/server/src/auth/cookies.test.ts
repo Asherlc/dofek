@@ -247,6 +247,30 @@ describe("Auth cookies", () => {
       const req = mockRequest({}, { authorization: "Bearer " });
       expect(getSessionIdFromRequest(req)).toBeUndefined();
     });
+
+    it("returns session from query parameter when no cookie or header", () => {
+      const req = mockRequest({});
+      req.query = { session: "query-session" };
+      expect(getSessionIdFromRequest(req)).toBe("query-session");
+    });
+
+    it("prefers cookie over query parameter", () => {
+      const req = mockRequest({ session: "cookie-session" });
+      req.query = { session: "query-session" };
+      expect(getSessionIdFromRequest(req)).toBe("cookie-session");
+    });
+
+    it("prefers Authorization header over query parameter", () => {
+      const req = mockRequest({}, { authorization: "Bearer header-session" });
+      req.query = { session: "query-session" };
+      expect(getSessionIdFromRequest(req)).toBe("header-session");
+    });
+
+    it("ignores non-string query parameter", () => {
+      const req = mockRequest({});
+      req.query = { session: ["array-value"] };
+      expect(getSessionIdFromRequest(req)).toBeUndefined();
+    });
   });
 
   describe("setMobileSchemeCookie", () => {
