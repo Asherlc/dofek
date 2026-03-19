@@ -7,6 +7,7 @@ describe("PROVIDER_LABELS", () => {
     expect(PROVIDER_LABELS.whoop).toBe("WHOOP");
     expect(PROVIDER_LABELS["ride-with-gps"]).toBe("Ride with GPS");
     expect(PROVIDER_LABELS["cronometer-csv"]).toBe("Cronometer");
+    expect(PROVIDER_LABELS.apple_health).toBe("Apple Health");
   });
 
   it("all values are non-empty strings", () => {
@@ -22,6 +23,7 @@ describe("providerLabel", () => {
   it("returns the label for a known provider ID", () => {
     expect(providerLabel("strava")).toBe("Strava");
     expect(providerLabel("eight-sleep")).toBe("Eight Sleep");
+    expect(providerLabel("apple_health")).toBe("Apple Health");
   });
 
   it("falls back to the raw ID for unknown providers", () => {
