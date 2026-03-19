@@ -7,30 +7,49 @@ import { BatchLogRecordProcessor } from "@opentelemetry/sdk-logs";
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-node";
 
+function resolveOtelEnvValue(
+  env: Record<string, string | undefined>,
+  key: string,
+): string | undefined {
+  const configured = env[key];
+  if (configured) {
+    return configured;
+  }
+
+  const unencrypted = env[`${key}_unencrypted`];
+  if (unencrypted) {
+    process.env[key] = unencrypted;
+    return unencrypted;
+  }
+
+  return undefined;
+}
+
 /**
- * Starts OpenTelemetry instrumentation when OTEL_EXPORTER_OTLP_ENDPOINT is set.
- * Also checks OTEL_EXPORTER_OTLP_ENDPOINT_unencrypted (SOPS stores non-secret
- * values with this suffix to keep them in plaintext).
+ * Starts OpenTelemetry instrumentation when OTLP export env vars are set.
+ * Also checks *_unencrypted variants (SOPS stores non-secret values with this
+ * suffix to keep them in plaintext).
  * Returns the SDK instance for shutdown, or undefined if OTel is disabled.
  */
 export function startInstrumentation(
   env: Record<string, string | undefined> = process.env,
 ): NodeSDK | undefined {
-  const endpoint = env.OTEL_EXPORTER_OTLP_ENDPOINT ?? env.OTEL_EXPORTER_OTLP_ENDPOINT_unencrypted;
-  if (!endpoint) {
+  const endpoint = resolveOtelEnvValue(env, "OTEL_EXPORTER_OTLP_ENDPOINT");
+  const tracesEndpoint = resolveOtelEnvValue(env, "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT");
+  const logsEndpoint = resolveOtelEnvValue(env, "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT");
+
+  const hasTraceExport = Boolean(endpoint || tracesEndpoint);
+  const hasLogExport = Boolean(endpoint || logsEndpoint);
+  if (!hasTraceExport && !hasLogExport) {
     return undefined;
   }
 
-  // Set the standard env var so the OTel SDK auto-configures from it
-  process.env.OTEL_EXPORTER_OTLP_ENDPOINT = endpoint;
-
   const sdk = new NodeSDK({
-    spanProcessors: [new BatchSpanProcessor(new OTLPTraceExporter())],
-    logRecordProcessors: [new BatchLogRecordProcessor(new OTLPLogExporter())],
+    spanProcessors: hasTraceExport ? [new BatchSpanProcessor(new OTLPTraceExporter())] : [],
+    logRecordProcessors: hasLogExport ? [new BatchLogRecordProcessor(new OTLPLogExporter())] : [],
     instrumentations: [
-      new WinstonInstrumentation(),
-      new HttpInstrumentation(),
-      new ExpressInstrumentation(),
+      ...(hasLogExport ? [new WinstonInstrumentation()] : []),
+      ...(hasTraceExport ? [new HttpInstrumentation(), new ExpressInstrumentation()] : []),
     ],
   });
 

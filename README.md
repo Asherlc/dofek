@@ -292,6 +292,24 @@ cd /opt/dofek && docker compose up -d web
 
 **Note:** The in-memory ring buffer and Docker container logs are still available for quick debugging, but Axiom is the primary log store.
 
+### OpenTelemetry (Provider-Agnostic)
+
+Frontend telemetry is initialized in `packages/web/src/lib/telemetry.ts` and only activates when `VITE_OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` (or `VITE_OTEL_EXPORTER_OTLP_ENDPOINT`) is set.
+
+The browser instrumentation propagates trace headers on `/api`, `/auth`, and `/callback` so backend OpenTelemetry can continue frontend traces.
+
+Backend telemetry is initialized in `src/instrumentation.ts` and supports both standard OTLP env vars and SOPS plaintext fallback keys with `_unencrypted` suffix for endpoints:
+- `OTEL_EXPORTER_OTLP_ENDPOINT_unencrypted`
+- `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT_unencrypted`
+- `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT_unencrypted`
+
+Example OTLP endpoint for Sentry (as a backend destination):
+
+```bash
+OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://o<ORG_ID>.ingest.sentry.io/api/<PROJECT_ID>/otlp/v1/traces
+OTEL_EXPORTER_OTLP_TRACES_HEADERS=Authorization=Bearer <SENTRY_AUTH_TOKEN>
+```
+
 ### Production secrets
 
 There are two sources of environment variables for the production containers:

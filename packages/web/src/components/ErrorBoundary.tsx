@@ -1,4 +1,5 @@
 import { Component, type ReactNode } from "react";
+import { captureException } from "../lib/telemetry.ts";
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -18,6 +19,12 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    captureException(error, {
+      "react.component_stack": errorInfo.componentStack ?? "",
+    });
   }
 
   render() {
