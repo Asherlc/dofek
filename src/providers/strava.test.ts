@@ -6,6 +6,7 @@ import {
   type StravaActivity,
   StravaClient,
   type StravaDetailedActivity,
+  StravaNotFoundError,
   StravaProvider,
   StravaRateLimitError,
   type StravaStreamSet,
@@ -496,7 +497,7 @@ describe("StravaClient — error handling", () => {
     await expect(client.getActivities(0)).rejects.toThrow("Strava API error (500): Server Error");
   });
 
-  it("shows clean message for HTML error responses instead of dumping HTML", async () => {
+  it("throws StravaNotFoundError for HTML 404 responses", async () => {
     const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("<html><body>Not Found</body></html>", {
         status: 404,
@@ -505,12 +506,10 @@ describe("StravaClient — error handling", () => {
     };
 
     const client = new StravaClient("token", mockFetch);
-    await expect(client.getActivities(0)).rejects.toThrow(
-      "Strava API error (404): (HTML error page)",
-    );
+    await expect(client.getActivities(0)).rejects.toThrow(StravaNotFoundError);
   });
 
-  it("includes JSON body for JSON error responses", async () => {
+  it("throws StravaNotFoundError for JSON 404 responses", async () => {
     const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response(JSON.stringify({ message: "Not Found", errors: [] }), {
         status: 404,
@@ -519,9 +518,7 @@ describe("StravaClient — error handling", () => {
     };
 
     const client = new StravaClient("token", mockFetch);
-    await expect(client.getActivities(0)).rejects.toThrow(
-      'Strava API error (404): {"message":"Not Found","errors":[]}',
-    );
+    await expect(client.getActivities(0)).rejects.toThrow(StravaNotFoundError);
   });
 
   it("truncates long plain-text error responses", async () => {
@@ -542,6 +539,15 @@ describe("StravaRateLimitError", () => {
     const error = new StravaRateLimitError("Rate limited");
     expect(error.name).toBe("StravaRateLimitError");
     expect(error.message).toBe("Rate limited");
+    expect(error).toBeInstanceOf(Error);
+  });
+});
+
+describe("StravaNotFoundError", () => {
+  it("has correct name and message", () => {
+    const error = new StravaNotFoundError("Not found");
+    expect(error.name).toBe("StravaNotFoundError");
+    expect(error.message).toBe("Not found");
     expect(error).toBeInstanceOf(Error);
   });
 });

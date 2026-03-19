@@ -84,6 +84,12 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
         pct: computePct(completedCount, 0, totalProviders),
       });
 
+      if (hasErrors) {
+        for (const err of result.errors) {
+          logger.error(`[worker] ${provider.name} sync error: ${err.message}`);
+        }
+      }
+
       await logSync(db, {
         providerId: provider.id,
         dataType: "sync",
