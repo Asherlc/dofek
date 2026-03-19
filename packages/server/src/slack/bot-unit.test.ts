@@ -149,18 +149,10 @@ describe("bot.ts — registerHandlers", () => {
       const db = createMockDb();
       const mockExecute = getMockExecute(db);
 
-      // lookupOrCreateUserId: no existing slack link
-      mockExecute.mockResolvedValueOnce([]); // slack profile fetch — users.info
-      // no existing auth_account for slack
+      // lookupOrCreateUserId: no existing slack auth link
       mockExecute.mockResolvedValueOnce([]);
-      // resolveOrCreateUserId: no auth_account by email
-      mockExecute.mockResolvedValueOnce([]);
-      // no user_profile by email
-      mockExecute.mockResolvedValueOnce([]);
-      // user count = 0 (multi-user, create new)
-      mockExecute.mockResolvedValueOnce([{ count: "0", id: null }]);
-      // insert user_profile
-      mockExecute.mockResolvedValueOnce([{ id: "user-123" }]);
+      // resolveUserByEmail: auth_account by email → found
+      mockExecute.mockResolvedValueOnce([{ user_id: "user-123" }]);
       // link slack auth_account
       mockExecute.mockResolvedValueOnce([]);
       // ensureDofekProvider
@@ -361,9 +353,7 @@ describe("bot.ts — registerHandlers", () => {
       // lookupOrCreateUserId:
       // 1. check existing auth_account for slack link
       mockExecute.mockResolvedValueOnce([{ user_id: "user-123" }]);
-      // 2. check realUsers (orphan check — no email so canonical check skipped)
-      mockExecute.mockResolvedValueOnce([]);
-      // 3. load previous items from DB
+      // 2. load previous items from DB
       mockExecute.mockResolvedValueOnce([
         {
           food_name: "Eggs",
@@ -491,9 +481,7 @@ describe("bot.ts — registerHandlers", () => {
       // lookupOrCreateUserId:
       // 1. check existing auth_account for slack link
       mockExecute.mockResolvedValueOnce([{ user_id: "user-123" }]);
-      // 2. check realUsers (orphan check — no email so canonical check skipped)
-      mockExecute.mockResolvedValueOnce([]);
-      // 3. load previous items from DB
+      // 2. load previous items from DB
       mockExecute.mockResolvedValueOnce([
         {
           food_name: "Eggs",
@@ -942,20 +930,12 @@ describe("bot.ts — registerHandlers", () => {
       expect(chatUpdate).toHaveBeenCalled();
     });
 
-    it("repairs orphan via single-user fallback when no email match", async () => {
+    it("uses existing link without repair when no email available", async () => {
       const db = createMockDb();
       const mockExecute = getMockExecute(db);
 
-      // existing slack auth_account found
-      mockExecute.mockResolvedValueOnce([{ user_id: "orphan-user" }]);
-      // no canonical auth_account by email
-      mockExecute.mockResolvedValueOnce([]);
-      // single real user with non-slack auth
-      mockExecute.mockResolvedValueOnce([{ user_id: "real-user" }]);
-      // UPDATE auth_account
-      mockExecute.mockResolvedValueOnce([]);
-      // UPDATE food_entry
-      mockExecute.mockResolvedValueOnce([]);
+      // existing slack auth_account found — no email available so no orphan repair
+      mockExecute.mockResolvedValueOnce([{ user_id: "existing-user" }]);
 
       const { messageHandler } = setupHandlers(db);
 
@@ -972,7 +952,7 @@ describe("bot.ts — registerHandlers", () => {
       const client = {
         users: {
           info: vi.fn().mockResolvedValue({
-            user: { tz: "UTC", real_name: "Test", profile: { email: "test@example.com" } },
+            user: { tz: "UTC", real_name: "Test" },
           }),
         },
         chat: { postMessage: chatPostMessage, update: chatUpdate },
@@ -984,45 +964,33 @@ describe("bot.ts — registerHandlers", () => {
         client,
       });
 
+      // Should use existing link directly, food gets logged
       expect(chatUpdate).toHaveBeenCalled();
     });
   });
 
-  describe("resolveOrCreateUserId — single user fallback", () => {
-    it("falls back to sole user when no email match and single user exists", async () => {
+  describe("resolveUserByEmail", () => {
+    it("replies with error when no email match found", async () => {
       const db = createMockDb();
       const mockExecute = getMockExecute(db);
 
       // lookupOrCreateUserId: no existing slack auth link
       mockExecute.mockResolvedValueOnce([]);
-      // resolveOrCreateUserId: no auth_account by email
+      // resolveUserByEmail: no auth_account by email
       mockExecute.mockResolvedValueOnce([]);
       // no user_profile by email
-      mockExecute.mockResolvedValueOnce([]);
-      // exactly 1 user
-      mockExecute.mockResolvedValueOnce([{ count: "1", id: "sole-user" }]);
-      // link slack auth_account
       mockExecute.mockResolvedValueOnce([]);
 
       const { messageHandler } = setupHandlers(db);
 
-      // ensureDofekProvider
-      mockExecute.mockResolvedValueOnce([]);
-      // insert food_entry
-      mockExecute.mockResolvedValueOnce([{ id: "entry-1" }]);
-
-      mockAnalyze.mockResolvedValueOnce({ items: [makeFoodItem()], provider: "gemini" });
-
       const say = vi.fn();
-      const chatPostMessage = vi.fn().mockResolvedValue({ ts: "thinking-ts" });
-      const chatUpdate = vi.fn().mockResolvedValue({});
       const client = {
         users: {
           info: vi.fn().mockResolvedValue({
-            user: { tz: "UTC", real_name: "Solo User", profile: { email: "solo@test.com" } },
+            user: { tz: "UTC", real_name: "Unknown", profile: { email: "unknown@test.com" } },
           }),
         },
-        chat: { postMessage: chatPostMessage, update: chatUpdate },
+        chat: { postMessage: vi.fn().mockResolvedValue({}) },
       };
 
       await messageHandler({
@@ -1031,7 +999,12 @@ describe("bot.ts — registerHandlers", () => {
         client,
       });
 
-      expect(chatUpdate).toHaveBeenCalled();
+      // Should reply with error about unmatched account
+      expect(say).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining("Could not match your Slack account"),
+        }),
+      );
     });
 
     it("finds user by user_profile email", async () => {
@@ -1119,43 +1092,24 @@ describe("bot.ts — registerHandlers", () => {
     });
   });
 
-  describe("resolveOrCreateUserId — authenticated user fallback with orphans", () => {
-    it("falls back to sole authenticated user when orphan user_profiles exist", async () => {
+  describe("resolveUserByEmail — no email available", () => {
+    it("replies with error when users.info returns no email and no existing link", async () => {
       const db = createMockDb();
       const mockExecute = getMockExecute(db);
 
       // lookupOrCreateUserId: no existing slack auth link
       mockExecute.mockResolvedValueOnce([]);
-      // resolveOrCreateUserId: no auth_account by email
-      mockExecute.mockResolvedValueOnce([]);
-      // no user_profile by email
-      mockExecute.mockResolvedValueOnce([]);
-      // multiple users in user_profile (real user + orphan from previous Slack DM)
-      mockExecute.mockResolvedValueOnce([{ count: "2", id: "orphan-user" }]);
-      // sole authenticated user (one non-slack auth_account)
-      mockExecute.mockResolvedValueOnce([{ user_id: "real-user" }]);
-      // link slack auth_account
-      mockExecute.mockResolvedValueOnce([]);
 
       const { messageHandler } = setupHandlers(db);
 
-      // ensureDofekProvider
-      mockExecute.mockResolvedValueOnce([]);
-      // insert food_entry
-      mockExecute.mockResolvedValueOnce([{ id: "entry-1" }]);
-
-      mockAnalyze.mockResolvedValueOnce({ items: [makeFoodItem()], provider: "gemini" });
-
       const say = vi.fn();
-      const chatPostMessage = vi.fn().mockResolvedValue({ ts: "thinking-ts" });
-      const chatUpdate = vi.fn().mockResolvedValue({});
       const client = {
         users: {
           info: vi.fn().mockResolvedValue({
-            user: { tz: "UTC", real_name: "Test User", profile: { email: "different@email.com" } },
+            user: { tz: "UTC", real_name: "Test User" },
           }),
         },
-        chat: { postMessage: chatPostMessage, update: chatUpdate },
+        chat: { postMessage: vi.fn().mockResolvedValue({}) },
       };
 
       await messageHandler({
@@ -1164,8 +1118,12 @@ describe("bot.ts — registerHandlers", () => {
         client,
       });
 
-      // Should succeed — food logged to the real user, not a new orphan
-      expect(chatUpdate).toHaveBeenCalled();
+      // Should reply with error about unmatched account (no email to match)
+      expect(say).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining("Could not match your Slack account"),
+        }),
+      );
     });
   });
 
