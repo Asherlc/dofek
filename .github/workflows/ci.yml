@@ -151,8 +151,21 @@ jobs:
           merge-multiple: true
       - run: pnpm exec vitest --merge-reports --coverage
 
-  test-e2e:
-    name: E2E Tests
+  test-ios:
+    name: iOS Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec vitest run --project ios
+
+  test-e2e-web:
+    name: E2E Tests (Web)
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
     env:
@@ -174,7 +187,7 @@ jobs:
           wait $DOCKER_PID
       - name: Start e2e stack
         run: docker compose -f docker-compose.e2e.yml up -d --wait
-      - run: pnpm e2e:run
+      - run: pnpm e2e:web:run
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -245,7 +258,7 @@ jobs:
 
   docker:
     name: Docker (${{ matrix.target }})
-    needs: [lint, typecheck, knip, coverage, test-e2e]
+    needs: [lint, typecheck, knip, coverage, test-e2e-web, test-ios]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04-arm
     permissions:

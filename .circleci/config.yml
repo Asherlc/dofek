@@ -97,7 +97,15 @@ jobs:
       - store_artifacts:
           path: coverage
 
-  test-e2e:
+  test-ios:
+    executor: node
+    steps:
+      - setup
+      - run:
+          name: Run iOS component tests
+          command: pnpm exec vitest run --project ios
+
+  test-e2e-web:
     executor: machine
     environment:
       DOCKER_BUILDKIT: "1"
@@ -157,7 +165,7 @@ jobs:
           key: cypress-v1-{{ checksum "pnpm-lock.yaml" }}
           paths:
             - ~/.cache/Cypress
-      - run: pnpm e2e:run
+      - run: pnpm e2e:web:run
       - store_artifacts:
           path: cypress/screenshots
           destination: cypress-screenshots
@@ -224,7 +232,8 @@ workflows:
       - typescript
       - knip
       - test
-      - test-e2e
+      - test-ios
+      - test-e2e-web
       - mutation:
           filters:
             branches:

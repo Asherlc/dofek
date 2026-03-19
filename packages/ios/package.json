@@ -12,10 +12,10 @@
     "lint:fix": "biome check --write ."
   },
   "dependencies": {
+    "@dofek/shared": "workspace:*",
     "@tanstack/react-query": "5.90.21",
     "@trpc/client": "11.12.0",
     "@trpc/react-query": "11.12.0",
-    "@dofek/shared": "workspace:*",
     "dofek-server": "workspace:*",
     "expo": "55.0.6",
     "expo-camera": "55.0.9",
@@ -31,6 +31,7 @@
     "zod": "3.25.76"
   },
   "devDependencies": {
+    "@testing-library/react": "^16.3.2",
     "@types/react": "19.2.14",
     "typescript": "5.9.3"
   }
