@@ -9,12 +9,14 @@ import {
 import Svg, { Polyline } from "react-native-svg";
 import { ActivityCard } from "../../components/ActivityCard";
 import { MetricCard } from "../../components/MetricCard";
+import { OnboardingWelcome } from "../../components/OnboardingWelcome";
 import { RecoveryRing } from "../../components/charts/RecoveryRing";
 import { SleepBar } from "../../components/charts/SleepBar";
 import { StrainGauge } from "../../components/charts/StrainGauge";
 import { formatDurationMinutes, formatSleepDebtInline } from "../../lib/format";
 import { scoreColor, scoreLabel, trendDirection as computeTrend } from "../../lib/scoring";
 import { trpc } from "../../lib/trpc";
+import { useOnboarding } from "../../lib/useOnboarding";
 import type {
   ActivityRow,
   HeartRateVariabilityRow,
@@ -70,6 +72,7 @@ function trendArrow(trend: string | null): string {
 
 export default function OverviewScreen() {
   const router = useRouter();
+  const onboarding = useOnboarding();
 
   // Fetch readiness/recovery score (last 7 days for trend)
   const readinessQuery = trpc.recovery.readinessScore.useQuery({ days: 7 });
@@ -170,6 +173,14 @@ export default function OverviewScreen() {
       style={styles.container}
       contentContainerStyle={styles.content}
     >
+      {/* Onboarding — shown to new users with no connected providers */}
+      {onboarding.showOnboarding && (
+        <OnboardingWelcome
+          onDismiss={onboarding.dismiss}
+          providers={onboarding.providers}
+        />
+      )}
+
       {/* Anomaly Alert Banner — at the very top before date */}
       {anomalies != null && anomalies.anomalies.length > 0 && (
         <View style={styles.anomalyBanner}>

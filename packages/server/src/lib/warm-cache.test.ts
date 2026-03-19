@@ -27,6 +27,10 @@ vi.mock("../router.ts", () => ({
           activityVariability: mockFn,
           verticalAscentRate: mockFn,
         },
+        running: {
+          dynamics: mockFn,
+          paceTrend: mockFn,
+        },
       };
     }),
   },

@@ -25,6 +25,7 @@ import { powerRouter } from "./routers/power.ts";
 import { predictionsRouter } from "./routers/predictions.ts";
 import { providerDetailRouter } from "./routers/provider-detail.ts";
 import { recoveryRouter } from "./routers/recovery.ts";
+import { runningRouter } from "./routers/running.ts";
 import { settingsRouter } from "./routers/settings.ts";
 import { sleepRouter } from "./routers/sleep.ts";
 import { sleepNeedRouter } from "./routers/sleep-need.ts";
@@ -73,6 +74,7 @@ export const appRouter = router({
   hiking: hikingRouter,
   predictions: predictionsRouter,
   recovery: recoveryRouter,
+  running: runningRouter,
   settings: settingsRouter,
   stress: stressRouter,
   healthspan: healthspanRouter,

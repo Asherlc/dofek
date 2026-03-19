@@ -38,6 +38,9 @@ export async function warmCache(db: import("dofek/db").Database): Promise<void> 
       "cyclingAdvanced.verticalAscentRate(90)",
       () => caller.cyclingAdvanced.verticalAscentRate({ days: 90 }),
     ],
+    // Running page
+    ["running.dynamics(90)", () => caller.running.dynamics({ days: 90 })],
+    ["running.paceTrend(90)", () => caller.running.paceTrend({ days: 90 })],
   ];
   let ok = 0;
   for (const [name, fn] of queries) {

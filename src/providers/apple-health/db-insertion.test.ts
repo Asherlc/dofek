@@ -1234,3 +1234,102 @@ describe("upsertSleepBatch", () => {
     expect(count).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Dedup: body measurements, daily metrics, nutrition
+// Apple Health exports can contain duplicate records from multiple sources
+// (Watch + iPhone) at the same timestamp. All onConflictDoUpdate operations
+// must deduplicate within a batch to avoid PostgreSQL error:
+// "ON CONFLICT DO UPDATE command cannot affect row a second time"
+// ---------------------------------------------------------------------------
+
+describe("upsertBodyMeasurementBatch — deduplication", () => {
+  it("deduplicates body measurements at the same timestamp from different sources", async () => {
+    const { db, capture } = createMockDb();
+    const sharedTime = new Date("2024-06-01T08:00:00Z");
+
+    const records = [
+      makeRecord({
+        type: "HKQuantityTypeIdentifierBodyMass",
+        sourceName: "Apple Watch",
+        value: 80,
+        unit: "kg",
+        startDate: sharedTime,
+        endDate: sharedTime,
+      }),
+      makeRecord({
+        type: "HKQuantityTypeIdentifierBodyMass",
+        sourceName: "iPhone",
+        value: 80.1,
+        unit: "kg",
+        startDate: sharedTime,
+        endDate: sharedTime,
+      }),
+    ];
+
+    const count = await upsertBodyMeasurementBatch(db, "apple_health", records);
+    // Should produce only 1 row (same timestamp → same externalId)
+    expect(count).toBe(1);
+    expect(capture.values).toHaveLength(1);
+    expect(capture.values[0]).toHaveLength(1);
+  });
+});
+
+describe("upsertDailyMetricsBatch — deduplication", () => {
+  it("aggregates daily metrics for the same date into one row", async () => {
+    const { db, capture } = createMockDb();
+
+    // Two step count records on the same day from different sources
+    const records = [
+      makeRecord({
+        type: "HKQuantityTypeIdentifierStepCount",
+        sourceName: "Apple Watch",
+        value: 5000,
+        startDate: new Date("2024-06-01T10:00:00Z"),
+        endDate: new Date("2024-06-01T10:30:00Z"),
+      }),
+      makeRecord({
+        type: "HKQuantityTypeIdentifierStepCount",
+        sourceName: "iPhone",
+        value: 3000,
+        startDate: new Date("2024-06-01T14:00:00Z"),
+        endDate: new Date("2024-06-01T14:30:00Z"),
+      }),
+    ];
+
+    const count = await upsertDailyMetricsBatch(db, "apple_health", records);
+    // Both records are on the same day → aggregated into 1 row
+    expect(count).toBe(1);
+    expect(capture.values).toHaveLength(1);
+    expect(capture.values[0]).toHaveLength(1);
+  });
+});
+
+describe("upsertNutritionBatch — deduplication", () => {
+  it("aggregates nutrition records for the same date into one row", async () => {
+    const { db, capture } = createMockDb();
+
+    const records = [
+      makeRecord({
+        type: "HKQuantityTypeIdentifierDietaryEnergyConsumed",
+        value: 500,
+        unit: "kcal",
+        startDate: new Date("2024-06-01T08:00:00Z"),
+        endDate: new Date("2024-06-01T08:00:00Z"),
+      }),
+      makeRecord({
+        type: "HKQuantityTypeIdentifierDietaryEnergyConsumed",
+        value: 800,
+        unit: "kcal",
+        startDate: new Date("2024-06-01T12:00:00Z"),
+        endDate: new Date("2024-06-01T12:00:00Z"),
+      }),
+    ];
+
+    const count = await upsertNutritionBatch(db, "apple_health", records);
+    // Both records are on the same day → aggregated into 1 row
+    expect(count).toBe(1);
+    expect(capture.values).toHaveLength(1);
+    expect(capture.values[0]).toHaveLength(1);
+  });
+});

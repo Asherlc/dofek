@@ -16,6 +16,12 @@ export const syncStatusInput = z.object({ jobId: z.string() });
 
 export const logsInput = z.object({ limit: z.number().default(100) });
 
+const syncJobDataSchema = z.object({
+  userId: z.string(),
+  providerId: z.string().optional(),
+  sinceDays: z.number().optional(),
+});
+
 export const REDACTED_ERROR_MESSAGE = "Details hidden";
 
 function redactLogErrorMessage(errorMessage: string | null): string | null {
@@ -208,7 +214,8 @@ export const syncRouter = router({
     if (!job) return null;
 
     // Only return status for jobs belonging to the requesting user
-    if (job.data.userId !== ctx.userId) return null;
+    const jobData = syncJobDataSchema.safeParse(job.data);
+    if (!jobData.success || jobData.data.userId !== ctx.userId) return null;
 
     const state = await job.getState();
 
@@ -231,6 +238,51 @@ export const syncRouter = router({
       message:
         state === "failed" ? job.failedReason : state === "completed" ? "Sync complete" : undefined,
     };
+  }),
+
+  /** Check for active sync jobs belonging to the current user */
+  activeSyncs: protectedProcedure.query(async ({ ctx }) => {
+    let jobs: Awaited<ReturnType<ReturnType<typeof getSyncQueue>["getJobs"]>>;
+    try {
+      jobs = await getSyncQueue().getJobs(["active", "waiting", "delayed"]);
+    } catch {
+      return []; // Redis unavailable
+    }
+
+    const progressSchema = z.object({
+      providers: z
+        .record(
+          z.object({
+            status: z.enum(["pending", "running", "done", "error"]),
+            message: z.string().optional(),
+          }),
+        )
+        .optional(),
+    });
+
+    const results: Array<{
+      jobId: string;
+      status: "running" | "done" | "error";
+      providers: Record<
+        string,
+        { status: "pending" | "running" | "done" | "error"; message?: string }
+      >;
+    }> = [];
+
+    for (const job of jobs) {
+      const jobData = syncJobDataSchema.safeParse(job.data);
+      if (!jobData.success || jobData.data.userId !== ctx.userId) continue;
+      const state = await job.getState();
+      const parsed = progressSchema.safeParse(job.progress);
+      const progress = parsed.success ? parsed.data : undefined;
+      results.push({
+        jobId: job.id ?? `job-${Date.now()}`,
+        status: mapBullMqStateToSyncStatus(state),
+        providers: progress?.providers ?? {},
+      });
+    }
+
+    return results;
   }),
 
   /** Get sync log history */

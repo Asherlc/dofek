@@ -34,6 +34,10 @@ export function DataSourcesPanel() {
   const [providerStates, setProviderStates] = useState<Record<string, ProviderState>>({});
   const [syncAllMode, setSyncAllMode] = useState<"sync" | "full" | null>(null);
 
+  // Resume polling for any active sync jobs (e.g. navigated away and back)
+  const activeSyncs = trpc.sync.activeSyncs.useQuery(undefined, { staleTime: 0 });
+  const resumedJobIds = useRef(new Set<string>());
+
   // Custom auth modal state
   const [whoopAuthOpen, setWhoopAuthOpen] = useState(false);
   const [garminAuthOpen, setGarminAuthOpen] = useState(false);
@@ -137,6 +141,31 @@ export function DataSourcesPanel() {
 
   const allProviders = providers.data ?? [];
   const enabledSyncable = allProviders.filter((p) => !p.importOnly);
+
+  // Resume polling for sync jobs that were already running when the page loaded
+  useEffect(() => {
+    if (!activeSyncs.data) return;
+    for (const activeJob of activeSyncs.data) {
+      if (activeJob.status !== "running") continue;
+      if (resumedJobIds.current.has(activeJob.jobId)) continue;
+      resumedJobIds.current.add(activeJob.jobId);
+
+      // Set provider states to reflect the current progress
+      const providerIds = Object.keys(activeJob.providers);
+      for (const [pid, pStatus] of Object.entries(activeJob.providers)) {
+        if (pStatus.status === "running" || pStatus.status === "pending") {
+          updateState(pid, { status: "syncing", message: pStatus.message });
+        } else if (pStatus.status === "done") {
+          updateState(pid, { status: "done", message: pStatus.message });
+        } else if (pStatus.status === "error") {
+          updateState(pid, { status: "error", message: pStatus.message });
+        }
+      }
+
+      // Start polling this job
+      doPollSyncJob(activeJob.jobId, providerIds);
+    }
+  }, [activeSyncs.data, updateState, doPollSyncJob]);
 
   // Listen for OAuth completion from the popup via BroadcastChannel + postMessage.
   // Both channels may fire for the same event, so deduplicate with a timestamp.

@@ -37,7 +37,6 @@
     "./providers/wger": "./src/providers/wger.ts",
     "./providers/decathlon": "./src/providers/decathlon.ts",
     "./providers/velohero": "./src/providers/velohero.ts",
-    "./sync/runner": "./src/sync/runner.ts",
     "./db/migrate": "./src/db/migrate.ts",
     "./db/tokens": "./src/db/tokens.ts",
     "./auth/oauth": "./src/auth/oauth.ts",
