@@ -21,15 +21,11 @@ export default defineConfig({
         test: {
           ...sharedTestConfig,
           name: "unit",
-          include: [
-            "src/**/*.test.ts",
-            "packages/*/src/**/*.test.{ts,tsx}",
-            "packages/ios/lib/**/*.test.ts",
-            "packages/ios/app/**/*.test.{ts,tsx}",
-          ],
-          exclude: ["**/*.integration.test.ts"],
+          include: ["src/**/*.test.ts", "packages/*/src/**/*.test.{ts,tsx}"],
+          exclude: ["**/*.integration.test.ts", "packages/ios/**"],
         },
       },
+      "packages/ios/vitest.config.ts",
       {
         test: {
           ...sharedTestConfig,
