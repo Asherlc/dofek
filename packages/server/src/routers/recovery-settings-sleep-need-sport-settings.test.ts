@@ -294,6 +294,22 @@ describe("settingsRouter", () => {
       const result = await caller.slackStatus();
       expect(result.connected).toBe(true);
     });
+
+    it("returns configured when Socket Mode env vars are set", async () => {
+      process.env.SLACK_BOT_TOKEN = "xoxb-test";
+      process.env.SLACK_APP_TOKEN = "xapp-test";
+      try {
+        const caller = createCaller({
+          db: { execute: vi.fn().mockResolvedValue([]) },
+          userId: "user-1",
+        });
+        const result = await caller.slackStatus();
+        expect(result.configured).toBe(true);
+      } finally {
+        delete process.env.SLACK_BOT_TOKEN;
+        delete process.env.SLACK_APP_TOKEN;
+      }
+    });
   });
 });
 

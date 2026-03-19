@@ -208,8 +208,9 @@ async function lookupOrCreateUserId(
     if (info.user?.real_name) name = info.user.real_name;
     if (info.user?.profile?.email) email = info.user.profile.email;
     if (info.user?.tz) timezone = info.user.tz;
-  } catch {
-    logger.warn(`[slack] Could not fetch Slack profile for ${slackUserId}`);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    logger.warn(`[slack] Could not fetch Slack profile for ${slackUserId}: ${detail}`);
   }
 
   // Check for existing Slack auth link
@@ -269,6 +270,9 @@ async function lookupOrCreateUserId(
       return { userId: correctId, timezone };
     }
 
+    logger.info(
+      `[slack] Using existing Slack link for ${slackUserId} → user ${existingRow.user_id}`,
+    );
     return { userId: existingRow.user_id, timezone };
   }
 
