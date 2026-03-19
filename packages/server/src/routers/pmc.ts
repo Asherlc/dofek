@@ -150,8 +150,12 @@ export const pmcRouter = router({
       const { chronicTrainingLoadDays, acuteTrainingLoadDays } = effective.exponentialMovingAverage;
       const { genderFactor, exponent } = effective.trainingImpulseConstants;
 
-      // Fetch extra history for EWMA warm-up
-      const queryDays = input.days + chronicTrainingLoadDays;
+      // Fetch enough history for EWMA convergence, regardless of display range.
+      // A 42-day EWMA needs ~126 days to reach 95% convergence, so we always
+      // fetch at least 365 days of activity data, then trim the output to the
+      // requested display window.
+      const minHistoryDays = 365;
+      const queryDays = Math.max(input.days, minHistoryDays) + chronicTrainingLoadDays;
 
       // Get max HR, resting HR from user_profile + per-activity stats from activity_summary
       const combinedActivityRowSchema = z.object({
@@ -311,7 +315,7 @@ export const pmcRouter = router({
       let atl = 0;
 
       const current = new Date(startDate);
-      const warmUpDays = chronicTrainingLoadDays; // skip warm-up from final output
+      const warmUpDays = queryDays - input.days; // skip warm-up from final output
       let dayIndex = 0;
 
       while (current <= endDate) {
@@ -337,11 +341,12 @@ export const pmcRouter = router({
         current.setDate(current.getDate() + 1);
       }
 
-      // Trim leading days with no cumulative load — avoids sending thousands
-      // of zeros when the user selects "All" but only has recent data.
-      let firstLoadIndex = result.findIndex((d) => d.load > 0);
-      if (firstLoadIndex < 0) firstLoadIndex = 0;
-      const trimmedResult = result.slice(firstLoadIndex);
+      // Trim leading days before any fitness has accumulated — avoids sending
+      // thousands of flat zeros when the user selects "All" but only has
+      // recent data. Preserves rest days where CTL is decaying (still > 0).
+      let firstMeaningfulIndex = result.findIndex((d) => d.ctl >= 0.1);
+      if (firstMeaningfulIndex < 0) firstMeaningfulIndex = 0;
+      const trimmedResult = result.slice(firstMeaningfulIndex);
 
       const modelInfo: TssModelInfo =
         tssModel != null

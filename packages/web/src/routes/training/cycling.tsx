@@ -48,7 +48,7 @@ function CyclingTab() {
   const recentCurve = trpc.power.powerCurve.useQuery({ days });
   const seasonCurve = trpc.power.powerCurve.useQuery({ days: 365 });
   const eftpTrend = trpc.power.eftpTrend.useQuery({ days: 365 });
-  const pmc = trpc.pmc.chart.useQuery({ days: 365 });
+  const pmc = trpc.pmc.chart.useQuery({ days });
   const efficiency = trpc.efficiency.aerobicEfficiency.useQuery({ days });
   const variability = trpc.cyclingAdvanced.activityVariability.useQuery({ days });
   const verticalAscent = trpc.cyclingAdvanced.verticalAscentRate.useQuery({ days });

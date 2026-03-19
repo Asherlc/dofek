@@ -557,7 +557,7 @@ describe("pmcRouter", () => {
       }
     });
 
-    it("trims leading zero-load days", async () => {
+    it("trims leading days before fitness has accumulated", async () => {
       // Use an activity date in the past so there are zero days before it
       const today = new Date();
       const actDate = new Date(today);
@@ -584,9 +584,14 @@ describe("pmcRouter", () => {
       const caller = createCaller({ db: { execute }, userId: "user-1" });
       const result = await caller.chart({ days: 180 });
 
-      // First data point should have load > 0 (leading zeros trimmed)
+      // First data point should be at or near the activity (CTL starts building)
       expect(result.data.length).toBeGreaterThan(0);
-      expect(result.data[0]?.load).toBeGreaterThan(0);
+      // Days after the activity should be preserved even if load is 0
+      // (CTL/ATL are decaying but still meaningful)
+      const daysAfterActivity = result.data.filter((d) => d.date > actDateStr);
+      expect(daysAfterActivity.length).toBeGreaterThan(0);
+      // Rest days after training should still appear (CTL > 0)
+      expect(daysAfterActivity.some((d) => d.load === 0 && d.ctl > 0)).toBe(true);
     });
 
     it("produces tsb = ctl - atl", async () => {

@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useRouter } from "expo-router";
+import { DaySelector } from "../../components/DaySelector";
 import { MetricCard } from "../../components/MetricCard";
 import { SparkLine } from "../../components/charts/SparkLine";
 import { trendDirection as computeTrend } from "../../lib/scoring";
@@ -14,22 +16,23 @@ import { colors } from "../../theme";
 
 export default function MetricsScreen() {
   const router = useRouter();
+  const [days, setDays] = useState(30);
 
   // HRV trend
-  const hrvQuery = trpc.recovery.hrvVariability.useQuery({ days: 30 });
+  const hrvQuery = trpc.recovery.hrvVariability.useQuery({ days });
   const hrvData = hrvQuery.data ?? [];
   const latestHrv = hrvData[hrvData.length - 1];
   const hrvValues = hrvData.filter((d) => d.hrv != null).map((d) => d.hrv as number);
   const hrvBaseline = latestHrv?.rollingMean;
 
   // Readiness trend
-  const readinessQuery = trpc.recovery.readinessScore.useQuery({ days: 30 });
+  const readinessQuery = trpc.recovery.readinessScore.useQuery({ days });
   const readinessData = readinessQuery.data ?? [];
   const readinessValues = readinessData.map((d) => d.readinessScore);
   const latestReadiness = readinessData[readinessData.length - 1];
 
   // Stress trend
-  const stressQuery = trpc.stress.scores.useQuery({ days: 30 });
+  const stressQuery = trpc.stress.scores.useQuery({ days });
   const stressResult = stressQuery.data;
   const stressDaily = stressResult?.daily ?? [];
   const stressValues = stressDaily.map((d) => d.stressScore);
@@ -37,7 +40,7 @@ export default function MetricsScreen() {
   const stressTrend = stressResult?.trend;
 
   // Workload ratio trend
-  const workloadQuery = trpc.recovery.workloadRatio.useQuery({ days: 30 });
+  const workloadQuery = trpc.recovery.workloadRatio.useQuery({ days });
   const workloadData = workloadQuery.data ?? [];
   const workloadRatioValues = workloadData
     .filter((d) => d.workloadRatio != null)
@@ -52,7 +55,9 @@ export default function MetricsScreen() {
       style={styles.container}
       contentContainerStyle={styles.content}
     >
-      <Text style={styles.header}>30-Day Trends</Text>
+      <Text style={styles.header}>{days}-Day Trends</Text>
+
+      <DaySelector days={days} onChange={setDays} />
 
       <TouchableOpacity
         style={styles.insightsButton}
@@ -103,7 +108,7 @@ export default function MetricsScreen() {
                 />
               </View>
               <Text style={styles.chartSubtitle}>
-                30-day avg: {Math.round(readinessValues.reduce((s, v) => s + v, 0) / readinessValues.length)}
+                {days}-day avg: {Math.round(readinessValues.reduce((s, v) => s + v, 0) / readinessValues.length)}
               </Text>
             </View>
           )}
