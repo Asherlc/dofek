@@ -15,4 +15,8 @@ config.resolver.nodeModulesPaths = [
 	path.resolve(monorepoRoot, "node_modules"),
 ];
 
+// Exclude test files from the bundle (colocated tests in app/ would
+// otherwise be picked up as Expo Router routes)
+config.resolver.blockList = [/\.test\.[jt]sx?$/];
+
 module.exports = config;
