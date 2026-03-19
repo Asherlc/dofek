@@ -99,6 +99,58 @@ describe("RideWithGpsClient — API calls", () => {
     expect(result.trip.name).toBe("Test Ride");
   });
 
+  it("getTrip transforms compact track point keys to descriptive names", async () => {
+    const mockFetch: typeof globalThis.fetch = async () => {
+      return Response.json({
+        trip: {
+          id: 42,
+          name: "Test Ride",
+          distance: 50000,
+          duration: 7200,
+          moving_time: 6800,
+          elevation_gain: 500,
+          elevation_loss: 500,
+          created_at: "2026-03-15T10:00:00Z",
+          updated_at: "2026-03-15T10:00:00Z",
+          track_points: [
+            {
+              x: -122.6,
+              y: 45.5,
+              d: 0,
+              e: 123,
+              t: 1742025600,
+              s: 25,
+              T: 21,
+              h: 140,
+              c: 90,
+              p: 200,
+            },
+          ],
+        },
+      });
+    };
+
+    const client = new RideWithGpsClient("test-token", mockFetch);
+    const result = await client.getTrip(42);
+    const point = result.trip.track_points[0];
+    expect(point).toEqual({
+      longitude: -122.6,
+      latitude: 45.5,
+      distanceMeters: 0,
+      elevationMeters: 123,
+      epochSeconds: 1742025600,
+      speedKph: 25,
+      temperatureCelsius: 21,
+      heartRateBpm: 140,
+      cadenceRpm: 90,
+      powerWatts: 200,
+    });
+    expect(point).not.toHaveProperty("x");
+    expect(point).not.toHaveProperty("y");
+    expect(point).not.toHaveProperty("t");
+    expect(point).not.toHaveProperty("T");
+  });
+
   it("throws on non-OK response", async () => {
     const mockFetch: typeof globalThis.fetch = async () => {
       return new Response("Unauthorized", { status: 401 });
@@ -228,13 +280,23 @@ describe("parseTripToActivity — additional edge cases", () => {
 
 describe("parseTrackPoints — speed edge cases", () => {
   it("converts speed = 0 to 0 m/s", () => {
-    const points: RideWithGpsTrackPoint[] = [{ x: -122.6, y: 45.5, d: 0, t: 1723276200, s: 0 }];
+    const points: RideWithGpsTrackPoint[] = [
+      {
+        longitude: -122.6,
+        latitude: 45.5,
+        distanceMeters: 0,
+        epochSeconds: 1723276200,
+        speedKph: 0,
+      },
+    ];
     const result = parseTrackPoints(points);
     expect(result[0]?.speed).toBeCloseTo(0);
   });
 
   it("handles undefined speed as undefined", () => {
-    const points: RideWithGpsTrackPoint[] = [{ x: -122.6, y: 45.5, d: 0, t: 1723276200 }];
+    const points: RideWithGpsTrackPoint[] = [
+      { longitude: -122.6, latitude: 45.5, distanceMeters: 0, epochSeconds: 1723276200 },
+    ];
     const result = parseTrackPoints(points);
     expect(result[0]?.speed).toBeUndefined();
   });
@@ -608,6 +670,30 @@ describe("RideWithGpsProvider — sync", () => {
     expect(result.errors).toHaveLength(0);
     expect(db.insert).toHaveBeenCalled();
     expect(db.delete).toHaveBeenCalled();
+
+    const valuesMock = db.insert.mock.results[0]?.value.values;
+    const activityInsertArg = valuesMock.mock.calls
+      .map((call: unknown[]) => call[0])
+      .find(
+        (value: unknown) => typeof value === "object" && value !== null && "externalId" in value,
+      );
+    const raw = activityInsertArg ? Reflect.get(activityInsertArg, "raw") : undefined;
+    const rawTrackPoints = raw ? Reflect.get(raw, "track_points") : undefined;
+    const firstRawPoint = Array.isArray(rawTrackPoints) ? rawTrackPoints[0] : undefined;
+
+    expect(firstRawPoint).toMatchObject({
+      longitude: -122.6,
+      latitude: 45.5,
+      distanceMeters: 0,
+      epochSeconds: 1742025600,
+      speedKph: 25,
+      heartRateBpm: 140,
+      powerWatts: 200,
+    });
+    expect(firstRawPoint).not.toHaveProperty("x");
+    expect(firstRawPoint).not.toHaveProperty("y");
+    expect(firstRawPoint).not.toHaveProperty("t");
+    expect(firstRawPoint).not.toHaveProperty("s");
   });
 
   it("handles deleted trip items", async () => {

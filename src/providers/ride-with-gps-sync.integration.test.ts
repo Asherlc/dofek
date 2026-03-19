@@ -6,11 +6,11 @@ import { activity, metricStream, oauthToken } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import {
+  type RideWithGpsApiTrackPoint,
+  type RideWithGpsApiTripDetail,
   RideWithGpsProvider,
   type RideWithGpsSyncItem,
   type RideWithGpsSyncResponse,
-  type RideWithGpsTrackPoint,
-  type RideWithGpsTripDetail,
 } from "./ride-with-gps.ts";
 
 // ============================================================
@@ -32,7 +32,7 @@ function fakeSyncResponse(
   };
 }
 
-function fakeTrackPoints(count: number, startTime: number): RideWithGpsTrackPoint[] {
+function fakeTrackPoints(count: number, startTime: number): RideWithGpsApiTrackPoint[] {
   return Array.from({ length: count }, (_, i) => ({
     x: -73.9857 + i * 0.001,
     y: 40.7484 + i * 0.001,
@@ -48,8 +48,8 @@ function fakeTrackPoints(count: number, startTime: number): RideWithGpsTrackPoin
 
 function fakeTripDetail(
   id: number,
-  overrides: Partial<RideWithGpsTripDetail> = {},
-): RideWithGpsTripDetail {
+  overrides: Partial<RideWithGpsApiTripDetail> = {},
+): RideWithGpsApiTripDetail {
   const startTime = Math.floor(new Date("2026-03-01T10:00:00Z").getTime() / 1000);
   return {
     id,
@@ -71,7 +71,7 @@ function fakeTripDetail(
 
 function rwgpsHandlers(
   syncResponse: RideWithGpsSyncResponse,
-  trips: Map<number, RideWithGpsTripDetail>,
+  trips: Map<number, RideWithGpsApiTripDetail>,
 ) {
   return [
     // Token refresh
@@ -134,7 +134,7 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     });
 
     const syncResp = fakeSyncResponse([{ item_id: 5001 }, { item_id: 5002 }]);
-    const trips = new Map<number, RideWithGpsTripDetail>();
+    const trips = new Map<number, RideWithGpsApiTripDetail>();
     trips.set(5001, fakeTripDetail(5001));
     trips.set(
       5002,
@@ -195,7 +195,7 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     });
 
     const syncResp = fakeSyncResponse([{ item_id: 5001 }]);
-    const trips = new Map<number, RideWithGpsTripDetail>();
+    const trips = new Map<number, RideWithGpsApiTripDetail>();
     trips.set(5001, fakeTripDetail(5001));
 
     server.use(...rwgpsHandlers(syncResp, trips));
@@ -223,7 +223,7 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
 
     // First, sync a trip so it exists
     const syncResp1 = fakeSyncResponse([{ item_id: 6001 }]);
-    const trips = new Map<number, RideWithGpsTripDetail>();
+    const trips = new Map<number, RideWithGpsApiTripDetail>();
     trips.set(6001, fakeTripDetail(6001));
 
     server.use(...rwgpsHandlers(syncResp1, trips));
@@ -322,7 +322,7 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     });
 
     const syncResp = fakeSyncResponse([{ item_id: 8001 }]);
-    const trips = new Map<number, RideWithGpsTripDetail>();
+    const trips = new Map<number, RideWithGpsApiTripDetail>();
     trips.set(8001, noTimestampTrip);
 
     server.use(...rwgpsHandlers(syncResp, trips));
@@ -410,7 +410,7 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     });
 
     const syncResp = fakeSyncResponse([{ item_id: 11001 }]);
-    const trips = new Map<number, RideWithGpsTripDetail>();
+    const trips = new Map<number, RideWithGpsApiTripDetail>();
     trips.set(11001, fakeTripDetail(11001));
 
     let tokenUsedForSync: string | null = null;
