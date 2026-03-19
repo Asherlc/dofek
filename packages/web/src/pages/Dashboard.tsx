@@ -1,4 +1,4 @@
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useMemo, useState } from "react";
 import { z } from "zod";
 import { ActivityList } from "../components/ActivityList.tsx";
 import { AnomalyAlertBanner } from "../components/AnomalyAlertBanner.tsx";
@@ -110,12 +110,22 @@ const GRID_PAIR_SECONDARY: Record<string, string> = {
 export function Dashboard() {
   const { unitSystem } = useUnitSystem();
   const { layout, toggleCollapsed, toggleHidden, moveSection } = useDashboardLayout();
-  const [days, setDays] = useState(30);
+  const [days, setDaysRaw] = useState(30);
+  const [activityPage, setActivityPage] = useState(0);
+  const activityPageSize = 20;
+  const setDays = useCallback((d: number) => {
+    setDaysRaw(d);
+    setActivityPage(0);
+  }, []);
   const onboarding = useOnboarding();
 
   const trends = trpc.dailyMetrics.trends.useQuery({ days });
   const dailyMetrics = trpc.dailyMetrics.list.useQuery({ days });
-  const activities = trpc.activity.list.useQuery({ days });
+  const activities = trpc.activity.list.useQuery({
+    days,
+    limit: activityPageSize,
+    offset: activityPage * activityPageSize,
+  });
   const sleepData = trpc.sleep.list.useQuery({ days });
   const hrvBaseline = trpc.dailyMetrics.hrvBaseline.useQuery({ days });
   const nutritionData = trpc.nutrition.daily.useQuery({ days });
@@ -368,8 +378,12 @@ export function Dashboard() {
       content: (
         <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
           <ActivityList
-            activities={assertRows(activities.data, activityRowSchema)}
+            activities={assertRows(activities.data?.items, activityRowSchema)}
             loading={activities.isLoading}
+            totalCount={activities.data?.totalCount}
+            page={activityPage}
+            pageSize={activityPageSize}
+            onPageChange={setActivityPage}
           />
         </div>
       ),
