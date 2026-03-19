@@ -160,6 +160,9 @@ vi.mock("expo-secure-store", () => ({
 
 vi.mock("expo-web-browser", () => ({
   openAuthSessionAsync: vi.fn(),
+  openBrowserAsync: vi.fn(() => Promise.resolve({ type: "cancel" })),
+  WebBrowserPresentationStyle: { PAGE_SHEET: "pageSheet" },
+  WebBrowserResultType: { CANCEL: "cancel", DISMISS: "dismiss", OPENED: "opened" },
 }));
 
 vi.mock("expo-router", () => ({
