@@ -55,7 +55,7 @@ export const sleepNeedRouter = router({
         sql`WITH sleep_nights AS (
               SELECT
                 started_at::date AS date,
-                duration_minutes
+                COALESCE(duration_minutes, EXTRACT(EPOCH FROM (ended_at - started_at)) / 60)::int AS duration_minutes
               FROM fitness.v_sleep
               WHERE user_id = ${ctx.userId}
                 AND is_nap = false

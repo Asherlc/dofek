@@ -544,26 +544,32 @@ async function processSleepSamples(
     }
 
     const externalId = `hk:sleep:${session.uuid}`;
+    const durationMinutes = Math.round((sessionEnd - sessionStart) / (1000 * 60));
+    const isNap = durationMinutes < 120;
     await db.execute(
-      sql`INSERT INTO fitness.sleep_session (user_id, provider_id, external_id, started_at, ended_at, deep_minutes, rem_minutes, light_minutes, awake_minutes)
+      sql`INSERT INTO fitness.sleep_session (user_id, provider_id, external_id, started_at, ended_at, duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes, is_nap)
           VALUES (
             ${userId},
             ${PROVIDER_ID},
             ${externalId},
             ${session.startDate}::timestamptz,
             ${session.endDate}::timestamptz,
+            ${durationMinutes},
             ${deepMinutes},
             ${remMinutes},
             ${lightMinutes},
-            ${awakeMinutes}
+            ${awakeMinutes},
+            ${isNap}
           )
           ON CONFLICT (provider_id, external_id) DO UPDATE SET
             started_at = ${session.startDate}::timestamptz,
             ended_at = ${session.endDate}::timestamptz,
+            duration_minutes = ${durationMinutes},
             deep_minutes = ${deepMinutes},
             rem_minutes = ${remMinutes},
             light_minutes = ${lightMinutes},
-            awake_minutes = ${awakeMinutes}`,
+            awake_minutes = ${awakeMinutes},
+            is_nap = ${isNap}`,
     );
     inserted++;
   }
