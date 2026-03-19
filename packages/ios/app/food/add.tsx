@@ -20,7 +20,7 @@ import { colors } from "../../theme";
 import { lookupBarcode, searchFoods } from "../../lib/food-database";
 import { MEAL_OPTIONS, type MealType, autoMealType } from "@dofek/shared/meal";
 import { formatDateYmd } from "@dofek/shared/format";
-import { getTrpcUrl } from "../../lib/server";
+import { SERVER_URL, getTrpcUrl } from "../../lib/server";
 import { trpc } from "../../lib/trpc";
 
 type LoggerTab = "search" | "scan" | "quickadd";
@@ -55,8 +55,8 @@ export default function AddFoodScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ meal?: string; date?: string }>();
   const date = params.date ?? formatDateYmd();
-  const { serverUrl, sessionToken } = useAuth();
-  const apiUrl = serverUrl ? getTrpcUrl(serverUrl) : "http://localhost:3000/api/trpc";
+  const { sessionToken } = useAuth();
+  const apiUrl = getTrpcUrl(SERVER_URL);
   const authHeaders = useMemo<Record<string, string>>(
     () =>
       sessionToken

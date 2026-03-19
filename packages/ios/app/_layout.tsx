@@ -9,7 +9,6 @@ import { AuthProvider, useAuth } from "../lib/auth-context";
 import { getTrpcUrl } from "../lib/server";
 import { colors } from "../theme";
 import LoginScreen from "./login";
-import ServerSetupScreen from "./server-setup";
 
 function AuthGate() {
   const { user, serverUrl, isLoading, sessionToken } = useAuth();
@@ -17,7 +16,7 @@ function AuthGate() {
   const [queryClient] = useState(() => new QueryClient());
 
   const trpcClient = useMemo(() => {
-    const url = serverUrl ? getTrpcUrl(serverUrl) : "http://localhost:3000/api/trpc";
+    const url = getTrpcUrl(serverUrl);
     return trpc.createClient({
       links: [
         httpBatchLink({
@@ -38,12 +37,7 @@ function AuthGate() {
     );
   }
 
-  // Step 1: No server configured — show server setup
-  if (!serverUrl) {
-    return <ServerSetupScreen />;
-  }
-
-  // Step 2: No user — show login
+  // No user — show login
   if (!user) {
     return <LoginScreen />;
   }

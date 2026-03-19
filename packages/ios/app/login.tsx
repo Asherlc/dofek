@@ -28,7 +28,7 @@ const providerLabels: Record<string, string> = {
 };
 
 export default function LoginScreen() {
-  const { serverUrl, onLoginSuccess, disconnectServer } = useAuth();
+  const { serverUrl, onLoginSuccess } = useAuth();
   const [providers, setProviders] = useState<ConfiguredProviders | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -107,13 +107,6 @@ export default function LoginScreen() {
             style={styles.spinner}
           />
         ) : null}
-
-        <TouchableOpacity
-          style={styles.changeServer}
-          onPress={disconnectServer}
-        >
-          <Text style={styles.changeServerText}>Change server</Text>
-        </TouchableOpacity>
       </View>
     </View>
   );
@@ -174,13 +167,5 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 15,
     fontWeight: "500",
-  },
-  changeServer: {
-    marginTop: 32,
-    alignItems: "center",
-  },
-  changeServerText: {
-    color: colors.textSecondary,
-    fontSize: 13,
   },
 });

@@ -52,7 +52,7 @@ const NAV_LINKS = [
 
 export default function HealthScreen() {
   const router = useRouter();
-  const { user, serverUrl, logout, disconnectServer } = useAuth();
+  const { user, logout } = useAuth();
   const [permissionsGranted, setPermissionsGranted] = useState(false);
   const [status, setStatus] = useState<SyncStatus>({
     lastSync: null,
@@ -270,15 +270,6 @@ export default function HealthScreen() {
         ) : null}
         <TouchableOpacity style={styles.buttonSecondary} onPress={logout} activeOpacity={0.7}>
           <Text style={styles.buttonSecondaryText}>Sign Out</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.buttonSecondary, { marginTop: 8 }]}
-          onPress={disconnectServer}
-          activeOpacity={0.7}
-        >
-          <Text style={[styles.buttonSecondaryText, { color: colors.danger }]}>
-            Disconnect Server
-          </Text>
         </TouchableOpacity>
       </View>
     </ScrollView>
