@@ -569,9 +569,11 @@ export class WhoopProvider implements Provider {
       const sleepCount = await withSyncLog(db, this.id, "sleep", async () => {
         let count = 0;
         for (const cycle of cycles) {
-          if (cycle.sleep?.id) {
+          // Extract sleep ID: cycle.sleep.id (legacy), recovery.sleep_id (BFF v0), or v2_activities
+          const sleepId = cycle.sleep?.id ?? cycle.recovery?.sleep_id ?? undefined;
+          if (sleepId) {
             try {
-              const sleepData = await client.getSleep(cycle.sleep.id);
+              const sleepData = await client.getSleep(sleepId);
               const parsed = parseSleep(sleepData);
 
               await db
@@ -605,8 +607,8 @@ export class WhoopProvider implements Provider {
               count++;
             } catch (err) {
               errors.push({
-                message: `Sleep ${cycle.sleep.id}: ${err instanceof Error ? err.message : String(err)}`,
-                externalId: String(cycle.sleep.id),
+                message: `Sleep ${sleepId}: ${err instanceof Error ? err.message : String(err)}`,
+                externalId: String(sleepId),
                 cause: err,
               });
             }
