@@ -820,6 +820,13 @@ describe("importAppleHealthFile — full DB integration", () => {
     const run = activities.find((a) => a.activityType === "running");
     expect(run).toBeDefined();
     expect(run?.externalId).toContain("ah:workout:");
+    expect(run?.raw).toMatchObject({
+      durationSeconds: 1830,
+      distanceMeters: 5200,
+      calories: 320,
+      avgHeartRate: 148,
+      maxHeartRate: 175,
+    });
 
     // Check GPS metric_stream rows linked to the activity
     const allMetrics = await ctx.db.select().from(schema.metricStream);

@@ -329,6 +329,96 @@ describe("HealthKit sync router", () => {
       expect(rows.length).toBe(1);
       expect(rows[0]?.activity_type).toBe("other");
     });
+
+    it("links existing heart-rate metric rows when workouts are pushed", async () => {
+      await mutate("healthKitSync.pushQuantitySamples", {
+        samples: [
+          {
+            type: "HKQuantityTypeIdentifierHeartRate",
+            value: 149,
+            unit: "count/min",
+            startDate: "2025-06-06T12:15:00Z",
+            endDate: "2025-06-06T12:15:05Z",
+            sourceName: "Apple Watch",
+            sourceBundle: "com.apple.health",
+            uuid: "hr-link-before-workout",
+          },
+        ],
+      });
+
+      await mutate("healthKitSync.pushWorkouts", {
+        workouts: [
+          {
+            uuid: "workout-link-after-hr",
+            workoutType: "37",
+            startDate: "2025-06-06T12:00:00Z",
+            endDate: "2025-06-06T12:45:00Z",
+            duration: 2700,
+            totalEnergyBurned: 350,
+            totalDistance: 5000,
+            sourceName: "Apple Watch",
+            sourceBundle: "com.apple.health",
+          },
+        ],
+      });
+
+      const rows = await testCtx.db.execute(
+        sql`SELECT ms.activity_id, a.external_id
+            FROM fitness.metric_stream ms
+            LEFT JOIN fitness.activity a ON a.id = ms.activity_id
+            WHERE ms.provider_id = 'apple_health_kit'
+              AND ms.raw->>'uuid' = 'hr-link-before-workout'
+            LIMIT 1`,
+      );
+      expect(rows.length).toBe(1);
+      expect(rows[0]?.activity_id).toBeTruthy();
+      expect(rows[0]?.external_id).toBe("hk:workout:workout-link-after-hr");
+    });
+
+    it("links newly pushed heart-rate metric rows to existing workouts", async () => {
+      await mutate("healthKitSync.pushWorkouts", {
+        workouts: [
+          {
+            uuid: "workout-link-before-hr",
+            workoutType: "37",
+            startDate: "2025-06-06T14:00:00Z",
+            endDate: "2025-06-06T14:45:00Z",
+            duration: 2700,
+            totalEnergyBurned: 360,
+            totalDistance: 5200,
+            sourceName: "Apple Watch",
+            sourceBundle: "com.apple.health",
+          },
+        ],
+      });
+
+      await mutate("healthKitSync.pushQuantitySamples", {
+        samples: [
+          {
+            type: "HKQuantityTypeIdentifierHeartRate",
+            value: 155,
+            unit: "count/min",
+            startDate: "2025-06-06T14:20:00Z",
+            endDate: "2025-06-06T14:20:05Z",
+            sourceName: "Apple Watch",
+            sourceBundle: "com.apple.health",
+            uuid: "hr-link-after-workout",
+          },
+        ],
+      });
+
+      const rows = await testCtx.db.execute(
+        sql`SELECT ms.activity_id, a.external_id
+            FROM fitness.metric_stream ms
+            LEFT JOIN fitness.activity a ON a.id = ms.activity_id
+            WHERE ms.provider_id = 'apple_health_kit'
+              AND ms.raw->>'uuid' = 'hr-link-after-workout'
+            LIMIT 1`,
+      );
+      expect(rows.length).toBe(1);
+      expect(rows[0]?.activity_id).toBeTruthy();
+      expect(rows[0]?.external_id).toBe("hk:workout:workout-link-before-hr");
+    });
   });
 
   describe("pushSleepSamples", () => {
