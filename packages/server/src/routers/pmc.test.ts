@@ -512,6 +512,9 @@ describe("pmcRouter", () => {
 
       // FTP = round(200 * 0.95) = 190 (uses avg_power, not NP)
       expect(result.model.ftp).toBe(190);
+      expect(result.model.type).toBe("learned");
+      expect(result.model.r2).toBe(0.7);
+      expect(result.model.pairedActivities).toBeGreaterThan(0);
       expect(result.data.length).toBeGreaterThan(0);
 
       // Activity days should have non-zero load from power TSS
