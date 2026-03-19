@@ -114,6 +114,8 @@ export function streamHealthExport(
           }
         })
         .catch((err) => {
+          pendingFlushes--;
+          fileStream.destroy();
           reject(err);
         });
     }

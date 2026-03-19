@@ -50,7 +50,7 @@ services:
     image: ghcr.io/asherlc/dofek:latest
     container_name: dofek-worker
     command: worker
-    restart: "no"
+    restart: on-failure
     env_file: .env
     environment:
       - DATABASE_URL=postgres://health:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/health

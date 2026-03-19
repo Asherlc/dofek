@@ -195,11 +195,21 @@ export async function upsertBodyMeasurementBatch(
     rows.push(row);
   }
 
+  // Deduplicate by externalId — Apple Health can export duplicate measurements
+  // from multiple sources (Apple Watch + iPhone) with the same timestamp.
+  // PostgreSQL rejects ON CONFLICT DO UPDATE when the same row appears twice
+  // in a single INSERT statement.
+  const dedupMap = new Map<string, typeof bodyMeasurement.$inferInsert>();
+  for (const row of rows) {
+    if (row.externalId) dedupMap.set(row.externalId, row);
+  }
+  const uniqueRows = [...dedupMap.values()];
+
   // Multi-row upsert with COALESCE to preserve existing non-null values
-  for (let i = 0; i < rows.length; i += 500) {
+  for (let i = 0; i < uniqueRows.length; i += 500) {
     await db
       .insert(bodyMeasurement)
-      .values(rows.slice(i, i + 500))
+      .values(uniqueRows.slice(i, i + 500))
       .onConflictDoUpdate({
         target: [bodyMeasurement.providerId, bodyMeasurement.externalId],
         set: {
@@ -220,7 +230,7 @@ export async function upsertBodyMeasurementBatch(
         },
       });
   }
-  return rows.length;
+  return uniqueRows.length;
 }
 
 export async function upsertDailyMetricsBatch(

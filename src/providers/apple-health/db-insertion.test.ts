@@ -398,6 +398,29 @@ describe("upsertBodyMeasurementBatch", () => {
     });
   });
 
+  it("deduplicates body measurements with the same timestamp from multiple sources", async () => {
+    const { db } = createMockDb();
+    const sharedDate = new Date("2024-06-01T08:00:00Z");
+    const records = [
+      makeRecord({
+        type: "HKQuantityTypeIdentifierBodyMass",
+        value: 72.5,
+        startDate: sharedDate,
+        sourceName: "Apple Watch",
+      }),
+      makeRecord({
+        type: "HKQuantityTypeIdentifierBodyMass",
+        value: 72.4,
+        startDate: sharedDate,
+        sourceName: "iPhone",
+      }),
+    ];
+
+    // Both records have the same timestamp → same externalId → deduplicated to 1
+    const count = await upsertBodyMeasurementBatch(db, "p1", records);
+    expect(count).toBe(1);
+  });
+
   it("skips non-body-measurement record types", async () => {
     const { db } = createMockDb();
     const records = [makeRecord({ type: "HKQuantityTypeIdentifierHeartRate", value: 72 })];
