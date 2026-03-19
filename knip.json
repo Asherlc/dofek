@@ -8,7 +8,7 @@
         "vitest.config.mutation.ts"
       ],
       "project": ["src/**/*.ts", "*.config.{ts,js,json}"],
-      "ignoreDependencies": ["tsx"],
+      "ignoreDependencies": ["sharp", "tsx"],
       "ignoreBinaries": ["tsr"],
       "vitest": {
         "config": ["vitest.config.ts"],
