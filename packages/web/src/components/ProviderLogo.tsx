@@ -4,6 +4,9 @@
  * Files live in public/logos/ and are served by Vite as static assets.
  */
 
+import { PROVIDER_LABELS, providerLabel } from "@dofek/shared/providers";
+export { providerLabel };
+
 interface ProviderLogoProps {
   /** Provider ID (e.g. "strava", "ride-with-gps") */
   provider: string;
@@ -55,48 +58,6 @@ const BRAND_COLORS: Record<string, string> = {
   velohero: "#FF6600",
   bodyspec: "#00B4D8",
 };
-
-// ── Display labels ──
-
-const PROVIDER_LABELS: Record<string, string> = {
-  google: "Google",
-  apple: "Apple",
-  authentik: "Homelab",
-  strava: "Strava",
-  wahoo: "Wahoo",
-  fitbit: "Fitbit",
-  "ride-with-gps": "Ride with GPS",
-  withings: "Withings",
-  garmin: "Garmin",
-  polar: "Polar",
-  whoop: "WHOOP",
-  peloton: "Peloton",
-  oura: "Oura",
-  zwift: "Zwift",
-  suunto: "Suunto",
-  trainerroad: "TrainerRoad",
-  komoot: "Komoot",
-  concept2: "Concept2",
-  coros: "COROS",
-  "cycling-analytics": "Cycling Analytics",
-  cycling_analytics: "Cycling Analytics",
-  decathlon: "Decathlon",
-  "eight-sleep": "Eight Sleep",
-  fatsecret: "FatSecret",
-  mapmyfitness: "MapMyFitness",
-  ultrahuman: "Ultrahuman",
-  velohero: "VeloHero",
-  wger: "Wger",
-  xert: "Xert",
-  "apple-health": "Apple Health",
-  "strong-csv": "Strong",
-  "cronometer-csv": "Cronometer",
-  bodyspec: "BodySpec",
-};
-
-export function providerLabel(id: string): string {
-  return PROVIDER_LABELS[id] ?? id;
-}
 
 function logoUrl(provider: string): string | null {
   if (SVG_LOGOS.has(provider)) return `/logos/${provider}.svg`;
