@@ -587,7 +587,9 @@ ${recordLines.join("\n")}
     }).catch((err: unknown) => err);
 
     expect(error).toBeInstanceOf(Error);
-    expect((error as Error).message).toBe("DB conflict error");
+    if (error instanceof Error) {
+      expect(error.message).toBe("DB conflict error");
+    }
     // Should not have called the callback more than the batch that errored
     // plus at most one more that was already in-flight
     expect(callCount).toBeLessThanOrEqual(3);
