@@ -6,6 +6,8 @@ const mockLoadConfig = vi.fn();
 const mockSyncPriorities = vi.fn();
 const mockRefreshViews = vi.fn();
 const mockUpdateMaxHr = vi.fn();
+const mockLoggerInfo = vi.fn();
+const mockLoggerError = vi.fn();
 
 vi.mock("../db/provider-priority.ts", () => ({
   loadProviderPriorityConfig: (...args: unknown[]) => mockLoadConfig(...args),
@@ -19,6 +21,15 @@ vi.mock("../db/dedup.ts", () => ({
 
 vi.mock("../providers/index.ts", () => ({
   getEnabledProviders: () => [],
+}));
+
+vi.mock("../logger.ts", () => ({
+  logger: {
+    info: (...args: unknown[]) => mockLoggerInfo(...args),
+    error: (...args: unknown[]) => mockLoggerError(...args),
+    warn: vi.fn(),
+    debug: vi.fn(),
+  },
 }));
 
 import { runSync } from "./runner.ts";
@@ -162,6 +173,28 @@ describe("Sync Runner", () => {
     expect(result.totalRecords).toBe(0);
   });
 
+  it("logs each provider error message individually", async () => {
+    const providers = [
+      createMockProvider({
+        id: "flaky",
+        name: "Flaky",
+        sync: async () => ({
+          provider: "flaky",
+          recordsSynced: 2,
+          errors: [{ message: "rate limit exceeded" }, { message: "timeout on activity 123" }],
+          duration: 100,
+        }),
+      }),
+    ];
+
+    await runSync(mockDb, since, providers);
+
+    expect(mockLoggerError).toHaveBeenCalledWith(expect.stringContaining("rate limit exceeded"));
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      expect.stringContaining("timeout on activity 123"),
+    );
+  });
+
   it("includes provider errors in result array", async () => {
     const providers = [
       createMockProvider({
@@ -224,17 +257,12 @@ describe("Sync Runner — provider priority sync", () => {
     mockLoadConfig.mockImplementation(() => {
       throw new Error("ENOENT: file read error");
     });
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const result = await runSync(mockDb, since, [createMockProvider()]);
 
     expect(result.results).toHaveLength(1);
     expect(result.totalRecords).toBe(5);
-    expect(spy).toHaveBeenCalledWith(
-      expect.stringContaining("provider priorities"),
-      expect.any(Error),
-    );
-    spy.mockRestore();
+    expect(mockLoggerError).toHaveBeenCalledWith(expect.stringContaining("provider priorities"));
   });
 
   it("calls updateUserMaxHr before priority sync", async () => {
@@ -265,36 +293,32 @@ describe("Sync Runner — provider priority sync", () => {
 
   it("logs refresh messages", async () => {
     mockLoadConfig.mockReturnValue(null);
-    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
 
     await runSync(mockDb, since, []);
 
-    expect(spy).toHaveBeenCalledWith(expect.stringContaining("Refreshing materialized views"));
-    expect(spy).toHaveBeenCalledWith(expect.stringContaining("views refreshed"));
-    spy.mockRestore();
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      expect.stringContaining("Refreshing materialized views"),
+    );
+    expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("views refreshed"));
   });
 
   it("continues when refreshDedupViews throws", async () => {
     mockLoadConfig.mockReturnValue(null);
     mockRefreshViews.mockRejectedValue(new Error("connection lost"));
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const result = await runSync(mockDb, since, []);
 
     expect(result.results).toHaveLength(0);
-    expect(spy).toHaveBeenCalledWith(expect.stringContaining("refresh views"), expect.any(Error));
-    spy.mockRestore();
+    expect(mockLoggerError).toHaveBeenCalledWith(expect.stringContaining("refresh views"));
   });
 
   it("continues when updateUserMaxHr throws", async () => {
     mockLoadConfig.mockReturnValue(null);
     mockUpdateMaxHr.mockRejectedValue(new Error("max HR failed"));
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const result = await runSync(mockDb, since, []);
 
     expect(result.results).toHaveLength(0);
-    expect(spy).toHaveBeenCalledWith(expect.stringContaining("max HR"), expect.any(Error));
-    spy.mockRestore();
+    expect(mockLoggerError).toHaveBeenCalledWith(expect.stringContaining("max HR"));
   });
 });
