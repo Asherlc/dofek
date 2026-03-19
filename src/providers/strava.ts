@@ -268,6 +268,10 @@ export class StravaClient {
       throw new StravaRateLimitError(`Strava API rate limit exceeded (429)`);
     }
 
+    if (response.status === 404) {
+      throw new StravaNotFoundError(`Strava API 404: ${url.pathname}`);
+    }
+
     if (!response.ok) {
       const contentType = response.headers.get("content-type") ?? "";
       let detail: string;
@@ -337,6 +341,13 @@ export class StravaRateLimitError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "StravaRateLimitError";
+  }
+}
+
+export class StravaNotFoundError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "StravaNotFoundError";
   }
 }
 
@@ -488,11 +499,15 @@ export class StravaProvider implements Provider {
               rateLimited = true;
               break;
             }
-            errors.push({
-              message: `Detail for activity ${act.externalId}: ${detailErr instanceof Error ? detailErr.message : String(detailErr)}`,
-              externalId: act.externalId,
-              cause: detailErr,
-            });
+            if (detailErr instanceof StravaNotFoundError) {
+              logger.warn(`[strava] Activity ${act.externalId} not found (404) — skipping detail`);
+            } else {
+              errors.push({
+                message: `Detail for activity ${act.externalId}: ${detailErr instanceof Error ? detailErr.message : String(detailErr)}`,
+                externalId: act.externalId,
+                cause: detailErr,
+              });
+            }
           }
 
           const [row] = await db
@@ -558,11 +573,15 @@ export class StravaProvider implements Provider {
               rateLimited = true;
               break;
             }
-            errors.push({
-              message: `Streams for activity ${act.externalId}: ${streamErr instanceof Error ? streamErr.message : String(streamErr)}`,
-              externalId: act.externalId,
-              cause: streamErr,
-            });
+            if (streamErr instanceof StravaNotFoundError) {
+              logger.info(`[strava] No streams for activity ${act.externalId} (404) — skipping`);
+            } else {
+              errors.push({
+                message: `Streams for activity ${act.externalId}: ${streamErr instanceof Error ? streamErr.message : String(streamErr)}`,
+                externalId: act.externalId,
+                cause: streamErr,
+              });
+            }
           }
         } catch (err) {
           errors.push({

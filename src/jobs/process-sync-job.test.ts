@@ -270,6 +270,10 @@ describe("processSyncJob", () => {
         errorMessage: "bad record 1; bad record 2",
       }),
     );
+
+    // Verify each error is logged individually via Winston
+    expect(mockLoggerError).toHaveBeenCalledWith("[worker] Partial sync error: bad record 1");
+    expect(mockLoggerError).toHaveBeenCalledWith("[worker] Partial sync error: bad record 2");
   });
 
   it("calls ensureProvider for each synced provider", async () => {
