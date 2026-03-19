@@ -333,8 +333,22 @@ function slackTimestampToDateString(slackTs: string, timezone: string): string {
 
 /** Register message and action handlers on a Bolt app */
 function registerHandlers(app: AppType, db: Database) {
+  // Log all incoming events so we can diagnose silent failures
+  app.use(async (args) => {
+    if ("event" in args) {
+      const event = args.event as { type?: string };
+      logger.info(`[slack] Received event type=${event.type}`);
+    } else {
+      logger.info("[slack] Received non-event payload (action/shortcut/command)");
+    }
+    await args.next();
+  });
+
   // Handle direct messages (both top-level and thread replies)
   app.message(async ({ message, say, client }) => {
+    logger.info(
+      `[slack] Message handler invoked: type=${message.type ?? "unknown"}, subtype=${"subtype" in message ? message.subtype : "none"}, has_text=${"text" in message && !!message.text}, has_user=${"user" in message && !!message.user}, has_bot_id=${"bot_id" in message && !!message.bot_id}`,
+    );
     // Filter non-user messages: bots, subtypes (edits, deletes, etc.)
     if (!("text" in message) || !message.text) return;
     if ("subtype" in message && message.subtype) return;
@@ -759,6 +773,9 @@ export function createSlackBot(db: Database): SlackBotResult | null {
         };
       },
     });
+    app.error(async (error) => {
+      logger.error(`[slack] Unhandled Bolt error: ${error.message ?? error}`);
+    });
     registerHandlers(app, db);
 
     logger.info(
@@ -776,6 +793,10 @@ export function createSlackBot(db: Database): SlackBotResult | null {
       token: botToken,
       appToken,
       socketMode: true,
+    });
+
+    app.error(async (error) => {
+      logger.error(`[slack] Unhandled Bolt error: ${error.message ?? error}`);
     });
 
     registerHandlers(app, db);

@@ -6,6 +6,8 @@ vi.mock("@slack/bolt", () => {
     message: vi.fn(),
     action: vi.fn(),
     event: vi.fn(),
+    error: vi.fn(),
+    use: vi.fn(),
     start: vi.fn().mockResolvedValue(undefined),
   };
   const mockRouter = { get: vi.fn(), post: vi.fn() };
