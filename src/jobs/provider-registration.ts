@@ -64,6 +64,10 @@ async function doRegisterProviders() {
     ["wger", () => import("../providers/wger.ts").then((m) => new m.WgerProvider())],
     ["decathlon", () => import("../providers/decathlon.ts").then((m) => new m.DecathlonProvider())],
     ["velohero", () => import("../providers/velohero.ts").then((m) => new m.VeloHeroProvider())],
+    [
+      "auto-supplements",
+      () => import("../providers/auto-supplements.ts").then((m) => new m.AutoSupplementsProvider()),
+    ],
   ] as const;
 
   for (const [name, loadProvider] of providers) {
@@ -71,24 +75,6 @@ async function doRegisterProviders() {
       registerProvider(await loadProvider());
     } catch (err) {
       console.warn(`[worker] Failed to register ${name} provider: ${err}`);
-    }
-  }
-
-  // Auto-supplements provider (requires config file)
-  try {
-    const { readFileSync } = await import("node:fs");
-    const { resolve } = await import("node:path");
-    const jsonPath = resolve(import.meta.dirname, "../../supplements.json");
-    const raw = readFileSync(jsonPath, "utf-8");
-    const { supplementConfigSchema, AutoSupplementsProvider } = await import(
-      "../providers/auto-supplements.ts"
-    );
-    const config = supplementConfigSchema.parse(JSON.parse(raw));
-    registerProvider(new AutoSupplementsProvider(config));
-  } catch (err) {
-    // File not found is expected — only log unexpected errors
-    if (err instanceof Error && !err.message.includes("ENOENT")) {
-      console.warn(`[worker] Failed to register auto-supplements provider: ${err}`);
     }
   }
 }

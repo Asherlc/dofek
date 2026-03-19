@@ -1,10 +1,7 @@
-import { readFile, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { supplement } from "dofek/db/schema";
+import { asc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { protectedProcedure, router } from "../trpc.ts";
-
-// Config file lives at project root (alongside supplements.config.ts)
-const CONFIG_PATH = resolve(import.meta.dirname, "../../../../supplements.json");
 
 const supplementSchema = z.object({
   name: z.string().min(1).max(200),
@@ -54,35 +51,132 @@ const supplementSchema = z.object({
 
 export type Supplement = z.infer<typeof supplementSchema>;
 
-let cachedSupplements: Supplement[] | null = null;
+/** Fields that are optional in the API shape and nullable in the DB row. */
+export const OPTIONAL_FIELDS = [
+  "amount",
+  "unit",
+  "form",
+  "description",
+  "meal",
+  "calories",
+  "proteinG",
+  "carbsG",
+  "fatG",
+  "saturatedFatG",
+  "polyunsaturatedFatG",
+  "monounsaturatedFatG",
+  "transFatG",
+  "cholesterolMg",
+  "sodiumMg",
+  "potassiumMg",
+  "fiberG",
+  "sugarG",
+  "vitaminAMcg",
+  "vitaminCMg",
+  "vitaminDMcg",
+  "vitaminEMg",
+  "vitaminKMcg",
+  "vitaminB1Mg",
+  "vitaminB2Mg",
+  "vitaminB3Mg",
+  "vitaminB5Mg",
+  "vitaminB6Mg",
+  "vitaminB7Mcg",
+  "vitaminB9Mcg",
+  "vitaminB12Mcg",
+  "calciumMg",
+  "ironMg",
+  "magnesiumMg",
+  "zincMg",
+  "seleniumMcg",
+  "copperMg",
+  "manganeseMg",
+  "chromiumMcg",
+  "iodineMcg",
+  "omega3Mg",
+  "omega6Mg",
+] as const;
 
-async function readConfig(): Promise<Supplement[]> {
-  if (cachedSupplements) return cachedSupplements;
-  try {
-    const raw = await readFile(CONFIG_PATH, "utf-8");
-    const parsed = JSON.parse(raw);
-    cachedSupplements = z.array(supplementSchema).parse(parsed.supplements ?? parsed);
-    return cachedSupplements;
-  } catch (err) {
-    console.error(`[supplements] Failed to read config: ${err}`);
-    return [];
+type SupplementRow = typeof supplement.$inferSelect;
+
+/** Map a DB supplement row to the API shape (strip DB-only fields). */
+export function toApiSupplement(row: SupplementRow): Supplement {
+  const result: Record<string, unknown> = { name: row.name };
+  for (const key of OPTIONAL_FIELDS) {
+    if (row[key] != null) {
+      result[key] = row[key];
+    }
   }
-}
-
-async function writeConfig(supplements: Supplement[]): Promise<void> {
-  cachedSupplements = null; // invalidate cache on write
-  await writeFile(CONFIG_PATH, `${JSON.stringify({ supplements }, null, 2)}\n`);
+  return supplementSchema.parse(result);
 }
 
 export const supplementsRouter = router({
-  list: protectedProcedure.query(async () => {
-    return readConfig();
+  list: protectedProcedure.query(async ({ ctx }) => {
+    const rows = await ctx.db
+      .select()
+      .from(supplement)
+      .where(eq(supplement.userId, ctx.userId))
+      .orderBy(asc(supplement.sortOrder));
+    return rows.map(toApiSupplement);
   }),
 
   save: protectedProcedure
     .input(z.object({ supplements: z.array(supplementSchema) }))
-    .mutation(async ({ input }) => {
-      await writeConfig(input.supplements);
+    .mutation(async ({ ctx, input }) => {
+      await ctx.db.transaction(async (tx) => {
+        await tx.delete(supplement).where(eq(supplement.userId, ctx.userId));
+        if (input.supplements.length > 0) {
+          await tx.insert(supplement).values(
+            input.supplements.map((s, i) => ({
+              userId: ctx.userId,
+              name: s.name,
+              amount: s.amount ?? null,
+              unit: s.unit ?? null,
+              form: s.form ?? null,
+              description: s.description ?? null,
+              meal: s.meal ?? null,
+              sortOrder: i,
+              calories: s.calories ?? null,
+              proteinG: s.proteinG ?? null,
+              carbsG: s.carbsG ?? null,
+              fatG: s.fatG ?? null,
+              saturatedFatG: s.saturatedFatG ?? null,
+              polyunsaturatedFatG: s.polyunsaturatedFatG ?? null,
+              monounsaturatedFatG: s.monounsaturatedFatG ?? null,
+              transFatG: s.transFatG ?? null,
+              cholesterolMg: s.cholesterolMg ?? null,
+              sodiumMg: s.sodiumMg ?? null,
+              potassiumMg: s.potassiumMg ?? null,
+              fiberG: s.fiberG ?? null,
+              sugarG: s.sugarG ?? null,
+              vitaminAMcg: s.vitaminAMcg ?? null,
+              vitaminCMg: s.vitaminCMg ?? null,
+              vitaminDMcg: s.vitaminDMcg ?? null,
+              vitaminEMg: s.vitaminEMg ?? null,
+              vitaminKMcg: s.vitaminKMcg ?? null,
+              vitaminB1Mg: s.vitaminB1Mg ?? null,
+              vitaminB2Mg: s.vitaminB2Mg ?? null,
+              vitaminB3Mg: s.vitaminB3Mg ?? null,
+              vitaminB5Mg: s.vitaminB5Mg ?? null,
+              vitaminB6Mg: s.vitaminB6Mg ?? null,
+              vitaminB7Mcg: s.vitaminB7Mcg ?? null,
+              vitaminB9Mcg: s.vitaminB9Mcg ?? null,
+              vitaminB12Mcg: s.vitaminB12Mcg ?? null,
+              calciumMg: s.calciumMg ?? null,
+              ironMg: s.ironMg ?? null,
+              magnesiumMg: s.magnesiumMg ?? null,
+              zincMg: s.zincMg ?? null,
+              seleniumMcg: s.seleniumMcg ?? null,
+              copperMg: s.copperMg ?? null,
+              manganeseMg: s.manganeseMg ?? null,
+              chromiumMcg: s.chromiumMcg ?? null,
+              iodineMcg: s.iodineMcg ?? null,
+              omega3Mg: s.omega3Mg ?? null,
+              omega6Mg: s.omega6Mg ?? null,
+            })),
+          );
+        }
+      });
       return { success: true, count: input.supplements.length };
     }),
 });

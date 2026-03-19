@@ -471,6 +471,74 @@ export const sleepSession = fitness.table(
 );
 
 // ============================================================
+// Supplements — per-user supplement stack definitions
+// ============================================================
+
+export const supplement = fitness.table(
+  "supplement",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => userProfile.id),
+    name: text("name").notNull(),
+    amount: real("amount"),
+    unit: text("unit"),
+    form: text("form"),
+    description: text("description"),
+    meal: mealEnum("meal"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    // Macronutrients
+    calories: integer("calories"),
+    proteinG: real("protein_g"),
+    carbsG: real("carbs_g"),
+    fatG: real("fat_g"),
+    // Fat breakdown
+    saturatedFatG: real("saturated_fat_g"),
+    polyunsaturatedFatG: real("polyunsaturated_fat_g"),
+    monounsaturatedFatG: real("monounsaturated_fat_g"),
+    transFatG: real("trans_fat_g"),
+    // Other macros
+    cholesterolMg: real("cholesterol_mg"),
+    sodiumMg: real("sodium_mg"),
+    potassiumMg: real("potassium_mg"),
+    fiberG: real("fiber_g"),
+    sugarG: real("sugar_g"),
+    // Micronutrients
+    vitaminAMcg: real("vitamin_a_mcg"),
+    vitaminCMg: real("vitamin_c_mg"),
+    vitaminDMcg: real("vitamin_d_mcg"),
+    vitaminEMg: real("vitamin_e_mg"),
+    vitaminKMcg: real("vitamin_k_mcg"),
+    vitaminB1Mg: real("vitamin_b1_mg"),
+    vitaminB2Mg: real("vitamin_b2_mg"),
+    vitaminB3Mg: real("vitamin_b3_mg"),
+    vitaminB5Mg: real("vitamin_b5_mg"),
+    vitaminB6Mg: real("vitamin_b6_mg"),
+    vitaminB7Mcg: real("vitamin_b7_mcg"),
+    vitaminB9Mcg: real("vitamin_b9_mcg"),
+    vitaminB12Mcg: real("vitamin_b12_mcg"),
+    calciumMg: real("calcium_mg"),
+    ironMg: real("iron_mg"),
+    magnesiumMg: real("magnesium_mg"),
+    zincMg: real("zinc_mg"),
+    seleniumMcg: real("selenium_mcg"),
+    copperMg: real("copper_mg"),
+    manganeseMg: real("manganese_mg"),
+    chromiumMcg: real("chromium_mcg"),
+    iodineMcg: real("iodine_mcg"),
+    omega3Mg: real("omega3_mg"),
+    omega6Mg: real("omega6_mg"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("supplement_user_name_idx").on(table.userId, table.name),
+    index("supplement_user_idx").on(table.userId),
+  ],
+);
+
+// ============================================================
 // Nutrition
 // ============================================================
 

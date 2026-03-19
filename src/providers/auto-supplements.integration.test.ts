@@ -1,162 +1,11 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { foodEntry } from "../db/schema.ts";
+import { DEFAULT_USER_ID, foodEntry, supplement, userProfile } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
-import {
-  AutoSupplementsProvider,
-  buildDailyEntries,
-  parseSupplementConfig,
-  type SupplementConfig,
-} from "./auto-supplements.ts";
+import { AutoSupplementsProvider } from "./auto-supplements.ts";
 
 // ============================================================
-// Coverage tests — validate(), datesInRange(), sync() paths
-// Including: sync with DB (lines 240-277), datesInRange iteration (lines 189-191)
-// ============================================================
-
-describe("AutoSupplementsProvider — validate()", () => {
-  it("returns error when no config is provided", () => {
-    const provider = new AutoSupplementsProvider();
-    const result = provider.validate();
-    expect(result).toContain("No supplement config");
-  });
-
-  it("returns null for a valid config", () => {
-    const config: SupplementConfig = {
-      supplements: [{ name: "Vitamin D", calories: 0 }],
-    };
-    const provider = new AutoSupplementsProvider(config);
-    expect(provider.validate()).toBeNull();
-  });
-
-  it("returns validation error for invalid config", () => {
-    // Force an invalid config — empty supplements array (violates Zod min(1) at runtime).
-    // TypeScript type allows empty array since min(1) is a runtime-only constraint.
-    const badConfig: SupplementConfig = { supplements: [] };
-    const provider = new AutoSupplementsProvider(badConfig);
-    const result = provider.validate();
-    expect(result).toContain("Invalid supplement config");
-  });
-});
-
-describe("AutoSupplementsProvider — sync() edge cases", () => {
-  it("returns error when no config during sync", async () => {
-    const provider = new AutoSupplementsProvider();
-    const mockDb = Object.create(null);
-    const result = await provider.sync(mockDb, new Date());
-    expect(result.recordsSynced).toBe(0);
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]?.message).toBe("No supplement config");
-  });
-});
-
-describe("parseSupplementConfig — edge cases", () => {
-  it("rejects non-object input", () => {
-    expect(() => parseSupplementConfig("not an object")).toThrow();
-  });
-
-  it("rejects null input", () => {
-    expect(() => parseSupplementConfig(null)).toThrow();
-  });
-
-  it("accepts supplement with all nutrient fields", () => {
-    const config = {
-      supplements: [
-        {
-          name: "Super Supplement",
-          description: "Everything",
-          meal: "breakfast" as const,
-          calories: 10,
-          proteinG: 1,
-          carbsG: 2,
-          fatG: 0.5,
-          saturatedFatG: 0.1,
-          polyunsaturatedFatG: 0.2,
-          monounsaturatedFatG: 0.1,
-          transFatG: 0,
-          cholesterolMg: 5,
-          sodiumMg: 10,
-          potassiumMg: 50,
-          fiberG: 0.5,
-          sugarG: 0.1,
-          vitaminAMcg: 300,
-          vitaminCMg: 60,
-          vitaminDMcg: 25,
-          vitaminEMg: 7.5,
-          vitaminKMcg: 60,
-          vitaminB1Mg: 0.6,
-          vitaminB2Mg: 0.7,
-          vitaminB3Mg: 8,
-          vitaminB5Mg: 2.5,
-          vitaminB6Mg: 0.8,
-          vitaminB7Mcg: 15,
-          vitaminB9Mcg: 200,
-          vitaminB12Mcg: 1.2,
-          calciumMg: 500,
-          ironMg: 9,
-          magnesiumMg: 200,
-          zincMg: 5,
-          seleniumMcg: 28,
-          copperMg: 0.45,
-          manganeseMg: 1.2,
-          chromiumMcg: 18,
-          iodineMcg: 75,
-          omega3Mg: 500,
-          omega6Mg: 100,
-          amount: 2,
-          unit: "capsules",
-          form: "gelcap",
-        },
-      ],
-    };
-    const result = parseSupplementConfig(config);
-    expect(result).toHaveLength(1);
-    expect(result[0]?.vitaminDMcg).toBe(25);
-    expect(result[0]?.omega3Mg).toBe(500);
-  });
-});
-
-describe("buildDailyEntries — edge cases", () => {
-  it("returns empty array for empty dates", () => {
-    const entries = buildDailyEntries([{ name: "Test" }], []);
-    expect(entries).toHaveLength(0);
-  });
-
-  it("returns empty array for empty supplements", () => {
-    const entries = buildDailyEntries([], ["2024-03-15"]);
-    expect(entries).toHaveLength(0);
-  });
-
-  it("sets numberOfUnits to 1 for all entries", () => {
-    const entries = buildDailyEntries([{ name: "Test" }], ["2024-03-15"]);
-    expect(entries[0]?.numberOfUnits).toBe(1);
-  });
-
-  it("sets foodDescription from supplement description", () => {
-    const entries = buildDailyEntries(
-      [{ name: "Test", description: "2 capsules" }],
-      ["2024-03-15"],
-    );
-    expect(entries[0]?.foodDescription).toBe("2 capsules");
-  });
-
-  it("sets foodDescription to undefined when no description", () => {
-    const entries = buildDailyEntries([{ name: "Test" }], ["2024-03-15"]);
-    expect(entries[0]?.foodDescription).toBeUndefined();
-  });
-
-  it("only includes defined nutrient values in nutrients object", () => {
-    const entries = buildDailyEntries(
-      [{ name: "Test", calories: 10, proteinG: 5 }],
-      ["2024-03-15"],
-    );
-    expect(entries[0]?.nutrients).toEqual({ calories: 10, proteinG: 5 });
-    expect(entries[0]?.nutrients.fatG).toBeUndefined();
-  });
-});
-
-// ============================================================
-// Integration tests for sync() with real DB (covers lines 240-277)
+// Integration tests for sync() with real DB
 // ============================================================
 
 describe("AutoSupplementsProvider — sync() with DB (integration)", () => {
@@ -164,6 +13,11 @@ describe("AutoSupplementsProvider — sync() with DB (integration)", () => {
 
   beforeAll(async () => {
     ctx = await setupTestDatabase();
+    // Ensure the default user exists
+    await ctx.db
+      .insert(userProfile)
+      .values({ id: DEFAULT_USER_ID, name: "Test User" })
+      .onConflictDoNothing();
   }, 60_000);
 
   afterAll(async () => {
@@ -171,13 +25,25 @@ describe("AutoSupplementsProvider — sync() with DB (integration)", () => {
   });
 
   it("inserts supplement entries into the database", async () => {
-    const config: SupplementConfig = {
-      supplements: [
-        { name: "Vitamin D3", calories: 0, vitaminDMcg: 50 },
-        { name: "Fish Oil", calories: 10, omega3Mg: 1000, meal: "breakfast" },
-      ],
-    };
-    const provider = new AutoSupplementsProvider(config);
+    // Insert supplement definitions for the default user
+    await ctx.db.insert(supplement).values([
+      {
+        userId: DEFAULT_USER_ID,
+        name: "Vitamin D3",
+        sortOrder: 0,
+        vitaminDMcg: 50,
+      },
+      {
+        userId: DEFAULT_USER_ID,
+        name: "Fish Oil",
+        sortOrder: 1,
+        calories: 10,
+        omega3Mg: 1000,
+        meal: "breakfast",
+      },
+    ]);
+
+    const provider = new AutoSupplementsProvider();
 
     // Use a since date that is today so we get exactly 1 day
     const today = new Date();
@@ -198,6 +64,7 @@ describe("AutoSupplementsProvider — sync() with DB (integration)", () => {
     const vitD = rows.find((r) => r.foodName === "Vitamin D3");
     expect(vitD).toBeDefined();
     expect(vitD?.category).toBe("supplement");
+    expect(vitD?.userId).toBe(DEFAULT_USER_ID);
 
     const fishOil = rows.find((r) => r.foodName === "Fish Oil");
     expect(fishOil).toBeDefined();
@@ -205,11 +72,18 @@ describe("AutoSupplementsProvider — sync() with DB (integration)", () => {
   });
 
   it("upserts on re-sync (updates existing entries)", async () => {
-    const config: SupplementConfig = {
-      supplements: [{ name: "Magnesium", calories: 0, magnesiumMg: 400 }],
-    };
-    const provider = new AutoSupplementsProvider(config);
+    // Insert a supplement
+    await ctx.db
+      .insert(supplement)
+      .values({
+        userId: DEFAULT_USER_ID,
+        name: "Magnesium",
+        sortOrder: 0,
+        magnesiumMg: 400,
+      })
+      .onConflictDoNothing();
 
+    const provider = new AutoSupplementsProvider();
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
 
@@ -218,23 +92,19 @@ describe("AutoSupplementsProvider — sync() with DB (integration)", () => {
     const result = await provider.sync(ctx.db, today);
 
     expect(result.errors).toHaveLength(0);
-    expect(result.recordsSynced).toBe(1);
 
-    // Verify no duplicates
+    // Verify no duplicates for Magnesium on today's date
     const rows = await ctx.db
       .select()
       .from(foodEntry)
       .where(eq(foodEntry.providerId, "auto-supplements"));
-    const magCount = rows.filter((r) => r.foodName === "Magnesium").length;
+    const todayStr = today.toISOString().slice(0, 10);
+    const magCount = rows.filter((r) => r.foodName === "Magnesium" && r.date === todayStr).length;
     expect(magCount).toBe(1);
   });
 
   it("returns empty result when since is in the future (no dates)", async () => {
-    const config: SupplementConfig = {
-      supplements: [{ name: "Zinc", calories: 0 }],
-    };
-    const provider = new AutoSupplementsProvider(config);
-
+    const provider = new AutoSupplementsProvider();
     const future = new Date("2099-01-01T00:00:00Z");
     const result = await provider.sync(ctx.db, future);
 
@@ -243,10 +113,18 @@ describe("AutoSupplementsProvider — sync() with DB (integration)", () => {
   });
 
   it("handles multiple days in range", async () => {
-    const config: SupplementConfig = {
-      supplements: [{ name: "TestMultiDay", calories: 5 }],
-    };
-    const provider = new AutoSupplementsProvider(config);
+    // Insert a unique supplement for this test
+    await ctx.db
+      .insert(supplement)
+      .values({
+        userId: DEFAULT_USER_ID,
+        name: "TestMultiDay",
+        sortOrder: 0,
+        calories: 5,
+      })
+      .onConflictDoNothing();
+
+    const provider = new AutoSupplementsProvider();
 
     // 3 days ago to today = 4 days
     const threeDaysAgo = new Date();
@@ -256,7 +134,54 @@ describe("AutoSupplementsProvider — sync() with DB (integration)", () => {
     const result = await provider.sync(ctx.db, threeDaysAgo);
 
     expect(result.errors).toHaveLength(0);
-    // Should be at least 4 entries (3 days ago, 2 days ago, yesterday, today)
+    // Should have entries for multiple supplements across multiple days
     expect(result.recordsSynced).toBeGreaterThanOrEqual(4);
+  });
+
+  it("syncs supplements for multiple users independently", async () => {
+    const secondUserId = "22222222-2222-2222-2222-222222222222";
+
+    // Create second user
+    await ctx.db
+      .insert(userProfile)
+      .values({ id: secondUserId, name: "Second User" })
+      .onConflictDoNothing();
+
+    // Insert supplements for second user
+    await ctx.db.insert(supplement).values({
+      userId: secondUserId,
+      name: "User2 Zinc",
+      sortOrder: 0,
+      zincMg: 15,
+    });
+
+    const provider = new AutoSupplementsProvider();
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    const result = await provider.sync(ctx.db, today);
+
+    expect(result.errors).toHaveLength(0);
+
+    // Verify user2's supplement entry exists with correct userId
+    const rows = await ctx.db
+      .select()
+      .from(foodEntry)
+      .where(eq(foodEntry.providerId, "auto-supplements"));
+    const user2Entry = rows.find((r) => r.foodName === "User2 Zinc" && r.userId === secondUserId);
+    expect(user2Entry).toBeDefined();
+    expect(user2Entry?.zincMg).toBe(15);
+  });
+
+  it("returns empty result when no supplements exist in DB", async () => {
+    // Clean up all supplements
+    await ctx.db.delete(supplement);
+
+    const provider = new AutoSupplementsProvider();
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    const result = await provider.sync(ctx.db, today);
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toHaveLength(0);
   });
 });
