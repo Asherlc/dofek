@@ -154,8 +154,12 @@ export const pmcRouter = router({
       const { chronicTrainingLoadDays, acuteTrainingLoadDays } = effective.exponentialMovingAverage;
       const { genderFactor, exponent } = effective.trainingImpulseConstants;
 
-      // Fetch extra history for EWMA warm-up
-      const queryDays = input.days + chronicTrainingLoadDays;
+      // Fetch enough history for EWMA convergence, regardless of display range.
+      // A 42-day EWMA needs ~126 days to reach 95% convergence, so we always
+      // fetch at least 365 days of activity data, then trim the output to the
+      // requested display window.
+      const minHistoryDays = 365;
+      const queryDays = Math.max(input.days, minHistoryDays) + chronicTrainingLoadDays;
 
       // Get max HR, resting HR from user_profile + per-activity stats from activity_summary
       const combinedActivityRowSchema = z.object({
@@ -315,7 +319,7 @@ export const pmcRouter = router({
       let atl = 0;
 
       const current = new Date(startDate);
-      const warmUpDays = chronicTrainingLoadDays; // skip warm-up from final output
+      const warmUpDays = queryDays - input.days; // skip warm-up from final output
       let dayIndex = 0;
 
       while (current <= endDate) {
