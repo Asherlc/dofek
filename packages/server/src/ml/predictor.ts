@@ -221,9 +221,8 @@ function crossValidate(X: number[][], y: number[], k: number): number {
     const testY: number[] = [];
 
     for (let i = 0; i < n; i++) {
-      const xi = X[i];
-      const yi = y[i];
-      if (xi === undefined || yi === undefined) continue;
+      const xi = X[i]!;
+      const yi = y[i]!;
       if (i >= testStart && i < testEnd) {
         testX.push(xi);
         testY.push(yi);
@@ -245,9 +244,8 @@ function crossValidate(X: number[][], y: number[], k: number): number {
 
     const testMean = testY.reduce((a, b) => a + b, 0) / testY.length;
     for (let i = 0; i < testX.length; i++) {
-      const testXi = testX[i];
-      const testYi = testY[i];
-      if (testXi === undefined || testYi === undefined) continue;
+      const testXi = testX[i]!;
+      const testYi = testY[i]!;
       const pred = model.predict(testXi);
       totalSsRes += (testYi - pred) ** 2;
       totalSsTot += (testYi - testMean) ** 2;
@@ -262,9 +260,8 @@ function fitLinearSafely(X: number[][], y: number[]): LinearRegression | null {
   try {
     linear.fit(X, y);
     return linear;
-  } catch {
-    return null;
-  }
+  } catch {}
+  return null;
 }
 
 function predictLinearOrFallback(
