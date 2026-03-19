@@ -35,6 +35,36 @@ async function doRegisterProviders() {
     ["oura", () => import("../providers/oura.ts").then((m) => new m.OuraProvider())],
     ["bodyspec", () => import("../providers/bodyspec.ts").then((m) => new m.BodySpecProvider())],
     [
+      "eight-sleep",
+      () => import("../providers/eight-sleep.ts").then((m) => new m.EightSleepProvider()),
+    ],
+    ["zwift", () => import("../providers/zwift.ts").then((m) => new m.ZwiftProvider())],
+    [
+      "trainerroad",
+      () => import("../providers/trainerroad.ts").then((m) => new m.TrainerRoadProvider()),
+    ],
+    [
+      "ultrahuman",
+      () => import("../providers/ultrahuman.ts").then((m) => new m.UltrahumanProvider()),
+    ],
+    [
+      "mapmyfitness",
+      () => import("../providers/mapmyfitness.ts").then((m) => new m.MapMyFitnessProvider()),
+    ],
+    ["suunto", () => import("../providers/suunto.ts").then((m) => new m.SuuntoProvider())],
+    ["coros", () => import("../providers/coros.ts").then((m) => new m.CorosProvider())],
+    ["concept2", () => import("../providers/concept2.ts").then((m) => new m.Concept2Provider())],
+    ["komoot", () => import("../providers/komoot.ts").then((m) => new m.KomootProvider())],
+    ["xert", () => import("../providers/xert.ts").then((m) => new m.XertProvider())],
+    [
+      "cycling-analytics",
+      () =>
+        import("../providers/cycling-analytics.ts").then((m) => new m.CyclingAnalyticsProvider()),
+    ],
+    ["wger", () => import("../providers/wger.ts").then((m) => new m.WgerProvider())],
+    ["decathlon", () => import("../providers/decathlon.ts").then((m) => new m.DecathlonProvider())],
+    ["velohero", () => import("../providers/velohero.ts").then((m) => new m.VeloHeroProvider())],
+    [
       "auto-supplements",
       () => import("../providers/auto-supplements.ts").then((m) => new m.AutoSupplementsProvider()),
     ],
@@ -47,4 +77,5 @@ async function doRegisterProviders() {
       console.warn(`[worker] Failed to register ${name} provider: ${err}`);
     }
   }
+
 }

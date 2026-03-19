@@ -50,6 +50,8 @@ export type {
   SleepNightlyRow,
   WorkloadRatioRow,
 } from "./routers/recovery.ts";
+// Running router types
+export type { PaceTrendRow, RunningDynamicsRow } from "./routers/running.ts";
 // Sleep need router types
 export type { SleepNeedResult, SleepNight } from "./routers/sleep-need.ts";
 // Strength router types

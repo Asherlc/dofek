@@ -5,6 +5,7 @@ import {
   formatDurationMinutes,
   formatDurationRange,
   formatHour,
+  formatPace,
   formatRelativeTime,
   formatSleepDebt,
   formatSleepDebtInline,
@@ -212,6 +213,33 @@ describe("formatRelativeTime", () => {
   it("returns days ago for multi-day diffs", () => {
     const ago = new Date(Date.now() - 3 * 86400000).toISOString();
     expect(formatRelativeTime(ago)).toBe("3d ago");
+  });
+});
+
+describe("formatPace", () => {
+  it("formats a standard pace", () => {
+    expect(formatPace(300)).toBe("5:00");
+  });
+
+  it("formats pace with seconds", () => {
+    expect(formatPace(330)).toBe("5:30");
+  });
+
+  it("pads single-digit seconds", () => {
+    expect(formatPace(305)).toBe("5:05");
+  });
+
+  it("handles rollover when seconds round to 60", () => {
+    // 299.7 -> Math.floor(299.7/60) = 4, Math.round(59.7) = 60 -> should be 5:00
+    expect(formatPace(299.7)).toBe("5:00");
+  });
+
+  it("handles fractional seconds without rollover", () => {
+    expect(formatPace(299.2)).toBe("4:59");
+  });
+
+  it("formats sub-minute pace", () => {
+    expect(formatPace(45)).toBe("0:45");
   });
 });
 
