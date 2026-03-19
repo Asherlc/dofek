@@ -10,6 +10,11 @@ interface SlackMessage {
   text: string;
 }
 
+export interface SavedFoodSummaryItem {
+  foodName: string;
+  calories: number;
+}
+
 type MicroKey = keyof NutritionItemWithMeal & string;
 
 /** Object containing only micronutrient values, used for summing totals */
@@ -168,7 +173,7 @@ export function formatConfirmationMessage(
 }
 
 /** Format a success message after food entries are saved */
-export function formatSavedMessage(items: NutritionItemWithMeal[]): SlackMessage {
+export function formatSavedMessage(items: SavedFoodSummaryItem[]): SlackMessage {
   const blocks: SlackBlock[] = [
     {
       type: "section",

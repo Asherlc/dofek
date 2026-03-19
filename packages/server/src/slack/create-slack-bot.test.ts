@@ -6,6 +6,8 @@ vi.mock("@slack/bolt", () => {
     message: vi.fn(),
     action: vi.fn(),
     event: vi.fn(),
+    error: vi.fn(),
+    use: vi.fn(),
     start: vi.fn().mockResolvedValue(undefined),
   };
   const mockRouter = { get: vi.fn(), post: vi.fn() };
@@ -15,9 +17,16 @@ vi.mock("@slack/bolt", () => {
       ExpressReceiver: vi.fn().mockImplementation(() => ({
         router: mockRouter,
       })),
+      SocketModeReceiver: vi.fn().mockImplementation(() => ({
+        start: vi.fn().mockResolvedValue(undefined),
+      })),
     },
   };
 });
+
+vi.mock("@slack/socket-mode", () => ({
+  SocketModeClient: vi.fn().mockImplementation(() => ({})),
+}));
 
 vi.mock("../logger.ts", () => ({
   logger: {
@@ -40,6 +49,7 @@ vi.mock("../lib/cache.ts", () => ({
 }));
 
 import bolt from "@slack/bolt";
+import { SocketModeClient } from "@slack/socket-mode";
 import { createSlackBot, startSlackBot } from "./bot.ts";
 
 /**
@@ -86,11 +96,19 @@ describe("createSlackBot", () => {
     expect(result?.mode).toBe("socket");
     expect(result?.router).toBeUndefined();
 
+    expect(vi.mocked(bolt.SocketModeReceiver)).toHaveBeenCalledWith(
+      expect.objectContaining({ appToken: "xapp-test-token" }),
+    );
+    expect(vi.mocked(SocketModeClient)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        appToken: "xapp-test-token",
+        clientPingTimeout: 30_000,
+      }),
+    );
     expect(vi.mocked(bolt.App)).toHaveBeenCalledWith(
       expect.objectContaining({
         token: "xoxb-test-token",
-        appToken: "xapp-test-token",
-        socketMode: true,
+        receiver: expect.any(Object),
       }),
     );
   });
@@ -184,5 +202,162 @@ describe("startSlackBot", () => {
     expect(logger.warn).toHaveBeenCalledWith(
       expect.stringContaining("requires Express app reference"),
     );
+  });
+
+  it("calls app.start() in socket mode", async () => {
+    process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
+    process.env.SLACK_APP_TOKEN = "xapp-test-token";
+
+    const db = createMockDb();
+    const { logger } = await import("../logger.ts");
+
+    await startSlackBot(db);
+
+    // Get the mock App instance to verify start() was called
+    const mockAppInstance = vi.mocked(bolt.App).mock.results[0]?.value;
+    expect(mockAppInstance).toBeDefined();
+    expect(mockAppInstance.start).toHaveBeenCalled();
+    expect(logger.info).toHaveBeenCalledWith("[slack] Slack bot connected (Socket Mode)");
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  it("does not mount Express router in socket mode when express app is provided", async () => {
+    process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
+    process.env.SLACK_APP_TOKEN = "xapp-test-token";
+
+    const db = createMockDb();
+    const mockExpress = mockAs<import("express").Express>({ use: vi.fn() });
+    const { logger } = await import("../logger.ts");
+
+    await startSlackBot(db, mockExpress);
+
+    expect(mockExpress.use).not.toHaveBeenCalled();
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  it("logs error when app.start() fails in socket mode", async () => {
+    process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
+    process.env.SLACK_APP_TOKEN = "xapp-test-token";
+
+    // Make the mock App's start() reject
+    const mockAppInstance = {
+      message: vi.fn(),
+      action: vi.fn(),
+      event: vi.fn(),
+      error: vi.fn(),
+      use: vi.fn(),
+      start: vi.fn().mockRejectedValue(new Error("WebSocket connection failed")),
+    };
+    vi.mocked(bolt.App).mockImplementationOnce(() => mockAs(mockAppInstance));
+
+    const db = createMockDb();
+    const { logger } = await import("../logger.ts");
+
+    await startSlackBot(db);
+
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining("[slack] Failed to start Slack bot: WebSocket connection failed"),
+    );
+  });
+
+  it("logs HTTP mode mount info after mounting router", async () => {
+    process.env.SLACK_SIGNING_SECRET = "test-signing-secret";
+
+    const db = createMockDb();
+    const mockExpress = mockAs<import("express").Express>({ use: vi.fn() });
+    const { logger } = await import("../logger.ts");
+
+    await startSlackBot(db, mockExpress);
+
+    expect(logger.info).toHaveBeenCalledWith(
+      "[slack] Slack bot mounted at /slack/events (HTTP mode)",
+    );
+  });
+
+  it("logs no-credentials info when nothing is configured", async () => {
+    const db = createMockDb();
+    const { logger } = await import("../logger.ts");
+
+    await startSlackBot(db);
+
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.stringContaining("No Slack credentials configured"),
+    );
+  });
+});
+
+describe("createSlackBot — logger messages", () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    delete process.env.SLACK_BOT_TOKEN;
+    delete process.env.SLACK_APP_TOKEN;
+    delete process.env.SLACK_SIGNING_SECRET;
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it("logs HTTP mode configured message", async () => {
+    process.env.SLACK_SIGNING_SECRET = "test-signing-secret";
+
+    const db = createMockDb();
+    const { logger } = await import("../logger.ts");
+
+    createSlackBot(db);
+
+    expect(logger.info).toHaveBeenCalledWith(
+      "[slack] Configured in HTTP mode (multi-workspace, OAuth via /auth/provider/slack)",
+    );
+  });
+
+  it("logs Socket Mode configured message", async () => {
+    process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
+    process.env.SLACK_APP_TOKEN = "xapp-test-token";
+
+    const db = createMockDb();
+    const { logger } = await import("../logger.ts");
+
+    createSlackBot(db);
+
+    expect(logger.info).toHaveBeenCalledWith(
+      "[slack] Configured in Socket Mode (single workspace)",
+    );
+  });
+
+  it("logs no credentials message when nothing set", async () => {
+    const db = createMockDb();
+    const { logger } = await import("../logger.ts");
+
+    createSlackBot(db);
+
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.stringContaining("No Slack credentials configured"),
+    );
+  });
+
+  it("registers error handler on app", () => {
+    process.env.SLACK_SIGNING_SECRET = "test-signing-secret";
+
+    const db = createMockDb();
+    const result = createSlackBot(db);
+
+    expect(result).not.toBeNull();
+    const mockAppInstance = vi.mocked(bolt.App).mock.results[0]?.value;
+    expect(mockAppInstance.error).toHaveBeenCalled();
+  });
+
+  it("registers error handler on socket mode app", () => {
+    process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
+    process.env.SLACK_APP_TOKEN = "xapp-test-token";
+
+    const db = createMockDb();
+    const result = createSlackBot(db);
+
+    expect(result).not.toBeNull();
+    const mockAppInstance = vi.mocked(bolt.App).mock.results[0]?.value;
+    expect(mockAppInstance.error).toHaveBeenCalled();
   });
 });
