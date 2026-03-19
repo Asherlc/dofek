@@ -39,12 +39,15 @@ function createFakeQueue() {
 }
 
 // Fake DB that returns a valid session for any query (used by auth middleware).
-const fakeDb = {
-  execute: async () => [{ user_id: "test-user", expires_at: new Date("2099-01-01") }],
-} as import("dofek/db").Database;
+function createFakeDb(): import("dofek/db").Database {
+  return {
+    execute: async () => [{ user_id: "test-user", expires_at: new Date("2099-01-01") }],
+  } satisfies import("dofek/db").Database;
+}
 
 function createTestApp() {
   const queue = createFakeQueue();
+  const fakeDb = createFakeDb();
   const app = express();
   app.use("/api/upload", createUploadRouter({ getImportQueue: () => queue, db: fakeDb }));
   return { app, queue };

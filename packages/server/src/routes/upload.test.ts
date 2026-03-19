@@ -48,7 +48,7 @@ function mockQueue() {
 
 function createTestApp() {
   const queue = mockQueue();
-  const fakeDb = {} as import("dofek/db").Database;
+  const fakeDb = {} satisfies import("dofek/db").Database;
   const app = express();
   app.use("/api/upload", createUploadRouter({ getImportQueue: () => queue, db: fakeDb }));
   return { app, queue };
