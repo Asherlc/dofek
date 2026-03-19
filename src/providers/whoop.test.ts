@@ -1454,6 +1454,87 @@ describe("WhoopProvider.sync() — sleep sync", () => {
     expect(sleepInsert?.deepMinutes).toBe(120);
   });
 
+  it("uses v2_activities sleep IDs when legacy sleep fields are missing", async () => {
+    const { loadTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValueOnce({
+      accessToken: "test",
+      refreshToken: "test-refresh",
+      expiresAt: new Date("2027-01-01"),
+      scopes: "userId:42",
+    });
+
+    const cycles = [
+      {
+        days: ["2026-03-01"],
+        recovery: null,
+        sleep: null,
+        workouts: [],
+        v2_activities: [
+          {
+            id: "sleep-activity-uuid",
+            type: "sleep",
+            during: "['2026-02-28T23:00:00Z','2026-03-01T06:30:00Z')",
+            score_state: "SCORED",
+            score_type: "SLEEP",
+          },
+        ],
+      },
+    ];
+
+    const sleepData: WhoopSleepRecord = {
+      id: 10235,
+      user_id: 42,
+      created_at: "2026-03-01T06:00:00Z",
+      updated_at: "2026-03-01T06:30:00Z",
+      start: "2026-02-28T23:00:00Z",
+      end: "2026-03-01T06:30:00Z",
+      timezone_offset: "-05:00",
+      nap: false,
+      score_state: "SCORED",
+      score: {
+        stage_summary: {
+          total_in_bed_time_milli: 27000000,
+          total_awake_time_milli: 1800000,
+          total_no_data_time_milli: 0,
+          total_light_sleep_time_milli: 10800000,
+          total_slow_wave_sleep_time_milli: 7200000,
+          total_rem_sleep_time_milli: 5400000,
+          sleep_cycle_count: 4,
+          disturbance_count: 2,
+        },
+        sleep_needed: {
+          baseline_milli: 28800000,
+          need_from_sleep_debt_milli: 1800000,
+          need_from_recent_strain_milli: 900000,
+          need_from_recent_nap_milli: 0,
+        },
+        respiratory_rate: 16.1,
+        sleep_performance_percentage: 92,
+        sleep_consistency_percentage: 88,
+        sleep_efficiency_percentage: 91.7,
+      },
+    };
+
+    const mockFetch = makeSyncMockFetch({
+      cycles,
+      sleepData,
+      journalData: [],
+      hrValues: [],
+      weightliftingData: null,
+    });
+    const provider = new WhoopProvider(mockFetch);
+    const db = makeChainableMock();
+    db.onConflictDoUpdate = vi.fn().mockReturnValue(db);
+    db.returning = vi.fn().mockResolvedValue([]);
+    const result = await provider.sync(db, new Date("2026-03-01"));
+
+    expect(result.errors).toHaveLength(0);
+    const valuesCallArgs = getValuesCallArgs(db);
+    const sleepInsert = findValuesRecord(valuesCallArgs, (rec) => rec.externalId === "10235");
+    expect(sleepInsert).toBeDefined();
+    expect(sleepInsert?.deepMinutes).toBe(120);
+  });
+
   it("skips cycles without sleep data", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
     vi.mocked(loadTokens).mockResolvedValueOnce({
