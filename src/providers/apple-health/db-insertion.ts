@@ -10,17 +10,31 @@ import {
   nutritionDaily,
   sleepSession,
 } from "../../db/schema.ts";
+import { logger } from "../../logger.ts";
 import type { HealthRecord } from "./records.ts";
 import type { SleepAnalysisRecord } from "./sleep.ts";
 import type { HealthWorkout } from "./workouts.ts";
 
 /**
- * Helper to catch and re-throw the "ON CONFLICT DO UPDATE command cannot affect
- * row a second time" PostgreSQL error with diagnostic information about which
- * table and which duplicate keys caused it. This error means a single INSERT
- * batch contained duplicate conflict-target values.
+ * Deduplicate rows by their conflict key, keeping the last occurrence.
+ * Returns the deduplicated rows if any duplicates were found, or the
+ * original array if all keys are unique.
  */
-async function insertWithDuplicateDiag<T extends Record<string, unknown>>(
+function deduplicateByKey<T>(rows: T[], conflictKey: (row: T) => string): T[] {
+  const seen = new Map<string, T>();
+  for (const row of rows) {
+    seen.set(conflictKey(row), row);
+  }
+  return seen.size === rows.length ? rows : [...seen.values()];
+}
+
+/**
+ * Insert rows with automatic deduplication on the "ON CONFLICT DO UPDATE
+ * command cannot affect row a second time" PostgreSQL error. When a batch
+ * contains duplicate conflict-target values, this helper deduplicates and
+ * retries the insert instead of crashing.
+ */
+export async function insertWithDuplicateDiag<T extends Record<string, unknown>>(
   label: string,
   conflictKey: (row: T) => string,
   rows: T[],
@@ -30,17 +44,12 @@ async function insertWithDuplicateDiag<T extends Record<string, unknown>>(
     await doInsert(rows);
   } catch (err) {
     if (err instanceof Error && err.message.includes("cannot affect row a second time")) {
-      const seen = new Map<string, number>();
-      const dupes: string[] = [];
-      for (const row of rows) {
-        const key = conflictKey(row);
-        const count = (seen.get(key) ?? 0) + 1;
-        seen.set(key, count);
-        if (count === 2) dupes.push(key);
-      }
-      console.error(
-        `[apple_health] Duplicate conflict keys in ${label} batch (${rows.length} rows, ${dupes.length} dupes): ${dupes.slice(0, 5).join(", ")}`,
+      const uniqueRows = deduplicateByKey(rows, conflictKey);
+      logger.warn(
+        `[apple_health] Deduplicated ${label} batch: ${rows.length} → ${uniqueRows.length} rows (${rows.length - uniqueRows.length} duplicates removed)`,
       );
+      await doInsert(uniqueRows);
+      return;
     }
     throw err;
   }

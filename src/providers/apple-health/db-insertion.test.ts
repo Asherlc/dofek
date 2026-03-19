@@ -4,6 +4,7 @@ import {
   ALL_ROUTED_TYPES,
   BODY_MEASUREMENT_TYPES,
   DAILY_METRIC_TYPES,
+  insertWithDuplicateDiag,
   METRIC_STREAM_TYPES,
   NUTRITION_TYPES,
   upsertBodyMeasurementBatch,
@@ -1331,5 +1332,57 @@ describe("upsertNutritionBatch — deduplication", () => {
     expect(count).toBe(1);
     expect(capture.values).toHaveLength(1);
     expect(capture.values[0]).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Safety-net dedup: insertWithDuplicateDiag retries with deduplicated batch
+// ---------------------------------------------------------------------------
+
+describe("insertWithDuplicateDiag — dedup and retry", () => {
+  it("deduplicates and retries when batch has duplicate conflict keys", async () => {
+    const insertCalls: Record<string, unknown>[][] = [];
+
+    const rows: Record<string, unknown>[] = [
+      { providerId: "apple_health", externalId: "dup-key", weightKg: 80 },
+      { providerId: "apple_health", externalId: "dup-key", weightKg: 81 },
+    ];
+
+    const doInsert = vi.fn(async (batch: Record<string, unknown>[]) => {
+      insertCalls.push(batch);
+      if (insertCalls.length === 1) {
+        throw new Error("ON CONFLICT DO UPDATE command cannot affect row a second time");
+      }
+    });
+
+    await insertWithDuplicateDiag(
+      "body_measurement",
+      (row) => `${row.providerId}:${row.externalId}`,
+      rows,
+      doInsert,
+    );
+
+    expect(doInsert).toHaveBeenCalledTimes(2);
+    // First call gets both rows (including duplicate)
+    expect(insertCalls[0]).toHaveLength(2);
+    // Second call gets deduplicated rows (last one wins)
+    expect(insertCalls[1]).toHaveLength(1);
+    expect(insertCalls[1]?.[0]).toEqual({
+      providerId: "apple_health",
+      externalId: "dup-key",
+      weightKg: 81,
+    });
+  });
+
+  it("re-throws non-duplicate errors", async () => {
+    const doInsert = vi.fn(async () => {
+      throw new Error("connection reset");
+    });
+
+    await expect(
+      insertWithDuplicateDiag("test", (row) => String(row.id), [{ id: 1 }], doInsert),
+    ).rejects.toThrow("connection reset");
+
+    expect(doInsert).toHaveBeenCalledTimes(1);
   });
 });
