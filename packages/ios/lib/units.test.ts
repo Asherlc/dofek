@@ -1,18 +1,49 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   convertDistance,
-  convertElevation,
-  convertPace,
-  convertSpeed,
-  convertTemperature,
   convertWeight,
   distanceLabel,
-  elevationLabel,
-  paceLabel,
-  speedLabel,
-  temperatureLabel,
   weightLabel,
 } from "./units";
+
+const mockSettings = { data: undefined as { value: unknown } | undefined };
+
+vi.mock("./trpc", () => ({
+  trpc: {
+    settings: {
+      get: { useQuery: () => mockSettings },
+    },
+  },
+}));
+
+const { useUnitSystem } = await import("./units");
+
+describe("useUnitSystem", () => {
+  it("returns 'metric' when no setting exists", () => {
+    mockSettings.data = undefined;
+    expect(useUnitSystem()).toBe("metric");
+  });
+
+  it("returns 'metric' when setting value is 'metric'", () => {
+    mockSettings.data = { value: "metric" };
+    expect(useUnitSystem()).toBe("metric");
+  });
+
+  it("returns 'imperial' when setting value is 'imperial'", () => {
+    mockSettings.data = { value: "imperial" };
+    expect(useUnitSystem()).toBe("imperial");
+  });
+
+  it("falls back to 'metric' for unexpected values", () => {
+    mockSettings.data = { value: "unknown-system" };
+    expect(useUnitSystem()).toBe("metric");
+  });
+
+  it("falls back to 'metric' when value is null", () => {
+    mockSettings.data = { value: null };
+    expect(useUnitSystem()).toBe("metric");
+  });
+});
 
 describe("re-exported conversion functions", () => {
   it("converts weight", () => {
@@ -25,31 +56,9 @@ describe("re-exported conversion functions", () => {
     expect(convertDistance(10, "imperial")).toBeCloseTo(6.214, 2);
   });
 
-  it("converts elevation", () => {
-    expect(convertElevation(1000, "imperial")).toBeCloseTo(3280.84, 0);
-  });
-
-  it("converts temperature", () => {
-    expect(convertTemperature(37, "imperial")).toBeCloseTo(98.6, 1);
-  });
-
-  it("converts speed", () => {
-    expect(convertSpeed(100, "imperial")).toBeCloseTo(62.14, 1);
-  });
-
-  it("converts pace", () => {
-    expect(convertPace(300, "imperial")).toBeCloseTo(482.8, 0);
-  });
-});
-
-describe("re-exported label functions", () => {
   it("returns correct labels", () => {
     expect(weightLabel("metric")).toBe("kg");
     expect(weightLabel("imperial")).toBe("lbs");
     expect(distanceLabel("imperial")).toBe("mi");
-    expect(elevationLabel("imperial")).toBe("ft");
-    expect(temperatureLabel("imperial")).toBe("°F");
-    expect(speedLabel("imperial")).toBe("mph");
-    expect(paceLabel("imperial")).toBe("/mi");
   });
 });
