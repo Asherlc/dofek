@@ -1,13 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
-// Mock expo-secure-store so the module loads in Node (it imports react-native)
-vi.mock("expo-secure-store", () => ({
-  setItemAsync: vi.fn(),
-  getItemAsync: vi.fn(() => Promise.resolve(null)),
-  deleteItemAsync: vi.fn(),
-}));
+import { SERVER_URL, getTrpcUrl } from "./server";
 
-import { getTrpcUrl } from "./server";
+describe("SERVER_URL", () => {
+  it("points to production server", () => {
+    expect(SERVER_URL).toBe("https://dofek.asherlc.com");
+  });
+});
 
 describe("getTrpcUrl", () => {
   it("appends /api/trpc to the server URL", () => {
