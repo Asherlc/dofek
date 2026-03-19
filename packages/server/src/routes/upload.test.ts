@@ -275,6 +275,32 @@ describe("createUploadRouter", () => {
       const data = JSON.parse(res.body);
       expect(data.status).toBe("processing");
     });
+
+    it("passes weightUnit=lbs when units=lbs", async () => {
+      const { app, queue } = createTestApp();
+      await request(app, "post", "/api/upload/strong-csv?units=lbs", {
+        headers: { "Content-Type": "text/csv" },
+        body: Buffer.from("date,exercise\n2026-01-01,squat"),
+      });
+      expect(queue.add).toHaveBeenCalledWith(
+        "strong-csv",
+        expect.objectContaining({ weightUnit: "lbs" }),
+        undefined,
+      );
+    });
+
+    it("defaults weightUnit to kg when units not set", async () => {
+      const { app, queue } = createTestApp();
+      await request(app, "post", "/api/upload/strong-csv", {
+        headers: { "Content-Type": "text/csv" },
+        body: Buffer.from("date,exercise\n2026-01-01,squat"),
+      });
+      expect(queue.add).toHaveBeenCalledWith(
+        "strong-csv",
+        expect.objectContaining({ weightUnit: "kg" }),
+        undefined,
+      );
+    });
   });
 
   describe("POST /api/upload/apple-health (chunked)", () => {
@@ -709,13 +735,34 @@ describe("createUploadRouter", () => {
       expect(data.status).toBe("processing");
     });
 
-    it("uses fullSync when query param is set", async () => {
-      const { app } = createTestApp();
+    it("passes since=epoch when fullSync=true", async () => {
+      const { app, queue } = createTestApp();
       const res = await request(app, "post", "/api/upload/apple-health?fullSync=true", {
         headers: { "Content-Type": "application/zip" },
         body: Buffer.from("data"),
       });
       expect(res.status).toBe(200);
+      expect(queue.add).toHaveBeenCalledWith(
+        "apple-health",
+        expect.objectContaining({ since: "1970-01-01T00:00:00.000Z" }),
+        undefined,
+      );
+    });
+
+    it("passes since=7 days ago when fullSync is not set", async () => {
+      const { app, queue } = createTestApp();
+      const before = Date.now();
+      const res = await request(app, "post", "/api/upload/apple-health", {
+        headers: { "Content-Type": "application/zip" },
+        body: Buffer.from("data"),
+      });
+      expect(res.status).toBe(200);
+      const sinceArg = String(queue.add.mock.calls[0][1].since);
+      const sinceMs = new Date(sinceArg).getTime();
+      const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+      // since should be approximately 7 days before the request
+      expect(sinceMs).toBeGreaterThan(before - sevenDaysMs - 5000);
+      expect(sinceMs).toBeLessThan(before - sevenDaysMs + 5000);
     });
   });
 });
