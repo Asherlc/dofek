@@ -77,12 +77,12 @@ describe("Router coverage", () => {
         sql`INSERT INTO fitness.sleep_session (
               provider_id, user_id, started_at, ended_at,
               duration_minutes, deep_minutes, rem_minutes, light_minutes,
-              awake_minutes, efficiency_pct, is_nap
+              awake_minutes, efficiency_pct, sleep_type
             ) VALUES (
               'test_provider', ${DEFAULT_USER_ID},
               (CURRENT_DATE - ${i}::int)::timestamp + INTERVAL '22 hours 30 minutes',
               (CURRENT_DATE - ${i}::int + 1)::timestamp + INTERVAL '6 hours',
-              ${duration}, ${deep}, ${rem}, ${light}, ${awake}, ${efficiency}, false
+              ${duration}, ${deep}, ${rem}, ${light}, ${awake}, ${efficiency}, 'sleep'
             )`,
       );
     }

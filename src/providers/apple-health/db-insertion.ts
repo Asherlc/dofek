@@ -647,7 +647,6 @@ export async function upsertSleepBatch(
 
     const totalSleepMinutes = deepMinutes + remMinutes + lightMinutes;
     const externalId = `ah:sleep:${bed.startDate.toISOString()}`;
-    const isNap = bed.durationMinutes < 120;
 
     return {
       bed,
@@ -657,7 +656,6 @@ export async function upsertSleepBatch(
       awakeMinutes,
       totalSleepMinutes,
       externalId,
-      isNap,
     };
   });
 
@@ -676,7 +674,7 @@ export async function upsertSleepBatch(
       s.bed.durationMinutes > 0
         ? Math.round((s.totalSleepMinutes / s.bed.durationMinutes) * 100) / 100
         : undefined,
-    isNap: s.isNap,
+    sleepType: null,
     sourceName: s.bed.sourceName,
   }));
 
@@ -699,7 +697,7 @@ export async function upsertSleepBatch(
               remMinutes: sql`excluded.rem_minutes`,
               lightMinutes: sql`excluded.light_minutes`,
               awakeMinutes: sql`excluded.awake_minutes`,
-              isNap: sql`excluded.is_nap`,
+              sleepType: sql`excluded.sleep_type`,
               sourceName: sql`coalesce(excluded.source_name, ${sleepSession.sourceName})`,
             },
           }),

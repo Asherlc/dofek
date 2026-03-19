@@ -242,7 +242,7 @@ describe("FitbitProvider.sync() (integration)", () => {
     expect(sleep.lightMinutes).toBe(200);
     expect(sleep.awakeMinutes).toBe(35);
     expect(sleep.efficiencyPct).toBe(92);
-    expect(sleep.isNap).toBe(false);
+    expect(sleep.sleepType).toBe("main");
 
     // Verify daily metrics (since covers only 2026-03-01 to today, but mock returns same data)
     const dailyRows = await ctx.db
