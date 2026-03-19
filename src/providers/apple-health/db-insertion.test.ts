@@ -1333,3 +1333,71 @@ describe("upsertNutritionBatch — deduplication", () => {
     expect(capture.values[0]).toHaveLength(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Safety-net dedup: insertWithDuplicateDiag retries with deduplicated batch
+// ---------------------------------------------------------------------------
+
+describe("insertWithDuplicateDiag — dedup and retry", () => {
+  it("retries body measurement insert after deduplicating on conflict error", async () => {
+    // Create a mock DB that throws the duplicate conflict error on first insert,
+    // then succeeds on second (after deduplication)
+    const capture: MockInsertCapture = { values: [] };
+    let insertCallCount = 0;
+
+    // biome-ignore lint/suspicious/noExplicitAny: mock chainable return needs flexible typing
+    function makeChainable(shouldFail = false): any {
+      const result = shouldFail
+        ? Promise.reject(new Error("ON CONFLICT DO UPDATE command cannot affect row a second time"))
+        : Promise.resolve(undefined);
+
+      return Object.assign(result, {
+        values: vi.fn((rows: Record<string, unknown>[]) => {
+          capture.values.push(rows);
+          insertCallCount++;
+          // First insert attempt fails, second succeeds
+          return makeChainable(insertCallCount === 1);
+        }),
+        onConflictDoUpdate: vi.fn(() => makeChainable(shouldFail)),
+        onConflictDoNothing: vi.fn(() => makeChainable(shouldFail)),
+        returning: vi.fn(() => Promise.resolve([])),
+      });
+    }
+
+    const db: SyncDatabase = {
+      select: vi.fn(),
+      insert: vi.fn().mockImplementation(() => makeChainable()),
+      delete: vi.fn(),
+      execute: vi.fn(),
+    };
+
+    // Two body mass records at different timestamps produce two distinct rows.
+    // If the DB rejects the first insert (simulating a duplicate conflict that
+    // slipped through application-level dedup), insertWithDuplicateDiag should
+    // deduplicate and retry.
+    const records = [
+      makeRecord({
+        type: "HKQuantityTypeIdentifierBodyMass",
+        sourceName: "Scale A",
+        value: 80,
+        unit: "kg",
+        startDate: new Date("2024-06-01T08:00:00Z"),
+        endDate: new Date("2024-06-01T08:00:00Z"),
+      }),
+      makeRecord({
+        type: "HKQuantityTypeIdentifierBodyMass",
+        sourceName: "Scale B",
+        value: 81,
+        unit: "kg",
+        startDate: new Date("2024-06-01T09:00:00Z"),
+        endDate: new Date("2024-06-01T09:00:00Z"),
+      }),
+    ];
+
+    // Should not throw — the helper catches the error and retries
+    const count = await upsertBodyMeasurementBatch(db, "apple_health", records);
+    expect(count).toBe(2);
+    // Two insert calls: first fails, second succeeds with deduplicated data
+    expect(insertCallCount).toBe(2);
+  });
+});

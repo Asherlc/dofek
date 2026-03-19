@@ -1,8 +1,8 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as schema from "../../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../db/test-helpers.ts";
-import { upsertSleepBatch, upsertWorkoutBatch } from "./db-insertion.ts";
+import { insertWithDuplicateDiag, upsertSleepBatch, upsertWorkoutBatch } from "./db-insertion.ts";
 import type { SleepAnalysisRecord } from "./sleep.ts";
 import type { HealthWorkout } from "./workouts.ts";
 
@@ -93,6 +93,57 @@ describe("db-insertion deduplication (integration)", () => {
 
       // 2 unique workouts (the two running dupes collapse into 1, plus the cycling)
       expect(count).toBe(2);
+    });
+  });
+
+  describe("insertWithDuplicateDiag — safety net dedup", () => {
+    it("deduplicates and retries when batch has duplicate conflict keys", async () => {
+      const time1 = new Date("2025-01-15T08:00:00Z");
+      const time2 = new Date("2025-01-15T08:00:00Z"); // same timestamp = same externalId
+
+      const rows: (typeof schema.bodyMeasurement.$inferInsert)[] = [
+        {
+          providerId: PROVIDER_ID,
+          externalId: "dup-test-key",
+          recordedAt: time1,
+          weightKg: 80,
+          sourceName: "Scale A",
+        },
+        {
+          providerId: PROVIDER_ID,
+          externalId: "dup-test-key", // duplicate conflict key
+          recordedAt: time2,
+          weightKg: 81,
+          sourceName: "Scale B",
+        },
+      ];
+
+      // insertWithDuplicateDiag should deduplicate and retry instead of crashing
+      await insertWithDuplicateDiag(
+        "body_measurement",
+        (row) => `${row.providerId}:${row.externalId}`,
+        rows,
+        (batch) =>
+          ctx.db
+            .insert(schema.bodyMeasurement)
+            .values(batch)
+            .onConflictDoUpdate({
+              target: [schema.bodyMeasurement.providerId, schema.bodyMeasurement.externalId],
+              set: {
+                weightKg: sql`excluded.weight_kg`,
+                sourceName: sql`excluded.source_name`,
+              },
+            }),
+      );
+
+      // Should have inserted the deduplicated row (last one wins)
+      const result = await ctx.db
+        .select()
+        .from(schema.bodyMeasurement)
+        .where(eq(schema.bodyMeasurement.externalId, "dup-test-key"));
+
+      expect(result).toHaveLength(1);
+      expect(Number(result[0]?.weightKg)).toBe(81); // last duplicate wins
     });
   });
 
