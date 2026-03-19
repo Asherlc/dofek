@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "expo-router";
 import {
   ScrollView,
@@ -20,14 +20,6 @@ import { scoreColor, scoreLabel, trendDirection as computeTrend } from "../../li
 import { trpc } from "../../lib/trpc";
 import { convertTemperature, convertWeight, temperatureLabel, useUnitSystem, weightLabel } from "../../lib/units";
 import { useOnboarding } from "../../lib/useOnboarding";
-import type {
-  ActivityRow,
-  HeartRateVariabilityRow,
-  ReadinessRow,
-  SleepAnalyticsResult,
-  StressResult,
-  WorkloadRow,
-} from "../../types/api";
 import { ActivityRowSchema } from "../../types/api";
 import { colors, statusColors } from "../../theme";
 
@@ -39,6 +31,8 @@ function todayString(): string {
     day: "numeric",
   });
 }
+
+const RECENT_ACTIVITY_PAGE_SIZE = 3;
 
 /** Strain zone label for weekly report */
 function strainZoneLabel(zone: string): string {
@@ -78,6 +72,7 @@ export default function OverviewScreen() {
   const onboarding = useOnboarding();
   const unitSystem = useUnitSystem();
   const [days, setDays] = useState(7);
+  const [recentActivityPage, setRecentActivityPage] = useState(0);
 
   // Fetch readiness/recovery score
   const readinessQuery = trpc.recovery.readinessScore.useQuery({ days });
@@ -106,11 +101,23 @@ export default function OverviewScreen() {
   const stressData = stressQuery.data;
 
   // Fetch recent activities
-  const activitiesQuery = trpc.training.activityStats.useQuery({ days });
+  const activitiesQuery = trpc.activity.list.useQuery({
+    days,
+    limit: RECENT_ACTIVITY_PAGE_SIZE,
+    offset: recentActivityPage * RECENT_ACTIVITY_PAGE_SIZE,
+  });
+
+  useEffect(() => {
+    setRecentActivityPage(0);
+  }, [days]);
+
   const recentActivities = ActivityRowSchema.array()
     .catch([])
-    .parse(activitiesQuery.data ?? [])
-    .slice(0, 3);
+    .parse(activitiesQuery.data?.items ?? []);
+  const recentActivitiesTotalCount = activitiesQuery.data?.totalCount ?? 0;
+  const recentActivitiesTotalPages = Math.ceil(
+    recentActivitiesTotalCount / RECENT_ACTIVITY_PAGE_SIZE,
+  );
 
   // Health metrics (latest)
   const dailyMetricsQuery = trpc.dailyMetrics.trends.useQuery({ days });
@@ -320,7 +327,12 @@ export default function OverviewScreen() {
           {/* Recent activities */}
           {recentActivities.length > 0 && (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Recent Activities</Text>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Recent Activities</Text>
+                <TouchableOpacity onPress={() => router.push("/activities")}>
+                  <Text style={styles.viewAllLink}>View All</Text>
+                </TouchableOpacity>
+              </View>
               <View style={styles.activitiesStack}>
                 {recentActivities.map((activity) => (
                   <TouchableOpacity
@@ -340,6 +352,53 @@ export default function OverviewScreen() {
                   </TouchableOpacity>
                 ))}
               </View>
+              {recentActivitiesTotalPages > 1 && (
+                <View style={styles.paginationRow}>
+                  <TouchableOpacity
+                    onPress={() => setRecentActivityPage((p) => Math.max(0, p - 1))}
+                    disabled={recentActivityPage <= 0}
+                    style={[
+                      styles.pageButton,
+                      recentActivityPage <= 0 && styles.pageButtonDisabled,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.pageButtonText,
+                        recentActivityPage <= 0 && styles.pageButtonTextDisabled,
+                      ]}
+                    >
+                      Previous
+                    </Text>
+                  </TouchableOpacity>
+                  <Text style={styles.pageInfo}>
+                    {recentActivityPage + 1} / {recentActivitiesTotalPages}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() =>
+                      setRecentActivityPage((p) =>
+                        Math.min(recentActivitiesTotalPages - 1, p + 1),
+                      )
+                    }
+                    disabled={recentActivityPage >= recentActivitiesTotalPages - 1}
+                    style={[
+                      styles.pageButton,
+                      recentActivityPage >= recentActivitiesTotalPages - 1 &&
+                        styles.pageButtonDisabled,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.pageButtonText,
+                        recentActivityPage >= recentActivitiesTotalPages - 1 &&
+                          styles.pageButtonTextDisabled,
+                      ]}
+                    >
+                      Next
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
           )}
 
@@ -915,6 +974,11 @@ const styles = StyleSheet.create({
   section: {
     gap: 12,
   },
+  sectionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
   sectionTitle: {
     fontSize: 13,
     fontWeight: "600",
@@ -922,8 +986,42 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
+  viewAllLink: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: colors.accent,
+  },
   activitiesStack: {
     gap: 8,
+  },
+  paginationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+    paddingTop: 4,
+  },
+  pageButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: colors.surface,
+    borderRadius: 8,
+  },
+  pageButtonDisabled: {
+    opacity: 0.4,
+  },
+  pageButtonText: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "500",
+  },
+  pageButtonTextDisabled: {
+    color: colors.textTertiary,
+  },
+  pageInfo: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontVariant: ["tabular-nums"],
   },
   // Anomaly banner
   anomalyBanner: {

@@ -51,16 +51,28 @@ export const activityRouter = router({
     .input(
       z.object({
         days: z.number().default(30),
+        limit: z.number().min(1).max(100).default(20),
+        offset: z.number().min(0).default(0),
       }),
     )
     .query(async ({ ctx, input }) => {
       const rows = await ctx.db.execute(
-        sql`SELECT * FROM fitness.v_activity
+        sql`SELECT *, COUNT(*) OVER()::int AS total_count
+            FROM fitness.v_activity
             WHERE user_id = ${ctx.userId}
               AND started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
-            ORDER BY started_at DESC`,
+            ORDER BY started_at DESC
+            LIMIT ${input.limit} OFFSET ${input.offset}`,
       );
-      return rows;
+      const totalCount =
+        rows.length > 0
+          ? Number((rows[0] as Record<string, unknown>).total_count)
+          : 0;
+      const items = rows.map((row) => {
+        const { total_count, ...rest } = row as Record<string, unknown>;
+        return rest;
+      });
+      return { items, totalCount };
     }),
 
   /**

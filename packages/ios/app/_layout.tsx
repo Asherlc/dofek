@@ -117,6 +117,14 @@ function AuthGate() {
             }}
           />
           <Stack.Screen
+            name="activities"
+            options={{
+              title: "Activities",
+              headerStyle: { backgroundColor: colors.background },
+              headerTintColor: colors.text,
+            }}
+          />
+          <Stack.Screen
             name="predictions"
             options={{
               title: "Predictions",

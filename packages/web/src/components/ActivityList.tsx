@@ -14,9 +14,20 @@ interface Activity {
 interface ActivityListProps {
   activities: Activity[];
   loading?: boolean;
+  totalCount?: number;
+  page?: number;
+  pageSize?: number;
+  onPageChange?: (page: number) => void;
 }
 
-export function ActivityList({ activities, loading }: ActivityListProps) {
+export function ActivityList({
+  activities,
+  loading,
+  totalCount,
+  page,
+  pageSize,
+  onPageChange,
+}: ActivityListProps) {
   if (loading) {
     return <ChartLoadingSkeleton height={100} />;
   }
@@ -24,6 +35,10 @@ export function ActivityList({ activities, loading }: ActivityListProps) {
   if (activities.length === 0) {
     return <div className="text-zinc-500 text-sm py-4">No recent activities</div>;
   }
+
+  const totalPages =
+    totalCount != null && pageSize != null ? Math.ceil(totalCount / pageSize) : undefined;
+  const currentPage = page ?? 0;
 
   return (
     <div className="overflow-x-auto">
@@ -82,6 +97,35 @@ export function ActivityList({ activities, loading }: ActivityListProps) {
           })}
         </tbody>
       </table>
+
+      {totalPages != null && totalPages > 1 && onPageChange && (
+        <div className="flex items-center justify-between pt-3 border-t border-zinc-800/50 mt-2">
+          <span className="text-xs text-zinc-500 tabular-nums">
+            {totalCount} activities
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onPageChange(currentPage - 1)}
+              disabled={currentPage <= 0}
+              className="px-2 py-1 text-xs text-zinc-400 hover:text-zinc-200 disabled:text-zinc-700 disabled:cursor-not-allowed transition-colors cursor-pointer"
+            >
+              Previous
+            </button>
+            <span className="text-xs text-zinc-500 tabular-nums">
+              {currentPage + 1} / {totalPages}
+            </span>
+            <button
+              type="button"
+              onClick={() => onPageChange(currentPage + 1)}
+              disabled={currentPage >= totalPages - 1}
+              className="px-2 py-1 text-xs text-zinc-400 hover:text-zinc-200 disabled:text-zinc-700 disabled:cursor-not-allowed transition-colors cursor-pointer"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
