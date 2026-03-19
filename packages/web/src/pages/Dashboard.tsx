@@ -139,60 +139,59 @@ export function Dashboard() {
       .slice(0, 2);
   }, [insightsQuery.data]);
 
-  const healthMetrics = useMemo(
-    () =>
-      trendData
-        ? [
-            {
-              label: "Resting HR",
-              value: trendData.latest_resting_hr,
-              avg: trendData.avg_resting_hr,
-              stddev: trendData.stddev_resting_hr,
-              unit: "bpm",
-              lowerBetter: true,
-            },
-            {
-              label: "HRV",
-              value: trendData.latest_hrv,
-              avg: trendData.avg_hrv,
-              stddev: trendData.stddev_hrv,
-              unit: "ms",
-            },
-            trendData.latest_spo2 != null && {
-              label: "SpO2",
-              value: trendData.latest_spo2,
-              avg: trendData.avg_spo2,
-              stddev: trendData.stddev_spo2,
-              unit: "%",
-            },
-            {
-              label: "Steps",
-              value: trendData.latest_steps,
-              avg: trendData.avg_steps,
-              stddev: null,
-              unit: "",
-            },
-            {
-              label: "Active Energy",
-              value: trendData.latest_active_energy,
-              avg: trendData.avg_active_energy,
-              stddev: null,
-              unit: "kcal",
-            },
-            trendData.latest_skin_temp != null && {
-              label: "Skin Temp",
-              value: convertTemperature(trendData.latest_skin_temp, unitSystem),
-              avg:
-                trendData.avg_skin_temp != null
-                  ? convertTemperature(trendData.avg_skin_temp, unitSystem)
-                  : null,
-              stddev: trendData.stddev_skin_temp,
-              unit: temperatureLabel(unitSystem),
-            },
-          ].filter((entry): entry is MetricEntry => Boolean(entry))
-        : [],
-    [trendData, unitSystem],
-  );
+  const healthMetrics = useMemo(() => {
+    if (!trendData) return [];
+    const entries: (MetricEntry | false)[] = [
+      {
+        label: "Resting HR",
+        value: trendData.latest_resting_hr,
+        avg: trendData.avg_resting_hr,
+        stddev: trendData.stddev_resting_hr,
+        unit: "bpm",
+        lowerBetter: true,
+      },
+      {
+        label: "HRV",
+        value: trendData.latest_hrv,
+        avg: trendData.avg_hrv,
+        stddev: trendData.stddev_hrv,
+        unit: "ms",
+        lowerBetter: false,
+      },
+      trendData.latest_spo2 != null && {
+        label: "SpO2",
+        value: trendData.latest_spo2,
+        avg: trendData.avg_spo2,
+        stddev: trendData.stddev_spo2,
+        unit: "%",
+      },
+      {
+        label: "Steps",
+        value: trendData.latest_steps,
+        avg: trendData.avg_steps,
+        stddev: null,
+        unit: "",
+      },
+      {
+        label: "Active Energy",
+        value: trendData.latest_active_energy,
+        avg: trendData.avg_active_energy,
+        stddev: null,
+        unit: "kcal",
+      },
+      trendData.latest_skin_temp != null && {
+        label: "Skin Temp",
+        value: convertTemperature(trendData.latest_skin_temp, unitSystem),
+        avg:
+          trendData.avg_skin_temp != null
+            ? convertTemperature(trendData.avg_skin_temp, unitSystem)
+            : null,
+        stddev: trendData.stddev_skin_temp,
+        unit: temperatureLabel(unitSystem),
+      },
+    ];
+    return entries.filter((entry): entry is MetricEntry => entry !== false);
+  }, [trendData, unitSystem]);
 
   const metrics = assertRows(dailyMetrics.data, dailyMetricRowSchema);
 

@@ -17,11 +17,20 @@ function getStatus(
   value: number | null | undefined,
   avg: number | null | undefined,
   stddev: number | null | undefined,
+  lowerBetter?: boolean,
 ): "green" | "yellow" | "red" | "unknown" {
   if (value == null || avg == null || stddev == null || stddev === 0) return "unknown";
-  const zScore = Math.abs((value - avg) / stddev);
-  if (zScore < 1) return "green";
-  if (zScore < 2) return "yellow";
+  const rawZScore = (value - avg) / stddev;
+
+  // When we know the direction, deviations in the "good" direction stay green
+  if (lowerBetter !== undefined) {
+    const isBadDirection = lowerBetter ? rawZScore > 0 : rawZScore < 0;
+    if (!isBadDirection) return "green";
+  }
+
+  const absZScore = Math.abs(rawZScore);
+  if (absZScore < 1) return "green";
+  if (absZScore < 2) return "yellow";
   return "red";
 }
 
@@ -53,7 +62,7 @@ export function HealthStatusBar({ metrics, loading }: HealthStatusBarProps) {
   return (
     <div className="flex gap-3 overflow-x-auto">
       {metrics.map((m) => {
-        const status = getStatus(m.value, m.avg, m.stddev);
+        const status = getStatus(m.value, m.avg, m.stddev, m.lowerBetter);
         return (
           <div
             key={m.label}
