@@ -5,8 +5,8 @@ import { sql } from "drizzle-orm";
 import { Router } from "express";
 import { resolveOrCreateUser } from "../auth/account-linking.ts";
 import {
-  clearPostLoginRedirectCookie,
   clearOAuthFlowCookies,
+  clearPostLoginRedirectCookie,
   clearSessionCookie,
   getLinkUserCookie,
   getMobileSchemeCookie,
@@ -240,8 +240,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         setMobileSchemeCookie(res, redirectScheme);
       }
 
-      const returnToRaw =
-        typeof req.query.return_to === "string" ? req.query.return_to : undefined;
+      const returnToRaw = typeof req.query.return_to === "string" ? req.query.return_to : undefined;
       const returnTo = sanitizeReturnTo(returnToRaw);
       if (returnTo) {
         setPostLoginRedirectCookie(res, returnTo);
@@ -442,8 +441,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         typeof req.query.redirect_scheme === "string" ? req.query.redirect_scheme : undefined;
       const mobileScheme =
         redirectScheme && isValidMobileScheme(redirectScheme) ? redirectScheme : undefined;
-      const returnToRaw =
-        typeof req.query.return_to === "string" ? req.query.return_to : undefined;
+      const returnToRaw = typeof req.query.return_to === "string" ? req.query.return_to : undefined;
       const returnTo = sanitizeReturnTo(returnToRaw);
       if (returnTo) {
         setPostLoginRedirectCookie(res, returnTo);

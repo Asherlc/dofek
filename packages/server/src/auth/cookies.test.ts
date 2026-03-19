@@ -1,8 +1,8 @@
 import type { Request, Response } from "express";
 import { describe, expect, it, vi } from "vitest";
 import {
-  clearPostLoginRedirectCookie,
   clearOAuthFlowCookies,
+  clearPostLoginRedirectCookie,
   clearSessionCookie,
   getLinkUserCookie,
   getMobileSchemeCookie,
@@ -167,29 +167,26 @@ describe("Auth cookies", () => {
   });
 
   describe("clearOAuthFlowCookies", () => {
-    it(
-      "clears state, code_verifier, link_user, mobile_scheme, and post_login_redirect cookies",
-      () => {
-        const res = mockResponse();
+    it("clears state, code_verifier, link_user, mobile_scheme, and post_login_redirect cookies", () => {
+      const res = mockResponse();
 
-        clearOAuthFlowCookies(res);
+      clearOAuthFlowCookies(res);
 
-        expect(res.clearCookie).toHaveBeenCalledTimes(5);
-        expect(res.clearCookie).toHaveBeenCalledWith("auth_state", { path: "/" });
-        expect(res.clearCookie).toHaveBeenCalledWith("auth_code_verifier", {
-          path: "/",
-        });
-        expect(res.clearCookie).toHaveBeenCalledWith("auth_link_user", {
-          path: "/",
-        });
-        expect(res.clearCookie).toHaveBeenCalledWith("auth_mobile_scheme", {
-          path: "/",
-        });
-        expect(res.clearCookie).toHaveBeenCalledWith("auth_post_login_redirect", {
-          path: "/",
-        });
-      },
-    );
+      expect(res.clearCookie).toHaveBeenCalledTimes(5);
+      expect(res.clearCookie).toHaveBeenCalledWith("auth_state", { path: "/" });
+      expect(res.clearCookie).toHaveBeenCalledWith("auth_code_verifier", {
+        path: "/",
+      });
+      expect(res.clearCookie).toHaveBeenCalledWith("auth_link_user", {
+        path: "/",
+      });
+      expect(res.clearCookie).toHaveBeenCalledWith("auth_mobile_scheme", {
+        path: "/",
+      });
+      expect(res.clearCookie).toHaveBeenCalledWith("auth_post_login_redirect", {
+        path: "/",
+      });
+    });
   });
 
   describe("setLinkUserCookie", () => {
