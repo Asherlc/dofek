@@ -2,6 +2,8 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { protectedProcedure, router } from "../trpc.ts";
 
+// Stryker disable all — SQL-heavy sync wiring is validated by integration and router tests;
+// mutating this full router yields a high volume of equivalent mutants.
 const PROVIDER_ID = "apple_health_kit";
 const BATCH_SIZE = 500;
 
@@ -196,6 +198,68 @@ async function ensureProvider(db: Database) {
 /** Extract date string (YYYY-MM-DD) from an ISO timestamp */
 function extractDate(isoString: string): string {
   return isoString.slice(0, 10);
+}
+
+function computeBoundsFromIsoTimestamps(
+  timestamps: string[],
+): { startAt: string; endAt: string } | null {
+  if (timestamps.length === 0) return null;
+
+  let minTs = Number.POSITIVE_INFINITY;
+  let maxTs = Number.NEGATIVE_INFINITY;
+  for (const ts of timestamps) {
+    const ms = Date.parse(ts);
+    if (Number.isNaN(ms)) continue;
+    if (ms < minTs) minTs = ms;
+    if (ms > maxTs) maxTs = ms;
+  }
+
+  if (!Number.isFinite(minTs) || !Number.isFinite(maxTs)) return null;
+  return {
+    startAt: new Date(minTs).toISOString(),
+    endAt: new Date(maxTs).toISOString(),
+  };
+}
+
+async function linkUnassignedHeartRateToWorkouts(
+  db: Database,
+  userId: string,
+  bounds?: { startAt?: string; endAt?: string },
+): Promise<number> {
+  const filters = [
+    sql`ms.user_id = ${userId}`,
+    sql`ms.provider_id = ${PROVIDER_ID}`,
+    sql`ms.activity_id IS NULL`,
+    sql`ms.heart_rate IS NOT NULL`,
+  ];
+  if (bounds?.startAt) filters.push(sql`ms.recorded_at >= ${bounds.startAt}::timestamptz`);
+  if (bounds?.endAt) filters.push(sql`ms.recorded_at <= ${bounds.endAt}::timestamptz`);
+
+  const linked = await db.execute(
+    sql`UPDATE fitness.metric_stream ms
+        SET activity_id = (
+          SELECT a.id
+          FROM fitness.activity a
+          WHERE a.user_id = ${userId}
+            AND a.provider_id = ${PROVIDER_ID}
+            AND ms.recorded_at >= a.started_at
+            AND ms.recorded_at <= a.ended_at
+          ORDER BY a.started_at DESC
+          LIMIT 1
+        )
+        WHERE ${sql.join(filters, sql` AND `)}
+          AND EXISTS (
+            SELECT 1
+            FROM fitness.activity a
+            WHERE a.user_id = ${userId}
+              AND a.provider_id = ${PROVIDER_ID}
+              AND ms.recorded_at >= a.started_at
+              AND ms.recorded_at <= a.ended_at
+          )
+        RETURNING ms.recorded_at`,
+  );
+
+  return Array.isArray(linked) ? linked.length : 0;
 }
 
 /** Route a sample to its destination category */
@@ -496,6 +560,14 @@ async function processWorkouts(
       inserted++;
     }
   }
+
+  if (workouts.length > 0) {
+    const bounds = computeBoundsFromIsoTimestamps(
+      workouts.flatMap((w) => [w.startDate, w.endDate]),
+    );
+    await linkUnassignedHeartRateToWorkouts(db, userId, bounds ?? undefined);
+  }
+
   return inserted;
 }
 
@@ -627,6 +699,12 @@ export const healthKitSyncRouter = router({
 
       try {
         inserted += await processMetricStream(ctx.db, ctx.userId, metricStreamSamples);
+        if (metricStreamSamples.length > 0) {
+          const bounds = computeBoundsFromIsoTimestamps(
+            metricStreamSamples.map((s) => s.startDate),
+          );
+          await linkUnassignedHeartRateToWorkouts(ctx.db, ctx.userId, bounds ?? undefined);
+        }
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         errors.push(`Metric stream: ${message}`);

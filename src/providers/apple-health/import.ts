@@ -14,6 +14,7 @@ import {
   ALL_ROUTED_TYPES,
   BODY_MEASUREMENT_TYPES,
   DAILY_METRIC_TYPES,
+  linkUnassignedHeartRateToActivities,
   METRIC_STREAM_TYPES,
   NUTRITION_TYPES,
   upsertBodyMeasurementBatch,
@@ -173,6 +174,15 @@ export async function runImport(
         recordsSynced += rows.length;
       },
     });
+
+    const linkedHrRows = await linkUnassignedHeartRateToActivities(db, providerId, {
+      startAt: since,
+    });
+    if (linkedHrRows > 0) {
+      logger.info(
+        `[apple_health] Linked ${linkedHrRows} heart-rate metric rows to workouts after import`,
+      );
+    }
 
     logger.info(
       `[apple_health] Parsed ${counts.recordCount} records, ` +
