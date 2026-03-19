@@ -77,6 +77,17 @@ export function formatRelativeTime(isoString: string): string {
   return `${days}d ago`;
 }
 
+/** Format a pace in seconds per km as "M:SS" */
+export function formatPace(secondsPerKm: number): string {
+  let mins = Math.floor(secondsPerKm / 60);
+  let secs = Math.round(secondsPerKm % 60);
+  if (secs === 60) {
+    mins += 1;
+    secs = 0;
+  }
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
+}
+
 /** Format an ISO string as "Jan 1, 2:30 PM" */
 export function formatTime(iso: string): string {
   const d = new Date(iso);

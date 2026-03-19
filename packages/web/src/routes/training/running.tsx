@@ -8,11 +8,7 @@ export const Route = createFileRoute("/training/running")({
   component: RunningTab,
 });
 
-function formatPace(secondsPerKm: number): string {
-  const mins = Math.floor(secondsPerKm / 60);
-  const secs = Math.round(secondsPerKm % 60);
-  return `${mins}:${secs.toString().padStart(2, "0")}`;
-}
+import { formatPace } from "@dofek/shared/format";
 
 function RunningTab() {
   const { days } = useTrainingDays();
