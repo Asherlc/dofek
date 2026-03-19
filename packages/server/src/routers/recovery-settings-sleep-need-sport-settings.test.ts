@@ -23,6 +23,19 @@ import { settingsRouter } from "./settings.ts";
 import { sleepNeedRouter } from "./sleep-need.ts";
 import { sportSettingsRouter } from "./sport-settings.ts";
 
+function queryChunkLength(value: unknown): number {
+  if (!value || typeof value !== "object") return -1;
+  if (!("queryChunks" in value)) return -1;
+  const queryChunks = (value as { queryChunks?: unknown }).queryChunks;
+  return Array.isArray(queryChunks) ? queryChunks.length : -1;
+}
+
+function expectCallsUseNonEmptySql(executeMock: ReturnType<typeof vi.fn>) {
+  for (const [arg] of executeMock.mock.calls) {
+    expect(queryChunkLength(arg)).toBeGreaterThan(0);
+  }
+}
+
 // ── Recovery Router ──
 
 describe("recoveryRouter", () => {
@@ -219,12 +232,14 @@ describe("settingsRouter", () => {
   describe("get", () => {
     it("returns setting value", async () => {
       const rows = [{ key: "theme", value: "dark" }];
+      const execute = vi.fn().mockResolvedValue(rows);
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
+        db: { execute },
         userId: "user-1",
       });
       const result = await caller.get({ key: "theme" });
       expect(result).toEqual({ key: "theme", value: "dark" });
+      expectCallsUseNonEmptySql(execute);
     });
 
     it("returns null when setting not found", async () => {
@@ -243,24 +258,30 @@ describe("settingsRouter", () => {
         { key: "theme", value: "dark" },
         { key: "units", value: "metric" },
       ];
+      const execute = vi.fn().mockResolvedValue(rows);
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
+        db: { execute },
         userId: "user-1",
       });
       const result = await caller.getAll();
       expect(result).toHaveLength(2);
+      expect(result[0]).toEqual({ key: "theme", value: "dark" });
+      expect(result[1]).toEqual({ key: "units", value: "metric" });
+      expectCallsUseNonEmptySql(execute);
     });
   });
 
   describe("set", () => {
     it("upserts a setting", async () => {
       const rows = [{ key: "theme", value: "light" }];
+      const execute = vi.fn().mockResolvedValue(rows);
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
+        db: { execute },
         userId: "user-1",
       });
       const result = await caller.set({ key: "theme", value: "light" });
       expect(result).toEqual({ key: "theme", value: "light" });
+      expectCallsUseNonEmptySql(execute);
     });
 
     it("throws when upsert fails", async () => {
@@ -292,11 +313,41 @@ describe("settingsRouter", () => {
       expect(result).toEqual({ success: true });
       expect(mockTransaction).toHaveBeenCalledTimes(1);
       expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length + 1 + 4);
+      expectCallsUseNonEmptySql(txExecute);
     });
   });
 
   describe("slackStatus", () => {
+    const slackEnvKeys = [
+      "SLACK_CLIENT_ID",
+      "SLACK_SIGNING_SECRET",
+      "SLACK_BOT_TOKEN",
+      "SLACK_APP_TOKEN",
+    ] as const;
+
+    function withCleanSlackEnv() {
+      const previousValues = Object.fromEntries(
+        slackEnvKeys.map((key) => [key, process.env[key]]),
+      ) as Record<(typeof slackEnvKeys)[number], string | undefined>;
+
+      for (const key of slackEnvKeys) {
+        delete process.env[key];
+      }
+
+      return () => {
+        for (const key of slackEnvKeys) {
+          const value = previousValues[key];
+          if (value === undefined) {
+            delete process.env[key];
+          } else {
+            process.env[key] = value;
+          }
+        }
+      };
+    }
+
     it("returns slack status", async () => {
+      const restoreEnv = withCleanSlackEnv();
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
@@ -304,7 +355,9 @@ describe("settingsRouter", () => {
       const result = await caller.slackStatus();
       expect(result).toHaveProperty("configured");
       expect(result).toHaveProperty("connected");
+      expect(result.configured).toBe(false);
       expect(result.connected).toBe(false);
+      restoreEnv();
     });
 
     it("returns connected when slack account exists", async () => {
@@ -318,9 +371,10 @@ describe("settingsRouter", () => {
     });
 
     it("returns configured when Socket Mode env vars are set", async () => {
-      process.env.SLACK_BOT_TOKEN = "xoxb-test";
-      process.env.SLACK_APP_TOKEN = "xapp-test";
+      const restoreEnv = withCleanSlackEnv();
       try {
+        process.env.SLACK_BOT_TOKEN = "xoxb-test";
+        process.env.SLACK_APP_TOKEN = "xapp-test";
         const caller = createCaller({
           db: { execute: vi.fn().mockResolvedValue([]) },
           userId: "user-1",
@@ -328,8 +382,53 @@ describe("settingsRouter", () => {
         const result = await caller.slackStatus();
         expect(result.configured).toBe(true);
       } finally {
-        delete process.env.SLACK_BOT_TOKEN;
-        delete process.env.SLACK_APP_TOKEN;
+        restoreEnv();
+      }
+    });
+
+    it("returns configured when OAuth env vars are set", async () => {
+      const restoreEnv = withCleanSlackEnv();
+      try {
+        process.env.SLACK_CLIENT_ID = "client-id";
+        process.env.SLACK_SIGNING_SECRET = "signing-secret";
+        const caller = createCaller({
+          db: { execute: vi.fn().mockResolvedValue([]) },
+          userId: "user-1",
+        });
+        const result = await caller.slackStatus();
+        expect(result.configured).toBe(true);
+      } finally {
+        restoreEnv();
+      }
+    });
+
+    it("requires both OAuth env vars", async () => {
+      const restoreEnv = withCleanSlackEnv();
+      try {
+        process.env.SLACK_CLIENT_ID = "client-id";
+        const caller = createCaller({
+          db: { execute: vi.fn().mockResolvedValue([]) },
+          userId: "user-1",
+        });
+        const result = await caller.slackStatus();
+        expect(result.configured).toBe(false);
+      } finally {
+        restoreEnv();
+      }
+    });
+
+    it("requires both Socket Mode env vars", async () => {
+      const restoreEnv = withCleanSlackEnv();
+      try {
+        process.env.SLACK_BOT_TOKEN = "xoxb-test";
+        const caller = createCaller({
+          db: { execute: vi.fn().mockResolvedValue([]) },
+          userId: "user-1",
+        });
+        const result = await caller.slackStatus();
+        expect(result.configured).toBe(false);
+      } finally {
+        restoreEnv();
       }
     });
   });
