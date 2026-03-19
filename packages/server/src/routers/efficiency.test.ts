@@ -147,7 +147,7 @@ describe("efficiencyRouter", () => {
   });
 
   describe("polarizationTrend", () => {
-    it("computes exact polarization index: log10((z1/(z2*z3))*100)", async () => {
+    it("computes polarization index using Treff formula with time fractions", async () => {
       const rows = [
         {
           max_hr: 190,
@@ -166,10 +166,13 @@ describe("efficiencyRouter", () => {
       expect(result.maxHr).toBe(190);
       expect(result.weeks).toHaveLength(1);
 
-      // PI = log10((5000 / (500 * 100)) * 100) = log10((5000 / 50000) * 100) = log10(10) = 1.0
-      const expected = Math.round(Math.log10((5000 / (500 * 100)) * 100) * 1000) / 1000;
+      // Treff PI = log10((f1 / (f2 * f3)) * 100) where f = fraction of total time
+      const total = 5000 + 500 + 100;
+      const f1 = 5000 / total;
+      const f2 = 500 / total;
+      const f3 = 100 / total;
+      const expected = Math.round(Math.log10((f1 / (f2 * f3)) * 100) * 1000) / 1000;
       expect(result.weeks[0]?.polarizationIndex).toBe(expected);
-      expect(result.weeks[0]?.polarizationIndex).toBe(1);
     });
 
     it("returns null polarization index when z2 is 0", async () => {
@@ -244,8 +247,12 @@ describe("efficiencyRouter", () => {
       });
       const result = await caller.polarizationTrend({ days: 180 });
 
-      // PI = log10((3600 / (1800 * 600)) * 100) = log10(3600/1080000 * 100) = log10(0.3333) ≈ -0.477
-      const expected = Math.round(Math.log10((3600 / (1800 * 600)) * 100) * 1000) / 1000;
+      // Treff PI = log10((f1 / (f2 * f3)) * 100) where f = fraction of total time
+      const total = 3600 + 1800 + 600;
+      const f1 = 3600 / total;
+      const f2 = 1800 / total;
+      const f3 = 600 / total;
+      const expected = Math.round(Math.log10((f1 / (f2 * f3)) * 100) * 1000) / 1000;
       expect(result.weeks[0]?.polarizationIndex).toBe(expected);
     });
   });
