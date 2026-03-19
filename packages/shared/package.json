@@ -8,6 +8,7 @@
     "./scoring": "./src/scoring.ts",
     "./meal": "./src/meal.ts",
     "./format": "./src/format.ts",
-    "./correlation": "./src/correlation.ts"
+    "./correlation": "./src/correlation.ts",
+    "./onboarding": "./src/onboarding.ts"
   }
 }

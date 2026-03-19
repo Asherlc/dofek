@@ -9,6 +9,7 @@ import { HealthStatusBar } from "../components/HealthStatusBar.tsx";
 import { HealthspanScoreCard } from "../components/HealthspanScoreCard.tsx";
 import { HrvBaselineChart } from "../components/HrvBaselineChart.tsx";
 import { NutritionChart } from "../components/NutritionChart.tsx";
+import { OnboardingWelcome } from "../components/OnboardingWelcome.tsx";
 import { SleepChart } from "../components/SleepChart.tsx";
 import { SleepNeedCard } from "../components/SleepNeedCard.tsx";
 import { SmoothedWeightChart } from "../components/SmoothedWeightChart.tsx";
@@ -20,6 +21,7 @@ import { useDashboardLayout } from "../lib/dashboardLayoutContext.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitSystem } from "../lib/unitContext.ts";
 import { convertTemperature, temperatureLabel } from "../lib/units.ts";
+import { useOnboarding } from "../lib/useOnboarding.ts";
 import { assertRows } from "../lib/utils.ts";
 
 type MetricEntry = {
@@ -109,6 +111,7 @@ export function Dashboard() {
   const { unitSystem } = useUnitSystem();
   const { layout, toggleCollapsed, toggleHidden, moveSection } = useDashboardLayout();
   const [days, setDays] = useState(30);
+  const onboarding = useOnboarding();
 
   const trends = trpc.dailyMetrics.trends.useQuery({ days });
   const dailyMetrics = trpc.dailyMetrics.list.useQuery({ days });
@@ -459,6 +462,11 @@ export function Dashboard() {
       </AppHeader>
 
       <main className="mx-auto max-w-7xl px-3 sm:px-6 py-4 sm:py-6 space-y-6 sm:space-y-8">
+        {/* Onboarding — shown to new users with no connected providers */}
+        {onboarding.showOnboarding && (
+          <OnboardingWelcome onDismiss={onboarding.dismiss} providers={onboarding.providers} />
+        )}
+
         {/* Anomaly Alert — always at the top, not reorderable */}
         <AnomalyAlertBanner
           anomalies={anomalyCheck.data?.anomalies ?? []}
