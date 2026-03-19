@@ -17,7 +17,6 @@ dist/
 *.log
 # Personal supplement stack — differs per user
 src/supplements.config.ts
-packages/ios/ios/
 # Stryker mutation testing
 reports/
 .stryker-tmp/
