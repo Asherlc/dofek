@@ -503,7 +503,18 @@ export function ouraOAuthConfig(): OAuthConfig | null {
     authorizeUrl: "https://cloud.ouraring.com/oauth/authorize",
     tokenUrl: `${OURA_API_BASE}/oauth/token`,
     redirectUri: getOAuthRedirectUri(),
-    scopes: ["daily", "email", "heartrate", "personal", "session", "spo2", "workout", "tag"],
+    scopes: [
+      "daily",
+      "email",
+      "heartrate",
+      "heart_health",
+      "personal",
+      "session",
+      "spo2",
+      "stress",
+      "workout",
+      "tag",
+    ],
   };
 }
 
@@ -796,11 +807,24 @@ export class OuraProvider implements Provider {
     }
 
     // 4. Sync heart rate → metricStream table (batched)
+    // Oura heart rate API enforces a max 30-day window per request
     try {
       const hrCount = await withSyncLog(db, this.id, "heart_rate", async () => {
-        const allHr = await fetchAllPages((nextToken) =>
-          client.getHeartRate(sinceDate, todayDate, nextToken),
-        );
+        const allHr: OuraHeartRate[] = [];
+        const windowMs = 30 * 24 * 60 * 60 * 1000;
+        let windowStart = since.getTime();
+        const end = Date.now();
+
+        while (windowStart < end) {
+          const windowEnd = Math.min(windowStart + windowMs, end);
+          const startStr = formatDate(new Date(windowStart));
+          const endStr = formatDate(new Date(windowEnd));
+          const chunk = await fetchAllPages((nextToken) =>
+            client.getHeartRate(startStr, endStr, nextToken),
+          );
+          allHr.push(...chunk);
+          windowStart = windowEnd;
+        }
 
         const rows = allHr.map((hr) => ({
           providerId: this.id,
