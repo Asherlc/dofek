@@ -278,6 +278,19 @@ describe("handleAuthCommand", () => {
     );
   });
 
+  it("only lists providers with authSetup in usage message", async () => {
+    mockGetAllProviders.mockReturnValue([
+      { id: "strava", authSetup: () => ({}) },
+      { id: "garmin" }, // no authSetup
+      { id: "wahoo", authSetup: () => ({}) },
+    ]);
+    await handleAuthCommand(["node", "index.ts", "auth", "unknown"]);
+    // Should show strava|wahoo but not garmin
+    expect(mockLoggerError).toHaveBeenCalledWith(expect.stringContaining("strava|wahoo"));
+    const errorCall = mockLoggerError.mock.calls[0]?.[0];
+    expect(errorCall).not.toContain("garmin");
+  });
+
   it("returns 1 when provider validation fails", async () => {
     mockGetAllProviders.mockReturnValue([
       {
@@ -384,6 +397,25 @@ describe("handleAuthCommand", () => {
     expect(mockLoggerInfo).toHaveBeenCalledWith(
       expect.stringContaining("https://custom-auth.example.com"),
     );
+  });
+
+  it("detects http callback URL and passes https: false", async () => {
+    const mockExchangeCode = vi.fn().mockResolvedValue(mockTokens);
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "strava",
+        name: "Strava",
+        authSetup: () => ({
+          oauthConfig: { redirectUri: "http://localhost:9876/callback" },
+          exchangeCode: mockExchangeCode,
+        }),
+        validate: () => null,
+      },
+    ]);
+    mockWaitForAuthCode.mockResolvedValue({ code: "code", cleanup: mockCleanup });
+
+    await handleAuthCommand(["node", "index.ts", "auth", "strava"]);
+    expect(mockWaitForAuthCode).toHaveBeenCalledWith(9876, { https: false });
   });
 
   it("detects https callback URL", async () => {
@@ -515,6 +547,54 @@ describe("handleAuthCommand", () => {
     process.env = savedEnv;
   });
 
+  it("returns 1 when only username is missing", async () => {
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "peloton",
+        name: "Peloton",
+        authSetup: () => ({
+          oauthConfig: { redirectUri: "http://localhost:9876/callback" },
+          exchangeCode: vi.fn(),
+          automatedLogin: vi.fn(),
+        }),
+        validate: () => null,
+      },
+    ]);
+
+    const savedEnv = { ...process.env };
+    delete process.env.PELOTON_USERNAME;
+    process.env.PELOTON_PASSWORD = "secret123";
+
+    const code = await handleAuthCommand(["node", "index.ts", "auth", "peloton"]);
+    expect(code).toBe(1);
+
+    process.env = savedEnv;
+  });
+
+  it("returns 1 when only password is missing", async () => {
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "peloton",
+        name: "Peloton",
+        authSetup: () => ({
+          oauthConfig: { redirectUri: "http://localhost:9876/callback" },
+          exchangeCode: vi.fn(),
+          automatedLogin: vi.fn(),
+        }),
+        validate: () => null,
+      },
+    ]);
+
+    const savedEnv = { ...process.env };
+    process.env.PELOTON_USERNAME = "user@test.com";
+    delete process.env.PELOTON_PASSWORD;
+
+    const code = await handleAuthCommand(["node", "index.ts", "auth", "peloton"]);
+    expect(code).toBe(1);
+
+    process.env = savedEnv;
+  });
+
   it("registers providers before checking auth", async () => {
     mockGetAllProviders.mockReturnValue([]);
     await handleAuthCommand(["node", "index.ts", "auth"]);
@@ -583,6 +663,25 @@ describe("handleImportCommand", () => {
       expect.any(Date),
     );
     expect(mockLoggerInfo).toHaveBeenCalledWith("[import] Done: 42 records, 0 errors in 1234ms");
+  });
+
+  it("does not log errors when import succeeds with no errors", async () => {
+    mockImportAppleHealthFile.mockResolvedValue({
+      recordsSynced: 42,
+      errors: [],
+      duration: 1234,
+    });
+
+    await handleImportCommand([
+      "node",
+      "index.ts",
+      "import",
+      "apple-health",
+      "/path/to/export.zip",
+    ]);
+
+    // mockLoggerError should not be called for error items (only mockLoggerInfo for the done message)
+    expect(mockLoggerError).not.toHaveBeenCalled();
   });
 
   it("returns 1 and logs errors when import has errors", async () => {
