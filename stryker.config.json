@@ -35,8 +35,8 @@
   "timeoutMS": 30000,
   "thresholds": {
     "high": 80,
-    "low": 60,
-    "break": 60
+    "low": 70,
+    "break": 70
   },
   "reporters": ["clear-text", "html", "progress"],
   "concurrency": 4
