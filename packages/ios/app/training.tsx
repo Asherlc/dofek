@@ -4,11 +4,12 @@ import Svg, { Rect, Text as SvgText, Path } from "react-native-svg";
 import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
 import { scoreColor, scoreLabel, workloadRatioColor, workloadRatioHint, rampRateColor } from "@dofek/shared/scoring";
+import { formatPace } from "@dofek/shared/format";
 import { statusColors } from "@dofek/shared/colors";
 
 // ── Types ──
 
-type TabKey = "overview" | "endurance" | "strength" | "hiking" | "recovery";
+type TabKey = "overview" | "endurance" | "cycling" | "running" | "strength" | "hiking" | "recovery";
 
 interface TabDef {
   key: TabKey;
@@ -18,6 +19,8 @@ interface TabDef {
 const TABS: TabDef[] = [
   { key: "overview", label: "Overview" },
   { key: "endurance", label: "Endurance" },
+  { key: "cycling", label: "Cycling" },
+  { key: "running", label: "Running" },
   { key: "strength", label: "Strength" },
   { key: "hiking", label: "Hiking" },
   { key: "recovery", label: "Recovery" },
@@ -160,6 +163,8 @@ export default function TrainingScreen() {
       {/* Tab content */}
       {activeTab === "overview" && <OverviewTab days={days} />}
       {activeTab === "endurance" && <EnduranceTab days={days} />}
+      {activeTab === "cycling" && <CyclingTab days={days} />}
+      {activeTab === "running" && <RunningTab days={days} />}
       {activeTab === "strength" && <StrengthTab days={days} />}
       {activeTab === "hiking" && <HikingTab days={days} />}
       {activeTab === "recovery" && <RecoveryTab days={days} />}
@@ -253,41 +258,16 @@ function OverviewTab({ days }: { days: number }) {
 // ── Tab 2: Endurance ──
 
 function EnduranceTab({ days }: { days: number }) {
-  const { width: screenWidth } = useWindowDimensions();
-  const chartWidth = screenWidth - 64;
-
-  const eftp = trpc.power.eftpTrend.useQuery({ days });
   const polarization = trpc.efficiency.polarizationTrend.useQuery({ days });
   const ramp = trpc.cyclingAdvanced.rampRate.useQuery({ days });
 
-  if (eftp.isLoading || polarization.isLoading || ramp.isLoading) return <LoadingText />;
+  if (polarization.isLoading || ramp.isLoading) return <LoadingText />;
 
-  const eftpData = eftp.data?.trend ?? [];
-  const currentEftp = eftp.data?.currentEftp;
   const polarizationWeeks = polarization.data?.weeks ?? [];
-  const rampData = ramp.data?.weeks ?? [];
   const currentRampRate = ramp.data?.currentRampRate;
 
   return (
     <View>
-      {/* eFTP */}
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Estimated Functional Threshold Power</Text>
-        <Text style={styles.bigValue}>
-          {currentEftp != null ? `${Math.round(currentEftp)} W` : "--"}
-        </Text>
-        {eftpData.length > 1 && (
-          <View style={styles.sparklineContainer}>
-            <Sparkline
-              data={eftpData.map((d) => d.eftp)}
-              width={chartWidth}
-              height={60}
-              color={colors.teal}
-            />
-          </View>
-        )}
-      </View>
-
       {/* Polarization */}
       {polarizationWeeks.length > 0 && (
         <View>
@@ -330,6 +310,247 @@ function EnduranceTab({ days }: { days: number }) {
         </Text>
         <Text style={styles.cardSubtext}>Weekly training load change rate</Text>
       </View>
+
+      {polarizationWeeks.length === 0 && currentRampRate == null && (
+        <EmptyText message="No endurance data available for this period." />
+      )}
+    </View>
+  );
+}
+
+// ── Cycling Tab ──
+
+function CyclingTab({ days }: { days: number }) {
+  const { width: screenWidth } = useWindowDimensions();
+  const chartWidth = screenWidth - 64;
+
+  const eftp = trpc.power.eftpTrend.useQuery({ days });
+  const powerCurve = trpc.power.powerCurve.useQuery({ days });
+  const pmc = trpc.pmc.chart.useQuery({ days: 365 });
+
+  if (eftp.isLoading || powerCurve.isLoading || pmc.isLoading) return <LoadingText />;
+
+  const eftpData = eftp.data?.trend ?? [];
+  const currentEftp = eftp.data?.currentEftp;
+  const model = powerCurve.data?.model;
+  const points = powerCurve.data?.points ?? [];
+  const pmcData = pmc.data?.data ?? [];
+  const latestPmc = pmcData[pmcData.length - 1];
+
+  // Key durations for summary
+  const powerAt = (seconds: number) => points.find((p) => p.durationSeconds === seconds)?.bestPower;
+  const fiveSecond = powerAt(5);
+  const oneMinute = powerAt(60);
+  const fiveMinute = powerAt(300);
+  const twentyMinute = powerAt(1200);
+
+  return (
+    <View>
+      {/* eFTP */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Estimated Threshold Power</Text>
+        <Text style={styles.bigValue}>
+          {currentEftp != null ? `${Math.round(currentEftp)} W` : "--"}
+        </Text>
+        {eftpData.length > 1 && (
+          <View style={styles.sparklineContainer}>
+            <Sparkline
+              data={eftpData.map((d) => d.eftp)}
+              width={chartWidth}
+              height={60}
+              color={colors.teal}
+            />
+          </View>
+        )}
+      </View>
+
+      {/* Fitness / Fatigue / Form */}
+      {latestPmc && (
+        <View>
+          <Text style={styles.sectionTitle}>Fitness, Fatigue & Form</Text>
+          <View style={styles.summaryRow}>
+            <View style={styles.summaryCard}>
+              <Text style={styles.summaryLabel}>Fitness</Text>
+              <Text style={[styles.summaryValue, { color: colors.blue }]}>{formatNumber(latestPmc.ctl, 1)}</Text>
+            </View>
+            <View style={styles.summaryCard}>
+              <Text style={styles.summaryLabel}>Fatigue</Text>
+              <Text style={[styles.summaryValue, { color: colors.orange }]}>{formatNumber(latestPmc.atl, 1)}</Text>
+            </View>
+            <View style={styles.summaryCard}>
+              <Text style={styles.summaryLabel}>Form</Text>
+              <Text
+                style={[
+                  styles.summaryValue,
+                  { color: latestPmc.tsb >= 0 ? statusColors.positive : statusColors.danger },
+                ]}
+              >
+                {formatNumber(latestPmc.tsb, 1)}
+              </Text>
+            </View>
+          </View>
+          {pmcData.length > 1 && (
+            <View style={styles.card}>
+              <View style={styles.sparklineContainer}>
+                <Sparkline
+                  data={pmcData.map((d) => d.ctl)}
+                  width={chartWidth}
+                  height={40}
+                  color={colors.blue}
+                />
+              </View>
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* Key Power Durations */}
+      {points.length > 0 && (
+        <View>
+          <Text style={styles.sectionTitle}>Power Bests</Text>
+          <View style={styles.summaryRow}>
+            <PowerCard label="5s" watts={fiveSecond} />
+            <PowerCard label="1m" watts={oneMinute} />
+          </View>
+          <View style={styles.summaryRow}>
+            <PowerCard label="5m" watts={fiveMinute} />
+            <PowerCard label="20m" watts={twentyMinute} />
+          </View>
+        </View>
+      )}
+
+      {/* CP Model */}
+      {model && (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Critical Power Model</Text>
+          <View style={styles.summaryRow}>
+            <View style={styles.summaryCard}>
+              <Text style={styles.summaryLabel}>Critical Power</Text>
+              <Text style={[styles.summaryValue, { color: colors.teal }]}>{model.cp} W</Text>
+            </View>
+            <View style={styles.summaryCard}>
+              <Text style={styles.summaryLabel}>Anaerobic Reserve</Text>
+              <Text style={[styles.summaryValue, { color: colors.orange }]}>{Math.round(model.wPrime / 1000)} kJ</Text>
+            </View>
+          </View>
+          <Text style={styles.cardSubtext}>Model fit: {(model.r2 * 100).toFixed(0)}%</Text>
+        </View>
+      )}
+
+      {points.length === 0 && (
+        <EmptyText message="No cycling power data available for this period." />
+      )}
+    </View>
+  );
+}
+
+function PowerCard({ label, watts }: { label: string; watts: number | undefined }) {
+  return (
+    <View style={styles.summaryCard}>
+      <Text style={styles.summaryLabel}>{label}</Text>
+      <Text style={[styles.summaryValue, { color: colors.purple }]}>
+        {watts != null ? `${watts} W` : "--"}
+      </Text>
+    </View>
+  );
+}
+
+// ── Running Tab ──
+
+function RunningTab({ days }: { days: number }) {
+  const { width: screenWidth } = useWindowDimensions();
+  const chartWidth = screenWidth - 64;
+
+  const paceTrend = trpc.running.paceTrend.useQuery({ days });
+  const dynamics = trpc.running.dynamics.useQuery({ days });
+
+  if (paceTrend.isLoading || dynamics.isLoading) return <LoadingText />;
+
+  const paceData = paceTrend.data ?? [];
+  const dynamicsData = dynamics.data ?? [];
+
+  return (
+    <View>
+      {/* Pace Trend */}
+      {paceData.length > 0 && (
+        <View>
+          <Text style={styles.sectionTitle}>Recent Runs</Text>
+          {paceData.slice(-10).reverse().map((run, index) => (
+            <View key={`${run.date}-${index}`} style={styles.card}>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.cardTitle}>{run.activityName}</Text>
+                  <Text style={styles.cardSubtext}>{run.date}</Text>
+                </View>
+                <View style={{ alignItems: "flex-end" }}>
+                  <Text style={[styles.bigValue, { fontSize: 20, color: colors.green }]}>
+                    {formatPace(run.paceSecondsPerKm)} /km
+                  </Text>
+                  <Text style={styles.cardSubtext}>
+                    {run.distanceKm} km · {run.durationMinutes} min
+                  </Text>
+                </View>
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {/* Running Dynamics Summary */}
+      {dynamicsData.length > 0 && (
+        <View>
+          <Text style={styles.sectionTitle}>Running Form</Text>
+          {(() => {
+            const latest = dynamicsData[dynamicsData.length - 1];
+            if (!latest) return null;
+            return (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Latest: {latest.activityName}</Text>
+                <View style={{ gap: 8, marginTop: 8 }}>
+                  <FormRow label="Cadence" value={`${latest.cadence} spm`} />
+                  {latest.strideLengthMeters != null && (
+                    <FormRow label="Stride Length" value={`${latest.strideLengthMeters.toFixed(2)} m`} />
+                  )}
+                  {latest.stanceTimeMs != null && (
+                    <FormRow label="Ground Contact" value={`${Math.round(latest.stanceTimeMs)} ms`} />
+                  )}
+                  {latest.verticalOscillationMm != null && (
+                    <FormRow label="Vertical Oscillation" value={`${latest.verticalOscillationMm.toFixed(1)} mm`} />
+                  )}
+                </View>
+              </View>
+            );
+          })()}
+        </View>
+      )}
+
+      {/* Cadence Sparkline */}
+      {dynamicsData.length > 1 && (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Cadence Trend</Text>
+          <View style={styles.sparklineContainer}>
+            <Sparkline
+              data={dynamicsData.map((d) => d.cadence)}
+              width={chartWidth}
+              height={50}
+              color={colors.orange}
+            />
+          </View>
+        </View>
+      )}
+
+      {paceData.length === 0 && dynamicsData.length === 0 && (
+        <EmptyText message="No running data available for this period." />
+      )}
+    </View>
+  );
+}
+
+function FormRow({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+      <Text style={{ fontSize: 13, color: colors.textSecondary }}>{label}</Text>
+      <Text style={{ fontSize: 13, color: colors.text, fontWeight: "600", fontVariant: ["tabular-nums"] }}>{value}</Text>
     </View>
   );
 }
