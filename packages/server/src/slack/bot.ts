@@ -553,38 +553,16 @@ function registerHandlers(app: AppType, db: Database) {
       // Load items for the saved message display
       const rows = await db.execute<{
         food_name: string;
-        food_description: string | null;
-        category: string | null;
         calories: number | null;
-        protein_g: number | null;
-        carbs_g: number | null;
-        fat_g: number | null;
-        fiber_g: number | null;
-        saturated_fat_g: number | null;
-        sugar_g: number | null;
-        sodium_mg: number | null;
-        meal: string | null;
       }>(
-        sql`SELECT food_name, food_description, category, calories,
-                   protein_g, carbs_g, fat_g, fiber_g,
-                   saturated_fat_g, sugar_g, sodium_mg, meal
+        sql`SELECT food_name, calories
             FROM fitness.food_entry
             WHERE id IN (${sqlIdList(entryIds)})`,
       );
 
-      const items: NutritionItemWithMeal[] = rows.map((r) => ({
+      const items = rows.map((r) => ({
         foodName: r.food_name,
-        foodDescription: r.food_description ?? "",
-        category: categorySchema.parse(r.category ?? "other"),
         calories: r.calories ?? 0,
-        proteinG: r.protein_g ?? 0,
-        carbsG: r.carbs_g ?? 0,
-        fatG: r.fat_g ?? 0,
-        fiberG: r.fiber_g ?? 0,
-        saturatedFatG: r.saturated_fat_g ?? 0,
-        sugarG: r.sugar_g ?? 0,
-        sodiumMg: r.sodium_mg ?? 0,
-        meal: mealSchema.parse(r.meal ?? "other"),
       }));
 
       const savedMessage = formatSavedMessage(items);

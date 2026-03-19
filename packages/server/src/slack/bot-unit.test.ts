@@ -646,6 +646,7 @@ describe("bot.ts — registerHandlers", () => {
       expect(chatUpdate).toHaveBeenCalledWith(
         expect.objectContaining({
           text: "These entries were already saved.",
+          blocks: [],
         }),
       );
     });
@@ -723,8 +724,88 @@ describe("bot.ts — registerHandlers", () => {
       expect(chatUpdate).toHaveBeenCalledWith(
         expect.objectContaining({
           text: expect.stringContaining("DB connection failed"),
+          blocks: [],
         }),
       );
+    });
+
+    it("does not update already-saved message when channel exists but message.ts is missing", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+      const { confirmHandler } = setupHandlers(db);
+
+      mockExecute.mockResolvedValueOnce([]);
+
+      const ack = vi.fn();
+      const chatUpdate = vi.fn();
+
+      await confirmHandler({
+        ack,
+        body: {
+          type: "block_actions",
+          actions: [{ action_id: "confirm_food", value: "entry-1" }],
+          channel: { id: "C123" },
+          message: {},
+        },
+        client: { chat: { update: chatUpdate } },
+      });
+
+      expect(ack).toHaveBeenCalled();
+      expect(chatUpdate).not.toHaveBeenCalled();
+    });
+
+    it("confirms entries but does not update when message.ts is missing", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+      const { confirmHandler } = setupHandlers(db);
+
+      mockExecute.mockResolvedValueOnce([{ id: "entry-1" }]);
+      mockExecute.mockResolvedValueOnce([{ food_name: "Toast", calories: 80 }]);
+      mockExecute.mockResolvedValueOnce([{ user_id: "user-123" }]);
+
+      const ack = vi.fn();
+      const chatUpdate = vi.fn();
+
+      await confirmHandler({
+        ack,
+        body: {
+          type: "block_actions",
+          actions: [{ action_id: "confirm_food", value: "entry-1" }],
+          channel: { id: "C123" },
+          message: {},
+        },
+        client: { chat: { update: chatUpdate } },
+      });
+
+      expect(ack).toHaveBeenCalled();
+      expect(chatUpdate).not.toHaveBeenCalled();
+      expect(vi.mocked(queryCache.invalidateByPrefix)).toHaveBeenCalledWith("user-123:food.");
+      expect(vi.mocked(queryCache.invalidateByPrefix)).toHaveBeenCalledWith("user-123:nutrition.");
+    });
+
+    it("does not update error message when channel exists but message.ts is missing", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+      const { confirmHandler } = setupHandlers(db);
+
+      mockExecute.mockRejectedValueOnce(new Error("DB connection failed"));
+
+      const ack = vi.fn();
+      const chatUpdate = vi.fn();
+
+      await confirmHandler({
+        ack,
+        body: {
+          type: "block_actions",
+          actions: [{ action_id: "confirm_food", value: "entry-1" }],
+          channel: { id: "C123" },
+          message: {},
+        },
+        client: { chat: { update: chatUpdate } },
+      });
+
+      expect(ack).toHaveBeenCalled();
+      expect(chatUpdate).not.toHaveBeenCalled();
     });
   });
 
@@ -2915,9 +2996,18 @@ describe("bot.ts — registerHandlers", () => {
       });
 
       expect(ack).toHaveBeenCalled();
-      expect(chatUpdate).toHaveBeenCalled();
+      expect(chatUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining("Logged: Apple: 95 cal"),
+        }),
+      );
       // Cache invalidation should not have been called because no user row was found
       expect(vi.mocked(queryCache.invalidateByPrefix)).not.toHaveBeenCalled();
+      // The user lookup SQL must still run to support cache invalidation on successful paths.
+      const thirdCallSql = mockExecute.mock.calls[2]?.[0];
+      expect(extractSqlText(thirdCallSql)).toContain(
+        "SELECT DISTINCT user_id FROM fitness.food_entry",
+      );
     });
   });
 
@@ -3554,20 +3644,41 @@ describe("bot.ts — registerHandlers", () => {
    * and raw JavaScript values (the interpolated params: number, string, null, boolean, etc.).
    * Nested SQL objects (from sql.join) are recursively flattened.
    */
-  function extractParamValues(sqlObj: { queryChunks: unknown[] }): unknown[] {
+  function isObjectRecord(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === "object";
+  }
+
+  function getQueryChunks(value: unknown): unknown[] {
+    if (!isObjectRecord(value)) return [];
+    const chunks = value.queryChunks;
+    return Array.isArray(chunks) ? chunks : [];
+  }
+
+  function getStringChunkValues(value: unknown): string[] {
+    if (!isObjectRecord(value)) return [];
+    const chunkValue = value.value;
+    if (!Array.isArray(chunkValue)) return [];
+    return chunkValue.filter((part): part is string => typeof part === "string");
+  }
+
+  function extractSqlText(sqlObj: unknown): string {
+    return getQueryChunks(sqlObj)
+      .flatMap((chunk) => getStringChunkValues(chunk))
+      .join("");
+  }
+
+  function extractParamValues(sqlObj: unknown): unknown[] {
     const params: unknown[] = [];
-    for (const chunk of sqlObj.queryChunks) {
-      if (chunk !== null && typeof chunk === "object") {
-        // StringChunk: has .value that is string[]
-        if ("value" in chunk && Array.isArray((chunk as { value: unknown }).value)) {
-          continue; // Skip StringChunk
-        }
-        // Nested SQL object: has .queryChunks
-        if ("queryChunks" in chunk) {
-          params.push(...extractParamValues(chunk as { queryChunks: unknown[] }));
-          continue;
-        }
+    for (const chunk of getQueryChunks(sqlObj)) {
+      // StringChunk: has .value that is string[]
+      if (getStringChunkValues(chunk).length > 0) continue;
+
+      // Nested SQL object: has .queryChunks
+      if (getQueryChunks(chunk).length > 0) {
+        params.push(...extractParamValues(chunk));
+        continue;
       }
+
       // Raw value: number, string, null, boolean, etc.
       params.push(chunk);
     }
@@ -3578,23 +3689,11 @@ describe("bot.ts — registerHandlers", () => {
   function findInsertCall(mockExecute: ReturnType<typeof vi.fn>): unknown[] | undefined {
     return mockExecute.mock.calls.find((call: unknown[]) => {
       const sqlObj = call[0];
-      if (!sqlObj || typeof sqlObj !== "object" || !("queryChunks" in sqlObj)) return false;
-      const chunks = (sqlObj as { queryChunks: unknown[] }).queryChunks;
-      return chunks.some((chunk) => {
-        if (chunk === null || typeof chunk !== "object") return false;
-        const val = (chunk as { value?: unknown }).value;
-        return (
-          Array.isArray(val) &&
-          val.some(
-            (v) => typeof v === "string" && v.includes("INSERT INTO fitness.food_entry"),
-          )
-        );
-      });
+      return extractSqlText(sqlObj).includes("INSERT INTO fitness.food_entry");
     });
   }
 
   describe("micronutrient ?? null — kills ?? → && mutations on INSERT", () => {
-
     it("passes non-null micronutrient values through to the INSERT SQL", async () => {
       const db = createMockDb();
       const mockExecute = getMockExecute(db);
@@ -3665,10 +3764,8 @@ describe("bot.ts — registerHandlers", () => {
       const insertCall = findInsertCall(mockExecute);
 
       expect(insertCall).toBeDefined();
-
-      const paramValues = extractParamValues(
-        insertCall![0] as { queryChunks: unknown[] },
-      );
+      if (!insertCall) throw new Error("Expected INSERT call");
+      const paramValues = extractParamValues(insertCall[0]);
 
       // All micronutrient values should appear as their actual values, not null
       // Use unique values to distinguish each field
@@ -3737,26 +3834,11 @@ describe("bot.ts — registerHandlers", () => {
       });
 
       // Find the INSERT call
-      const insertCall = mockExecute.mock.calls.find((call: unknown[]) => {
-        const sqlObj = call[0];
-        if (!sqlObj || typeof sqlObj !== "object" || !("queryChunks" in sqlObj)) return false;
-        const chunks = (sqlObj as { queryChunks: unknown[] }).queryChunks;
-        return chunks.some((chunk) => {
-          const val = (chunk as { value?: unknown }).value;
-          return (
-            Array.isArray(val) &&
-            val.some(
-              (v) => typeof v === "string" && v.includes("INSERT INTO fitness.food_entry"),
-            )
-          );
-        });
-      });
+      const insertCall = findInsertCall(mockExecute);
 
       expect(insertCall).toBeDefined();
-
-      const paramValues = extractParamValues(
-        insertCall![0] as { queryChunks: unknown[] },
-      );
+      if (!insertCall) throw new Error("Expected INSERT call");
+      const paramValues = extractParamValues(insertCall[0]);
 
       // Count null values — all micronutrient fields (28 of them: polyunsaturated through omega6)
       // plus the `false` for confirmed. The item has undefined micronutrients, so ?? null gives null.
@@ -3862,10 +3944,8 @@ describe("bot.ts — registerHandlers", () => {
       // The date passed to saveUnconfirmedFoodEntries should be "2023-11-14"
       const insertCall = findInsertCall(mockExecute);
       expect(insertCall).toBeDefined();
-
-      const paramValues = extractParamValues(
-        insertCall![0] as { queryChunks: unknown[] },
-      );
+      if (!insertCall) throw new Error("Expected INSERT call");
+      const paramValues = extractParamValues(insertCall[0]);
 
       expect(paramValues).toContain("2023-11-14");
     });
@@ -3906,10 +3986,8 @@ describe("bot.ts — registerHandlers", () => {
 
       const insertCall = findInsertCall(mockExecute);
       expect(insertCall).toBeDefined();
-
-      const paramValues = extractParamValues(
-        insertCall![0] as { queryChunks: unknown[] },
-      );
+      if (!insertCall) throw new Error("Expected INSERT call");
+      const paramValues = extractParamValues(insertCall[0]);
 
       // In Tokyo timezone, this should be 2023-11-15 (00:13 JST = next day)
       expect(paramValues).toContain("2023-11-15");
@@ -3952,10 +4030,7 @@ describe("bot.ts — registerHandlers", () => {
 
       // slackTimestampToLocalTime returns "weekday, H:MM AM/PM" format — check for Tuesday
       // (Nov 14, 2023 was a Tuesday). If mutated to /1000, would be Jan 1970 = Thursday
-      expect(mockAnalyze).toHaveBeenCalledWith(
-        "food",
-        expect.stringContaining("Tuesday"),
-      );
+      expect(mockAnalyze).toHaveBeenCalledWith("food", expect.stringContaining("Tuesday"));
     });
   });
 
@@ -4212,11 +4287,7 @@ describe("bot.ts — registerHandlers", () => {
       const firstCallSql = mockExecute.mock.calls[0]?.[0];
       expect(firstCallSql).toBeDefined();
       // The SQL object's string chunks should contain "UPDATE" and "confirmed"
-      const chunks = (firstCallSql as { queryChunks: Array<{ value?: unknown }> }).queryChunks;
-      const stringValues = chunks
-        .filter((c) => Array.isArray((c as { value?: string[] }).value))
-        .flatMap((c) => (c as { value: string[] }).value);
-      const fullSql = stringValues.join("");
+      const fullSql = extractSqlText(firstCallSql);
       expect(fullSql).toContain("UPDATE");
       expect(fullSql).toContain("confirmed = true");
     });
@@ -4254,11 +4325,7 @@ describe("bot.ts — registerHandlers", () => {
       // The execute call should contain DELETE SQL
       const firstCallSql = mockExecute.mock.calls[0]?.[0];
       expect(firstCallSql).toBeDefined();
-      const chunks = (firstCallSql as { queryChunks: Array<{ value?: unknown }> }).queryChunks;
-      const stringValues = chunks
-        .filter((c) => Array.isArray((c as { value?: string[] }).value))
-        .flatMap((c) => (c as { value: string[] }).value);
-      const fullSql = stringValues.join("");
+      const fullSql = extractSqlText(firstCallSql);
       expect(fullSql).toContain("DELETE");
       expect(fullSql).toContain("confirmed = false");
     });
@@ -4477,9 +4544,7 @@ describe("bot.ts — registerHandlers", () => {
       // deleteUnconfirmedEntries should return early (entryIds.length === 0)
       expect(mockExecute).not.toHaveBeenCalled();
       // Should still update message with "Cancelled."
-      expect(chatUpdate).toHaveBeenCalledWith(
-        expect.objectContaining({ text: "Cancelled." }),
-      );
+      expect(chatUpdate).toHaveBeenCalledWith(expect.objectContaining({ text: "Cancelled." }));
     });
   });
 });

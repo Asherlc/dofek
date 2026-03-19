@@ -49,6 +49,7 @@ vi.mock("../lib/cache.ts", () => ({
 }));
 
 import bolt from "@slack/bolt";
+import { SocketModeClient } from "@slack/socket-mode";
 import { createSlackBot, startSlackBot } from "./bot.ts";
 
 /**
@@ -97,6 +98,12 @@ describe("createSlackBot", () => {
 
     expect(vi.mocked(bolt.SocketModeReceiver)).toHaveBeenCalledWith(
       expect.objectContaining({ appToken: "xapp-test-token" }),
+    );
+    expect(vi.mocked(SocketModeClient)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        appToken: "xapp-test-token",
+        clientPingTimeout: 30_000,
+      }),
     );
     expect(vi.mocked(bolt.App)).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -211,6 +218,21 @@ describe("startSlackBot", () => {
     expect(mockAppInstance).toBeDefined();
     expect(mockAppInstance.start).toHaveBeenCalled();
     expect(logger.info).toHaveBeenCalledWith("[slack] Slack bot connected (Socket Mode)");
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  it("does not mount Express router in socket mode when express app is provided", async () => {
+    process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
+    process.env.SLACK_APP_TOKEN = "xapp-test-token";
+
+    const db = createMockDb();
+    const mockExpress = mockAs<import("express").Express>({ use: vi.fn() });
+    const { logger } = await import("../logger.ts");
+
+    await startSlackBot(db, mockExpress);
+
+    expect(mockExpress.use).not.toHaveBeenCalled();
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 
   it("logs error when app.start() fails in socket mode", async () => {
