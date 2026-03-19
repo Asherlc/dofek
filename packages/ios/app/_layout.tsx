@@ -7,8 +7,11 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { trpc } from "../lib/trpc";
 import { AuthProvider, useAuth } from "../lib/auth-context";
 import { getTrpcUrl } from "../lib/server";
+import { initTelemetry } from "../lib/telemetry";
 import { colors } from "../theme";
 import LoginScreen from "./login";
+
+initTelemetry();
 
 function AuthGate() {
   const { user, serverUrl, isLoading, sessionToken } = useAuth();
