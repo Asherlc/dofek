@@ -51,52 +51,63 @@ const supplementSchema = z.object({
 
 export type Supplement = z.infer<typeof supplementSchema>;
 
+/** Fields that are optional in the API shape and nullable in the DB row. */
+export const OPTIONAL_FIELDS = [
+  "amount",
+  "unit",
+  "form",
+  "description",
+  "meal",
+  "calories",
+  "proteinG",
+  "carbsG",
+  "fatG",
+  "saturatedFatG",
+  "polyunsaturatedFatG",
+  "monounsaturatedFatG",
+  "transFatG",
+  "cholesterolMg",
+  "sodiumMg",
+  "potassiumMg",
+  "fiberG",
+  "sugarG",
+  "vitaminAMcg",
+  "vitaminCMg",
+  "vitaminDMcg",
+  "vitaminEMg",
+  "vitaminKMcg",
+  "vitaminB1Mg",
+  "vitaminB2Mg",
+  "vitaminB3Mg",
+  "vitaminB5Mg",
+  "vitaminB6Mg",
+  "vitaminB7Mcg",
+  "vitaminB9Mcg",
+  "vitaminB12Mcg",
+  "calciumMg",
+  "ironMg",
+  "magnesiumMg",
+  "zincMg",
+  "seleniumMcg",
+  "copperMg",
+  "manganeseMg",
+  "chromiumMcg",
+  "iodineMcg",
+  "omega3Mg",
+  "omega6Mg",
+] as const;
+
+type SupplementRow = typeof supplement.$inferSelect;
+
 /** Map a DB supplement row to the API shape (strip DB-only fields). */
-function toApiSupplement(row: typeof supplement.$inferSelect): Supplement {
-  const result: Supplement = { name: row.name };
-  if (row.amount != null) result.amount = row.amount;
-  if (row.unit != null) result.unit = row.unit;
-  if (row.form != null) result.form = row.form;
-  if (row.description != null) result.description = row.description;
-  if (row.meal != null) result.meal = row.meal;
-  if (row.calories != null) result.calories = row.calories;
-  if (row.proteinG != null) result.proteinG = row.proteinG;
-  if (row.carbsG != null) result.carbsG = row.carbsG;
-  if (row.fatG != null) result.fatG = row.fatG;
-  if (row.saturatedFatG != null) result.saturatedFatG = row.saturatedFatG;
-  if (row.polyunsaturatedFatG != null) result.polyunsaturatedFatG = row.polyunsaturatedFatG;
-  if (row.monounsaturatedFatG != null) result.monounsaturatedFatG = row.monounsaturatedFatG;
-  if (row.transFatG != null) result.transFatG = row.transFatG;
-  if (row.cholesterolMg != null) result.cholesterolMg = row.cholesterolMg;
-  if (row.sodiumMg != null) result.sodiumMg = row.sodiumMg;
-  if (row.potassiumMg != null) result.potassiumMg = row.potassiumMg;
-  if (row.fiberG != null) result.fiberG = row.fiberG;
-  if (row.sugarG != null) result.sugarG = row.sugarG;
-  if (row.vitaminAMcg != null) result.vitaminAMcg = row.vitaminAMcg;
-  if (row.vitaminCMg != null) result.vitaminCMg = row.vitaminCMg;
-  if (row.vitaminDMcg != null) result.vitaminDMcg = row.vitaminDMcg;
-  if (row.vitaminEMg != null) result.vitaminEMg = row.vitaminEMg;
-  if (row.vitaminKMcg != null) result.vitaminKMcg = row.vitaminKMcg;
-  if (row.vitaminB1Mg != null) result.vitaminB1Mg = row.vitaminB1Mg;
-  if (row.vitaminB2Mg != null) result.vitaminB2Mg = row.vitaminB2Mg;
-  if (row.vitaminB3Mg != null) result.vitaminB3Mg = row.vitaminB3Mg;
-  if (row.vitaminB5Mg != null) result.vitaminB5Mg = row.vitaminB5Mg;
-  if (row.vitaminB6Mg != null) result.vitaminB6Mg = row.vitaminB6Mg;
-  if (row.vitaminB7Mcg != null) result.vitaminB7Mcg = row.vitaminB7Mcg;
-  if (row.vitaminB9Mcg != null) result.vitaminB9Mcg = row.vitaminB9Mcg;
-  if (row.vitaminB12Mcg != null) result.vitaminB12Mcg = row.vitaminB12Mcg;
-  if (row.calciumMg != null) result.calciumMg = row.calciumMg;
-  if (row.ironMg != null) result.ironMg = row.ironMg;
-  if (row.magnesiumMg != null) result.magnesiumMg = row.magnesiumMg;
-  if (row.zincMg != null) result.zincMg = row.zincMg;
-  if (row.seleniumMcg != null) result.seleniumMcg = row.seleniumMcg;
-  if (row.copperMg != null) result.copperMg = row.copperMg;
-  if (row.manganeseMg != null) result.manganeseMg = row.manganeseMg;
-  if (row.chromiumMcg != null) result.chromiumMcg = row.chromiumMcg;
-  if (row.iodineMcg != null) result.iodineMcg = row.iodineMcg;
-  if (row.omega3Mg != null) result.omega3Mg = row.omega3Mg;
-  if (row.omega6Mg != null) result.omega6Mg = row.omega6Mg;
-  return result;
+export function toApiSupplement(row: SupplementRow): Supplement {
+  const result: Record<string, unknown> = { name: row.name };
+  for (const key of OPTIONAL_FIELDS) {
+    if (row[key] != null) {
+      result[key] = row[key];
+    }
+  }
+  return supplementSchema.parse(result);
 }
 
 export const supplementsRouter = router({
@@ -112,7 +123,6 @@ export const supplementsRouter = router({
   save: protectedProcedure
     .input(z.object({ supplements: z.array(supplementSchema) }))
     .mutation(async ({ ctx, input }) => {
-      // Replace all supplements for this user: delete existing, insert new list
       await ctx.db.transaction(async (tx) => {
         await tx.delete(supplement).where(eq(supplement.userId, ctx.userId));
         if (input.supplements.length > 0) {
