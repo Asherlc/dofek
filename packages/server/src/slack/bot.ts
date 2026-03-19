@@ -112,12 +112,8 @@ function extractEntryIdsFromThread(
   return null;
 }
 
-/** Find an existing user by email, or create a new user profile. */
-async function resolveOrCreateUserId(
-  db: Database,
-  email: string | null,
-  name: string,
-): Promise<string> {
+/** Find an existing user by email. Throws if no match is found. */
+async function resolveUserByEmail(db: Database, email: string | null): Promise<string> {
   if (email) {
     // Check auth_account first (Google/Apple login creates these)
     const existingByAuthEmail = await db.execute<{ user_id: string }>(
@@ -144,46 +140,11 @@ async function resolveOrCreateUserId(
     }
   }
 
-  // Fallback: if there's exactly one user in the system, use that user.
-  // This handles the common case where the Slack API doesn't return an email
-  // but only one person uses the app.
-  const userCount = await db.execute<{ count: string; id: string }>(
-    sql`SELECT COUNT(*)::text AS count, MIN(id::text)::uuid AS id FROM fitness.user_profile`,
+  throw new Error(
+    "Could not match your Slack account to a Dofek user. " +
+      "Make sure the Slack app has the `users:read` and `users:read.email` scopes, " +
+      "and that your Slack email matches your Dofek login email.",
   );
-  const countRow = userCount[0];
-  if (countRow && parseInt(countRow.count, 10) === 1) {
-    logger.info(
-      `[slack] No email match — falling back to sole user ${countRow.id} (single-user mode)`,
-    );
-    return countRow.id;
-  }
-
-  // Multiple user_profiles exist (possibly including orphans from previous Slack
-  // interactions). Check for users with non-slack auth_accounts — these are "real"
-  // users who logged in via the web. If exactly one exists, use them.
-  const realUsers = await db.execute<{ user_id: string }>(
-    sql`SELECT DISTINCT user_id FROM fitness.auth_account
-        WHERE auth_provider != 'slack'`,
-  );
-  if (realUsers.length === 1 && realUsers[0]) {
-    logger.info(
-      `[slack] No email match — falling back to sole authenticated user ${realUsers[0].user_id}`,
-    );
-    return realUsers[0].user_id;
-  }
-
-  // No match and multiple real users — create a new one
-  logger.warn(
-    `[slack] Could not match Slack user to existing account (email=${email ?? "null"}), creating new user`,
-  );
-  const newUser = await db.execute<{ id: string }>(
-    sql`INSERT INTO fitness.user_profile (name, email)
-        VALUES (${name}, ${email})
-        RETURNING id`,
-  );
-  const newUserRow = newUser[0];
-  if (!newUserRow) throw new Error("Failed to create user profile for Slack user");
-  return newUserRow.id;
 }
 
 /** Look up the dofek user ID for a Slack user, or create a new user + link if none exists.
@@ -208,8 +169,9 @@ async function lookupOrCreateUserId(
     if (info.user?.real_name) name = info.user.real_name;
     if (info.user?.profile?.email) email = info.user.profile.email;
     if (info.user?.tz) timezone = info.user.tz;
-  } catch {
-    logger.warn(`[slack] Could not fetch Slack profile for ${slackUserId}`);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    logger.warn(`[slack] Could not fetch Slack profile for ${slackUserId}: ${detail}`);
   }
 
   // Check for existing Slack auth link
@@ -223,8 +185,6 @@ async function lookupOrCreateUserId(
     // Verify this Slack account isn't orphaned: if a non-Slack auth_account exists
     // with the same email but a different user_id, the Slack link is stale
     // (e.g., Slack bot ran before the user logged in on the web).
-    let correctId: string | null = null;
-
     if (email) {
       const canonical = await db.execute<{ user_id: string }>(
         sql`SELECT user_id FROM fitness.auth_account
@@ -233,47 +193,35 @@ async function lookupOrCreateUserId(
       );
       const canonicalRow = canonical[0];
       if (canonicalRow && canonicalRow.user_id !== existingRow.user_id) {
-        correctId = canonicalRow.user_id;
+        const orphanId = existingRow.user_id;
+        const correctId = canonicalRow.user_id;
+        logger.info(
+          `[slack] Repairing orphan: moving Slack user ${slackUserId} from ${orphanId} → ${correctId}`,
+        );
+        // Repoint the Slack auth_account to the correct user
+        await db.execute(
+          sql`UPDATE fitness.auth_account
+              SET user_id = ${correctId}
+              WHERE auth_provider = 'slack' AND provider_account_id = ${slackUserId}`,
+        );
+        // Migrate any food entries saved under the orphan user
+        await db.execute(
+          sql`UPDATE fitness.food_entry
+              SET user_id = ${correctId}
+              WHERE user_id = ${orphanId}`,
+        );
+        return { userId: correctId, timezone };
       }
     }
 
-    // Single-user fallback: if no email match found, but there's exactly one user
-    // with a non-slack auth_account, the Slack link likely points to a bot-created orphan
-    if (!correctId) {
-      const realUsers = await db.execute<{ user_id: string }>(
-        sql`SELECT DISTINCT user_id FROM fitness.auth_account
-            WHERE auth_provider != 'slack'`,
-      );
-      if (realUsers.length === 1 && realUsers[0] && realUsers[0].user_id !== existingRow.user_id) {
-        correctId = realUsers[0].user_id;
-      }
-    }
-
-    if (correctId) {
-      const orphanId = existingRow.user_id;
-      logger.info(
-        `[slack] Repairing orphan: moving Slack user ${slackUserId} from ${orphanId} → ${correctId}`,
-      );
-      // Repoint the Slack auth_account to the correct user
-      await db.execute(
-        sql`UPDATE fitness.auth_account
-            SET user_id = ${correctId}
-            WHERE auth_provider = 'slack' AND provider_account_id = ${slackUserId}`,
-      );
-      // Migrate any food entries saved under the orphan user
-      await db.execute(
-        sql`UPDATE fitness.food_entry
-            SET user_id = ${correctId}
-            WHERE user_id = ${orphanId}`,
-      );
-      return { userId: correctId, timezone };
-    }
-
+    logger.info(
+      `[slack] Using existing Slack link for ${slackUserId} → user ${existingRow.user_id}`,
+    );
     return { userId: existingRow.user_id, timezone };
   }
 
-  // Try to find an existing user with the same email (e.g., from Google/Apple web login)
-  const userId = await resolveOrCreateUserId(db, email, name);
+  // Try to find an existing user by email (e.g., from Google/Apple web login)
+  const userId = await resolveUserByEmail(db, email);
 
   // Link Slack account
   await db.execute(

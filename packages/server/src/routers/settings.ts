@@ -41,7 +41,9 @@ export const settingsRouter = router({
           WHERE user_id = ${ctx.userId} AND auth_provider = 'slack'
           LIMIT 1`,
     );
-    const configured = !!(process.env.SLACK_CLIENT_ID && process.env.SLACK_SIGNING_SECRET);
+    const oauthMode = !!(process.env.SLACK_CLIENT_ID && process.env.SLACK_SIGNING_SECRET);
+    const socketMode = !!(process.env.SLACK_BOT_TOKEN && process.env.SLACK_APP_TOKEN);
+    const configured = oauthMode || socketMode;
     return {
       configured,
       connected: rows.length > 0,
