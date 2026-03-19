@@ -1455,6 +1455,50 @@ describe("OuraProvider.sync()", () => {
     expect(db.onConflictDoNothing).toHaveBeenCalled();
   });
 
+  it("chunks heart rate fetches into 30-day windows", async () => {
+    setupEnv();
+    const hr1 = fakeHeartRate({ bpm: 72, timestamp: "2026-01-15T10:00:00+00:00" });
+    const hr2 = fakeHeartRate({ bpm: 85, timestamp: "2026-02-15T10:00:00+00:00" });
+    const hr3 = fakeHeartRate({ bpm: 78, timestamp: "2026-03-15T10:00:00+00:00" });
+
+    // Track which date ranges are requested
+    const requestedRanges: Array<{ start: string; end: string }> = [];
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      const urlStr = input.toString();
+      if (urlStr.includes("/v2/usercollection/heartrate")) {
+        const startMatch = urlStr.match(/start_datetime=([^&]+)/);
+        const endMatch = urlStr.match(/end_datetime=([^&]+)/);
+        if (startMatch?.[1] && endMatch?.[1]) {
+          requestedRanges.push({ start: startMatch[1], end: endMatch[1] });
+        }
+        // Return HR data matching the requested period
+        const data = [];
+        if (startMatch?.[1]?.startsWith("2026-01")) data.push(hr1);
+        if (startMatch?.[1]?.startsWith("2026-02")) data.push(hr2);
+        if (startMatch?.[1]?.startsWith("2026-03")) data.push(hr3);
+        return Response.json({ data, next_token: null });
+      }
+      return createMockApiFetch({ heartRate: [hr1, hr2, hr3] })(input);
+    };
+
+    const provider = new OuraProvider(mockFetch);
+    const db = createMockDb();
+
+    // Sync from Jan 1 to Apr 30 (4 months, > 30 days)
+    const result = await provider.sync(db, new Date("2026-01-01"));
+
+    expect(result.errors).toHaveLength(0);
+    // Should make multiple requests for HR due to 30-day window limit
+    expect(requestedRanges.length).toBeGreaterThan(1);
+    // Each window should be at most 30 days apart
+    for (const range of requestedRanges) {
+      const start = new Date(`${range.start}Z`).getTime();
+      const end = new Date(`${range.end}Z`).getTime();
+      const diff = (end - start) / (1000 * 60 * 60 * 24);
+      expect(diff).toBeLessThanOrEqual(31); // Allow 1 day margin
+    }
+  });
+
   it("syncs daily stress", async () => {
     setupEnv();
     const stress = fakeStress();
