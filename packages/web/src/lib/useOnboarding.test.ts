@@ -10,6 +10,8 @@ const mockSettings: MockQuery = { data: undefined, isLoading: true };
 const mockMutate = vi.fn();
 const mockInvalidate = vi.fn();
 
+let mockSearchParams: { onboarding: boolean } = { onboarding: false };
+
 vi.mock("./trpc.ts", () => ({
   trpc: {
     sync: {
@@ -27,6 +29,10 @@ vi.mock("./trpc.ts", () => ({
   },
 }));
 
+vi.mock("@tanstack/react-router", () => ({
+  useSearch: () => mockSearchParams,
+}));
+
 // Import after mock setup
 const { useOnboarding } = await import("./useOnboarding.ts");
 
@@ -36,6 +42,7 @@ describe("useOnboarding", () => {
     mockProviders.isLoading = true;
     mockSettings.data = undefined;
     mockSettings.isLoading = true;
+    mockSearchParams = { onboarding: false };
 
     const result = useOnboarding();
     expect(result.isLoading).toBe(true);
@@ -50,6 +57,7 @@ describe("useOnboarding", () => {
     mockProviders.isLoading = false;
     mockSettings.data = null;
     mockSettings.isLoading = false;
+    mockSearchParams = { onboarding: false };
 
     const result = useOnboarding();
     expect(result.showOnboarding).toBe(true);
@@ -63,6 +71,7 @@ describe("useOnboarding", () => {
     mockProviders.isLoading = false;
     mockSettings.data = null;
     mockSettings.isLoading = false;
+    mockSearchParams = { onboarding: false };
 
     const result = useOnboarding();
     expect(result.showOnboarding).toBe(false);
@@ -77,6 +86,7 @@ describe("useOnboarding", () => {
     mockProviders.isLoading = false;
     mockSettings.data = null;
     mockSettings.isLoading = false;
+    mockSearchParams = { onboarding: false };
 
     const result = useOnboarding();
     expect(result.showOnboarding).toBe(true);
@@ -87,9 +97,21 @@ describe("useOnboarding", () => {
     mockProviders.isLoading = false;
     mockSettings.data = { key: "onboarding_dismissed", value: true };
     mockSettings.isLoading = false;
+    mockSearchParams = { onboarding: false };
 
     const result = useOnboarding();
     expect(result.showOnboarding).toBe(false);
+  });
+
+  it("forces onboarding when ?onboarding=true query param is set", () => {
+    mockProviders.data = [{ id: "strava", authorized: true, importOnly: false }];
+    mockProviders.isLoading = false;
+    mockSettings.data = { key: "onboarding_dismissed", value: true };
+    mockSettings.isLoading = false;
+    mockSearchParams = { onboarding: true };
+
+    const result = useOnboarding();
+    expect(result.showOnboarding).toBe(true);
   });
 
   it("dismiss calls the settings mutation", () => {
@@ -97,6 +119,7 @@ describe("useOnboarding", () => {
     mockProviders.isLoading = false;
     mockSettings.data = null;
     mockSettings.isLoading = false;
+    mockSearchParams = { onboarding: false };
 
     const result = useOnboarding();
     result.dismiss();

@@ -1,7 +1,9 @@
 import { ONBOARDING_SETTINGS_KEY, shouldShowOnboarding } from "@dofek/shared/onboarding";
+import { useSearch } from "@tanstack/react-router";
 import { trpc } from "./trpc.ts";
 
 export function useOnboarding() {
+  const { onboarding: forceOnboarding } = useSearch({ from: "__root__" });
   const providers = trpc.sync.providers.useQuery();
   const dismissedSetting = trpc.settings.get.useQuery({ key: ONBOARDING_SETTINGS_KEY });
   const setMutation = trpc.settings.set.useMutation();
@@ -11,7 +13,8 @@ export function useOnboarding() {
   const dismissed = dismissedSetting.data?.value === true;
   const isLoading = providers.isLoading || dismissedSetting.isLoading;
 
-  const showOnboarding = !isLoading && shouldShowOnboarding(connectedCount, dismissed);
+  const showOnboarding =
+    forceOnboarding || (!isLoading && shouldShowOnboarding(connectedCount, dismissed));
 
   function dismiss() {
     setMutation.mutate(
