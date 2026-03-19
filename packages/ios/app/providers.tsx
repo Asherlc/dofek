@@ -186,47 +186,58 @@ export default function ProvidersScreen() {
   const [syncingProviders, setSyncingProviders] = useState<Set<string>>(new Set());
   const [anySyncing, setAnySyncing] = useState(false);
   const resumedJobIds = useRef(new Set<string>());
-  const pollingRef = useRef(false);
+  const pollingJobIds = useRef(new Set<string>());
 
   const pollJob = useCallback(
     async (jobId: string, providerIds: string[]) => {
-      if (pollingRef.current) return;
-      pollingRef.current = true;
+      if (pollingJobIds.current.has(jobId)) return;
+      pollingJobIds.current.add(jobId);
+
+      const cleanup = () => {
+        pollingJobIds.current.delete(jobId);
+        setSyncingProviders((prev) => {
+          const next = new Set(prev);
+          for (const pid of providerIds) next.delete(pid);
+          return next;
+        });
+        if (pollingJobIds.current.size === 0) {
+          setAnySyncing(false);
+        }
+      };
 
       const poll = async (): Promise<void> => {
         let status: Awaited<ReturnType<typeof trpcUtils.sync.syncStatus.fetch>>;
         try {
           status = await trpcUtils.sync.syncStatus.fetch({ jobId }, { staleTime: 0 });
         } catch {
-          setSyncingProviders((prev) => {
-            const next = new Set(prev);
-            for (const pid of providerIds) next.delete(pid);
-            return next;
-          });
-          setAnySyncing(false);
-          pollingRef.current = false;
+          cleanup();
           return;
         }
 
         if (!status) {
-          setSyncingProviders(new Set());
-          setAnySyncing(false);
-          pollingRef.current = false;
+          cleanup();
           return;
         }
 
-        // Update per-provider syncing state
-        const stillSyncing = new Set<string>();
-        for (const [pid, pStatus] of Object.entries(status.providers)) {
-          if (pStatus.status === "running" || pStatus.status === "pending") {
-            stillSyncing.add(pid);
+        // Update per-provider syncing state (only for this job's providers)
+        setSyncingProviders((prev) => {
+          const next = new Set(prev);
+          for (const pid of providerIds) {
+            const pStatus = status.providers[pid];
+            if (pStatus && (pStatus.status === "running" || pStatus.status === "pending")) {
+              next.add(pid);
+            } else {
+              next.delete(pid);
+            }
           }
-        }
-        setSyncingProviders(stillSyncing);
+          return next;
+        });
 
         if (status.status === "done" || status.status === "error") {
-          setAnySyncing(false);
-          pollingRef.current = false;
+          pollingJobIds.current.delete(jobId);
+          if (pollingJobIds.current.size === 0) {
+            setAnySyncing(false);
+          }
           trpcUtils.sync.providers.invalidate();
           trpcUtils.sync.providerStats.invalidate();
           trpcUtils.sync.logs.invalidate();
