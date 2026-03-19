@@ -8,26 +8,15 @@ interface SleepAnalyticsChartProps {
   loading?: boolean;
 }
 
-export function SleepAnalyticsChart({ nightly, sleepDebt, loading }: SleepAnalyticsChartProps) {
-  if (loading) {
-    return <ChartLoadingSkeleton height={350} />;
-  }
-
-  if (nightly.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-[350px]">
-        <span className="text-zinc-600 text-sm">No sleep data</span>
-      </div>
-    );
-  }
-
+export function buildSleepAnalyticsOption(nightly: SleepNightlyRow[], sleepDebt: number) {
   const debtHours = Math.round((sleepDebt / 60) * 10) / 10;
   const debtLabel = sleepDebt > 0 ? `${debtHours}h deficit` : `${Math.abs(debtHours)}h surplus`;
   const debtColor = sleepDebt > 120 ? "#ef4444" : sleepDebt > 0 ? "#eab308" : "#22c55e";
 
-  const option = {
+  return {
     backgroundColor: "transparent",
-    grid: { top: 50, right: 60, bottom: 40, left: 50 },
+    // Reserve vertical space for both the legend row and sleep debt status row.
+    grid: { top: 82, right: 60, bottom: 40, left: 50 },
     tooltip: {
       trigger: "axis" as const,
       backgroundColor: "#18181b",
@@ -76,17 +65,22 @@ export function SleepAnalyticsChart({ nightly, sleepDebt, loading }: SleepAnalyt
       data: ["Deep", "REM", "Light", "Awake", "7d Avg"],
       textStyle: { color: "#a1a1aa", fontSize: 11 },
       top: 0,
+      left: 0,
+      right: 0,
+      itemGap: 14,
     },
     graphic: [
       {
         type: "text" as const,
         right: 10,
-        top: 5,
+        top: 28,
+        silent: true,
         style: {
           text: `14d Sleep Debt: ${debtLabel}`,
           fill: debtColor,
           fontSize: 13,
           fontWeight: "bold" as const,
+          align: "right" as const,
         },
       },
     ],
@@ -165,6 +159,22 @@ export function SleepAnalyticsChart({ nightly, sleepDebt, loading }: SleepAnalyt
       },
     ],
   };
+}
+
+export function SleepAnalyticsChart({ nightly, sleepDebt, loading }: SleepAnalyticsChartProps) {
+  if (loading) {
+    return <ChartLoadingSkeleton height={350} />;
+  }
+
+  if (nightly.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-[350px]">
+        <span className="text-zinc-600 text-sm">No sleep data</span>
+      </div>
+    );
+  }
+
+  const option = buildSleepAnalyticsOption(nightly, sleepDebt);
 
   return <ReactECharts option={option} style={{ height: 350 }} notMerge={true} />;
 }

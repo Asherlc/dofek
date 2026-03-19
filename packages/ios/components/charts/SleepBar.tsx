@@ -101,6 +101,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
+    flexShrink: 1,
+    maxWidth: "48%",
   },
   legendDot: {
     width: 8,
@@ -110,5 +112,6 @@ const styles = StyleSheet.create({
   legendLabel: {
     fontSize: 12,
     color: colors.textSecondary,
+    flexShrink: 1,
   },
 });
