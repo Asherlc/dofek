@@ -22,15 +22,40 @@ interface PolarizationWeekData {
   z3Seconds: number;
 }
 
-export function buildPolarizationTrendOption(validWeeks: PolarizationWeekData[]) {
-  const piValues = validWeeks.map((w) => Number(w.polarizationIndex));
-  const piMin = Math.min(...piValues);
-  const piMax = Math.max(...piValues);
+function missingZonesForWeek(week: PolarizationWeekData): string[] {
+  const missing: string[] = [];
+  if (week.z1Seconds <= 0) missing.push("Zone 1");
+  if (week.z2Seconds <= 0) missing.push("Zone 2");
+  if (week.z3Seconds <= 0) missing.push("Zone 3");
+  return missing;
+}
+
+function findWeekForAxisValue(
+  weeks: PolarizationWeekData[],
+  axisValue: string,
+): PolarizationWeekData | null {
+  const axisDate = new Date(axisValue);
+  if (Number.isNaN(axisDate.getTime())) return null;
+  const axisDateOnly = axisDate.toISOString().slice(0, 10);
+  for (const week of weeks) {
+    const weekDate = new Date(week.week);
+    if (Number.isNaN(weekDate.getTime())) continue;
+    if (weekDate.toISOString().slice(0, 10) === axisDateOnly) return week;
+  }
+  return null;
+}
+
+export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
+  const piValues = weeks
+    .map((w) => w.polarizationIndex)
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  const piMin = piValues.length > 0 ? Math.min(...piValues) : 0;
+  const piMax = piValues.length > 0 ? Math.max(...piValues) : 2.5;
   const yMin = Math.floor(Math.min(piMin, 0) * 10) / 10;
   const yMax = Math.ceil(Math.max(piMax, 2.5) * 10) / 10;
 
-  const firstDate = validWeeks[0]?.week ?? "";
-  const lastDate = validWeeks[validWeeks.length - 1]?.week ?? "";
+  const firstDate = weeks[0]?.week ?? "";
+  const lastDate = weeks[weeks.length - 1]?.week ?? "";
 
   return {
     backgroundColor: "transparent",
@@ -43,16 +68,24 @@ export function buildPolarizationTrendOption(validWeeks: PolarizationWeekData[])
       formatter: (
         params: Array<{
           axisValue: string;
-          value: [string, number];
-          dataIndex: number;
+          value: [string, number | null];
+          dataIndex?: number;
           color: string;
+          seriesName?: string;
         }>,
       ) => {
         if (!params.length) return "";
-        const param = params[0];
-        if (!param) return "";
-        const w = validWeeks[param.dataIndex];
+        const piParam = params.find((param) => param.seriesName === "Polarization Index");
+        const param = piParam ?? params[0];
+        if (!param || typeof param.axisValue !== "string") return "";
+
+        const weekByIndex =
+          typeof piParam?.dataIndex === "number" && piParam.dataIndex >= 0
+            ? weeks[piParam.dataIndex]
+            : undefined;
+        const w = weekByIndex ?? findWeekForAxisValue(weeks, param.axisValue);
         if (!w) return "";
+
         const pi = w.polarizationIndex;
         const piStr = pi !== null ? pi.toFixed(3) : "N/A";
         const dateLabel = new Date(w.week).toLocaleDateString("en-US", {
@@ -60,17 +93,27 @@ export function buildPolarizationTrendOption(validWeeks: PolarizationWeekData[])
           day: "numeric",
           year: "numeric",
         });
+        const missingZones = missingZonesForWeek(w);
         const status =
-          pi !== null && pi >= 2.0
-            ? '<span style="color:#22c55e">Polarized</span>'
-            : '<span style="color:#ef4444">Not polarized</span>';
+          pi === null
+            ? '<span style="color:#f59e0b">Insufficient zone coverage</span>'
+            : pi >= 2.0
+              ? '<span style="color:#22c55e">Polarized</span>'
+              : '<span style="color:#ef4444">Not polarized</span>';
+        const missingZonesText =
+          pi === null && missingZones.length > 0
+            ? `Missing zones this week: ${missingZones.join(", ")}`
+            : null;
         return [
           `<strong>Week of ${dateLabel}</strong>`,
           `Polarization Index: ${piStr} ${status}`,
           `Zone 1 (easy, <80% HRR): ${formatMinutes(w.z1Seconds)}`,
           `Zone 2 (threshold, 80-90% HRR): ${formatMinutes(w.z2Seconds)}`,
           `Zone 3 (high, ≥90% HRR): ${formatMinutes(w.z3Seconds)}`,
-        ].join("<br/>");
+          missingZonesText,
+        ]
+          .filter((line): line is string => typeof line === "string")
+          .join("<br/>");
       },
     },
     xAxis: {
@@ -149,7 +192,8 @@ export function buildPolarizationTrendOption(validWeeks: PolarizationWeekData[])
       {
         name: "Polarization Index",
         type: "line",
-        data: validWeeks.map((w) => [w.week, w.polarizationIndex]),
+        data: weeks.map((w) => [w.week, w.polarizationIndex]),
+        connectNulls: false,
         smooth: true,
         symbol: "circle",
         symbolSize: 6,
@@ -173,9 +217,7 @@ export function PolarizationTrendChart({ weeks, maxHr, loading }: PolarizationTr
     );
   }
 
-  const validWeeks = weeks.filter((w) => w.polarizationIndex !== null);
-
-  if (validWeeks.length === 0) {
+  if (weeks.length === 0) {
     return (
       <div className="flex items-center justify-center h-[100px]">
         <span className="text-zinc-600 text-sm">
@@ -185,7 +227,7 @@ export function PolarizationTrendChart({ weeks, maxHr, loading }: PolarizationTr
     );
   }
 
-  const option = buildPolarizationTrendOption(validWeeks);
+  const option = buildPolarizationTrendOption(weeks);
 
   return (
     <div>
