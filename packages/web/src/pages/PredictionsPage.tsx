@@ -133,6 +133,7 @@ export function PredictionsPage() {
                 label={prediction.data.targetLabel}
                 unit={prediction.data.targetUnit}
                 isActivityTarget={isActivityTarget}
+                linearFallbackUsed={prediction.data.diagnostics.linearFallbackUsed ?? false}
               />
               <KeyTakeaway
                 importances={prediction.data.featureImportances}
@@ -177,6 +178,7 @@ interface Diagnostics {
   crossValidatedRSquared: number;
   sampleCount: number;
   featureCount: number;
+  linearFallbackUsed?: boolean;
 }
 
 function KeyTakeaway({
@@ -246,18 +248,21 @@ function TomorrowCard({
   label,
   unit,
   isActivityTarget,
+  linearFallbackUsed,
 }: {
   prediction: TomorrowPrediction | null;
   label: string;
   unit: string;
   isActivityTarget: boolean;
+  linearFallbackUsed: boolean;
 }) {
   if (!prediction) return null;
 
   const avg = (prediction.linear + prediction.tree) / 2;
   const spread = Math.abs(prediction.linear - prediction.tree);
-  const agreement =
-    spread < avg * AGREEMENT_THRESHOLD_HIGH
+  const agreement = linearFallbackUsed
+    ? "fallback"
+    : spread < avg * AGREEMENT_THRESHOLD_HIGH
       ? "high"
       : spread < avg * AGREEMENT_THRESHOLD_MODERATE
         ? "moderate"
@@ -265,6 +270,20 @@ function TomorrowCard({
   const heading = isActivityTarget
     ? `Next Session's Predicted ${label}`
     : `Tomorrow's Predicted ${label}`;
+  const agreementText =
+    agreement === "fallback"
+      ? "Tree model only"
+      : agreement === "high"
+        ? "Both models agree"
+        : null;
+  const agreementDescription =
+    agreement === "fallback"
+      ? "The linear model could not be fit for this target, so this forecast uses the tree model."
+      : agreement === "high"
+        ? "Two independent models arrived at nearly the same prediction — this gives us more confidence."
+        : agreement === "moderate"
+          ? `The two models predict ${prediction.linear.toFixed(0)} and ${prediction.tree.toFixed(0)} — reasonably close.`
+          : `The models disagree (${prediction.linear.toFixed(0)} vs ${prediction.tree.toFixed(0)}) — ${isActivityTarget ? "this metric" : "tomorrow"} may be hard to predict.`;
 
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
@@ -272,19 +291,19 @@ function TomorrowCard({
       <div className="flex items-baseline gap-3">
         <span className="text-3xl font-bold text-emerald-400">{avg.toFixed(0)}</span>
         <span className="text-sm text-zinc-500">{unit}</span>
-        {agreement === "high" && (
-          <span className="text-[10px] text-emerald-600 bg-emerald-950/50 px-2 py-0.5 rounded-full">
-            Both models agree
+        {agreementText && (
+          <span
+            className={
+              agreement === "fallback"
+                ? "text-[10px] text-zinc-300 bg-zinc-800 px-2 py-0.5 rounded-full"
+                : "text-[10px] text-emerald-600 bg-emerald-950/50 px-2 py-0.5 rounded-full"
+            }
+          >
+            {agreementText}
           </span>
         )}
       </div>
-      <p className="text-[10px] text-zinc-600 mt-2">
-        {agreement === "high"
-          ? "Two independent models arrived at nearly the same prediction — this gives us more confidence."
-          : agreement === "moderate"
-            ? `The two models predict ${prediction.linear.toFixed(0)} and ${prediction.tree.toFixed(0)} — reasonably close.`
-            : `The models disagree (${prediction.linear.toFixed(0)} vs ${prediction.tree.toFixed(0)}) — ${isActivityTarget ? "this metric" : "tomorrow"} may be hard to predict.`}
-      </p>
+      <p className="text-[10px] text-zinc-600 mt-2">{agreementDescription}</p>
     </div>
   );
 }
@@ -570,6 +589,12 @@ function ModelConfidence({
             ? "The model captures some real patterns, but health metrics are inherently variable. Use these as general guidance."
             : "Health is complex and many factors aren't captured here (stress, illness, etc). These patterns are suggestive but not definitive."}
       </p>
+      {diagnostics.linearFallbackUsed && (
+        <p className="text-[10px] text-zinc-500 mt-2">
+          The linear model could not be fit for this target because the inputs overlap too much.
+          Impact ranking and confidence are based on the tree model.
+        </p>
+      )}
     </div>
   );
 }

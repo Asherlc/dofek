@@ -138,6 +138,66 @@ describe("trainHrvPredictor (legacy wrapper)", () => {
     }
   });
 
+  it("is deterministic for a fixed seed and preserves date alignment", () => {
+    const days = generateSyntheticDays(200, 42);
+    const result = trainHrvPredictor(days);
+    if (!result) throw new Error("expected result");
+
+    expect(result.diagnostics).toEqual({
+      linearRSquared: 0.0809,
+      linearAdjustedRSquared: 0.0001,
+      treeRSquared: 0.7988,
+      crossValidatedRSquared: -0.1498,
+      sampleCount: 199,
+      featureCount: 16,
+      linearFallbackUsed: false,
+    });
+
+    expect(result.predictions[0]).toEqual({
+      date: "2024-01-01",
+      actual: 57.7,
+      linearPrediction: 67.04,
+      treePrediction: 62.95,
+    });
+    expect(result.predictions[50]).toEqual({
+      date: "2024-02-20",
+      actual: 70.5,
+      linearPrediction: 68.21,
+      treePrediction: 69.78,
+    });
+    expect(result.tomorrowPrediction).toEqual({ linear: 68.29, tree: 68.51 });
+    expect(result.featureImportances[0]?.name).toBe("weight_kg");
+    expect(result.featureImportances[0]?.treeImportance).toBeCloseTo(0.1460034569, 8);
+    expect(
+      result.featureImportances.some(
+        (feature) => feature.linearCoefficient !== 0 && feature.linearImportance > 0,
+      ),
+    ).toBe(true);
+
+    for (let i = 0; i < result.predictions.length; i++) {
+      const prediction = result.predictions[i];
+      const sourceDay = days[i];
+      if (!prediction || !sourceDay) continue;
+      expect(prediction.date).toBe(sourceDay.date);
+    }
+  });
+
+  it("returns null when HRV target is unavailable", () => {
+    const originalTargets = [...PREDICTION_TARGETS];
+    PREDICTION_TARGETS.splice(
+      0,
+      PREDICTION_TARGETS.length,
+      ...originalTargets.filter((target) => target.id !== "hrv"),
+    );
+
+    try {
+      const days = generateSyntheticDays(200);
+      expect(trainHrvPredictor(days)).toBeNull();
+    } finally {
+      PREDICTION_TARGETS.splice(0, PREDICTION_TARGETS.length, ...originalTargets);
+    }
+  });
+
   it("handles days with lots of missing nutrition data", () => {
     const days = generateSyntheticDays(100);
     const rng = mulberry32(99);
