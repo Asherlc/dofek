@@ -306,10 +306,9 @@ describe("estimateFtp", () => {
 
   it("ignores NP and uses avg_power to avoid inflated interval estimates", () => {
     // NP inflates power for interval workouts (4th-power averaging).
-    // Using max NP × 0.95 gives an unrealistically high FTP.
+    // Using max NP × 0.95 gives an unrealistically high FTP (e.g., 305 NP → 290 FTP).
+    // Now uses avg_power only (220 × 0.95 = 209), which is more conservative.
     const activities = [makeActivity({ id: "a1", avg_power: 220 })];
-    const npMap = new Map([["a1", 305]]);
-    // Should use avg_power (220 × 0.95 = 209), not NP (305 × 0.95 = 290)
     expect(estimateFtp(activities)).toBe(Math.round(220 * 0.95)); // 209
   });
 
@@ -389,9 +388,7 @@ describe("estimateFtp", () => {
   });
 
   it("handles single qualifying activity correctly", () => {
-    const activities = [
-      makeActivity({ id: "a1", avg_power: 250, duration_min: 20 }),
-    ];
+    const activities = [makeActivity({ id: "a1", avg_power: 250, duration_min: 20 })];
     expect(estimateFtp(activities)).toBe(Math.round(250 * 0.95)); // 238
   });
 });
