@@ -27,7 +27,6 @@
   ],
   "ignorePatterns": [
     "packages/ios/**",
-    "packages/whoop-whoop/**",
     "dist/**",
     "drizzle/**"
   ],
