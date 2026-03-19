@@ -68,6 +68,20 @@ describe("useOnboarding", () => {
     expect(result.showOnboarding).toBe(false);
   });
 
+  it("ignores import-only providers when counting connected providers", () => {
+    mockProviders.data = [
+      { id: "cronometer-csv", authorized: true, importOnly: true },
+      { id: "strong-csv", authorized: true, importOnly: true },
+      { id: "strava", authorized: false, importOnly: false },
+    ];
+    mockProviders.isLoading = false;
+    mockSettings.data = null;
+    mockSettings.isLoading = false;
+
+    const result = useOnboarding();
+    expect(result.showOnboarding).toBe(true);
+  });
+
   it("hides onboarding when setting is dismissed", () => {
     mockProviders.data = [];
     mockProviders.isLoading = false;

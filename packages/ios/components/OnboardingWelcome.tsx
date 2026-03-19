@@ -1,4 +1,5 @@
 import { ONBOARDING_CATEGORIES } from "@dofek/shared/onboarding";
+import { providerLabel } from "@dofek/shared/providers";
 import { useRouter } from "expo-router";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { colors } from "../theme";
@@ -7,44 +8,6 @@ interface ProviderInfo {
   id: string;
   name: string;
   authorized: boolean;
-}
-
-interface OnboardingWelcomeProps {
-  onDismiss: () => void;
-  providers: ProviderInfo[];
-}
-
-/** Readable label for a provider ID */
-function providerDisplayName(id: string): string {
-  const labels: Record<string, string> = {
-    strava: "Strava",
-    garmin: "Garmin",
-    wahoo: "Wahoo",
-    polar: "Polar",
-    fitbit: "Fitbit",
-    zwift: "Zwift",
-    peloton: "Peloton",
-    suunto: "Suunto",
-    coros: "COROS",
-    oura: "Oura",
-    whoop: "WHOOP",
-    "eight-sleep": "Eight Sleep",
-    "cronometer-csv": "Cronometer",
-    fatsecret: "FatSecret",
-    withings: "Withings",
-    ultrahuman: "Ultrahuman",
-    trainerroad: "TrainerRoad",
-    concept2: "Concept2",
-    komoot: "Komoot",
-    "ride-with-gps": "Ride with GPS",
-    mapmyfitness: "MapMyFitness",
-    cycling_analytics: "Cycling Analytics",
-    xert: "Xert",
-    velohero: "VeloHero",
-    decathlon: "Decathlon",
-    wger: "Wger",
-  };
-  return labels[id] ?? id;
 }
 
 export function OnboardingWelcome({ onDismiss, providers }: OnboardingWelcomeProps) {
@@ -76,7 +39,7 @@ export function OnboardingWelcome({ onDismiss, providers }: OnboardingWelcomePro
             <View style={styles.providerRow}>
               {categoryProviders.slice(0, 4).map((providerId) => (
                 <Text key={providerId} style={styles.providerChip}>
-                  {providerDisplayName(providerId)}
+                  {providerLabel(providerId)}
                 </Text>
               ))}
               {categoryProviders.length > 4 && (

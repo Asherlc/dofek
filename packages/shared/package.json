@@ -9,6 +9,7 @@
     "./meal": "./src/meal.ts",
     "./format": "./src/format.ts",
     "./correlation": "./src/correlation.ts",
-    "./onboarding": "./src/onboarding.ts"
+    "./onboarding": "./src/onboarding.ts",
+    "./providers": "./src/providers.ts"
   }
 }

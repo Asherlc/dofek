@@ -7,7 +7,7 @@ export function useOnboarding() {
   const setMutation = trpc.settings.set.useMutation();
   const trpcUtils = trpc.useUtils();
 
-  const connectedCount = (providers.data ?? []).filter((p) => p.authorized).length;
+  const connectedCount = (providers.data ?? []).filter((p) => p.authorized && !p.importOnly).length;
   const dismissed = dismissedSetting.data?.value === true;
   const isLoading = providers.isLoading || dismissedSetting.isLoading;
 
