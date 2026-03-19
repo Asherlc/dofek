@@ -24,9 +24,8 @@ import { sleepNeedRouter } from "./sleep-need.ts";
 import { sportSettingsRouter } from "./sport-settings.ts";
 
 function queryChunkLength(value: unknown): number {
-  if (!value || typeof value !== "object") return -1;
-  if (!("queryChunks" in value)) return -1;
-  const queryChunks = (value as { queryChunks?: unknown }).queryChunks;
+  if (!value || typeof value !== "object" || !("queryChunks" in value)) return -1;
+  const queryChunks = Reflect.get(value, "queryChunks");
   return Array.isArray(queryChunks) ? queryChunks.length : -1;
 }
 
@@ -326,9 +325,10 @@ describe("settingsRouter", () => {
     ] as const;
 
     function withCleanSlackEnv() {
-      const previousValues = Object.fromEntries(
-        slackEnvKeys.map((key) => [key, process.env[key]]),
-      ) as Record<(typeof slackEnvKeys)[number], string | undefined>;
+      const previousValues = new Map<(typeof slackEnvKeys)[number], string | undefined>();
+      for (const key of slackEnvKeys) {
+        previousValues.set(key, process.env[key]);
+      }
 
       for (const key of slackEnvKeys) {
         delete process.env[key];
@@ -336,7 +336,7 @@ describe("settingsRouter", () => {
 
       return () => {
         for (const key of slackEnvKeys) {
-          const value = previousValues[key];
+          const value = previousValues.get(key);
           if (value === undefined) {
             delete process.env[key];
           } else {
