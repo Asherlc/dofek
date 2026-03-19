@@ -365,6 +365,35 @@ describe("estimateFtp", () => {
     expect(result).toBe(190);
     expect(result).not.toBe(211);
   });
+
+  it("filters by duration_min >= 20 not > 20", () => {
+    const activities = [
+      makeActivity({ id: "a1", duration_min: 19, avg_power: 300 }),
+      makeActivity({ id: "a2", duration_min: 20, avg_power: 200 }),
+    ];
+    const result = estimateFtp(activities);
+    // a1 should be excluded (19 < 20), a2 included
+    expect(result).toBe(Math.round(200 * 0.95)); // 190, not 285
+    expect(result).not.toBe(Math.round(300 * 0.95));
+  });
+
+  it("filters by avg_power > 0 not >= 0", () => {
+    const activities = [makeActivity({ avg_power: 0, duration_min: 60 })];
+    expect(estimateFtp(activities)).toBeNull();
+  });
+
+  it("rounds result to nearest integer", () => {
+    // 210 * 0.95 = 199.5 → 200 (Math.round)
+    const activities = [makeActivity({ avg_power: 210 })];
+    expect(estimateFtp(activities)).toBe(200);
+  });
+
+  it("handles single qualifying activity correctly", () => {
+    const activities = [
+      makeActivity({ id: "a1", avg_power: 250, duration_min: 20 }),
+    ];
+    expect(estimateFtp(activities)).toBe(Math.round(250 * 0.95)); // 238
+  });
 });
 
 // --- pmcRouter ---
