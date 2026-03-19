@@ -156,15 +156,21 @@ describe("processImportJob", () => {
       );
     });
 
-    it("updates progress via the callback", async () => {
+    it("scales streaming progress to 0-90% range with descriptive messages", async () => {
       mockImportAppleHealthFile.mockImplementation(
         async (
           _db: unknown,
           _path: unknown,
           _since: unknown,
-          onProgress: (info: { pct: number }) => void,
+          onProgress: (info: {
+            pct: number;
+            recordCount: number;
+            workoutCount: number;
+            sleepCount: number;
+          }) => void,
         ) => {
-          onProgress({ pct: 50 });
+          onProgress({ pct: 50, recordCount: 1000, workoutCount: 5, sleepCount: 0 });
+          onProgress({ pct: 100, recordCount: 2000, workoutCount: 10, sleepCount: 3 });
           return { recordsSynced: 10, errors: [] };
         },
       );
@@ -172,9 +178,15 @@ describe("processImportJob", () => {
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
       await runImportJob(job, mockDb);
 
+      // 50% streaming → 45% reported (50 * 0.9), message includes counts
       expect(job.updateProgress).toHaveBeenCalledWith({
-        pct: 50,
-        message: "Processing: 50%",
+        pct: 45,
+        message: "Importing health data (1,000 records, 5 workouts)...",
+      });
+      // 100% streaming → 90% reported (100 * 0.9)
+      expect(job.updateProgress).toHaveBeenCalledWith({
+        pct: 90,
+        message: "Importing health data (2,000 records, 10 workouts, 3 sleep sessions)...",
       });
     });
 
@@ -347,6 +359,24 @@ describe("processImportJob", () => {
 
       expect(mockUpdateUserMaxHr).toHaveBeenCalledWith(mockDb);
       expect(mockRefreshDedupViews).toHaveBeenCalledWith(mockDb);
+    });
+
+    it("reports progress during post-import steps (92%, 95%, 97%)", async () => {
+      const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
+      await runImportJob(job, mockDb);
+
+      expect(job.updateProgress).toHaveBeenCalledWith({
+        pct: 92,
+        message: "Updating max heart rate...",
+      });
+      expect(job.updateProgress).toHaveBeenCalledWith({
+        pct: 95,
+        message: "Syncing provider priorities...",
+      });
+      expect(job.updateProgress).toHaveBeenCalledWith({
+        pct: 97,
+        message: "Refreshing views...",
+      });
     });
 
     it("handles post-import refresh failures gracefully and logs errors", async () => {
