@@ -1,6 +1,7 @@
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import { useRouter } from "expo-router";
 import { PersonalizationPanel } from "../components/PersonalizationPanel";
+import { SlackIntegrationPanel } from "../components/SlackIntegrationPanel";
 import { trpc } from "../lib/trpc";
 import { useAuth } from "../lib/auth-context";
 import { colors } from "../theme";
@@ -154,6 +155,15 @@ export default function SettingsScreen() {
         </Text>
         <View style={styles.card}>
           <PersonalizationPanel />
+        </View>
+      </View>
+
+      {/* ── Integrations ── */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Integrations</Text>
+        <Text style={styles.sectionDescription}>Connect external services</Text>
+        <View style={styles.card}>
+          <SlackIntegrationPanel />
         </View>
       </View>
 
