@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   ScrollView,
@@ -180,23 +180,123 @@ export default function ProvidersScreen() {
   const logs = trpc.sync.logs.useQuery({ limit: 50 });
   const syncMutation = trpc.sync.triggerSync.useMutation();
   const trpcUtils = trpc.useUtils();
+  const activeSyncs = trpc.sync.activeSyncs.useQuery(undefined, { staleTime: 0 });
+
+  // Track which providers are currently syncing (from active jobs or user-initiated)
+  const [syncingProviders, setSyncingProviders] = useState<Set<string>>(new Set());
+  const [anySyncing, setAnySyncing] = useState(false);
+  const resumedJobIds = useRef(new Set<string>());
+  const pollingRef = useRef(false);
+
+  const pollJob = useCallback(
+    async (jobId: string, providerIds: string[]) => {
+      if (pollingRef.current) return;
+      pollingRef.current = true;
+
+      const poll = async (): Promise<void> => {
+        let status: Awaited<ReturnType<typeof trpcUtils.sync.syncStatus.fetch>>;
+        try {
+          status = await trpcUtils.sync.syncStatus.fetch({ jobId }, { staleTime: 0 });
+        } catch {
+          setSyncingProviders((prev) => {
+            const next = new Set(prev);
+            for (const pid of providerIds) next.delete(pid);
+            return next;
+          });
+          setAnySyncing(false);
+          pollingRef.current = false;
+          return;
+        }
+
+        if (!status) {
+          setSyncingProviders(new Set());
+          setAnySyncing(false);
+          pollingRef.current = false;
+          return;
+        }
+
+        // Update per-provider syncing state
+        const stillSyncing = new Set<string>();
+        for (const [pid, pStatus] of Object.entries(status.providers)) {
+          if (pStatus.status === "running" || pStatus.status === "pending") {
+            stillSyncing.add(pid);
+          }
+        }
+        setSyncingProviders(stillSyncing);
+
+        if (status.status === "done" || status.status === "error") {
+          setAnySyncing(false);
+          pollingRef.current = false;
+          trpcUtils.sync.providers.invalidate();
+          trpcUtils.sync.providerStats.invalidate();
+          trpcUtils.sync.logs.invalidate();
+          return;
+        }
+
+        await new Promise((r) => setTimeout(r, 1000));
+        return poll();
+      };
+
+      return poll();
+    },
+    [trpcUtils],
+  );
+
+  // Resume polling for active sync jobs on mount
+  useEffect(() => {
+    if (!activeSyncs.data) return;
+    for (const activeJob of activeSyncs.data) {
+      if (activeJob.status !== "running") continue;
+      if (resumedJobIds.current.has(activeJob.jobId)) continue;
+      resumedJobIds.current.add(activeJob.jobId);
+
+      const providerIds = Object.keys(activeJob.providers);
+      setSyncingProviders((prev) => {
+        const next = new Set(prev);
+        for (const [pid, pStatus] of Object.entries(activeJob.providers)) {
+          if (pStatus.status === "running" || pStatus.status === "pending") {
+            next.add(pid);
+          }
+        }
+        return next;
+      });
+      setAnySyncing(true);
+      pollJob(activeJob.jobId, providerIds);
+    }
+  }, [activeSyncs.data, pollJob]);
 
   const handleSyncProvider = useCallback(
     async (providerId: string) => {
-      await syncMutation.mutateAsync({ providerId, sinceDays: 7 });
-      trpcUtils.sync.providers.invalidate();
-      trpcUtils.sync.providerStats.invalidate();
-      trpcUtils.sync.logs.invalidate();
+      setSyncingProviders((prev) => new Set(prev).add(providerId));
+      setAnySyncing(true);
+      try {
+        const { jobId } = await syncMutation.mutateAsync({ providerId, sinceDays: 7 });
+        await pollJob(jobId, [providerId]);
+      } catch {
+        setSyncingProviders((prev) => {
+          const next = new Set(prev);
+          next.delete(providerId);
+          return next;
+        });
+        setAnySyncing(false);
+      }
     },
-    [syncMutation, trpcUtils],
+    [syncMutation, pollJob],
   );
 
   const handleSyncAll = useCallback(async () => {
-    await syncMutation.mutateAsync({ sinceDays: 7 });
-    trpcUtils.sync.providers.invalidate();
-    trpcUtils.sync.providerStats.invalidate();
-    trpcUtils.sync.logs.invalidate();
-  }, [syncMutation, trpcUtils]);
+    const enabled = (providers.data ?? []).filter((p) => p.authorized && !p.importOnly);
+    const ids = enabled.map((p) => p.id);
+    setSyncingProviders(new Set(ids));
+    setAnySyncing(true);
+    try {
+      const { jobId } = await syncMutation.mutateAsync({ sinceDays: 7 });
+      await pollJob(jobId, ids);
+    } catch {
+      setSyncingProviders(new Set());
+      setAnySyncing(false);
+    }
+  }, [syncMutation, providers.data, pollJob]);
 
   const providerList: Provider[] = providers.data ?? [];
   const statsMap: Record<string, ProviderStats> = stats.data ?? {};
@@ -218,12 +318,12 @@ export default function ProvidersScreen() {
       {/* Sync All */}
       {enabledProviders.length > 0 && (
         <TouchableOpacity
-          style={[styles.syncAllButton, syncMutation.isPending && styles.syncAllButtonDisabled]}
+          style={[styles.syncAllButton, anySyncing && styles.syncAllButtonDisabled]}
           onPress={handleSyncAll}
           activeOpacity={0.7}
-          disabled={syncMutation.isPending}
+          disabled={anySyncing}
         >
-          {syncMutation.isPending ? (
+          {anySyncing ? (
             <ActivityIndicator color={colors.text} size="small" />
           ) : (
             <Text style={styles.syncAllButtonText}>Sync All</Text>
@@ -243,7 +343,7 @@ export default function ProvidersScreen() {
             key={provider.id}
             provider={provider}
             stats={statsMap[provider.id]}
-            syncing={syncMutation.isPending && syncMutation.variables?.providerId === provider.id}
+            syncing={syncingProviders.has(provider.id)}
             onSync={() => handleSyncProvider(provider.id)}
             onPress={() => router.push(`/providers/${provider.id}`)}
           />

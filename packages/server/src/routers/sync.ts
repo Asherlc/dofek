@@ -233,6 +233,50 @@ export const syncRouter = router({
     };
   }),
 
+  /** Check for active sync jobs belonging to the current user */
+  activeSyncs: protectedProcedure.query(async ({ ctx }) => {
+    let jobs: Awaited<ReturnType<ReturnType<typeof getSyncQueue>["getJobs"]>>;
+    try {
+      jobs = await getSyncQueue().getJobs(["active", "waiting", "delayed"]);
+    } catch {
+      return []; // Redis unavailable
+    }
+
+    const progressSchema = z.object({
+      providers: z
+        .record(
+          z.object({
+            status: z.enum(["pending", "running", "done", "error"]),
+            message: z.string().optional(),
+          }),
+        )
+        .optional(),
+    });
+
+    const results: Array<{
+      jobId: string;
+      status: "running" | "done" | "error";
+      providers: Record<
+        string,
+        { status: "pending" | "running" | "done" | "error"; message?: string }
+      >;
+    }> = [];
+
+    for (const job of jobs) {
+      if (job.data.userId !== ctx.userId) continue;
+      const state = await job.getState();
+      const parsed = progressSchema.safeParse(job.progress);
+      const progress = parsed.success ? parsed.data : undefined;
+      results.push({
+        jobId: job.id ?? `job-${Date.now()}`,
+        status: mapBullMqStateToSyncStatus(state),
+        providers: progress?.providers ?? {},
+      });
+    }
+
+    return results;
+  }),
+
   /** Get sync log history */
   logs: cachedProtectedQuery(CacheTTL.SHORT)
     .input(logsInput)

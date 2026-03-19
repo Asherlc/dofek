@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
-const { mockAdd, mockGetJob, mockGetAllProviders, mockRegisterProvider, mockLoggerWarn } =
+const { mockAdd, mockGetJob, mockGetJobs, mockGetAllProviders, mockRegisterProvider, mockLoggerWarn } =
   vi.hoisted(() => ({
     mockAdd: vi.fn().mockResolvedValue({ id: "job-123" }),
     mockGetJob: vi.fn(),
+    mockGetJobs: vi.fn().mockResolvedValue([]),
     mockGetAllProviders: vi.fn(() => []),
     mockRegisterProvider: vi.fn(),
     mockLoggerWarn: vi.fn(),
@@ -27,6 +28,7 @@ vi.mock("dofek/jobs/queues", () => ({
   createSyncQueue: vi.fn(() => ({
     add: mockAdd,
     getJob: mockGetJob,
+    getJobs: mockGetJobs,
   })),
 }));
 
@@ -485,6 +487,106 @@ describe("syncRouter", () => {
       const result = await caller.syncStatus({ jobId: "waiting-job" });
       expect(result?.status).toBe("running");
       expect(result?.providers).toEqual({});
+    });
+  });
+
+  describe("activeSyncs", () => {
+    it("returns empty array when no active jobs", async () => {
+      mockGetJobs.mockResolvedValueOnce([]);
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+      });
+
+      const result = await caller.activeSyncs();
+      expect(result).toEqual([]);
+      expect(mockGetJobs).toHaveBeenCalledWith(["active", "waiting", "delayed"]);
+    });
+
+    it("returns only jobs belonging to the current user", async () => {
+      mockGetJobs.mockResolvedValueOnce([
+        {
+          id: "job-1",
+          data: { userId: "user-1" },
+          getState: vi.fn().mockResolvedValue("active"),
+          progress: {
+            providers: {
+              wahoo: { status: "running", message: "Syncing..." },
+            },
+          },
+        },
+        {
+          id: "job-2",
+          data: { userId: "other-user" },
+          getState: vi.fn().mockResolvedValue("active"),
+          progress: { providers: { strava: { status: "running" } } },
+        },
+      ]);
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+      });
+
+      const result = await caller.activeSyncs();
+      expect(result).toHaveLength(1);
+      expect(result[0]?.jobId).toBe("job-1");
+      expect(result[0]?.status).toBe("running");
+      expect(result[0]?.providers).toEqual({
+        wahoo: { status: "running", message: "Syncing..." },
+      });
+    });
+
+    it("returns empty array when Redis is unavailable", async () => {
+      mockGetJobs.mockRejectedValueOnce(new Error("Redis connection refused"));
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+      });
+
+      const result = await caller.activeSyncs();
+      expect(result).toEqual([]);
+    });
+
+    it("handles jobs with no progress data", async () => {
+      mockGetJobs.mockResolvedValueOnce([
+        {
+          id: "job-1",
+          data: { userId: "user-1" },
+          getState: vi.fn().mockResolvedValue("waiting"),
+          progress: undefined,
+        },
+      ]);
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+      });
+
+      const result = await caller.activeSyncs();
+      expect(result).toHaveLength(1);
+      expect(result[0]?.providers).toEqual({});
+    });
+
+    it("generates fallback jobId when BullMQ job has no id", async () => {
+      mockGetJobs.mockResolvedValueOnce([
+        {
+          id: undefined,
+          data: { userId: "user-1" },
+          getState: vi.fn().mockResolvedValue("active"),
+          progress: {},
+        },
+      ]);
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+      });
+
+      const result = await caller.activeSyncs();
+      expect(result[0]?.jobId).toMatch(/^job-\d+$/);
     });
   });
 
