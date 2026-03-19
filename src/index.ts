@@ -1,90 +1,19 @@
 import { execFile } from "node:child_process";
+import { QueueEvents, Worker } from "bullmq";
 import { waitForAuthCode } from "./auth/callback-server.ts";
 import { buildAuthorizationUrl } from "./auth/index.ts";
-import { computeSinceDate, parseSinceDays } from "./cli.ts";
+import { parseSinceDays } from "./cli.ts";
 import { createDatabaseFromEnv } from "./db/index.ts";
 import { ensureProvider, saveTokens } from "./db/tokens.ts";
-import { AutoSupplementsProvider } from "./providers/auto-supplements.ts";
-import { BodySpecProvider } from "./providers/bodyspec.ts";
-import { Concept2Provider } from "./providers/concept2.ts";
-import { CorosProvider } from "./providers/coros.ts";
-import { CronometerCsvProvider } from "./providers/cronometer-csv.ts";
-import { CyclingAnalyticsProvider } from "./providers/cycling-analytics.ts";
-import { DecathlonProvider } from "./providers/decathlon.ts";
-import { EightSleepProvider } from "./providers/eight-sleep.ts";
-import { FatSecretProvider } from "./providers/fatsecret.ts";
-import { FitbitProvider } from "./providers/fitbit.ts";
-import { GarminProvider } from "./providers/garmin.ts";
-import { getAllProviders, getEnabledProviders, registerProvider } from "./providers/index.ts";
-import { KomootProvider } from "./providers/komoot.ts";
-import { MapMyFitnessProvider } from "./providers/mapmyfitness.ts";
-import { OuraProvider } from "./providers/oura.ts";
-import { PelotonProvider } from "./providers/peloton.ts";
-import { PolarProvider } from "./providers/polar.ts";
-import { RideWithGpsProvider } from "./providers/ride-with-gps.ts";
-import { StravaProvider } from "./providers/strava.ts";
-import { StrongCsvProvider } from "./providers/strong-csv.ts";
-import { SuuntoProvider } from "./providers/suunto.ts";
-import { TrainerRoadProvider } from "./providers/trainerroad.ts";
-import { UltrahumanProvider } from "./providers/ultrahuman.ts";
-import { VeloHeroProvider } from "./providers/velohero.ts";
-import { WahooProvider } from "./providers/wahoo.ts";
-import { WgerProvider } from "./providers/wger.ts";
-import { WhoopProvider } from "./providers/whoop.ts";
-import { WithingsProvider } from "./providers/withings.ts";
-import { XertProvider } from "./providers/xert.ts";
-import { ZwiftProvider } from "./providers/zwift.ts";
-import { runSync } from "./sync/runner.ts";
-
-// Load supplement config from supplements.json (managed via web UI)
-let supplementConfig: import("./providers/auto-supplements.ts").SupplementConfig | undefined;
-try {
-  const { readFileSync } = await import("node:fs");
-  const { resolve } = await import("node:path");
-  const jsonPath = resolve(import.meta.dirname, "../supplements.json");
-  const raw = readFileSync(jsonPath, "utf-8");
-  const { supplementConfigSchema } = await import("./providers/auto-supplements.ts");
-  supplementConfig = supplementConfigSchema.parse(JSON.parse(raw));
-} catch (err) {
-  // File not found is expected — auto-supplements provider will report validation error
-  // Log other errors (e.g., corrupt JSON) so they're not silently swallowed
-  if (err instanceof Error && !err.message.includes("ENOENT")) {
-    console.error(`[supplements] Failed to load config: ${err.message}`);
-  }
-}
-
-// Register all providers
-registerProvider(new WahooProvider());
-registerProvider(new WithingsProvider());
-registerProvider(new PelotonProvider());
-registerProvider(new FatSecretProvider());
-registerProvider(new FitbitProvider());
-registerProvider(new GarminProvider());
-registerProvider(new PolarProvider());
-registerProvider(new WhoopProvider());
-registerProvider(new RideWithGpsProvider());
-registerProvider(new StravaProvider());
-registerProvider(new OuraProvider());
-registerProvider(new StrongCsvProvider());
-registerProvider(new CronometerCsvProvider());
-registerProvider(new EightSleepProvider());
-registerProvider(new ZwiftProvider());
-registerProvider(new TrainerRoadProvider());
-registerProvider(new UltrahumanProvider());
-registerProvider(new MapMyFitnessProvider());
-registerProvider(new SuuntoProvider());
-registerProvider(new CorosProvider());
-registerProvider(new Concept2Provider());
-registerProvider(new KomootProvider());
-registerProvider(new XertProvider());
-registerProvider(new CyclingAnalyticsProvider());
-registerProvider(new WgerProvider());
-registerProvider(new DecathlonProvider());
-registerProvider(new VeloHeroProvider());
-registerProvider(new BodySpecProvider());
-if (supplementConfig) {
-  registerProvider(new AutoSupplementsProvider(supplementConfig));
-}
+import { processSyncJob } from "./jobs/process-sync-job.ts";
+import { ensureProvidersRegistered } from "./jobs/provider-registration.ts";
+import {
+  createSyncQueue,
+  getRedisConnection,
+  SYNC_QUEUE,
+  type SyncJobData,
+} from "./jobs/queues.ts";
+import { getAllProviders, getEnabledProviders } from "./providers/index.ts";
 
 async function main() {
   const command = process.argv[2] ?? "sync";
@@ -95,8 +24,9 @@ async function main() {
   if (command === "sync") {
     const fullSync = process.argv.includes("--full-sync");
     const days = parseSinceDays(process.argv);
-    const db = createDatabaseFromEnv();
-    const since = computeSinceDate(days, fullSync);
+
+    // Register all providers so processSyncJob can use them
+    await ensureProvidersRegistered();
 
     const enabled = getEnabledProviders();
     if (enabled.length === 0) {
@@ -104,17 +34,43 @@ async function main() {
       process.exit(0);
     }
 
-    const label = fullSync ? "all time" : `since ${since.toISOString()}`;
-    console.log(`[sync] Running sync for ${enabled.length} provider(s) — ${label}`);
-    const result = await runSync(db, since);
-    console.log(
-      `[sync] Done: ${result.totalRecords} records, ${result.totalErrors} errors in ${result.duration}ms`,
-    );
+    const db = createDatabaseFromEnv();
+    const connection = getRedisConnection();
+    const queue = createSyncQueue(connection);
+    const { DEFAULT_USER_ID } = await import("./db/schema.ts");
 
-    process.exit(result.totalErrors > 0 ? 1 : 0);
+    const jobData: SyncJobData = {
+      sinceDays: fullSync ? undefined : days,
+      userId: DEFAULT_USER_ID,
+    };
+
+    const job = await queue.add("sync", jobData);
+    const label = fullSync ? "all time" : `last ${days} days`;
+    console.log(`[sync] Enqueued sync job for ${enabled.length} provider(s) — ${label}`);
+
+    // Process the job inline with a temporary worker
+    const worker = new Worker<SyncJobData>(SYNC_QUEUE, (j) => processSyncJob(j, db), {
+      connection,
+    });
+    const queueEvents = new QueueEvents(SYNC_QUEUE, { connection });
+
+    try {
+      await job.waitUntilFinished(queueEvents);
+      console.log("[sync] Done.");
+      process.exit(0);
+    } catch (err) {
+      console.error(`[sync] Failed: ${err}`);
+      process.exit(1);
+    } finally {
+      await worker.close();
+      await queueEvents.close();
+      await queue.close();
+    }
   }
 
   if (command === "auth") {
+    await ensureProvidersRegistered();
+
     const providerArg = process.argv[3];
 
     // Find providers that support OAuth auth
@@ -236,7 +192,7 @@ async function main() {
 
       const fullSync = process.argv.includes("--full-sync");
       const days = parseSinceDays(process.argv);
-      const since = computeSinceDate(days, fullSync);
+      const since = fullSync ? new Date(0) : new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
       const { importAppleHealthFile } = await import("./providers/apple-health/index.ts");
       const db = createDatabaseFromEnv();
