@@ -36,23 +36,6 @@ import { XertProvider } from "./providers/xert.ts";
 import { ZwiftProvider } from "./providers/zwift.ts";
 import { runSync } from "./sync/runner.ts";
 
-// Load supplement config from supplements.json (managed via web UI)
-let supplementConfig: import("./providers/auto-supplements.ts").SupplementConfig | undefined;
-try {
-  const { readFileSync } = await import("node:fs");
-  const { resolve } = await import("node:path");
-  const jsonPath = resolve(import.meta.dirname, "../supplements.json");
-  const raw = readFileSync(jsonPath, "utf-8");
-  const { supplementConfigSchema } = await import("./providers/auto-supplements.ts");
-  supplementConfig = supplementConfigSchema.parse(JSON.parse(raw));
-} catch (err) {
-  // File not found is expected — auto-supplements provider will report validation error
-  // Log other errors (e.g., corrupt JSON) so they're not silently swallowed
-  if (err instanceof Error && !err.message.includes("ENOENT")) {
-    console.error(`[supplements] Failed to load config: ${err.message}`);
-  }
-}
-
 // Register all providers
 registerProvider(new WahooProvider());
 registerProvider(new WithingsProvider());
@@ -82,9 +65,7 @@ registerProvider(new WgerProvider());
 registerProvider(new DecathlonProvider());
 registerProvider(new VeloHeroProvider());
 registerProvider(new BodySpecProvider());
-if (supplementConfig) {
-  registerProvider(new AutoSupplementsProvider(supplementConfig));
-}
+registerProvider(new AutoSupplementsProvider());
 
 async function main() {
   const command = process.argv[2] ?? "sync";

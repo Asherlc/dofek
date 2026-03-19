@@ -34,6 +34,10 @@ async function doRegisterProviders() {
     ],
     ["oura", () => import("../providers/oura.ts").then((m) => new m.OuraProvider())],
     ["bodyspec", () => import("../providers/bodyspec.ts").then((m) => new m.BodySpecProvider())],
+    [
+      "auto-supplements",
+      () => import("../providers/auto-supplements.ts").then((m) => new m.AutoSupplementsProvider()),
+    ],
   ] as const;
 
   for (const [name, loadProvider] of providers) {

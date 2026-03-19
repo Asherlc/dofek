@@ -67,7 +67,6 @@ COPY --from=source --chown=node:node /app/src ./src
 COPY --from=source --chown=node:node /app/drizzle ./drizzle
 COPY --from=source --chown=node:node /app/package.json .
 COPY --from=source --chown=node:node /app/pnpm-workspace.yaml .
-COPY --from=source --chown=node:node /app/supplements.json .
 COPY --from=source --chown=node:node /app/packages/server/src ./packages/server/src
 COPY --from=source --chown=node:node /app/packages/server/package.json ./packages/server/
 COPY --from=source --chown=node:node /app/packages/whoop-whoop/src ./packages/whoop-whoop/src

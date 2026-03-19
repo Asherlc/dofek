@@ -1,77 +1,8 @@
-import { z } from "zod";
+import { asc } from "drizzle-orm";
 import type { SyncDatabase } from "../db/index.ts";
-import { foodEntry } from "../db/schema.ts";
+import { foodEntry, supplement } from "../db/schema.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import type { Provider, SyncError, SyncResult } from "./types.ts";
-
-// ============================================================
-// Supplement config types & validation
-// ============================================================
-
-const mealValues = ["breakfast", "lunch", "dinner", "snack", "other"] as const;
-
-const supplementDefinitionSchema = z.object({
-  name: z.string().min(1),
-  description: z.string().optional(),
-  meal: z.enum(mealValues).optional(),
-  // Macronutrients
-  calories: z.number().optional(),
-  proteinG: z.number().optional(),
-  carbsG: z.number().optional(),
-  fatG: z.number().optional(),
-  // Fat breakdown
-  saturatedFatG: z.number().optional(),
-  polyunsaturatedFatG: z.number().optional(),
-  monounsaturatedFatG: z.number().optional(),
-  transFatG: z.number().optional(),
-  // Other macros
-  cholesterolMg: z.number().optional(),
-  sodiumMg: z.number().optional(),
-  potassiumMg: z.number().optional(),
-  fiberG: z.number().optional(),
-  sugarG: z.number().optional(),
-  // Micronutrients
-  vitaminAMcg: z.number().optional(),
-  vitaminCMg: z.number().optional(),
-  vitaminDMcg: z.number().optional(),
-  vitaminEMg: z.number().optional(),
-  vitaminKMcg: z.number().optional(),
-  vitaminB1Mg: z.number().optional(),
-  vitaminB2Mg: z.number().optional(),
-  vitaminB3Mg: z.number().optional(),
-  vitaminB5Mg: z.number().optional(),
-  vitaminB6Mg: z.number().optional(),
-  vitaminB7Mcg: z.number().optional(),
-  vitaminB9Mcg: z.number().optional(),
-  vitaminB12Mcg: z.number().optional(),
-  calciumMg: z.number().optional(),
-  ironMg: z.number().optional(),
-  magnesiumMg: z.number().optional(),
-  zincMg: z.number().optional(),
-  seleniumMcg: z.number().optional(),
-  copperMg: z.number().optional(),
-  manganeseMg: z.number().optional(),
-  chromiumMcg: z.number().optional(),
-  iodineMcg: z.number().optional(),
-  omega3Mg: z.number().optional(),
-  omega6Mg: z.number().optional(),
-  // Supplement-specific metadata
-  amount: z.number().optional(),
-  unit: z.string().optional(),
-  form: z.string().optional(),
-});
-
-export const supplementConfigSchema = z.object({
-  supplements: z.array(supplementDefinitionSchema).min(1),
-});
-
-export type SupplementDefinition = z.infer<typeof supplementDefinitionSchema>;
-export type SupplementConfig = z.infer<typeof supplementConfigSchema>;
-
-export function parseSupplementConfig(raw: unknown): SupplementDefinition[] {
-  const config = supplementConfigSchema.parse(raw);
-  return config.supplements;
-}
 
 // ============================================================
 // Entry builder
@@ -85,7 +16,7 @@ function slugify(name: string): string {
     .replace(/(^-|-$)/g, "");
 }
 
-/** Nutrient keys shared between SupplementDefinition and food_entry schema */
+/** Nutrient keys shared between supplement table and food_entry schema */
 const NUTRIENT_KEYS = [
   "calories",
   "proteinG",
@@ -126,13 +57,18 @@ const NUTRIENT_KEYS = [
   "omega6Mg",
 ] as const;
 
+type SupplementRow = typeof supplement.$inferSelect;
+
+const mealValues = ["breakfast", "lunch", "dinner", "snack", "other"] as const;
+
 export interface DailySupplementEntry {
   providerId: string;
   externalId: string;
+  userId: string;
   date: string;
   meal: (typeof mealValues)[number];
   foodName: string;
-  foodDescription: string | undefined;
+  foodDescription: string | null;
   category: "supplement";
   numberOfUnits: number;
   nutrients: Partial<Record<(typeof NUTRIENT_KEYS)[number], number>>;
@@ -142,7 +78,7 @@ export interface DailySupplementEntry {
  * Build food_entry rows for each supplement × each date.
  */
 export function buildDailyEntries(
-  supplements: SupplementDefinition[],
+  supplements: SupplementRow[],
   dates: string[],
 ): DailySupplementEntry[] {
   const entries: DailySupplementEntry[] = [];
@@ -155,7 +91,8 @@ export function buildDailyEntries(
       }
       entries.push({
         providerId: "auto-supplements",
-        externalId: `auto:${slugify(supp.name)}:${date}`,
+        externalId: `auto:${slugify(supp.name)}:${supp.userId}:${date}`,
+        userId: supp.userId,
         date,
         meal: supp.meal ?? "other",
         foodName: supp.name,
@@ -197,48 +134,32 @@ export class AutoSupplementsProvider implements Provider {
   readonly id = PROVIDER_ID;
   readonly name = PROVIDER_NAME;
 
-  private config: SupplementConfig | null = null;
-
-  constructor(config?: SupplementConfig) {
-    if (config) {
-      this.config = config;
-    }
-  }
-
   validate(): string | null {
-    if (!this.config) {
-      return "No supplement config provided. Create supplements.config.ts with your supplement stack.";
-    }
-    try {
-      parseSupplementConfig(this.config);
-      return null;
-    } catch (e) {
-      return `Invalid supplement config: ${e instanceof Error ? e.message : String(e)}`;
-    }
+    // Always valid — supplements are stored in the DB per-user
+    return null;
   }
 
   async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
 
-    if (!this.config) {
-      return {
-        provider: PROVIDER_ID,
-        recordsSynced: 0,
-        errors: [{ message: "No supplement config" }],
-        duration: Date.now() - start,
-      };
+    // Query all users' supplements from the DB
+    const allSupplements = await db
+      .select()
+      .from(supplement)
+      .orderBy(asc(supplement.userId), asc(supplement.sortOrder));
+
+    if (allSupplements.length === 0) {
+      return { provider: PROVIDER_ID, recordsSynced: 0, errors, duration: Date.now() - start };
     }
 
-    const supplements = parseSupplementConfig(this.config);
     const dates = datesInRange(since);
-
     if (dates.length === 0) {
       return { provider: PROVIDER_ID, recordsSynced: 0, errors, duration: Date.now() - start };
     }
 
     await ensureProvider(db, PROVIDER_ID, PROVIDER_NAME);
-    const entries = buildDailyEntries(supplements, dates);
+    const entries = buildDailyEntries(allSupplements, dates);
 
     let synced = 0;
     for (const entry of entries) {
@@ -248,6 +169,7 @@ export class AutoSupplementsProvider implements Provider {
           .values({
             providerId: entry.providerId,
             externalId: entry.externalId,
+            userId: entry.userId,
             date: entry.date,
             meal: entry.meal,
             foodName: entry.foodName,
