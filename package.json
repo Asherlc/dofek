@@ -95,6 +95,7 @@
     "velohero-client": "workspace:*",
     "whoop-whoop": "workspace:*",
     "winston": "3.19.0",
+    "winston-transport": "^4.9.0",
     "yauzl": "3.2.0",
     "zod": "3.25.76",
     "zwift-client": "workspace:*"

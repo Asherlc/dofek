@@ -161,13 +161,14 @@ The `deploy/` directory contains everything needed to provision and run the prod
 
 ```
 deploy/
-├── main.tf                  # Terraform — Hetzner server, firewall, SSH key
-├── cloud-init.yml           # Auto-installs Docker on first boot
-├── docker-compose.yml       # Production stack (all services)
-├── Caddyfile                # Auto-HTTPS via Let's Encrypt
-├── deploy-config/main.tf    # Terraform — pushes config updates to server via SSH
-├── terraform.tfvars.example # Example config
-└── .gitignore               # Excludes secrets and state
+├── main.tf                       # Terraform — Hetzner server, firewall, SSH key
+├── cloud-init.yml                # Auto-installs Docker on first boot
+├── docker-compose.yml            # Production stack (all services)
+├── otel-collector-config.yaml    # OTel Collector — receives app logs/traces + tails Docker logs → Axiom
+├── Caddyfile                     # Auto-HTTPS via Let's Encrypt
+├── deploy-config/main.tf         # Terraform — pushes config updates to server via SSH
+├── terraform.tfvars.example      # Example config
+└── .gitignore                    # Excludes secrets and state
 ```
 
 ### Production architecture
@@ -192,6 +193,7 @@ Internet → Caddy (auto-HTTPS :443)
 | `sync` | ghcr.io/your-org/dofek | Sync runner (provider data sync) |
 | `db` | timescale/timescaledb | TimescaleDB (persistent volume) |
 | `db-backup` | postgres-backup-local | Daily pg_dump (7 daily, 4 weekly, 6 monthly) |
+| `collector` | otel/opentelemetry-collector-contrib | OTel Collector — receives app logs/traces + tails Docker container logs → Axiom |
 | `watchtower` | containrrr/watchtower | Auto-pulls new images from GHCR every 5min |
 
 ### CI/CD pipeline
@@ -286,7 +288,9 @@ docker logs dofek-web-1 -f
 cd /opt/dofek && docker compose up -d web
 ```
 
-**Note:** There is no centralized log aggregation (Loki, CloudWatch, etc.). Logs only exist in Docker container stdout/stderr and the in-memory ring buffer. If a container restarts, its Docker logs reset. The ring buffer also resets on restart.
+**Axiom (centralized):** All application logs and Docker container logs are shipped to [Axiom](https://axiom.co) via an OpenTelemetry Collector sidecar. The app uses Winston with an OTel SDK exporter; the collector also tails raw Docker JSON logs from the host filesystem. Logs land in the `dofek-logs` dataset. This is the most complete log source — it survives container restarts and includes structured metadata.
+
+**Note:** The in-memory ring buffer and Docker container logs are still available for quick debugging, but Axiom is the primary log store.
 
 ### Production secrets
 
@@ -364,6 +368,7 @@ See `packages/server/src/routers/life-events.ts` for the API and `packages/web/s
 
 ### Infrastructure
 - [x] Winston structured logging with ring buffer transport for UI system logs
+- [x] OTel Collector sidecar shipping app logs + Docker container logs to Axiom
 - [x] SOPS + Age encrypted secrets
 - [x] GHA CI with Docker build + push to GHCR
 - [x] Watchtower auto-deploy with Slack notifications
