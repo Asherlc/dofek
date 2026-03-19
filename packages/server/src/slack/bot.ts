@@ -1,4 +1,4 @@
-import type { App as AppType } from "@slack/bolt";
+import type { App as AppType, SayFn } from "@slack/bolt";
 import bolt from "@slack/bolt";
 import { SocketModeClient } from "@slack/socket-mode";
 
@@ -334,53 +334,53 @@ function slackTimestampToDateString(slackTs: string, timezone: string): string {
 
 /** Register message and action handlers on a Bolt app */
 function registerHandlers(app: AppType, db: Database) {
-  type SayMessage = {
-    text?: string;
-    thread_ts?: string;
-    blocks?: unknown[];
-    [key: string]: unknown;
-  };
-  type SayFunction = (message: SayMessage) => Promise<unknown>;
-  type SlackClient = {
-    users: {
-      info: (args: { user: string }) => Promise<{
-        user?: { tz?: string; real_name?: string; profile?: { email?: string } };
-      }>;
-    };
-    conversations: {
-      replies: (args: {
-        channel: string;
-        ts: string;
-      }) => Promise<{ messages?: Array<{ bot_id?: string; blocks?: unknown[] }> }>;
-    };
-    chat: {
-      postMessage: (args: {
-        channel: string;
-        text: string;
-        thread_ts?: string;
-      }) => Promise<{ ts?: string }>;
-      update: (args: {
-        channel: string;
-        ts: string;
-        text?: string;
-        blocks?: unknown[];
-        [key: string]: unknown;
-      }) => Promise<unknown>;
-    };
-  };
+  type SayFunction = SayFn;
 
   async function handleParsedMessage(args: {
     say: SayFunction;
-    client: SlackClient;
+    getUserInfo: (slackUserId: string) => Promise<{
+      user?: { tz?: string; real_name?: string; profile?: { email?: string } };
+    }>;
+    getThreadReplies: (
+      channel: string,
+      ts: string,
+    ) => Promise<{
+      messages?: Array<{ bot_id?: string; blocks?: unknown[] }>;
+    }>;
+    postMessage: (message: { channel: string; text: string; thread_ts?: string }) => Promise<{
+      ts?: string;
+    }>;
+    updateMessage: (message: {
+      channel: string;
+      ts: string;
+      text?: string;
+      blocks?: unknown[];
+      [key: string]: unknown;
+    }) => Promise<unknown>;
     msgText: string;
     msgUser: string;
     msgTs: string;
     msgChannel: string;
     msgThreadTs?: string;
   }) {
-    const { say, client, msgText, msgUser, msgTs, msgChannel, msgThreadTs } = args;
+    const {
+      say,
+      getUserInfo,
+      getThreadReplies,
+      postMessage,
+      updateMessage,
+      msgText,
+      msgUser,
+      msgTs,
+      msgChannel,
+      msgThreadTs,
+    } = args;
     try {
-      const { userId, timezone: userTimezone } = await lookupOrCreateUserId(db, msgUser, client);
+      const { userId, timezone: userTimezone } = await lookupOrCreateUserId(db, msgUser, {
+        users: {
+          info: ({ user }) => getUserInfo(user),
+        },
+      });
 
       const date = slackTimestampToDateString(msgTs, userTimezone);
 
@@ -389,10 +389,7 @@ function registerHandlers(app: AppType, db: Database) {
         logger.info(`[slack] Thread reply from ${msgUser}: "${msgText}"`);
 
         try {
-          const thread = await client.conversations.replies({
-            channel: msgChannel,
-            ts: msgThreadTs,
-          });
+          const thread = await getThreadReplies(msgChannel, msgThreadTs);
           const previousEntryIds = extractEntryIdsFromThread(thread.messages ?? []);
 
           if (previousEntryIds) {
@@ -437,7 +434,7 @@ function registerHandlers(app: AppType, db: Database) {
               logger.info(`[slack] Refining ${previousItems.length} items with: "${msgText}"`);
 
               // Post a temporary "thinking" message so the user knows we're working
-              const thinkingMsg = await client.chat.postMessage({
+              const thinkingMsg = await postMessage({
                 channel: msgChannel,
                 thread_ts: msgThreadTs,
                 text: "Updating your entries...",
@@ -455,7 +452,7 @@ function registerHandlers(app: AppType, db: Database) {
 
               // Replace the "thinking" message with the actual result
               if (thinkingMsg.ts) {
-                await client.chat.update({
+                await updateMessage({
                   channel: msgChannel,
                   ts: thinkingMsg.ts,
                   ...confirmation,
@@ -481,7 +478,7 @@ function registerHandlers(app: AppType, db: Database) {
       logger.info(`[slack] Parsing food from ${msgUser}: "${msgText}"`);
 
       // Post a temporary "thinking" message so the user knows we're working
-      const thinkingMsg = await client.chat.postMessage({
+      const thinkingMsg = await postMessage({
         channel: msgChannel,
         thread_ts: msgTs,
         text: "Analyzing what you ate...",
@@ -496,7 +493,7 @@ function registerHandlers(app: AppType, db: Database) {
 
         // Replace the "thinking" message with the actual result
         if (thinkingMsg.ts) {
-          await client.chat.update({
+          await updateMessage({
             channel: msgChannel,
             ts: thinkingMsg.ts,
             ...confirmation,
@@ -511,7 +508,7 @@ function registerHandlers(app: AppType, db: Database) {
         // Replace "thinking" message with error, or post new one
         const errorText = `Sorry, I couldn't parse that. Try describing what you ate more specifically.\n\`${errorMessage}\``;
         if (thinkingMsg.ts) {
-          await client.chat.update({
+          await updateMessage({
             channel: msgChannel,
             ts: thinkingMsg.ts,
             text: errorText,
@@ -570,7 +567,14 @@ function registerHandlers(app: AppType, db: Database) {
 
     await handleParsedMessage({
       say,
-      client,
+      getUserInfo: (slackUserId) => client.users.info({ user: slackUserId }),
+      getThreadReplies: (channel, ts) => client.conversations.replies({ channel, ts }),
+      postMessage: (message) => client.chat.postMessage(message),
+      updateMessage: (message) =>
+        client.chat.update({
+          ...message,
+          attachments: [],
+        }),
       msgText,
       msgUser,
       msgTs,
@@ -591,7 +595,14 @@ function registerHandlers(app: AppType, db: Database) {
 
     await handleParsedMessage({
       say,
-      client,
+      getUserInfo: (slackUserId) => client.users.info({ user: slackUserId }),
+      getThreadReplies: (channel, ts) => client.conversations.replies({ channel, ts }),
+      postMessage: (message) => client.chat.postMessage(message),
+      updateMessage: (message) =>
+        client.chat.update({
+          ...message,
+          attachments: [],
+        }),
       msgText,
       msgUser: event.user,
       msgTs: event.ts,
