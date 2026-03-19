@@ -207,7 +207,6 @@ function isStringRecord(value: unknown): value is Record<string, string> {
 function getRequestHeaders(value: unknown): HeadersInit | undefined {
   if (typeof value !== "object" || value === null || !("headers" in value)) return undefined;
   const headers = Reflect.get(value, "headers");
-  if (typeof headers === "string") return headers;
   if (Array.isArray(headers)) return headers;
   if (headers instanceof Headers) return headers;
   if (isStringRecord(headers)) return headers;
