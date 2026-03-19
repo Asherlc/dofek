@@ -1165,6 +1165,52 @@ describe("bot.ts — registerHandlers", () => {
     });
   });
 
+  describe("resolveUserByEmail — additional error cases", () => {
+    it("rejects users with mismatched non-slack auth_account (orphan repair)", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+
+      // lookupOrCreateUserId: existing slack auth link (orphan)
+      mockExecute.mockResolvedValueOnce([{ user_id: "orphan-user" }]);
+      // canonical auth_account with different user_id
+      mockExecute.mockResolvedValueOnce([{ user_id: "real-user" }]);
+      // update slack auth_account
+      mockExecute.mockResolvedValueOnce([]);
+      // update food_entry
+      mockExecute.mockResolvedValueOnce([]);
+
+      const { messageHandler } = setupHandlers(db);
+
+      // ensureDofekProvider
+      mockExecute.mockResolvedValueOnce([]);
+      // insert food_entry
+      mockExecute.mockResolvedValueOnce([{ id: "entry-1" }]);
+
+      mockAnalyze.mockResolvedValueOnce({ items: [makeFoodItem()], provider: "gemini" });
+
+      const say = vi.fn();
+      const chatPostMessage = vi.fn().mockResolvedValue({ ts: "thinking-ts" });
+      const chatUpdate = vi.fn().mockResolvedValue({});
+      const client = {
+        users: {
+          info: vi.fn().mockResolvedValue({
+            user: { tz: "UTC", real_name: "Real User", profile: { email: "real@test.com" } },
+          }),
+        },
+        chat: { postMessage: chatPostMessage, update: chatUpdate },
+      };
+
+      await messageHandler({
+        message: { user: "U_ORPHAN", text: "orphan entry", ts: "1700000000.000000", channel: "C1" },
+        say,
+        client,
+      });
+
+      // Should repair orphan and log food to real user
+      expect(chatUpdate).toHaveBeenCalled();
+    });
+  });
+
   describe("confirm_food — no channel or message context", () => {
     it("confirms entries without updating message when channel/message missing", async () => {
       const db = createMockDb();
