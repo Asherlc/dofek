@@ -229,45 +229,27 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
         z: 3,
         markArea: {
           silent: true,
+          itemStyle: { borderWidth: 0 },
+          label: { show: false },
           data: [
             [
-              {
-                yAxis: ZONE_TRANSITION,
-                itemStyle: { color: "rgba(96, 165, 250, 0.08)" },
-                label: zoneLabel("Transition", COLOR_TRANSITION),
-              },
+              { yAxis: ZONE_TRANSITION, itemStyle: { color: "rgba(96, 165, 250, 0.08)" } },
               { yAxis: 200 },
             ],
             [
-              {
-                yAxis: ZONE_FRESH,
-                itemStyle: { color: "rgba(74, 222, 128, 0.08)" },
-                label: zoneLabel("Fresh", COLOR_FRESH),
-              },
+              { yAxis: ZONE_FRESH, itemStyle: { color: "rgba(74, 222, 128, 0.08)" } },
               { yAxis: ZONE_TRANSITION },
             ],
             [
-              {
-                yAxis: ZONE_GREY,
-                itemStyle: { color: "rgba(161, 161, 170, 0.05)" },
-                label: zoneLabel("Grey Zone", COLOR_GREY),
-              },
+              { yAxis: ZONE_GREY, itemStyle: { color: "rgba(161, 161, 170, 0.05)" } },
               { yAxis: ZONE_FRESH },
             ],
             [
-              {
-                yAxis: ZONE_OPTIMAL,
-                itemStyle: { color: "rgba(74, 222, 128, 0.06)" },
-                label: zoneLabel("Optimal", COLOR_OPTIMAL),
-              },
+              { yAxis: ZONE_OPTIMAL, itemStyle: { color: "rgba(74, 222, 128, 0.06)" } },
               { yAxis: ZONE_GREY },
             ],
             [
-              {
-                yAxis: -200,
-                itemStyle: { color: "rgba(248, 113, 113, 0.08)" },
-                label: zoneLabel("High Risk", COLOR_HIGH_RISK),
-              },
+              { yAxis: -200, itemStyle: { color: "rgba(248, 113, 113, 0.08)" } },
               { yAxis: ZONE_OPTIMAL },
             ],
           ],
@@ -339,14 +321,4 @@ function ZoneTag({ label, color }: { label: string; color: string }) {
       <span style={{ color }}>{label}</span>
     </span>
   );
-}
-
-function zoneLabel(name: string, color: string) {
-  return {
-    show: true,
-    position: "insideRight" as const,
-    color,
-    fontSize: 10,
-    formatter: () => name,
-  };
 }
