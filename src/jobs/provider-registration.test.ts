@@ -123,12 +123,14 @@ vi.mock("../providers/velohero.ts", () => ({
   VeloHeroProvider: vi.fn(() => mockProviders.velohero),
 }));
 
+const mockReadFileSync = vi.fn(() => {
+  const err = new Error("ENOENT: no such file or directory");
+  throw err;
+});
+
 // Mock node:fs to simulate missing supplements.json (ENOENT)
 vi.mock("node:fs", () => ({
-  readFileSync: vi.fn(() => {
-    const err = new Error("ENOENT: no such file or directory");
-    throw err;
-  }),
+  readFileSync: () => mockReadFileSync(),
 }));
 
 const PROVIDER_COUNT = Object.keys(mockProviders).length;
@@ -138,6 +140,11 @@ describe("provider-registration", () => {
     vi.clearAllMocks();
     // Reset the module so registrationPromise is cleared
     vi.resetModules();
+    // Default: ENOENT (file not found, silently ignored)
+    mockReadFileSync.mockImplementation(() => {
+      const err = new Error("ENOENT: no such file or directory");
+      throw err;
+    });
   });
 
   afterEach(() => {
@@ -171,5 +178,37 @@ describe("provider-registration", () => {
 
     // Should have attempted all registrations even though peloton failed
     expect(mockRegisterProvider).toHaveBeenCalledTimes(PROVIDER_COUNT);
+  });
+
+  it("silently ignores ENOENT when supplements.json is missing", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const { ensureProvidersRegistered } = await import("./provider-registration.ts");
+    await ensureProvidersRegistered();
+
+    // Should NOT log a warning for ENOENT
+    const autoSupWarnings = warnSpy.mock.calls.filter(
+      (call) => typeof call[0] === "string" && call[0].includes("auto-supplements"),
+    );
+    expect(autoSupWarnings).toHaveLength(0);
+    warnSpy.mockRestore();
+  });
+
+  it("logs warning for non-ENOENT errors in supplements loading", async () => {
+    mockReadFileSync.mockImplementation(() => {
+      throw new Error("Permission denied");
+    });
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const { ensureProvidersRegistered } = await import("./provider-registration.ts");
+    await ensureProvidersRegistered();
+
+    const autoSupWarnings = warnSpy.mock.calls.filter(
+      (call) => typeof call[0] === "string" && call[0].includes("auto-supplements"),
+    );
+    expect(autoSupWarnings).toHaveLength(1);
+    expect(autoSupWarnings[0]?.[0]).toContain("Permission denied");
+    warnSpy.mockRestore();
   });
 });
