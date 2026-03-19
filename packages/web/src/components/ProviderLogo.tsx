@@ -50,7 +50,7 @@ const PNG_LOGOS = new Set([
   "strong-csv",
   "cronometer-csv",
   "cycling_analytics",
-  "apple-health",
+  "apple_health",
 ]);
 
 // Brand colors used for the styled-letter fallback

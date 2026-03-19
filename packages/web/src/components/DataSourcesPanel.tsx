@@ -267,9 +267,10 @@ export function DataSourcesPanel() {
   > = [];
 
   // Add Apple Health first (always available, not in server provider list)
+  // ID must match the database provider_id ("apple_health") so stats/logs look up correctly
   unifiedProviders.push({
     kind: "import",
-    id: "apple-health",
+    id: "apple_health",
     config: appleHealthConfig,
   });
 
