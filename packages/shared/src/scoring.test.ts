@@ -2,6 +2,13 @@ import { describe, expect, it } from "vitest";
 import { statusColors, textColors } from "./colors.ts";
 import {
   aggregateWeeklyVolume,
+  FORM_ZONE_COLORS,
+  FORM_ZONE_FRESH,
+  FORM_ZONE_GREY,
+  FORM_ZONE_OPTIMAL,
+  FORM_ZONE_TRANSITION,
+  formZoneColor,
+  formZoneLabel,
   rampRateColor,
   scoreColor,
   scoreLabel,
@@ -328,5 +335,87 @@ describe("sleepDebtColor", () => {
 
   it("returns danger for high debt", () => {
     expect(sleepDebtColor(300)).toBe(statusColors.danger);
+  });
+});
+
+describe("formZoneColor", () => {
+  it("returns transition color for values above transition boundary", () => {
+    expect(formZoneColor(26)).toBe(FORM_ZONE_COLORS.transition);
+    expect(formZoneColor(100)).toBe(FORM_ZONE_COLORS.transition);
+  });
+
+  it("returns fresh color at exactly transition boundary (not above)", () => {
+    expect(formZoneColor(FORM_ZONE_TRANSITION)).toBe(FORM_ZONE_COLORS.fresh);
+  });
+
+  it("returns fresh color for values between fresh and transition", () => {
+    expect(formZoneColor(6)).toBe(FORM_ZONE_COLORS.fresh);
+    expect(formZoneColor(24)).toBe(FORM_ZONE_COLORS.fresh);
+  });
+
+  it("returns grey color at exactly fresh boundary (not above)", () => {
+    expect(formZoneColor(FORM_ZONE_FRESH)).toBe(FORM_ZONE_COLORS.grey);
+  });
+
+  it("returns grey color for values between grey and fresh", () => {
+    expect(formZoneColor(0)).toBe(FORM_ZONE_COLORS.grey);
+    expect(formZoneColor(-9)).toBe(FORM_ZONE_COLORS.grey);
+  });
+
+  it("returns optimal color at exactly grey boundary (not above)", () => {
+    expect(formZoneColor(FORM_ZONE_GREY)).toBe(FORM_ZONE_COLORS.optimal);
+  });
+
+  it("returns optimal color for values between optimal and grey", () => {
+    expect(formZoneColor(-11)).toBe(FORM_ZONE_COLORS.optimal);
+    expect(formZoneColor(-29)).toBe(FORM_ZONE_COLORS.optimal);
+  });
+
+  it("returns high risk color at exactly optimal boundary (not above)", () => {
+    expect(formZoneColor(FORM_ZONE_OPTIMAL)).toBe(FORM_ZONE_COLORS.highRisk);
+  });
+
+  it("returns high risk color for values below optimal", () => {
+    expect(formZoneColor(-31)).toBe(FORM_ZONE_COLORS.highRisk);
+    expect(formZoneColor(-100)).toBe(FORM_ZONE_COLORS.highRisk);
+  });
+});
+
+describe("formZoneLabel", () => {
+  it("returns Transition for values above transition boundary", () => {
+    expect(formZoneLabel(26)).toBe("Transition");
+    expect(formZoneLabel(100)).toBe("Transition");
+  });
+
+  it("returns Fresh at exactly transition boundary", () => {
+    expect(formZoneLabel(FORM_ZONE_TRANSITION)).toBe("Fresh");
+  });
+
+  it("returns Fresh for values between fresh and transition", () => {
+    expect(formZoneLabel(10)).toBe("Fresh");
+  });
+
+  it("returns Grey Zone at exactly fresh boundary", () => {
+    expect(formZoneLabel(FORM_ZONE_FRESH)).toBe("Grey Zone");
+  });
+
+  it("returns Grey Zone for values between grey and fresh", () => {
+    expect(formZoneLabel(0)).toBe("Grey Zone");
+  });
+
+  it("returns Optimal at exactly grey boundary", () => {
+    expect(formZoneLabel(FORM_ZONE_GREY)).toBe("Optimal");
+  });
+
+  it("returns Optimal for values between optimal and grey", () => {
+    expect(formZoneLabel(-20)).toBe("Optimal");
+  });
+
+  it("returns High Risk at exactly optimal boundary", () => {
+    expect(formZoneLabel(FORM_ZONE_OPTIMAL)).toBe("High Risk");
+  });
+
+  it("returns High Risk for values below optimal", () => {
+    expect(formZoneLabel(-50)).toBe("High Risk");
   });
 });
