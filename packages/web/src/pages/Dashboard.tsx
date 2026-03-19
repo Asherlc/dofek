@@ -8,6 +8,7 @@ import { CorrelationCard, type Insight } from "../components/CorrelationCard.tsx
 import { HealthStatusBar } from "../components/HealthStatusBar.tsx";
 import { HealthspanScoreCard } from "../components/HealthspanScoreCard.tsx";
 import { HrvBaselineChart } from "../components/HrvBaselineChart.tsx";
+import { NextWorkoutCard } from "../components/NextWorkoutCard.tsx";
 import { NutritionChart } from "../components/NutritionChart.tsx";
 import { OnboardingWelcome } from "../components/OnboardingWelcome.tsx";
 import { SleepChart } from "../components/SleepChart.tsx";
@@ -123,6 +124,7 @@ export function Dashboard() {
   const sleepNeed = trpc.sleepNeed.calculate.useQuery();
   const stressData = trpc.stress.scores.useQuery({ days });
   const weeklyReport = trpc.weeklyReport.report.useQuery({ weeks: Math.ceil(days / 7) });
+  const nextWorkout = trpc.training.nextWorkout.useQuery();
   const healthspan = trpc.healthspan.score.useQuery({ weeks: Math.max(Math.ceil(days / 7), 4) });
   const anomalyCheck = trpc.anomalyDetection.check.useQuery({});
   const smoothedWeight = trpc.bodyAnalytics.smoothedWeight.useQuery({ days: Math.max(days, 90) });
@@ -261,6 +263,11 @@ export function Dashboard() {
       title: "Weekly Performance",
       subtitle: "Strain balance, sleep vs average, key vitals",
       content: <WeeklyReportCard data={weeklyReport.data} loading={weeklyReport.isLoading} />,
+    },
+    nextWorkout: {
+      title: "Next Workout",
+      subtitle: "Daily recommendation based on readiness and training balance",
+      content: <NextWorkoutCard data={nextWorkout.data} loading={nextWorkout.isLoading} />,
     },
     sleepNeed: {
       title: "Sleep Coach",

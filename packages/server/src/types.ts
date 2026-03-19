@@ -70,6 +70,8 @@ export type {
   StressResult,
   WeeklyStressRow,
 } from "./routers/stress.ts";
+// Training router types
+export type { NextWorkoutRecommendation } from "./routers/training.ts";
 // Weekly report router types
 export type {
   StrainZone,

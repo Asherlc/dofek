@@ -114,6 +114,7 @@ describe("Router SQL validity", () => {
     it("weeklyVolume", () => expectValidSql("training.weeklyVolume", { days: 90 }));
     it("hrZones", () => expectValidSql("training.hrZones", { days: 90 }));
     it("activityStats", () => expectValidSql("training.activityStats", { days: 90 }));
+    it("nextWorkout", () => expectValidSql("training.nextWorkout"));
   });
 
   // ── Power ──
