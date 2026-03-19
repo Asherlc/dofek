@@ -2,9 +2,11 @@ import { mkdirSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DEFAULT_USER_ID } from "dofek/db/schema";
+import type { Database } from "dofek/db";
 import type { createImportQueue } from "dofek/jobs/queues";
-import { Router } from "express";
+import { type Request, type Response, Router } from "express";
+import { getSessionIdFromRequest } from "../auth/cookies.ts";
+import { validateSession } from "../auth/session.ts";
 import { assembleChunks, streamToFile } from "../lib/server-utils.ts";
 import { startWorker } from "../lib/start-worker.ts";
 import { logger } from "../logger.ts";
@@ -24,12 +26,16 @@ interface UploadChunks {
 }
 
 const activeUploads = new Map<string, UploadChunks>();
-const uploadStatuses = new Map<string, { status: string; progress: number; message: string }>();
+interface UploadStatus {
+  status: string;
+  progress: number;
+  message: string;
+  userId: string;
+}
 
-function setUploadStatus(
-  id: string,
-  status: { status: string; progress: number; message: string },
-) {
+const uploadStatuses = new Map<string, UploadStatus>();
+
+function setUploadStatus(id: string, status: UploadStatus) {
   uploadStatuses.set(id, status);
 }
 
@@ -93,26 +99,55 @@ async function getImportJobStatus(
   else if (state === "failed") status = "error";
   else status = "processing";
 
+  const jobUserId =
+    typeof job.data === "object" && job.data !== null && "userId" in job.data
+      ? String(job.data.userId)
+      : undefined;
+
   return {
     status,
     progress: status === "done" ? 100 : (pct ?? 0),
     message: state === "failed" ? job.failedReason : msg,
     result: job.returnvalue,
+    userId: jobUserId,
   };
 }
 
 interface UploadRouteDeps {
   getImportQueue: () => ReturnType<typeof createImportQueue>;
+  db: Database;
+}
+
+/** Validate session from cookie or Bearer header. Returns userId or null (sends 401). */
+async function authenticate(req: Request, res: Response, db: Database): Promise<string | null> {
+  const sessionId = getSessionIdFromRequest(req);
+  if (!sessionId) {
+    res.status(401).json({ error: "Not authenticated" });
+    return null;
+  }
+  const session = await validateSession(db, sessionId);
+  if (!session) {
+    res.status(401).json({ error: "Session expired" });
+    return null;
+  }
+  return session.userId;
 }
 
 export function createUploadRouter(deps: UploadRouteDeps): Router {
   const router = Router();
-  const { getImportQueue } = deps;
+  const { getImportQueue, db } = deps;
 
   // Poll job status — checks BullMQ first, falls back to upload-phase status
   router.get("/apple-health/status/:jobId", async (req, res) => {
+    const userId = await authenticate(req, res, db);
+    if (!userId) return;
+
     const uploadStatus = uploadStatuses.get(req.params.jobId);
     if (uploadStatus) {
+      if (uploadStatus.userId !== userId) {
+        res.status(403).json({ error: "Forbidden" });
+        return;
+      }
       res.json(uploadStatus);
       return;
     }
@@ -122,11 +157,18 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
       res.status(404).json({ error: "Unknown job" });
       return;
     }
+    if (status.userId && status.userId !== userId) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
     res.json(status);
   });
 
   // Chunked upload endpoint
   router.post("/apple-health", async (req, res) => {
+    const userId = await authenticate(req, res, db);
+    if (!userId) return;
+
     const contentType = req.headers["content-type"]?.split(";")[0]?.trim().toLowerCase();
     if (
       contentType &&
@@ -173,13 +215,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
       const tmpFile = join(JOB_FILES_DIR, `apple-health-${tmpId}${ext}`);
       try {
         await streamToFile(req, tmpFile);
-        const jobId = await enqueueImport(
-          getImportQueue,
-          tmpFile,
-          since,
-          "apple-health",
-          DEFAULT_USER_ID,
-        );
+        const jobId = await enqueueImport(getImportQueue, tmpFile, since, "apple-health", userId);
         res.json({ status: "processing", jobId });
       } catch (err: unknown) {
         logger.error(`[upload] Apple Health upload failed: ${err}`);
@@ -207,6 +243,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
                 status: "error",
                 progress: 0,
                 message: "Upload timed out",
+                userId,
               });
               cleanupUploadStatus(uploadId);
             }
@@ -217,6 +254,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
           status: "uploading",
           progress: 0,
           message: "Receiving chunks...",
+          userId,
         });
       }
 
@@ -232,6 +270,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
           status: "uploading",
           progress: uploadPct,
           message: `Received ${upload.received.size}/${upload.total} chunks`,
+          userId,
         });
         res.json({
           status: "uploading",
@@ -250,6 +289,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
         status: "assembling",
         progress: 0,
         message: "Assembling file...",
+        userId,
       });
       res.json({ status: "assembling", jobId: uploadId });
 
@@ -260,16 +300,9 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
           await assembleChunks(chunkDir, assembledFile);
           await rm(chunkDir, { recursive: true, force: true });
           // Use uploadId as the BullMQ job ID so the client can poll the same ID
-          await enqueueImport(
-            getImportQueue,
-            assembledFile,
-            since,
-            "apple-health",
-            DEFAULT_USER_ID,
-            {
-              jobId: uploadId,
-            },
-          );
+          await enqueueImport(getImportQueue, assembledFile, since, "apple-health", userId, {
+            jobId: uploadId,
+          });
           // Clear upload status — BullMQ job status takes over
           uploadStatuses.delete(uploadId);
         } catch (err: unknown) {
@@ -279,6 +312,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
             status: "error",
             progress: 0,
             message: "Failed to assemble uploaded file",
+            userId,
           });
           cleanupUploadStatus(uploadId);
         }
@@ -290,7 +324,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
         activeUploads.delete(uploadId);
         await rm(upload.dir, { recursive: true, force: true }).catch(() => {});
       }
-      setUploadStatus(uploadId, { status: "error", progress: 0, message: "Upload failed" });
+      setUploadStatus(uploadId, { status: "error", progress: 0, message: "Upload failed", userId });
       cleanupUploadStatus(uploadId);
       res.status(500).json({ error: "Upload failed" });
     }
@@ -298,15 +332,25 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
 
   // ── Strong CSV upload ──
   router.get("/strong-csv/status/:jobId", async (req, res) => {
+    const userId = await authenticate(req, res, db);
+    if (!userId) return;
+
     const status = await getImportJobStatus(getImportQueue, req.params.jobId);
     if (!status) {
       res.status(404).json({ error: "Unknown job" });
+      return;
+    }
+    if (status.userId && status.userId !== userId) {
+      res.status(403).json({ error: "Forbidden" });
       return;
     }
     res.json(status);
   });
 
   router.post("/strong-csv", async (req, res) => {
+    const userId = await authenticate(req, res, db);
+    if (!userId) return;
+
     const contentType = req.headers["content-type"]?.split(";")[0]?.trim().toLowerCase();
     if (
       contentType &&
@@ -330,7 +374,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
         tmpFile,
         new Date(0),
         "strong-csv",
-        DEFAULT_USER_ID,
+        userId,
         { weightUnit },
       );
       res.json({ status: "processing", jobId });
@@ -342,15 +386,25 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
 
   // ── Cronometer CSV upload ──
   router.get("/cronometer-csv/status/:jobId", async (req, res) => {
+    const userId = await authenticate(req, res, db);
+    if (!userId) return;
+
     const status = await getImportJobStatus(getImportQueue, req.params.jobId);
     if (!status) {
       res.status(404).json({ error: "Unknown job" });
+      return;
+    }
+    if (status.userId && status.userId !== userId) {
+      res.status(403).json({ error: "Forbidden" });
       return;
     }
     res.json(status);
   });
 
   router.post("/cronometer-csv", async (req, res) => {
+    const userId = await authenticate(req, res, db);
+    if (!userId) return;
+
     const contentType = req.headers["content-type"]?.split(";")[0]?.trim().toLowerCase();
     if (
       contentType &&
@@ -373,7 +427,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
         tmpFile,
         new Date(0),
         "cronometer-csv",
-        DEFAULT_USER_ID,
+        userId,
       );
       res.json({ status: "processing", jobId });
     } catch (err: unknown) {

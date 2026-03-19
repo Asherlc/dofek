@@ -12,14 +12,14 @@ describe("Upload & Auth - extended coverage", () => {
   let server: ReturnType<import("express").Express["listen"]>;
   let baseUrl: string;
   let testCtx: TestContext;
-  let _sessionCookie: string;
+  let sessionCookie: string;
 
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
 
     const DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001";
     const session = await createSession(testCtx.db, DEFAULT_USER_ID);
-    _sessionCookie = `session=${session.sessionId}`;
+    sessionCookie = `session=${session.sessionId}`;
 
     const app = createApp(testCtx.db);
     await new Promise<void>((resolve) => {
@@ -46,7 +46,7 @@ describe("Upload & Auth - extended coverage", () => {
     it("non-chunked upload with XML content-type uses .xml extension", async () => {
       const res = await fetch(`${baseUrl}/api/upload/apple-health`, {
         method: "POST",
-        headers: { "Content-Type": "application/xml" },
+        headers: { "Content-Type": "application/xml", Cookie: sessionCookie },
         body: "<HealthData></HealthData>",
       });
       expect(res.status).toBe(200);
@@ -58,7 +58,7 @@ describe("Upload & Auth - extended coverage", () => {
     it("enqueued import job is visible via status endpoint", async () => {
       const res = await fetch(`${baseUrl}/api/upload/apple-health`, {
         method: "POST",
-        headers: { "Content-Type": "application/octet-stream" },
+        headers: { "Content-Type": "application/octet-stream", Cookie: sessionCookie },
         body: Buffer.from("not-a-valid-zip-file"),
       });
       const data = await res.json();
@@ -66,7 +66,9 @@ describe("Upload & Auth - extended coverage", () => {
       expect(typeof data.jobId).toBe("string");
 
       // BullMQ job should be queryable (worker may not be running in test)
-      const statusRes = await fetch(`${baseUrl}/api/upload/apple-health/status/${data.jobId}`);
+      const statusRes = await fetch(`${baseUrl}/api/upload/apple-health/status/${data.jobId}`, {
+        headers: { Cookie: sessionCookie },
+      });
       expect(statusRes.status).toBe(200);
       const statusData = await statusRes.json();
       // Job is enqueued — without a worker it stays in "processing" state
@@ -81,7 +83,7 @@ describe("Upload & Auth - extended coverage", () => {
         "Date,Workout Name,Exercise Name,Set Order,Weight,Reps\n2024-01-01,Morning,Bench Press,1,100,10\n";
       const res = await fetch(`${baseUrl}/api/upload/strong-csv`, {
         method: "POST",
-        headers: { "Content-Type": "text/csv" },
+        headers: { "Content-Type": "text/csv", Cookie: sessionCookie },
         body: csvData,
       });
       const data = await res.json();
@@ -89,7 +91,9 @@ describe("Upload & Auth - extended coverage", () => {
       expect(typeof data.jobId).toBe("string");
 
       // BullMQ job should be queryable
-      const statusRes = await fetch(`${baseUrl}/api/upload/strong-csv/status/${data.jobId}`);
+      const statusRes = await fetch(`${baseUrl}/api/upload/strong-csv/status/${data.jobId}`, {
+        headers: { Cookie: sessionCookie },
+      });
       expect(statusRes.status).toBe(200);
       const statusData = await statusRes.json();
       // Job is enqueued — without a worker it stays in "processing" state
@@ -101,7 +105,7 @@ describe("Upload & Auth - extended coverage", () => {
         "Date,Workout Name,Exercise Name,Set Order,Weight,Reps\n2024-01-01,Evening,Squat,1,60,8\n";
       const res = await fetch(`${baseUrl}/api/upload/strong-csv?units=kg`, {
         method: "POST",
-        headers: { "Content-Type": "text/csv" },
+        headers: { "Content-Type": "text/csv", Cookie: sessionCookie },
         body: csvData,
       });
       expect(res.status).toBe(200);
@@ -115,7 +119,7 @@ describe("Upload & Auth - extended coverage", () => {
       const csvData = "Day,Food Name,Amount,Energy (kcal)\n2024-01-01,Oatmeal,1 cup,150\n";
       const res = await fetch(`${baseUrl}/api/upload/cronometer-csv`, {
         method: "POST",
-        headers: { "Content-Type": "text/csv" },
+        headers: { "Content-Type": "text/csv", Cookie: sessionCookie },
         body: csvData,
       });
       const data = await res.json();
@@ -123,7 +127,9 @@ describe("Upload & Auth - extended coverage", () => {
       expect(typeof data.jobId).toBe("string");
 
       // BullMQ job should be queryable
-      const statusRes = await fetch(`${baseUrl}/api/upload/cronometer-csv/status/${data.jobId}`);
+      const statusRes = await fetch(`${baseUrl}/api/upload/cronometer-csv/status/${data.jobId}`, {
+        headers: { Cookie: sessionCookie },
+      });
       expect(statusRes.status).toBe(200);
       const statusData = await statusRes.json();
       // Job is enqueued — without a worker it stays in "processing" state
@@ -243,6 +249,7 @@ describe("Upload & Auth - extended coverage", () => {
         method: "POST",
         headers: {
           "Content-Type": "application/octet-stream",
+          Cookie: sessionCookie,
           "x-upload-id": uploadId,
           "x-chunk-index": "0",
           "x-chunk-total": "1",
@@ -261,6 +268,7 @@ describe("Upload & Auth - extended coverage", () => {
         method: "POST",
         headers: {
           "Content-Type": "application/octet-stream",
+          Cookie: sessionCookie,
           "x-chunk-index": "0",
           "x-chunk-total": "3",
         },
@@ -280,6 +288,7 @@ describe("Upload & Auth - extended coverage", () => {
         method: "POST",
         headers: {
           "Content-Type": "application/octet-stream",
+          Cookie: sessionCookie,
           "x-upload-id": uploadId,
           "x-chunk-index": "0",
           "x-chunk-total": "4",
@@ -298,6 +307,7 @@ describe("Upload & Auth - extended coverage", () => {
         method: "POST",
         headers: {
           "Content-Type": "application/octet-stream",
+          Cookie: sessionCookie,
           "x-upload-id": uploadId,
           "x-chunk-index": "1",
           "x-chunk-total": "4",
@@ -312,7 +322,9 @@ describe("Upload & Auth - extended coverage", () => {
       expect(data2.total).toBe(4);
 
       // Job status should reflect uploading
-      const statusRes = await fetch(`${baseUrl}/api/upload/apple-health/status/${uploadId}`);
+      const statusRes = await fetch(`${baseUrl}/api/upload/apple-health/status/${uploadId}`, {
+        headers: { Cookie: sessionCookie },
+      });
       expect(statusRes.status).toBe(200);
       const statusData = await statusRes.json();
       expect(statusData.status).toBe("uploading");

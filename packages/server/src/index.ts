@@ -107,7 +107,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
   });
 
   // ── Route modules ──
-  app.use("/api/upload", createUploadRouter({ getImportQueue }));
+  app.use("/api/upload", createUploadRouter({ getImportQueue, db }));
   app.use("/api/export", createExportRouter(db));
   app.use(createAuthRouter(db));
 

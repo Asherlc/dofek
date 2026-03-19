@@ -2,7 +2,7 @@ import { stat, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Router } from "express";
-import { getSessionCookie } from "../auth/cookies.ts";
+import { getSessionIdFromRequest } from "../auth/cookies.ts";
 import { validateSession } from "../auth/session.ts";
 import { errorMessage } from "../lib/server-utils.ts";
 import { logger } from "../logger.ts";
@@ -20,7 +20,7 @@ export function createExportRouter(db: import("dofek/db").Database): Router {
   const router = Router();
 
   router.post("/", async (req, res) => {
-    const sessionId = getSessionCookie(req);
+    const sessionId = getSessionIdFromRequest(req);
     if (!sessionId) {
       res.status(401).json({ error: "Not authenticated" });
       return;
@@ -80,12 +80,29 @@ export function createExportRouter(db: import("dofek/db").Database): Router {
     res.json({ status: "processing", jobId });
   });
 
-  router.get("/status/:jobId", (req, res) => {
+  router.get("/status/:jobId", async (req, res) => {
+    const sessionId = getSessionIdFromRequest(req);
+    if (!sessionId) {
+      res.status(401).json({ error: "Not authenticated" });
+      return;
+    }
+    const session = await validateSession(db, sessionId);
+    if (!session) {
+      res.status(401).json({ error: "Session expired" });
+      return;
+    }
+
     const job = exportJobs.get(req.params.jobId);
     if (!job) {
       res.status(404).json({ error: "Unknown job" });
       return;
     }
+
+    if (job.userId !== session.userId) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+
     const response: Record<string, unknown> = {
       status: job.status,
       progress: job.progress,
@@ -98,7 +115,7 @@ export function createExportRouter(db: import("dofek/db").Database): Router {
   });
 
   router.get("/download/:jobId", async (req, res) => {
-    const sessionId = getSessionCookie(req);
+    const sessionId = getSessionIdFromRequest(req);
     if (!sessionId) {
       res.status(401).json({ error: "Not authenticated" });
       return;

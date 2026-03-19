@@ -13,10 +13,20 @@ vi.mock("../logger.ts", () => ({
   logger: { info: vi.fn(), error: vi.fn() },
 }));
 
+vi.mock("../auth/cookies.ts", () => ({
+  getSessionIdFromRequest: vi.fn(),
+}));
+
+vi.mock("../auth/session.ts", () => ({
+  validateSession: vi.fn(() => Promise.resolve(null)),
+}));
+
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import express from "express";
+import { getSessionIdFromRequest } from "../auth/cookies.ts";
+import { validateSession } from "../auth/session.ts";
 import { assembleChunks, streamToFile } from "../lib/server-utils.ts";
 import { createUploadRouter } from "./upload.ts";
 
@@ -38,8 +48,9 @@ function mockQueue() {
 
 function createTestApp() {
   const queue = mockQueue();
+  const fakeDb = {} satisfies import("dofek/db").Database;
   const app = express();
-  app.use("/api/upload", createUploadRouter({ getImportQueue: () => queue }));
+  app.use("/api/upload", createUploadRouter({ getImportQueue: () => queue, db: fakeDb }));
   return { app, queue };
 }
 
@@ -81,6 +92,110 @@ async function request(
 describe("createUploadRouter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
+    vi.mocked(validateSession).mockResolvedValue({ userId: "user-1" });
+  });
+
+  describe("authentication", () => {
+    it("returns 401 for unauthenticated POST /apple-health", async () => {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/api/upload/apple-health", {
+        headers: { "Content-Type": "application/zip" },
+        body: Buffer.from("data"),
+      });
+      expect(res.status).toBe(401);
+    });
+
+    it("returns 401 for expired session on POST /apple-health", async () => {
+      vi.mocked(validateSession).mockResolvedValue(null);
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/api/upload/apple-health", {
+        headers: { "Content-Type": "application/zip" },
+        body: Buffer.from("data"),
+      });
+      expect(res.status).toBe(401);
+    });
+
+    it("returns 401 for unauthenticated POST /strong-csv", async () => {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/api/upload/strong-csv", {
+        headers: { "Content-Type": "text/csv" },
+        body: Buffer.from("data"),
+      });
+      expect(res.status).toBe(401);
+    });
+
+    it("returns 401 for unauthenticated POST /cronometer-csv", async () => {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/api/upload/cronometer-csv", {
+        headers: { "Content-Type": "text/csv" },
+        body: Buffer.from("data"),
+      });
+      expect(res.status).toBe(401);
+    });
+
+    it("returns 401 for unauthenticated GET /apple-health/status", async () => {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
+      const { app } = createTestApp();
+      const res = await request(app, "get", "/api/upload/apple-health/status/job-1");
+      expect(res.status).toBe(401);
+    });
+
+    it("returns 401 for unauthenticated GET /strong-csv/status", async () => {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
+      const { app } = createTestApp();
+      const res = await request(app, "get", "/api/upload/strong-csv/status/job-1");
+      expect(res.status).toBe(401);
+    });
+
+    it("returns 401 for unauthenticated GET /cronometer-csv/status", async () => {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
+      const { app } = createTestApp();
+      const res = await request(app, "get", "/api/upload/cronometer-csv/status/job-1");
+      expect(res.status).toBe(401);
+    });
+
+    it("uses authenticated userId for apple-health upload", async () => {
+      const { app, queue } = createTestApp();
+      await request(app, "post", "/api/upload/apple-health", {
+        headers: { "Content-Type": "application/zip" },
+        body: Buffer.from("data"),
+      });
+      expect(queue.add).toHaveBeenCalledWith(
+        "apple-health",
+        expect.objectContaining({ userId: "user-1" }),
+        undefined,
+      );
+    });
+
+    it("uses authenticated userId for strong-csv upload", async () => {
+      const { app, queue } = createTestApp();
+      await request(app, "post", "/api/upload/strong-csv", {
+        headers: { "Content-Type": "text/csv" },
+        body: Buffer.from("data"),
+      });
+      expect(queue.add).toHaveBeenCalledWith(
+        "strong-csv",
+        expect.objectContaining({ userId: "user-1" }),
+        undefined,
+      );
+    });
+
+    it("uses authenticated userId for cronometer-csv upload", async () => {
+      const { app, queue } = createTestApp();
+      await request(app, "post", "/api/upload/cronometer-csv", {
+        headers: { "Content-Type": "text/csv" },
+        body: Buffer.from("data"),
+      });
+      expect(queue.add).toHaveBeenCalledWith(
+        "cronometer-csv",
+        expect.objectContaining({ userId: "user-1" }),
+        undefined,
+      );
+    });
   });
 
   describe("POST /api/upload/apple-health", () => {
@@ -127,6 +242,7 @@ describe("createUploadRouter", () => {
     it("returns job status", async () => {
       const { app, queue } = createTestApp();
       const mockJob = {
+        data: { userId: "user-1" },
         getState: vi.fn(() => Promise.resolve("completed")),
         progress: 100,
         failedReason: null,
@@ -137,6 +253,20 @@ describe("createUploadRouter", () => {
       expect(res.status).toBe(200);
       const data = JSON.parse(res.body);
       expect(data.status).toBe("done");
+    });
+
+    it("returns 403 when job belongs to another user", async () => {
+      const { app, queue } = createTestApp();
+      const mockJob = {
+        data: { userId: "user-2" },
+        getState: vi.fn(() => Promise.resolve("active")),
+        progress: 50,
+        failedReason: null,
+        returnvalue: null,
+      };
+      queue.getJob.mockResolvedValueOnce(mockJob);
+      const res = await request(app, "get", "/api/upload/apple-health/status/job-other");
+      expect(res.status).toBe(403);
     });
   });
 
@@ -159,6 +289,32 @@ describe("createUploadRouter", () => {
       expect(res.status).toBe(200);
       const data = JSON.parse(res.body);
       expect(data.status).toBe("processing");
+    });
+
+    it("passes weightUnit=lbs when units=lbs", async () => {
+      const { app, queue } = createTestApp();
+      await request(app, "post", "/api/upload/strong-csv?units=lbs", {
+        headers: { "Content-Type": "text/csv" },
+        body: Buffer.from("date,exercise\n2026-01-01,squat"),
+      });
+      expect(queue.add).toHaveBeenCalledWith(
+        "strong-csv",
+        expect.objectContaining({ weightUnit: "lbs" }),
+        undefined,
+      );
+    });
+
+    it("defaults weightUnit to kg when units not set", async () => {
+      const { app, queue } = createTestApp();
+      await request(app, "post", "/api/upload/strong-csv", {
+        headers: { "Content-Type": "text/csv" },
+        body: Buffer.from("date,exercise\n2026-01-01,squat"),
+      });
+      expect(queue.add).toHaveBeenCalledWith(
+        "strong-csv",
+        expect.objectContaining({ weightUnit: "kg" }),
+        undefined,
+      );
     });
   });
 
@@ -314,6 +470,7 @@ describe("createUploadRouter", () => {
     it("returns job status for known job", async () => {
       const { app, queue } = createTestApp();
       const mockJob = {
+        data: { userId: "user-1" },
         getState: vi.fn(() => Promise.resolve("completed")),
         progress: 100,
         failedReason: null,
@@ -325,6 +482,20 @@ describe("createUploadRouter", () => {
       const data = JSON.parse(res.body);
       expect(data.status).toBe("done");
     });
+
+    it("returns 403 when job belongs to another user", async () => {
+      const { app, queue } = createTestApp();
+      const mockJob = {
+        data: { userId: "user-2" },
+        getState: vi.fn(() => Promise.resolve("active")),
+        progress: 50,
+        failedReason: null,
+        returnvalue: null,
+      };
+      queue.getJob.mockResolvedValueOnce(mockJob);
+      const res = await request(app, "get", "/api/upload/strong-csv/status/job-other");
+      expect(res.status).toBe(403);
+    });
   });
 
   describe("GET /api/upload/cronometer-csv/status/:jobId", () => {
@@ -333,6 +504,20 @@ describe("createUploadRouter", () => {
       queue.getJob.mockResolvedValueOnce(null);
       const res = await request(app, "get", "/api/upload/cronometer-csv/status/unknown");
       expect(res.status).toBe(404);
+    });
+
+    it("returns 403 when job belongs to another user", async () => {
+      const { app, queue } = createTestApp();
+      const mockJob = {
+        data: { userId: "user-2" },
+        getState: vi.fn(() => Promise.resolve("active")),
+        progress: 50,
+        failedReason: null,
+        returnvalue: null,
+      };
+      queue.getJob.mockResolvedValueOnce(mockJob);
+      const res = await request(app, "get", "/api/upload/cronometer-csv/status/job-other");
+      expect(res.status).toBe(403);
     });
   });
 
@@ -594,13 +779,34 @@ describe("createUploadRouter", () => {
       expect(data.status).toBe("processing");
     });
 
-    it("uses fullSync when query param is set", async () => {
-      const { app } = createTestApp();
+    it("passes since=epoch when fullSync=true", async () => {
+      const { app, queue } = createTestApp();
       const res = await request(app, "post", "/api/upload/apple-health?fullSync=true", {
         headers: { "Content-Type": "application/zip" },
         body: Buffer.from("data"),
       });
       expect(res.status).toBe(200);
+      expect(queue.add).toHaveBeenCalledWith(
+        "apple-health",
+        expect.objectContaining({ since: "1970-01-01T00:00:00.000Z" }),
+        undefined,
+      );
+    });
+
+    it("passes since=7 days ago when fullSync is not set", async () => {
+      const { app, queue } = createTestApp();
+      const before = Date.now();
+      const res = await request(app, "post", "/api/upload/apple-health", {
+        headers: { "Content-Type": "application/zip" },
+        body: Buffer.from("data"),
+      });
+      expect(res.status).toBe(200);
+      const sinceArg = String(queue.add.mock.calls[0][1].since);
+      const sinceMs = new Date(sinceArg).getTime();
+      const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+      // since should be approximately 7 days before the request
+      expect(sinceMs).toBeGreaterThan(before - sevenDaysMs - 5000);
+      expect(sinceMs).toBeLessThan(before - sevenDaysMs + 5000);
     });
   });
 });
