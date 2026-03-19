@@ -179,29 +179,38 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
       ],
     },
     series: [
-      // ── Top pane: Load bars (on hidden y-axis so they don't compress CTL/ATL) ──
+      // ── Top pane: Load dots (scatter on hidden y-axis) ──
       {
         name: "Load",
-        type: "bar",
+        type: "scatter",
         xAxisIndex: 0,
         yAxisIndex: 2,
-        data: data.map((d) => [d.date, d.load]),
-        itemStyle: { color: "#71717a", opacity: 0.3 },
-        barMaxWidth: 6,
-        z: 1,
+        data: data.filter((d) => d.load > 0).map((d) => [d.date, d.load]),
+        itemStyle: { color: "#f87171", opacity: 0.7 },
+        symbolSize: 4,
+        z: 2,
       },
-      // ── Top pane: Fitness (CTL) line ──
+      // ── Top pane: Fitness (CTL) — area chart with fill ──
       {
         name: "Fitness",
         type: "line",
         xAxisIndex: 0,
         yAxisIndex: 0,
         data: data.map((d) => [d.date, d.ctl]),
-        smooth: true,
         symbol: "none",
         lineStyle: { color: COLOR_FITNESS, width: 2 },
         itemStyle: { color: COLOR_FITNESS },
+        areaStyle: { color: "rgba(59, 130, 246, 0.12)" },
         z: 3,
+        markLine: lastPoint
+          ? {
+              silent: true,
+              symbol: "none",
+              lineStyle: { color: "#71717a", type: "dashed" as const, width: 1 },
+              label: { show: false },
+              data: [{ yAxis: lastPoint.ctl }],
+            }
+          : undefined,
       },
       // ── Top pane: Fatigue (ATL) line ──
       {
@@ -210,11 +219,10 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
         xAxisIndex: 0,
         yAxisIndex: 0,
         data: data.map((d) => [d.date, d.atl]),
-        smooth: true,
         symbol: "none",
-        lineStyle: { color: COLOR_FATIGUE, width: 2 },
+        lineStyle: { color: COLOR_FATIGUE, width: 1.5 },
         itemStyle: { color: COLOR_FATIGUE },
-        z: 3,
+        z: 4,
       },
       // ── Bottom pane: Form (TSB) line — colored per zone by visualMap ──
       {
@@ -223,7 +231,6 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
         xAxisIndex: 1,
         yAxisIndex: 1,
         data: data.map((d) => [d.date, d.tsb]),
-        smooth: true,
         symbol: "none",
         lineStyle: { width: 2 },
         z: 3,
