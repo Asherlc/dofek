@@ -25,20 +25,7 @@ export default defineConfig({
           exclude: ["**/*.integration.test.ts", "packages/ios/**"],
         },
       },
-      {
-        esbuild: {
-          jsx: "automatic",
-          jsxImportSource: "react",
-        },
-        test: {
-          ...sharedTestConfig,
-          name: "ios",
-          include: ["packages/ios/**/*.test.{ts,tsx}"],
-          exclude: ["**/*.integration.test.ts", "**/node_modules/**"],
-          setupFiles: ["packages/ios/test-setup.ts"],
-          environment: "jsdom",
-        },
-      },
+      "packages/ios/vitest.config.ts",
       {
         test: {
           ...sharedTestConfig,
