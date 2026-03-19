@@ -8,28 +8,28 @@
 
 /* Begin PBXBuildFile section */
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
-		2F205EDD67AD0D9A4819E9DB /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F3F09476482EF135A6ADB764 /* PrivacyInfo.xcprivacy */; };
+		1E276AD16C3BD8845025D0AE /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A9D4CA36A24B9F8DB5B0AB2E /* PrivacyInfo.xcprivacy */; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
-		949B0F40BEAD1FC41E4F5CD8 /* libPods-Dofek.a in Frameworks */ = {isa = PBXBuildFile; fileRef = F50B8F42A73E99733F12F4A6 /* libPods-Dofek.a */; };
+		9D358792FD5DC6A56F315837 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = D87095AD4422360167F8F540 /* ExpoModulesProvider.swift */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
-		FEC0CB3EC1BD896AB4C42F6D /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FEAA7625032CD37214B6643 /* ExpoModulesProvider.swift */; };
+		FC05A7C2628A6FA16E879E05 /* libPods-Dofek.a in Frameworks */ = {isa = PBXBuildFile; fileRef = BC62C5A292A9533358596420 /* libPods-Dofek.a */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		0C1F865D10320D7BDCBF357B /* Pods-Dofek.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Dofek.release.xcconfig"; path = "Target Support Files/Pods-Dofek/Pods-Dofek.release.xcconfig"; sourceTree = "<group>"; };
-		0FEAA7625032CD37214B6643 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-Dofek/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 		13B07F961A680F5B00A75B9A /* Dofek.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Dofek.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = Dofek/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = Dofek/Info.plist; sourceTree = "<group>"; };
-		21ACE37CA8947FCD449A9A9E /* Pods-Dofek.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Dofek.debug.xcconfig"; path = "Target Support Files/Pods-Dofek/Pods-Dofek.debug.xcconfig"; sourceTree = "<group>"; };
+		48E62AB375794DA193E04730 /* Pods-Dofek.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Dofek.release.xcconfig"; path = "Target Support Files/Pods-Dofek/Pods-Dofek.release.xcconfig"; sourceTree = "<group>"; };
+		4FADCAFFCA6ACB645C7256FA /* Pods-Dofek.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Dofek.debug.xcconfig"; path = "Target Support Files/Pods-Dofek/Pods-Dofek.debug.xcconfig"; sourceTree = "<group>"; };
+		A9D4CA36A24B9F8DB5B0AB2E /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = Dofek/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = Dofek/SplashScreen.storyboard; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
+		BC62C5A292A9533358596420 /* libPods-Dofek.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-Dofek.a"; sourceTree = BUILT_PRODUCTS_DIR; };
+		D87095AD4422360167F8F540 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-Dofek/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = Dofek/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* Dofek-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "Dofek-Bridging-Header.h"; path = "Dofek/Dofek-Bridging-Header.h"; sourceTree = "<group>"; };
-		F3F09476482EF135A6ADB764 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xml; name = PrivacyInfo.xcprivacy; path = Dofek/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
-		F50B8F42A73E99733F12F4A6 /* libPods-Dofek.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-Dofek.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -37,22 +37,13 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				949B0F40BEAD1FC41E4F5CD8 /* libPods-Dofek.a in Frameworks */,
+				FC05A7C2628A6FA16E879E05 /* libPods-Dofek.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		12C490F7717445F37FE7CCBA /* Pods */ = {
-			isa = PBXGroup;
-			children = (
-				21ACE37CA8947FCD449A9A9E /* Pods-Dofek.debug.xcconfig */,
-				0C1F865D10320D7BDCBF357B /* Pods-Dofek.release.xcconfig */,
-			);
-			path = Pods;
-			sourceTree = "<group>";
-		};
 		13B07FAE1A68108700A75B9A /* Dofek */ = {
 			isa = PBXGroup;
 			children = (
@@ -62,7 +53,7 @@
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */,
-				F3F09476482EF135A6ADB764 /* PrivacyInfo.xcprivacy */,
+				A9D4CA36A24B9F8DB5B0AB2E /* PrivacyInfo.xcprivacy */,
 			);
 			name = Dofek;
 			sourceTree = "<group>";
@@ -71,25 +62,17 @@
 			isa = PBXGroup;
 			children = (
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
-				F50B8F42A73E99733F12F4A6 /* libPods-Dofek.a */,
+				BC62C5A292A9533358596420 /* libPods-Dofek.a */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
 		};
-		39FF5920BB5BA067D64D4C08 /* Dofek */ = {
+		4770509D239865EA2714FEC3 /* Dofek */ = {
 			isa = PBXGroup;
 			children = (
-				0FEAA7625032CD37214B6643 /* ExpoModulesProvider.swift */,
+				D87095AD4422360167F8F540 /* ExpoModulesProvider.swift */,
 			);
 			name = Dofek;
-			sourceTree = "<group>";
-		};
-		777DCFC6E08A14C96C434D4C /* ExpoModulesProviders */ = {
-			isa = PBXGroup;
-			children = (
-				39FF5920BB5BA067D64D4C08 /* Dofek */,
-			);
-			name = ExpoModulesProviders;
 			sourceTree = "<group>";
 		};
 		832341AE1AAA6A7D00B99B32 /* Libraries */ = {
@@ -106,8 +89,8 @@
 				832341AE1AAA6A7D00B99B32 /* Libraries */,
 				83CBBA001A601CBA00E9B192 /* Products */,
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
-				12C490F7717445F37FE7CCBA /* Pods */,
-				777DCFC6E08A14C96C434D4C /* ExpoModulesProviders */,
+				86928FCBAF5CDF10824817F5 /* Pods */,
+				F75B29E150E9384BF435656E /* ExpoModulesProviders */,
 			);
 			indentWidth = 2;
 			sourceTree = "<group>";
@@ -122,6 +105,16 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		86928FCBAF5CDF10824817F5 /* Pods */ = {
+			isa = PBXGroup;
+			children = (
+				4FADCAFFCA6ACB645C7256FA /* Pods-Dofek.debug.xcconfig */,
+				48E62AB375794DA193E04730 /* Pods-Dofek.release.xcconfig */,
+			);
+			name = Pods;
+			path = Pods;
+			sourceTree = "<group>";
+		};
 		BB2F792B24A3F905000567C9 /* Supporting */ = {
 			isa = PBXGroup;
 			children = (
@@ -129,6 +122,14 @@
 			);
 			name = Supporting;
 			path = Dofek/Supporting;
+			sourceTree = "<group>";
+		};
+		F75B29E150E9384BF435656E /* ExpoModulesProviders */ = {
+			isa = PBXGroup;
+			children = (
+				4770509D239865EA2714FEC3 /* Dofek */,
+			);
+			name = ExpoModulesProviders;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -139,13 +140,13 @@
 			buildConfigurationList = 13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "Dofek" */;
 			buildPhases = (
 				08A4A3CD28434E44B6B9DE2E /* [CP] Check Pods Manifest.lock */,
-				3268895FE234BA14DE4C2D39 /* [Expo] Configure project */,
+				9EA03A785A5D3EE46D864331 /* [Expo] Configure project */,
 				13B07F871A680F5B00A75B9A /* Sources */,
 				13B07F8C1A680F5B00A75B9A /* Frameworks */,
 				13B07F8E1A680F5B00A75B9A /* Resources */,
 				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
 				800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */,
-				14CD02A3A385AB50FF701296 /* [CP] Embed Pods Frameworks */,
+				7A3048DFE5269B5F8CF85481 /* [CP] Embed Pods Frameworks */,
 			);
 			buildRules = (
 			);
@@ -195,7 +196,7 @@
 				BB2F792D24A3F905000567C9 /* Expo.plist in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */,
-				2F205EDD67AD0D9A4819E9DB /* PrivacyInfo.xcprivacy in Resources */,
+				1E276AD16C3BD8845025D0AE /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -241,7 +242,7 @@
 			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
 			showEnvVarsInLog = 0;
 		};
-		14CD02A3A385AB50FF701296 /* [CP] Embed Pods Frameworks */ = {
+		7A3048DFE5269B5F8CF85481 /* [CP] Embed Pods Frameworks */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -262,30 +263,6 @@
 			shellPath = /bin/sh;
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Dofek/Pods-Dofek-frameworks.sh\"\n";
 			showEnvVarsInLog = 0;
-		};
-		3268895FE234BA14DE4C2D39 /* [Expo] Configure project */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"$(SRCROOT)/.xcode.env",
-				"$(SRCROOT)/.xcode.env.local",
-				"$(SRCROOT)/Dofek/Dofek.entitlements",
-				"$(SRCROOT)/Pods/Target Support Files/Pods-Dofek/expo-configure-project.sh",
-			);
-			name = "[Expo] Configure project";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"$(SRCROOT)/Pods/Target Support Files/Pods-Dofek/ExpoModulesProvider.swift",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "# This script configures Expo modules and generates the modules provider file.\nbash -l -c \"./Pods/Target\\ Support\\ Files/Pods-Dofek/expo-configure-project.sh\"\n";
 		};
 		800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -315,6 +292,30 @@
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Dofek/Pods-Dofek-resources.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
+		9EA03A785A5D3EE46D864331 /* [Expo] Configure project */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/.xcode.env",
+				"$(SRCROOT)/.xcode.env.local",
+				"$(SRCROOT)/Dofek/Dofek.entitlements",
+				"$(SRCROOT)/Pods/Target Support Files/Pods-Dofek/expo-configure-project.sh",
+			);
+			name = "[Expo] Configure project";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(SRCROOT)/Pods/Target Support Files/Pods-Dofek/ExpoModulesProvider.swift",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# This script configures Expo modules and generates the modules provider file.\nbash -l -c \"./Pods/Target\\ Support\\ Files/Pods-Dofek/expo-configure-project.sh\"\n";
+		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -323,7 +324,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */,
-				FEC0CB3EC1BD896AB4C42F6D /* ExpoModulesProvider.swift in Sources */,
+				9D358792FD5DC6A56F315837 /* ExpoModulesProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -332,21 +333,18 @@
 /* Begin XCBuildConfiguration section */
 		13B07F941A680F5B00A75B9A /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 21ACE37CA8947FCD449A9A9E /* Pods-Dofek.debug.xcconfig */;
+			baseConfigurationReference = 4FADCAFFCA6ACB645C7256FA /* Pods-Dofek.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Dofek/Dofek.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 68LEL35DQ9;
 				ENABLE_BITCODE = NO;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"$(inherited)",
 					"FB_SONARKIT_ENABLED=1",
 				);
 				INFOPLIST_FILE = Dofek/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Dofek;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -371,16 +369,13 @@
 		};
 		13B07F951A680F5B00A75B9A /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 0C1F865D10320D7BDCBF357B /* Pods-Dofek.release.xcconfig */;
+			baseConfigurationReference = 48E62AB375794DA193E04730 /* Pods-Dofek.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Dofek/Dofek.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 68LEL35DQ9;
 				INFOPLIST_FILE = Dofek/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Dofek;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
