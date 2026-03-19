@@ -327,7 +327,7 @@ function CyclingTab({ days }: { days: number }) {
 
   const eftp = trpc.power.eftpTrend.useQuery({ days });
   const powerCurve = trpc.power.powerCurve.useQuery({ days });
-  const pmc = trpc.pmc.chart.useQuery({ days: 365 });
+  const pmc = trpc.pmc.chart.useQuery({ days });
 
   if (eftp.isLoading || powerCurve.isLoading || pmc.isLoading) return <LoadingText />;
 
