@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { ActivityVariabilityTable } from "../../components/ActivityVariabilityTable.tsx";
 import { AerobicEfficiencyChart } from "../../components/AerobicEfficiencyChart.tsx";
 import { EftpTrendChart } from "../../components/EftpTrendChart.tsx";
+import { PmcChart } from "../../components/PmcChart.tsx";
 import { PowerCurveChart } from "../../components/PowerCurveChart.tsx";
 import { VerticalAscentChart } from "../../components/VerticalAscentChart.tsx";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
@@ -47,13 +48,15 @@ function CyclingTab() {
   const recentCurve = trpc.power.powerCurve.useQuery({ days });
   const seasonCurve = trpc.power.powerCurve.useQuery({ days: 365 });
   const eftpTrend = trpc.power.eftpTrend.useQuery({ days: 365 });
+  const pmc = trpc.pmc.chart.useQuery({ days: 365 });
   const efficiency = trpc.efficiency.aerobicEfficiency.useQuery({ days });
   const variability = trpc.cyclingAdvanced.activityVariability.useQuery({ days });
   const verticalAscent = trpc.cyclingAdvanced.verticalAscentRate.useQuery({ days });
   const bodyData = trpc.body.list.useQuery({ days: 365 });
 
   // Extract latest weight for w/kg calculations
-  const latestWeight = bodyData.data?.[0]?.weight_kg as number | undefined;
+  const rawWeight = bodyData.data?.[0]?.weight_kg;
+  const latestWeight = typeof rawWeight === "number" ? rawWeight : undefined;
 
   // Build lookup: duration → best power for each period
   const recentByDuration = new Map(
@@ -118,6 +121,14 @@ function CyclingTab() {
           <PeriodLabel color="#8b5cf6" label={`${days} days`} model={recentModel} />
           <PeriodLabel color="#71717a" label="This season" model={seasonModel} />
         </div>
+      </Section>
+
+      {/* Fitness / Fatigue / Form */}
+      <Section
+        title="Fitness, Fatigue & Form"
+        subtitle="42-day fitness (blue), 7-day fatigue (pink), form = fitness − fatigue"
+      >
+        <PmcChart data={pmc.data?.data ?? []} model={pmc.data?.model} loading={pmc.isLoading} />
       </Section>
 
       {/* eFTP Trend */}

@@ -325,13 +325,16 @@ function CyclingTab({ days }: { days: number }) {
 
   const eftp = trpc.power.eftpTrend.useQuery({ days });
   const powerCurve = trpc.power.powerCurve.useQuery({ days });
+  const pmc = trpc.pmc.chart.useQuery({ days: 365 });
 
-  if (eftp.isLoading || powerCurve.isLoading) return <LoadingText />;
+  if (eftp.isLoading || powerCurve.isLoading || pmc.isLoading) return <LoadingText />;
 
   const eftpData = eftp.data?.trend ?? [];
   const currentEftp = eftp.data?.currentEftp;
   const model = powerCurve.data?.model;
   const points = powerCurve.data?.points ?? [];
+  const pmcData = pmc.data?.data ?? [];
+  const latestPmc = pmcData[pmcData.length - 1];
 
   // Key durations for summary
   const powerAt = (seconds: number) => points.find((p) => p.durationSeconds === seconds)?.bestPower;
@@ -359,6 +362,46 @@ function CyclingTab({ days }: { days: number }) {
           </View>
         )}
       </View>
+
+      {/* Fitness / Fatigue / Form */}
+      {latestPmc && (
+        <View>
+          <Text style={styles.sectionTitle}>Fitness, Fatigue & Form</Text>
+          <View style={styles.summaryRow}>
+            <View style={styles.summaryCard}>
+              <Text style={styles.summaryLabel}>Fitness</Text>
+              <Text style={[styles.summaryValue, { color: colors.blue }]}>{formatNumber(latestPmc.ctl, 1)}</Text>
+            </View>
+            <View style={styles.summaryCard}>
+              <Text style={styles.summaryLabel}>Fatigue</Text>
+              <Text style={[styles.summaryValue, { color: colors.orange }]}>{formatNumber(latestPmc.atl, 1)}</Text>
+            </View>
+            <View style={styles.summaryCard}>
+              <Text style={styles.summaryLabel}>Form</Text>
+              <Text
+                style={[
+                  styles.summaryValue,
+                  { color: latestPmc.tsb >= 0 ? statusColors.positive : statusColors.danger },
+                ]}
+              >
+                {formatNumber(latestPmc.tsb, 1)}
+              </Text>
+            </View>
+          </View>
+          {pmcData.length > 1 && (
+            <View style={styles.card}>
+              <View style={styles.sparklineContainer}>
+                <Sparkline
+                  data={pmcData.map((d) => d.ctl)}
+                  width={chartWidth}
+                  height={40}
+                  color={colors.blue}
+                />
+              </View>
+            </View>
+          )}
+        </View>
+      )}
 
       {/* Key Power Durations */}
       {points.length > 0 && (
