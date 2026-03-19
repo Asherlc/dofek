@@ -118,7 +118,7 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
         data: data.map((d) => [d.date, d.load]),
         itemStyle: { color: "#71717a", opacity: 0.35 },
         yAxisIndex: 0,
-        z: 1,
+        z: 2,
       },
       {
         name: "Fitness (Chronic Training Load)",
@@ -152,7 +152,7 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
         areaStyle: { color: "#22c55e", opacity: 0.25 },
         itemStyle: { color: "#22c55e" },
         yAxisIndex: 1,
-        z: 2,
+        z: 1,
       },
       {
         name: "Form -",
@@ -164,7 +164,7 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
         areaStyle: { color: "#ef4444", opacity: 0.25 },
         itemStyle: { color: "#ef4444" },
         yAxisIndex: 1,
-        z: 2,
+        z: 1,
       },
     ],
   };
