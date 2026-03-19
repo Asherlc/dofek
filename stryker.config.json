@@ -20,13 +20,16 @@
     "packages/velohero-client/src/**/*.ts",
     "packages/zwift-client/src/**/*.ts",
     "packages/trainingpeaks-connect/src/**/*.ts",
+    "packages/ios/app/**/*.{ts,tsx}",
+    "packages/ios/components/**/*.{ts,tsx}",
+    "packages/ios/lib/**/*.{ts,tsx}",
     "!**/*.test.ts",
+    "!**/*.test.tsx",
     "!**/test-helpers.ts",
     "!**/fixtures/**",
     "!src/db/schema.ts"
   ],
   "ignorePatterns": [
-    "packages/ios/**",
     "dist/**",
     "drizzle/**"
   ],
