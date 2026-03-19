@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { NextWorkoutRecommendation } from "dofek-server/types";
 import { useRouter } from "expo-router";
 import {
   ScrollView,
@@ -73,6 +74,27 @@ function trendArrow(trend: string | null): string {
   return "";
 }
 
+function recommendationTypeColor(
+  type: NextWorkoutRecommendation["recommendationType"],
+): string {
+  if (type === "rest") return colors.orange;
+  if (type === "strength") return colors.positive;
+  return colors.blue;
+}
+
+function readinessLevelColor(
+  level: NextWorkoutRecommendation["readiness"]["level"],
+): string {
+  if (level === "high") return colors.positive;
+  if (level === "moderate") return colors.warning;
+  if (level === "low") return colors.danger;
+  return colors.textSecondary;
+}
+
+function capitalize(value: string): string {
+  return value.slice(0, 1).toUpperCase() + value.slice(1);
+}
+
 export default function OverviewScreen() {
   const router = useRouter();
   const onboarding = useOnboarding();
@@ -119,6 +141,10 @@ export default function OverviewScreen() {
   // Weekly report
   const weeklyReportQuery = trpc.weeklyReport.report.useQuery({ weeks: Math.max(Math.ceil(days / 7), 1) });
   const weeklyReport = weeklyReportQuery.data;
+
+  // Next workout recommendation
+  const nextWorkoutQuery = trpc.training.nextWorkout.useQuery();
+  const nextWorkout = nextWorkoutQuery.data;
 
   // Sleep need
   const sleepNeedQuery = trpc.sleepNeed.calculate.useQuery();
@@ -436,6 +462,71 @@ export default function OverviewScreen() {
                   </View>
                 )}
               </View>
+            </View>
+          )}
+
+          {/* Next Workout */}
+          {nextWorkout != null && (
+            <View style={styles.card}>
+              <View style={styles.nextWorkoutHeader}>
+                <View style={styles.nextWorkoutTitleWrap}>
+                  <Text style={styles.cardTitle}>Next Workout</Text>
+                  <Text style={styles.nextWorkoutTitle}>{nextWorkout.title}</Text>
+                </View>
+                <View
+                  style={[
+                    styles.nextWorkoutTypeBadge,
+                    {
+                      borderColor: recommendationTypeColor(nextWorkout.recommendationType),
+                      backgroundColor: `${recommendationTypeColor(nextWorkout.recommendationType)}20`,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.nextWorkoutTypeLabel,
+                      { color: recommendationTypeColor(nextWorkout.recommendationType) },
+                    ]}
+                  >
+                    {capitalize(nextWorkout.recommendationType)}
+                  </Text>
+                </View>
+              </View>
+
+              <Text style={styles.nextWorkoutSummary}>{nextWorkout.shortBlurb}</Text>
+              <Text
+                style={[
+                  styles.nextWorkoutReadiness,
+                  { color: readinessLevelColor(nextWorkout.readiness.level) },
+                ]}
+              >
+                Readiness:{" "}
+                {nextWorkout.readiness.score != null
+                  ? `${nextWorkout.readiness.score}/100 (${nextWorkout.readiness.level})`
+                  : "Unavailable"}
+              </Text>
+
+              {nextWorkout.cardio != null && (
+                <Text style={styles.nextWorkoutMeta}>
+                  Cardio: {nextWorkout.cardio.durationMinutes} minutes ({nextWorkout.cardio.focus})
+                </Text>
+              )}
+              {nextWorkout.strength != null && nextWorkout.strength.focusMuscles.length > 0 && (
+                <Text style={styles.nextWorkoutMeta}>
+                  Strength focus: {nextWorkout.strength.focusMuscles.join(", ")}
+                </Text>
+              )}
+
+              {nextWorkout.details.length > 0 && (
+                <View style={styles.nextWorkoutList}>
+                  <Text style={styles.nextWorkoutListTitle}>Plan</Text>
+                  {nextWorkout.details.slice(0, 3).map((detail, index) => (
+                    <Text key={`next-workout-detail-${index}`} style={styles.nextWorkoutListItem}>
+                      {"\u2022"} {detail}
+                    </Text>
+                  ))}
+                </View>
+              )}
             </View>
           )}
 
@@ -967,6 +1058,63 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: colors.text,
+  },
+  // Next workout
+  nextWorkoutHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  nextWorkoutTitleWrap: {
+    flex: 1,
+    gap: 6,
+  },
+  nextWorkoutTitle: {
+    fontSize: 22,
+    fontWeight: "700",
+    color: colors.text,
+  },
+  nextWorkoutTypeBadge: {
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    marginTop: 2,
+  },
+  nextWorkoutTypeLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.3,
+  },
+  nextWorkoutSummary: {
+    fontSize: 14,
+    color: colors.text,
+    lineHeight: 20,
+  },
+  nextWorkoutReadiness: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  nextWorkoutMeta: {
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
+  nextWorkoutList: {
+    gap: 6,
+    marginTop: 2,
+  },
+  nextWorkoutListTitle: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.textSecondary,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  nextWorkoutListItem: {
+    fontSize: 13,
+    color: colors.text,
+    lineHeight: 19,
   },
   // Sleep coach
   sleepNeedTotal: {
