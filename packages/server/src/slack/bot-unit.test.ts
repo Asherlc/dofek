@@ -131,11 +131,13 @@ function setupHandlers(db: ReturnType<typeof createMockDb>) {
   const homeOpenedHandler: Handler = eventCalls.find(
     (c) => String(c[0]) === "app_home_opened",
   )?.[1];
+  const appMentionHandler: Handler = eventCalls.find((c) => String(c[0]) === "app_mention")?.[1];
 
   expect(messageHandler).toBeDefined();
   expect(confirmHandler).toBeDefined();
   expect(cancelHandler).toBeDefined();
   expect(homeOpenedHandler).toBeDefined();
+  expect(appMentionHandler).toBeDefined();
 
   // Capture the app.use() middleware(s) for direct invocation in tests
   type MiddlewareFn = (args: Record<string, unknown>) => Promise<void>;
@@ -143,7 +145,15 @@ function setupHandlers(db: ReturnType<typeof createMockDb>) {
     castMock<MiddlewareFn>(call[0] ?? {}),
   );
 
-  return { messageHandler, confirmHandler, cancelHandler, homeOpenedHandler, useMiddlewares, app };
+  return {
+    messageHandler,
+    confirmHandler,
+    cancelHandler,
+    homeOpenedHandler,
+    appMentionHandler,
+    useMiddlewares,
+    app,
+  };
 }
 
 describe("bot.ts — registerHandlers", () => {
@@ -358,6 +368,89 @@ describe("bot.ts — registerHandlers", () => {
           client,
         }),
       ).resolves.not.toThrow();
+    });
+  });
+
+  describe("app_mention handler", () => {
+    it("handles app mentions by reusing message parsing flow", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+
+      // lookupOrCreateUserId: existing slack link found
+      mockExecute.mockResolvedValueOnce([{ user_id: "user-123" }]);
+      // ensureDofekProvider
+      mockExecute.mockResolvedValueOnce([]);
+      // insert food_entry
+      mockExecute.mockResolvedValueOnce([{ id: "entry-1" }]);
+
+      mockAnalyze.mockResolvedValueOnce({ items: [makeFoodItem()], provider: "gemini" });
+
+      const { appMentionHandler } = setupHandlers(db);
+
+      const say = vi.fn();
+      const chatPostMessage = vi.fn().mockResolvedValue({ ts: "thinking-ts" });
+      const chatUpdate = vi.fn().mockResolvedValue({});
+      const client = {
+        users: {
+          info: vi.fn().mockResolvedValue({ user: { tz: "America/New_York" } }),
+        },
+        conversations: { replies: vi.fn() },
+        chat: { postMessage: chatPostMessage, update: chatUpdate },
+      };
+
+      await appMentionHandler({
+        event: {
+          user: "U123",
+          text: "<@U_BOT> two eggs and toast",
+          ts: "1700000000.000000",
+          channel: "C123",
+        },
+        say,
+        client,
+      });
+
+      expect(mockAnalyze).toHaveBeenCalledWith("two eggs and toast", expect.any(String));
+      expect(chatPostMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ text: "Analyzing what you ate..." }),
+      );
+      expect(chatUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ts: "thinking-ts",
+          blocks: expect.any(Array),
+        }),
+      );
+    });
+
+    it("ignores mention events with no text beyond the bot mention", async () => {
+      const db = createMockDb();
+      const { appMentionHandler } = setupHandlers(db);
+
+      const say = vi.fn();
+      const chatPostMessage = vi.fn();
+      const chatUpdate = vi.fn();
+      const client = {
+        users: {
+          info: vi.fn(),
+        },
+        conversations: { replies: vi.fn() },
+        chat: { postMessage: chatPostMessage, update: chatUpdate },
+      };
+
+      await appMentionHandler({
+        event: {
+          user: "U123",
+          text: "<@U_BOT>",
+          ts: "1700000000.000000",
+          channel: "C123",
+        },
+        say,
+        client,
+      });
+
+      expect(mockAnalyze).not.toHaveBeenCalled();
+      expect(chatPostMessage).not.toHaveBeenCalled();
+      expect(chatUpdate).not.toHaveBeenCalled();
+      expect(say).not.toHaveBeenCalled();
     });
   });
 

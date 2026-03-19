@@ -334,35 +334,51 @@ function slackTimestampToDateString(slackTs: string, timezone: string): string {
 
 /** Register message and action handlers on a Bolt app */
 function registerHandlers(app: AppType, db: Database) {
-  // Log all incoming events so we can diagnose silent failures
-  app.use(async (args) => {
-    if ("event" in args && args.event && typeof args.event === "object" && "type" in args.event) {
-      logger.info(`[slack] Received event type=${String(args.event.type)}`);
-    } else {
-      logger.info("[slack] Received non-event payload (action/shortcut/command)");
-    }
-    await args.next();
-  });
+  type SayMessage = {
+    text?: string;
+    thread_ts?: string;
+    blocks?: unknown[];
+    [key: string]: unknown;
+  };
+  type SayFunction = (message: SayMessage) => Promise<unknown>;
+  type SlackClient = {
+    users: {
+      info: (args: { user: string }) => Promise<{
+        user?: { tz?: string; real_name?: string; profile?: { email?: string } };
+      }>;
+    };
+    conversations: {
+      replies: (args: {
+        channel: string;
+        ts: string;
+      }) => Promise<{ messages?: Array<{ bot_id?: string; blocks?: unknown[] }> }>;
+    };
+    chat: {
+      postMessage: (args: {
+        channel: string;
+        text: string;
+        thread_ts?: string;
+      }) => Promise<{ ts?: string }>;
+      update: (args: {
+        channel: string;
+        ts: string;
+        text?: string;
+        blocks?: unknown[];
+        [key: string]: unknown;
+      }) => Promise<unknown>;
+    };
+  };
 
-  // Handle direct messages (both top-level and thread replies)
-  app.message(async ({ message, say, client }) => {
-    logger.info(
-      `[slack] Message handler invoked: type=${message.type ?? "unknown"}, subtype=${"subtype" in message ? message.subtype : "none"}, has_text=${"text" in message && !!message.text}, has_user=${"user" in message && !!message.user}, has_bot_id=${"bot_id" in message && !!message.bot_id}`,
-    );
-    // Filter non-user messages: bots, subtypes (edits, deletes, etc.)
-    if (!("text" in message) || !message.text) return;
-    if ("subtype" in message && message.subtype) return;
-    if ("bot_id" in message && message.bot_id) return;
-    if (!("user" in message) || !message.user) return;
-    if (!("ts" in message) || !message.ts) return;
-    if (!("channel" in message) || !message.channel) return;
-    // Capture narrowed fields into local constants so TypeScript doesn't lose the narrowing
-    const msgText = message.text;
-    const msgUser = message.user;
-    const msgTs = message.ts;
-    const msgChannel = message.channel;
-    const msgThreadTs = "thread_ts" in message ? message.thread_ts : undefined;
-
+  async function handleParsedMessage(args: {
+    say: SayFunction;
+    client: SlackClient;
+    msgText: string;
+    msgUser: string;
+    msgTs: string;
+    msgChannel: string;
+    msgThreadTs?: string;
+  }) {
+    const { say, client, msgText, msgUser, msgTs, msgChannel, msgThreadTs } = args;
     try {
       const { userId, timezone: userTimezone } = await lookupOrCreateUserId(db, msgUser, client);
 
@@ -521,6 +537,67 @@ function registerHandlers(app: AppType, db: Database) {
         );
       }
     }
+  }
+
+  // Log all incoming events so we can diagnose silent failures
+  app.use(async (args) => {
+    if ("event" in args && args.event && typeof args.event === "object" && "type" in args.event) {
+      logger.info(`[slack] Received event type=${String(args.event.type)}`);
+    } else {
+      logger.info("[slack] Received non-event payload (action/shortcut/command)");
+    }
+    await args.next();
+  });
+
+  // Handle direct messages (both top-level and thread replies)
+  app.message(async ({ message, say, client }) => {
+    logger.info(
+      `[slack] Message handler invoked: type=${message.type ?? "unknown"}, subtype=${"subtype" in message ? message.subtype : "none"}, has_text=${"text" in message && !!message.text}, has_user=${"user" in message && !!message.user}, has_bot_id=${"bot_id" in message && !!message.bot_id}`,
+    );
+    // Filter non-user messages: bots, subtypes (edits, deletes, etc.)
+    if (!("text" in message) || !message.text) return;
+    if ("subtype" in message && message.subtype) return;
+    if ("bot_id" in message && message.bot_id) return;
+    if (!("user" in message) || !message.user) return;
+    if (!("ts" in message) || !message.ts) return;
+    if (!("channel" in message) || !message.channel) return;
+    // Capture narrowed fields into local constants so TypeScript doesn't lose the narrowing
+    const msgText = message.text;
+    const msgUser = message.user;
+    const msgTs = message.ts;
+    const msgChannel = message.channel;
+    const msgThreadTs = "thread_ts" in message ? message.thread_ts : undefined;
+
+    await handleParsedMessage({
+      say,
+      client,
+      msgText,
+      msgUser,
+      msgTs,
+      msgChannel,
+      msgThreadTs,
+    });
+  });
+
+  // Handle app mentions in channels (<@BOT> ...)
+  app.event("app_mention", async ({ event, say, client }) => {
+    if (!event.text || !event.user || !event.ts || !event.channel) return;
+
+    const mentionPrefix = /^<@[^>]+>\s*/;
+    const msgText = event.text.replace(mentionPrefix, "").trim();
+    if (!msgText) return;
+
+    logger.info(`[slack] App mention from ${event.user}: "${msgText}"`);
+
+    await handleParsedMessage({
+      say,
+      client,
+      msgText,
+      msgUser: event.user,
+      msgTs: event.ts,
+      msgChannel: event.channel,
+      msgThreadTs: event.thread_ts,
+    });
   });
 
   // Handle "Confirm" button click
