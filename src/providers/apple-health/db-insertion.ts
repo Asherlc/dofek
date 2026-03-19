@@ -651,7 +651,9 @@ export async function upsertWorkoutBatch(
     const startAt = new Date(
       Math.min(...activityResults.map(({ workout }) => workout.startDate.getTime())),
     );
-    const endAt = new Date(Math.max(...activityResults.map(({ workout }) => workout.endDate.getTime())));
+    const endAt = new Date(
+      Math.max(...activityResults.map(({ workout }) => workout.endDate.getTime())),
+    );
     await linkUnassignedHeartRateToActivities(db, providerId, { startAt, endAt });
   }
 
