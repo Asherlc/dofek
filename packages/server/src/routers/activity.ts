@@ -46,6 +46,8 @@ export interface ActivityHrZone {
 
 export type ActivityHrZones = ActivityHrZone[];
 
+type ActivityListRow = Record<string, unknown> & { total_count: number };
+
 export const activityRouter = router({
   list: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(
@@ -56,7 +58,7 @@ export const activityRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const rows = await ctx.db.execute(
+      const rows = await ctx.db.execute<ActivityListRow>(
         sql`SELECT *, COUNT(*) OVER()::int AS total_count
             FROM fitness.v_activity
             WHERE user_id = ${ctx.userId}
@@ -64,12 +66,9 @@ export const activityRouter = router({
             ORDER BY started_at DESC
             LIMIT ${input.limit} OFFSET ${input.offset}`,
       );
-      const totalCount =
-        rows.length > 0
-          ? Number((rows[0] as Record<string, unknown>).total_count)
-          : 0;
+      const totalCount = rows.length > 0 ? Number(rows[0]?.total_count) : 0;
       const items = rows.map((row) => {
-        const { total_count, ...rest } = row as Record<string, unknown>;
+        const { total_count, ...rest } = row;
         return rest;
       });
       return { items, totalCount };

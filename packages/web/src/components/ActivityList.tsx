@@ -100,9 +100,7 @@ export function ActivityList({
 
       {totalPages != null && totalPages > 1 && onPageChange && (
         <div className="flex items-center justify-between pt-3 border-t border-zinc-800/50 mt-2">
-          <span className="text-xs text-zinc-500 tabular-nums">
-            {totalCount} activities
-          </span>
+          <span className="text-xs text-zinc-500 tabular-nums">{totalCount} activities</span>
           <div className="flex items-center gap-2">
             <button
               type="button"
