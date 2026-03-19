@@ -12,6 +12,7 @@
     "./workout-recommendation": "./src/workout-recommendation.ts",
     "./onboarding": "./src/onboarding.ts",
     "./providers": "./src/providers.ts",
-    "./units": "./src/units.ts"
+    "./units": "./src/units.ts",
+    "./training": "./src/training.ts"
   }
 }

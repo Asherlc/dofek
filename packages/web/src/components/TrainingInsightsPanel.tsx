@@ -1,3 +1,8 @@
+import {
+  collapseWeeklyVolumeActivityTypes,
+  formatActivityTypeLabel,
+  OTHER_ACTIVITY_TYPE,
+} from "@dofek/shared/training";
 import ReactECharts from "echarts-for-react";
 import { z } from "zod";
 import { trpc } from "../lib/trpc.ts";
@@ -27,7 +32,10 @@ const ACTIVITY_COLORS: Record<string, string> = {
   swimming: "#3b82f6",
   hiking: "#a3e635",
   yoga: "#c084fc",
+  functional_strength: "#dc2626",
   strength_training: "#ef4444",
+  strength: "#ef4444",
+  [OTHER_ACTIVITY_TYPE]: "#71717a",
 };
 
 function getActivityColor(type: string): string {
@@ -104,13 +112,19 @@ export function TrainingInsightsPanel({ days }: TrainingInsightsPanelProps) {
 
 /** Stacked bar chart: weekly training hours by activity type */
 function WeeklyVolumeChart({ data }: { data: WeeklyVolumeRow[] }) {
+  const collapsedRows = collapseWeeklyVolumeActivityTypes(data, 6);
+
   // Pivot: collect all weeks and activity types
-  const weekSet = [...new Set(data.map((r) => r.week))].sort();
-  const typeSet = [...new Set(data.map((r) => r.activity_type))];
+  const weekSet = [...new Set(collapsedRows.map((r) => r.week))].sort();
+  const typeTotals = collapsedRows.reduce(
+    (acc, row) => acc.set(row.activity_type, (acc.get(row.activity_type) ?? 0) + row.hours),
+    new Map<string, number>(),
+  );
+  const typeSet = [...typeTotals.entries()].sort((a, b) => b[1] - a[1]).map(([type]) => type);
 
   // Build lookup: week -> type -> hours
   const lookup = new Map<string, Map<string, number>>();
-  for (const row of data) {
+  for (const row of collapsedRows) {
     let inner = lookup.get(row.week);
     if (!inner) {
       inner = new Map();
@@ -120,7 +134,7 @@ function WeeklyVolumeChart({ data }: { data: WeeklyVolumeRow[] }) {
   }
 
   const series = typeSet.map((type) => ({
-    name: type,
+    name: formatActivityTypeLabel(type),
     type: "bar" as const,
     stack: "volume",
     data: weekSet.map((w) => [w, lookup.get(w)?.get(type) ?? 0]),
@@ -164,13 +178,14 @@ function WeeklyVolumeChart({ data }: { data: WeeklyVolumeRow[] }) {
     },
     yAxis: {
       type: "value",
-      name: "hours",
+      name: "Hours",
       splitLine: { lineStyle: { color: "#27272a" } },
       axisLabel: { color: "#71717a", fontSize: 11 },
       axisLine: { show: false },
       nameTextStyle: { color: "#71717a", fontSize: 11 },
     },
     legend: {
+      type: "scroll" as const,
       textStyle: { color: "#a1a1aa", fontSize: 11 },
       top: 0,
     },

@@ -88,6 +88,8 @@ export type ActivityRow = z.infer<typeof ActivityRowSchema>;
 
 export const WeeklyVolumeRowSchema = z.object({
   week: z.string(),
+  activity_type: z.string(),
+  count: z.number(),
   hours: z.coerce.number(),
 });
 
