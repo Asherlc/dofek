@@ -118,22 +118,18 @@ export function buildTssModel(
 
 /**
  * Estimate FTP from activity data.
- * Uses highest NP from activities >= 20 min duration, multiplied by 0.95.
- * Falls back to avg_power when NP is not available.
+ * Uses highest avg_power from activities >= 20 min duration, multiplied by 0.95.
+ *
+ * Intentionally uses avg_power rather than Normalized Power (NP).
+ * NP inflates power for interval workouts via 4th-power averaging,
+ * which produces unrealistically high FTP estimates from variable efforts.
  */
-export function estimateFtp(
-  activities: ActivityRow[],
-  npByActivity: Map<string, number>,
-): number | null {
+export function estimateFtp(activities: ActivityRow[]): number | null {
   const qualifying = activities.filter(
-    (act) =>
-      (npByActivity.has(act.id) || (act.avg_power != null && act.avg_power > 0)) &&
-      act.duration_min >= 20,
+    (act) => act.avg_power != null && act.avg_power > 0 && act.duration_min >= 20,
   );
   if (qualifying.length === 0) return null;
-  const bestPower = Math.max(
-    ...qualifying.map((act) => npByActivity.get(act.id) ?? Number(act.avg_power)),
-  );
+  const bestPower = Math.max(...qualifying.map((act) => Number(act.avg_power)));
   return Math.round(bestPower * 0.95);
 }
 
@@ -241,8 +237,8 @@ export const pmcRouter = router({
       );
       const npByActivity = new Map(npRows.map((r) => [r.activity_id, Number(r.np)]));
 
-      // Estimate FTP from the data (prefers NP over avg_power)
-      const ftp = estimateFtp(activities, npByActivity);
+      // Estimate FTP from avg_power (not NP, which inflates for intervals)
+      const ftp = estimateFtp(activities);
 
       // Build regression model from activities with both power and HR
       let tssModel: { slope: number; intercept: number; r2: number } | null = null;

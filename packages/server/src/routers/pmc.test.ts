@@ -286,43 +286,45 @@ describe("estimateFtp", () => {
   }
 
   it("returns null when no activities", () => {
-    expect(estimateFtp([], new Map())).toBeNull();
+    expect(estimateFtp([])).toBeNull();
   });
 
   it("returns null when all activities too short", () => {
     const activities = [makeActivity({ duration_min: 15 })];
-    expect(estimateFtp(activities, new Map())).toBeNull();
+    expect(estimateFtp(activities)).toBeNull();
   });
 
-  it("returns null when no power data and no NP", () => {
+  it("returns null when no power data", () => {
     const activities = [makeActivity({ avg_power: null })];
-    expect(estimateFtp(activities, new Map())).toBeNull();
+    expect(estimateFtp(activities)).toBeNull();
   });
 
-  it("returns null when avg_power is 0 and no NP", () => {
+  it("returns null when avg_power is 0", () => {
     const activities = [makeActivity({ avg_power: 0 })];
-    expect(estimateFtp(activities, new Map())).toBeNull();
+    expect(estimateFtp(activities)).toBeNull();
   });
 
-  it("uses NP over avg_power when available", () => {
-    const activities = [makeActivity({ id: "a1", avg_power: 200 })];
-    const npMap = new Map([["a1", 300]]);
-    expect(estimateFtp(activities, npMap)).toBe(Math.round(300 * 0.95)); // 285
+  it("ignores NP and uses avg_power to avoid inflated interval estimates", () => {
+    // NP inflates power for interval workouts (4th-power averaging).
+    // Using max NP × 0.95 gives an unrealistically high FTP (e.g., 305 NP → 290 FTP).
+    // Now uses avg_power only (220 × 0.95 = 209), which is more conservative.
+    const activities = [makeActivity({ id: "a1", avg_power: 220 })];
+    expect(estimateFtp(activities)).toBe(Math.round(220 * 0.95)); // 209
   });
 
-  it("falls back to avg_power when NP not available", () => {
+  it("uses avg_power for estimation", () => {
     const activities = [makeActivity({ avg_power: 200 })];
-    expect(estimateFtp(activities, new Map())).toBe(Math.round(200 * 0.95)); // 190
+    expect(estimateFtp(activities)).toBe(Math.round(200 * 0.95)); // 190
   });
 
-  it("uses the highest power among qualifying activities", () => {
+  it("uses the highest avg_power among qualifying activities", () => {
     const activities = [
       makeActivity({ id: "a1", avg_power: 200 }),
       makeActivity({ id: "a2", avg_power: 250 }),
       makeActivity({ id: "a3", avg_power: 180 }),
     ];
     // max is 250
-    expect(estimateFtp(activities, new Map())).toBe(Math.round(250 * 0.95)); // 238
+    expect(estimateFtp(activities)).toBe(Math.round(250 * 0.95)); // 238
   });
 
   it("uses Math.max not Math.min for best power", () => {
@@ -331,7 +333,7 @@ describe("estimateFtp", () => {
       makeActivity({ id: "a2", avg_power: 300 }),
     ];
     // Math.max → 300, Math.min would give 100
-    const result = estimateFtp(activities, new Map());
+    const result = estimateFtp(activities);
     expect(result).toBe(Math.round(300 * 0.95)); // 285
     expect(result).not.toBe(Math.round(100 * 0.95)); // not 95
   });
@@ -342,26 +344,52 @@ describe("estimateFtp", () => {
       makeActivity({ id: "a2", duration_min: 20, avg_power: 200 }),
     ];
     // a1 excluded (19 min < 20), a2 included
-    expect(estimateFtp(activities, new Map())).toBe(Math.round(200 * 0.95)); // 190
+    expect(estimateFtp(activities)).toBe(Math.round(200 * 0.95)); // 190
   });
 
   it("includes activity with exactly 20 minutes", () => {
     const activities = [makeActivity({ duration_min: 20, avg_power: 250 })];
-    expect(estimateFtp(activities, new Map())).toBe(Math.round(250 * 0.95)); // 238
+    expect(estimateFtp(activities)).toBe(Math.round(250 * 0.95)); // 238
   });
 
-  it("qualifies by NP even if avg_power is null", () => {
+  it("returns null when avg_power is null on all activities", () => {
     const activities = [makeActivity({ id: "a1", avg_power: null, duration_min: 30 })];
-    const npMap = new Map([["a1", 280]]);
-    expect(estimateFtp(activities, npMap)).toBe(Math.round(280 * 0.95)); // 266
+    expect(estimateFtp(activities)).toBeNull();
   });
 
   it("multiplies by 0.95 not divides", () => {
     const activities = [makeActivity({ avg_power: 200 })];
-    const result = estimateFtp(activities, new Map());
+    const result = estimateFtp(activities);
     // 200 * 0.95 = 190, 200 / 0.95 ≈ 210.5 → 211
     expect(result).toBe(190);
     expect(result).not.toBe(211);
+  });
+
+  it("filters by duration_min >= 20 not > 20", () => {
+    const activities = [
+      makeActivity({ id: "a1", duration_min: 19, avg_power: 300 }),
+      makeActivity({ id: "a2", duration_min: 20, avg_power: 200 }),
+    ];
+    const result = estimateFtp(activities);
+    // a1 should be excluded (19 < 20), a2 included
+    expect(result).toBe(Math.round(200 * 0.95)); // 190, not 285
+    expect(result).not.toBe(Math.round(300 * 0.95));
+  });
+
+  it("filters by avg_power > 0 not >= 0", () => {
+    const activities = [makeActivity({ avg_power: 0, duration_min: 60 })];
+    expect(estimateFtp(activities)).toBeNull();
+  });
+
+  it("rounds result to nearest integer", () => {
+    // 210 * 0.95 = 199.5 → 200 (Math.round)
+    const activities = [makeActivity({ avg_power: 210 })];
+    expect(estimateFtp(activities)).toBe(200);
+  });
+
+  it("handles single qualifying activity correctly", () => {
+    const activities = [makeActivity({ id: "a1", avg_power: 250, duration_min: 20 })];
+    expect(estimateFtp(activities)).toBe(Math.round(250 * 0.95)); // 238
   });
 });
 
@@ -479,8 +507,11 @@ describe("pmcRouter", () => {
       const caller = createCaller({ db: { execute }, userId: "user-1" });
       const result = await caller.chart({ days: 180 });
 
-      // FTP = round(220 * 0.95) = 209
-      expect(result.model.ftp).toBe(209);
+      // FTP = round(200 * 0.95) = 190 (uses avg_power, not NP)
+      expect(result.model.ftp).toBe(190);
+      expect(result.model.type).toBe("learned");
+      expect(result.model.r2).toBe(0.7);
+      expect(result.model.pairedActivities).toBeGreaterThan(0);
       expect(result.data.length).toBeGreaterThan(0);
 
       // Activity days should have non-zero load from power TSS
@@ -488,8 +519,8 @@ describe("pmcRouter", () => {
       const todayPoint = result.data.find((d) => d.date === todayStr);
       if (todayPoint) {
         expect(todayPoint.load).toBeGreaterThan(0);
-        // Verify it's power TSS: (220/209)^2 * 1 * 100 ≈ 110.7
-        const expectedTss = computePowerTss(220, 209, 60);
+        // Verify it's power TSS: (220/190)^2 * 1 * 100 ≈ 134.1
+        const expectedTss = computePowerTss(220, 190, 60);
         expect(todayPoint.load).toBeCloseTo(Math.round(expectedTss * 10) / 10, 1);
       }
     });
