@@ -8,6 +8,29 @@ interface PmcChartProps {
   loading?: boolean;
 }
 
+/** Form zone boundaries (intervals.icu defaults). */
+const ZONE_TRANSITION = 25;
+const ZONE_FRESH = 5;
+const ZONE_GREY = -10;
+const ZONE_OPTIMAL = -30;
+
+/** Colors matching intervals.icu */
+const COLOR_FITNESS = "#3b82f6"; // blue
+const COLOR_FATIGUE = "#8b5cf6"; // purple (intervals.icu uses purple, not pink)
+const COLOR_TRANSITION = "#60a5fa"; // light blue
+const COLOR_FRESH = "#22c55e"; // green
+const COLOR_GREY = "#a1a1aa"; // grey
+const COLOR_OPTIMAL = "#22c55e"; // green (optimal = gaining fitness)
+const COLOR_HIGH_RISK = "#ef4444"; // red
+
+function formColor(tsb: number): string {
+  if (tsb > ZONE_TRANSITION) return COLOR_TRANSITION;
+  if (tsb > ZONE_FRESH) return COLOR_FRESH;
+  if (tsb > ZONE_GREY) return COLOR_GREY;
+  if (tsb > ZONE_OPTIMAL) return COLOR_OPTIMAL;
+  return COLOR_HIGH_RISK;
+}
+
 function ModelBadge({ model }: { model: TssModelInfo }) {
   if (model.type === "learned") {
     return (
@@ -31,166 +54,214 @@ function ModelBadge({ model }: { model: TssModelInfo }) {
 
 export function PmcChart({ data, model, loading }: PmcChartProps) {
   if (loading) {
-    return <ChartLoadingSkeleton height={300} />;
+    return <ChartLoadingSkeleton height={420} />;
   }
 
   if (data.length === 0) {
     return (
-      <div className="flex items-center justify-center h-[300px]">
+      <div className="flex items-center justify-center h-[420px]">
         <span className="text-zinc-600 text-sm">No training load data</span>
       </div>
     );
   }
 
-  const formZoneLabel = (name: string) => ({
-    show: true,
-    position: "insideRight" as const,
-    color: "#a1a1aa",
-    fontSize: 10,
-    formatter: () => name,
-  });
+  const lastPoint = data[data.length - 1];
+  const lastDate = lastPoint
+    ? new Date(lastPoint.date).toLocaleDateString("en-US", {
+        weekday: "short",
+        day: "numeric",
+        month: "short",
+      })
+    : "";
 
   const option = {
     backgroundColor: "transparent",
-    grid: { top: 40, right: 120, bottom: 50, left: 60 },
+    grid: [
+      { top: 10, right: 15, bottom: "42%", left: 50 },
+      { top: "64%", right: 15, bottom: 30, left: 50 },
+    ],
+    axisPointer: {
+      link: [{ xAxisIndex: "all" }],
+    },
     tooltip: {
       trigger: "axis" as const,
       backgroundColor: "#18181b",
       borderColor: "#3f3f46",
       textStyle: { color: "#e4e4e7", fontSize: 12 },
       formatter(
-        params: Array<{ seriesName: string; value: number; marker: string; dataIndex: number }>,
+        params: Array<{
+          seriesName: string;
+          value: [string, number];
+          marker: string;
+          dataIndex: number;
+        }>,
       ) {
         const first = params[0];
         if (!first) return "";
-        const idx = first.dataIndex;
-        const d = data[idx];
-        if (!d) return "";
-        const label = new Date(d.date).toLocaleDateString("en-US", {
+        const date = first.value[0];
+        const label = new Date(date).toLocaleDateString("en-US", {
+          weekday: "short",
           month: "short",
           day: "numeric",
           year: "numeric",
         });
-        const zone =
-          d.tsb > 25 ? "Transition" : d.tsb > 5 ? "Fresh" : d.tsb > -10 ? "Grey" : "High Risk";
+
+        // Find values by series name
+        const load = params.find((p) => p.seriesName === "Load")?.value[1] ?? 0;
+        const fitness = params.find((p) => p.seriesName === "Fitness")?.value[1] ?? 0;
+        const fatigue = params.find((p) => p.seriesName === "Fatigue")?.value[1] ?? 0;
+        const form = params.find((p) => p.seriesName === "Form")?.value[1] ?? 0;
+
         return [
           `<strong>${label}</strong>`,
-          `<span style="color:#71717a">Load:</span> ${d.load.toFixed(1)}`,
-          `<span style="color:#3b82f6">Fitness (Chronic Training Load):</span> ${d.ctl.toFixed(1)}`,
-          `<span style="color:#ec4899">Fatigue (Acute Training Load):</span> ${d.atl.toFixed(1)}`,
-          `<span style="color:#f97316">Form (Training Stress Balance):</span> ${d.tsb.toFixed(1)} (${zone})`,
+          `<span style="color:#71717a">Load:</span> ${load.toFixed(1)}`,
+          `<span style="color:${COLOR_FITNESS}">Fitness:</span> ${fitness.toFixed(1)}`,
+          `<span style="color:${COLOR_FATIGUE}">Fatigue:</span> ${fatigue.toFixed(1)}`,
+          `<span style="color:${formColor(form)}">Form:</span> ${form.toFixed(1)}`,
         ].join("<br/>");
       },
     },
-    legend: {
-      data: [
-        "Load",
-        "Fitness (Chronic Training Load)",
-        "Fatigue (Acute Training Load)",
-        "Form (Training Stress Balance)",
-      ],
-      textStyle: { color: "#a1a1aa", fontSize: 11 },
-      top: 0,
-    },
-    xAxis: {
-      type: "time" as const,
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
-    },
+    xAxis: [
+      {
+        type: "time" as const,
+        gridIndex: 0,
+        axisLabel: { show: false },
+        axisLine: { lineStyle: { color: "#3f3f46" } },
+        axisTick: { show: false },
+        splitLine: { show: false },
+      },
+      {
+        type: "time" as const,
+        gridIndex: 1,
+        axisLabel: { color: "#71717a", fontSize: 11 },
+        axisLine: { lineStyle: { color: "#3f3f46" } },
+        splitLine: { show: false },
+      },
+    ],
     yAxis: [
       {
         type: "value" as const,
-        name: "Fitness / Fatigue",
+        gridIndex: 0,
+        name: "Training Load",
+        nameTextStyle: { color: "#52525b", fontSize: 10 },
         splitLine: { lineStyle: { color: "#27272a" } },
         axisLabel: { color: "#71717a", fontSize: 11 },
         axisLine: { show: false },
-        nameTextStyle: { color: "#71717a", fontSize: 11 },
       },
       {
         type: "value" as const,
+        gridIndex: 1,
         name: "Form",
-        splitLine: { show: false },
+        nameTextStyle: { color: "#52525b", fontSize: 10 },
+        splitLine: { lineStyle: { color: "#27272a" } },
         axisLabel: { color: "#71717a", fontSize: 11 },
         axisLine: { show: false },
-        nameTextStyle: { color: "#71717a", fontSize: 11 },
-        position: "right" as const,
       },
     ],
+    visualMap: {
+      type: "piecewise" as const,
+      show: false,
+      seriesIndex: 3,
+      dimension: 1,
+      pieces: [
+        { gte: ZONE_TRANSITION, color: COLOR_TRANSITION },
+        { gte: ZONE_FRESH, lt: ZONE_TRANSITION, color: COLOR_FRESH },
+        { gte: ZONE_GREY, lt: ZONE_FRESH, color: COLOR_GREY },
+        { gte: ZONE_OPTIMAL, lt: ZONE_GREY, color: COLOR_OPTIMAL },
+        { lt: ZONE_OPTIMAL, color: COLOR_HIGH_RISK },
+      ],
+    },
     series: [
+      // ── Top pane: Load bars ──
       {
         name: "Load",
         type: "bar",
-        data: data.map((d) => [d.date, d.load]),
-        itemStyle: { color: "#71717a", opacity: 0.35 },
+        xAxisIndex: 0,
         yAxisIndex: 0,
-        z: 2,
+        data: data.map((d) => [d.date, d.load]),
+        itemStyle: { color: "#71717a", opacity: 0.3 },
+        barMaxWidth: 6,
+        z: 1,
       },
+      // ── Top pane: Fitness (CTL) line ──
       {
-        name: "Fitness (Chronic Training Load)",
+        name: "Fitness",
         type: "line",
+        xAxisIndex: 0,
+        yAxisIndex: 0,
         data: data.map((d) => [d.date, d.ctl]),
         smooth: true,
         symbol: "none",
-        lineStyle: { color: "#3b82f6", width: 2 },
-        itemStyle: { color: "#3b82f6" },
-        yAxisIndex: 0,
+        lineStyle: { color: COLOR_FITNESS, width: 2 },
+        itemStyle: { color: COLOR_FITNESS },
         z: 3,
       },
+      // ── Top pane: Fatigue (ATL) line ──
       {
-        name: "Fatigue (Acute Training Load)",
+        name: "Fatigue",
         type: "line",
+        xAxisIndex: 0,
+        yAxisIndex: 0,
         data: data.map((d) => [d.date, d.atl]),
         smooth: true,
         symbol: "none",
-        lineStyle: { color: "#ec4899", width: 2 },
-        itemStyle: { color: "#ec4899" },
-        yAxisIndex: 0,
+        lineStyle: { color: COLOR_FATIGUE, width: 2 },
+        itemStyle: { color: COLOR_FATIGUE },
         z: 3,
       },
+      // ── Bottom pane: Form (TSB) line — colored per zone by visualMap ──
       {
-        name: "Form (Training Stress Balance)",
+        name: "Form",
         type: "line",
+        xAxisIndex: 1,
+        yAxisIndex: 1,
         data: data.map((d) => [d.date, d.tsb]),
         smooth: true,
         symbol: "none",
-        lineStyle: { color: "#f97316", width: 2 },
-        itemStyle: { color: "#f97316" },
-        yAxisIndex: 1,
+        lineStyle: { width: 2 },
         z: 3,
         markArea: {
           silent: true,
           data: [
             [
               {
-                yAxis: 25,
-                itemStyle: { color: "rgba(96, 165, 250, 0.12)" },
-                label: formZoneLabel("Transition"),
+                yAxis: ZONE_TRANSITION,
+                itemStyle: { color: "rgba(96, 165, 250, 0.08)" },
+                label: zoneLabel("Transition", COLOR_TRANSITION),
               },
-              { yAxis: 100 },
+              { yAxis: 200 },
             ],
             [
               {
-                yAxis: 5,
-                itemStyle: { color: "rgba(74, 222, 128, 0.12)" },
-                label: formZoneLabel("Fresh"),
+                yAxis: ZONE_FRESH,
+                itemStyle: { color: "rgba(74, 222, 128, 0.08)" },
+                label: zoneLabel("Fresh", COLOR_FRESH),
               },
-              { yAxis: 25 },
+              { yAxis: ZONE_TRANSITION },
             ],
             [
               {
-                yAxis: -10,
-                itemStyle: { color: "rgba(161, 161, 170, 0.08)" },
-                label: formZoneLabel("Grey"),
+                yAxis: ZONE_GREY,
+                itemStyle: { color: "rgba(161, 161, 170, 0.05)" },
+                label: zoneLabel("Grey Zone", COLOR_GREY),
               },
-              { yAxis: 5 },
+              { yAxis: ZONE_FRESH },
             ],
             [
               {
-                yAxis: -100,
-                itemStyle: { color: "rgba(248, 113, 113, 0.12)" },
-                label: formZoneLabel("High Risk"),
+                yAxis: ZONE_OPTIMAL,
+                itemStyle: { color: "rgba(74, 222, 128, 0.06)" },
+                label: zoneLabel("Optimal", COLOR_OPTIMAL),
               },
-              { yAxis: -10 },
+              { yAxis: ZONE_GREY },
+            ],
+            [
+              {
+                yAxis: -200,
+                itemStyle: { color: "rgba(248, 113, 113, 0.08)" },
+                label: zoneLabel("High Risk", COLOR_HIGH_RISK),
+              },
+              { yAxis: ZONE_OPTIMAL },
             ],
           ],
         },
@@ -205,7 +276,70 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
           <ModelBadge model={model} />
         </div>
       )}
-      <ReactECharts option={option} style={{ height: 300 }} notMerge={true} />
+      <div className="flex">
+        <div className="flex-1 min-w-0">
+          <ReactECharts option={option} style={{ height: 420 }} notMerge={true} />
+        </div>
+        {/* Right-side current values, matching intervals.icu */}
+        {lastPoint && (
+          <div className="flex flex-col w-[100px] pl-2 shrink-0">
+            {/* Top pane values — positioned in top ~55% */}
+            <div className="flex flex-col items-end justify-center gap-1" style={{ height: "58%" }}>
+              <span className="text-zinc-500 text-[10px] leading-tight text-right">{lastDate}</span>
+              <div className="text-right">
+                <div className="text-zinc-500 text-[10px]">Fitness</div>
+                <div className="text-sm font-semibold" style={{ color: COLOR_FITNESS }}>
+                  {Math.round(lastPoint.ctl)}
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-zinc-500 text-[10px]">Fatigue</div>
+                <div className="text-sm font-semibold" style={{ color: COLOR_FATIGUE }}>
+                  {Math.round(lastPoint.atl)}
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-zinc-500 text-[10px]">Form</div>
+                <div className="text-sm font-semibold" style={{ color: formColor(lastPoint.tsb) }}>
+                  {lastPoint.ctl > 0
+                    ? `${Math.round((lastPoint.tsb / lastPoint.ctl) * 100)}%`
+                    : Math.round(lastPoint.tsb)}
+                </div>
+              </div>
+            </div>
+            {/* Bottom pane zone labels — positioned in bottom ~42% */}
+            <div
+              className="flex flex-col items-end justify-center gap-0.5 text-[10px]"
+              style={{ height: "42%" }}
+            >
+              <ZoneTag label="Transition" color={COLOR_TRANSITION} />
+              <ZoneTag label="Fresh" color={COLOR_FRESH} />
+              <ZoneTag label="Grey Zone" color={COLOR_GREY} />
+              <ZoneTag label="Optimal" color={COLOR_OPTIMAL} />
+              <ZoneTag label="High Risk" color={COLOR_HIGH_RISK} />
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
+}
+
+function ZoneTag({ label, color }: { label: string; color: string }) {
+  return (
+    <span className="flex items-center gap-1">
+      <span className="w-[3px] h-3 rounded-sm" style={{ backgroundColor: color }} />
+      <span style={{ color }}>{label}</span>
+    </span>
+  );
+}
+
+function zoneLabel(name: string, color: string) {
+  return {
+    show: true,
+    position: "insideRight" as const,
+    color,
+    fontSize: 10,
+    formatter: () => name,
+  };
 }
