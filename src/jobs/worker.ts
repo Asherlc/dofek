@@ -1,6 +1,6 @@
 import { Worker } from "bullmq";
 import { createDatabaseFromEnv } from "../db/index.ts";
-import { logger } from "../logger.ts";
+import { jobContext, logger } from "../logger.ts";
 import { processImportJob } from "./process-import-job.ts";
 import { processSyncJob } from "./process-sync-job.ts";
 import {
@@ -18,12 +18,16 @@ const connection = getRedisConnection();
 
 // ── Workers ──
 
-const syncWorker = new Worker<SyncJobData>(SYNC_QUEUE, (job) => processSyncJob(job, db), {
-  connection,
-});
-const importWorker = new Worker<ImportJobData>(IMPORT_QUEUE, (job) => processImportJob(job, db), {
-  connection,
-});
+const syncWorker = new Worker<SyncJobData>(
+  SYNC_QUEUE,
+  (job) => jobContext.run(job, () => processSyncJob(job, db)),
+  { connection },
+);
+const importWorker = new Worker<ImportJobData>(
+  IMPORT_QUEUE,
+  (job) => jobContext.run(job, () => processImportJob(job, db)),
+  { connection },
+);
 
 // ── Idle spin-down ──
 
