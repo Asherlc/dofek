@@ -1,17 +1,20 @@
 import type { Request, Response } from "express";
 import { describe, expect, it, vi } from "vitest";
 import {
+  clearPostLoginRedirectCookie,
   clearOAuthFlowCookies,
   clearSessionCookie,
   getLinkUserCookie,
   getMobileSchemeCookie,
   getOAuthFlowCookies,
+  getPostLoginRedirectCookie,
   getSessionCookie,
   getSessionIdFromRequest,
   isValidMobileScheme,
   setLinkUserCookie,
   setMobileSchemeCookie,
   setOAuthFlowCookies,
+  setPostLoginRedirectCookie,
   setSessionCookie,
 } from "./cookies.ts";
 
@@ -164,23 +167,29 @@ describe("Auth cookies", () => {
   });
 
   describe("clearOAuthFlowCookies", () => {
-    it("clears state, code_verifier, link_user, and mobile_scheme cookies", () => {
-      const res = mockResponse();
+    it(
+      "clears state, code_verifier, link_user, mobile_scheme, and post_login_redirect cookies",
+      () => {
+        const res = mockResponse();
 
-      clearOAuthFlowCookies(res);
+        clearOAuthFlowCookies(res);
 
-      expect(res.clearCookie).toHaveBeenCalledTimes(4);
-      expect(res.clearCookie).toHaveBeenCalledWith("auth_state", { path: "/" });
-      expect(res.clearCookie).toHaveBeenCalledWith("auth_code_verifier", {
-        path: "/",
-      });
-      expect(res.clearCookie).toHaveBeenCalledWith("auth_link_user", {
-        path: "/",
-      });
-      expect(res.clearCookie).toHaveBeenCalledWith("auth_mobile_scheme", {
-        path: "/",
-      });
-    });
+        expect(res.clearCookie).toHaveBeenCalledTimes(5);
+        expect(res.clearCookie).toHaveBeenCalledWith("auth_state", { path: "/" });
+        expect(res.clearCookie).toHaveBeenCalledWith("auth_code_verifier", {
+          path: "/",
+        });
+        expect(res.clearCookie).toHaveBeenCalledWith("auth_link_user", {
+          path: "/",
+        });
+        expect(res.clearCookie).toHaveBeenCalledWith("auth_mobile_scheme", {
+          path: "/",
+        });
+        expect(res.clearCookie).toHaveBeenCalledWith("auth_post_login_redirect", {
+          path: "/",
+        });
+      },
+    );
   });
 
   describe("setLinkUserCookie", () => {
@@ -211,6 +220,33 @@ describe("Auth cookies", () => {
     it("returns undefined for non-string cookie value", () => {
       const req = mockRequest(undefined);
       expect(getLinkUserCookie(req)).toBeUndefined();
+    });
+  });
+
+  describe("post-login redirect cookie", () => {
+    it("sets and reads the post-login redirect cookie", () => {
+      const res = mockResponse();
+      setPostLoginRedirectCookie(res, "/dashboard?onboarding=true");
+      expect(res.cookie).toHaveBeenCalledWith(
+        "auth_post_login_redirect",
+        "/dashboard?onboarding=true",
+        {
+          httpOnly: true,
+          secure: false,
+          sameSite: "lax",
+          path: "/",
+          maxAge: 10 * 60 * 1000,
+        },
+      );
+
+      const req = mockRequest({ auth_post_login_redirect: "/dashboard?onboarding=true" });
+      expect(getPostLoginRedirectCookie(req)).toBe("/dashboard?onboarding=true");
+    });
+
+    it("clears the post-login redirect cookie", () => {
+      const res = mockResponse();
+      clearPostLoginRedirectCookie(res);
+      expect(res.clearCookie).toHaveBeenCalledWith("auth_post_login_redirect", { path: "/" });
     });
   });
 

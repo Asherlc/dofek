@@ -12,7 +12,7 @@ function AuthGate() {
 
   useEffect(() => {
     if (!isLoading && !user && !isPublic) {
-      navigate({ to: "/login" });
+      navigate({ to: "/login", search: (prev) => prev });
     }
   }, [isLoading, user, isPublic, navigate]);
 

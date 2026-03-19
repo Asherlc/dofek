@@ -13,6 +13,9 @@ vi.mock("../auth/cookies.ts", () => ({
   setLinkUserCookie: vi.fn(),
   getMobileSchemeCookie: vi.fn(() => undefined),
   setMobileSchemeCookie: vi.fn(),
+  getPostLoginRedirectCookie: vi.fn(() => undefined),
+  setPostLoginRedirectCookie: vi.fn(),
+  clearPostLoginRedirectCookie: vi.fn(),
   isValidMobileScheme: (scheme: unknown) => scheme === "dofek",
 }));
 
@@ -79,9 +82,12 @@ import { createDatabaseFromEnv } from "dofek/db";
 import { getAllProviders } from "dofek/providers/registry";
 import express from "express";
 import {
+  clearPostLoginRedirectCookie,
+  getPostLoginRedirectCookie,
   getMobileSchemeCookie,
   getOAuthFlowCookies,
   getSessionIdFromRequest,
+  setPostLoginRedirectCookie,
 } from "../auth/cookies.ts";
 import { getIdentityProvider, isProviderConfigured } from "../auth/providers.ts";
 import { deleteSession, validateSession } from "../auth/session.ts";
@@ -159,6 +165,30 @@ describe("createAuthRouter", () => {
       const { app } = createTestApp();
       const res = await request(app, "get", "/auth/login/google");
       expect(res.status).toBe(302);
+      expect(clearPostLoginRedirectCookie).toHaveBeenCalledWith(expect.anything());
+    });
+
+    it("stores validated return_to when provided", async () => {
+      const { app } = createTestApp();
+      const res = await request(
+        app,
+        "get",
+        "/auth/login/google?return_to=%2Fdashboard%3Fonboarding%3Dtrue",
+      );
+      expect(res.status).toBe(302);
+      expect(setPostLoginRedirectCookie).toHaveBeenCalledWith(
+        expect.anything(),
+        "/dashboard?onboarding=true",
+      );
+      expect(clearPostLoginRedirectCookie).not.toHaveBeenCalled();
+    });
+
+    it("ignores invalid return_to values", async () => {
+      const { app } = createTestApp();
+      const res = await request(app, "get", "/auth/login/google?return_to=https%3A%2F%2Fevil.test");
+      expect(res.status).toBe(302);
+      expect(setPostLoginRedirectCookie).not.toHaveBeenCalled();
+      expect(clearPostLoginRedirectCookie).toHaveBeenCalledWith(expect.anything());
     });
   });
 
@@ -350,6 +380,33 @@ describe("createAuthRouter", () => {
       );
       expect(res.status).toBe(302); // redirect to /
     });
+
+    it("uses stored return_to for successful callback", async () => {
+      const mockValidate = vi.fn(() =>
+        Promise.resolve({
+          tokens: {},
+          user: { sub: "goog-1", email: "alice@test.com", name: "Alice" },
+        }),
+      );
+      vi.mocked(getIdentityProvider).mockReturnValue({
+        createAuthorizationUrl: vi.fn(() => new URL("https://accounts.google.com/authorize")),
+        validateCallback: mockValidate,
+      });
+      vi.mocked(getOAuthFlowCookies).mockReturnValue({
+        state: "google:state123",
+        codeVerifier: "verifier123",
+      });
+      vi.mocked(getPostLoginRedirectCookie).mockReturnValue("/dashboard?onboarding=true");
+
+      const { app } = createTestApp();
+      const res = await request(
+        app,
+        "get",
+        "/auth/callback/google?code=authcode&state=google:state123",
+      );
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toBe("/dashboard?onboarding=true");
+    });
   });
 
   describe("GET /auth/link/:provider", () => {
@@ -405,6 +462,44 @@ describe("createAuthRouter", () => {
       const res = await request(app, "get", "/auth/login/data/nonexistent");
       expect(res.status).toBe(404);
       expect(res.body).toContain("Unknown provider");
+      expect(clearPostLoginRedirectCookie).toHaveBeenCalledWith(expect.anything());
+    });
+
+    it("stores validated return_to for data provider login", async () => {
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "test-provider",
+          name: "Test",
+          authSetup: () => ({
+            oauthConfig: { authorizationEndpoint: "https://auth.example.com" },
+            getUserIdentity: vi.fn(),
+          }),
+        },
+      ]);
+      const { app } = createTestApp();
+      const res = await request(
+        app,
+        "get",
+        "/auth/login/data/test-provider?return_to=%2Fdashboard%3Fonboarding%3Dtrue",
+      );
+      expect(res.status).toBe(302);
+      expect(setPostLoginRedirectCookie).toHaveBeenCalledWith(
+        expect.anything(),
+        "/dashboard?onboarding=true",
+      );
+      expect(clearPostLoginRedirectCookie).not.toHaveBeenCalled();
+    });
+
+    it("clears stale return_to when data login return_to is invalid", async () => {
+      const { app } = createTestApp();
+      const res = await request(
+        app,
+        "get",
+        "/auth/login/data/nonexistent?return_to=https%3A%2F%2Fevil.test",
+      );
+      expect(res.status).toBe(404);
+      expect(setPostLoginRedirectCookie).not.toHaveBeenCalled();
+      expect(clearPostLoginRedirectCookie).toHaveBeenCalledWith(expect.anything());
     });
 
     it("returns 400 when provider has no OAuth config", async () => {
