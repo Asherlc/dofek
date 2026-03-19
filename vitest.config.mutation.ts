@@ -1,6 +1,10 @@
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  esbuild: {
+    jsx: "automatic",
+    jsxImportSource: "react",
+  },
   test: {
     globals: true,
     testTimeout: 60_000,
@@ -18,8 +22,11 @@ export default defineConfig({
       "packages/zwift-client/src/**/*.test.ts",
       "packages/whoop-whoop/src/**/*.test.ts",
       "packages/trainingpeaks-connect/src/**/*.test.ts",
+      "packages/ios/**/*.test.{ts,tsx}",
     ],
-    exclude: ["**/*.integration.test.ts"],
+    exclude: ["**/*.integration.test.ts", "**/node_modules/**"],
+    setupFiles: ["packages/ios/test-setup.ts"],
+    environmentMatchGlobs: [["packages/ios/**", "jsdom"]],
   },
   resolve: {
     alias: {

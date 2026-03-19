@@ -20,14 +20,16 @@
     "packages/velohero-client/src/**/*.ts",
     "packages/zwift-client/src/**/*.ts",
     "packages/trainingpeaks-connect/src/**/*.ts",
+    "packages/ios/app/**/*.{ts,tsx}",
+    "packages/ios/components/**/*.{ts,tsx}",
+    "packages/ios/lib/**/*.{ts,tsx}",
     "!**/*.test.ts",
+    "!**/*.test.tsx",
     "!**/test-helpers.ts",
     "!**/fixtures/**",
     "!src/db/schema.ts"
   ],
   "ignorePatterns": [
-    "packages/ios/**",
-    "packages/whoop-whoop/**",
     "dist/**",
     "drizzle/**"
   ],
@@ -35,8 +37,8 @@
   "timeoutMS": 30000,
   "thresholds": {
     "high": 80,
-    "low": 60,
-    "break": 60
+    "low": 70,
+    "break": 70
   },
   "reporters": ["clear-text", "html", "progress"],
   "concurrency": 4
