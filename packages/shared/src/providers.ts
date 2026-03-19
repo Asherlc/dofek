@@ -29,7 +29,7 @@ export const PROVIDER_LABELS: Record<string, string> = {
   velohero: "VeloHero",
   wger: "Wger",
   xert: "Xert",
-  "apple-health": "Apple Health",
+  apple_health: "Apple Health",
   "strong-csv": "Strong",
   "cronometer-csv": "Cronometer",
   bodyspec: "BodySpec",
