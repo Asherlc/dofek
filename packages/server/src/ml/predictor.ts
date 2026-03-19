@@ -32,6 +32,7 @@ export interface ModelDiagnostics {
   crossValidatedRSquared: number;
   sampleCount: number;
   featureCount: number;
+  linearFallbackUsed: boolean;
 }
 
 export interface PredictionResult {
@@ -62,9 +63,9 @@ export function trainPredictor(
 
   const { featureNames, X, y, dates } = dataset;
 
-  // Train linear regression
-  const linear = new LinearRegression();
-  linear.fit(X, y);
+  // Linear regression can fail on singular/underdetermined feature matrices.
+  // When that happens, keep serving tree-based predictions instead of erroring.
+  const linear = fitLinearSafely(X, y);
 
   // Train gradient-boosted trees
   const tree = new GradientBoostedTrees({
@@ -81,9 +82,9 @@ export function trainPredictor(
   // Feature importances (sorted by tree importance descending)
   const importances: FeatureImportance[] = featureNames.map((name, i) => ({
     name,
-    linearImportance: linear.featureImportances[i] ?? 0,
+    linearImportance: linear?.featureImportances[i] ?? 0,
     treeImportance: tree.featureImportances[i] ?? 0,
-    linearCoefficient: linear.coefficients[i] ?? 0,
+    linearCoefficient: linear?.coefficients[i] ?? 0,
   }));
   importances.sort((a, b) => b.treeImportance - a.treeImportance);
 
@@ -91,7 +92,7 @@ export function trainPredictor(
   const predictions: PredictionPoint[] = X.map((features, i) => ({
     date: dates[i] ?? "",
     actual: y[i] ?? 0,
-    linearPrediction: round2(linear.predict(features)),
+    linearPrediction: round2(predictLinearOrFallback(linear, tree, features)),
     treePrediction: round2(tree.predict(features)),
   }));
 
@@ -101,7 +102,7 @@ export function trainPredictor(
     const lastFeatures = X[X.length - 1];
     if (!lastFeatures) return null;
     tomorrowPrediction = {
-      linear: round2(linear.predict(lastFeatures)),
+      linear: round2(predictLinearOrFallback(linear, tree, lastFeatures)),
       tree: round2(tree.predict(lastFeatures)),
     };
   }
@@ -113,12 +114,13 @@ export function trainPredictor(
     featureImportances: importances,
     predictions,
     diagnostics: {
-      linearRSquared: round4(linear.rSquared),
-      linearAdjustedRSquared: round4(linear.adjustedRSquared),
+      linearRSquared: round4(linear?.rSquared ?? 0),
+      linearAdjustedRSquared: round4(linear?.adjustedRSquared ?? 0),
       treeRSquared: round4(tree.rSquared),
       crossValidatedRSquared: round4(cvRSquared),
       sampleCount: X.length,
       featureCount: featureNames.length,
+      linearFallbackUsed: linear == null,
     },
     tomorrowPrediction,
   };
@@ -137,8 +139,9 @@ export function trainFromDataset(
 ): PredictionResult {
   const { featureNames, X, y, dates } = dataset;
 
-  const linear = new LinearRegression();
-  linear.fit(X, y);
+  // Activity datasets can be especially collinear (trailing aggregates + sparse
+  // imputed columns). Fall back to tree-only predictions if linear fit fails.
+  const linear = fitLinearSafely(X, y);
 
   const tree = new GradientBoostedTrees({
     nEstimators: 100,
@@ -152,16 +155,16 @@ export function trainFromDataset(
 
   const importances: FeatureImportance[] = featureNames.map((name, i) => ({
     name,
-    linearImportance: linear.featureImportances[i] ?? 0,
+    linearImportance: linear?.featureImportances[i] ?? 0,
     treeImportance: tree.featureImportances[i] ?? 0,
-    linearCoefficient: linear.coefficients[i] ?? 0,
+    linearCoefficient: linear?.coefficients[i] ?? 0,
   }));
   importances.sort((a, b) => b.treeImportance - a.treeImportance);
 
   const predictions: PredictionPoint[] = X.map((features, i) => ({
     date: dates[i] ?? "",
     actual: y[i] ?? 0,
-    linearPrediction: round2(linear.predict(features)),
+    linearPrediction: round2(predictLinearOrFallback(linear, tree, features)),
     treePrediction: round2(tree.predict(features)),
   }));
 
@@ -177,12 +180,13 @@ export function trainFromDataset(
     featureImportances: importances,
     predictions,
     diagnostics: {
-      linearRSquared: round4(linear.rSquared),
-      linearAdjustedRSquared: round4(linear.adjustedRSquared),
+      linearRSquared: round4(linear?.rSquared ?? 0),
+      linearAdjustedRSquared: round4(linear?.adjustedRSquared ?? 0),
       treeRSquared: round4(tree.rSquared),
       crossValidatedRSquared: round4(cvRSquared),
       sampleCount: X.length,
       featureCount: featureNames.length,
+      linearFallbackUsed: linear == null,
     },
     tomorrowPrediction,
   };
@@ -251,6 +255,24 @@ function crossValidate(X: number[][], y: number[], k: number): number {
   }
 
   return totalSsTot === 0 ? 0 : 1 - totalSsRes / totalSsTot;
+}
+
+function fitLinearSafely(X: number[][], y: number[]): LinearRegression | null {
+  const linear = new LinearRegression();
+  try {
+    linear.fit(X, y);
+    return linear;
+  } catch {
+    return null;
+  }
+}
+
+function predictLinearOrFallback(
+  linear: LinearRegression | null,
+  tree: GradientBoostedTrees,
+  x: number[],
+): number {
+  return linear ? linear.predict(x) : tree.predict(x);
 }
 
 function round2(v: number): number {

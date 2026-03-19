@@ -130,6 +130,31 @@ describe("trainFromDataset", () => {
     // With only 30 samples, CV might return 0 (not enough for 5-fold)
     expect(result.diagnostics.crossValidatedRSquared).toBeTypeOf("number");
   });
+
+  it("falls back when linear regression fails on collinear features", () => {
+    const n = 24;
+    const featureNames = ["x", "x_dup", "constant"];
+    const X: number[][] = [];
+    const y: number[] = [];
+    const dates: string[] = [];
+
+    for (let i = 0; i < n; i++) {
+      const x = i + 1;
+      X.push([x, x, 1]); // perfect collinearity + constant feature
+      y.push(x * 2);
+      dates.push(new Date(2024, 0, 1 + i).toISOString().slice(0, 10));
+    }
+
+    const dataset: ExtractedDataset = { featureNames, X, y, dates };
+    const result = trainFromDataset(dataset, "cardio_power", "Cardio Power Output", "W");
+
+    expect(result.predictions.length).toBe(n);
+    expect(result.featureImportances).toHaveLength(3);
+    // Linear diagnostics should degrade gracefully instead of throwing.
+    expect(result.diagnostics.linearRSquared).toBeTypeOf("number");
+    expect(result.diagnostics.linearAdjustedRSquared).toBeTypeOf("number");
+    expect(result.diagnostics.linearFallbackUsed).toBe(true);
+  });
 });
 
 describe("trainPredictor — edge cases", () => {
