@@ -6,7 +6,6 @@ import { Router } from "express";
 import { resolveOrCreateUser } from "../auth/account-linking.ts";
 import {
   clearOAuthFlowCookies,
-  clearPostLoginRedirectCookie,
   clearSessionCookie,
   getLinkUserCookie,
   getMobileSchemeCookie,
@@ -69,12 +68,6 @@ const IDENTITY_PROVIDERS: IdentityProviderName[] = ["google", "apple", "authenti
 
 function isIdentityProviderName(value: string): value is IdentityProviderName {
   return IDENTITY_PROVIDERS.some((p) => p === value);
-}
-
-function sanitizeReturnTo(returnTo: string | undefined): string | undefined {
-  if (!returnTo) return undefined;
-  if (!returnTo.startsWith("/") || returnTo.startsWith("//")) return undefined;
-  return returnTo;
 }
 
 const SLACK_SCOPES = [
@@ -240,13 +233,10 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         setMobileSchemeCookie(res, redirectScheme);
       }
 
-      const returnToRaw = typeof req.query.return_to === "string" ? req.query.return_to : undefined;
-      const returnTo = sanitizeReturnTo(returnToRaw);
-      if (returnTo) {
-        setPostLoginRedirectCookie(res, returnTo);
-      } else {
-        clearPostLoginRedirectCookie(res);
-      }
+      setPostLoginRedirectCookie(
+        res,
+        typeof req.query.return_to === "string" ? req.query.return_to : undefined,
+      );
 
       res.redirect(url.toString());
     } catch (err: unknown) {
@@ -324,7 +314,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       const { state: storedState, codeVerifier } = getOAuthFlowCookies(req);
       const linkUserId = getLinkUserCookie(req);
       const mobileScheme = getMobileSchemeCookie(req);
-      const returnTo = sanitizeReturnTo(getPostLoginRedirectCookie(req));
+      const returnTo = getPostLoginRedirectCookie(req);
       clearOAuthFlowCookies(res);
 
       if (!storedState || !codeVerifier || stateParam !== storedState) {
@@ -441,13 +431,6 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         typeof req.query.redirect_scheme === "string" ? req.query.redirect_scheme : undefined;
       const mobileScheme =
         redirectScheme && isValidMobileScheme(redirectScheme) ? redirectScheme : undefined;
-      const returnToRaw = typeof req.query.return_to === "string" ? req.query.return_to : undefined;
-      const returnTo = sanitizeReturnTo(returnToRaw);
-      if (returnTo) {
-        setPostLoginRedirectCookie(res, returnTo);
-      } else {
-        clearPostLoginRedirectCookie(res);
-      }
       await startDataProviderOAuth(res, req.params.provider, {
         providerId: req.params.provider,
         intent: "login",
@@ -749,8 +732,6 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
             // Data provider login: resolve/create user and create session
             const { userId } = await resolveOrCreateUser(db, providerId, identity);
             const sessionInfo = await createSession(db, userId);
-            const returnTo = sanitizeReturnTo(getPostLoginRedirectCookie(req));
-            clearPostLoginRedirectCookie(res);
 
             // Mobile: redirect to app via deep link with session token
             if (stateEntry.mobileScheme && isValidMobileScheme(stateEntry.mobileScheme)) {
@@ -765,7 +746,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
 
             setSessionCookie(res, sessionInfo.sessionId, sessionInfo.expiresAt);
             logger.info(`[auth] User ${userId} logged in via data provider ${providerId}`);
-            res.redirect(returnTo ?? "/");
+            res.redirect("/");
             return;
           }
 

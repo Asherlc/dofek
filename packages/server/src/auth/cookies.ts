@@ -117,13 +117,27 @@ export function getMobileSchemeCookie(req: Request): string | undefined {
 
 // ── Post-login redirect cookie ──
 
-export function setPostLoginRedirectCookie(res: Response, returnTo: string): void {
-  res.cookie(POST_LOGIN_REDIRECT_COOKIE, returnTo, { ...cookieDefaults, maxAge: FLOW_MAX_AGE });
+function sanitizeReturnTo(returnTo: string | undefined): string | undefined {
+  if (!returnTo) return undefined;
+  if (!returnTo.startsWith("/") || returnTo.startsWith("//")) return undefined;
+  return returnTo;
+}
+
+export function setPostLoginRedirectCookie(res: Response, returnTo: string | undefined): void {
+  const sanitizedReturnTo = sanitizeReturnTo(returnTo);
+  if (!sanitizedReturnTo) {
+    clearPostLoginRedirectCookie(res);
+    return;
+  }
+  res.cookie(POST_LOGIN_REDIRECT_COOKIE, sanitizedReturnTo, {
+    ...cookieDefaults,
+    maxAge: FLOW_MAX_AGE,
+  });
 }
 
 export function getPostLoginRedirectCookie(req: Request): string | undefined {
   const val = req.cookies?.[POST_LOGIN_REDIRECT_COOKIE];
-  return typeof val === "string" ? val : undefined;
+  return sanitizeReturnTo(typeof val === "string" ? val : undefined);
 }
 
 export function clearPostLoginRedirectCookie(res: Response): void {

@@ -240,6 +240,23 @@ describe("Auth cookies", () => {
       expect(getPostLoginRedirectCookie(req)).toBe("/dashboard?onboarding=true");
     });
 
+    it("clears the cookie when return_to is missing or invalid", () => {
+      const res = mockResponse();
+      setPostLoginRedirectCookie(res, undefined);
+      setPostLoginRedirectCookie(res, "https://evil.test");
+      setPostLoginRedirectCookie(res, "//evil.test/path");
+      expect(res.clearCookie).toHaveBeenCalledTimes(3);
+      expect(res.clearCookie).toHaveBeenCalledWith("auth_post_login_redirect", { path: "/" });
+    });
+
+    it("returns undefined for invalid cookie values", () => {
+      const req1 = mockRequest({ auth_post_login_redirect: "https://evil.test" });
+      expect(getPostLoginRedirectCookie(req1)).toBeUndefined();
+
+      const req2 = mockRequest({ auth_post_login_redirect: "//evil.test/path" });
+      expect(getPostLoginRedirectCookie(req2)).toBeUndefined();
+    });
+
     it("clears the post-login redirect cookie", () => {
       const res = mockResponse();
       clearPostLoginRedirectCookie(res);
