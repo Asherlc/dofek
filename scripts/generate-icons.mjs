@@ -1,7 +1,7 @@
-import sharp from "sharp";
-import { readFileSync, mkdirSync } from "node:fs";
-import { resolve, dirname } from "node:path";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import sharp from "sharp";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, "..");
@@ -43,15 +43,10 @@ for (const target of targets) {
 
   if (target.removeRoundedRect) {
     // For iOS: replace rounded rect with plain rect (iOS adds its own superellipse mask)
-    svgInput = Buffer.from(
-      svg.toString().replace('rx="224"', ""),
-    );
+    svgInput = Buffer.from(svg.toString().replace('rx="224"', ""));
   }
 
-  await sharp(svgInput)
-    .resize(target.size, target.size)
-    .png()
-    .toFile(target.path);
+  await sharp(svgInput).resize(target.size, target.size).png().toFile(target.path);
 
   console.log(`Generated ${target.path} (${target.size}x${target.size})`);
 }
