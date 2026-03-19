@@ -172,6 +172,35 @@ export function parseHeartRateValues(values: WhoopHrValue[]): ParsedHrRecord[] {
   }));
 }
 
+/**
+ * WHOOP has multiple cycle shapes:
+ * - legacy: cycle.sleep.id
+ * - BFF v0: cycle.recovery.sleep_id
+ * - v2 activities: cycle.v2_activities[*].id where activity is sleep-related
+ */
+export function extractSleepIdsFromCycle(cycle: WhoopCycle): string[] {
+  const ids = new Set<string>();
+
+  if (cycle.sleep?.id != null) {
+    ids.add(String(cycle.sleep.id));
+  }
+
+  if (cycle.recovery?.sleep_id != null) {
+    ids.add(String(cycle.recovery.sleep_id));
+  }
+
+  for (const activity of cycle.v2_activities ?? []) {
+    const activityType = activity.type.toLowerCase();
+    const scoreType = activity.score_type.toLowerCase();
+    const isSleepActivity = scoreType === "sleep" || activityType.includes("sleep");
+    if (isSleepActivity && activity.id) {
+      ids.add(activity.id);
+    }
+  }
+
+  return [...ids];
+}
+
 // ============================================================
 // Weightlifting parsing
 // ============================================================
@@ -570,10 +599,11 @@ export class WhoopProvider implements Provider {
     try {
       const sleepCount = await withSyncLog(db, this.id, "sleep", async () => {
         let count = 0;
+        const seenSleepIds = new Set<string>();
         for (const cycle of cycles) {
-          // Extract sleep ID: cycle.sleep.id (legacy), recovery.sleep_id (BFF v0), or v2_activities
-          const sleepId = cycle.sleep?.id ?? cycle.recovery?.sleep_id ?? undefined;
-          if (sleepId) {
+          for (const sleepId of extractSleepIdsFromCycle(cycle)) {
+            if (seenSleepIds.has(sleepId)) continue;
+            seenSleepIds.add(sleepId);
             try {
               const sleepData = await client.getSleep(sleepId);
               const parsed = parseSleep(sleepData);
@@ -611,7 +641,7 @@ export class WhoopProvider implements Provider {
             } catch (err) {
               errors.push({
                 message: `Sleep ${sleepId}: ${err instanceof Error ? err.message : String(err)}`,
-                externalId: String(sleepId),
+                externalId: sleepId,
                 cause: err,
               });
             }

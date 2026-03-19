@@ -343,7 +343,7 @@ export class WhoopClient {
     return [];
   }
 
-  async getSleep(sleepId: number): Promise<WhoopSleepRecord> {
+  async getSleep(sleepId: string | number): Promise<WhoopSleepRecord> {
     return this.get<WhoopSleepRecord>(`${WHOOP_API_BASE}/sleep-service/v1/sleep-events`, {
       activityId: String(sleepId),
     });
