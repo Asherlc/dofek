@@ -1468,8 +1468,8 @@ describe("OuraProvider.sync()", () => {
       if (urlStr.includes("/v2/usercollection/heartrate")) {
         const startMatch = urlStr.match(/start_datetime=([^&]+)/);
         const endMatch = urlStr.match(/end_datetime=([^&]+)/);
-        if (startMatch && endMatch) {
-          requestedRanges.push({ start: startMatch[1]!, end: endMatch[1]! });
+        if (startMatch?.[1] && endMatch?.[1]) {
+          requestedRanges.push({ start: startMatch[1], end: endMatch[1] });
         }
         // Return HR data matching the requested period
         const data = [];
