@@ -325,6 +325,65 @@ describe("healthKitSyncRouter", () => {
       expect(result.inserted).toBe(1);
     });
 
+    it("includes duration_minutes and is_nap in SQL", async () => {
+      const execute = makeExecute();
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+      });
+
+      await caller.pushSleepSamples({
+        samples: [
+          {
+            uuid: "sleep-dur",
+            startDate: "2024-01-15T22:00:00Z",
+            endDate: "2024-01-16T06:00:00Z", // 8 hours = 480 minutes
+            value: "inBed",
+            sourceName: "Apple Watch",
+          },
+        ],
+      });
+
+      // Find the sleep INSERT call (not the ensureProvider call)
+      const sleepCall = execute.mock.calls.find((call: unknown[]) => {
+        const serialized = JSON.stringify(call[0]);
+        return serialized.includes("sleep_session");
+      });
+      expect(sleepCall).toBeDefined();
+      const serialized = JSON.stringify(sleepCall?.[0]);
+      expect(serialized).toContain("duration_minutes");
+      expect(serialized).toContain("is_nap");
+    });
+
+    it("marks short sessions as naps", async () => {
+      const execute = makeExecute();
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+      });
+
+      await caller.pushSleepSamples({
+        samples: [
+          {
+            uuid: "nap-1",
+            startDate: "2024-01-15T14:00:00Z",
+            endDate: "2024-01-15T14:45:00Z", // 45 minutes — nap
+            value: "inBed",
+            sourceName: "Apple Watch",
+          },
+        ],
+      });
+
+      // The 45-minute session should be marked as a nap
+      const sleepCall = execute.mock.calls.find((call: unknown[]) => {
+        const serialized = JSON.stringify(call[0]);
+        return serialized.includes("sleep_session");
+      });
+      expect(sleepCall).toBeDefined();
+      const serialized = JSON.stringify(sleepCall?.[0]);
+      expect(serialized).toContain("is_nap");
+    });
+
     it("returns 0 when no inBed samples", async () => {
       const execute = makeExecute();
       const caller = createCaller({
