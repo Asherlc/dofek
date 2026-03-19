@@ -531,8 +531,12 @@ export async function linkUnassignedHeartRateToActivities(
     sql`ms.activity_id IS NULL`,
     sql`ms.heart_rate IS NOT NULL`,
   ];
-  if (bounds?.startAt) filters.push(sql`ms.recorded_at >= ${bounds.startAt}`);
-  if (bounds?.endAt) filters.push(sql`ms.recorded_at <= ${bounds.endAt}`);
+  if (bounds?.startAt) {
+    filters.push(sql`ms.recorded_at >= ${bounds.startAt.toISOString()}::timestamptz`);
+  }
+  if (bounds?.endAt) {
+    filters.push(sql`ms.recorded_at <= ${bounds.endAt.toISOString()}::timestamptz`);
+  }
 
   const linkedRows = await db.execute(
     sql`UPDATE fitness.metric_stream ms
