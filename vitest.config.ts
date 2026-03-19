@@ -15,6 +15,9 @@ export default defineConfig({
     ...sharedTestConfig,
     projects: [
       {
+        esbuild: {
+          jsx: "automatic",
+        },
         test: {
           ...sharedTestConfig,
           name: "unit",
@@ -22,6 +25,7 @@ export default defineConfig({
             "src/**/*.test.ts",
             "packages/*/src/**/*.test.{ts,tsx}",
             "packages/ios/lib/**/*.test.ts",
+            "packages/ios/app/**/*.test.{ts,tsx}",
           ],
           exclude: ["**/*.integration.test.ts"],
         },

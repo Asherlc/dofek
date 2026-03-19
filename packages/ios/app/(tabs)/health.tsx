@@ -52,7 +52,7 @@ const NAV_LINKS = [
 
 export default function HealthScreen() {
   const router = useRouter();
-  const { user, logout } = useAuth();
+  const { user, serverUrl, logout } = useAuth();
   const [permissionsGranted, setPermissionsGranted] = useState(false);
   const [status, setStatus] = useState<SyncStatus>({
     lastSync: null,
