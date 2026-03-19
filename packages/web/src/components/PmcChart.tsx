@@ -157,6 +157,13 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
         axisLabel: { color: "#71717a", fontSize: 11 },
         axisLine: { show: false },
       },
+      // Hidden axis for load bars so they don't compress the CTL/ATL scale
+      {
+        type: "value" as const,
+        gridIndex: 0,
+        show: false,
+        min: 0,
+      },
     ],
     visualMap: {
       type: "piecewise" as const,
@@ -172,12 +179,12 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
       ],
     },
     series: [
-      // ── Top pane: Load bars ──
+      // ── Top pane: Load bars (on hidden y-axis so they don't compress CTL/ATL) ──
       {
         name: "Load",
         type: "bar",
         xAxisIndex: 0,
-        yAxisIndex: 0,
+        yAxisIndex: 2,
         data: data.map((d) => [d.date, d.load]),
         itemStyle: { color: "#71717a", opacity: 0.3 },
         barMaxWidth: 6,
