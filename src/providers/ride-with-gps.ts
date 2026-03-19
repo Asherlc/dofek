@@ -19,17 +19,50 @@ import type {
 // ============================================================
 
 export interface RideWithGpsTrackPoint {
-  x: number; // longitude
-  y: number; // latitude
-  d: number; // distance from start, meters
-  e?: number; // elevation, meters
-  t?: number; // unix epoch seconds
-  s?: number; // speed, km/h
-  T?: number; // temperature, celsius
-  h?: number; // heart rate, bpm
-  c?: number; // cadence, rpm
-  p?: number; // power, watts
+  longitude: number;
+  latitude: number;
+  distanceMeters: number;
+  elevationMeters?: number;
+  epochSeconds?: number;
+  speedKph?: number;
+  temperatureCelsius?: number;
+  heartRateBpm?: number;
+  cadenceRpm?: number;
+  powerWatts?: number;
 }
+
+// Zod schema for track points from the RideWithGPS API.
+// Transforms the API's compact single-letter field names to descriptive names.
+const rideWithGpsTrackPointSchema = z
+  .object({
+    x: z.number(),
+    y: z.number(),
+    d: z.number(),
+    e: z.number().optional(),
+    t: z.number().optional(),
+    s: z.number().optional(),
+    T: z.number().optional(),
+    h: z.number().optional(),
+    c: z.number().optional(),
+    p: z.number().optional(),
+  })
+  .transform(
+    (raw): RideWithGpsTrackPoint => ({
+      longitude: raw.x,
+      latitude: raw.y,
+      distanceMeters: raw.d,
+      elevationMeters: raw.e,
+      epochSeconds: raw.t,
+      speedKph: raw.s,
+      temperatureCelsius: raw.T,
+      heartRateBpm: raw.h,
+      cadenceRpm: raw.c,
+      powerWatts: raw.p,
+    }),
+  );
+
+/** Raw API track point shape (single-letter keys), for constructing test fixtures */
+export type RideWithGpsApiTrackPoint = z.input<typeof rideWithGpsTrackPointSchema>;
 
 export interface RideWithGpsTripSummary {
   id: number;
@@ -48,9 +81,28 @@ export interface RideWithGpsTripSummary {
   source?: string | null;
 }
 
-export interface RideWithGpsTripDetail extends RideWithGpsTripSummary {
-  track_points: RideWithGpsTrackPoint[];
-}
+// Zod schema for the full trip detail response, including track point transform
+const rideWithGpsTripDetailSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+  description: z.string().nullable().optional(),
+  departed_at: z.string().nullable().optional(),
+  activity_type: z.string().nullable().optional(),
+  distance: z.number(),
+  duration: z.number(),
+  moving_time: z.number(),
+  elevation_gain: z.number(),
+  elevation_loss: z.number(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  source: z.string().nullable().optional(),
+  track_points: z.array(rideWithGpsTrackPointSchema).default([]),
+});
+
+export type RideWithGpsTripDetail = z.output<typeof rideWithGpsTripDetailSchema>;
+
+/** Raw API trip detail shape (single-letter track point keys), for constructing test fixtures */
+export type RideWithGpsApiTripDetail = z.input<typeof rideWithGpsTripDetailSchema>;
 
 export interface RideWithGpsSyncItem {
   item_type: "route" | "trip";
@@ -155,18 +207,18 @@ export function parseTrackPoints(points: RideWithGpsTrackPoint[]): ParsedTrackPo
   const result: ParsedTrackPoint[] = [];
   for (const point of points) {
     // Skip points without a timestamp — can't insert into metric_stream
-    if (point.t === undefined) continue;
+    if (point.epochSeconds === undefined) continue;
 
     result.push({
-      recordedAt: new Date(point.t * 1000),
-      lat: point.y,
-      lng: point.x,
-      altitude: point.e,
-      speed: point.s !== undefined ? point.s / 3.6 : undefined,
-      temperature: point.T,
-      heartRate: point.h,
-      cadence: point.c,
-      power: point.p,
+      recordedAt: new Date(point.epochSeconds * 1000),
+      lat: point.latitude,
+      lng: point.longitude,
+      altitude: point.elevationMeters,
+      speed: point.speedKph !== undefined ? point.speedKph / 3.6 : undefined,
+      temperature: point.temperatureCelsius,
+      heartRate: point.heartRateBpm,
+      cadence: point.cadenceRpm,
+      power: point.powerWatts,
     });
   }
   return result;
@@ -215,7 +267,8 @@ export class RideWithGpsClient {
   }
 
   async getTrip(id: number): Promise<{ trip: RideWithGpsTripDetail }> {
-    return this.get<{ trip: RideWithGpsTripDetail }>(`/api/v1/trips/${id}.json`);
+    const data = await this.get<unknown>(`/api/v1/trips/${id}.json`);
+    return z.object({ trip: rideWithGpsTripDetailSchema }).parse(data);
   }
 }
 

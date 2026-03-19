@@ -94,7 +94,15 @@ describe("parseTripToActivity", () => {
 
 describe("parseTrackPoints", () => {
   it("converts speed from km/h to m/s", () => {
-    const points: RideWithGpsTrackPoint[] = [{ x: -122.6, y: 45.5, d: 0, t: 1723276200, s: 36 }];
+    const points: RideWithGpsTrackPoint[] = [
+      {
+        longitude: -122.6,
+        latitude: 45.5,
+        distanceMeters: 0,
+        epochSeconds: 1723276200,
+        speedKph: 36,
+      },
+    ];
     const result = parseTrackPoints(points);
     expect(result).toHaveLength(1);
     expect(result[0]?.speed).toBeCloseTo(10, 5); // 36 km/h = 10 m/s
@@ -103,16 +111,16 @@ describe("parseTrackPoints", () => {
   it("maps all sensor fields", () => {
     const points: RideWithGpsTrackPoint[] = [
       {
-        x: -122.6,
-        y: 45.5,
-        d: 1000,
-        e: 150,
-        t: 1723276200,
-        s: 25,
-        T: 22,
-        h: 145,
-        c: 90,
-        p: 200,
+        longitude: -122.6,
+        latitude: 45.5,
+        distanceMeters: 1000,
+        elevationMeters: 150,
+        epochSeconds: 1723276200,
+        speedKph: 25,
+        temperatureCelsius: 22,
+        heartRateBpm: 145,
+        cadenceRpm: 90,
+        powerWatts: 200,
       },
     ];
     const result = parseTrackPoints(points);
@@ -127,16 +135,18 @@ describe("parseTrackPoints", () => {
     });
   });
 
-  it("uses unix epoch t for recordedAt", () => {
-    const points: RideWithGpsTrackPoint[] = [{ x: -122.6, y: 45.5, d: 0, t: 1723276200 }];
+  it("uses unix epoch timestamp for recordedAt", () => {
+    const points: RideWithGpsTrackPoint[] = [
+      { longitude: -122.6, latitude: 45.5, distanceMeters: 0, epochSeconds: 1723276200 },
+    ];
     const result = parseTrackPoints(points);
     expect(result[0]?.recordedAt).toEqual(new Date(1723276200 * 1000));
   });
 
   it("skips points without timestamp", () => {
     const points: RideWithGpsTrackPoint[] = [
-      { x: -122.6, y: 45.5, d: 0 }, // no t
-      { x: -122.7, y: 45.6, d: 100, t: 1723276300 },
+      { longitude: -122.6, latitude: 45.5, distanceMeters: 0 }, // no epochSeconds
+      { longitude: -122.7, latitude: 45.6, distanceMeters: 100, epochSeconds: 1723276300 },
     ];
     const result = parseTrackPoints(points);
     expect(result).toHaveLength(1);
@@ -144,7 +154,9 @@ describe("parseTrackPoints", () => {
   });
 
   it("handles missing optional fields as undefined", () => {
-    const points: RideWithGpsTrackPoint[] = [{ x: -122.6, y: 45.5, d: 0, t: 1723276200 }];
+    const points: RideWithGpsTrackPoint[] = [
+      { longitude: -122.6, latitude: 45.5, distanceMeters: 0, epochSeconds: 1723276200 },
+    ];
     const result = parseTrackPoints(points);
     const point = result[0];
     if (!point) {
