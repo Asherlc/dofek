@@ -264,14 +264,18 @@ describe("handleAuthCommand", () => {
     mockGetAllProviders.mockReturnValue([]);
     const code = await handleAuthCommand(["node", "index.ts", "auth"]);
     expect(code).toBe(1);
-    expect(mockLoggerError).toHaveBeenCalledWith(expect.stringContaining("Usage: health-data auth"));
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      expect.stringContaining("Usage: health-data auth"),
+    );
   });
 
   it("returns 1 when provider not found", async () => {
     mockGetAllProviders.mockReturnValue([{ id: "strava", authSetup: () => ({}) }]);
     const code = await handleAuthCommand(["node", "index.ts", "auth", "unknown"]);
     expect(code).toBe(1);
-    expect(mockLoggerError).toHaveBeenCalledWith(expect.stringContaining("Usage: health-data auth <strava>"));
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      expect.stringContaining("Usage: health-data auth <strava>"),
+    );
   });
 
   it("returns 1 when provider validation fails", async () => {
@@ -377,7 +381,9 @@ describe("handleAuthCommand", () => {
 
     await handleAuthCommand(["node", "index.ts", "auth", "strava"]);
     expect(mockBuildAuthorizationUrl).not.toHaveBeenCalled();
-    expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("https://custom-auth.example.com"));
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      expect.stringContaining("https://custom-auth.example.com"),
+    );
   });
 
   it("detects https callback URL", async () => {
