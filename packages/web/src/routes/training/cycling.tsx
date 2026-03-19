@@ -126,7 +126,7 @@ function CyclingTab() {
       {/* Fitness / Fatigue / Form */}
       <Section
         title="Fitness, Fatigue & Form"
-        subtitle="42-day fitness (blue), 7-day fatigue (pink), form = fitness − fatigue"
+        subtitle="42-day fitness (blue), 7-day fatigue (purple), form = fitness − fatigue"
       >
         <PmcChart data={pmc.data?.data ?? []} model={pmc.data?.model} loading={pmc.isLoading} />
       </Section>

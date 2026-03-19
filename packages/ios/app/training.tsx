@@ -4,7 +4,7 @@ import Svg, { Rect, Text as SvgText, Path } from "react-native-svg";
 import { trpc } from "../lib/trpc";
 import { convertDistance, convertElevation, convertPace, convertWeight, distanceLabel, elevationLabel, paceLabel, useUnitSystem, weightLabel } from "../lib/units";
 import { colors } from "../theme";
-import { scoreColor, scoreLabel, workloadRatioColor, workloadRatioHint, rampRateColor } from "@dofek/shared/scoring";
+import { scoreColor, scoreLabel, workloadRatioColor, workloadRatioHint, rampRateColor, formZoneColor, FORM_ZONE_COLORS } from "@dofek/shared/scoring";
 import { formatPace } from "@dofek/shared/format";
 import { statusColors } from "@dofek/shared/colors";
 
@@ -192,19 +192,19 @@ function OverviewTab({ days }: { days: number }) {
       <Text style={styles.sectionTitle}>Performance Management</Text>
       <View style={styles.summaryRow}>
         <View style={styles.summaryCard}>
-          <Text style={styles.summaryLabel}>Fitness (CTL)</Text>
+          <Text style={styles.summaryLabel}>Fitness</Text>
           <Text style={[styles.summaryValue, { color: colors.blue }]}>{formatNumber(latest?.ctl, 1)}</Text>
         </View>
         <View style={styles.summaryCard}>
-          <Text style={styles.summaryLabel}>Fatigue (ATL)</Text>
-          <Text style={[styles.summaryValue, { color: colors.orange }]}>{formatNumber(latest?.atl, 1)}</Text>
+          <Text style={styles.summaryLabel}>Fatigue</Text>
+          <Text style={[styles.summaryValue, { color: colors.purple }]}>{formatNumber(latest?.atl, 1)}</Text>
         </View>
         <View style={styles.summaryCard}>
-          <Text style={styles.summaryLabel}>Form (TSB)</Text>
+          <Text style={styles.summaryLabel}>Form</Text>
           <Text
             style={[
               styles.summaryValue,
-              { color: latest?.tsb != null && latest.tsb >= 0 ? statusColors.positive : statusColors.danger },
+              { color: latest?.tsb != null ? formZoneColor(latest.tsb) : colors.textSecondary },
             ]}
           >
             {formatNumber(latest?.tsb, 1)}
@@ -376,14 +376,14 @@ function CyclingTab({ days }: { days: number }) {
             </View>
             <View style={styles.summaryCard}>
               <Text style={styles.summaryLabel}>Fatigue</Text>
-              <Text style={[styles.summaryValue, { color: colors.orange }]}>{formatNumber(latestPmc.atl, 1)}</Text>
+              <Text style={[styles.summaryValue, { color: colors.purple }]}>{formatNumber(latestPmc.atl, 1)}</Text>
             </View>
             <View style={styles.summaryCard}>
               <Text style={styles.summaryLabel}>Form</Text>
               <Text
                 style={[
                   styles.summaryValue,
-                  { color: latestPmc.tsb >= 0 ? statusColors.positive : statusColors.danger },
+                  { color: formZoneColor(latestPmc.tsb) },
                 ]}
               >
                 {formatNumber(latestPmc.tsb, 1)}
@@ -402,6 +402,14 @@ function CyclingTab({ days }: { days: number }) {
               </View>
             </View>
           )}
+          {/* Form zone legend */}
+          <View style={styles.legendRow}>
+            <FormZoneTag label="Transition" color={FORM_ZONE_COLORS.transition} />
+            <FormZoneTag label="Fresh" color={FORM_ZONE_COLORS.fresh} />
+            <FormZoneTag label="Grey" color={FORM_ZONE_COLORS.grey} />
+            <FormZoneTag label="Optimal" color={FORM_ZONE_COLORS.optimal} />
+            <FormZoneTag label="High Risk" color={FORM_ZONE_COLORS.highRisk} />
+          </View>
         </View>
       )}
 
@@ -441,6 +449,15 @@ function CyclingTab({ days }: { days: number }) {
       {points.length === 0 && (
         <EmptyText message="No cycling power data available for this period." />
       )}
+    </View>
+  );
+}
+
+function FormZoneTag({ label, color }: { label: string; color: string }) {
+  return (
+    <View style={styles.legendItem}>
+      <View style={[styles.legendDot, { backgroundColor: color }]} />
+      <Text style={[styles.legendText, { color }]}>{label}</Text>
     </View>
   );
 }

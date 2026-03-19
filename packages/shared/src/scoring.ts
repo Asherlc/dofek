@@ -97,3 +97,36 @@ export function sleepDebtColor(minutes: number): string {
   if (minutes < 120) return statusColors.warning;
   return statusColors.danger;
 }
+
+/** Form zone boundaries (intervals.icu defaults) */
+export const FORM_ZONE_TRANSITION = 25;
+export const FORM_ZONE_FRESH = 5;
+export const FORM_ZONE_GREY = -10;
+export const FORM_ZONE_OPTIMAL = -30;
+
+/** Colors for form (training stress balance) zones */
+export const FORM_ZONE_COLORS = {
+  transition: "#60a5fa",
+  fresh: "#22c55e",
+  grey: "#a1a1aa",
+  optimal: "#22c55e",
+  highRisk: "#ef4444",
+} as const;
+
+/** Get the color for a form score (training stress balance) value */
+export function formZoneColor(formScore: number): string {
+  if (formScore > FORM_ZONE_TRANSITION) return FORM_ZONE_COLORS.transition;
+  if (formScore > FORM_ZONE_FRESH) return FORM_ZONE_COLORS.fresh;
+  if (formScore > FORM_ZONE_GREY) return FORM_ZONE_COLORS.grey;
+  if (formScore > FORM_ZONE_OPTIMAL) return FORM_ZONE_COLORS.optimal;
+  return FORM_ZONE_COLORS.highRisk;
+}
+
+/** Get a human-readable zone label for a form score value */
+export function formZoneLabel(formScore: number): string {
+  if (formScore > FORM_ZONE_TRANSITION) return "Transition";
+  if (formScore > FORM_ZONE_FRESH) return "Fresh";
+  if (formScore > FORM_ZONE_GREY) return "Grey Zone";
+  if (formScore > FORM_ZONE_OPTIMAL) return "Optimal";
+  return "High Risk";
+}
