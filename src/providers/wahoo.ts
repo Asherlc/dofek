@@ -4,6 +4,7 @@ import type { SyncDatabase } from "../db/index.ts";
 import { activity, metricStream } from "../db/schema.ts";
 import { loadTokens, saveTokens } from "../db/tokens.ts";
 import { type ParsedFitRecord, parseFitFile } from "../fit/parser.ts";
+import { logger } from "../logger.ts";
 import type {
   Provider,
   ProviderAuthSetup,
@@ -302,7 +303,7 @@ export class WahooProvider implements Provider {
       return tokens;
     }
 
-    console.log("[wahoo] Access token expired, refreshing...");
+    logger.info("[wahoo] Access token expired, refreshing...");
     const config = wahooOAuthConfig();
     if (!config)
       throw new Error("WAHOO_CLIENT_ID and WAHOO_CLIENT_SECRET are required to refresh tokens");
@@ -394,7 +395,7 @@ export class WahooProvider implements Provider {
                 for (let i = 0; i < metricRows.length; i += 500) {
                   await db.insert(metricStream).values(metricRows.slice(i, i + 500));
                 }
-                console.log(
+                logger.info(
                   `[wahoo] Inserted ${metricRows.length} metric_stream records for workout ${workout.externalId}`,
                 );
               }

@@ -1,5 +1,6 @@
 import { Worker } from "bullmq";
 import { createDatabaseFromEnv } from "../db/index.ts";
+import { jobContext, logger } from "../logger.ts";
 import { processImportJob } from "./process-import-job.ts";
 import { processSyncJob } from "./process-sync-job.ts";
 import {
@@ -17,12 +18,16 @@ const connection = getRedisConnection();
 
 // ── Workers ──
 
-const syncWorker = new Worker<SyncJobData>(SYNC_QUEUE, (job) => processSyncJob(job, db), {
-  connection,
-});
-const importWorker = new Worker<ImportJobData>(IMPORT_QUEUE, (job) => processImportJob(job, db), {
-  connection,
-});
+const syncWorker = new Worker<SyncJobData>(
+  SYNC_QUEUE,
+  (job) => jobContext.run(job, () => processSyncJob(job, db)),
+  { connection },
+);
+const importWorker = new Worker<ImportJobData>(
+  IMPORT_QUEUE,
+  (job) => jobContext.run(job, () => processImportJob(job, db)),
+  { connection },
+);
 
 // ── Idle spin-down ──
 
@@ -39,7 +44,7 @@ function resetIdleTimer() {
 function startIdleTimer() {
   resetIdleTimer();
   idleTimer = setTimeout(async () => {
-    console.log("[worker] Idle timeout reached, shutting down...");
+    logger.info("[worker] Idle timeout reached, shutting down...");
     await shutdown();
   }, IDLE_TIMEOUT_MS);
 }
@@ -57,12 +62,12 @@ for (const worker of [syncWorker, importWorker]) {
 
   worker.on("failed", (_job, err) => {
     activeJobs--;
-    console.error(`[worker] Job failed: ${err.message}`);
+    logger.error(`[worker] Job failed: ${err.message}`);
     if (activeJobs <= 0) startIdleTimer();
   });
 
   worker.on("error", (err) => {
-    console.error(`[worker] Worker error: ${err.message}`);
+    logger.error(`[worker] Worker error: ${err.message}`);
   });
 }
 
@@ -76,9 +81,9 @@ let shuttingDown = false;
 async function shutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
-  console.log("[worker] Shutting down gracefully...");
+  logger.info("[worker] Shutting down gracefully...");
   await Promise.all([syncWorker.close(), importWorker.close()]);
-  console.log("[worker] Shutdown complete.");
+  logger.info("[worker] Shutdown complete.");
   process.exit(0);
 }
 
@@ -90,7 +95,7 @@ process.on("SIGINT", shutdown);
 // processor's try/catch (e.g., from concurrent batch inserts via postgres.js).
 // Log the error but keep the worker alive so it can process the next job.
 process.on("unhandledRejection", (err) => {
-  console.error("[worker] Unhandled rejection (worker still running):", err);
+  logger.error(`[worker] Unhandled rejection (worker still running): ${err}`);
 });
 
-console.log("[worker] Started, waiting for jobs...");
+logger.info("[worker] Started, waiting for jobs...");

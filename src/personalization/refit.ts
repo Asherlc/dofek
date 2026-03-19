@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { logger } from "../logger.ts";
 import type { ExponentialMovingAverageInput } from "./fit-ewma.ts";
 import { fitExponentialMovingAverage } from "./fit-ewma.ts";
 import type { ReadinessWeightsInput } from "./fit-readiness-weights.ts";
@@ -45,7 +46,7 @@ export async function refitAllParams(db: Database, userId: string): Promise<Pers
   try {
     await savePersonalizedParams(db, userId, params);
   } catch (err) {
-    console.error("[personalization] Failed to save params:", err);
+    logger.error(`[personalization] Failed to save params: ${err}`);
   }
 
   return params;

@@ -11,6 +11,7 @@ import type { SyncDatabase } from "../db/index.ts";
 import { activity, bodyMeasurement, dailyMetrics, sleepSession } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import { logger } from "../logger.ts";
 import type {
   Provider,
   ProviderAuthSetup,
@@ -397,7 +398,7 @@ export class FitbitProvider implements Provider {
       return tokens;
     }
 
-    console.log("[fitbit] Access token expired, refreshing...");
+    logger.info("[fitbit] Access token expired, refreshing...");
     const config = fitbitOAuthConfig();
     if (!config) {
       throw new Error("FITBIT_CLIENT_ID and FITBIT_CLIENT_SECRET are required to refresh tokens");

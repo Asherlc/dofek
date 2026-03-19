@@ -4,6 +4,7 @@ import type { SyncDatabase } from "../db/index.ts";
 import { activity, bodyMeasurement } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import { logger } from "../logger.ts";
 import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
 
 // ============================================================
@@ -135,7 +136,7 @@ export class WgerProvider implements Provider {
     if (!tokens) throw new Error("No OAuth tokens for Wger. Run: health-data auth wger");
     if (tokens.expiresAt > new Date()) return tokens;
 
-    console.log("[wger] Token expired, refreshing...");
+    logger.info("[wger] Token expired, refreshing...");
     const config = wgerOAuthConfig();
     if (!config || !tokens.refreshToken) throw new Error("Cannot refresh Wger tokens");
     const refreshed = await refreshAccessToken(config, tokens.refreshToken, this.fetchFn);

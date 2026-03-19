@@ -11,6 +11,7 @@ import type { SyncDatabase } from "../db/index.ts";
 import { bodyMeasurement, dailyMetrics, metricStream, sleepSession } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import { logger } from "../logger.ts";
 import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
 
 // ============================================================
@@ -97,7 +98,7 @@ export class EightSleepProvider implements Provider {
             "Eight Sleep token expired and EIGHT_SLEEP_USERNAME/EIGHT_SLEEP_PASSWORD not set for re-auth",
           );
         }
-        console.log("[eight-sleep] Token expired, re-authenticating...");
+        logger.info("[eight-sleep] Token expired, re-authenticating...");
         const result = await EightSleepClient.signIn(email, password, this.fetchFn);
         const tokens = {
           accessToken: result.accessToken,

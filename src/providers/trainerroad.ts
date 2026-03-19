@@ -3,6 +3,7 @@ import type { SyncDatabase } from "../db/index.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import { logger } from "../logger.ts";
 import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
 
 const TRAINERROAD_BASE = "https://www.trainerroad.com";
@@ -88,7 +89,7 @@ export class TrainerRoadProvider implements Provider {
             "TrainerRoad cookie expired and TRAINERROAD_USERNAME/TRAINERROAD_PASSWORD not set",
           );
         }
-        console.log("[trainerroad] Cookie expired, re-authenticating...");
+        logger.info("[trainerroad] Cookie expired, re-authenticating...");
         const result = await TrainerRoadClient.signIn(email, password, this.fetchFn);
         await saveTokens(db, this.id, {
           accessToken: result.authCookie,

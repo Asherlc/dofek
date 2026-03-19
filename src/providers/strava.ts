@@ -4,6 +4,7 @@ import { exchangeCodeForTokens, getOAuthRedirectUri, refreshAccessToken } from "
 import type { SyncDatabase } from "../db/index.ts";
 import { activity, metricStream } from "../db/schema.ts";
 import { loadTokens, saveTokens } from "../db/tokens.ts";
+import { logger } from "../logger.ts";
 import type {
   Provider,
   ProviderAuthSetup,
@@ -416,7 +417,7 @@ export class StravaProvider implements Provider {
       return tokens;
     }
 
-    console.log("[strava] Access token expired, refreshing...");
+    logger.info("[strava] Access token expired, refreshing...");
     const config = stravaOAuthConfig();
     if (!config)
       throw new Error("STRAVA_CLIENT_ID and STRAVA_CLIENT_SECRET are required to refresh tokens");
@@ -544,7 +545,7 @@ export class StravaProvider implements Provider {
               for (let i = 0; i < metricRows.length; i += 500) {
                 await db.insert(metricStream).values(metricRows.slice(i, i + 500));
               }
-              console.log(
+              logger.info(
                 `[strava] Inserted ${metricRows.length} metric_stream records for activity ${act.externalId}`,
               );
             }

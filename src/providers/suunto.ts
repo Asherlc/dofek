@@ -4,6 +4,7 @@ import type { SyncDatabase } from "../db/index.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import { logger } from "../logger.ts";
 import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
 
 // ============================================================
@@ -154,7 +155,7 @@ export class SuuntoProvider implements Provider {
     if (!tokens) throw new Error("No OAuth tokens for Suunto. Run: health-data auth suunto");
     if (tokens.expiresAt > new Date()) return tokens;
 
-    console.log("[suunto] Token expired, refreshing...");
+    logger.info("[suunto] Token expired, refreshing...");
     const config = suuntoOAuthConfig();
     if (!config || !tokens.refreshToken) throw new Error("Cannot refresh Suunto tokens");
     const refreshed = await refreshAccessToken(config, tokens.refreshToken, this.fetchFn);

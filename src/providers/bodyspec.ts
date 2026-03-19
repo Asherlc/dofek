@@ -5,6 +5,7 @@ import type { SyncDatabase } from "../db/index.ts";
 import { dexaScan, dexaScanRegion } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import { logger } from "../logger.ts";
 import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
 
 // ============================================================
@@ -354,7 +355,7 @@ export class BodySpecProvider implements Provider {
       return tokens;
     }
 
-    console.log("[bodyspec] Access token expired, refreshing...");
+    logger.info("[bodyspec] Access token expired, refreshing...");
     const config = bodySpecOAuthConfig();
     if (!config) {
       throw new Error(

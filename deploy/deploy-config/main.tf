@@ -5,8 +5,9 @@ variable "server_ip" {
 
 resource "null_resource" "deploy_config" {
   triggers = {
-    compose_hash = filemd5("${path.module}/../docker-compose.yml")
-    caddy_hash   = filemd5("${path.module}/../Caddyfile")
+    compose_hash   = filemd5("${path.module}/../docker-compose.yml")
+    caddy_hash     = filemd5("${path.module}/../Caddyfile")
+    collector_hash = filemd5("${path.module}/../otel-collector-config.yaml")
   }
 
   connection {
@@ -24,6 +25,11 @@ resource "null_resource" "deploy_config" {
   provisioner "file" {
     source      = "${path.module}/../Caddyfile"
     destination = "/opt/dofek/Caddyfile"
+  }
+
+  provisioner "file" {
+    source      = "${path.module}/../otel-collector-config.yaml"
+    destination = "/opt/dofek/otel-collector-config.yaml"
   }
 
   provisioner "remote-exec" {

@@ -26,6 +26,7 @@ import {
 } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import { logger } from "../logger.ts";
 import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
 
 // ============================================================
@@ -539,7 +540,7 @@ export class GarminProvider implements Provider {
     // For internal tokens, refresh via OAuth1→OAuth2 exchange
     const internalTokens = deserializeInternalTokens(tokens);
     if (internalTokens) {
-      console.log("[garmin] Internal API token expired, refreshing via OAuth1 exchange...");
+      logger.info("[garmin] Internal API token expired, refreshing via OAuth1 exchange...");
       const client = await GarminConnectClient.fromTokens(
         internalTokens,
         "garmin.com",
@@ -553,7 +554,7 @@ export class GarminProvider implements Provider {
     }
 
     // For official tokens, use standard refresh
-    console.log("[garmin] Access token expired, refreshing...");
+    logger.info("[garmin] Access token expired, refreshing...");
     const config = garminOAuthConfig();
     if (!config) throw new Error("GARMIN_CLIENT_ID is required to refresh tokens");
     if (!tokens.refreshToken) throw new Error("No refresh token for Garmin");

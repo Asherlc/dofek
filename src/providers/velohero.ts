@@ -3,6 +3,7 @@ import type { SyncDatabase } from "../db/index.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import { logger } from "../logger.ts";
 import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
 
 const VELOHERO_BASE_URL = "https://app.velohero.com";
@@ -83,7 +84,7 @@ export class VeloHeroProvider implements Provider {
             "VeloHero session expired and VELOHERO_USERNAME/VELOHERO_PASSWORD not set for re-auth",
           );
         }
-        console.log("[velohero] Session expired, re-authenticating...");
+        logger.info("[velohero] Session expired, re-authenticating...");
         const result = await VeloHeroClient.signIn(username, password, this.fetchFn);
         const tokens = {
           accessToken: result.sessionCookie,
@@ -109,9 +110,9 @@ export class VeloHeroProvider implements Provider {
       const activityCount = await withSyncLog(db, this.id, "activity", async () => {
         let count = 0;
 
-        console.log(`[velohero] Fetching workouts from ${sinceDate} to ${toDate}`);
+        logger.info(`[velohero] Fetching workouts from ${sinceDate} to ${toDate}`);
         const workouts = await client.getWorkouts(sinceDate, toDate);
-        console.log(`[velohero] Fetched ${workouts.length} workouts`);
+        logger.info(`[velohero] Fetched ${workouts.length} workouts`);
 
         for (const workout of workouts) {
           const parsed = parseVeloHeroWorkout(workout);

@@ -12,6 +12,7 @@ import type { SyncDatabase } from "../db/index.ts";
 import { activity, metricStream } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import { logger } from "../logger.ts";
 import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
 
 // ============================================================
@@ -379,7 +380,7 @@ export async function pelotonAutomatedLogin(
   authorizeUrl.searchParams.set("state", state);
   authorizeUrl.searchParams.set("nonce", nonce);
 
-  console.log("[peloton] Initiating Auth0 login flow...");
+  logger.info("[peloton] Initiating Auth0 login flow...");
   let { response, location } = await followRedirects(authorizeUrl.toString(), jar, fetchFn);
 
   while (location) {
@@ -410,7 +411,7 @@ export async function pelotonAutomatedLogin(
   const extraParams = injectedConfig.extraParams;
 
   // Step 2: POST credentials to Auth0 login endpoint
-  console.log("[peloton] Submitting credentials...");
+  logger.info("[peloton] Submitting credentials...");
   const loginUrl = `${PELOTON_AUTH_DOMAIN}/usernamepassword/login`;
   const { response: loginResp } = await followRedirects(loginUrl, jar, fetchFn, {
     method: "POST",
@@ -457,7 +458,7 @@ export async function pelotonAutomatedLogin(
   }
 
   // Step 4: Submit form, then follow redirects until we find ?code= in a Location header
-  console.log("[peloton] Following Auth0 redirect chain...");
+  logger.info("[peloton] Following Auth0 redirect chain...");
   let { location: redirectUrl } = await followRedirects(formAction, jar, fetchFn, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -489,7 +490,7 @@ export async function pelotonAutomatedLogin(
   }
 
   // Step 5: Exchange code for tokens
-  console.log("[peloton] Exchanging authorization code for tokens...");
+  logger.info("[peloton] Exchanging authorization code for tokens...");
   return exchangeCodeForTokens(config, authCode, fetchFn, { codeVerifier });
 }
 
@@ -534,7 +535,7 @@ export class PelotonProvider implements Provider {
       return tokens;
     }
 
-    console.log("[peloton] Access token expired, refreshing...");
+    logger.info("[peloton] Access token expired, refreshing...");
     const config = pelotonOAuthConfig();
     if (!tokens.refreshToken) throw new Error("No refresh token for Peloton");
     const refreshed = await refreshAccessToken(config, tokens.refreshToken, this.fetchFn);
@@ -693,7 +694,7 @@ export class PelotonProvider implements Provider {
         page++;
       }
 
-      console.log(`[peloton] ${workoutCount} workouts, ${streamCount} metric stream rows`);
+      logger.info(`[peloton] ${workoutCount} workouts, ${streamCount} metric stream rows`);
       return { recordCount: workoutCount + streamCount, result: workoutCount + streamCount };
     });
 

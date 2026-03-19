@@ -4,6 +4,7 @@ import type { SyncDatabase } from "../db/index.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import { logger } from "../logger.ts";
 import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
 
 // ============================================================
@@ -218,7 +219,7 @@ export class MapMyFitnessProvider implements Provider {
 
     if (tokens.expiresAt > new Date()) return tokens;
 
-    console.log("[mapmyfitness] Token expired, refreshing...");
+    logger.info("[mapmyfitness] Token expired, refreshing...");
     const config = mapMyFitnessOAuthConfig();
     if (!config) throw new Error("MapMyFitness OAuth config required");
     if (!tokens.refreshToken) throw new Error("No refresh token for MapMyFitness");

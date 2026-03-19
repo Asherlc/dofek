@@ -3,6 +3,18 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { SyncResult } from "./providers/types.ts";
 import { createUploadHandler, parseSince } from "./upload-server.ts";
 
+const mockLoggerInfo = vi.fn();
+const mockLoggerError = vi.fn();
+
+vi.mock("./logger.ts", () => ({
+  logger: {
+    info: (...args: unknown[]) => mockLoggerInfo(...args),
+    error: (...args: unknown[]) => mockLoggerError(...args),
+    warn: vi.fn(),
+    debug: vi.fn(),
+  },
+}));
+
 // ---------------------------------------------------------------------------
 // parseSince
 // ---------------------------------------------------------------------------
@@ -93,10 +105,49 @@ describe("createUploadHandler", () => {
       await teardown();
     });
 
-    it("returns 200 with { status: 'ok' }", async () => {
+    it("returns 200 with { status: 'ok' } and JSON content type", async () => {
       const res = await fetch(`${baseUrl}/health`);
       expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("application/json");
       expect(await res.json()).toEqual({ status: "ok" });
+    });
+  });
+
+  describe("method matching", () => {
+    beforeAll(async () => {
+      mockImportAppleHealth.mockResolvedValue(mockImportResult);
+      await setup(undefined);
+    });
+
+    afterAll(async () => {
+      await teardown();
+      mockImportAppleHealth.mockReset();
+    });
+
+    it("returns 404 for POST /health (wrong method)", async () => {
+      const res = await fetch(`${baseUrl}/health`, { method: "POST", body: "data" });
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 404 for GET /upload/apple-health (wrong method)", async () => {
+      const res = await fetch(`${baseUrl}/upload/apple-health`);
+      expect(res.status).toBe(404);
+    });
+
+    it("matches /upload/apple-health prefix with query params", async () => {
+      const res = await fetch(`${baseUrl}/upload/apple-health?since-days=14`, {
+        method: "POST",
+        body: "data",
+      });
+      expect(res.status).toBe(200);
+    });
+
+    it("returns 404 for POST /upload/other-provider", async () => {
+      const res = await fetch(`${baseUrl}/upload/other-provider`, {
+        method: "POST",
+        body: "data",
+      });
+      expect(res.status).toBe(404);
     });
   });
 
@@ -111,17 +162,30 @@ describe("createUploadHandler", () => {
       mockImportAppleHealth.mockReset();
     });
 
-    it("accepts upload and returns import result", async () => {
+    it("accepts upload and returns import result with JSON content type", async () => {
       const res = await fetch(`${baseUrl}/upload/apple-health`, {
         method: "POST",
         body: "fake-zip-data",
       });
       expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("application/json");
       const body = await res.json();
       expect(body.recordsSynced).toBe(42);
       expect(body.errors).toEqual([]);
       expect(body.duration).toBe(500);
       expect(mockImportAppleHealth).toHaveBeenCalledOnce();
+    });
+
+    it("logs upload receipt", async () => {
+      mockLoggerInfo.mockClear();
+      mockImportAppleHealth.mockResolvedValueOnce(mockImportResult);
+      await fetch(`${baseUrl}/upload/apple-health`, {
+        method: "POST",
+        body: "data",
+      });
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        expect.stringContaining("[server] Received upload"),
+      );
     });
   });
 
@@ -138,13 +202,14 @@ describe("createUploadHandler", () => {
       mockImportAppleHealth.mockReset();
     });
 
-    it("returns 401 with wrong Bearer token", async () => {
+    it("returns 401 with wrong Bearer token and JSON content type", async () => {
       const res = await fetch(`${baseUrl}/upload/apple-health`, {
         method: "POST",
         headers: { Authorization: "Bearer wrong-key" },
         body: "data",
       });
       expect(res.status).toBe(401);
+      expect(res.headers.get("content-type")).toContain("application/json");
       expect(await res.json()).toEqual({ error: "Unauthorized" });
     });
 
@@ -170,17 +235,22 @@ describe("createUploadHandler", () => {
       mockImportAppleHealth.mockReset();
     });
 
-    it("returns 500 when import throws", async () => {
+    it("returns 500 when import throws with JSON content type", async () => {
+      mockLoggerError.mockClear();
       mockImportAppleHealth.mockRejectedValueOnce(new Error("disk full"));
       const res = await fetch(`${baseUrl}/upload/apple-health`, {
         method: "POST",
         body: "data",
       });
       expect(res.status).toBe(500);
+      expect(res.headers.get("content-type")).toContain("application/json");
       expect(await res.json()).toEqual({ error: "disk full" });
+      expect(mockLoggerError).toHaveBeenCalledWith(
+        expect.stringContaining("[server] Import failed:"),
+      );
     });
 
-    it("returns 207 when import has partial errors", async () => {
+    it("returns 207 when import has partial errors with JSON content type", async () => {
       mockImportAppleHealth.mockResolvedValueOnce({
         ...mockImportResult,
         errors: [{ message: "bad record" }],
@@ -190,6 +260,7 @@ describe("createUploadHandler", () => {
         body: "data",
       });
       expect(res.status).toBe(207);
+      expect(res.headers.get("content-type")).toContain("application/json");
       const body = await res.json();
       expect(body.errors).toEqual(["bad record"]);
     });
@@ -204,9 +275,10 @@ describe("createUploadHandler", () => {
       await teardown();
     });
 
-    it("returns 404 for GET /unknown", async () => {
+    it("returns 404 for GET /unknown with JSON content type", async () => {
       const res = await fetch(`${baseUrl}/unknown`);
       expect(res.status).toBe(404);
+      expect(res.headers.get("content-type")).toContain("application/json");
       expect(await res.json()).toEqual({ error: "Not found" });
     });
   });

@@ -27,6 +27,7 @@ import {
 } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import { logger } from "../logger.ts";
 import type {
   Provider,
   ProviderAuthSetup,
@@ -505,12 +506,12 @@ export class WhoopProvider implements Provider {
         const windowEnd = Math.min(windowStart + MAX_CYCLE_WINDOW_MS, nowMs);
         const startStr = new Date(windowStart).toISOString();
         const endStr = new Date(windowEnd).toISOString();
-        console.log(`[whoop] Fetching cycles ${startStr} → ${endStr}`);
+        logger.info(`[whoop] Fetching cycles ${startStr} → ${endStr}`);
         const chunk = await client.getCycles(startStr, endStr);
         cycles.push(...chunk);
         windowStart = windowEnd;
       }
-      console.log(`[whoop] Fetched ${cycles.length} total cycles`);
+      logger.info(`[whoop] Fetched ${cycles.length} total cycles`);
     } catch (err) {
       errors.push({
         message: `getCycles: ${err instanceof Error ? err.message : String(err)}`,
@@ -871,7 +872,7 @@ export class WhoopProvider implements Provider {
     try {
       const journalCount = await withSyncLog(db, this.id, "journal", async () => {
         const raw = await client.getJournal(since.toISOString(), new Date().toISOString());
-        console.log(`[whoop] Journal response shape: ${JSON.stringify(raw).slice(0, 500)}`);
+        logger.info(`[whoop] Journal response shape: ${JSON.stringify(raw).slice(0, 500)}`);
 
         const entries = parseJournalResponse(raw);
         let count = 0;

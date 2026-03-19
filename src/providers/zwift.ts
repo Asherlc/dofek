@@ -10,6 +10,7 @@ import type { SyncDatabase } from "../db/index.ts";
 import { activity, dailyMetrics, metricStream } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import { logger } from "../logger.ts";
 import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
 
 // ============================================================
@@ -81,7 +82,7 @@ export class ZwiftProvider implements Provider {
       if (!stored.refreshToken) {
         throw new Error("Zwift token expired and no refresh token — re-authenticate");
       }
-      console.log("[zwift] Token expired, refreshing...");
+      logger.info("[zwift] Token expired, refreshing...");
       const refreshed = await ZwiftClient.refreshToken(stored.refreshToken, this.fetchFn);
       const tokens = {
         accessToken: refreshed.accessToken,

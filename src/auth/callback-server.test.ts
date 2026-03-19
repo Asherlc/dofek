@@ -1,4 +1,18 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+const mockLoggerInfo = vi.fn();
+const mockLoggerError = vi.fn();
+const mockLoggerWarn = vi.fn();
+
+vi.mock("../logger.ts", () => ({
+  logger: {
+    info: (...args: unknown[]) => mockLoggerInfo(...args),
+    error: (...args: unknown[]) => mockLoggerError(...args),
+    warn: (...args: unknown[]) => mockLoggerWarn(...args),
+    debug: vi.fn(),
+  },
+}));
+
 import { waitForAuthCode } from "./callback-server.ts";
 
 describe("waitForAuthCode", () => {
@@ -172,19 +186,17 @@ describe("waitForAuthCode", () => {
 
   it("logs server startup message", async () => {
     const port = 19886;
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
     const promise = waitForAuthCode(port, { https: false });
     await new Promise((r) => setTimeout(r, 200));
 
-    expect(logSpy).toHaveBeenCalledWith(
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
       expect.stringContaining(`http://localhost:${port}/callback`),
     );
 
     await fetch(`http://localhost:${port}/callback?code=cleanup`);
     const result = await promise;
     cleanup = result.cleanup;
-    logSpy.mockRestore();
   });
 
   it("defaults to HTTPS when no options provided", async () => {

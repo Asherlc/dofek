@@ -4,6 +4,7 @@ import { getOAuthRedirectUri } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { foodEntry } from "../db/schema.ts";
 import { ensureProvider } from "../db/tokens.ts";
+import { logger } from "../logger.ts";
 import type { Provider, SyncError, SyncResult } from "./types.ts";
 
 // ============================================================
@@ -651,7 +652,7 @@ export class FatSecretProvider implements Provider {
       current.setDate(current.getDate() + 1);
     }
 
-    console.log(`[fatsecret] ${recordsSynced} food entries synced`);
+    logger.info(`[fatsecret] ${recordsSynced} food entries synced`);
 
     return {
       provider: this.id,

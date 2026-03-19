@@ -1,6 +1,7 @@
 import type { SyncDatabase } from "../db/index.ts";
 import { logSync } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
+import { logger } from "../logger.ts";
 import type { SyncJobData } from "./queues.ts";
 
 /**
@@ -61,7 +62,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
     const syncStart = Date.now();
 
     try {
-      console.log(`[worker] Starting ${provider.name}...`);
+      logger.info(`[worker] Starting ${provider.name}...`);
       const result = await provider.sync(db, since, (pct, message) => {
         providerStatus[provider.id] = { status: "running", message };
         job.updateProgress({
@@ -115,7 +116,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
     const { updateUserMaxHr } = await import("../db/dedup.ts");
     await updateUserMaxHr(db);
   } catch (err) {
-    console.error(`[worker] Failed to update max HR: ${err}`);
+    logger.error(`[worker] Failed to update max HR: ${err}`);
   }
 
   try {
@@ -127,23 +128,23 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
       await syncProviderPriorities(db, config);
     }
   } catch (err) {
-    console.error("[worker] Failed to sync provider priorities:", err);
+    logger.error(`[worker] Failed to sync provider priorities: ${err}`);
   }
 
   try {
     const { refreshDedupViews } = await import("../db/dedup.ts");
     await refreshDedupViews(db);
   } catch (err) {
-    console.error(`[worker] Failed to refresh views: ${err}`);
+    logger.error(`[worker] Failed to refresh views: ${err}`);
   }
 
   // Refit personalized algorithm parameters from updated data
   try {
     const { refitAllParams } = await import("../personalization/refit.ts");
-    console.log("[worker] Refitting personalized parameters...");
+    logger.info("[worker] Refitting personalized parameters...");
     await refitAllParams(db, job.data.userId);
-    console.log("[worker] Personalized parameters updated.");
+    logger.info("[worker] Personalized parameters updated.");
   } catch (err) {
-    console.error(`[worker] Failed to refit parameters: ${err}`);
+    logger.error(`[worker] Failed to refit parameters: ${err}`);
   }
 }

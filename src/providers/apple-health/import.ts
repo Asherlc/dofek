@@ -7,6 +7,7 @@ import yauzl from "yauzl";
 import type { SyncDatabase } from "../../db/index.ts";
 import { healthEvent, labResult, metricStream } from "../../db/schema.ts";
 import { ensureProvider } from "../../db/tokens.ts";
+import { logger } from "../../logger.ts";
 import type { SyncError, SyncResult } from "../types.ts";
 import { getStringAttrs } from "./dates.ts";
 import {
@@ -173,7 +174,7 @@ export async function runImport(
       },
     });
 
-    console.log(
+    logger.info(
       `[apple_health] Parsed ${counts.recordCount} records, ` +
         `${counts.workoutCount} workouts, ${counts.sleepCount} sleep records, ` +
         `${counts.categoryCount} category events`,
@@ -203,10 +204,10 @@ export async function importAppleHealthFile(
   let cleanupPath: string | null = null;
 
   if (filePath.endsWith(".zip")) {
-    console.log(`[apple_health] Extracting ${filePath}...`);
+    logger.info(`[apple_health] Extracting ${filePath}...`);
     xmlPath = await extractExportXml(filePath);
     cleanupPath = xmlPath;
-    console.log(`[apple_health] Extracted to ${xmlPath}`);
+    logger.info(`[apple_health] Extracted to ${xmlPath}`);
   } else {
     xmlPath = filePath;
   }
@@ -214,18 +215,18 @@ export async function importAppleHealthFile(
   // Default to console progress if no callback provided
   const progressFn = onProgress ?? defaultConsoleProgress;
 
-  console.log(`[apple_health] Importing from ${xmlPath} (since ${since.toISOString()})`);
+  logger.info(`[apple_health] Importing from ${xmlPath} (since ${since.toISOString()})`);
   const result = await runImport(db, "apple_health", xmlPath, since, progressFn);
 
   // Import clinical records (lab results) from zip
   if (filePath.endsWith(".zip")) {
-    console.log("[apple_health] Importing clinical records...");
+    logger.info("[apple_health] Importing clinical records...");
     const labCounts = await importClinicalRecords(db, "apple_health", filePath, xmlPath);
     result.recordsSynced += labCounts.inserted;
     if (labCounts.errors.length > 0) {
       result.errors.push(...labCounts.errors);
     }
-    console.log(
+    logger.info(
       `[apple_health] ${labCounts.inserted} lab results, ` +
         `${labCounts.skipped} skipped, ${labCounts.errors.length} errors`,
     );

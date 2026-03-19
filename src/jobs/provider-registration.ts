@@ -1,3 +1,4 @@
+import { logger } from "../logger.ts";
 import { registerProvider } from "../providers/index.ts";
 
 let registrationPromise: Promise<void> | null = null;
@@ -74,7 +75,7 @@ async function doRegisterProviders() {
     try {
       registerProvider(await loadProvider());
     } catch (err) {
-      console.warn(`[worker] Failed to register ${name} provider: ${err}`);
+      logger.warn(`[worker] Failed to register ${name} provider: ${err}`);
     }
   }
 }
