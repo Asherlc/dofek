@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { DaySelector } from "../../components/DaySelector";
 import { MetricCard } from "../../components/MetricCard";
 import { SleepBar } from "../../components/charts/SleepBar";
@@ -56,7 +57,11 @@ export default function SleepScreen() {
           {/* Last night's sleep */}
           {lastNight && (
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>Last Night</Text>
+              <ChartTitleWithTooltip
+                title="Last Night"
+                description="This sleep stage bar shows how your most recent night was split across deep, REM, light, and awake time."
+                textStyle={styles.cardTitle}
+              />
               <SleepBar
                 durationMinutes={lastNight.durationMinutes}
                 deepPct={lastNight.deepPct}
@@ -111,7 +116,11 @@ export default function SleepScreen() {
           {/* Sleep consistency */}
           {latestConsistency && (
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>Schedule Consistency</Text>
+              <ChartTitleWithTooltip
+                title="Schedule Consistency"
+                description="This chart tracks how consistent your sleep and wake timing has been over recent nights."
+                textStyle={styles.cardTitle}
+              />
               <View style={styles.consistencyRow}>
                 <View style={styles.consistencyStat}>
                   <Text style={styles.consistencyValue}>
@@ -151,7 +160,11 @@ export default function SleepScreen() {
           {/* Nightly history */}
           {nightly.length > 0 && (
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>Recent Nights</Text>
+              <ChartTitleWithTooltip
+                title="Recent Nights"
+                description="These stacked bars compare the sleep-stage breakdown for your most recent nights."
+                textStyle={styles.cardTitle}
+              />
               <View style={styles.nightlyStack}>
                 {nightly.slice(-7).reverse().map((night) => (
                   <View key={night.date} style={styles.nightlyRow}>

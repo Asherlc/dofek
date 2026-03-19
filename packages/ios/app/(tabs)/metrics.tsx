@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useRouter } from "expo-router";
+import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { DaySelector } from "../../components/DaySelector";
 import { MetricCard } from "../../components/MetricCard";
 import { SparkLine } from "../../components/charts/SparkLine";
@@ -94,7 +95,11 @@ export default function MetricsScreen() {
           {/* Recovery trend chart */}
           {readinessValues.length >= 2 && (
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>Recovery Score</Text>
+              <ChartTitleWithTooltip
+                title="Recovery Score"
+                description="This chart shows your recovery score trend over the selected period."
+                textStyle={styles.cardTitle}
+              />
               <View style={styles.chartRow}>
                 <Text style={styles.bigValue}>
                   {latestReadiness?.readinessScore ?? "--"}
@@ -138,9 +143,11 @@ export default function MetricsScreen() {
           {/* HRV variability (coefficient of variation) */}
           {hrvData.length >= 2 && (
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>
-                Heart Rate Variability Stability
-              </Text>
+              <ChartTitleWithTooltip
+                title="Heart Rate Variability Stability"
+                description="This chart tracks heart rate variability consistency using the rolling coefficient of variation."
+                textStyle={styles.cardTitle}
+              />
               <SparkLine
                 data={hrvData
                   .filter((d) => d.rollingCoefficientOfVariation != null)
@@ -182,7 +189,11 @@ export default function MetricsScreen() {
           {/* Weekly stress breakdown */}
           {(stressResult?.weekly ?? []).length > 0 && (
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>Weekly Stress</Text>
+              <ChartTitleWithTooltip
+                title="Weekly Stress"
+                description="This chart summarizes average daily stress and number of high-stress days by week."
+                textStyle={styles.cardTitle}
+              />
               <View style={styles.weeklyGrid}>
                 {(stressResult?.weekly ?? []).slice(-4).map((week) => (
                   <View key={week.weekStart} style={styles.weeklyItem}>

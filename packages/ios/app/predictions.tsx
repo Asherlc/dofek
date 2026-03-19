@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import Svg, { Path, Line, Circle, Text as SvgText } from "react-native-svg";
+import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
 import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
 import { statusColors } from "@dofek/shared/colors";
@@ -260,7 +261,11 @@ export default function PredictionsScreen() {
           {/* Section 3: Key Factors */}
           {topFeatures.length > 0 && (
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>Key Factors</Text>
+              <ChartTitleWithTooltip
+                title="Key Factors"
+                description="This chart ranks the strongest factors behind the current prediction."
+                textStyle={styles.cardTitle}
+              />
               <View style={styles.factorsContainer}>
                 {topFeatures.map((feature) => {
                   const directionSymbol =
@@ -349,7 +354,11 @@ export default function PredictionsScreen() {
           {/* Section 5: Prediction Timeline */}
           {prediction.predictions.length > 1 && (
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>Prediction Timeline</Text>
+              <ChartTitleWithTooltip
+                title="Prediction Timeline"
+                description="This chart compares model predictions against actual values over time."
+                textStyle={styles.cardTitle}
+              />
               <View style={styles.chartContainer}>
                 <TimelineChart
                   actualValues={actualValues}

@@ -42,7 +42,29 @@ vi.mock("react-native", () => {
   const View = createMockComponent("View");
   const Text = createMockComponent("Text");
   const ScrollView = createMockComponent("ScrollView");
-  const Pressable = createMockComponent("Pressable");
+  const Pressable = ({
+    children,
+    onPress,
+    accessibilityRole,
+    accessibilityLabel,
+    accessibilityHint,
+    style,
+    ...props
+  }: Record<string, unknown>) =>
+    React.createElement(
+      "button",
+      {
+        ...props,
+        onClick: onPress,
+        role: accessibilityRole,
+        "aria-label": accessibilityLabel,
+        "aria-description": accessibilityHint,
+        style: flattenStyle(style),
+        type: "button",
+      },
+      children as ReactNode,
+    );
+  Pressable.displayName = "Pressable";
   const TextInput = createMockComponent("TextInput");
   const Image = createMockComponent("Image");
   const FlatList = createMockComponent("FlatList");

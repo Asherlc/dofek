@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import Svg, { Polyline } from "react-native-svg";
 import { ActivityCard } from "../../components/ActivityCard";
+import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { DaySelector } from "../../components/DaySelector";
 import { MetricCard } from "../../components/MetricCard";
 import { OnboardingWelcome } from "../../components/OnboardingWelcome";
@@ -228,7 +229,11 @@ export default function OverviewScreen() {
           {/* Recovery + Strain rings */}
           <View style={styles.ringsRow}>
             <View style={styles.ringSection}>
-              <Text style={styles.sectionLabel}>Recovery</Text>
+              <ChartTitleWithTooltip
+                title="Recovery"
+                description="This ring visualizes your readiness score based on recovery-related signals."
+                textStyle={styles.sectionLabel}
+              />
               {recoveryScore != null ? (
                 <RecoveryRing score={recoveryScore} size={180} />
               ) : (
@@ -239,7 +244,11 @@ export default function OverviewScreen() {
               )}
             </View>
             <View style={styles.ringSection}>
-              <Text style={styles.sectionLabel}>Strain</Text>
+              <ChartTitleWithTooltip
+                title="Strain"
+                description="This gauge estimates your daily training strain relative to your recent baseline."
+                textStyle={styles.sectionLabel}
+              />
               <StrainGauge strain={dailyStrain} size={120} />
             </View>
           </View>
@@ -247,7 +256,11 @@ export default function OverviewScreen() {
           {/* Recovery components breakdown */}
           {todayReadiness?.components && (
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>Recovery Breakdown</Text>
+              <ChartTitleWithTooltip
+                title="Recovery Breakdown"
+                description="These bars break your readiness score into heart rate variability, resting heart rate, sleep quality, and training balance."
+                textStyle={styles.cardTitle}
+              />
               <View style={styles.componentGrid}>
                 <ComponentRow
                   label="Heart Rate Variability"
@@ -272,7 +285,11 @@ export default function OverviewScreen() {
           {/* Sleep summary */}
           {lastNight && (
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>Last Night</Text>
+              <ChartTitleWithTooltip
+                title="Last Night"
+                description="This sleep stage bar shows how your total sleep was split across deep, REM, light, and awake time."
+                textStyle={styles.cardTitle}
+              />
               <SleepBar
                 durationMinutes={lastNight.durationMinutes}
                 deepPct={lastNight.deepPct}
@@ -626,7 +643,11 @@ export default function OverviewScreen() {
           {/* Body Weight */}
           {latestWeight != null && (
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>Body Weight</Text>
+              <ChartTitleWithTooltip
+                title="Body Weight"
+                description="This card shows your latest smoothed body weight and a short trend sparkline."
+                textStyle={styles.cardTitle}
+              />
               <View style={styles.weightRow}>
                 <View>
                   <Text style={styles.weightValue}>

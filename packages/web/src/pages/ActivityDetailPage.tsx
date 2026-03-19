@@ -7,6 +7,7 @@ import type {
   StreamPoint,
 } from "../../../server/src/routers/activity.ts";
 import { AppHeader } from "../components/AppHeader.tsx";
+import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
 import { trpc } from "../lib/trpc.ts";
 
@@ -77,13 +78,19 @@ export function ActivityDetailPage() {
         <ActivityHeader activity={activity} />
 
         {hasGps && (
-          <Section title="Route Map">
+          <Section
+            title="Route Map"
+            description="This map shows your recorded route, including start and finish locations."
+          >
             <RouteMap points={points} />
           </Section>
         )}
 
         {(hasHr || hasPower || hasSpeed || hasCadence) && (
-          <Section title="Performance">
+          <Section
+            title="Performance"
+            description="This chart overlays heart rate, power, speed, and cadence so you can see how effort changed during the workout."
+          >
             <MetricsChart
               points={points}
               hasHr={hasHr}
@@ -97,13 +104,19 @@ export function ActivityDetailPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {hasAltitude && (
-            <Section title="Elevation Profile">
+            <Section
+              title="Elevation Profile"
+              description="This chart shows how your elevation changed over time during the activity."
+            >
               <ElevationChart points={points} loading={stream.isLoading} />
             </Section>
           )}
 
           {zones.length > 0 && (
-            <Section title="Heart Rate Zones">
+            <Section
+              title="Heart Rate Zones"
+              description="This chart shows how much time you spent in each heart rate zone."
+            >
               <HrZonesChart zones={zones} loading={hrZones.isLoading} />
             </Section>
           )}
@@ -559,11 +572,24 @@ function HrZonesChart({ zones, loading }: { zones: ActivityHrZone[]; loading: bo
   return <ReactECharts option={option} style={{ height: 200 }} />;
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: string;
+  children: React.ReactNode;
+}) {
   return (
     <section>
-      <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-2">{title}</h2>
-      <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">{children}</div>
+      <div className="mb-2 flex items-center gap-2">
+        <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider">{title}</h2>
+        <ChartDescriptionTooltip description={description} />
+      </div>
+      <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4" title={description}>
+        {children}
+      </div>
     </section>
   );
 }

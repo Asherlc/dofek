@@ -1,4 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
+import { ChartDescriptionTooltip } from "./ChartDescriptionTooltip";
 import { SparkLine } from "./charts/SparkLine";
 import { colors } from "../theme";
 
@@ -14,6 +15,8 @@ interface MetricCardProps {
   subtitle?: string;
   /** Trend direction indicator */
   trendDirection?: "up" | "down" | "stable";
+  /** Optional chart description for the sparkline tooltip */
+  chartDescription?: string;
 }
 
 function trendArrow(direction: "up" | "down" | "stable"): string {
@@ -30,10 +33,18 @@ export function MetricCard({
   color = colors.text,
   subtitle,
   trendDirection,
+  chartDescription,
 }: MetricCardProps) {
+  const hasTrendChart = Boolean(trend && trend.length >= 2);
+  const description =
+    chartDescription ?? `This chart shows the recent trend for ${title.toLowerCase()}.`;
+
   return (
     <View style={styles.card}>
-      <Text style={styles.title}>{title}</Text>
+      <View style={styles.titleRow}>
+        <Text style={styles.title}>{title}</Text>
+        {hasTrendChart && <ChartDescriptionTooltip title={title} description={description} />}
+      </View>
       <View style={styles.row}>
         <View style={styles.valueContainer}>
           <Text style={[styles.value, { color }]}>{value}</Text>
@@ -78,6 +89,11 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textTransform: "uppercase",
     letterSpacing: 0.5,
+  },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
   row: {
     flexDirection: "row",

@@ -2,6 +2,7 @@ import type { EChartsOption } from "echarts";
 import ReactECharts from "echarts-for-react";
 import { useState } from "react";
 import { AppHeader } from "../components/AppHeader.tsx";
+import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import { CorrelationStrengthBar } from "../components/CorrelationStrengthBar.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { trpc } from "../lib/trpc.ts";
@@ -249,7 +250,14 @@ export function CorrelationExplorerPage() {
 
             {/* Scatter plot */}
             {data.dataPoints.length > 0 && (
-              <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+              <div
+                className="rounded-lg border border-zinc-800 bg-zinc-900 p-4"
+                title="This chart plots each data point and overlays a trend line so you can see whether two metrics move together."
+              >
+                <div className="mb-2 flex items-center gap-2">
+                  <h3 className="text-xs text-zinc-500 uppercase tracking-wider">Scatter Plot</h3>
+                  <ChartDescriptionTooltip description="This chart plots each data point and overlays a trend line so you can see whether two metrics move together." />
+                </div>
                 <ScatterPlot
                   dataPoints={data.dataPoints}
                   regression={data.regression}
