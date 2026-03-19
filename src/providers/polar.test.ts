@@ -367,7 +367,9 @@ describe("PolarProvider.authSetup", () => {
     delete process.env.POLAR_CLIENT_SECRET;
 
     const provider = new PolarProvider();
-    expect(() => provider.authSetup()).toThrow("POLAR_CLIENT_ID and POLAR_CLIENT_SECRET are required");
+    expect(() => provider.authSetup()).toThrow(
+      "POLAR_CLIENT_ID and POLAR_CLIENT_SECRET are required",
+    );
   });
 
   it("throws when only POLAR_CLIENT_SECRET is set", () => {
@@ -375,7 +377,9 @@ describe("PolarProvider.authSetup", () => {
     process.env.POLAR_CLIENT_SECRET = "polar-secret";
 
     const provider = new PolarProvider();
-    expect(() => provider.authSetup()).toThrow("POLAR_CLIENT_ID and POLAR_CLIENT_SECRET are required");
+    expect(() => provider.authSetup()).toThrow(
+      "POLAR_CLIENT_ID and POLAR_CLIENT_SECRET are required",
+    );
   });
 
   it("returns expected OAuth config fields for Polar", () => {
@@ -392,15 +396,13 @@ describe("PolarProvider.authSetup", () => {
     process.env.POLAR_CLIENT_ID = "polar-id";
     process.env.POLAR_CLIENT_SECRET = "polar-secret";
 
-    const fetchMock = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(
-        Response.json({
-          access_token: "new-access-token",
-          refresh_token: "new-refresh-token",
-          expires_in: 3600,
-        }),
-      );
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      Response.json({
+        access_token: "new-access-token",
+        refresh_token: "new-refresh-token",
+        expires_in: 3600,
+      }),
+    );
 
     const provider = new PolarProvider();
     const setup = provider.authSetup();
@@ -447,7 +449,9 @@ function createPolarMockDb(tokenRows = [POLAR_VALID_TOKEN]): SyncDatabase {
 }
 
 function createPolarFetchWithEndpointStatus(
-  endpointStatus: Partial<Record<"/exercises" | "/sleep" | "/activity" | "/nightly-recharge", number>>,
+  endpointStatus: Partial<
+    Record<"/exercises" | "/sleep" | "/activity" | "/nightly-recharge", number>
+  >,
 ): typeof globalThis.fetch {
   return async (url: string | URL | Request): Promise<Response> => {
     const urlString = String(url);
@@ -460,6 +464,12 @@ function createPolarFetchWithEndpointStatus(
   };
 }
 
+function getPayloadProviderId(value: unknown): string | undefined {
+  if (typeof value !== "object" || value === null || !("providerId" in value)) return undefined;
+  const providerId = Reflect.get(value, "providerId");
+  return typeof providerId === "string" ? providerId : undefined;
+}
+
 describe("PolarProvider.sync — error handling", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -469,21 +479,27 @@ describe("PolarProvider.sync — error handling", () => {
     const provider = new PolarProvider(createPolarFetchWithEndpointStatus({ "/exercises": 401 }));
     const result = await provider.sync(createPolarMockDb(), new Date("2026-01-01"));
 
-    expect(result.errors.some((e) => e.message.includes("authorization failed while syncing exercises"))).toBe(true);
+    expect(
+      result.errors.some((e) => e.message.includes("authorization failed while syncing exercises")),
+    ).toBe(true);
   });
 
   it("captures 404 exercises endpoint errors with re-auth guidance", async () => {
     const provider = new PolarProvider(createPolarFetchWithEndpointStatus({ "/exercises": 404 }));
     const result = await provider.sync(createPolarMockDb(), new Date("2026-01-01"));
 
-    expect(result.errors.some((e) => e.message.includes("exercises endpoint returned 404"))).toBe(true);
+    expect(result.errors.some((e) => e.message.includes("exercises endpoint returned 404"))).toBe(
+      true,
+    );
   });
 
   it("captures unauthorized sleep endpoint errors with auth guidance", async () => {
     const provider = new PolarProvider(createPolarFetchWithEndpointStatus({ "/sleep": 401 }));
     const result = await provider.sync(createPolarMockDb(), new Date("2026-01-01"));
 
-    expect(result.errors.some((e) => e.message.includes("authorization failed while syncing sleep"))).toBe(true);
+    expect(
+      result.errors.some((e) => e.message.includes("authorization failed while syncing sleep")),
+    ).toBe(true);
   });
 
   it("captures 404 sleep endpoint errors with re-auth guidance", async () => {
@@ -498,7 +514,9 @@ describe("PolarProvider.sync — error handling", () => {
     const result = await provider.sync(createPolarMockDb(), new Date("2026-01-01"));
 
     expect(
-      result.errors.some((e) => e.message.includes("authorization failed while syncing daily activity")),
+      result.errors.some((e) =>
+        e.message.includes("authorization failed while syncing daily activity"),
+      ),
     ).toBe(true);
   });
 
@@ -506,7 +524,9 @@ describe("PolarProvider.sync — error handling", () => {
     const provider = new PolarProvider(createPolarFetchWithEndpointStatus({ "/activity": 404 }));
     const result = await provider.sync(createPolarMockDb(), new Date("2026-01-01"));
 
-    expect(result.errors.some((e) => e.message.includes("daily activity endpoint returned 404"))).toBe(true);
+    expect(
+      result.errors.some((e) => e.message.includes("daily activity endpoint returned 404")),
+    ).toBe(true);
   });
 
   it("returns a token error when no Polar tokens are stored", async () => {
@@ -574,12 +594,7 @@ describe("PolarProvider.sync — error handling", () => {
       }),
       insert: vi.fn().mockReturnValue({
         values: vi.fn().mockImplementation((payload: unknown) => {
-          if (
-            typeof payload === "object" &&
-            payload !== null &&
-            "providerId" in payload &&
-            (payload as { providerId?: string }).providerId === "polar"
-          ) {
+          if (getPayloadProviderId(payload) === "polar") {
             return {
               onConflictDoUpdate: vi.fn().mockRejectedValue(new Error("forced insert failure")),
             };

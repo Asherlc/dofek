@@ -32,14 +32,13 @@ describe("StravaClient", () => {
 
     expect(mockFetch).toHaveBeenCalledOnce();
     const callUrl = String(mockFetch.mock.calls[0]?.[0]);
-    const callOptions = mockFetch.mock.calls[0]?.[1] as RequestInit | undefined;
+    const callOptions = mockFetch.mock.calls[0]?.[1];
+    const headers = getRequestHeaders(callOptions);
     expect(callUrl).toContain("/athlete/activities");
     expect(callUrl).toContain("after=1000");
     expect(callUrl).toContain("page=2");
     expect(callUrl).toContain("per_page=50");
-    expect(callOptions?.headers).toEqual(
-      expect.objectContaining({ Authorization: "Bearer test-token" }),
-    );
+    expect(headers).toEqual(expect.objectContaining({ Authorization: "Bearer test-token" }));
     expect(result).toHaveLength(1);
     expect(result[0]?.id).toBe(1);
   });
@@ -200,6 +199,34 @@ const EXPIRED_TOKEN = {
   expiresAt: new Date("2000-01-01"),
 };
 
+function isStringRecord(value: unknown): value is Record<string, string> {
+  if (typeof value !== "object" || value === null) return false;
+  return Object.values(value).every((entry) => typeof entry === "string");
+}
+
+function getRequestHeaders(value: unknown): HeadersInit | undefined {
+  if (typeof value !== "object" || value === null || !("headers" in value)) return undefined;
+  const headers = Reflect.get(value, "headers");
+  if (typeof headers === "string") return headers;
+  if (Array.isArray(headers)) return headers;
+  if (headers instanceof Headers) return headers;
+  if (isStringRecord(headers)) return headers;
+  return undefined;
+}
+
+function getProviderId(value: unknown): string | undefined {
+  if (typeof value !== "object" || value === null || !("providerId" in value)) return undefined;
+  const providerId = Reflect.get(value, "providerId");
+  return typeof providerId === "string" ? providerId : undefined;
+}
+
+function getSetSourceName(value: unknown): unknown {
+  if (typeof value !== "object" || value === null || !("set" in value)) return undefined;
+  const set = Reflect.get(value, "set");
+  if (typeof set !== "object" || set === null || !("sourceName" in set)) return undefined;
+  return Reflect.get(set, "sourceName");
+}
+
 function createMockDb(tokenRows = [VALID_TOKEN]): SyncDatabase {
   return {
     select: vi.fn().mockReturnValue({
@@ -328,8 +355,7 @@ describe("StravaProvider.sync — additional coverage", () => {
     const upsertConfigs: unknown[] = [];
     const insertValuesMock = vi.fn().mockImplementation((payload: unknown) => {
       if (Array.isArray(payload)) return Promise.resolve();
-      const maybeActivity = payload as { providerId?: string; raw?: { id?: number } };
-      if (maybeActivity.providerId === "strava") {
+      if (getProviderId(payload) === "strava") {
         activityInsertPayloads.push(payload);
       }
       return {
@@ -386,7 +412,7 @@ describe("StravaProvider.sync — additional coverage", () => {
         raw: expect.objectContaining({ id: secondActivity.id }),
       }),
     });
-    const firstSetSourceName = (upsertConfigs[0] as { set?: { sourceName?: unknown } })?.set?.sourceName;
+    const firstSetSourceName = getSetSourceName(upsertConfigs[0]);
     expect(firstSetSourceName).toBeDefined();
   });
 
