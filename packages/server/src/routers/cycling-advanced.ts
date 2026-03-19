@@ -33,6 +33,11 @@ export interface ActivityVariabilityRow {
   intensityFactor: number;
 }
 
+export interface ActivityVariabilityResult {
+  rows: ActivityVariabilityRow[];
+  totalCount: number;
+}
+
 export interface VerticalAscentRow {
   date: string;
   activityName: string;
@@ -272,8 +277,14 @@ export const cyclingAdvancedRouter = router({
    * MUST hit raw metric_stream for sequential window functions.
    */
   activityVariability: cachedProtectedQuery(CacheTTL.LONG)
-    .input(daysInput)
-    .query(async ({ ctx, input }): Promise<ActivityVariabilityRow[]> => {
+    .input(
+      z.object({
+        days: z.number().default(90),
+        limit: z.number().min(1).max(100).default(20),
+        offset: z.number().min(0).default(0),
+      }),
+    )
+    .query(async ({ ctx, input }): Promise<ActivityVariabilityResult> => {
       // Estimate FTP as 95% of best 20-minute average power.
       // Includes zero-power samples and adapts row offset to sample interval.
       const ftpSchema = z.object({ ftp: z.coerce.number() });
@@ -318,7 +329,7 @@ export const cyclingAdvancedRouter = router({
             WHERE ap.rn >= ROUND(1200.0 / sr.interval_s)::int`,
       );
       const ftp = ftpResult[0]?.ftp ?? null;
-      if (!ftp) return [];
+      if (!ftp) return { rows: [], totalCount: 0 };
 
       // Compute NP, avg power per activity in a single query using SQL window functions
       const variabilityRowSchema = z.object({
@@ -326,6 +337,7 @@ export const cyclingAdvancedRouter = router({
         name: z.string(),
         np: z.coerce.number(),
         avg_power: z.coerce.number(),
+        total_count: z.coerce.number(),
       });
       const rows = await executeWithSchema(
         ctx.db,
@@ -345,31 +357,44 @@ export const cyclingAdvancedRouter = router({
                 AND ms.recorded_at > NOW() - (${input.days} + 1)::int * INTERVAL '1 day'
                 AND ${enduranceTypeFilter("a")}
                 AND ms.power > 0
+            ),
+            grouped AS (
+              SELECT
+                a.started_at::date AS date,
+                a.name,
+                a.started_at,
+                ROUND(POWER(AVG(POWER(r.rolling_30s_power, 4)), 0.25)::numeric, 1) AS np,
+                ROUND(AVG(r.rolling_30s_power)::numeric, 1) AS avg_power
+              FROM rolling r
+              JOIN fitness.v_activity a ON a.id = r.activity_id
+              GROUP BY a.id, a.started_at, a.name
+              HAVING COUNT(*) >= 60
             )
-            SELECT
-              a.started_at::date AS date,
-              a.name,
-              ROUND(POWER(AVG(POWER(r.rolling_30s_power, 4)), 0.25)::numeric, 1) AS np,
-              ROUND(AVG(r.rolling_30s_power)::numeric, 1) AS avg_power
-            FROM rolling r
-            JOIN fitness.v_activity a ON a.id = r.activity_id
-            GROUP BY a.id, a.started_at, a.name
-            HAVING COUNT(*) >= 60
-            ORDER BY a.started_at`,
+            SELECT date, name, np, avg_power,
+                   COUNT(*) OVER()::int AS total_count
+            FROM grouped
+            ORDER BY started_at DESC
+            LIMIT ${input.limit}
+            OFFSET ${input.offset}`,
       );
 
-      return rows.map((row) => {
-        const normalizedPower = row.np;
-        const averagePower = row.avg_power;
-        return {
-          date: row.date,
-          activityName: row.name,
-          normalizedPower,
-          averagePower,
-          variabilityIndex: Math.round((normalizedPower / averagePower) * 1000) / 1000,
-          intensityFactor: Math.round((normalizedPower / ftp) * 1000) / 1000,
-        };
-      });
+      const totalCount = rows[0]?.total_count ?? 0;
+
+      return {
+        rows: rows.map((row) => {
+          const normalizedPower = row.np;
+          const averagePower = row.avg_power;
+          return {
+            date: row.date,
+            activityName: row.name,
+            normalizedPower,
+            averagePower,
+            variabilityIndex: Math.round((normalizedPower / averagePower) * 1000) / 1000,
+            intensityFactor: Math.round((normalizedPower / ftp) * 1000) / 1000,
+          };
+        }),
+        totalCount,
+      };
     }),
 
   /**

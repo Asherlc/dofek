@@ -518,20 +518,22 @@ describe("Router data coverage", () => {
     });
 
     it("activityVariability returns NP, VI, IF per activity", async () => {
-      const result = await query<
-        {
+      const result = await query<{
+        rows: {
           date: string;
           activityName: string;
           normalizedPower: number;
           averagePower: number;
           variabilityIndex: number;
           intensityFactor: number;
-        }[]
-      >("cyclingAdvanced.activityVariability", { days: 90 });
+        }[];
+        totalCount: number;
+      }>("cyclingAdvanced.activityVariability", { days: 90 });
 
-      expect(Array.isArray(result)).toBe(true);
+      expect(Array.isArray(result.rows)).toBe(true);
+      expect(typeof result.totalCount).toBe("number");
 
-      for (const row of result) {
+      for (const row of result.rows) {
         expect(row.normalizedPower).toBeGreaterThan(0);
         expect(row.averagePower).toBeGreaterThan(0);
         // NP should be >= avg power

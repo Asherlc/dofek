@@ -2,6 +2,10 @@ import type { ActivityVariabilityRow } from "dofek-server/types";
 
 interface ActivityVariabilityTableProps {
   data: ActivityVariabilityRow[];
+  totalCount: number;
+  offset: number;
+  limit: number;
+  onPageChange: (newOffset: number) => void;
   loading?: boolean;
 }
 
@@ -11,7 +15,14 @@ function getVariabilityColor(variabilityIndex: number): string {
   return "text-red-400";
 }
 
-export function ActivityVariabilityTable({ data, loading }: ActivityVariabilityTableProps) {
+export function ActivityVariabilityTable({
+  data,
+  totalCount,
+  offset,
+  limit,
+  onPageChange,
+  loading,
+}: ActivityVariabilityTableProps) {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[200px]">
@@ -20,13 +31,16 @@ export function ActivityVariabilityTable({ data, loading }: ActivityVariabilityT
     );
   }
 
-  if (data.length === 0) {
+  if (data.length === 0 && offset === 0) {
     return (
       <div className="flex items-center justify-center h-[100px]">
         <span className="text-zinc-600 text-sm">No activities with power data available</span>
       </div>
     );
   }
+
+  const currentPage = Math.floor(offset / limit) + 1;
+  const totalPages = Math.ceil(totalCount / limit);
 
   return (
     <div className="overflow-x-auto">
@@ -70,11 +84,36 @@ export function ActivityVariabilityTable({ data, loading }: ActivityVariabilityT
           ))}
         </tbody>
       </table>
-      <p className="text-xs text-zinc-600 mt-2">
-        Variability: <span className="text-green-400">&lt;1.05 steady</span> /{" "}
-        <span className="text-yellow-400">1.05-1.1 moderate</span> /{" "}
-        <span className="text-red-400">&gt;1.1 variable</span>
-      </p>
+      <div className="flex items-center justify-between mt-3">
+        <p className="text-xs text-zinc-600">
+          Variability: <span className="text-green-400">&lt;1.05 steady</span> /{" "}
+          <span className="text-yellow-400">1.05-1.1 moderate</span> /{" "}
+          <span className="text-red-400">&gt;1.1 variable</span>
+        </p>
+        {totalPages > 1 && (
+          <div className="flex items-center gap-2 text-xs">
+            <button
+              type="button"
+              disabled={offset === 0}
+              onClick={() => onPageChange(Math.max(0, offset - limit))}
+              className="px-2 py-1 rounded border border-zinc-700 text-zinc-400 hover:bg-zinc-800 disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              Previous
+            </button>
+            <span className="text-zinc-500">
+              {currentPage} / {totalPages}
+            </span>
+            <button
+              type="button"
+              disabled={offset + limit >= totalCount}
+              onClick={() => onPageChange(offset + limit)}
+              className="px-2 py-1 rounded border border-zinc-700 text-zinc-400 hover:bg-zinc-800 disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              Next
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

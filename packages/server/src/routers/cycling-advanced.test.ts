@@ -184,19 +184,19 @@ describe("cyclingAdvancedRouter", () => {
   });
 
   describe("activityVariability", () => {
-    it("returns empty when no FTP data", async () => {
+    it("returns empty rows and zero totalCount when no FTP data", async () => {
       const caller = makeCaller([]);
       const result = await caller.activityVariability({ days: 90 });
-      expect(result).toEqual([]);
+      expect(result).toEqual({ rows: [], totalCount: 0 });
     });
 
     it("computes variability from power data", async () => {
       const execute = vi.fn();
       // First call: FTP estimation
       execute.mockResolvedValueOnce([{ ftp: 250 }]);
-      // Second call: NP/avg power per activity
+      // Second call: NP/avg power per activity (with total_count from COUNT(*) OVER())
       execute.mockResolvedValueOnce([
-        { date: "2024-01-15", name: "Ride", np: 230, avg_power: 200 },
+        { date: "2024-01-15", name: "Ride", np: 230, avg_power: 200, total_count: 1 },
       ]);
 
       const caller = createCaller({
@@ -205,41 +205,57 @@ describe("cyclingAdvancedRouter", () => {
       });
       const result = await caller.activityVariability({ days: 90 });
 
-      expect(result).toHaveLength(1);
-      expect(result[0]?.normalizedPower).toBe(230);
-      expect(result[0]?.variabilityIndex).toBe(1.15); // 230/200
-      expect(result[0]?.intensityFactor).toBe(0.92); // 230/250
+      expect(result.rows).toHaveLength(1);
+      expect(result.totalCount).toBe(1);
+      expect(result.rows[0]?.normalizedPower).toBe(230);
+      expect(result.rows[0]?.variabilityIndex).toBe(1.15); // 230/200
+      expect(result.rows[0]?.intensityFactor).toBe(0.92); // 230/250
     });
 
     it("computes variability index as NP / avgPower", async () => {
       const execute = vi.fn();
       execute.mockResolvedValueOnce([{ ftp: 300 }]);
       execute.mockResolvedValueOnce([
-        { date: "2024-01-15", name: "Ride", np: 280, avg_power: 250 },
+        { date: "2024-01-15", name: "Ride", np: 280, avg_power: 250, total_count: 1 },
       ]);
 
       const caller = createCaller({ db: { execute }, userId: "user-1" });
       const result = await caller.activityVariability({ days: 90 });
 
       // VI = 280/250 = 1.12
-      expect(result[0]?.variabilityIndex).toBe(Math.round((280 / 250) * 1000) / 1000);
+      expect(result.rows[0]?.variabilityIndex).toBe(Math.round((280 / 250) * 1000) / 1000);
       // IF = 280/300 = 0.933
-      expect(result[0]?.intensityFactor).toBe(Math.round((280 / 300) * 1000) / 1000);
+      expect(result.rows[0]?.intensityFactor).toBe(Math.round((280 / 300) * 1000) / 1000);
     });
 
     it("maps activityName from name field", async () => {
       const execute = vi.fn();
       execute.mockResolvedValueOnce([{ ftp: 200 }]);
       execute.mockResolvedValueOnce([
-        { date: "2024-01-15", name: "Zwift Race", np: 190, avg_power: 180 },
+        { date: "2024-01-15", name: "Zwift Race", np: 190, avg_power: 180, total_count: 1 },
       ]);
 
       const caller = createCaller({ db: { execute }, userId: "user-1" });
       const result = await caller.activityVariability({ days: 90 });
 
-      expect(result[0]?.activityName).toBe("Zwift Race");
-      expect(result[0]?.date).toBe("2024-01-15");
-      expect(result[0]?.averagePower).toBe(180);
+      expect(result.rows[0]?.activityName).toBe("Zwift Race");
+      expect(result.rows[0]?.date).toBe("2024-01-15");
+      expect(result.rows[0]?.averagePower).toBe(180);
+    });
+
+    it("returns totalCount from the query regardless of limit/offset", async () => {
+      const execute = vi.fn();
+      execute.mockResolvedValueOnce([{ ftp: 250 }]);
+      execute.mockResolvedValueOnce([
+        { date: "2024-01-15", name: "Ride 1", np: 230, avg_power: 200, total_count: 5 },
+        { date: "2024-01-16", name: "Ride 2", np: 240, avg_power: 210, total_count: 5 },
+      ]);
+
+      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const result = await caller.activityVariability({ days: 90, limit: 2, offset: 0 });
+
+      expect(result.rows).toHaveLength(2);
+      expect(result.totalCount).toBe(5);
     });
   });
 
