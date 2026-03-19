@@ -294,7 +294,7 @@ describe("PolarProvider — validate and properties", () => {
     expect(setup.oauthConfig.clientId).toBe("test-id");
     expect(setup.oauthConfig.clientSecret).toBe("test-secret");
     expect(setup.exchangeCode).toBeTypeOf("function");
-    expect(setup.apiBaseUrl).toContain("polar.com");
+    expect(setup.apiBaseUrl).toContain("polaraccesslink.com");
   });
 
   it("authSetup throws when env vars missing", () => {
