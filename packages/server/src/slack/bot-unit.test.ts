@@ -930,6 +930,90 @@ describe("bot.ts — registerHandlers", () => {
       expect(chatUpdate).toHaveBeenCalled();
     });
 
+    it("skips orphan repair when canonical email matches same user", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+
+      // existing slack auth_account found
+      mockExecute.mockResolvedValueOnce([{ user_id: "correct-user" }]);
+      // canonical auth_account by email → SAME user (no orphan)
+      mockExecute.mockResolvedValueOnce([{ user_id: "correct-user" }]);
+
+      const { messageHandler } = setupHandlers(db);
+
+      // ensureDofekProvider
+      mockExecute.mockResolvedValueOnce([]);
+      // insert food_entry
+      mockExecute.mockResolvedValueOnce([{ id: "entry-1" }]);
+
+      mockAnalyze.mockResolvedValueOnce({ items: [makeFoodItem()], provider: "gemini" });
+
+      const say = vi.fn();
+      const chatPostMessage = vi.fn().mockResolvedValue({ ts: "t" });
+      const chatUpdate = vi.fn().mockResolvedValue({});
+      const client = {
+        users: {
+          info: vi.fn().mockResolvedValue({
+            user: { tz: "UTC", real_name: "Test", profile: { email: "test@example.com" } },
+          }),
+        },
+        chat: { postMessage: chatPostMessage, update: chatUpdate },
+      };
+
+      await messageHandler({
+        message: { user: "U_SAME", text: "food", ts: "1700000000.000000", channel: "C1" },
+        say,
+        client,
+      });
+
+      // Should use existing link — no orphan repair (user IDs match)
+      expect(chatUpdate).toHaveBeenCalled();
+      // Should NOT have called UPDATE auth_account or UPDATE food_entry
+      // Only 4 execute calls: existing link check, canonical check, ensureDofek, insert food
+      expect(mockExecute).toHaveBeenCalledTimes(4);
+    });
+
+    it("skips orphan repair when email exists but no canonical auth_account found", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+
+      // existing slack auth_account found
+      mockExecute.mockResolvedValueOnce([{ user_id: "slack-user" }]);
+      // canonical auth_account by email → none found
+      mockExecute.mockResolvedValueOnce([]);
+
+      const { messageHandler } = setupHandlers(db);
+
+      // ensureDofekProvider
+      mockExecute.mockResolvedValueOnce([]);
+      // insert food_entry
+      mockExecute.mockResolvedValueOnce([{ id: "entry-1" }]);
+
+      mockAnalyze.mockResolvedValueOnce({ items: [makeFoodItem()], provider: "gemini" });
+
+      const say = vi.fn();
+      const chatPostMessage = vi.fn().mockResolvedValue({ ts: "t" });
+      const chatUpdate = vi.fn().mockResolvedValue({});
+      const client = {
+        users: {
+          info: vi.fn().mockResolvedValue({
+            user: { tz: "UTC", real_name: "Test", profile: { email: "nocanonical@test.com" } },
+          }),
+        },
+        chat: { postMessage: chatPostMessage, update: chatUpdate },
+      };
+
+      await messageHandler({
+        message: { user: "U_NOCANON", text: "food", ts: "1700000000.000000", channel: "C1" },
+        say,
+        client,
+      });
+
+      // Should use existing link — no orphan repair (no canonical match)
+      expect(chatUpdate).toHaveBeenCalled();
+      expect(mockExecute).toHaveBeenCalledTimes(4);
+    });
+
     it("uses existing link without repair when no email available", async () => {
       const db = createMockDb();
       const mockExecute = getMockExecute(db);
