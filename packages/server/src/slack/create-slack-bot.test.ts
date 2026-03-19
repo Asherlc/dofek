@@ -11,7 +11,6 @@ vi.mock("@slack/bolt", () => {
     start: vi.fn().mockResolvedValue(undefined),
   };
   const mockRouter = { get: vi.fn(), post: vi.fn() };
-  const mockSocketModeClient = { clientPingTimeoutMS: 5000 };
   return {
     default: {
       App: vi.fn().mockImplementation(() => mockApp),
@@ -19,12 +18,15 @@ vi.mock("@slack/bolt", () => {
         router: mockRouter,
       })),
       SocketModeReceiver: vi.fn().mockImplementation(() => ({
-        client: mockSocketModeClient,
         start: vi.fn().mockResolvedValue(undefined),
       })),
     },
   };
 });
+
+vi.mock("@slack/socket-mode", () => ({
+  SocketModeClient: vi.fn().mockImplementation(() => ({})),
+}));
 
 vi.mock("../logger.ts", () => ({
   logger: {
