@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { ActivityCard } from "../../components/ActivityCard";
+import { DaySelector } from "../../components/DaySelector";
 import { StrainGauge } from "../../components/charts/StrainGauge";
 import { SparkLine } from "../../components/charts/SparkLine";
 import { aggregateWeeklyVolume, workloadRatioColor, workloadRatioHint } from "../../lib/scoring";
@@ -10,14 +12,15 @@ import { ActivityRowSchema, WeeklyVolumeRowSchema } from "../../types/api";
 import { colors } from "../../theme";
 
 export default function StrainScreen() {
-  const workloadQuery = trpc.recovery.workloadRatio.useQuery({ days: 30 });
+  const [days, setDays] = useState(30);
+  const workloadQuery = trpc.recovery.workloadRatio.useQuery({ days });
   const workloadData = workloadQuery.data ?? [];
   const todayWorkload = workloadData[workloadData.length - 1];
 
-  const activitiesQuery = trpc.training.activityStats.useQuery({ days: 14 });
+  const activitiesQuery = trpc.training.activityStats.useQuery({ days });
   const activities = ActivityRowSchema.array().catch([]).parse(activitiesQuery.data ?? []);
 
-  const weeklyVolumeQuery = trpc.training.weeklyVolume.useQuery({ days: 30 });
+  const weeklyVolumeQuery = trpc.training.weeklyVolume.useQuery({ days });
   const weeklyVolume = WeeklyVolumeRowSchema.array().catch([]).parse(weeklyVolumeQuery.data ?? []);
 
   const dailyStrain = todayWorkload?.dailyLoad ?? 0;
@@ -34,6 +37,8 @@ export default function StrainScreen() {
       style={styles.container}
       contentContainerStyle={styles.content}
     >
+      <DaySelector days={days} onChange={setDays} />
+
       {isLoading ? (
         <View style={styles.loadingContainer}>
           <Text style={styles.loadingText}>Loading strain data...</Text>
@@ -84,7 +89,7 @@ export default function StrainScreen() {
 
           {/* Strain trend */}
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Daily Strain (14 Days)</Text>
+            <Text style={styles.cardTitle}>Daily Strain ({days} Days)</Text>
             {strainTrend.length >= 2 && (
               <View style={styles.sparkContainer}>
                 <SparkLine

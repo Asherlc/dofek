@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { DaySelector } from "../../components/DaySelector";
 import { MetricCard } from "../../components/MetricCard";
 import { SleepBar } from "../../components/charts/SleepBar";
 import { SparkLine } from "../../components/charts/SparkLine";
@@ -8,8 +10,9 @@ import type { SleepConsistencyRow, SleepNightlyRow } from "../../types/api";
 import { colors } from "../../theme";
 
 export default function SleepScreen() {
-  const sleepQuery = trpc.recovery.sleepAnalytics.useQuery({ days: 30 });
-  const consistencyQuery = trpc.recovery.sleepConsistency.useQuery({ days: 30 });
+  const [days, setDays] = useState(30);
+  const sleepQuery = trpc.recovery.sleepAnalytics.useQuery({ days });
+  const consistencyQuery = trpc.recovery.sleepConsistency.useQuery({ days });
 
   const sleepResult = sleepQuery.data;
   const nightly = sleepResult?.nightly ?? [];
@@ -42,6 +45,8 @@ export default function SleepScreen() {
       style={styles.container}
       contentContainerStyle={styles.content}
     >
+      <DaySelector days={days} onChange={setDays} />
+
       {isLoading ? (
         <View style={styles.loadingContainer}>
           <Text style={styles.loadingText}>Loading sleep data...</Text>
@@ -91,7 +96,7 @@ export default function SleepScreen() {
               value={`${Math.floor(avgDuration / 60)}h ${Math.round(avgDuration % 60)}m`}
               trend={durationTrend}
               color={colors.blue}
-              subtitle="Last 30 nights"
+              subtitle={`Last ${days} nights`}
             />
             <MetricCard
               title="Average Efficiency"
@@ -99,7 +104,7 @@ export default function SleepScreen() {
               unit="%"
               trend={efficiencyTrend}
               color={colors.purple}
-              subtitle="Last 30 nights"
+              subtitle={`Last ${days} nights`}
             />
           </View>
 

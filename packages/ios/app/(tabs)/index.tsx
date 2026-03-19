@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useRouter } from "expo-router";
 import {
   ScrollView,
@@ -8,6 +9,7 @@ import {
 } from "react-native";
 import Svg, { Polyline } from "react-native-svg";
 import { ActivityCard } from "../../components/ActivityCard";
+import { DaySelector } from "../../components/DaySelector";
 import { MetricCard } from "../../components/MetricCard";
 import { OnboardingWelcome } from "../../components/OnboardingWelcome";
 import { RecoveryRing } from "../../components/charts/RecoveryRing";
@@ -75,46 +77,47 @@ export default function OverviewScreen() {
   const router = useRouter();
   const onboarding = useOnboarding();
   const unitSystem = useUnitSystem();
+  const [days, setDays] = useState(7);
 
-  // Fetch readiness/recovery score (last 7 days for trend)
-  const readinessQuery = trpc.recovery.readinessScore.useQuery({ days: 7 });
+  // Fetch readiness/recovery score
+  const readinessQuery = trpc.recovery.readinessScore.useQuery({ days });
   const readinessData = readinessQuery.data ?? [];
   const todayReadiness = readinessData[readinessData.length - 1];
 
   // Fetch sleep analytics for last night
-  const sleepQuery = trpc.recovery.sleepAnalytics.useQuery({ days: 7 });
+  const sleepQuery = trpc.recovery.sleepAnalytics.useQuery({ days });
   const sleepResult = sleepQuery.data;
   const nightly = sleepResult?.nightly ?? [];
   const lastNight = nightly[nightly.length - 1];
   const sleepDebt = sleepResult?.sleepDebt ?? 0;
 
   // Fetch workload ratio for strain
-  const workloadQuery = trpc.recovery.workloadRatio.useQuery({ days: 7 });
+  const workloadQuery = trpc.recovery.workloadRatio.useQuery({ days });
   const workloadData = workloadQuery.data ?? [];
   const todayWorkload = workloadData[workloadData.length - 1];
 
   // Fetch HRV trend
-  const hrvQuery = trpc.recovery.hrvVariability.useQuery({ days: 14 });
+  const hrvQuery = trpc.recovery.hrvVariability.useQuery({ days: Math.max(days, 14) });
   const hrvData = hrvQuery.data ?? [];
   const latestHrv = hrvData[hrvData.length - 1];
 
   // Fetch stress
-  const stressQuery = trpc.stress.scores.useQuery({ days: 7 });
+  const stressQuery = trpc.stress.scores.useQuery({ days });
   const stressData = stressQuery.data;
 
   // Fetch recent activities
-  const activitiesQuery = trpc.training.activityStats.useQuery({ days: 7 });
+  const activitiesQuery = trpc.training.activityStats.useQuery({ days });
   const recentActivities = ActivityRowSchema.array()
     .catch([])
     .parse(activitiesQuery.data ?? [])
     .slice(0, 3);
 
   // Health metrics (latest)
-  const dailyMetricsQuery = trpc.dailyMetrics.trends.useQuery({ days: 7 });
+  const dailyMetricsQuery = trpc.dailyMetrics.trends.useQuery({ days });
   const metrics = dailyMetricsQuery.data;
 
   // Weekly report
-  const weeklyReportQuery = trpc.weeklyReport.report.useQuery({ weeks: 1 });
+  const weeklyReportQuery = trpc.weeklyReport.report.useQuery({ weeks: Math.max(Math.ceil(days / 7), 1) });
   const weeklyReport = weeklyReportQuery.data;
 
   // Sleep need
@@ -122,15 +125,15 @@ export default function OverviewScreen() {
   const sleepNeed = sleepNeedQuery.data;
 
   // Healthspan
-  const healthspanQuery = trpc.healthspan.score.useQuery({ weeks: 12 });
+  const healthspanQuery = trpc.healthspan.score.useQuery({ weeks: Math.max(Math.ceil(days / 7), 4) });
   const healthspan = healthspanQuery.data;
 
-  // Nutrition (today)
-  const nutritionQuery = trpc.nutrition.daily.useQuery({ days: 7 });
+  // Nutrition
+  const nutritionQuery = trpc.nutrition.daily.useQuery({ days });
   const nutritionData = nutritionQuery.data ?? [];
 
   // Body analytics
-  const weightQuery = trpc.bodyAnalytics.smoothedWeight.useQuery({ days: 90 });
+  const weightQuery = trpc.bodyAnalytics.smoothedWeight.useQuery({ days: Math.max(days, 90) });
   const weightData = weightQuery.data ?? [];
 
   // Anomaly detection
@@ -138,7 +141,7 @@ export default function OverviewScreen() {
   const anomalies = anomalyQuery.data;
 
   // Steps (from daily metrics)
-  const stepsQuery = trpc.dailyMetrics.list.useQuery({ days: 7 });
+  const stepsQuery = trpc.dailyMetrics.list.useQuery({ days });
   const stepsData = stepsQuery.data ?? [];
 
   const recoveryScore = todayReadiness?.readinessScore ?? null;
@@ -196,6 +199,8 @@ export default function OverviewScreen() {
       )}
 
       <Text style={styles.date}>{todayString()}</Text>
+
+      <DaySelector days={days} onChange={setDays} />
 
       {/* Log food — navigates to full search/scan/quick-add screen */}
       <TouchableOpacity
