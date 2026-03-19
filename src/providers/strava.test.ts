@@ -10,6 +10,7 @@ import {
   StravaProvider,
   StravaRateLimitError,
   type StravaStreamSet,
+  StravaUnauthorizedError,
   stravaOAuthConfig,
   stravaStreamsToMetricStream,
 } from "./strava.ts";
@@ -521,6 +522,18 @@ describe("StravaClient — error handling", () => {
     await expect(client.getActivities(0)).rejects.toThrow(StravaNotFoundError);
   });
 
+  it("throws StravaUnauthorizedError for 401 responses", async () => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response(JSON.stringify({ message: "Authorization Error" }), {
+        status: 401,
+        headers: { "content-type": "application/json; charset=utf-8" },
+      });
+    };
+
+    const client = new StravaClient("token", mockFetch);
+    await expect(client.getActivities(0)).rejects.toThrow(StravaUnauthorizedError);
+  });
+
   it("truncates long plain-text error responses", async () => {
     const longText = "x".repeat(300);
     const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
@@ -548,6 +561,15 @@ describe("StravaNotFoundError", () => {
     const error = new StravaNotFoundError("Not found");
     expect(error.name).toBe("StravaNotFoundError");
     expect(error.message).toBe("Not found");
+    expect(error).toBeInstanceOf(Error);
+  });
+});
+
+describe("StravaUnauthorizedError", () => {
+  it("has correct name and message", () => {
+    const error = new StravaUnauthorizedError("Unauthorized");
+    expect(error.name).toBe("StravaUnauthorizedError");
+    expect(error.message).toBe("Unauthorized");
     expect(error).toBeInstanceOf(Error);
   });
 });

@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   mapPolarSport,
+  PolarClient,
   type PolarDailyActivity,
   type PolarExercise,
   type PolarNightlyRecharge,
+  PolarNotFoundError,
   type PolarSleep,
+  PolarUnauthorizedError,
   parsePolarDailyActivity,
   parsePolarDuration,
   parsePolarExercise,
@@ -230,5 +233,102 @@ describe("parsePolarDailyActivity", () => {
     expect(result.restingHr).toBeUndefined();
     expect(result.hrv).toBeUndefined();
     expect(result.respiratoryRateAvg).toBeUndefined();
+  });
+});
+
+// ============================================================
+// PolarClient error handling
+// ============================================================
+
+describe("PolarClient", () => {
+  it("throws PolarNotFoundError for 404 responses", async () => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response("<html>Not Found</html>", {
+        status: 404,
+        headers: { "content-type": "text/html" },
+      });
+    };
+
+    const client = new PolarClient("token", mockFetch);
+    await expect(client.getExercises()).rejects.toThrow(PolarNotFoundError);
+  });
+
+  it("includes endpoint path in PolarNotFoundError message", async () => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response("", { status: 404 });
+    };
+
+    const client = new PolarClient("token", mockFetch);
+    await expect(client.getExercises()).rejects.toThrow("/exercises");
+  });
+
+  it("throws PolarUnauthorizedError for 401 responses", async () => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response(JSON.stringify({ error: "unauthorized" }), {
+        status: 401,
+        headers: { "content-type": "application/json; charset=utf-8" },
+      });
+    };
+
+    const client = new PolarClient("token", mockFetch);
+    await expect(client.getExercises()).rejects.toThrow(PolarUnauthorizedError);
+  });
+
+  it("truncates HTML error bodies instead of dumping them", async () => {
+    const longHtml = `<!DOCTYPE html><html><head><title>Error</title></head><body>${"x".repeat(5000)}</body></html>`;
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response(longHtml, {
+        status: 500,
+        headers: { "content-type": "text/html; charset=utf-8" },
+      });
+    };
+
+    const client = new PolarClient("token", mockFetch);
+    await expect(client.getExercises()).rejects.toThrow("(HTML error page)");
+  });
+
+  it("includes JSON body in error messages", async () => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response(JSON.stringify({ error: "unauthorized" }), {
+        status: 422,
+        headers: { "content-type": "application/json" },
+      });
+    };
+
+    const client = new PolarClient("token", mockFetch);
+    await expect(client.getExercises()).rejects.toThrow(
+      'Polar API error (422): {"error":"unauthorized"}',
+    );
+  });
+
+  it("parses successful JSON responses", async () => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+
+    const client = new PolarClient("token", mockFetch);
+    const result = await client.getExercises();
+    expect(result).toEqual([]);
+  });
+});
+
+describe("PolarNotFoundError", () => {
+  it("has correct name and message", () => {
+    const error = new PolarNotFoundError("Not found");
+    expect(error.name).toBe("PolarNotFoundError");
+    expect(error.message).toBe("Not found");
+    expect(error).toBeInstanceOf(Error);
+  });
+});
+
+describe("PolarUnauthorizedError", () => {
+  it("has correct name and message", () => {
+    const error = new PolarUnauthorizedError("Unauthorized");
+    expect(error.name).toBe("PolarUnauthorizedError");
+    expect(error.message).toBe("Unauthorized");
+    expect(error).toBeInstanceOf(Error);
   });
 });

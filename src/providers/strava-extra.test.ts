@@ -593,7 +593,7 @@ describe("StravaProvider.sync — additional coverage", () => {
     expect(result.errors.some((e) => e.message.includes("rate limit"))).toBe(true);
   });
 
-  it("non-rate-limit error from getActivities is re-thrown", async () => {
+  it("authorization error from getActivities is captured and returned in sync result", async () => {
     setupEnv();
 
     const mockFetch = vi.fn().mockImplementation((url: string) => {
@@ -610,10 +610,10 @@ describe("StravaProvider.sync — additional coverage", () => {
 
     const mockDb = createMockDb();
     const provider = new StravaProvider(mockFetch);
-
-    await expect(provider.sync(mockDb, new Date("2026-01-01"))).rejects.toThrow(
-      "Strava API error (401)",
-    );
+    const result = await provider.sync(mockDb, new Date("2026-01-01"));
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain("run: health-data auth strava");
   });
 
   it("activity with no streams (empty streams response) still increments recordsSynced", async () => {
