@@ -2,7 +2,7 @@ import { stat, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Router } from "express";
-import { getSessionCookie } from "../auth/cookies.ts";
+import { getSessionIdFromRequest } from "../auth/cookies.ts";
 import { validateSession } from "../auth/session.ts";
 import { errorMessage } from "../lib/server-utils.ts";
 import { logger } from "../logger.ts";
@@ -20,7 +20,7 @@ export function createExportRouter(db: import("dofek/db").Database): Router {
   const router = Router();
 
   router.post("/", async (req, res) => {
-    const sessionId = getSessionCookie(req);
+    const sessionId = getSessionIdFromRequest(req);
     if (!sessionId) {
       res.status(401).json({ error: "Not authenticated" });
       return;
@@ -81,7 +81,7 @@ export function createExportRouter(db: import("dofek/db").Database): Router {
   });
 
   router.get("/status/:jobId", async (req, res) => {
-    const sessionId = getSessionCookie(req);
+    const sessionId = getSessionIdFromRequest(req);
     if (!sessionId) {
       res.status(401).json({ error: "Not authenticated" });
       return;
@@ -115,7 +115,7 @@ export function createExportRouter(db: import("dofek/db").Database): Router {
   });
 
   router.get("/download/:jobId", async (req, res) => {
-    const sessionId = getSessionCookie(req);
+    const sessionId = getSessionIdFromRequest(req);
     if (!sessionId) {
       res.status(401).json({ error: "Not authenticated" });
       return;

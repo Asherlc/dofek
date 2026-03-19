@@ -242,6 +242,7 @@ describe("createUploadRouter", () => {
     it("returns job status", async () => {
       const { app, queue } = createTestApp();
       const mockJob = {
+        data: { userId: "user-1" },
         getState: vi.fn(() => Promise.resolve("completed")),
         progress: 100,
         failedReason: null,
@@ -252,6 +253,20 @@ describe("createUploadRouter", () => {
       expect(res.status).toBe(200);
       const data = JSON.parse(res.body);
       expect(data.status).toBe("done");
+    });
+
+    it("returns 403 when job belongs to another user", async () => {
+      const { app, queue } = createTestApp();
+      const mockJob = {
+        data: { userId: "user-2" },
+        getState: vi.fn(() => Promise.resolve("active")),
+        progress: 50,
+        failedReason: null,
+        returnvalue: null,
+      };
+      queue.getJob.mockResolvedValueOnce(mockJob);
+      const res = await request(app, "get", "/api/upload/apple-health/status/job-other");
+      expect(res.status).toBe(403);
     });
   });
 
@@ -455,6 +470,7 @@ describe("createUploadRouter", () => {
     it("returns job status for known job", async () => {
       const { app, queue } = createTestApp();
       const mockJob = {
+        data: { userId: "user-1" },
         getState: vi.fn(() => Promise.resolve("completed")),
         progress: 100,
         failedReason: null,
@@ -466,6 +482,20 @@ describe("createUploadRouter", () => {
       const data = JSON.parse(res.body);
       expect(data.status).toBe("done");
     });
+
+    it("returns 403 when job belongs to another user", async () => {
+      const { app, queue } = createTestApp();
+      const mockJob = {
+        data: { userId: "user-2" },
+        getState: vi.fn(() => Promise.resolve("active")),
+        progress: 50,
+        failedReason: null,
+        returnvalue: null,
+      };
+      queue.getJob.mockResolvedValueOnce(mockJob);
+      const res = await request(app, "get", "/api/upload/strong-csv/status/job-other");
+      expect(res.status).toBe(403);
+    });
   });
 
   describe("GET /api/upload/cronometer-csv/status/:jobId", () => {
@@ -474,6 +504,20 @@ describe("createUploadRouter", () => {
       queue.getJob.mockResolvedValueOnce(null);
       const res = await request(app, "get", "/api/upload/cronometer-csv/status/unknown");
       expect(res.status).toBe(404);
+    });
+
+    it("returns 403 when job belongs to another user", async () => {
+      const { app, queue } = createTestApp();
+      const mockJob = {
+        data: { userId: "user-2" },
+        getState: vi.fn(() => Promise.resolve("active")),
+        progress: 50,
+        failedReason: null,
+        returnvalue: null,
+      };
+      queue.getJob.mockResolvedValueOnce(mockJob);
+      const res = await request(app, "get", "/api/upload/cronometer-csv/status/job-other");
+      expect(res.status).toBe(403);
     });
   });
 

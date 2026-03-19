@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../auth/cookies.ts", () => ({
-  getSessionCookie: vi.fn(),
+  getSessionIdFromRequest: vi.fn(),
 }));
 
 vi.mock("../auth/session.ts", () => ({
@@ -24,7 +24,7 @@ import type { AddressInfo } from "node:net";
 import cookieParser from "cookie-parser";
 import { createDatabaseFromEnv } from "dofek/db";
 import express from "express";
-import { getSessionCookie } from "../auth/cookies.ts";
+import { getSessionIdFromRequest } from "../auth/cookies.ts";
 import { validateSession } from "../auth/session.ts";
 import { createExportRouter } from "./export.ts";
 
@@ -72,14 +72,14 @@ describe("createExportRouter", () => {
 
   describe("POST /api/export", () => {
     it("returns 401 when not authenticated", async () => {
-      vi.mocked(getSessionCookie).mockReturnValue(undefined);
+      vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
       const { app } = createTestApp();
       const res = await request(app, "post", "/api/export");
       expect(res.status).toBe(401);
     });
 
     it("returns 401 when session expired", async () => {
-      vi.mocked(getSessionCookie).mockReturnValue("sess-1");
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
       vi.mocked(validateSession).mockResolvedValue(null);
       const { app } = createTestApp();
       const res = await request(app, "post", "/api/export");
@@ -90,35 +90,35 @@ describe("createExportRouter", () => {
   describe("GET /api/export/status/:jobId", () => {
     it("returns 401 when not authenticated", async () => {
       // First create a job while authenticated
-      vi.mocked(getSessionCookie).mockReturnValue("sess-1");
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
       vi.mocked(validateSession).mockResolvedValue({ userId: "user-1" });
       const { app } = createTestApp();
       const postRes = await request(app, "post", "/api/export");
       const { jobId } = JSON.parse(postRes.body);
 
       // Now try to access status without auth
-      vi.mocked(getSessionCookie).mockReturnValue(undefined);
+      vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
       const statusRes = await request(app, "get", `/api/export/status/${jobId}`);
       expect(statusRes.status).toBe(401);
     });
 
     it("returns 403 when job belongs to another user", async () => {
       // Create a job as user-1
-      vi.mocked(getSessionCookie).mockReturnValue("sess-1");
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
       vi.mocked(validateSession).mockResolvedValue({ userId: "user-1" });
       const { app } = createTestApp();
       const postRes = await request(app, "post", "/api/export");
       const { jobId } = JSON.parse(postRes.body);
 
       // Try to access status as user-2
-      vi.mocked(getSessionCookie).mockReturnValue("sess-2");
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-2");
       vi.mocked(validateSession).mockResolvedValue({ userId: "user-2" });
       const statusRes = await request(app, "get", `/api/export/status/${jobId}`);
       expect(statusRes.status).toBe(403);
     });
 
     it("returns 404 for unknown job", async () => {
-      vi.mocked(getSessionCookie).mockReturnValue("sess-1");
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
       vi.mocked(validateSession).mockResolvedValue({ userId: "user-1" });
       const { app } = createTestApp();
       const res = await request(app, "get", "/api/export/status/unknown-job");
@@ -128,7 +128,7 @@ describe("createExportRouter", () => {
 
   describe("POST /api/export (with valid session)", () => {
     it("starts export and returns processing status", async () => {
-      vi.mocked(getSessionCookie).mockReturnValue("sess-1");
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
       vi.mocked(validateSession).mockResolvedValue({
         userId: "user-1",
         expiresAt: new Date("2027-01-01"),
@@ -144,14 +144,14 @@ describe("createExportRouter", () => {
 
   describe("GET /api/export/download/:jobId", () => {
     it("returns 401 when not authenticated", async () => {
-      vi.mocked(getSessionCookie).mockReturnValue(undefined);
+      vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
       const { app } = createTestApp();
       const res = await request(app, "get", "/api/export/download/some-job");
       expect(res.status).toBe(401);
     });
 
     it("returns 401 when session expired", async () => {
-      vi.mocked(getSessionCookie).mockReturnValue("sess-1");
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
       vi.mocked(validateSession).mockResolvedValue(null);
       const { app } = createTestApp();
       const res = await request(app, "get", "/api/export/download/some-job");
@@ -159,7 +159,7 @@ describe("createExportRouter", () => {
     });
 
     it("returns 404 for unknown job with valid session", async () => {
-      vi.mocked(getSessionCookie).mockReturnValue("sess-1");
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
       vi.mocked(validateSession).mockResolvedValue({
         userId: "user-1",
         expiresAt: new Date("2027-01-01"),
@@ -172,7 +172,7 @@ describe("createExportRouter", () => {
 
   describe("GET /api/export/status/:jobId (after export starts)", () => {
     it("returns job status for known job", async () => {
-      vi.mocked(getSessionCookie).mockReturnValue("sess-1");
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
       vi.mocked(validateSession).mockResolvedValue({
         userId: "user-1",
         expiresAt: new Date("2027-01-01"),
@@ -195,7 +195,7 @@ describe("createExportRouter", () => {
   describe("GET /api/export/download/:jobId (forbidden/not ready)", () => {
     it("returns 403 when job belongs to another user", async () => {
       // Start export as user-1
-      vi.mocked(getSessionCookie).mockReturnValue("sess-1");
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
       vi.mocked(validateSession).mockResolvedValue({
         userId: "user-1",
         expiresAt: new Date("2027-01-01"),
@@ -214,7 +214,7 @@ describe("createExportRouter", () => {
     });
 
     it("returns 400 when export is not done yet", async () => {
-      vi.mocked(getSessionCookie).mockReturnValue("sess-1");
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
       vi.mocked(validateSession).mockResolvedValue({
         userId: "user-1",
         expiresAt: new Date("2027-01-01"),

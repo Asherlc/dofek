@@ -26,12 +26,16 @@ interface UploadChunks {
 }
 
 const activeUploads = new Map<string, UploadChunks>();
-const uploadStatuses = new Map<string, { status: string; progress: number; message: string }>();
+interface UploadStatus {
+  status: string;
+  progress: number;
+  message: string;
+  userId: string;
+}
 
-function setUploadStatus(
-  id: string,
-  status: { status: string; progress: number; message: string },
-) {
+const uploadStatuses = new Map<string, UploadStatus>();
+
+function setUploadStatus(id: string, status: UploadStatus) {
   uploadStatuses.set(id, status);
 }
 
@@ -95,11 +99,17 @@ async function getImportJobStatus(
   else if (state === "failed") status = "error";
   else status = "processing";
 
+  const jobUserId =
+    typeof job.data === "object" && job.data !== null && "userId" in job.data
+      ? String(job.data.userId)
+      : undefined;
+
   return {
     status,
     progress: status === "done" ? 100 : (pct ?? 0),
     message: state === "failed" ? job.failedReason : msg,
     result: job.returnvalue,
+    userId: jobUserId,
   };
 }
 
@@ -134,6 +144,10 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
 
     const uploadStatus = uploadStatuses.get(req.params.jobId);
     if (uploadStatus) {
+      if (uploadStatus.userId !== userId) {
+        res.status(403).json({ error: "Forbidden" });
+        return;
+      }
       res.json(uploadStatus);
       return;
     }
@@ -141,6 +155,10 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
     const status = await getImportJobStatus(getImportQueue, req.params.jobId);
     if (!status) {
       res.status(404).json({ error: "Unknown job" });
+      return;
+    }
+    if (status.userId && status.userId !== userId) {
+      res.status(403).json({ error: "Forbidden" });
       return;
     }
     res.json(status);
@@ -225,6 +243,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
                 status: "error",
                 progress: 0,
                 message: "Upload timed out",
+                userId,
               });
               cleanupUploadStatus(uploadId);
             }
@@ -235,6 +254,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
           status: "uploading",
           progress: 0,
           message: "Receiving chunks...",
+          userId,
         });
       }
 
@@ -250,6 +270,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
           status: "uploading",
           progress: uploadPct,
           message: `Received ${upload.received.size}/${upload.total} chunks`,
+          userId,
         });
         res.json({
           status: "uploading",
@@ -268,6 +289,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
         status: "assembling",
         progress: 0,
         message: "Assembling file...",
+        userId,
       });
       res.json({ status: "assembling", jobId: uploadId });
 
@@ -290,6 +312,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
             status: "error",
             progress: 0,
             message: "Failed to assemble uploaded file",
+            userId,
           });
           cleanupUploadStatus(uploadId);
         }
@@ -301,7 +324,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
         activeUploads.delete(uploadId);
         await rm(upload.dir, { recursive: true, force: true }).catch(() => {});
       }
-      setUploadStatus(uploadId, { status: "error", progress: 0, message: "Upload failed" });
+      setUploadStatus(uploadId, { status: "error", progress: 0, message: "Upload failed", userId });
       cleanupUploadStatus(uploadId);
       res.status(500).json({ error: "Upload failed" });
     }
@@ -315,6 +338,10 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
     const status = await getImportJobStatus(getImportQueue, req.params.jobId);
     if (!status) {
       res.status(404).json({ error: "Unknown job" });
+      return;
+    }
+    if (status.userId && status.userId !== userId) {
+      res.status(403).json({ error: "Forbidden" });
       return;
     }
     res.json(status);
@@ -365,6 +392,10 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
     const status = await getImportJobStatus(getImportQueue, req.params.jobId);
     if (!status) {
       res.status(404).json({ error: "Unknown job" });
+      return;
+    }
+    if (status.userId && status.userId !== userId) {
+      res.status(403).json({ error: "Forbidden" });
       return;
     }
     res.json(status);
