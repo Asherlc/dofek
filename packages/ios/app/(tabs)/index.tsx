@@ -16,6 +16,7 @@ import { StrainGauge } from "../../components/charts/StrainGauge";
 import { formatDurationMinutes, formatSleepDebtInline } from "../../lib/format";
 import { scoreColor, scoreLabel, trendDirection as computeTrend } from "../../lib/scoring";
 import { trpc } from "../../lib/trpc";
+import { convertTemperature, convertWeight, temperatureLabel, useUnitSystem, weightLabel } from "../../lib/units";
 import { useOnboarding } from "../../lib/useOnboarding";
 import type {
   ActivityRow,
@@ -73,6 +74,7 @@ function trendArrow(trend: string | null): string {
 export default function OverviewScreen() {
   const router = useRouter();
   const onboarding = useOnboarding();
+  const unitSystem = useUnitSystem();
 
   // Fetch readiness/recovery score (last 7 days for trend)
   const readinessQuery = trpc.recovery.readinessScore.useQuery({ days: 7 });
@@ -371,8 +373,8 @@ export default function OverviewScreen() {
                 />
                 <MiniMetricCard
                   label="Skin Temp"
-                  value={metrics.latest_skin_temp != null ? metrics.latest_skin_temp.toFixed(1) : "--"}
-                  unit={"\u00B0C"}
+                  value={metrics.latest_skin_temp != null ? convertTemperature(metrics.latest_skin_temp, unitSystem).toFixed(1) : "--"}
+                  unit={temperatureLabel(unitSystem)}
                 />
               </ScrollView>
             </View>
@@ -564,9 +566,9 @@ export default function OverviewScreen() {
               <View style={styles.weightRow}>
                 <View>
                   <Text style={styles.weightValue}>
-                    {latestWeight.smoothedWeight.toFixed(1)}
+                    {convertWeight(latestWeight.smoothedWeight, unitSystem).toFixed(1)}
                   </Text>
-                  <Text style={styles.weightUnit}>kg</Text>
+                  <Text style={styles.weightUnit}>{weightLabel(unitSystem)}</Text>
                 </View>
                 {weightData.length >= 2 && (
                   <WeightSparkline
