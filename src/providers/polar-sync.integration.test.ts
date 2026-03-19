@@ -17,7 +17,7 @@ function fakePolarExercise(overrides: Partial<PolarExercise> = {}): PolarExercis
   return {
     id: "ex-1001",
     upload_time: "2026-03-01T11:30:00Z",
-    polar_user: "https://www.polar.com/v3/users/12345",
+    polar_user: "https://www.polaraccesslink.com/v3/users/12345",
     device: "Polar Vantage V3",
     start_time: "2026-03-01T10:00:00Z",
     duration: "PT1H15M30S",
@@ -33,7 +33,7 @@ function fakePolarExercise(overrides: Partial<PolarExercise> = {}): PolarExercis
 
 function fakePolarSleep(overrides: Partial<PolarSleep> = {}): PolarSleep {
   return {
-    polar_user: "https://www.polar.com/v3/users/12345",
+    polar_user: "https://www.polaraccesslink.com/v3/users/12345",
     date: "2026-03-01",
     sleep_start_time: "2026-02-28T22:45:00Z",
     sleep_end_time: "2026-03-01T06:30:00Z",
@@ -56,7 +56,7 @@ function fakePolarSleep(overrides: Partial<PolarSleep> = {}): PolarSleep {
 
 function fakePolarDailyActivity(overrides: Partial<PolarDailyActivity> = {}): PolarDailyActivity {
   return {
-    polar_user: "https://www.polar.com/v3/users/12345",
+    polar_user: "https://www.polaraccesslink.com/v3/users/12345",
     date: "2026-03-01",
     created: "2026-03-01T23:59:00Z",
     calories: 2400,
@@ -71,7 +71,7 @@ function fakePolarNightlyRecharge(
   overrides: Partial<PolarNightlyRecharge> = {},
 ): PolarNightlyRecharge {
   return {
-    polar_user: "https://www.polar.com/v3/users/12345",
+    polar_user: "https://www.polaraccesslink.com/v3/users/12345",
     date: "2026-03-01",
     heart_rate_avg: 52,
     beat_to_beat_avg: 1154,
@@ -107,22 +107,22 @@ function polarHandlers(opts?: {
     }),
 
     // Exercises
-    http.get("https://www.polar.com/v3/exercises", () => {
+    http.get("https://www.polaraccesslink.com/v3/exercises", () => {
       return HttpResponse.json(exercises);
     }),
 
     // Sleep
-    http.get("https://www.polar.com/v3/sleep", () => {
+    http.get("https://www.polaraccesslink.com/v3/sleep", () => {
       return HttpResponse.json(sleep);
     }),
 
     // Nightly recharge
-    http.get("https://www.polar.com/v3/nightly-recharge", () => {
+    http.get("https://www.polaraccesslink.com/v3/nightly-recharge", () => {
       return HttpResponse.json(nightlyRecharge);
     }),
 
     // Daily activity
-    http.get("https://www.polar.com/v3/activity", () => {
+    http.get("https://www.polaraccesslink.com/v3/activity", () => {
       return HttpResponse.json(dailyActivity);
     }),
   ];
@@ -138,7 +138,7 @@ describe("PolarProvider.sync() (integration)", () => {
     process.env.POLAR_CLIENT_SECRET = "test-polar-secret";
     ctx = await setupTestDatabase();
     server.listen({ onUnhandledRequest: "error" });
-    await ensureProvider(ctx.db, "polar", "Polar", "https://www.polar.com/v3");
+    await ensureProvider(ctx.db, "polar", "Polar", "https://www.polaraccesslink.com/v3");
   }, 60_000);
 
   afterEach(() => {
@@ -360,22 +360,22 @@ function polarCoverageHandlers(opts: {
 }) {
   return [
     // Exercises — return empty
-    http.get("https://www.polar.com/v3/exercises", () => {
+    http.get("https://www.polaraccesslink.com/v3/exercises", () => {
       return HttpResponse.json([]);
     }),
 
     // Sleep — return empty
-    http.get("https://www.polar.com/v3/sleep", () => {
+    http.get("https://www.polaraccesslink.com/v3/sleep", () => {
       return HttpResponse.json([]);
     }),
 
     // Nightly recharge
-    http.get("https://www.polar.com/v3/nightly-recharge", () => {
+    http.get("https://www.polaraccesslink.com/v3/nightly-recharge", () => {
       return HttpResponse.json(opts.nightlyRecharges ?? []);
     }),
 
     // Daily activity
-    http.get("https://www.polar.com/v3/activity", () => {
+    http.get("https://www.polaraccesslink.com/v3/activity", () => {
       if (opts.dailyActivityError) {
         return new HttpResponse("Internal Server Error", { status: 500 });
       }
@@ -393,7 +393,7 @@ describe("PolarProvider.sync() — daily_activity error paths (integration)", ()
     process.env.POLAR_CLIENT_SECRET = "test-polar-secret";
     ctx = await setupTestDatabase();
     errorServer.listen({ onUnhandledRequest: "error" });
-    await ensureProvider(ctx.db, "polar", "Polar", "https://www.polar.com/v3");
+    await ensureProvider(ctx.db, "polar", "Polar", "https://www.polaraccesslink.com/v3");
   }, 60_000);
 
   afterEach(() => {

@@ -237,7 +237,7 @@ export function parsePolarDailyActivity(
 // Polar OAuth configuration
 // ============================================================
 
-const POLAR_API_BASE = "https://www.polar.com/v3";
+const POLAR_API_BASE = "https://www.polaraccesslink.com/v3";
 const POLAR_AUTHORIZE_URL = "https://flow.polar.com/oauth2/authorization";
 const POLAR_TOKEN_URL = "https://polarremote.com/v2/oauth2/token";
 
