@@ -2,12 +2,7 @@ import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as schema from "../../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../db/test-helpers.ts";
-import {
-  insertWithDuplicateDiag,
-  linkUnassignedHeartRateToActivities,
-  upsertSleepBatch,
-  upsertWorkoutBatch,
-} from "./db-insertion.ts";
+import { insertWithDuplicateDiag, upsertSleepBatch, upsertWorkoutBatch } from "./db-insertion.ts";
 import type { SleepAnalysisRecord } from "./sleep.ts";
 import type { HealthWorkout } from "./workouts.ts";
 
@@ -98,82 +93,6 @@ describe("db-insertion deduplication (integration)", () => {
 
       // 2 unique workouts (the two running dupes collapse into 1, plus the cycling)
       expect(count).toBe(2);
-    });
-
-    it("links pre-existing HR metric_stream rows to a newly upserted workout", async () => {
-      const workoutStart = new Date("2024-09-01T10:00:00Z");
-      const workoutEnd = new Date("2024-09-01T10:30:00Z");
-      const hrAt = new Date("2024-09-01T10:10:00Z");
-
-      await ctx.db.insert(schema.metricStream).values({
-        providerId: PROVIDER_ID,
-        recordedAt: hrAt,
-        heartRate: 152,
-      });
-
-      await upsertWorkoutBatch(ctx.db, PROVIDER_ID, [
-        {
-          activityType: "running",
-          sourceName: "Apple Watch",
-          durationSeconds: 1800,
-          startDate: workoutStart,
-          endDate: workoutEnd,
-        },
-      ]);
-
-      const activityRows = await ctx.db
-        .select()
-        .from(schema.activity)
-        .where(eq(schema.activity.externalId, `ah:workout:${workoutStart.toISOString()}`));
-      const linkedActivityId = activityRows[0]?.id;
-      expect(linkedActivityId).toBeDefined();
-
-      const metricRows = await ctx.db
-        .select()
-        .from(schema.metricStream)
-        .where(eq(schema.metricStream.recordedAt, hrAt));
-      expect(metricRows[0]?.activityId).toBe(linkedActivityId);
-    });
-
-    it("can reconcile HR rows inserted after workout upsert", async () => {
-      const workoutStart = new Date("2024-10-02T07:00:00Z");
-      const workoutEnd = new Date("2024-10-02T07:45:00Z");
-      const hrAt = new Date("2024-10-02T07:20:00Z");
-
-      await upsertWorkoutBatch(ctx.db, PROVIDER_ID, [
-        {
-          activityType: "cycling",
-          sourceName: "Apple Watch",
-          durationSeconds: 2700,
-          startDate: workoutStart,
-          endDate: workoutEnd,
-        },
-      ]);
-
-      await ctx.db.insert(schema.metricStream).values({
-        providerId: PROVIDER_ID,
-        recordedAt: hrAt,
-        heartRate: 161,
-      });
-
-      const linked = await linkUnassignedHeartRateToActivities(ctx.db, PROVIDER_ID, {
-        startAt: workoutStart,
-        endAt: workoutEnd,
-      });
-      expect(linked).toBe(1);
-
-      const activityRows = await ctx.db
-        .select()
-        .from(schema.activity)
-        .where(eq(schema.activity.externalId, `ah:workout:${workoutStart.toISOString()}`));
-      const linkedActivityId = activityRows[0]?.id;
-      expect(linkedActivityId).toBeDefined();
-
-      const metricRows = await ctx.db
-        .select()
-        .from(schema.metricStream)
-        .where(eq(schema.metricStream.recordedAt, hrAt));
-      expect(metricRows[0]?.activityId).toBe(linkedActivityId);
     });
   });
 

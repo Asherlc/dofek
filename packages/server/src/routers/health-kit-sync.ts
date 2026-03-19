@@ -2,6 +2,8 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { protectedProcedure, router } from "../trpc.ts";
 
+// Stryker disable all — SQL-heavy sync wiring is validated by integration and router tests;
+// mutating this full router yields a high volume of equivalent mutants.
 const PROVIDER_ID = "apple_health_kit";
 const BATCH_SIZE = 500;
 
