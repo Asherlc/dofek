@@ -32,7 +32,7 @@ export async function warmCache(db: import("dofek/db").Database): Promise<void> 
     ],
     [
       "cyclingAdvanced.activityVariability(90)",
-      () => caller.cyclingAdvanced.activityVariability({ days: 90 }),
+      () => caller.cyclingAdvanced.activityVariability({ days: 90, limit: 20, offset: 0 }),
     ],
     [
       "cyclingAdvanced.verticalAscentRate(90)",
