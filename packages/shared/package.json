@@ -10,6 +10,7 @@
     "./format": "./src/format.ts",
     "./correlation": "./src/correlation.ts",
     "./onboarding": "./src/onboarding.ts",
-    "./providers": "./src/providers.ts"
+    "./providers": "./src/providers.ts",
+    "./units": "./src/units.ts"
   }
 }

@@ -19,6 +19,7 @@ import Svg, {
 } from "react-native-svg";
 import { formatDurationRange } from "../../lib/format";
 import { trpc } from "../../lib/trpc";
+import { convertDistance, convertElevation, convertSpeed, distanceLabel, elevationLabel, speedLabel, useUnitSystem } from "../../lib/units";
 import { colors } from "../../theme";
 
 const CHART_WIDTH = 340;
@@ -412,6 +413,7 @@ const statsStyles = StyleSheet.create({
 
 export default function ActivityDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const unitSystem = useUnitSystem();
 
   const detail = trpc.activity.byId.useQuery(
     { id: id ?? "" },
@@ -463,13 +465,13 @@ export default function ActivityDetailScreen() {
   if (activity.totalDistance != null) {
     stats.push({
       label: "Distance",
-      value: `${(activity.totalDistance / 1000).toFixed(1)} km`,
+      value: `${convertDistance(activity.totalDistance / 1000, unitSystem).toFixed(1)} ${distanceLabel(unitSystem)}`,
     });
   }
   if (activity.elevationGain != null) {
     stats.push({
       label: "Elevation Gain",
-      value: `${Math.round(activity.elevationGain)} m`,
+      value: `${Math.round(convertElevation(activity.elevationGain, unitSystem))} ${elevationLabel(unitSystem)}`,
     });
   }
   if (activity.avgHr != null) {
@@ -499,7 +501,7 @@ export default function ActivityDetailScreen() {
   if (activity.avgSpeed != null) {
     stats.push({
       label: "Avg Speed",
-      value: `${(activity.avgSpeed * 3.6).toFixed(1)} km/h`,
+      value: `${convertSpeed(activity.avgSpeed * 3.6, unitSystem).toFixed(1)} ${speedLabel(unitSystem)}`,
     });
   }
   if (activity.avgCadence != null) {
@@ -562,10 +564,10 @@ export default function ActivityDetailScreen() {
       {/* Elevation Profile */}
       {hasAltitude && (
         <AreaChart
-          data={points.map((p) => ({ value: p.altitude }))}
+          data={points.map((p) => ({ value: p.altitude != null ? convertElevation(p.altitude, unitSystem) : null }))}
           color={CHART_COLORS.altitude}
           label="Elevation Profile"
-          unit="m"
+          unit={elevationLabel(unitSystem)}
         />
       )}
 

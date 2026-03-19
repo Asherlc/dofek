@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import Svg, { Rect, Text as SvgText, Path } from "react-native-svg";
 import { trpc } from "../lib/trpc";
+import { convertDistance, convertElevation, convertPace, convertWeight, distanceLabel, elevationLabel, paceLabel, useUnitSystem, weightLabel } from "../lib/units";
 import { colors } from "../theme";
 import { scoreColor, scoreLabel, workloadRatioColor, workloadRatioHint, rampRateColor } from "@dofek/shared/scoring";
 import { formatPace } from "@dofek/shared/format";
@@ -460,6 +461,7 @@ function PowerCard({ label, watts }: { label: string; watts: number | undefined 
 function RunningTab({ days }: { days: number }) {
   const { width: screenWidth } = useWindowDimensions();
   const chartWidth = screenWidth - 64;
+  const unitSystem = useUnitSystem();
 
   const paceTrend = trpc.running.paceTrend.useQuery({ days });
   const dynamics = trpc.running.dynamics.useQuery({ days });
@@ -484,10 +486,10 @@ function RunningTab({ days }: { days: number }) {
                 </View>
                 <View style={{ alignItems: "flex-end" }}>
                   <Text style={[styles.bigValue, { fontSize: 20, color: colors.green }]}>
-                    {formatPace(run.paceSecondsPerKm)} /km
+                    {formatPace(convertPace(run.paceSecondsPerKm, unitSystem))} {paceLabel(unitSystem)}
                   </Text>
                   <Text style={styles.cardSubtext}>
-                    {run.distanceKm} km · {run.durationMinutes} min
+                    {convertDistance(run.distanceKm, unitSystem).toFixed(1)} {distanceLabel(unitSystem)} · {run.durationMinutes} min
                   </Text>
                 </View>
               </View>
@@ -560,6 +562,7 @@ function FormRow({ label, value }: { label: string; value: string }) {
 function StrengthTab({ days }: { days: number }) {
   const { width: screenWidth } = useWindowDimensions();
   const chartWidth = screenWidth - 64;
+  const unitSystem = useUnitSystem();
 
   const volume = trpc.strength.volumeOverTime.useQuery({ days });
   const oneRepMax = trpc.strength.estimatedOneRepMax.useQuery({ days });
@@ -579,7 +582,7 @@ function StrengthTab({ days }: { days: number }) {
           <Text style={styles.cardTitle}>Weekly Volume</Text>
           <View style={styles.chartContainer}>
             <BarChart
-              data={volumeData.map((w) => w.totalVolumeKg)}
+              data={volumeData.map((w) => convertWeight(w.totalVolumeKg, unitSystem))}
               width={chartWidth}
               height={100}
               color={colors.purple}
@@ -599,7 +602,7 @@ function StrengthTab({ days }: { days: number }) {
               <View key={exercise.exerciseName} style={styles.card}>
                 <Text style={styles.cardTitle}>{exercise.exerciseName}</Text>
                 <Text style={styles.bigValue}>
-                  {latestEstimate ? `${Math.round(latestEstimate.estimatedMax)} kg` : "--"}
+                  {latestEstimate ? `${Math.round(convertWeight(latestEstimate.estimatedMax, unitSystem))} ${weightLabel(unitSystem)}` : "--"}
                 </Text>
                 {exercise.history.length > 1 && (
                   <View style={styles.sparklineContainer}>
@@ -627,7 +630,7 @@ function StrengthTab({ days }: { days: number }) {
                   <View style={styles.overloadInfo}>
                     <Text style={styles.cardTitle}>{exercise.exerciseName}</Text>
                     <Text style={styles.cardSubtext}>
-                      Slope: {exercise.slopeKgPerWeek > 0 ? "+" : ""}{exercise.slopeKgPerWeek} kg/week
+                      Slope: {exercise.slopeKgPerWeek > 0 ? "+" : ""}{convertWeight(exercise.slopeKgPerWeek, unitSystem).toFixed(1)} {weightLabel(unitSystem)}/week
                     </Text>
                   </View>
                   <View style={styles.overloadChange}>
@@ -656,6 +659,7 @@ function StrengthTab({ days }: { days: number }) {
 function HikingTab({ days }: { days: number }) {
   const { width: screenWidth } = useWindowDimensions();
   const chartWidth = screenWidth - 64;
+  const unitSystem = useUnitSystem();
 
   const gap = trpc.hiking.gradeAdjustedPace.useQuery({ days });
   const elevation = trpc.hiking.elevationProfile.useQuery({ days: Math.max(days, 365) });
@@ -685,13 +689,13 @@ function HikingTab({ days }: { days: number }) {
                 <Text style={styles.tableCellSecondary}>{hike.date}</Text>
               </View>
               <Text style={[styles.tableCell, { flex: 1 }]}>
-                {hike.distanceKm.toFixed(1)} km
+                {convertDistance(hike.distanceKm, unitSystem).toFixed(1)} {distanceLabel(unitSystem)}
               </Text>
               <Text style={[styles.tableCell, { flex: 1 }]}>
-                {hike.gradeAdjustedPaceMinPerKm.toFixed(1)} min/km
+                {(convertPace(hike.gradeAdjustedPaceMinPerKm * 60, unitSystem) / 60).toFixed(1)} min{paceLabel(unitSystem)}
               </Text>
               <Text style={[styles.tableCell, { flex: 1 }]}>
-                {Math.round(hike.elevationGainMeters)} m
+                {Math.round(convertElevation(hike.elevationGainMeters, unitSystem))} {elevationLabel(unitSystem)}
               </Text>
             </View>
           ))}
@@ -704,7 +708,7 @@ function HikingTab({ days }: { days: number }) {
           <Text style={styles.cardTitle}>Weekly Elevation Gain</Text>
           <View style={styles.chartContainer}>
             <BarChart
-              data={elevationData.map((w) => w.elevationGainMeters)}
+              data={elevationData.map((w) => convertElevation(w.elevationGainMeters, unitSystem))}
               width={chartWidth}
               height={100}
               color={colors.green}
