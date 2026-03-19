@@ -17,6 +17,7 @@ vi.mock("../lib/typed-sql.ts", () => ({
   executeWithSchema: vi.fn(async (db: { execute: () => Promise<unknown[]> }) => db.execute()),
 }));
 
+import { DISCONNECT_CHILD_TABLES } from "./provider-detail.ts";
 import { recoveryRouter } from "./recovery.ts";
 import { settingsRouter } from "./settings.ts";
 import { sleepNeedRouter } from "./sleep-need.ts";
@@ -270,6 +271,27 @@ describe("settingsRouter", () => {
       await expect(caller.set({ key: "theme", value: "dark" })).rejects.toThrow(
         "Failed to upsert setting",
       );
+    });
+  });
+
+  describe("deleteAllUserData", () => {
+    it("deletes provider and user-scoped data in one transaction", async () => {
+      const txExecute = vi.fn().mockResolvedValue([]);
+      const mockTransaction = vi
+        .fn()
+        .mockImplementation(async (fn: (tx: { execute: typeof txExecute }) => Promise<void>) => {
+          await fn({ execute: txExecute });
+        });
+
+      const caller = createCaller({
+        db: { execute: vi.fn(), transaction: mockTransaction },
+        userId: "user-1",
+      });
+
+      const result = await caller.deleteAllUserData();
+      expect(result).toEqual({ success: true });
+      expect(mockTransaction).toHaveBeenCalledTimes(1);
+      expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length + 1 + 4);
     });
   });
 

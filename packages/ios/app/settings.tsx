@@ -1,5 +1,4 @@
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
-import { useRouter } from "expo-router";
 import { PersonalizationPanel } from "../components/PersonalizationPanel";
 import { SlackIntegrationPanel } from "../components/SlackIntegrationPanel";
 import { trpc } from "../lib/trpc";
@@ -30,10 +29,10 @@ function formatProviderLabel(provider: string): string {
 }
 
 export default function SettingsScreen() {
-  const router = useRouter();
   const auth = useAuth();
   const { width } = useWindowDimensions();
   const isWide = width >= 600;
+  const trpcUtils = trpc.useUtils();
 
   // ── Linked Accounts ──
   const linkedAccounts = trpc.auth.linkedAccounts.useQuery();
@@ -49,6 +48,13 @@ export default function SettingsScreen() {
   const unitSetting = trpc.settings.get.useQuery({ key: "unitSystem" });
   const setSettingMutation = trpc.settings.set.useMutation({
     onSuccess: () => unitSetting.refetch(),
+  });
+  const deleteAllDataMutation = trpc.settings.deleteAllUserData.useMutation({
+    onSuccess: async () => {
+      await trpcUtils.invalidate();
+      Alert.alert("Data Deleted", "All synced and manually-entered data has been deleted.");
+    },
+    onError: (error) => Alert.alert("Error", error.message),
   });
 
   const currentUnitSystem: UnitSystem =
@@ -78,6 +84,21 @@ export default function SettingsScreen() {
         onPress: () => auth.logout(),
       },
     ]);
+  }
+
+  function handleDeleteAllUserData() {
+    Alert.alert(
+      "Delete All User Data",
+      "Delete all synced and manually-entered data? This action cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => deleteAllDataMutation.mutate(),
+        },
+      ],
+    );
   }
 
   return (
@@ -164,6 +185,29 @@ export default function SettingsScreen() {
         <Text style={styles.sectionDescription}>Connect external services</Text>
         <View style={styles.card}>
           <SlackIntegrationPanel />
+        </View>
+      </View>
+
+      {/* ── Danger Zone ── */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Danger Zone</Text>
+        <Text style={styles.sectionDescription}>
+          Permanently delete all synced and manually-entered data for your account
+        </Text>
+        <View style={styles.dangerCard}>
+          <TouchableOpacity
+            style={[
+              styles.deleteButton,
+              deleteAllDataMutation.isPending && styles.deleteButtonDisabled,
+            ]}
+            onPress={handleDeleteAllUserData}
+            activeOpacity={0.7}
+            disabled={deleteAllDataMutation.isPending}
+          >
+            <Text style={styles.deleteButtonText}>
+              {deleteAllDataMutation.isPending ? "Deleting..." : "Delete All User Data"}
+            </Text>
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -284,6 +328,30 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textTertiary,
     marginTop: 2,
+  },
+
+  // ── Danger Zone ──
+  dangerCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: colors.danger,
+  },
+  deleteButton: {
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: colors.danger,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  deleteButtonDisabled: {
+    opacity: 0.6,
+  },
+  deleteButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.danger,
   },
 
   // ── Logout ──
