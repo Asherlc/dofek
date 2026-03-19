@@ -77,5 +77,4 @@ async function doRegisterProviders() {
       console.warn(`[worker] Failed to register ${name} provider: ${err}`);
     }
   }
-
 }
