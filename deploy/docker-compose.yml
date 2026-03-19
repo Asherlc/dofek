@@ -37,6 +37,7 @@ services:
       - PORT=3000
       - NODE_ENV=production
       - OTEL_SERVICE_NAME=dofek-web
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4318
     volumes:
       - job_files:/app/job-files
       - /var/run/docker.sock:/var/run/docker.sock
@@ -57,6 +58,7 @@ services:
       - REDIS_URL=redis://redis:6379
       - NODE_ENV=production
       - OTEL_SERVICE_NAME=dofek-worker
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4318
     volumes:
       - job_files:/app/job-files
     depends_on:
@@ -75,9 +77,21 @@ services:
       - DATABASE_URL=postgres://health:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/health
       - NODE_ENV=production
       - OTEL_SERVICE_NAME=dofek-sync
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4318
     depends_on:
       db:
         condition: service_healthy
+
+  collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    restart: unless-stopped
+    environment:
+      - AXIOM_API_TOKEN=${AXIOM_API_TOKEN:?Set AXIOM_API_TOKEN in .env}
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    labels:
+      - "com.centurylinklabs.watchtower.enable=false"
 
   redis:
     image: redis:7-alpine
