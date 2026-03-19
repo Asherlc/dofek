@@ -1,3 +1,7 @@
+import {
+  collapseWeeklyVolumeActivityTypes,
+  formatActivityTypeLabel,
+} from "@dofek/shared/training";
 import { useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { ActivityCard } from "../../components/ActivityCard";
@@ -22,6 +26,17 @@ export default function StrainScreen() {
 
   const weeklyVolumeQuery = trpc.training.weeklyVolume.useQuery({ days });
   const weeklyVolume = WeeklyVolumeRowSchema.array().catch([]).parse(weeklyVolumeQuery.data ?? []);
+  const collapsedWeeklyVolume = collapseWeeklyVolumeActivityTypes(weeklyVolume, 6);
+  const activityTypeTotalsMap = new Map<string, number>();
+  for (const row of collapsedWeeklyVolume) {
+    activityTypeTotalsMap.set(
+      row.activity_type,
+      (activityTypeTotalsMap.get(row.activity_type) ?? 0) + row.hours,
+    );
+  }
+  const activityTypeTotals = [...activityTypeTotalsMap.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([activityType, hours]) => ({ activityType, hours }));
 
   const dailyStrain = todayWorkload?.dailyLoad ?? 0;
   const acuteLoad = todayWorkload?.acuteLoad ?? 0;
@@ -130,6 +145,15 @@ export default function StrainScreen() {
                   </View>
                 ))}
               </View>
+              {activityTypeTotals.length > 0 && (
+                <View style={styles.activityTypeSummary}>
+                  {activityTypeTotals.map((entry) => (
+                    <Text key={entry.activityType} style={styles.activityTypeSummaryItem}>
+                      {formatActivityTypeLabel(entry.activityType)}: {entry.hours.toFixed(1)}h
+                    </Text>
+                  ))}
+                </View>
+              )}
             </View>
           )}
 
@@ -253,6 +277,18 @@ const styles = StyleSheet.create({
     color: colors.text,
     width: 40,
     textAlign: "right",
+    fontVariant: ["tabular-nums"],
+  },
+  activityTypeSummary: {
+    borderTopWidth: 1,
+    borderTopColor: colors.surfaceSecondary,
+    marginTop: 4,
+    paddingTop: 8,
+    gap: 4,
+  },
+  activityTypeSummaryItem: {
+    fontSize: 12,
+    color: colors.textSecondary,
     fontVariant: ["tabular-nums"],
   },
   section: {
