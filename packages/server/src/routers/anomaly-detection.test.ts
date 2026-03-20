@@ -2,9 +2,13 @@ import { describe, expect, it, vi } from "vitest";
 
 const mockExecuteWithSchema = vi.fn();
 
-vi.mock("../lib/typed-sql.ts", () => ({
-  executeWithSchema: (...args: unknown[]) => mockExecuteWithSchema(...args),
-}));
+vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../lib/typed-sql.ts")>();
+  return {
+    ...original,
+    executeWithSchema: (...args: unknown[]) => mockExecuteWithSchema(...args),
+  };
+});
 
 vi.mock("../logger.ts", () => ({
   logger: { debug: vi.fn(), info: vi.fn(), error: vi.fn(), warn: vi.fn() },

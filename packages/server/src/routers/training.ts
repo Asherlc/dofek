@@ -3,11 +3,11 @@ import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { enduranceTypeFilter } from "../lib/endurance-types.ts";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 const weeklyVolumeRowSchema = z.object({
-  week: z.string(),
+  week: dateStringSchema,
   activity_type: z.string(),
   count: z.number(),
   hours: z.coerce.number(),
@@ -169,7 +169,7 @@ export const trainingRouter = router({
     const weights = getEffectiveParams(storedParams).readinessWeights;
 
     const readinessMetricSchema = z.object({
-      date: z.string(),
+      date: dateStringSchema,
       hrv: z.coerce.number().nullable(),
       resting_hr: z.coerce.number().nullable(),
       hrv_mean_60d: z.coerce.number().nullable(),
@@ -286,7 +286,7 @@ export const trainingRouter = router({
 
     const muscleFreshnessSchema = z.object({
       muscle_group: z.string(),
-      last_trained_date: z.string(),
+      last_trained_date: dateStringSchema,
     });
     const muscleFreshnessRows = await executeWithSchema(
       ctx.db,
@@ -305,8 +305,8 @@ export const trainingRouter = router({
     const balanceSchema = z.object({
       strength_7d: z.coerce.number(),
       endurance_7d: z.coerce.number(),
-      last_strength_date: z.string().nullable(),
-      last_endurance_date: z.string().nullable(),
+      last_strength_date: dateStringSchema.nullable(),
+      last_endurance_date: dateStringSchema.nullable(),
     });
     const balanceRows = await executeWithSchema(
       ctx.db,
@@ -383,7 +383,7 @@ export const trainingRouter = router({
 
     const hiitLoadSchema = z.object({
       hiit_count_7d: z.coerce.number(),
-      last_hiit_date: z.string().nullable(),
+      last_hiit_date: dateStringSchema.nullable(),
     });
     const hiitLoadRows = await executeWithSchema(
       ctx.db,
@@ -432,7 +432,7 @@ export const trainingRouter = router({
     const hiitLoad = hiitLoadRows[0] ?? { hiit_count_7d: 0, last_hiit_date: null };
 
     const trainingDaySchema = z.object({
-      training_date: z.string(),
+      training_date: dateStringSchema,
     });
     const trainingDays = await executeWithSchema(
       ctx.db,

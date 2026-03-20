@@ -14,12 +14,18 @@ vi.mock("../trpc.ts", async () => {
   };
 });
 
-vi.mock("../lib/typed-sql.ts", () => ({
-  executeWithSchema: vi.fn(async (db: { execute: () => Promise<unknown[]> }, schema: z.ZodType) => {
-    const rows = await db.execute();
-    return rows.map((row) => schema.parse(row));
-  }),
-}));
+vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../lib/typed-sql.ts")>();
+  return {
+    ...original,
+    executeWithSchema: vi.fn(
+      async (db: { execute: () => Promise<unknown[]> }, schema: z.ZodType) => {
+        const rows = await db.execute();
+        return rows.map((row) => schema.parse(row));
+      },
+    ),
+  };
+});
 
 import { dailyMetricsRouter } from "./daily-metrics.ts";
 
