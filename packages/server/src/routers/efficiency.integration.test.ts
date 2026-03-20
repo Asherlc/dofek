@@ -13,12 +13,6 @@ describe("efficiency.polarizationTrend integration", () => {
   let sessionCookie: string;
 
   const MAX_HR = 190;
-  // Zone boundaries: Z1 < 152, Z2 = 152-170, Z3 >= 171
-  const Z1_HR = 130; // well below 80% of 190 (152)
-  const Z2_HR = 160; // between 80% (152) and 90% (171)
-  const Z3_HR = 180; // above 90% of 190 (171)
-  const Z2_BOUNDARY_HR = 152; // exactly 80% of 190
-  const Z3_BOUNDARY_HR = 171; // exactly 90% of 190
 
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
@@ -26,51 +20,40 @@ describe("efficiency.polarizationTrend integration", () => {
     const session = await createSession(testCtx.db, DEFAULT_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
 
-    // Set up user profile with known max HR, no resting HR needed for %HRmax zones
     await testCtx.db.execute(
       sql`UPDATE fitness.user_profile
           SET max_hr = ${MAX_HR}, ftp = 250, birth_date = '1990-01-01'
           WHERE id = ${DEFAULT_USER_ID}`,
     );
 
-    // Insert provider
     await testCtx.db.execute(
       sql`INSERT INTO fitness.provider (id, name, user_id)
           VALUES ('test_provider', 'Test Provider', ${DEFAULT_USER_ID})
           ON CONFLICT DO NOTHING`,
     );
 
-    // ── Activity 1: All three zones present → PI should be non-null ──
-    // Place 2 days ago to ensure it's within the current week
-    await insertActivityWithHrZones("polarized-ride", "cycling", 2, [
-      { hr: Z1_HR, samples: 1200 },
-      { hr: Z2_HR, samples: 200 },
-      { hr: Z3_HR, samples: 100 },
+    // ── Single activity with all HR zones + boundary values (2 days ago) ──
+    // Combines zone coverage and boundary testing in one activity to avoid
+    // v_activity's overlap dedup merging separate activities.
+    //
+    // Zone boundaries at 190 max HR: Z1 < 152, Z2 = 152-170, Z3 >= 171
+    //
+    // Samples: 1300 Z1 + 400 Z2 + 200 Z3 = 1900 total
+    await insertActivity("all-zones-ride", "cycling", 2, [
+      { hr: 130, samples: 1200 }, // Z1: well below 80%
+      { hr: 151, samples: 100 }, // Z1: just below boundary (151 < 152)
+      { hr: 152, samples: 100 }, // Z2: exactly 80% HRmax boundary
+      { hr: 160, samples: 200 }, // Z2: mid-zone
+      { hr: 170, samples: 100 }, // Z2: just below 90%
+      { hr: 171, samples: 100 }, // Z3: exactly 90% HRmax boundary
+      { hr: 180, samples: 100 }, // Z3: well above 90%
     ]);
 
-    // ── Activity 2: Boundary test, offset 3h so v_activity dedup doesn't merge with #1 ──
-    // 152 bpm = exactly 80% of 190 → should be Z2 (>= 80%)
-    // 171 bpm = exactly 90% of 190 → should be Z3 (>= 90%)
-    await insertActivityWithHrZones(
-      "boundary-ride",
-      "cycling",
-      2,
-      [
-        { hr: 151, samples: 100 }, // Z1: < 152
-        { hr: Z2_BOUNDARY_HR, samples: 100 }, // Z2: exactly 80% HRmax
-        { hr: 170, samples: 100 }, // Z2: just below 90%
-        { hr: Z3_BOUNDARY_HR, samples: 100 }, // Z3: exactly 90% HRmax
-      ],
-      3, // 3 hours after midnight → no overlap with activity 1
-    );
+    // ── Z1-only ride, 21 days ago (guaranteed different week) → PI null ──
+    await insertActivity("easy-ride", "cycling", 21, [{ hr: 120, samples: 1000 }]);
 
-    // ── Activity 3: Z1-only ride, 21 days ago (guaranteed different week) → PI null ──
-    await insertActivityWithHrZones("easy-ride", "cycling", 21, [{ hr: 120, samples: 1000 }]);
-
-    // Refresh materialized views
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_activity`);
 
-    // Start server
     const app = createApp(testCtx.db);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
@@ -92,26 +75,23 @@ describe("efficiency.polarizationTrend integration", () => {
     await testCtx?.cleanup();
   });
 
-  // offsetHours staggers activities so v_activity's overlap dedup doesn't merge them
-  async function insertActivityWithHrZones(
+  async function insertActivity(
     name: string,
     activityType: string,
     daysAgo: number,
     zones: Array<{ hr: number; samples: number }>,
-    offsetHours = 0,
   ) {
     const totalSamples = zones.reduce((sum, z) => sum + z.samples, 0);
-    const offsetSql = offsetHours > 0 ? `+ ${offsetHours} * INTERVAL '1 hour'` : "";
 
     const actResult = await testCtx.db.execute<{ id: string }>(
-      sql.raw(`INSERT INTO fitness.activity (
+      sql`INSERT INTO fitness.activity (
             provider_id, user_id, activity_type, started_at, ended_at, name
           ) VALUES (
-            'test_provider', '${DEFAULT_USER_ID}', '${activityType}',
-            CURRENT_TIMESTAMP - ${daysAgo} * INTERVAL '1 day' ${offsetSql},
-            CURRENT_TIMESTAMP - ${daysAgo} * INTERVAL '1 day' ${offsetSql} + ${totalSamples} * INTERVAL '1 second',
-            '${name}'
-          ) RETURNING id`),
+            'test_provider', ${DEFAULT_USER_ID}, ${activityType},
+            CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day',
+            CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day' + ${totalSamples}::int * INTERVAL '1 second',
+            ${name}
+          ) RETURNING id`,
     );
     const actId = actResult[0]?.id;
     if (!actId) throw new Error(`Failed to insert activity ${name}`);
@@ -124,7 +104,7 @@ describe("efficiency.polarizationTrend integration", () => {
         for (let s = batchStart; s < batchEnd; s++) {
           const offset = sampleIndex + s;
           values.push(
-            `(CURRENT_TIMESTAMP - ${daysAgo} * INTERVAL '1 day' ${offsetSql} + ${offset} * INTERVAL '1 second',
+            `(CURRENT_TIMESTAMP - ${daysAgo} * INTERVAL '1 day' + ${offset} * INTERVAL '1 second',
               '${DEFAULT_USER_ID}', '${actId}', 'test_provider', ${zone.hr}, 200)`,
           );
         }
@@ -169,19 +149,17 @@ describe("efficiency.polarizationTrend integration", () => {
     expect(result.maxHr).toBe(MAX_HR);
   });
 
-  it("bins HR samples into correct %HRmax zones using simple thresholds", async () => {
+  it("bins HR samples into correct %HRmax zones", async () => {
     const result = await query<PolarizationResult>("efficiency.polarizationTrend", { days: 90 });
-    expect(result.weeks.length).toBeGreaterThan(0);
 
-    // Sum zone totals across all weeks to verify total binning
     const totalZ1 = result.weeks.reduce((sum, w) => sum + w.z1Seconds, 0);
     const totalZ2 = result.weeks.reduce((sum, w) => sum + w.z2Seconds, 0);
     const totalZ3 = result.weeks.reduce((sum, w) => sum + w.z3Seconds, 0);
 
-    // Activity 1: 1200 Z1, 200 Z2, 100 Z3
-    // Activity 2: 100 Z1 (151bpm), 100 Z2 (152bpm), 100 Z2 (170bpm), 100 Z3 (171bpm)
-    // Activity 3: 1000 Z1
-    // Total: Z1 = 1200 + 100 + 1000 = 2300, Z2 = 200 + 100 + 100 = 400, Z3 = 100 + 100 = 200
+    // all-zones-ride: 1200 (130bpm) + 100 (151bpm) = 1300 Z1
+    //                 100 (152bpm) + 200 (160bpm) + 100 (170bpm) = 400 Z2
+    //                 100 (171bpm) + 100 (180bpm) = 200 Z3
+    // easy-ride: 1000 (120bpm) Z1
     expect(totalZ1).toBe(2300);
     expect(totalZ2).toBe(400);
     expect(totalZ3).toBe(200);
@@ -189,25 +167,20 @@ describe("efficiency.polarizationTrend integration", () => {
 
   it("places HR at exactly 80% HRmax (152) in Z2, not Z1", async () => {
     const result = await query<PolarizationResult>("efficiency.polarizationTrend", { days: 90 });
-
-    // Sum across weeks avoids week-boundary sensitivity
     const totalZ2 = result.weeks.reduce((sum, w) => sum + w.z2Seconds, 0);
-    // If 152 bpm was wrongly placed in Z1, total Z2 would be 300 instead of 400
+    // If 152 bpm was in Z1 instead of Z2, total Z2 would be 300 not 400
     expect(totalZ2).toBe(400);
   });
 
   it("places HR at exactly 90% HRmax (171) in Z3, not Z2", async () => {
     const result = await query<PolarizationResult>("efficiency.polarizationTrend", { days: 90 });
-
     const totalZ3 = result.weeks.reduce((sum, w) => sum + w.z3Seconds, 0);
-    // If 171 bpm was wrongly placed in Z2, total Z3 would be 100 instead of 200
+    // If 171 bpm was in Z2 instead of Z3, total Z3 would be 100 not 200
     expect(totalZ3).toBe(200);
   });
 
   it("returns null PI when a zone has zero samples", async () => {
     const result = await query<PolarizationResult>("efficiency.polarizationTrend", { days: 90 });
-
-    // easy-ride (21 days ago) is Z1-only → that week should have null PI
     const z1OnlyWeek = result.weeks.find((w) => w.z2Seconds === 0 && w.z3Seconds === 0);
     expect(z1OnlyWeek).toBeDefined();
     if (z1OnlyWeek) {
@@ -217,27 +190,21 @@ describe("efficiency.polarizationTrend integration", () => {
 
   it("computes Treff PI correctly from real zone data", async () => {
     const result = await query<PolarizationResult>("efficiency.polarizationTrend", { days: 90 });
-
-    // Find a week with all three zones (activities 1+2 should be in the same week)
     const threeZoneWeek = result.weeks.find(
       (w) => w.z1Seconds > 0 && w.z2Seconds > 0 && w.z3Seconds > 0,
     );
     expect(threeZoneWeek).toBeDefined();
-
     if (threeZoneWeek) {
       const total = threeZoneWeek.z1Seconds + threeZoneWeek.z2Seconds + threeZoneWeek.z3Seconds;
       const f1 = threeZoneWeek.z1Seconds / total;
       const f2 = threeZoneWeek.z2Seconds / total;
       const f3 = threeZoneWeek.z3Seconds / total;
       const expectedPi = Math.round(Math.log10((f1 / (f2 * f3)) * 100) * 1000) / 1000;
-
       expect(threeZoneWeek.polarizationIndex).toBe(expectedPi);
     }
   });
 
   it("does not require resting HR for zone calculation", async () => {
-    // The whole point of switching to %HRmax zones: no resting HR dependency.
-    // We inserted NO daily_metrics rows, yet polarization data should still work.
     const result = await query<PolarizationResult>("efficiency.polarizationTrend", { days: 90 });
     expect(result.weeks.length).toBeGreaterThan(0);
     expect(result.maxHr).toBe(MAX_HR);
