@@ -81,9 +81,7 @@ export class TrainerRoadProvider implements Provider {
 
       // TrainerRoad cookies expire — user must re-authenticate when expired
       if (stored.expiresAt <= new Date()) {
-        throw new Error(
-          "TrainerRoad session expired — please re-authenticate via Settings",
-        );
+        throw new Error("TrainerRoad session expired — please re-authenticate via Settings");
       }
       client = new TrainerRoadClient(stored.accessToken, this.fetchFn);
     } catch (err) {

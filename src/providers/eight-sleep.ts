@@ -90,9 +90,7 @@ export class EightSleepProvider implements Provider {
 
       // Eight Sleep has no refresh tokens — user must re-authenticate when expired
       if (stored.expiresAt <= new Date()) {
-        throw new Error(
-          "Eight Sleep token expired — please re-authenticate via Settings",
-        );
+        throw new Error("Eight Sleep token expired — please re-authenticate via Settings");
       }
       client = new EightSleepClient(stored.accessToken, userId, this.fetchFn);
     } catch (err) {
