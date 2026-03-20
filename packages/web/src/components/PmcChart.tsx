@@ -5,7 +5,7 @@ import {
   FORM_ZONE_OPTIMAL,
   FORM_ZONE_TRANSITION,
   formZoneColor,
-} from "@dofek/shared/scoring";
+} from "@dofek/scoring/scoring";
 import type { PmcDataPoint, TssModelInfo } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";

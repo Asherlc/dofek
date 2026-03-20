@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { selectRecentDailyLoad } from "@dofek/shared/training";
+import { selectRecentDailyLoad } from "@dofek/training/training";
 import type { NextWorkoutRecommendation } from "dofek-server/types";
 import { useRouter } from "expo-router";
 import {

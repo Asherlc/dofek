@@ -1,5 +1,7 @@
 # Health Data
 
+> **Canonical agent guidelines.** CLAUDE.md is the source of truth. Other agent config files (GEMINI.md, etc.) are symlinked to it.
+
 Provider-agnostic fitness/health data pipeline. Syncs data from various providers (Wahoo, Intervals.icu, etc.) into a TimescaleDB database for Grafana dashboards.
 
 ## Stack
@@ -16,7 +18,7 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 - **Instrumentation first**: When debugging a production issue, before attempting a fix, verify that we have working instrumentation (logs, metrics, traces) to confirm the diagnosis. If logs aren't reaching the observability platform, or the relevant code path has no logging, fix that first. A confident fix requires confident evidence — don't guess at root causes when you can instrument and observe.
 
 ## Development Rules
-- **Dual-platform parity (web + iOS)**: Every feature, bug fix, and UI change must be implemented on both `packages/web` and `packages/ios`. When adding a new page, chart, or data view to one platform, implement the equivalent on the other in the same PR. Shared logic (scoring, formatting, meal utilities, color palettes) lives in `packages/shared` — import from there instead of duplicating. Platform-specific code (HealthKit, barcode scanning, Expo secure storage, ECharts vs react-native-svg) stays in the respective package. When reviewing PRs, check that both platforms are updated.
+- **Dual-platform parity (web + iOS)**: Every feature, bug fix, and UI change must be implemented on both `packages/web` and `packages/ios`. When adding a new page, chart, or data view to one platform, implement the equivalent on the other in the same PR. Shared logic lives in domain-specific packages (`@dofek/format`, `@dofek/scoring`, `@dofek/nutrition`, `@dofek/training`, `@dofek/stats`, `@dofek/onboarding`, `@dofek/providers`) — import from there instead of duplicating. Platform-specific code (HealthKit, barcode scanning, Expo secure storage, ECharts vs react-native-svg) stays in the respective package. When reviewing PRs, check that both platforms are updated.
 - **Fix properly, no workarounds**: When encountering an issue, fix the root cause. Lint rules, type checks, and CI gates exist for a reason — don't disable them, skip them, add ignores, or use workarounds to make problems go away. Always do the harder thing that actually solves the problem. If you genuinely cannot fix the root cause, **stop and ask the user before** resorting to any shortcut, disable, or workaround. Never take the "easy" or "efficient" way out without explicit approval.
 - **TDD**: Write tests first, then implement. Every new feature or provider starts with a failing test. When fixing bugs, write a failing test that reproduces the bug before writing the fix.
 - **Colocated unit tests**: Unit test files live next to the source file they test, named `<source>.test.ts`. Do not use `__tests__/` directories. For example, `src/db/tokens.ts` has its unit test at `src/db/tokens.test.ts`. Integration tests (`*.integration.test.ts`) can live wherever makes sense.
@@ -92,11 +94,13 @@ src/                         — Root package: sync runner, providers, DB schema
   providers/                 — Provider implementations
   index.ts                   — CLI entry point (enqueues sync via BullMQ)
 packages/
-  shared/src/                — @dofek/shared: platform-agnostic utilities
-    scoring.ts               — Score colors, labels, workload ratio helpers
-    format.ts                — Duration, date, number formatting
-    meal.ts                  — Meal types, auto-meal detection, constants
-    colors.ts                — Semantic color palette (shared across platforms)
+  format/src/                — @dofek/format: date, duration, number, unit formatting
+  scoring/src/               — @dofek/scoring: score colors, labels, workload helpers
+  nutrition/src/             — @dofek/nutrition: meal types, auto-meal detection
+  training/src/              — @dofek/training: activity types, weekly volume
+  stats/src/                 — @dofek/stats: correlation, regression analysis
+  onboarding/src/            — @dofek/onboarding: onboarding flow logic
+  providers-meta/src/        — @dofek/providers: provider display labels
   server/src/                — dofek-server: Express + tRPC API (Node)
     routers/                 — tRPC route handlers
     index.ts                 — Express server entry point

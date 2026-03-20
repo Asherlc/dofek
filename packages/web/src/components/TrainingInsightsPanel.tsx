@@ -2,7 +2,7 @@ import {
   collapseWeeklyVolumeActivityTypes,
   formatActivityTypeLabel,
   OTHER_ACTIVITY_TYPE,
-} from "@dofek/shared/training";
+} from "@dofek/training/training";
 import ReactECharts from "echarts-for-react";
 import { z } from "zod";
 import { trpc } from "../lib/trpc.ts";

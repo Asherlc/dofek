@@ -71,6 +71,14 @@ describe("formatDurationRange", () => {
   it("formats short durations", () => {
     expect(formatDurationRange("2024-01-01T10:00:00Z", "2024-01-01T10:15:00Z")).toBe("15m");
   });
+
+  it("returns -- when start timestamp is invalid", () => {
+    expect(formatDurationRange("not-a-date", "2024-01-01T10:15:00Z")).toBe("--");
+  });
+
+  it("returns -- when end timestamp is invalid", () => {
+    expect(formatDurationRange("2024-01-01T10:00:00Z", "not-a-date")).toBe("--");
+  });
 });
 
 describe("formatSleepDebt", () => {
@@ -249,5 +257,9 @@ describe("formatTime", () => {
     // The exact output depends on timezone, but should contain key parts
     expect(result).toContain("Mar");
     expect(result).toContain("15");
+  });
+
+  it("returns -- for invalid timestamps", () => {
+    expect(formatTime("not-a-date")).toBe("--");
   });
 });

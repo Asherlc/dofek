@@ -4,7 +4,7 @@ import Svg, { Rect, Line, Text as SvgText } from "react-native-svg";
 import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
 import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
-import { statusColors } from "@dofek/shared/colors";
+import { statusColors } from "@dofek/scoring/colors";
 
 // ── Types ──
 

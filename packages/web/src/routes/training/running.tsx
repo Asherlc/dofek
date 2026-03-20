@@ -9,7 +9,7 @@ export const Route = createFileRoute("/training/running")({
   component: RunningTab,
 });
 
-import { formatPace } from "@dofek/shared/format";
+import { formatPace } from "@dofek/format/format";
 
 function RunningTab() {
   const { days } = useTrainingDays();

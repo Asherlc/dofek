@@ -1,0 +1,10 @@
+{
+  "name": "@dofek/scoring",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./scoring": "./src/scoring.ts",
+    "./colors": "./src/colors.ts"
+  }
+}

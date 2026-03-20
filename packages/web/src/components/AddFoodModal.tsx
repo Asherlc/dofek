@@ -1,9 +1,9 @@
-import { MEAL_OPTIONS, type MealType } from "@dofek/shared/meal";
+import { MEAL_OPTIONS, type MealType } from "@dofek/nutrition/meal";
 import { useEffect, useRef, useState } from "react";
 import { type FoodDatabaseResult, searchFoods } from "../lib/food-database.ts";
 import { trpc } from "../lib/trpc.ts";
 
-export type { MealType } from "@dofek/shared/meal";
+export type { MealType } from "@dofek/nutrition/meal";
 
 export interface FoodFormData {
   foodName: string;

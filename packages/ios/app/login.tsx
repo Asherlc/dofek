@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { providerLabel } from "@dofek/shared/providers";
+import { providerLabel } from "@dofek/providers/providers";
 import { useAuth } from "../lib/auth-context";
 import {
   type ConfiguredProviders,
