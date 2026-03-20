@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { type ReactNode, useCallback, useMemo, useState } from "react";
 import { z } from "zod";
 import { ActivityList } from "../components/ActivityList.tsx";
@@ -107,6 +108,8 @@ const GRID_PAIR_SECONDARY: Record<string, string> = {
   healthspan: "stress",
   steps: "spo2Temp",
 };
+
+const DASHBOARD_SECTION_IDS = new Set(["healthMonitor", "nextWorkout", "activities"]);
 
 export function Dashboard() {
   const { unitSystem } = useUnitSystem();
@@ -402,6 +405,7 @@ export function Dashboard() {
   const orderedElements: ReactNode[] = [];
 
   for (const id of layout.order) {
+    if (!DASHBOARD_SECTION_IDS.has(id)) continue;
     if (rendered.has(id) || layout.hidden.includes(id)) continue;
 
     const section = sectionContent[id];
@@ -493,9 +497,35 @@ export function Dashboard() {
           loading={anomalyCheck.isLoading}
         />
 
+        <section>
+          <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-1">
+            Detailed Views
+          </h2>
+          <p className="text-xs text-zinc-600 mb-3">
+            Deep dives are available in dedicated pages, not on the dashboard.
+          </p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <DashboardLink to="/training" label="Training" />
+            <DashboardLink to="/nutrition" label="Nutrition" />
+            <DashboardLink to="/insights" label="Insights" />
+            <DashboardLink to="/tracking" label="Tracking" />
+          </div>
+        </section>
+
         {orderedElements}
       </main>
     </div>
+  );
+}
+
+function DashboardLink({ to, label }: { to: string; label: string }) {
+  return (
+    <Link
+      to={to}
+      className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-300 hover:text-zinc-100 hover:border-zinc-700 transition-colors"
+    >
+      {label}
+    </Link>
   );
 }
 

@@ -95,6 +95,7 @@ export default function OverviewScreen() {
   const unitSystem = useUnitSystem();
   const [days, setDays] = useState(7);
   const [recentActivityPage, setRecentActivityPage] = useState(0);
+  const showDetailedSections = false;
 
   // Fetch readiness/recovery score
   const readinessQuery = trpc.recovery.readinessScore.useQuery({ days });
@@ -235,6 +236,12 @@ export default function OverviewScreen() {
 
       <DaySelector days={days} onChange={setDays} />
 
+      <View style={styles.detailsHintCard}>
+        <Text style={styles.detailsHintText}>
+          Detailed analytics are available in Sleep, Strain, Food, Trends, Training, and Insights.
+        </Text>
+      </View>
+
       {/* Log food — navigates to full search/scan/quick-add screen */}
       <TouchableOpacity
         style={styles.quickAddButton}
@@ -271,7 +278,7 @@ export default function OverviewScreen() {
           </View>
 
           {/* Recovery components breakdown */}
-          {todayReadiness?.components && (
+          {showDetailedSections && todayReadiness?.components && (
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Recovery Breakdown</Text>
               <View style={styles.componentGrid}>
@@ -296,7 +303,7 @@ export default function OverviewScreen() {
           )}
 
           {/* Sleep summary */}
-          {lastNight && (
+          {showDetailedSections && lastNight && (
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Last Night</Text>
               <SleepBar
@@ -429,7 +436,7 @@ export default function OverviewScreen() {
           )}
 
           {/* Health Status Bar — horizontal scrolling mini metrics */}
-          {metrics != null && (
+          {showDetailedSections && metrics != null && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Health Status</Text>
               <ScrollView
@@ -471,7 +478,7 @@ export default function OverviewScreen() {
           )}
 
           {/* Weekly Report */}
-          {currentWeek != null && (
+          {showDetailedSections && currentWeek != null && (
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Weekly Report</Text>
               <View style={styles.weeklyReportContent}>
@@ -590,7 +597,7 @@ export default function OverviewScreen() {
           )}
 
           {/* Sleep Coach */}
-          {sleepNeed != null && (
+          {showDetailedSections && sleepNeed != null && (
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Sleep Coach</Text>
               <Text style={styles.sleepNeedTotal}>
@@ -621,7 +628,10 @@ export default function OverviewScreen() {
           )}
 
           {/* Healthspan Score */}
-          {healthspan != null && healthspan.healthspanScore != null && healthspan.metrics.length > 0 && (
+          {showDetailedSections &&
+            healthspan != null &&
+            healthspan.healthspanScore != null &&
+            healthspan.metrics.length > 0 && (
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Healthspan Score</Text>
               <View style={styles.healthspanRow}>
@@ -665,7 +675,7 @@ export default function OverviewScreen() {
           )}
 
           {/* Daily Steps */}
-          {latestSteps != null && (
+          {showDetailedSections && latestSteps != null && (
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Daily Steps</Text>
               <Text style={styles.stepsValue}>
@@ -682,7 +692,7 @@ export default function OverviewScreen() {
           )}
 
           {/* Nutrition Summary */}
-          {latestNutrition != null && (
+          {showDetailedSections && latestNutrition != null && (
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Nutrition Today</Text>
               <Text style={styles.caloriesValue}>
@@ -715,7 +725,7 @@ export default function OverviewScreen() {
           )}
 
           {/* Body Weight */}
-          {latestWeight != null && (
+          {showDetailedSections && latestWeight != null && (
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Body Weight</Text>
               <View style={styles.weightRow}>
@@ -971,6 +981,17 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.textSecondary,
     fontWeight: "500",
+  },
+  detailsHintCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  detailsHintText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    lineHeight: 16,
   },
   quickAddButton: {
     flexDirection: "row",
