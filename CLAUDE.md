@@ -1,5 +1,7 @@
 # Health Data
 
+> **Canonical agent guidelines.** CLAUDE.md is the source of truth. Other agent config files (GEMINI.md, etc.) are symlinked to it.
+
 Provider-agnostic fitness/health data pipeline. Syncs data from various providers (Wahoo, Intervals.icu, etc.) into a TimescaleDB database for Grafana dashboards.
 
 ## Stack
