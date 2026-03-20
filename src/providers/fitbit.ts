@@ -13,10 +13,10 @@ import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
 import type {
-  Provider,
   ProviderAuthSetup,
   ProviderIdentity,
   SyncError,
+  SyncProvider,
   SyncResult,
 } from "./types.ts";
 
@@ -343,7 +343,7 @@ function formatDate(date: Date): string {
 // Provider implementation
 // ============================================================
 
-export class FitbitProvider implements Provider {
+export class FitbitProvider implements SyncProvider {
   readonly id = "fitbit";
   readonly name = "Fitbit";
   private fetchFn: typeof globalThis.fetch;

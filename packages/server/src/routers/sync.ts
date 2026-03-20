@@ -1,5 +1,6 @@
 import { createSyncQueue } from "dofek/jobs/queues";
-import { getAllProviders, registerProvider } from "dofek/providers/registry";
+import { getAllProviders, getSyncProviders, registerProvider } from "dofek/providers/registry";
+import { isSyncProvider } from "dofek/providers/types";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { startWorker } from "../lib/start-worker.ts";
@@ -175,7 +176,7 @@ export const syncRouter = router({
           needsCustomAuth,
           authorized,
           lastSyncedAt,
-          importOnly: p.importOnly === true,
+          importOnly: !isSyncProvider(p),
         };
       });
   }),
@@ -196,8 +197,8 @@ export const syncRouter = router({
       providerIds.push(provider.id);
     } else {
       providerIds.push(
-        ...getAllProviders()
-          .filter((provider) => provider.validate() === null && !provider.importOnly)
+        ...getSyncProviders()
+          .filter((provider) => provider.validate() === null)
           .map((provider) => provider.id),
       );
       if (providerIds.length === 0) throw new Error("No configured providers available for sync");

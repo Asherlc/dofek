@@ -7,10 +7,10 @@ import { activity, DEFAULT_USER_ID, metricStream, userSettings } from "../db/sch
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
 import type {
-  Provider,
   ProviderAuthSetup,
   ProviderIdentity,
   SyncError,
+  SyncProvider,
   SyncResult,
 } from "./types.ts";
 
@@ -311,7 +311,7 @@ async function saveSyncCursor(db: SyncDatabase, cursor: string): Promise<void> {
 
 const METRIC_STREAM_BATCH_SIZE = 500;
 
-export class RideWithGpsProvider implements Provider {
+export class RideWithGpsProvider implements SyncProvider {
   readonly id = "ride-with-gps";
   readonly name = "RideWithGPS";
   private fetchFn: typeof globalThis.fetch;

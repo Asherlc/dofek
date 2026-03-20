@@ -6,10 +6,10 @@ import { loadTokens, saveTokens } from "../db/tokens.ts";
 import { type ParsedFitRecord, parseFitFile } from "../fit/parser.ts";
 import { logger } from "../logger.ts";
 import type {
-  Provider,
   ProviderAuthSetup,
   ProviderIdentity,
   SyncError,
+  SyncProvider,
   SyncResult,
 } from "./types.ts";
 
@@ -244,7 +244,7 @@ export function wahooOAuthConfig(): OAuthConfig | null {
   };
 }
 
-export class WahooProvider implements Provider {
+export class WahooProvider implements SyncProvider {
   readonly id = "wahoo";
   readonly name = "Wahoo";
   private fetchFn: typeof globalThis.fetch;

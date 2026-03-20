@@ -12,7 +12,7 @@ import { bodyMeasurement, dailyMetrics, metricStream, sleepSession } from "../db
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
-import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
+import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
 // Helper: format date as YYYY-MM-DD
@@ -28,7 +28,7 @@ function formatDate(date: Date): string {
 
 const AUTH_API_BASE = "https://auth-api.8slp.net/v1";
 
-export class EightSleepProvider implements Provider {
+export class EightSleepProvider implements SyncProvider {
   readonly id = "eight-sleep";
   readonly name = "Eight Sleep";
   private fetchFn: typeof globalThis.fetch;

@@ -6,7 +6,7 @@ import { dexaScan, dexaScanRegion } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
-import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
+import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
 // BodySpec API types & Zod schemas
@@ -320,7 +320,7 @@ class BodySpecClient {
 // Provider implementation
 // ============================================================
 
-export class BodySpecProvider implements Provider {
+export class BodySpecProvider implements SyncProvider {
   readonly id = "bodyspec";
   readonly name = "BodySpec";
   private fetchFn: typeof globalThis.fetch;

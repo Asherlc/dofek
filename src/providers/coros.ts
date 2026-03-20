@@ -5,7 +5,7 @@ import { activity, dailyMetrics, sleepSession } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
-import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
+import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
 // COROS API types
@@ -159,7 +159,7 @@ function formatDateCompact(date: Date): string {
 // Provider implementation
 // ============================================================
 
-export class CorosProvider implements Provider {
+export class CorosProvider implements SyncProvider {
   readonly id = "coros";
   readonly name = "COROS";
   private fetchFn: typeof globalThis.fetch;

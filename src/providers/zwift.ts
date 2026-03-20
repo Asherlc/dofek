@@ -11,13 +11,13 @@ import { activity, dailyMetrics, metricStream } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
-import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
+import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
 // Provider implementation
 // ============================================================
 
-export class ZwiftProvider implements Provider {
+export class ZwiftProvider implements SyncProvider {
   readonly id = "zwift";
   readonly name = "Zwift";
   private fetchFn: typeof globalThis.fetch;

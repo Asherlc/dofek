@@ -27,7 +27,7 @@ import {
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
-import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
+import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
 // Garmin Health API types (official REST API response shapes)
@@ -469,7 +469,7 @@ async function saveSyncCursor(db: SyncDatabase, cursor: string): Promise<void> {
 // Provider
 // ============================================================
 
-export class GarminProvider implements Provider {
+export class GarminProvider implements SyncProvider {
   readonly id = "garmin";
   readonly name = "Garmin Connect";
   private fetchFn: typeof globalThis.fetch;

@@ -5,7 +5,7 @@ import type { SyncDatabase } from "../db/index.ts";
 import { foodEntry } from "../db/schema.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
-import type { Provider, SyncError, SyncResult } from "./types.ts";
+import type { SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
 // OAuth 1.0 HMAC-SHA1 signing
@@ -497,7 +497,7 @@ async function exchangeForAccessToken(
 // Provider
 // ============================================================
 
-export class FatSecretProvider implements Provider {
+export class FatSecretProvider implements SyncProvider {
   readonly id = "fatsecret";
   readonly name = "FatSecret";
 

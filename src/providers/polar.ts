@@ -4,7 +4,7 @@ import type { SyncDatabase } from "../db/index.ts";
 import { activity, dailyMetrics, sleepSession } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
-import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
+import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
 // Polar AccessLink API types
@@ -338,7 +338,7 @@ export class PolarClient {
 // Provider implementation
 // ============================================================
 
-export class PolarProvider implements Provider {
+export class PolarProvider implements SyncProvider {
   readonly id = "polar";
   readonly name = "Polar";
   private fetchFn: typeof globalThis.fetch;

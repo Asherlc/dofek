@@ -5,7 +5,7 @@ import { bodyMeasurement } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
-import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
+import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
 // Withings API types
@@ -271,7 +271,7 @@ export class WithingsClient {
 // Provider implementation
 // ============================================================
 
-export class WithingsProvider implements Provider {
+export class WithingsProvider implements SyncProvider {
   readonly id = "withings";
   readonly name = "Withings";
   private fetchFn: typeof globalThis.fetch;

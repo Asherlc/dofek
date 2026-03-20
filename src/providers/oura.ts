@@ -7,10 +7,10 @@ import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
 import type {
-  Provider,
   ProviderAuthSetup,
   ProviderIdentity,
   SyncError,
+  SyncProvider,
   SyncResult,
 } from "./types.ts";
 
@@ -558,7 +558,7 @@ const HEALTH_EVENT_BATCH_SIZE = 1000;
 // Provider implementation
 // ============================================================
 
-export class OuraProvider implements Provider {
+export class OuraProvider implements SyncProvider {
   readonly id = "oura";
   readonly name = "Oura";
   private fetchFn: typeof globalThis.fetch;

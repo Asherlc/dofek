@@ -6,6 +6,7 @@ const {
   mockGetJob,
   mockGetJobs,
   mockGetAllProviders,
+  mockGetSyncProviders,
   mockRegisterProvider,
   mockLoggerWarn,
 } = vi.hoisted(() => ({
@@ -13,6 +14,7 @@ const {
   mockGetJob: vi.fn(),
   mockGetJobs: vi.fn().mockResolvedValue([]),
   mockGetAllProviders: vi.fn(() => []),
+  mockGetSyncProviders: vi.fn(() => []),
   mockRegisterProvider: vi.fn(),
   mockLoggerWarn: vi.fn(),
 }));
@@ -40,7 +42,12 @@ vi.mock("dofek/jobs/queues", () => ({
 
 vi.mock("dofek/providers/registry", () => ({
   getAllProviders: mockGetAllProviders,
+  getSyncProviders: mockGetSyncProviders,
   registerProvider: mockRegisterProvider,
+}));
+
+vi.mock("dofek/providers/types", () => ({
+  isSyncProvider: (p: { importOnly?: boolean }) => p.importOnly !== true,
 }));
 
 vi.mock("../lib/start-worker.ts", () => ({
@@ -233,7 +240,7 @@ describe("syncRouter", () => {
 
   describe("triggerSync", () => {
     it("enqueues one sync job per configured provider when providerId is omitted", async () => {
-      mockGetAllProviders.mockReturnValue([
+      mockGetSyncProviders.mockReturnValue([
         { id: "strava", name: "Strava", validate: () => null },
         { id: "wahoo", name: "Wahoo", validate: () => null },
         { id: "peloton", name: "Peloton", validate: () => "Missing credentials" },
@@ -267,10 +274,8 @@ describe("syncRouter", () => {
     });
 
     it("excludes import-only providers from sync-all fan-out", async () => {
-      mockGetAllProviders.mockReturnValue([
+      mockGetSyncProviders.mockReturnValue([
         { id: "strava", name: "Strava", validate: () => null },
-        { id: "strong-csv", name: "Strong", validate: () => null, importOnly: true },
-        { id: "cronometer-csv", name: "Cronometer", validate: () => null, importOnly: true },
       ]);
       mockAdd.mockResolvedValueOnce({ id: "job-strava" });
 
@@ -326,7 +331,7 @@ describe("syncRouter", () => {
 
     it("reuses the sync queue across calls", async () => {
       const { createSyncQueue } = await import("dofek/jobs/queues");
-      mockGetAllProviders.mockReturnValue([{ id: "wahoo", name: "Wahoo", validate: () => null }]);
+      mockGetSyncProviders.mockReturnValue([{ id: "wahoo", name: "Wahoo", validate: () => null }]);
 
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
@@ -342,6 +347,7 @@ describe("syncRouter", () => {
 
     it("throws for unknown provider", async () => {
       mockGetAllProviders.mockReturnValue([]);
+      mockGetSyncProviders.mockReturnValue([]);
 
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
@@ -370,7 +376,7 @@ describe("syncRouter", () => {
 
     it("generates fallback jobId when BullMQ returns no id", async () => {
       mockAdd.mockResolvedValueOnce({ id: undefined });
-      mockGetAllProviders.mockReturnValue([{ id: "wahoo", name: "Wahoo", validate: () => null }]);
+      mockGetSyncProviders.mockReturnValue([{ id: "wahoo", name: "Wahoo", validate: () => null }]);
 
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },

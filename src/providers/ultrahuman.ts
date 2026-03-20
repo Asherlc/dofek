@@ -2,7 +2,7 @@ import type { SyncDatabase } from "../db/index.ts";
 import { dailyMetrics, sleepSession } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
-import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
+import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
 // Ultrahuman Partner API types
@@ -146,7 +146,7 @@ function formatDate(date: Date): string {
 // Provider implementation
 // ============================================================
 
-export class UltrahumanProvider implements Provider {
+export class UltrahumanProvider implements SyncProvider {
   readonly id = "ultrahuman";
   readonly name = "Ultrahuman";
   private fetchFn: typeof globalThis.fetch;

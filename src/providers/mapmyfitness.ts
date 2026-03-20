@@ -5,7 +5,7 @@ import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
-import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
+import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
 // MapMyFitness API types
@@ -184,7 +184,7 @@ function formatDate(date: Date): string {
 // Provider implementation
 // ============================================================
 
-export class MapMyFitnessProvider implements Provider {
+export class MapMyFitnessProvider implements SyncProvider {
   readonly id = "mapmyfitness";
   readonly name = "MapMyFitness";
   private fetchFn: typeof globalThis.fetch;

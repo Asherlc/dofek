@@ -6,10 +6,10 @@ import { activity, metricStream } from "../db/schema.ts";
 import { loadTokens, saveTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
 import type {
-  Provider,
   ProviderAuthSetup,
   ProviderIdentity,
   SyncError,
+  SyncProvider,
   SyncResult,
 } from "./types.ts";
 
@@ -385,7 +385,7 @@ export function stravaOAuthConfig(): OAuthConfig | null {
   };
 }
 
-export class StravaProvider implements Provider {
+export class StravaProvider implements SyncProvider {
   readonly id = "strava";
   readonly name = "Strava";
   private fetchFn: typeof globalThis.fetch;
