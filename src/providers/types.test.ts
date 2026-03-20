@@ -112,4 +112,10 @@ describe("getProviderAuthType", () => {
     const provider = stubProvider({ authSetup: () => setup });
     expect(getProviderAuthType(provider)).toBe("credential");
   });
+
+  it("returns 'none' for UltrahumanProvider (server-side env var auth, not user credentials)", async () => {
+    const { UltrahumanProvider } = await import("./ultrahuman.ts");
+    const provider = new UltrahumanProvider();
+    expect(getProviderAuthType(provider)).toBe("none");
+  });
 });

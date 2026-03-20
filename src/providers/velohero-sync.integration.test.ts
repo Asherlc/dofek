@@ -52,19 +52,8 @@ function fakeWorkout(overrides: Partial<FakeVeloHeroWorkout> = {}): FakeVeloHero
   };
 }
 
-function veloheroHandlers(workouts: FakeVeloHeroWorkout[], opts?: { signInError?: boolean }) {
+function veloheroHandlers(workouts: FakeVeloHeroWorkout[]) {
   return [
-    // Sign-in (SSO)
-    http.post("https://app.velohero.com/sso", () => {
-      if (opts?.signInError) {
-        return new HttpResponse("Unauthorized", { status: 401 });
-      }
-      return HttpResponse.json({
-        session: "new-session-token",
-        "user-id": "user-456",
-      });
-    }),
-
     // Workouts export
     http.get("https://app.velohero.com/export/workouts/json", () => {
       return HttpResponse.json({
@@ -165,54 +154,21 @@ describe("VeloHeroProvider.sync() (integration)", () => {
     expect(updated?.name).toBe("Updated ride");
   });
 
-  it("re-authenticates when session is expired using env credentials", async () => {
+  it("returns error when session is expired", async () => {
     await saveTokens(ctx.db, "velohero", {
       accessToken: "VeloHero_session=expired-session",
       refreshToken: null,
       expiresAt: new Date("2025-01-01T00:00:00Z"), // expired
       scopes: "userId:user-456",
     });
-
-    process.env.VELOHERO_USERNAME = "test@example.com";
-    process.env.VELOHERO_PASSWORD = "test-password";
-
-    const workouts = [fakeWorkout({ id: "4001", title: "Post-reauth workout" })];
-    server.use(...veloheroHandlers(workouts));
-
-    const provider = new VeloHeroProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
-
-    expect(result.errors).toHaveLength(0);
-    expect(result.recordsSynced).toBe(1);
-
-    // Verify tokens were saved after re-auth
-    const { loadTokens } = await import("../db/tokens.ts");
-    const tokens = await loadTokens(ctx.db, "velohero");
-    expect(tokens?.accessToken).toBe("VeloHero_session=new-session-token");
-    expect(tokens?.scopes).toBe("userId:user-456");
-
-    delete process.env.VELOHERO_USERNAME;
-    delete process.env.VELOHERO_PASSWORD;
-  });
-
-  it("returns error when session expired and no env vars for re-auth", async () => {
-    await saveTokens(ctx.db, "velohero", {
-      accessToken: "VeloHero_session=expired-session",
-      refreshToken: null,
-      expiresAt: new Date("2025-01-01T00:00:00Z"), // expired
-      scopes: "userId:user-456",
-    });
-
-    // Ensure env vars are not set
-    delete process.env.VELOHERO_USERNAME;
-    delete process.env.VELOHERO_PASSWORD;
 
     const provider = new VeloHeroProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]?.message).toContain("VELOHERO_USERNAME");
-    expect(result.errors[0]?.message).toContain("VELOHERO_PASSWORD");
+    expect(result.errors[0]?.message).toContain(
+      "VeloHero session expired — please re-authenticate via Settings",
+    );
     expect(result.recordsSynced).toBe(0);
   });
 
