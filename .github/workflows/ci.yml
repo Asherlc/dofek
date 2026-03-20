@@ -178,6 +178,63 @@ jobs:
       - name: Verify iOS Metro bundle
         run: cd packages/ios && pnpm expo export --platform ios --clear
 
+  check-ios-changes:
+    name: Check iOS Changes
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.filter.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check for iOS file changes
+        id: filter
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="origin/${{ github.event.pull_request.base.ref }}"
+          else
+            BASE="HEAD~1"
+          fi
+          if git diff --name-only "$BASE"...HEAD | grep -q '^packages/ios/'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  build-ios-native:
+    name: iOS Xcode Build
+    needs: check-ios-changes
+    if: needs.check-ios-changes.outputs.changed == 'true'
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Lint podspecs
+        run: |
+          for spec in packages/ios/modules/*/ios/*.podspec; do
+            echo "Linting $spec"
+            pod lib lint "$spec" --allow-warnings
+          done
+      - name: Prebuild and install pods
+        run: |
+          cd packages/ios
+          npx expo prebuild --no-install
+          cd ios && pod install
+      - name: Build for simulator
+        run: |
+          cd packages/ios/ios
+          xcodebuild build \
+            -workspace Dofek.xcworkspace \
+            -scheme Dofek \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            -quiet
+
   test-e2e-web:
     name: E2E Tests (Web)
     runs-on: ubuntu-latest
