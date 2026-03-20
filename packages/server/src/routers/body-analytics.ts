@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -40,7 +40,7 @@ export const bodyAnalyticsRouter = router({
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }): Promise<SmoothedWeightRow[]> => {
       const weightRowSchema = z.object({
-        date: z.string(),
+        date: dateStringSchema,
         weight_kg: z.coerce.number(),
       });
       const rows = await executeWithSchema(
@@ -108,7 +108,7 @@ export const bodyAnalyticsRouter = router({
     .input(z.object({ days: z.number().default(180) }))
     .query(async ({ ctx, input }): Promise<BodyRecompositionRow[]> => {
       const recompRowSchema = z.object({
-        date: z.string(),
+        date: dateStringSchema,
         weight_kg: z.coerce.number(),
         body_fat_pct: z.coerce.number(),
       });
@@ -178,7 +178,7 @@ export const bodyAnalyticsRouter = router({
     .input(z.object({}).default({}))
     .query(async ({ ctx }): Promise<WeightRateOfChange> => {
       const weightRowSchema = z.object({
-        date: z.string(),
+        date: dateStringSchema,
         weight_kg: z.coerce.number(),
       });
       const rows = await executeWithSchema(

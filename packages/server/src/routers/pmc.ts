@@ -3,7 +3,7 @@ import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { linearRegression } from "../lib/math.ts";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export type ActivityRow = {
@@ -162,7 +162,7 @@ export const pmcRouter = router({
         global_max_hr: z.coerce.number().nullable(),
         resting_hr: z.coerce.number(),
         id: z.string(),
-        date: z.string(),
+        date: dateStringSchema,
         duration_min: z.coerce.number(),
         avg_hr: z.coerce.number(),
         max_hr: z.coerce.number(),

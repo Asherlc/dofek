@@ -3,7 +3,7 @@ import { z } from "zod";
 import { DURATION_LABELS } from "../lib/duration-labels.ts";
 import { enduranceTypeFilter } from "../lib/endurance-types.ts";
 import { type CriticalPowerModel, fitCriticalPower } from "../lib/math.ts";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export type { CriticalPowerModel };
@@ -12,14 +12,14 @@ export type { CriticalPowerModel };
 
 const powerCurveSampleSchema = z.object({
   activity_id: z.string(),
-  activity_date: z.string(),
+  activity_date: dateStringSchema,
   power: z.coerce.number(),
   interval_s: z.coerce.number(),
 });
 
 const normalizedPowerSampleSchema = z.object({
   activity_id: z.string(),
-  activity_date: z.string(),
+  activity_date: dateStringSchema,
   activity_name: z.string().nullable(),
   power: z.coerce.number(),
   interval_s: z.coerce.number(),
