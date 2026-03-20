@@ -31,6 +31,11 @@ export interface SleepSample {
 	sourceName: string;
 }
 
+export interface DailyStatistic {
+	date: string; // YYYY-MM-DD (local timezone)
+	value: number;
+}
+
 export interface SyncResult {
 	samplesCount: number;
 	startDate: string;
@@ -76,6 +81,17 @@ export async function querySleepSamples(
 	endDate: string,
 ): Promise<SleepSample[]> {
 	return HealthKitModule.querySleepSamples(startDate, endDate);
+}
+
+/** Query deduplicated daily statistics for a cumulative quantity type.
+ * Uses HKStatisticsCollectionQuery which properly handles source deduplication
+ * (e.g., iPhone + Apple Watch both counting steps for the same time period). */
+export async function queryDailyStatistics(
+	typeIdentifier: string,
+	startDate: string,
+	endDate: string,
+): Promise<DailyStatistic[]> {
+	return HealthKitModule.queryDailyStatistics(typeIdentifier, startDate, endDate);
 }
 
 /** Write dietary energy consumed sample to HealthKit */
