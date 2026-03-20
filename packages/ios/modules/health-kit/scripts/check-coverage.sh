@@ -23,17 +23,18 @@ echo ""
 echo "=== Swift Code Coverage Report ==="
 echo ""
 
+# Source files are positional arguments (not --sources, which isn't supported on older llvm-cov)
+SOURCES="ios/HealthKitQueries.swift ios/HealthKitTypes.swift"
+
 # Show per-file report
 xcrun llvm-cov report "$XCTEST_PATH" \
   --instr-profile "$PROFDATA" \
-  --sources ios/HealthKitQueries.swift \
-  --sources ios/HealthKitTypes.swift
+  $SOURCES
 
 # Extract total line and function coverage
 TOTALS=$(xcrun llvm-cov report "$XCTEST_PATH" \
   --instr-profile "$PROFDATA" \
-  --sources ios/HealthKitQueries.swift \
-  --sources ios/HealthKitTypes.swift \
+  $SOURCES \
   | grep "^TOTAL")
 
 LINE_COVER=$(echo "$TOTALS" | awk '{print $(NF-3)}' | sed 's/%//')
