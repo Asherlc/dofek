@@ -784,6 +784,38 @@ interface SlackBotResult {
   router?: express.Router;
 }
 
+function formatSocketDiagnosticPayload(payload: unknown): string {
+  if (payload instanceof Error) return payload.message;
+  if (typeof payload === "string") return payload;
+  if (payload === null || payload === undefined) return "unknown";
+  try {
+    return JSON.stringify(payload);
+  } catch {
+    return String(payload);
+  }
+}
+
+function registerSocketModeDiagnostics(client: SocketModeClient): void {
+  client.on("connecting", () => {
+    logger.info("[slack] Socket Mode connecting");
+  });
+  client.on("connected", () => {
+    logger.info("[slack] Socket Mode connected");
+  });
+  client.on("reconnecting", () => {
+    logger.warn("[slack] Socket Mode reconnecting");
+  });
+  client.on("disconnect", (payload) => {
+    logger.warn(`[slack] Socket Mode disconnected: ${formatSocketDiagnosticPayload(payload)}`);
+  });
+  client.on("error", (payload) => {
+    logger.error(`[slack] Socket Mode client error: ${formatSocketDiagnosticPayload(payload)}`);
+  });
+  client.on("unable_to_socket_mode_start", (payload) => {
+    logger.error(`[slack] Socket Mode failed to start: ${formatSocketDiagnosticPayload(payload)}`);
+  });
+}
+
 /**
  * Create the Slack bot. Supports two modes:
  *
@@ -865,6 +897,7 @@ export function createSlackBot(db: Database): SlackBotResult | null {
       appToken,
       clientPingTimeout: 30_000,
     });
+    registerSocketModeDiagnostics(receiver.client);
 
     const app = new App({
       token: botToken,

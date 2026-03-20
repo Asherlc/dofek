@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const { mockSocketClient } = vi.hoisted(() => ({
+  mockSocketClient: {
+    on: vi.fn(),
+  },
+}));
+
 // Mock @slack/bolt
 vi.mock("@slack/bolt", () => {
   const mockApp = {
@@ -25,7 +31,7 @@ vi.mock("@slack/bolt", () => {
 });
 
 vi.mock("@slack/socket-mode", () => ({
-  SocketModeClient: vi.fn().mockImplementation(() => ({})),
+  SocketModeClient: vi.fn().mockImplementation(() => mockSocketClient),
 }));
 
 vi.mock("../logger.ts", () => ({
@@ -63,6 +69,15 @@ function mockAs<T extends object>(partial: Partial<T>): T {
 
 function createMockDb(): import("dofek/db").Database {
   return mockAs<import("dofek/db").Database>({ execute: vi.fn().mockResolvedValue([]) });
+}
+
+function findSocketListener(eventName: string): ((payload: unknown) => void) | undefined {
+  for (const call of mockSocketClient.on.mock.calls) {
+    if (call[0] === eventName && typeof call[1] === "function") {
+      return call[1];
+    }
+  }
+  return undefined;
 }
 
 describe("createSlackBot", () => {
@@ -104,6 +119,15 @@ describe("createSlackBot", () => {
         appToken: "xapp-test-token",
         clientPingTimeout: 30_000,
       }),
+    );
+    expect(mockSocketClient.on).toHaveBeenCalledWith("connecting", expect.any(Function));
+    expect(mockSocketClient.on).toHaveBeenCalledWith("connected", expect.any(Function));
+    expect(mockSocketClient.on).toHaveBeenCalledWith("reconnecting", expect.any(Function));
+    expect(mockSocketClient.on).toHaveBeenCalledWith("disconnect", expect.any(Function));
+    expect(mockSocketClient.on).toHaveBeenCalledWith("error", expect.any(Function));
+    expect(mockSocketClient.on).toHaveBeenCalledWith(
+      "unable_to_socket_mode_start",
+      expect.any(Function),
     );
     expect(vi.mocked(bolt.App)).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -359,5 +383,29 @@ describe("createSlackBot — logger messages", () => {
     expect(result).not.toBeNull();
     const mockAppInstance = vi.mocked(bolt.App).mock.results[0]?.value;
     expect(mockAppInstance.error).toHaveBeenCalled();
+  });
+
+  it("logs socket diagnostics on disconnect and error events", async () => {
+    process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
+    process.env.SLACK_APP_TOKEN = "xapp-test-token";
+
+    const db = createMockDb();
+    const { logger } = await import("../logger.ts");
+
+    createSlackBot(db);
+
+    const disconnectHandler = findSocketListener("disconnect");
+    const errorHandler = findSocketListener("error");
+
+    expect(disconnectHandler).toBeDefined();
+    expect(errorHandler).toBeDefined();
+
+    disconnectHandler?.({ code: 1006, reason: "abnormal closure" });
+    errorHandler?.(new Error("socket failure"));
+
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("Socket Mode disconnected"));
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining("Socket Mode client error: socket failure"),
+    );
   });
 });
