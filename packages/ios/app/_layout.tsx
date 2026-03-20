@@ -13,6 +13,15 @@ import LoginScreen from "./login";
 
 initTelemetry();
 
+export const rootStackScreenOptions = {
+  headerStyle: { backgroundColor: colors.background },
+  headerTintColor: colors.text,
+  headerBackButtonDisplayMode: "minimal" as const,
+  headerBackTitle: "Back",
+  headerBackTitleVisible: false,
+  headerShadowVisible: false,
+};
+
 function AuthGate() {
   const { user, serverUrl, isLoading, sessionToken } = useAuth();
 
@@ -50,12 +59,7 @@ function AuthGate() {
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
       <QueryClientProvider client={queryClient}>
         <Stack
-          screenOptions={{
-            headerStyle: { backgroundColor: colors.background },
-            headerTintColor: colors.text,
-            headerBackTitleVisible: false,
-            headerShadowVisible: false,
-          }}
+          screenOptions={rootStackScreenOptions}
         >
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen

@@ -70,6 +70,10 @@ function statusLabel(authStatus: AuthStatus): string {
   }
 }
 
+export function providerActionLabel(authStatus: AuthStatus): "Sync" | "Connect" {
+  return authStatus === "connected" ? "Sync" : "Connect";
+}
+
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
   return `${(ms / 1000).toFixed(1)}s`;
@@ -129,7 +133,9 @@ function ProviderCard({
           {syncing ? (
             <ActivityIndicator color={colors.text} size="small" />
           ) : (
-            <Text style={styles.syncButtonText}>Sync</Text>
+            <Text style={styles.syncButtonText}>
+              {providerActionLabel(provider.authStatus)}
+            </Text>
           )}
         </TouchableOpacity>
       </View>
