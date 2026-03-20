@@ -412,7 +412,7 @@ Each provider is enabled by adding its credentials to `.env` (SOPS-encrypted). O
 
 | Provider | Auth Type | Data Types | Required `.env` Variables |
 |----------|-----------|------------|--------------------------|
-| Apple Health | File import | HR, HRV, sleep, workouts, body, glucose, nutrition, walking, labs | None (upload `.zip`/`.xml` via UI) |
+| Apple Health | File import | HR, HRV, sleep, workouts, body, glucose, nutrition, walking, labs | None (upload `.zip`/`.xml` via web UI or share to iOS app) |
 | Wahoo | OAuth 2.0 | Activities with FIT file parsing (GPS, power, HR, cadence, running dynamics) | `WAHOO_CLIENT_ID`, `WAHOO_CLIENT_SECRET` |
 | WHOOP | RE'd (Cognito) | Sleep, recovery, workouts, 6s HR streams, journal, strength sets | None (credentials entered in UI modal) |
 | Peloton | Automated login | Workouts with performance metrics | `PELOTON_USERNAME`, `PELOTON_PASSWORD` |
@@ -438,8 +438,8 @@ Each provider is enabled by adding its credentials to `.env` (SOPS-encrypted). O
 | Cycling Analytics | OAuth 2.0 | Rides | `CYCLING_ANALYTICS_CLIENT_ID`, `CYCLING_ANALYTICS_CLIENT_SECRET` |
 | Wger | OAuth 2.0 | Workouts | `WGER_CLIENT_ID`, `WGER_CLIENT_SECRET` |
 | Decathlon | OAuth 2.0 | Activities | `DECATHLON_CLIENT_ID`, `DECATHLON_CLIENT_SECRET` |
-| Strong | File import | Strength training history | None (upload `.csv` via UI) |
-| Cronometer | File import | Nutrition | None (upload `.csv` via UI) |
+| Strong | File import | Strength training history | None (upload `.csv` via web UI or share to iOS app) |
+| Cronometer | File import | Nutrition | None (upload `.csv` via web UI or share to iOS app) |
 | Auto-Supplements | Config-based | Daily supplement entries | None (configured in UI) |
 
 OAuth providers also need `OAUTH_REDIRECT_URI` set to your deployment's callback URL (e.g. `https://dofek.asherlc.com/callback`). After adding credentials, click the provider tile on the Data Sources page to complete the OAuth flow.
