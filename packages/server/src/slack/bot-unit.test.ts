@@ -713,13 +713,51 @@ describe("bot.ts — registerHandlers", () => {
       expect(vi.mocked(queryCache.invalidateByPrefix)).toHaveBeenCalledWith("user-123:nutrition.");
     });
 
-    it("updates message when entries were already confirmed", async () => {
+    it("shows success message when entries were already confirmed (idempotent retry)", async () => {
       const db = createMockDb();
       const mockExecute = getMockExecute(db);
 
       const { confirmHandler } = setupHandlers(db);
 
       // confirmFoodEntries returns empty (already confirmed)
+      mockExecute.mockResolvedValueOnce([]);
+      // SELECT items still returns data (entries exist, just already confirmed)
+      mockExecute.mockResolvedValueOnce([{ food_name: "Toast", calories: 80 }]);
+      // user_id lookup for cache invalidation
+      mockExecute.mockResolvedValueOnce([{ user_id: "user-123" }]);
+
+      const ack = vi.fn();
+      const chatUpdate = vi.fn().mockResolvedValue({});
+
+      await confirmHandler({
+        ack,
+        body: {
+          type: "block_actions",
+          actions: [{ action_id: "confirm_food", value: "entry-1" }],
+          channel: { id: "C123" },
+          message: { ts: "1700000000.000000" },
+        },
+        client: { chat: { update: chatUpdate } },
+      });
+
+      expect(ack).toHaveBeenCalled();
+      // Should show success message, not "already saved"
+      expect(chatUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining("Toast: 80 cal"),
+        }),
+      );
+    });
+
+    it("shows already-saved message when entries were deleted", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+
+      const { confirmHandler } = setupHandlers(db);
+
+      // confirmFoodEntries returns empty
+      mockExecute.mockResolvedValueOnce([]);
+      // SELECT items also returns empty (entries were deleted)
       mockExecute.mockResolvedValueOnce([]);
 
       const ack = vi.fn();

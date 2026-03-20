@@ -292,8 +292,13 @@ async function saveUnconfirmedFoodEntries(
           ) RETURNING id`,
     );
     const row = rows[0];
-    if (row) ids.push(row.id);
+    if (row) {
+      ids.push(row.id);
+    } else {
+      logger.warn(`[slack] INSERT RETURNING returned no id for "${item.foodName}"`);
+    }
   }
+  logger.info(`[slack] Saved ${ids.length} unconfirmed entries: ${ids.join(",")}`);
   return ids;
 }
 
@@ -621,12 +626,42 @@ function registerHandlers(app: AppType, db: Database) {
     if (!("value" in action) || !action.value) return;
 
     const entryIds = action.value.split(",").filter(Boolean);
+    logger.info(
+      `[slack] confirm_food action: entryIds=${JSON.stringify(entryIds)}, buttonValue=${action.value.substring(0, 100)}`,
+    );
+
+    if (entryIds.length === 0) {
+      logger.warn("[slack] confirm_food: no entry IDs in button value");
+      if (body.channel?.id && body.message?.ts) {
+        await client.chat.update({
+          channel: body.channel.id,
+          ts: body.message.ts,
+          text: "These entries were already saved.",
+          blocks: [],
+        });
+      }
+      return;
+    }
 
     try {
+      // Confirm any unconfirmed entries (idempotent — retries are harmless)
       const confirmedCount = await confirmFoodEntries(db, entryIds);
+      logger.info(`[slack] confirmFoodEntries updated ${confirmedCount} rows`);
 
-      if (confirmedCount === 0) {
-        // Entries were already confirmed or deleted
+      // Always load items to show the success message, even if entries were
+      // already confirmed by a prior delivery (Socket Mode retry).
+      const rows = await db.execute<{
+        food_name: string;
+        calories: number | null;
+      }>(
+        sql`SELECT food_name, calories
+            FROM fitness.food_entry
+            WHERE id IN (${sqlIdList(entryIds)})`,
+      );
+
+      if (rows.length === 0) {
+        // Entries were deleted or IDs are invalid
+        logger.warn(`[slack] confirm_food: no entries found for IDs ${entryIds.join(",")}`);
         if (body.channel?.id && body.message?.ts) {
           await client.chat.update({
             channel: body.channel.id,
@@ -637,16 +672,6 @@ function registerHandlers(app: AppType, db: Database) {
         }
         return;
       }
-
-      // Load items for the saved message display
-      const rows = await db.execute<{
-        food_name: string;
-        calories: number | null;
-      }>(
-        sql`SELECT food_name, calories
-            FROM fitness.food_entry
-            WHERE id IN (${sqlIdList(entryIds)})`,
-      );
 
       const items = rows.map((r) => ({
         foodName: r.food_name,
@@ -664,7 +689,6 @@ function registerHandlers(app: AppType, db: Database) {
       }
 
       // Invalidate cached food/nutrition queries so the UI reflects the new entries.
-      // We need the user_id from the entries to scope the invalidation.
       const userRow = await db.execute<{ user_id: string }>(
         sql`SELECT DISTINCT user_id FROM fitness.food_entry WHERE id IN (${sqlIdList(entryIds)}) LIMIT 1`,
       );
@@ -673,7 +697,7 @@ function registerHandlers(app: AppType, db: Database) {
         await queryCache.invalidateByPrefix(`${userRow[0].user_id}:nutrition.`);
       }
 
-      logger.info(`[slack] Confirmed ${confirmedCount} food entries`);
+      logger.info(`[slack] Confirmed ${confirmedCount} food entries (${rows.length} total)`);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       logger.error(`[slack] Failed to confirm food entries: ${errorMessage}`);
@@ -888,6 +912,11 @@ export function createSlackBot(db: Database): SlackBotResult | null {
 
   if (botToken && appToken) {
     const receiver = new SocketModeReceiver({ appToken });
+    // Increase pong timeout from default 5s — small servers can't always
+    // respond in time, causing frequent disconnects and lost action events.
+    // SocketModeReceiver doesn't expose clientPingTimeout, and the property
+    // is TS-private (but runtime-writable), so we use Object.assign.
+    Object.assign(receiver.client, { clientPingTimeoutMS: 30_000 });
     registerSocketModeDiagnostics(receiver.client);
 
     const app = new App({
