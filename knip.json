@@ -9,7 +9,7 @@
       ],
       "project": ["src/**/*.ts", "*.config.{ts,js,json}"],
       "ignoreDependencies": ["sharp", "tsx"],
-      "ignoreBinaries": ["tsr"],
+      "ignoreBinaries": ["tsr", "expo"],
       "vitest": {
         "config": ["vitest.config.ts"],
         "entry": ["src/**/*.test.ts", "src/**/*.integration.test.ts"]
