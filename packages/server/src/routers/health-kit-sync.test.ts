@@ -440,7 +440,7 @@ describe("healthKitSyncRouter", () => {
       expect(serialized).toContain("sleep_type");
     });
 
-    it("returns 0 when no inBed samples", async () => {
+    it("derives a sleep session when only stage samples are present", async () => {
       const execute = makeExecute();
       const caller = createCaller({
         db: { execute },
@@ -450,16 +450,30 @@ describe("healthKitSyncRouter", () => {
       const result = await caller.pushSleepSamples({
         samples: [
           {
-            uuid: "stage-only",
-            startDate: "2024-01-15T23:00:00Z",
-            endDate: "2024-01-15T23:30:00Z",
+            uuid: "stage-only-1",
+            startDate: "2024-01-15T22:00:00Z",
+            endDate: "2024-01-16T01:00:00Z",
+            value: "asleepCore",
+            sourceName: "Apple Watch",
+          },
+          {
+            uuid: "stage-only-2",
+            startDate: "2024-01-16T01:00:00Z",
+            endDate: "2024-01-16T02:00:00Z",
+            value: "asleepREM",
+            sourceName: "Apple Watch",
+          },
+          {
+            uuid: "stage-only-3",
+            startDate: "2024-01-16T02:00:00Z",
+            endDate: "2024-01-16T05:00:00Z",
             value: "asleepDeep",
             sourceName: "Apple Watch",
           },
         ],
       });
 
-      expect(result.inserted).toBe(0);
+      expect(result.inserted).toBe(1);
     });
   });
 });
