@@ -39,9 +39,13 @@ export function DataSourcesPanel() {
   const activeSyncs = trpc.sync.activeSyncs.useQuery(undefined, { staleTime: 0 });
   const resumedJobIds = useRef(new Set<string>());
 
-  // Custom auth modal state
+  // Auth modal state
   const [whoopAuthOpen, setWhoopAuthOpen] = useState(false);
   const [garminAuthOpen, setGarminAuthOpen] = useState(false);
+  const [credentialAuthProvider, setCredentialAuthProvider] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
 
   const updateState = useCallback(
     (id: string, state: ProviderState) => setProviderStates((prev) => ({ ...prev, [id]: state })),
@@ -233,23 +237,28 @@ export function DataSourcesPanel() {
   }, [trpcUtils, handleSync]);
 
   const handleProviderClick = useCallback(
-    (
-      p: { id: string; needsOAuth: boolean; needsCustomAuth?: boolean; authorized: boolean },
-      fullSync = false,
-    ) => {
-      if (p.needsCustomAuth && !p.authorized) {
-        if (p.id === "garmin") {
-          setGarminAuthOpen(true);
-        } else {
+    (p: { id: string; name: string; authType: string; authorized: boolean }, fullSync = false) => {
+      if (p.authorized) {
+        handleSync(p.id, fullSync);
+        return;
+      }
+      switch (p.authType) {
+        case "oauth":
+        case "oauth1":
+          window.open(`/auth/provider/${p.id}`, "_blank");
+          break;
+        case "credential":
+          setCredentialAuthProvider({ id: p.id, name: p.name });
+          break;
+        case "custom:whoop":
           setWhoopAuthOpen(true);
-        }
-        return;
+          break;
+        case "custom:garmin":
+          setGarminAuthOpen(true);
+          break;
+        default:
+          handleSync(p.id, fullSync);
       }
-      if (p.needsOAuth && !p.authorized) {
-        window.open(`/auth/provider/${p.id}`, "_blank");
-        return;
-      }
-      handleSync(p.id, fullSync);
     },
     [handleSync],
   );
@@ -363,7 +372,8 @@ export function DataSourcesPanel() {
 
             const p = entry.provider;
             const state = providerStates[p.id] ?? { status: "idle" };
-            const needsAuth = (p.needsOAuth || p.needsCustomAuth) && !p.authorized;
+            const needsAuth =
+              p.authType !== "none" && p.authType !== "file-import" && !p.authorized;
             const providerStats = statsByProvider.get(p.id);
             const recentLogs = (logsByProvider.get(p.id) ?? []).slice(0, 5);
 
@@ -400,6 +410,19 @@ export function DataSourcesPanel() {
           onClose={() => setGarminAuthOpen(false)}
           onSuccess={() => {
             setGarminAuthOpen(false);
+            trpcUtils.sync.providers.invalidate();
+          }}
+        />
+      )}
+
+      {/* Generic Credential Auth Modal */}
+      {credentialAuthProvider && (
+        <CredentialAuthModal
+          providerId={credentialAuthProvider.id}
+          providerName={credentialAuthProvider.name}
+          onClose={() => setCredentialAuthProvider(null)}
+          onSuccess={() => {
+            setCredentialAuthProvider(null);
             trpcUtils.sync.providers.invalidate();
           }}
         />
@@ -580,6 +603,109 @@ function SyncProviderCard({
             Details
           </Link>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Generic Credential Auth Modal ──
+
+function CredentialAuthModal({
+  providerId,
+  providerName,
+  onClose,
+  onSuccess,
+}: {
+  providerId: string;
+  providerName: string;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const emailRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    emailRef.current?.focus();
+  }, []);
+
+  const signInMutation = trpc.credentialAuth.signIn.useMutation();
+
+  const handleSignIn = useCallback(
+    async (e: React.FormEvent<HTMLFormElement>) => {
+      e.preventDefault();
+      setError("");
+      setLoading(true);
+      try {
+        await signInMutation.mutateAsync({ providerId, username, password });
+        onSuccess();
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : "Sign in failed");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [providerId, username, password, signInMutation, onSuccess],
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 w-full max-w-sm shadow-2xl">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-semibold text-zinc-200">Connect {providerName}</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-zinc-500 hover:text-zinc-300 text-lg leading-none p-1"
+            aria-label="Close"
+          >
+            &times;
+          </button>
+        </div>
+
+        {error && (
+          <div className="mb-3 text-xs text-red-400 bg-red-400/10 rounded px-3 py-2">{error}</div>
+        )}
+
+        <form onSubmit={handleSignIn} className="space-y-3">
+          <div>
+            <label htmlFor={`${providerId}-email`} className="block text-xs text-zinc-400 mb-1">
+              Email
+            </label>
+            <input
+              ref={emailRef}
+              id={`${providerId}-email`}
+              type="email"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              required
+              className="w-full px-3 py-2 text-sm bg-zinc-800 border border-zinc-700 rounded text-zinc-200 focus:outline-none focus:border-zinc-500"
+              placeholder="you@example.com"
+            />
+          </div>
+          <div>
+            <label htmlFor={`${providerId}-password`} className="block text-xs text-zinc-400 mb-1">
+              Password
+            </label>
+            <input
+              id={`${providerId}-password`}
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              className="w-full px-3 py-2 text-sm bg-zinc-800 border border-zinc-700 rounded text-zinc-200 focus:outline-none focus:border-zinc-500"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full py-2 text-sm font-medium rounded bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
+          >
+            {loading ? "Signing in..." : "Sign In"}
+          </button>
+        </form>
       </div>
     </div>
   );

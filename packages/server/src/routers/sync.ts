@@ -1,5 +1,6 @@
 import { createSyncQueue } from "dofek/jobs/queues";
 import { getAllProviders, registerProvider } from "dofek/providers/registry";
+import { getProviderAuthType } from "dofek/providers/types";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { startWorker } from "../lib/start-worker.ts";
@@ -156,23 +157,22 @@ export const syncRouter = router({
     return all
       .filter((p) => p.validate() === null)
       .map((p) => {
-        let setup: ReturnType<NonNullable<typeof p.authSetup>> | undefined;
-        try {
-          setup = p.authSetup?.();
-        } catch {
-          /* credentials not configured */
-        }
-        const needsOAuth = !!setup?.oauthConfig;
-        const needsCustomAuth = p.id === "whoop" || p.id === "garmin";
-        const needsAuth = needsOAuth || needsCustomAuth;
+        // Providers with their own custom tRPC auth routers (MFA, special clients)
+        const CUSTOM_AUTH_PROVIDERS: Record<string, string> = {
+          whoop: "custom:whoop",
+          garmin: "custom:garmin",
+        };
+
+        const baseAuthType = getProviderAuthType(p);
+        const authType = CUSTOM_AUTH_PROVIDERS[p.id] ?? baseAuthType;
+        const needsAuth = authType !== "none" && authType !== "file-import";
         const authorized = needsAuth ? tokenSet.has(p.id) : true;
         const lastSyncedAt = lastSyncMap.get(p.id) ?? null;
 
         return {
           id: p.id,
           name: p.name,
-          needsOAuth,
-          needsCustomAuth,
+          authType,
           authorized,
           lastSyncedAt,
           importOnly: p.importOnly === true,

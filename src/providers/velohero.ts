@@ -2,7 +2,7 @@ import { parseVeloHeroWorkout, VeloHeroClient } from "velohero-client";
 import type { SyncDatabase } from "../db/index.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
-import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
 import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
 
@@ -75,28 +75,13 @@ export class VeloHeroProvider implements Provider {
         throw new Error("VeloHero not connected — authenticate via the web UI");
       }
 
-      // Re-authenticate if token expired (session cookies expire)
+      // VeloHero sessions expire — user must re-authenticate when expired
       if (stored.expiresAt <= new Date()) {
-        const username = process.env.VELOHERO_USERNAME;
-        const password = process.env.VELOHERO_PASSWORD;
-        if (!username || !password) {
-          throw new Error(
-            "VeloHero session expired and VELOHERO_USERNAME/VELOHERO_PASSWORD not set for re-auth",
-          );
-        }
-        logger.info("[velohero] Session expired, re-authenticating...");
-        const result = await VeloHeroClient.signIn(username, password, this.fetchFn);
-        const tokens = {
-          accessToken: result.sessionCookie,
-          refreshToken: null,
-          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-          scopes: `userId:${result.userId}`,
-        };
-        await saveTokens(db, this.id, tokens);
-        client = new VeloHeroClient(result.sessionCookie, this.fetchFn);
-      } else {
-        client = new VeloHeroClient(stored.accessToken, this.fetchFn);
+        throw new Error(
+          "VeloHero session expired — please re-authenticate via Settings",
+        );
       }
+      client = new VeloHeroClient(stored.accessToken, this.fetchFn);
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };

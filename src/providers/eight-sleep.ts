@@ -10,8 +10,7 @@ import {
 import type { SyncDatabase } from "../db/index.ts";
 import { bodyMeasurement, dailyMetrics, metricStream, sleepSession } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
-import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
-import { logger } from "../logger.ts";
+import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
 
 // ============================================================
@@ -89,28 +88,13 @@ export class EightSleepProvider implements Provider {
         throw new Error("Eight Sleep user ID not found — re-authenticate");
       }
 
-      // Re-authenticate if token expired (Eight Sleep has no refresh tokens)
+      // Eight Sleep has no refresh tokens — user must re-authenticate when expired
       if (stored.expiresAt <= new Date()) {
-        const email = process.env.EIGHT_SLEEP_USERNAME;
-        const password = process.env.EIGHT_SLEEP_PASSWORD;
-        if (!email || !password) {
-          throw new Error(
-            "Eight Sleep token expired and EIGHT_SLEEP_USERNAME/EIGHT_SLEEP_PASSWORD not set for re-auth",
-          );
-        }
-        logger.info("[eight-sleep] Token expired, re-authenticating...");
-        const result = await EightSleepClient.signIn(email, password, this.fetchFn);
-        const tokens = {
-          accessToken: result.accessToken,
-          refreshToken: null,
-          expiresAt: new Date(Date.now() + result.expiresIn * 1000),
-          scopes: `userId:${result.userId}`,
-        };
-        await saveTokens(db, this.id, tokens);
-        client = new EightSleepClient(result.accessToken, result.userId, this.fetchFn);
-      } else {
-        client = new EightSleepClient(stored.accessToken, userId, this.fetchFn);
+        throw new Error(
+          "Eight Sleep token expired — please re-authenticate via Settings",
+        );
       }
+      client = new EightSleepClient(stored.accessToken, userId, this.fetchFn);
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
