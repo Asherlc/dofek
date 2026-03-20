@@ -399,10 +399,13 @@ jobs:
       - name: Get changed Swift files
         id: changed
         run: |
+          # Filter to mutatable Swift source files, strip prefix for Muter's working directory
           CHANGED=$(git diff --name-only origin/main...HEAD \
             | { grep '\.swift$' || true; } \
             | { grep -v 'Tests/' || true; } \
             | { grep -v 'HealthKitModule.swift' || true; } \
+            | { grep -v 'Package.swift' || true; } \
+            | sed 's|^packages/ios/modules/health-kit/||' \
             | tr '\n' ',' \
             | sed 's/,$//')
           echo "files=$CHANGED" >> "$GITHUB_OUTPUT"
