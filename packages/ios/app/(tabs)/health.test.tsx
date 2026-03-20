@@ -1,9 +1,17 @@
 // @vitest-environment jsdom
 import React from "react";
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const TEST_SERVER_URL = "https://test.dofek.example.com";
+const mockRequestPermissions = vi.fn();
+const mockQueryQuantitySamples = vi.fn();
+const mockQueryWorkouts = vi.fn();
+const mockQuerySleepSamples = vi.fn();
+const mockEnableBackgroundDelivery = vi.fn();
+const mockPushQuantityMutate = vi.fn();
+const mockPushWorkoutsMutate = vi.fn();
+const mockPushSleepMutate = vi.fn();
 
 const mockUseAuth = vi.fn(() => ({
 	user: { name: "Test User" },
@@ -42,19 +50,19 @@ vi.mock("expo-router", () => ({
 
 vi.mock("../../modules/health-kit", () => ({
 	isAvailable: () => true,
-	requestPermissions: vi.fn(),
-	queryQuantitySamples: vi.fn(),
-	queryWorkouts: vi.fn(),
-	querySleepSamples: vi.fn(),
-	enableBackgroundDelivery: vi.fn(),
+	requestPermissions: mockRequestPermissions,
+	queryQuantitySamples: mockQueryQuantitySamples,
+	queryWorkouts: mockQueryWorkouts,
+	querySleepSamples: mockQuerySleepSamples,
+	enableBackgroundDelivery: mockEnableBackgroundDelivery,
 }));
 
 vi.mock("../../lib/trpc", () => ({
 	trpc: {
 		healthKitSync: {
-			pushQuantitySamples: { useMutation: () => ({ mutateAsync: vi.fn() }) },
-			pushWorkouts: { useMutation: () => ({ mutateAsync: vi.fn() }) },
-			pushSleepSamples: { useMutation: () => ({ mutateAsync: vi.fn() }) },
+			pushQuantitySamples: { useMutation: () => ({ mutateAsync: mockPushQuantityMutate }) },
+			pushWorkouts: { useMutation: () => ({ mutateAsync: mockPushWorkoutsMutate }) },
+			pushSleepSamples: { useMutation: () => ({ mutateAsync: mockPushSleepMutate }) },
 		},
 	},
 }));
@@ -84,6 +92,24 @@ vi.mock("../../lib/auth-context", () => ({
 }));
 
 describe("HealthScreen", () => {
+	beforeEach(() => {
+		mockRequestPermissions.mockReset();
+		mockQueryQuantitySamples.mockReset();
+		mockQueryWorkouts.mockReset();
+		mockQuerySleepSamples.mockReset();
+		mockEnableBackgroundDelivery.mockReset();
+		mockPushQuantityMutate.mockReset();
+		mockPushWorkoutsMutate.mockReset();
+		mockPushSleepMutate.mockReset();
+
+		mockQueryQuantitySamples.mockResolvedValue([]);
+		mockQueryWorkouts.mockResolvedValue([]);
+		mockQuerySleepSamples.mockResolvedValue([]);
+		mockPushQuantityMutate.mockResolvedValue({ inserted: 0, errors: [] });
+		mockPushWorkoutsMutate.mockResolvedValue({ inserted: 0 });
+		mockPushSleepMutate.mockResolvedValue({ inserted: 0 });
+	});
+
 	it("renders the server URL from auth context", async () => {
 		const { default: HealthScreen } = await import("./health");
 		render(<HealthScreen />);
@@ -108,5 +134,32 @@ describe("HealthScreen", () => {
 		const { default: HealthScreen } = await import("./health");
 		render(<HealthScreen />);
 		expect(screen.queryByText("Server")).toBeNull();
+	});
+
+	it("normalizes missing workout optional fields to null before sync", async () => {
+		mockQueryWorkouts.mockResolvedValueOnce([
+			{
+				uuid: "workout-1",
+				workoutType: "35",
+				startDate: "2026-03-01T10:00:00.000Z",
+				endDate: "2026-03-01T11:00:00.000Z",
+				duration: 3600,
+				sourceName: "Apple Watch",
+				sourceBundle: "com.apple.health",
+			},
+		]);
+
+		const { default: HealthScreen } = await import("./health");
+		render(<HealthScreen />);
+		fireEvent.click(screen.getByText("Sync Now"));
+
+		await waitFor(() => {
+			expect(mockPushWorkoutsMutate).toHaveBeenCalledTimes(1);
+		});
+		const pushInput = mockPushWorkoutsMutate.mock.calls[0][0] as {
+			workouts: Array<{ totalDistance?: number | null; totalEnergyBurned?: number | null }>;
+		};
+		expect(pushInput.workouts[0]?.totalDistance).toBeNull();
+		expect(pushInput.workouts[0]?.totalEnergyBurned).toBeNull();
 	});
 });
