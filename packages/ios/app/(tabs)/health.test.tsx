@@ -271,6 +271,23 @@ describe("HealthScreen", () => {
 		expect(button).toHaveProperty("disabled", true);
 	});
 
+	it("queries skin temperature from HealthKit during sync", async () => {
+		const { default: HealthScreen } = await import("./health");
+		render(<HealthScreen />);
+		fireEvent.click(screen.getByText("Sync Now"));
+
+		await waitFor(() => {
+			expect(mockQueryQuantitySamples).toHaveBeenCalled();
+		});
+
+		const queriedTypes = mockQueryQuantitySamples.mock.calls.map(
+			(call: unknown[]) => call[0] as string,
+		);
+		expect(queriedTypes).toContain(
+			"HKQuantityTypeIdentifierAppleSleepingWristTemperature",
+		);
+	});
+
 	it("normalizes missing workout optional fields to null before sync", async () => {
 		mockQueryWorkouts.mockResolvedValueOnce([
 			{
