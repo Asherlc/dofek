@@ -48,15 +48,21 @@ describe("efficiency.polarizationTrend integration", () => {
       { hr: Z3_HR, samples: 100 },
     ]);
 
-    // ── Activity 2: Boundary test in same day ──
+    // ── Activity 2: Boundary test, offset 3h so v_activity dedup doesn't merge with #1 ──
     // 152 bpm = exactly 80% of 190 → should be Z2 (>= 80%)
     // 171 bpm = exactly 90% of 190 → should be Z3 (>= 90%)
-    await insertActivityWithHrZones("boundary-ride", "cycling", 2, [
-      { hr: 151, samples: 100 }, // Z1: < 152
-      { hr: Z2_BOUNDARY_HR, samples: 100 }, // Z2: exactly 80% HRmax
-      { hr: 170, samples: 100 }, // Z2: just below 90%
-      { hr: Z3_BOUNDARY_HR, samples: 100 }, // Z3: exactly 90% HRmax
-    ]);
+    await insertActivityWithHrZones(
+      "boundary-ride",
+      "cycling",
+      2,
+      [
+        { hr: 151, samples: 100 }, // Z1: < 152
+        { hr: Z2_BOUNDARY_HR, samples: 100 }, // Z2: exactly 80% HRmax
+        { hr: 170, samples: 100 }, // Z2: just below 90%
+        { hr: Z3_BOUNDARY_HR, samples: 100 }, // Z3: exactly 90% HRmax
+      ],
+      3, // 3 hours after midnight → no overlap with activity 1
+    );
 
     // ── Activity 3: Z1-only ride, 21 days ago (guaranteed different week) → PI null ──
     await insertActivityWithHrZones("easy-ride", "cycling", 21, [{ hr: 120, samples: 1000 }]);
@@ -86,23 +92,26 @@ describe("efficiency.polarizationTrend integration", () => {
     await testCtx?.cleanup();
   });
 
+  // offsetHours staggers activities so v_activity's overlap dedup doesn't merge them
   async function insertActivityWithHrZones(
     name: string,
     activityType: string,
     daysAgo: number,
     zones: Array<{ hr: number; samples: number }>,
+    offsetHours = 0,
   ) {
     const totalSamples = zones.reduce((sum, z) => sum + z.samples, 0);
+    const offsetSql = offsetHours > 0 ? `+ ${offsetHours} * INTERVAL '1 hour'` : "";
 
     const actResult = await testCtx.db.execute<{ id: string }>(
-      sql`INSERT INTO fitness.activity (
+      sql.raw(`INSERT INTO fitness.activity (
             provider_id, user_id, activity_type, started_at, ended_at, name
           ) VALUES (
-            'test_provider', ${DEFAULT_USER_ID}, ${activityType},
-            CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day',
-            CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day' + ${totalSamples}::int * INTERVAL '1 second',
-            ${name}
-          ) RETURNING id`,
+            'test_provider', '${DEFAULT_USER_ID}', '${activityType}',
+            CURRENT_TIMESTAMP - ${daysAgo} * INTERVAL '1 day' ${offsetSql},
+            CURRENT_TIMESTAMP - ${daysAgo} * INTERVAL '1 day' ${offsetSql} + ${totalSamples} * INTERVAL '1 second',
+            '${name}'
+          ) RETURNING id`),
     );
     const actId = actResult[0]?.id;
     if (!actId) throw new Error(`Failed to insert activity ${name}`);
@@ -115,7 +124,7 @@ describe("efficiency.polarizationTrend integration", () => {
         for (let s = batchStart; s < batchEnd; s++) {
           const offset = sampleIndex + s;
           values.push(
-            `(CURRENT_TIMESTAMP - ${daysAgo} * INTERVAL '1 day' + ${offset} * INTERVAL '1 second',
+            `(CURRENT_TIMESTAMP - ${daysAgo} * INTERVAL '1 day' ${offsetSql} + ${offset} * INTERVAL '1 second',
               '${DEFAULT_USER_ID}', '${actId}', 'test_provider', ${zone.hr}, 200)`,
           );
         }
