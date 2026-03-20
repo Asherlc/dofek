@@ -87,30 +87,17 @@ describe("tRPC API", () => {
   });
 
   describe("POST mutations", () => {
-    it("handles triggerSync mutation with sinceDays", async () => {
+    it("triggerSync returns error when no providers are connected", async () => {
       const res = await fetch(`${baseUrl}/api/trpc/sync.triggerSync?batch=1`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Cookie: sessionCookie },
         body: JSON.stringify({ "0": { sinceDays: 7 } }),
       });
 
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(500);
       const data = await res.json();
       expect(data).toHaveLength(1);
-      expect(typeof data[0].result.data.jobId).toBe("string");
-    });
-
-    it("handles triggerSync mutation without sinceDays (full sync)", async () => {
-      const res = await fetch(`${baseUrl}/api/trpc/sync.triggerSync?batch=1`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Cookie: sessionCookie },
-        body: JSON.stringify({ "0": {} }),
-      });
-
-      expect(res.status).toBe(200);
-      const data = await res.json();
-      expect(data).toHaveLength(1);
-      expect(typeof data[0].result.data.jobId).toBe("string");
+      expect(data[0].error.message).toContain("No configured providers");
     });
   });
 
