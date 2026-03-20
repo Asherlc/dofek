@@ -88,7 +88,7 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
       {
         type: "bar",
         data: data.recentNights.map((n) => ({
-          value: [n.date, n.actualMinutes],
+          value: n.actualMinutes,
           itemStyle: {
             color: n.actualMinutes >= n.neededMinutes ? "#22c55e" : "#ef4444",
           },
@@ -97,7 +97,7 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
       },
       {
         type: "line",
-        data: data.recentNights.map((n) => [n.date, n.neededMinutes]),
+        data: data.recentNights.map((n) => n.neededMinutes),
         symbol: "none",
         lineStyle: { color: "#71717a", width: 1.5, type: "dashed" as const },
         z: 5,
