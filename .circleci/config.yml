@@ -11,6 +11,11 @@ executors:
       image: ubuntu-2404:current
     resource_class: medium
 
+  macos:
+    macos:
+      xcode: "16.2.0"
+    resource_class: macos.m1.medium.gen1
+
 commands:
   setup:
     description: Checkout, install pnpm, restore cache, install deps
@@ -177,6 +182,63 @@ jobs:
           command: docker compose -f docker-compose.e2e.yml down -v
           when: always
 
+  test-swift:
+    executor: macos
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - swift-build-v1-{{ checksum "packages/ios/modules/health-kit/Package.swift" }}
+            - swift-build-v1-
+      - run:
+          name: Run Swift tests with coverage
+          command: |
+            cd packages/ios/modules/health-kit
+            bash scripts/check-coverage.sh
+      - save_cache:
+          key: swift-build-v1-{{ checksum "packages/ios/modules/health-kit/Package.swift" }}
+          paths:
+            - packages/ios/modules/health-kit/.build
+      - store_artifacts:
+          path: packages/ios/modules/health-kit/.build/debug/codecov
+          destination: swift-coverage
+
+  mutation-swift:
+    executor: macos
+    steps:
+      - checkout
+      - run:
+          name: Install Muter
+          command: brew install muter-mutation-testing/formulae/muter
+      - restore_cache:
+          keys:
+            - swift-build-v1-{{ checksum "packages/ios/modules/health-kit/Package.swift" }}
+            - swift-build-v1-
+      - run:
+          name: Run Muter (incremental on PRs)
+          command: |
+            cd packages/ios/modules/health-kit
+            if [ -n "$CIRCLE_PULL_REQUEST" ]; then
+              CHANGED=$(git diff --name-only origin/main...HEAD \
+                | { grep '\.swift$' || true; } \
+                | { grep -v 'Tests/' || true; } \
+                | { grep -v 'HealthKitModule.swift' || true; } \
+                | tr '\n' ',' \
+                | sed 's/,$//')
+              if [ -n "$CHANGED" ]; then
+                echo "Mutating changed Swift files: $CHANGED"
+                muter --files-to-mutate "$CHANGED"
+              else
+                echo "No mutatable Swift files changed — skipping."
+              fi
+            else
+              muter
+            fi
+          no_output_timeout: 30m
+      - store_artifacts:
+          path: packages/ios/modules/health-kit/muter_logs
+          destination: muter-report
+
   mutation:
     executor: node
     environment:
@@ -237,7 +299,12 @@ workflows:
       - test
       - test-ios
       - test-e2e-web
+      - test-swift
       - mutation:
+          filters:
+            branches:
+              ignore: main
+      - mutation-swift:
           filters:
             branches:
               ignore: main
@@ -251,3 +318,4 @@ workflows:
               only: main
     jobs:
       - mutation
+      - mutation-swift
