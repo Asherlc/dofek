@@ -14,7 +14,7 @@ export function initSentry() {
   }
   initialized = true;
 
-  const dsn = process.env.SENTRY_DSN;
+  const dsn = process.env.SENTRY_DSN || process.env.SENTRY_DSN_unencrypted;
   if (!dsn) {
     return;
   }

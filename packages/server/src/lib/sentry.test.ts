@@ -38,6 +38,19 @@ describe("server sentry", () => {
     expect(mocks.mockInit).not.toHaveBeenCalled();
   });
 
+  it("picks up SENTRY_DSN_unencrypted (SOPS convention)", async () => {
+    vi.stubEnv("SENTRY_DSN", "");
+    vi.stubEnv("SENTRY_DSN_unencrypted", "https://key@sentry.example/789");
+
+    const { initSentry } = await import("./sentry.ts");
+    initSentry();
+
+    expect(mocks.mockInit).toHaveBeenCalledWith({
+      dsn: "https://key@sentry.example/789",
+      skipOpenTelemetrySetup: true,
+    });
+  });
+
   it("initializes Sentry once with skipOpenTelemetrySetup", async () => {
     vi.stubEnv("SENTRY_DSN", "https://key@sentry.example/456");
 
