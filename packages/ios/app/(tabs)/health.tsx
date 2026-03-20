@@ -63,6 +63,7 @@ export default function HealthScreen() {
   const router = useRouter();
   const { user, serverUrl, logout } = useAuth();
   const [permissionsGranted, setPermissionsGranted] = useState(false);
+  const [backgroundEnabled, setBackgroundEnabled] = useState(false);
   const [status, setStatus] = useState<SyncStatus>({
     lastSync: null,
     syncing: false,
@@ -156,6 +157,7 @@ export default function HealthScreen() {
       for (const typeId of QUANTITY_TYPES) {
         await enableBackgroundDelivery(typeId);
       }
+      setBackgroundEnabled(true);
       Alert.alert("Background Sync", "Background delivery enabled for all health data types.");
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
@@ -253,8 +255,15 @@ export default function HealthScreen() {
             <Text style={styles.cardDescription}>
               Enable background delivery so data syncs automatically.
             </Text>
-            <TouchableOpacity style={styles.buttonSecondary} onPress={handleEnableBackground} activeOpacity={0.7}>
-              <Text style={styles.buttonSecondaryText}>Enable Background Delivery</Text>
+            <TouchableOpacity
+              style={[styles.buttonSecondary, backgroundEnabled && styles.buttonDisabled]}
+              onPress={handleEnableBackground}
+              activeOpacity={0.7}
+              disabled={backgroundEnabled}
+            >
+              <Text style={styles.buttonSecondaryText}>
+                {backgroundEnabled ? "Background Delivery Enabled" : "Enable Background Delivery"}
+              </Text>
             </TouchableOpacity>
           </View>
         </>
