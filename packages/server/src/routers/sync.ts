@@ -34,16 +34,45 @@ function toJobId(id: string | number | undefined, providerId: string): string {
 }
 
 /**
- * A provider is connected if it either needs no auth, or has tokens in the database.
- * Providers that define `authSetup` require authentication (OAuth, credentials, etc.)
- * and must have tokens stored before they can sync.
+ * Wraps a raw Provider plugin with derived state (connection status, auth type, etc.).
+ * Providers that define `authSetup` require authentication — they are only connected
+ * when tokens exist in the database.
  */
-export function isProviderConnected(
-  provider: { id: string; authSetup?(): unknown },
-  tokenSet: Set<string>,
-): boolean {
-  if (!provider.authSetup) return true;
-  return tokenSet.has(provider.id);
+export class ProviderModel {
+  readonly id: string;
+  readonly name: string;
+  readonly importOnly: boolean;
+  readonly needsOAuth: boolean;
+  readonly needsCustomAuth: boolean;
+  readonly isConnected: boolean;
+  readonly lastSyncedAt: string | null;
+
+  constructor(
+    provider: { id: string; name: string; importOnly?: boolean; authSetup?(): unknown },
+    tokenSet: Set<string>,
+    lastSyncMap?: Map<string, string>,
+  ) {
+    this.id = provider.id;
+    this.name = provider.name;
+    this.importOnly = provider.importOnly === true;
+
+    let hasOAuthConfig = false;
+    try {
+      const setup = provider.authSetup?.();
+      hasOAuthConfig =
+        typeof setup === "object" &&
+        setup !== null &&
+        "oauthConfig" in setup &&
+        !!setup.oauthConfig;
+    } catch {
+      /* credentials not configured */
+    }
+
+    this.needsOAuth = hasOAuthConfig;
+    this.needsCustomAuth = !!provider.authSetup && !hasOAuthConfig;
+    this.isConnected = !provider.authSetup || tokenSet.has(provider.id);
+    this.lastSyncedAt = lastSyncMap?.get(provider.id) ?? null;
+  }
 }
 
 // ── Provider registration (race-safe) ──
@@ -169,25 +198,15 @@ export const syncRouter = router({
     return all
       .filter((p) => p.validate() === null)
       .map((p) => {
-        let setup: ReturnType<NonNullable<typeof p.authSetup>> | undefined;
-        try {
-          setup = p.authSetup?.();
-        } catch {
-          /* credentials not configured */
-        }
-        const needsOAuth = !!setup?.oauthConfig;
-        const needsCustomAuth = !!p.authSetup && !needsOAuth;
-        const authorized = isProviderConnected(p, tokenSet);
-        const lastSyncedAt = lastSyncMap.get(p.id) ?? null;
-
+        const model = new ProviderModel(p, tokenSet, lastSyncMap);
         return {
-          id: p.id,
-          name: p.name,
-          needsOAuth,
-          needsCustomAuth,
-          authorized,
-          lastSyncedAt,
-          importOnly: p.importOnly === true,
+          id: model.id,
+          name: model.name,
+          needsOAuth: model.needsOAuth,
+          needsCustomAuth: model.needsCustomAuth,
+          authorized: model.isConnected,
+          lastSyncedAt: model.lastSyncedAt,
+          importOnly: model.importOnly,
         };
       });
   }),
@@ -217,9 +236,10 @@ export const syncRouter = router({
       const tokenSet = new Set(allTokens.map((r) => r.provider_id));
 
       for (const provider of getAllProviders()) {
-        if (provider.validate() !== null || provider.importOnly) continue;
-        if (!isProviderConnected(provider, tokenSet)) continue;
-        providerIds.push(provider.id);
+        if (provider.validate() !== null) continue;
+        const model = new ProviderModel(provider, tokenSet);
+        if (model.importOnly || !model.isConnected) continue;
+        providerIds.push(model.id);
       }
 
       if (providerIds.length === 0) throw new Error("No configured providers available for sync");

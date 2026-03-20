@@ -94,27 +94,78 @@ vi.mock("dofek/db/schema", () => ({
 
 import {
   ensureProvidersRegistered,
-  isProviderConnected,
   logsInput,
+  ProviderModel,
   REDACTED_ERROR_MESSAGE,
   syncRouter,
   syncStatusInput,
   triggerSyncInput,
 } from "./sync.ts";
 
-describe("isProviderConnected", () => {
-  it("returns true for providers without authSetup", () => {
-    expect(isProviderConnected({ id: "strong-csv" }, new Set())).toBe(true);
+describe("ProviderModel", () => {
+  it("isConnected is true for providers without authSetup", () => {
+    const model = new ProviderModel({ id: "strong-csv", name: "Strong" }, new Set());
+    expect(model.isConnected).toBe(true);
+    expect(model.needsOAuth).toBe(false);
+    expect(model.needsCustomAuth).toBe(false);
   });
 
-  it("returns true for providers with authSetup that have tokens", () => {
-    expect(isProviderConnected({ id: "strava", authSetup: () => ({}) }, new Set(["strava"]))).toBe(
-      true,
+  it("isConnected is true for providers with authSetup that have tokens", () => {
+    const model = new ProviderModel(
+      { id: "strava", name: "Strava", authSetup: () => ({ oauthConfig: {} }) },
+      new Set(["strava"]),
     );
+    expect(model.isConnected).toBe(true);
+    expect(model.needsOAuth).toBe(true);
+    expect(model.needsCustomAuth).toBe(false);
   });
 
-  it("returns false for providers with authSetup that lack tokens", () => {
-    expect(isProviderConnected({ id: "strava", authSetup: () => ({}) }, new Set())).toBe(false);
+  it("isConnected is false for providers with authSetup that lack tokens", () => {
+    const model = new ProviderModel(
+      { id: "strava", name: "Strava", authSetup: () => ({ oauthConfig: {} }) },
+      new Set(),
+    );
+    expect(model.isConnected).toBe(false);
+  });
+
+  it("needsCustomAuth is true for providers with authSetup but no oauthConfig", () => {
+    const model = new ProviderModel(
+      { id: "whoop", name: "WHOOP", authSetup: () => undefined },
+      new Set(),
+    );
+    expect(model.needsCustomAuth).toBe(true);
+    expect(model.needsOAuth).toBe(false);
+    expect(model.isConnected).toBe(false);
+  });
+
+  it("handles authSetup that throws", () => {
+    const model = new ProviderModel(
+      {
+        id: "broken",
+        name: "Broken",
+        authSetup: () => {
+          throw new Error("no credentials");
+        },
+      },
+      new Set(),
+    );
+    expect(model.needsOAuth).toBe(false);
+    expect(model.needsCustomAuth).toBe(true);
+    expect(model.isConnected).toBe(false);
+  });
+
+  it("reads lastSyncedAt from the map", () => {
+    const model = new ProviderModel(
+      { id: "wahoo", name: "Wahoo" },
+      new Set(),
+      new Map([["wahoo", "2024-01-01"]]),
+    );
+    expect(model.lastSyncedAt).toBe("2024-01-01");
+  });
+
+  it("lastSyncedAt is null when not in the map", () => {
+    const model = new ProviderModel({ id: "wahoo", name: "Wahoo" }, new Set());
+    expect(model.lastSyncedAt).toBeNull();
   });
 });
 
