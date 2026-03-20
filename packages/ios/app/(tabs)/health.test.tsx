@@ -57,12 +57,19 @@ vi.mock("../../modules/health-kit", () => ({
 	enableBackgroundDelivery: mockEnableBackgroundDelivery,
 }));
 
+const mockSettingsGet = vi.fn();
+const mockSettingsSetMutate = vi.fn();
+
 vi.mock("../../lib/trpc", () => ({
 	trpc: {
 		healthKitSync: {
 			pushQuantitySamples: { useMutation: () => ({ mutateAsync: mockPushQuantityMutate }) },
 			pushWorkouts: { useMutation: () => ({ mutateAsync: mockPushWorkoutsMutate }) },
 			pushSleepSamples: { useMutation: () => ({ mutateAsync: mockPushSleepMutate }) },
+		},
+		settings: {
+			get: { useQuery: (...args: unknown[]) => mockSettingsGet(...args) },
+			set: { useMutation: () => ({ mutateAsync: mockSettingsSetMutate }) },
 		},
 	},
 }));
@@ -101,6 +108,8 @@ describe("HealthScreen", () => {
 		mockPushQuantityMutate.mockReset();
 		mockPushWorkoutsMutate.mockReset();
 		mockPushSleepMutate.mockReset();
+		mockSettingsGet.mockReset();
+		mockSettingsSetMutate.mockReset();
 
 		mockQueryQuantitySamples.mockResolvedValue([]);
 		mockQueryWorkouts.mockResolvedValue([]);
@@ -108,6 +117,8 @@ describe("HealthScreen", () => {
 		mockPushQuantityMutate.mockResolvedValue({ inserted: 0, errors: [] });
 		mockPushWorkoutsMutate.mockResolvedValue({ inserted: 0 });
 		mockPushSleepMutate.mockResolvedValue({ inserted: 0 });
+		// Default: backfill already completed
+		mockSettingsGet.mockReturnValue({ data: { value: true }, isLoading: false });
 	});
 
 	it("renders the server URL from auth context", async () => {
@@ -134,6 +145,108 @@ describe("HealthScreen", () => {
 		const { default: HealthScreen } = await import("./health");
 		render(<HealthScreen />);
 		expect(screen.queryByText("Server")).toBeNull();
+	});
+
+	it("renders sync range selector with all options", async () => {
+		const { default: HealthScreen } = await import("./health");
+		render(<HealthScreen />);
+		expect(screen.getByText("7d")).toBeTruthy();
+		expect(screen.getByText("30d")).toBeTruthy();
+		expect(screen.getByText("90d")).toBeTruthy();
+		expect(screen.getByText("1y")).toBeTruthy();
+		expect(screen.getByText("All")).toBeTruthy();
+	});
+
+	it("defaults to All when backfill has not been completed", async () => {
+		mockSettingsGet.mockReturnValue({ data: null, isLoading: false });
+		const { default: HealthScreen } = await import("./health");
+		render(<HealthScreen />);
+		expect(screen.getByText("Sync all health data to the server.")).toBeTruthy();
+	});
+
+	it("defaults to 7d when backfill has been completed", async () => {
+		mockSettingsGet.mockReturnValue({ data: { value: true }, isLoading: false });
+		const { default: HealthScreen } = await import("./health");
+		render(<HealthScreen />);
+		expect(screen.getByText("Sync the last 7 days of health data to the server.")).toBeTruthy();
+	});
+
+	it("uses selected range when syncing", async () => {
+		mockSettingsGet.mockReturnValue({ data: { value: true }, isLoading: false });
+		const { default: HealthScreen } = await import("./health");
+		render(<HealthScreen />);
+
+		// Switch to 30d
+		fireEvent.click(screen.getByText("30d"));
+		fireEvent.click(screen.getByText("Sync Now"));
+
+		await waitFor(() => {
+			expect(mockQueryQuantitySamples).toHaveBeenCalled();
+		});
+
+		// The start date should be ~30 days ago, not 7
+		const firstCallStartDate = mockQueryQuantitySamples.mock.calls[0][1] as string;
+		const startDate = new Date(firstCallStartDate);
+		const thirtyDaysAgo = new Date();
+		thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+		// Allow 1 second tolerance
+		expect(Math.abs(startDate.getTime() - thirtyDaysAgo.getTime())).toBeLessThan(1000);
+	});
+
+	it("uses epoch start date when All is selected", async () => {
+		mockSettingsGet.mockReturnValue({ data: null, isLoading: false });
+		const { default: HealthScreen } = await import("./health");
+		render(<HealthScreen />);
+
+		// All should be selected by default (no backfill done)
+		fireEvent.click(screen.getByText("Sync Now"));
+
+		await waitFor(() => {
+			expect(mockQueryQuantitySamples).toHaveBeenCalled();
+		});
+
+		const firstCallStartDate = mockQueryQuantitySamples.mock.calls[0][1] as string;
+		const startDate = new Date(firstCallStartDate);
+		// Epoch: 1970-01-01T00:00:00.000Z
+		expect(startDate.getTime()).toBe(0);
+	});
+
+	it("marks backfill as completed after successful all-time sync", async () => {
+		mockSettingsGet.mockReturnValue({ data: null, isLoading: false });
+		mockSettingsSetMutate.mockResolvedValue({ key: "healthkit_backfill_completed", value: true });
+
+		const { default: HealthScreen } = await import("./health");
+		render(<HealthScreen />);
+
+		fireEvent.click(screen.getByText("Sync Now"));
+
+		await waitFor(() => {
+			expect(mockSettingsSetMutate).toHaveBeenCalledWith({
+				key: "healthkit_backfill_completed",
+				value: true,
+			});
+		});
+	});
+
+	it("does not mark backfill when syncing a specific range", async () => {
+		mockSettingsGet.mockReturnValue({ data: { value: true }, isLoading: false });
+
+		const { default: HealthScreen } = await import("./health");
+		render(<HealthScreen />);
+
+		// Default is 7d when backfill is done
+		fireEvent.click(screen.getByText("Sync Now"));
+
+		await waitFor(() => {
+			expect(mockQueryQuantitySamples).toHaveBeenCalled();
+		});
+
+		// Wait for sync to complete
+		await waitFor(() => {
+			expect(screen.getByText(/Synced/)).toBeTruthy();
+		});
+
+		expect(mockSettingsSetMutate).not.toHaveBeenCalled();
 	});
 
 	it("normalizes missing workout optional fields to null before sync", async () => {
