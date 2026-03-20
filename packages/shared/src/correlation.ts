@@ -365,7 +365,6 @@ export function tCDF(t: number, df: number): number {
   return 0.5 * regularizedBeta(x, df / 2, 0.5);
 }
 
-// Stryker disable all : Complex mathematical library function, validated through correlation test suite
 export function regularizedBeta(x: number, a: number, b: number): number {
   if (x === 0) return 0;
   if (x === 1) return 1;
@@ -404,7 +403,6 @@ export function regularizedBeta(x: number, a: number, b: number): number {
   return front * f;
 }
 
-// Stryker disable all : Complex mathematical library function (Lanczos approximation), validated through correlation test suite
 export function lgamma(z: number): number {
   const g = 7;
   const coef = [

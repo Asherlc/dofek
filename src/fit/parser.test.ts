@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { parseFitFile, parseFitRecord } from "./parser.ts";
+import { parseFitFile, parseFitRecord, parseFitSession } from "./parser.ts";
 
 const FIXTURES = resolve(import.meta.dirname, "fixtures");
 
@@ -142,6 +142,73 @@ describe("FIT Parser", () => {
 
       const result = parseFitRecord(record);
       expect(result.altitude).toBeCloseTo(504.8);
+    });
+  });
+
+  describe("parseFitSession", () => {
+    it("extracts sport from raw.sport when it is a string", () => {
+      const raw = { sport: "cycling", start_time: "2026-01-01T00:00:00Z" };
+      const session = parseFitSession(raw);
+      expect(session.sport).toBe("cycling");
+    });
+
+    it("returns 'unknown' when sport is not a string", () => {
+      expect(parseFitSession({ sport: 42, start_time: "2026-01-01T00:00:00Z" }).sport).toBe(
+        "unknown",
+      );
+      expect(parseFitSession({ start_time: "2026-01-01T00:00:00Z" }).sport).toBe("unknown");
+    });
+
+    it("extracts subSport when present", () => {
+      const raw = {
+        sport: "cycling",
+        sub_sport: "indoor_cycling",
+        start_time: "2026-01-01T00:00:00Z",
+      };
+      expect(parseFitSession(raw).subSport).toBe("indoor_cycling");
+    });
+
+    it("returns undefined for subSport when not a string", () => {
+      const raw = { sport: "cycling", sub_sport: 99, start_time: "2026-01-01T00:00:00Z" };
+      expect(parseFitSession(raw).subSport).toBeUndefined();
+    });
+
+    it("defaults numeric fields to 0 when missing", () => {
+      const raw = { start_time: "2026-01-01T00:00:00Z" };
+      const session = parseFitSession(raw);
+      expect(session.totalElapsedTime).toBe(0);
+      expect(session.totalTimerTime).toBe(0);
+      expect(session.totalDistance).toBe(0);
+      expect(session.totalCalories).toBe(0);
+    });
+
+    it("returns undefined for optional numeric fields when missing", () => {
+      const raw = { start_time: "2026-01-01T00:00:00Z" };
+      const session = parseFitSession(raw);
+      expect(session.avgHeartRate).toBeUndefined();
+      expect(session.maxHeartRate).toBeUndefined();
+      expect(session.avgPower).toBeUndefined();
+      expect(session.normalizedPower).toBeUndefined();
+      expect(session.tss).toBeUndefined();
+    });
+
+    it("prefers enhanced_avg_speed over avg_speed", () => {
+      const raw = {
+        start_time: "2026-01-01T00:00:00Z",
+        avg_speed: 3.0,
+        enhanced_avg_speed: 5.5,
+      };
+      expect(parseFitSession(raw).avgSpeed).toBeCloseTo(5.5);
+    });
+
+    it("falls back to avg_speed when enhanced_avg_speed is missing", () => {
+      const raw = { start_time: "2026-01-01T00:00:00Z", avg_speed: 3.0 };
+      expect(parseFitSession(raw).avgSpeed).toBeCloseTo(3.0);
+    });
+
+    it("preserves the raw record", () => {
+      const raw = { sport: "running", start_time: "2026-01-01T00:00:00Z", custom_field: 42 };
+      expect(parseFitSession(raw).raw).toBe(raw);
     });
   });
 

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { JoinedDay } from "../insights/engine.ts";
-import { computeCorrelation, extractMetricValue } from "./correlation.ts";
+import {
+  computeCorrelation,
+  computeStats,
+  downsample,
+  emptyStats,
+  extractMetricValue,
+} from "./correlation.ts";
 
 function makeDay(overrides: Partial<JoinedDay> & { date: string }): JoinedDay {
   return {
@@ -301,5 +307,93 @@ describe("computeCorrelation", () => {
     // Verify labels are used (not raw IDs)
     expect(result.insight).toContain("protein");
     expect(result.insight).not.toContain("protein_g");
+  });
+});
+
+describe("downsample", () => {
+  it("returns the same array when arr.length <= max", () => {
+    const arr = [1, 2, 3];
+    expect(downsample(arr, 5)).toEqual([1, 2, 3]);
+    expect(downsample(arr, 3)).toEqual([1, 2, 3]);
+  });
+
+  it("returns exactly max items when arr.length > max", () => {
+    const arr = Array.from({ length: 100 }, (_, i) => i);
+    const result = downsample(arr, 10);
+    expect(result).toHaveLength(10);
+  });
+
+  it("picks evenly spaced items for a known input", () => {
+    // 10 items downsampled to 4: step = 10/4 = 2.5
+    // indices: floor(0*2.5)=0, floor(1*2.5)=2, floor(2*2.5)=5, floor(3*2.5)=7
+    const arr = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90];
+    const result = downsample(arr, 4);
+    expect(result).toEqual([0, 20, 50, 70]);
+  });
+
+  it("handles empty array", () => {
+    expect(downsample([], 5)).toEqual([]);
+  });
+
+  it("handles max=0", () => {
+    const result = downsample([1, 2, 3], 0);
+    expect(result).toEqual([]);
+  });
+
+  it("returns first and sampled items preserving order", () => {
+    const arr = [10, 20, 30, 40, 50, 60];
+    const result = downsample(arr, 3);
+    expect(result).toHaveLength(3);
+    expect(result[0]).toBe(10);
+  });
+});
+
+describe("computeStats", () => {
+  it("computes correct mean for known values", () => {
+    const stats = computeStats([2, 4, 6, 8, 10]);
+    expect(stats.mean).toBe(6);
+  });
+
+  it("computes correct median for odd-length array", () => {
+    const stats = computeStats([3, 1, 5, 2, 4]);
+    expect(stats.median).toBe(3);
+  });
+
+  it("computes correct median for even-length array", () => {
+    const stats = computeStats([1, 3, 5, 7]);
+    expect(stats.median).toBe(4);
+  });
+
+  it("computes correct min and max", () => {
+    const stats = computeStats([10, -3, 7, 0, 42]);
+    expect(stats.min).toBe(-3);
+    expect(stats.max).toBe(42);
+  });
+
+  it("computes correct stddev (sample std dev, using n-1)", () => {
+    const stats = computeStats([2, 4, 4, 4, 5, 5, 7, 9]);
+    expect(stats.stddev).toBeCloseTo(Math.sqrt(32 / 7), 10);
+  });
+
+  it("n equals the input length", () => {
+    const stats = computeStats([1, 2, 3, 4, 5, 6, 7]);
+    expect(stats.n).toBe(7);
+  });
+
+  it("handles single-element array", () => {
+    const stats = computeStats([42]);
+    expect(stats.mean).toBe(42);
+    expect(stats.median).toBe(42);
+    expect(stats.min).toBe(42);
+    expect(stats.max).toBe(42);
+    expect(stats.stddev).toBe(0);
+    expect(stats.n).toBe(1);
+  });
+});
+
+describe("emptyStats", () => {
+  it("returns all fields as 0", () => {
+    const stats = emptyStats();
+    expect(stats).toEqual({ mean: 0, median: 0, stddev: 0, min: 0, max: 0, n: 0 });
   });
 });

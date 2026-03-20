@@ -112,13 +112,12 @@ function parseCsvLine(line: string): string[] {
 /**
  * Parse a string as a number, returning null for empty/invalid values.
  */
-// Stryker disable all — mutations are equivalent: all code paths produce null for invalid input regardless of guard order
 export function parseOptionalNumber(value: string): number | null {
-  if (!value || value.trim() === "") return null;
-  const num = Number.parseFloat(value);
+  const trimmed = value.trim();
+  if (trimmed === "") return null;
+  const num = Number.parseFloat(trimmed);
   return Number.isNaN(num) ? null : num;
 }
-// Stryker restore all
 
 /**
  * Map Cronometer meal name to our meal enum.
@@ -179,7 +178,6 @@ export function parseCronometerCsv(csvText: string): CronometerFoodEntry[] {
     const fields = parseCsvLine(line);
     if (fields.length < MIN_FIELDS) continue;
 
-    // Stryker disable next-line all — parseOptionalNumber returns null for any non-numeric fallback string
     const field = (index: number): string => fields[index] ?? "";
 
     const omega3Grams = parseOptionalNumber(field(41));
@@ -252,7 +250,6 @@ export function parseCronometerCsv(csvText: string): CronometerFoodEntry[] {
  * Import Cronometer CSV data into the database.
  * Upserts individual food entries and aggregates daily nutrition totals.
  */
-// Stryker disable all — DB import function only tested via integration tests
 export async function importCronometerCsv(
   db: SyncDatabase,
   csvText: string,
@@ -448,13 +445,10 @@ export async function importCronometerCsv(
   return { provider: CRONOMETER_PROVIDER_ID, recordsSynced, errors, duration: Date.now() - start };
 }
 
-// Stryker restore all
-
 // ============================================================
 // Provider (stub — real import happens via upload endpoint)
 // ============================================================
 
-// Stryker disable all — stub provider, no meaningful logic to mutate
 export class CronometerCsvProvider implements Provider {
   readonly id = CRONOMETER_PROVIDER_ID;
   readonly name = "Cronometer";

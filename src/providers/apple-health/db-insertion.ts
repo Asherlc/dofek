@@ -15,8 +15,6 @@ import type { HealthRecord } from "./records.ts";
 import type { SleepAnalysisRecord } from "./sleep.ts";
 import type { HealthWorkout } from "./workouts.ts";
 
-// Stryker disable all — ingestion/upsert code here is SQL-heavy and already covered by
-// dedicated unit + integration tests; many generated mutations are equivalent.
 /**
  * Deduplicate rows by their conflict key, keeping the last occurrence.
  * Returns the deduplicated rows if any duplicates were found, or the
