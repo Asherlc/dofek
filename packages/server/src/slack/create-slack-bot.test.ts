@@ -24,6 +24,7 @@ vi.mock("@slack/bolt", () => {
         router: mockRouter,
       })),
       SocketModeReceiver: vi.fn().mockImplementation(() => ({
+        client: mockSocketClient,
         start: vi.fn().mockResolvedValue(undefined),
       })),
     },
@@ -55,7 +56,6 @@ vi.mock("../lib/cache.ts", () => ({
 }));
 
 import bolt from "@slack/bolt";
-import { SocketModeClient } from "@slack/socket-mode";
 import { createSlackBot, startSlackBot } from "./bot.ts";
 
 /**
@@ -114,12 +114,8 @@ describe("createSlackBot", () => {
     expect(vi.mocked(bolt.SocketModeReceiver)).toHaveBeenCalledWith(
       expect.objectContaining({ appToken: "xapp-test-token" }),
     );
-    expect(vi.mocked(SocketModeClient)).toHaveBeenCalledWith(
-      expect.objectContaining({
-        appToken: "xapp-test-token",
-        clientPingTimeout: 30_000,
-      }),
-    );
+    // Verify ping timeout is set on the existing client (not by replacing it)
+    expect(mockSocketClient).toHaveProperty("clientPingTimeoutMS", 30_000);
     expect(mockSocketClient.on).toHaveBeenCalledWith("connecting", expect.any(Function));
     expect(mockSocketClient.on).toHaveBeenCalledWith("connected", expect.any(Function));
     expect(mockSocketClient.on).toHaveBeenCalledWith("reconnecting", expect.any(Function));
