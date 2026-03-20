@@ -28,9 +28,10 @@ const authentikClaimsSchema = z.object({
   groups: z.array(z.string()).optional(),
 });
 
-// ── Provider types ──
+import { IDENTITY_PROVIDER_NAMES, type IdentityProviderName } from "@dofek/shared/auth";
+export type { IdentityProviderName };
 
-export type IdentityProviderName = "google" | "apple" | "authentik";
+// ── Provider types ──
 
 export interface IdentityUser {
   sub: string;
@@ -184,8 +185,7 @@ export function getIdentityProvider(name: IdentityProviderName): IdentityProvide
 
 /** List all configured identity providers. */
 export function getConfiguredProviders(): IdentityProviderName[] {
-  const allNames: IdentityProviderName[] = ["google", "apple", "authentik"];
-  return allNames.filter(isProviderConfigured);
+  return [...IDENTITY_PROVIDER_NAMES].filter(isProviderConfigured);
 }
 
 export { generateCodeVerifier, generateState };

@@ -43,3 +43,60 @@ export const PROVIDER_LABELS: Record<string, string> = {
 export function providerLabel(id: string): string {
   return PROVIDER_LABELS[id] ?? id;
 }
+
+/**
+ * Providers that have an SVG logo file (Simple Icons).
+ * Files live in public/logos/{id}.svg on web.
+ */
+export const SVG_LOGOS: ReadonlySet<string> = new Set([
+  "strava",
+  "garmin",
+  "fitbit",
+  "google",
+  "apple",
+  "peloton",
+  "trainerroad",
+  "komoot",
+  "eight-sleep",
+  "authentik",
+]);
+
+/**
+ * Providers that have a PNG logo file (App Store icons / provider websites).
+ * Files live in public/logos/{id}.png on web.
+ */
+export const PNG_LOGOS: ReadonlySet<string> = new Set([
+  "polar",
+  "zwift",
+  "suunto",
+  "wahoo",
+  "whoop",
+  "oura",
+  "withings",
+  "decathlon",
+  "coros",
+  "concept2",
+  "ride-with-gps",
+  "mapmyfitness",
+  "fatsecret",
+  "xert",
+  "ultrahuman",
+  "wger",
+  "strong-csv",
+  "cronometer-csv",
+  "cycling_analytics",
+  "apple_health",
+]);
+
+/** Brand colors used for the styled-letter fallback when no logo exists. */
+export const BRAND_COLORS: Readonly<Record<string, string>> = {
+  velohero: "#FF6600",
+  bodyspec: "#00B4D8",
+};
+
+/** Returns "svg", "png", or null depending on what logo file a provider has. */
+export function providerLogoType(id: string): "svg" | "png" | null {
+  if (SVG_LOGOS.has(id)) return "svg";
+  if (PNG_LOGOS.has(id)) return "png";
+  return null;
+}

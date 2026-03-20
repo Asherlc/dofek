@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { IDENTITY_PROVIDER_NAMES } from "@dofek/shared/auth";
 import { getOAuthRedirectUri } from "dofek/auth/oauth";
 import { DEFAULT_USER_ID } from "dofek/db/schema";
 import { sql } from "drizzle-orm";
@@ -64,10 +65,8 @@ const oauth1Secrets = new Map<
   { providerId: string; tokenSecret: string; userId: string }
 >();
 
-const IDENTITY_PROVIDERS: IdentityProviderName[] = ["google", "apple", "authentik"];
-
 function isIdentityProviderName(value: string): value is IdentityProviderName {
-  return IDENTITY_PROVIDERS.some((p) => p === value);
+  return IDENTITY_PROVIDER_NAMES.some((p) => p === value);
 }
 
 const SLACK_SCOPES = [
