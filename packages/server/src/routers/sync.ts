@@ -4,11 +4,15 @@ import { getAllProviders, registerProvider } from "dofek/providers/registry";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { startWorker } from "../lib/start-worker.ts";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
 const tokenRowSchema = z.object({ provider_id: z.string() });
+const lastSyncRowSchema = z.object({
+  provider_id: z.string(),
+  last_synced: timestampStringSchema,
+});
 
 // ── Input schemas ──
 export const triggerSyncInput = z.object({
@@ -140,18 +144,22 @@ export const syncRouter = router({
 
     // Batch: load all tokens + last sync times in 2 queries instead of 2N
     const [allTokens, lastSyncs] = await Promise.all([
-      ctx.db.execute<{ provider_id: string }>(
+      executeWithSchema(
+        ctx.db,
+        tokenRowSchema,
         sql`SELECT DISTINCT ot.provider_id
             FROM fitness.oauth_token ot
             JOIN fitness.provider p ON p.id = ot.provider_id
             WHERE p.user_id = ${ctx.userId}`,
       ),
-      ctx.db.execute<{ provider_id: string; last_synced: string }>(sql`
-        SELECT provider_id, MAX(synced_at) AS last_synced
-        FROM fitness.sync_log
-        WHERE user_id = ${ctx.userId}
-        GROUP BY provider_id
-      `),
+      executeWithSchema(
+        ctx.db,
+        lastSyncRowSchema,
+        sql`SELECT provider_id, MAX(synced_at) AS last_synced
+            FROM fitness.sync_log
+            WHERE user_id = ${ctx.userId}
+            GROUP BY provider_id`,
+      ),
     ]);
 
     const tokenSet = new Set(allTokens.map((r) => r.provider_id));

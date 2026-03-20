@@ -222,6 +222,28 @@ describe("formatRelativeTime", () => {
     const ago = new Date(Date.now() - 3 * 86400000).toISOString();
     expect(formatRelativeTime(ago)).toBe("3d ago");
   });
+
+  it("handles Date objects (postgres-js on Linux/ARM returns Date for timestamps)", () => {
+    const ago = new Date(Date.now() - 5 * 60000);
+    expect(formatRelativeTime(ago)).toBe("5m ago");
+  });
+
+  it("handles postgres-style timestamp strings without T separator", () => {
+    // postgres-js may return timestamps like "2024-01-15 10:30:00+00" (no T)
+    // Safari cannot parse this format
+    const now = new Date();
+    const fiveMinAgo = new Date(now.getTime() - 5 * 60000);
+    const pgFormat = fiveMinAgo.toISOString().replace("T", " ").replace("Z", "+00");
+    expect(formatRelativeTime(pgFormat)).toBe("5m ago");
+  });
+
+  it("returns null for completely invalid input", () => {
+    expect(formatRelativeTime("not-a-date")).toBeNull();
+  });
+
+  it("returns null for empty string", () => {
+    expect(formatRelativeTime("")).toBeNull();
+  });
 });
 
 describe("formatPace", () => {
