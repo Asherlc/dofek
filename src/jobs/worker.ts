@@ -1,9 +1,12 @@
 import { Worker } from "bullmq";
 import { createDatabaseFromEnv } from "../db/index.ts";
 import { jobContext, logger } from "../logger.ts";
+import { processExportJob } from "./process-export-job.ts";
 import { processImportJob } from "./process-import-job.ts";
 import { processSyncJob } from "./process-sync-job.ts";
 import {
+  EXPORT_QUEUE,
+  type ExportJobData,
   getRedisConnection,
   IMPORT_QUEUE,
   type ImportJobData,
@@ -28,6 +31,11 @@ const importWorker = new Worker<ImportJobData>(
   (job) => jobContext.run(job, () => processImportJob(job, db)),
   { connection },
 );
+const exportWorker = new Worker<ExportJobData>(
+  EXPORT_QUEUE,
+  (job) => jobContext.run(job, () => processExportJob(job, db)),
+  { connection },
+);
 
 // ── Idle spin-down ──
 
@@ -49,7 +57,7 @@ function startIdleTimer() {
   }, IDLE_TIMEOUT_MS);
 }
 
-for (const worker of [syncWorker, importWorker]) {
+for (const worker of [syncWorker, importWorker, exportWorker]) {
   worker.on("active", () => {
     activeJobs++;
     resetIdleTimer();
@@ -82,7 +90,7 @@ async function shutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
   logger.info("[worker] Shutting down gracefully...");
-  await Promise.all([syncWorker.close(), importWorker.close()]);
+  await Promise.all([syncWorker.close(), importWorker.close(), exportWorker.close()]);
   logger.info("[worker] Shutdown complete.");
   process.exit(0);
 }

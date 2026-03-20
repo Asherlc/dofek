@@ -1,8 +1,8 @@
 import { createWriteStream } from "node:fs";
 import { Readable } from "node:stream";
 import archiver from "archiver";
-import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
+import type { SyncDatabase } from "./db/index.ts";
 import { logger } from "./logger.ts";
 
 /** Configuration for a single table to export. */
@@ -10,7 +10,7 @@ interface ExportTableConfig {
   /** Filename in the ZIP (e.g., "activities.json") */
   name: string;
   /** SQL query that returns all rows for the given user */
-  query: (db: Database, userId: string) => Promise<Record<string, unknown>[]>;
+  query: (db: SyncDatabase, userId: string) => Promise<Record<string, unknown>[]>;
   /** If true, query in batches (for very large tables like metric_stream) */
   batched?: boolean;
 }
@@ -155,7 +155,7 @@ const EXPORT_TABLES: ExportTableConfig[] = [
  * Query metric_stream in batches and return a Readable stream of JSON array content.
  * This avoids loading the entire table into memory.
  */
-function createBatchedJsonStream(db: Database, userId: string): Readable {
+function createBatchedJsonStream(db: SyncDatabase, userId: string): Readable {
   let offset = 0;
   let started = false;
   let done = false;
@@ -209,7 +209,7 @@ function createBatchedJsonStream(db: Database, userId: string): Readable {
  * Generate a full data export ZIP file for the given user.
  */
 export async function generateExport(
-  db: Database,
+  db: SyncDatabase,
   userId: string,
   outputPath: string,
   onProgress: (info: ExportProgress) => void,

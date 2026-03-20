@@ -18,10 +18,17 @@ export interface ImportJobData {
   weightUnit?: "kg" | "lbs";
 }
 
+export interface ExportJobData {
+  userId: string;
+  /** Full path to the output ZIP file in the shared job-files directory */
+  outputPath: string;
+}
+
 // ── Queue names ──
 
 export const SYNC_QUEUE = "sync";
 export const IMPORT_QUEUE = "import";
+export const EXPORT_QUEUE = "export";
 
 // ── Shared Redis connection config ──
 
@@ -46,4 +53,8 @@ export function createSyncQueue(connection?: ConnectionOptions): Queue<SyncJobDa
 
 export function createImportQueue(connection?: ConnectionOptions): Queue<ImportJobData> {
   return new Queue(IMPORT_QUEUE, { connection: connection ?? getRedisConnection() });
+}
+
+export function createExportQueue(connection?: ConnectionOptions): Queue<ExportJobData> {
+  return new Queue(EXPORT_QUEUE, { connection: connection ?? getRedisConnection() });
 }

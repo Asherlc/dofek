@@ -41,6 +41,9 @@ importers:
       '@opentelemetry/winston-transport':
         specifier: ^0.23.0
         version: 0.23.0
+      archiver:
+        specifier: ^7.0.1
+        version: 7.0.1
       bullmq:
         specifier: ^5.71.0
         version: 5.71.0
@@ -99,6 +102,9 @@ importers:
       '@testing-library/react':
         specifier: ^16.3.2
         version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      '@types/archiver':
+        specifier: ^7.0.0
+        version: 7.0.0
       '@types/node':
         specifier: 22.19.15
         version: 22.19.15
@@ -317,9 +323,6 @@ importers:
       ai:
         specifier: 6.0.116
         version: 6.0.116(zod@3.25.76)
-      archiver:
-        specifier: ^7.0.1
-        version: 7.0.1
       arctic:
         specifier: ^3.7.0
         version: 3.7.0
@@ -345,9 +348,6 @@ importers:
         specifier: 3.25.76
         version: 3.25.76
     devDependencies:
-      '@types/archiver':
-        specifier: ^7.0.0
-        version: 7.0.0
       '@types/compression':
         specifier: 1.8.1
         version: 1.8.1

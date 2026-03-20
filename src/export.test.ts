@@ -25,17 +25,26 @@ vi.mock("./logger.ts", () => ({
   logger: { info: vi.fn(), warn: vi.fn() },
 }));
 
+import type { SyncDatabase } from "./db/index.ts";
 import { generateExport } from "./export.ts";
 
-function createMockDb(executeResults: Record<string, unknown>[][] = []) {
+// All DB functions are mocked — only execute is actually called by generateExport.
+const mockDb: SyncDatabase = {
+  select: vi.fn(),
+  insert: vi.fn(),
+  delete: vi.fn(),
+  execute: vi.fn(),
+};
+
+function setupMockDb(executeResults: Record<string, unknown>[][] = []) {
   let callIndex = 0;
-  return {
-    execute: vi.fn(() => {
-      const result = executeResults[callIndex] ?? [];
-      callIndex++;
-      return Promise.resolve(result);
-    }),
-  };
+  const execute = vi.fn(() => {
+    const result = executeResults[callIndex] ?? [];
+    callIndex++;
+    return Promise.resolve(result);
+  });
+  // Replace execute on the mock — Object.defineProperty avoids type mismatch
+  Object.defineProperty(mockDb, "execute", { value: execute, writable: true });
 }
 
 describe("generateExport", () => {
@@ -72,7 +81,7 @@ describe("generateExport", () => {
     // second batch read returns empty (end of data)
     executeResults.push([]);
 
-    const db = createMockDb(executeResults);
+    setupMockDb(executeResults);
     const progress: Array<{ percentage: number; message: string }> = [];
 
     // For the batched stream, we need to handle archive.append receiving a Readable
@@ -85,7 +94,7 @@ describe("generateExport", () => {
       }
     });
 
-    const result = await generateExport(db, "user-1", "/tmp/test.zip", (info) => {
+    const result = await generateExport(mockDb, "user-1", "/tmp/test.zip", (info) => {
       progress.push(info);
     });
 
@@ -107,7 +116,7 @@ describe("generateExport", () => {
     // metric-streams batch (empty)
     executeResults.push([]);
 
-    const db = createMockDb(executeResults);
+    setupMockDb(executeResults);
 
     mockArchive.append.mockImplementation((content: unknown, _opts: unknown) => {
       if (content instanceof Readable) {
@@ -115,7 +124,7 @@ describe("generateExport", () => {
       }
     });
 
-    const result = await generateExport(db, "user-1", "/tmp/test.zip", () => {});
+    const result = await generateExport(mockDb, "user-1", "/tmp/test.zip", () => {});
 
     expect(result.tableCount).toBe(16);
     expect(result.totalRecords).toBe(0);
@@ -129,7 +138,7 @@ describe("generateExport", () => {
     executeResults.push([{ count: "0" }]);
     executeResults.push([]);
 
-    const db = createMockDb(executeResults);
+    setupMockDb(executeResults);
     const progress: Array<{ percentage: number; message: string }> = [];
 
     mockArchive.append.mockImplementation((content: unknown, _opts: unknown) => {
@@ -138,7 +147,7 @@ describe("generateExport", () => {
       }
     });
 
-    await generateExport(db, "user-1", "/tmp/test.zip", (info) => {
+    await generateExport(mockDb, "user-1", "/tmp/test.zip", (info) => {
       progress.push(info);
     });
 
@@ -159,7 +168,7 @@ describe("generateExport", () => {
     executeResults.push([{ count: "0" }]);
     executeResults.push([]);
 
-    const db = createMockDb(executeResults);
+    setupMockDb(executeResults);
 
     mockArchive.append.mockImplementation((content: unknown, _opts: unknown) => {
       if (content instanceof Readable) {
@@ -167,15 +176,19 @@ describe("generateExport", () => {
       }
     });
 
-    await generateExport(db, "user-1", "/tmp/test.zip", () => {});
+    await generateExport(mockDb, "user-1", "/tmp/test.zip", () => {});
 
     // Find the metadata append call
-    const metadataCall = mockArchive.append.mock.calls.find((call: unknown[]) => {
-      return call[1]?.name === "export-metadata.json";
-    });
+    const metadataCall = mockArchive.append.mock.calls.find(
+      (call: unknown[]) =>
+        call[1] != null &&
+        typeof call[1] === "object" &&
+        "name" in call[1] &&
+        call[1].name === "export-metadata.json",
+    );
     expect(metadataCall).toBeDefined();
 
-    const metadata = JSON.parse(metadataCall[0]);
+    const metadata = JSON.parse(String(metadataCall?.[0]));
     expect(metadata.userId).toBe("user-1");
     expect(metadata.tables).toHaveLength(16);
     expect(metadata.totalRecords).toBe(0);
