@@ -12,12 +12,14 @@ import { SparkLine } from "../../components/charts/SparkLine";
 import { aggregateWeeklyVolume, workloadRatioColor, workloadRatioHint } from "../../lib/scoring";
 import type { WeekSummary } from "../../lib/scoring";
 import { trpc } from "../../lib/trpc";
+import { useUnitSystem } from "../../lib/units";
 import type { ActivityRow, WorkloadRow } from "../../types/api";
 import { ActivityRowSchema, WeeklyVolumeRowSchema } from "../../types/api";
 import { colors } from "../../theme";
 
 export default function StrainScreen() {
   const [days, setDays] = useState(30);
+  const unitSystem = useUnitSystem();
   const workloadQuery = trpc.recovery.workloadRatio.useQuery({ days });
   const workloadData = workloadQuery.data ?? [];
   const todayWorkload = workloadData[workloadData.length - 1];
@@ -183,6 +185,7 @@ export default function StrainScreen() {
                     avgPower={activity.avg_power ?? null}
                     distanceKm={activity.distance_meters ? activity.distance_meters / 1000 : null}
                     calories={activity.calories ?? null}
+                    unitSystem={unitSystem}
                   />
                 ))}
               </View>
