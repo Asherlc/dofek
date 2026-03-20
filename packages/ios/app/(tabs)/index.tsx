@@ -209,6 +209,14 @@ export default function OverviewScreen() {
       )
     : null;
 
+  const spo2Trend = stepsData
+    .filter((d: Record<string, unknown>) => d.spo2_avg != null)
+    .map((d: Record<string, unknown>) => Number(d.spo2_avg));
+
+  const skinTempTrend = stepsData
+    .filter((d: Record<string, unknown>) => d.skin_temp_c != null)
+    .map((d: Record<string, unknown>) => convertTemperature(Number(d.skin_temp_c), unitSystem));
+
   return (
     <ScrollView
       style={styles.container}
@@ -373,6 +381,40 @@ export default function OverviewScreen() {
               }
               subtitle={stressData?.trend ? `Trend: ${stressData.trend}` : undefined}
             />
+            {metrics?.latest_spo2 != null && (
+              <MetricCard
+                title="Blood Oxygen"
+                value={String(Math.round(metrics.latest_spo2))}
+                unit="%"
+                trend={spo2Trend}
+                color={colors.blue}
+                trendDirection={
+                  spo2Trend.length >= 2
+                    ? computeTrend(
+                        spo2Trend[spo2Trend.length - 1] ?? 0,
+                        spo2Trend[spo2Trend.length - 2] ?? 0,
+                      )
+                    : undefined
+                }
+              />
+            )}
+            {metrics?.latest_skin_temp != null && (
+              <MetricCard
+                title="Skin Temperature"
+                value={convertTemperature(metrics.latest_skin_temp, unitSystem).toFixed(1)}
+                unit={temperatureLabel(unitSystem)}
+                trend={skinTempTrend}
+                color={colors.orange}
+                trendDirection={
+                  skinTempTrend.length >= 2
+                    ? computeTrend(
+                        skinTempTrend[skinTempTrend.length - 1] ?? 0,
+                        skinTempTrend[skinTempTrend.length - 2] ?? 0,
+                      )
+                    : undefined
+                }
+              />
+            )}
           </View>
 
           {/* Recent activities */}
