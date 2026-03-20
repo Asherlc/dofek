@@ -1,5 +1,8 @@
+import { formatPace } from "@dofek/shared/format";
 import type { ActivityComparisonRow } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
+import { useUnitSystem } from "../lib/unitContext.ts";
+import { convertPace, paceLabel } from "../lib/units.ts";
 
 interface ActivityComparisonChartProps {
   data: ActivityComparisonRow[];
@@ -17,14 +20,8 @@ const SERIES_COLORS = [
   "#f97316",
 ];
 
-function formatPace(minPerKm: number): string {
-  const totalSeconds = Math.round(minPerKm * 60);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
-}
-
 export function ActivityComparisonChart({ data, loading }: ActivityComparisonChartProps) {
+  const { unitSystem } = useUnitSystem();
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[280px]">
@@ -46,7 +43,10 @@ export function ActivityComparisonChart({ data, loading }: ActivityComparisonCha
   const series = data.map((route, index) => ({
     name: route.activityName,
     type: "line" as const,
-    data: route.instances.map((instance) => [instance.date, instance.averagePaceMinPerKm]),
+    data: route.instances.map((instance) => [
+      instance.date,
+      convertPace(instance.averagePaceMinPerKm * 60, unitSystem),
+    ]),
     symbol: "circle",
     symbolSize: 8,
     lineStyle: { color: SERIES_COLORS[index % SERIES_COLORS.length], width: 2 },
@@ -70,7 +70,7 @@ export function ActivityComparisonChart({ data, loading }: ActivityComparisonCha
         return [
           `<strong>${seriesName}</strong>`,
           `Date: ${date}`,
-          `Pace: ${formatPace(pace)}/km`,
+          `Pace: ${formatPace(pace)} ${paceLabel(unitSystem)}`,
         ].join("<br/>");
       },
     },
@@ -87,7 +87,7 @@ export function ActivityComparisonChart({ data, loading }: ActivityComparisonCha
     },
     yAxis: {
       type: "value",
-      name: "Pace (min/km)",
+      name: `Pace (min${paceLabel(unitSystem)})`,
       inverse: true,
       splitLine: { lineStyle: { color: "#27272a" } },
       axisLabel: {

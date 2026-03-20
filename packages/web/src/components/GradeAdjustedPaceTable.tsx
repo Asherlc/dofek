@@ -1,18 +1,22 @@
+import { formatPace } from "@dofek/shared/format";
 import type { GradeAdjustedPaceRow } from "dofek-server/types";
+import { useUnitSystem } from "../lib/unitContext.ts";
+import {
+  convertDistance,
+  convertElevation,
+  convertPace,
+  distanceLabel,
+  elevationLabel,
+  paceLabel,
+} from "../lib/units.ts";
 
 interface GradeAdjustedPaceTableProps {
   data: GradeAdjustedPaceRow[];
   loading?: boolean;
 }
 
-function formatPace(minPerKm: number): string {
-  const totalSeconds = Math.round(minPerKm * 60);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
-}
-
 export function GradeAdjustedPaceTable({ data, loading }: GradeAdjustedPaceTableProps) {
+  const { unitSystem } = useUnitSystem();
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[200px]">
@@ -63,17 +67,25 @@ export function GradeAdjustedPaceTable({ data, loading }: GradeAdjustedPaceTable
                     {new Date(row.date).toLocaleDateString()}
                   </td>
                   <td className="py-2 pr-4 text-zinc-300">{row.activityName}</td>
-                  <td className="py-2 pr-4 tabular-nums">{row.distanceKm.toFixed(1)} km</td>
+                  <td className="py-2 pr-4 tabular-nums">
+                    {convertDistance(row.distanceKm, unitSystem).toFixed(1)}{" "}
+                    {distanceLabel(unitSystem)}
+                  </td>
                   <td className="py-2 pr-4 tabular-nums">{row.durationMinutes.toFixed(0)} min</td>
                   <td className="py-2 pr-4 tabular-nums">
-                    {formatPace(row.averagePaceMinPerKm)}/km
+                    {formatPace(convertPace(row.averagePaceMinPerKm * 60, unitSystem))}{" "}
+                    {paceLabel(unitSystem)}
                   </td>
                   <td
                     className={`py-2 pr-4 tabular-nums ${highlightGap ? "text-amber-400 font-medium" : ""}`}
                   >
-                    {formatPace(row.gradeAdjustedPaceMinPerKm)}/km
+                    {formatPace(convertPace(row.gradeAdjustedPaceMinPerKm * 60, unitSystem))}{" "}
+                    {paceLabel(unitSystem)}
                   </td>
-                  <td className="py-2 tabular-nums">{row.elevationGainMeters} m</td>
+                  <td className="py-2 tabular-nums">
+                    {Math.round(convertElevation(row.elevationGainMeters, unitSystem))}{" "}
+                    {elevationLabel(unitSystem)}
+                  </td>
                 </tr>
               );
             })}

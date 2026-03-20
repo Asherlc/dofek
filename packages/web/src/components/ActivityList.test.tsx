@@ -1,6 +1,9 @@
 /** @vitest-environment jsdom */
 import { fireEvent, render, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
+import { UnitContext } from "../lib/unitContext.ts";
+import type { UnitSystem } from "../lib/units.ts";
 import { type Activity, ActivityList } from "./ActivityList";
 
 // Mock @tanstack/react-router
@@ -8,6 +11,14 @@ const mockNavigate = vi.fn();
 vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => mockNavigate,
 }));
+
+function renderWithUnits(ui: ReactNode, unitSystem: UnitSystem = "metric") {
+  return render(
+    <UnitContext.Provider value={{ unitSystem, setUnitSystem: () => {} }}>
+      {ui}
+    </UnitContext.Provider>,
+  );
+}
 
 describe("ActivityList", () => {
   const mockActivities: Activity[] = [
@@ -24,16 +35,21 @@ describe("ActivityList", () => {
     },
   ];
 
-  it("renders a list of activities", () => {
-    render(<ActivityList activities={mockActivities} />);
+  it("renders a list of activities with metric units", () => {
+    renderWithUnits(<ActivityList activities={mockActivities} />, "metric");
     expect(screen.getByText("Morning Run")).toBeDefined();
     expect(screen.getByText("running")).toBeDefined();
-    expect(screen.getByText("5.0km")).toBeDefined();
+    expect(screen.getByText("5.0 km")).toBeDefined();
     expect(screen.getByText("450 kcal")).toBeDefined();
   });
 
+  it("renders distances in imperial units", () => {
+    renderWithUnits(<ActivityList activities={mockActivities} />, "imperial");
+    expect(screen.getByText("3.1 mi")).toBeDefined();
+  });
+
   it("navigates to activity detail on row click", () => {
-    render(<ActivityList activities={mockActivities} />);
+    renderWithUnits(<ActivityList activities={mockActivities} />);
     const row = screen.getByText("Morning Run").closest("tr");
     if (!row) throw new Error("Row not found");
     fireEvent.click(row);
@@ -44,12 +60,12 @@ describe("ActivityList", () => {
   });
 
   it("shows empty state when no activities", () => {
-    render(<ActivityList activities={[]} />);
+    renderWithUnits(<ActivityList activities={[]} />);
     expect(screen.getByText("No recent activities")).toBeDefined();
   });
 
   it("renders loading state", () => {
-    render(<ActivityList activities={[]} loading={true} />);
+    renderWithUnits(<ActivityList activities={[]} loading={true} />);
     // ChartLoadingSkeleton should be visible
     const skeleton = document.querySelector(".animate-pulse");
     expect(skeleton).toBeDefined();
@@ -69,7 +85,7 @@ describe("ActivityList", () => {
         calories: undefined,
       },
     ];
-    render(<ActivityList activities={activityWithoutStats} />);
+    renderWithUnits(<ActivityList activities={activityWithoutStats} />);
     // Should show the dash/placeholder
     const cells = screen.getAllByText("—");
     expect(cells.length).toBeGreaterThanOrEqual(2);
