@@ -22,6 +22,7 @@ type SyncStatus = "idle" | "syncing" | "done" | "error";
 interface ProviderState {
   status: SyncStatus;
   message?: string;
+  percentage?: number;
 }
 
 export function DataSourcesPanel() {
@@ -496,11 +497,28 @@ function SyncProviderCard({
         {state.status === "syncing" && <span className="text-xs text-zinc-500">...</span>}
       </button>
 
+      {/* Progress bar during sync */}
+      {state.status === "syncing" && (
+        <div className="mt-2">
+          {state.percentage != null && (
+            <div className="w-full h-1.5 rounded-full bg-zinc-800 overflow-hidden">
+              <div
+                className="h-full rounded-full bg-emerald-500 transition-all duration-300"
+                style={{ width: `${state.percentage}%` }}
+              />
+            </div>
+          )}
+          {state.message && (
+            <span className="text-xs text-zinc-500 mt-1 block">{state.message}</span>
+          )}
+        </div>
+      )}
+
       {/* Status message */}
       {state.message && state.status !== "syncing" && (
         <span className="text-xs text-zinc-500 mt-1">{state.message}</span>
       )}
-      {!state.message && provider.lastSyncedAt && (
+      {state.status !== "syncing" && !state.message && provider.lastSyncedAt && (
         <span className="text-xs text-zinc-600 mt-1">
           Last sync: {formatRelativeTime(provider.lastSyncedAt)}
         </span>
