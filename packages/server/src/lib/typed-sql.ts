@@ -1,6 +1,6 @@
 import type { Database } from "dofek/db";
 import type { SQL } from "drizzle-orm";
-import type { z } from "zod";
+import { z } from "zod";
 
 /**
  * Execute a raw SQL query and parse each row with a Zod schema.
@@ -15,3 +15,12 @@ export async function executeWithSchema<T extends z.ZodType>(
   const rows = await db.execute(query);
   return rows.map((row) => schema.parse(row));
 }
+
+/**
+ * Zod schema for SQL date columns (::date).
+ * The postgres-js driver returns Date objects on some platforms (Linux/ARM)
+ * and strings on others (macOS). This schema normalizes both to YYYY-MM-DD.
+ */
+export const dateStringSchema = z
+  .union([z.string(), z.date()])
+  .transform((value) => (value instanceof Date ? value.toISOString().slice(0, 10) : value));

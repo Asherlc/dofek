@@ -1,11 +1,14 @@
 import { createSyncQueue } from "dofek/jobs/queues";
+import { ProviderModel } from "dofek/providers/provider-model";
 import { getAllProviders, registerProvider } from "dofek/providers/registry";
-import { getProviderAuthType } from "dofek/providers/types";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { startWorker } from "../lib/start-worker.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
+
+const tokenRowSchema = z.object({ provider_id: z.string() });
 
 // ── Input schemas ──
 export const triggerSyncInput = z.object({
@@ -163,19 +166,14 @@ export const syncRouter = router({
           garmin: "custom:garmin",
         };
 
-        const baseAuthType = getProviderAuthType(p);
-        const authType = CUSTOM_AUTH_PROVIDERS[p.id] ?? baseAuthType;
-        const needsAuth = authType !== "none" && authType !== "file-import";
-        const authorized = needsAuth ? tokenSet.has(p.id) : true;
-        const lastSyncedAt = lastSyncMap.get(p.id) ?? null;
-
+        const model = new ProviderModel(p, tokenSet, lastSyncMap, CUSTOM_AUTH_PROVIDERS);
         return {
-          id: p.id,
-          name: p.name,
-          authType,
-          authorized,
-          lastSyncedAt,
-          importOnly: p.importOnly === true,
+          id: model.id,
+          name: model.name,
+          authType: model.authType,
+          authorized: model.isConnected,
+          lastSyncedAt: model.lastSyncedAt,
+          importOnly: model.importOnly,
         };
       });
   }),
@@ -187,7 +185,7 @@ export const syncRouter = router({
     const providerIds: string[] = [];
 
     // Validate provider exists and is configured before enqueuing.
-    // For "sync all", fan out into one BullMQ job per configured provider.
+    // For "sync all", fan out into one BullMQ job per connected provider.
     if (input.providerId) {
       const provider = getAllProviders().find((p) => p.id === input.providerId);
       if (!provider) throw new Error(`Unknown provider: ${input.providerId}`);
@@ -195,11 +193,24 @@ export const syncRouter = router({
       if (validation) throw new Error(`Provider not configured: ${validation}`);
       providerIds.push(provider.id);
     } else {
-      providerIds.push(
-        ...getAllProviders()
-          .filter((provider) => provider.validate() === null && !provider.importOnly)
-          .map((provider) => provider.id),
+      // Check which providers have tokens to determine connectivity
+      const allTokens = await executeWithSchema(
+        ctx.db,
+        tokenRowSchema,
+        sql`SELECT DISTINCT ot.provider_id
+            FROM fitness.oauth_token ot
+            JOIN fitness.provider p ON p.id = ot.provider_id
+            WHERE p.user_id = ${ctx.userId}`,
       );
+      const tokenSet = new Set(allTokens.map((r) => r.provider_id));
+
+      for (const provider of getAllProviders()) {
+        if (provider.validate() !== null) continue;
+        const model = new ProviderModel(provider, tokenSet);
+        if (model.importOnly || !model.isConnected) continue;
+        providerIds.push(model.id);
+      }
+
       if (providerIds.length === 0) throw new Error("No configured providers available for sync");
     }
 

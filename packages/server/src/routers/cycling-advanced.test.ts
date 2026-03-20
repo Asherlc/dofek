@@ -13,18 +13,22 @@ vi.mock("../trpc.ts", async () => {
   };
 });
 
-vi.mock("../lib/typed-sql.ts", () => ({
-  executeWithSchema: vi.fn(
-    async (
-      db: { execute: (query: unknown) => Promise<unknown[]> },
-      schema: { parse: (row: unknown) => unknown },
-      query: unknown,
-    ) => {
-      const rows = await db.execute(query);
-      return rows.map((row) => schema.parse(row));
-    },
-  ),
-}));
+vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../lib/typed-sql.ts")>();
+  return {
+    ...original,
+    executeWithSchema: vi.fn(
+      async (
+        db: { execute: (query: unknown) => Promise<unknown[]> },
+        schema: { parse: (row: unknown) => unknown },
+        query: unknown,
+      ) => {
+        const rows = await db.execute(query);
+        return rows.map((row) => schema.parse(row));
+      },
+    ),
+  };
+});
 
 vi.mock("../lib/endurance-types.ts", () => ({
   enduranceTypeFilter: (alias: string) => {

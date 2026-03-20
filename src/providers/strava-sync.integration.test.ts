@@ -170,7 +170,7 @@ describe("StravaProvider.sync() (integration)", () => {
 
     server.use(...stravaHandlers(activities));
 
-    const provider = new StravaProvider();
+    const provider = new StravaProvider(globalThis.fetch, 0);
     const since = new Date("2026-02-01T00:00:00Z");
     const result = await provider.sync(ctx.db, since);
 
@@ -213,7 +213,7 @@ describe("StravaProvider.sync() (integration)", () => {
 
     server.use(...stravaHandlers(activities));
 
-    const provider = new StravaProvider();
+    const provider = new StravaProvider(globalThis.fetch, 0);
     await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
     await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
@@ -232,7 +232,7 @@ describe("StravaProvider.sync() (integration)", () => {
 
     server.use(...stravaHandlers([]));
 
-    const provider = new StravaProvider();
+    const provider = new StravaProvider(globalThis.fetch, 0);
     await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     const { loadTokens } = await import("../db/tokens.ts");
@@ -252,7 +252,7 @@ describe("StravaProvider.sync() (integration)", () => {
 
     server.use(...stravaHandlers(activities, { streamsError: true }));
 
-    const provider = new StravaProvider();
+    const provider = new StravaProvider(globalThis.fetch, 0);
     const result = await provider.sync(ctx.db, new Date("2026-04-01T00:00:00Z"));
 
     // Activity should still be inserted
@@ -280,7 +280,7 @@ describe("StravaProvider.sync() (integration)", () => {
 
     server.use(...stravaHandlers(activities, { rateLimited: true }));
 
-    const provider = new StravaProvider();
+    const provider = new StravaProvider(globalThis.fetch, 0);
     const result = await provider.sync(ctx.db, new Date("2026-05-01T00:00:00Z"));
 
     // Should report rate limit error
@@ -293,7 +293,7 @@ describe("StravaProvider.sync() (integration)", () => {
     const { oauthToken } = await import("../db/schema.ts");
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "strava"));
 
-    const provider = new StravaProvider();
+    const provider = new StravaProvider(globalThis.fetch, 0);
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);

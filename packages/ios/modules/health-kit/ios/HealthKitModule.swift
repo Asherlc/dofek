@@ -46,7 +46,7 @@ public class HealthKitModule: Module {
                     return
                 }
                 let samples = (results as? [HKQuantitySample])?.map { sample -> [String: Any] in
-                    let unit = self.preferredUnit(for: sampleType)
+                    let unit = HealthKitQueries.preferredUnit(for: sampleType)
                     return [
                         "type": typeIdentifier,
                         "value": sample.quantity.doubleValue(for: unit),
@@ -197,7 +197,7 @@ public class HealthKitModule: Module {
                 }
 
                 let samples = (added as? [HKQuantitySample])?.map { sample -> [String: Any] in
-                    let unit = self.preferredUnit(for: sampleType)
+                    let unit = HealthKitQueries.preferredUnit(for: sampleType)
                     return [
                         "type": typeIdentifier,
                         "value": sample.quantity.doubleValue(for: unit),
@@ -230,6 +230,61 @@ public class HealthKitModule: Module {
             self.healthStore.execute(query)
         }
 
+        AsyncFunction("queryDailyStatistics") { (typeIdentifier: String, startDateStr: String, endDateStr: String, promise: Promise) in
+            guard let quantityType = HKQuantityType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: typeIdentifier)) else {
+                promise.reject("INVALID_TYPE", "Unknown quantity type: \(typeIdentifier)")
+                return
+            }
+            guard let startDate = HealthKitQueries.parseDate(startDateStr),
+                  let endDate = HealthKitQueries.parseDate(endDateStr) else {
+                promise.reject("INVALID_DATE", "Invalid ISO 8601 date format")
+                return
+            }
+
+            let calendar = Calendar.current
+            let interval = DateComponents(day: 1)
+            let anchorDate = calendar.startOfDay(for: startDate)
+
+            let query = HKStatisticsCollectionQuery(
+                quantityType: quantityType,
+                quantitySamplePredicate: HealthKitQueries.datePredicate(start: startDate, end: endDate),
+                options: .cumulativeSum,
+                anchorDate: anchorDate,
+                intervalComponents: interval
+            )
+
+            query.initialResultsHandler = { _, results, error in
+                if let error = error {
+                    promise.reject("QUERY_ERROR", error.localizedDescription)
+                    return
+                }
+
+                guard let results = results else {
+                    promise.resolve([])
+                    return
+                }
+
+                let unit = self.preferredUnit(for: quantityType)
+                let dateFormatter = DateFormatter()
+                dateFormatter.dateFormat = "yyyy-MM-dd"
+                dateFormatter.timeZone = .current
+
+                var dailyValues: [[String: Any]] = []
+                results.enumerateStatistics(from: startDate, to: endDate) { statistics, _ in
+                    if let sum = statistics.sumQuantity() {
+                        dailyValues.append([
+                            "date": dateFormatter.string(from: statistics.startDate),
+                            "value": sum.doubleValue(for: unit),
+                        ])
+                    }
+                }
+
+                promise.resolve(dailyValues)
+            }
+
+            self.healthStore.execute(query)
+        }
+
         AsyncFunction("enableBackgroundDelivery") { (typeIdentifier: String, promise: Promise) in
             guard let sampleType = HKQuantityType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: typeIdentifier)) else {
                 promise.reject("INVALID_TYPE", "Unknown quantity type: \(typeIdentifier)")
@@ -246,59 +301,4 @@ public class HealthKitModule: Module {
         }
     }
 
-    /// Return the preferred unit for a given quantity type
-    private func preferredUnit(for quantityType: HKQuantityType) -> HKUnit {
-        switch quantityType.identifier {
-        case HKQuantityTypeIdentifier.heartRate.rawValue,
-             HKQuantityTypeIdentifier.restingHeartRate.rawValue:
-            return HKUnit.count().unitDivided(by: .minute())
-        case HKQuantityTypeIdentifier.bodyMass.rawValue,
-             HKQuantityTypeIdentifier.leanBodyMass.rawValue:
-            return .gramUnit(with: .kilo)
-        case HKQuantityTypeIdentifier.bodyFatPercentage.rawValue,
-             HKQuantityTypeIdentifier.oxygenSaturation.rawValue,
-             HKQuantityTypeIdentifier.walkingDoubleSupportPercentage.rawValue,
-             HKQuantityTypeIdentifier.walkingAsymmetryPercentage.rawValue:
-            return .percent()
-        case HKQuantityTypeIdentifier.height.rawValue:
-            return .meterUnit(with: .centi)
-        case HKQuantityTypeIdentifier.heartRateVariabilitySDNN.rawValue:
-            return .secondUnit(with: .milli)
-        case HKQuantityTypeIdentifier.distanceWalkingRunning.rawValue,
-             HKQuantityTypeIdentifier.distanceCycling.rawValue:
-            return .meter()
-        case HKQuantityTypeIdentifier.activeEnergyBurned.rawValue,
-             HKQuantityTypeIdentifier.basalEnergyBurned.rawValue,
-             HKQuantityTypeIdentifier.dietaryEnergyConsumed.rawValue:
-            return .kilocalorie()
-        case HKQuantityTypeIdentifier.stepCount.rawValue,
-             HKQuantityTypeIdentifier.flightsClimbed.rawValue:
-            return .count()
-        case HKQuantityTypeIdentifier.appleExerciseTime.rawValue,
-             HKQuantityTypeIdentifier.appleStandTime.rawValue:
-            return .minute()
-        case HKQuantityTypeIdentifier.respiratoryRate.rawValue:
-            return HKUnit.count().unitDivided(by: .minute())
-        case HKQuantityTypeIdentifier.vo2Max.rawValue:
-            return HKUnit(from: "mL/kg*min")
-        case HKQuantityTypeIdentifier.walkingSpeed.rawValue:
-            return HKUnit.meter().unitDivided(by: .second())
-        case HKQuantityTypeIdentifier.walkingStepLength.rawValue:
-            return .meterUnit(with: .centi)
-        case HKQuantityTypeIdentifier.bodyTemperature.rawValue,
-             HKQuantityTypeIdentifier.appleSleepingWristTemperature.rawValue:
-            return .degreeCelsius()
-        case HKQuantityTypeIdentifier.bloodGlucose.rawValue:
-            return HKUnit(from: "mmol/L")
-        case HKQuantityTypeIdentifier.environmentalAudioExposure.rawValue,
-             HKQuantityTypeIdentifier.headphoneAudioExposure.rawValue:
-            return .decibelAWeightedSoundPressureLevel()
-        case HKQuantityTypeIdentifier.dietaryProtein.rawValue,
-             HKQuantityTypeIdentifier.dietaryCarbohydrates.rawValue,
-             HKQuantityTypeIdentifier.dietaryFatTotal.rawValue:
-            return .gram()
-        default:
-            return .count()
-        }
-    }
 }

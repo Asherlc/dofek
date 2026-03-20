@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 const RUNNING_TYPES = ["running", "trail_running"];
@@ -41,7 +41,7 @@ export const runningRouter = router({
     .input(daysInput)
     .query(async ({ ctx, input }): Promise<RunningDynamicsRow[]> => {
       const dynamicsRowSchema = z.object({
-        date: z.string(),
+        date: dateStringSchema,
         name: z.string(),
         avg_cadence: z.coerce.number(),
         avg_stride_length: z.coerce.number().nullable(),
@@ -92,7 +92,7 @@ export const runningRouter = router({
     .input(daysInput)
     .query(async ({ ctx, input }): Promise<PaceTrendRow[]> => {
       const paceTrendRowSchema = z.object({
-        date: z.string(),
+        date: dateStringSchema,
         name: z.string(),
         avg_speed: z.coerce.number(),
         total_distance: z.coerce.number(),

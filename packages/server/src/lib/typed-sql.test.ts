@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { executeWithSchema } from "./typed-sql.ts";
+import { dateStringSchema, executeWithSchema } from "./typed-sql.ts";
 
 const mockExecute = vi.fn();
 
@@ -102,5 +102,25 @@ describe("executeWithSchema", () => {
     const result = await executeWithSchema(mockDb, schema, sql`SELECT *`);
 
     expect(result).toEqual([{ id: 1 }]);
+  });
+});
+
+describe("dateStringSchema", () => {
+  it("passes through a YYYY-MM-DD string unchanged", () => {
+    expect(dateStringSchema.parse("2024-01-15")).toBe("2024-01-15");
+  });
+
+  it("transforms a Date object to YYYY-MM-DD string", () => {
+    expect(dateStringSchema.parse(new Date("2024-01-15T00:00:00.000Z"))).toBe("2024-01-15");
+  });
+
+  it("transforms a Date at end-of-year correctly", () => {
+    expect(dateStringSchema.parse(new Date("2024-12-31T00:00:00.000Z"))).toBe("2024-12-31");
+  });
+
+  it("rejects non-string non-date values", () => {
+    expect(() => dateStringSchema.parse(12345)).toThrow(z.ZodError);
+    expect(() => dateStringSchema.parse(null)).toThrow(z.ZodError);
+    expect(() => dateStringSchema.parse(undefined)).toThrow(z.ZodError);
   });
 });

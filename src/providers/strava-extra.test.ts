@@ -27,7 +27,7 @@ describe("StravaClient", () => {
       ]),
     );
 
-    const client = new StravaClient("test-token", mockFetch);
+    const client = new StravaClient("test-token", mockFetch, 0);
     const result = await client.getActivities(1000, 2, 50);
 
     expect(mockFetch).toHaveBeenCalledOnce();
@@ -77,7 +77,7 @@ describe("StravaClient", () => {
       ]),
     );
 
-    const client = new StravaClient("test-token", mockFetch);
+    const client = new StravaClient("test-token", mockFetch, 0);
     const streams = await client.getActivityStreams(12345);
 
     const calledUrl = String(mockFetch.mock.calls[0]?.[0]);
@@ -105,7 +105,7 @@ describe("StravaProvider.sync", () => {
     process.env.STRAVA_CLIENT_SECRET = "secret";
 
     const mockFetch = vi.fn();
-    const provider = new StravaProvider(mockFetch);
+    const provider = new StravaProvider(mockFetch, 0);
 
     // Mock db with loadTokens returning null
     const mockDb = {
@@ -141,7 +141,7 @@ describe("StravaProvider.sync", () => {
       return Response.json([]);
     });
 
-    const provider = new StravaProvider(mockFetch);
+    const provider = new StravaProvider(mockFetch, 0);
 
     // Provide tokens
     const futureDate = new Date("2099-01-01");
@@ -307,7 +307,7 @@ describe("StravaProvider.sync — additional coverage", () => {
     });
 
     const mockDb = createMockDb();
-    const provider = new StravaProvider(mockFetch);
+    const provider = new StravaProvider(mockFetch, 0);
 
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
 
@@ -383,7 +383,7 @@ describe("StravaProvider.sync — additional coverage", () => {
       execute: vi.fn().mockResolvedValue([]),
     };
 
-    const provider = new StravaProvider(mockFetch);
+    const provider = new StravaProvider(mockFetch, 0);
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
 
     expect(result.errors).toHaveLength(0);
@@ -432,7 +432,7 @@ describe("StravaProvider.sync — additional coverage", () => {
     });
 
     const mockDb = createMockDb();
-    const provider = new StravaProvider(mockFetch);
+    const provider = new StravaProvider(mockFetch, 0);
 
     await provider.sync(mockDb, sinceDate);
 
@@ -459,7 +459,7 @@ describe("StravaProvider.sync — additional coverage", () => {
     });
 
     const mockDb = createMockDb();
-    const provider = new StravaProvider(mockFetch);
+    const provider = new StravaProvider(mockFetch, 0);
 
     await provider.sync(mockDb, sinceDate);
 
@@ -493,7 +493,7 @@ describe("StravaProvider.sync — additional coverage", () => {
     });
 
     const mockDb = createMockDb();
-    const provider = new StravaProvider(mockFetch);
+    const provider = new StravaProvider(mockFetch, 0);
 
     await provider.sync(mockDb, new Date("2026-01-01"));
 
@@ -544,7 +544,7 @@ describe("StravaProvider.sync — additional coverage", () => {
       execute: vi.fn().mockResolvedValue([]),
     };
 
-    const provider = new StravaProvider(mockFetch);
+    const provider = new StravaProvider(mockFetch, 0);
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
 
     expect(activitiesCallCount).toBe(2);
@@ -572,7 +572,7 @@ describe("StravaProvider.sync — additional coverage", () => {
 
     const mockDb = createMockDb();
     const onProgress = vi.fn();
-    const provider = new StravaProvider(mockFetch);
+    const provider = new StravaProvider(mockFetch, 0);
 
     await provider.sync(mockDb, new Date("2026-01-01"), onProgress);
 
@@ -594,7 +594,7 @@ describe("StravaProvider.sync — additional coverage", () => {
     });
 
     const mockDb = createMockDb();
-    const provider = new StravaProvider(mockFetch);
+    const provider = new StravaProvider(mockFetch, 0);
 
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
 
@@ -622,7 +622,7 @@ describe("StravaProvider.sync — additional coverage", () => {
     });
 
     const mockDb = createMockDb();
-    const provider = new StravaProvider(mockFetch);
+    const provider = new StravaProvider(mockFetch, 0);
 
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
 
@@ -642,7 +642,7 @@ describe("StravaProvider.sync — additional coverage", () => {
     });
 
     const mockDb = createMockDb();
-    const provider = new StravaProvider(mockFetch);
+    const provider = new StravaProvider(mockFetch, 0);
 
     const before = Date.now();
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
@@ -681,7 +681,7 @@ describe("StravaProvider.sync — additional coverage", () => {
     });
 
     const mockDb = createMockDb([EXPIRED_TOKEN]);
-    const provider = new StravaProvider(mockFetch);
+    const provider = new StravaProvider(mockFetch, 0);
 
     await provider.sync(mockDb, new Date("2026-01-01"));
 
@@ -703,7 +703,7 @@ describe("StravaProvider.sync — additional coverage", () => {
     });
 
     const mockDb = createMockDb([VALID_TOKEN]);
-    const provider = new StravaProvider(mockFetch);
+    const provider = new StravaProvider(mockFetch, 0);
 
     await provider.sync(mockDb, new Date("2026-01-01"));
 
@@ -754,7 +754,7 @@ describe("StravaProvider.sync — additional coverage", () => {
       execute: vi.fn().mockResolvedValue([]),
     };
 
-    const provider = new StravaProvider(mockFetch);
+    const provider = new StravaProvider(mockFetch, 0);
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
 
     // rateLimited breaks out of inner loop and sets hasMore = false
@@ -779,7 +779,7 @@ describe("StravaProvider.sync — additional coverage", () => {
     });
 
     const mockDb = createMockDb();
-    const provider = new StravaProvider(mockFetch);
+    const provider = new StravaProvider(mockFetch, 0);
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(1);
@@ -797,7 +797,7 @@ describe("StravaProvider.sync — additional coverage", () => {
     });
 
     const mockDb = createMockDb();
-    const provider = new StravaProvider(mockFetch);
+    const provider = new StravaProvider(mockFetch, 0);
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
 
     expect(result.recordsSynced).toBe(0);
@@ -845,7 +845,7 @@ describe("StravaProvider.sync — additional coverage", () => {
       execute: vi.fn().mockResolvedValue([]),
     };
 
-    const provider = new StravaProvider(mockFetch);
+    const provider = new StravaProvider(mockFetch, 0);
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
 
     expect(returningMock).toHaveBeenCalledWith(
@@ -881,7 +881,7 @@ describe("StravaProvider.sync — additional coverage", () => {
     });
 
     const mockDb = createMockDb();
-    const provider = new StravaProvider(mockFetch);
+    const provider = new StravaProvider(mockFetch, 0);
 
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
 
@@ -935,7 +935,7 @@ describe("StravaProvider.sync — additional coverage", () => {
       execute: vi.fn().mockResolvedValue([]),
     };
 
-    const provider = new StravaProvider(mockFetch);
+    const provider = new StravaProvider(mockFetch, 0);
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
 
     expect(result.recordsSynced).toBe(1);
@@ -1007,7 +1007,7 @@ describe("StravaProvider.sync — additional coverage", () => {
       execute: vi.fn().mockResolvedValue([]),
     };
 
-    const provider = new StravaProvider(mockFetch);
+    const provider = new StravaProvider(mockFetch, 0);
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
 
     expect(result.recordsSynced).toBe(1);
@@ -1033,7 +1033,7 @@ describe("StravaProvider.sync — additional coverage", () => {
     });
 
     const mockDb = createMockDb();
-    const provider = new StravaProvider(mockFetch);
+    const provider = new StravaProvider(mockFetch, 0);
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
 
     expect(result.recordsSynced).toBe(1);
@@ -1059,7 +1059,7 @@ describe("StravaProvider.sync — additional coverage", () => {
     });
 
     const mockDb = createMockDb();
-    const provider = new StravaProvider(mockFetch);
+    const provider = new StravaProvider(mockFetch, 0);
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
 
     expect(result.recordsSynced).toBe(1);
@@ -1115,7 +1115,7 @@ describe("StravaProvider.sync — additional coverage", () => {
       execute: vi.fn().mockResolvedValue([]),
     };
 
-    const provider = new StravaProvider(mockFetch);
+    const provider = new StravaProvider(mockFetch, 0);
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
 
     // Both activities should be counted even though first streams call failed

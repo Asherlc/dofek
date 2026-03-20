@@ -110,40 +110,42 @@ export interface FatSecretFoodEntry {
 export interface FatSecretFoodEntriesResponse {
   food_entries: {
     food_entry: FatSecretFoodEntry[];
-  };
+  } | null;
 }
 
 const fatSecretFoodEntriesResponseSchema = z.object({
-  food_entries: z.object({
-    food_entry: z.array(
-      z.object({
-        food_entry_id: z.string(),
-        food_entry_name: z.string(),
-        food_entry_description: z.string(),
-        food_id: z.string(),
-        serving_id: z.string(),
-        number_of_units: z.string(),
-        meal: z.string(),
-        date_int: z.string(),
-        calories: z.string(),
-        carbohydrate: z.string(),
-        protein: z.string(),
-        fat: z.string(),
-        saturated_fat: z.string().optional(),
-        polyunsaturated_fat: z.string().optional(),
-        monounsaturated_fat: z.string().optional(),
-        cholesterol: z.string().optional(),
-        sodium: z.string().optional(),
-        potassium: z.string().optional(),
-        fiber: z.string().optional(),
-        sugar: z.string().optional(),
-        vitamin_a: z.string().optional(),
-        vitamin_c: z.string().optional(),
-        calcium: z.string().optional(),
-        iron: z.string().optional(),
-      }),
-    ),
-  }),
+  food_entries: z
+    .object({
+      food_entry: z.array(
+        z.object({
+          food_entry_id: z.string(),
+          food_entry_name: z.string(),
+          food_entry_description: z.string(),
+          food_id: z.string(),
+          serving_id: z.string(),
+          number_of_units: z.string(),
+          meal: z.string(),
+          date_int: z.string(),
+          calories: z.string(),
+          carbohydrate: z.string(),
+          protein: z.string(),
+          fat: z.string(),
+          saturated_fat: z.string().optional(),
+          polyunsaturated_fat: z.string().optional(),
+          monounsaturated_fat: z.string().optional(),
+          cholesterol: z.string().optional(),
+          sodium: z.string().optional(),
+          potassium: z.string().optional(),
+          fiber: z.string().optional(),
+          sugar: z.string().optional(),
+          vitamin_a: z.string().optional(),
+          vitamin_c: z.string().optional(),
+          calcium: z.string().optional(),
+          iron: z.string().optional(),
+        }),
+      ),
+    })
+    .nullable(),
 });
 
 // ============================================================

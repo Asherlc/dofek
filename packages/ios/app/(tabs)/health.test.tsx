@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const TEST_SERVER_URL = "https://test.dofek.example.com";
 const mockRequestPermissions = vi.fn();
+const mockQueryDailyStatistics = vi.fn();
 const mockQueryQuantitySamples = vi.fn();
 const mockQueryWorkouts = vi.fn();
 const mockQuerySleepSamples = vi.fn();
@@ -51,6 +52,7 @@ vi.mock("expo-router", () => ({
 vi.mock("../../modules/health-kit", () => ({
 	isAvailable: () => true,
 	requestPermissions: mockRequestPermissions,
+	queryDailyStatistics: mockQueryDailyStatistics,
 	queryQuantitySamples: mockQueryQuantitySamples,
 	queryWorkouts: mockQueryWorkouts,
 	querySleepSamples: mockQuerySleepSamples,
@@ -101,6 +103,7 @@ vi.mock("../../lib/auth-context", () => ({
 describe("HealthScreen", () => {
 	beforeEach(() => {
 		mockRequestPermissions.mockReset();
+		mockQueryDailyStatistics.mockReset();
 		mockQueryQuantitySamples.mockReset();
 		mockQueryWorkouts.mockReset();
 		mockQuerySleepSamples.mockReset();
@@ -111,6 +114,7 @@ describe("HealthScreen", () => {
 		mockSettingsGet.mockReset();
 		mockSettingsSetMutate.mockReset();
 
+		mockQueryDailyStatistics.mockResolvedValue([]);
 		mockQueryQuantitySamples.mockResolvedValue([]);
 		mockQueryWorkouts.mockResolvedValue([]);
 		mockQuerySleepSamples.mockResolvedValue([]);
@@ -181,11 +185,12 @@ describe("HealthScreen", () => {
 		fireEvent.click(screen.getByText("Sync Now"));
 
 		await waitFor(() => {
-			expect(mockQueryQuantitySamples).toHaveBeenCalled();
+			// Additive types are queried first via queryDailyStatistics
+			expect(mockQueryDailyStatistics).toHaveBeenCalled();
 		});
 
 		// The start date should be ~30 days ago, not 7
-		const firstCallStartDate = mockQueryQuantitySamples.mock.calls[0][1] as string;
+		const firstCallStartDate = mockQueryDailyStatistics.mock.calls[0][1] as string;
 		const startDate = new Date(firstCallStartDate);
 		const thirtyDaysAgo = new Date();
 		thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -202,10 +207,11 @@ describe("HealthScreen", () => {
 		fireEvent.click(screen.getByText("Sync Now"));
 
 		await waitFor(() => {
-			expect(mockQueryQuantitySamples).toHaveBeenCalled();
+			// Additive types are queried first via queryDailyStatistics
+			expect(mockQueryDailyStatistics).toHaveBeenCalled();
 		});
 
-		const firstCallStartDate = mockQueryQuantitySamples.mock.calls[0][1] as string;
+		const firstCallStartDate = mockQueryDailyStatistics.mock.calls[0][1] as string;
 		const startDate = new Date(firstCallStartDate);
 		// Epoch: 1970-01-01T00:00:00.000Z
 		expect(startDate.getTime()).toBe(0);
