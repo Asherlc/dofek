@@ -92,6 +92,10 @@ export default function AddFoodScreen() {
   const recentLoaded = useRef(false);
   const { width } = useWindowDimensions();
   const isWide = width >= 600;
+  const deviceLocale = useMemo(
+    () => Intl.DateTimeFormat().resolvedOptions().locale ?? "en-US",
+    [],
+  );
 
   useEffect(() => {
     if (recentLoaded.current) return;
@@ -195,7 +199,7 @@ export default function AddFoodScreen() {
           }));
         })
         .catch(() => [] as SearchResult[]),
-      searchFoods(query, 10),
+      searchFoods(query, 10, deviceLocale),
     ]);
 
     const offMapped: SearchResult[] = offResults.map((r) => ({
@@ -213,7 +217,7 @@ export default function AddFoodScreen() {
     // History first, then Open Food Facts
     setSearchResults([...historyResults, ...offMapped]);
     setSearching(false);
-  }, [apiUrl, authHeaders]);
+  }, [apiUrl, authHeaders, deviceLocale]);
 
   // Debounced search
   useEffect(() => {
@@ -489,7 +493,11 @@ export default function AddFoodScreen() {
             </View>
           )}
 
-          <ScrollView style={styles.scrollView} keyboardShouldPersistTaps="handled">
+          <ScrollView
+            style={styles.scrollView}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={styles.resultsContent}
+          >
             {/* Section header */}
             <Text style={styles.sectionHeader}>
               {searchQuery.length >= 2 ? "Results" : "Recent Foods"}
@@ -501,38 +509,52 @@ export default function AddFoodScreen() {
               </View>
             )}
 
-            {displayResults.map((result, index) => (
-              <TouchableOpacity
-                key={`${result.source}-${result.name}-${index}`}
-                style={styles.resultRow}
-                onPress={() => handleSelectResult(result)}
-                activeOpacity={0.6}
-              >
-                <View style={styles.resultLeft}>
-                  <Text style={styles.resultName} numberOfLines={2}>
-                    {result.name}
-                  </Text>
+            {displayResults.map((result, index) => {
+              const macroTags = [
+                result.proteinG != null ? `Protein ${result.proteinG}g` : null,
+                result.carbsG != null ? `Carbs ${result.carbsG}g` : null,
+                result.fatG != null ? `Fat ${result.fatG}g` : null,
+              ].filter((tag): tag is string => tag !== null);
+
+              return (
+                <TouchableOpacity
+                  key={`${result.source}-${result.name}-${index}`}
+                  style={styles.resultCard}
+                  onPress={() => handleSelectResult(result)}
+                  activeOpacity={0.75}
+                >
+                  <View style={styles.resultHeaderRow}>
+                    <Text style={styles.resultName} numberOfLines={2}>
+                      {result.name}
+                    </Text>
+                    {result.calories != null && (
+                      <View style={styles.resultCaloriesBadge}>
+                        <Text style={styles.resultCaloriesText}>{result.calories} cal</Text>
+                      </View>
+                    )}
+                  </View>
+
                   {result.servingDescription && (
                     <Text style={styles.resultServing} numberOfLines={2}>
                       {result.servingDescription}
                     </Text>
                   )}
-                </View>
-                <View style={styles.resultRight}>
-                  {result.calories != null && (
-                    <Text style={styles.resultCalories}>{result.calories} cal</Text>
-                  )}
-                  {result.proteinG != null && result.carbsG != null && result.fatG != null && (
-                    <Text style={styles.resultMacros}>
-                      Protein {result.proteinG}g · Carbs {result.carbsG}g · Fat {result.fatG}g
+
+                  <View style={styles.resultMetaRow}>
+                    <View style={styles.resultMacroTags}>
+                      {macroTags.map((macro) => (
+                        <View key={`${result.name}-${macro}`} style={styles.resultMacroTag}>
+                          <Text style={styles.resultMacroTagText}>{macro}</Text>
+                        </View>
+                      ))}
+                    </View>
+                    <Text style={styles.resultSource}>
+                      {result.source === "history" ? "History" : "Open Food Facts"}
                     </Text>
-                  )}
-                  <Text style={styles.resultSource}>
-                    {result.source === "history" ? "History" : "Open Food Facts"}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            ))}
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
 
             {!searching && displayResults.length === 0 && searchQuery.length >= 2 && (
               <Text style={styles.emptyText}>No results found</Text>
@@ -684,6 +706,9 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
   },
+  resultsContent: {
+    paddingBottom: 24,
+  },
   formContent: {
     padding: 16,
     paddingBottom: 40,
@@ -723,91 +748,126 @@ const styles = StyleSheet.create({
 
   // ── Search bar ──
   searchBar: {
-    padding: 12,
-    paddingTop: 8,
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 10,
     backgroundColor: colors.surface,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.surfaceSecondary,
   },
   searchInput: {
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    backgroundColor: colors.background,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     fontSize: 16,
     color: colors.text,
+    borderWidth: 1,
+    borderColor: colors.surfaceSecondary,
   },
 
   // ── Search results ──
   sectionHeader: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "600",
     color: colors.textSecondary,
     textTransform: "uppercase",
-    letterSpacing: 0.5,
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 6,
+    letterSpacing: 0.7,
+    paddingHorizontal: 14,
+    paddingTop: 14,
+    paddingBottom: 10,
   },
   loadingRow: {
-    paddingVertical: 16,
+    paddingVertical: 20,
     alignItems: "center",
   },
-  resultRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+  resultCard: {
+    marginHorizontal: 14,
+    marginBottom: 10,
+    padding: 14,
     backgroundColor: colors.surface,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.surfaceSecondary,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.surfaceSecondary,
   },
-  resultLeft: {
-    flex: 1,
-    marginRight: 12,
+  resultHeaderRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
   },
   resultName: {
+    flex: 1,
     fontSize: 16,
+    lineHeight: 22,
     color: colors.text,
-    fontWeight: "500",
+    fontWeight: "600",
+  },
+  resultCaloriesBadge: {
+    backgroundColor: colors.background,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.surfaceSecondary,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  resultCaloriesText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.text,
   },
   resultServing: {
     fontSize: 13,
     color: colors.textTertiary,
-    marginTop: 2,
+    marginTop: 6,
+    lineHeight: 18,
   },
-  resultRight: {
-    alignItems: "flex-end",
+  resultMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 12,
+    gap: 10,
   },
-  resultCalories: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: colors.textSecondary,
+  resultMacroTags: {
+    flex: 1,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
   },
-  resultMacros: {
+  resultMacroTag: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: colors.background,
+  },
+  resultMacroTagText: {
     fontSize: 11,
-    color: colors.textTertiary,
-    marginTop: 1,
+    color: colors.textSecondary,
+    fontWeight: "600",
   },
   resultSource: {
     fontSize: 11,
     color: colors.textTertiary,
-    marginTop: 2,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
   },
   emptyText: {
     textAlign: "center",
     color: colors.textTertiary,
-    paddingVertical: 24,
-    paddingHorizontal: 16,
+    paddingVertical: 28,
+    paddingHorizontal: 18,
   },
   manualEntry: {
-    paddingVertical: 16,
-    paddingHorizontal: 16,
+    marginHorizontal: 14,
+    marginTop: 6,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
     alignItems: "center",
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.surfaceSecondary,
-    marginTop: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.accent,
+    backgroundColor: colors.surface,
   },
   manualEntryText: {
     fontSize: 15,
