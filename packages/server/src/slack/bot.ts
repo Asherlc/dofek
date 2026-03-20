@@ -888,14 +888,6 @@ export function createSlackBot(db: Database): SlackBotResult | null {
 
   if (botToken && appToken) {
     const receiver = new SocketModeReceiver({ appToken });
-    // Increase WebSocket ping timeout from the 5s default to 30s.
-    // The default causes rapid reconnection failures during container startup
-    // because pong responses aren't processed in time.
-    // IMPORTANT: We must modify the existing client rather than replacing it,
-    // because SocketModeReceiver registers its 'slack_event' forwarding
-    // listener on this.client in the constructor. Replacing receiver.client
-    // orphans that listener and silently drops all incoming Slack events.
-    Object.assign(receiver.client, { clientPingTimeoutMS: 30_000 });
     registerSocketModeDiagnostics(receiver.client);
 
     const app = new App({
