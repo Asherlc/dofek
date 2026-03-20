@@ -10,6 +10,9 @@ PATTERNS=(
   '@ts-nocheck'
   'biome-ignore'
   'eslint-disable'
+  'Stryker disable'
+  'istanbul ignore'
+  'c8 ignore'
 )
 
 # Find all .ts/.tsx files, excluding generated files, node_modules, and this checker's companion script.
