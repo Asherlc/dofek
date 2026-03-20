@@ -22,6 +22,7 @@ export interface ActivityDetail {
   totalDistance: number | null;
   elevationGain: number | null;
   elevationLoss: number | null;
+  calories: number | null;
   sampleCount: number | null;
 }
 
@@ -100,6 +101,7 @@ export const activityRouter = router({
         total_distance: number | null;
         elevation_gain_m: number | null;
         elevation_loss_m: number | null;
+        calories: number | null;
         sample_count: number | null;
       }>(
         sql`SELECT
@@ -121,6 +123,7 @@ export const activityRouter = router({
               s.total_distance,
               s.elevation_gain_m,
               s.elevation_loss_m,
+              a.calories,
               s.sample_count
             FROM fitness.v_activity a
             LEFT JOIN fitness.activity_summary s ON s.activity_id = a.id
@@ -267,6 +270,7 @@ export function mapActivityDetail(row: {
   total_distance: number | null;
   elevation_gain_m: number | null;
   elevation_loss_m: number | null;
+  calories: number | null;
   sample_count: number | null;
 }): ActivityDetail {
   return {
@@ -288,6 +292,7 @@ export function mapActivityDetail(row: {
     totalDistance: row.total_distance != null ? Number(row.total_distance) : null,
     elevationGain: row.elevation_gain_m != null ? Number(row.elevation_gain_m) : null,
     elevationLoss: row.elevation_loss_m != null ? Number(row.elevation_loss_m) : null,
+    calories: row.calories != null ? Number(row.calories) : null,
     sampleCount: row.sample_count != null ? Number(row.sample_count) : null,
   };
 }

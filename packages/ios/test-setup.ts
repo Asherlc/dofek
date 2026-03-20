@@ -68,7 +68,14 @@ vi.mock("react-native", () => {
   const TextInput = createMockComponent("TextInput");
   const Image = createMockComponent("Image");
   const FlatList = createMockComponent("FlatList");
-  const ActivityIndicator = createMockComponent("ActivityIndicator");
+  const ActivityIndicator = ({ color, style, ...props }: Record<string, unknown>) =>
+    React.createElement("activityindicator", {
+      ...props,
+      style: flattenStyle(style),
+      color,
+      role: "progressbar",
+    });
+  ActivityIndicator.displayName = "ActivityIndicator";
 
   const TouchableOpacity = ({
     children,
