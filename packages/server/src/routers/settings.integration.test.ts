@@ -85,6 +85,24 @@ describe("Settings router", () => {
     });
   });
 
+  describe("cache invalidation on set", () => {
+    it("returns the updated value after set, not the stale cached value", async () => {
+      // 1. Set initial value
+      await mutate("settings.set", { key: "cacheTest", value: "metric" });
+
+      // 2. Read it — populates the server-side cache
+      const first = await query("settings.get", { key: "cacheTest" });
+      expect(first.result.data.value).toBe("metric");
+
+      // 3. Update the value
+      await mutate("settings.set", { key: "cacheTest", value: "imperial" });
+
+      // 4. Read again — should return "imperial", not stale "metric"
+      const second = await query("settings.get", { key: "cacheTest" });
+      expect(second.result.data.value).toBe("imperial");
+    });
+  });
+
   describe("getAll", () => {
     it("returns all settings", async () => {
       // Ensure we have at least two settings from previous tests
