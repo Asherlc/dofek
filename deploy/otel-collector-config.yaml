@@ -47,12 +47,12 @@ exporters:
     endpoint: https://api.axiom.co
     headers:
       authorization: "Bearer ${env:AXIOM_API_TOKEN}"
-      x-axiom-dataset: dofek-traces
+      x-axiom-dataset: dofek-logs
   otlphttp/logs:
     endpoint: https://api.axiom.co
     headers:
       authorization: "Bearer ${env:AXIOM_API_TOKEN}"
-      x-axiom-dataset: dofek-app-logs
+      x-axiom-dataset: dofek-logs
 
 service:
   pipelines:

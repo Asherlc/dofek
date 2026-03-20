@@ -88,6 +88,7 @@ services:
   collector:
     image: otel/opentelemetry-collector-contrib:latest
     restart: unless-stopped
+    user: "0:0"
     environment:
       - AXIOM_API_TOKEN=${AXIOM_API_TOKEN:?Set AXIOM_API_TOKEN in .env}
     volumes:
