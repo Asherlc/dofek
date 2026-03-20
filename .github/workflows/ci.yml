@@ -178,6 +178,96 @@ jobs:
       - name: Verify iOS Metro bundle
         run: cd packages/ios && pnpm expo export --platform ios --clear
 
+  lint-ios-podspecs:
+    name: iOS Podspec Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate podspec deployment targets
+        run: |
+          APP_TARGET=$(python3 -c "import json; print(json.load(open('packages/ios/app.json'))['expo']['ios']['deploymentTarget'])")
+          echo "App deployment target: iOS $APP_TARGET"
+          FAILED=0
+          for spec in packages/ios/modules/*/ios/*.podspec; do
+            SPEC_TARGET=$(grep -oP "s\.platform\s*=\s*:ios,\s*'\K[^']+" "$spec")
+            echo "  $(basename "$spec"): iOS $SPEC_TARGET"
+            if [ "$(printf '%s\n' "$APP_TARGET" "$SPEC_TARGET" | sort -V | head -1)" != "$APP_TARGET" ]; then
+              echo "  ERROR: podspec targets iOS $SPEC_TARGET which is below app target iOS $APP_TARGET"
+              FAILED=1
+            fi
+          done
+          exit $FAILED
+
+  check-ios-changes:
+    name: Check iOS Changes
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.check.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: check
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- packages/ios/)
+            if [ -n "$CHANGED" ]; then
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+              echo "iOS files changed:"
+              echo "$CHANGED"
+            else
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+              echo "No iOS changes detected, skipping native build"
+            fi
+          fi
+
+  build-ios-native:
+    name: iOS Native Build
+    needs: check-ios-changes
+    if: needs.check-ios-changes.outputs.changed == 'true'
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Cache CocoaPods
+        uses: actions/cache@v4
+        with:
+          path: packages/ios/ios/Pods
+          key: pods-${{ hashFiles('packages/ios/ios/Podfile.lock') }}
+          restore-keys: pods-
+      - name: Install CocoaPods dependencies
+        run: cd packages/ios/ios && pod install
+      - name: Build for simulator
+        run: |
+          xcodebuild build \
+            -workspace packages/ios/ios/Dofek.xcworkspace \
+            -scheme Dofek \
+            -sdk iphonesimulator \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            | tail -20
+        timeout-minutes: 20
+
+  ios-native-gate:
+    name: iOS Native Gate
+    needs: [check-ios-changes, build-ios-native]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          if [ "${{ needs.build-ios-native.result }}" = "failure" ] || [ "${{ needs.build-ios-native.result }}" = "cancelled" ]; then
+            echo "iOS native build failed or was cancelled"
+            exit 1
+          fi
+
   test-e2e-web:
     name: E2E Tests (Web)
     runs-on: ubuntu-latest

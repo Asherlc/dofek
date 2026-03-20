@@ -23,7 +23,7 @@ import { WeeklyReportCard } from "../components/WeeklyReportCard.tsx";
 import { useDashboardLayout } from "../lib/dashboardLayoutContext.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitSystem } from "../lib/unitContext.ts";
-import { convertTemperature, temperatureLabel } from "../lib/units.ts";
+import { convertTemperature, temperatureLabel, type UnitSystem } from "../lib/units.ts";
 import { useOnboarding } from "../lib/useOnboarding.ts";
 import { assertRows } from "../lib/utils.ts";
 
@@ -111,6 +111,20 @@ const GRID_PAIR_SECONDARY: Record<string, string> = {
   healthspan: "stress",
   steps: "spo2Temp",
 };
+
+type DailyMetricRow = z.infer<typeof dailyMetricRowSchema>;
+
+export function buildSkinTempSeries(metrics: DailyMetricRow[], unitSystem: UnitSystem) {
+  return {
+    name: "Skin Temp",
+    data: metrics.map((d): [string, number | null] => [
+      d.date,
+      d.skin_temp_c != null ? convertTemperature(d.skin_temp_c, unitSystem) : null,
+    ]),
+    color: "#f59e0b",
+    yAxisIndex: 1 as const,
+  };
+}
 
 export const DASHBOARD_SECTION_IDS = new Set([
   "healthMonitor",
@@ -236,14 +250,7 @@ export function Dashboard() {
   );
 
   const skinTempSeries = useMemo(
-    () => ({
-      name: "Skin Temp",
-      data: metrics.map((d): [string, number | null] => [
-        d.date,
-        d.skin_temp_c != null ? convertTemperature(d.skin_temp_c, unitSystem) : null,
-      ]),
-      color: "#f59e0b",
-    }),
+    () => buildSkinTempSeries(metrics, unitSystem),
     [metrics, unitSystem],
   );
 

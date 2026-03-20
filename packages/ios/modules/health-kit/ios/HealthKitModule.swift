@@ -230,6 +230,61 @@ public class HealthKitModule: Module {
             self.healthStore.execute(query)
         }
 
+        AsyncFunction("queryDailyStatistics") { (typeIdentifier: String, startDateStr: String, endDateStr: String, promise: Promise) in
+            guard let quantityType = HKQuantityType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: typeIdentifier)) else {
+                promise.reject("INVALID_TYPE", "Unknown quantity type: \(typeIdentifier)")
+                return
+            }
+            guard let startDate = HealthKitQueries.parseDate(startDateStr),
+                  let endDate = HealthKitQueries.parseDate(endDateStr) else {
+                promise.reject("INVALID_DATE", "Invalid ISO 8601 date format")
+                return
+            }
+
+            let calendar = Calendar.current
+            let interval = DateComponents(day: 1)
+            let anchorDate = calendar.startOfDay(for: startDate)
+
+            let query = HKStatisticsCollectionQuery(
+                quantityType: quantityType,
+                quantitySamplePredicate: HealthKitQueries.datePredicate(start: startDate, end: endDate),
+                options: .cumulativeSum,
+                anchorDate: anchorDate,
+                intervalComponents: interval
+            )
+
+            query.initialResultsHandler = { _, results, error in
+                if let error = error {
+                    promise.reject("QUERY_ERROR", error.localizedDescription)
+                    return
+                }
+
+                guard let results = results else {
+                    promise.resolve([])
+                    return
+                }
+
+                let unit = self.preferredUnit(for: quantityType)
+                let dateFormatter = DateFormatter()
+                dateFormatter.dateFormat = "yyyy-MM-dd"
+                dateFormatter.timeZone = .current
+
+                var dailyValues: [[String: Any]] = []
+                results.enumerateStatistics(from: startDate, to: endDate) { statistics, _ in
+                    if let sum = statistics.sumQuantity() {
+                        dailyValues.append([
+                            "date": dateFormatter.string(from: statistics.startDate),
+                            "value": sum.doubleValue(for: unit),
+                        ])
+                    }
+                }
+
+                promise.resolve(dailyValues)
+            }
+
+            self.healthStore.execute(query)
+        }
+
         AsyncFunction("enableBackgroundDelivery") { (typeIdentifier: String, promise: Promise) in
             guard let sampleType = HKQuantityType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: typeIdentifier)) else {
                 promise.reject("INVALID_TYPE", "Unknown quantity type: \(typeIdentifier)")

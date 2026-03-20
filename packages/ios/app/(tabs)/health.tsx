@@ -6,6 +6,7 @@ import { colors } from "../../theme";
 import {
   enableBackgroundDelivery,
   isAvailable,
+  queryDailyStatistics,
   queryQuantitySamples,
   querySleepSamples,
   type WorkoutSample,
@@ -31,22 +32,32 @@ const SYNC_RANGE_OPTIONS: Array<{ label: string; value: number | null }> = [
 
 const HEALTHKIT_BACKFILL_COMPLETED_KEY = "healthkit_backfill_completed";
 
-const QUANTITY_TYPES = [
-  "HKQuantityTypeIdentifierBodyMass",
-  "HKQuantityTypeIdentifierBodyFatPercentage",
-  "HKQuantityTypeIdentifierHeartRate",
-  "HKQuantityTypeIdentifierRestingHeartRate",
-  "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
+// Additive types use HKStatisticsCollectionQuery for proper source deduplication.
+// Without this, overlapping samples from iPhone + Apple Watch get summed, roughly
+// doubling the real values (e.g., 3k steps shown when the user walked 1.5k).
+const ADDITIVE_QUANTITY_TYPES = [
   "HKQuantityTypeIdentifierStepCount",
   "HKQuantityTypeIdentifierActiveEnergyBurned",
   "HKQuantityTypeIdentifierBasalEnergyBurned",
   "HKQuantityTypeIdentifierDistanceWalkingRunning",
   "HKQuantityTypeIdentifierFlightsClimbed",
   "HKQuantityTypeIdentifierAppleExerciseTime",
+];
+
+// Non-additive types use raw HKSampleQuery (no deduplication needed since
+// these are point-in-time or discrete measurements, not cumulative sums).
+const NON_ADDITIVE_QUANTITY_TYPES = [
+  "HKQuantityTypeIdentifierBodyMass",
+  "HKQuantityTypeIdentifierBodyFatPercentage",
+  "HKQuantityTypeIdentifierHeartRate",
+  "HKQuantityTypeIdentifierRestingHeartRate",
+  "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
   "HKQuantityTypeIdentifierVO2Max",
   "HKQuantityTypeIdentifierOxygenSaturation",
   "HKQuantityTypeIdentifierRespiratoryRate",
 ];
+
+const ALL_QUANTITY_TYPES = [...ADDITIVE_QUANTITY_TYPES, ...NON_ADDITIVE_QUANTITY_TYPES];
 
 function daysAgo(days: number): string {
   const d = new Date();
@@ -129,15 +140,43 @@ export default function HealthScreen() {
 
       // Sync quantity samples
       const allSamples = [];
-      for (let i = 0; i < QUANTITY_TYPES.length; i++) {
-        const typeId = QUANTITY_TYPES[i];
+      const totalTypes = ALL_QUANTITY_TYPES.length;
+      let typeIndex = 0;
+
+      // Additive types: use HKStatisticsCollectionQuery for proper deduplication
+      // across sources (iPhone + Apple Watch). Returns one deduplicated total per day.
+      for (const typeId of ADDITIVE_QUANTITY_TYPES) {
         const shortName = typeId.replace("HKQuantityTypeIdentifier", "");
         setStatus((prev) => ({
           ...prev,
-          progress: `Querying ${shortName}... (${i + 1}/${QUANTITY_TYPES.length})`,
+          progress: `Querying ${shortName}... (${typeIndex + 1}/${totalTypes})`,
+        }));
+        const dailyStats = await queryDailyStatistics(typeId, startDate, endDate);
+        for (const stat of dailyStats) {
+          allSamples.push({
+            type: typeId,
+            value: stat.value,
+            unit: "statistics",
+            startDate: `${stat.date}T12:00:00Z`,
+            endDate: `${stat.date}T12:00:00Z`,
+            sourceName: "HealthKit",
+            sourceBundle: "com.apple.Health",
+            uuid: `stat:${typeId}:${stat.date}`,
+          });
+        }
+        typeIndex++;
+      }
+
+      // Non-additive types: use raw sample query (point-in-time values)
+      for (const typeId of NON_ADDITIVE_QUANTITY_TYPES) {
+        const shortName = typeId.replace("HKQuantityTypeIdentifier", "");
+        setStatus((prev) => ({
+          ...prev,
+          progress: `Querying ${shortName}... (${typeIndex + 1}/${totalTypes})`,
         }));
         const samples = await queryQuantitySamples(typeId, startDate, endDate);
         allSamples.push(...samples);
+        typeIndex++;
       }
 
       let totalInserted = 0;
@@ -201,7 +240,7 @@ export default function HealthScreen() {
 
   async function handleEnableBackground() {
     try {
-      for (const typeId of QUANTITY_TYPES) {
+      for (const typeId of ALL_QUANTITY_TYPES) {
         await enableBackgroundDelivery(typeId);
       }
       setBackgroundEnabled(true);

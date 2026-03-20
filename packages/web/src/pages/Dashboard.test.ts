@@ -1,5 +1,60 @@
 import { describe, expect, it } from "vitest";
-import { DASHBOARD_SECTION_IDS } from "./Dashboard";
+import { buildSkinTempSeries, DASHBOARD_SECTION_IDS } from "./Dashboard";
+
+describe("buildSkinTempSeries", () => {
+  const metrics = [
+    {
+      date: "2026-03-18",
+      spo2_avg: 97,
+      skin_temp_c: 34.5,
+      resting_hr: null,
+      hrv: null,
+      steps: null,
+      active_energy_kcal: null,
+    },
+    {
+      date: "2026-03-19",
+      spo2_avg: null,
+      skin_temp_c: null,
+      resting_hr: null,
+      hrv: null,
+      steps: null,
+      active_energy_kcal: null,
+    },
+    {
+      date: "2026-03-20",
+      spo2_avg: 98,
+      skin_temp_c: 35.0,
+      resting_hr: null,
+      hrv: null,
+      steps: null,
+      active_energy_kcal: null,
+    },
+  ];
+
+  it("assigns skin temp series to the second y-axis (yAxisIndex: 1)", () => {
+    const series = buildSkinTempSeries(metrics, "metric");
+    expect(series.yAxisIndex).toBe(1);
+  });
+
+  it("converts temperature values using the given unit system", () => {
+    const metricSeries = buildSkinTempSeries(metrics, "metric");
+    const metricValues = metricSeries.data.map(([, v]) => v);
+    expect(metricValues).toEqual([34.5, null, 35.0]);
+
+    const imperialSeries = buildSkinTempSeries(metrics, "imperial");
+    const imperialValues = imperialSeries.data.map(([, v]) => v);
+    // 34.5°C = 94.1°F, 35.0°C = 95.0°F
+    expect(imperialValues[0]).toBeCloseTo(94.1, 1);
+    expect(imperialValues[1]).toBeNull();
+    expect(imperialValues[2]).toBeCloseTo(95.0, 1);
+  });
+
+  it("uses date strings as the x-axis values", () => {
+    const series = buildSkinTempSeries(metrics, "metric");
+    expect(series.data.map(([date]) => date)).toEqual(["2026-03-18", "2026-03-19", "2026-03-20"]);
+  });
+});
 
 describe("DASHBOARD_SECTION_IDS", () => {
   it("includes spo2Temp section", () => {

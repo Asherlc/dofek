@@ -302,6 +302,35 @@ describe("startSlackBot", () => {
       expect.stringContaining("No Slack credentials configured"),
     );
   });
+
+  it("registers SIGTERM handler that stops the app in socket mode", async () => {
+    process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
+    process.env.SLACK_APP_TOKEN = "xapp-test-token";
+
+    const db = createMockDb();
+    const { logger } = await import("../logger.ts");
+    const processOnceSpy = vi.spyOn(process, "once");
+
+    await startSlackBot(db);
+
+    // Verify SIGTERM handler was registered
+    const sigtermCall = processOnceSpy.mock.calls.find((call) => call[0] === "SIGTERM");
+    expect(sigtermCall).toBeDefined();
+
+    // Call the handler and verify it stops the app
+    const mockAppInstance = vi.mocked(bolt.App).mock.results[0]?.value;
+    mockAppInstance.stop = vi.fn().mockResolvedValue(undefined);
+    if (!sigtermCall) throw new Error("SIGTERM handler not registered");
+    const handler: () => void = sigtermCall[1];
+    await handler();
+
+    expect(mockAppInstance.stop).toHaveBeenCalled();
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.stringContaining("Shutting down Socket Mode connection"),
+    );
+
+    processOnceSpy.mockRestore();
+  });
 });
 
 describe("createSlackBot — logger messages", () => {
@@ -377,6 +406,16 @@ describe("createSlackBot — logger messages", () => {
     expect(result).not.toBeNull();
     const mockAppInstance = vi.mocked(bolt.App).mock.results[0]?.value;
     expect(mockAppInstance.error).toHaveBeenCalled();
+  });
+
+  it("registers slack_event diagnostic listener on socket mode client", () => {
+    process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
+    process.env.SLACK_APP_TOKEN = "xapp-test-token";
+
+    const db = createMockDb();
+    createSlackBot(db);
+
+    expect(mockSocketClient.on).toHaveBeenCalledWith("slack_event", expect.any(Function));
   });
 
   it("logs socket diagnostics on disconnect and error events", async () => {
