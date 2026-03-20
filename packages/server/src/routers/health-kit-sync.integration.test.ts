@@ -170,6 +170,45 @@ describe("HealthKit sync router", () => {
       expect(rows[0]?.distance_km).toBeCloseTo(2.5, 1);
     });
 
+    it("averages same-day HRV samples instead of taking the last value", async () => {
+      const result = await mutate("healthKitSync.pushQuantitySamples", {
+        samples: [
+          {
+            type: "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
+            value: 40,
+            unit: "ms",
+            startDate: "2025-06-02T01:00:00Z",
+            endDate: "2025-06-02T01:00:05Z",
+            sourceName: "Apple Watch",
+            sourceBundle: "com.apple.health",
+            uuid: "hrv-integ-1",
+          },
+          {
+            type: "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
+            value: 80,
+            unit: "ms",
+            startDate: "2025-06-02T23:00:00Z",
+            endDate: "2025-06-02T23:00:05Z",
+            sourceName: "Apple Watch",
+            sourceBundle: "com.apple.health",
+            uuid: "hrv-integ-2",
+          },
+        ],
+      });
+
+      expect(result.result.data.inserted).toBe(2);
+      expect(result.result.data.errors).toEqual([]);
+
+      const rows = await testCtx.db.execute(
+        sql`SELECT hrv FROM fitness.daily_metrics
+            WHERE provider_id = 'apple_health_kit'
+              AND date = '2025-06-02'`,
+      );
+      expect(rows.length).toBe(1);
+      // Average of 40 and 80 = 60
+      expect(rows[0]?.hrv).toBeCloseTo(60, 1);
+    });
+
     it("handles VO2Max as a point-in-time metric", async () => {
       const result = await mutate("healthKitSync.pushQuantitySamples", {
         samples: [
