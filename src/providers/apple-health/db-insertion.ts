@@ -1,3 +1,4 @@
+import { selectDailyHrv } from "@dofek/hrv";
 import { sql } from "drizzle-orm";
 import type { SyncDatabase } from "../../db/index.ts";
 import {
@@ -286,8 +287,9 @@ export async function upsertDailyMetricsBatch(
   providerId: string,
   records: HealthRecord[],
 ): Promise<number> {
-  // Aggregate by date -- sum steps/energy, take latest for point-in-time values
+  // Aggregate by date -- sum steps/energy, select overnight HRV, take latest for other point-in-time values
   const byDate = new Map<string, Map<string, number>>();
+  const hrvSamplesByDate = new Map<string, Array<{ value: number; startDate: Date }>>();
   for (const r of records) {
     if (!DAILY_METRIC_TYPES.has(r.type)) continue;
     const dateKey = dateToString(r.startDate);
@@ -296,9 +298,22 @@ export async function upsertDailyMetricsBatch(
 
     if (ADDITIVE_DAILY_TYPES.has(r.type)) {
       day.set(r.type, (day.get(r.type) ?? 0) + r.value);
+    } else if (r.type === "HKQuantityTypeIdentifierHeartRateVariabilitySDNN") {
+      const daySamples = hrvSamplesByDate.get(dateKey) ?? [];
+      daySamples.push({ value: r.value, startDate: r.startDate });
+      hrvSamplesByDate.set(dateKey, daySamples);
     } else {
       // Point-in-time: keep latest
       day.set(r.type, r.value);
+    }
+  }
+
+  // Select overnight HRV for each date using shared logic
+  for (const [dateKey, hrvSamples] of hrvSamplesByDate) {
+    const day = byDate.get(dateKey);
+    const selected = selectDailyHrv(hrvSamples);
+    if (day && selected !== null) {
+      day.set("HKQuantityTypeIdentifierHeartRateVariabilitySDNN", selected);
     }
   }
 

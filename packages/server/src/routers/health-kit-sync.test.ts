@@ -37,28 +37,54 @@ function makeSample(overrides: Record<string, unknown> = {}) {
 
 describe("healthKitSyncRouter", () => {
   describe("pushQuantitySamples", () => {
-    it("averages same-day HRV samples instead of taking the last sample", () => {
+    it("uses the first HRV reading of the day (overnight) instead of averaging with Breathe sessions", () => {
       const samples = [
         makeSample({
           type: "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
-          value: 40,
-          startDate: "2024-01-15T01:00:00Z",
-          endDate: "2024-01-15T01:00:05Z",
-          uuid: "hrv-1",
+          value: 45,
+          startDate: "2024-01-15T04:00:00Z", // overnight reading (e.g. 11pm EST)
+          endDate: "2024-01-15T04:00:05Z",
+          uuid: "hrv-overnight",
         }),
         makeSample({
           type: "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
-          value: 80,
-          startDate: "2024-01-15T23:00:00Z",
-          endDate: "2024-01-15T23:00:05Z",
-          uuid: "hrv-2",
+          value: 50,
+          startDate: "2024-01-15T08:00:00Z", // early morning reading
+          endDate: "2024-01-15T08:00:05Z",
+          uuid: "hrv-morning",
+        }),
+        makeSample({
+          type: "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
+          value: 120,
+          startDate: "2024-01-15T22:00:00Z", // Breathe session (high value)
+          endDate: "2024-01-15T22:00:05Z",
+          uuid: "hrv-breathe",
         }),
       ];
 
       const daily = aggregateDailyMetricSamples(samples);
       const jan15 = daily.get("2024-01-15");
 
-      expect(jan15?.hrv).toBe(60);
+      // Should use the first reading (45ms overnight), NOT average (71.7ms)
+      // or last-write-wins (120ms Breathe session)
+      expect(jan15?.hrv).toBe(45);
+    });
+
+    it("uses the only HRV reading when there is just one", () => {
+      const samples = [
+        makeSample({
+          type: "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
+          value: 52,
+          startDate: "2024-01-15T06:00:00Z",
+          endDate: "2024-01-15T06:00:05Z",
+          uuid: "hrv-only",
+        }),
+      ];
+
+      const daily = aggregateDailyMetricSamples(samples);
+      const jan15 = daily.get("2024-01-15");
+
+      expect(jan15?.hrv).toBe(52);
     });
 
     it("processes body measurement samples", async () => {
