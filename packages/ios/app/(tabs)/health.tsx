@@ -8,6 +8,7 @@ import {
   isAvailable,
   queryQuantitySamples,
   querySleepSamples,
+  type WorkoutSample,
   queryWorkouts,
   requestPermissions,
 } from "../../modules/health-kit";
@@ -40,6 +41,14 @@ function daysAgo(days: number): string {
   const d = new Date();
   d.setDate(d.getDate() - days);
   return d.toISOString();
+}
+
+function normalizeWorkoutsForSync(workouts: WorkoutSample[]): WorkoutSample[] {
+  return workouts.map((workout) => ({
+    ...workout,
+    totalEnergyBurned: workout.totalEnergyBurned ?? null,
+    totalDistance: workout.totalDistance ?? null,
+  }));
 }
 
 const NAV_LINKS = [
@@ -110,7 +119,7 @@ export default function HealthScreen() {
       }
 
       // Sync workouts
-      const workouts = await queryWorkouts(startDate, endDate);
+      const workouts = normalizeWorkoutsForSync(await queryWorkouts(startDate, endDate));
       if (workouts.length > 0) {
         const result = await pushWorkouts.mutateAsync({ workouts });
         totalInserted += result.inserted;
