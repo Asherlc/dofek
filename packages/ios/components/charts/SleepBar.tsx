@@ -6,10 +6,10 @@ interface SleepBarProps {
   /** Total sleep duration in minutes */
   durationMinutes: number;
   /** Percentage of each sleep stage (0-100) */
-  deepPct: number;
-  remPct: number;
-  lightPct: number;
-  awakePct: number;
+  deepPercentage: number;
+  remPercentage: number;
+  lightPercentage: number;
+  awakePercentage: number;
   /** Show stage legend */
   showLegend?: boolean;
 }
@@ -23,17 +23,17 @@ const STAGE_COLORS = {
 
 export function SleepBar({
   durationMinutes,
-  deepPct,
-  remPct,
-  lightPct,
-  awakePct,
+  deepPercentage,
+  remPercentage,
+  lightPercentage,
+  awakePercentage,
   showLegend = true,
 }: SleepBarProps) {
   const stages = [
-    { key: "deep", label: "Deep", pct: deepPct, color: STAGE_COLORS.deep },
-    { key: "rem", label: "REM Sleep", pct: remPct, color: STAGE_COLORS.rem },
-    { key: "light", label: "Light", pct: lightPct, color: STAGE_COLORS.light },
-    { key: "awake", label: "Awake", pct: awakePct, color: STAGE_COLORS.awake },
+    { key: "deep", label: "Deep", percentage: deepPercentage, color: STAGE_COLORS.deep },
+    { key: "rem", label: "REM Sleep", percentage: remPercentage, color: STAGE_COLORS.rem },
+    { key: "light", label: "Light", percentage: lightPercentage, color: STAGE_COLORS.light },
+    { key: "awake", label: "Awake", percentage: awakePercentage, color: STAGE_COLORS.awake },
   ];
 
   return (
@@ -41,13 +41,13 @@ export function SleepBar({
       <Text style={styles.duration}>{formatDurationMinutes(durationMinutes)}</Text>
       <View style={styles.bar}>
         {stages.map((stage) =>
-          stage.pct > 0 ? (
+          stage.percentage > 0 ? (
             <View
               key={stage.key}
               style={[
                 styles.segment,
                 {
-                  flex: stage.pct,
+                  flex: stage.percentage,
                   backgroundColor: stage.color,
                 },
               ]}
@@ -61,7 +61,7 @@ export function SleepBar({
             <View key={stage.key} style={styles.legendItem}>
               <View style={[styles.legendDot, { backgroundColor: stage.color }]} />
               <Text style={styles.legendLabel}>
-                {stage.label} {Math.round(stage.pct)}%
+                {stage.label} {Math.round(stage.percentage)}%
               </Text>
             </View>
           ))}

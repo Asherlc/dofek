@@ -283,8 +283,8 @@ function MicronutrientAdequacySection({ days }: { days: number }) {
       </Text>
 
       {sorted.map((nutrient) => {
-        const pct = Math.min(nutrient.percentRda, 150);
-        const barFraction = pct / 150;
+        const percentage = Math.min(nutrient.percentRda, 150);
+        const barFraction = percentage / 150;
         const barColor = nutrientBarColor(nutrient.percentRda);
 
         return (

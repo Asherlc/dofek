@@ -22,7 +22,7 @@ import {
 export interface ProgressInfo {
   bytesRead: number;
   totalBytes: number;
-  pct: number;
+  percentage: number;
   recordCount: number;
   workoutCount: number;
   sleepCount: number;
@@ -70,16 +70,16 @@ export function streamHealthExport(
     // Progress tracking
     const totalBytes = statSync(filePath).size;
     let bytesRead = 0;
-    let lastReportedPct = -1;
+    let lastReportedPercentage = -1;
     fileStream.on("data", (chunk: string | Buffer) => {
       bytesRead += typeof chunk === "string" ? Buffer.byteLength(chunk) : chunk.length;
-      const pct = Math.floor((bytesRead / totalBytes) * 100);
-      if (pct > lastReportedPct) {
-        lastReportedPct = pct;
+      const percentage = Math.floor((bytesRead / totalBytes) * 100);
+      if (percentage > lastReportedPercentage) {
+        lastReportedPercentage = percentage;
         callbacks.onProgress?.({
           bytesRead,
           totalBytes,
-          pct,
+          percentage,
           recordCount,
           workoutCount,
           sleepCount,

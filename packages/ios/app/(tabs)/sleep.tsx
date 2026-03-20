@@ -64,10 +64,10 @@ export default function SleepScreen() {
               />
               <SleepBar
                 durationMinutes={lastNight.durationMinutes}
-                deepPct={lastNight.deepPct}
-                remPct={lastNight.remPct}
-                lightPct={lastNight.lightPct}
-                awakePct={lastNight.awakePct}
+                deepPercentage={lastNight.deepPct}
+                remPercentage={lastNight.remPct}
+                lightPercentage={lastNight.lightPct}
+                awakePercentage={lastNight.awakePct}
               />
               <View style={styles.efficiencyRow}>
                 <Text style={styles.efficiencyLabel}>Sleep Efficiency</Text>
@@ -178,10 +178,10 @@ export default function SleepScreen() {
                     <View style={styles.nightlyBarContainer}>
                       <SleepBar
                         durationMinutes={night.durationMinutes}
-                        deepPct={night.deepPct}
-                        remPct={night.remPct}
-                        lightPct={night.lightPct}
-                        awakePct={night.awakePct}
+                        deepPercentage={night.deepPct}
+                        remPercentage={night.remPct}
+                        lightPercentage={night.lightPct}
+                        awakePercentage={night.awakePct}
                         showLegend={false}
                       />
                     </View>

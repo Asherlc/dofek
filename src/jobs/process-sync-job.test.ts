@@ -166,15 +166,15 @@ describe("processSyncJob", () => {
     expect(progressSnapshots).toHaveLength(3);
     expect(progressSnapshots[0]).toEqual({
       providers: { test: { status: "pending" } },
-      pct: 0,
+      percentage: 0,
     });
     expect(progressSnapshots[1]).toEqual({
       providers: { test: { status: "running" } },
-      pct: 0,
+      percentage: 0,
     });
     expect(progressSnapshots[2]).toEqual({
       providers: { test: { status: "done", message: "5 synced" } },
-      pct: 100,
+      percentage: 100,
     });
   });
 
@@ -229,7 +229,7 @@ describe("processSyncJob", () => {
     const lastSnapshot = progressSnapshots[progressSnapshots.length - 1];
     expect(lastSnapshot).toEqual({
       providers: { broken: { status: "error", message: "API timeout" } },
-      pct: 100,
+      percentage: 100,
     });
   });
 
@@ -258,7 +258,7 @@ describe("processSyncJob", () => {
     const lastSnapshot = progressSnapshots[progressSnapshots.length - 1];
     expect(lastSnapshot).toEqual({
       providers: { partial: { status: "error", message: "3 synced, 2 errors" } },
-      pct: 100,
+      percentage: 100,
     });
 
     // Verify errors are joined with "; " separator
@@ -312,7 +312,7 @@ describe("processSyncJob", () => {
     );
   });
 
-  it("relays within-provider progress to job.updateProgress with correct pct", async () => {
+  it("relays within-provider progress to job.updateProgress with correct percentage", async () => {
     // Provider that calls the onProgress callback during sync
     const provider = createMockProvider({
       id: "test",
@@ -323,7 +323,7 @@ describe("processSyncJob", () => {
           async (
             _db: SyncDatabase,
             _since: Date,
-            onProgress?: (pct: number, message: string) => void,
+            onProgress?: (percentage: number, message: string) => void,
           ) => {
             onProgress?.(50, "5/10 activities");
             return { provider: "test", recordsSynced: 10, errors: [], duration: 100 };
@@ -342,15 +342,17 @@ describe("processSyncJob", () => {
     await runSyncJob(job, mockDb);
 
     // With 1 provider: within-provider 50% should yield 50% overall
-    const withinProviderSnapshot = progressSnapshots.find((s) => "pct" in s && s.pct === 50);
+    const withinProviderSnapshot = progressSnapshots.find(
+      (s) => "percentage" in s && s.percentage === 50,
+    );
     expect(withinProviderSnapshot).toBeDefined();
     expect(withinProviderSnapshot).toMatchObject({
       providers: { test: { status: "running", message: "5/10 activities" } },
-      pct: 50,
+      percentage: 50,
     });
   });
 
-  it("computes pct across multiple providers", async () => {
+  it("computes percentage across multiple providers", async () => {
     const providerA = createMockProvider({ id: "a", name: "A" });
     const providerB = createMockProvider({ id: "b", name: "B" });
     mockGetAllProviders.mockReturnValue([providerA, providerB]);
@@ -365,10 +367,12 @@ describe("processSyncJob", () => {
     await runSyncJob(job, mockDb);
 
     // After first provider completes: 50%, after second: 100%
-    const pcts = progressSnapshots.map((s) => ("pct" in s ? s.pct : undefined));
-    expect(pcts[pcts.length - 1]).toBe(100);
+    const percentages = progressSnapshots.map((s) =>
+      "percentage" in s ? s.percentage : undefined,
+    );
+    expect(percentages[percentages.length - 1]).toBe(100);
     // After first provider done, before second starts running
-    expect(pcts).toContain(50);
+    expect(percentages).toContain(50);
   });
 
   it("computes since date from sinceDays", async () => {

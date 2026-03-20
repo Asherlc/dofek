@@ -173,13 +173,13 @@ export function DataSourcesPanel() {
 
       // Set provider states to reflect the current progress
       const providerIds = Object.keys(activeJob.providers);
-      for (const [pid, pStatus] of Object.entries(activeJob.providers)) {
-        if (pStatus.status === "running" || pStatus.status === "pending") {
-          updateState(pid, { status: "syncing", message: pStatus.message });
-        } else if (pStatus.status === "done") {
-          updateState(pid, { status: "done", message: pStatus.message });
-        } else if (pStatus.status === "error") {
-          updateState(pid, { status: "error", message: pStatus.message });
+      for (const [pid, providerStatus] of Object.entries(activeJob.providers)) {
+        if (providerStatus.status === "running" || providerStatus.status === "pending") {
+          updateState(pid, { status: "syncing", message: providerStatus.message });
+        } else if (providerStatus.status === "done") {
+          updateState(pid, { status: "done", message: providerStatus.message });
+        } else if (providerStatus.status === "error") {
+          updateState(pid, { status: "error", message: providerStatus.message });
         }
       }
 

@@ -102,7 +102,7 @@ function StatBadge({ label, count }: { label: string; count: number }) {
   );
 }
 
-function ProviderCard({
+export function ProviderCard({
   provider,
   stats,
   syncing,
@@ -287,8 +287,8 @@ export default function ProvidersScreen() {
         setSyncingProviders((prev) => {
           const next = new Set(prev);
           for (const pid of providerIds) {
-            const pStatus = status.providers[pid];
-            if (pStatus && (pStatus.status === "running" || pStatus.status === "pending")) {
+            const providerStatus = status.providers[pid];
+            if (providerStatus && (providerStatus.status === "running" || providerStatus.status === "pending")) {
               next.add(pid);
             } else {
               next.delete(pid);
@@ -299,11 +299,11 @@ export default function ProvidersScreen() {
         setSyncProgress((prev) => {
           const next = { ...prev };
           for (const pid of providerIds) {
-            const pStatus = status.providers[pid];
-            if (pStatus && (pStatus.status === "running" || pStatus.status === "pending")) {
+            const providerStatus = status.providers[pid];
+            if (providerStatus && (providerStatus.status === "running" || providerStatus.status === "pending")) {
               next[pid] = {
-                percentage: status.pct,
-                message: pStatus.message,
+                percentage: status.percentage,
+                message: providerStatus.message,
               };
             } else {
               delete next[pid];
@@ -343,8 +343,8 @@ export default function ProvidersScreen() {
       const providerIds = Object.keys(activeJob.providers);
       setSyncingProviders((prev) => {
         const next = new Set(prev);
-        for (const [pid, pStatus] of Object.entries(activeJob.providers)) {
-          if (pStatus.status === "running" || pStatus.status === "pending") {
+        for (const [pid, providerStatus] of Object.entries(activeJob.providers)) {
+          if (providerStatus.status === "running" || providerStatus.status === "pending") {
             next.add(pid);
           }
         }

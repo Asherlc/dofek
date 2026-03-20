@@ -62,9 +62,9 @@ function categorize(metric: string): string {
 
 function formatPercent(whenTrue: number, whenFalse: number): string {
   if (whenFalse === 0) return "--";
-  const pct = ((whenTrue - whenFalse) / Math.abs(whenFalse)) * 100;
-  const sign = pct >= 0 ? "+" : "";
-  return `${sign}${pct.toFixed(1)}%`;
+  const percentage = ((whenTrue - whenFalse) / Math.abs(whenFalse)) * 100;
+  const sign = percentage >= 0 ? "+" : "";
+  return `${sign}${percentage.toFixed(1)}%`;
 }
 
 // ── Components ──

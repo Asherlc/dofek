@@ -436,13 +436,13 @@ describe("syncRouter", () => {
       });
     });
 
-    it("returns pct from job progress", async () => {
+    it("returns percentage from job progress", async () => {
       mockGetJob.mockResolvedValueOnce({
         data: { userId: "user-1" },
         getState: vi.fn().mockResolvedValue("active"),
         progress: {
           providers: { wahoo: { status: "running" } },
-          pct: 55,
+          percentage: 55,
         },
       });
 
@@ -451,11 +451,11 @@ describe("syncRouter", () => {
         userId: "user-1",
       });
 
-      const result = await caller.syncStatus({ jobId: "active-job-pct" });
-      expect(result?.pct).toBe(55);
+      const result = await caller.syncStatus({ jobId: "active-job-percentage" });
+      expect(result?.percentage).toBe(55);
     });
 
-    it("returns undefined pct when not present in progress", async () => {
+    it("returns undefined percentage when not present in progress", async () => {
       mockGetJob.mockResolvedValueOnce({
         data: { userId: "user-1" },
         getState: vi.fn().mockResolvedValue("active"),
@@ -469,8 +469,8 @@ describe("syncRouter", () => {
         userId: "user-1",
       });
 
-      const result = await caller.syncStatus({ jobId: "active-no-pct" });
-      expect(result?.pct).toBeUndefined();
+      const result = await caller.syncStatus({ jobId: "active-no-percentage" });
+      expect(result?.percentage).toBeUndefined();
     });
 
     it("parses progress with all valid status values", async () => {
@@ -618,7 +618,7 @@ describe("syncRouter", () => {
       });
     });
 
-    it("includes pct from job progress", async () => {
+    it("includes percentage from job progress", async () => {
       mockGetJobs.mockResolvedValueOnce([
         {
           id: "job-1",
@@ -626,7 +626,7 @@ describe("syncRouter", () => {
           getState: vi.fn().mockResolvedValue("active"),
           progress: {
             providers: { wahoo: { status: "running" } },
-            pct: 73,
+            percentage: 73,
           },
         },
       ]);
@@ -638,7 +638,7 @@ describe("syncRouter", () => {
 
       const result = await caller.activeSyncs();
       expect(result).toHaveLength(1);
-      expect(result[0]?.pct).toBe(73);
+      expect(result[0]?.percentage).toBe(73);
     });
 
     it("returns empty array when Redis is unavailable", async () => {

@@ -6,7 +6,7 @@ export interface ProviderStatus {
 export interface SyncJobStatus {
   status: "running" | "done" | "error";
   providers: Record<string, ProviderStatus>;
-  pct?: number;
+  percentage?: number;
   message?: string;
 }
 
@@ -45,17 +45,17 @@ export async function pollSyncJob(opts: PollSyncJobOptions): Promise<void> {
       return;
     }
 
-    for (const [pid, pStatus] of Object.entries(job.providers)) {
-      if (pStatus.status === "done" || pStatus.status === "error") {
+    for (const [pid, providerStatus] of Object.entries(job.providers)) {
+      if (providerStatus.status === "done" || providerStatus.status === "error") {
         updateState(pid, {
-          status: pStatus.status === "done" ? "done" : "error",
-          message: pStatus.message ?? undefined,
+          status: providerStatus.status === "done" ? "done" : "error",
+          message: providerStatus.message ?? undefined,
         });
-      } else if (pStatus.status === "running") {
+      } else if (providerStatus.status === "running") {
         updateState(pid, {
           status: "syncing",
-          message: pStatus.message ?? "Syncing...",
-          percentage: job.pct,
+          message: providerStatus.message ?? "Syncing...",
+          percentage: job.percentage,
         });
       }
     }

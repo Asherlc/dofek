@@ -175,13 +175,13 @@ describe("pollSyncJob", () => {
     });
   });
 
-  it("passes pct as percentage when provider is running", async () => {
+  it("passes percentage when provider is running", async () => {
     const updateState = vi.fn();
     const fetchStatus = vi
       .fn()
       .mockResolvedValueOnce({
         status: "running",
-        pct: 42,
+        percentage: 42,
         providers: { p1: { status: "running", message: "Fetching activities..." } },
       })
       .mockResolvedValueOnce({
@@ -209,7 +209,7 @@ describe("pollSyncJob", () => {
     const updateState = vi.fn();
     const fetchStatus = vi.fn().mockResolvedValue({
       status: "done",
-      pct: 100,
+      percentage: 100,
       providers: {
         p1: { status: "done", message: "5 synced" },
         p2: { status: "error", message: "Auth failed" },
