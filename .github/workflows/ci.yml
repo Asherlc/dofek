@@ -360,9 +360,68 @@ jobs:
           path: reports/mutation/
           retention-days: 7
 
+  test-swift:
+    name: Swift Tests
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: packages/ios/modules/health-kit/.build
+          key: swift-build-v1-${{ hashFiles('packages/ios/modules/health-kit/Package.swift') }}
+          restore-keys: swift-build-v1-
+      - name: Run Swift tests with coverage
+        run: |
+          cd packages/ios/modules/health-kit
+          bash scripts/check-coverage.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: swift-coverage
+          path: packages/ios/modules/health-kit/.build/debug/codecov/
+          retention-days: 7
+
+  mutation-swift:
+    name: Swift Mutation Testing
+    runs-on: macos-14
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/cache@v4
+        with:
+          path: packages/ios/modules/health-kit/.build
+          key: swift-build-v1-${{ hashFiles('packages/ios/modules/health-kit/Package.swift') }}
+          restore-keys: swift-build-v1-
+      - name: Install Muter
+        run: brew install muter-mutation-testing/formulae/muter
+      - name: Get changed Swift files
+        id: changed
+        run: |
+          CHANGED=$(git diff --name-only origin/main...HEAD \
+            | { grep '\.swift$' || true; } \
+            | { grep -v 'Tests/' || true; } \
+            | { grep -v 'HealthKitModule.swift' || true; } \
+            | tr '\n' ',' \
+            | sed 's/,$//')
+          echo "files=$CHANGED" >> "$GITHUB_OUTPUT"
+          echo "Mutating changed Swift files: $CHANGED"
+      - name: Run Muter
+        if: steps.changed.outputs.files != ''
+        working-directory: packages/ios/modules/health-kit
+        run: muter --files-to-mutate "${{ steps.changed.outputs.files }}"
+        timeout-minutes: 30
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: muter-report
+          path: packages/ios/modules/health-kit/muter_logs/
+          retention-days: 7
+
   docker:
     name: Docker (${{ matrix.target }})
-    needs: [lint, typecheck, knip, coverage, test-e2e-web, test-ios, build-ios]
+    needs: [lint, typecheck, knip, coverage, test-e2e-web, test-ios, build-ios, test-swift]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04-arm
     permissions:
