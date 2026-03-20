@@ -112,7 +112,7 @@ const GRID_PAIR_SECONDARY: Record<string, string> = {
   steps: "spo2Temp",
 };
 
-const DASHBOARD_SECTION_IDS = new Set([
+export const DASHBOARD_SECTION_IDS = new Set([
   "healthMonitor",
   "nextWorkout",
   "spo2Temp",
