@@ -187,7 +187,12 @@ describe("healthspan zone time with variable-interval HR data", () => {
     const result = await query<HealthspanResult>("healthspan.score", { weeks: 4 });
 
     const highIntensity = result.metrics.find((m) => m.name === "High Intensity");
+    expect(highIntensity).toBeDefined();
+    expect(highIntensity?.value).not.toBeNull();
+
     const aerobic = result.metrics.find((m) => m.name === "Aerobic Activity");
+    expect(aerobic).toBeDefined();
+    expect(aerobic?.value).not.toBeNull();
 
     // Both zones have equal number of samples (60 each) AND equal actual time (300s each).
     // With the fix, they should be approximately equal.
