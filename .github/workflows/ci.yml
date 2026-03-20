@@ -122,7 +122,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec vitest run --project integration --reporter=blob --coverage.enabled --coverage.reporter=json --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 --coverage.thresholds.statements=0
+      - run: pnpm exec vitest run --project integration --reporter=blob --reporter=verbose --coverage.enabled --coverage.reporter=json --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 --coverage.thresholds.statements=0
         timeout-minutes: 10
       - run: mv .vitest-reports/blob.json .vitest-reports/integration.json
       - uses: actions/upload-artifact@v4
