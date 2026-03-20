@@ -230,8 +230,15 @@ describe("syncRouter", () => {
   });
 
   describe("triggerSync", () => {
-    it("enqueues a sync job and returns jobId", async () => {
-      mockGetAllProviders.mockReturnValue([]);
+    it("enqueues one sync job per configured provider when providerId is omitted", async () => {
+      mockGetAllProviders.mockReturnValue([
+        { id: "strava", name: "Strava", validate: () => null },
+        { id: "wahoo", name: "Wahoo", validate: () => null },
+        { id: "peloton", name: "Peloton", validate: () => "Missing credentials" },
+      ]);
+      mockAdd
+        .mockResolvedValueOnce({ id: "job-strava" })
+        .mockResolvedValueOnce({ id: "job-wahoo" });
 
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
@@ -239,9 +246,19 @@ describe("syncRouter", () => {
       });
 
       const result = await caller.triggerSync({});
-      expect(result.jobId).toBe("job-123");
-      expect(mockAdd).toHaveBeenCalledWith("sync", {
-        providerId: undefined,
+      expect(result.jobId).toBe("job-strava");
+      expect(result.jobIds).toEqual(["job-strava", "job-wahoo"]);
+      expect(result.providerJobs).toEqual([
+        { providerId: "strava", jobId: "job-strava" },
+        { providerId: "wahoo", jobId: "job-wahoo" },
+      ]);
+      expect(mockAdd).toHaveBeenNthCalledWith(1, "sync", {
+        providerId: "strava",
+        sinceDays: undefined,
+        userId: "user-1",
+      });
+      expect(mockAdd).toHaveBeenNthCalledWith(2, "sync", {
+        providerId: "wahoo",
         sinceDays: undefined,
         userId: "user-1",
       });
@@ -257,6 +274,8 @@ describe("syncRouter", () => {
 
       const result = await caller.triggerSync({ providerId: "wahoo" });
       expect(result.jobId).toBe("job-123");
+      expect(result.jobIds).toEqual(["job-123"]);
+      expect(result.providerJobs).toEqual([{ providerId: "wahoo", jobId: "job-123" }]);
       expect(mockAdd).toHaveBeenCalledWith("sync", {
         providerId: "wahoo",
         sinceDays: undefined,
@@ -282,7 +301,7 @@ describe("syncRouter", () => {
 
     it("reuses the sync queue across calls", async () => {
       const { createSyncQueue } = await import("dofek/jobs/queues");
-      mockGetAllProviders.mockReturnValue([]);
+      mockGetAllProviders.mockReturnValue([{ id: "wahoo", name: "Wahoo", validate: () => null }]);
 
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
@@ -326,7 +345,7 @@ describe("syncRouter", () => {
 
     it("generates fallback jobId when BullMQ returns no id", async () => {
       mockAdd.mockResolvedValueOnce({ id: undefined });
-      mockGetAllProviders.mockReturnValue([]);
+      mockGetAllProviders.mockReturnValue([{ id: "wahoo", name: "Wahoo", validate: () => null }]);
 
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
@@ -334,7 +353,9 @@ describe("syncRouter", () => {
       });
 
       const result = await caller.triggerSync({});
-      expect(result.jobId).toMatch(/^job-\d+$/);
+      expect(result.jobId).toMatch(/^job-wahoo-\d+$/);
+      expect(result.jobIds).toHaveLength(1);
+      expect(result.providerJobs[0]?.providerId).toBe("wahoo");
     });
   });
 

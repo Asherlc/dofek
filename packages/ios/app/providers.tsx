@@ -298,11 +298,32 @@ export default function ProvidersScreen() {
   const handleSyncAll = useCallback(async () => {
     const enabled = (providers.data ?? []).filter((p) => p.authorized && !p.importOnly);
     const ids = enabled.map((p) => p.id);
+    if (ids.length === 0) return;
     setSyncingProviders(new Set(ids));
     setAnySyncing(true);
     try {
-      const { jobId } = await syncMutation.mutateAsync({ sinceDays: 7 });
-      await pollJob(jobId, ids);
+      const result = await syncMutation.mutateAsync({ sinceDays: 7 });
+      const providerJobMap = new Map(
+        (result.providerJobs ?? []).map((job) => [job.providerId, job.jobId] as const),
+      );
+      if (providerJobMap.size > 0) {
+        await Promise.all(
+          ids.map(async (providerId) => {
+            const jobId = providerJobMap.get(providerId);
+            if (!jobId) {
+              setSyncingProviders((prev) => {
+                const next = new Set(prev);
+                next.delete(providerId);
+                return next;
+              });
+              return;
+            }
+            await pollJob(jobId, [providerId]);
+          }),
+        );
+      } else {
+        await pollJob(result.jobId, ids);
+      }
     } catch {
       setSyncingProviders(new Set());
       setAnySyncing(false);

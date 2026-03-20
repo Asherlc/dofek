@@ -87,14 +87,34 @@ export function DataSourcesPanel() {
       setSyncAllMode(fullSync ? "full" : "sync");
       const enabled = (providers.data ?? []).filter((p) => p.authorized && !p.importOnly);
       const ids = enabled.map((p) => p.id);
+      if (ids.length === 0) {
+        setSyncAllMode(null);
+        return;
+      }
       for (const p of enabled) {
         updateState(p.id, { status: "syncing" });
       }
       try {
-        const { jobId } = await syncMutation.mutateAsync({
+        const result = await syncMutation.mutateAsync({
           sinceDays: fullSync ? undefined : 7,
         });
-        await doPollSyncJob(jobId, ids);
+        const providerJobMap = new Map(
+          (result.providerJobs ?? []).map((job) => [job.providerId, job.jobId] as const),
+        );
+        if (providerJobMap.size > 0) {
+          await Promise.all(
+            ids.map(async (providerId) => {
+              const jobId = providerJobMap.get(providerId);
+              if (!jobId) {
+                updateState(providerId, { status: "error", message: "Failed to start sync job" });
+                return;
+              }
+              await doPollSyncJob(jobId, [providerId]);
+            }),
+          );
+        } else {
+          await doPollSyncJob(result.jobId, ids);
+        }
       } catch (err: unknown) {
         for (const p of enabled) {
           updateState(p.id, {
