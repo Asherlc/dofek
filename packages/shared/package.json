@@ -16,7 +16,7 @@
     "./providers": "./src/providers.ts",
     "./units": "./src/units.ts",
     "./training": "./src/training.ts",
-    "./hrv": "./src/hrv.ts"
+    "./heart-rate-variability": "./src/heart-rate-variability.ts"
   },
   "dependencies": {
     "zod": "3.25.76"

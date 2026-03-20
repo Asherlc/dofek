@@ -94,6 +94,16 @@ Exports may contain both DSTU2 (1.0.2) and R4 (4.0.1) resources. Key differences
 
 A single export may contain records from multiple health systems (e.g., UCSF Health, Sutter Health, Quest Diagnostics). The `sourceName` attribute on `ClinicalRecord` and the `subject.display` field in FHIR resources identify the source.
 
+## Provider ID Unification
+
+As of migration `0037`, the `apple_health_kit` provider ID (iOS HealthKit live sync) was consolidated into `apple_health` (XML export import). Both are ingestion paths for the same Apple Watch data, so they now share a single provider ID. The migration merges overlapping `daily_metrics` rows with `COALESCE`, preferring XML export values.
+
+## Heart Rate Variability (HRV) Selection
+
+Apple Watch records SDNN (the standard HRV metric) during both overnight sleep and Breathe/Mindfulness sessions. Breathe session values are typically ~2x the overnight baseline because deliberate slow breathing maximises parasympathetic tone.
+
+To avoid this inflation, both ingestion paths (XML import and iOS HealthKit sync) select the **earliest reading of each day** rather than averaging or taking the latest. Overnight/early-morning readings come first chronologically and reflect resting autonomic status. This logic lives in `packages/shared/src/heart-rate-variability.ts` (`selectDailyHeartRateVariability`).
+
 ## Import
 
 ### CLI

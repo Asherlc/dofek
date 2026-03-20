@@ -5,10 +5,10 @@
 -- After this migration, both paths use provider_id = 'apple_health'.
 
 -- 1. daily_metrics: merge rows where both providers have data for the same date.
---    Prefer existing apple_health values (from full XML export) over apple_health_kit.
-UPDATE fitness.daily_metrics ahk
-SET provider_id = 'apple_health',
-    resting_hr           = COALESCE(ah.resting_hr,           ahk.resting_hr),
+--    Update the existing apple_health row with COALESCE'd values from apple_health_kit,
+--    preferring apple_health (XML export) values where both exist.
+UPDATE fitness.daily_metrics ah
+SET resting_hr           = COALESCE(ah.resting_hr,           ahk.resting_hr),
     hrv                  = COALESCE(ah.hrv,                  ahk.hrv),
     vo2max               = COALESCE(ah.vo2max,               ahk.vo2max),
     spo2_avg             = COALESCE(ah.spo2_avg,             ahk.spo2_avg),
@@ -34,19 +34,19 @@ SET provider_id = 'apple_health',
     recovery_high_minutes = COALESCE(ah.recovery_high_minutes, ahk.recovery_high_minutes),
     resilience_level     = COALESCE(ah.resilience_level,      ahk.resilience_level),
     source_name          = COALESCE(ah.source_name,           ahk.source_name)
-FROM fitness.daily_metrics ah
-WHERE ahk.provider_id = 'apple_health_kit'
-  AND ah.provider_id = 'apple_health'
+FROM fitness.daily_metrics ahk
+WHERE ah.provider_id = 'apple_health'
+  AND ahk.provider_id = 'apple_health_kit'
   AND ah.date = ahk.date
   AND ah.user_id = ahk.user_id;
 
 -- Delete apple_health_kit rows that were merged into existing apple_health rows
-DELETE FROM fitness.daily_metrics ahk
-USING fitness.daily_metrics ah
-WHERE ahk.provider_id = 'apple_health_kit'
-  AND ah.provider_id = 'apple_health'
-  AND ah.date = ahk.date
-  AND ah.user_id = ahk.user_id;
+DELETE FROM fitness.daily_metrics
+WHERE provider_id = 'apple_health_kit'
+  AND (date, user_id) IN (
+    SELECT date, user_id FROM fitness.daily_metrics
+    WHERE provider_id = 'apple_health'
+  );
 
 -- Remaining apple_health_kit daily_metrics rows (dates with no apple_health row): just rename
 UPDATE fitness.daily_metrics

@@ -1,4 +1,4 @@
-import { selectDailyHrv } from "@dofek/shared/hrv";
+import { selectDailyHeartRateVariability } from "@dofek/shared/heart-rate-variability";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { protectedProcedure, router } from "../trpc.ts";
@@ -459,7 +459,10 @@ export function aggregateDailyMetricSamples(
   samples: HealthKitSample[],
 ): Map<string, DailyMetricAccumulator> {
   const byDate = new Map<string, DailyMetricAccumulator>();
-  const hrvSamplesByDate = new Map<string, Array<{ value: number; startDate: string }>>();
+  const heartRateVariabilitySamplesByDate = new Map<
+    string,
+    Array<{ value: number; startDate: string }>
+  >();
 
   for (const sample of samples) {
     const dateStr = extractDate(sample.startDate);
@@ -485,9 +488,9 @@ export function aggregateDailyMetricSamples(
     if (!pointMapping) continue;
 
     if (pointMapping.column === "hrv") {
-      const daySamples = hrvSamplesByDate.get(dateStr) ?? [];
+      const daySamples = heartRateVariabilitySamplesByDate.get(dateStr) ?? [];
       daySamples.push({ value: sample.value, startDate: sample.startDate });
-      hrvSamplesByDate.set(dateStr, daySamples);
+      heartRateVariabilitySamplesByDate.set(dateStr, daySamples);
       continue;
     }
 
@@ -498,10 +501,10 @@ export function aggregateDailyMetricSamples(
   }
 
   // Select overnight HRV for each date using shared logic
-  for (const [dateStr, hrvSamples] of hrvSamplesByDate) {
+  for (const [dateStr, heartRateVariabilitySamples] of heartRateVariabilitySamplesByDate) {
     const accumulator = byDate.get(dateStr);
     if (accumulator) {
-      accumulator.hrv = selectDailyHrv(hrvSamples);
+      accumulator.hrv = selectDailyHeartRateVariability(heartRateVariabilitySamples);
     }
   }
 
