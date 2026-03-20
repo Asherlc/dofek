@@ -5,8 +5,11 @@ import {
   correlationConfidence,
   describeCorrelation,
   generateCorrelationInsight,
+  lgamma,
   linearRegression,
   pearsonCorrelation,
+  regularizedBeta,
+  tCDF,
 } from "./correlation.ts";
 
 describe("CORRELATION_METRICS", () => {
@@ -290,5 +293,87 @@ describe("linearRegression", () => {
     expect(result.slope).toBeCloseTo(2, 5);
     expect(result.intercept).toBeCloseTo(1, 5);
     expect(result.rSquared).toBeCloseTo(1, 5);
+  });
+});
+
+describe("regularizedBeta", () => {
+  it("returns 0 when x=0", () => {
+    expect(regularizedBeta(0, 2, 3)).toBe(0);
+  });
+
+  it("returns 1 when x=1", () => {
+    expect(regularizedBeta(1, 2, 3)).toBe(1);
+  });
+
+  it("returns 0.5 for I(0.5, 1, 1) (uniform beta CDF)", () => {
+    expect(regularizedBeta(0.5, 1, 1)).toBeCloseTo(0.5, 5);
+  });
+
+  it("returns 0.5 for I(0.5, 2, 2) (symmetric beta)", () => {
+    expect(regularizedBeta(0.5, 2, 2)).toBeCloseTo(0.5, 5);
+  });
+
+  it("returns value between 0 and 1 for x between 0 and 1", () => {
+    const result = regularizedBeta(0.3, 3, 4);
+    expect(result).toBeGreaterThan(0);
+    expect(result).toBeLessThan(1);
+  });
+
+  it("is monotonically increasing in x", () => {
+    const r1 = regularizedBeta(0.2, 2, 3);
+    const r2 = regularizedBeta(0.5, 2, 3);
+    const r3 = regularizedBeta(0.8, 2, 3);
+    expect(r1).toBeLessThan(r2);
+    expect(r2).toBeLessThan(r3);
+  });
+});
+
+describe("lgamma", () => {
+  it("lgamma(1) = 0 since Γ(1) = 1", () => {
+    expect(lgamma(1)).toBeCloseTo(0, 10);
+  });
+
+  it("lgamma(2) = 0 since Γ(2) = 1! = 1", () => {
+    expect(lgamma(2)).toBeCloseTo(0, 10);
+  });
+
+  it("lgamma(3) ≈ ln(2) since Γ(3) = 2! = 2", () => {
+    expect(lgamma(3)).toBeCloseTo(Math.log(2), 5);
+  });
+
+  it("lgamma(4) ≈ ln(6) since Γ(4) = 3! = 6", () => {
+    expect(lgamma(4)).toBeCloseTo(Math.log(6), 5);
+  });
+
+  it("lgamma(5) ≈ ln(24) since Γ(5) = 4! = 24", () => {
+    expect(lgamma(5)).toBeCloseTo(Math.log(24), 5);
+  });
+
+  it("lgamma(0.5) ≈ ln(√π) since Γ(1/2) = √π", () => {
+    expect(lgamma(0.5)).toBeCloseTo(Math.log(Math.sqrt(Math.PI)), 5);
+  });
+
+  it("handles values near zero (z < 0.5, reflection formula)", () => {
+    const result = lgamma(0.1);
+    // Γ(0.1) ≈ 9.5135, ln(9.5135) ≈ 2.2527
+    expect(result).toBeCloseTo(2.2527, 3);
+  });
+});
+
+describe("tCDF", () => {
+  it("tCDF(0, df) = 0.5 (symmetric distribution center)", () => {
+    expect(tCDF(0, 10)).toBeCloseTo(0.5, 10);
+    expect(tCDF(0, 1)).toBeCloseTo(0.5, 10);
+  });
+
+  it("large negative t approaches 0", () => {
+    const result = tCDF(-100, 10);
+    expect(result).toBeLessThan(0.001);
+  });
+
+  it("returns value between 0 and 1", () => {
+    const result = tCDF(-1.5, 5);
+    expect(result).toBeGreaterThan(0);
+    expect(result).toBeLessThan(1);
   });
 });

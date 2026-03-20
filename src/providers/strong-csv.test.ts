@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { parseDurationString, parseStrongCsv, parseStrongExerciseName } from "./strong-csv.ts";
+import {
+  parseDurationString,
+  parseOptionalFloat,
+  parseOptionalInt,
+  parseStrongCsv,
+  parseStrongExerciseName,
+} from "./strong-csv.ts";
 
 describe("parseStrongExerciseName", () => {
   it("splits name and equipment from parens", () => {
@@ -436,5 +442,73 @@ describe("parseStrongCsv — field-level assertions", () => {
     const groups = parseStrongCsv(csv);
     expect(groups).toHaveLength(1);
     expect(groups[0]?.date).toBe("2024-11-02");
+  });
+});
+
+describe("parseOptionalFloat", () => {
+  it("returns number for valid float", () => {
+    expect(parseOptionalFloat("12.5")).toBe(12.5);
+  });
+
+  it("returns number for valid integer string", () => {
+    expect(parseOptionalFloat("100")).toBe(100);
+  });
+
+  it("returns null for empty string", () => {
+    expect(parseOptionalFloat("")).toBeNull();
+  });
+
+  it("returns null for whitespace-only", () => {
+    expect(parseOptionalFloat("  ")).toBeNull();
+  });
+
+  it("returns null for non-numeric", () => {
+    expect(parseOptionalFloat("abc")).toBeNull();
+  });
+
+  it("returns 0 for '0'", () => {
+    expect(parseOptionalFloat("0")).toBe(0);
+  });
+
+  it("returns 0 for '0.0'", () => {
+    expect(parseOptionalFloat("0.0")).toBe(0);
+  });
+
+  it("handles leading whitespace", () => {
+    expect(parseOptionalFloat("  42.5")).toBe(42.5);
+  });
+
+  it("returns null for tab-only", () => {
+    expect(parseOptionalFloat("\t")).toBeNull();
+  });
+});
+
+describe("parseOptionalInt", () => {
+  it("returns number for valid integer", () => {
+    expect(parseOptionalInt("10")).toBe(10);
+  });
+
+  it("returns null for empty string", () => {
+    expect(parseOptionalInt("")).toBeNull();
+  });
+
+  it("returns null for whitespace-only", () => {
+    expect(parseOptionalInt("   ")).toBeNull();
+  });
+
+  it("returns null for non-numeric", () => {
+    expect(parseOptionalInt("abc")).toBeNull();
+  });
+
+  it("returns 0 for '0'", () => {
+    expect(parseOptionalInt("0")).toBe(0);
+  });
+
+  it("truncates float to int", () => {
+    expect(parseOptionalInt("12.5")).toBe(12);
+  });
+
+  it("handles leading whitespace", () => {
+    expect(parseOptionalInt("  7")).toBe(7);
   });
 });
