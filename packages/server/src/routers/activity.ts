@@ -123,7 +123,11 @@ export const activityRouter = router({
               s.total_distance,
               s.elevation_gain_m,
               s.elevation_loss_m,
-              a.calories,
+              COALESCE(
+                (a.raw->>'calories')::REAL,
+                (a.raw->>'totalEnergyBurned')::REAL,
+                (a.raw->>'total_energy_burned')::REAL
+              ) AS calories,
               s.sample_count
             FROM fitness.v_activity a
             LEFT JOIN fitness.activity_summary s ON s.activity_id = a.id
