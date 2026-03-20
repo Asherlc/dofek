@@ -1,9 +1,9 @@
-import { selectDailyHrv } from "@dofek/hrv";
+import { selectDailyHeartRateVariability } from "@dofek/heart-rate-variability";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { protectedProcedure, router } from "../trpc.ts";
 
-const PROVIDER_ID = "apple_health_kit";
+const PROVIDER_ID = "apple_health";
 const BATCH_SIZE = 500;
 const MAX_SLEEP_SESSION_GAP_MS = 90 * 60 * 1000;
 
@@ -186,11 +186,11 @@ const workoutActivityTypeMap: Record<string, string> = {
 
 type Database = Parameters<Parameters<typeof protectedProcedure.mutation>[0]>[0]["ctx"]["db"];
 
-/** Ensure the apple_health_kit provider row exists */
+/** Ensure the apple_health provider row exists */
 async function ensureProvider(db: Database) {
   await db.execute(
     sql`INSERT INTO fitness.provider (id, name)
-        VALUES (${PROVIDER_ID}, 'Apple HealthKit')
+        VALUES (${PROVIDER_ID}, 'Apple Health')
         ON CONFLICT (id) DO NOTHING`,
   );
 }
@@ -459,7 +459,10 @@ export function aggregateDailyMetricSamples(
   samples: HealthKitSample[],
 ): Map<string, DailyMetricAccumulator> {
   const byDate = new Map<string, DailyMetricAccumulator>();
-  const hrvSamplesByDate = new Map<string, Array<{ value: number; startDate: string }>>();
+  const heartRateVariabilitySamplesByDate = new Map<
+    string,
+    Array<{ value: number; startDate: string }>
+  >();
 
   for (const sample of samples) {
     const dateStr = extractDate(sample.startDate);
@@ -485,9 +488,9 @@ export function aggregateDailyMetricSamples(
     if (!pointMapping) continue;
 
     if (pointMapping.column === "hrv") {
-      const daySamples = hrvSamplesByDate.get(dateStr) ?? [];
+      const daySamples = heartRateVariabilitySamplesByDate.get(dateStr) ?? [];
       daySamples.push({ value: sample.value, startDate: sample.startDate });
-      hrvSamplesByDate.set(dateStr, daySamples);
+      heartRateVariabilitySamplesByDate.set(dateStr, daySamples);
       continue;
     }
 
@@ -498,10 +501,10 @@ export function aggregateDailyMetricSamples(
   }
 
   // Select overnight HRV for each date using shared logic
-  for (const [dateStr, hrvSamples] of hrvSamplesByDate) {
+  for (const [dateStr, heartRateVariabilitySamples] of heartRateVariabilitySamplesByDate) {
     const accumulator = byDate.get(dateStr);
     if (accumulator) {
-      accumulator.hrv = selectDailyHrv(hrvSamples);
+      accumulator.hrv = selectDailyHeartRateVariability(heartRateVariabilitySamples);
     }
   }
 

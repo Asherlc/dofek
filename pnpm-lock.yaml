@@ -14,9 +14,9 @@ importers:
       '@bull-board/express':
         specifier: ^6.20.5
         version: 6.20.5
-      '@dofek/hrv':
+      '@dofek/heart-rate-variability':
         specifier: workspace:*
-        version: link:packages/hrv
+        version: link:packages/heart-rate-variability
       '@opentelemetry/exporter-logs-otlp-proto':
         specifier: ^0.213.0
         version: 0.213.0(@opentelemetry/api@1.9.0)
@@ -180,7 +180,7 @@ importers:
         specifier: 3.2.4
         version: 3.2.4(@types/node@22.19.15)(jiti@2.6.1)(jsdom@29.0.0)(lightningcss@1.31.1)(msw@2.12.11(@types/node@22.19.15)(typescript@5.9.3))(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
 
-  packages/hrv: {}
+  packages/heart-rate-variability: {}
 
   packages/ios:
     dependencies:
@@ -299,9 +299,9 @@ importers:
       '@dofek/auth':
         specifier: workspace:*
         version: link:../auth
-      '@dofek/hrv':
+      '@dofek/heart-rate-variability':
         specifier: workspace:*
-        version: link:../hrv
+        version: link:../heart-rate-variability
       '@dofek/stats':
         specifier: workspace:*
         version: link:../stats

@@ -7,7 +7,7 @@
  * reading of the day avoids this inflation — overnight/early-morning readings
  * come first chronologically and reflect resting autonomic status.
  */
-export function selectDailyHrv(
+export function selectDailyHeartRateVariability(
   samples: ReadonlyArray<{ value: number; startDate: Date | string }>,
 ): number | null {
   if (samples.length === 0) return null;

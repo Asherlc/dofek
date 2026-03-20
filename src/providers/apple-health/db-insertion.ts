@@ -1,4 +1,4 @@
-import { selectDailyHrv } from "@dofek/hrv";
+import { selectDailyHeartRateVariability } from "@dofek/heart-rate-variability";
 import { sql } from "drizzle-orm";
 import type { SyncDatabase } from "../../db/index.ts";
 import {
@@ -289,7 +289,10 @@ export async function upsertDailyMetricsBatch(
 ): Promise<number> {
   // Aggregate by date -- sum steps/energy, select overnight HRV, take latest for other point-in-time values
   const byDate = new Map<string, Map<string, number>>();
-  const hrvSamplesByDate = new Map<string, Array<{ value: number; startDate: Date }>>();
+  const heartRateVariabilitySamplesByDate = new Map<
+    string,
+    Array<{ value: number; startDate: Date }>
+  >();
   for (const r of records) {
     if (!DAILY_METRIC_TYPES.has(r.type)) continue;
     const dateKey = dateToString(r.startDate);
@@ -299,9 +302,9 @@ export async function upsertDailyMetricsBatch(
     if (ADDITIVE_DAILY_TYPES.has(r.type)) {
       day.set(r.type, (day.get(r.type) ?? 0) + r.value);
     } else if (r.type === "HKQuantityTypeIdentifierHeartRateVariabilitySDNN") {
-      const daySamples = hrvSamplesByDate.get(dateKey) ?? [];
+      const daySamples = heartRateVariabilitySamplesByDate.get(dateKey) ?? [];
       daySamples.push({ value: r.value, startDate: r.startDate });
-      hrvSamplesByDate.set(dateKey, daySamples);
+      heartRateVariabilitySamplesByDate.set(dateKey, daySamples);
     } else {
       // Point-in-time: keep latest
       day.set(r.type, r.value);
@@ -309,9 +312,9 @@ export async function upsertDailyMetricsBatch(
   }
 
   // Select overnight HRV for each date using shared logic
-  for (const [dateKey, hrvSamples] of hrvSamplesByDate) {
+  for (const [dateKey, heartRateVariabilitySamples] of heartRateVariabilitySamplesByDate) {
     const day = byDate.get(dateKey);
-    const selected = selectDailyHrv(hrvSamples);
+    const selected = selectDailyHeartRateVariability(heartRateVariabilitySamples);
     if (day && selected !== null) {
       day.set("HKQuantityTypeIdentifierHeartRateVariabilitySDNN", selected);
     }

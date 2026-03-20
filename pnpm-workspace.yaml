@@ -8,7 +8,7 @@ packages:
   - packages/onboarding
   - packages/providers-meta
   - packages/auth
-  - packages/hrv
+  - packages/heart-rate-variability
   - packages/server
   - packages/web
   - packages/ios

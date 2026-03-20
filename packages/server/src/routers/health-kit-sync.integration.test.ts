@@ -70,7 +70,7 @@ describe("HealthKit sync router", () => {
       // Verify in DB
       const rows = await testCtx.db.execute(
         sql`SELECT * FROM fitness.body_measurement
-            WHERE provider_id = 'apple_health_kit'
+            WHERE provider_id = 'apple_health'
               AND external_id = 'hk:body-mass-uuid-1'`,
       );
       expect(rows.length).toBe(1);
@@ -97,7 +97,7 @@ describe("HealthKit sync router", () => {
 
       const rows = await testCtx.db.execute(
         sql`SELECT * FROM fitness.body_measurement
-            WHERE provider_id = 'apple_health_kit'
+            WHERE provider_id = 'apple_health'
               AND external_id = 'hk:body-fat-uuid-1'`,
       );
       expect(rows.length).toBe(1);
@@ -158,7 +158,7 @@ describe("HealthKit sync router", () => {
       // Check aggregated daily metrics
       const rows = await testCtx.db.execute(
         sql`SELECT * FROM fitness.daily_metrics
-            WHERE provider_id = 'apple_health_kit'
+            WHERE provider_id = 'apple_health'
               AND date = '2025-06-02'`,
       );
       expect(rows.length).toBe(1);
@@ -201,7 +201,7 @@ describe("HealthKit sync router", () => {
 
       const rows = await testCtx.db.execute(
         sql`SELECT hrv FROM fitness.daily_metrics
-            WHERE provider_id = 'apple_health_kit'
+            WHERE provider_id = 'apple_health'
               AND date = '2025-06-02'`,
       );
       expect(rows.length).toBe(1);
@@ -229,7 +229,7 @@ describe("HealthKit sync router", () => {
 
       const rows = await testCtx.db.execute(
         sql`SELECT * FROM fitness.daily_metrics
-            WHERE provider_id = 'apple_health_kit'
+            WHERE provider_id = 'apple_health'
               AND date = '2025-06-03'`,
       );
       expect(rows.length).toBe(1);
@@ -268,7 +268,7 @@ describe("HealthKit sync router", () => {
 
       const rows = await testCtx.db.execute(
         sql`SELECT * FROM fitness.metric_stream
-            WHERE provider_id = 'apple_health_kit'
+            WHERE provider_id = 'apple_health'
             ORDER BY recorded_at`,
       );
       expect(rows.length).toBeGreaterThanOrEqual(2);
@@ -303,7 +303,7 @@ describe("HealthKit sync router", () => {
 
       const rows = await testCtx.db.execute(
         sql`SELECT * FROM fitness.health_event
-            WHERE provider_id = 'apple_health_kit'
+            WHERE provider_id = 'apple_health'
               AND external_id = 'hk:unknown-uuid-1'`,
       );
       expect(rows.length).toBe(1);
@@ -334,7 +334,7 @@ describe("HealthKit sync router", () => {
 
       const rows = await testCtx.db.execute(
         sql`SELECT * FROM fitness.activity
-            WHERE provider_id = 'apple_health_kit'
+            WHERE provider_id = 'apple_health'
               AND external_id = 'hk:workout:workout-uuid-1'`,
       );
       expect(rows.length).toBe(1);
@@ -362,7 +362,7 @@ describe("HealthKit sync router", () => {
 
       const rows = await testCtx.db.execute(
         sql`SELECT * FROM fitness.activity
-            WHERE provider_id = 'apple_health_kit'
+            WHERE provider_id = 'apple_health'
               AND external_id = 'hk:workout:workout-uuid-unknown'`,
       );
       expect(rows.length).toBe(1);
@@ -416,7 +416,7 @@ describe("HealthKit sync router", () => {
 
       const rows = await testCtx.db.execute(
         sql`SELECT * FROM fitness.sleep_session
-            WHERE provider_id = 'apple_health_kit'
+            WHERE provider_id = 'apple_health'
               AND external_id = 'hk:sleep:sleep-inbed-1'`,
       );
       expect(rows.length).toBe(1);
@@ -464,7 +464,7 @@ describe("HealthKit sync router", () => {
 
       const rows = await testCtx.db.execute(
         sql`SELECT * FROM fitness.sleep_session
-            WHERE provider_id = 'apple_health_kit'
+            WHERE provider_id = 'apple_health'
               AND external_id = 'hk:sleep:stage-only-light-1'`,
       );
       expect(rows.length).toBe(1);
@@ -495,7 +495,7 @@ describe("HealthKit sync router", () => {
 
       const rows = await testCtx.db.execute(
         sql`SELECT * FROM fitness.body_measurement
-            WHERE provider_id = 'apple_health_kit'
+            WHERE provider_id = 'apple_health'
               AND external_id = 'hk:dedup-body-uuid-1'`,
       );
       expect(rows.length).toBe(1);
@@ -521,7 +521,7 @@ describe("HealthKit sync router", () => {
 
       const rows = await testCtx.db.execute(
         sql`SELECT * FROM fitness.activity
-            WHERE provider_id = 'apple_health_kit'
+            WHERE provider_id = 'apple_health'
               AND external_id = 'hk:workout:dedup-workout-uuid-1'`,
       );
       expect(rows.length).toBe(1);
@@ -550,7 +550,7 @@ describe("HealthKit sync router", () => {
 
       const rows = await testCtx.db.execute(
         sql`SELECT * FROM fitness.sleep_session
-            WHERE provider_id = 'apple_health_kit'
+            WHERE provider_id = 'apple_health'
               AND external_id = 'hk:sleep:dedup-sleep-inbed-1'`,
       );
       expect(rows.length).toBe(1);

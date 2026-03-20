@@ -77,7 +77,7 @@
     "ios:device": "pnpm --filter dofek-ios ios:device"
   },
   "dependencies": {
-    "@dofek/hrv": "workspace:*",
+    "@dofek/heart-rate-variability": "workspace:*",
     "@bull-board/api": "^6.20.5",
     "@bull-board/express": "^6.20.5",
     "@opentelemetry/exporter-logs-otlp-proto": "^0.213.0",
