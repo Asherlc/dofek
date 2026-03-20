@@ -58,7 +58,7 @@ describe("triggerSync token lookup SQL", () => {
       sql`INSERT INTO fitness.provider (id, name, user_id) VALUES ('wahoo', 'Wahoo', ${testUserId})`,
     );
     await testCtx.db.execute(
-      sql`INSERT INTO fitness.oauth_token (provider_id, access_token) VALUES ('strava', 'tok')`,
+      sql`INSERT INTO fitness.oauth_token (provider_id, access_token, expires_at) VALUES ('strava', 'tok', '2099-01-01T00:00:00Z')`,
     );
   });
 
