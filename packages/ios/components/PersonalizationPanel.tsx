@@ -116,8 +116,8 @@ export function PersonalizationPanel() {
       <ParamCard
         paramKey="readinessWeights"
         personalized={data.parameters.readinessWeights}
-        value={`Heart Rate Variability ${Math.round(data.effective.readinessWeights.hrv * 100)}%, Resting Heart Rate ${Math.round(data.effective.readinessWeights.restingHr * 100)}%, Sleep ${Math.round(data.effective.readinessWeights.sleep * 100)}%, Load ${Math.round(data.effective.readinessWeights.loadBalance * 100)}%`}
-        defaultValue={`Heart Rate Variability ${Math.round(data.defaults.readinessWeights.hrv * 100)}%, Resting Heart Rate ${Math.round(data.defaults.readinessWeights.restingHr * 100)}%, Sleep ${Math.round(data.defaults.readinessWeights.sleep * 100)}%, Load ${Math.round(data.defaults.readinessWeights.loadBalance * 100)}%`}
+        value={`HRV: ${Math.round(data.effective.readinessWeights.hrv * 100)}%, RHR: ${Math.round(data.effective.readinessWeights.restingHr * 100)}%, Sleep: ${Math.round(data.effective.readinessWeights.sleep * 100)}%, Load: ${Math.round(data.effective.readinessWeights.loadBalance * 100)}%`}
+        defaultValue={`HRV: ${Math.round(data.defaults.readinessWeights.hrv * 100)}%, RHR: ${Math.round(data.defaults.readinessWeights.restingHr * 100)}%, Sleep: ${Math.round(data.defaults.readinessWeights.sleep * 100)}%, Load: ${Math.round(data.defaults.readinessWeights.loadBalance * 100)}%`}
         quality={
           data.parameters.readinessWeights
             ? `${data.parameters.readinessWeights.sampleCount} days, r=${data.parameters.readinessWeights.correlation}`
@@ -140,8 +140,8 @@ export function PersonalizationPanel() {
       <ParamCard
         paramKey="stressThresholds"
         personalized={data.parameters.stressThresholds}
-        value={`Heart Rate Variability: ${data.effective.stressThresholds.hrvThresholds.map((t) => t.toFixed(1)).join(", ")}`}
-        defaultValue={`Heart Rate Variability: ${data.defaults.stressThresholds.hrvThresholds.map((t) => t.toFixed(1)).join(", ")}`}
+        value={`HRV Thresholds: ${data.effective.stressThresholds.hrvThresholds.map((t) => t.toFixed(1)).join(", ")}`}
+        defaultValue={`HRV Thresholds: ${data.defaults.stressThresholds.hrvThresholds.map((t) => t.toFixed(1)).join(", ")}`}
         quality={
           data.parameters.stressThresholds
             ? `${data.parameters.stressThresholds.sampleCount} days`
@@ -302,7 +302,7 @@ const styles = StyleSheet.create({
   paramValue: {
     fontSize: 14,
     color: colors.text,
-    fontFamily: "Menlo",
+    fontVariant: ["tabular-nums"],
     marginTop: 2,
   },
   paramQuality: {

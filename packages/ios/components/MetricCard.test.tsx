@@ -41,6 +41,14 @@ describe("MetricCard", () => {
     expect(screen.queryByText("\u2192")).toBeNull();
   });
 
+  it("renders trend arrow with provided color", () => {
+    const customColor = "rgb(255, 0, 255)"; // JSDOM converts hex to rgb in computed style
+    render(<MetricCard title="HRV" value="62" trendDirection="up" color={customColor} />);
+    // Find the arrow text element
+    const arrow = screen.getByText("\u2191");
+    expect(arrow.style.color).toBe(customColor);
+  });
+
   it("renders subtitle when provided", () => {
     render(<MetricCard title="Stress" value="1.2" subtitle="Trend: improving" />);
     expect(screen.getByText("Trend: improving")).toBeTruthy();

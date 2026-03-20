@@ -181,6 +181,8 @@ export default function StrainScreen() {
                     avgHr={activity.avg_hr ?? null}
                     maxHr={activity.max_hr ?? null}
                     avgPower={activity.avg_power ?? null}
+                    distanceKm={activity.distance_meters ? activity.distance_meters / 1000 : null}
+                    calories={activity.calories ?? null}
                   />
                 ))}
               </View>
