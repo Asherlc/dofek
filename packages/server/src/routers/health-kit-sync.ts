@@ -371,8 +371,6 @@ function categorize(
   return "healthEvent";
 }
 
-// Stryker disable all — SQL upsert wiring in process* functions and router is validated
-// by integration tests; mutating SQL template literals produces equivalent mutants.
 /** Process body measurement samples */
 async function processBodyMeasurements(
   db: Database,
@@ -399,7 +397,6 @@ async function processBodyMeasurements(
   }
   return inserted;
 }
-// Stryker restore all
 
 /** Aggregated daily metric values for a single date */
 export interface DailyMetricAccumulator {
@@ -507,7 +504,6 @@ export function aggregateDailyMetricSamples(
   return byDate;
 }
 
-// Stryker disable all
 /** Process daily metric samples (both additive and point-in-time) */
 async function processDailyMetrics(
   db: Database,
