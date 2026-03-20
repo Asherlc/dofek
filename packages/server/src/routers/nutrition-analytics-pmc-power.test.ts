@@ -309,13 +309,13 @@ describe("powerRouter", () => {
   describe("eftpTrend", () => {
     it("returns eFTP trend data", async () => {
       const execute = vi.fn();
-      // First call: NP samples — 300 samples at 1s with ~260W average
-      const npSamples = makePowerSamples(
+      // First call: Normalized Power samples — 300 samples at 1s with ~260W average
+      const normalizedPowerSamples = makePowerSamples(
         "act-1",
         "2024-01-15",
         Array.from({ length: 300 }, () => 260),
       ).map((s) => ({ ...s, activity_name: "Ride" }));
-      execute.mockResolvedValueOnce(npSamples);
+      execute.mockResolvedValueOnce(normalizedPowerSamples);
       // Second call: power curve samples — 1200 samples for CP model
       const pcSamples = makePowerSamples(
         "act-1",
@@ -331,7 +331,7 @@ describe("powerRouter", () => {
       const result = await caller.eftpTrend({ days: 365 });
 
       expect(result.trend).toHaveLength(1);
-      // NP of constant 260W = 260, eFTP = 260 * 0.95 = 247
+      // Normalized Power of constant 260W = 260, eFTP = 260 * 0.95 = 247
       expect(result.trend[0]?.eftp).toBe(247);
     });
   });

@@ -17,7 +17,7 @@ const powerCurveSampleSchema = z.object({
   interval_s: z.coerce.number(),
 });
 
-const npSampleSchema = z.object({
+const normalizedPowerSampleSchema = z.object({
   activity_id: z.string(),
   activity_date: z.string(),
   activity_name: z.string().nullable(),
@@ -70,10 +70,10 @@ function powerCurveSamplesQuery(days: number, userId: string) {
 /**
  * Fetch per-sample power data for Normalized Power computation.
  * Excludes zero-power samples (coasting) since they'd artificially
- * lower NP. Only includes activities with >= 240 power-positive samples
+ * lower Normalized Power. Only includes activities with >= 240 power-positive samples
  * (~20 min at any sample rate).
  */
-function npSamplesQuery(days: number, userId: string) {
+function normalizedPowerSamplesQuery(days: number, userId: string) {
   return sql`
     WITH activity_info AS (
       SELECT a.id AS activity_id,
@@ -184,7 +184,7 @@ function computePowerCurve(samples: z.infer<typeof powerCurveSampleSchema>[]) {
  * NP = (mean(rolling_30s_avg^4))^0.25 — accounts for the metabolic cost
  * of variable-intensity efforts.
  */
-function computeNormalizedPower(samples: z.infer<typeof npSampleSchema>[]) {
+function computeNormalizedPower(samples: z.infer<typeof normalizedPowerSampleSchema>[]) {
   const activities = groupByActivity(samples);
   const results: { activityDate: string; activityName: string | null; normalizedPower: number }[] =
     [];
@@ -209,12 +209,12 @@ function computeNormalizedPower(samples: z.infer<typeof npSampleSchema>[]) {
     }
 
     if (count === 0) continue;
-    const np = Math.round((sum4thPower / count) ** 0.25 * 10) / 10;
+    const normalizedPower = Math.round((sum4thPower / count) ** 0.25 * 10) / 10;
 
     results.push({
       activityDate,
       activityName: rows[0]?.activity_name ?? null,
-      normalizedPower: np,
+      normalizedPower,
     });
   }
 
@@ -263,15 +263,15 @@ export const powerRouter = router({
   eftpTrend: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(365) }))
     .query(async ({ ctx, input }) => {
-      const npSamples = await executeWithSchema(
+      const normalizedPowerSamples = await executeWithSchema(
         ctx.db,
-        npSampleSchema,
-        npSamplesQuery(input.days, ctx.userId),
+        normalizedPowerSampleSchema,
+        normalizedPowerSamplesQuery(input.days, ctx.userId),
       );
 
-      const npResults = computeNormalizedPower(npSamples);
+      const normalizedPowerResults = computeNormalizedPower(normalizedPowerSamples);
 
-      const trend = npResults.map((r) => ({
+      const trend = normalizedPowerResults.map((r) => ({
         date: r.activityDate,
         eftp: Math.round(r.normalizedPower * 0.95),
         activityName: r.activityName,
