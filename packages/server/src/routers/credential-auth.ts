@@ -1,6 +1,6 @@
+import { TRPCError } from "@trpc/server";
 import { ensureProvider, saveTokens } from "dofek/db/tokens";
 import { getAllProviders } from "dofek/providers/registry";
-import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { queryCache } from "../lib/cache.ts";
 import { protectedProcedure, router } from "../trpc.ts";
