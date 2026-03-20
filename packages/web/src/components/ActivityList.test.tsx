@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
-import { render, screen, fireEvent } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { ActivityList } from "./ActivityList";
+import { type Activity, ActivityList } from "./ActivityList";
 
 // Mock @tanstack/react-router
 const mockNavigate = vi.fn();
@@ -10,7 +10,7 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 describe("ActivityList", () => {
-  const mockActivities = [
+  const mockActivities: Activity[] = [
     {
       id: "1",
       started_at: "2026-03-18T07:00:00Z",
@@ -56,9 +56,15 @@ describe("ActivityList", () => {
   });
 
   it("handles activities without distance or calories", () => {
-    const activityWithoutStats = [
+    const activityWithoutStats: Activity[] = [
       {
-        ...mockActivities[0],
+        id: "2",
+        started_at: "2026-03-18T08:00:00Z",
+        ended_at: "2026-03-18T08:30:00Z",
+        activity_type: "walking",
+        name: "Morning Walk",
+        provider_id: "apple",
+        source_providers: ["apple"],
         distance_meters: null,
         calories: undefined,
       },

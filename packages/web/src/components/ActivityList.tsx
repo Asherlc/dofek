@@ -1,7 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
-interface Activity {
+export interface Activity {
   id: string;
   started_at: string;
   ended_at: string | null;
@@ -94,9 +94,7 @@ export function ActivityList({
                   {new Date(a.started_at).toLocaleDateString()}
                 </td>
                 <td className="py-2 pr-4 capitalize whitespace-nowrap">{a.activity_type}</td>
-                <td className="py-2 pr-4 text-zinc-300 max-w-[200px] truncate">
-                  {a.name ?? "—"}
-                </td>
+                <td className="py-2 pr-4 text-zinc-300 max-w-[200px] truncate">{a.name ?? "—"}</td>
                 <td className="py-2 pr-4 tabular-nums whitespace-nowrap">
                   {duration != null ? `${duration}m` : "—"}
                 </td>
