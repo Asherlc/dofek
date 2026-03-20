@@ -98,6 +98,7 @@ const metricStreamTypes: Record<string, { column: string }> = {
   HKQuantityTypeIdentifierRespiratoryRate: { column: "respiratory_rate" },
   HKQuantityTypeIdentifierBloodGlucose: { column: "blood_glucose" },
   HKQuantityTypeIdentifierEnvironmentalAudioExposure: { column: "audio_exposure" },
+  HKQuantityTypeIdentifierAppleSleepingWristTemperature: { column: "skin_temperature" },
 };
 
 /** HKWorkoutActivityType raw values to activity type strings */
@@ -805,6 +806,35 @@ async function aggregateSpO2ToDailyMetrics(
   );
 }
 
+/**
+ * Aggregate wrist temperature readings from metric_stream into daily_metrics.skin_temp_c.
+ * Apple Watch reports sleeping wrist temperature in °C; this computes the daily
+ * average and stores it alongside other daily metrics.
+ */
+async function aggregateSkinTempToDailyMetrics(
+  db: Database,
+  userId: string,
+  bounds: { startAt: string; endAt: string },
+): Promise<void> {
+  await db.execute(
+    sql`INSERT INTO fitness.daily_metrics (date, provider_id, user_id, skin_temp_c)
+        SELECT
+          (recorded_at AT TIME ZONE 'UTC')::date AS date,
+          provider_id,
+          user_id,
+          AVG(skin_temperature) AS skin_temp_c
+        FROM fitness.metric_stream
+        WHERE provider_id = ${PROVIDER_ID}
+          AND user_id = ${userId}
+          AND skin_temperature IS NOT NULL
+          AND recorded_at >= ${bounds.startAt}::timestamptz
+          AND recorded_at <= ${bounds.endAt}::timestamptz
+        GROUP BY (recorded_at AT TIME ZONE 'UTC')::date, provider_id, user_id
+        ON CONFLICT (date, provider_id) DO UPDATE SET
+          skin_temp_c = EXCLUDED.skin_temp_c`,
+  );
+}
+
 // ── Router ──
 
 export const healthKitSyncRouter = router({
@@ -862,12 +892,20 @@ export const healthKitSyncRouter = router({
           );
           await linkUnassignedHeartRateToWorkouts(ctx.db, ctx.userId, bounds ?? undefined);
 
-          // Aggregate SpO2 readings from metric_stream into daily_metrics
-          const spo2Samples = metricStreamSamples.filter(
-            (s) => s.type === "HKQuantityTypeIdentifierOxygenSaturation",
-          );
-          if (spo2Samples.length > 0 && bounds) {
-            await aggregateSpO2ToDailyMetrics(ctx.db, ctx.userId, bounds);
+          // Aggregate SpO2 and skin temperature from metric_stream into daily_metrics
+          if (bounds) {
+            const hasSpo2 = metricStreamSamples.some(
+              (s) => s.type === "HKQuantityTypeIdentifierOxygenSaturation",
+            );
+            if (hasSpo2) {
+              await aggregateSpO2ToDailyMetrics(ctx.db, ctx.userId, bounds);
+            }
+            const hasSkinTemp = metricStreamSamples.some(
+              (s) => s.type === "HKQuantityTypeIdentifierAppleSleepingWristTemperature",
+            );
+            if (hasSkinTemp) {
+              await aggregateSkinTempToDailyMetrics(ctx.db, ctx.userId, bounds);
+            }
           }
         }
       } catch (error: unknown) {

@@ -285,7 +285,8 @@ public class HealthKitModule: Module {
             return HKUnit.meter().unitDivided(by: .second())
         case HKQuantityTypeIdentifier.walkingStepLength.rawValue:
             return .meterUnit(with: .centi)
-        case HKQuantityTypeIdentifier.bodyTemperature.rawValue:
+        case HKQuantityTypeIdentifier.bodyTemperature.rawValue,
+             HKQuantityTypeIdentifier.appleSleepingWristTemperature.rawValue:
             return .degreeCelsius()
         case HKQuantityTypeIdentifier.bloodGlucose.rawValue:
             return HKUnit(from: "mmol/L")

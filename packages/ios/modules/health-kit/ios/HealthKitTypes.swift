@@ -33,6 +33,7 @@ let readTypes: Set<HKObjectType> = {
         .dietaryCarbohydrates,
         .dietaryFatTotal,
         .bodyTemperature,
+        .appleSleepingWristTemperature,
         .bloodGlucose,
         .environmentalAudioExposure,
         .headphoneAudioExposure,

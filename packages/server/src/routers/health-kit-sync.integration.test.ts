@@ -331,6 +331,45 @@ describe("HealthKit sync router", () => {
       // Average of 0.96, 0.98, 0.97 = 0.97 → 97% on 0-100 scale
       expect(rows[0]?.spo2_avg).toBeCloseTo(97, 0);
     });
+
+    it("aggregates wrist temperature from metric_stream into daily_metrics", async () => {
+      const result = await mutate("healthKitSync.pushQuantitySamples", {
+        samples: [
+          {
+            type: "HKQuantityTypeIdentifierAppleSleepingWristTemperature",
+            value: 33.2,
+            unit: "degC",
+            startDate: "2025-07-02T02:00:00Z",
+            endDate: "2025-07-02T02:00:00Z",
+            sourceName: "Apple Watch",
+            sourceBundle: "com.apple.health",
+            uuid: "wrist-temp-uuid-1",
+          },
+          {
+            type: "HKQuantityTypeIdentifierAppleSleepingWristTemperature",
+            value: 33.6,
+            unit: "degC",
+            startDate: "2025-07-02T04:00:00Z",
+            endDate: "2025-07-02T04:00:00Z",
+            sourceName: "Apple Watch",
+            sourceBundle: "com.apple.health",
+            uuid: "wrist-temp-uuid-2",
+          },
+        ],
+      });
+
+      expect(result.result.data.inserted).toBe(2);
+      expect(result.result.data.errors).toEqual([]);
+
+      // Verify daily_metrics.skin_temp_c is populated (average of 33.2 and 33.6 = 33.4)
+      const rows = await testCtx.db.execute(
+        sql`SELECT skin_temp_c FROM fitness.daily_metrics
+            WHERE provider_id = 'apple_health'
+              AND date = '2025-07-02'`,
+      );
+      expect(rows.length).toBe(1);
+      expect(rows[0]?.skin_temp_c).toBeCloseTo(33.4, 1);
+    });
   });
 
   describe("pushQuantitySamples - catch-all health events", () => {

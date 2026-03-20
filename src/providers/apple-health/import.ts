@@ -18,6 +18,7 @@ import type { SyncError, SyncResult } from "../types.ts";
 import { getStringAttrs } from "./dates.ts";
 import {
   ALL_ROUTED_TYPES,
+  aggregateSkinTempToDailyMetrics,
   aggregateSpO2ToDailyMetrics,
   BODY_MEASUREMENT_TYPES,
   DAILY_METRIC_TYPES,
@@ -200,10 +201,16 @@ export async function runImport(
       );
     }
 
-    // Aggregate SpO2 from metric_stream into daily_metrics
+    // Aggregate SpO2 and skin temperature from metric_stream into daily_metrics
     const spo2Days = await aggregateSpO2ToDailyMetrics(db, providerId, since);
     if (spo2Days > 0) {
       logger.info(`[apple_health] Aggregated SpO2 daily averages for ${spo2Days} days`);
+    }
+    const skinTempDays = await aggregateSkinTempToDailyMetrics(db, providerId, since);
+    if (skinTempDays > 0) {
+      logger.info(
+        `[apple_health] Aggregated skin temperature daily averages for ${skinTempDays} days`,
+      );
     }
 
     logger.info(
