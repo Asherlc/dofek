@@ -1,4 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
+import { useUnitSystem } from "../lib/unitContext.ts";
+import { convertDistance, distanceLabel } from "../lib/units.ts";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 export interface Activity {
@@ -50,6 +52,7 @@ export function ActivityList({
   onPageChange,
 }: ActivityListProps) {
   const navigate = useNavigate();
+  const { unitSystem } = useUnitSystem();
 
   if (loading) {
     return <ChartLoadingSkeleton height={100} />;
@@ -111,7 +114,9 @@ export function ActivityList({
                   {formatActivityDuration(a.started_at, a.ended_at)}
                 </td>
                 <td className="py-2 pr-4 tabular-nums whitespace-nowrap text-zinc-300">
-                  {a.distance_meters ? `${(a.distance_meters / 1000).toFixed(1)}km` : "—"}
+                  {a.distance_meters
+                    ? `${convertDistance(a.distance_meters / 1000, unitSystem).toFixed(1)} ${distanceLabel(unitSystem)}`
+                    : "—"}
                 </td>
                 <td className="py-2 pr-4 tabular-nums whitespace-nowrap text-zinc-300">
                   {a.calories ? `${Math.round(a.calories)} kcal` : "—"}

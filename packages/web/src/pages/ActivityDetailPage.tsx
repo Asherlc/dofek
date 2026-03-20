@@ -10,6 +10,16 @@ import { AppHeader } from "../components/AppHeader.tsx";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
 import { trpc } from "../lib/trpc.ts";
+import { useUnitSystem } from "../lib/unitContext.ts";
+import type { UnitSystem } from "../lib/units.ts";
+import {
+  convertDistance,
+  convertElevation,
+  convertSpeed,
+  distanceLabel,
+  elevationLabel,
+  speedLabel,
+} from "../lib/units.ts";
 
 const CHART_COLORS = {
   heartRate: "#ef4444",
@@ -24,6 +34,7 @@ const ZONE_COLORS = ["#22c55e", "#84cc16", "#eab308", "#f97316", "#ef4444"];
 export function ActivityDetailPage() {
   const { id } = useParams({ from: "/activity/$id" });
 
+  const { unitSystem } = useUnitSystem();
   const detail = trpc.activity.byId.useQuery({ id });
   const stream = trpc.activity.stream.useQuery({ id, maxPoints: 500 });
   const hrZones = trpc.activity.hrZones.useQuery({ id });
@@ -75,7 +86,7 @@ export function ActivityDetailPage() {
           <span className="text-zinc-300">{activity.name ?? activity.activityType}</span>
         </div>
 
-        <ActivityHeader activity={activity} />
+        <ActivityHeader activity={activity} unitSystem={unitSystem} />
 
         {hasGps && (
           <Section
@@ -98,6 +109,7 @@ export function ActivityDetailPage() {
               hasSpeed={hasSpeed}
               hasCadence={hasCadence}
               loading={stream.isLoading}
+              unitSystem={unitSystem}
             />
           </Section>
         )}
@@ -108,7 +120,7 @@ export function ActivityDetailPage() {
               title="Elevation Profile"
               description="This chart shows how your elevation changed over time during the activity."
             >
-              <ElevationChart points={points} loading={stream.isLoading} />
+              <ElevationChart points={points} loading={stream.isLoading} unitSystem={unitSystem} />
             </Section>
           )}
 
@@ -126,7 +138,13 @@ export function ActivityDetailPage() {
   );
 }
 
-function ActivityHeader({ activity }: { activity: ActivityDetail }) {
+function ActivityHeader({
+  activity,
+  unitSystem,
+}: {
+  activity: ActivityDetail;
+  unitSystem: UnitSystem;
+}) {
   const durationMin =
     activity.startedAt && activity.endedAt
       ? Math.round(
@@ -144,11 +162,17 @@ function ActivityHeader({ activity }: { activity: ActivityDetail }) {
 
   if (durationMin != null) stats.push({ label: "Duration", value: formatDuration(durationMin) });
   if (activity.totalDistance != null)
-    stats.push({ label: "Distance", value: `${(activity.totalDistance / 1000).toFixed(1)} km` });
+    stats.push({
+      label: "Distance",
+      value: `${convertDistance(activity.totalDistance / 1000, unitSystem).toFixed(1)} ${distanceLabel(unitSystem)}`,
+    });
   if (activity.calories != null)
     stats.push({ label: "Calories", value: `${Math.round(activity.calories)} kcal` });
   if (activity.elevationGain != null)
-    stats.push({ label: "Elevation Gain", value: `${Math.round(activity.elevationGain)} m` });
+    stats.push({
+      label: "Elevation Gain",
+      value: `${Math.round(convertElevation(activity.elevationGain, unitSystem))} ${elevationLabel(unitSystem)}`,
+    });
   if (activity.avgHr != null)
     stats.push({ label: "Avg Heart Rate", value: `${Math.round(activity.avgHr)} bpm` });
   if (activity.maxHr != null)
@@ -158,7 +182,10 @@ function ActivityHeader({ activity }: { activity: ActivityDetail }) {
   if (activity.maxPower != null)
     stats.push({ label: "Max Power", value: `${Math.round(activity.maxPower)} W` });
   if (activity.avgSpeed != null)
-    stats.push({ label: "Avg Speed", value: `${(activity.avgSpeed * 3.6).toFixed(1)} km/h` });
+    stats.push({
+      label: "Avg Speed",
+      value: `${convertSpeed(activity.avgSpeed * 3.6, unitSystem).toFixed(1)} ${speedLabel(unitSystem)}`,
+    });
   if (activity.avgCadence != null)
     stats.push({ label: "Avg Cadence", value: `${Math.round(activity.avgCadence)} rpm` });
 
@@ -280,6 +307,7 @@ function MetricsChart({
   hasSpeed,
   hasCadence,
   loading,
+  unitSystem,
 }: {
   points: StreamPoint[];
   hasHr: boolean;
@@ -287,6 +315,7 @@ function MetricsChart({
   hasSpeed: boolean;
   hasCadence: boolean;
   loading: boolean;
+  unitSystem: UnitSystem;
 }) {
   if (loading) return <ChartLoadingSkeleton height={300} />;
   if (points.length === 0) return null;
@@ -341,7 +370,7 @@ function MetricsChart({
   if (hasSpeed) {
     yAxes.push({
       type: "value",
-      name: "Speed (km/h)",
+      name: `Speed (${speedLabel(unitSystem)})`,
       position: axisIndex === 0 ? "left" : "right",
       offset: axisIndex > 1 ? (axisIndex - 1) * 60 : 0,
       axisLabel: { color: CHART_COLORS.speed, fontSize: 11 },
@@ -352,7 +381,9 @@ function MetricsChart({
       name: "Speed",
       type: "line",
       yAxisIndex: axisIndex,
-      data: points.map((p) => (p.speed != null ? +(p.speed * 3.6).toFixed(1) : null)),
+      data: points.map((p) =>
+        p.speed != null ? +convertSpeed(p.speed * 3.6, unitSystem).toFixed(1) : null,
+      ),
       showSymbol: false,
       lineStyle: { width: 1.5, color: CHART_COLORS.speed },
       itemStyle: { color: CHART_COLORS.speed },
@@ -433,7 +464,15 @@ function MetricsChart({
   return <ReactECharts option={option} style={{ height: 350 }} />;
 }
 
-function ElevationChart({ points, loading }: { points: StreamPoint[]; loading: boolean }) {
+function ElevationChart({
+  points,
+  loading,
+  unitSystem,
+}: {
+  points: StreamPoint[];
+  loading: boolean;
+  unitSystem: UnitSystem;
+}) {
   if (loading) return <ChartLoadingSkeleton height={200} />;
 
   const elevPoints = points.filter((p) => p.altitude != null);
@@ -450,7 +489,7 @@ function ElevationChart({ points, loading }: { points: StreamPoint[]; loading: b
       formatter: (params: Array<{ value: number; dataIndex: number }>) => {
         const p = params[0];
         if (!p) return "";
-        return `Elevation: ${p.value} m`;
+        return `Elevation: ${Math.round(convertElevation(p.value, unitSystem))} ${elevationLabel(unitSystem)}`;
       },
     },
     xAxis: {
@@ -468,13 +507,17 @@ function ElevationChart({ points, loading }: { points: StreamPoint[]; loading: b
     },
     yAxis: {
       type: "value",
+      name: `Elevation (${elevationLabel(unitSystem)})`,
+      nameTextStyle: { color: "#71717a", fontSize: 10 },
       axisLabel: { color: "#71717a", fontSize: 11 },
       splitLine: { lineStyle: { color: "#27272a" } },
     },
     series: [
       {
         type: "line",
-        data: elevPoints.map((p) => (p.altitude != null ? Math.round(p.altitude) : null)),
+        data: elevPoints.map((p) =>
+          p.altitude != null ? Math.round(convertElevation(p.altitude, unitSystem)) : null,
+        ),
         showSymbol: false,
         lineStyle: { width: 1.5, color: CHART_COLORS.altitude },
         areaStyle: {
