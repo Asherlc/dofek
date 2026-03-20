@@ -179,7 +179,7 @@ export function ProviderDetailPage() {
                   ) : (
                     <span className="text-xs text-zinc-500">Not connected</span>
                   )}
-                  {provider.lastSyncedAt && (
+                  {provider.lastSyncedAt && formatRelativeTime(provider.lastSyncedAt) && (
                     <span className="text-xs text-zinc-600">
                       Last sync: {formatRelativeTime(provider.lastSyncedAt)}
                     </span>

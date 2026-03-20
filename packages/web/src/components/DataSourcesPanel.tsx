@@ -541,11 +541,14 @@ function SyncProviderCard({
       {state.message && state.status !== "syncing" && (
         <span className="text-xs text-zinc-500 mt-1">{state.message}</span>
       )}
-      {state.status !== "syncing" && !state.message && provider.lastSyncedAt && (
-        <span className="text-xs text-zinc-600 mt-1">
-          Last sync: {formatRelativeTime(provider.lastSyncedAt)}
-        </span>
-      )}
+      {state.status !== "syncing" &&
+        !state.message &&
+        provider.lastSyncedAt &&
+        formatRelativeTime(provider.lastSyncedAt) && (
+          <span className="text-xs text-zinc-600 mt-1">
+            Last sync: {formatRelativeTime(provider.lastSyncedAt)}
+          </span>
+        )}
 
       {/* Stats summary */}
       {totalRecords > 0 && (

@@ -882,7 +882,7 @@ export default function ProviderDetailScreen() {
                 ) : (
                   <Text style={styles.statusDisconnected}>Not connected</Text>
                 )}
-                {provider.lastSyncedAt && (
+                {provider.lastSyncedAt && formatRelativeTime(provider.lastSyncedAt) && (
                   <Text style={styles.lastSync}>
                     Last sync: {formatRelativeTime(provider.lastSyncedAt)}
                   </Text>

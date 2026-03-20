@@ -24,3 +24,13 @@ export async function executeWithSchema<T extends z.ZodType>(
 export const dateStringSchema = z
   .union([z.string(), z.date()])
   .transform((value) => (value instanceof Date ? value.toISOString().slice(0, 10) : value));
+
+/**
+ * Zod schema for SQL timestamp/timestamptz columns.
+ * The postgres-js driver returns Date objects on some platforms (Linux/ARM)
+ * and strings on others (macOS). This schema normalizes both to ISO 8601
+ * strings that all browsers (including Safari) can parse.
+ */
+export const timestampStringSchema = z
+  .union([z.string(), z.date()])
+  .transform((value) => (value instanceof Date ? value.toISOString() : value));

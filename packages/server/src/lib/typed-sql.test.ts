@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { dateStringSchema, executeWithSchema } from "./typed-sql.ts";
+import { dateStringSchema, executeWithSchema, timestampStringSchema } from "./typed-sql.ts";
 
 const mockExecute = vi.fn();
 
@@ -122,5 +122,27 @@ describe("dateStringSchema", () => {
     expect(() => dateStringSchema.parse(12345)).toThrow(z.ZodError);
     expect(() => dateStringSchema.parse(null)).toThrow(z.ZodError);
     expect(() => dateStringSchema.parse(undefined)).toThrow(z.ZodError);
+  });
+});
+
+describe("timestampStringSchema", () => {
+  it("passes through an ISO string unchanged", () => {
+    expect(timestampStringSchema.parse("2024-01-15T10:30:00.000Z")).toBe(
+      "2024-01-15T10:30:00.000Z",
+    );
+  });
+
+  it("transforms a Date object to ISO string", () => {
+    const date = new Date("2024-01-15T10:30:00.000Z");
+    expect(timestampStringSchema.parse(date)).toBe("2024-01-15T10:30:00.000Z");
+  });
+
+  it("passes through a postgres-format string", () => {
+    expect(timestampStringSchema.parse("2024-01-15 10:30:00+00")).toBe("2024-01-15 10:30:00+00");
+  });
+
+  it("rejects non-string non-date values", () => {
+    expect(() => timestampStringSchema.parse(12345)).toThrow(z.ZodError);
+    expect(() => timestampStringSchema.parse(null)).toThrow(z.ZodError);
   });
 });

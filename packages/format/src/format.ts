@@ -74,9 +74,13 @@ export function isToday(date: Date): boolean {
   );
 }
 
-/** Format an ISO string as relative time: "5m ago", "2h ago", "3d ago" */
-export function formatRelativeTime(isoString: string): string {
-  const diff = Date.now() - new Date(isoString).getTime();
+/** Format a timestamp as relative time: "5m ago", "2h ago", "3d ago".
+ *  Accepts ISO strings, postgres-format strings, or Date objects
+ *  (postgres-js returns Date objects on Linux/ARM). */
+export function formatRelativeTime(value: string | Date): string | null {
+  const date = value instanceof Date ? value : parseValidDate(value);
+  if (!date) return null;
+  const diff = Date.now() - date.getTime();
   const minutes = Math.floor(diff / 60000);
   if (minutes < 1) return "just now";
   if (minutes < 60) return `${minutes}m ago`;

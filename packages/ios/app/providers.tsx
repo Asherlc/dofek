@@ -171,7 +171,7 @@ export function ProviderCard({
       ) : (
         <View style={styles.cardMeta}>
           <Text style={styles.cardMetaText}>{statusLabel(provider.authStatus)}</Text>
-          {provider.lastSyncAt ? (
+          {provider.lastSyncAt && formatRelativeTime(provider.lastSyncAt) ? (
             <Text style={styles.cardMetaText}>
               Last sync: {formatRelativeTime(provider.lastSyncAt)}
             </Text>
@@ -221,7 +221,7 @@ function SyncLogRow({ log }: { log: SyncLog }) {
           </Text>
           <Text style={styles.logDetailText}>{formatDuration(log.durationMs ?? 0)}</Text>
           <Text style={styles.logDetailText}>
-            {formatRelativeTime(log.syncedAt)}
+            {formatRelativeTime(log.syncedAt) ?? ""}
           </Text>
         </View>
         {isError && log.errorMessage ? (
