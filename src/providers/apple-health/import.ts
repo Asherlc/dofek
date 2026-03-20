@@ -202,16 +202,8 @@ export async function runImport(
     }
 
     // Aggregate SpO2 and skin temperature from metric_stream into daily_metrics
-    const spo2Days = await aggregateSpO2ToDailyMetrics(db, providerId, since);
-    if (spo2Days > 0) {
-      logger.info(`[apple_health] Aggregated SpO2 daily averages for ${spo2Days} days`);
-    }
-    const skinTempDays = await aggregateSkinTempToDailyMetrics(db, providerId, since);
-    if (skinTempDays > 0) {
-      logger.info(
-        `[apple_health] Aggregated skin temperature daily averages for ${skinTempDays} days`,
-      );
-    }
+    await aggregateSpO2ToDailyMetrics(db, providerId, since);
+    await aggregateSkinTempToDailyMetrics(db, providerId, since);
 
     logger.info(
       `[apple_health] Parsed ${counts.recordCount} records, ` +

@@ -444,8 +444,8 @@ export async function aggregateSpO2ToDailyMetrics(
   db: SyncDatabase,
   providerId: string,
   since: Date,
-): Promise<number> {
-  const result = await db.execute(
+): Promise<void> {
+  await db.execute(
     sql`INSERT INTO fitness.daily_metrics (date, provider_id, user_id, spo2_avg)
         SELECT
           (recorded_at AT TIME ZONE 'UTC')::date AS date,
@@ -460,7 +460,6 @@ export async function aggregateSpO2ToDailyMetrics(
         ON CONFLICT (date, provider_id) DO UPDATE SET
           spo2_avg = EXCLUDED.spo2_avg`,
   );
-  return Array.isArray(result) ? result.length : 0;
 }
 
 /**
@@ -472,8 +471,8 @@ export async function aggregateSkinTempToDailyMetrics(
   db: SyncDatabase,
   providerId: string,
   since: Date,
-): Promise<number> {
-  const result = await db.execute(
+): Promise<void> {
+  await db.execute(
     sql`INSERT INTO fitness.daily_metrics (date, provider_id, user_id, skin_temp_c)
         SELECT
           (recorded_at AT TIME ZONE 'UTC')::date AS date,
@@ -488,7 +487,6 @@ export async function aggregateSkinTempToDailyMetrics(
         ON CONFLICT (date, provider_id) DO UPDATE SET
           skin_temp_c = EXCLUDED.skin_temp_c`,
   );
-  return Array.isArray(result) ? result.length : 0;
 }
 
 export async function upsertNutritionBatch(
