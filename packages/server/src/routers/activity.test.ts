@@ -31,12 +31,70 @@ function makeCaller(rows: Record<string, unknown>[] = []) {
 describe("activityRouter", () => {
   describe("list", () => {
     it("returns paginated items with totalCount", async () => {
-      const rows = [{ id: "a1", started_at: "2024-01-01", total_count: 5 }];
+      const rows = [
+        {
+          id: "a1",
+          started_at: "2024-01-01 10:00:00+00",
+          ended_at: "2024-01-01 11:00:00+00",
+          activity_type: "cycling",
+          name: "Morning Ride",
+          provider_id: "wahoo",
+          source_providers: ["wahoo"],
+          avg_hr: 150,
+          max_hr: 180,
+          avg_power: 200,
+          total_distance: 30000,
+          calories: 450,
+          distance_meters: 30000,
+          total_count: 5,
+        },
+      ];
       const caller = makeCaller(rows);
       const result = await caller.list({ days: 30, limit: 20, offset: 0 });
-      expect(result).toEqual({
-        items: [{ id: "a1", started_at: "2024-01-01" }],
-        totalCount: 5,
+      expect(result.totalCount).toBe(5);
+      expect(result.items).toHaveLength(1);
+      const item = result.items[0];
+      expect(item).not.toHaveProperty("total_count");
+      expect(item).toMatchObject({
+        id: "a1",
+        started_at: "2024-01-01 10:00:00+00",
+        activity_type: "cycling",
+        avg_hr: 150,
+        max_hr: 180,
+        avg_power: 200,
+        distance_meters: 30000,
+        calories: 450,
+      });
+    });
+
+    it("returns stats from activity_summary join", async () => {
+      const rows = [
+        {
+          id: "a1",
+          started_at: "2024-01-15 14:30:00+00",
+          ended_at: "2024-01-15 15:15:00+00",
+          activity_type: "running",
+          name: "Easy Run",
+          provider_id: "apple_health",
+          source_providers: ["apple_health"],
+          avg_hr: 142,
+          max_hr: 165,
+          avg_power: null,
+          total_distance: 5200,
+          calories: 380,
+          distance_meters: 5200,
+          total_count: 1,
+        },
+      ];
+      const caller = makeCaller(rows);
+      const result = await caller.list({ days: 30, limit: 20, offset: 0 });
+      const item = result.items[0];
+      expect(item).toMatchObject({
+        avg_hr: 142,
+        max_hr: 165,
+        avg_power: null,
+        distance_meters: 5200,
+        calories: 380,
       });
     });
 
