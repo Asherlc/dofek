@@ -507,13 +507,17 @@ function ElevationChart({
     },
     yAxis: {
       type: "value",
+      name: `Elevation (${elevationLabel(unitSystem)})`,
+      nameTextStyle: { color: "#71717a", fontSize: 10 },
       axisLabel: { color: "#71717a", fontSize: 11 },
       splitLine: { lineStyle: { color: "#27272a" } },
     },
     series: [
       {
         type: "line",
-        data: elevPoints.map((p) => (p.altitude != null ? Math.round(p.altitude) : null)),
+        data: elevPoints.map((p) =>
+          p.altitude != null ? Math.round(convertElevation(p.altitude, unitSystem)) : null,
+        ),
         showSymbol: false,
         lineStyle: { width: 1.5, color: CHART_COLORS.altitude },
         areaStyle: {

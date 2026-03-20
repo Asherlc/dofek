@@ -14,7 +14,7 @@ export const Route = createFileRoute("/training/running")({
 
 import { formatPace } from "../../lib/format.ts";
 
-function RunningTab() {
+export function RunningTab() {
   const { days } = useTrainingDays();
   const { unitSystem } = useUnitSystem();
 
@@ -104,7 +104,7 @@ function PaceCurveChart({
             : seconds < 3600
               ? `${Math.round(seconds / 60)}min`
               : `${Math.round(seconds / 3600)}h`;
-        return `${durLabel}: <strong>${formatPace(convertPace(pace, unitSystem))} ${paceLabel(unitSystem)}</strong>`;
+        return `${durLabel}: <strong>${formatPace(pace)} ${paceLabel(unitSystem)}</strong>`;
       },
     },
     xAxis: {
