@@ -24,7 +24,7 @@ vi.mock("dofek/db", () => ({
 const mockJob = {
   id: "42",
   data: { userId: "user-1", outputPath: "/tmp/dofek-export-42.zip" },
-  progress: { pct: 0, message: "Starting export..." },
+  progress: { percentage: 0, message: "Starting export..." },
   getState: vi.fn().mockResolvedValue("active"),
   remove: vi.fn().mockResolvedValue(undefined),
   failedReason: "",
@@ -88,7 +88,7 @@ describe("createExportRouter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockJob.data = { userId: "user-1", outputPath: "/tmp/dofek-export-42.zip" };
-    mockJob.progress = { pct: 0, message: "Starting export..." };
+    mockJob.progress = { percentage: 0, message: "Starting export..." };
     mockJob.getState.mockResolvedValue("active");
     mockQueue.add.mockResolvedValue(mockJob);
     mockQueue.getJob.mockResolvedValue(mockJob);
@@ -159,7 +159,7 @@ describe("createExportRouter", () => {
     it("returns processing status with progress", async () => {
       vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
       vi.mocked(validateSession).mockResolvedValue({ userId: "user-1" });
-      mockJob.progress = { pct: 50, message: "Exporting activities.json..." };
+      mockJob.progress = { percentage: 50, message: "Exporting activities.json..." };
       mockJob.getState.mockResolvedValue("active");
       const { app } = createTestApp();
 
@@ -174,7 +174,7 @@ describe("createExportRouter", () => {
     it("returns done status with download URL when completed", async () => {
       vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
       vi.mocked(validateSession).mockResolvedValue({ userId: "user-1" });
-      mockJob.progress = { pct: 100, message: "Export complete" };
+      mockJob.progress = { percentage: 100, message: "Export complete" };
       mockJob.getState.mockResolvedValue("completed");
       const { app } = createTestApp();
 

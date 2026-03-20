@@ -19,7 +19,7 @@ const JOB_FILES_DIR = process.env.JOB_FILES_DIR || join(tmpdir(), "dofek-job-fil
 mkdirSync(JOB_FILES_DIR, { recursive: true });
 
 const exportProgressSchema = z.object({
-  pct: z.number(),
+  percentage: z.number(),
   message: z.string(),
 });
 
@@ -94,11 +94,13 @@ export function createExportRouter(db: import("dofek/db").Database): Router {
 
     const state = await job.getState();
     const parsed = exportProgressSchema.safeParse(job.progress);
-    const progress = parsed.success ? parsed.data : { pct: 0, message: "Starting export..." };
+    const progress = parsed.success
+      ? parsed.data
+      : { percentage: 0, message: "Starting export..." };
 
     const response: Record<string, unknown> = {
       status: state === "completed" ? "done" : state === "failed" ? "error" : "processing",
-      progress: progress.pct,
+      progress: progress.percentage,
       message: state === "failed" ? (job.failedReason ?? "Export failed") : progress.message,
     };
 

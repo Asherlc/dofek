@@ -65,10 +65,10 @@ describe("processExportJob", () => {
         _db: unknown,
         _userId: string,
         _path: string,
-        onProgress: (info: { pct: number; message: string }) => void,
+        onProgress: (info: { percentage: number; message: string }) => void,
       ) => {
-        onProgress({ pct: 25, message: "Exporting activities.json..." });
-        onProgress({ pct: 75, message: "Exporting sleep-sessions.json..." });
+        onProgress({ percentage: 25, message: "Exporting activities.json..." });
+        onProgress({ percentage: 75, message: "Exporting sleep-sessions.json..." });
         return { tableCount: 5, totalRecords: 100 };
       },
     );
@@ -77,11 +77,11 @@ describe("processExportJob", () => {
     await processExportJob(job, mockDb);
 
     expect(job.updateProgress).toHaveBeenCalledWith({
-      pct: 25,
+      percentage: 25,
       message: "Exporting activities.json...",
     });
     expect(job.updateProgress).toHaveBeenCalledWith({
-      pct: 75,
+      percentage: 75,
       message: "Exporting sleep-sessions.json...",
     });
   });
@@ -99,9 +99,9 @@ describe("processExportJob", () => {
         _db: unknown,
         _userId: string,
         _path: string,
-        onProgress: (info: { pct: number; message: string }) => void,
+        onProgress: (info: { percentage: number; message: string }) => void,
       ) => {
-        onProgress({ pct: 50, message: "test" });
+        onProgress({ percentage: 50, message: "test" });
         return { tableCount: 5, totalRecords: 100 };
       },
     );

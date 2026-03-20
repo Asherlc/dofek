@@ -18,8 +18,8 @@ export async function processExportJob(job: ExportJob, db: SyncDatabase): Promis
     db,
     userId,
     outputPath,
-    (info: { pct: number; message: string }) => {
-      job.updateProgress({ pct: info.pct, message: info.message }).catch(() => {});
+    (info: { percentage: number; message: string }) => {
+      job.updateProgress({ percentage: info.percentage, message: info.message }).catch(() => {});
     },
   );
 

@@ -82,7 +82,7 @@ describe("generateExport", () => {
     executeResults.push([]);
 
     setupMockDb(executeResults);
-    const progress: Array<{ pct: number; message: string }> = [];
+    const progress: Array<{ percentage: number; message: string }> = [];
 
     // For the batched stream, we need to handle archive.append receiving a Readable
     // and the test needs the stream to emit "end"
@@ -102,7 +102,7 @@ describe("generateExport", () => {
     // 15 non-batched tables * 1 row each + 3 from batched count
     expect(result.totalRecords).toBe(18);
     expect(progress.length).toBeGreaterThan(0);
-    expect(progress[progress.length - 1]).toEqual({ pct: 100, message: "Export complete" });
+    expect(progress[progress.length - 1]).toEqual({ percentage: 100, message: "Export complete" });
   });
 
   it("handles empty tables correctly", async () => {
@@ -139,7 +139,7 @@ describe("generateExport", () => {
     executeResults.push([]);
 
     setupMockDb(executeResults);
-    const progress: Array<{ pct: number; message: string }> = [];
+    const progress: Array<{ percentage: number; message: string }> = [];
 
     mockArchive.append.mockImplementation((content: unknown, _opts: unknown) => {
       if (content instanceof Readable) {
@@ -154,10 +154,10 @@ describe("generateExport", () => {
     // Should have progress for each of the 16 tables + final 100%
     expect(progress.length).toBe(17);
     // First progress should be 0%
-    expect(progress[0]?.pct).toBe(0);
+    expect(progress[0]?.percentage).toBe(0);
     expect(progress[0]?.message).toContain("Exporting");
     // Last progress should be 100%
-    expect(progress[16]?.pct).toBe(100);
+    expect(progress[16]?.percentage).toBe(100);
   });
 
   it("includes metadata file in the archive", async () => {
