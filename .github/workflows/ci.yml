@@ -163,6 +163,18 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec vitest run --project ios
+
+  build-ios:
+    name: iOS Metro Bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
       - name: Verify iOS Metro bundle
         run: cd packages/ios && pnpm expo export --platform ios --clear
 
@@ -261,7 +273,7 @@ jobs:
 
   docker:
     name: Docker (${{ matrix.target }})
-    needs: [lint, typecheck, knip, coverage, test-e2e-web, test-ios]
+    needs: [lint, typecheck, knip, coverage, test-e2e-web, test-ios, build-ios]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04-arm
     permissions:
