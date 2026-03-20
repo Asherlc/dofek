@@ -187,7 +187,7 @@ export const syncRouter = router({
     const providerIds: string[] = [];
 
     // Validate provider exists and is configured before enqueuing.
-    // For "sync all", fan out into one BullMQ job per configured provider.
+    // For "sync all", fan out into one BullMQ job per connected provider.
     if (input.providerId) {
       const provider = getAllProviders().find((p) => p.id === input.providerId);
       if (!provider) throw new Error(`Unknown provider: ${input.providerId}`);
@@ -195,11 +195,34 @@ export const syncRouter = router({
       if (validation) throw new Error(`Provider not configured: ${validation}`);
       providerIds.push(provider.id);
     } else {
-      providerIds.push(
-        ...getAllProviders()
-          .filter((provider) => provider.validate() === null && !provider.importOnly)
-          .map((provider) => provider.id),
+      // Check which providers have OAuth tokens to determine authorization
+      const allTokens = await ctx.db.execute<{ provider_id: string }>(
+        sql`SELECT DISTINCT ot.provider_id
+            FROM fitness.oauth_token ot
+            JOIN fitness.provider p ON p.id = ot.provider_id
+            WHERE p.user_id = ${ctx.userId}`,
       );
+      const tokenSet = new Set(allTokens.map((r) => r.provider_id));
+
+      for (const provider of getAllProviders()) {
+        if (provider.validate() !== null || provider.importOnly) continue;
+
+        let setup: ReturnType<NonNullable<typeof provider.authSetup>> | undefined;
+        try {
+          setup = provider.authSetup?.();
+        } catch {
+          /* credentials not configured */
+        }
+        const needsOAuth = !!setup?.oauthConfig;
+        const needsCustomAuth = provider.id === "whoop" || provider.id === "garmin";
+        const needsAuth = needsOAuth || needsCustomAuth;
+        const authorized = needsAuth ? tokenSet.has(provider.id) : true;
+
+        if (authorized) {
+          providerIds.push(provider.id);
+        }
+      }
+
       if (providerIds.length === 0) throw new Error("No configured providers available for sync");
     }
 
