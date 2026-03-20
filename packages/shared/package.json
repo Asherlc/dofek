@@ -15,7 +15,8 @@
     "./onboarding": "./src/onboarding.ts",
     "./providers": "./src/providers.ts",
     "./units": "./src/units.ts",
-    "./training": "./src/training.ts"
+    "./training": "./src/training.ts",
+    "./hrv": "./src/hrv.ts"
   },
   "dependencies": {
     "zod": "3.25.76"

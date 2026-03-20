@@ -1,3 +1,4 @@
+import { selectDailyHrv } from "@dofek/shared/hrv";
 import { sql } from "drizzle-orm";
 import type { SyncDatabase } from "../../db/index.ts";
 import {
@@ -286,9 +287,9 @@ export async function upsertDailyMetricsBatch(
   providerId: string,
   records: HealthRecord[],
 ): Promise<number> {
-  // Aggregate by date -- sum steps/energy, take first for HRV, take latest for other point-in-time values
+  // Aggregate by date -- sum steps/energy, select overnight HRV, take latest for other point-in-time values
   const byDate = new Map<string, Map<string, number>>();
-  const hrvFirstSeen = new Set<string>();
+  const hrvSamplesByDate = new Map<string, Array<{ value: number; startDate: Date }>>();
   for (const r of records) {
     if (!DAILY_METRIC_TYPES.has(r.type)) continue;
     const dateKey = dateToString(r.startDate);
@@ -298,17 +299,21 @@ export async function upsertDailyMetricsBatch(
     if (ADDITIVE_DAILY_TYPES.has(r.type)) {
       day.set(r.type, (day.get(r.type) ?? 0) + r.value);
     } else if (r.type === "HKQuantityTypeIdentifierHeartRateVariabilitySDNN") {
-      // First-reading-wins: records are in chronological order, so the first
-      // HRV reading is from overnight. Later readings from Breathe/Mindfulness
-      // sessions produce inflated SDNN values (~2x overnight baseline).
-      const hrvKey = `${dateKey}:hrv`;
-      if (!hrvFirstSeen.has(hrvKey)) {
-        hrvFirstSeen.add(hrvKey);
-        day.set(r.type, r.value);
-      }
+      const daySamples = hrvSamplesByDate.get(dateKey) ?? [];
+      daySamples.push({ value: r.value, startDate: r.startDate });
+      hrvSamplesByDate.set(dateKey, daySamples);
     } else {
       // Point-in-time: keep latest
       day.set(r.type, r.value);
+    }
+  }
+
+  // Select overnight HRV for each date using shared logic
+  for (const [dateKey, hrvSamples] of hrvSamplesByDate) {
+    const day = byDate.get(dateKey);
+    const selected = selectDailyHrv(hrvSamples);
+    if (day && selected !== null) {
+      day.set("HKQuantityTypeIdentifierHeartRateVariabilitySDNN", selected);
     }
   }
 

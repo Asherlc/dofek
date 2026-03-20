@@ -1,3 +1,4 @@
+import { selectDailyHrv } from "@dofek/shared/hrv";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { protectedProcedure, router } from "../trpc.ts";
@@ -453,18 +454,12 @@ const columnToAccumulatorKey: Record<string, keyof DailyMetricAccumulator> = {
   walking_asymmetry_pct: "walkingAsymmetryPct",
 };
 
-/**
- * Aggregate daily metrics per date.
- * HRV uses first-reading-wins: the earliest reading of the day is typically from
- * overnight sleep, which is the clinically relevant measurement. Later readings
- * from Breathe/Mindfulness sessions produce much higher SDNN values that would
- * inflate the daily value to roughly double the overnight baseline.
- */
+/** Aggregate daily metrics per date. */
 export function aggregateDailyMetricSamples(
   samples: HealthKitSample[],
 ): Map<string, DailyMetricAccumulator> {
   const byDate = new Map<string, DailyMetricAccumulator>();
-  const hrvFirstSeen = new Set<string>();
+  const hrvSamplesByDate = new Map<string, Array<{ value: number; startDate: string }>>();
 
   for (const sample of samples) {
     const dateStr = extractDate(sample.startDate);
@@ -490,19 +485,23 @@ export function aggregateDailyMetricSamples(
     if (!pointMapping) continue;
 
     if (pointMapping.column === "hrv") {
-      // First-reading-wins: HealthKit returns samples sorted by startDate ASC,
-      // so the first HRV sample is the earliest (overnight). Skip later readings
-      // which may be from Breathe/Mindfulness sessions with inflated SDNN.
-      if (!hrvFirstSeen.has(dateStr)) {
-        hrvFirstSeen.add(dateStr);
-        accumulator.hrv = sample.value;
-      }
+      const daySamples = hrvSamplesByDate.get(dateStr) ?? [];
+      daySamples.push({ value: sample.value, startDate: sample.startDate });
+      hrvSamplesByDate.set(dateStr, daySamples);
       continue;
     }
 
     const key = columnToAccumulatorKey[pointMapping.column];
     if (key) {
       (accumulator[key] as number | null) = sample.value;
+    }
+  }
+
+  // Select overnight HRV for each date using shared logic
+  for (const [dateStr, hrvSamples] of hrvSamplesByDate) {
+    const accumulator = byDate.get(dateStr);
+    if (accumulator) {
+      accumulator.hrv = selectDailyHrv(hrvSamples);
     }
   }
 

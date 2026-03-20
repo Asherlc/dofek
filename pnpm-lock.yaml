@@ -14,6 +14,9 @@ importers:
       '@bull-board/express':
         specifier: ^6.20.5
         version: 6.20.5
+      '@dofek/shared':
+        specifier: workspace:*
+        version: link:packages/shared
       '@opentelemetry/exporter-logs-otlp-proto':
         specifier: ^0.213.0
         version: 0.213.0(@opentelemetry/api@1.9.0)
