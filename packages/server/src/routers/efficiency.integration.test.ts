@@ -119,7 +119,7 @@ describe("efficiency.polarizationTrend integration", () => {
   }
 
   async function query<T = unknown>(path: string, input: Record<string, unknown> = {}): Promise<T> {
-    queryCache.clear();
+    await queryCache.invalidateAll();
     const res = await fetch(`${baseUrl}/api/trpc/${path}?batch=1`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Cookie: sessionCookie },
