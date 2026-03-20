@@ -2,7 +2,13 @@ import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as schema from "../../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../db/test-helpers.ts";
-import { insertWithDuplicateDiag, upsertSleepBatch, upsertWorkoutBatch } from "./db-insertion.ts";
+import {
+  aggregateSkinTempToDailyMetrics,
+  aggregateSpO2ToDailyMetrics,
+  insertWithDuplicateDiag,
+  upsertSleepBatch,
+  upsertWorkoutBatch,
+} from "./db-insertion.ts";
 import type { SleepAnalysisRecord } from "./sleep.ts";
 import type { HealthWorkout } from "./workouts.ts";
 
@@ -232,6 +238,74 @@ describe("db-insertion deduplication (integration)", () => {
 
       // 2 unique sessions (the two duplicate night-1 records collapse into 1, plus night-2)
       expect(count).toBe(2);
+    });
+  });
+
+  describe("aggregateSpO2ToDailyMetrics", () => {
+    it("aggregates SpO2 fractions from metric_stream into daily_metrics as percentage", async () => {
+      // Insert SpO2 readings as fractions (0-1) into metric_stream
+      await ctx.db.insert(schema.metricStream).values([
+        {
+          providerId: PROVIDER_ID,
+          recordedAt: new Date("2025-08-01T08:00:00Z"),
+          spo2: 0.96,
+          sourceName: "Apple Watch",
+        },
+        {
+          providerId: PROVIDER_ID,
+          recordedAt: new Date("2025-08-01T14:00:00Z"),
+          spo2: 0.98,
+          sourceName: "Apple Watch",
+        },
+        {
+          providerId: PROVIDER_ID,
+          recordedAt: new Date("2025-08-01T20:00:00Z"),
+          spo2: 0.97,
+          sourceName: "Apple Watch",
+        },
+      ]);
+
+      await aggregateSpO2ToDailyMetrics(ctx.db, PROVIDER_ID, new Date("2025-08-01T00:00:00Z"));
+
+      const rows = await ctx.db
+        .select({ spo2Avg: schema.dailyMetrics.spo2Avg })
+        .from(schema.dailyMetrics)
+        .where(eq(schema.dailyMetrics.date, "2025-08-01"));
+
+      expect(rows).toHaveLength(1);
+      // Average of 0.96, 0.98, 0.97 = 0.97 → 97% on 0-100 scale
+      expect(rows[0]?.spo2Avg).toBeCloseTo(97, 0);
+    });
+  });
+
+  describe("aggregateSkinTempToDailyMetrics", () => {
+    it("aggregates wrist temperature from metric_stream into daily_metrics", async () => {
+      // Insert skin temperature readings into metric_stream
+      await ctx.db.insert(schema.metricStream).values([
+        {
+          providerId: PROVIDER_ID,
+          recordedAt: new Date("2025-08-02T02:00:00Z"),
+          skinTemperature: 33.2,
+          sourceName: "Apple Watch",
+        },
+        {
+          providerId: PROVIDER_ID,
+          recordedAt: new Date("2025-08-02T04:00:00Z"),
+          skinTemperature: 33.6,
+          sourceName: "Apple Watch",
+        },
+      ]);
+
+      await aggregateSkinTempToDailyMetrics(ctx.db, PROVIDER_ID, new Date("2025-08-02T00:00:00Z"));
+
+      const rows = await ctx.db
+        .select({ skinTempC: schema.dailyMetrics.skinTempC })
+        .from(schema.dailyMetrics)
+        .where(eq(schema.dailyMetrics.date, "2025-08-02"));
+
+      expect(rows).toHaveLength(1);
+      // Average of 33.2 and 33.6 = 33.4
+      expect(rows[0]?.skinTempC).toBeCloseTo(33.4, 1);
     });
   });
 });

@@ -64,6 +64,7 @@ export const METRIC_STREAM_TYPES: Record<string, string> = {
   HKQuantityTypeIdentifierBloodGlucose: "bloodGlucose",
   HKQuantityTypeIdentifierEnvironmentalAudioExposure: "audioExposure",
   HKQuantityTypeIdentifierHeadphoneAudioExposure: "audioExposure",
+  HKQuantityTypeIdentifierAppleSleepingWristTemperature: "skinTemperature",
 };
 
 // Records that map to body_measurement
@@ -169,6 +170,9 @@ export async function upsertMetricStreamBatch(
         break;
       case "audioExposure":
         rows.push({ ...base, audioExposure: record.value });
+        break;
+      case "skinTemperature":
+        rows.push({ ...base, skinTemperature: record.value });
         break;
     }
   }
@@ -428,6 +432,61 @@ export async function upsertDailyMetricsBatch(
     );
   }
   return insertRows.length;
+}
+
+/**
+ * Aggregate SpO2 readings from metric_stream into daily_metrics.spo2_avg.
+ * Apple Health stores SpO2 as fractions (0-1) in metric_stream; this converts
+ * the daily average to a percentage (0-100) for consistency with other providers
+ * (WHOOP, Oura, Garmin) that report SpO2 as a percentage.
+ */
+export async function aggregateSpO2ToDailyMetrics(
+  db: SyncDatabase,
+  providerId: string,
+  since: Date,
+): Promise<void> {
+  await db.execute(
+    sql`INSERT INTO fitness.daily_metrics (date, provider_id, user_id, spo2_avg)
+        SELECT
+          (recorded_at AT TIME ZONE 'UTC')::date AS date,
+          provider_id,
+          user_id,
+          AVG(spo2) * 100 AS spo2_avg
+        FROM fitness.metric_stream
+        WHERE provider_id = ${providerId}
+          AND spo2 IS NOT NULL
+          AND recorded_at >= ${since.toISOString()}::timestamptz
+        GROUP BY (recorded_at AT TIME ZONE 'UTC')::date, provider_id, user_id
+        ON CONFLICT (date, provider_id) DO UPDATE SET
+          spo2_avg = EXCLUDED.spo2_avg`,
+  );
+}
+
+/**
+ * Aggregate wrist temperature readings from metric_stream into daily_metrics.skin_temp_c.
+ * Apple Watch reports sleeping wrist temperature in °C; this computes the daily
+ * average and stores it alongside other daily metrics.
+ */
+export async function aggregateSkinTempToDailyMetrics(
+  db: SyncDatabase,
+  providerId: string,
+  since: Date,
+): Promise<void> {
+  await db.execute(
+    sql`INSERT INTO fitness.daily_metrics (date, provider_id, user_id, skin_temp_c)
+        SELECT
+          (recorded_at AT TIME ZONE 'UTC')::date AS date,
+          provider_id,
+          user_id,
+          AVG(skin_temperature) AS skin_temp_c
+        FROM fitness.metric_stream
+        WHERE provider_id = ${providerId}
+          AND skin_temperature IS NOT NULL
+          AND recorded_at >= ${since.toISOString()}::timestamptz
+        GROUP BY (recorded_at AT TIME ZONE 'UTC')::date, provider_id, user_id
+        ON CONFLICT (date, provider_id) DO UPDATE SET
+          skin_temp_c = EXCLUDED.skin_temp_c`,
+  );
 }
 
 export async function upsertNutritionBatch(
