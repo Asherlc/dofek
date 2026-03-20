@@ -1,5 +1,9 @@
 import type { Server } from "node:http";
+import { Worker } from "bullmq";
 import { DEFAULT_USER_ID } from "dofek/db/schema";
+import { processExportJob } from "dofek/jobs/process-export-job";
+import type { ExportJobData } from "dofek/jobs/queues";
+import { EXPORT_QUEUE, getRedisConnection } from "dofek/jobs/queues";
 import { sql } from "drizzle-orm";
 import JSZip from "jszip";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -19,9 +23,19 @@ describe("Data Export", () => {
   let server: Server;
   let baseUrl: string;
   let sessionCookie: string;
+  let exportWorker: Worker<ExportJobData>;
 
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
+
+    // Start an in-process BullMQ worker so export jobs are processed
+    // without needing the Docker worker container.
+    const connection = getRedisConnection();
+    exportWorker = new Worker<ExportJobData>(
+      EXPORT_QUEUE,
+      (job) => processExportJob(job, testCtx.db),
+      { connection },
+    );
 
     // Create a provider for seeding data
     await testCtx.db.execute(
@@ -95,6 +109,7 @@ describe("Data Export", () => {
   }, 120_000);
 
   afterAll(async () => {
+    if (exportWorker) await exportWorker.close();
     if (server) {
       server.closeAllConnections();
       await new Promise<void>((resolve) => {
@@ -226,10 +241,10 @@ describe("Data Export", () => {
     // Insert data for a different user
     const otherUserId = "22222222-2222-2222-2222-222222222222";
     await testCtx.db.execute(
-      sql`INSERT INTO fitness.user_profile (id, name) VALUES (${otherUserId}, 'Other User')`,
+      sql`INSERT INTO fitness.user_profile (id, name) VALUES (${otherUserId}, 'Other User') ON CONFLICT (id) DO NOTHING`,
     );
     await testCtx.db.execute(
-      sql`INSERT INTO fitness.provider (id, name, user_id) VALUES ('other-provider', 'Other Provider', ${otherUserId})`,
+      sql`INSERT INTO fitness.provider (id, name, user_id) VALUES ('other-provider', 'Other Provider', ${otherUserId}) ON CONFLICT (id) DO NOTHING`,
     );
     await testCtx.db.execute(
       sql`INSERT INTO fitness.activity (provider_id, user_id, activity_type, started_at, name)
