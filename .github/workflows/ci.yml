@@ -198,6 +198,37 @@ jobs:
           done
           exit $FAILED
 
+  build-ios-native:
+    name: iOS Native Build
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Cache CocoaPods
+        uses: actions/cache@v4
+        with:
+          path: packages/ios/ios/Pods
+          key: pods-${{ hashFiles('packages/ios/ios/Podfile.lock') }}
+          restore-keys: pods-
+      - name: Install CocoaPods dependencies
+        run: cd packages/ios/ios && pod install
+      - name: Build for simulator
+        run: |
+          xcodebuild build \
+            -workspace packages/ios/ios/Dofek.xcworkspace \
+            -scheme Dofek \
+            -sdk iphonesimulator \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            | tail -20
+        timeout-minutes: 20
+
   test-e2e-web:
     name: E2E Tests (Web)
     runs-on: ubuntu-latest
@@ -292,7 +323,7 @@ jobs:
 
   docker:
     name: Docker (${{ matrix.target }})
-    needs: [lint, typecheck, knip, coverage, test-e2e-web, test-ios, build-ios]
+    needs: [lint, typecheck, knip, coverage, test-e2e-web, test-ios, build-ios, build-ios-native]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04-arm
     permissions:
