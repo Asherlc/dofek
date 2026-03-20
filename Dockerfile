@@ -58,6 +58,8 @@ COPY packages/hrv/package.json ./packages/hrv/
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile
 COPY . .
+ARG COMMIT_HASH
+ENV COMMIT_HASH=${COMMIT_HASH}
 RUN cd packages/web && pnpm run build
 
 # ── Server image (Express API + sync runner) ────────────────────────────
