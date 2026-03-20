@@ -5,6 +5,7 @@ import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { DaySelector } from "../../components/DaySelector";
 import { MetricCard } from "../../components/MetricCard";
 import { SparkLine } from "../../components/charts/SparkLine";
+import { formatNumber } from "../../lib/format";
 import { trendDirection as computeTrend } from "../../lib/scoring";
 import { trpc } from "../../lib/trpc";
 import { convertTemperature, temperatureLabel, useUnitSystem } from "../../lib/units";
@@ -182,7 +183,7 @@ export default function MetricsScreen() {
           {/* Stress */}
           <MetricCard
             title="Stress Level"
-            value={latestStress != null ? latestStress.toFixed(1) : "--"}
+            value={latestStress != null ? formatNumber(latestStress) : "--"}
             unit="/ 3"
             trend={stressValues.slice(-14)}
             color={
@@ -220,7 +221,7 @@ export default function MetricsScreen() {
                       })}
                     </Text>
                     <Text style={styles.weeklyValue}>
-                      {week.avgDailyStress.toFixed(1)}
+                      {formatNumber(week.avgDailyStress)}
                     </Text>
                     <Text style={styles.weeklyLabel}>
                       {week.highStressDays} high days
@@ -254,7 +255,7 @@ export default function MetricsScreen() {
           {trendsData?.latest_skin_temp != null && (
             <MetricCard
               title="Skin Temperature"
-              value={convertTemperature(trendsData.latest_skin_temp, unitSystem).toFixed(1)}
+              value={formatNumber(convertTemperature(trendsData.latest_skin_temp, unitSystem))}
               unit={temperatureLabel(unitSystem)}
               trend={skinTempTrend}
               color={colors.orange}
@@ -272,7 +273,7 @@ export default function MetricsScreen() {
           {/* Workload ratio */}
           <MetricCard
             title="Workload Ratio"
-            value={latestRatio != null ? latestRatio.toFixed(2) : "--"}
+            value={latestRatio != null ? formatNumber(latestRatio, 2) : "--"}
             trend={workloadRatioValues.slice(-14)}
             color={
               latestRatio != null

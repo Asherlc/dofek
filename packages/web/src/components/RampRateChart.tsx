@@ -1,6 +1,7 @@
 import { rampRateColor } from "@dofek/scoring/scoring";
 import type { RampRateWeek } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
+import { formatNumber } from "../lib/format.ts";
 
 interface RampRateChartProps {
   data: RampRateWeek[];
@@ -38,7 +39,7 @@ export function buildRampRateOption(data: RampRateWeekData[]) {
         });
         return [
           `<strong>${dateLabel}</strong>`,
-          `Ramp Rate: <span style="color:${color}">${d.rampRate.toFixed(2)}</span>`,
+          `Ramp Rate: <span style="color:${color}">${formatNumber(d.rampRate, 2)}</span>`,
         ].join("<br/>");
       },
     },
@@ -118,7 +119,7 @@ export function RampRateChart({
             backgroundColor: `${badgeColor}15`,
           }}
         >
-          Current: {currentRampRate.toFixed(2)}
+          Current: {formatNumber(currentRampRate, 2)}
         </span>
         <span className="text-xs text-zinc-500">{recommendation}</span>
       </div>

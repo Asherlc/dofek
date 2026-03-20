@@ -1,5 +1,6 @@
 import ReactECharts from "echarts-for-react";
 import type { SmoothedWeightRow } from "../../../server/src/routers/body-analytics.ts";
+import { formatNumber } from "../lib/format.ts";
 import { useUnitSystem } from "../lib/unitContext.ts";
 import { convertWeight, weightLabel } from "../lib/units.ts";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
@@ -103,7 +104,7 @@ export function SmoothedWeightChart({ data, loading }: SmoothedWeightChartProps)
             className={`text-lg font-semibold ${latestWeeklyChange > 0 ? "text-green-400" : latestWeeklyChange < 0 ? "text-red-400" : "text-zinc-400"}`}
           >
             {latestWeeklyChange > 0 ? "+" : ""}
-            {convertWeight(latestWeeklyChange, unitSystem).toFixed(1)} {weightLabel(unitSystem)}
+            {formatNumber(convertWeight(latestWeeklyChange, unitSystem))} {weightLabel(unitSystem)}
             /week
           </span>
         </div>

@@ -5,8 +5,11 @@ import {
   formatDurationMinutes,
   formatDurationRange,
   formatHour,
+  formatNumber,
   formatPace,
+  formatPercent,
   formatRelativeTime,
+  formatSigned,
   formatSleepDebt,
   formatSleepDebtInline,
   formatTime,
@@ -261,5 +264,87 @@ describe("formatTime", () => {
 
   it("returns -- for invalid timestamps", () => {
     expect(formatTime("not-a-date")).toBe("--");
+  });
+});
+
+describe("formatNumber", () => {
+  it("formats with default 1 decimal", () => {
+    expect(formatNumber(Math.PI)).toBe("3.1");
+  });
+
+  it("formats with 0 decimals", () => {
+    expect(formatNumber(3.7, 0)).toBe("4");
+  });
+
+  it("formats with 2 decimals", () => {
+    expect(formatNumber(1.456, 2)).toBe("1.46");
+  });
+
+  it("formats with 3 decimals", () => {
+    expect(formatNumber(0.12345, 3)).toBe("0.123");
+  });
+
+  it("handles zero", () => {
+    expect(formatNumber(0)).toBe("0.0");
+  });
+
+  it("handles negative numbers", () => {
+    expect(formatNumber(-2.567, 1)).toBe("-2.6");
+  });
+
+  it("returns -- for NaN", () => {
+    expect(formatNumber(Number.NaN)).toBe("--");
+  });
+
+  it("returns -- for Infinity", () => {
+    expect(formatNumber(Number.POSITIVE_INFINITY)).toBe("--");
+  });
+
+  it("returns -- for negative Infinity", () => {
+    expect(formatNumber(Number.NEGATIVE_INFINITY)).toBe("--");
+  });
+});
+
+describe("formatPercent", () => {
+  it("formats a ratio as percentage with default 0 decimals", () => {
+    expect(formatPercent(0.75)).toBe("75%");
+  });
+
+  it("formats with 1 decimal", () => {
+    expect(formatPercent(0.756, 1)).toBe("75.6%");
+  });
+
+  it("handles 0", () => {
+    expect(formatPercent(0)).toBe("0%");
+  });
+
+  it("handles 1 (100%)", () => {
+    expect(formatPercent(1)).toBe("100%");
+  });
+
+  it("handles values already in percentage scale", () => {
+    expect(formatPercent(75.6, 1)).toBe("7560.0%");
+  });
+
+  it("returns -- for NaN", () => {
+    expect(formatPercent(Number.NaN)).toBe("--");
+  });
+});
+
+describe("formatSigned", () => {
+  it("prepends + for positive numbers", () => {
+    expect(formatSigned(2.5, 1)).toBe("+2.5");
+  });
+
+  it("prepends - for negative numbers", () => {
+    expect(formatSigned(-2.5, 1)).toBe("-2.5");
+  });
+
+  it("formats zero without sign", () => {
+    expect(formatSigned(0, 1)).toBe("0.0");
+  });
+
+  it("returns -- for NaN", () => {
+    expect(formatSigned(Number.NaN)).toBe("--");
   });
 });

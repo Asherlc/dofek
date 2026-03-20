@@ -12,6 +12,7 @@ import { StrainGauge } from "../../components/charts/StrainGauge";
 import { SparkLine } from "../../components/charts/SparkLine";
 import { aggregateWeeklyVolume, workloadRatioColor, workloadRatioHint } from "../../lib/scoring";
 import type { WeekSummary } from "../../lib/scoring";
+import { formatNumber } from "../../lib/format";
 import { trpc } from "../../lib/trpc";
 import { useUnitSystem } from "../../lib/units";
 import type { ActivityRow, WorkloadRow } from "../../types/api";
@@ -86,13 +87,13 @@ export default function StrainScreen() {
             <View style={styles.loadGrid}>
               <View style={styles.loadItem}>
                 <Text style={styles.loadValue}>
-                  {acuteLoad.toFixed(1)}
+                  {formatNumber(acuteLoad)}
                 </Text>
                 <Text style={styles.loadLabel}>Acute (7 day)</Text>
               </View>
               <View style={styles.loadItem}>
                 <Text style={styles.loadValue}>
-                  {chronicLoad.toFixed(1)}
+                  {formatNumber(chronicLoad)}
                 </Text>
                 <Text style={styles.loadLabel}>Chronic (28 day)</Text>
               </View>
@@ -105,7 +106,7 @@ export default function StrainScreen() {
                     },
                   ]}
                 >
-                  {workloadRatio != null ? workloadRatio.toFixed(2) : "--"}
+                  {workloadRatio != null ? formatNumber(workloadRatio, 2) : "--"}
                 </Text>
                 <Text style={styles.loadLabel}>Workload Ratio</Text>
               </View>
@@ -163,7 +164,7 @@ export default function StrainScreen() {
                       />
                     </View>
                     <Text style={styles.volumeHours}>
-                      {week.hours.toFixed(1)}h
+                      {formatNumber(week.hours)}h
                     </Text>
                   </View>
                 ))}
@@ -172,7 +173,7 @@ export default function StrainScreen() {
                 <View style={styles.activityTypeSummary}>
                   {activityTypeTotals.map((entry) => (
                     <Text key={entry.activityType} style={styles.activityTypeSummaryItem}>
-                      {formatActivityTypeLabel(entry.activityType)}: {entry.hours.toFixed(1)}h
+                      {formatActivityTypeLabel(entry.activityType)}: {formatNumber(entry.hours)}h
                     </Text>
                   ))}
                 </View>

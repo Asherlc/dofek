@@ -1,5 +1,6 @@
 import type { AerobicEfficiencyActivity } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
+import { formatNumber } from "../lib/format.ts";
 
 const ACTIVITY_COLORS: Record<string, string> = {
   cycling: "#f97316",
@@ -133,7 +134,7 @@ export function AerobicEfficiencyChart({
         return [
           `<strong>${String(data.name)}</strong>`,
           `Date: ${date}`,
-          `Efficiency: ${ef.toFixed(3)} W/bpm`,
+          `Efficiency: ${formatNumber(ef, 3)} W/bpm`,
           `Avg Power (Zone 2): ${String(data.avgPower)}W`,
           `Avg Heart Rate (Zone 2): ${String(data.avgHr)} bpm`,
           `Zone 2 time: ${mins} min`,

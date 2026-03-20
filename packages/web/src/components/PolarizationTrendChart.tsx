@@ -1,5 +1,6 @@
 import type { PolarizationWeek } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
+import { formatNumber } from "../lib/format.ts";
 
 interface PolarizationTrendChartProps {
   weeks: PolarizationWeek[];
@@ -87,7 +88,7 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
         if (!w) return "";
 
         const pi = w.polarizationIndex;
-        const piStr = pi !== null ? pi.toFixed(3) : "N/A";
+        const piStr = pi !== null ? formatNumber(pi, 3) : "N/A";
         const dateLabel = new Date(w.week).toLocaleDateString("en-US", {
           month: "short",
           day: "numeric",

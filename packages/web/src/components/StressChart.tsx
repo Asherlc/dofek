@@ -1,6 +1,7 @@
 import { stressColor, stressLabel, trendColor } from "@dofek/scoring/scoring";
 import type { StressResult } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
+import { formatNumber } from "../lib/format.ts";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface StressChartProps {
@@ -55,7 +56,7 @@ export function StressChart({ data, loading }: StressChartProps) {
           day: "numeric",
         });
         let html = `<div style="font-weight:600;margin-bottom:4px">${date}</div>`;
-        html += `<div>Stress: <b style="color:${stressColor(day.stressScore)}">${day.stressScore.toFixed(1)} (${stressLabel(day.stressScore)})</b></div>`;
+        html += `<div>Stress: <b style="color:${stressColor(day.stressScore)}">${formatNumber(day.stressScore)} (${stressLabel(day.stressScore)})</b></div>`;
         if (day.hrvDeviation != null)
           html += `<div>Heart rate variability deviation: <b>${day.hrvDeviation > 0 ? "+" : ""}${day.hrvDeviation}</b>σ</div>`;
         if (day.restingHrDeviation != null)
@@ -76,7 +77,7 @@ export function StressChart({ data, loading }: StressChartProps) {
         right: 10,
         top: 5,
         style: {
-          text: `Today: ${latest.toFixed(1)} ${stressLabel(latest)} ${trendIcon(data.trend)}`,
+          text: `Today: ${formatNumber(latest)} ${stressLabel(latest)} ${trendIcon(data.trend)}`,
           fill: latestColor,
           fontSize: 13,
           fontWeight: "bold" as const,
@@ -159,7 +160,8 @@ export function StressChart({ data, loading }: StressChartProps) {
         </span>
         {data.weekly.length > 0 && (
           <span className="text-zinc-600 text-xs">
-            This week: {data.weekly[data.weekly.length - 1]?.cumulativeStress.toFixed(1)} cumulative
+            This week: {formatNumber(data.weekly[data.weekly.length - 1]?.cumulativeStress ?? 0)}{" "}
+            cumulative
           </span>
         )}
       </div>

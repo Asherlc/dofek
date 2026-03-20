@@ -1,5 +1,6 @@
 import type { TrainingMonotonyWeek } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
+import { formatNumber } from "../lib/format.ts";
 
 interface TrainingMonotonyChartProps {
   data: TrainingMonotonyWeek[];
@@ -53,8 +54,8 @@ export function TrainingMonotonyChart({ data, loading }: TrainingMonotonyChartPr
         const monotonyColor = d.monotony > 2.0 ? "#ef4444" : "#3b82f6";
         return [
           `<strong>${dateLabel}</strong>`,
-          `Monotony: <span style="color:${monotonyColor}">${d.monotony.toFixed(2)}</span>${d.monotony > 2.0 ? " (high!)" : ""}`,
-          `Strain: ${d.strain.toFixed(1)}`,
+          `Monotony: <span style="color:${monotonyColor}">${formatNumber(d.monotony, 2)}</span>${d.monotony > 2.0 ? " (high!)" : ""}`,
+          `Strain: ${formatNumber(d.strain)}`,
         ].join("<br/>");
       },
     },

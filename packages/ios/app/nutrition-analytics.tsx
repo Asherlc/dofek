@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import Svg, { Rect, Line, Text as SvgText } from "react-native-svg";
 import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
+import { formatNumber } from "../lib/format";
 import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
 import { statusColors } from "@dofek/scoring/colors";
@@ -17,9 +18,9 @@ const DAY_OPTIONS = [
 
 // ── Helpers ──
 
-function formatNumber(value: number | null | undefined, decimals = 0): string {
+function formatNullable(value: number | null | undefined, decimals = 0): string {
   if (value == null || Number.isNaN(value)) return "--";
-  return value.toFixed(decimals);
+  return formatNumber(value, decimals);
 }
 
 function nutrientBarColor(percentRda: number): string {

@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import Svg, { Circle, Line } from "react-native-svg";
 import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
+import { formatNumber, formatSigned } from "../lib/format";
 import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
 import { statusColors } from "@dofek/scoring/colors";
@@ -156,7 +157,7 @@ function CorrelationBar({ rho, label }: { rho: number; label: string }) {
         />
       </View>
       <Text style={[styles.corrBarValue, { color: barColor }]}>
-        {clamped >= 0 ? "+" : ""}{clamped.toFixed(2)}
+        {formatSigned(clamped, 2)}
       </Text>
     </View>
   );
@@ -317,10 +318,10 @@ export default function CorrelationScreen() {
             <CorrelationBar rho={data.pearsonR} label="Pearson" />
 
             <View style={styles.statsRow}>
-              <Text style={styles.statText}>R² = {data.regression.rSquared.toFixed(3)}</Text>
+              <Text style={styles.statText}>R² = {formatNumber(data.regression.rSquared, 3)}</Text>
               <Text style={styles.statText}>n = {data.sampleCount}</Text>
               <Text style={styles.statText}>
-                p = {data.spearmanPValue < 0.001 ? "< 0.001" : data.spearmanPValue.toFixed(3)}
+                p = {data.spearmanPValue < 0.001 ? "< 0.001" : formatNumber(data.spearmanPValue, 3)}
               </Text>
             </View>
           </View>
@@ -335,13 +336,13 @@ export default function CorrelationScreen() {
                 <View style={styles.statsGridItem}>
                   <Text style={styles.statsGridLabel}>{xMetric?.label ?? metricX}</Text>
                   <Text style={styles.statsGridValue}>
-                    {data.xStats.mean.toFixed(1)} ± {data.xStats.stddev.toFixed(1)} {xMetric?.unit}
+                    {formatNumber(data.xStats.mean)} ± {formatNumber(data.xStats.stddev)} {xMetric?.unit}
                   </Text>
                 </View>
                 <View style={styles.statsGridItem}>
                   <Text style={styles.statsGridLabel}>{yMetric?.label ?? metricY}</Text>
                   <Text style={styles.statsGridValue}>
-                    {data.yStats.mean.toFixed(1)} ± {data.yStats.stddev.toFixed(1)} {yMetric?.unit}
+                    {formatNumber(data.yStats.mean)} ± {formatNumber(data.yStats.stddev)} {yMetric?.unit}
                   </Text>
                 </View>
               </View>

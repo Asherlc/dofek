@@ -1,5 +1,6 @@
 import type { SleepNightlyRow } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
+import { formatNumber } from "../lib/format.ts";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface SleepAnalyticsChartProps {
@@ -56,7 +57,7 @@ export function buildSleepAnalyticsOption(nightly: SleepNightlyRow[], sleepDebt:
           }
           if (p.value[1] == null) continue;
           const mins = Math.round((p.value[1] / 100) * night.durationMinutes);
-          html += `<div>${p.marker} ${p.seriesName}: <b>${p.value[1].toFixed(1)}%</b> (${mins}m)</div>`;
+          html += `<div>${p.marker} ${p.seriesName}: <b>${formatNumber(p.value[1])}%</b> (${mins}m)</div>`;
         }
         return html;
       },
