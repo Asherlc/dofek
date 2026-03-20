@@ -490,7 +490,7 @@ describe("Apple Health streaming import (integration)", () => {
     expect(flightRecords[0]?.value).toBe(3);
   });
 
-  it("parses ActivitySummary as active energy records", async () => {
+  it("skips ActivitySummary to avoid double-counting with individual records", async () => {
     const since = new Date("2024-01-01");
     let activitySummaryEnergyCount = 0;
 
@@ -502,7 +502,6 @@ describe("Apple Health streaming import (integration)", () => {
             r.sourceName === "ActivitySummary"
           ) {
             activitySummaryEnergyCount++;
-            expect(r.value).toBeCloseTo(523.4);
           }
         }
       },
@@ -510,7 +509,9 @@ describe("Apple Health streaming import (integration)", () => {
       onWorkoutBatch: async () => {},
     });
 
-    expect(activitySummaryEnergyCount).toBe(1);
+    // ActivitySummary no longer generates records — individual records are
+    // the authoritative source for additive daily metrics
+    expect(activitySummaryEnergyCount).toBe(0);
   });
 
   it("calls onProgress with increasing percentages", async () => {

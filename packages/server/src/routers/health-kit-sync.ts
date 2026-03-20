@@ -525,7 +525,9 @@ async function processDailyMetrics(
     insertColumns.push(sql`user_id`);
     insertValues.push(sql`${userId}`);
 
-    // Additive fields: use COALESCE + EXCLUDED for summing
+    // Additive fields: replace with the complete day-total from this sync.
+    // Each iOS sync sends all samples for the 7-day window, so the in-memory
+    // accumulator already contains the full sum — no need to add to existing.
     const additiveFields: Array<{ column: string; key: keyof DailyMetricAccumulator }> = [
       { column: "steps", key: "steps" },
       { column: "active_energy_kcal", key: "activeEnergyKcal" },
@@ -541,9 +543,7 @@ async function processDailyMetrics(
       if (value > 0) {
         insertColumns.push(sql`${sql.identifier(column)}`);
         insertValues.push(sql`${value}`);
-        setClauses.push(
-          sql`${sql.identifier(column)} = COALESCE(fitness.daily_metrics.${sql.identifier(column)}, 0) + EXCLUDED.${sql.identifier(column)}`,
-        );
+        setClauses.push(sql`${sql.identifier(column)} = EXCLUDED.${sql.identifier(column)}`);
       }
     }
 
