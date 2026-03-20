@@ -1,6 +1,6 @@
-import { formatPace } from "@dofek/shared/format";
 import type { ActivityComparisonRow } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
+import { formatPace } from "../lib/format.ts";
 import { useUnitSystem } from "../lib/unitContext.ts";
 import { convertPace, paceLabel } from "../lib/units.ts";
 

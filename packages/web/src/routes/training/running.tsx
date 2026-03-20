@@ -12,7 +12,7 @@ export const Route = createFileRoute("/training/running")({
   component: RunningTab,
 });
 
-import { formatPace } from "@dofek/format/format";
+import { formatPace } from "../../lib/format.ts";
 
 function RunningTab() {
   const { days } = useTrainingDays();
