@@ -33,6 +33,19 @@ function toJobId(id: string | number | undefined, providerId: string): string {
   return id === undefined ? `job-${providerId}-${Date.now()}` : String(id);
 }
 
+/**
+ * A provider is connected if it either needs no auth, or has tokens in the database.
+ * Providers that define `authSetup` require authentication (OAuth, credentials, etc.)
+ * and must have tokens stored before they can sync.
+ */
+export function isProviderConnected(
+  provider: { id: string; authSetup?(): unknown },
+  tokenSet: Set<string>,
+): boolean {
+  if (!provider.authSetup) return true;
+  return tokenSet.has(provider.id);
+}
+
 // ── Provider registration (race-safe) ──
 let registrationPromise: Promise<void> | null = null;
 
@@ -163,9 +176,8 @@ export const syncRouter = router({
           /* credentials not configured */
         }
         const needsOAuth = !!setup?.oauthConfig;
-        const needsCustomAuth = p.id === "whoop" || p.id === "garmin";
-        const needsAuth = needsOAuth || needsCustomAuth;
-        const authorized = needsAuth ? tokenSet.has(p.id) : true;
+        const needsCustomAuth = !!p.authSetup && !needsOAuth;
+        const authorized = isProviderConnected(p, tokenSet);
         const lastSyncedAt = lastSyncMap.get(p.id) ?? null;
 
         return {
@@ -195,7 +207,7 @@ export const syncRouter = router({
       if (validation) throw new Error(`Provider not configured: ${validation}`);
       providerIds.push(provider.id);
     } else {
-      // Check which providers have OAuth tokens to determine authorization
+      // Check which providers have tokens to determine connectivity
       const allTokens = await ctx.db.execute<{ provider_id: string }>(
         sql`SELECT DISTINCT ot.provider_id
             FROM fitness.oauth_token ot
@@ -206,21 +218,8 @@ export const syncRouter = router({
 
       for (const provider of getAllProviders()) {
         if (provider.validate() !== null || provider.importOnly) continue;
-
-        let setup: ReturnType<NonNullable<typeof provider.authSetup>> | undefined;
-        try {
-          setup = provider.authSetup?.();
-        } catch {
-          /* credentials not configured */
-        }
-        const needsOAuth = !!setup?.oauthConfig;
-        const needsCustomAuth = provider.id === "whoop" || provider.id === "garmin";
-        const needsAuth = needsOAuth || needsCustomAuth;
-        const authorized = needsAuth ? tokenSet.has(provider.id) : true;
-
-        if (authorized) {
-          providerIds.push(provider.id);
-        }
+        if (!isProviderConnected(provider, tokenSet)) continue;
+        providerIds.push(provider.id);
       }
 
       if (providerIds.length === 0) throw new Error("No configured providers available for sync");

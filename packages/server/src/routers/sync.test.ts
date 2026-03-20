@@ -94,12 +94,29 @@ vi.mock("dofek/db/schema", () => ({
 
 import {
   ensureProvidersRegistered,
+  isProviderConnected,
   logsInput,
   REDACTED_ERROR_MESSAGE,
   syncRouter,
   syncStatusInput,
   triggerSyncInput,
 } from "./sync.ts";
+
+describe("isProviderConnected", () => {
+  it("returns true for providers without authSetup", () => {
+    expect(isProviderConnected({ id: "strong-csv" }, new Set())).toBe(true);
+  });
+
+  it("returns true for providers with authSetup that have tokens", () => {
+    expect(isProviderConnected({ id: "strava", authSetup: () => ({}) }, new Set(["strava"]))).toBe(
+      true,
+    );
+  });
+
+  it("returns false for providers with authSetup that lack tokens", () => {
+    expect(isProviderConnected({ id: "strava", authSetup: () => ({}) }, new Set())).toBe(false);
+  });
+});
 
 describe("syncRouter", () => {
   const createCaller = createTestCallerFactory(syncRouter);
@@ -147,20 +164,18 @@ describe("syncRouter", () => {
           id: "whoop",
           name: "WHOOP",
           validate: () => null,
-          authSetup: undefined,
+          authSetup: () => undefined,
         },
         {
           id: "strong-csv",
           name: "Strong CSV",
           validate: () => null,
-          authSetup: undefined,
           importOnly: true,
         },
         {
           id: "cronometer-csv",
           name: "Cronometer CSV",
           validate: () => null,
-          authSetup: undefined,
           importOnly: true,
         },
       ]);
@@ -284,13 +299,12 @@ describe("syncRouter", () => {
           id: "whoop",
           name: "WHOOP",
           validate: () => null,
-          authSetup: undefined,
+          authSetup: () => undefined,
         },
         {
           id: "intervals",
           name: "Intervals.icu",
           validate: () => null,
-          authSetup: undefined,
         },
       ]);
       // Only strava has tokens
@@ -302,17 +316,17 @@ describe("syncRouter", () => {
         db: {
           execute: vi
             .fn()
-            // oauth tokens query — only strava has tokens
+            // tokens query — only strava has tokens
             .mockResolvedValueOnce([{ provider_id: "strava" }]),
         },
         userId: "user-1",
       });
 
       const result = await caller.triggerSync({});
-      // wahoo needs OAuth but has no token — excluded
-      // whoop needs custom auth but has no token — excluded
-      // strava needs OAuth and has token — included
-      // intervals needs no auth — included
+      // wahoo has authSetup but no token — excluded
+      // whoop has authSetup but no token — excluded
+      // strava has authSetup and has token — included
+      // intervals has no authSetup — included (no auth needed)
       expect(result.providerJobs).toEqual([
         { providerId: "strava", jobId: "job-strava" },
         { providerId: "intervals", jobId: "job-intervals" },
