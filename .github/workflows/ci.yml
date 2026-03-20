@@ -163,6 +163,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec vitest run --project ios
+      - name: Verify iOS Metro bundle
+        run: cd packages/ios && pnpm expo export --platform ios --clear
 
   test-e2e-web:
     name: E2E Tests (Web)
