@@ -44,8 +44,20 @@ const mockData = [
   {
     activityName: "Park Loop",
     instances: [
-      { date: "2026-03-10", averagePaceMinPerKm: 5 },
-      { date: "2026-03-15", averagePaceMinPerKm: 4.8 },
+      {
+        date: "2026-03-10",
+        averagePaceMinPerKm: 5,
+        durationMinutes: 25,
+        avgHeartRate: 150,
+        elevationGainMeters: 50,
+      },
+      {
+        date: "2026-03-15",
+        averagePaceMinPerKm: 4.8,
+        durationMinutes: 24,
+        avgHeartRate: 148,
+        elevationGainMeters: 50,
+      },
     ],
   },
 ];
@@ -76,14 +88,17 @@ describe("ActivityComparisonChart", () => {
   it("converts pace values to imperial in series data", () => {
     renderWithUnits(<ActivityComparisonChart data={mockData} />, "imperial");
     const data = getFirstSeriesData();
-    const firstPace = data[0][1];
-    expect(firstPace).toBeGreaterThan(400);
-    expect(firstPace).toBeLessThan(500);
+    const first = data[0];
+    if (!first) throw new Error("Expected series data");
+    expect(first[1]).toBeGreaterThan(400);
+    expect(first[1]).toBeLessThan(500);
   });
 
   it("keeps pace values in metric unchanged", () => {
     renderWithUnits(<ActivityComparisonChart data={mockData} />, "metric");
     const data = getFirstSeriesData();
-    expect(data[0][1]).toBe(300);
+    const first = data[0];
+    if (!first) throw new Error("Expected series data");
+    expect(first[1]).toBe(300);
   });
 });

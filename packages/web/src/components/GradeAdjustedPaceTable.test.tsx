@@ -18,11 +18,13 @@ const mockData = [
   {
     date: "2026-03-15",
     activityName: "Hill Hike",
+    activityType: "hiking",
     distanceKm: 10,
     durationMinutes: 120,
     averagePaceMinPerKm: 12,
     gradeAdjustedPaceMinPerKm: 10,
     elevationGainMeters: 500,
+    elevationLossMeters: 400,
   },
 ];
 
@@ -60,11 +62,13 @@ describe("GradeAdjustedPaceTable", () => {
       {
         date: "2026-03-15",
         activityName: "Steep Hike",
+        activityType: "hiking",
         distanceKm: 5,
         durationMinutes: 90,
         averagePaceMinPerKm: 10,
         gradeAdjustedPaceMinPerKm: 7,
         elevationGainMeters: 800,
+        elevationLossMeters: 200,
       },
     ];
     const { container } = renderWithUnits(<GradeAdjustedPaceTable data={dataWithBigGap} />);
