@@ -1,4 +1,5 @@
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
+import { providerLabel } from "@dofek/shared/providers";
 import { PersonalizationPanel } from "../components/PersonalizationPanel";
 import { SlackIntegrationPanel } from "../components/SlackIntegrationPanel";
 import { trpc } from "../lib/trpc";
@@ -11,22 +12,6 @@ const UNIT_OPTIONS: { value: UnitSystem; label: string; description: string }[] 
   { value: "metric", label: "Metric", description: "kg, km, °C" },
   { value: "imperial", label: "Imperial", description: "lbs, mi, °F" },
 ];
-
-/** Capitalize a provider ID into a human-readable label. */
-function formatProviderLabel(provider: string): string {
-  const labels: Record<string, string> = {
-    google: "Google",
-    github: "GitHub",
-    strava: "Strava",
-    wahoo: "Wahoo",
-    garmin: "Garmin Connect",
-    "intervals.icu": "Intervals.icu",
-    peloton: "Peloton",
-    slack: "Slack",
-    "apple-health": "Apple Health",
-  };
-  return labels[provider] ?? provider;
-}
 
 export default function SettingsScreen() {
   const auth = useAuth();
@@ -117,7 +102,7 @@ export default function SettingsScreen() {
               <View key={account.id} style={styles.accountRow}>
                 <View style={styles.accountInfo}>
                   <Text style={styles.accountProvider}>
-                    {formatProviderLabel(account.authProvider)}
+                    {providerLabel(account.authProvider)}
                   </Text>
                   {account.email ? (
                     <Text style={styles.accountEmail}>{account.email}</Text>
