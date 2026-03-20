@@ -455,13 +455,16 @@ const columnToAccumulatorKey: Record<string, keyof DailyMetricAccumulator> = {
 
 /**
  * Aggregate daily metrics per date.
- * HRV is averaged across same-day samples to avoid outlier inflation from a single reading.
+ * HRV uses first-reading-wins: the earliest reading of the day is typically from
+ * overnight sleep, which is the clinically relevant measurement. Later readings
+ * from Breathe/Mindfulness sessions produce much higher SDNN values that would
+ * inflate the daily value to roughly double the overnight baseline.
  */
 export function aggregateDailyMetricSamples(
   samples: HealthKitSample[],
 ): Map<string, DailyMetricAccumulator> {
   const byDate = new Map<string, DailyMetricAccumulator>();
-  const hrvRunningTotals = new Map<string, { sum: number; count: number }>();
+  const hrvFirstSeen = new Set<string>();
 
   for (const sample of samples) {
     const dateStr = extractDate(sample.startDate);
@@ -487,11 +490,13 @@ export function aggregateDailyMetricSamples(
     if (!pointMapping) continue;
 
     if (pointMapping.column === "hrv") {
-      const running = hrvRunningTotals.get(dateStr) ?? { sum: 0, count: 0 };
-      running.sum += sample.value;
-      running.count += 1;
-      hrvRunningTotals.set(dateStr, running);
-      accumulator.hrv = running.sum / running.count;
+      // First-reading-wins: HealthKit returns samples sorted by startDate ASC,
+      // so the first HRV sample is the earliest (overnight). Skip later readings
+      // which may be from Breathe/Mindfulness sessions with inflated SDNN.
+      if (!hrvFirstSeen.has(dateStr)) {
+        hrvFirstSeen.add(dateStr);
+        accumulator.hrv = sample.value;
+      }
       continue;
     }
 
