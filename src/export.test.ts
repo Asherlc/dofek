@@ -25,24 +25,24 @@ vi.mock("./logger.ts", () => ({
   logger: { info: vi.fn(), warn: vi.fn() },
 }));
 
-import type { SyncDatabase } from "./db/index.ts";
 import { generateExport } from "./export.ts";
 
-// All DB functions are mocked — the db object is never actually called with real queries.
-const mockDb: SyncDatabase = {
-  select: vi.fn(),
-  insert: vi.fn(),
-  delete: vi.fn(),
-  execute: vi.fn(),
-};
+// generateExport only calls db.execute(), so a minimal mock suffices.
+function createMockDb(executeResults: Record<string, unknown>[][] = []) {
+  let callIndex = 0;
+  return {
+    execute: vi.fn(() => {
+      const result = executeResults[callIndex] ?? [];
+      callIndex++;
+      return Promise.resolve(result);
+    }),
+  };
+}
+
+let mockDb: ReturnType<typeof createMockDb>;
 
 function setupMockDb(executeResults: Record<string, unknown>[][] = []) {
-  let callIndex = 0;
-  vi.mocked(mockDb.execute).mockImplementation(() => {
-    const result = executeResults[callIndex] ?? [];
-    callIndex++;
-    return Promise.resolve(result) as ReturnType<SyncDatabase["execute"]>;
-  });
+  mockDb = createMockDb(executeResults);
 }
 
 describe("generateExport", () => {
@@ -186,7 +186,7 @@ describe("generateExport", () => {
     );
     expect(metadataCall).toBeDefined();
 
-    const metadata = JSON.parse(String(metadataCall![0]));
+    const metadata = JSON.parse(String(metadataCall?.[0]));
     expect(metadata.userId).toBe("user-1");
     expect(metadata.tables).toHaveLength(16);
     expect(metadata.totalRecords).toBe(0);
