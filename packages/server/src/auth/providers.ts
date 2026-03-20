@@ -28,7 +28,7 @@ const authentikClaimsSchema = z.object({
   groups: z.array(z.string()).optional(),
 });
 
-import { IDENTITY_PROVIDER_NAMES, type IdentityProviderName } from "@dofek/shared/auth";
+import { IDENTITY_PROVIDER_NAMES, type IdentityProviderName } from "@dofek/auth/auth";
 export type { IdentityProviderName };
 
 // ── Provider types ──

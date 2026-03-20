@@ -5,9 +5,9 @@ import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
 import { trpc } from "../lib/trpc";
 import { convertDistance, convertElevation, convertPace, convertWeight, distanceLabel, elevationLabel, paceLabel, useUnitSystem, weightLabel } from "../lib/units";
 import { colors } from "../theme";
-import { scoreColor, scoreLabel, workloadRatioColor, workloadRatioHint, rampRateColor, formZoneColor, FORM_ZONE_COLORS } from "@dofek/shared/scoring";
-import { formatPace } from "@dofek/shared/format";
-import { statusColors } from "@dofek/shared/colors";
+import { scoreColor, scoreLabel, workloadRatioColor, workloadRatioHint, rampRateColor, formZoneColor, FORM_ZONE_COLORS } from "@dofek/scoring/scoring";
+import { formatPace } from "@dofek/format/format";
+import { statusColors } from "@dofek/scoring/colors";
 
 // ── Types ──
 

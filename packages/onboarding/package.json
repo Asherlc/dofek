@@ -1,0 +1,9 @@
+{
+  "name": "@dofek/onboarding",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./onboarding": "./src/onboarding.ts"
+  }
+}

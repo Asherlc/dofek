@@ -14,9 +14,9 @@ importers:
       '@bull-board/express':
         specifier: ^6.20.5
         version: 6.20.5
-      '@dofek/shared':
+      '@dofek/hrv':
         specifier: workspace:*
-        version: link:packages/shared
+        version: link:packages/hrv
       '@opentelemetry/exporter-logs-otlp-proto':
         specifier: ^0.213.0
         version: 0.213.0(@opentelemetry/api@1.9.0)
@@ -148,6 +148,12 @@ importers:
         specifier: 3.2.4
         version: 3.2.4(@types/node@22.19.15)(jiti@2.6.1)(jsdom@29.0.0)(lightningcss@1.31.1)(msw@2.12.11(@types/node@22.19.15)(typescript@5.9.3))(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
 
+  packages/auth:
+    dependencies:
+      zod:
+        specifier: 3.25.76
+        version: 3.25.76
+
   packages/eight-sleep:
     devDependencies:
       typescript:
@@ -156,6 +162,8 @@ importers:
       vitest:
         specifier: 3.2.4
         version: 3.2.4(@types/node@22.19.15)(jiti@2.6.1)(jsdom@29.0.0)(lightningcss@1.31.1)(msw@2.12.11(@types/node@22.19.15)(typescript@5.9.3))(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
+
+  packages/format: {}
 
   packages/garmin-connect:
     devDependencies:
@@ -166,11 +174,31 @@ importers:
         specifier: 3.2.4
         version: 3.2.4(@types/node@22.19.15)(jiti@2.6.1)(jsdom@29.0.0)(lightningcss@1.31.1)(msw@2.12.11(@types/node@22.19.15)(typescript@5.9.3))(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
 
+  packages/hrv: {}
+
   packages/ios:
     dependencies:
-      '@dofek/shared':
+      '@dofek/auth':
         specifier: workspace:*
-        version: link:../shared
+        version: link:../auth
+      '@dofek/format':
+        specifier: workspace:*
+        version: link:../format
+      '@dofek/nutrition':
+        specifier: workspace:*
+        version: link:../nutrition
+      '@dofek/onboarding':
+        specifier: workspace:*
+        version: link:../onboarding
+      '@dofek/providers':
+        specifier: workspace:*
+        version: link:../providers-meta
+      '@dofek/scoring':
+        specifier: workspace:*
+        version: link:../scoring
+      '@dofek/training':
+        specifier: workspace:*
+        version: link:../training
       '@opentelemetry/api':
         specifier: 1.9.0
         version: 1.9.0
@@ -242,6 +270,18 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
+  packages/nutrition:
+    dependencies:
+      zod:
+        specifier: 3.25.76
+        version: 3.25.76
+
+  packages/onboarding: {}
+
+  packages/providers-meta: {}
+
+  packages/scoring: {}
+
   packages/server:
     dependencies:
       '@ai-sdk/google':
@@ -250,9 +290,15 @@ importers:
       '@ai-sdk/mistral':
         specifier: 3.0.24
         version: 3.0.24(zod@3.25.76)
-      '@dofek/shared':
+      '@dofek/auth':
         specifier: workspace:*
-        version: link:../shared
+        version: link:../auth
+      '@dofek/hrv':
+        specifier: workspace:*
+        version: link:../hrv
+      '@dofek/stats':
+        specifier: workspace:*
+        version: link:../stats
       '@slack/bolt':
         specifier: ^4.6.0
         version: 4.6.0(@types/express@5.0.6)
@@ -318,11 +364,11 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  packages/shared:
+  packages/stats:
     dependencies:
-      zod:
-        specifier: 3.25.76
-        version: 3.25.76
+      '@dofek/scoring':
+        specifier: workspace:*
+        version: link:../scoring
 
   packages/trainerroad-client:
     devDependencies:
@@ -332,6 +378,8 @@ importers:
       vitest:
         specifier: 3.2.4
         version: 3.2.4(@types/node@22.19.15)(jiti@2.6.1)(jsdom@29.0.0)(lightningcss@1.31.1)(msw@2.12.11(@types/node@22.19.15)(typescript@5.9.3))(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
+
+  packages/training: {}
 
   packages/trainingpeaks-connect:
     devDependencies:
@@ -353,9 +401,27 @@ importers:
 
   packages/web:
     dependencies:
-      '@dofek/shared':
+      '@dofek/auth':
         specifier: workspace:*
-        version: link:../shared
+        version: link:../auth
+      '@dofek/format':
+        specifier: workspace:*
+        version: link:../format
+      '@dofek/nutrition':
+        specifier: workspace:*
+        version: link:../nutrition
+      '@dofek/onboarding':
+        specifier: workspace:*
+        version: link:../onboarding
+      '@dofek/providers':
+        specifier: workspace:*
+        version: link:../providers-meta
+      '@dofek/scoring':
+        specifier: workspace:*
+        version: link:../scoring
+      '@dofek/training':
+        specifier: workspace:*
+        version: link:../training
       '@opentelemetry/api':
         specifier: 1.9.0
         version: 1.9.0

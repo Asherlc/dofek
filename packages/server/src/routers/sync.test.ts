@@ -154,12 +154,14 @@ describe("syncRouter", () => {
           name: "Strong CSV",
           validate: () => null,
           authSetup: undefined,
+          importOnly: true,
         },
         {
           id: "cronometer-csv",
           name: "Cronometer CSV",
           validate: () => null,
           authSetup: undefined,
+          importOnly: true,
         },
       ]);
 
@@ -259,6 +261,29 @@ describe("syncRouter", () => {
       });
       expect(mockAdd).toHaveBeenNthCalledWith(2, "sync", {
         providerId: "wahoo",
+        sinceDays: undefined,
+        userId: "user-1",
+      });
+    });
+
+    it("excludes import-only providers from sync-all fan-out", async () => {
+      mockGetAllProviders.mockReturnValue([
+        { id: "strava", name: "Strava", validate: () => null },
+        { id: "strong-csv", name: "Strong", validate: () => null, importOnly: true },
+        { id: "cronometer-csv", name: "Cronometer", validate: () => null, importOnly: true },
+      ]);
+      mockAdd.mockResolvedValueOnce({ id: "job-strava" });
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+      });
+
+      const result = await caller.triggerSync({});
+      expect(result.providerJobs).toEqual([{ providerId: "strava", jobId: "job-strava" }]);
+      expect(mockAdd).toHaveBeenCalledTimes(1);
+      expect(mockAdd).toHaveBeenCalledWith("sync", {
+        providerId: "strava",
         sinceDays: undefined,
         userId: "user-1",
       });

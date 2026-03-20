@@ -2,4 +2,4 @@ export {
   type FoodDatabaseResult,
   lookupBarcode,
   searchFoods,
-} from "@dofek/shared/open-food-facts";
+} from "@dofek/nutrition/open-food-facts";

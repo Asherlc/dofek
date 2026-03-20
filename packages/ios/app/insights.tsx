@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
-import { statusColors } from "@dofek/shared/colors";
+import { statusColors } from "@dofek/scoring/colors";
 
 // ── Types ──
 

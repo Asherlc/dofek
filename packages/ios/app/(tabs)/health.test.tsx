@@ -136,6 +136,22 @@ describe("HealthScreen", () => {
 		expect(screen.queryByText("Server")).toBeNull();
 	});
 
+	it("shows enabled state after enabling background delivery", async () => {
+		mockEnableBackgroundDelivery.mockResolvedValue(true);
+		const { default: HealthScreen } = await import("./health");
+		render(<HealthScreen />);
+
+		fireEvent.click(screen.getByText("Enable Background Delivery"));
+
+		await waitFor(() => {
+			expect(screen.getByText("Background Delivery Enabled")).toBeTruthy();
+		});
+
+		// Button should be disabled after enabling
+		const button = screen.getByText("Background Delivery Enabled").closest("button");
+		expect(button).toHaveProperty("disabled", true);
+	});
+
 	it("normalizes missing workout optional fields to null before sync", async () => {
 		mockQueryWorkouts.mockResolvedValueOnce([
 			{

@@ -1,6 +1,6 @@
-import type { AuthUser, ConfiguredProviders } from "@dofek/shared/auth";
+import type { AuthUser, ConfiguredProviders } from "@dofek/auth/auth";
 
-export type { AuthUser, ConfiguredProviders, IdentityProviderName } from "@dofek/shared/auth";
+export type { AuthUser, ConfiguredProviders, IdentityProviderName } from "@dofek/auth/auth";
 
 /** Fetch the currently authenticated user, or null if not logged in. */
 export async function fetchCurrentUser(): Promise<AuthUser | null> {

@@ -1,4 +1,4 @@
-import { selectDailyHrv } from "@dofek/shared/hrv";
+import { selectDailyHrv } from "@dofek/hrv";
 import { sql } from "drizzle-orm";
 import type { SyncDatabase } from "../../db/index.ts";
 import {

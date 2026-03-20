@@ -12,10 +12,19 @@ export function formatDurationMinutes(minutes: number): string {
   return `${hours}h ${mins}m`;
 }
 
+function parseValidDate(value: string): Date | null {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 /** Format a duration between two ISO timestamps as "Xh Ym" */
 export function formatDurationRange(start: string, end: string | null): string {
   if (!end) return "--";
-  const ms = new Date(end).getTime() - new Date(start).getTime();
+  const startDate = parseValidDate(start);
+  const endDate = parseValidDate(end);
+  if (!startDate || !endDate) return "--";
+  const ms = endDate.getTime() - startDate.getTime();
+  if (ms < 0) return "--";
   const totalMinutes = Math.round(ms / 60000);
   return formatDurationMinutes(totalMinutes);
 }
@@ -90,7 +99,8 @@ export function formatPace(secondsPerKm: number): string {
 
 /** Format an ISO string as "Jan 1, 2:30 PM" */
 export function formatTime(iso: string): string {
-  const d = new Date(iso);
+  const d = parseValidDate(iso);
+  if (!d) return "--";
   return d.toLocaleString("en-US", {
     month: "short",
     day: "numeric",

@@ -4,4 +4,4 @@ export {
   formatRelativeTime,
   formatTime,
   isToday,
-} from "@dofek/shared/format";
+} from "@dofek/format/format";

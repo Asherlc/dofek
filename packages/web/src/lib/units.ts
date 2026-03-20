@@ -1,4 +1,4 @@
-export type { UnitSystem } from "@dofek/shared/units";
+export type { UnitSystem } from "@dofek/format/units";
 export {
   convertDistance,
   convertElevation,
@@ -21,4 +21,4 @@ export {
   speedLabel,
   temperatureLabel,
   weightLabel,
-} from "@dofek/shared/units";
+} from "@dofek/format/units";

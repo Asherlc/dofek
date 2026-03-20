@@ -9,7 +9,7 @@ import {
   PROVIDER_LABELS,
   providerLabel,
   providerLogoType,
-} from "@dofek/shared/providers";
+} from "@dofek/providers/providers";
 export { providerLabel };
 
 interface ProviderLogoProps {
