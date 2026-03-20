@@ -114,9 +114,12 @@ const GRID_PAIR_SECONDARY: Record<string, string> = {
 
 export const DASHBOARD_SECTION_IDS = new Set([
   "healthMonitor",
+  "weeklyReport",
+  "sleepNeed",
   "nextWorkout",
   "spo2Temp",
   "steps",
+  "sleep",
   "activities",
 ]);
 
