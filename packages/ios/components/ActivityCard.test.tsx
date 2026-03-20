@@ -11,6 +11,7 @@ describe("ActivityCard", () => {
     avgHr: null,
     maxHr: null,
     avgPower: null,
+    unitSystem: "metric" as const,
   };
 
   it("renders activity name", () => {
@@ -46,6 +47,13 @@ describe("ActivityCard", () => {
     expect(screen.getByText("5.25")).toBeTruthy();
     expect(screen.getByText("Distance")).toBeTruthy();
     expect(screen.getByText("km")).toBeTruthy();
+  });
+
+  it("shows distance in miles when unit system is imperial", () => {
+    render(<ActivityCard {...baseProps} unitSystem="imperial" distanceKm={5.25} />);
+    expect(screen.getByText("3.26")).toBeTruthy();
+    expect(screen.getByText("Distance")).toBeTruthy();
+    expect(screen.getByText("mi")).toBeTruthy();
   });
 
   it("shows calories when provided", () => {
