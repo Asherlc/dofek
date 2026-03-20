@@ -145,6 +145,8 @@ function ActivityHeader({ activity }: { activity: ActivityDetail }) {
   if (durationMin != null) stats.push({ label: "Duration", value: formatDuration(durationMin) });
   if (activity.totalDistance != null)
     stats.push({ label: "Distance", value: `${(activity.totalDistance / 1000).toFixed(1)} km` });
+  if (activity.calories != null)
+    stats.push({ label: "Calories", value: `${Math.round(activity.calories)} kcal` });
   if (activity.elevationGain != null)
     stats.push({ label: "Elevation Gain", value: `${Math.round(activity.elevationGain)} m` });
   if (activity.avgHr != null)
