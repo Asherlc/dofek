@@ -142,11 +142,29 @@ describe("handleSyncCommand", () => {
     expect(mockEnsureProvidersRegistered).toHaveBeenCalledOnce();
   });
 
-  it("enqueues sync job with default sinceDays and returns 0", async () => {
+  it("enqueues sync job with providerId and default sinceDays", async () => {
     mockGetEnabledProviders.mockReturnValue([{ id: "strava" }]);
     const code = await handleSyncCommand(["node", "index.ts", "sync"]);
     expect(code).toBe(0);
     expect(mockAdd).toHaveBeenCalledWith("sync", {
+      providerId: "strava",
+      sinceDays: 7,
+      userId: "test-user",
+    });
+  });
+
+  it("enqueues one sync job per enabled provider", async () => {
+    mockGetEnabledProviders.mockReturnValue([{ id: "strava" }, { id: "wahoo" }]);
+    await handleSyncCommand(["node", "index.ts", "sync"]);
+
+    expect(mockAdd).toHaveBeenCalledTimes(2);
+    expect(mockAdd).toHaveBeenNthCalledWith(1, "sync", {
+      providerId: "strava",
+      sinceDays: 7,
+      userId: "test-user",
+    });
+    expect(mockAdd).toHaveBeenNthCalledWith(2, "sync", {
+      providerId: "wahoo",
       sinceDays: 7,
       userId: "test-user",
     });
@@ -156,7 +174,7 @@ describe("handleSyncCommand", () => {
     mockGetEnabledProviders.mockReturnValue([{ id: "strava" }, { id: "wahoo" }]);
     await handleSyncCommand(["node", "index.ts", "sync"]);
     expect(mockLoggerInfo).toHaveBeenCalledWith(
-      expect.stringContaining("[sync] Enqueued sync job for 2 provider(s)"),
+      expect.stringContaining("[sync] Enqueued 2 sync job(s), one per provider"),
     );
     expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("last 7 days"));
   });
@@ -214,6 +232,7 @@ describe("handleSyncCommand", () => {
     mockGetEnabledProviders.mockReturnValue([{ id: "strava" }]);
     await handleSyncCommand(["node", "index.ts", "sync", "--full-sync"]);
     expect(mockAdd).toHaveBeenCalledWith("sync", {
+      providerId: "strava",
       sinceDays: undefined,
       userId: "test-user",
     });
@@ -223,6 +242,7 @@ describe("handleSyncCommand", () => {
     mockGetEnabledProviders.mockReturnValue([{ id: "strava" }]);
     await handleSyncCommand(["node", "index.ts", "sync", "--since-days=30"]);
     expect(mockAdd).toHaveBeenCalledWith("sync", {
+      providerId: "strava",
       sinceDays: 30,
       userId: "test-user",
     });
