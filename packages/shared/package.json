@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./auth": "./src/auth.ts",
     "./colors": "./src/colors.ts",
     "./scoring": "./src/scoring.ts",
     "./meal": "./src/meal.ts",
@@ -15,5 +16,8 @@
     "./providers": "./src/providers.ts",
     "./units": "./src/units.ts",
     "./training": "./src/training.ts"
+  },
+  "dependencies": {
+    "zod": "3.25.76"
   }
 }
