@@ -3,6 +3,7 @@ import {
   collapseWeeklyVolumeActivityTypes,
   formatActivityTypeLabel,
   OTHER_ACTIVITY_TYPE,
+  selectRecentDailyLoad,
 } from "./training";
 
 describe("formatActivityTypeLabel", () => {
@@ -61,5 +62,39 @@ describe("collapseWeeklyVolumeActivityTypes", () => {
     expect(otherRows).toHaveLength(1);
     expect(otherRows[0]?.hours).toBe(15);
     expect(otherRows[0]?.count).toBe(3);
+  });
+});
+
+describe("selectRecentDailyLoad", () => {
+  it("returns null when workload rows are empty", () => {
+    expect(selectRecentDailyLoad([])).toBeNull();
+  });
+
+  it("returns the latest row when it has positive load", () => {
+    const rows = [
+      { date: "2026-03-15", dailyLoad: 42.1 },
+      { date: "2026-03-16", dailyLoad: 55.3 },
+    ];
+
+    expect(selectRecentDailyLoad(rows)).toEqual(rows[1]);
+  });
+
+  it("falls back to the most recent non-zero row when latest day is zero", () => {
+    const rows = [
+      { date: "2026-03-14", dailyLoad: 31.2 },
+      { date: "2026-03-15", dailyLoad: 0 },
+      { date: "2026-03-16", dailyLoad: 0 },
+    ];
+
+    expect(selectRecentDailyLoad(rows)).toEqual(rows[0]);
+  });
+
+  it("returns the latest row when all rows are zero", () => {
+    const rows = [
+      { date: "2026-03-15", dailyLoad: 0 },
+      { date: "2026-03-16", dailyLoad: 0 },
+    ];
+
+    expect(selectRecentDailyLoad(rows)).toEqual(rows[1]);
   });
 });
