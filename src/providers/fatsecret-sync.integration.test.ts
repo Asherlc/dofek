@@ -229,6 +229,29 @@ describe("FatSecretProvider.sync() (integration)", () => {
     expect(result.recordsSynced).toBe(0);
   });
 
+  it("handles null food_entries response for days with no data", async () => {
+    await saveTokens(ctx.db, "fatsecret", {
+      accessToken: "oauth1-token",
+      refreshToken: "oauth1-token-secret",
+      expiresAt: new Date("2099-01-01T00:00:00Z"),
+      scopes: null,
+    });
+
+    // FatSecret sometimes returns { food_entries: null } instead of an error
+    server.use(
+      http.get("https://platform.fatsecret.com/rest/server.api", () => {
+        return HttpResponse.json({ food_entries: null });
+      }),
+    );
+
+    const provider = new FatSecretProvider();
+    const since = new Date("2026-03-19T00:00:00Z");
+    const result = await provider.sync(ctx.db, since);
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(0);
+  });
+
   it("handles API errors for specific dates without stopping sync", async () => {
     await saveTokens(ctx.db, "fatsecret", {
       accessToken: "oauth1-token",

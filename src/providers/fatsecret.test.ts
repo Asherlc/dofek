@@ -300,6 +300,13 @@ describe("FatSecret Provider", () => {
       expect(parseFoodEntries(response)).toHaveLength(0);
     });
 
+    it("returns empty array when food_entries is null", () => {
+      const response: FatSecretFoodEntriesResponse = {
+        food_entries: null,
+      };
+      expect(parseFoodEntries(response)).toHaveLength(0);
+    });
+
     it("maps unknown meal to 'other'", () => {
       const response: FatSecretFoodEntriesResponse = {
         food_entries: {
