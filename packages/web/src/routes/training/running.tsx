@@ -4,6 +4,9 @@ import { ChartDescriptionTooltip } from "../../components/ChartDescriptionToolti
 import { ChartLoadingSkeleton } from "../../components/LoadingSkeleton.tsx";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
 import { trpc } from "../../lib/trpc.ts";
+import { useUnitSystem } from "../../lib/unitContext.ts";
+import type { UnitSystem } from "../../lib/units.ts";
+import { convertDistance, convertPace, distanceLabel, paceLabel } from "../../lib/units.ts";
 
 export const Route = createFileRoute("/training/running")({
   component: RunningTab,
@@ -13,6 +16,7 @@ import { formatPace } from "@dofek/format/format";
 
 function RunningTab() {
   const { days } = useTrainingDays();
+  const { unitSystem } = useUnitSystem();
 
   const paceCurve = trpc.durationCurves.paceCurve.useQuery({ days });
   const paceTrend = trpc.running.paceTrend.useQuery({ days });
@@ -22,13 +26,21 @@ function RunningTab() {
     <>
       {/* Pace Duration Curve */}
       <Section title="Pace Duration Curve" subtitle="Best sustained pace at each duration">
-        <PaceCurveChart data={paceCurve.data?.points ?? []} loading={paceCurve.isLoading} />
+        <PaceCurveChart
+          data={paceCurve.data?.points ?? []}
+          loading={paceCurve.isLoading}
+          unitSystem={unitSystem}
+        />
       </Section>
 
       {/* Pace Trend + Running Dynamics side by side */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Section title="Pace Trend" subtitle="Average pace per run over time">
-          <PaceTrendChart data={paceTrend.data ?? []} loading={paceTrend.isLoading} />
+          <PaceTrendChart
+            data={paceTrend.data ?? []}
+            loading={paceTrend.isLoading}
+            unitSystem={unitSystem}
+          />
         </Section>
 
         <Section title="Cadence Trend" subtitle="Steps per minute over time">
@@ -38,7 +50,11 @@ function RunningTab() {
 
       {/* Running Dynamics Table */}
       <Section title="Running Form" subtitle="Per-activity running dynamics">
-        <RunningDynamicsTable data={dynamics.data ?? []} loading={dynamics.isLoading} />
+        <RunningDynamicsTable
+          data={dynamics.data ?? []}
+          loading={dynamics.isLoading}
+          unitSystem={unitSystem}
+        />
       </Section>
     </>
   );
@@ -53,7 +69,15 @@ interface PaceCurvePoint {
   activityDate: string;
 }
 
-function PaceCurveChart({ data, loading }: { data: PaceCurvePoint[]; loading: boolean }) {
+function PaceCurveChart({
+  data,
+  loading,
+  unitSystem,
+}: {
+  data: PaceCurvePoint[];
+  loading: boolean;
+  unitSystem: UnitSystem;
+}) {
   if (loading) return <ChartLoadingSkeleton height={280} />;
 
   if (data.length === 0) {
@@ -80,7 +104,7 @@ function PaceCurveChart({ data, loading }: { data: PaceCurvePoint[]; loading: bo
             : seconds < 3600
               ? `${Math.round(seconds / 60)}min`
               : `${Math.round(seconds / 3600)}h`;
-        return `${durLabel}: <strong>${formatPace(pace)} /km</strong>`;
+        return `${durLabel}: <strong>${formatPace(convertPace(pace, unitSystem))} ${paceLabel(unitSystem)}</strong>`;
       },
     },
     xAxis: {
@@ -106,7 +130,7 @@ function PaceCurveChart({ data, loading }: { data: PaceCurvePoint[]; loading: bo
     },
     yAxis: {
       type: "value" as const,
-      name: "Pace (min/km)",
+      name: `Pace (min${paceLabel(unitSystem)})`,
       inverse: true, // faster pace (lower number) at top
       splitLine: { lineStyle: { color: "#27272a" } },
       axisLabel: {
@@ -121,7 +145,7 @@ function PaceCurveChart({ data, loading }: { data: PaceCurvePoint[]; loading: bo
       {
         name: "Best Pace",
         type: "line",
-        data: data.map((d) => [d.durationSeconds, d.bestPaceSecondsPerKm]),
+        data: data.map((d) => [d.durationSeconds, convertPace(d.bestPaceSecondsPerKm, unitSystem)]),
         smooth: 0.3,
         symbol: "circle",
         symbolSize: 6,
@@ -145,7 +169,15 @@ interface PaceTrendPoint {
   durationMinutes: number;
 }
 
-function PaceTrendChart({ data, loading }: { data: PaceTrendPoint[]; loading: boolean }) {
+function PaceTrendChart({
+  data,
+  loading,
+  unitSystem,
+}: {
+  data: PaceTrendPoint[];
+  loading: boolean;
+  unitSystem: UnitSystem;
+}) {
   if (loading) return <ChartLoadingSkeleton height={250} />;
 
   if (data.length === 0) {
@@ -170,8 +202,8 @@ function PaceTrendChart({ data, loading }: { data: PaceTrendPoint[]; loading: bo
         return [
           `<strong>${d.activityName}</strong>`,
           `${d.date}`,
-          `Pace: ${formatPace(d.paceSecondsPerKm)} /km`,
-          `Distance: ${d.distanceKm} km · ${d.durationMinutes} min`,
+          `Pace: ${formatPace(convertPace(d.paceSecondsPerKm, unitSystem))} ${paceLabel(unitSystem)}`,
+          `Distance: ${convertDistance(d.distanceKm, unitSystem).toFixed(1)} ${distanceLabel(unitSystem)} · ${d.durationMinutes} min`,
         ].join("<br/>");
       },
     },
@@ -194,9 +226,9 @@ function PaceTrendChart({ data, loading }: { data: PaceTrendPoint[]; loading: bo
     series: [
       {
         type: "scatter",
-        data: data.map((d) => [d.date, d.paceSecondsPerKm]),
+        data: data.map((d) => [d.date, convertPace(d.paceSecondsPerKm, unitSystem)]),
         symbolSize: (val: [string, number]) => {
-          const d = data.find((p) => p.date === val[0] && p.paceSecondsPerKm === val[1]);
+          const d = data.find((p) => convertPace(p.paceSecondsPerKm, unitSystem) === val[1]);
           return Math.min(Math.max((d?.distanceKm ?? 5) * 1.5, 4), 16);
         },
         itemStyle: { color: "#10b981", opacity: 0.7 },
@@ -276,7 +308,15 @@ function CadenceTrendChart({ data, loading }: { data: DynamicsRow[]; loading: bo
 
 // ── Running Dynamics Table ──
 
-function RunningDynamicsTable({ data, loading }: { data: DynamicsRow[]; loading: boolean }) {
+function RunningDynamicsTable({
+  data,
+  loading,
+  unitSystem,
+}: {
+  data: DynamicsRow[];
+  loading: boolean;
+  unitSystem: UnitSystem;
+}) {
   if (loading) return <ChartLoadingSkeleton height={200} />;
 
   if (data.length === 0) {
@@ -316,7 +356,9 @@ function RunningDynamicsTable({ data, loading }: { data: DynamicsRow[]; loading:
                 <td className="py-1.5 pr-3 text-right font-mono">
                   {formatPace(d.paceSecondsPerKm)}
                 </td>
-                <td className="py-1.5 pr-3 text-right font-mono">{d.distanceKm} km</td>
+                <td className="py-1.5 pr-3 text-right font-mono">
+                  {convertDistance(d.distanceKm, unitSystem).toFixed(1)} {distanceLabel(unitSystem)}
+                </td>
                 <td className="py-1.5 pr-3 text-right font-mono">{d.cadence}</td>
                 <td className="py-1.5 pr-3 text-right font-mono">
                   {d.strideLengthMeters != null ? `${d.strideLengthMeters.toFixed(2)} m` : "--"}
