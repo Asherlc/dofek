@@ -1,4 +1,4 @@
-import { ONBOARDING_CATEGORIES } from "@dofek/shared/onboarding";
+import { ONBOARDING_CATEGORIES } from "@dofek/onboarding/onboarding";
 import { Link } from "@tanstack/react-router";
 import { ProviderLogo, providerLabel } from "./ProviderLogo.tsx";
 

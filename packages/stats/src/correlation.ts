@@ -1,4 +1,4 @@
-import { chartColors, textColors } from "./colors.ts";
+import { chartColors, textColors } from "@dofek/scoring/colors";
 
 // ── Metric definitions ──────────────────────────────────────────────────
 

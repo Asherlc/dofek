@@ -10,7 +10,7 @@ import {
 import { useRouter } from "expo-router";
 import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
-import { formatRelativeTime } from "@dofek/shared/format";
+import { formatRelativeTime } from "@dofek/format/format";
 
 type AuthStatus = "connected" | "not_connected" | "expired";
 

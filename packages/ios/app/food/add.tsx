@@ -18,8 +18,8 @@ import { useAuth } from "../../lib/auth-context";
 import { colors } from "../../theme";
 
 import { lookupBarcode, searchFoods } from "../../lib/food-database";
-import { MEAL_OPTIONS, type MealType, autoMealType } from "@dofek/shared/meal";
-import { formatDateYmd } from "@dofek/shared/format";
+import { MEAL_OPTIONS, type MealType, autoMealType } from "@dofek/nutrition/meal";
+import { formatDateYmd } from "@dofek/format/format";
 import { SERVER_URL, getTrpcUrl } from "../../lib/server";
 import { trpc } from "../../lib/trpc";
 

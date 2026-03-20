@@ -1,5 +1,5 @@
-import { ONBOARDING_CATEGORIES } from "@dofek/shared/onboarding";
-import { providerLabel } from "@dofek/shared/providers";
+import { ONBOARDING_CATEGORIES } from "@dofek/onboarding/onboarding";
+import { providerLabel } from "@dofek/providers/providers";
 import { useRouter } from "expo-router";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { colors } from "../theme";

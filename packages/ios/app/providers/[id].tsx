@@ -10,7 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { formatRelativeTime, formatTime } from "@dofek/shared/format";
+import { formatRelativeTime, formatTime } from "@dofek/format/format";
 import { trpc } from "../../lib/trpc";
 import { colors } from "../../theme";
 

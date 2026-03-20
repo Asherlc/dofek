@@ -1,7 +1,7 @@
 import {
   collapseWeeklyVolumeActivityTypes,
   formatActivityTypeLabel,
-} from "@dofek/shared/training";
+} from "@dofek/training/training";
 import { useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { ActivityCard } from "../../components/ActivityCard";

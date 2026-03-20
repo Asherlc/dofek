@@ -4,7 +4,7 @@
  * Files live in public/logos/ and are served by Vite as static assets.
  */
 
-import { PROVIDER_LABELS, providerLabel } from "@dofek/shared/providers";
+import { PROVIDER_LABELS, providerLabel } from "@dofek/providers/providers";
 export { providerLabel };
 
 interface ProviderLogoProps {

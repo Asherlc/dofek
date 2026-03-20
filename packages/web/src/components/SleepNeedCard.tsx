@@ -1,4 +1,4 @@
-import { sleepDebtColor } from "@dofek/shared/scoring";
+import { sleepDebtColor } from "@dofek/scoring/scoring";
 import type { SleepNeedResult } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";

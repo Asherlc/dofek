@@ -1,10 +1,10 @@
 /**
  * Shared color palette for the dark Whoop-style UI.
  *
- * Re-exported from @dofek/shared — this module composes the shared semantic
+ * Re-exported from @dofek/scoring — this module composes the shared semantic
  * color tokens into the flat `colors` object that iOS components expect.
  */
-import { chartColors, statusColors, surfaceColors, textColors } from "@dofek/shared/colors";
+import { chartColors, statusColors, surfaceColors, textColors } from "@dofek/scoring/colors";
 
 export { chartColors, statusColors, surfaceColors, textColors };
 
