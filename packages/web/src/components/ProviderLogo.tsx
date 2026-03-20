@@ -4,7 +4,12 @@
  * Files live in public/logos/ and are served by Vite as static assets.
  */
 
-import { PROVIDER_LABELS, providerLabel } from "@dofek/providers/providers";
+import {
+  BRAND_COLORS,
+  PROVIDER_LABELS,
+  providerLabel,
+  providerLogoType,
+} from "@dofek/providers/providers";
 export { providerLabel };
 
 interface ProviderLogoProps {
@@ -15,53 +20,9 @@ interface ProviderLogoProps {
   className?: string;
 }
 
-// Providers that have an SVG logo file (Simple Icons)
-const SVG_LOGOS = new Set([
-  "strava",
-  "garmin",
-  "fitbit",
-  "google",
-  "apple",
-  "peloton",
-  "trainerroad",
-  "komoot",
-  "eight-sleep",
-  "authentik",
-]);
-
-// Providers that have a PNG logo file (App Store icons / provider websites)
-const PNG_LOGOS = new Set([
-  "polar",
-  "zwift",
-  "suunto",
-  "wahoo",
-  "whoop",
-  "oura",
-  "withings",
-  "decathlon",
-  "coros",
-  "concept2",
-  "ride-with-gps",
-  "mapmyfitness",
-  "fatsecret",
-  "xert",
-  "ultrahuman",
-  "wger",
-  "strong-csv",
-  "cronometer-csv",
-  "cycling_analytics",
-  "apple_health",
-]);
-
-// Brand colors used for the styled-letter fallback
-const BRAND_COLORS: Record<string, string> = {
-  velohero: "#FF6600",
-  bodyspec: "#00B4D8",
-};
-
 function logoUrl(provider: string): string | null {
-  if (SVG_LOGOS.has(provider)) return `/logos/${provider}.svg`;
-  if (PNG_LOGOS.has(provider)) return `/logos/${provider}.png`;
+  const type = providerLogoType(provider);
+  if (type) return `/logos/${provider}.${type}`;
   return null;
 }
 

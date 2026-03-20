@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { providerLabel } from "@dofek/providers/providers";
 import { useAuth } from "../lib/auth-context";
 import {
   type ConfiguredProviders,
@@ -13,19 +14,6 @@ import {
   startOAuthLogin,
 } from "../lib/auth";
 import { colors } from "../theme";
-
-const providerLabels: Record<string, string> = {
-  google: "Google",
-  apple: "Apple",
-  authentik: "Homelab",
-  strava: "Strava",
-  wahoo: "Wahoo",
-  fitbit: "Fitbit",
-  "ride-with-gps": "Ride with GPS",
-  withings: "Withings",
-  garmin: "Garmin",
-  polar: "Polar",
-};
 
 export default function LoginScreen() {
   const { serverUrl, onLoginSuccess } = useAuth();
@@ -94,7 +82,7 @@ export default function LoginScreen() {
                 disabled={loggingIn}
               >
                 <Text style={styles.providerText}>
-                  Sign in with {providerLabels[id] ?? id}
+                  Sign in with {providerLabel(id)}
                 </Text>
               </TouchableOpacity>
             ))}

@@ -17,6 +17,7 @@
     "packages/stats/src/**/*.ts",
     "packages/onboarding/src/**/*.ts",
     "packages/providers-meta/src/**/*.ts",
+    "packages/auth/src/**/*.ts",
     "packages/server/src/**/*.ts",
     "packages/web/src/lib/**/*.ts",
     "packages/garmin-connect/src/**/*.ts",

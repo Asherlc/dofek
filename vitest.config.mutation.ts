@@ -19,6 +19,7 @@ export default defineConfig({
       "packages/stats/src/**/*.test.ts",
       "packages/onboarding/src/**/*.test.ts",
       "packages/providers-meta/src/**/*.test.ts",
+      "packages/auth/src/**/*.test.ts",
       "packages/web/src/**/*.test.ts",
       "packages/server/src/**/*.test.ts",
       "packages/garmin-connect/src/**/*.test.ts",

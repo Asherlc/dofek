@@ -12,6 +12,7 @@
     "lint:fix": "biome check --write ."
   },
   "dependencies": {
+    "@dofek/auth": "workspace:*",
     "@dofek/format": "workspace:*",
     "@dofek/nutrition": "workspace:*",
     "@dofek/onboarding": "workspace:*",

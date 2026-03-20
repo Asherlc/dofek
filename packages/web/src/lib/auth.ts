@@ -1,15 +1,6 @@
-export interface AuthUser {
-  id: string;
-  name: string;
-  email: string | null;
-}
+import type { AuthUser, ConfiguredProviders } from "@dofek/auth/auth";
 
-export type IdentityProviderName = "google" | "apple" | "authentik";
-
-export interface ConfiguredProviders {
-  identity: IdentityProviderName[];
-  data: string[];
-}
+export type { AuthUser, ConfiguredProviders, IdentityProviderName } from "@dofek/auth/auth";
 
 /** Fetch the currently authenticated user, or null if not logged in. */
 export async function fetchCurrentUser(): Promise<AuthUser | null> {

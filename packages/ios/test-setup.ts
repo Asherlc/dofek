@@ -80,11 +80,12 @@ vi.mock("react-native", () => {
   const TouchableOpacity = ({
     children,
     onPress,
+    style,
     ...props
   }: Record<string, unknown>) =>
     React.createElement(
       "button",
-      { ...props, onClick: onPress, type: "button" },
+      { ...props, onClick: onPress, style: flattenStyle(style), type: "button" },
       children as ReactNode,
     );
   TouchableOpacity.displayName = "TouchableOpacity";
@@ -135,6 +136,7 @@ vi.mock("react-native", () => {
     StyleSheet,
     Platform,
     Alert,
+    useWindowDimensions: () => ({ width: 390, height: 844 }),
   };
 });
 

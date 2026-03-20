@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@dofek/auth": "workspace:*",
     "@dofek/format": "workspace:*",
     "@dofek/nutrition": "workspace:*",
     "@dofek/onboarding": "workspace:*",

@@ -1,6 +1,14 @@
+import {
+  AuthUserSchema,
+  ConfiguredProvidersSchema,
+  type AuthUser,
+  type ConfiguredProviders,
+} from "@dofek/auth/auth";
 import * as SecureStore from "expo-secure-store";
 import * as WebBrowser from "expo-web-browser";
-import { z } from "zod";
+
+export { AuthUserSchema, ConfiguredProvidersSchema };
+export type { AuthUser, ConfiguredProviders };
 
 const SESSION_TOKEN_KEY = "dofek_session_token";
 const APP_SCHEME = "dofek";
@@ -20,23 +28,6 @@ export async function clearSessionToken(): Promise<void> {
   await SecureStore.deleteItemAsync(SESSION_TOKEN_KEY);
 }
 
-export const AuthUserSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  email: z.string().nullable(),
-});
-
-export type AuthUser = z.infer<typeof AuthUserSchema>;
-
-const identityProviderNames = ["google", "apple", "authentik"] as const;
-
-export const ConfiguredProvidersSchema = z.object({
-  identity: z.array(z.enum(identityProviderNames)),
-  data: z.array(z.string()),
-});
-
-export type ConfiguredProviders = z.infer<typeof ConfiguredProvidersSchema>;
-
 /** Validate the stored session token by calling /api/auth/me. Returns the user or null. */
 export async function fetchCurrentUser(
   serverUrl: string,
@@ -53,8 +44,6 @@ export async function fetchCurrentUser(
     return null;
   }
 }
-
-export type IdentityProviderName = (typeof identityProviderNames)[number];
 
 /** Fetch available login providers from the server. */
 export async function fetchConfiguredProviders(
