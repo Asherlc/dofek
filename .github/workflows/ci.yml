@@ -198,8 +198,35 @@ jobs:
           done
           exit $FAILED
 
+  check-ios-changes:
+    name: Check iOS Changes
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.check.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: check
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- packages/ios/)
+            if [ -n "$CHANGED" ]; then
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+              echo "iOS files changed:"
+              echo "$CHANGED"
+            else
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+              echo "No iOS changes detected, skipping native build"
+            fi
+          fi
+
   build-ios-native:
     name: iOS Native Build
+    needs: check-ios-changes
+    if: needs.check-ios-changes.outputs.changed == 'true'
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -323,7 +350,7 @@ jobs:
 
   docker:
     name: Docker (${{ matrix.target }})
-    needs: [lint, typecheck, knip, coverage, test-e2e-web, test-ios, build-ios, build-ios-native]
+    needs: [lint, typecheck, knip, coverage, test-e2e-web, test-ios, build-ios]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04-arm
     permissions:
