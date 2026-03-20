@@ -205,7 +205,7 @@ jobs:
     name: iOS Xcode Build
     needs: check-ios-changes
     if: needs.check-ios-changes.outputs.changed == 'true'
-    runs-on: macos-15
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
