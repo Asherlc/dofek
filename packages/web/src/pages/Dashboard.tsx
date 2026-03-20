@@ -243,6 +243,7 @@ export function Dashboard() {
         d.skin_temp_c != null ? convertTemperature(d.skin_temp_c, unitSystem) : null,
       ]),
       color: "#f59e0b",
+      yAxisIndex: 1,
     }),
     [metrics, unitSystem],
   );
