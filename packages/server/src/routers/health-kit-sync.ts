@@ -3,7 +3,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { protectedProcedure, router } from "../trpc.ts";
 
-const PROVIDER_ID = "apple_health_kit";
+const PROVIDER_ID = "apple_health";
 const BATCH_SIZE = 500;
 const MAX_SLEEP_SESSION_GAP_MS = 90 * 60 * 1000;
 
@@ -186,11 +186,11 @@ const workoutActivityTypeMap: Record<string, string> = {
 
 type Database = Parameters<Parameters<typeof protectedProcedure.mutation>[0]>[0]["ctx"]["db"];
 
-/** Ensure the apple_health_kit provider row exists */
+/** Ensure the apple_health provider row exists */
 async function ensureProvider(db: Database) {
   await db.execute(
     sql`INSERT INTO fitness.provider (id, name)
-        VALUES (${PROVIDER_ID}, 'Apple HealthKit')
+        VALUES (${PROVIDER_ID}, 'Apple Health')
         ON CONFLICT (id) DO NOTHING`,
   );
 }
