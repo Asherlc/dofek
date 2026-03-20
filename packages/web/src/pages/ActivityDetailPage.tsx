@@ -529,9 +529,10 @@ function HrZonesChart({ zones, loading }: { zones: ActivityHrZone[]; loading: bo
         if (!p) return "";
         const zone = zones[p.dataIndex];
         if (!zone) return "";
-        const pct = totalSeconds > 0 ? ((zone.seconds / totalSeconds) * 100).toFixed(1) : "0";
+        const percentage =
+          totalSeconds > 0 ? ((zone.seconds / totalSeconds) * 100).toFixed(1) : "0";
         return `<b>${zone.label}</b> (${zone.minPct}–${zone.maxPct}% HRR)<br/>
-          ${formatTime(zone.seconds)} (${pct}%)`;
+          ${formatTime(zone.seconds)} (${percentage}%)`;
       },
     },
     xAxis: {
@@ -563,8 +564,8 @@ function HrZonesChart({ zones, loading }: { zones: ActivityHrZone[]; loading: bo
           color: "#a1a1aa",
           fontSize: 11,
           formatter: (p: { value: number }) => {
-            const pct = totalSeconds > 0 ? ((p.value / totalSeconds) * 100).toFixed(0) : "0";
-            return `${pct}%`;
+            const percentage = totalSeconds > 0 ? ((p.value / totalSeconds) * 100).toFixed(0) : "0";
+            return `${percentage}%`;
           },
         },
       },

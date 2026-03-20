@@ -176,14 +176,14 @@ describe("processImportJob", () => {
           _path: unknown,
           _since: unknown,
           onProgress: (info: {
-            pct: number;
+            percentage: number;
             recordCount: number;
             workoutCount: number;
             sleepCount: number;
           }) => void,
         ) => {
-          onProgress({ pct: 50, recordCount: 1000, workoutCount: 5, sleepCount: 0 });
-          onProgress({ pct: 100, recordCount: 2000, workoutCount: 10, sleepCount: 3 });
+          onProgress({ percentage: 50, recordCount: 1000, workoutCount: 5, sleepCount: 0 });
+          onProgress({ percentage: 100, recordCount: 2000, workoutCount: 10, sleepCount: 3 });
           return { recordsSynced: 10, errors: [] };
         },
       );
@@ -193,12 +193,12 @@ describe("processImportJob", () => {
 
       // 50% streaming → 45% reported (50 * 0.9), message includes counts
       expect(job.updateProgress).toHaveBeenCalledWith({
-        pct: 45,
+        percentage: 45,
         message: "Importing health data (1,000 records, 5 workouts)...",
       });
       // 100% streaming → 90% reported (100 * 0.9)
       expect(job.updateProgress).toHaveBeenCalledWith({
-        pct: 90,
+        percentage: 90,
         message: "Importing health data (2,000 records, 10 workouts, 3 sleep sessions)...",
       });
     });
@@ -209,13 +209,13 @@ describe("processImportJob", () => {
           _db: unknown,
           _path: unknown,
           _since: unknown,
-          onProgress: (info: { pct: number }) => void,
+          onProgress: (info: { percentage: number }) => void,
         ) => {
-          onProgress({ pct: 5 });
-          onProgress({ pct: 9 });
-          onProgress({ pct: 10 });
-          onProgress({ pct: 15 });
-          onProgress({ pct: 20 });
+          onProgress({ percentage: 5 });
+          onProgress({ percentage: 9 });
+          onProgress({ percentage: 10 });
+          onProgress({ percentage: 15 });
+          onProgress({ percentage: 20 });
           return { recordsSynced: 10, errors: [] };
         },
       );
@@ -371,15 +371,15 @@ describe("processImportJob", () => {
       await runImportJob(job, mockDb);
 
       expect(job.updateProgress).toHaveBeenCalledWith({
-        pct: 92,
+        percentage: 92,
         message: "Updating max heart rate...",
       });
       expect(job.updateProgress).toHaveBeenCalledWith({
-        pct: 95,
+        percentage: 95,
         message: "Syncing provider priorities...",
       });
       expect(job.updateProgress).toHaveBeenCalledWith({
-        pct: 97,
+        percentage: 97,
         message: "Refreshing views...",
       });
     });

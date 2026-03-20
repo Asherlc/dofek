@@ -168,7 +168,64 @@ describe("pollSyncJob", () => {
       pollIntervalMs: 0,
     });
 
-    expect(updateState).toHaveBeenCalledWith("p1", { status: "syncing", message: "Syncing..." });
+    expect(updateState).toHaveBeenCalledWith("p1", {
+      status: "syncing",
+      message: "Syncing...",
+      percentage: undefined,
+    });
+  });
+
+  it("passes percentage when provider is running", async () => {
+    const updateState = vi.fn();
+    const fetchStatus = vi
+      .fn()
+      .mockResolvedValueOnce({
+        status: "running",
+        percentage: 42,
+        providers: { p1: { status: "running", message: "Fetching activities..." } },
+      })
+      .mockResolvedValueOnce({
+        status: "done",
+        providers: { p1: { status: "done" } },
+      });
+
+    await pollSyncJob({
+      jobId: "j1",
+      providerIds: ["p1"],
+      fetchStatus,
+      updateState,
+      onComplete: vi.fn(),
+      pollIntervalMs: 0,
+    });
+
+    expect(updateState).toHaveBeenCalledWith("p1", {
+      status: "syncing",
+      message: "Fetching activities...",
+      percentage: 42,
+    });
+  });
+
+  it("does not include percentage for done/error states", async () => {
+    const updateState = vi.fn();
+    const fetchStatus = vi.fn().mockResolvedValue({
+      status: "done",
+      percentage: 100,
+      providers: {
+        p1: { status: "done", message: "5 synced" },
+        p2: { status: "error", message: "Auth failed" },
+      },
+    });
+
+    await pollSyncJob({
+      jobId: "j1",
+      providerIds: ["p1", "p2"],
+      fetchStatus,
+      updateState,
+      onComplete: vi.fn(),
+    });
+
+    expect(updateState).toHaveBeenCalledWith("p1", { status: "done", message: "5 synced" });
+    expect(updateState).toHaveBeenCalledWith("p2", { status: "error", message: "Auth failed" });
   });
 
   it("does not call updateState for pending providers", async () => {

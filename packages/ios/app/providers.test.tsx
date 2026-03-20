@@ -125,6 +125,25 @@ function setupDefaultMocks() {
 	mockActiveSyncsQuery.mockReturnValue({ data: [] });
 }
 
+function makeProvider(overrides: Partial<{
+	id: string;
+	label: string;
+	enabled: boolean;
+	authStatus: "connected" | "not_connected" | "expired";
+	lastSyncAt: string | null;
+}> = {}) {
+	return {
+		id: overrides.id ?? "wahoo",
+		label: overrides.label ?? "Wahoo",
+		enabled: overrides.enabled ?? true,
+		authStatus: overrides.authStatus ?? "connected",
+		lastSyncAt: overrides.lastSyncAt ?? null,
+		...overrides,
+	};
+}
+
+const noopFn = () => {};
+
 describe("providerActionLabel", () => {
 	it("returns Sync for connected providers", () => {
 		expect(providerActionLabel("connected")).toBe("Sync");
@@ -136,6 +155,208 @@ describe("providerActionLabel", () => {
 
 	it("returns Connect for expired providers", () => {
 		expect(providerActionLabel("expired")).toBe("Connect");
+	});
+});
+
+describe("ProviderCard", () => {
+	describe("sync progress", () => {
+		it("renders progress bar when syncing with percentage", async () => {
+			const { ProviderCard } = await import("./providers");
+			render(
+				<ProviderCard
+					provider={makeProvider()}
+					stats={undefined}
+					syncing={true}
+					syncProgress={{ percentage: 45, message: "Fetching activities..." }}
+					onSync={noopFn}
+					onFullSync={noopFn}
+					onPress={noopFn}
+				/>,
+			);
+
+			expect(screen.getByText("Fetching activities...")).toBeTruthy();
+			expect(screen.queryByText("Connected")).toBeNull();
+			expect(screen.queryByText("Never synced")).toBeNull();
+		});
+
+		it("renders progress message without percentage", async () => {
+			const { ProviderCard } = await import("./providers");
+			render(
+				<ProviderCard
+					provider={makeProvider()}
+					stats={undefined}
+					syncing={true}
+					syncProgress={{ message: "Preparing sync..." }}
+					onSync={noopFn}
+					onFullSync={noopFn}
+					onPress={noopFn}
+				/>,
+			);
+
+			expect(screen.getByText("Preparing sync...")).toBeTruthy();
+		});
+
+		it("renders progress bar without message when only percentage is provided", async () => {
+			const { ProviderCard } = await import("./providers");
+			render(
+				<ProviderCard
+					provider={makeProvider()}
+					stats={undefined}
+					syncing={true}
+					syncProgress={{ percentage: 60 }}
+					onSync={noopFn}
+					onFullSync={noopFn}
+					onPress={noopFn}
+				/>,
+			);
+
+			expect(screen.queryByText("Connected")).toBeNull();
+			expect(screen.queryByText("Never synced")).toBeNull();
+		});
+	});
+
+	describe("normal metadata when not syncing", () => {
+		it("renders auth status and last sync time when not syncing", async () => {
+			const { ProviderCard } = await import("./providers");
+			render(
+				<ProviderCard
+					provider={makeProvider({ lastSyncAt: "2026-03-19T12:00:00Z" })}
+					stats={undefined}
+					syncing={false}
+					syncProgress={undefined}
+					onSync={noopFn}
+					onFullSync={noopFn}
+					onPress={noopFn}
+				/>,
+			);
+
+			expect(screen.getByText("Connected")).toBeTruthy();
+			expect(screen.getByText(/Last sync:/)).toBeTruthy();
+		});
+
+		it("renders 'Never synced' when provider has no lastSyncAt", async () => {
+			const { ProviderCard } = await import("./providers");
+			render(
+				<ProviderCard
+					provider={makeProvider({ lastSyncAt: null })}
+					stats={undefined}
+					syncing={false}
+					syncProgress={undefined}
+					onSync={noopFn}
+					onFullSync={noopFn}
+					onPress={noopFn}
+				/>,
+			);
+
+			expect(screen.getByText("Connected")).toBeTruthy();
+			expect(screen.getByText("Never synced")).toBeTruthy();
+		});
+
+		it("renders normal metadata when syncing but syncProgress is undefined", async () => {
+			const { ProviderCard } = await import("./providers");
+			render(
+				<ProviderCard
+					provider={makeProvider()}
+					stats={undefined}
+					syncing={true}
+					syncProgress={undefined}
+					onSync={noopFn}
+					onFullSync={noopFn}
+					onPress={noopFn}
+				/>,
+			);
+
+			expect(screen.getByText("Connected")).toBeTruthy();
+			expect(screen.getByText("Never synced")).toBeTruthy();
+		});
+
+		it("renders 'Not connected' status for disconnected providers", async () => {
+			const { ProviderCard } = await import("./providers");
+			render(
+				<ProviderCard
+					provider={makeProvider({ authStatus: "not_connected" })}
+					stats={undefined}
+					syncing={false}
+					syncProgress={undefined}
+					onSync={noopFn}
+					onFullSync={noopFn}
+					onPress={noopFn}
+				/>,
+			);
+
+			expect(screen.getByText("Not connected")).toBeTruthy();
+		});
+
+		it("renders 'Expired' status for expired providers", async () => {
+			const { ProviderCard } = await import("./providers");
+			render(
+				<ProviderCard
+					provider={makeProvider({ authStatus: "expired" })}
+					stats={undefined}
+					syncing={false}
+					syncProgress={undefined}
+					onSync={noopFn}
+					onFullSync={noopFn}
+					onPress={noopFn}
+				/>,
+			);
+
+			expect(screen.getByText("Expired")).toBeTruthy();
+		});
+	});
+
+	describe("progress percentage clamping", () => {
+		it("renders without error when percentage is negative", async () => {
+			const { ProviderCard } = await import("./providers");
+			render(
+				<ProviderCard
+					provider={makeProvider()}
+					stats={undefined}
+					syncing={true}
+					syncProgress={{ percentage: -20 }}
+					onSync={noopFn}
+					onFullSync={noopFn}
+					onPress={noopFn}
+				/>,
+			);
+
+			// Should render the progress container, not the metadata
+			expect(screen.queryByText("Connected")).toBeNull();
+		});
+
+		it("renders without error when percentage exceeds 100", async () => {
+			const { ProviderCard } = await import("./providers");
+			render(
+				<ProviderCard
+					provider={makeProvider()}
+					stats={undefined}
+					syncing={true}
+					syncProgress={{ percentage: 150 }}
+					onSync={noopFn}
+					onFullSync={noopFn}
+					onPress={noopFn}
+				/>,
+			);
+
+			expect(screen.queryByText("Connected")).toBeNull();
+		});
+	});
+
+	it("renders provider label", async () => {
+		const { ProviderCard } = await import("./providers");
+		render(
+			<ProviderCard
+				provider={makeProvider({ label: "Wahoo" })}
+				stats={undefined}
+				syncing={false}
+				syncProgress={undefined}
+				onSync={noopFn}
+				onFullSync={noopFn}
+				onPress={noopFn}
+			/>,
+		);
+
+		expect(screen.getByText("Wahoo")).toBeTruthy();
 	});
 });
 

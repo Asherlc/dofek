@@ -250,6 +250,7 @@ export const syncRouter = router({
           }),
         )
         .optional(),
+      percentage: z.number().optional(),
     });
     const parsed = progressSchema.safeParse(job.progress);
     const progress = parsed.success ? parsed.data : undefined;
@@ -257,6 +258,7 @@ export const syncRouter = router({
     return {
       status: mapBullMqStateToSyncStatus(state),
       providers: progress?.providers ?? {},
+      percentage: progress?.percentage,
       message:
         state === "failed" ? job.failedReason : state === "completed" ? "Sync complete" : undefined,
     };
@@ -280,11 +282,13 @@ export const syncRouter = router({
           }),
         )
         .optional(),
+      percentage: z.number().optional(),
     });
 
     const results: Array<{
       jobId: string;
       status: "running" | "done" | "error";
+      percentage?: number;
       providers: Record<
         string,
         { status: "pending" | "running" | "done" | "error"; message?: string }
@@ -300,6 +304,7 @@ export const syncRouter = router({
       results.push({
         jobId: job.id ?? `job-${Date.now()}`,
         status: mapBullMqStateToSyncStatus(state),
+        percentage: progress?.percentage,
         providers: progress?.providers ?? {},
       });
     }

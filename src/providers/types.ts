@@ -60,10 +60,10 @@ export interface SyncError {
 
 /**
  * Progress callback for reporting sync progress from within a provider.
- * @param pct - Percentage complete (0–100)
+ * @param percentage - Percentage complete (0–100)
  * @param message - Human-readable status message
  */
-export type SyncProgressCallback = (pct: number, message: string) => void;
+export type SyncProgressCallback = (percentage: number, message: string) => void;
 
 /**
  * Every provider implements this interface.

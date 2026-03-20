@@ -334,10 +334,10 @@ export default function OverviewScreen() {
               />
               <SleepBar
                 durationMinutes={lastNight.durationMinutes}
-                deepPct={lastNight.deepPct}
-                remPct={lastNight.remPct}
-                lightPct={lastNight.lightPct}
-                awakePct={lastNight.awakePct}
+                deepPercentage={lastNight.deepPct}
+                remPercentage={lastNight.remPct}
+                lightPercentage={lastNight.lightPct}
+                awakePercentage={lastNight.awakePct}
               />
               {sleepDebt > 0 && (
                 <Text style={styles.sleepDebt}>
@@ -873,7 +873,7 @@ function MacroBar({
   // Approximate calorie contribution: protein=4, carbs=4, fat=9
   const calMultiplier = label === "Fat" ? 9 : 4;
   const macroCalories = grams * calMultiplier;
-  const pct = totalCalories > 0 ? Math.min(100, Math.round((macroCalories / totalCalories) * 100)) : 0;
+  const percentage = totalCalories > 0 ? Math.min(100, Math.round((macroCalories / totalCalories) * 100)) : 0;
 
   return (
     <View style={macroStyles.container}>
@@ -885,7 +885,7 @@ function MacroBar({
         <View
           style={[
             macroStyles.barFill,
-            { width: `${pct}%`, backgroundColor: color },
+            { width: `${percentage}%`, backgroundColor: color },
           ]}
         />
       </View>

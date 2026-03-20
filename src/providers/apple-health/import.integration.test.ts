@@ -210,8 +210,8 @@ describe("streamHealthExport", () => {
       onProgress: (info) => {
         progressCalled = true;
         expect(info.totalBytes).toBeGreaterThan(0);
-        expect(info.pct).toBeGreaterThanOrEqual(0);
-        expect(info.pct).toBeLessThanOrEqual(100);
+        expect(info.percentage).toBeGreaterThanOrEqual(0);
+        expect(info.percentage).toBeLessThanOrEqual(100);
       },
     });
 

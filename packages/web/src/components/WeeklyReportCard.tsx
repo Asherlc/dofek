@@ -18,9 +18,9 @@ function strainZoneLabel(zone: WeekSummary["strainZone"]): string {
   return "Overreaching";
 }
 
-function sleepPerfColor(pct: number): string {
-  if (pct >= 95) return "#22c55e";
-  if (pct >= 85) return "#eab308";
+function sleepPerfColor(percentage: number): string {
+  if (percentage >= 95) return "#22c55e";
+  if (percentage >= 85) return "#eab308";
   return "#ef4444";
 }
 

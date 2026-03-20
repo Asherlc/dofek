@@ -92,13 +92,14 @@ function formatBytes(bytes: number): string {
 
 export function defaultConsoleProgress(info: ProgressInfo): void {
   const bar =
-    "\u2588".repeat(Math.floor(info.pct / 2)) + "\u2591".repeat(50 - Math.floor(info.pct / 2));
+    "\u2588".repeat(Math.floor(info.percentage / 2)) +
+    "\u2591".repeat(50 - Math.floor(info.percentage / 2));
   process.stderr.write(
-    `\r[apple_health] ${bar} ${info.pct}% ` +
+    `\r[apple_health] ${bar} ${info.percentage}% ` +
       `(${formatBytes(info.bytesRead)}/${formatBytes(info.totalBytes)}) ` +
       `${info.recordCount} records, ${info.workoutCount} workouts, ${info.sleepCount} sleep`,
   );
-  if (info.pct >= 100) {
+  if (info.percentage >= 100) {
     process.stderr.write("\n");
   }
 }

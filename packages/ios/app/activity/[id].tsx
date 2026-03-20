@@ -306,8 +306,8 @@ function HrZonesChart({ zones }: { zones: HrZone[] }) {
       />
       <Svg width={CHART_WIDTH} height={chartTotalHeight + 8}>
         {zones.map((zone, i) => {
-          const pct = totalSeconds > 0 ? zone.seconds / totalSeconds : 0;
-          const barWidth = Math.max(pct * barAreaWidth, 2);
+          const percentage = totalSeconds > 0 ? zone.seconds / totalSeconds : 0;
+          const barWidth = Math.max(percentage * barAreaWidth, 2);
           const y = i * (barHeight + gap);
           const zoneColor = ZONE_COLORS[i] ?? "#71717a";
 
@@ -348,7 +348,7 @@ function HrZonesChart({ zones }: { zones: HrZone[] }) {
                 fontSize={12}
                 fontWeight="600"
               >
-                {`${Math.round(pct * 100)}%`}
+                {`${Math.round(percentage * 100)}%`}
               </SvgText>
             </G>
           );

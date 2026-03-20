@@ -102,10 +102,11 @@ function StatBadge({ label, count }: { label: string; count: number }) {
   );
 }
 
-function ProviderCard({
+export function ProviderCard({
   provider,
   stats,
   syncing,
+  syncProgress,
   onSync,
   onFullSync,
   onPress,
@@ -113,6 +114,7 @@ function ProviderCard({
   provider: Provider;
   stats: ProviderStats | undefined;
   syncing: boolean;
+  syncProgress: { percentage?: number; message?: string } | undefined;
   onSync: () => void;
   onFullSync: () => void;
   onPress: () => void;
@@ -142,21 +144,41 @@ function ProviderCard({
         </TouchableOpacity>
       </View>
 
-      <View style={styles.cardMeta}>
-        <Text style={styles.cardMetaText}>{statusLabel(provider.authStatus)}</Text>
-        {provider.lastSyncAt ? (
-          <Text style={styles.cardMetaText}>
-            Last sync: {formatRelativeTime(provider.lastSyncAt)}
-          </Text>
-        ) : (
-          <Text style={styles.cardMetaText}>Never synced</Text>
-        )}
-        {provider.authStatus === "connected" && !syncing && (
-          <TouchableOpacity onPress={onFullSync} activeOpacity={0.7}>
-            <Text style={styles.fullSyncLink}>Full sync</Text>
-          </TouchableOpacity>
-        )}
-      </View>
+      {syncing && syncProgress ? (
+        <View style={styles.syncProgressContainer}>
+          {syncProgress.percentage != null && (
+            <View style={styles.syncProgressTrack}>
+              <View
+                style={[
+                  styles.syncProgressFill,
+                  {
+                    width: `${Math.max(0, Math.min(100, syncProgress.percentage))}%`,
+                  },
+                ]}
+              />
+            </View>
+          )}
+          {syncProgress.message ? (
+            <Text style={styles.syncProgressMessage}>{syncProgress.message}</Text>
+          ) : null}
+        </View>
+      ) : (
+        <View style={styles.cardMeta}>
+          <Text style={styles.cardMetaText}>{statusLabel(provider.authStatus)}</Text>
+          {provider.lastSyncAt ? (
+            <Text style={styles.cardMetaText}>
+              Last sync: {formatRelativeTime(provider.lastSyncAt)}
+            </Text>
+          ) : (
+            <Text style={styles.cardMetaText}>Never synced</Text>
+          )}
+          {provider.authStatus === "connected" && !syncing && (
+            <TouchableOpacity onPress={onFullSync} activeOpacity={0.7}>
+              <Text style={styles.fullSyncLink}>Full sync</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
 
       {stats && (
         <View style={styles.statsRow}>
@@ -219,6 +241,9 @@ export default function ProvidersScreen() {
 
   // Track which providers are currently syncing (from active jobs or user-initiated)
   const [syncingProviders, setSyncingProviders] = useState<Set<string>>(new Set());
+  const [syncProgress, setSyncProgress] = useState<
+    Record<string, { percentage?: number; message?: string }>
+  >({});
   const [anySyncing, setAnySyncing] = useState(false);
   const [sharedImportState, setSharedImportState] = useState<ShareImportProgress | null>(null);
   const resumedJobIds = useRef(new Set<string>());
@@ -241,6 +266,11 @@ export default function ProvidersScreen() {
           for (const pid of providerIds) next.delete(pid);
           return next;
         });
+        setSyncProgress((prev) => {
+          const next = { ...prev };
+          for (const pid of providerIds) delete next[pid];
+          return next;
+        });
         if (pollingJobIds.current.size === 0) {
           setAnySyncing(false);
         }
@@ -260,15 +290,30 @@ export default function ProvidersScreen() {
           return;
         }
 
-        // Update per-provider syncing state (only for this job's providers)
+        // Update per-provider syncing state and progress (only for this job's providers)
         setSyncingProviders((prev) => {
           const next = new Set(prev);
           for (const pid of providerIds) {
-            const pStatus = status.providers[pid];
-            if (pStatus && (pStatus.status === "running" || pStatus.status === "pending")) {
+            const providerStatus = status.providers[pid];
+            if (providerStatus && (providerStatus.status === "running" || providerStatus.status === "pending")) {
               next.add(pid);
             } else {
               next.delete(pid);
+            }
+          }
+          return next;
+        });
+        setSyncProgress((prev) => {
+          const next = { ...prev };
+          for (const pid of providerIds) {
+            const providerStatus = status.providers[pid];
+            if (providerStatus && (providerStatus.status === "running" || providerStatus.status === "pending")) {
+              next[pid] = {
+                percentage: status.percentage,
+                message: providerStatus.message,
+              };
+            } else {
+              delete next[pid];
             }
           }
           return next;
@@ -305,8 +350,8 @@ export default function ProvidersScreen() {
       const providerIds = Object.keys(activeJob.providers);
       setSyncingProviders((prev) => {
         const next = new Set(prev);
-        for (const [pid, pStatus] of Object.entries(activeJob.providers)) {
-          if (pStatus.status === "running" || pStatus.status === "pending") {
+        for (const [pid, providerStatus] of Object.entries(activeJob.providers)) {
+          if (providerStatus.status === "running" || providerStatus.status === "pending") {
             next.add(pid);
           }
         }
@@ -503,6 +548,7 @@ export default function ProvidersScreen() {
             provider={provider}
             stats={statsMap[provider.id]}
             syncing={syncingProviders.has(provider.id)}
+            syncProgress={syncProgress[provider.id]}
             onSync={() => handleSyncProvider(provider.id)}
             onFullSync={() => handleSyncProvider(provider.id, true)}
             onPress={() => router.push(`/providers/${provider.id}`)}
@@ -697,6 +743,26 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 14,
     fontWeight: "600",
+  },
+
+  // Sync progress
+  syncProgressContainer: {
+    marginTop: 8,
+    gap: 4,
+  },
+  syncProgressTrack: {
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: colors.surfaceSecondary,
+    overflow: "hidden" as const,
+  },
+  syncProgressFill: {
+    height: "100%" as const,
+    backgroundColor: colors.accent,
+  },
+  syncProgressMessage: {
+    fontSize: 12,
+    color: colors.textSecondary,
   },
 
   // Stats row

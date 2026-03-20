@@ -526,10 +526,12 @@ describe("Apple Health streaming import (integration)", () => {
 
     expect(progressUpdates.length).toBeGreaterThan(0);
     // Should reach 100%
-    expect(progressUpdates[progressUpdates.length - 1]?.pct).toBe(100);
+    expect(progressUpdates[progressUpdates.length - 1]?.percentage).toBe(100);
     // Percentages should be non-decreasing
     for (let i = 1; i < progressUpdates.length; i++) {
-      expect(progressUpdates[i]?.pct).toBeGreaterThanOrEqual(progressUpdates[i - 1]?.pct ?? 0);
+      expect(progressUpdates[i]?.percentage).toBeGreaterThanOrEqual(
+        progressUpdates[i - 1]?.percentage ?? 0,
+      );
     }
     // Should report file size and bytes read
     const last = progressUpdates[progressUpdates.length - 1];

@@ -17,10 +17,10 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
   try {
     if (importType === "apple-health") {
       const { importAppleHealthFile } = await import("../providers/apple-health/index.ts");
-      let lastLoggedPct = 0;
+      let lastLoggedPercentage = 0;
       // Scale streaming progress to 0-90% — remaining 10% is for post-import steps
       const result = await importAppleHealthFile(db, filePath, sinceDate, (info) => {
-        const scaledPct = Math.floor(info.pct * 0.9);
+        const scaledPercentage = Math.floor(info.percentage * 0.9);
         const counts = [
           info.recordCount > 0 ? `${info.recordCount.toLocaleString()} records` : "",
           info.workoutCount > 0 ? `${info.workoutCount} workouts` : "",
@@ -31,10 +31,10 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
         const message = counts
           ? `Importing health data (${counts})...`
           : "Importing health data...";
-        job.updateProgress({ pct: scaledPct, message }).catch(() => {});
-        if (info.pct >= lastLoggedPct + 10) {
-          logger.info(`[worker] Apple Health import progress: ${info.pct}%`);
-          lastLoggedPct = info.pct;
+        job.updateProgress({ percentage: scaledPercentage, message }).catch(() => {});
+        if (info.percentage >= lastLoggedPercentage + 10) {
+          logger.info(`[worker] Apple Health import progress: ${info.percentage}%`);
+          lastLoggedPercentage = info.percentage;
         }
       });
 
@@ -101,7 +101,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
 
   // Post-import: refresh views
   try {
-    job.updateProgress({ pct: 92, message: "Updating max heart rate..." }).catch(() => {});
+    job.updateProgress({ percentage: 92, message: "Updating max heart rate..." }).catch(() => {});
     const { updateUserMaxHr } = await import("../db/dedup.ts");
     await updateUserMaxHr(db);
   } catch (err) {
@@ -109,7 +109,9 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
   }
 
   try {
-    job.updateProgress({ pct: 95, message: "Syncing provider priorities..." }).catch(() => {});
+    job
+      .updateProgress({ percentage: 95, message: "Syncing provider priorities..." })
+      .catch(() => {});
     const { loadProviderPriorityConfig, syncProviderPriorities } = await import(
       "../db/provider-priority.ts"
     );
@@ -122,7 +124,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
   }
 
   try {
-    job.updateProgress({ pct: 97, message: "Refreshing views..." }).catch(() => {});
+    job.updateProgress({ percentage: 97, message: "Refreshing views..." }).catch(() => {});
     const { refreshDedupViews } = await import("../db/dedup.ts");
     await refreshDedupViews(db);
   } catch (err) {
