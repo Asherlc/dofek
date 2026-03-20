@@ -13,6 +13,12 @@ vi.mock("../trpc.ts", async () => {
   };
 });
 
+vi.mock("../lib/cache.ts", () => ({
+  queryCache: {
+    invalidateByPrefix: vi.fn().mockResolvedValue(undefined),
+  },
+}));
+
 vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   const original = await importOriginal<typeof import("../lib/typed-sql.ts")>();
   return {
@@ -21,6 +27,7 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   };
 });
 
+import { queryCache } from "../lib/cache.ts";
 import { DISCONNECT_CHILD_TABLES } from "./provider-detail.ts";
 import { recoveryRouter } from "./recovery.ts";
 import { settingsRouter } from "./settings.ts";
@@ -285,6 +292,17 @@ describe("settingsRouter", () => {
       const result = await caller.set({ key: "theme", value: "light" });
       expect(result).toEqual({ key: "theme", value: "light" });
       expectCallsUseNonEmptySql(execute);
+    });
+
+    it("invalidates server-side settings cache after upsert", async () => {
+      const rows = [{ key: "unitSystem", value: "imperial" }];
+      const execute = vi.fn().mockResolvedValue(rows);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+      });
+      await caller.set({ key: "unitSystem", value: "imperial" });
+      expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:settings.");
     });
 
     it("throws when upsert fails", async () => {

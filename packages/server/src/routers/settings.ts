@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { queryCache } from "../lib/cache.ts";
 import { CacheTTL, cachedProtectedQueryLight, protectedProcedure, router } from "../trpc.ts";
 import { DISCONNECT_CHILD_TABLES } from "./provider-detail.ts";
 
@@ -40,6 +41,11 @@ export const settingsRouter = router({
       );
       const result = rows[0];
       if (!result) throw new Error("Failed to upsert setting");
+
+      // Invalidate server-side cache for settings.get and settings.getAll
+      // so subsequent reads return the updated value, not stale cached data.
+      await queryCache.invalidateByPrefix(`${ctx.userId}:settings.`);
+
       return { key: result.key, value: result.value };
     }),
 
