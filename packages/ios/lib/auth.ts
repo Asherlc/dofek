@@ -3,7 +3,7 @@ import {
   ConfiguredProvidersSchema,
   type AuthUser,
   type ConfiguredProviders,
-} from "@dofek/shared/auth";
+} from "@dofek/auth/auth";
 import * as SecureStore from "expo-secure-store";
 import * as WebBrowser from "expo-web-browser";
 

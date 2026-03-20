@@ -17,7 +17,7 @@ interface ExportTableConfig {
 
 /** Progress callback info */
 export interface ExportProgress {
-  pct: number;
+  percentage: number;
   message: string;
 }
 
@@ -229,8 +229,8 @@ export async function generateExport(
   let tablesProcessed = 0;
 
   for (const table of EXPORT_TABLES) {
-    const pct = Math.round((tablesProcessed / EXPORT_TABLES.length) * 100);
-    onProgress({ pct, message: `Exporting ${table.name}...` });
+    const percentage = Math.round((tablesProcessed / EXPORT_TABLES.length) * 100);
+    onProgress({ percentage, message: `Exporting ${table.name}...` });
     logger.info(`[export] Exporting ${table.name}...`);
 
     if (table.batched) {
@@ -269,6 +269,6 @@ export async function generateExport(
   await archive.finalize();
   await finished;
 
-  onProgress({ pct: 100, message: "Export complete" });
+  onProgress({ percentage: 100, message: "Export complete" });
   return { tableCount: EXPORT_TABLES.length, totalRecords };
 }

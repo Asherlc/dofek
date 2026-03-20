@@ -10,5 +10,5 @@ export {
   trendColor,
   rampRateColor,
   sleepDebtColor,
-} from "@dofek/shared/scoring";
-export type { WeekSummary } from "@dofek/shared/scoring";
+} from "@dofek/scoring/scoring";
+export type { WeekSummary } from "@dofek/scoring/scoring";

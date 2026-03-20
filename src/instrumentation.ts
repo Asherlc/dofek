@@ -2,7 +2,6 @@ import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-proto";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
 import { ExpressInstrumentation } from "@opentelemetry/instrumentation-express";
 import { HttpInstrumentation } from "@opentelemetry/instrumentation-http";
-import { WinstonInstrumentation } from "@opentelemetry/instrumentation-winston";
 import { BatchLogRecordProcessor } from "@opentelemetry/sdk-logs";
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-node";
@@ -48,7 +47,8 @@ export function startInstrumentation(
     spanProcessors: hasTraceExport ? [new BatchSpanProcessor(new OTLPTraceExporter())] : [],
     logRecordProcessors: hasLogExport ? [new BatchLogRecordProcessor(new OTLPLogExporter())] : [],
     instrumentations: [
-      ...(hasLogExport ? [new WinstonInstrumentation()] : []),
+      // Winston logs are bridged via @opentelemetry/winston-transport in logger.ts
+      // (WinstonInstrumentation doesn't work in ESM apps)
       ...(hasTraceExport ? [new HttpInstrumentation(), new ExpressInstrumentation()] : []),
     ],
   });

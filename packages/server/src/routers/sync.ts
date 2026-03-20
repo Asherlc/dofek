@@ -153,9 +153,6 @@ export const syncRouter = router({
     const tokenSet = new Set(allTokens.map((r) => r.provider_id));
     const lastSyncMap = new Map(lastSyncs.map((r) => [r.provider_id, r.last_synced]));
 
-    // Import-only providers have no real sync — they only work via file upload
-    const importOnlyIds = new Set(["strong-csv", "cronometer-csv"]);
-
     return all
       .filter((p) => p.validate() === null)
       .map((p) => {
@@ -178,7 +175,7 @@ export const syncRouter = router({
           needsCustomAuth,
           authorized,
           lastSyncedAt,
-          importOnly: importOnlyIds.has(p.id),
+          importOnly: p.importOnly === true,
         };
       });
   }),
@@ -200,7 +197,7 @@ export const syncRouter = router({
     } else {
       providerIds.push(
         ...getAllProviders()
-          .filter((provider) => provider.validate() === null)
+          .filter((provider) => provider.validate() === null && !provider.importOnly)
           .map((provider) => provider.id),
       );
       if (providerIds.length === 0) throw new Error("No configured providers available for sync");
@@ -253,6 +250,7 @@ export const syncRouter = router({
           }),
         )
         .optional(),
+      percentage: z.number().optional(),
     });
     const parsed = progressSchema.safeParse(job.progress);
     const progress = parsed.success ? parsed.data : undefined;
@@ -260,6 +258,7 @@ export const syncRouter = router({
     return {
       status: mapBullMqStateToSyncStatus(state),
       providers: progress?.providers ?? {},
+      percentage: progress?.percentage,
       message:
         state === "failed" ? job.failedReason : state === "completed" ? "Sync complete" : undefined,
     };
@@ -283,11 +282,13 @@ export const syncRouter = router({
           }),
         )
         .optional(),
+      percentage: z.number().optional(),
     });
 
     const results: Array<{
       jobId: string;
       status: "running" | "done" | "error";
+      percentage?: number;
       providers: Record<
         string,
         { status: "pending" | "running" | "done" | "error"; message?: string }
@@ -303,6 +304,7 @@ export const syncRouter = router({
       results.push({
         jobId: job.id ?? `job-${Date.now()}`,
         status: mapBullMqStateToSyncStatus(state),
+        percentage: progress?.percentage,
         providers: progress?.providers ?? {},
       });
     }

@@ -9,7 +9,7 @@ import type { SyncJobData } from "./queues.ts";
  * Each provider gets an equal slice of the total (e.g., 3 providers = 33% each).
  * Within-provider progress subdivides that slice.
  */
-function computePct(
+function computePercentage(
   completedProviders: number,
   withinProviderPct: number,
   totalProviders: number,
@@ -46,7 +46,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
   for (const p of providers) {
     providerStatus[p.id] = { status: "pending" };
   }
-  await job.updateProgress({ providers: providerStatus, pct: 0 });
+  await job.updateProgress({ providers: providerStatus, percentage: 0 });
 
   let completedCount = 0;
   const totalProviders = providers.length;
@@ -55,7 +55,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
     providerStatus[provider.id] = { status: "running" };
     await job.updateProgress({
       providers: providerStatus,
-      pct: computePct(completedCount, 0, totalProviders),
+      percentage: computePercentage(completedCount, 0, totalProviders),
     });
 
     await ensureProvider(db, provider.id, provider.name);
@@ -63,11 +63,11 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
 
     try {
       logger.info(`[worker] Starting ${provider.name}...`);
-      const result = await provider.sync(db, since, (pct, message) => {
+      const result = await provider.sync(db, since, (percentage, message) => {
         providerStatus[provider.id] = { status: "running", message };
         job.updateProgress({
           providers: providerStatus,
-          pct: computePct(completedCount, pct, totalProviders),
+          percentage: computePercentage(completedCount, percentage, totalProviders),
         });
       });
       completedCount++;
@@ -81,7 +81,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
       };
       await job.updateProgress({
         providers: providerStatus,
-        pct: computePct(completedCount, 0, totalProviders),
+        percentage: computePercentage(completedCount, 0, totalProviders),
       });
 
       if (hasErrors) {
@@ -104,7 +104,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
       providerStatus[provider.id] = { status: "error", message };
       await job.updateProgress({
         providers: providerStatus,
-        pct: computePct(completedCount, 0, totalProviders),
+        percentage: computePercentage(completedCount, 0, totalProviders),
       });
 
       await logSync(db, {

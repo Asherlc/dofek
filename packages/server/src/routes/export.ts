@@ -49,7 +49,7 @@ export function createExportRouter(db: import("dofek/db").Database): Router {
         const result = await generateExport(db, session.userId, tmpFile, (info) => {
           exportJobs.set(jobId, {
             status: "processing",
-            progress: info.pct,
+            progress: info.percentage,
             message: info.message,
             userId: session.userId,
           });

@@ -73,6 +73,28 @@ describe("PolarizationTrendChart option builder", () => {
     ]);
   });
 
+  it("tooltip shows %HRmax zone labels (not Karvonen %HRR)", () => {
+    const option = buildPolarizationTrendOption(sampleWeeks);
+    const formatter = option.tooltip.formatter;
+    const html = formatter([
+      {
+        axisValue: "2024-01-01",
+        value: ["2024-01-01", 2.5],
+        dataIndex: 0,
+        color: "",
+        seriesName: "Polarization Index",
+      },
+    ]);
+    // Zone labels should reference %HRmax thresholds
+    expect(html).toContain("<80% max HR");
+    expect(html).toContain("80-90% max HR");
+    expect(html).toContain("≥90% max HR");
+    // Should NOT contain Karvonen/HRR references
+    expect(html).not.toContain("HRR");
+    expect(html).not.toContain("Karvonen");
+    expect(html).not.toContain("resting");
+  });
+
   it("explains missing zones when PI is unavailable", () => {
     const weeksWithGap = [
       {

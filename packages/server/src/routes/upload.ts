@@ -80,14 +80,14 @@ async function getImportJobStatus(
 
   const state = await job.getState();
   const progress: unknown = job.progress;
-  const pct =
+  const percentage =
     typeof progress === "number"
       ? progress
       : typeof progress === "object" &&
           progress !== null &&
-          "pct" in progress &&
-          typeof progress.pct === "number"
-        ? progress.pct
+          "percentage" in progress &&
+          typeof progress.percentage === "number"
+        ? progress.percentage
         : undefined;
   const msg =
     typeof progress === "object" && progress !== null && "message" in progress
@@ -106,7 +106,7 @@ async function getImportJobStatus(
 
   return {
     status,
-    progress: status === "done" ? 100 : (pct ?? 0),
+    progress: status === "done" ? 100 : (percentage ?? 0),
     message: state === "failed" ? job.failedReason : msg,
     result: job.returnvalue,
     userId: jobUserId,
@@ -262,13 +262,13 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
       await streamToFile(req, chunkPath);
       upload.received.add(chunkIndex);
 
-      const uploadPct = Math.round((upload.received.size / upload.total) * 100);
+      const uploadPercentage = Math.round((upload.received.size / upload.total) * 100);
       logger.info(`[upload] Chunk ${chunkIndex + 1}/${chunkTotal} for ${uploadId}`);
 
       if (upload.received.size < upload.total) {
         setUploadStatus(uploadId, {
           status: "uploading",
-          progress: uploadPct,
+          progress: uploadPercentage,
           message: `Received ${upload.received.size}/${upload.total} chunks`,
           userId,
         });

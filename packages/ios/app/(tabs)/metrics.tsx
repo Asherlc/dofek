@@ -7,6 +7,7 @@ import { MetricCard } from "../../components/MetricCard";
 import { SparkLine } from "../../components/charts/SparkLine";
 import { trendDirection as computeTrend } from "../../lib/scoring";
 import { trpc } from "../../lib/trpc";
+import { convertTemperature, temperatureLabel, useUnitSystem } from "../../lib/units";
 import type {
   HeartRateVariabilityRow,
   ReadinessRow,
@@ -17,6 +18,7 @@ import { colors } from "../../theme";
 
 export default function MetricsScreen() {
   const router = useRouter();
+  const unitSystem = useUnitSystem();
   const [days, setDays] = useState(30);
 
   // HRV trend
@@ -47,6 +49,20 @@ export default function MetricsScreen() {
     .filter((d) => d.workloadRatio != null)
     .map((d) => d.workloadRatio as number);
   const latestRatio = workloadData[workloadData.length - 1]?.workloadRatio;
+
+  // Daily metrics for SpO2 and skin temp
+  const trendsQuery = trpc.dailyMetrics.trends.useQuery({ days });
+  const trendsData = trendsQuery.data;
+  const dailyMetricsQuery = trpc.dailyMetrics.list.useQuery({ days });
+  const dailyMetricsData = dailyMetricsQuery.data ?? [];
+
+  const spo2Trend = dailyMetricsData
+    .filter((d: Record<string, unknown>) => d.spo2_avg != null)
+    .map((d: Record<string, unknown>) => Number(d.spo2_avg));
+
+  const skinTempTrend = dailyMetricsData
+    .filter((d: Record<string, unknown>) => d.skin_temp_c != null)
+    .map((d: Record<string, unknown>) => convertTemperature(Number(d.skin_temp_c), unitSystem));
 
   const isLoading =
     hrvQuery.isLoading || readinessQuery.isLoading || stressQuery.isLoading;
@@ -213,6 +229,44 @@ export default function MetricsScreen() {
                 ))}
               </View>
             </View>
+          )}
+
+          {/* SpO2 */}
+          {trendsData?.latest_spo2 != null && (
+            <MetricCard
+              title="Blood Oxygen"
+              value={String(Math.round(trendsData.latest_spo2))}
+              unit="%"
+              trend={spo2Trend}
+              color={colors.blue}
+              trendDirection={
+                spo2Trend.length >= 2
+                  ? computeTrend(
+                      spo2Trend[spo2Trend.length - 1] ?? 0,
+                      spo2Trend[spo2Trend.length - 2] ?? 0,
+                    )
+                  : undefined
+              }
+            />
+          )}
+
+          {/* Skin Temperature */}
+          {trendsData?.latest_skin_temp != null && (
+            <MetricCard
+              title="Skin Temperature"
+              value={convertTemperature(trendsData.latest_skin_temp, unitSystem).toFixed(1)}
+              unit={temperatureLabel(unitSystem)}
+              trend={skinTempTrend}
+              color={colors.orange}
+              trendDirection={
+                skinTempTrend.length >= 2
+                  ? computeTrend(
+                      skinTempTrend[skinTempTrend.length - 1] ?? 0,
+                      skinTempTrend[skinTempTrend.length - 2] ?? 0,
+                    )
+                  : undefined
+              }
+            />
           )}
 
           {/* Workload ratio */}

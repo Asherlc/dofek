@@ -4,7 +4,7 @@ interface CorrelationStrengthBarProps {
 
 export function CorrelationStrengthBar({ rho }: CorrelationStrengthBarProps) {
   const clampedRho = Math.max(-1, Math.min(1, rho));
-  const pct = Math.abs(clampedRho) * 50;
+  const percentage = Math.abs(clampedRho) * 50;
   const isPositive = clampedRho >= 0;
 
   return (
@@ -16,7 +16,9 @@ export function CorrelationStrengthBar({ rho }: CorrelationStrengthBarProps) {
         <div
           className={`absolute top-0 bottom-0 ${isPositive ? "bg-emerald-500/70" : "bg-rose-500/70"}`}
           style={
-            isPositive ? { left: "50%", width: `${pct}%` } : { right: "50%", width: `${pct}%` }
+            isPositive
+              ? { left: "50%", width: `${percentage}%` }
+              : { right: "50%", width: `${percentage}%` }
           }
         />
       </div>

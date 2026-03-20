@@ -1,4 +1,4 @@
-import { ONBOARDING_SETTINGS_KEY, shouldShowOnboarding } from "@dofek/shared/onboarding";
+import { ONBOARDING_SETTINGS_KEY, shouldShowOnboarding } from "@dofek/onboarding/onboarding";
 import { trpc } from "./trpc";
 
 export function useOnboarding() {

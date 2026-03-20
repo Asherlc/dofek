@@ -1,4 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
+import { useUnitSystem } from "../lib/unitContext.ts";
+import { convertDistance, distanceLabel } from "../lib/units.ts";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 export interface Activity {
@@ -22,6 +24,25 @@ interface ActivityListProps {
   onPageChange?: (page: number) => void;
 }
 
+function parseValidDate(iso: string): Date | null {
+  const parsed = new Date(iso);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function formatActivityDate(startedAt: string): string {
+  const startedDate = parseValidDate(startedAt);
+  return startedDate ? startedDate.toLocaleDateString() : "—";
+}
+
+function formatActivityDuration(startedAt: string, endedAt: string | null): string {
+  if (!endedAt) return "—";
+  const startedDate = parseValidDate(startedAt);
+  const endedDate = parseValidDate(endedAt);
+  if (!startedDate || !endedDate) return "—";
+  const durationMinutes = Math.round((endedDate.getTime() - startedDate.getTime()) / 60000);
+  return durationMinutes >= 0 ? `${durationMinutes}m` : "—";
+}
+
 export function ActivityList({
   activities,
   loading,
@@ -31,6 +52,7 @@ export function ActivityList({
   onPageChange,
 }: ActivityListProps) {
   const navigate = useNavigate();
+  const { unitSystem } = useUnitSystem();
 
   if (loading) {
     return <ChartLoadingSkeleton height={100} />;
@@ -77,13 +99,6 @@ export function ActivityList({
         </thead>
         <tbody>
           {activities.map((a) => {
-            const duration =
-              a.started_at && a.ended_at
-                ? Math.round(
-                    (new Date(a.ended_at).getTime() - new Date(a.started_at).getTime()) / 60000,
-                  )
-                : null;
-
             return (
               <tr
                 key={a.id}
@@ -91,15 +106,17 @@ export function ActivityList({
                 className="border-b border-zinc-800/50 hover:bg-zinc-900/50 cursor-pointer"
               >
                 <td className="py-2 pr-4 text-zinc-300 whitespace-nowrap">
-                  {new Date(a.started_at).toLocaleDateString()}
+                  {formatActivityDate(a.started_at)}
                 </td>
                 <td className="py-2 pr-4 capitalize whitespace-nowrap">{a.activity_type}</td>
                 <td className="py-2 pr-4 text-zinc-300 max-w-[200px] truncate">{a.name ?? "—"}</td>
                 <td className="py-2 pr-4 tabular-nums whitespace-nowrap">
-                  {duration != null ? `${duration}m` : "—"}
+                  {formatActivityDuration(a.started_at, a.ended_at)}
                 </td>
                 <td className="py-2 pr-4 tabular-nums whitespace-nowrap text-zinc-300">
-                  {a.distance_meters ? `${(a.distance_meters / 1000).toFixed(1)}km` : "—"}
+                  {a.distance_meters
+                    ? `${convertDistance(a.distance_meters / 1000, unitSystem).toFixed(1)} ${distanceLabel(unitSystem)}`
+                    : "—"}
                 </td>
                 <td className="py-2 pr-4 tabular-nums whitespace-nowrap text-zinc-300">
                   {a.calories ? `${Math.round(a.calories)} kcal` : "—"}

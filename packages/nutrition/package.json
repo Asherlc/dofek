@@ -1,0 +1,13 @@
+{
+  "name": "@dofek/nutrition",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./meal": "./src/meal.ts",
+    "./open-food-facts": "./src/open-food-facts.ts"
+  },
+  "dependencies": {
+    "zod": "3.25.76"
+  }
+}

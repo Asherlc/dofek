@@ -1,5 +1,5 @@
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
-import { providerLabel } from "@dofek/shared/providers";
+import { providerLabel } from "@dofek/providers/providers";
 import { PersonalizationPanel } from "../components/PersonalizationPanel";
 import { SlackIntegrationPanel } from "../components/SlackIntegrationPanel";
 import { trpc } from "../lib/trpc";

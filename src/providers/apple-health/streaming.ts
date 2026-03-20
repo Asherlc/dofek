@@ -1,6 +1,6 @@
 import { createReadStream, statSync } from "node:fs";
 import sax from "sax";
-import { getStringAttrs, parseHealthDate } from "./dates.ts";
+import { getStringAttrs } from "./dates.ts";
 import {
   type CategoryRecord,
   type HealthRecord,
@@ -13,7 +13,6 @@ import { parseSleepAnalysis, type SleepAnalysisRecord } from "./sleep.ts";
 import {
   enrichWorkoutFromStats,
   type HealthWorkout,
-  parseActivitySummary,
   parseWorkout,
   parseWorkoutStatistics,
   type WorkoutStatistics,
@@ -22,7 +21,7 @@ import {
 export interface ProgressInfo {
   bytesRead: number;
   totalBytes: number;
-  pct: number;
+  percentage: number;
   recordCount: number;
   workoutCount: number;
   sleepCount: number;
@@ -70,16 +69,16 @@ export function streamHealthExport(
     // Progress tracking
     const totalBytes = statSync(filePath).size;
     let bytesRead = 0;
-    let lastReportedPct = -1;
+    let lastReportedPercentage = -1;
     fileStream.on("data", (chunk: string | Buffer) => {
       bytesRead += typeof chunk === "string" ? Buffer.byteLength(chunk) : chunk.length;
-      const pct = Math.floor((bytesRead / totalBytes) * 100);
-      if (pct > lastReportedPct) {
-        lastReportedPct = pct;
+      const percentage = Math.floor((bytesRead / totalBytes) * 100);
+      if (percentage > lastReportedPercentage) {
+        lastReportedPercentage = percentage;
         callbacks.onProgress?.({
           bytesRead,
           totalBytes,
-          pct,
+          percentage,
           recordCount,
           workoutCount,
           sleepCount,
@@ -209,25 +208,11 @@ export function streamHealthExport(
         const loc = parseRouteLocation(attrs);
         if (loc) currentRouteLocations.push(loc);
       } else if (node.name === "ActivitySummary") {
-        // ActivitySummary contains daily ring data -- treat as a record batch
-        const summary = parseActivitySummary(attrs);
-        if (summary) {
-          // Convert to HealthRecords for the daily metrics pipeline
-          const date = parseHealthDate(`${summary.date} 00:00:00 +0000`);
-          if (date >= since) {
-            if (summary.activeEnergyBurned !== undefined) {
-              addRecord({
-                type: "HKQuantityTypeIdentifierActiveEnergyBurned",
-                sourceName: "ActivitySummary",
-                unit: "kcal",
-                value: summary.activeEnergyBurned,
-                startDate: date,
-                endDate: date,
-                creationDate: date,
-              });
-            }
-          }
-        }
+        // ActivitySummary contains daily ring totals (activeEnergyBurned, etc.)
+        // but individual Record elements with the same types already exist in the
+        // export. Creating records from ActivitySummary would double-count them.
+        // We intentionally skip these — the individual records are summed by the
+        // daily metrics pipeline instead.
       }
     });
 

@@ -377,12 +377,12 @@ describe("computeInsights()", () => {
       (i) => i.metric.includes("weight change") || i.metric.includes("body fat change"),
     );
     for (const insight of bodyCompInsights) {
-      const pctMatch = insight.message.match(/(\d+)%/);
-      if (pctMatch) {
-        const pctStr = pctMatch[1];
-        if (!pctStr) continue;
-        const pct = Number.parseInt(pctStr, 10);
-        expect(pct).toBeLessThanOrEqual(100);
+      const percentageMatch = insight.message.match(/(\d+)%/);
+      if (percentageMatch) {
+        const percentageStr = percentageMatch[1];
+        if (!percentageStr) continue;
+        const percentage = Number.parseInt(percentageStr, 10);
+        expect(percentage).toBeLessThanOrEqual(100);
       }
     }
   });

@@ -1,4 +1,4 @@
-import { stressColor, stressLabel, trendColor } from "@dofek/shared/scoring";
+import { stressColor, stressLabel, trendColor } from "@dofek/scoring/scoring";
 import type { StressResult } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";

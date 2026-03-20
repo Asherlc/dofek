@@ -4,7 +4,7 @@ import Svg, { Rect, Line, Text as SvgText } from "react-native-svg";
 import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
 import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
-import { statusColors } from "@dofek/shared/colors";
+import { statusColors } from "@dofek/scoring/colors";
 
 // ── Types ──
 
@@ -283,8 +283,8 @@ function MicronutrientAdequacySection({ days }: { days: number }) {
       </Text>
 
       {sorted.map((nutrient) => {
-        const pct = Math.min(nutrient.percentRda, 150);
-        const barFraction = pct / 150;
+        const percentage = Math.min(nutrient.percentRda, 150);
+        const barFraction = percentage / 150;
         const barColor = nutrientBarColor(nutrient.percentRda);
 
         return (

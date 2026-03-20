@@ -1,6 +1,14 @@
 packages:
   - .
-  - packages/shared
+  - packages/format
+  - packages/scoring
+  - packages/nutrition
+  - packages/training
+  - packages/stats
+  - packages/onboarding
+  - packages/providers-meta
+  - packages/auth
+  - packages/heart-rate-variability
   - packages/server
   - packages/web
   - packages/ios

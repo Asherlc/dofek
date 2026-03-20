@@ -1,0 +1,9 @@
+{
+  "name": "@dofek/heart-rate-variability",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/heart-rate-variability.ts"
+  }
+}
