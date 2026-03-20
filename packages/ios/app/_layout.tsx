@@ -36,8 +36,12 @@ function AuthGate() {
         httpBatchLink({
           url,
           methodOverride: "POST",
-          headers: () =>
-            sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {},
+          headers: () => {
+            const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            return sessionToken
+              ? { Authorization: `Bearer ${sessionToken}`, "x-timezone": tz }
+              : { "x-timezone": tz };
+          },
         }),
       ],
     });

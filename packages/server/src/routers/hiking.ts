@@ -67,7 +67,7 @@ export const hikingRouter = router({
         ctx.db,
         gradeRowSchema,
         sql`SELECT
-              a.started_at::date::text AS date,
+              (a.started_at AT TIME ZONE ${ctx.timezone})::date::text AS date,
               a.name AS activity_name,
               a.activity_type,
               ROUND(asum.total_distance::numeric, 1) AS distance_m,
@@ -134,7 +134,7 @@ export const hikingRouter = router({
         ctx.db,
         elevRowSchema,
         sql`SELECT
-              date_trunc('week', a.started_at)::date::text AS week,
+              date_trunc('week', (a.started_at AT TIME ZONE ${ctx.timezone})::date)::date::text AS week,
               ROUND(SUM(asum.elevation_gain_m)::numeric, 1) AS elevation_gain_m,
               COUNT(*)::int AS activity_count,
               ROUND(SUM(asum.total_distance / 1000.0)::numeric, 2) AS total_distance_km
@@ -143,7 +143,7 @@ export const hikingRouter = router({
             WHERE a.user_id = ${ctx.userId}
               AND a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
               AND a.activity_type IN ('walking', 'hiking')
-            GROUP BY date_trunc('week', a.started_at)
+            GROUP BY date_trunc('week', (a.started_at AT TIME ZONE ${ctx.timezone})::date)
             ORDER BY week`,
       );
 
@@ -222,7 +222,7 @@ export const hikingRouter = router({
         sql`WITH activity_data AS (
               SELECT
                 a.name AS activity_name,
-                a.started_at::date AS date,
+                (a.started_at AT TIME ZONE ${ctx.timezone})::date AS date,
                 ROUND((EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 60.0)::numeric, 1) AS duration_minutes,
                 CASE WHEN asum.total_distance > 0
                   THEN ROUND(((EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 60.0) / (asum.total_distance / 1000.0))::numeric, 2)

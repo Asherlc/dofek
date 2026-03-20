@@ -52,7 +52,11 @@ const anomalyCheckRowSchema = z.object({
   sleep_count: z.coerce.number().nullable(),
 });
 
-export async function checkAnomalies(db: Database, userId: string): Promise<AnomalyCheckResult> {
+export async function checkAnomalies(
+  db: Database,
+  userId: string,
+  timezone: string,
+): Promise<AnomalyCheckResult> {
   const rows = await executeWithSchema(
     db,
     anomalyCheckRowSchema,
@@ -74,11 +78,11 @@ export async function checkAnomalies(db: Database, userId: string): Promise<Anom
         ),
         sleep AS (
           SELECT
-            started_at::date AS date,
+            (started_at AT TIME ZONE ${timezone})::date AS date,
             duration_minutes,
-            AVG(duration_minutes) OVER (ORDER BY started_at::date ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING) AS sleep_mean,
-            STDDEV_POP(duration_minutes) OVER (ORDER BY started_at::date ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING) AS sleep_sd,
-            COUNT(*) OVER (ORDER BY started_at::date ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING) AS sleep_count
+            AVG(duration_minutes) OVER (ORDER BY (started_at AT TIME ZONE ${timezone})::date ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING) AS sleep_mean,
+            STDDEV_POP(duration_minutes) OVER (ORDER BY (started_at AT TIME ZONE ${timezone})::date ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING) AS sleep_sd,
+            COUNT(*) OVER (ORDER BY (started_at AT TIME ZONE ${timezone})::date ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING) AS sleep_count
           FROM fitness.v_sleep
           WHERE user_id = ${userId}
             AND is_nap = false
@@ -295,7 +299,7 @@ export const anomalyDetectionRouter = router({
   check: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({}).default({}))
     .query(async ({ ctx }): Promise<AnomalyCheckResult> => {
-      return checkAnomalies(ctx.db, ctx.userId);
+      return checkAnomalies(ctx.db, ctx.userId, ctx.timezone);
     }),
 
   /**

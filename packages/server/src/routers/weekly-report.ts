@@ -83,13 +83,13 @@ export const weeklyReportRouter = router({
             ),
             per_activity AS (
               SELECT
-                asum.started_at::date AS date,
+                (asum.started_at AT TIME ZONE ${ctx.timezone})::date AS date,
                 EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 3600.0 AS hours,
                 EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0
                   * asum.avg_hr / NULLIF(asum.max_hr, 0) AS load
               FROM fitness.activity_summary asum
               WHERE asum.user_id = ${ctx.userId}
-                AND asum.started_at::date >= CURRENT_DATE - ${totalDays}::int
+                AND (asum.started_at AT TIME ZONE ${ctx.timezone})::date >= CURRENT_DATE - ${totalDays}::int
                 AND asum.ended_at IS NOT NULL
                 AND asum.avg_hr IS NOT NULL
             ),
@@ -109,7 +109,7 @@ export const weeklyReportRouter = router({
             ),
             sleep_daily AS (
               SELECT
-                started_at::date AS date,
+                (started_at AT TIME ZONE ${ctx.timezone})::date AS date,
                 duration_minutes
               FROM fitness.v_sleep
               WHERE user_id = ${ctx.userId}

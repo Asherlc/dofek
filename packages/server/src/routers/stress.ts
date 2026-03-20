@@ -67,14 +67,14 @@ export const stressRouter = router({
               ORDER BY date ASC
             ),
             sleep_eff AS (
-              SELECT DISTINCT ON (started_at::date)
-                started_at::date AS date,
+              SELECT DISTINCT ON ((started_at AT TIME ZONE ${ctx.timezone})::date)
+                (started_at AT TIME ZONE ${ctx.timezone})::date AS date,
                 efficiency_pct
               FROM fitness.v_sleep
               WHERE user_id = ${ctx.userId}
                 AND is_nap = false
                 AND started_at > NOW() - ${queryDays}::int * INTERVAL '1 day'
-              ORDER BY started_at::date, started_at DESC
+              ORDER BY (started_at AT TIME ZONE ${ctx.timezone})::date, started_at DESC
             )
             SELECT
               m.date::text,

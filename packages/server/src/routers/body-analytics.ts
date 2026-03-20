@@ -46,14 +46,14 @@ export const bodyAnalyticsRouter = router({
       const rows = await executeWithSchema(
         ctx.db,
         weightRowSchema,
-        sql`SELECT DISTINCT ON (recorded_at::date)
-              recorded_at::date::text AS date,
+        sql`SELECT DISTINCT ON ((recorded_at AT TIME ZONE ${ctx.timezone})::date)
+              (recorded_at AT TIME ZONE ${ctx.timezone})::date::text AS date,
               weight_kg
             FROM fitness.v_body_measurement
             WHERE user_id = ${ctx.userId}
               AND weight_kg IS NOT NULL
               AND recorded_at > NOW() - ${input.days}::int * INTERVAL '1 day'
-            ORDER BY recorded_at::date, recorded_at DESC`,
+            ORDER BY (recorded_at AT TIME ZONE ${ctx.timezone})::date, recorded_at DESC`,
       );
 
       const data = rows.map((r) => ({
@@ -115,8 +115,8 @@ export const bodyAnalyticsRouter = router({
       const rows = await executeWithSchema(
         ctx.db,
         recompRowSchema,
-        sql`SELECT DISTINCT ON (recorded_at::date)
-              recorded_at::date::text AS date,
+        sql`SELECT DISTINCT ON ((recorded_at AT TIME ZONE ${ctx.timezone})::date)
+              (recorded_at AT TIME ZONE ${ctx.timezone})::date::text AS date,
               weight_kg,
               body_fat_pct
             FROM fitness.v_body_measurement
@@ -124,7 +124,7 @@ export const bodyAnalyticsRouter = router({
               AND weight_kg IS NOT NULL
               AND body_fat_pct IS NOT NULL
               AND recorded_at > NOW() - ${input.days}::int * INTERVAL '1 day'
-            ORDER BY recorded_at::date, recorded_at DESC`,
+            ORDER BY (recorded_at AT TIME ZONE ${ctx.timezone})::date, recorded_at DESC`,
       );
 
       const data = rows.map((r) => ({
@@ -184,14 +184,14 @@ export const bodyAnalyticsRouter = router({
       const rows = await executeWithSchema(
         ctx.db,
         weightRowSchema,
-        sql`SELECT DISTINCT ON (recorded_at::date)
-              recorded_at::date::text AS date,
+        sql`SELECT DISTINCT ON ((recorded_at AT TIME ZONE ${ctx.timezone})::date)
+              (recorded_at AT TIME ZONE ${ctx.timezone})::date::text AS date,
               weight_kg
             FROM fitness.v_body_measurement
             WHERE user_id = ${ctx.userId}
               AND weight_kg IS NOT NULL
               AND recorded_at > NOW() - INTERVAL '35 days'
-            ORDER BY recorded_at::date, recorded_at DESC`,
+            ORDER BY (recorded_at AT TIME ZONE ${ctx.timezone})::date, recorded_at DESC`,
       );
 
       const data = rows.map((r) => ({

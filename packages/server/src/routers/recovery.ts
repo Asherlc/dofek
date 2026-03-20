@@ -85,14 +85,15 @@ export const recoveryRouter = router({
         rolling_waketime_stddev: z.coerce.number().nullable(),
         window_count: z.coerce.number(),
       });
+      const tz = ctx.timezone;
       const rows = await executeWithSchema(
         ctx.db,
         consistencyRowSchema,
         sql`WITH nightly AS (
               SELECT
-                started_at::date AS date,
-                EXTRACT(HOUR FROM started_at) + EXTRACT(MINUTE FROM started_at) / 60.0 AS bedtime_hour,
-                EXTRACT(HOUR FROM ended_at) + EXTRACT(MINUTE FROM ended_at) / 60.0 AS waketime_hour
+                (started_at AT TIME ZONE ${tz})::date AS date,
+                EXTRACT(HOUR FROM started_at AT TIME ZONE ${tz}) + EXTRACT(MINUTE FROM started_at AT TIME ZONE ${tz}) / 60.0 AS bedtime_hour,
+                EXTRACT(HOUR FROM ended_at AT TIME ZONE ${tz}) + EXTRACT(MINUTE FROM ended_at AT TIME ZONE ${tz}) / 60.0 AS waketime_hour
               FROM fitness.v_sleep
               WHERE user_id = ${ctx.userId}
                 AND is_nap = false
@@ -215,13 +216,13 @@ export const recoveryRouter = router({
             ),
             per_activity AS (
               SELECT
-                asum.started_at::date AS date,
+                (asum.started_at AT TIME ZONE ${ctx.timezone})::date AS date,
                 EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0
                   * asum.avg_hr
                   / NULLIF(asum.max_hr, 0) AS load
               FROM fitness.activity_summary asum
               WHERE asum.user_id = ${ctx.userId}
-                AND asum.started_at::date >= CURRENT_DATE - ${queryDays}::int
+                AND (asum.started_at AT TIME ZONE ${ctx.timezone})::date >= CURRENT_DATE - ${queryDays}::int
                 AND asum.ended_at IS NOT NULL
                 AND asum.avg_hr IS NOT NULL
             ),
@@ -300,12 +301,13 @@ export const recoveryRouter = router({
         efficiency: z.coerce.number(),
         rolling_avg_duration: z.coerce.number().nullable(),
       });
+      const tz = ctx.timezone;
       const rows = await executeWithSchema(
         ctx.db,
         sleepRowSchema,
         sql`WITH nightly AS (
               SELECT
-                started_at::date AS date,
+                (started_at AT TIME ZONE ${tz})::date AS date,
                 duration_minutes,
                 -- Actual time asleep: for Apple Health, duration = in-bed time,
                 -- so derive sleep time from stages. Other providers already exclude awake.
@@ -424,14 +426,14 @@ export const recoveryRouter = router({
                 AND date > CURRENT_DATE - ${queryDays}::int
             ),
             sleep_eff AS (
-              SELECT DISTINCT ON (COALESCE(ended_at, started_at + interval '8 hours')::date)
-                COALESCE(ended_at, started_at + interval '8 hours')::date::text AS date,
+              SELECT DISTINCT ON ((COALESCE(ended_at, started_at + interval '8 hours') AT TIME ZONE ${ctx.timezone})::date)
+                (COALESCE(ended_at, started_at + interval '8 hours') AT TIME ZONE ${ctx.timezone})::date::text AS date,
                 efficiency_pct
               FROM fitness.v_sleep
               WHERE user_id = ${ctx.userId}
                 AND is_nap = false
                 AND started_at > NOW() - ${queryDays}::int * INTERVAL '1 day'
-              ORDER BY COALESCE(ended_at, started_at + interval '8 hours')::date, started_at DESC
+              ORDER BY (COALESCE(ended_at, started_at + interval '8 hours') AT TIME ZONE ${ctx.timezone})::date, started_at DESC
             )
             SELECT
               m.date,

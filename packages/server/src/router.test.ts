@@ -51,7 +51,7 @@ vi.mock("./routers/whoop-auth.ts", () => ({ whoopAuthRouter: mockRouter }));
 // Mock trpc
 vi.mock("./trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const t = initTRPC.context<{ db: unknown; userId: string | null }>().create();
+  const t = initTRPC.context<{ db: unknown; userId: string | null; timezone: string }>().create();
   return {
     router: t.router,
     protectedProcedure: t.procedure,

@@ -5,7 +5,7 @@ import { appRouter } from "../router.ts";
 /** Fire common queries sequentially to populate cache without overwhelming the DB.
  *  Uses DEFAULT_USER_ID for backwards compatibility — only warms for the primary user. */
 export async function warmCache(db: import("dofek/db").Database): Promise<void> {
-  const caller = appRouter.createCaller({ db, userId: DEFAULT_USER_ID });
+  const caller = appRouter.createCaller({ db, userId: DEFAULT_USER_ID, timezone: "UTC" });
   const queries: Array<[string, () => Promise<unknown>]> = [
     // Dashboard
     ["dailyMetrics.list(30)", () => caller.dailyMetrics.list({ days: 30 })],

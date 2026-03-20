@@ -65,7 +65,7 @@ export const trainingRouter = router({
         ctx.db,
         weeklyVolumeRowSchema,
         sql`SELECT
-              date_trunc('week', started_at)::date AS week,
+              date_trunc('week', (started_at AT TIME ZONE ${ctx.timezone})::date)::date AS week,
               activity_type,
               COUNT(*)::int AS count,
               ROUND(SUM(EXTRACT(EPOCH FROM (ended_at - started_at)) / 3600)::numeric, 2) AS hours
@@ -73,7 +73,7 @@ export const trainingRouter = router({
             WHERE user_id = ${ctx.userId}
               AND started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
               AND ended_at IS NOT NULL
-            GROUP BY date_trunc('week', started_at), activity_type
+            GROUP BY date_trunc('week', (started_at AT TIME ZONE ${ctx.timezone})::date), activity_type
             ORDER BY week`,
       );
     }),
@@ -100,7 +100,7 @@ export const trainingRouter = router({
         hrZoneRowSchema,
         sql`SELECT
               up.max_hr,
-              date_trunc('week', a.started_at)::date AS week,
+              date_trunc('week', (a.started_at AT TIME ZONE ${ctx.timezone})::date)::date AS week,
               COUNT(*) FILTER (WHERE ms.heart_rate < rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[0]}::numeric)::int AS zone1,
               COUNT(*) FILTER (WHERE ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[0]}::numeric
                                 AND ms.heart_rate <  rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[1]}::numeric)::int AS zone2,
@@ -116,7 +116,7 @@ export const trainingRouter = router({
               SELECT dm.resting_hr
               FROM fitness.v_daily_metrics dm
               WHERE dm.user_id = up.id
-                AND dm.date <= a.started_at::date
+                AND dm.date <= (a.started_at AT TIME ZONE ${ctx.timezone})::date
                 AND dm.resting_hr IS NOT NULL
               ORDER BY dm.date DESC
               LIMIT 1
@@ -127,7 +127,7 @@ export const trainingRouter = router({
               AND ${enduranceTypeFilter("a")}
               AND up.max_hr IS NOT NULL
               AND ms.heart_rate IS NOT NULL
-            GROUP BY up.max_hr, date_trunc('week', a.started_at)
+            GROUP BY up.max_hr, date_trunc('week', (a.started_at AT TIME ZONE ${ctx.timezone})::date)
             ORDER BY week`,
       );
       const rawMaxHr = rows[0]?.max_hr;
@@ -272,13 +272,13 @@ export const trainingRouter = router({
           ),
           per_activity AS (
             SELECT
-              asum.started_at::date AS date,
+              (asum.started_at AT TIME ZONE ${ctx.timezone})::date AS date,
               EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0
                 * asum.avg_hr
                 / NULLIF(asum.max_hr, 0) AS load
             FROM fitness.activity_summary asum
             WHERE asum.user_id = ${ctx.userId}
-              AND asum.started_at::date >= CURRENT_DATE - 28
+              AND (asum.started_at AT TIME ZONE ${ctx.timezone})::date >= CURRENT_DATE - 28
               AND asum.ended_at IS NOT NULL
               AND asum.avg_hr IS NOT NULL
           ),
@@ -323,7 +323,7 @@ export const trainingRouter = router({
       muscleFreshnessSchema,
       sql`SELECT
             e.muscle_group,
-            MAX(sw.started_at)::date::text AS last_trained_date
+            MAX((sw.started_at AT TIME ZONE ${ctx.timezone})::date)::text AS last_trained_date
           FROM fitness.strength_set ss
           JOIN fitness.strength_workout sw ON sw.id = ss.workout_id
           JOIN fitness.exercise e ON e.id = ss.exercise_id
@@ -344,14 +344,14 @@ export const trainingRouter = router({
       sql`WITH strength_data AS (
             SELECT
               COUNT(*) FILTER (WHERE started_at > NOW() - INTERVAL '7 days')::int AS strength_7d,
-              MAX(started_at)::date::text AS last_strength_date
+              MAX((started_at AT TIME ZONE ${ctx.timezone})::date)::text AS last_strength_date
             FROM fitness.strength_workout
             WHERE user_id = ${ctx.userId}
           ),
           endurance_data AS (
             SELECT
               COUNT(*) FILTER (WHERE started_at > NOW() - INTERVAL '7 days')::int AS endurance_7d,
-              MAX(started_at)::date::text AS last_endurance_date
+              MAX((started_at AT TIME ZONE ${ctx.timezone})::date)::text AS last_endurance_date
             FROM fitness.v_activity
             WHERE user_id = ${ctx.userId}
               AND ${enduranceTypeFilter("v_activity")}
@@ -397,7 +397,7 @@ export const trainingRouter = router({
             SELECT dm.resting_hr
             FROM fitness.v_daily_metrics dm
             WHERE dm.user_id = up.id
-              AND dm.date <= a.started_at::date
+              AND dm.date <= (a.started_at AT TIME ZONE ${ctx.timezone})::date
               AND dm.resting_hr IS NOT NULL
             ORDER BY dm.date DESC
             LIMIT 1
@@ -421,7 +421,7 @@ export const trainingRouter = router({
       sql`WITH per_activity AS (
             SELECT
               a.id,
-              a.started_at::date AS activity_date,
+              (a.started_at AT TIME ZONE ${ctx.timezone})::date AS activity_date,
               BOOL_OR(ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[2]}::numeric) AS had_high_intensity
             FROM fitness.user_profile up
             JOIN fitness.v_activity a ON a.user_id = up.id
@@ -430,7 +430,7 @@ export const trainingRouter = router({
               SELECT dm.resting_hr
               FROM fitness.v_daily_metrics dm
               WHERE dm.user_id = up.id
-                AND dm.date <= a.started_at::date
+                AND dm.date <= (a.started_at AT TIME ZONE ${ctx.timezone})::date
                 AND dm.resting_hr IS NOT NULL
               ORDER BY dm.date DESC
               LIMIT 1
@@ -440,7 +440,7 @@ export const trainingRouter = router({
               AND ${enduranceTypeFilter("a")}
               AND up.max_hr IS NOT NULL
               AND ms.heart_rate IS NOT NULL
-            GROUP BY a.id, a.started_at::date
+            GROUP BY a.id, (a.started_at AT TIME ZONE ${ctx.timezone})::date
           )
           SELECT
             SUM(
@@ -468,12 +468,12 @@ export const trainingRouter = router({
       ctx.db,
       trainingDaySchema,
       sql`WITH combined AS (
-            SELECT DISTINCT started_at::date AS training_date
+            SELECT DISTINCT (started_at AT TIME ZONE ${ctx.timezone})::date AS training_date
             FROM fitness.v_activity
             WHERE user_id = ${ctx.userId}
               AND started_at > NOW() - INTERVAL '14 days'
             UNION
-            SELECT DISTINCT started_at::date AS training_date
+            SELECT DISTINCT (started_at AT TIME ZONE ${ctx.timezone})::date AS training_date
             FROM fitness.strength_workout
             WHERE user_id = ${ctx.userId}
               AND started_at > NOW() - INTERVAL '14 days'

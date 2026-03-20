@@ -4,7 +4,7 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const t = initTRPC.context<{ db: unknown; userId: string | null }>().create();
+  const t = initTRPC.context<{ db: unknown; userId: string | null; timezone: string }>().create();
   return {
     router: t.router,
     protectedProcedure: t.procedure,
@@ -57,6 +57,7 @@ describe("efficiencyRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.aerobicEfficiency({ days: 180 });
 
@@ -77,6 +78,7 @@ describe("efficiencyRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.aerobicEfficiency({ days: 180 });
       expect(result.maxHr).toBeNull();
@@ -99,6 +101,7 @@ describe("efficiencyRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.aerobicEfficiency({ days: 180 });
 
@@ -132,6 +135,7 @@ describe("efficiencyRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.aerobicEfficiency({ days: 180 });
 
@@ -158,6 +162,7 @@ describe("efficiencyRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.aerobicDecoupling({ days: 180 });
 
@@ -177,6 +182,7 @@ describe("efficiencyRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.aerobicDecoupling({ days: 180 });
       expect(result).toEqual([]);
@@ -197,6 +203,7 @@ describe("efficiencyRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.aerobicDecoupling({ days: 180 });
 
@@ -219,6 +226,7 @@ describe("efficiencyRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.polarizationTrend({ days: 180 });
 
@@ -241,6 +249,7 @@ describe("efficiencyRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.polarizationTrend({ days: 180 });
       expect(result.weeks[0]?.polarizationIndex).toBeNull();
@@ -253,6 +262,7 @@ describe("efficiencyRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.polarizationTrend({ days: 180 });
       expect(result.weeks[0]?.polarizationIndex).toBeNull();
@@ -265,6 +275,7 @@ describe("efficiencyRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.polarizationTrend({ days: 180 });
       expect(result.weeks[0]?.polarizationIndex).toBeNull();
@@ -277,6 +288,7 @@ describe("efficiencyRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.polarizationTrend({ days: 180 });
 
@@ -300,6 +312,7 @@ describe("efficiencyRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.polarizationTrend({ days: 180 });
 
@@ -311,6 +324,7 @@ describe("efficiencyRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.polarizationTrend({ days: 180 });
       expect(result.maxHr).toBeNull();
@@ -324,6 +338,7 @@ describe("efficiencyRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
       });
       const result = await caller.polarizationTrend({ days: 180 });
 

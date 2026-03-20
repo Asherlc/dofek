@@ -256,14 +256,14 @@ export const nutritionAnalyticsRouter = router({
               GROUP BY date
             ),
             weight AS (
-              SELECT DISTINCT ON (recorded_at::date)
-                recorded_at::date AS date,
+              SELECT DISTINCT ON ((recorded_at AT TIME ZONE ${ctx.timezone})::date)
+                (recorded_at AT TIME ZONE ${ctx.timezone})::date AS date,
                 weight_kg
               FROM fitness.v_body_measurement
               WHERE user_id = ${ctx.userId}
                 AND weight_kg IS NOT NULL
                 AND recorded_at > NOW() - ${input.days}::int * INTERVAL '1 day'
-              ORDER BY recorded_at::date, recorded_at DESC
+              ORDER BY (recorded_at AT TIME ZONE ${ctx.timezone})::date, recorded_at DESC
             )
             SELECT
               n.date::text,

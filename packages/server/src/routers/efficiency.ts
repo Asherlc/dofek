@@ -72,7 +72,7 @@ export const efficiencyRouter = router({
         efficiencyRowSchema,
         sql`SELECT
               up.max_hr,
-              a.started_at::date AS date,
+              (a.started_at AT TIME ZONE ${ctx.timezone})::date AS date,
               a.activity_type,
               a.name,
               ROUND(AVG(ms.power)::numeric, 1) AS avg_power_z2,
@@ -86,7 +86,7 @@ export const efficiencyRouter = router({
               SELECT dm.resting_hr
               FROM fitness.v_daily_metrics dm
               WHERE dm.user_id = up.id
-                AND dm.date <= a.started_at::date
+                AND dm.date <= (a.started_at AT TIME ZONE ${ctx.timezone})::date
                 AND dm.resting_hr IS NOT NULL
               ORDER BY dm.date DESC
               LIMIT 1
@@ -172,7 +172,7 @@ export const efficiencyRouter = router({
               HAVING COUNT(*) >= 600
             )
             SELECT
-              a.started_at::date AS date,
+              (a.started_at AT TIME ZONE ${ctx.timezone})::date AS date,
               a.activity_type,
               a.name,
               hr.first_half_ratio,
@@ -224,7 +224,7 @@ export const efficiencyRouter = router({
         polarizationRowSchema,
         sql`SELECT
               up.max_hr,
-              date_trunc('week', a.started_at)::date AS week,
+              date_trunc('week', (a.started_at AT TIME ZONE ${ctx.timezone})::date)::date AS week,
               COUNT(*) FILTER (WHERE ms.heart_rate < up.max_hr * ${POLARIZATION_ZONES[1]?.minPctHrmax}::numeric)::int AS z1_seconds,
               COUNT(*) FILTER (WHERE ms.heart_rate >= up.max_hr * ${POLARIZATION_ZONES[1]?.minPctHrmax}::numeric
                                 AND ms.heart_rate <  up.max_hr * ${POLARIZATION_ZONES[2]?.minPctHrmax}::numeric)::int AS z2_seconds,
@@ -238,7 +238,7 @@ export const efficiencyRouter = router({
               AND ${enduranceTypeFilter("a")}
               AND up.max_hr IS NOT NULL
               AND ms.heart_rate IS NOT NULL
-            GROUP BY up.max_hr, date_trunc('week', a.started_at)
+            GROUP BY up.max_hr, date_trunc('week', (a.started_at AT TIME ZONE ${ctx.timezone})::date)
             ORDER BY week`,
       );
 

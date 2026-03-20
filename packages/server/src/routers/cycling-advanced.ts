@@ -73,7 +73,7 @@ export const cyclingAdvancedRouter = router({
         ctx.db,
         dailyLoadSchema,
         sql`SELECT
-              asum.started_at::date AS day,
+              (asum.started_at AT TIME ZONE ${ctx.timezone})::date AS day,
               SUM(
                 CASE WHEN up.max_hr > rhr.val AND asum.avg_hr > rhr.val THEN
                   -- Bannister TRIMP normalized to hrTSS (matches PMC router)
@@ -100,7 +100,7 @@ export const cyclingAdvancedRouter = router({
               AND asum.ended_at IS NOT NULL
               AND asum.avg_hr IS NOT NULL
               AND asum.avg_hr > 0
-            GROUP BY asum.started_at::date
+            GROUP BY (asum.started_at AT TIME ZONE ${ctx.timezone})::date
             ORDER BY day`,
       );
 
@@ -215,7 +215,7 @@ export const cyclingAdvancedRouter = router({
         monotonyRowSchema,
         sql`WITH daily_loads AS (
               SELECT
-                asum.started_at::date AS day,
+                (asum.started_at AT TIME ZONE ${ctx.timezone})::date AS day,
                 SUM(
                   CASE WHEN up.max_hr > rhr.val AND asum.avg_hr > rhr.val THEN
                     -- Bannister TRIMP normalized to hrTSS (matches PMC router)
@@ -242,7 +242,7 @@ export const cyclingAdvancedRouter = router({
                 AND asum.ended_at IS NOT NULL
                 AND asum.avg_hr IS NOT NULL
                 AND asum.avg_hr > 0
-              GROUP BY asum.started_at::date
+              GROUP BY (asum.started_at AT TIME ZONE ${ctx.timezone})::date
             ),
             weekly_stats AS (
               SELECT
@@ -360,7 +360,7 @@ export const cyclingAdvancedRouter = router({
             ),
             grouped AS (
               SELECT
-                a.started_at::date AS date,
+                (a.started_at AT TIME ZONE ${ctx.timezone})::date AS date,
                 a.name,
                 a.started_at,
                 ROUND(POWER(AVG(POWER(r.rolling_30s_power, 4)), 0.25)::numeric, 1) AS np,
@@ -436,7 +436,7 @@ export const cyclingAdvancedRouter = router({
                 AND ms.grade > 3
             )
             SELECT
-              a.started_at::date AS date,
+              (a.started_at AT TIME ZONE ${ctx.timezone})::date AS date,
               a.name,
               ROUND(SUM(
                 GREATEST(cs.altitude - cs.prev_altitude, 0)
@@ -490,7 +490,7 @@ export const cyclingAdvancedRouter = router({
         ctx.db,
         pedalRowSchema,
         sql`SELECT
-              asum.started_at::date AS date,
+              (asum.started_at AT TIME ZONE ${ctx.timezone})::date AS date,
               asum.name,
               ROUND(asum.avg_left_balance::numeric, 1) AS avg_balance,
               ROUND(

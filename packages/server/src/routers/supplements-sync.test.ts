@@ -4,7 +4,7 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const t = initTRPC.context<{ db: unknown; userId: string | null }>().create();
+  const t = initTRPC.context<{ db: unknown; userId: string | null; timezone: string }>().create();
   return {
     router: t.router,
     protectedProcedure: t.procedure,
@@ -238,7 +238,7 @@ describe("supplementsRouter", () => {
   describe("list", () => {
     it("returns supplements mapped through toApiSupplement", async () => {
       const { db } = createMockDb({ viewRows: [fullViewRow()] });
-      const caller = createCaller({ db, userId: "user-1" });
+      const caller = createCaller({ db, userId: "user-1", timezone: "UTC" });
 
       const result = await caller.list();
       expect(result).toHaveLength(1);
@@ -249,7 +249,7 @@ describe("supplementsRouter", () => {
 
     it("returns empty array when user has no supplements", async () => {
       const { db } = createMockDb({ viewRows: [] });
-      const caller = createCaller({ db, userId: "user-1" });
+      const caller = createCaller({ db, userId: "user-1", timezone: "UTC" });
 
       const result = await caller.list();
       expect(result).toHaveLength(0);
@@ -257,7 +257,7 @@ describe("supplementsRouter", () => {
 
     it("excludes null fields from listed supplements", async () => {
       const { db } = createMockDb({ viewRows: [minimalViewRow()] });
-      const caller = createCaller({ db, userId: "user-1" });
+      const caller = createCaller({ db, userId: "user-1", timezone: "UTC" });
 
       const result = await caller.list();
       expect(result[0]).toEqual({ name: "Multivitamin" });
@@ -276,7 +276,7 @@ describe("supplementsRouter", () => {
   describe("save", () => {
     it("saves supplements via transaction (delete + insert)", async () => {
       const { db, mocks } = createMockDb();
-      const caller = createCaller({ db, userId: "user-1" });
+      const caller = createCaller({ db, userId: "user-1", timezone: "UTC" });
 
       const result = await caller.save({
         supplements: [{ name: "Creatine", calories: 0 }],
@@ -303,7 +303,7 @@ describe("supplementsRouter", () => {
 
     it("inserts nutrition_data then supplement for each supplement", async () => {
       const { db, mocks } = createMockDb();
-      const caller = createCaller({ db, userId: "user-1" });
+      const caller = createCaller({ db, userId: "user-1", timezone: "UTC" });
 
       await caller.save({
         supplements: [
@@ -320,7 +320,7 @@ describe("supplementsRouter", () => {
 
     it("handles empty supplements array (delete all, no insert)", async () => {
       const { db, mocks } = createMockDb();
-      const caller = createCaller({ db, userId: "user-1" });
+      const caller = createCaller({ db, userId: "user-1", timezone: "UTC" });
 
       const result = await caller.save({ supplements: [] });
 
@@ -331,7 +331,7 @@ describe("supplementsRouter", () => {
 
     it("passes nutrient values through to nutrition_data insert", async () => {
       const { db, mocks } = createMockDb();
-      const caller = createCaller({ db, userId: "user-1" });
+      const caller = createCaller({ db, userId: "user-1", timezone: "UTC" });
 
       await caller.save({
         supplements: [{ name: "Test", vitaminDMcg: 125, calories: 0 }],
