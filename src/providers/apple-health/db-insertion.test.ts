@@ -1359,6 +1359,41 @@ describe("upsertDailyMetricsBatch — deduplication", () => {
   });
 });
 
+describe("upsertDailyMetricsBatch — HRV first-reading-wins", () => {
+  it("uses the first HRV reading of the day, ignoring later Breathe session values", async () => {
+    const { db, capture } = createMockDb();
+
+    const records = [
+      makeRecord({
+        type: "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
+        value: 45, // overnight reading (first)
+        startDate: new Date("2024-06-01T04:00:00Z"),
+        endDate: new Date("2024-06-01T04:00:05Z"),
+      }),
+      makeRecord({
+        type: "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
+        value: 50, // morning reading
+        startDate: new Date("2024-06-01T10:00:00Z"),
+        endDate: new Date("2024-06-01T10:00:05Z"),
+      }),
+      makeRecord({
+        type: "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
+        value: 120, // Breathe session (inflated, should be ignored)
+        startDate: new Date("2024-06-01T22:00:00Z"),
+        endDate: new Date("2024-06-01T22:00:05Z"),
+      }),
+    ];
+
+    const count = await upsertDailyMetricsBatch(db, "apple_health", records);
+    expect(count).toBe(1);
+    expect(capture.values).toHaveLength(1);
+
+    const row = capture.values[0]?.[0];
+    // Should use the first reading (45ms), not average (71.7) or last (120)
+    expect(row?.hrv).toBe(45);
+  });
+});
+
 describe("upsertNutritionBatch — deduplication", () => {
   it("aggregates nutrition records for the same date into one row", async () => {
     const { db, capture } = createMockDb();

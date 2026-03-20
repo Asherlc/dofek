@@ -1,4 +1,4 @@
-import { scoreColor } from "@dofek/shared/scoring";
+import { scoreColor } from "@dofek/scoring/scoring";
 import type { ReadinessRow } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";

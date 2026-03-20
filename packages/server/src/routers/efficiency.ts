@@ -195,12 +195,11 @@ export const efficiencyRouter = router({
 
   /**
    * Polarization Index trend per week using Treff 3-zone model.
-   * Computes Karvonen zones at query time from metric_stream + v_daily_metrics.
+   * Uses %HRmax zones (simpler and more stable than Karvonen %HRR):
    *
-   * Uses a 3-zone re-bucketing:
-   *   Z1 (easy) = < 80% HRR (Karvonen zones 1-3)
-   *   Z2 (threshold) = 80-90% HRR (Karvonen zone 4)
-   *   Z3 (high intensity) = ≥ 90% HRR (Karvonen zone 5)
+   *   Z1 (easy) = < 80% HRmax
+   *   Z2 (threshold) = 80-90% HRmax
+   *   Z3 (high intensity) = ≥ 90% HRmax
    *
    * PI = log10((f1 / (f2 * f3)) * 100) where f = fraction of total training time
    * PI > 2.0 indicates a well-polarized training distribution.
@@ -221,25 +220,16 @@ export const efficiencyRouter = router({
         sql`SELECT
               up.max_hr,
               date_trunc('week', a.started_at)::date AS week,
-              -- Z1 (easy): < 80% HRR
-              COUNT(*) FILTER (WHERE ms.heart_rate < rhr.resting_hr + (up.max_hr - rhr.resting_hr) * 0.8)::int AS z1_seconds,
-              -- Z2 (threshold): 80-90% HRR
-              COUNT(*) FILTER (WHERE ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * 0.8
-                                AND ms.heart_rate <  rhr.resting_hr + (up.max_hr - rhr.resting_hr) * 0.9)::int AS z2_seconds,
-              -- Z3 (high intensity): >= 90% HRR
-              COUNT(*) FILTER (WHERE ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * 0.9)::int AS z3_seconds
+              -- Z1 (easy): < 80% HRmax
+              COUNT(*) FILTER (WHERE ms.heart_rate < up.max_hr * 0.8)::int AS z1_seconds,
+              -- Z2 (threshold): 80-90% HRmax
+              COUNT(*) FILTER (WHERE ms.heart_rate >= up.max_hr * 0.8
+                                AND ms.heart_rate <  up.max_hr * 0.9)::int AS z2_seconds,
+              -- Z3 (high intensity): >= 90% HRmax
+              COUNT(*) FILTER (WHERE ms.heart_rate >= up.max_hr * 0.9)::int AS z3_seconds
             FROM fitness.user_profile up
             JOIN fitness.v_activity a ON a.user_id = up.id
             JOIN fitness.metric_stream ms ON ms.activity_id = a.id
-            JOIN LATERAL (
-              SELECT dm.resting_hr
-              FROM fitness.v_daily_metrics dm
-              WHERE dm.user_id = up.id
-                AND dm.date <= a.started_at::date
-                AND dm.resting_hr IS NOT NULL
-              ORDER BY dm.date DESC
-              LIMIT 1
-            ) rhr ON true
             WHERE up.id = ${ctx.userId}
               AND a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
               AND ms.recorded_at > NOW() - (${input.days} + 1)::int * INTERVAL '1 day'

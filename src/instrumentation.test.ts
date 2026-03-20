@@ -2,7 +2,6 @@ import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-proto";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
 import { ExpressInstrumentation } from "@opentelemetry/instrumentation-express";
 import { HttpInstrumentation } from "@opentelemetry/instrumentation-http";
-import { WinstonInstrumentation } from "@opentelemetry/instrumentation-winston";
 import { BatchLogRecordProcessor } from "@opentelemetry/sdk-logs";
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-node";
@@ -32,10 +31,6 @@ vi.mock("@opentelemetry/sdk-trace-node", () => ({
 
 vi.mock("@opentelemetry/sdk-logs", () => ({
   BatchLogRecordProcessor: vi.fn(),
-}));
-
-vi.mock("@opentelemetry/instrumentation-winston", () => ({
-  WinstonInstrumentation: vi.fn(),
 }));
 
 vi.mock("@opentelemetry/instrumentation-http", () => ({
@@ -76,7 +71,6 @@ describe("instrumentation", () => {
     vi.mocked(OTLPLogExporter).mockClear();
     vi.mocked(BatchSpanProcessor).mockClear();
     vi.mocked(BatchLogRecordProcessor).mockClear();
-    vi.mocked(WinstonInstrumentation).mockClear();
     vi.mocked(HttpInstrumentation).mockClear();
     vi.mocked(ExpressInstrumentation).mockClear();
     mockStart.mockClear();
@@ -176,10 +170,9 @@ describe("instrumentation", () => {
     expect(config).toBeDefined();
     expect(config?.spanProcessors).toHaveLength(1);
     expect(config?.logRecordProcessors).toHaveLength(1);
-    expect(config?.instrumentations).toHaveLength(3);
+    expect(config?.instrumentations).toHaveLength(2);
     expect(BatchSpanProcessor).toHaveBeenCalledWith(expect.any(OTLPTraceExporter));
     expect(BatchLogRecordProcessor).toHaveBeenCalledWith(expect.any(OTLPLogExporter));
-    expect(WinstonInstrumentation).toHaveBeenCalled();
     expect(HttpInstrumentation).toHaveBeenCalled();
     expect(ExpressInstrumentation).toHaveBeenCalled();
   });
@@ -200,7 +193,6 @@ describe("instrumentation", () => {
     expect(config?.instrumentations).toHaveLength(2);
     expect(BatchSpanProcessor).toHaveBeenCalledWith(expect.any(OTLPTraceExporter));
     expect(BatchLogRecordProcessor).not.toHaveBeenCalled();
-    expect(WinstonInstrumentation).not.toHaveBeenCalled();
     expect(HttpInstrumentation).toHaveBeenCalled();
     expect(ExpressInstrumentation).toHaveBeenCalled();
   });
@@ -218,10 +210,9 @@ describe("instrumentation", () => {
     expect(config).toBeDefined();
     expect(config?.spanProcessors).toHaveLength(0);
     expect(config?.logRecordProcessors).toHaveLength(1);
-    expect(config?.instrumentations).toHaveLength(1);
+    expect(config?.instrumentations).toHaveLength(0);
     expect(BatchSpanProcessor).not.toHaveBeenCalled();
     expect(BatchLogRecordProcessor).toHaveBeenCalledWith(expect.any(OTLPLogExporter));
-    expect(WinstonInstrumentation).toHaveBeenCalled();
     expect(HttpInstrumentation).not.toHaveBeenCalled();
     expect(ExpressInstrumentation).not.toHaveBeenCalled();
   });

@@ -1,0 +1,12 @@
+{
+  "name": "@dofek/auth",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./auth": "./src/auth.ts"
+  },
+  "dependencies": {
+    "zod": "3.25.76"
+  }
+}

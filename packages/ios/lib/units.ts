@@ -13,8 +13,8 @@ export {
   speedLabel,
   temperatureLabel,
   weightLabel,
-} from "@dofek/shared/units";
-export type { UnitSystem } from "@dofek/shared/units";
+} from "@dofek/format/units";
+export type { UnitSystem } from "@dofek/format/units";
 
 /**
  * Hook that fetches the user's unit system preference from the server.

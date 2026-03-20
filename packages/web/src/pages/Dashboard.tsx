@@ -112,7 +112,13 @@ const GRID_PAIR_SECONDARY: Record<string, string> = {
   steps: "spo2Temp",
 };
 
-const DASHBOARD_SECTION_IDS = new Set(["healthMonitor", "nextWorkout", "activities"]);
+export const DASHBOARD_SECTION_IDS = new Set([
+  "healthMonitor",
+  "nextWorkout",
+  "spo2Temp",
+  "steps",
+  "activities",
+]);
 
 export function Dashboard() {
   const { unitSystem } = useUnitSystem();

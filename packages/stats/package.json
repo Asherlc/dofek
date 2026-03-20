@@ -1,0 +1,12 @@
+{
+  "name": "@dofek/stats",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./correlation": "./src/correlation.ts"
+  },
+  "dependencies": {
+    "@dofek/scoring": "workspace:*"
+  }
+}

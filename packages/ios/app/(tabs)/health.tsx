@@ -18,7 +18,18 @@ interface SyncStatus {
   lastSync: Date | null;
   syncing: boolean;
   lastResult: string | null;
+  progress: string | null;
 }
+
+const SYNC_RANGE_OPTIONS: Array<{ label: string; value: number | null }> = [
+  { label: "7d", value: 7 },
+  { label: "30d", value: 30 },
+  { label: "90d", value: 90 },
+  { label: "1y", value: 365 },
+  { label: "All", value: null },
+];
+
+const HEALTHKIT_BACKFILL_COMPLETED_KEY = "healthkit_backfill_completed";
 
 const QUANTITY_TYPES = [
   "HKQuantityTypeIdentifierBodyMass",
@@ -63,15 +74,31 @@ export default function HealthScreen() {
   const router = useRouter();
   const { user, serverUrl, logout } = useAuth();
   const [permissionsGranted, setPermissionsGranted] = useState(false);
+  const [backgroundEnabled, setBackgroundEnabled] = useState(false);
   const [status, setStatus] = useState<SyncStatus>({
     lastSync: null,
     syncing: false,
     lastResult: null,
+    progress: null,
   });
+
+  const backfillSetting = trpc.settings.get.useQuery({ key: HEALTHKIT_BACKFILL_COMPLETED_KEY });
+  const backfillCompleted = backfillSetting.data?.value === true;
+  const [syncRange, setSyncRange] = useState<number | null | undefined>(undefined);
+
+  // Resolve the effective sync range: user selection takes priority, then backfill status
+  const effectiveSyncRange = syncRange !== undefined
+    ? syncRange
+    : backfillSetting.isLoading
+      ? 7 // safe default while loading
+      : backfillCompleted
+        ? 7
+        : null; // first time = All
 
   const pushQuantity = trpc.healthKitSync.pushQuantitySamples.useMutation();
   const pushWorkouts = trpc.healthKitSync.pushWorkouts.useMutation();
   const pushSleep = trpc.healthKitSync.pushSleepSamples.useMutation();
+  const setBackfillComplete = trpc.settings.set.useMutation();
 
   const available = isAvailable();
 
@@ -92,15 +119,23 @@ export default function HealthScreen() {
   }
 
   const handleSync = useCallback(async () => {
-    setStatus((prev) => ({ ...prev, syncing: true, lastResult: null }));
+    setStatus((prev) => ({ ...prev, syncing: true, lastResult: null, progress: null }));
 
     try {
-      const startDate = daysAgo(7);
+      const startDate = effectiveSyncRange === null
+        ? new Date(0).toISOString()
+        : daysAgo(effectiveSyncRange);
       const endDate = new Date().toISOString();
 
       // Sync quantity samples
       const allSamples = [];
-      for (const typeId of QUANTITY_TYPES) {
+      for (let i = 0; i < QUANTITY_TYPES.length; i++) {
+        const typeId = QUANTITY_TYPES[i];
+        const shortName = typeId.replace("HKQuantityTypeIdentifier", "");
+        setStatus((prev) => ({
+          ...prev,
+          progress: `Querying ${shortName}... (${i + 1}/${QUANTITY_TYPES.length})`,
+        }));
         const samples = await queryQuantitySamples(typeId, startDate, endDate);
         allSamples.push(...samples);
       }
@@ -109,6 +144,7 @@ export default function HealthScreen() {
       const errors: string[] = [];
 
       if (allSamples.length > 0) {
+        setStatus((prev) => ({ ...prev, progress: `Pushing ${allSamples.length} samples...` }));
         // Push in batches of 500
         for (let i = 0; i < allSamples.length; i += 500) {
           const batch = allSamples.slice(i, i + 500);
@@ -119,6 +155,7 @@ export default function HealthScreen() {
       }
 
       // Sync workouts
+      setStatus((prev) => ({ ...prev, progress: "Querying workouts..." }));
       const workouts = normalizeWorkoutsForSync(await queryWorkouts(startDate, endDate));
       if (workouts.length > 0) {
         const result = await pushWorkouts.mutateAsync({ workouts });
@@ -126,10 +163,19 @@ export default function HealthScreen() {
       }
 
       // Sync sleep
+      setStatus((prev) => ({ ...prev, progress: "Querying sleep..." }));
       const sleepSamples = await querySleepSamples(startDate, endDate);
       if (sleepSamples.length > 0) {
         const result = await pushSleep.mutateAsync({ samples: sleepSamples });
         totalInserted += result.inserted;
+      }
+
+      // Mark backfill as completed after successful all-time sync
+      if (effectiveSyncRange === null) {
+        await setBackfillComplete.mutateAsync({
+          key: HEALTHKIT_BACKFILL_COMPLETED_KEY,
+          value: true,
+        });
       }
 
       const resultMessage = errors.length > 0
@@ -140,6 +186,7 @@ export default function HealthScreen() {
         lastSync: new Date(),
         syncing: false,
         lastResult: resultMessage,
+        progress: null,
       });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
@@ -147,15 +194,17 @@ export default function HealthScreen() {
         ...prev,
         syncing: false,
         lastResult: `Error: ${message}`,
+        progress: null,
       }));
     }
-  }, [pushQuantity, pushWorkouts, pushSleep]);
+  }, [pushQuantity, pushWorkouts, pushSleep, setBackfillComplete, effectiveSyncRange]);
 
   async function handleEnableBackground() {
     try {
       for (const typeId of QUANTITY_TYPES) {
         await enableBackgroundDelivery(typeId);
       }
+      setBackgroundEnabled(true);
       Alert.alert("Background Sync", "Background delivery enabled for all health data types.");
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
@@ -212,8 +261,32 @@ export default function HealthScreen() {
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Manual Sync</Text>
             <Text style={styles.cardDescription}>
-              Sync the last 7 days of health data to the server.
+              {effectiveSyncRange === null
+                ? "Sync all health data to the server."
+                : `Sync the last ${effectiveSyncRange} days of health data to the server.`}
             </Text>
+            <View style={styles.syncRangeRow}>
+              {SYNC_RANGE_OPTIONS.map((opt) => (
+                <TouchableOpacity
+                  key={opt.label}
+                  style={[
+                    styles.syncRangeButton,
+                    effectiveSyncRange === opt.value && styles.syncRangeButtonActive,
+                  ]}
+                  onPress={() => setSyncRange(opt.value)}
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    style={[
+                      styles.syncRangeText,
+                      effectiveSyncRange === opt.value && styles.syncRangeTextActive,
+                    ]}
+                  >
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
             <TouchableOpacity
               style={[styles.button, status.syncing && styles.buttonDisabled]}
               onPress={handleSync}
@@ -237,6 +310,12 @@ export default function HealthScreen() {
                   : "Never"}
               </Text>
             </View>
+            {status.progress && (
+              <View style={styles.statusRow}>
+                <Text style={styles.statusLabel}>Progress</Text>
+                <Text style={styles.statusValue}>{status.progress}</Text>
+              </View>
+            )}
             {status.lastResult && (
               <View style={styles.statusRow}>
                 <Text style={styles.statusLabel}>Result</Text>
@@ -253,8 +332,15 @@ export default function HealthScreen() {
             <Text style={styles.cardDescription}>
               Enable background delivery so data syncs automatically.
             </Text>
-            <TouchableOpacity style={styles.buttonSecondary} onPress={handleEnableBackground} activeOpacity={0.7}>
-              <Text style={styles.buttonSecondaryText}>Enable Background Delivery</Text>
+            <TouchableOpacity
+              style={[styles.buttonSecondary, backgroundEnabled && styles.buttonDisabled]}
+              onPress={handleEnableBackground}
+              activeOpacity={0.7}
+              disabled={backgroundEnabled}
+            >
+              <Text style={styles.buttonSecondaryText}>
+                {backgroundEnabled ? "Background Delivery Enabled" : "Enable Background Delivery"}
+              </Text>
             </TouchableOpacity>
           </View>
         </>
@@ -366,6 +452,31 @@ const styles = StyleSheet.create({
   statusValue: {
     fontSize: 15,
     color: colors.text,
+  },
+  syncRangeRow: {
+    flexDirection: "row",
+    gap: 6,
+    marginBottom: 12,
+  },
+  syncRangeButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.surfaceSecondary,
+  },
+  syncRangeButtonActive: {
+    backgroundColor: colors.surfaceSecondary,
+    borderColor: colors.accent,
+  },
+  syncRangeText: {
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
+  syncRangeTextActive: {
+    color: colors.text,
+    fontWeight: "600",
   },
   errorText: {
     color: colors.danger,

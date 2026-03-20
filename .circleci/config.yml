@@ -104,6 +104,9 @@ jobs:
       - run:
           name: Run iOS component tests
           command: pnpm exec vitest run --project ios
+      - run:
+          name: Verify iOS Metro bundle
+          command: cd packages/ios && pnpm expo export --platform ios --clear
 
   test-e2e-web:
     executor: machine

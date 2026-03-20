@@ -408,7 +408,7 @@ describe("createUploadRouter", () => {
       const { app, queue } = createTestApp();
       const mockJob = {
         getState: vi.fn(() => Promise.resolve("active")),
-        progress: { pct: 50, message: "Parsing records..." },
+        progress: { percentage: 50, message: "Parsing records..." },
         failedReason: null,
         returnvalue: null,
       };

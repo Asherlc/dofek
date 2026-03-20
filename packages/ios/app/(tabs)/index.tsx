@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { selectRecentDailyLoad } from "@dofek/shared/training";
+import { selectRecentDailyLoad } from "@dofek/training/training";
 import type { NextWorkoutRecommendation } from "dofek-server/types";
 import { useRouter } from "expo-router";
 import {
@@ -209,6 +209,14 @@ export default function OverviewScreen() {
       )
     : null;
 
+  const spo2Trend = stepsData
+    .filter((d: Record<string, unknown>) => d.spo2_avg != null)
+    .map((d: Record<string, unknown>) => Number(d.spo2_avg));
+
+  const skinTempTrend = stepsData
+    .filter((d: Record<string, unknown>) => d.skin_temp_c != null)
+    .map((d: Record<string, unknown>) => convertTemperature(Number(d.skin_temp_c), unitSystem));
+
   return (
     <ScrollView
       style={styles.container}
@@ -326,10 +334,10 @@ export default function OverviewScreen() {
               />
               <SleepBar
                 durationMinutes={lastNight.durationMinutes}
-                deepPct={lastNight.deepPct}
-                remPct={lastNight.remPct}
-                lightPct={lastNight.lightPct}
-                awakePct={lastNight.awakePct}
+                deepPercentage={lastNight.deepPct}
+                remPercentage={lastNight.remPct}
+                lightPercentage={lastNight.lightPct}
+                awakePercentage={lastNight.awakePct}
               />
               {sleepDebt > 0 && (
                 <Text style={styles.sleepDebt}>
@@ -373,6 +381,40 @@ export default function OverviewScreen() {
               }
               subtitle={stressData?.trend ? `Trend: ${stressData.trend}` : undefined}
             />
+            {metrics?.latest_spo2 != null && (
+              <MetricCard
+                title="Blood Oxygen"
+                value={String(Math.round(metrics.latest_spo2))}
+                unit="%"
+                trend={spo2Trend}
+                color={colors.blue}
+                trendDirection={
+                  spo2Trend.length >= 2
+                    ? computeTrend(
+                        spo2Trend[spo2Trend.length - 1] ?? 0,
+                        spo2Trend[spo2Trend.length - 2] ?? 0,
+                      )
+                    : undefined
+                }
+              />
+            )}
+            {metrics?.latest_skin_temp != null && (
+              <MetricCard
+                title="Skin Temperature"
+                value={convertTemperature(metrics.latest_skin_temp, unitSystem).toFixed(1)}
+                unit={temperatureLabel(unitSystem)}
+                trend={skinTempTrend}
+                color={colors.orange}
+                trendDirection={
+                  skinTempTrend.length >= 2
+                    ? computeTrend(
+                        skinTempTrend[skinTempTrend.length - 1] ?? 0,
+                        skinTempTrend[skinTempTrend.length - 2] ?? 0,
+                      )
+                    : undefined
+                }
+              />
+            )}
           </View>
 
           {/* Recent activities */}
@@ -831,7 +873,7 @@ function MacroBar({
   // Approximate calorie contribution: protein=4, carbs=4, fat=9
   const calMultiplier = label === "Fat" ? 9 : 4;
   const macroCalories = grams * calMultiplier;
-  const pct = totalCalories > 0 ? Math.min(100, Math.round((macroCalories / totalCalories) * 100)) : 0;
+  const percentage = totalCalories > 0 ? Math.min(100, Math.round((macroCalories / totalCalories) * 100)) : 0;
 
   return (
     <View style={macroStyles.container}>
@@ -843,7 +885,7 @@ function MacroBar({
         <View
           style={[
             macroStyles.barFill,
-            { width: `${pct}%`, backgroundColor: color },
+            { width: `${percentage}%`, backgroundColor: color },
           ]}
         />
       </View>

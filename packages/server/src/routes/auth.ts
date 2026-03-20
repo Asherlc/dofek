@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { IDENTITY_PROVIDER_NAMES } from "@dofek/shared/auth";
+import { IDENTITY_PROVIDER_NAMES } from "@dofek/auth/auth";
 import { getOAuthRedirectUri } from "dofek/auth/oauth";
 import { DEFAULT_USER_ID } from "dofek/db/schema";
 import { sql } from "drizzle-orm";

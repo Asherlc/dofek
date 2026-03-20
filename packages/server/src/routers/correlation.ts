@@ -5,7 +5,7 @@ import {
   generateCorrelationInsight,
   linearRegression,
   pearsonCorrelation,
-} from "@dofek/shared/correlation";
+} from "@dofek/stats/correlation";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type {

@@ -107,9 +107,9 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
         return [
           `<strong>Week of ${dateLabel}</strong>`,
           `Polarization Index: ${piStr} ${status}`,
-          `Zone 1 (easy, <80% HRR): ${formatMinutes(w.z1Seconds)}`,
-          `Zone 2 (threshold, 80-90% HRR): ${formatMinutes(w.z2Seconds)}`,
-          `Zone 3 (high, ≥90% HRR): ${formatMinutes(w.z3Seconds)}`,
+          `Zone 1 (easy, <80% max HR): ${formatMinutes(w.z1Seconds)}`,
+          `Zone 2 (threshold, 80-90% max HR): ${formatMinutes(w.z2Seconds)}`,
+          `Zone 3 (high, ≥90% max HR): ${formatMinutes(w.z3Seconds)}`,
           missingZonesText,
         ]
           .filter((line): line is string => typeof line === "string")
@@ -237,8 +237,8 @@ export function PolarizationTrendChart({ weeks, maxHr, loading }: PolarizationTr
       </h3>
       <ReactECharts option={option} style={{ height: 280 }} notMerge={true} />
       <p className="text-xs text-zinc-700 mt-1">
-        Index above 2.0 = well-polarized training. Zone 1 = easy (&lt;80% heart rate reserve), Zone
-        2 = threshold (80-90% HRR), Zone 3 = high intensity (&ge;90% HRR).
+        Index above 2.0 = well-polarized training. Zone 1 = easy (&lt;80% max HR), Zone 2 =
+        threshold (80-90% max HR), Zone 3 = high intensity (&ge;90% max HR).
       </p>
     </div>
   );
