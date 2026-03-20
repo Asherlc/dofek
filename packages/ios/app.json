@@ -45,7 +45,8 @@
         {
           "cameraPermission": "Dofek uses the camera to scan food barcodes."
         }
-      ]
+      ],
+      "@sentry/react-native/expo"
     ]
   }
 }
