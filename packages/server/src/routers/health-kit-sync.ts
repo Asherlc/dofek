@@ -2,8 +2,6 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { protectedProcedure, router } from "../trpc.ts";
 
-// Stryker disable all — SQL-heavy sync wiring is validated by integration and router tests;
-// mutating this full router yields a high volume of equivalent mutants.
 const PROVIDER_ID = "apple_health_kit";
 const BATCH_SIZE = 500;
 const MAX_SLEEP_SESSION_GAP_MS = 90 * 60 * 1000;
@@ -41,7 +39,7 @@ const sleepSampleSchema = z.object({
   sourceName: z.string(),
 });
 
-type HealthKitSample = z.infer<typeof healthKitSampleSchema>;
+export type HealthKitSample = z.infer<typeof healthKitSampleSchema>;
 type WorkoutSample = z.infer<typeof workoutSampleSchema>;
 type SleepSample = z.infer<typeof sleepSampleSchema>;
 
@@ -373,6 +371,8 @@ function categorize(
   return "healthEvent";
 }
 
+// Stryker disable all — SQL upsert wiring in process* functions and router is validated
+// by integration tests; mutating SQL template literals produces equivalent mutants.
 /** Process body measurement samples */
 async function processBodyMeasurements(
   db: Database,
@@ -399,9 +399,10 @@ async function processBodyMeasurements(
   }
   return inserted;
 }
+// Stryker restore all
 
 /** Aggregated daily metric values for a single date */
-interface DailyMetricAccumulator {
+export interface DailyMetricAccumulator {
   steps: number;
   activeEnergyKcal: number;
   basalEnergyKcal: number;
@@ -455,14 +456,15 @@ const columnToAccumulatorKey: Record<string, keyof DailyMetricAccumulator> = {
   walking_asymmetry_pct: "walkingAsymmetryPct",
 };
 
-/** Process daily metric samples (both additive and point-in-time) */
-async function processDailyMetrics(
-  db: Database,
-  userId: string,
+/**
+ * Aggregate daily metrics per date.
+ * HRV is averaged across same-day samples to avoid outlier inflation from a single reading.
+ */
+export function aggregateDailyMetricSamples(
   samples: HealthKitSample[],
-): Promise<number> {
-  // Group by date
+): Map<string, DailyMetricAccumulator> {
   const byDate = new Map<string, DailyMetricAccumulator>();
+  const hrvRunningTotals = new Map<string, { sum: number; count: number }>();
 
   for (const sample of samples) {
     const dateStr = extractDate(sample.startDate);
@@ -485,13 +487,34 @@ async function processDailyMetrics(
     }
 
     const pointMapping = pointInTimeDailyMetricTypes[sample.type];
-    if (pointMapping) {
-      const key = columnToAccumulatorKey[pointMapping.column];
-      if (key) {
-        (accumulator[key] as number | null) = sample.value;
-      }
+    if (!pointMapping) continue;
+
+    if (pointMapping.column === "hrv") {
+      const running = hrvRunningTotals.get(dateStr) ?? { sum: 0, count: 0 };
+      running.sum += sample.value;
+      running.count += 1;
+      hrvRunningTotals.set(dateStr, running);
+      accumulator.hrv = running.sum / running.count;
+      continue;
+    }
+
+    const key = columnToAccumulatorKey[pointMapping.column];
+    if (key) {
+      (accumulator[key] as number | null) = sample.value;
     }
   }
+
+  return byDate;
+}
+
+// Stryker disable all
+/** Process daily metric samples (both additive and point-in-time) */
+async function processDailyMetrics(
+  db: Database,
+  userId: string,
+  samples: HealthKitSample[],
+): Promise<number> {
+  const byDate = aggregateDailyMetricSamples(samples);
 
   // Upsert each date
   for (const [dateStr, accumulator] of byDate) {
@@ -528,7 +551,7 @@ async function processDailyMetrics(
       }
     }
 
-    // Point-in-time fields: overwrite with latest
+    // Point-in-time fields: overwrite with aggregated day values (HRV is day-averaged upstream)
     const pointFields: Array<{ column: string; key: keyof DailyMetricAccumulator }> = [
       { column: "resting_hr", key: "restingHr" },
       { column: "hrv", key: "hrv" },
