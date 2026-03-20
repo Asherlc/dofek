@@ -256,6 +256,18 @@ jobs:
             | tail -20
         timeout-minutes: 20
 
+  ios-native-gate:
+    name: iOS Native Gate
+    needs: [check-ios-changes, build-ios-native]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          if [ "${{ needs.build-ios-native.result }}" = "failure" ] || [ "${{ needs.build-ios-native.result }}" = "cancelled" ]; then
+            echo "iOS native build failed or was cancelled"
+            exit 1
+          fi
+
   test-e2e-web:
     name: E2E Tests (Web)
     runs-on: ubuntu-latest
