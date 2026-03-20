@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export interface GradeAdjustedPaceRow {
@@ -54,7 +54,7 @@ export const hikingRouter = router({
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
       const gradeRowSchema = z.object({
-        date: z.string(),
+        date: dateStringSchema,
         activity_name: z.string(),
         activity_type: z.string(),
         distance_m: z.coerce.number(),
@@ -125,7 +125,7 @@ export const hikingRouter = router({
     .input(z.object({ days: z.number().default(365) }))
     .query(async ({ ctx, input }) => {
       const elevRowSchema = z.object({
-        week: z.string(),
+        week: dateStringSchema,
         elevation_gain_m: z.coerce.number(),
         activity_count: z.coerce.number(),
         total_distance_km: z.coerce.number(),
@@ -162,7 +162,7 @@ export const hikingRouter = router({
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
       const walkRowSchema = z.object({
-        date: z.string(),
+        date: dateStringSchema,
         walking_speed: z.coerce.number().nullable(),
         step_length: z.coerce.number().nullable(),
         double_support_pct: z.coerce.number().nullable(),
@@ -210,7 +210,7 @@ export const hikingRouter = router({
     .query(async ({ ctx, input }) => {
       const compRowSchema = z.object({
         activity_name: z.string(),
-        date: z.string(),
+        date: dateStringSchema,
         duration_minutes: z.coerce.number(),
         average_pace_min_per_km: z.coerce.number(),
         avg_heart_rate: z.coerce.number().nullable(),

@@ -1,7 +1,7 @@
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
@@ -37,7 +37,7 @@ export interface AnomalyCheckResult {
  * known early indicator of illness (WHOOP / Welltory research).
  */
 const anomalyCheckRowSchema = z.object({
-  date: z.string().nullable(),
+  date: dateStringSchema.nullable(),
   resting_hr: z.coerce.number().nullable(),
   rhr_mean: z.coerce.number().nullable(),
   rhr_sd: z.coerce.number().nullable(),
@@ -307,7 +307,7 @@ export const anomalyDetectionRouter = router({
     .query(async ({ ctx, input }): Promise<AnomalyRow[]> => {
       const queryDays = input.days + 30;
       const anomalyHistoryRowSchema = z.object({
-        date: z.string().nullable(),
+        date: dateStringSchema.nullable(),
         resting_hr: z.coerce.number().nullable(),
         rhr_mean: z.coerce.number().nullable(),
         rhr_sd: z.coerce.number().nullable(),

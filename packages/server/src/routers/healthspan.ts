@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 /**
@@ -147,7 +147,7 @@ export const healthspanRouter = router({
       const totalDays = input.weeks * 7;
 
       const histRowSchema = z.object({
-        week_start: z.string(),
+        week_start: dateStringSchema,
         avg_rhr: z.coerce.number().nullable(),
         avg_steps: z.coerce.number().nullable(),
         avg_vo2max: z.coerce.number().nullable(),

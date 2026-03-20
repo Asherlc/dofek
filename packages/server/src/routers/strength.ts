@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export interface VolumeOverTimeRow {
@@ -56,7 +56,7 @@ export const strengthRouter = router({
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
       const volumeRowSchema = z.object({
-        week: z.string(),
+        week: dateStringSchema,
         total_volume_kg: z.coerce.number(),
         set_count: z.coerce.number(),
         workout_count: z.coerce.number(),
@@ -94,7 +94,7 @@ export const strengthRouter = router({
     .query(async ({ ctx, input }) => {
       const oneRepMaxRowSchema = z.object({
         exercise_name: z.string(),
-        workout_date: z.string(),
+        workout_date: dateStringSchema,
         estimated_max: z.coerce.number(),
         actual_weight: z.coerce.number(),
         actual_reps: z.coerce.number(),
@@ -167,7 +167,7 @@ export const strengthRouter = router({
     .query(async ({ ctx, input }) => {
       const muscleGroupRowSchema = z.object({
         muscle_group: z.string(),
-        week: z.string(),
+        week: dateStringSchema,
         sets: z.coerce.number(),
       });
       const rows = await executeWithSchema(
@@ -208,7 +208,7 @@ export const strengthRouter = router({
     .query(async ({ ctx, input }) => {
       const overloadRowSchema = z.object({
         exercise_name: z.string(),
-        week: z.string(),
+        week: dateStringSchema,
         weekly_volume: z.coerce.number(),
       });
       const rows = await executeWithSchema(
@@ -255,7 +255,7 @@ export const strengthRouter = router({
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
       const summaryRowSchema = z.object({
-        date: z.string(),
+        date: dateStringSchema,
         name: z.string(),
         exercise_count: z.coerce.number(),
         total_sets: z.coerce.number(),

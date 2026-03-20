@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { enduranceTypeFilter } from "../lib/endurance-types.ts";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export interface RampRateWeek {
@@ -66,7 +66,7 @@ export const cyclingAdvancedRouter = router({
     .query(async ({ ctx, input }): Promise<RampRateResult> => {
       // Get daily TRIMP loads from activity_summary
       const dailyLoadSchema = z.object({
-        day: z.string(),
+        day: dateStringSchema,
         trimp: z.coerce.number(),
       });
       const dailyLoads = await executeWithSchema(
@@ -205,7 +205,7 @@ export const cyclingAdvancedRouter = router({
     .input(daysInput)
     .query(async ({ ctx, input }): Promise<TrainingMonotonyWeek[]> => {
       const monotonyRowSchema = z.object({
-        week: z.string(),
+        week: dateStringSchema,
         monotony: z.coerce.number(),
         strain: z.coerce.number(),
         weekly_load: z.coerce.number(),
@@ -333,7 +333,7 @@ export const cyclingAdvancedRouter = router({
 
       // Compute NP, avg power per activity in a single query using SQL window functions
       const variabilityRowSchema = z.object({
-        date: z.string(),
+        date: dateStringSchema,
         name: z.string(),
         np: z.coerce.number(),
         avg_power: z.coerce.number(),
@@ -405,7 +405,7 @@ export const cyclingAdvancedRouter = router({
     .input(daysInput)
     .query(async ({ ctx, input }): Promise<VerticalAscentRow[]> => {
       const vamRowSchema = z.object({
-        date: z.string(),
+        date: dateStringSchema,
         name: z.string(),
         elevation_gain: z.coerce.number(),
         climbing_seconds: z.coerce.number(),
@@ -480,7 +480,7 @@ export const cyclingAdvancedRouter = router({
     .input(daysInput)
     .query(async ({ ctx, input }): Promise<PedalDynamicsRow[]> => {
       const pedalRowSchema = z.object({
-        date: z.string(),
+        date: dateStringSchema,
         name: z.string(),
         avg_balance: z.coerce.number(),
         avg_torque_effectiveness: z.coerce.number(),

@@ -2,7 +2,7 @@ import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export interface HrvVariabilityRow {
@@ -69,7 +69,7 @@ export const recoveryRouter = router({
     .query(async ({ ctx, input }): Promise<SleepConsistencyRow[]> => {
       const queryDays = input.days + 14;
       const consistencyRowSchema = z.object({
-        date: z.string(),
+        date: dateStringSchema,
         bedtime_hour: z.coerce.number(),
         waketime_hour: z.coerce.number(),
         rolling_bedtime_stddev: z.coerce.number().nullable(),
@@ -137,7 +137,7 @@ export const recoveryRouter = router({
     .query(async ({ ctx, input }): Promise<HrvVariabilityRow[]> => {
       const queryDays = input.days + 7;
       const hrvRowSchema = z.object({
-        date: z.string(),
+        date: dateStringSchema,
         hrv: z.coerce.number().nullable(),
         rolling_mean: z.coerce.number().nullable(),
         rolling_cv: z.coerce.number().nullable(),
@@ -192,7 +192,7 @@ export const recoveryRouter = router({
     .query(async ({ ctx, input }): Promise<WorkloadRatioRow[]> => {
       const queryDays = input.days + 28;
       const workloadRowSchema = z.object({
-        date: z.string(),
+        date: dateStringSchema,
         daily_load: z.coerce.number(),
         acute_load: z.coerce.number(),
         chronic_load: z.coerce.number(),
@@ -274,7 +274,7 @@ export const recoveryRouter = router({
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }): Promise<SleepAnalyticsResult> => {
       const sleepRowSchema = z.object({
-        date: z.string(),
+        date: dateStringSchema,
         duration_minutes: z.coerce.number(),
         deep_pct: z.coerce.number(),
         rem_pct: z.coerce.number(),
@@ -365,7 +365,7 @@ export const recoveryRouter = router({
 
       // Fetch HRV + resting HR baselines, sleep efficiency, and ACWR in one query
       const readinessRowSchema = z.object({
-        date: z.string(),
+        date: dateStringSchema,
         hrv: z.coerce.number().nullable(),
         resting_hr: z.coerce.number().nullable(),
         hrv_mean_60d: z.coerce.number().nullable(),

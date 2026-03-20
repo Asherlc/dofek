@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export interface DailyTrendRow {
@@ -47,7 +47,7 @@ export const trendsRouter = router({
     .input(z.object({ days: z.number().default(365) }))
     .query(async ({ ctx, input }): Promise<DailyTrendRow[]> => {
       const dailyTrendRowSchema = z.object({
-        date: z.string(),
+        date: dateStringSchema,
         avg_hr: z.coerce.number().nullable(),
         max_hr: z.coerce.number().nullable(),
         avg_power: z.coerce.number().nullable(),
@@ -105,7 +105,7 @@ export const trendsRouter = router({
     .query(async ({ ctx, input }): Promise<WeeklyTrendRow[]> => {
       const days = input.weeks * 7;
       const weeklyTrendRowSchema = z.object({
-        week: z.string(),
+        week: dateStringSchema,
         avg_hr: z.coerce.number().nullable(),
         max_hr: z.coerce.number().nullable(),
         avg_power: z.coerce.number().nullable(),

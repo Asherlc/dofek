@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export interface HrvBaselineRow {
@@ -44,7 +44,7 @@ export const dailyMetricsRouter = router({
     )
     .query(async ({ ctx, input }) => {
       const hrvBaselineRowSchema = z.object({
-        date: z.string(),
+        date: dateStringSchema,
         hrv: z.coerce.number().nullable(),
         resting_hr: z.coerce.number().nullable(),
         mean_60d: z.coerce.number().nullable(),
@@ -94,7 +94,7 @@ export const dailyMetricsRouter = router({
         latest_steps: z.coerce.number().nullable(),
         latest_active_energy: z.coerce.number().nullable(),
         latest_skin_temp: z.coerce.number().nullable(),
-        latest_date: z.string().nullable(),
+        latest_date: dateStringSchema.nullable(),
       });
       const rows = await executeWithSchema(
         ctx.db,

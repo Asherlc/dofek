@@ -1427,8 +1427,8 @@ describe("upsertNutritionBatch — deduplication", () => {
 // Safety-net dedup: insertWithDuplicateDiag retries with deduplicated batch
 // ---------------------------------------------------------------------------
 
-describe("insertWithDuplicateDiag — dedup and retry", () => {
-  it("deduplicates and retries when batch has duplicate conflict keys", async () => {
+describe("insertWithDuplicateDiag — upfront dedup", () => {
+  it("deduplicates before inserting when batch has duplicate conflict keys", async () => {
     const insertCalls: Record<string, unknown>[][] = [];
 
     const rows: Record<string, unknown>[] = [
@@ -1438,9 +1438,6 @@ describe("insertWithDuplicateDiag — dedup and retry", () => {
 
     const doInsert = vi.fn(async (batch: Record<string, unknown>[]) => {
       insertCalls.push(batch);
-      if (insertCalls.length === 1) {
-        throw new Error("ON CONFLICT DO UPDATE command cannot affect row a second time");
-      }
     });
 
     await insertWithDuplicateDiag(
@@ -1450,19 +1447,31 @@ describe("insertWithDuplicateDiag — dedup and retry", () => {
       doInsert,
     );
 
-    expect(doInsert).toHaveBeenCalledTimes(2);
-    // First call gets both rows (including duplicate)
-    expect(insertCalls[0]).toHaveLength(2);
-    // Second call gets deduplicated rows (last one wins)
-    expect(insertCalls[1]).toHaveLength(1);
-    expect(insertCalls[1]?.[0]).toEqual({
+    // Only one call with deduplicated rows
+    expect(doInsert).toHaveBeenCalledTimes(1);
+    expect(insertCalls[0]).toHaveLength(1);
+    expect(insertCalls[0]?.[0]).toEqual({
       providerId: "apple_health",
       externalId: "dup-key",
       weightKg: 81,
     });
   });
 
-  it("re-throws non-duplicate errors", async () => {
+  it("passes through rows unchanged when no duplicates", async () => {
+    const rows: Record<string, unknown>[] = [
+      { id: 1, name: "a" },
+      { id: 2, name: "b" },
+    ];
+
+    const doInsert = vi.fn(async () => {});
+
+    await insertWithDuplicateDiag("test", (row) => String(row.id), rows, doInsert);
+
+    expect(doInsert).toHaveBeenCalledTimes(1);
+    expect(doInsert).toHaveBeenCalledWith(rows);
+  });
+
+  it("propagates insert errors", async () => {
     const doInsert = vi.fn(async () => {
       throw new Error("connection reset");
     });

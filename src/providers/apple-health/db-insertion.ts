@@ -41,19 +41,13 @@ export async function insertWithDuplicateDiag<T extends Record<string, unknown>>
   rows: T[],
   doInsert: (rows: T[]) => Promise<unknown>,
 ): Promise<void> {
-  try {
-    await doInsert(rows);
-  } catch (err) {
-    if (err instanceof Error && err.message.includes("cannot affect row a second time")) {
-      const uniqueRows = deduplicateByKey(rows, conflictKey);
-      logger.warn(
-        `[apple_health] Deduplicated ${label} batch: ${rows.length} → ${uniqueRows.length} rows (${rows.length - uniqueRows.length} duplicates removed)`,
-      );
-      await doInsert(uniqueRows);
-      return;
-    }
-    throw err;
+  const uniqueRows = deduplicateByKey(rows, conflictKey);
+  if (uniqueRows.length < rows.length) {
+    logger.warn(
+      `[apple_health] Deduplicated ${label} batch: ${rows.length} → ${uniqueRows.length} rows (${rows.length - uniqueRows.length} duplicates removed)`,
+    );
   }
+  await doInsert(uniqueRows);
 }
 
 // Records that map to metric_stream (granular time-series)
