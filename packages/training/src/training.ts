@@ -7,6 +7,11 @@ export interface WeeklyVolumeChartRow {
   hours: number;
 }
 
+export interface DailyLoadRow {
+  date: string;
+  dailyLoad: number;
+}
+
 const ACTIVITY_TYPE_LABELS: Record<string, string> = {
   cycling: "Cycling",
   running: "Running",
@@ -104,4 +109,26 @@ export function collapseWeeklyVolumeActivityTypes(
     if (a.week !== b.week) return a.week.localeCompare(b.week);
     return a.activity_type.localeCompare(b.activity_type);
   });
+}
+
+/**
+ * Pick the daily load row to display in "current strain" UI.
+ * If the latest day is a rest day (0 load), fall back to the most recent
+ * day with positive load so recent training is still represented.
+ */
+export function selectRecentDailyLoad(rows: DailyLoadRow[]): DailyLoadRow | null {
+  if (rows.length === 0) return null;
+
+  const latest = rows[rows.length - 1];
+  if (latest == null) return null;
+  if (Number.isFinite(latest.dailyLoad) && latest.dailyLoad > 0) return latest;
+
+  for (let index = rows.length - 2; index >= 0; index -= 1) {
+    const row = rows[index];
+    if (row != null && Number.isFinite(row.dailyLoad) && row.dailyLoad > 0) {
+      return row;
+    }
+  }
+
+  return latest;
 }

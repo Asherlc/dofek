@@ -24,7 +24,7 @@ vi.mock("@slack/bolt", () => {
 });
 
 vi.mock("@slack/socket-mode", () => ({
-  SocketModeClient: vi.fn().mockImplementation(() => ({})),
+  SocketModeClient: vi.fn().mockImplementation(() => ({ on: vi.fn() })),
 }));
 
 vi.mock("../logger.ts", () => ({

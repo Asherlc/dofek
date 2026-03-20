@@ -34,14 +34,17 @@ export async function handleSyncCommand(args: string[]): Promise<number> {
   const queue = createSyncQueue(connection);
   const { DEFAULT_USER_ID } = await import("./db/schema.ts");
 
-  const jobData: SyncJobData = {
-    sinceDays: fullSync ? undefined : days,
-    userId: DEFAULT_USER_ID,
-  };
-
-  const job = await queue.add("sync", jobData);
+  const jobs = await Promise.all(
+    enabled.map((provider) =>
+      queue.add("sync", {
+        providerId: provider.id,
+        sinceDays: fullSync ? undefined : days,
+        userId: DEFAULT_USER_ID,
+      } satisfies SyncJobData),
+    ),
+  );
   const label = fullSync ? "all time" : `last ${days} days`;
-  logger.info(`[sync] Enqueued sync job for ${enabled.length} provider(s) — ${label}`);
+  logger.info(`[sync] Enqueued ${jobs.length} sync job(s), one per provider — ${label}`);
 
   // Process the job inline with a temporary worker
   const worker = new Worker<SyncJobData>(SYNC_QUEUE, (j) => processSyncJob(j, db), {
@@ -50,7 +53,11 @@ export async function handleSyncCommand(args: string[]): Promise<number> {
   const queueEvents = new QueueEvents(SYNC_QUEUE, { connection });
 
   try {
-    await job.waitUntilFinished(queueEvents);
+    const results = await Promise.allSettled(jobs.map((job) => job.waitUntilFinished(queueEvents)));
+    const failed = results.find((result) => result.status === "rejected");
+    if (failed) {
+      throw failed.reason;
+    }
     logger.info("[sync] Done.");
     return 0;
   } catch (err) {

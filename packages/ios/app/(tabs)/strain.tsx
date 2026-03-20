@@ -1,6 +1,7 @@
 import {
   collapseWeeklyVolumeActivityTypes,
   formatActivityTypeLabel,
+  selectRecentDailyLoad,
 } from "@dofek/training/training";
 import { useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
@@ -12,15 +13,18 @@ import { SparkLine } from "../../components/charts/SparkLine";
 import { aggregateWeeklyVolume, workloadRatioColor, workloadRatioHint } from "../../lib/scoring";
 import type { WeekSummary } from "../../lib/scoring";
 import { trpc } from "../../lib/trpc";
+import { useUnitSystem } from "../../lib/units";
 import type { ActivityRow, WorkloadRow } from "../../types/api";
 import { ActivityRowSchema, WeeklyVolumeRowSchema } from "../../types/api";
 import { colors } from "../../theme";
 
 export default function StrainScreen() {
   const [days, setDays] = useState(30);
+  const unitSystem = useUnitSystem();
   const workloadQuery = trpc.recovery.workloadRatio.useQuery({ days });
   const workloadData = workloadQuery.data ?? [];
   const todayWorkload = workloadData[workloadData.length - 1];
+  const displayedWorkload = selectRecentDailyLoad(workloadData);
 
   const activitiesQuery = trpc.training.activityStats.useQuery({ days });
   const activities = ActivityRowSchema.array().catch([]).parse(activitiesQuery.data ?? []);
@@ -39,10 +43,19 @@ export default function StrainScreen() {
     .sort((a, b) => b[1] - a[1])
     .map(([activityType, hours]) => ({ activityType, hours }));
 
-  const dailyStrain = todayWorkload?.dailyLoad ?? 0;
+  const dailyStrain = displayedWorkload?.dailyLoad ?? 0;
   const acuteLoad = todayWorkload?.acuteLoad ?? 0;
   const chronicLoad = todayWorkload?.chronicLoad ?? 0;
   const workloadRatio = todayWorkload?.workloadRatio;
+  const strainDateLabel =
+    displayedWorkload == null
+      ? "No training load yet"
+      : displayedWorkload.date === todayWorkload?.date
+        ? "Today"
+        : `Last training day: ${new Date(displayedWorkload.date).toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+          })}`;
 
   const strainTrend = workloadData.slice(-14).map((d) => d.dailyLoad);
 
@@ -61,9 +74,10 @@ export default function StrainScreen() {
         </View>
       ) : (
         <>
-          {/* Today's strain gauge */}
+          {/* Current strain gauge */}
           <View style={styles.gaugeSection}>
             <StrainGauge strain={dailyStrain} size={160} />
+            <Text style={styles.gaugeCaption}>{strainDateLabel}</Text>
           </View>
 
           {/* Workload breakdown */}
@@ -183,6 +197,7 @@ export default function StrainScreen() {
                     avgPower={activity.avg_power ?? null}
                     distanceKm={activity.distance_meters ? activity.distance_meters / 1000 : null}
                     calories={activity.calories ?? null}
+                    unitSystem={unitSystem}
                   />
                 ))}
               </View>
@@ -217,6 +232,11 @@ const styles = StyleSheet.create({
   gaugeSection: {
     alignItems: "center",
     paddingVertical: 16,
+    gap: 8,
+  },
+  gaugeCaption: {
+    fontSize: 12,
+    color: colors.textSecondary,
   },
   card: {
     backgroundColor: colors.surface,

@@ -29,6 +29,10 @@ function redactLogErrorMessage(errorMessage: string | null): string | null {
   return REDACTED_ERROR_MESSAGE;
 }
 
+function toJobId(id: string | number | undefined, providerId: string): string {
+  return id === undefined ? `job-${providerId}-${Date.now()}` : String(id);
+}
+
 // ── Provider registration (race-safe) ──
 let registrationPromise: Promise<void> | null = null;
 
@@ -183,22 +187,43 @@ export const syncRouter = router({
   triggerSync: protectedProcedure.input(triggerSyncInput).mutation(async ({ ctx, input }) => {
     await ensureProvidersRegistered();
 
-    // Validate provider exists and is configured before enqueuing
+    const providerIds: string[] = [];
+
+    // Validate provider exists and is configured before enqueuing.
+    // For "sync all", fan out into one BullMQ job per configured provider.
     if (input.providerId) {
       const provider = getAllProviders().find((p) => p.id === input.providerId);
       if (!provider) throw new Error(`Unknown provider: ${input.providerId}`);
       const validation = provider.validate();
       if (validation) throw new Error(`Provider not configured: ${validation}`);
+      providerIds.push(provider.id);
+    } else {
+      providerIds.push(
+        ...getAllProviders()
+          .filter((provider) => provider.validate() === null)
+          .map((provider) => provider.id),
+      );
+      if (providerIds.length === 0) throw new Error("No configured providers available for sync");
     }
 
-    const job = await getSyncQueue().add("sync", {
-      providerId: input.providerId,
-      sinceDays: input.sinceDays,
-      userId: ctx.userId,
-    });
+    const queue = getSyncQueue();
+    const providerJobs = await Promise.all(
+      providerIds.map(async (providerId) => {
+        const job = await queue.add("sync", {
+          providerId,
+          sinceDays: input.sinceDays,
+          userId: ctx.userId,
+        });
+        return { providerId, jobId: toJobId(job.id, providerId) };
+      }),
+    );
 
     startWorker();
-    return { jobId: job.id ?? `job-${Date.now()}` };
+    return {
+      jobId: providerJobs[0]?.jobId ?? `job-${Date.now()}`,
+      jobIds: providerJobs.map((job) => job.jobId),
+      providerJobs,
+    };
   }),
 
   /** Poll sync job status — reads from BullMQ */

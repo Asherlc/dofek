@@ -1,5 +1,6 @@
 import { StyleSheet, Text, View } from "react-native";
 import { formatDurationRange } from "../lib/format";
+import { convertDistance, distanceLabel, type UnitSystem } from "../lib/units";
 import { colors } from "../theme";
 
 interface ActivityCardProps {
@@ -12,6 +13,7 @@ interface ActivityCardProps {
   avgPower: number | null;
   distanceKm?: number | null;
   calories?: number | null;
+  unitSystem: UnitSystem;
 }
 
 function formatTime(iso: string): string {
@@ -56,6 +58,7 @@ export function ActivityCard({
   avgPower,
   distanceKm,
   calories,
+  unitSystem,
 }: ActivityCardProps) {
   return (
     <View style={styles.card}>
@@ -75,7 +78,11 @@ export function ActivityCard({
 
       <View style={styles.stats}>
         {distanceKm != null && distanceKm > 0 && (
-          <Stat value={distanceKm.toFixed(2)} label="Distance" unit="km" />
+          <Stat
+            value={convertDistance(distanceKm, unitSystem).toFixed(2)}
+            label="Distance"
+            unit={distanceLabel(unitSystem)}
+          />
         )}
         {calories != null && calories > 0 && (
           <Stat value={Math.round(calories)} label="Calories" unit="kcal" />

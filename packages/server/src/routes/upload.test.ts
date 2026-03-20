@@ -679,15 +679,14 @@ describe("createUploadRouter", () => {
         body: Buffer.from("chunk-1"),
       });
 
-      // Let background assembly + enqueue complete
-      await new Promise((r) => setTimeout(r, 10));
-
-      // Verify queue.add was called with the upload ID as the job ID
-      expect(queue.add).toHaveBeenCalledWith(
-        "apple-health",
-        expect.objectContaining({ importType: "apple-health" }),
-        { jobId: "upload-jobid-test" },
-      );
+      // Wait for background assembly + enqueue to complete.
+      await vi.waitFor(() => {
+        expect(queue.add).toHaveBeenCalledWith(
+          "apple-health",
+          expect.objectContaining({ importType: "apple-health" }),
+          { jobId: "upload-jobid-test" },
+        );
+      });
     });
   });
 

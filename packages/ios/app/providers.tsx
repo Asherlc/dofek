@@ -7,8 +7,10 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { trpc } from "../lib/trpc";
+import { useAuth } from "../lib/auth-context";
+import { importSharedFile, type ShareImportProgress } from "../lib/share-import";
 import { colors } from "../theme";
 import { formatRelativeTime } from "@dofek/format/format";
 
@@ -24,21 +26,26 @@ interface Provider {
 
 interface ProviderStats {
   activities: number;
-  sleep: number;
-  body: number;
-  food: number;
-  metrics: number;
+  sleepSessions: number;
+  bodyMeasurements: number;
+  foodEntries: number;
+  dailyMetrics: number;
+  healthEvents: number;
+  metricStream: number;
+  nutritionDaily: number;
+  labResults: number;
+  journalEntries: number;
 }
 
 interface SyncLog {
   id: string;
-  provider: string;
+  providerId: string;
   dataType: string;
-  status: "success" | "error";
-  recordCount: number;
-  durationMs: number;
+  status: string;
+  recordCount: number | null;
+  durationMs: number | null;
   errorMessage: string | null;
-  createdAt: string;
+  syncedAt: string;
 }
 
 function statusDotColor(authStatus: AuthStatus): string {
@@ -63,9 +70,26 @@ function statusLabel(authStatus: AuthStatus): string {
   }
 }
 
+export function providerActionLabel(authStatus: AuthStatus): "Sync" | "Connect" {
+  return authStatus === "connected" ? "Sync" : "Connect";
+}
+
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
   return `${(ms / 1000).toFixed(1)}s`;
+}
+
+function importProviderLabel(providerId: string | undefined): string {
+  switch (providerId) {
+    case "apple-health":
+      return "Apple Health";
+    case "strong-csv":
+      return "Strong";
+    case "cronometer-csv":
+      return "Cronometer";
+    default:
+      return "Shared file";
+  }
 }
 
 function StatBadge({ label, count }: { label: string; count: number }) {
@@ -109,7 +133,9 @@ function ProviderCard({
           {syncing ? (
             <ActivityIndicator color={colors.text} size="small" />
           ) : (
-            <Text style={styles.syncButtonText}>Sync</Text>
+            <Text style={styles.syncButtonText}>
+              {providerActionLabel(provider.authStatus)}
+            </Text>
           )}
         </TouchableOpacity>
       </View>
@@ -128,10 +154,10 @@ function ProviderCard({
       {stats && (
         <View style={styles.statsRow}>
           <StatBadge label="activities" count={stats.activities} />
-          <StatBadge label="sleep" count={stats.sleep} />
-          <StatBadge label="body" count={stats.body} />
-          <StatBadge label="food" count={stats.food} />
-          <StatBadge label="metrics" count={stats.metrics} />
+          <StatBadge label="sleep" count={stats.sleepSessions} />
+          <StatBadge label="body" count={stats.bodyMeasurements} />
+          <StatBadge label="food" count={stats.foodEntries + stats.nutritionDaily} />
+          <StatBadge label="metrics" count={stats.dailyMetrics + stats.metricStream} />
         </View>
       )}
     </TouchableOpacity>
@@ -151,16 +177,16 @@ function SyncLogRow({ log }: { log: SyncLog }) {
               { backgroundColor: isError ? colors.danger : colors.positive },
             ]}
           />
-          <Text style={styles.logProvider}>{log.provider}</Text>
+          <Text style={styles.logProvider}>{log.providerId}</Text>
           <Text style={styles.logDataType}>{log.dataType}</Text>
         </View>
         <View style={styles.logDetails}>
           <Text style={styles.logDetailText}>
-            {log.recordCount.toLocaleString()} records
+            {(log.recordCount ?? 0).toLocaleString()} records
           </Text>
-          <Text style={styles.logDetailText}>{formatDuration(log.durationMs)}</Text>
+          <Text style={styles.logDetailText}>{formatDuration(log.durationMs ?? 0)}</Text>
           <Text style={styles.logDetailText}>
-            {formatRelativeTime(log.createdAt)}
+            {formatRelativeTime(log.syncedAt)}
           </Text>
         </View>
         {isError && log.errorMessage ? (
@@ -175,6 +201,8 @@ function SyncLogRow({ log }: { log: SyncLog }) {
 
 export default function ProvidersScreen() {
   const router = useRouter();
+  const { serverUrl, sessionToken } = useAuth();
+  const params = useLocalSearchParams<{ sharedFile?: string | string[] }>();
   const providers = trpc.sync.providers.useQuery();
   const stats = trpc.sync.providerStats.useQuery();
   const logs = trpc.sync.logs.useQuery({ limit: 50 });
@@ -185,8 +213,14 @@ export default function ProvidersScreen() {
   // Track which providers are currently syncing (from active jobs or user-initiated)
   const [syncingProviders, setSyncingProviders] = useState<Set<string>>(new Set());
   const [anySyncing, setAnySyncing] = useState(false);
+  const [sharedImportState, setSharedImportState] = useState<ShareImportProgress | null>(null);
   const resumedJobIds = useRef(new Set<string>());
   const pollingJobIds = useRef(new Set<string>());
+  const importedSharedUris = useRef(new Set<string>());
+
+  const sharedFileUri = Array.isArray(params.sharedFile)
+    ? params.sharedFile[0]
+    : params.sharedFile;
 
   const pollJob = useCallback(
     async (jobId: string, providerIds: string[]) => {
@@ -276,6 +310,34 @@ export default function ProvidersScreen() {
     }
   }, [activeSyncs.data, pollJob]);
 
+  useEffect(() => {
+    if (!sharedFileUri) return;
+    if (!sessionToken) return;
+    if (importedSharedUris.current.has(sharedFileUri)) return;
+    importedSharedUris.current.add(sharedFileUri);
+    router.replace("/providers");
+
+    void (async () => {
+      try {
+        await importSharedFile({
+          fileUri: sharedFileUri,
+          serverUrl,
+          sessionToken,
+          onProgress: setSharedImportState,
+        });
+        trpcUtils.sync.providers.invalidate();
+        trpcUtils.sync.providerStats.invalidate();
+        trpcUtils.sync.logs.invalidate();
+      } catch (error: unknown) {
+        setSharedImportState({
+          status: "error",
+          progress: 0,
+          message: error instanceof Error ? error.message : "Import failed",
+        });
+      }
+    })();
+  }, [sharedFileUri, router, serverUrl, sessionToken, trpcUtils]);
+
   const handleSyncProvider = useCallback(
     async (providerId: string) => {
       setSyncingProviders((prev) => new Set(prev).add(providerId));
@@ -298,11 +360,32 @@ export default function ProvidersScreen() {
   const handleSyncAll = useCallback(async () => {
     const enabled = (providers.data ?? []).filter((p) => p.authorized && !p.importOnly);
     const ids = enabled.map((p) => p.id);
+    if (ids.length === 0) return;
     setSyncingProviders(new Set(ids));
     setAnySyncing(true);
     try {
-      const { jobId } = await syncMutation.mutateAsync({ sinceDays: 7 });
-      await pollJob(jobId, ids);
+      const result = await syncMutation.mutateAsync({ sinceDays: 7 });
+      const providerJobMap = new Map(
+        (result.providerJobs ?? []).map((job) => [job.providerId, job.jobId] as const),
+      );
+      if (providerJobMap.size > 0) {
+        await Promise.all(
+          ids.map(async (providerId) => {
+            const jobId = providerJobMap.get(providerId);
+            if (!jobId) {
+              setSyncingProviders((prev) => {
+                const next = new Set(prev);
+                next.delete(providerId);
+                return next;
+              });
+              return;
+            }
+            await pollJob(jobId, [providerId]);
+          }),
+        );
+      } else {
+        await pollJob(result.jobId, ids);
+      }
     } catch {
       setSyncingProviders(new Set());
       setAnySyncing(false);
@@ -316,7 +399,10 @@ export default function ProvidersScreen() {
     authStatus: p.authorized ? "connected" : "not_connected",
     lastSyncAt: p.lastSyncedAt,
   }));
-  const statsMap: Record<string, ProviderStats> = stats.data ?? {};
+  const statsMap: Record<string, ProviderStats> = {};
+  for (const s of stats.data ?? []) {
+    statsMap[s.providerId] = s;
+  }
   const logList: SyncLog[] = logs.data ?? [];
 
   const isLoading = providers.isLoading || stats.isLoading;
@@ -347,6 +433,40 @@ export default function ProvidersScreen() {
           )}
         </TouchableOpacity>
       )}
+
+      <View style={styles.shareInfoCard}>
+        <Text style={styles.shareInfoTitle}>Import from Share</Text>
+        <Text style={styles.shareInfoDescription}>
+          Export a CSV, XML, or ZIP file from Strong, Cronometer, or Apple Health and share it to Dofek.
+        </Text>
+        {sharedImportState ? (
+          <View style={styles.shareImportState}>
+            <Text style={styles.shareImportTitle}>
+              {sharedImportState.status === "done"
+                ? `${importProviderLabel(sharedImportState.providerId)} import complete`
+                : `${importProviderLabel(sharedImportState.providerId)} import ${sharedImportState.status}`}
+            </Text>
+            <Text
+              style={[
+                styles.shareImportMessage,
+                sharedImportState.status === "error" && styles.shareImportError,
+              ]}
+            >
+              {sharedImportState.message}
+            </Text>
+            {sharedImportState.status !== "error" && (
+              <View style={styles.shareProgressTrack}>
+                <View
+                  style={[
+                    styles.shareProgressFill,
+                    { width: `${Math.max(0, Math.min(100, sharedImportState.progress))}%` },
+                  ]}
+                />
+              </View>
+            )}
+          </View>
+        ) : null}
+      </View>
 
       {/* Data Sources */}
       <Text style={styles.sectionTitle}>Data Sources</Text>
@@ -418,6 +538,54 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 16,
     fontWeight: "600",
+  },
+  shareInfoCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+  },
+  shareInfoTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: colors.text,
+    marginBottom: 4,
+  },
+  shareInfoDescription: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    lineHeight: 19,
+  },
+  shareImportState: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.surfaceSecondary,
+  },
+  shareImportTitle: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.text,
+    textTransform: "capitalize",
+  },
+  shareImportMessage: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 4,
+  },
+  shareImportError: {
+    color: colors.danger,
+  },
+  shareProgressTrack: {
+    marginTop: 8,
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: colors.surfaceSecondary,
+    overflow: "hidden",
+  },
+  shareProgressFill: {
+    height: "100%",
+    backgroundColor: colors.accent,
   },
 
   // Section titles

@@ -13,7 +13,7 @@ vi.mock("../trpc.ts", async () => {
   };
 });
 
-import { healthKitSyncRouter } from "./health-kit-sync.ts";
+import { aggregateDailyMetricSamples, healthKitSyncRouter } from "./health-kit-sync.ts";
 
 const createCaller = createTestCallerFactory(healthKitSyncRouter);
 
@@ -37,6 +37,30 @@ function makeSample(overrides: Record<string, unknown> = {}) {
 
 describe("healthKitSyncRouter", () => {
   describe("pushQuantitySamples", () => {
+    it("averages same-day HRV samples instead of taking the last sample", () => {
+      const samples = [
+        makeSample({
+          type: "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
+          value: 40,
+          startDate: "2024-01-15T01:00:00Z",
+          endDate: "2024-01-15T01:00:05Z",
+          uuid: "hrv-1",
+        }),
+        makeSample({
+          type: "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
+          value: 80,
+          startDate: "2024-01-15T23:00:00Z",
+          endDate: "2024-01-15T23:00:05Z",
+          uuid: "hrv-2",
+        }),
+      ];
+
+      const daily = aggregateDailyMetricSamples(samples);
+      const jan15 = daily.get("2024-01-15");
+
+      expect(jan15?.hrv).toBe(60);
+    });
+
     it("processes body measurement samples", async () => {
       const execute = makeExecute();
       const caller = createCaller({

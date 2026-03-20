@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./meal": "./src/meal.ts"
+    "./meal": "./src/meal.ts",
+    "./open-food-facts": "./src/open-food-facts.ts"
+  },
+  "dependencies": {
+    "zod": "3.25.76"
   }
 }

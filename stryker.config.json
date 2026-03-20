@@ -47,7 +47,7 @@
   "thresholds": {
     "high": 90,
     "low": 80,
-    "break": 30
+    "break": 40
   },
   "reporters": ["clear-text", "html", "progress"],
   "concurrency": 4

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { selectRecentDailyLoad } from "@dofek/training/training";
 import type { NextWorkoutRecommendation } from "dofek-server/types";
 import { useRouter } from "expo-router";
 import {
@@ -113,7 +114,7 @@ export default function OverviewScreen() {
   // Fetch workload ratio for strain
   const workloadQuery = trpc.recovery.workloadRatio.useQuery({ days });
   const workloadData = workloadQuery.data ?? [];
-  const todayWorkload = workloadData[workloadData.length - 1];
+  const displayedWorkload = selectRecentDailyLoad(workloadData);
 
   // Fetch HRV trend
   const hrvQuery = trpc.recovery.hrvVariability.useQuery({ days: Math.max(days, 14) });
@@ -180,7 +181,7 @@ export default function OverviewScreen() {
   const stepsData = stepsQuery.data ?? [];
 
   const recoveryScore = todayReadiness?.readinessScore ?? null;
-  const dailyStrain = todayWorkload?.dailyLoad ?? 0;
+  const dailyStrain = displayedWorkload?.dailyLoad ?? 0;
 
   const isLoading =
     readinessQuery.isLoading ||
@@ -279,7 +280,7 @@ export default function OverviewScreen() {
             <View style={styles.ringSection}>
               <ChartTitleWithTooltip
                 title="Strain"
-                description="This gauge estimates your daily training strain relative to your recent baseline."
+                description="This gauge shows your most recent daily training strain relative to your recent baseline."
                 textStyle={styles.sectionLabel}
               />
               <StrainGauge strain={dailyStrain} size={120} />
@@ -400,6 +401,7 @@ export default function OverviewScreen() {
                       avgPower={activity.avg_power ?? null}
                       distanceKm={activity.distance_meters ? activity.distance_meters / 1000 : null}
                       calories={activity.calories ?? null}
+                      unitSystem={unitSystem}
                     />
                   </TouchableOpacity>
                 ))}
