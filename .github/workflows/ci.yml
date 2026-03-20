@@ -413,8 +413,18 @@ jobs:
       - name: Run Muter
         if: steps.changed.outputs.files != ''
         working-directory: packages/ios/modules/health-kit
-        run: muter --files-to-mutate "${{ steps.changed.outputs.files }}"
         timeout-minutes: 30
+        run: |
+          muter --files-to-mutate "${{ steps.changed.outputs.files }}" || {
+            EXIT_CODE=$?
+            # Exit 255 = "no mutatable code found" — expected for incremental runs
+            # when changed files have no patterns Muter's operators can target
+            if [ $EXIT_CODE -eq 255 ]; then
+              echo "Muter found no mutatable code in changed files — skipping."
+              exit 0
+            fi
+            exit $EXIT_CODE
+          }
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
