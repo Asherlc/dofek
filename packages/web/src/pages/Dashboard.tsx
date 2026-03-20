@@ -4,6 +4,7 @@ import { ActivityList } from "../components/ActivityList.tsx";
 import { AnomalyAlertBanner } from "../components/AnomalyAlertBanner.tsx";
 import { AppHeader } from "../components/AppHeader.tsx";
 import { BodyRecompositionChart } from "../components/BodyRecompositionChart.tsx";
+import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import { CorrelationCard, type Insight } from "../components/CorrelationCard.tsx";
 import { HealthStatusBar } from "../components/HealthStatusBar.tsx";
 import { HealthspanScoreCard } from "../components/HealthspanScoreCard.tsx";
@@ -366,14 +367,20 @@ export function Dashboard() {
       content: (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
-            <h3 className="text-xs font-medium text-zinc-500 uppercase mb-2">Weight Trend</h3>
+            <div className="mb-2 flex items-center gap-2">
+              <h3 className="text-xs font-medium text-zinc-500 uppercase">Weight Trend</h3>
+              <ChartDescriptionTooltip description="This chart shows your smoothed body weight trend over time to highlight your underlying direction." />
+            </div>
             <SmoothedWeightChart
               data={smoothedWeight.data ?? []}
               loading={smoothedWeight.isLoading}
             />
           </div>
           <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
-            <h3 className="text-xs font-medium text-zinc-500 uppercase mb-2">Recomposition</h3>
+            <div className="mb-2 flex items-center gap-2">
+              <h3 className="text-xs font-medium text-zinc-500 uppercase">Recomposition</h3>
+              <ChartDescriptionTooltip description="This chart shows how fat mass and lean mass have changed so you can track body recomposition, not just scale weight." />
+            </div>
             <BodyRecompositionChart data={bodyRecomp.data ?? []} loading={bodyRecomp.isLoading} />
           </div>
         </div>
@@ -533,9 +540,12 @@ function CollapsibleSection({
             ▶
           </span>
           <div>
-            <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider group-hover:text-zinc-300 transition-colors">
-              {title}
-            </h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider group-hover:text-zinc-300 transition-colors">
+                {title}
+              </h2>
+              {subtitle && <ChartDescriptionTooltip description={subtitle} />}
+            </div>
             {subtitle && <p className="text-xs text-zinc-600 mt-0.5">{subtitle}</p>}
           </div>
         </button>

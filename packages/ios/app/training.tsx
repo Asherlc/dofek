@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import Svg, { Rect, Text as SvgText, Path } from "react-native-svg";
+import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
 import { trpc } from "../lib/trpc";
 import { convertDistance, convertElevation, convertPace, convertWeight, distanceLabel, elevationLabel, paceLabel, useUnitSystem, weightLabel } from "../lib/units";
 import { colors } from "../theme";
@@ -189,7 +190,11 @@ function OverviewTab({ days }: { days: number }) {
   return (
     <View>
       {/* PMC Summary */}
-      <Text style={styles.sectionTitle}>Performance Management</Text>
+      <ChartTitleWithTooltip
+        title="Performance Management"
+        description="This section summarizes your current fitness, fatigue, and form from recent training load trends."
+        textStyle={styles.sectionTitle}
+      />
       <View style={styles.summaryRow}>
         <View style={styles.summaryCard}>
           <Text style={styles.summaryLabel}>Fitness</Text>
@@ -215,7 +220,11 @@ function OverviewTab({ days }: { days: number }) {
       {/* Estimated FTP */}
       {model?.ftp != null && (
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Estimated Functional Threshold Power</Text>
+          <ChartTitleWithTooltip
+            title="Estimated Functional Threshold Power"
+            description="This card estimates the highest power you can sustain for about one hour, based on your recent best efforts."
+            textStyle={styles.cardTitle}
+          />
           <Text style={styles.bigValue}>{Math.round(model.ftp)} W</Text>
           {model.r2 != null && (
             <Text style={styles.cardSubtext}>
@@ -228,7 +237,11 @@ function OverviewTab({ days }: { days: number }) {
       {/* Activity Calendar */}
       {calendarData.length > 0 && (
         <View>
-          <Text style={styles.sectionTitle}>Activity Calendar</Text>
+          <ChartTitleWithTooltip
+            title="Activity Calendar"
+            description="This chart shows your training frequency day by day, with darker squares indicating more sessions."
+            textStyle={styles.sectionTitle}
+          />
           <View style={styles.calendarGrid}>
             {calendarData.map((day) => {
               const intensity = Math.min(day.activityCount, 4);
@@ -279,7 +292,11 @@ function EnduranceTab({ days }: { days: number }) {
       {/* Polarization */}
       {polarizationWeeks.length > 0 && (
         <View>
-          <Text style={styles.sectionTitle}>Training Polarization</Text>
+          <ChartTitleWithTooltip
+            title="Training Polarization"
+            description="This chart shows how each week was split between low, medium, and high intensity training."
+            textStyle={styles.sectionTitle}
+          />
           {polarizationWeeks.slice(-6).map((week) => {
             const total = week.z1Seconds + week.z2Seconds + week.z3Seconds || 1;
             const hasPolarizationIndex = week.polarizationIndex !== null;
@@ -324,7 +341,11 @@ function EnduranceTab({ days }: { days: number }) {
 
       {/* Ramp Rate */}
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Ramp Rate</Text>
+        <ChartTitleWithTooltip
+          title="Ramp Rate"
+          description="This card shows how quickly your weekly training load is increasing or decreasing."
+          textStyle={styles.cardTitle}
+        />
         <Text style={[styles.bigValue, { color: currentRampRate != null ? rampRateColor(Math.abs(currentRampRate)) : colors.text }]}>
           {currentRampRate != null ? `${currentRampRate > 0 ? "+" : ""}${currentRampRate.toFixed(1)}%` : "--"}
         </Text>
@@ -368,7 +389,11 @@ function CyclingTab({ days }: { days: number }) {
     <View>
       {/* eFTP */}
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Estimated Threshold Power</Text>
+        <ChartTitleWithTooltip
+          title="Estimated Threshold Power"
+          description="This chart tracks changes in your estimated threshold power over time."
+          textStyle={styles.cardTitle}
+        />
         <Text style={styles.bigValue}>
           {currentEftp != null ? `${Math.round(currentEftp)} W` : "--"}
         </Text>
@@ -387,7 +412,11 @@ function CyclingTab({ days }: { days: number }) {
       {/* Fitness / Fatigue / Form */}
       {latestPmc && (
         <View>
-          <Text style={styles.sectionTitle}>Fitness, Fatigue & Form</Text>
+          <ChartTitleWithTooltip
+            title="Fitness, Fatigue & Form"
+            description="This section compares your long-term fitness, short-term fatigue, and current training form."
+            textStyle={styles.sectionTitle}
+          />
           <View style={styles.summaryRow}>
             <View style={styles.summaryCard}>
               <Text style={styles.summaryLabel}>Fitness</Text>
@@ -565,7 +594,11 @@ function RunningTab({ days }: { days: number }) {
       {/* Cadence Sparkline */}
       {dynamicsData.length > 1 && (
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Cadence Trend</Text>
+          <ChartTitleWithTooltip
+            title="Cadence Trend"
+            description="This chart shows how your running cadence has changed across recent sessions."
+            textStyle={styles.cardTitle}
+          />
           <View style={styles.sparklineContainer}>
             <Sparkline
               data={dynamicsData.map((d) => d.cadence)}
@@ -615,7 +648,11 @@ function StrengthTab({ days }: { days: number }) {
       {/* Weekly Volume */}
       {volumeData.length > 0 && (
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Weekly Volume</Text>
+          <ChartTitleWithTooltip
+            title="Weekly Volume"
+            description="This chart shows your total strength training volume for each recent week."
+            textStyle={styles.cardTitle}
+          />
           <View style={styles.chartContainer}>
             <BarChart
               data={volumeData.map((w) => convertWeight(w.totalVolumeKg, unitSystem))}
@@ -631,7 +668,11 @@ function StrengthTab({ days }: { days: number }) {
       {/* Estimated 1RM */}
       {oneRepMaxData.length > 0 && (
         <View>
-          <Text style={styles.sectionTitle}>Estimated 1-Rep Max</Text>
+          <ChartTitleWithTooltip
+            title="Estimated 1-Rep Max"
+            description="These charts show how your estimated one-rep max has changed for each exercise."
+            textStyle={styles.sectionTitle}
+          />
           {oneRepMaxData.map((exercise) => {
             const latestEstimate = exercise.history[exercise.history.length - 1];
             return (
@@ -741,7 +782,11 @@ function HikingTab({ days }: { days: number }) {
       {/* Weekly Elevation Gain */}
       {elevationData.length > 0 && (
         <View style={[styles.card, { marginTop: 16 }]}>
-          <Text style={styles.cardTitle}>Weekly Elevation Gain</Text>
+          <ChartTitleWithTooltip
+            title="Weekly Elevation Gain"
+            description="This chart shows how much climbing you accumulated each week from hiking and walking."
+            textStyle={styles.cardTitle}
+          />
           <View style={styles.chartContainer}>
             <BarChart
               data={elevationData.map((w) => convertElevation(w.elevationGainMeters, unitSystem))}
@@ -785,7 +830,11 @@ function RecoveryTab({ days }: { days: number }) {
       {/* Readiness Score */}
       {latestReadiness && (
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Readiness</Text>
+          <ChartTitleWithTooltip
+            title="Readiness"
+            description="This score and bar breakdown summarize how prepared you are to train today."
+            textStyle={styles.cardTitle}
+          />
           <View style={styles.readinessHeader}>
             <Text style={[styles.bigValue, { color: scoreColor(latestReadiness.readinessScore) }]}>
               {Math.round(latestReadiness.readinessScore)}
@@ -828,7 +877,11 @@ function RecoveryTab({ days }: { days: number }) {
       {/* Workload Ratio */}
       {latestWorkload && latestWorkload.workloadRatio != null && (
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Acute:Chronic Workload Ratio</Text>
+          <ChartTitleWithTooltip
+            title="Acute:Chronic Workload Ratio"
+            description="This ratio compares short-term load against longer-term load to highlight undertraining or overload risk."
+            textStyle={styles.cardTitle}
+          />
           <Text style={[styles.bigValue, { color: workloadRatioColor(latestWorkload.workloadRatio) }]}>
             {latestWorkload.workloadRatio.toFixed(2)}
           </Text>
@@ -841,7 +894,11 @@ function RecoveryTab({ days }: { days: number }) {
       {/* HRV Trends */}
       {hrvData.length > 1 && (
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Heart Rate Variability Trend</Text>
+          <ChartTitleWithTooltip
+            title="Heart Rate Variability Trend"
+            description="These charts show your rolling heart rate variability average and day-to-day variability over time."
+            textStyle={styles.cardTitle}
+          />
           <Text style={styles.cardSubtext}>Rolling Mean</Text>
           <View style={styles.sparklineContainer}>
             <Sparkline

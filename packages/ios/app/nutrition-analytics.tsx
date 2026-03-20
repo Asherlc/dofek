@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import Svg, { Rect, Line, Text as SvgText } from "react-native-svg";
+import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
 import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
 import { statusColors } from "@dofek/shared/colors";
@@ -86,7 +87,11 @@ function AdaptiveTdeeSection({ days }: { days: number }) {
 
   return (
     <View style={styles.card}>
-      <Text style={styles.cardTitle}>Adaptive TDEE Estimate</Text>
+      <ChartTitleWithTooltip
+        title="Adaptive TDEE Estimate"
+        description="This estimate shows your likely daily energy expenditure based on calorie intake and body-weight change."
+        textStyle={styles.cardTitle}
+      />
       {data == null ? (
         <Text style={styles.emptyText}>Not enough data</Text>
       ) : (
@@ -131,7 +136,11 @@ function CaloricBalanceSection({ days }: { days: number }) {
 
   return (
     <View>
-      <Text style={styles.sectionTitle}>Caloric Balance</Text>
+      <ChartTitleWithTooltip
+        title="Caloric Balance"
+        description="This section shows whether you are averaging a calorie surplus or deficit over the selected period."
+        textStyle={styles.sectionTitle}
+      />
 
       {/* Summary cards */}
       <View style={styles.summaryRow}>
@@ -170,7 +179,11 @@ function CaloricBalanceSection({ days }: { days: number }) {
 
       {/* Bar chart */}
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Daily Balance</Text>
+        <ChartTitleWithTooltip
+          title="Daily Balance"
+          description="This chart shows day-by-day calorie surplus (above zero) or deficit (below zero)."
+          textStyle={styles.cardTitle}
+        />
         <View style={styles.chartContainer}>
           <Svg width={chartWidth} height={chartHeight}>
             {/* Zero line */}
@@ -260,7 +273,11 @@ function MicronutrientAdequacySection({ days }: { days: number }) {
 
   return (
     <View>
-      <Text style={styles.sectionTitle}>Micronutrient Adequacy</Text>
+      <ChartTitleWithTooltip
+        title="Micronutrient Adequacy"
+        description="This chart compares your average micronutrient intake against recommended daily targets."
+        textStyle={styles.sectionTitle}
+      />
       <Text style={styles.sectionSubtext}>
         Average daily intake vs. Recommended Daily Allowance
       </Text>

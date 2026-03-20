@@ -17,6 +17,7 @@ import Svg, {
   Stop,
   Text as SvgText,
 } from "react-native-svg";
+import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { formatDurationRange } from "../../lib/format";
 import { trpc } from "../../lib/trpc";
 import { convertDistance, convertElevation, convertSpeed, distanceLabel, elevationLabel, speedLabel, useUnitSystem } from "../../lib/units";
@@ -106,7 +107,11 @@ function LineChart({ data, color, label, unit }: LineChartProps) {
 
   return (
     <View style={chartStyles.container}>
-      <Text style={chartStyles.title}>{label}</Text>
+      <ChartTitleWithTooltip
+        title={label}
+        description={`This chart shows how your ${label.toLowerCase()} changed over the activity timeline.`}
+        textStyle={chartStyles.title}
+      />
       <Svg width={CHART_WIDTH} height={CHART_HEIGHT}>
         {/* Grid lines */}
         {yTicks.map((tick) => (
@@ -210,7 +215,11 @@ function AreaChart({ data, color, label, unit }: AreaChartProps) {
 
   return (
     <View style={chartStyles.container}>
-      <Text style={chartStyles.title}>{label}</Text>
+      <ChartTitleWithTooltip
+        title={label}
+        description={`This chart shows how your ${label.toLowerCase()} changed over the activity timeline.`}
+        textStyle={chartStyles.title}
+      />
       <Svg width={CHART_WIDTH} height={CHART_HEIGHT}>
         <Defs>
           <LinearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
@@ -290,7 +299,11 @@ function HrZonesChart({ zones }: { zones: HrZone[] }) {
 
   return (
     <View style={chartStyles.container}>
-      <Text style={chartStyles.title}>Heart Rate Zones</Text>
+      <ChartTitleWithTooltip
+        title="Heart Rate Zones"
+        description="This chart shows how much time you spent in each heart rate zone during the activity."
+        textStyle={chartStyles.title}
+      />
       <Svg width={CHART_WIDTH} height={chartTotalHeight + 8}>
         {zones.map((zone, i) => {
           const pct = totalSeconds > 0 ? zone.seconds / totalSeconds : 0;

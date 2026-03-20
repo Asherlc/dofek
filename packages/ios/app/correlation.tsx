@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import Svg, { Circle, Line } from "react-native-svg";
+import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
 import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
 import { statusColors } from "@dofek/shared/colors";
@@ -300,7 +301,11 @@ export default function CorrelationScreen() {
           {/* Correlation strength card */}
           <View style={styles.card}>
             <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>Correlation Strength</Text>
+              <ChartTitleWithTooltip
+                title="Correlation Strength"
+                description="These bars show how strongly the two selected metrics move together."
+                textStyle={styles.cardTitle}
+              />
               <View style={[styles.confidenceBadge, { backgroundColor: `${CONFIDENCE_COLORS[data.confidenceLevel] ?? "#636366"}22` }]}>
                 <Text style={[styles.confidenceBadgeText, { color: CONFIDENCE_COLORS[data.confidenceLevel] ?? "#636366" }]}>
                   {data.confidenceLevel}
@@ -346,6 +351,11 @@ export default function CorrelationScreen() {
           {/* Scatter plot */}
           {data.dataPoints.length > 0 && (
             <View style={styles.card}>
+              <ChartTitleWithTooltip
+                title="Scatter Plot"
+                description="This chart plots each data point and a trend line to visualize how the two metrics relate."
+                textStyle={styles.cardTitle}
+              />
               <ScatterPlot
                 dataPoints={data.dataPoints}
                 regression={data.regression}

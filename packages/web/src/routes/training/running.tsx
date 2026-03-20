@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import ReactECharts from "echarts-for-react";
+import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
 import { ChartLoadingSkeleton } from "../../components/LoadingSkeleton.tsx";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
 import { trpc } from "../../lib/trpc.ts";
@@ -347,11 +348,18 @@ function Section({
   subtitle?: string;
   children: React.ReactNode;
 }) {
+  const description = subtitle ?? `${title} chart.`;
+
   return (
     <section>
-      <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-1">{title}</h2>
+      <div className="mb-1 flex items-center gap-2">
+        <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider">{title}</h2>
+        <ChartDescriptionTooltip description={description} />
+      </div>
       {subtitle && <p className="text-xs text-zinc-600 mb-4">{subtitle}</p>}
-      <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">{children}</div>
+      <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4" title={description}>
+        {children}
+      </div>
     </section>
   );
 }

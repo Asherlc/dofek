@@ -6,6 +6,7 @@ import {
 import ReactECharts from "echarts-for-react";
 import { z } from "zod";
 import { trpc } from "../lib/trpc.ts";
+import { ChartDescriptionTooltip } from "./ChartDescriptionTooltip.tsx";
 
 // HR zone colors (blue->green->yellow->orange->red)
 const ZONE_COLORS = {
@@ -194,7 +195,10 @@ function WeeklyVolumeChart({ data }: { data: WeeklyVolumeRow[] }) {
 
   return (
     <div>
-      <h3 className="text-xs font-medium text-zinc-500 mb-2">Weekly Training Volume</h3>
+      <div className="mb-2 flex items-center gap-2">
+        <h3 className="text-xs font-medium text-zinc-500">Weekly Training Volume</h3>
+        <ChartDescriptionTooltip description="This chart shows how many training hours you completed each week, broken down by activity type." />
+      </div>
       <ReactECharts option={option} style={{ height: 220 }} notMerge={true} />
     </div>
   );
@@ -287,9 +291,12 @@ function HrZoneChart({ weeks, maxHr }: { weeks: HrZoneWeek[]; maxHr: number }) {
 
   return (
     <div>
-      <h3 className="text-xs font-medium text-zinc-500 mb-2">
-        HR Zone Distribution <span className="text-zinc-700">(max HR: {maxHr} bpm)</span>
-      </h3>
+      <div className="mb-2 flex items-center gap-2">
+        <h3 className="text-xs font-medium text-zinc-500">
+          HR Zone Distribution <span className="text-zinc-700">(max HR: {maxHr} bpm)</span>
+        </h3>
+        <ChartDescriptionTooltip description="This chart shows the percentage of weekly training time spent in each heart rate zone." />
+      </div>
       <ReactECharts option={option} style={{ height: 220 }} notMerge={true} />
     </div>
   );
@@ -365,12 +372,15 @@ function IntensityDonut({ weeks }: { weeks: HrZoneWeek[] }) {
 
   return (
     <div>
-      <h3 className="text-xs font-medium text-zinc-500 mb-2">
-        Intensity Distribution{" "}
-        <span className={`${statusColor} ml-2`}>
-          {status} ({lowPct}/{medPct}/{highPct})
-        </span>
-      </h3>
+      <div className="mb-2 flex items-center gap-2">
+        <h3 className="text-xs font-medium text-zinc-500">
+          Intensity Distribution{" "}
+          <span className={`${statusColor} ml-2`}>
+            {status} ({lowPct}/{medPct}/{highPct})
+          </span>
+        </h3>
+        <ChartDescriptionTooltip description="This chart summarizes your full time split between low, medium, and high intensity training." />
+      </div>
       <ReactECharts option={option} style={{ height: 200 }} notMerge={true} />
       <p className="text-xs text-zinc-700 mt-1">
         Target: ~80% low (Z1-Z2), minimal medium (Z3), ~20% high (Z4-Z5)

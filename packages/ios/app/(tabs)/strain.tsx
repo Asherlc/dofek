@@ -5,6 +5,7 @@ import {
 import { useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { ActivityCard } from "../../components/ActivityCard";
+import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { DaySelector } from "../../components/DaySelector";
 import { StrainGauge } from "../../components/charts/StrainGauge";
 import { SparkLine } from "../../components/charts/SparkLine";
@@ -104,7 +105,11 @@ export default function StrainScreen() {
 
           {/* Strain trend */}
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Daily Strain ({days} Days)</Text>
+            <ChartTitleWithTooltip
+              title={`Daily Strain (${days} Days)`}
+              description="This chart shows your day-to-day strain trend across the selected date range."
+              textStyle={styles.cardTitle}
+            />
             {strainTrend.length >= 2 && (
               <View style={styles.sparkContainer}>
                 <SparkLine
@@ -121,7 +126,11 @@ export default function StrainScreen() {
           {/* Weekly volume summary */}
           {weeklyVolume.length > 0 && (
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>Weekly Volume</Text>
+              <ChartTitleWithTooltip
+                title="Weekly Volume"
+                description="This chart shows your total training hours by week."
+                textStyle={styles.cardTitle}
+              />
               <View style={styles.volumeStack}>
                 {aggregateWeeklyVolume(weeklyVolume).map((week) => (
                   <View key={week.week} style={styles.volumeRow}>

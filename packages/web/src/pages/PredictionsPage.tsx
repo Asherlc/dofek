@@ -2,6 +2,7 @@ import type { EChartsOption } from "echarts";
 import ReactECharts from "echarts-for-react";
 import { useState } from "react";
 import { AppHeader } from "../components/AppHeader.tsx";
+import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { trpc } from "../lib/trpc.ts";
 
@@ -438,8 +439,14 @@ function FeatureImportanceChart({
   };
 
   const height = Math.max(MIN_CHART_HEIGHT_PX, top.length * CHART_BAR_HEIGHT_PX + CHART_PADDING_PX);
+  const description =
+    "This chart ranks which inputs had the biggest effect on your prediction. Longer bars mean stronger influence.";
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4" title={description}>
+      <div className="mb-2 flex items-center gap-2">
+        <p className="text-xs text-zinc-500 uppercase tracking-wider">Feature Influence</p>
+        <ChartDescriptionTooltip description={description} />
+      </div>
       <ReactECharts option={option} style={{ height }} opts={{ renderer: "svg" }} />
     </div>
   );
@@ -463,6 +470,8 @@ function TimelineChart({
   targetLabel: string;
   unit: string;
 }) {
+  const description =
+    "This chart compares your actual values against model predictions over time so you can see where the model tracks well or misses.";
   const option: EChartsOption = {
     title: {
       text: `Your ${targetLabel} Over Time`,
@@ -533,7 +542,11 @@ function TimelineChart({
   };
 
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4" title={description}>
+      <div className="mb-2 flex items-center gap-2">
+        <p className="text-xs text-zinc-500 uppercase tracking-wider">Prediction Timeline</p>
+        <ChartDescriptionTooltip description={description} />
+      </div>
       <ReactECharts option={option} style={{ height: 300 }} opts={{ renderer: "svg" }} />
       <p className="text-[10px] text-zinc-600 mt-2">
         When the lines move together, the model understands what's driving your{" "}
