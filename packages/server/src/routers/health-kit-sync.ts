@@ -1,3 +1,4 @@
+import { selectDailyHrv } from "@dofek/hrv";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { protectedProcedure, router } from "../trpc.ts";
@@ -453,15 +454,12 @@ const columnToAccumulatorKey: Record<string, keyof DailyMetricAccumulator> = {
   walking_asymmetry_pct: "walkingAsymmetryPct",
 };
 
-/**
- * Aggregate daily metrics per date.
- * HRV is averaged across same-day samples to avoid outlier inflation from a single reading.
- */
+/** Aggregate daily metrics per date. */
 export function aggregateDailyMetricSamples(
   samples: HealthKitSample[],
 ): Map<string, DailyMetricAccumulator> {
   const byDate = new Map<string, DailyMetricAccumulator>();
-  const hrvRunningTotals = new Map<string, { sum: number; count: number }>();
+  const hrvSamplesByDate = new Map<string, Array<{ value: number; startDate: string }>>();
 
   for (const sample of samples) {
     const dateStr = extractDate(sample.startDate);
@@ -487,17 +485,23 @@ export function aggregateDailyMetricSamples(
     if (!pointMapping) continue;
 
     if (pointMapping.column === "hrv") {
-      const running = hrvRunningTotals.get(dateStr) ?? { sum: 0, count: 0 };
-      running.sum += sample.value;
-      running.count += 1;
-      hrvRunningTotals.set(dateStr, running);
-      accumulator.hrv = running.sum / running.count;
+      const daySamples = hrvSamplesByDate.get(dateStr) ?? [];
+      daySamples.push({ value: sample.value, startDate: sample.startDate });
+      hrvSamplesByDate.set(dateStr, daySamples);
       continue;
     }
 
     const key = columnToAccumulatorKey[pointMapping.column];
     if (key) {
       (accumulator[key] as number | null) = sample.value;
+    }
+  }
+
+  // Select overnight HRV for each date using shared logic
+  for (const [dateStr, hrvSamples] of hrvSamplesByDate) {
+    const accumulator = byDate.get(dateStr);
+    if (accumulator) {
+      accumulator.hrv = selectDailyHrv(hrvSamples);
     }
   }
 
@@ -525,7 +529,9 @@ async function processDailyMetrics(
     insertColumns.push(sql`user_id`);
     insertValues.push(sql`${userId}`);
 
-    // Additive fields: use COALESCE + EXCLUDED for summing
+    // Additive fields: replace with the complete day-total from this sync.
+    // Each iOS sync sends all samples for the 7-day window, so the in-memory
+    // accumulator already contains the full sum — no need to add to existing.
     const additiveFields: Array<{ column: string; key: keyof DailyMetricAccumulator }> = [
       { column: "steps", key: "steps" },
       { column: "active_energy_kcal", key: "activeEnergyKcal" },
@@ -541,9 +547,7 @@ async function processDailyMetrics(
       if (value > 0) {
         insertColumns.push(sql`${sql.identifier(column)}`);
         insertValues.push(sql`${value}`);
-        setClauses.push(
-          sql`${sql.identifier(column)} = COALESCE(fitness.daily_metrics.${sql.identifier(column)}, 0) + EXCLUDED.${sql.identifier(column)}`,
-        );
+        setClauses.push(sql`${sql.identifier(column)} = EXCLUDED.${sql.identifier(column)}`);
       }
     }
 

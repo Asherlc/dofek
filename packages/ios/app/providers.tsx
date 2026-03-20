@@ -108,6 +108,7 @@ export function ProviderCard({
   syncing,
   syncProgress,
   onSync,
+  onFullSync,
   onPress,
 }: {
   provider: Provider;
@@ -115,6 +116,7 @@ export function ProviderCard({
   syncing: boolean;
   syncProgress: { percentage?: number; message?: string } | undefined;
   onSync: () => void;
+  onFullSync: () => void;
   onPress: () => void;
 }) {
   const dotColor = statusDotColor(provider.authStatus);
@@ -169,6 +171,11 @@ export function ProviderCard({
             </Text>
           ) : (
             <Text style={styles.cardMetaText}>Never synced</Text>
+          )}
+          {provider.authStatus === "connected" && !syncing && (
+            <TouchableOpacity onPress={onFullSync} activeOpacity={0.7}>
+              <Text style={styles.fullSyncLink}>Full sync</Text>
+            </TouchableOpacity>
           )}
         </View>
       )}
@@ -384,11 +391,14 @@ export default function ProvidersScreen() {
   }, [sharedFileUri, router, serverUrl, sessionToken, trpcUtils]);
 
   const handleSyncProvider = useCallback(
-    async (providerId: string) => {
+    async (providerId: string, fullSync = false) => {
       setSyncingProviders((prev) => new Set(prev).add(providerId));
       setAnySyncing(true);
       try {
-        const { jobId } = await syncMutation.mutateAsync({ providerId, sinceDays: 7 });
+        const { jobId } = await syncMutation.mutateAsync({
+          providerId,
+          sinceDays: fullSync ? undefined : 7,
+        });
         await pollJob(jobId, [providerId]);
       } catch {
         setSyncingProviders((prev) => {
@@ -402,14 +412,16 @@ export default function ProvidersScreen() {
     [syncMutation, pollJob],
   );
 
-  const handleSyncAll = useCallback(async () => {
+  const handleSyncAll = useCallback(async (fullSync = false) => {
     const enabled = (providers.data ?? []).filter((p) => p.authorized && !p.importOnly);
     const ids = enabled.map((p) => p.id);
     if (ids.length === 0) return;
     setSyncingProviders(new Set(ids));
     setAnySyncing(true);
     try {
-      const result = await syncMutation.mutateAsync({ sinceDays: 7 });
+      const result = await syncMutation.mutateAsync({
+        sinceDays: fullSync ? undefined : 7,
+      });
       const providerJobMap = new Map(
         (result.providerJobs ?? []).map((job) => [job.providerId, job.jobId] as const),
       );
@@ -465,18 +477,28 @@ export default function ProvidersScreen() {
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* Sync All */}
       {enabledProviders.length > 0 && (
-        <TouchableOpacity
-          style={[styles.syncAllButton, anySyncing && styles.syncAllButtonDisabled]}
-          onPress={handleSyncAll}
-          activeOpacity={0.7}
-          disabled={anySyncing}
-        >
-          {anySyncing ? (
-            <ActivityIndicator color={colors.text} size="small" />
-          ) : (
-            <Text style={styles.syncAllButtonText}>Sync All</Text>
-          )}
-        </TouchableOpacity>
+        <View style={styles.syncAllRow}>
+          <TouchableOpacity
+            style={[styles.syncAllButton, styles.syncAllButtonFlex, anySyncing && styles.syncAllButtonDisabled]}
+            onPress={() => handleSyncAll(false)}
+            activeOpacity={0.7}
+            disabled={anySyncing}
+          >
+            {anySyncing ? (
+              <ActivityIndicator color={colors.text} size="small" />
+            ) : (
+              <Text style={styles.syncAllButtonText}>Sync All</Text>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.fullSyncAllButton, anySyncing && styles.syncAllButtonDisabled]}
+            onPress={() => handleSyncAll(true)}
+            activeOpacity={0.7}
+            disabled={anySyncing}
+          >
+            <Text style={styles.fullSyncAllButtonText}>Full Sync All</Text>
+          </TouchableOpacity>
+        </View>
       )}
 
       <View style={styles.shareInfoCard}>
@@ -528,6 +550,7 @@ export default function ProvidersScreen() {
             syncing={syncingProviders.has(provider.id)}
             syncProgress={syncProgress[provider.id]}
             onSync={() => handleSyncProvider(provider.id)}
+            onFullSync={() => handleSyncProvider(provider.id, true)}
             onPress={() => router.push(`/providers/${provider.id}`)}
           />
         ))
@@ -569,13 +592,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
-  // Sync All button
+  // Sync All buttons
+  syncAllRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 20,
+  },
   syncAllButton: {
     backgroundColor: colors.accent,
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: "center",
-    marginBottom: 20,
+  },
+  syncAllButtonFlex: {
+    flex: 1,
   },
   syncAllButtonDisabled: {
     opacity: 0.5,
@@ -584,6 +614,24 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 16,
     fontWeight: "600",
+  },
+  fullSyncAllButton: {
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: colors.accent,
+  },
+  fullSyncAllButtonText: {
+    color: colors.accent,
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  fullSyncLink: {
+    fontSize: 13,
+    color: colors.accent,
+    marginTop: 4,
   },
   shareInfoCard: {
     backgroundColor: colors.surface,

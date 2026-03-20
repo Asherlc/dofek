@@ -1,3 +1,4 @@
+import { selectDailyHrv } from "@dofek/hrv";
 import { sql } from "drizzle-orm";
 import type { SyncDatabase } from "../../db/index.ts";
 import {
@@ -286,8 +287,9 @@ export async function upsertDailyMetricsBatch(
   providerId: string,
   records: HealthRecord[],
 ): Promise<number> {
-  // Aggregate by date -- sum steps/energy, take latest for point-in-time values
+  // Aggregate by date -- sum steps/energy, select overnight HRV, take latest for other point-in-time values
   const byDate = new Map<string, Map<string, number>>();
+  const hrvSamplesByDate = new Map<string, Array<{ value: number; startDate: Date }>>();
   for (const r of records) {
     if (!DAILY_METRIC_TYPES.has(r.type)) continue;
     const dateKey = dateToString(r.startDate);
@@ -296,9 +298,22 @@ export async function upsertDailyMetricsBatch(
 
     if (ADDITIVE_DAILY_TYPES.has(r.type)) {
       day.set(r.type, (day.get(r.type) ?? 0) + r.value);
+    } else if (r.type === "HKQuantityTypeIdentifierHeartRateVariabilitySDNN") {
+      const daySamples = hrvSamplesByDate.get(dateKey) ?? [];
+      daySamples.push({ value: r.value, startDate: r.startDate });
+      hrvSamplesByDate.set(dateKey, daySamples);
     } else {
       // Point-in-time: keep latest
       day.set(r.type, r.value);
+    }
+  }
+
+  // Select overnight HRV for each date using shared logic
+  for (const [dateKey, hrvSamples] of hrvSamplesByDate) {
+    const day = byDate.get(dateKey);
+    const selected = selectDailyHrv(hrvSamples);
+    if (day && selected !== null) {
+      day.set("HKQuantityTypeIdentifierHeartRateVariabilitySDNN", selected);
     }
   }
 
@@ -382,27 +397,29 @@ export async function upsertDailyMetricsBatch(
           .onConflictDoUpdate({
             target: [dailyMetrics.date, dailyMetrics.providerId],
             set: {
+              // Point-in-time metrics: prefer new value, fall back to existing
               restingHr: sql`coalesce(excluded.resting_hr, ${dailyMetrics.restingHr})`,
               hrv: sql`coalesce(excluded.hrv, ${dailyMetrics.hrv})`,
               vo2max: sql`coalesce(excluded.vo2max, ${dailyMetrics.vo2max})`,
               spo2Avg: sql`coalesce(excluded.spo2_avg, ${dailyMetrics.spo2Avg})`,
               respiratoryRateAvg: sql`coalesce(excluded.respiratory_rate_avg, ${dailyMetrics.respiratoryRateAvg})`,
-              steps: sql`coalesce(excluded.steps, ${dailyMetrics.steps})`,
-              activeEnergyKcal: sql`coalesce(excluded.active_energy_kcal, ${dailyMetrics.activeEnergyKcal})`,
-              basalEnergyKcal: sql`coalesce(excluded.basal_energy_kcal, ${dailyMetrics.basalEnergyKcal})`,
-              distanceKm: sql`coalesce(excluded.distance_km, ${dailyMetrics.distanceKm})`,
-              cyclingDistanceKm: sql`coalesce(excluded.cycling_distance_km, ${dailyMetrics.cyclingDistanceKm})`,
-              flightsClimbed: sql`coalesce(excluded.flights_climbed, ${dailyMetrics.flightsClimbed})`,
-              exerciseMinutes: sql`coalesce(excluded.exercise_minutes, ${dailyMetrics.exerciseMinutes})`,
               walkingSpeed: sql`coalesce(excluded.walking_speed, ${dailyMetrics.walkingSpeed})`,
               walkingStepLength: sql`coalesce(excluded.walking_step_length, ${dailyMetrics.walkingStepLength})`,
               walkingDoubleSupportPct: sql`coalesce(excluded.walking_double_support_pct, ${dailyMetrics.walkingDoubleSupportPct})`,
               walkingAsymmetryPct: sql`coalesce(excluded.walking_asymmetry_pct, ${dailyMetrics.walkingAsymmetryPct})`,
               walkingSteadiness: sql`coalesce(excluded.walking_steadiness, ${dailyMetrics.walkingSteadiness})`,
-              standHours: sql`coalesce(excluded.stand_hours, ${dailyMetrics.standHours})`,
               environmentalAudioExposure: sql`coalesce(excluded.environmental_audio_exposure, ${dailyMetrics.environmentalAudioExposure})`,
               headphoneAudioExposure: sql`coalesce(excluded.headphone_audio_exposure, ${dailyMetrics.headphoneAudioExposure})`,
               skinTempC: sql`coalesce(excluded.skin_temp_c, ${dailyMetrics.skinTempC})`,
+              // Additive metrics: accumulate across batches (import.ts clears before import)
+              steps: sql`coalesce(${dailyMetrics.steps}, 0) + coalesce(excluded.steps, 0)`,
+              activeEnergyKcal: sql`coalesce(${dailyMetrics.activeEnergyKcal}, 0) + coalesce(excluded.active_energy_kcal, 0)`,
+              basalEnergyKcal: sql`coalesce(${dailyMetrics.basalEnergyKcal}, 0) + coalesce(excluded.basal_energy_kcal, 0)`,
+              distanceKm: sql`coalesce(${dailyMetrics.distanceKm}, 0) + coalesce(excluded.distance_km, 0)`,
+              cyclingDistanceKm: sql`coalesce(${dailyMetrics.cyclingDistanceKm}, 0) + coalesce(excluded.cycling_distance_km, 0)`,
+              flightsClimbed: sql`coalesce(${dailyMetrics.flightsClimbed}, 0) + coalesce(excluded.flights_climbed, 0)`,
+              exerciseMinutes: sql`coalesce(${dailyMetrics.exerciseMinutes}, 0) + coalesce(excluded.exercise_minutes, 0)`,
+              standHours: sql`coalesce(${dailyMetrics.standHours}, 0) + coalesce(excluded.stand_hours, 0)`,
             },
           }),
     );
@@ -473,12 +490,13 @@ export async function upsertNutritionBatch(
           .onConflictDoUpdate({
             target: [nutritionDaily.date, nutritionDaily.providerId],
             set: {
-              calories: sql`coalesce(excluded.calories, ${nutritionDaily.calories})`,
-              proteinG: sql`coalesce(excluded.protein_g, ${nutritionDaily.proteinG})`,
-              carbsG: sql`coalesce(excluded.carbs_g, ${nutritionDaily.carbsG})`,
-              fatG: sql`coalesce(excluded.fat_g, ${nutritionDaily.fatG})`,
-              fiberG: sql`coalesce(excluded.fiber_g, ${nutritionDaily.fiberG})`,
-              waterMl: sql`coalesce(excluded.water_ml, ${nutritionDaily.waterMl})`,
+              // Nutrition is always additive (import.ts clears before import)
+              calories: sql`coalesce(${nutritionDaily.calories}, 0) + coalesce(excluded.calories, 0)`,
+              proteinG: sql`coalesce(${nutritionDaily.proteinG}, 0) + coalesce(excluded.protein_g, 0)`,
+              carbsG: sql`coalesce(${nutritionDaily.carbsG}, 0) + coalesce(excluded.carbs_g, 0)`,
+              fatG: sql`coalesce(${nutritionDaily.fatG}, 0) + coalesce(excluded.fat_g, 0)`,
+              fiberG: sql`coalesce(${nutritionDaily.fiberG}, 0) + coalesce(excluded.fiber_g, 0)`,
+              waterMl: sql`coalesce(${nutritionDaily.waterMl}, 0) + coalesce(excluded.water_ml, 0)`,
             },
           }),
     );

@@ -170,14 +170,14 @@ describe("HealthKit sync router", () => {
       expect(rows[0]?.distance_km).toBeCloseTo(2.5, 1);
     });
 
-    it("averages same-day HRV samples instead of taking the last value", async () => {
+    it("uses first HRV reading of the day, ignoring later Breathe session values", async () => {
       const result = await mutate("healthKitSync.pushQuantitySamples", {
         samples: [
           {
             type: "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
             value: 40,
             unit: "ms",
-            startDate: "2025-06-02T01:00:00Z",
+            startDate: "2025-06-02T01:00:00Z", // overnight reading
             endDate: "2025-06-02T01:00:05Z",
             sourceName: "Apple Watch",
             sourceBundle: "com.apple.health",
@@ -185,9 +185,9 @@ describe("HealthKit sync router", () => {
           },
           {
             type: "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
-            value: 80,
+            value: 120,
             unit: "ms",
-            startDate: "2025-06-02T23:00:00Z",
+            startDate: "2025-06-02T23:00:00Z", // Breathe session (inflated)
             endDate: "2025-06-02T23:00:05Z",
             sourceName: "Apple Watch",
             sourceBundle: "com.apple.health",
@@ -205,8 +205,8 @@ describe("HealthKit sync router", () => {
               AND date = '2025-06-02'`,
       );
       expect(rows.length).toBe(1);
-      // Average of 40 and 80 = 60
-      expect(rows[0]?.hrv).toBeCloseTo(60, 1);
+      // First reading (40ms overnight), NOT average (80) or last (120)
+      expect(rows[0]?.hrv).toBeCloseTo(40, 1);
     });
 
     it("handles VO2Max as a point-in-time metric", async () => {

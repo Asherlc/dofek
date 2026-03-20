@@ -76,6 +76,9 @@ export interface Provider {
   /** Human-readable name */
   readonly name: string;
 
+  /** True for file-import-only providers (e.g. Strong CSV, Cronometer CSV) that have no API sync. */
+  readonly importOnly?: boolean;
+
   /**
    * Validate that the provider is configured (API keys present, etc.)
    * Returns null if valid, or an error message if not.

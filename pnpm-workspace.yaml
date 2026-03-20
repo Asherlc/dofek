@@ -8,6 +8,7 @@ packages:
   - packages/onboarding
   - packages/providers-meta
   - packages/auth
+  - packages/hrv
   - packages/server
   - packages/web
   - packages/ios
