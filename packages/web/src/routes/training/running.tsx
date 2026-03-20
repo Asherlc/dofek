@@ -354,7 +354,7 @@ function RunningDynamicsTable({
                 <td className="py-1.5 pr-3 text-zinc-500">{d.date}</td>
                 <td className="py-1.5 pr-3 truncate max-w-[150px]">{d.activityName}</td>
                 <td className="py-1.5 pr-3 text-right font-mono">
-                  {formatPace(d.paceSecondsPerKm)}
+                  {formatPace(convertPace(d.paceSecondsPerKm, unitSystem))} {paceLabel(unitSystem)}
                 </td>
                 <td className="py-1.5 pr-3 text-right font-mono">
                   {convertDistance(d.distanceKm, unitSystem).toFixed(1)} {distanceLabel(unitSystem)}
