@@ -1,4 +1,4 @@
-import { rampRateColor } from "@dofek/shared/scoring";
+import { rampRateColor } from "@dofek/scoring/scoring";
 import type { RampRateWeek } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
 

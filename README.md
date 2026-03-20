@@ -288,7 +288,7 @@ docker logs dofek-web-1 -f
 cd /opt/dofek && docker compose up -d web
 ```
 
-**Axiom (centralized):** All application logs and Docker container logs are shipped to [Axiom](https://axiom.co) via an OpenTelemetry Collector sidecar. The app uses Winston with an OTel SDK exporter; the collector also tails raw Docker JSON logs from the host filesystem. Logs land in the `dofek-logs` dataset. This is the most complete log source — it survives container restarts and includes structured metadata.
+**Axiom (centralized):** All application logs and Docker container logs are shipped to [Axiom](https://axiom.co) via an OpenTelemetry Collector sidecar. The app uses Winston with an OTel SDK exporter; the collector also tails raw Docker JSON logs from the host filesystem. Two datasets: `dofek-app-logs` (Winston + Docker container logs) and `dofek-traces` (OTel HTTP spans). This is the most complete log source — it survives container restarts and includes structured metadata.
 
 **Note:** The in-memory ring buffer and Docker container logs are still available for quick debugging, but Axiom is the primary log store.
 

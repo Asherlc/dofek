@@ -12,7 +12,7 @@ import { trpc } from "../lib/trpc";
 import { useAuth } from "../lib/auth-context";
 import { importSharedFile, type ShareImportProgress } from "../lib/share-import";
 import { colors } from "../theme";
-import { formatRelativeTime } from "@dofek/shared/format";
+import { formatRelativeTime } from "@dofek/format/format";
 
 type AuthStatus = "connected" | "not_connected" | "expired";
 

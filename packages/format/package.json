@@ -1,0 +1,10 @@
+{
+  "name": "@dofek/format",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./format": "./src/format.ts",
+    "./units": "./src/units.ts"
+  }
+}

@@ -12,8 +12,8 @@ import {
 import { z } from "zod";
 import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
-import { MEAL_OPTIONS } from "@dofek/shared/meal";
-import type { MealType } from "@dofek/shared/meal";
+import { MEAL_OPTIONS } from "@dofek/nutrition/meal";
+import type { MealType } from "@dofek/nutrition/meal";
 
 const lifeEventSchema = z.object({
   id: z.string(),

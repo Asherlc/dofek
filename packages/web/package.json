@@ -9,7 +9,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@dofek/shared": "workspace:*",
+    "@dofek/auth": "workspace:*",
+    "@dofek/format": "workspace:*",
+    "@dofek/nutrition": "workspace:*",
+    "@dofek/onboarding": "workspace:*",
+    "@dofek/providers": "workspace:*",
+    "@dofek/scoring": "workspace:*",
+    "@dofek/training": "workspace:*",
     "@opentelemetry/api": "1.9.0",
     "@opentelemetry/exporter-trace-otlp-http": "0.213.0",
     "@opentelemetry/instrumentation": "0.213.0",

@@ -74,4 +74,25 @@ describe("ActivityList", () => {
     const cells = screen.getAllByText("—");
     expect(cells.length).toBeGreaterThanOrEqual(2);
   });
+
+  it("uses placeholders when timestamps are invalid", () => {
+    const invalidTimestampActivity: Activity[] = [
+      {
+        id: "3",
+        started_at: "not-a-date",
+        ended_at: "still-not-a-date",
+        activity_type: "running",
+        name: "Bad Timestamps",
+        provider_id: "strava",
+        source_providers: ["strava"],
+        distance_meters: null,
+        calories: null,
+      },
+    ];
+
+    render(<ActivityList activities={invalidTimestampActivity} />);
+    expect(screen.queryByText("Invalid Date")).toBeNull();
+    expect(screen.queryByText("NaNm")).toBeNull();
+    expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(2);
+  });
 });

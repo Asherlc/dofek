@@ -68,7 +68,7 @@ vi.mock("../lib/share-import", () => ({
 	importSharedFile: vi.fn(),
 }));
 
-vi.mock("@dofek/shared/format", () => ({
+vi.mock("@dofek/format/format", () => ({
 	formatRelativeTime: (date: string) => `${date} ago`,
 }));
 

@@ -17,6 +17,7 @@ vi.mock("@slack/bolt", () => {
         router: { get: vi.fn(), post: vi.fn() },
       })),
       SocketModeReceiver: vi.fn().mockImplementation(() => ({
+        client: { on: vi.fn() },
         start: vi.fn().mockResolvedValue(undefined),
       })),
     },

@@ -1,6 +1,6 @@
 import type { App as AppType, SayFn } from "@slack/bolt";
 import bolt from "@slack/bolt";
-import { SocketModeClient } from "@slack/socket-mode";
+import type { SocketModeClient } from "@slack/socket-mode";
 
 const { App, ExpressReceiver, SocketModeReceiver } = bolt;
 
@@ -888,15 +888,6 @@ export function createSlackBot(db: Database): SlackBotResult | null {
 
   if (botToken && appToken) {
     const receiver = new SocketModeReceiver({ appToken });
-    // Increase WebSocket ping timeout from the 5s default to 30s.
-    // The default causes rapid reconnection failures during container startup
-    // because pong responses aren't processed in time.
-    // SocketModeReceiver doesn't forward clientPingTimeout, so we construct
-    // a properly configured client and assign it before init() runs.
-    receiver.client = new SocketModeClient({
-      appToken,
-      clientPingTimeout: 30_000,
-    });
     registerSocketModeDiagnostics(receiver.client);
 
     const app = new App({
