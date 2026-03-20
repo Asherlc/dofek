@@ -18,6 +18,7 @@ import type { SyncError, SyncResult } from "../types.ts";
 import { getStringAttrs } from "./dates.ts";
 import {
   ALL_ROUTED_TYPES,
+  aggregateSpO2ToDailyMetrics,
   BODY_MEASUREMENT_TYPES,
   DAILY_METRIC_TYPES,
   linkUnassignedHeartRateToActivities,
@@ -197,6 +198,12 @@ export async function runImport(
       logger.info(
         `[apple_health] Linked ${linkedHrRows} heart-rate metric rows to workouts after import`,
       );
+    }
+
+    // Aggregate SpO2 from metric_stream into daily_metrics
+    const spo2Days = await aggregateSpO2ToDailyMetrics(db, providerId, since);
+    if (spo2Days > 0) {
+      logger.info(`[apple_health] Aggregated SpO2 daily averages for ${spo2Days} days`);
     }
 
     logger.info(

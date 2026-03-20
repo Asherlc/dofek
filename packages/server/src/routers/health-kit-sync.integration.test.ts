@@ -280,6 +280,57 @@ describe("HealthKit sync router", () => {
       expect(spo2Row).toBeDefined();
       expect(spo2Row?.spo2).toBeCloseTo(0.98, 2);
     });
+
+    it("aggregates SpO2 from metric_stream into daily_metrics as percentage", async () => {
+      // Push multiple SpO2 readings for the same day (stored as fractions 0-1)
+      const result = await mutate("healthKitSync.pushQuantitySamples", {
+        samples: [
+          {
+            type: "HKQuantityTypeIdentifierOxygenSaturation",
+            value: 0.96,
+            unit: "%",
+            startDate: "2025-07-01T08:00:00Z",
+            endDate: "2025-07-01T08:00:00Z",
+            sourceName: "Apple Watch",
+            sourceBundle: "com.apple.health",
+            uuid: "spo2-agg-uuid-1",
+          },
+          {
+            type: "HKQuantityTypeIdentifierOxygenSaturation",
+            value: 0.98,
+            unit: "%",
+            startDate: "2025-07-01T14:00:00Z",
+            endDate: "2025-07-01T14:00:00Z",
+            sourceName: "Apple Watch",
+            sourceBundle: "com.apple.health",
+            uuid: "spo2-agg-uuid-2",
+          },
+          {
+            type: "HKQuantityTypeIdentifierOxygenSaturation",
+            value: 0.97,
+            unit: "%",
+            startDate: "2025-07-01T20:00:00Z",
+            endDate: "2025-07-01T20:00:00Z",
+            sourceName: "Apple Watch",
+            sourceBundle: "com.apple.health",
+            uuid: "spo2-agg-uuid-3",
+          },
+        ],
+      });
+
+      expect(result.result.data.inserted).toBe(3);
+      expect(result.result.data.errors).toEqual([]);
+
+      // Verify daily_metrics.spo2_avg is populated as percentage (0-100 scale)
+      const rows = await testCtx.db.execute(
+        sql`SELECT spo2_avg FROM fitness.daily_metrics
+            WHERE provider_id = 'apple_health'
+              AND date = '2025-07-01'`,
+      );
+      expect(rows.length).toBe(1);
+      // Average of 0.96, 0.98, 0.97 = 0.97 → 97% on 0-100 scale
+      expect(rows[0]?.spo2_avg).toBeCloseTo(97, 0);
+    });
   });
 
   describe("pushQuantitySamples - catch-all health events", () => {

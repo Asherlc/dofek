@@ -430,6 +430,35 @@ export async function upsertDailyMetricsBatch(
   return insertRows.length;
 }
 
+/**
+ * Aggregate SpO2 readings from metric_stream into daily_metrics.spo2_avg.
+ * Apple Health stores SpO2 as fractions (0-1) in metric_stream; this converts
+ * the daily average to a percentage (0-100) for consistency with other providers
+ * (WHOOP, Oura, Garmin) that report SpO2 as a percentage.
+ */
+export async function aggregateSpO2ToDailyMetrics(
+  db: SyncDatabase,
+  providerId: string,
+  since: Date,
+): Promise<number> {
+  const result = await db.execute(
+    sql`INSERT INTO fitness.daily_metrics (date, provider_id, user_id, spo2_avg)
+        SELECT
+          (recorded_at AT TIME ZONE 'UTC')::date AS date,
+          provider_id,
+          user_id,
+          AVG(spo2) * 100 AS spo2_avg
+        FROM fitness.metric_stream
+        WHERE provider_id = ${providerId}
+          AND spo2 IS NOT NULL
+          AND recorded_at >= ${since.toISOString()}::timestamptz
+        GROUP BY (recorded_at AT TIME ZONE 'UTC')::date, provider_id, user_id
+        ON CONFLICT (date, provider_id) DO UPDATE SET
+          spo2_avg = EXCLUDED.spo2_avg`,
+  );
+  return Array.isArray(result) ? result.length : 0;
+}
+
 export async function upsertNutritionBatch(
   db: SyncDatabase,
   providerId: string,
