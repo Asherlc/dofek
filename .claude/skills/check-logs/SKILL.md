@@ -19,19 +19,19 @@ Query production logs to diagnose errors. Three sources are available (in priori
 
 ### 1. Query Axiom via MCP tools (preferred)
 
-The Axiom MCP server is configured in `.mcp.json`. Use the `mcp__axiom__*` tools to query logs directly. The dataset is `dofek-logs`. Service names are `dofek-web`, `dofek-worker`, `dofek-sync`.
+The Axiom MCP server is configured in `.mcp.json`. Use the `mcp__axiom__*` tools to query directly. Two datasets exist: `dofek-app-logs` (Winston application logs) and `dofek-traces` (OTel HTTP spans). For most debugging, start with `dofek-app-logs`. Service names are `dofek-web`, `dofek-worker`, `dofek-sync`.
 
 Use `ToolSearch` to load the Axiom MCP tools, then query with APL (Axiom Processing Language):
 
 ```apl
 // Search for errors in the last 24 hours
-['dofek-logs'] | where _time > ago(24h) | search "<SEARCH_TERM>" | sort by _time desc | limit 50
+['dofek-app-logs'] | where _time > ago(24h) | search "<SEARCH_TERM>" | sort by _time desc | limit 50
 
 // Filter by service
-['dofek-logs'] | where _time > ago(24h) and ['service.name'] == "dofek-web" | where severity_text == "ERROR" | sort by _time desc | limit 50
+['dofek-app-logs'] | where _time > ago(24h) and ['service.name'] == "dofek-web" | where severity_text == "ERROR" | sort by _time desc | limit 50
 
 // Apple Health import errors
-['dofek-logs'] | where _time > ago(7d) | search "apple" or search "health" or search "import" | sort by _time desc | limit 50
+['dofek-app-logs'] | where _time > ago(7d) | search "apple" or search "health" or search "import" | sort by _time desc | limit 50
 ```
 
 If the Axiom MCP server is not connected, fall back to step 2.
@@ -85,7 +85,7 @@ The Data Sources page has a "System Logs" panel showing the last 500 log entries
   ssh <SERVER> 'docker exec dofek-web-1 sh -c "sops -d .env 2>/dev/null | grep -q <VAR_NAME> && echo present || echo missing"'
   ```
   **Warning:** Do not use `| grep <VAR_NAME>` without `-q` or redirect, as it will print decrypted values to the terminal.
-- **OTel config**: Endpoint is `https://api.axiom.co`, headers contain the ingest token and dataset (`dofek-logs`). Service names: `dofek-web`, `dofek-worker`, `dofek-sync`.
+- **OTel config**: Endpoint is `https://api.axiom.co` via an OTel Collector sidecar. Traces go to `dofek-traces`, logs go to `dofek-app-logs`. Service names: `dofek-web`, `dofek-worker`, `dofek-sync`.
 
 ## Important
 

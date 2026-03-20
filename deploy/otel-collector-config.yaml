@@ -43,23 +43,28 @@ processors:
         action: upsert
 
 exporters:
-  otlphttp:
+  otlphttp/traces:
     endpoint: https://api.axiom.co
     headers:
       authorization: "Bearer ${env:AXIOM_API_TOKEN}"
-      x-axiom-dataset: dofek-logs
+      x-axiom-dataset: dofek-traces
+  otlphttp/logs:
+    endpoint: https://api.axiom.co
+    headers:
+      authorization: "Bearer ${env:AXIOM_API_TOKEN}"
+      x-axiom-dataset: dofek-app-logs
 
 service:
   pipelines:
     traces:
       receivers: [otlp]
       processors: [batch]
-      exporters: [otlphttp]
+      exporters: [otlphttp/traces]
     logs/app:
       receivers: [otlp]
       processors: [batch]
-      exporters: [otlphttp]
+      exporters: [otlphttp/logs]
     logs/docker:
       receivers: [filelog]
       processors: [resource/docker, batch]
-      exporters: [otlphttp]
+      exporters: [otlphttp/logs]
