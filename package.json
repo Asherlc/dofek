@@ -9,6 +9,7 @@
     "./db/schema": "./src/db/schema.ts",
     "./db/dedup": "./src/db/dedup.ts",
     "./providers/types": "./src/providers/types.ts",
+    "./providers/provider-model": "./src/providers/provider-model.ts",
     "./providers/registry": "./src/providers/index.ts",
     "./providers/wahoo": "./src/providers/wahoo.ts",
     "./providers/withings": "./src/providers/withings.ts",
