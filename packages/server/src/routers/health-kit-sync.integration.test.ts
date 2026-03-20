@@ -386,6 +386,54 @@ describe("HealthKit sync router", () => {
       expect(rows[0]?.light_minutes).toBe(240);
       expect(rows[0]?.awake_minutes).toBe(15);
     });
+
+    it("derives a session from stage-only samples when inBed is missing", async () => {
+      const result = await mutate("healthKitSync.pushSleepSamples", {
+        samples: [
+          {
+            uuid: "stage-only-light-1",
+            startDate: "2025-06-09T22:00:00Z",
+            endDate: "2025-06-10T01:00:00Z",
+            value: "asleepCore",
+            sourceName: "Apple Watch",
+          },
+          {
+            uuid: "stage-only-rem-1",
+            startDate: "2025-06-10T01:00:00Z",
+            endDate: "2025-06-10T02:00:00Z",
+            value: "asleepREM",
+            sourceName: "Apple Watch",
+          },
+          {
+            uuid: "stage-only-deep-1",
+            startDate: "2025-06-10T02:00:00Z",
+            endDate: "2025-06-10T05:00:00Z",
+            value: "asleepDeep",
+            sourceName: "Apple Watch",
+          },
+          {
+            uuid: "stage-only-awake-1",
+            startDate: "2025-06-10T05:00:00Z",
+            endDate: "2025-06-10T05:15:00Z",
+            value: "awake",
+            sourceName: "Apple Watch",
+          },
+        ],
+      });
+
+      expect(result.result.data.inserted).toBe(1);
+
+      const rows = await testCtx.db.execute(
+        sql`SELECT * FROM fitness.sleep_session
+            WHERE provider_id = 'apple_health_kit'
+              AND external_id = 'hk:sleep:stage-only-light-1'`,
+      );
+      expect(rows.length).toBe(1);
+      expect(rows[0]?.deep_minutes).toBe(180);
+      expect(rows[0]?.rem_minutes).toBe(60);
+      expect(rows[0]?.light_minutes).toBe(180);
+      expect(rows[0]?.awake_minutes).toBe(15);
+    });
   });
 
   describe("deduplication", () => {

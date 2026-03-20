@@ -125,6 +125,7 @@ public class HealthKitModule: Module {
                     if #available(iOS 16.0, *) {
                         switch sample.value {
                         case HKCategoryValueSleepAnalysis.inBed.rawValue: valueStr = "inBed"
+                        case HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue: valueStr = "asleep"
                         case HKCategoryValueSleepAnalysis.asleepCore.rawValue: valueStr = "asleepCore"
                         case HKCategoryValueSleepAnalysis.asleepDeep.rawValue: valueStr = "asleepDeep"
                         case HKCategoryValueSleepAnalysis.asleepREM.rawValue: valueStr = "asleepREM"

@@ -27,7 +27,7 @@ export interface SleepSample {
 	uuid: string;
 	startDate: string;
 	endDate: string;
-	value: string; // "inBed", "asleepCore", "asleepDeep", "asleepREM", "awake"
+	value: string; // "inBed", "asleep", "asleepCore", "asleepDeep", "asleepREM", "awake"
 	sourceName: string;
 }
 

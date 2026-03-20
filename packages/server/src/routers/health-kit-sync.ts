@@ -6,6 +6,7 @@ import { protectedProcedure, router } from "../trpc.ts";
 // mutating this full router yields a high volume of equivalent mutants.
 const PROVIDER_ID = "apple_health_kit";
 const BATCH_SIZE = 500;
+const MAX_SLEEP_SESSION_GAP_MS = 90 * 60 * 1000;
 
 // ── Zod schemas ──
 
@@ -219,6 +220,100 @@ function computeBoundsFromIsoTimestamps(
     startAt: new Date(minTs).toISOString(),
     endAt: new Date(maxTs).toISOString(),
   };
+}
+
+function parseIsoTimestamp(value: string): number | null {
+  const milliseconds = Date.parse(value);
+  if (Number.isNaN(milliseconds)) return null;
+  return milliseconds;
+}
+
+function isSleepStageValue(value: string): boolean {
+  return (
+    value === "asleep" ||
+    value === "asleepUnspecified" ||
+    value === "asleepCore" ||
+    value === "asleepDeep" ||
+    value === "asleepREM"
+  );
+}
+
+function deriveSleepSessionsFromStages(samples: SleepSample[]): SleepSample[] {
+  const sessions: SleepSample[] = [];
+  const bySource = new Map<string, SleepSample[]>();
+
+  for (const sample of samples) {
+    if (!isSleepStageValue(sample.value) && sample.value !== "awake") continue;
+    const sourceSamples = bySource.get(sample.sourceName) ?? [];
+    sourceSamples.push(sample);
+    bySource.set(sample.sourceName, sourceSamples);
+  }
+
+  for (const [sourceName, sourceSamples] of bySource) {
+    const sorted = sourceSamples
+      .map((sample) => ({
+        sample,
+        startMs: parseIsoTimestamp(sample.startDate),
+        endMs: parseIsoTimestamp(sample.endDate),
+      }))
+      .filter((entry): entry is { sample: SleepSample; startMs: number; endMs: number } => {
+        if (entry.startMs === null || entry.endMs === null) return false;
+        return entry.endMs > entry.startMs;
+      })
+      .sort((a, b) => a.startMs - b.startMs);
+
+    if (sorted.length === 0) continue;
+
+    const firstEntry = sorted[0];
+    if (!firstEntry) continue;
+
+    let currentStart = firstEntry.startMs;
+    let currentEnd = firstEntry.endMs;
+    let currentUuid = firstEntry.sample.uuid;
+    let currentHasSleepStage = isSleepStageValue(firstEntry.sample.value);
+
+    for (let index = 1; index < sorted.length; index++) {
+      const entry = sorted[index];
+      if (!entry) continue;
+
+      if (entry.startMs <= currentEnd + MAX_SLEEP_SESSION_GAP_MS) {
+        if (entry.endMs > currentEnd) {
+          currentEnd = entry.endMs;
+        }
+        if (isSleepStageValue(entry.sample.value)) {
+          currentHasSleepStage = true;
+        }
+        continue;
+      }
+
+      if (currentHasSleepStage) {
+        sessions.push({
+          uuid: currentUuid,
+          startDate: new Date(currentStart).toISOString(),
+          endDate: new Date(currentEnd).toISOString(),
+          value: "inBed",
+          sourceName,
+        });
+      }
+
+      currentStart = entry.startMs;
+      currentEnd = entry.endMs;
+      currentUuid = entry.sample.uuid;
+      currentHasSleepStage = isSleepStageValue(entry.sample.value);
+    }
+
+    if (currentHasSleepStage) {
+      sessions.push({
+        uuid: currentUuid,
+        startDate: new Date(currentStart).toISOString(),
+        endDate: new Date(currentEnd).toISOString(),
+        value: "inBed",
+        sourceName,
+      });
+    }
+  }
+
+  return sessions;
 }
 
 async function linkUnassignedHeartRateToWorkouts(
@@ -577,7 +672,9 @@ async function processSleepSamples(
   userId: string,
   samples: SleepSample[],
 ): Promise<number> {
-  const inBedSamples = samples.filter((s) => s.value === "inBed");
+  const explicitInBedSamples = samples.filter((s) => s.value === "inBed");
+  const inBedSamples =
+    explicitInBedSamples.length > 0 ? explicitInBedSamples : deriveSleepSessionsFromStages(samples);
   const stageSamples = samples.filter((s) => s.value !== "inBed");
 
   if (inBedSamples.length === 0) return 0;
@@ -599,6 +696,10 @@ async function processSleepSamples(
       if (stageStart >= sessionStart && stageEnd <= sessionEnd) {
         const durationMinutes = Math.round((stageEnd - stageStart) / (1000 * 60));
         switch (stage.value) {
+          case "asleep":
+          case "asleepUnspecified":
+            lightMinutes += durationMinutes;
+            break;
           case "asleepDeep":
             deepMinutes += durationMinutes;
             break;
