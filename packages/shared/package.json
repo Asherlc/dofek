@@ -8,6 +8,7 @@
     "./scoring": "./src/scoring.ts",
     "./meal": "./src/meal.ts",
     "./format": "./src/format.ts",
+    "./open-food-facts": "./src/open-food-facts.ts",
     "./correlation": "./src/correlation.ts",
     "./workout-recommendation": "./src/workout-recommendation.ts",
     "./onboarding": "./src/onboarding.ts",

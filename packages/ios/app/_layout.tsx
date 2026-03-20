@@ -64,7 +64,12 @@ function AuthGate() {
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen
             name="food/add"
-            options={{ presentation: "modal", title: "Add Food" }}
+            options={{
+              presentation: "fullScreenModal",
+              title: "Add Food",
+              headerStyle: { backgroundColor: colors.background },
+              headerTintColor: colors.text,
+            }}
           />
           <Stack.Screen
             name="providers"
