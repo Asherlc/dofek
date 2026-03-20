@@ -51,9 +51,7 @@ export function parseStrongExerciseName(rawName: string): {
   if (match) {
     const name = match[1];
     const equip = match[2];
-    // Stryker disable next-line all — regex groups (.+?) and ([^)]+) always capture non-empty; guard is unreachable
-    if (!name || !equip) return { exerciseName: trimmed, equipment: null };
-    return { exerciseName: name.trim(), equipment: equip.trim() };
+    return { exerciseName: (name ?? trimmed).trim(), equipment: (equip ?? "").trim() || null };
   }
   return { exerciseName: trimmed, equipment: null };
 }
@@ -64,11 +62,7 @@ export function parseDurationString(duration: string): number {
   // Try HH:MM:SS format
   const hmsMatch = duration.match(/^(\d{1,2}):(\d{2}):(\d{2})$/);
   if (hmsMatch) {
-    // Stryker disable all — regex capture groups (\d{1,2}), (\d{2}), (\d{2}) always present on match
-    const h = hmsMatch[1] ?? "0";
-    const m = hmsMatch[2] ?? "0";
-    const s = hmsMatch[3] ?? "0";
-    // Stryker restore all
+    const [, h = "0", m = "0", s = "0"] = hmsMatch;
     return Number.parseInt(h, 10) * 3600 + Number.parseInt(m, 10) * 60 + Number.parseInt(s, 10);
   }
 
@@ -115,19 +109,19 @@ function parseCsvLine(line: string): string[] {
   return fields;
 }
 
-// Stryker disable all — mutations are equivalent: all code paths produce null for invalid input regardless of guard order
-function parseOptionalFloat(value: string): number | null {
-  if (!value || value.trim() === "") return null;
-  const num = Number.parseFloat(value);
+export function parseOptionalFloat(value: string): number | null {
+  const trimmed = value.trim();
+  if (trimmed === "") return null;
+  const num = Number.parseFloat(trimmed);
   return Number.isNaN(num) ? null : num;
 }
 
-function parseOptionalInt(value: string): number | null {
-  if (!value || value.trim() === "") return null;
-  const num = Number.parseInt(value, 10);
+export function parseOptionalInt(value: string): number | null {
+  const trimmed = value.trim();
+  if (trimmed === "") return null;
+  const num = Number.parseInt(trimmed, 10);
   return Number.isNaN(num) ? null : num;
 }
-// Stryker restore all
 
 export function parseStrongCsv(csvText: string): StrongWorkoutGroup[] {
   // Strip BOM
@@ -144,7 +138,6 @@ export function parseStrongCsv(csvText: string): StrongWorkoutGroup[] {
     const fields = parseCsvLine(line);
     if (fields.length < 7) continue;
 
-    // Stryker disable all — indices 0-6 always exist (length >= 7 checked); parseOptional* returns null for any non-numeric fallback string
     rows.push({
       date: fields[0] ?? "",
       workoutName: fields[1] ?? "",
@@ -159,7 +152,6 @@ export function parseStrongCsv(csvText: string): StrongWorkoutGroup[] {
       workoutNotes: fields[10]?.trim() || null,
       rpe: parseOptionalFloat(fields[11] ?? ""),
     });
-    // Stryker restore all
   }
 
   // Group by date + workout name
@@ -191,7 +183,6 @@ export function parseStrongCsv(csvText: string): StrongWorkoutGroup[] {
 // Import function
 // ============================================================
 
-// Stryker disable all — DB import function only tested via integration tests
 export async function importStrongCsv(
   db: SyncDatabase,
   csvText: string,
@@ -337,13 +328,10 @@ export async function importStrongCsv(
   return { provider: STRONG_PROVIDER_ID, recordsSynced, errors, duration: Date.now() - start };
 }
 
-// Stryker restore all
-
 // ============================================================
 // Provider (stub — real import happens via upload endpoint)
 // ============================================================
 
-// Stryker disable all — stub provider, no meaningful logic to mutate
 export class StrongCsvProvider implements Provider {
   readonly id = STRONG_PROVIDER_ID;
   readonly name = "Strong";

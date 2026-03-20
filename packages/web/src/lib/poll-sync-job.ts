@@ -60,7 +60,6 @@ export async function pollSyncJob(opts: PollSyncJobOptions): Promise<void> {
       return;
     }
 
-    // Stryker disable next-line all — poll delay; only exercised in integration context
     if (pollIntervalMs > 0) {
       await new Promise((r) => setTimeout(r, pollIntervalMs));
     }
