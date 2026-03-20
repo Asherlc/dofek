@@ -452,6 +452,7 @@ export async function importCronometerCsv(
 export class CronometerCsvProvider implements Provider {
   readonly id = CRONOMETER_PROVIDER_ID;
   readonly name = "Cronometer";
+  readonly importOnly = true;
 
   validate(): string | null {
     return null; // Always valid — file import, no API key needed

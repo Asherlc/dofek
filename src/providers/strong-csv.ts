@@ -335,6 +335,7 @@ export async function importStrongCsv(
 export class StrongCsvProvider implements Provider {
   readonly id = STRONG_PROVIDER_ID;
   readonly name = "Strong";
+  readonly importOnly = true;
 
   validate(): string | null {
     return null; // Always valid — file import, no API key needed
