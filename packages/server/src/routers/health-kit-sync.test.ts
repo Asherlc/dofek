@@ -130,6 +130,54 @@ describe("healthKitSyncRouter", () => {
       expect(result.errors).toEqual([]);
     });
 
+    it("aggregates a single pre-deduplicated statistics sample per day (no double-counting)", () => {
+      // When iOS uses HKStatisticsCollectionQuery, it sends one sample per day
+      // per type with the deduplicated total. Verify the accumulator produces
+      // the correct value (not doubled or split across batches).
+      const samples = [
+        makeSample({
+          type: "HKQuantityTypeIdentifierStepCount",
+          value: 8500,
+          startDate: "2024-01-15T12:00:00Z",
+          endDate: "2024-01-15T12:00:00Z",
+          uuid: "stat:steps:2024-01-15",
+        }),
+        makeSample({
+          type: "HKQuantityTypeIdentifierActiveEnergyBurned",
+          value: 450,
+          startDate: "2024-01-15T12:00:00Z",
+          endDate: "2024-01-15T12:00:00Z",
+          uuid: "stat:energy:2024-01-15",
+        }),
+      ];
+
+      const daily = aggregateDailyMetricSamples(samples);
+      const jan15 = daily.get("2024-01-15");
+
+      expect(jan15?.steps).toBe(8500);
+      expect(jan15?.activeEnergyKcal).toBe(450);
+    });
+
+    it("does not double-count when raw samples from multiple sources are replaced by statistics", () => {
+      // Before the fix, iPhone (2800 steps) + Apple Watch (3000 steps) raw
+      // samples would sum to 5800. With statistics, only one deduplicated
+      // total (3000) is sent.
+      const samples = [
+        makeSample({
+          type: "HKQuantityTypeIdentifierStepCount",
+          value: 3000,
+          startDate: "2024-01-15T12:00:00Z",
+          endDate: "2024-01-15T12:00:00Z",
+          uuid: "stat:steps:2024-01-15",
+        }),
+      ];
+
+      const daily = aggregateDailyMetricSamples(samples);
+      const jan15 = daily.get("2024-01-15");
+
+      expect(jan15?.steps).toBe(3000);
+    });
+
     it("processes point-in-time daily metric samples", async () => {
       const execute = makeExecute();
       const caller = createCaller({
