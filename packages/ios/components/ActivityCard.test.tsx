@@ -80,4 +80,11 @@ describe("ActivityCard", () => {
     render(<ActivityCard {...baseProps} activityType="paddleboarding" />);
     expect(screen.getByText("\u{26A1}")).toBeTruthy();
   });
+
+  it("falls back to placeholders for invalid timestamps", () => {
+    render(<ActivityCard {...baseProps} startedAt="not-a-date" endedAt="still-not-a-date" />);
+    expect(screen.getByText("-- · --")).toBeTruthy();
+    expect(screen.queryByText("Invalid Date")).toBeNull();
+    expect(screen.queryByText("NaNh")).toBeNull();
+  });
 });
