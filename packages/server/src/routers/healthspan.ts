@@ -200,32 +200,53 @@ export const healthspanRouter = router({
             ),
             hr_zone_time AS (
               SELECT
-                CASE WHEN COUNT(*) = 0 THEN NULL
-                  ELSE COUNT(*) FILTER (
-                    WHERE ms.heart_rate < rhr.resting_hr + (up2.max_hr - rhr.resting_hr) * 0.8
-                  )::real / 60.0
-                END AS aerobic_minutes,
-                CASE WHEN COUNT(*) = 0 THEN NULL
-                  ELSE COUNT(*) FILTER (
-                    WHERE ms.heart_rate >= rhr.resting_hr + (up2.max_hr - rhr.resting_hr) * 0.8
-                  )::real / 60.0
-                END AS high_intensity_minutes
-              FROM fitness.user_profile up2
-              JOIN fitness.v_activity a ON a.user_id = up2.id
-              JOIN fitness.metric_stream ms ON ms.activity_id = a.id
-              JOIN LATERAL (
-                SELECT dm.resting_hr
-                FROM fitness.v_daily_metrics dm
-                WHERE dm.user_id = up2.id
-                  AND dm.date <= a.started_at::date
-                  AND dm.resting_hr IS NOT NULL
-                ORDER BY dm.date DESC
-                LIMIT 1
-              ) rhr ON true
-              WHERE up2.id = ${ctx.userId}
-                AND a.started_at > NOW() - ${totalDays}::int * INTERVAL '1 day'
-                AND ms.heart_rate IS NOT NULL
-                AND up2.max_hr IS NOT NULL
+                SUM(CASE
+                  WHEN heart_rate < resting_hr + (max_hr - resting_hr) * 0.8
+                  THEN sample_seconds ELSE 0
+                END) / 60.0 AS aerobic_minutes,
+                SUM(CASE
+                  WHEN heart_rate >= resting_hr + (max_hr - resting_hr) * 0.8
+                  THEN sample_seconds ELSE 0
+                END) / 60.0 AS high_intensity_minutes
+              FROM (
+                SELECT
+                  ms.heart_rate,
+                  rhr.resting_hr,
+                  up2.max_hr,
+                  COALESCE(
+                    LEAST(
+                      EXTRACT(EPOCH FROM
+                        LEAD(ms.recorded_at) OVER (PARTITION BY ms.activity_id ORDER BY ms.recorded_at)
+                        - ms.recorded_at
+                      ),
+                      30
+                    ),
+                    LEAST(
+                      EXTRACT(EPOCH FROM
+                        ms.recorded_at
+                        - LAG(ms.recorded_at) OVER (PARTITION BY ms.activity_id ORDER BY ms.recorded_at)
+                      ),
+                      30
+                    ),
+                    1
+                  ) AS sample_seconds
+                FROM fitness.user_profile up2
+                JOIN fitness.v_activity a ON a.user_id = up2.id
+                JOIN fitness.metric_stream ms ON ms.activity_id = a.id
+                JOIN LATERAL (
+                  SELECT dm.resting_hr
+                  FROM fitness.v_daily_metrics dm
+                  WHERE dm.user_id = up2.id
+                    AND dm.date <= a.started_at::date
+                    AND dm.resting_hr IS NOT NULL
+                  ORDER BY dm.date DESC
+                  LIMIT 1
+                ) rhr ON true
+                WHERE up2.id = ${ctx.userId}
+                  AND a.started_at > NOW() - ${totalDays}::int * INTERVAL '1 day'
+                  AND ms.heart_rate IS NOT NULL
+                  AND up2.max_hr IS NOT NULL
+              ) hr_samples
             ),
             strength_freq AS (
               SELECT NULLIF(COUNT(*), 0)::real / GREATEST(${totalDays}::real / 7, 1) AS sessions_per_week
