@@ -420,8 +420,8 @@ describe("streamHealthExport — correlations", () => {
 // ActivitySummary date filtering
 // ============================================================
 
-describe("streamHealthExport — activity summary filtering", () => {
-  it("filters ActivitySummary records by since date", async () => {
+describe("streamHealthExport — activity summary skipping", () => {
+  it("skips ActivitySummary to avoid double-counting with individual records", async () => {
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <HealthData locale="en_US">
   <ActivitySummary dateComponents="2020-01-01" activeEnergyBurned="300"/>
@@ -438,15 +438,16 @@ describe("streamHealthExport — activity summary filtering", () => {
       onWorkoutBatch: async () => {},
     });
 
-    expect(result.recordCount).toBe(1);
-    expect(records).toHaveLength(1);
-    expect(records[0]?.value).toBeCloseTo(500);
+    // ActivitySummary no longer generates records — individual records are
+    // the authoritative source for additive daily metrics
+    expect(result.recordCount).toBe(0);
+    expect(records).toHaveLength(0);
   });
 
-  it("handles ActivitySummary without activeEnergyBurned", async () => {
+  it("skips ActivitySummary even when activeEnergyBurned is present", async () => {
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <HealthData locale="en_US">
-  <ActivitySummary dateComponents="2024-06-01" appleExerciseTime="45" appleStandHours="12"/>
+  <ActivitySummary dateComponents="2024-06-01" activeEnergyBurned="500" appleExerciseTime="45" appleStandHours="12"/>
 </HealthData>`;
     const path = writeXml("activity-no-energy.xml", xml);
 
@@ -459,7 +460,6 @@ describe("streamHealthExport — activity summary filtering", () => {
       onWorkoutBatch: async () => {},
     });
 
-    // No activeEnergyBurned means no record produced
     expect(result.recordCount).toBe(0);
     expect(records).toHaveLength(0);
   });
@@ -741,9 +741,9 @@ describe("streamHealthExport — mixed record types", () => {
       },
     });
 
-    // 1 HR + 1 ActivitySummary energy = 2 records
-    expect(result.recordCount).toBe(2);
-    expect(recordCount).toBe(2);
+    // 1 HR record (ActivitySummary is intentionally skipped)
+    expect(result.recordCount).toBe(1);
+    expect(recordCount).toBe(1);
     expect(result.sleepCount).toBe(1);
     expect(sleepCount).toBe(1);
     expect(result.categoryCount).toBe(1);

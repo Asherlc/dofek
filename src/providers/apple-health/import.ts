@@ -1,11 +1,17 @@
 import { createReadStream, createWriteStream, mkdirSync, readdirSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { and, eq, gte } from "drizzle-orm";
+import { and, eq, gte, sql } from "drizzle-orm";
 import sax from "sax";
 import yauzl from "yauzl";
 import type { SyncDatabase } from "../../db/index.ts";
-import { healthEvent, labResult, metricStream } from "../../db/schema.ts";
+import {
+  dailyMetrics,
+  healthEvent,
+  labResult,
+  metricStream,
+  nutritionDaily,
+} from "../../db/schema.ts";
 import { ensureProvider } from "../../db/tokens.ts";
 import { logger } from "../../logger.ts";
 import type { SyncError, SyncResult } from "../types.ts";
@@ -113,11 +119,19 @@ export async function runImport(
   let recordsSynced = 0;
 
   try {
-    // Delete existing metric_stream rows for this provider/time range so re-imports
-    // don't create duplicates (metric_stream has no unique constraint).
+    // Delete existing rows for this provider/time range so re-imports don't
+    // create duplicates (metric_stream has no unique constraint) and additive
+    // daily metric upserts don't double-count across re-imports.
+    const sinceDate = sql`${since.toISOString().slice(0, 10)}::date`;
     await db
       .delete(metricStream)
       .where(and(eq(metricStream.providerId, providerId), gte(metricStream.recordedAt, since)));
+    await db
+      .delete(dailyMetrics)
+      .where(and(eq(dailyMetrics.providerId, providerId), gte(dailyMetrics.date, sinceDate)));
+    await db
+      .delete(nutritionDaily)
+      .where(and(eq(nutritionDaily.providerId, providerId), gte(nutritionDaily.date, sinceDate)));
 
     const counts = await streamHealthExport(xmlPath, since, {
       onProgress,

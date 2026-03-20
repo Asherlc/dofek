@@ -174,7 +174,7 @@ describe("streamHealthExport", () => {
     expect(result.categoryCount).toBe(0);
   });
 
-  it("parses ActivitySummary and converts to records", async () => {
+  it("skips ActivitySummary to avoid double-counting with individual records", async () => {
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <HealthData locale="en_US">
   <ActivitySummary dateComponents="2024-03-01" activeEnergyBurned="500" appleExerciseTime="45" appleStandHours="12"/>
@@ -190,9 +190,9 @@ describe("streamHealthExport", () => {
       onWorkoutBatch: async () => {},
     });
 
-    // ActivitySummary with activeEnergyBurned produces one record
-    expect(result.recordCount).toBe(1);
-    expect(recordCount).toBe(1);
+    // ActivitySummary no longer generates records
+    expect(result.recordCount).toBe(0);
+    expect(recordCount).toBe(0);
   });
 
   it("calls onProgress callback", async () => {
@@ -632,6 +632,20 @@ const IMPORT_XML = `<?xml version="1.0" encoding="UTF-8"?>
   endDate="2024-03-01 14:15:00 -0500"
   value="3"/>
 
+ <Record type="HKQuantityTypeIdentifierActiveEnergyBurned"
+  sourceName="Apple Watch" unit="kcal"
+  creationDate="2024-03-01 10:00:00 -0500"
+  startDate="2024-03-01 10:00:00 -0500"
+  endDate="2024-03-01 10:30:00 -0500"
+  value="300"/>
+
+ <Record type="HKQuantityTypeIdentifierActiveEnergyBurned"
+  sourceName="Apple Watch" unit="kcal"
+  creationDate="2024-03-01 14:00:00 -0500"
+  startDate="2024-03-01 14:00:00 -0500"
+  endDate="2024-03-01 14:30:00 -0500"
+  value="223.4"/>
+
  <Record type="HKQuantityTypeIdentifierDietaryProtein"
   sourceName="MyFitnessPal" unit="g"
   creationDate="2024-03-01 20:00:00 -0500"
@@ -786,7 +800,7 @@ describe("importAppleHealthFile — full DB integration", () => {
     expect(day?.flightsClimbed).toBe(3);
     // Distance: 523.7 m → 0.5237 km
     expect(day?.distanceKm).toBeCloseTo(0.5237);
-    // Active energy from ActivitySummary: 523.4
+    // Active energy: 300 + 223.4 = 523.4
     expect(day?.activeEnergyKcal).toBeCloseTo(523.4);
   });
 
