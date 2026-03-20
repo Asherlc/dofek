@@ -5,8 +5,7 @@ describe("ProviderModel", () => {
   it("isConnected is true for providers without authSetup", () => {
     const model = new ProviderModel({ id: "strong-csv", name: "Strong" }, new Set());
     expect(model.isConnected).toBe(true);
-    expect(model.needsOAuth).toBe(false);
-    expect(model.needsCustomAuth).toBe(false);
+    expect(model.authType).toBe("none");
   });
 
   it("isConnected is true for providers with authSetup that have tokens", () => {
@@ -15,8 +14,7 @@ describe("ProviderModel", () => {
       new Set(["strava"]),
     );
     expect(model.isConnected).toBe(true);
-    expect(model.needsOAuth).toBe(true);
-    expect(model.needsCustomAuth).toBe(false);
+    expect(model.authType).toBe("oauth");
   });
 
   it("isConnected is false for providers with authSetup that lack tokens", () => {
@@ -27,31 +25,51 @@ describe("ProviderModel", () => {
     expect(model.isConnected).toBe(false);
   });
 
-  it("needsCustomAuth is true for providers with authSetup but no oauthConfig", () => {
+  it("authType is 'none' for providers with authSetup but no recognizable config", () => {
     const model = new ProviderModel(
       { id: "whoop", name: "WHOOP", authSetup: () => undefined },
       new Set(),
     );
-    expect(model.needsCustomAuth).toBe(true);
-    expect(model.needsOAuth).toBe(false);
-    expect(model.isConnected).toBe(false);
+    expect(model.authType).toBe("none");
+    expect(model.isConnected).toBe(true);
   });
 
-  it("sets both needsOAuth and needsCustomAuth for dual-auth providers", () => {
+  it("authType is 'credential' for providers with automatedLogin", () => {
     const model = new ProviderModel(
       {
-        id: "garmin",
-        name: "Garmin",
+        id: "eight-sleep",
+        name: "Eight Sleep",
         authSetup: () => ({
-          oauthConfig: { clientId: "garmin", authorizeUrl: "", tokenUrl: "", redirectUri: "" },
+          oauthConfig: { clientId: "", authorizeUrl: "", tokenUrl: "", redirectUri: "" },
           automatedLogin: async () => ({}),
         }),
       },
-      new Set(["garmin"]),
+      new Set(),
     );
-    expect(model.needsOAuth).toBe(true);
-    expect(model.needsCustomAuth).toBe(true);
+    expect(model.authType).toBe("credential");
+    expect(model.isConnected).toBe(false);
+  });
+
+  it("applies customAuthOverrides when provided", () => {
+    const model = new ProviderModel(
+      { id: "whoop", name: "WHOOP", authSetup: () => undefined },
+      new Set(["whoop"]),
+      undefined,
+      { whoop: "custom:whoop" },
+    );
+    expect(model.authType).toBe("custom:whoop");
     expect(model.isConnected).toBe(true);
+  });
+
+  it("custom auth override makes provider require auth", () => {
+    const model = new ProviderModel(
+      { id: "garmin", name: "Garmin", authSetup: () => undefined },
+      new Set(),
+      undefined,
+      { garmin: "custom:garmin" },
+    );
+    expect(model.authType).toBe("custom:garmin");
+    expect(model.isConnected).toBe(false);
   });
 
   it("handles authSetup that throws", () => {
@@ -65,9 +83,8 @@ describe("ProviderModel", () => {
       },
       new Set(),
     );
-    expect(model.needsOAuth).toBe(false);
-    expect(model.needsCustomAuth).toBe(true);
-    expect(model.isConnected).toBe(false);
+    expect(model.authType).toBe("none");
+    expect(model.isConnected).toBe(true);
   });
 
   it("reads lastSyncedAt from the map", () => {
@@ -82,5 +99,33 @@ describe("ProviderModel", () => {
   it("lastSyncedAt is null when not in the map", () => {
     const model = new ProviderModel({ id: "wahoo", name: "Wahoo" }, new Set());
     expect(model.lastSyncedAt).toBeNull();
+  });
+
+  it("authType is 'file-import' for import-only providers", () => {
+    const model = new ProviderModel(
+      { id: "strong-csv", name: "Strong", importOnly: true },
+      new Set(),
+    );
+    expect(model.authType).toBe("file-import");
+    expect(model.importOnly).toBe(true);
+    expect(model.isConnected).toBe(true);
+  });
+
+  it("authType is 'oauth1' for providers with oauth1Flow", () => {
+    const model = new ProviderModel(
+      {
+        id: "fatsecret",
+        name: "FatSecret",
+        authSetup: () => ({
+          oauthConfig: {},
+          oauth1Flow: {
+            getRequestToken: async () => ({}),
+            exchangeForAccessToken: async () => ({}),
+          },
+        }),
+      },
+      new Set(),
+    );
+    expect(model.authType).toBe("oauth1");
   });
 });

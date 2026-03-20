@@ -160,12 +160,17 @@ export const syncRouter = router({
     return all
       .filter((p) => p.validate() === null)
       .map((p) => {
-        const model = new ProviderModel(p, tokenSet, lastSyncMap);
+        // Providers with their own custom tRPC auth routers (MFA, special clients)
+        const CUSTOM_AUTH_PROVIDERS: Record<string, string> = {
+          whoop: "custom:whoop",
+          garmin: "custom:garmin",
+        };
+
+        const model = new ProviderModel(p, tokenSet, lastSyncMap, CUSTOM_AUTH_PROVIDERS);
         return {
           id: model.id,
           name: model.name,
-          needsOAuth: model.needsOAuth,
-          needsCustomAuth: model.needsCustomAuth,
+          authType: model.authType,
           authorized: model.isConnected,
           lastSyncedAt: model.lastSyncedAt,
           importOnly: model.importOnly,

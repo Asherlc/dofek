@@ -185,18 +185,16 @@ describe("syncRouter", () => {
       expect(result).toHaveLength(4);
       expect(result.find((p: { id: string }) => p.id === "peloton")).toBeUndefined();
 
-      // Wahoo: needs OAuth, authorized (has token)
+      // Wahoo: OAuth provider, authorized (has token)
       const wahoo = result.find((p: { id: string }) => p.id === "wahoo");
-      expect(wahoo?.needsOAuth).toBe(true);
-      expect(wahoo?.needsCustomAuth).toBe(false);
+      expect(wahoo?.authType).toBe("oauth");
       expect(wahoo?.authorized).toBe(true);
       expect(wahoo?.lastSyncedAt).toBe("2024-01-01");
       expect(wahoo?.importOnly).toBe(false);
 
-      // WHOOP: needs custom auth, not authorized (no token)
+      // WHOOP: custom auth, not authorized (no token)
       const whoop = result.find((p: { id: string }) => p.id === "whoop");
-      expect(whoop?.needsCustomAuth).toBe(true);
-      expect(whoop?.needsOAuth).toBe(false);
+      expect(whoop?.authType).toBe("custom:whoop");
       expect(whoop?.authorized).toBe(false);
 
       // Strong CSV: import only
@@ -229,7 +227,7 @@ describe("syncRouter", () => {
 
       const result = await caller.providers();
       expect(result).toHaveLength(1);
-      expect(result[0]?.needsOAuth).toBe(false);
+      expect(result[0]?.authType).toBe("none");
     });
   });
 
@@ -286,7 +284,10 @@ describe("syncRouter", () => {
           id: "whoop",
           name: "WHOOP",
           validate: () => null,
-          authSetup: () => undefined,
+          authSetup: () => ({
+            oauthConfig: { clientId: "whoop", authorizeUrl: "", tokenUrl: "", redirectUri: "" },
+            automatedLogin: async () => ({}),
+          }),
         },
         {
           id: "intervals",

@@ -273,65 +273,10 @@ describe("UltrahumanProvider", () => {
     });
   });
 
-  describe("authSetup()", () => {
-    it("has empty oauthConfig fields (static API token, no OAuth)", () => {
+  describe("auth", () => {
+    it("does not have authSetup (uses server-side env var auth)", () => {
       const provider = new UltrahumanProvider();
-      const setup = provider.authSetup();
-      expect(setup.oauthConfig.clientId).toBe("");
-      expect(setup.oauthConfig.authorizeUrl).toBe("");
-      expect(setup.oauthConfig.tokenUrl).toBe("");
-      expect(setup.oauthConfig.redirectUri).toBe("");
-      expect(setup.oauthConfig.scopes).toEqual([]);
-    });
-
-    it("automatedLogin returns static token with far-future expiry", async () => {
-      process.env.ULTRAHUMAN_API_TOKEN = "my-api-token";
-      process.env.ULTRAHUMAN_EMAIL = "user@example.com";
-      const provider = new UltrahumanProvider();
-      const setup = provider.authSetup();
-      const result = await setup.automatedLogin?.("ignored", "ignored");
-      expect(result).toBeDefined();
-      expect(result?.accessToken).toBe("my-api-token");
-      expect(result?.refreshToken).toBeNull();
-      expect(result?.expiresAt).toEqual(new Date("2099-12-31T23:59:59Z"));
-      expect(result?.scopes).toBe("email:user@example.com");
-    });
-
-    it("automatedLogin throws when ULTRAHUMAN_API_TOKEN is missing", async () => {
-      delete process.env.ULTRAHUMAN_API_TOKEN;
-      process.env.ULTRAHUMAN_EMAIL = "user@example.com";
-      const provider = new UltrahumanProvider();
-      const setup = provider.authSetup();
-      await expect(setup.automatedLogin?.("x", "y")).rejects.toThrow(
-        "ULTRAHUMAN_API_TOKEN and ULTRAHUMAN_EMAIL required",
-      );
-    });
-
-    it("automatedLogin throws when ULTRAHUMAN_EMAIL is missing", async () => {
-      process.env.ULTRAHUMAN_API_TOKEN = "test-token";
-      delete process.env.ULTRAHUMAN_EMAIL;
-      const provider = new UltrahumanProvider();
-      const setup = provider.authSetup();
-      await expect(setup.automatedLogin?.("x", "y")).rejects.toThrow(
-        "ULTRAHUMAN_API_TOKEN and ULTRAHUMAN_EMAIL required",
-      );
-    });
-
-    it("automatedLogin throws when both env vars are missing", async () => {
-      delete process.env.ULTRAHUMAN_API_TOKEN;
-      delete process.env.ULTRAHUMAN_EMAIL;
-      const provider = new UltrahumanProvider();
-      const setup = provider.authSetup();
-      await expect(setup.automatedLogin?.("x", "y")).rejects.toThrow("ULTRAHUMAN_API_TOKEN");
-    });
-
-    it("exchangeCode throws with descriptive message", async () => {
-      const provider = new UltrahumanProvider();
-      const setup = provider.authSetup();
-      await expect(setup.exchangeCode("code", "verifier")).rejects.toThrow("API token auth");
-      await expect(setup.exchangeCode("code", "verifier")).rejects.toThrow(
-        "Ultrahuman uses API token auth, not OAuth code exchange",
-      );
+      expect("authSetup" in provider).toBe(false);
     });
 
     it("accepts custom fetch function", () => {

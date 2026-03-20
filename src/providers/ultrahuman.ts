@@ -2,7 +2,7 @@ import type { SyncDatabase } from "../db/index.ts";
 import { dailyMetrics, sleepSession } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
-import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
+import type { Provider, SyncError, SyncResult } from "./types.ts";
 
 // ============================================================
 // Ultrahuman Partner API types
@@ -159,36 +159,6 @@ export class UltrahumanProvider implements Provider {
     if (!process.env.ULTRAHUMAN_API_TOKEN) return "ULTRAHUMAN_API_TOKEN is not set";
     if (!process.env.ULTRAHUMAN_EMAIL) return "ULTRAHUMAN_EMAIL is not set";
     return null;
-  }
-
-  authSetup(): ProviderAuthSetup {
-    // Ultrahuman uses a static API token, no OAuth flow needed
-    // The token is stored as the access token for consistency
-    return {
-      oauthConfig: {
-        clientId: "",
-        authorizeUrl: "",
-        tokenUrl: "",
-        redirectUri: "",
-        scopes: [],
-      },
-      automatedLogin: async () => {
-        const token = process.env.ULTRAHUMAN_API_TOKEN;
-        const email = process.env.ULTRAHUMAN_EMAIL;
-        if (!token || !email) {
-          throw new Error("ULTRAHUMAN_API_TOKEN and ULTRAHUMAN_EMAIL required");
-        }
-        return {
-          accessToken: token,
-          refreshToken: null,
-          expiresAt: new Date("2099-12-31T23:59:59Z"),
-          scopes: `email:${email}`,
-        };
-      },
-      exchangeCode: async () => {
-        throw new Error("Ultrahuman uses API token auth, not OAuth code exchange");
-      },
-    };
   }
 
   async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {

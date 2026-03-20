@@ -7,8 +7,7 @@ export class ProviderModel {
   readonly id: string;
   readonly name: string;
   readonly importOnly: boolean;
-  readonly needsOAuth: boolean;
-  readonly needsCustomAuth: boolean;
+  readonly authType: string;
   readonly isConnected: boolean;
   readonly lastSyncedAt: string | null;
 
@@ -16,32 +15,35 @@ export class ProviderModel {
     provider: { id: string; name: string; importOnly?: boolean; authSetup?(): unknown },
     tokenSet: Set<string>,
     lastSyncMap?: Map<string, string>,
+    customAuthOverrides?: Record<string, string>,
   ) {
     this.id = provider.id;
     this.name = provider.name;
     this.importOnly = provider.importOnly === true;
 
-    let hasOAuthConfig = false;
-    let hasAutomatedLogin = false;
-    try {
-      const setup = provider.authSetup?.();
-      hasOAuthConfig =
-        typeof setup === "object" &&
-        setup !== null &&
-        "oauthConfig" in setup &&
-        !!setup.oauthConfig;
-      hasAutomatedLogin =
-        typeof setup === "object" &&
-        setup !== null &&
-        "automatedLogin" in setup &&
-        !!setup.automatedLogin;
-    } catch {
-      /* credentials not configured */
+    let authType = "none";
+    if (this.importOnly) {
+      authType = "file-import";
+    } else {
+      try {
+        const setup = provider.authSetup?.();
+        if (setup && typeof setup === "object") {
+          if ("automatedLogin" in setup && setup.automatedLogin) {
+            authType = "credential";
+          } else if ("oauth1Flow" in setup && setup.oauth1Flow) {
+            authType = "oauth1";
+          } else if ("oauthConfig" in setup && setup.oauthConfig) {
+            authType = "oauth";
+          }
+        }
+      } catch {
+        /* credentials not configured */
+      }
     }
 
-    this.needsOAuth = hasOAuthConfig;
-    this.needsCustomAuth = (!!provider.authSetup && !hasOAuthConfig) || hasAutomatedLogin;
-    this.isConnected = !provider.authSetup || tokenSet.has(provider.id);
+    this.authType = customAuthOverrides?.[provider.id] ?? authType;
+    const needsAuth = this.authType !== "none" && this.authType !== "file-import";
+    this.isConnected = needsAuth ? tokenSet.has(provider.id) : true;
     this.lastSyncedAt = lastSyncMap?.get(provider.id) ?? null;
   }
 }

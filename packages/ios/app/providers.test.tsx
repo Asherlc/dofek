@@ -25,6 +25,21 @@ vi.mock("react-native", () => ({
 		const { style: _s, activeOpacity: _ao, ...rest } = props;
 		return React.createElement("button", { type: "button", onClick: onPress, disabled, ...rest }, children as React.ReactNode);
 	},
+	TextInput: ({ placeholder, value, onChangeText, secureTextEntry, ...props }: Record<string, unknown>) => {
+		const { style: _s, placeholderTextColor: _pc, keyboardType: _kt, autoCapitalize: _ac, autoCorrect: _acr, ...rest } = props;
+		return React.createElement("input", {
+			type: secureTextEntry ? "password" : "text",
+			placeholder,
+			value: value as string,
+			onChange: (e: React.ChangeEvent<HTMLInputElement>) => (onChangeText as (text: string) => void)?.(e.target.value),
+			...rest,
+		});
+	},
+	Modal: ({ children, visible, onRequestClose, ...props }: Record<string, unknown>) => {
+		if (!visible) return null;
+		const { animationType: _at, transparent: _t, ...rest } = props;
+		return React.createElement("div", { role: "dialog", ...rest }, children as React.ReactNode);
+	},
 	ActivityIndicator: () => React.createElement("span", null, "Loading..."),
 	StyleSheet: {
 		create: <T extends Record<string, unknown>>(styles: T): T => styles,
@@ -64,6 +79,10 @@ vi.mock("../lib/auth-context", () => ({
 	}),
 }));
 
+vi.mock("expo-web-browser", () => ({
+	openBrowserAsync: vi.fn().mockResolvedValue({ type: "cancel" }),
+}));
+
 vi.mock("../lib/share-import", () => ({
 	importSharedFile: vi.fn(),
 }));
@@ -78,6 +97,7 @@ const mockLogsQuery = vi.fn();
 const mockActiveSyncsQuery = vi.fn();
 const mockInvalidate = vi.fn();
 const mockSyncStatusFetch = vi.fn();
+const mockCredentialSignIn = vi.fn();
 
 vi.mock("../lib/trpc", () => ({
 	trpc: {
@@ -87,6 +107,9 @@ vi.mock("../lib/trpc", () => ({
 			logs: { useQuery: (...args: unknown[]) => mockLogsQuery(...args) },
 			triggerSync: { useMutation: () => ({ mutateAsync: mockSyncMutateAsync }) },
 			activeSyncs: { useQuery: (...args: unknown[]) => mockActiveSyncsQuery(...args) },
+		},
+		credentialAuth: {
+			signIn: { useMutation: () => ({ mutateAsync: mockCredentialSignIn }) },
 		},
 		useUtils: () => ({
 			sync: {
@@ -102,6 +125,7 @@ vi.mock("../lib/trpc", () => ({
 const connectedProvider = {
 	id: "wahoo",
 	name: "Wahoo",
+	authType: "oauth",
 	authorized: true,
 	importOnly: false,
 	lastSyncedAt: "2026-03-19T12:00:00Z",
@@ -110,6 +134,16 @@ const connectedProvider = {
 const disconnectedProvider = {
 	id: "strava",
 	name: "Strava",
+	authType: "oauth",
+	authorized: false,
+	importOnly: false,
+	lastSyncedAt: null,
+};
+
+const credentialProvider = {
+	id: "eight-sleep",
+	name: "Eight Sleep",
+	authType: "credential",
 	authorized: false,
 	importOnly: false,
 	lastSyncedAt: null,
@@ -130,6 +164,7 @@ function makeProvider(overrides: Partial<{
 	label: string;
 	enabled: boolean;
 	authStatus: "connected" | "not_connected" | "expired";
+	authType: string;
 	lastSyncAt: string | null;
 }> = {}) {
 	return {
@@ -137,6 +172,7 @@ function makeProvider(overrides: Partial<{
 		label: overrides.label ?? "Wahoo",
 		enabled: overrides.enabled ?? true,
 		authStatus: overrides.authStatus ?? "connected",
+		authType: overrides.authType ?? "oauth",
 		lastSyncAt: overrides.lastSyncAt ?? null,
 		...overrides,
 	};
@@ -170,6 +206,7 @@ describe("ProviderCard", () => {
 					syncProgress={{ percentage: 45, message: "Fetching activities..." }}
 					onSync={noopFn}
 					onFullSync={noopFn}
+					onConnect={noopFn}
 					onPress={noopFn}
 				/>,
 			);
@@ -189,6 +226,7 @@ describe("ProviderCard", () => {
 					syncProgress={{ message: "Preparing sync..." }}
 					onSync={noopFn}
 					onFullSync={noopFn}
+					onConnect={noopFn}
 					onPress={noopFn}
 				/>,
 			);
@@ -206,6 +244,7 @@ describe("ProviderCard", () => {
 					syncProgress={{ percentage: 60 }}
 					onSync={noopFn}
 					onFullSync={noopFn}
+					onConnect={noopFn}
 					onPress={noopFn}
 				/>,
 			);
@@ -226,6 +265,7 @@ describe("ProviderCard", () => {
 					syncProgress={undefined}
 					onSync={noopFn}
 					onFullSync={noopFn}
+					onConnect={noopFn}
 					onPress={noopFn}
 				/>,
 			);
@@ -244,6 +284,7 @@ describe("ProviderCard", () => {
 					syncProgress={undefined}
 					onSync={noopFn}
 					onFullSync={noopFn}
+					onConnect={noopFn}
 					onPress={noopFn}
 				/>,
 			);
@@ -262,6 +303,7 @@ describe("ProviderCard", () => {
 					syncProgress={undefined}
 					onSync={noopFn}
 					onFullSync={noopFn}
+					onConnect={noopFn}
 					onPress={noopFn}
 				/>,
 			);
@@ -280,6 +322,7 @@ describe("ProviderCard", () => {
 					syncProgress={undefined}
 					onSync={noopFn}
 					onFullSync={noopFn}
+					onConnect={noopFn}
 					onPress={noopFn}
 				/>,
 			);
@@ -297,6 +340,7 @@ describe("ProviderCard", () => {
 					syncProgress={undefined}
 					onSync={noopFn}
 					onFullSync={noopFn}
+					onConnect={noopFn}
 					onPress={noopFn}
 				/>,
 			);
@@ -316,6 +360,7 @@ describe("ProviderCard", () => {
 					syncProgress={{ percentage: -20 }}
 					onSync={noopFn}
 					onFullSync={noopFn}
+					onConnect={noopFn}
 					onPress={noopFn}
 				/>,
 			);
@@ -334,6 +379,7 @@ describe("ProviderCard", () => {
 					syncProgress={{ percentage: 150 }}
 					onSync={noopFn}
 					onFullSync={noopFn}
+					onConnect={noopFn}
 					onPress={noopFn}
 				/>,
 			);
@@ -371,6 +417,7 @@ describe("ProvidersScreen", () => {
 		mockActiveSyncsQuery.mockReset();
 		mockInvalidate.mockReset();
 		mockSyncStatusFetch.mockReset();
+		mockCredentialSignIn.mockReset();
 		setupDefaultMocks();
 	});
 
@@ -460,6 +507,73 @@ describe("ProvidersScreen", () => {
 
 		await waitFor(() => {
 			expect(mockSyncMutateAsync).toHaveBeenCalledWith({ sinceDays: undefined });
+		});
+	});
+
+	it("opens credential auth modal when Connect is clicked on a credential provider", async () => {
+		mockProvidersQuery.mockReturnValue({
+			data: [credentialProvider],
+			isLoading: false,
+		});
+
+		const { default: ProvidersScreen } = await import("./providers");
+		render(<ProvidersScreen />);
+
+		fireEvent.click(screen.getByText("Connect"));
+
+		await waitFor(() => {
+			expect(screen.getByText("Connect Eight Sleep")).toBeTruthy();
+		});
+	});
+
+	it("credential auth modal calls signIn mutation with correct args", async () => {
+		mockProvidersQuery.mockReturnValue({
+			data: [credentialProvider],
+			isLoading: false,
+		});
+		mockCredentialSignIn.mockResolvedValue({});
+
+		const { default: ProvidersScreen } = await import("./providers");
+		render(<ProvidersScreen />);
+
+		// Open the modal
+		fireEvent.click(screen.getByText("Connect"));
+		await waitFor(() => {
+			expect(screen.getByText("Connect Eight Sleep")).toBeTruthy();
+		});
+
+		// Fill in credentials
+		fireEvent.change(screen.getByPlaceholderText("Email"), { target: { value: "user@test.com" } });
+		fireEvent.change(screen.getByPlaceholderText("Password"), { target: { value: "secret123" } });
+
+		// Submit
+		fireEvent.click(screen.getByText("Sign In"));
+
+		await waitFor(() => {
+			expect(mockCredentialSignIn).toHaveBeenCalledWith({
+				providerId: "eight-sleep",
+				username: "user@test.com",
+				password: "secret123",
+			});
+		});
+	});
+
+	it("opens browser for OAuth provider connect", async () => {
+		const WebBrowser = await import("expo-web-browser");
+		mockProvidersQuery.mockReturnValue({
+			data: [disconnectedProvider],
+			isLoading: false,
+		});
+
+		const { default: ProvidersScreen } = await import("./providers");
+		render(<ProvidersScreen />);
+
+		fireEvent.click(screen.getByText("Connect"));
+
+		await waitFor(() => {
+			expect(WebBrowser.openBrowserAsync).toHaveBeenCalledWith(
+				"https://test.example.com/auth/provider/strava",
+			);
 		});
 	});
 });

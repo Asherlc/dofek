@@ -235,7 +235,7 @@ export function ProviderDetailPage() {
               </button>
             </div>
             <div className="ml-auto flex items-center gap-3">
-              {provider?.needsOAuth && provider.authorized && (
+              {provider?.authType === "oauth" && provider.authorized && (
                 <button
                   type="button"
                   onClick={handleReauthorize}

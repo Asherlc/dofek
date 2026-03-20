@@ -87,17 +87,19 @@ describe("tRPC API", () => {
   });
 
   describe("POST mutations", () => {
-    it("triggerSync returns error when no providers are connected", async () => {
+    it("triggerSync succeeds even without OAuth tokens (always-connected providers exist)", async () => {
       const res = await fetch(`${baseUrl}/api/trpc/sync.triggerSync?batch=1`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Cookie: sessionCookie },
         body: JSON.stringify({ "0": { sinceDays: 7 } }),
       });
 
-      expect(res.status).toBe(500);
+      // Providers that don't require auth (e.g. auto-supplements) are always
+      // connected, so triggerSync will find at least one syncable provider.
+      expect(res.status).toBe(200);
       const data = await res.json();
       expect(data).toHaveLength(1);
-      expect(data[0].error.message).toContain("No configured providers");
+      expect(data[0].result.data.jobId).toBeDefined();
     });
   });
 
