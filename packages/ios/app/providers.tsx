@@ -309,7 +309,13 @@ export default function ProvidersScreen() {
     }
   }, [syncMutation, providers.data, pollJob]);
 
-  const providerList: Provider[] = providers.data ?? [];
+  const providerList: Provider[] = (providers.data ?? []).map((p) => ({
+    id: p.id,
+    label: p.name,
+    enabled: p.authorized && !p.importOnly,
+    authStatus: p.authorized ? "connected" : "not_connected",
+    lastSyncAt: p.lastSyncedAt,
+  }));
   const statsMap: Record<string, ProviderStats> = stats.data ?? {};
   const logList: SyncLog[] = logs.data ?? [];
 

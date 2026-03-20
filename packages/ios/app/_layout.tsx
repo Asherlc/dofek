@@ -49,7 +49,14 @@ function AuthGate() {
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
       <QueryClientProvider client={queryClient}>
-        <Stack>
+        <Stack
+          screenOptions={{
+            headerStyle: { backgroundColor: colors.background },
+            headerTintColor: colors.text,
+            headerBackTitleVisible: false,
+            headerShadowVisible: false,
+          }}
+        >
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen
             name="food/add"
@@ -59,64 +66,48 @@ function AuthGate() {
             name="providers"
             options={{
               title: "Data Sources",
-              headerStyle: { backgroundColor: colors.background },
-              headerTintColor: colors.text,
             }}
           />
           <Stack.Screen
             name="settings"
             options={{
               title: "Settings",
-              headerStyle: { backgroundColor: colors.background },
-              headerTintColor: colors.text,
             }}
           />
           <Stack.Screen
             name="tracking"
             options={{
               title: "Tracking",
-              headerStyle: { backgroundColor: colors.background },
-              headerTintColor: colors.text,
             }}
           />
           <Stack.Screen
             name="training"
             options={{
               title: "Training",
-              headerStyle: { backgroundColor: colors.background },
-              headerTintColor: colors.text,
             }}
           />
           <Stack.Screen
             name="nutrition-analytics"
             options={{
               title: "Nutrition Analytics",
-              headerStyle: { backgroundColor: colors.background },
-              headerTintColor: colors.text,
             }}
           />
           <Stack.Screen
             name="insights"
             options={{
               title: "Insights",
-              headerStyle: { backgroundColor: colors.background },
-              headerTintColor: colors.text,
             }}
           />
           <Stack.Screen
             name="providers/[id]"
             options={{
               title: "Provider Detail",
-              headerStyle: { backgroundColor: colors.background },
-              headerTintColor: colors.text,
             }}
           />
           <Stack.Screen
             name="activity/[id]"
             options={{
               title: "Activity",
-              headerStyle: { backgroundColor: colors.background },
-              headerTintColor: colors.text,
             }}
           />
           <Stack.Screen
@@ -131,16 +122,12 @@ function AuthGate() {
             name="predictions"
             options={{
               title: "Predictions",
-              headerStyle: { backgroundColor: colors.background },
-              headerTintColor: colors.text,
             }}
           />
           <Stack.Screen
             name="correlation"
             options={{
               title: "Correlation Explorer",
-              headerStyle: { backgroundColor: colors.background },
-              headerTintColor: colors.text,
             }}
           />
         </Stack>

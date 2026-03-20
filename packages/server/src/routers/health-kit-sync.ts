@@ -26,8 +26,8 @@ const workoutSampleSchema = z.object({
   startDate: z.string(),
   endDate: z.string(),
   duration: z.number(),
-  totalEnergyBurned: z.number().nullable(),
-  totalDistance: z.number().nullable(),
+  totalEnergyBurned: z.number().nullish(),
+  totalDistance: z.number().nullish(),
   sourceName: z.string(),
   sourceBundle: z.string(),
 });

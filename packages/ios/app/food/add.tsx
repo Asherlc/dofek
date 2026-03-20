@@ -509,11 +509,11 @@ export default function AddFoodScreen() {
                 activeOpacity={0.6}
               >
                 <View style={styles.resultLeft}>
-                  <Text style={styles.resultName} numberOfLines={1}>
+                  <Text style={styles.resultName} numberOfLines={2}>
                     {result.name}
                   </Text>
                   {result.servingDescription && (
-                    <Text style={styles.resultServing} numberOfLines={1}>
+                    <Text style={styles.resultServing} numberOfLines={2}>
                       {result.servingDescription}
                     </Text>
                   )}
