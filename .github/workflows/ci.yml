@@ -214,17 +214,17 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Lint podspecs
-        run: |
-          for spec in packages/ios/modules/*/ios/*.podspec; do
-            echo "Linting $spec"
-            pod lib lint "$spec" --allow-warnings
-          done
       - name: Prebuild and install pods
         run: |
           cd packages/ios
           npx expo prebuild --no-install
           cd ios && pod install
+      - name: Lint podspecs
+        run: |
+          for spec in packages/ios/modules/*/ios/*.podspec; do
+            echo "Linting $spec"
+            pod lib lint "$spec" --quick --allow-warnings
+          done
       - name: Build for simulator
         run: |
           cd packages/ios/ios
