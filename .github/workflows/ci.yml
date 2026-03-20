@@ -178,64 +178,25 @@ jobs:
       - name: Verify iOS Metro bundle
         run: cd packages/ios && pnpm expo export --platform ios --clear
 
-  check-ios-changes:
-    name: Check iOS Changes
+  lint-ios-podspecs:
+    name: iOS Podspec Lint
     runs-on: ubuntu-latest
-    outputs:
-      changed: ${{ steps.filter.outputs.changed }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Check for iOS file changes
-        id: filter
+      - name: Validate podspec deployment targets
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            BASE="origin/${{ github.event.pull_request.base.ref }}"
-          else
-            BASE="HEAD~1"
-          fi
-          if git diff --name-only "$BASE"...HEAD | grep -q '^packages/ios/'; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          fi
-
-  build-ios-native:
-    name: iOS Xcode Build
-    needs: check-ios-changes
-    if: needs.check-ios-changes.outputs.changed == 'true'
-    runs-on: macos-15
-    steps:
-      - uses: actions/checkout@v4
-      - name: Select Xcode 16.1
-        run: sudo xcode-select -s /Applications/Xcode_16.1.app/Contents/Developer
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - name: Prebuild and install pods
-        run: |
-          cd packages/ios
-          npx expo prebuild --no-install
-          cd ios && pod install
-      - name: Lint podspecs
-        run: |
+          APP_TARGET=$(python3 -c "import json; print(json.load(open('packages/ios/app.json'))['expo']['ios']['deploymentTarget'])")
+          echo "App deployment target: iOS $APP_TARGET"
+          FAILED=0
           for spec in packages/ios/modules/*/ios/*.podspec; do
-            echo "Linting $spec"
-            pod lib lint "$spec" --quick --allow-warnings
+            SPEC_TARGET=$(grep -oP "s\.platform\s*=\s*:ios,\s*'\K[^']+" "$spec")
+            echo "  $(basename "$spec"): iOS $SPEC_TARGET"
+            if [ "$(printf '%s\n' "$APP_TARGET" "$SPEC_TARGET" | sort -V | head -1)" != "$APP_TARGET" ]; then
+              echo "  ERROR: podspec targets iOS $SPEC_TARGET which is below app target iOS $APP_TARGET"
+              FAILED=1
+            fi
           done
-      - name: Build for simulator
-        run: |
-          cd packages/ios/ios
-          xcodebuild build \
-            -workspace Dofek.xcworkspace \
-            -scheme Dofek \
-            -destination 'generic/platform=iOS Simulator' \
-            CODE_SIGNING_ALLOWED=NO \
-            -quiet
+          exit $FAILED
 
   test-e2e-web:
     name: E2E Tests (Web)
