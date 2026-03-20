@@ -1,12 +1,13 @@
-import { View } from "react-native";
+import { useState } from "react";
+import { View, type LayoutChangeEvent } from "react-native";
 import Svg, { Line, Polyline } from "react-native-svg";
 
 interface SparkLineProps {
   /** Data points to plot */
   data: number[];
-  /** Width of the chart */
+  /** Fixed width of the chart (optional) */
   width?: number;
-  /** Height of the chart */
+  /** Fixed height of the chart (optional) */
   height?: number;
   /** Line color */
   color?: string;
@@ -18,19 +19,30 @@ interface SparkLineProps {
 
 export function SparkLine({
   data,
-  width = 120,
-  height = 40,
+  width: fixedWidth,
+  height: fixedHeight,
   color = "#00E676",
   lineWidth = 2,
   showBaseline = false,
 }: SparkLineProps) {
-  if (data.length < 2) {
-    return <View style={{ width, height }} />;
+  const [layout, setLayout] = useState({ width: fixedWidth ?? 0, height: fixedHeight ?? 0 });
+
+  const onLayout = (event: LayoutChangeEvent) => {
+    if (fixedWidth && fixedHeight) return;
+    const { width, height } = event.nativeEvent.layout;
+    setLayout({ width, height });
+  };
+
+  const currentWidth = fixedWidth ?? layout.width;
+  const currentHeight = fixedHeight ?? layout.height;
+
+  if (data.length < 2 || currentWidth === 0 || currentHeight === 0) {
+    return <View style={{ width: fixedWidth, height: fixedHeight, flex: fixedWidth ? undefined : 1 }} onLayout={onLayout} />;
   }
 
   const padding = 2;
-  const chartWidth = width - padding * 2;
-  const chartHeight = height - padding * 2;
+  const chartWidth = currentWidth - padding * 2;
+  const chartHeight = currentHeight - padding * 2;
 
   const min = Math.min(...data);
   const max = Math.max(...data);
@@ -48,26 +60,28 @@ export function SparkLine({
   const avgY = padding + chartHeight - ((avg - min) / range) * chartHeight;
 
   return (
-    <Svg width={width} height={height}>
-      {showBaseline && (
-        <Line
-          x1={padding}
-          y1={avgY}
-          x2={width - padding}
-          y2={avgY}
-          stroke="#3a3a3e"
-          strokeWidth={1}
-          strokeDasharray="4,4"
+    <View style={{ width: fixedWidth, height: fixedHeight, flex: fixedWidth ? undefined : 1 }} onLayout={onLayout}>
+      <Svg width={currentWidth} height={currentHeight}>
+        {showBaseline && (
+          <Line
+            x1={padding}
+            y1={avgY}
+            x2={currentWidth - padding}
+            y2={avgY}
+            stroke="#3a3a3e"
+            strokeWidth={1}
+            strokeDasharray="4,4"
+          />
+        )}
+        <Polyline
+          points={points}
+          fill="none"
+          stroke={color}
+          strokeWidth={lineWidth}
+          strokeLinecap="round"
+          strokeLinejoin="round"
         />
-      )}
-      <Polyline
-        points={points}
-        fill="none"
-        stroke={color}
-        strokeWidth={lineWidth}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </Svg>
+      </Svg>
+    </View>
   );
 }

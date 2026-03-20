@@ -51,16 +51,10 @@ export function MetricCard({
           {unit && <Text style={styles.unit}>{unit}</Text>}
           {trendDirection && (
             <Text
+              testID="trend-arrow"
               style={[
                 styles.trendArrow,
-                {
-                  color:
-                    trendDirection === "up"
-                      ? colors.positive
-                      : trendDirection === "down"
-                        ? colors.danger
-                        : colors.textSecondary,
-                },
+                { color },
               ]}
             >
               {trendArrow(trendDirection)}
@@ -68,7 +62,9 @@ export function MetricCard({
           )}
         </View>
         {trend && trend.length >= 2 && (
-          <SparkLine data={trend} color={color} width={100} height={36} />
+          <View style={styles.sparklineContainer}>
+            <SparkLine data={trend} color={color} height={36} />
+          </View>
         )}
       </View>
       {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
@@ -104,6 +100,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "baseline",
     gap: 4,
+  },
+  sparklineContainer: {
+    flex: 1,
+    height: 36,
+    marginLeft: 16,
+    alignItems: "flex-end",
   },
   value: {
     fontSize: 28,

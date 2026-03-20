@@ -10,11 +10,13 @@ interface ActivityCardProps {
   avgHr: number | null;
   maxHr: number | null;
   avgPower: number | null;
+  distanceKm?: number | null;
+  calories?: number | null;
 }
 
 function formatTime(iso: string): string {
   const date = new Date(iso);
-  return date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 
 function activityIcon(type: string): string {
@@ -25,7 +27,22 @@ function activityIcon(type: string): string {
   if (lower.includes("walk") || lower.includes("hike")) return "\u{1F6B6}";
   if (lower.includes("strength") || lower.includes("weight")) return "\u{1F3CB}";
   if (lower.includes("yoga")) return "\u{1F9D8}";
+  if (lower.includes("hiit")) return "\u{1F4A5}";
+  if (lower.includes("elliptical")) return "\u{1F3C3}\u{200D}\u{2642}\u{FE0F}";
+  if (lower.includes("row")) return "\u{1F6A3}";
   return "\u{26A1}";
+}
+
+function Stat({ value, label, unit }: { value: string | number; label: string; unit?: string }) {
+  return (
+    <View style={styles.stat}>
+      <View style={styles.statValueRow}>
+        <Text style={styles.statValue}>{value}</Text>
+        {unit && <Text style={styles.statUnit}>{unit}</Text>}
+      </View>
+      <Text style={styles.statLabel}>{label}</Text>
+    </View>
+  );
 }
 
 export function ActivityCard({
@@ -36,13 +53,15 @@ export function ActivityCard({
   avgHr,
   maxHr,
   avgPower,
+  distanceKm,
+  calories,
 }: ActivityCardProps) {
   return (
     <View style={styles.card}>
       <View style={styles.header}>
         <Text style={styles.icon}>{activityIcon(activityType)}</Text>
         <View style={styles.headerText}>
-          <Text style={styles.name} numberOfLines={1}>
+          <Text style={styles.name} numberOfLines={2}>
             {name || activityType}
           </Text>
           <Text style={styles.time}>
@@ -50,24 +69,24 @@ export function ActivityCard({
           </Text>
         </View>
       </View>
+
+      <View style={styles.separator} />
+
       <View style={styles.stats}>
+        {distanceKm != null && distanceKm > 0 && (
+          <Stat value={distanceKm.toFixed(2)} label="Distance" unit="km" />
+        )}
+        {calories != null && calories > 0 && (
+          <Stat value={Math.round(calories)} label="Calories" unit="kcal" />
+        )}
         {avgHr != null && (
-          <View style={styles.stat}>
-            <Text style={styles.statValue}>{Math.round(avgHr)}</Text>
-            <Text style={styles.statLabel}>Avg Heart Rate</Text>
-          </View>
+          <Stat value={Math.round(avgHr)} label="Avg HR" unit="bpm" />
         )}
         {maxHr != null && (
-          <View style={styles.stat}>
-            <Text style={styles.statValue}>{Math.round(maxHr)}</Text>
-            <Text style={styles.statLabel}>Max Heart Rate</Text>
-          </View>
+          <Stat value={Math.round(maxHr)} label="Max HR" unit="bpm" />
         )}
         {avgPower != null && (
-          <View style={styles.stat}>
-            <Text style={styles.statValue}>{Math.round(avgPower)}</Text>
-            <Text style={styles.statLabel}>Avg Power</Text>
-          </View>
+          <Stat value={Math.round(avgPower)} label="Avg Power" unit="W" />
         )}
       </View>
     </View>
@@ -94,7 +113,7 @@ const styles = StyleSheet.create({
   },
   name: {
     fontSize: 16,
-    fontWeight: "600",
+    fontWeight: "700",
     color: colors.text,
   },
   time: {
@@ -102,22 +121,42 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 2,
   },
+  separator: {
+    height: 1,
+    backgroundColor: colors.surfaceSecondary,
+    marginVertical: 4,
+  },
   stats: {
     flexDirection: "row",
-    gap: 24,
+    flexWrap: "wrap",
+    rowGap: 16,
+    columnGap: 24,
   },
   stat: {
-    alignItems: "center",
+    minWidth: 60,
+  },
+  statValueRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: 2,
   },
   statValue: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: "700",
     color: colors.text,
     fontVariant: ["tabular-nums"],
   },
+  statUnit: {
+    fontSize: 12,
+    color: colors.textTertiary,
+    fontWeight: "600",
+  },
   statLabel: {
     fontSize: 11,
-    color: colors.textTertiary,
+    color: colors.textSecondary,
+    textTransform: "uppercase",
+    fontWeight: "600",
+    letterSpacing: 0.5,
     marginTop: 2,
   },
 });
