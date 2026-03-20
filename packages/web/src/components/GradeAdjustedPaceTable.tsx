@@ -1,5 +1,5 @@
-import { formatPace } from "@dofek/shared/format";
 import type { GradeAdjustedPaceRow } from "dofek-server/types";
+import { formatPace } from "../lib/format.ts";
 import { useUnitSystem } from "../lib/unitContext.ts";
 import {
   convertDistance,
