@@ -38,6 +38,7 @@ services:
       - NODE_ENV=production
       - OTEL_SERVICE_NAME=dofek-web
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4318
+      - OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://collector:4318/v1/logs
       - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://o4511073249067008.ingest.us.sentry.io/api/4511073388593152/integration/otlp/v1/traces?sentry_key=b421c7fde44434a032c86e3357cae397
     volumes:
       - job_files:/app/job-files
@@ -60,6 +61,7 @@ services:
       - NODE_ENV=production
       - OTEL_SERVICE_NAME=dofek-worker
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4318
+      - OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://collector:4318/v1/logs
       - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://o4511073249067008.ingest.us.sentry.io/api/4511073388593152/integration/otlp/v1/traces?sentry_key=b421c7fde44434a032c86e3357cae397
     volumes:
       - job_files:/app/job-files
@@ -80,6 +82,7 @@ services:
       - NODE_ENV=production
       - OTEL_SERVICE_NAME=dofek-sync
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4318
+      - OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://collector:4318/v1/logs
       - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://o4511073249067008.ingest.us.sentry.io/api/4511073388593152/integration/otlp/v1/traces?sentry_key=b421c7fde44434a032c86e3357cae397
     depends_on:
       db:
