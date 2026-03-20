@@ -25,24 +25,26 @@ vi.mock("./logger.ts", () => ({
   logger: { info: vi.fn(), warn: vi.fn() },
 }));
 
+import type { SyncDatabase } from "./db/index.ts";
 import { generateExport } from "./export.ts";
 
-// generateExport only calls db.execute(), so a minimal mock suffices.
-function createMockDb(executeResults: Record<string, unknown>[][] = []) {
-  let callIndex = 0;
-  return {
-    execute: vi.fn(() => {
-      const result = executeResults[callIndex] ?? [];
-      callIndex++;
-      return Promise.resolve(result);
-    }),
-  };
-}
-
-let mockDb: ReturnType<typeof createMockDb>;
+// All DB functions are mocked — only execute is actually called by generateExport.
+const mockDb: SyncDatabase = {
+  select: vi.fn(),
+  insert: vi.fn(),
+  delete: vi.fn(),
+  execute: vi.fn(),
+};
 
 function setupMockDb(executeResults: Record<string, unknown>[][] = []) {
-  mockDb = createMockDb(executeResults);
+  let callIndex = 0;
+  const execute = vi.fn(() => {
+    const result = executeResults[callIndex] ?? [];
+    callIndex++;
+    return Promise.resolve(result);
+  });
+  // Replace execute on the mock — Object.defineProperty avoids type mismatch
+  Object.defineProperty(mockDb, "execute", { value: execute, writable: true });
 }
 
 describe("generateExport", () => {
