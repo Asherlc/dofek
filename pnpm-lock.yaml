@@ -38,6 +38,9 @@ importers:
       '@opentelemetry/sdk-trace-node':
         specifier: ^2.6.0
         version: 2.6.0(@opentelemetry/api@1.9.0)
+      archiver:
+        specifier: ^7.0.1
+        version: 7.0.1
       bullmq:
         specifier: ^5.71.0
         version: 5.71.0
@@ -96,6 +99,9 @@ importers:
       '@testing-library/react':
         specifier: ^16.3.2
         version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      '@types/archiver':
+        specifier: ^7.0.0
+        version: 7.0.0
       '@types/node':
         specifier: 22.19.15
         version: 22.19.15

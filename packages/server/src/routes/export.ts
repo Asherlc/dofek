@@ -1,20 +1,34 @@
+import { mkdirSync } from "node:fs";
 import { stat, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createExportQueue } from "dofek/jobs/queues";
 import { Router } from "express";
+import { z } from "zod";
 import { getSessionIdFromRequest } from "../auth/cookies.ts";
 import { validateSession } from "../auth/session.ts";
-import { errorMessage } from "../lib/server-utils.ts";
+import { startWorker } from "../lib/start-worker.ts";
 import { logger } from "../logger.ts";
 
-interface ExportJobStatus {
-  status: string;
-  progress: number;
-  message: string;
-  userId: string;
-}
+/**
+ * Shared directory for export files that the worker container can access.
+ * In production, both web and worker containers mount the `job_files` volume
+ * at /app/job-files. Falls back to OS temp dir for local development.
+ */
+const JOB_FILES_DIR = process.env.JOB_FILES_DIR || join(tmpdir(), "dofek-job-files");
+mkdirSync(JOB_FILES_DIR, { recursive: true });
 
-const exportJobs = new Map<string, ExportJobStatus>();
+const exportProgressSchema = z.object({
+  pct: z.number(),
+  message: z.string(),
+});
+
+let _exportQueue: ReturnType<typeof createExportQueue> | null = null;
+
+function getExportQueue() {
+  if (!_exportQueue) _exportQueue = createExportQueue();
+  return _exportQueue;
+}
 
 export function createExportRouter(db: import("dofek/db").Database): Router {
   const router = Router();
@@ -31,52 +45,18 @@ export function createExportRouter(db: import("dofek/db").Database): Router {
       return;
     }
 
-    const jobId = `export-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    const tmpFile = join(tmpdir(), `dofek-export-${jobId}.zip`);
-
-    exportJobs.set(jobId, {
-      status: "processing",
-      progress: 0,
-      message: "Starting export...",
+    const queue = getExportQueue();
+    const job = await queue.add("export", {
       userId: session.userId,
+      outputPath: join(
+        JOB_FILES_DIR,
+        `dofek-export-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.zip`,
+      ),
     });
 
-    // Fire-and-forget background export
-    (async () => {
-      const exportStart = Date.now();
-      try {
-        const { generateExport } = await import("../export.ts");
-        const result = await generateExport(db, session.userId, tmpFile, (info) => {
-          exportJobs.set(jobId, {
-            status: "processing",
-            progress: info.pct,
-            message: info.message,
-            userId: session.userId,
-          });
-        });
+    startWorker();
 
-        const durationSec = ((Date.now() - exportStart) / 1000).toFixed(1);
-        const msg = `Exported ${result.totalRecords} records across ${result.tableCount} tables in ${durationSec}s`;
-        logger.info(`[export] ${msg}`);
-        exportJobs.set(jobId, {
-          status: "done",
-          progress: 100,
-          message: msg,
-          userId: session.userId,
-        });
-      } catch (err: unknown) {
-        const message = errorMessage(err);
-        logger.error(`[export] Export failed: ${message}`);
-        exportJobs.set(jobId, {
-          status: "error",
-          progress: 0,
-          message,
-          userId: session.userId,
-        });
-        await unlink(tmpFile).catch(() => {});
-      }
-    })();
-
+    const jobId = String(job.id);
     res.json({ status: "processing", jobId });
   });
 
@@ -92,25 +72,40 @@ export function createExportRouter(db: import("dofek/db").Database): Router {
       return;
     }
 
-    const job = exportJobs.get(req.params.jobId);
+    const queue = getExportQueue();
+    let job: Awaited<ReturnType<typeof queue.getJob>>;
+    try {
+      job = await queue.getJob(req.params.jobId);
+    } catch {
+      res.status(404).json({ error: "Unknown job" });
+      return;
+    }
+
     if (!job) {
       res.status(404).json({ error: "Unknown job" });
       return;
     }
 
-    if (job.userId !== session.userId) {
+    const jobData = z.object({ userId: z.string() }).safeParse(job.data);
+    if (!jobData.success || jobData.data.userId !== session.userId) {
       res.status(403).json({ error: "Forbidden" });
       return;
     }
 
+    const state = await job.getState();
+    const parsed = exportProgressSchema.safeParse(job.progress);
+    const progress = parsed.success ? parsed.data : { pct: 0, message: "Starting export..." };
+
     const response: Record<string, unknown> = {
-      status: job.status,
-      progress: job.progress,
-      message: job.message,
+      status: state === "completed" ? "done" : state === "failed" ? "error" : "processing",
+      progress: progress.pct,
+      message: state === "failed" ? (job.failedReason ?? "Export failed") : progress.message,
     };
-    if (job.status === "done") {
+
+    if (state === "completed") {
       response.downloadUrl = `/api/export/download/${req.params.jobId}`;
     }
+
     res.json(response);
   });
 
@@ -126,25 +121,34 @@ export function createExportRouter(db: import("dofek/db").Database): Router {
       return;
     }
 
-    const { jobId } = req.params;
-    const job = exportJobs.get(jobId);
+    const queue = getExportQueue();
+    let job: Awaited<ReturnType<typeof queue.getJob>>;
+    try {
+      job = await queue.getJob(req.params.jobId);
+    } catch {
+      res.status(404).json({ error: "Unknown job" });
+      return;
+    }
+
     if (!job) {
       res.status(404).json({ error: "Unknown job" });
       return;
     }
 
-    // Verify the export belongs to this user
-    if (job.userId !== session.userId) {
+    const exportDataSchema = z.object({ userId: z.string(), outputPath: z.string() });
+    const jobData = exportDataSchema.safeParse(job.data);
+    if (!jobData.success || jobData.data.userId !== session.userId) {
       res.status(403).json({ error: "Forbidden" });
       return;
     }
 
-    if (job.status !== "done") {
+    const state = await job.getState();
+    if (state !== "completed") {
       res.status(400).json({ error: "Export not ready" });
       return;
     }
 
-    const filePath = join(tmpdir(), `dofek-export-${jobId}.zip`);
+    const filePath = jobData.data.outputPath;
     try {
       await stat(filePath);
     } catch {
@@ -158,7 +162,7 @@ export function createExportRouter(db: import("dofek/db").Database): Router {
       }
       // Clean up the temp file after download
       unlink(filePath).catch(() => {});
-      exportJobs.delete(jobId);
+      job.remove().catch(() => {});
     });
   });
 
