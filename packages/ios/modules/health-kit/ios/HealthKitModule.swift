@@ -264,7 +264,7 @@ public class HealthKitModule: Module {
                     return
                 }
 
-                let unit = self.preferredUnit(for: quantityType)
+                let unit = HealthKitQueries.preferredUnit(for: quantityType)
                 let dateFormatter = DateFormatter()
                 dateFormatter.dateFormat = "yyyy-MM-dd"
                 dateFormatter.timeZone = .current
