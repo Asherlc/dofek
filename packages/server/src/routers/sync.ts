@@ -4,8 +4,11 @@ import { getAllProviders, registerProvider } from "dofek/providers/registry";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { startWorker } from "../lib/start-worker.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
+
+const tokenRowSchema = z.object({ provider_id: z.string() });
 
 // ── Input schemas ──
 export const triggerSyncInput = z.object({
@@ -186,7 +189,9 @@ export const syncRouter = router({
       providerIds.push(provider.id);
     } else {
       // Check which providers have tokens to determine connectivity
-      const allTokens = await ctx.db.execute<{ provider_id: string }>(
+      const allTokens = await executeWithSchema(
+        ctx.db,
+        tokenRowSchema,
         sql`SELECT DISTINCT ot.provider_id
             FROM fitness.oauth_token ot
             JOIN fitness.provider p ON p.id = ot.provider_id

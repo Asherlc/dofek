@@ -37,6 +37,23 @@ describe("ProviderModel", () => {
     expect(model.isConnected).toBe(false);
   });
 
+  it("sets both needsOAuth and needsCustomAuth for dual-auth providers", () => {
+    const model = new ProviderModel(
+      {
+        id: "garmin",
+        name: "Garmin",
+        authSetup: () => ({
+          oauthConfig: { clientId: "garmin", authorizeUrl: "", tokenUrl: "", redirectUri: "" },
+          automatedLogin: async () => ({}),
+        }),
+      },
+      new Set(["garmin"]),
+    );
+    expect(model.needsOAuth).toBe(true);
+    expect(model.needsCustomAuth).toBe(true);
+    expect(model.isConnected).toBe(true);
+  });
+
   it("handles authSetup that throws", () => {
     const model = new ProviderModel(
       {

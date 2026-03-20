@@ -22,6 +22,7 @@ export class ProviderModel {
     this.importOnly = provider.importOnly === true;
 
     let hasOAuthConfig = false;
+    let hasAutomatedLogin = false;
     try {
       const setup = provider.authSetup?.();
       hasOAuthConfig =
@@ -29,12 +30,17 @@ export class ProviderModel {
         setup !== null &&
         "oauthConfig" in setup &&
         !!setup.oauthConfig;
+      hasAutomatedLogin =
+        typeof setup === "object" &&
+        setup !== null &&
+        "automatedLogin" in setup &&
+        !!setup.automatedLogin;
     } catch {
       /* credentials not configured */
     }
 
     this.needsOAuth = hasOAuthConfig;
-    this.needsCustomAuth = !!provider.authSetup && !hasOAuthConfig;
+    this.needsCustomAuth = (!!provider.authSetup && !hasOAuthConfig) || hasAutomatedLogin;
     this.isConnected = !provider.authSetup || tokenSet.has(provider.id);
     this.lastSyncedAt = lastSyncMap?.get(provider.id) ?? null;
   }
