@@ -93,6 +93,8 @@ const activityRowSchema = z.object({
   name: z.string().nullable(),
   provider_id: z.string(),
   source_providers: z.array(z.string()).nullable(),
+  distance_meters: z.number().nullable().optional(),
+  calories: z.number().nullable().optional(),
 });
 
 /** Sections that render side-by-side in a 2-column grid. The key is the "primary" (left) section. */

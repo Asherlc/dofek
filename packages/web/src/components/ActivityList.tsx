@@ -1,4 +1,4 @@
-import { Link } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface Activity {
@@ -9,6 +9,8 @@ interface Activity {
   name: string | null;
   provider_id: string;
   source_providers: string[] | null;
+  distance_meters?: number | null;
+  calories?: number | null;
 }
 
 interface ActivityListProps {
@@ -28,6 +30,8 @@ export function ActivityList({
   pageSize,
   onPageChange,
 }: ActivityListProps) {
+  const navigate = useNavigate();
+
   if (loading) {
     return <ChartLoadingSkeleton height={100} />;
   }
@@ -58,6 +62,12 @@ export function ActivityList({
               Duration
             </th>
             <th scope="col" className="pb-2 pr-4 whitespace-nowrap">
+              Distance
+            </th>
+            <th scope="col" className="pb-2 pr-4 whitespace-nowrap">
+              Calories
+            </th>
+            <th scope="col" className="pb-2 pr-4 whitespace-nowrap">
               Provider
             </th>
             <th scope="col" className="pb-2 whitespace-nowrap">
@@ -75,24 +85,32 @@ export function ActivityList({
                 : null;
 
             return (
-              <Link key={a.id} to="/activity/$id" params={{ id: a.id }} className="contents">
-                <tr className="border-b border-zinc-800/50 hover:bg-zinc-900/50 cursor-pointer">
-                  <td className="py-2 pr-4 text-zinc-300 whitespace-nowrap">
-                    {new Date(a.started_at).toLocaleDateString()}
-                  </td>
-                  <td className="py-2 pr-4 capitalize whitespace-nowrap">{a.activity_type}</td>
-                  <td className="py-2 pr-4 text-zinc-300 max-w-[200px] truncate">
-                    {a.name ?? "—"}
-                  </td>
-                  <td className="py-2 pr-4 tabular-nums whitespace-nowrap">
-                    {duration != null ? `${duration}m` : "—"}
-                  </td>
-                  <td className="py-2 pr-4 text-zinc-400 whitespace-nowrap">{a.provider_id}</td>
-                  <td className="py-2 text-zinc-500 text-xs whitespace-nowrap">
-                    {a.source_providers?.join(", ")}
-                  </td>
-                </tr>
-              </Link>
+              <tr
+                key={a.id}
+                onClick={() => navigate({ to: "/activity/$id", params: { id: a.id } })}
+                className="border-b border-zinc-800/50 hover:bg-zinc-900/50 cursor-pointer"
+              >
+                <td className="py-2 pr-4 text-zinc-300 whitespace-nowrap">
+                  {new Date(a.started_at).toLocaleDateString()}
+                </td>
+                <td className="py-2 pr-4 capitalize whitespace-nowrap">{a.activity_type}</td>
+                <td className="py-2 pr-4 text-zinc-300 max-w-[200px] truncate">
+                  {a.name ?? "—"}
+                </td>
+                <td className="py-2 pr-4 tabular-nums whitespace-nowrap">
+                  {duration != null ? `${duration}m` : "—"}
+                </td>
+                <td className="py-2 pr-4 tabular-nums whitespace-nowrap text-zinc-300">
+                  {a.distance_meters ? `${(a.distance_meters / 1000).toFixed(1)}km` : "—"}
+                </td>
+                <td className="py-2 pr-4 tabular-nums whitespace-nowrap text-zinc-300">
+                  {a.calories ? `${Math.round(a.calories)} kcal` : "—"}
+                </td>
+                <td className="py-2 pr-4 text-zinc-400 whitespace-nowrap">{a.provider_id}</td>
+                <td className="py-2 text-zinc-500 text-xs whitespace-nowrap">
+                  {a.source_providers?.join(", ")}
+                </td>
+              </tr>
             );
           })}
         </tbody>
