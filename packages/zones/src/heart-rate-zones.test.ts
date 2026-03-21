@@ -137,6 +137,10 @@ describe("getZoneForHeartRate", () => {
     expect(getZoneForHeartRate(210, karvonenZones)).toBe(5);
   });
 
+  it("returns 0 for empty zones array", () => {
+    expect(getZoneForHeartRate(150, [])).toBe(0);
+  });
+
   it("works with maxHr zones (3-zone model)", () => {
     const maxHrZones = computeMaxHrZones(200);
     // Z1: 0-160, Z2: 160-180, Z3: 180-200
@@ -155,10 +159,14 @@ describe("HR_ZONE_COLORS", () => {
     expect(HR_ZONE_COLORS).toHaveLength(5);
   });
 
-  it("contains valid hex color strings", () => {
-    for (const color of HR_ZONE_COLORS) {
-      expect(color).toMatch(/^#[0-9a-f]{6}$/);
-    }
+  it("has the exact green-to-red gradient colors", () => {
+    expect(HR_ZONE_COLORS).toEqual([
+      "#22c55e", // Z1 Recovery  (green)
+      "#84cc16", // Z2 Aerobic   (lime)
+      "#eab308", // Z3 Tempo     (yellow)
+      "#f97316", // Z4 Threshold (orange)
+      "#ef4444", // Z5 Anaerobic (red)
+    ]);
   });
 });
 
