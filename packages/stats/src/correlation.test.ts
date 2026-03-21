@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CORRELATION_METRICS,
-  correlationColor,
-  correlationConfidence,
-  describeCorrelation,
-  generateCorrelationInsight,
+  CorrelationResult,
   lgamma,
   linearRegression,
   pearsonCorrelation,
@@ -40,106 +37,103 @@ describe("CORRELATION_METRICS", () => {
   });
 });
 
-describe("describeCorrelation", () => {
+describe("CorrelationResult.description", () => {
   it("returns 'strong positive' for rho >= 0.7", () => {
-    expect(describeCorrelation(0.7)).toBe("strong positive");
-    expect(describeCorrelation(0.95)).toBe("strong positive");
+    expect(new CorrelationResult(0.7, 0, 30).description).toBe("strong positive");
+    expect(new CorrelationResult(0.95, 0, 30).description).toBe("strong positive");
   });
 
   it("returns 'moderate positive' for 0.4 <= rho < 0.7", () => {
-    expect(describeCorrelation(0.5)).toBe("moderate positive");
+    expect(new CorrelationResult(0.5, 0, 30).description).toBe("moderate positive");
   });
 
   it("returns 'weak positive' for 0.2 <= rho < 0.4", () => {
-    expect(describeCorrelation(0.25)).toBe("weak positive");
+    expect(new CorrelationResult(0.25, 0, 30).description).toBe("weak positive");
   });
 
   it("returns 'negligible' for |rho| < 0.2", () => {
-    expect(describeCorrelation(0.1)).toBe("negligible");
-    expect(describeCorrelation(-0.05)).toBe("negligible");
-    expect(describeCorrelation(0)).toBe("negligible");
+    expect(new CorrelationResult(0.1, 0, 30).description).toBe("negligible");
+    expect(new CorrelationResult(-0.05, 0, 30).description).toBe("negligible");
+    expect(new CorrelationResult(0, 0, 30).description).toBe("negligible");
   });
 
   it("returns negative descriptions for negative rho", () => {
-    expect(describeCorrelation(-0.75)).toBe("strong negative");
-    expect(describeCorrelation(-0.5)).toBe("moderate negative");
-    expect(describeCorrelation(-0.3)).toBe("weak negative");
+    expect(new CorrelationResult(-0.75, 0, 30).description).toBe("strong negative");
+    expect(new CorrelationResult(-0.5, 0, 30).description).toBe("moderate negative");
+    expect(new CorrelationResult(-0.3, 0, 30).description).toBe("weak negative");
   });
 
   it("returns 'moderate positive' at exact boundary 0.4", () => {
-    expect(describeCorrelation(0.4)).toBe("moderate positive");
+    expect(new CorrelationResult(0.4, 0, 30).description).toBe("moderate positive");
   });
 
   it("returns 'weak positive' at exact boundary 0.2", () => {
-    expect(describeCorrelation(0.2)).toBe("weak positive");
+    expect(new CorrelationResult(0.2, 0, 30).description).toBe("weak positive");
   });
 
   it("returns 'negligible' at exactly 0", () => {
-    expect(describeCorrelation(0)).toBe("negligible");
+    expect(new CorrelationResult(0, 0, 30).description).toBe("negligible");
   });
 });
 
-describe("correlationConfidence", () => {
+describe("CorrelationResult.confidence", () => {
   it("returns 'strong' for high rho + large n", () => {
-    expect(correlationConfidence(0.6, 50)).toBe("strong");
+    expect(new CorrelationResult(0.6, 0, 50).confidence).toBe("strong");
   });
 
   it("returns 'emerging' for moderate rho + moderate n", () => {
-    expect(correlationConfidence(0.4, 20)).toBe("emerging");
+    expect(new CorrelationResult(0.4, 0, 20).confidence).toBe("emerging");
   });
 
   it("returns 'early' for weak rho + small n", () => {
-    expect(correlationConfidence(0.25, 12)).toBe("early");
+    expect(new CorrelationResult(0.25, 0, 12).confidence).toBe("early");
   });
 
   it("returns 'insufficient' for tiny rho or tiny n", () => {
-    expect(correlationConfidence(0.1, 5)).toBe("insufficient");
-    expect(correlationConfidence(0.5, 5)).toBe("insufficient");
+    expect(new CorrelationResult(0.1, 0, 5).confidence).toBe("insufficient");
+    expect(new CorrelationResult(0.5, 0, 5).confidence).toBe("insufficient");
   });
 
   it("returns 'strong' at exact boundaries rho=0.5 and n=30", () => {
-    expect(correlationConfidence(0.5, 30)).toBe("strong");
+    expect(new CorrelationResult(0.5, 0, 30).confidence).toBe("strong");
   });
 
   it("returns 'emerging' at exact boundaries rho=0.35 and n=15", () => {
-    expect(correlationConfidence(0.35, 15)).toBe("emerging");
+    expect(new CorrelationResult(0.35, 0, 15).confidence).toBe("emerging");
   });
 
   it("returns 'early' at exact boundaries rho=0.2 and n=10", () => {
-    expect(correlationConfidence(0.2, 10)).toBe("early");
+    expect(new CorrelationResult(0.2, 0, 10).confidence).toBe("early");
   });
 });
 
-describe("correlationColor", () => {
+describe("CorrelationResult.color", () => {
   it("returns emerald for positive correlation", () => {
-    expect(correlationColor(0.5)).toBe("#10b981");
+    expect(new CorrelationResult(0.5, 0, 30).color).toBe("#10b981");
   });
 
   it("returns rose for negative correlation", () => {
-    expect(correlationColor(-0.5)).toBe("#f43f5e");
+    expect(new CorrelationResult(-0.5, 0, 30).color).toBe("#f43f5e");
   });
 
   it("returns neutral for negligible correlation", () => {
-    expect(correlationColor(0.05)).toBe("#71717a");
+    expect(new CorrelationResult(0.05, 0, 30).color).toBe("#71717a");
   });
 
   it("returns emerald at exact boundary rho=0.2", () => {
-    expect(correlationColor(0.2)).toBe("#10b981");
+    expect(new CorrelationResult(0.2, 0, 30).color).toBe("#10b981");
   });
 
   it("returns neutral at exactly zero", () => {
-    expect(correlationColor(0)).toBe("#71717a");
+    expect(new CorrelationResult(0, 0, 30).color).toBe("#71717a");
   });
 });
 
-describe("generateCorrelationInsight", () => {
+describe("CorrelationResult.generateInsight", () => {
   it("generates a descriptive sentence for a positive correlation", () => {
-    const result = generateCorrelationInsight({
+    const result = new CorrelationResult(0.45, 0.001, 200).generateInsight({
       xLabel: "protein intake",
       yLabel: "heart rate variability",
-      rho: 0.45,
-      pValue: 0.001,
-      n: 200,
       lag: 0,
     });
     expect(result).toContain("protein intake");
@@ -150,48 +144,36 @@ describe("generateCorrelationInsight", () => {
   });
 
   it("generates a 'no relationship' message for negligible correlation", () => {
-    const result = generateCorrelationInsight({
+    const result = new CorrelationResult(0.03, 0.7, 300).generateInsight({
       xLabel: "sleep duration",
       yLabel: "weight",
-      rho: 0.03,
-      pValue: 0.7,
-      n: 300,
       lag: 0,
     });
     expect(result).toContain("No meaningful");
   });
 
   it("includes lag info when lag > 0", () => {
-    const result = generateCorrelationInsight({
+    const result = new CorrelationResult(0.5, 0.001, 100).generateInsight({
       xLabel: "exercise duration",
       yLabel: "heart rate variability",
-      rho: 0.5,
-      pValue: 0.001,
-      n: 100,
       lag: 1,
     });
     expect(result).toMatch(/next.day|1.day later/i);
   });
 
   it("uses 'lower' for negative correlation", () => {
-    const result = generateCorrelationInsight({
+    const result = new CorrelationResult(-0.5, 0.001, 100).generateInsight({
       xLabel: "alcohol intake",
       yLabel: "sleep quality",
-      rho: -0.5,
-      pValue: 0.001,
-      n: 100,
       lag: 0,
     });
     expect(result).toContain("lower");
   });
 
   it("does not contain lag text when lag is 0", () => {
-    const result = generateCorrelationInsight({
+    const result = new CorrelationResult(0.45, 0.001, 100).generateInsight({
       xLabel: "protein intake",
       yLabel: "recovery score",
-      rho: 0.45,
-      pValue: 0.001,
-      n: 100,
       lag: 0,
     });
     expect(result).not.toContain("day later");
@@ -199,24 +181,18 @@ describe("generateCorrelationInsight", () => {
   });
 
   it("uses 'strongly' for high correlation", () => {
-    const result = generateCorrelationInsight({
+    const result = new CorrelationResult(0.8, 0.001, 100).generateInsight({
       xLabel: "sleep duration",
       yLabel: "heart rate variability",
-      rho: 0.8,
-      pValue: 0.001,
-      n: 100,
       lag: 0,
     });
     expect(result).toContain("strongly");
   });
 
   it("uses 'weakly' for weak correlation", () => {
-    const result = generateCorrelationInsight({
+    const result = new CorrelationResult(0.25, 0.05, 50).generateInsight({
       xLabel: "caffeine",
       yLabel: "resting heart rate",
-      rho: 0.25,
-      pValue: 0.05,
-      n: 50,
       lag: 0,
     });
     expect(result).toContain("weakly");
