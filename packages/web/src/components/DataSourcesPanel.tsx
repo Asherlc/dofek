@@ -316,7 +316,7 @@ export function DataSourcesPanel() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium text-zinc-300">Data Sources</h3>
+        <h3 className="text-sm font-medium text-foreground">Data Sources</h3>
         {enabledSyncable.length > 1 && (
           <div className="flex gap-2">
             <button
@@ -326,7 +326,7 @@ export function DataSourcesPanel() {
               className={`text-xs px-3 py-1 rounded transition-colors ${
                 syncAllMode === "sync"
                   ? "bg-emerald-600 text-white"
-                  : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50"
+                  : "bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50"
               }`}
             >
               {syncAllMode === "sync" ? "Syncing..." : "Sync All"}
@@ -338,7 +338,7 @@ export function DataSourcesPanel() {
               className={`text-xs px-3 py-1 rounded transition-colors ${
                 syncAllMode === "full"
                   ? "bg-emerald-600 text-white"
-                  : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700 disabled:opacity-50"
+                  : "bg-accent/10 text-muted hover:bg-surface-hover disabled:opacity-50"
               }`}
             >
               {syncAllMode === "full" ? "Full Syncing..." : "Full Sync All"}
@@ -350,7 +350,7 @@ export function DataSourcesPanel() {
       {providers.isLoading ? (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {["skeleton-1", "skeleton-2", "skeleton-3"].map((id) => (
-            <div key={id} className="h-24 rounded-lg bg-zinc-800/50 animate-pulse" />
+            <div key={id} className="h-24 rounded-lg bg-skeleton animate-pulse" />
           ))}
         </div>
       ) : (
@@ -500,7 +500,7 @@ function SyncProviderCard({
     : [];
 
   return (
-    <div className="flex flex-col rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-3 transition-colors">
+    <div className="flex flex-col rounded-lg border border-border bg-surface px-4 py-3 transition-colors">
       {/* Header with sync trigger */}
       <button
         type="button"
@@ -515,56 +515,54 @@ function SyncProviderCard({
         ) : (
           <StatusDot status={state.status} />
         )}
-        <span className="text-sm font-medium text-zinc-200">{provider.name}</span>
+        <span className="text-sm font-medium text-foreground">{provider.name}</span>
         {needsAuth && <span className="text-xs text-blue-400">Connect</span>}
-        {state.status === "syncing" && <span className="text-xs text-zinc-500">...</span>}
+        {state.status === "syncing" && <span className="text-xs text-subtle">...</span>}
       </button>
 
       {/* Progress bar during sync */}
       {state.status === "syncing" && (
         <div className="mt-2">
           {state.percentage != null && (
-            <div className="w-full h-1.5 rounded-full bg-zinc-800 overflow-hidden">
+            <div className="w-full h-1.5 rounded-full bg-accent/10 overflow-hidden">
               <div
                 className="h-full rounded-full bg-emerald-500 transition-all duration-300"
                 style={{ width: `${state.percentage}%` }}
               />
             </div>
           )}
-          {state.message && (
-            <span className="text-xs text-zinc-500 mt-1 block">{state.message}</span>
-          )}
+          {state.message && <span className="text-xs text-subtle mt-1 block">{state.message}</span>}
         </div>
       )}
 
       {/* Status message */}
       {state.message && state.status !== "syncing" && (
-        <span className="text-xs text-zinc-500 mt-1">{state.message}</span>
+        <span className="text-xs text-subtle mt-1">{state.message}</span>
       )}
       {state.status !== "syncing" &&
         !state.message &&
         provider.lastSyncedAt &&
         formatRelativeTime(provider.lastSyncedAt) && (
-          <span className="text-xs text-zinc-600 mt-1">
+          <span className="text-xs text-dim mt-1">
             Last sync: {formatRelativeTime(provider.lastSyncedAt)}
           </span>
         )}
 
       {/* Stats summary */}
       {totalRecords > 0 && (
-        <div className="mt-2 pt-2 border-t border-zinc-800/50">
+        <div className="mt-2 pt-2 border-t border-border/50">
           <div className="flex items-baseline gap-2">
-            <span className="text-lg font-bold text-zinc-100 tabular-nums">
+            <span className="text-lg font-bold text-foreground tabular-nums">
               {totalRecords.toLocaleString()}
             </span>
-            <span className="text-xs text-zinc-500">records</span>
+            <span className="text-xs text-subtle">records</span>
           </div>
           {breakdown.length > 1 && (
             <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 mt-1">
               {breakdown.map((b) => (
                 <div key={b.label} className="flex justify-between text-xs">
-                  <span className="text-zinc-500">{b.label}</span>
-                  <span className="text-zinc-400 tabular-nums">{b.count.toLocaleString()}</span>
+                  <span className="text-subtle">{b.label}</span>
+                  <span className="text-muted tabular-nums">{b.count.toLocaleString()}</span>
                 </div>
               ))}
             </div>
@@ -573,7 +571,7 @@ function SyncProviderCard({
       )}
 
       {/* Recent sync dots + full sync button + details link */}
-      <div className="flex items-center justify-between mt-2 pt-2 border-t border-zinc-800/50">
+      <div className="flex items-center justify-between mt-2 pt-2 border-t border-border/50">
         <div className="flex items-center gap-1">
           {recentLogs.map((l) => (
             <span
@@ -584,16 +582,14 @@ function SyncProviderCard({
               title={`${l.status} — ${formatTime(l.syncedAt)}`}
             />
           ))}
-          {recentLogs.length === 0 && (
-            <span className="text-xs text-zinc-600">No sync history</span>
-          )}
+          {recentLogs.length === 0 && <span className="text-xs text-dim">No sync history</span>}
         </div>
         <div className="flex items-center gap-3">
           {!needsAuth && state.status !== "syncing" && (
             <button
               type="button"
               onClick={onFullSync}
-              className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+              className="text-xs text-dim hover:text-muted transition-colors"
             >
               Full sync
             </button>
@@ -601,7 +597,7 @@ function SyncProviderCard({
           <Link
             to="/providers/$id"
             params={{ id: provider.id }}
-            className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+            className="text-xs text-dim hover:text-muted transition-colors"
           >
             Details
           </Link>
@@ -655,13 +651,13 @@ function CredentialAuthModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 w-full max-w-sm shadow-2xl">
+      <div className="bg-surface-solid border border-border-strong rounded-xl p-6 w-full max-w-sm shadow-2xl">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-semibold text-zinc-200">Connect {providerName}</h3>
+          <h3 className="text-sm font-semibold text-foreground">Connect {providerName}</h3>
           <button
             type="button"
             onClick={onClose}
-            className="text-zinc-500 hover:text-zinc-300 text-lg leading-none p-1"
+            className="text-subtle hover:text-foreground text-lg leading-none p-1"
             aria-label="Close"
           >
             &times;
@@ -674,7 +670,7 @@ function CredentialAuthModal({
 
         <form onSubmit={handleSignIn} className="space-y-3">
           <div>
-            <label htmlFor={`${providerId}-email`} className="block text-xs text-zinc-400 mb-1">
+            <label htmlFor={`${providerId}-email`} className="block text-xs text-muted mb-1">
               Email
             </label>
             <input
@@ -684,12 +680,12 @@ function CredentialAuthModal({
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               required
-              className="w-full px-3 py-2 text-sm bg-zinc-800 border border-zinc-700 rounded text-zinc-200 focus:outline-none focus:border-zinc-500"
+              className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
               placeholder="you@example.com"
             />
           </div>
           <div>
-            <label htmlFor={`${providerId}-password`} className="block text-xs text-zinc-400 mb-1">
+            <label htmlFor={`${providerId}-password`} className="block text-xs text-muted mb-1">
               Password
             </label>
             <input
@@ -698,7 +694,7 @@ function CredentialAuthModal({
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              className="w-full px-3 py-2 text-sm bg-zinc-800 border border-zinc-700 rounded text-zinc-200 focus:outline-none focus:border-zinc-500"
+              className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
             />
           </div>
           <button
@@ -748,13 +744,13 @@ function GarminAuthModal({ onClose, onSuccess }: { onClose: () => void; onSucces
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 w-full max-w-sm shadow-2xl">
+      <div className="bg-surface-solid border border-border-strong rounded-xl p-6 w-full max-w-sm shadow-2xl">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-semibold text-zinc-200">Connect Garmin</h3>
+          <h3 className="text-sm font-semibold text-foreground">Connect Garmin</h3>
           <button
             type="button"
             onClick={onClose}
-            className="text-zinc-500 hover:text-zinc-300 text-lg leading-none p-1"
+            className="text-subtle hover:text-foreground text-lg leading-none p-1"
             aria-label="Close"
           >
             &times;
@@ -767,7 +763,7 @@ function GarminAuthModal({ onClose, onSuccess }: { onClose: () => void; onSucces
 
         <form onSubmit={handleSignIn} className="space-y-3">
           <div>
-            <label htmlFor="garmin-email" className="block text-xs text-zinc-400 mb-1">
+            <label htmlFor="garmin-email" className="block text-xs text-muted mb-1">
               Email
             </label>
             <input
@@ -777,12 +773,12 @@ function GarminAuthModal({ onClose, onSuccess }: { onClose: () => void; onSucces
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               required
-              className="w-full px-3 py-2 text-sm bg-zinc-800 border border-zinc-700 rounded text-zinc-200 focus:outline-none focus:border-zinc-500"
+              className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
               placeholder="you@example.com"
             />
           </div>
           <div>
-            <label htmlFor="garmin-password" className="block text-xs text-zinc-400 mb-1">
+            <label htmlFor="garmin-password" className="block text-xs text-muted mb-1">
               Password
             </label>
             <input
@@ -791,7 +787,7 @@ function GarminAuthModal({ onClose, onSuccess }: { onClose: () => void; onSucces
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              className="w-full px-3 py-2 text-sm bg-zinc-800 border border-zinc-700 rounded text-zinc-200 focus:outline-none focus:border-zinc-500"
+              className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
             />
           </div>
           <button
@@ -878,13 +874,13 @@ function WhoopAuthModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 w-full max-w-sm shadow-2xl">
+      <div className="bg-surface-solid border border-border-strong rounded-xl p-6 w-full max-w-sm shadow-2xl">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-semibold text-zinc-200">Connect WHOOP</h3>
+          <h3 className="text-sm font-semibold text-foreground">Connect WHOOP</h3>
           <button
             type="button"
             onClick={onClose}
-            className="text-zinc-500 hover:text-zinc-300 text-lg leading-none p-1"
+            className="text-subtle hover:text-foreground text-lg leading-none p-1"
             aria-label="Close"
           >
             &times;
@@ -898,7 +894,7 @@ function WhoopAuthModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
         {step === "credentials" && (
           <form onSubmit={handleSignIn} className="space-y-3">
             <div>
-              <label htmlFor="whoop-email" className="block text-xs text-zinc-400 mb-1">
+              <label htmlFor="whoop-email" className="block text-xs text-muted mb-1">
                 Email
               </label>
               <input
@@ -908,12 +904,12 @@ function WhoopAuthModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 required
-                className="w-full px-3 py-2 text-sm bg-zinc-800 border border-zinc-700 rounded text-zinc-200 focus:outline-none focus:border-zinc-500"
+                className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
                 placeholder="you@example.com"
               />
             </div>
             <div>
-              <label htmlFor="whoop-password" className="block text-xs text-zinc-400 mb-1">
+              <label htmlFor="whoop-password" className="block text-xs text-muted mb-1">
                 Password
               </label>
               <input
@@ -922,7 +918,7 @@ function WhoopAuthModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                className="w-full px-3 py-2 text-sm bg-zinc-800 border border-zinc-700 rounded text-zinc-200 focus:outline-none focus:border-zinc-500"
+                className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
               />
             </div>
             <button
@@ -937,11 +933,11 @@ function WhoopAuthModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
 
         {step === "verify" && (
           <form onSubmit={handleVerify} className="space-y-3">
-            <p className="text-xs text-zinc-400">
+            <p className="text-xs text-muted">
               WHOOP sent a verification code to your phone. Enter it below.
             </p>
             <div>
-              <label htmlFor="whoop-code" className="block text-xs text-zinc-400 mb-1">
+              <label htmlFor="whoop-code" className="block text-xs text-muted mb-1">
                 Verification Code
               </label>
               <input
@@ -953,7 +949,7 @@ function WhoopAuthModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
                 required
                 inputMode="numeric"
                 pattern="[0-9]*"
-                className="w-full px-3 py-2 text-sm bg-zinc-800 border border-zinc-700 rounded text-zinc-200 focus:outline-none focus:border-zinc-500 text-center tracking-widest text-lg"
+                className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent text-center tracking-widest text-lg"
                 placeholder="000000"
               />
             </div>
@@ -969,7 +965,7 @@ function WhoopAuthModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
 
         {step === "saving" && (
           <div className="text-center py-4">
-            <div className="text-sm text-zinc-300">Saving credentials...</div>
+            <div className="text-sm text-foreground">Saving credentials...</div>
           </div>
         )}
       </div>
@@ -981,7 +977,7 @@ function WhoopAuthModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
 
 function StatusDot({ status }: { status: SyncStatus }) {
   const colors = {
-    idle: "bg-zinc-600",
+    idle: "bg-dim",
     syncing: "bg-amber-400 animate-pulse",
     done: "bg-emerald-400",
     error: "bg-red-400",
@@ -1206,11 +1202,11 @@ function FileImportZone({
   );
 
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-3">
+    <div className="rounded-lg border border-border bg-surface px-4 py-3">
       <div className="flex items-center gap-2 mb-2">
         {providerId && <ProviderLogo provider={providerId} size={18} />}
         <StatusDot status={state.status} />
-        <span className="text-sm font-medium text-zinc-200">{title}</span>
+        <span className="text-sm font-medium text-foreground">{title}</span>
       </div>
       <button
         type="button"
@@ -1231,7 +1227,7 @@ function FileImportZone({
         className={`rounded border-2 border-dashed p-3 text-center cursor-pointer transition-colors ${
           dragOver
             ? "border-blue-500 bg-blue-500/10"
-            : "border-zinc-700 hover:border-zinc-600 bg-zinc-900/30"
+            : "border-border-strong hover:border-border-strong bg-surface/30"
         }`}
       >
         <input
@@ -1243,9 +1239,9 @@ function FileImportZone({
         />
         {state.status === "syncing" ? (
           <div>
-            <div className="text-xs text-zinc-500">{state.message}</div>
+            <div className="text-xs text-subtle">{state.message}</div>
             {state.progress != null && (
-              <div className="mt-2 w-full h-1.5 rounded-full bg-zinc-800 overflow-hidden">
+              <div className="mt-2 w-full h-1.5 rounded-full bg-accent/10 overflow-hidden">
                 <div
                   className="h-full rounded-full bg-emerald-500 transition-all duration-300"
                   style={{ width: `${state.progress}%` }}
@@ -1254,7 +1250,7 @@ function FileImportZone({
             )}
           </div>
         ) : (
-          <div className="text-xs text-zinc-600">{description}</div>
+          <div className="text-xs text-dim">{description}</div>
         )}
       </button>
       {state.status !== "idle" && state.status !== "syncing" && (
@@ -1267,19 +1263,19 @@ function FileImportZone({
 
       {/* Stats summary */}
       {totalRecords > 0 && (
-        <div className="mt-2 pt-2 border-t border-zinc-800/50">
+        <div className="mt-2 pt-2 border-t border-border/50">
           <div className="flex items-baseline gap-2">
-            <span className="text-lg font-bold text-zinc-100 tabular-nums">
+            <span className="text-lg font-bold text-foreground tabular-nums">
               {totalRecords.toLocaleString()}
             </span>
-            <span className="text-xs text-zinc-500">records</span>
+            <span className="text-xs text-subtle">records</span>
           </div>
           {breakdown.length > 1 && (
             <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 mt-1">
               {breakdown.map((b) => (
                 <div key={b.label} className="flex justify-between text-xs">
-                  <span className="text-zinc-500">{b.label}</span>
-                  <span className="text-zinc-400 tabular-nums">{b.count.toLocaleString()}</span>
+                  <span className="text-subtle">{b.label}</span>
+                  <span className="text-muted tabular-nums">{b.count.toLocaleString()}</span>
                 </div>
               ))}
             </div>
@@ -1288,7 +1284,7 @@ function FileImportZone({
       )}
 
       {/* Recent sync dots + details link */}
-      <div className="flex items-center justify-between mt-2 pt-2 border-t border-zinc-800/50">
+      <div className="flex items-center justify-between mt-2 pt-2 border-t border-border/50">
         <div className="flex items-center gap-1">
           {recentLogs.map((l) => (
             <span
@@ -1304,7 +1300,7 @@ function FileImportZone({
           <Link
             to="/providers/$id"
             params={{ id: providerId }}
-            className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+            className="text-xs text-dim hover:text-muted transition-colors"
           >
             Details
           </Link>

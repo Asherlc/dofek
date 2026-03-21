@@ -1,7 +1,14 @@
-import type { EChartsOption } from "echarts";
-import ReactECharts from "echarts-for-react";
+import {
+  chartColors,
+  chartThemeColors,
+  dofekAxis,
+  dofekGrid,
+  dofekSeries,
+  dofekTooltip,
+} from "../lib/chartTheme.ts";
 import { formatNumber } from "../lib/format.ts";
 import { CorrelationStrengthBar } from "./CorrelationStrengthBar.tsx";
+import { DofekChart } from "./DofekChart.tsx";
 
 export interface Insight {
   id: string;
@@ -35,11 +42,11 @@ const confidenceBadge = {
   },
   early: {
     label: "Early signal",
-    className: "bg-zinc-800 text-zinc-400 border-zinc-700",
+    className: "bg-accent/10 text-muted border-border-strong",
   },
   insufficient: {
     label: "Insufficient",
-    className: "bg-zinc-800 text-zinc-600 border-zinc-700",
+    className: "bg-accent/10 text-dim border-border-strong",
   },
 };
 
@@ -51,10 +58,10 @@ export function CorrelationCard({ insight }: CorrelationCardProps) {
   const badge = confidenceBadge[insight.confidence];
 
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4 space-y-3">
+    <div className="card p-4 space-y-3">
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
-        <p className="text-sm text-zinc-100 font-medium leading-tight">{insight.message}</p>
+        <p className="text-sm text-foreground font-medium leading-tight">{insight.message}</p>
         <span className={`shrink-0 text-[10px] px-2 py-0.5 rounded-full border ${badge.className}`}>
           {badge.label}
         </span>
@@ -68,7 +75,7 @@ export function CorrelationCard({ insight }: CorrelationCardProps) {
       )}
 
       {/* Explanation */}
-      {insight.explanation && <p className="text-xs text-zinc-400 italic">{insight.explanation}</p>}
+      {insight.explanation && <p className="text-xs text-muted italic">{insight.explanation}</p>}
 
       {/* Confounders */}
       {insight.confounders && insight.confounders.length > 0 && (
@@ -83,7 +90,7 @@ export function CorrelationCard({ insight }: CorrelationCardProps) {
       )}
 
       {/* Stats footer */}
-      <p className="text-[11px] text-zinc-600">{insight.detail}</p>
+      <p className="text-[11px] text-dim">{insight.detail}</p>
     </div>
   );
 }
@@ -98,20 +105,19 @@ function ConditionalChart({ insight }: { insight: Insight }) {
 
   const maxVal = Math.max(Math.abs(whenTrue.mean), Math.abs(whenFalse.mean));
 
-  const option: EChartsOption = {
-    grid: { left: 8, right: 60, top: 4, bottom: 4, containLabel: true },
+  const option = {
+    grid: dofekGrid("single", { left: 8, right: 60, top: 4, bottom: 4, containLabel: true }),
     xAxis: {
-      type: "value",
+      ...dofekAxis.value(),
       show: false,
       max: maxVal * 1.15,
     },
     yAxis: {
-      type: "category",
-      data: ["Without", `With ${action}`],
+      ...dofekAxis.category({ data: ["Without", `With ${action}`] }),
       axisLine: { show: false },
       axisTick: { show: false },
       axisLabel: {
-        color: "#a1a1aa",
+        color: chartThemeColors.legendText,
         fontSize: 11,
         width: 120,
         overflow: "truncate",
@@ -119,41 +125,42 @@ function ConditionalChart({ insight }: { insight: Insight }) {
     },
     series: [
       {
-        type: "bar",
-        data: [
-          {
-            value: Math.abs(whenFalse.mean),
-            itemStyle: { color: "#52525b" },
-            label: {
-              show: true,
-              position: "right",
-              formatter: `${formatValue(whenFalse.mean)} (n=${whenFalse.n})`,
-              color: "#a1a1aa",
-              fontSize: 10,
+        ...dofekSeries.bar(
+          "",
+          [
+            {
+              value: Math.abs(whenFalse.mean),
+              itemStyle: { color: chartThemeColors.axisLabel },
+              label: {
+                show: true,
+                position: "right",
+                formatter: `${formatValue(whenFalse.mean)} (n=${whenFalse.n})`,
+                color: chartThemeColors.legendText,
+                fontSize: 10,
+              },
             },
-          },
-          {
-            value: Math.abs(whenTrue.mean),
-            itemStyle: { color: "#34d399" },
-            label: {
-              show: true,
-              position: "right",
-              formatter: `${formatValue(whenTrue.mean)} (n=${whenTrue.n})`,
-              color: "#6ee7b7",
-              fontSize: 10,
+            {
+              value: Math.abs(whenTrue.mean),
+              itemStyle: { color: chartColors.emerald },
+              label: {
+                show: true,
+                position: "right",
+                formatter: `${formatValue(whenTrue.mean)} (n=${whenTrue.n})`,
+                color: "#6ee7b7",
+                fontSize: 10,
+              },
             },
-          },
-        ],
-        barWidth: 14,
-        barGap: "30%",
+          ],
+          { barWidth: 14, barGap: "30%" },
+        ),
       },
     ],
   };
 
   return (
     <div>
-      <ReactECharts option={option} style={{ height: 64 }} opts={{ renderer: "svg" }} />
-      <p className="text-center text-xs text-zinc-500 mt-1">
+      <DofekChart option={option} height={64} opts={{ renderer: "svg" }} />
+      <p className="text-center text-xs text-subtle mt-1">
         <span className={diff > 0 ? "text-emerald-400" : "text-rose-400"}>
           {sign}
           {pctDiff != null ? `${formatNumber(pctDiff, 0)}%` : formatValue(diff)}
@@ -174,7 +181,7 @@ function CorrelationViz({ insight }: { insight: Insight }) {
   return (
     <div className="space-y-1">
       <CorrelationStrengthBar rho={rho} />
-      <p className="text-[11px] text-zinc-600 text-center">Spearman rho | n={insight.whenTrue.n}</p>
+      <p className="text-[11px] text-dim text-center">Spearman rho | n={insight.whenTrue.n}</p>
     </div>
   );
 }
@@ -199,51 +206,47 @@ function ScatterPlot({ insight }: { insight: Insight }) {
   const slope = den !== 0 ? num / den : 0;
   const intercept = yMean - slope * xMean;
 
-  const trendColor = rho >= 0 ? "#34d399" : "#fb7185";
+  const trendColor = rho >= 0 ? chartColors.emerald : "#fb7185";
 
-  const option: EChartsOption = {
-    grid: { left: 8, right: 16, top: 16, bottom: 24, containLabel: true },
+  const option = {
+    grid: dofekGrid("single", { left: 8, right: 16, top: 16, bottom: 24, containLabel: true }),
     xAxis: {
-      type: "value",
-      name: insight.action,
+      ...dofekAxis.value({
+        name: insight.action,
+        showSplitLine: true,
+      }),
       nameLocation: "middle",
       nameGap: 20,
-      nameTextStyle: { color: "#71717a", fontSize: 10 },
-      axisLabel: { color: "#52525b", fontSize: 9 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
-      splitLine: { lineStyle: { color: "#27272a" } },
+      nameTextStyle: { color: chartThemeColors.axisLabel, fontSize: 10 },
+      axisLabel: { color: chartThemeColors.axisLabel, fontSize: 9 },
+      splitLine: { lineStyle: { color: chartThemeColors.gridLine } },
     },
     yAxis: {
-      type: "value",
-      name: insight.metric,
-      nameTextStyle: { color: "#71717a", fontSize: 10 },
-      axisLabel: { color: "#52525b", fontSize: 9 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
-      splitLine: { lineStyle: { color: "#27272a" } },
+      ...dofekAxis.value({ name: insight.metric }),
+      nameTextStyle: { color: chartThemeColors.axisLabel, fontSize: 10 },
+      axisLabel: { color: chartThemeColors.axisLabel, fontSize: 9 },
+      splitLine: { lineStyle: { color: chartThemeColors.gridLine } },
     },
     series: [
+      dofekSeries.scatter(
+        "",
+        points.map((p) => [p.x, p.y]),
+        { color: chartThemeColors.legendText, symbolSize: 4, itemStyle: { opacity: 0.5 } },
+      ),
       {
-        type: "scatter",
-        data: points.map((p) => [p.x, p.y]),
-        symbolSize: 4,
-        itemStyle: { color: "#a1a1aa", opacity: 0.5 },
-      },
-      {
-        type: "line",
-        data: [
-          [xMin, slope * xMin + intercept],
-          [xMax, slope * xMax + intercept],
-        ],
-        lineStyle: { color: trendColor, width: 2, type: "dashed" },
-        symbol: "none",
+        ...dofekSeries.line(
+          "",
+          [
+            [xMin, slope * xMin + intercept],
+            [xMax, slope * xMax + intercept],
+          ],
+          { color: trendColor, smooth: false, lineStyle: { type: "dashed" } },
+        ),
         silent: true,
       },
     ],
-    tooltip: {
+    tooltip: dofekTooltip({
       trigger: "item",
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 11 },
       formatter: (params: unknown) => {
         if (!params || typeof params !== "object" || !("value" in params)) return "";
         const rawValue = Array.isArray(params.value) ? params.value : [0, 0];
@@ -251,12 +254,12 @@ function ScatterPlot({ insight }: { insight: Insight }) {
         const v1 = Number(rawValue[1] ?? 0);
         return `${insight.action}: ${formatValue(v0)}<br/>${insight.metric}: ${formatValue(v1)}`;
       },
-    },
+    }),
   };
 
   return (
     <div>
-      <ReactECharts option={option} style={{ height: 180 }} opts={{ renderer: "svg" }} />
+      <DofekChart option={option} height={180} opts={{ renderer: "svg" }} />
       <div className="mt-1">
         <CorrelationStrengthBar rho={rho} />
       </div>
@@ -265,7 +268,7 @@ function ScatterPlot({ insight }: { insight: Insight }) {
 }
 
 export function CorrelationCardSkeleton() {
-  return <div className="h-48 rounded-lg bg-zinc-800 animate-pulse" />;
+  return <div className="h-48 rounded-lg bg-skeleton animate-pulse" />;
 }
 
 function formatValue(v: number): string {

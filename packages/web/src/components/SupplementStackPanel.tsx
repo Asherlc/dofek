@@ -150,13 +150,13 @@ export function SupplementStackPanel() {
   };
 
   if (stack.isLoading) {
-    return <div className="h-20 rounded-lg bg-zinc-800 animate-pulse" />;
+    return <div className="h-20 rounded-lg bg-skeleton animate-pulse" />;
   }
 
   return (
     <div className="space-y-3">
       {supplements.length === 0 && !showAdd && (
-        <p className="text-xs text-zinc-600">
+        <p className="text-xs text-dim">
           No supplements configured. Add your daily stack and it will be synced as nutrition data.
         </p>
       )}
@@ -194,7 +194,7 @@ export function SupplementStackPanel() {
         <button
           type="button"
           onClick={() => setShowAdd(true)}
-          className="text-xs px-3 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-300 hover:bg-zinc-700 transition-colors"
+          className="text-xs px-3 py-1.5 rounded-lg bg-accent/10 border border-border-strong text-foreground hover:bg-surface-hover transition-colors"
         >
           + Add supplement
         </button>
@@ -222,13 +222,13 @@ function SupplementRow({
   const nutrients = NUTRIENT_FIELDS.filter((f) => supp[f.key] != null && supp[f.key] !== 0);
 
   return (
-    <div className="flex items-center gap-3 rounded border border-zinc-800 bg-zinc-950 px-3 py-2 group">
+    <div className="flex items-center gap-3 rounded border border-border bg-page px-3 py-2 group">
       <div className="flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
         {onMoveUp && (
           <button
             type="button"
             onClick={onMoveUp}
-            className="text-[10px] text-zinc-600 hover:text-zinc-400"
+            className="text-[10px] text-dim hover:text-muted"
           >
             ▲
           </button>
@@ -237,7 +237,7 @@ function SupplementRow({
           <button
             type="button"
             onClick={onMoveDown}
-            className="text-[10px] text-zinc-600 hover:text-zinc-400"
+            className="text-[10px] text-dim hover:text-muted"
           >
             ▼
           </button>
@@ -245,14 +245,14 @@ function SupplementRow({
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-2">
-          <span className="text-sm text-zinc-200">{supp.name}</span>
-          {dose && <span className="text-xs text-zinc-500">{dose}</span>}
-          {supp.meal && <span className="text-[10px] text-zinc-600 uppercase">{supp.meal}</span>}
+          <span className="text-sm text-foreground">{supp.name}</span>
+          {dose && <span className="text-xs text-subtle">{dose}</span>}
+          {supp.meal && <span className="text-[10px] text-dim uppercase">{supp.meal}</span>}
         </div>
         {nutrients.length > 0 && (
           <div className="flex flex-wrap gap-x-3 gap-y-0 mt-0.5">
             {nutrients.map((f) => (
-              <span key={f.key} className="text-[10px] text-zinc-600">
+              <span key={f.key} className="text-[10px] text-dim">
                 {f.label}: {supp[f.key]}
                 {f.unit}
               </span>
@@ -263,7 +263,7 @@ function SupplementRow({
       <button
         type="button"
         onClick={onEdit}
-        className="text-xs text-zinc-600 hover:text-zinc-300 transition-colors opacity-0 group-hover:opacity-100"
+        className="text-xs text-dim hover:text-foreground transition-colors opacity-0 group-hover:opacity-100"
       >
         Edit
       </button>
@@ -342,10 +342,10 @@ function SupplementForm({
   };
 
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-3 space-y-3">
+    <div className="card p-3 space-y-3">
       <div className="grid grid-cols-12 gap-3">
         <div className="col-span-5">
-          <label htmlFor="supplement-name" className="text-xs text-zinc-500 block mb-1">
+          <label htmlFor="supplement-name" className="text-xs text-subtle block mb-1">
             Name
           </label>
           <input
@@ -354,11 +354,11 @@ function SupplementForm({
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g., Creatine Monohydrate"
-            className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500"
+            className="w-full bg-accent/10 border border-border-strong rounded px-3 py-1.5 text-sm text-foreground placeholder:text-dim focus:outline-none focus:border-accent"
           />
         </div>
         <div className="col-span-2">
-          <label htmlFor="supplement-amount" className="text-xs text-zinc-500 block mb-1">
+          <label htmlFor="supplement-amount" className="text-xs text-subtle block mb-1">
             Amount
           </label>
           <input
@@ -368,18 +368,18 @@ function SupplementForm({
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             placeholder="5000"
-            className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500 tabular-nums"
+            className="w-full bg-accent/10 border border-border-strong rounded px-3 py-1.5 text-sm text-foreground placeholder:text-dim focus:outline-none focus:border-accent tabular-nums"
           />
         </div>
         <div className="col-span-1">
-          <label htmlFor="supplement-unit" className="text-xs text-zinc-500 block mb-1">
+          <label htmlFor="supplement-unit" className="text-xs text-subtle block mb-1">
             Unit
           </label>
           <select
             id="supplement-unit"
             value={unit}
             onChange={(e) => setUnit(e.target.value)}
-            className="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-zinc-500"
+            className="w-full bg-accent/10 border border-border-strong rounded px-2 py-1.5 text-sm text-foreground focus:outline-none focus:border-accent"
           >
             {UNITS.map((u) => (
               <option key={u} value={u}>
@@ -389,14 +389,14 @@ function SupplementForm({
           </select>
         </div>
         <div className="col-span-2">
-          <label htmlFor="supplement-form" className="text-xs text-zinc-500 block mb-1">
+          <label htmlFor="supplement-form" className="text-xs text-subtle block mb-1">
             Form
           </label>
           <select
             id="supplement-form"
             value={form}
             onChange={(e) => setForm(e.target.value)}
-            className="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-zinc-500"
+            className="w-full bg-accent/10 border border-border-strong rounded px-2 py-1.5 text-sm text-foreground focus:outline-none focus:border-accent"
           >
             <option value="">—</option>
             {FORMS.map((f) => (
@@ -407,14 +407,14 @@ function SupplementForm({
           </select>
         </div>
         <div className="col-span-2">
-          <label htmlFor="supplement-meal" className="text-xs text-zinc-500 block mb-1">
+          <label htmlFor="supplement-meal" className="text-xs text-subtle block mb-1">
             Meal
           </label>
           <select
             id="supplement-meal"
             value={meal}
             onChange={(e) => setMeal(e.target.value)}
-            className="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-zinc-500"
+            className="w-full bg-accent/10 border border-border-strong rounded px-2 py-1.5 text-sm text-foreground focus:outline-none focus:border-accent"
           >
             <option value="">—</option>
             {MEALS.map((m) => (
@@ -430,7 +430,7 @@ function SupplementForm({
         <button
           type="button"
           onClick={() => setShowNutrients(!showNutrients)}
-          className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+          className="text-xs text-subtle hover:text-foreground transition-colors"
         >
           {showNutrients ? "▼" : "▶"} Nutritional values
         </button>
@@ -440,7 +440,7 @@ function SupplementForm({
               <div key={f.key}>
                 <label
                   htmlFor={`supplement-nutrient-${f.key}`}
-                  className="text-[10px] text-zinc-600 block mb-0.5"
+                  className="text-[10px] text-dim block mb-0.5"
                 >
                   {f.label} ({f.unit})
                 </label>
@@ -450,7 +450,7 @@ function SupplementForm({
                   step="any"
                   value={nutrients[f.key]}
                   onChange={(e) => setNutrients((prev) => ({ ...prev, [f.key]: e.target.value }))}
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-100 focus:outline-none focus:border-zinc-500 tabular-nums"
+                  className="w-full bg-accent/10 border border-border-strong rounded px-2 py-1 text-xs text-foreground focus:outline-none focus:border-accent tabular-nums"
                 />
               </div>
             ))}
@@ -474,7 +474,7 @@ function SupplementForm({
           <button
             type="button"
             onClick={onCancel}
-            className="text-xs px-3 py-1.5 rounded text-zinc-500 hover:text-zinc-300 transition-colors"
+            className="text-xs px-3 py-1.5 rounded text-subtle hover:text-foreground transition-colors"
           >
             Cancel
           </button>

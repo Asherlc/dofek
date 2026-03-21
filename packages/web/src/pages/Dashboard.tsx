@@ -21,6 +21,8 @@ import { StressChart } from "../components/StressChart.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { TimeSeriesChart } from "../components/TimeSeriesChart.tsx";
 import { WeeklyReportCard } from "../components/WeeklyReportCard.tsx";
+import { useScrollReveal } from "../hooks/useScrollReveal.ts";
+import { chartColors } from "../lib/chartTheme.ts";
 import { useDashboardLayout } from "../lib/dashboardLayoutContext.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitSystem } from "../lib/unitContext.ts";
@@ -155,7 +157,7 @@ export function buildSkinTempSeries(metrics: DailyMetricRow[], unitSystem: UnitS
       d.date,
       d.skin_temp_c != null ? convertTemperature(d.skin_temp_c, unitSystem) : null,
     ]),
-    color: "#f59e0b",
+    color: chartColors.amber,
     yAxisIndex: 1 as const,
   };
 }
@@ -282,7 +284,7 @@ export function Dashboard() {
     () => ({
       name: "SpO2",
       data: metrics.map((d): [string, number | null] => [d.date, d.spo2_avg]),
-      color: "#3b82f6",
+      color: chartColors.blue,
       areaStyle: true,
     }),
     [metrics],
@@ -299,7 +301,7 @@ export function Dashboard() {
     () => ({
       name: "Steps",
       data: metrics.map((d): [string, number | null] => [d.date, d.steps]),
-      color: "#8b5cf6",
+      color: chartColors.purple,
       areaStyle: true,
     }),
     [metrics],
@@ -317,8 +319,8 @@ export function Dashboard() {
       subtitle: "Strongest correlations in your data",
       content: insightsQuery.isLoading ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className="h-48 rounded-lg bg-zinc-800 animate-pulse" />
-          <div className="h-48 rounded-lg bg-zinc-800 animate-pulse" />
+          <div className="h-48 rounded-lg bg-skeleton animate-pulse" />
+          <div className="h-48 rounded-lg bg-skeleton animate-pulse" />
         </div>
       ) : topInsights.length > 0 ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -327,7 +329,7 @@ export function Dashboard() {
           ))}
         </div>
       ) : (
-        <p className="text-sm text-zinc-500">
+        <p className="text-sm text-subtle">
           Not enough data to surface insights yet. Check back after a few more days of tracking.
         </p>
       ),
@@ -356,7 +358,7 @@ export function Dashboard() {
       title: "Stress Monitor",
       subtitle: "Daily stress from HR/HRV deviation vs personal baseline",
       content: (
-        <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
+        <div className="card p-2 sm:p-4">
           <StressChart data={stressData.data} loading={stressData.isLoading} />
         </div>
       ),
@@ -370,7 +372,7 @@ export function Dashboard() {
       title: "Heart Rate Variability & Resting HR",
       subtitle: "60-day baseline band with 7-day rolling average",
       content: (
-        <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
+        <div className="card p-2 sm:p-4">
           <HrvBaselineChart data={hrvBaseline.data ?? []} loading={hrvBaseline.isLoading} />
         </div>
       ),
@@ -380,7 +382,7 @@ export function Dashboard() {
       subtitle: spo2TempConfig.subtitle,
       content:
         hasSpO2 || hasSkinTemp ? (
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
+          <div className="card p-2 sm:p-4">
             <TimeSeriesChart
               series={[
                 ...(hasSpO2 ? [spo2Series] : []),
@@ -399,7 +401,7 @@ export function Dashboard() {
       title: "Daily Steps",
       subtitle: "Total daily step count over time",
       content: (
-        <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
+        <div className="card p-2 sm:p-4">
           <TimeSeriesChart
             series={[stepsSeries]}
             height={200}
@@ -413,7 +415,7 @@ export function Dashboard() {
       title: "Sleep",
       subtitle: `Stage breakdown (${days} days)`,
       content: (
-        <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
+        <div className="card p-2 sm:p-4">
           <SleepChart
             data={assertRows(sleepData.data, sleepRowSchema)}
             loading={sleepData.isLoading}
@@ -425,7 +427,7 @@ export function Dashboard() {
       title: "Nutrition",
       subtitle: `Calories & macros (${days} days)`,
       content: (
-        <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
+        <div className="card p-2 sm:p-4">
           <NutritionChart
             data={assertRows(nutritionData.data, nutritionDailyRowSchema)}
             loading={nutritionData.isLoading}
@@ -438,9 +440,9 @@ export function Dashboard() {
       subtitle: "Smoothed weight trend and fat/lean mass recomposition",
       content: (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
+          <div className="card p-2 sm:p-4">
             <div className="mb-2 flex items-center gap-2">
-              <h3 className="text-xs font-medium text-zinc-500 uppercase">Weight Trend</h3>
+              <h3 className="text-xs font-medium text-subtle uppercase">Weight Trend</h3>
               <ChartDescriptionTooltip description="This chart shows your smoothed body weight trend over time to highlight your underlying direction." />
             </div>
             <SmoothedWeightChart
@@ -448,9 +450,9 @@ export function Dashboard() {
               loading={smoothedWeight.isLoading}
             />
           </div>
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
+          <div className="card p-2 sm:p-4">
             <div className="mb-2 flex items-center gap-2">
-              <h3 className="text-xs font-medium text-zinc-500 uppercase">Recomposition</h3>
+              <h3 className="text-xs font-medium text-subtle uppercase">Recomposition</h3>
               <ChartDescriptionTooltip description="This chart shows how fat mass and lean mass have changed so you can track body recomposition, not just scale weight." />
             </div>
             <BodyRecompositionChart data={bodyRecomp.data ?? []} loading={bodyRecomp.isLoading} />
@@ -462,7 +464,7 @@ export function Dashboard() {
       title: "Recent Activities",
       subtitle: `Last ${days} days`,
       content: (
-        <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
+        <div className="card p-2 sm:p-4">
           <ActivityList
             activities={assertRows(activities.data?.items, activityRowSchema)}
             loading={activities.isLoading}
@@ -479,6 +481,7 @@ export function Dashboard() {
   // Build the ordered list of sections to render, skipping hidden and already-rendered (pair secondaries)
   const rendered = new Set<string>();
   const orderedElements: ReactNode[] = [];
+  let sectionIndex = 0;
 
   for (const id of layout.order) {
     if (!DASHBOARD_SECTION_IDS.has(id)) continue;
@@ -497,6 +500,8 @@ export function Dashboard() {
     rendered.add(id);
     if (pairId) rendered.add(pairId);
 
+    const currentIndex = sectionIndex++;
+
     if (pairId && pairSection && !pairHidden) {
       // Render as a grid pair
       const resolvedPairId = pairId;
@@ -511,6 +516,7 @@ export function Dashboard() {
             onMoveUp={() => moveSection(id, "up")}
             onMoveDown={() => moveSection(id, "down")}
             onHide={() => toggleHidden(id)}
+            staggerIndex={currentIndex}
           >
             {section.content}
           </CollapsibleSection>
@@ -523,6 +529,7 @@ export function Dashboard() {
             onMoveUp={() => moveSection(resolvedPairId, "up")}
             onMoveDown={() => moveSection(resolvedPairId, "down")}
             onHide={() => toggleHidden(resolvedPairId)}
+            staggerIndex={currentIndex + 1}
           >
             {pairSection.content}
           </CollapsibleSection>
@@ -541,6 +548,7 @@ export function Dashboard() {
           onMoveUp={() => moveSection(id, "up")}
           onMoveDown={() => moveSection(id, "down")}
           onHide={() => toggleHidden(id)}
+          staggerIndex={currentIndex}
         >
           {section.content}
         </CollapsibleSection>,
@@ -549,10 +557,10 @@ export function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 overflow-x-hidden">
+    <div className="min-h-screen bg-page text-foreground overflow-x-hidden">
       <AppHeader>
         <div className="flex items-center gap-2 sm:gap-4 shrink-0">
-          <p className="text-xs text-zinc-500 hidden sm:block">
+          <p className="text-xs text-subtle hidden sm:block">
             {trendData?.latest_date
               ? `Latest: ${new Date(trendData.latest_date).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}`
               : ""}
@@ -574,10 +582,10 @@ export function Dashboard() {
         />
 
         <section>
-          <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-1">
+          <h2 className="text-sm font-medium text-muted uppercase tracking-wider mb-1">
             Detailed Views
           </h2>
-          <p className="text-xs text-zinc-600 mb-3">
+          <p className="text-xs text-dim mb-3">
             Deep dives are available in dedicated pages, not on the dashboard.
           </p>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -598,7 +606,7 @@ function DashboardLink({ to, label }: { to: string; label: string }) {
   return (
     <Link
       to={to}
-      className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-300 hover:text-zinc-100 hover:border-zinc-700 transition-colors"
+      className="card px-3 py-2 text-sm text-foreground hover:text-foreground hover:border-border-strong transition-colors"
     >
       {label}
     </Link>
@@ -614,6 +622,7 @@ function CollapsibleSection({
   onMoveDown,
   onHide,
   children,
+  staggerIndex = 0,
 }: {
   id?: string;
   title: string;
@@ -624,28 +633,28 @@ function CollapsibleSection({
   onMoveDown?: () => void;
   onHide?: () => void;
   children: React.ReactNode;
+  staggerIndex?: number;
 }) {
+  const revealRef = useScrollReveal<HTMLElement>(staggerIndex);
   return (
-    <section className="group/section">
+    <section ref={revealRef} className="group/section reveal">
       <div className="mb-3 flex items-center gap-2 min-h-[44px]">
         <button
           type="button"
           onClick={onToggle}
           className="flex items-center gap-2 group cursor-pointer text-left flex-1"
         >
-          <span
-            className={`text-zinc-600 text-xs transition-transform ${collapsed ? "" : "rotate-90"}`}
-          >
+          <span className={`text-dim text-xs transition-transform ${collapsed ? "" : "rotate-90"}`}>
             ▶
           </span>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider group-hover:text-zinc-300 transition-colors">
+              <h2 className="text-sm font-medium text-muted uppercase tracking-wider group-hover:text-foreground transition-colors">
                 {title}
               </h2>
               {subtitle && <ChartDescriptionTooltip description={subtitle} />}
             </div>
-            {subtitle && <p className="text-xs text-zinc-600 mt-0.5">{subtitle}</p>}
+            {subtitle && <p className="text-xs text-dim mt-0.5">{subtitle}</p>}
           </div>
         </button>
 
@@ -655,7 +664,7 @@ function CollapsibleSection({
             <button
               type="button"
               onClick={onMoveUp}
-              className="p-1 text-zinc-600 hover:text-zinc-300 transition-colors cursor-pointer"
+              className="p-1 text-dim hover:text-foreground transition-colors cursor-pointer"
               title="Move up"
             >
               <svg
@@ -678,7 +687,7 @@ function CollapsibleSection({
             <button
               type="button"
               onClick={onMoveDown}
-              className="p-1 text-zinc-600 hover:text-zinc-300 transition-colors cursor-pointer"
+              className="p-1 text-dim hover:text-foreground transition-colors cursor-pointer"
               title="Move down"
             >
               <svg
@@ -700,7 +709,7 @@ function CollapsibleSection({
             <button
               type="button"
               onClick={onHide}
-              className="p-1 text-zinc-600 hover:text-zinc-300 transition-colors cursor-pointer"
+              className="p-1 text-dim hover:text-foreground transition-colors cursor-pointer"
               title="Hide section"
             >
               <svg

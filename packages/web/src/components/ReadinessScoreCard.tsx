@@ -1,7 +1,8 @@
 import { scoreColor } from "@dofek/scoring/scoring";
 import type { ReadinessRow } from "dofek-server/types";
-import ReactECharts from "echarts-for-react";
-import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
+import { useCountUp } from "../hooks/useCountUp.ts";
+import { dofekAxis, dofekGrid, dofekSeries, dofekTooltip } from "../lib/chartTheme.ts";
+import { DofekChart } from "./DofekChart.tsx";
 
 interface ReadinessScoreCardProps {
   data: ReadinessRow[];
@@ -12,58 +13,50 @@ function ComponentBar({ label, value }: { label: string; value: number }) {
   const color = scoreColor(value);
   return (
     <div className="flex items-center gap-3">
-      <span className="text-zinc-400 text-xs w-24 shrink-0">{label}</span>
-      <div className="flex-1 bg-zinc-800 rounded-full h-2.5 overflow-hidden">
+      <span className="text-muted text-xs w-24 shrink-0">{label}</span>
+      <div className="flex-1 bg-accent/10 rounded-full h-2.5 overflow-hidden">
         <div
           className="h-full rounded-full transition-all duration-300"
           style={{ width: `${value}%`, backgroundColor: color }}
         />
       </div>
-      <span className="text-zinc-300 text-xs w-8 text-right font-medium">{value}</span>
+      <span className="text-foreground text-xs w-8 text-right font-medium">{value}</span>
     </div>
   );
 }
 
 export function ReadinessScoreCard({ data, loading }: ReadinessScoreCardProps) {
-  if (loading) {
-    return <ChartLoadingSkeleton height={280} />;
-  }
+  const latest = data.length > 0 ? data[data.length - 1] : undefined;
+  const score = latest?.readinessScore ?? null;
+  const color = score != null ? scoreColor(score) : undefined;
+  const displayScore = useCountUp(score, 800);
 
-  if (data.length === 0) {
+  if (loading || !latest || color == null) {
     return (
-      <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-6 flex items-center justify-center h-[280px]">
-        <span className="text-zinc-600 text-sm">No readiness data</span>
-      </div>
+      <DofekChart
+        option={{}}
+        loading={loading}
+        empty={!latest || color == null}
+        height={280}
+        emptyMessage="No readiness data"
+      />
     );
   }
 
-  const latest = data[data.length - 1];
-  if (!latest) return null;
-  const score = latest.readinessScore;
-  const color = scoreColor(score);
-
   // Sparkline data for the mini chart
   const sparklineOption = {
-    backgroundColor: "transparent",
-    grid: { top: 5, right: 0, bottom: 5, left: 0 },
-    xAxis: {
-      type: "category" as const,
-      show: false,
-      data: data.map((d) => d.date),
-    },
-    yAxis: {
-      type: "value" as const,
-      show: false,
-      min: 0,
-      max: 100,
-    },
+    grid: dofekGrid("single", { top: 5, right: 0, bottom: 5, left: 0 }),
+    xAxis: dofekAxis.category({ data: data.map((d) => d.date), show: false }),
+    yAxis: { type: "value" as const, show: false, min: 0, max: 100 },
     series: [
       {
-        type: "line",
-        data: data.map((d) => d.readinessScore),
-        smooth: true,
-        symbol: "none",
-        lineStyle: { color, width: 2 },
+        ...dofekSeries.line(
+          "Readiness",
+          data.map((d) => d.readinessScore),
+          {
+            color,
+          },
+        ),
         areaStyle: {
           color: {
             type: "linear" as const,
@@ -79,21 +72,21 @@ export function ReadinessScoreCard({ data, loading }: ReadinessScoreCardProps) {
         },
       },
     ],
-    tooltip: { show: false },
+    tooltip: dofekTooltip({ trigger: "none" }),
   };
 
   return (
-    <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-6">
+    <div className="card p-6">
       <div className="flex items-start justify-between mb-4">
         <div>
-          <h3 className="text-zinc-400 text-sm font-medium mb-1">Readiness Score</h3>
+          <h3 className="text-muted text-sm font-medium mb-1">Readiness Score</h3>
           <div className="flex items-baseline gap-2">
-            <span className="text-5xl font-bold" style={{ color }}>
-              {score}
+            <span className="text-5xl font-bold font-mono" style={{ color }}>
+              {displayScore}
             </span>
-            <span className="text-zinc-500 text-sm">/100</span>
+            <span className="text-subtle text-sm">/100</span>
           </div>
-          <span className="text-zinc-600 text-xs">
+          <span className="text-dim text-xs">
             {new Date(latest.date).toLocaleDateString("en-US", {
               month: "short",
               day: "numeric",
@@ -102,11 +95,7 @@ export function ReadinessScoreCard({ data, loading }: ReadinessScoreCardProps) {
           </span>
         </div>
         <div className="w-32 h-16">
-          <ReactECharts
-            option={sparklineOption}
-            style={{ height: 64, width: 128 }}
-            notMerge={true}
-          />
+          <DofekChart option={sparklineOption} height={64} />
         </div>
       </div>
 

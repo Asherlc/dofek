@@ -23,21 +23,21 @@ function TrainingLayout() {
 
   return (
     <TrainingDaysContext.Provider value={{ days, setDays }}>
-      <div className="min-h-screen bg-zinc-950 text-zinc-100 overflow-x-hidden">
+      <div className="min-h-screen bg-page text-foreground overflow-x-hidden">
         <AppHeader>
           <TimeRangeSelector days={days} onChange={setDays} />
         </AppHeader>
-        <nav className="border-b border-zinc-800 px-3 sm:px-6">
+        <nav className="border-b border-border px-3 sm:px-6">
           <div className="mx-auto max-w-7xl flex gap-1 overflow-x-auto scrollbar-hide">
             {subtabs.map((tab) => (
               <Link
                 key={tab.to}
                 to={tab.to}
                 activeOptions={{ exact: tab.exact }}
-                className="px-3 py-2.5 text-xs transition-colors text-zinc-500 hover:text-zinc-300 whitespace-nowrap"
+                className="px-3 py-2.5 text-xs transition-colors text-subtle hover:text-foreground whitespace-nowrap"
                 activeProps={{
                   className:
-                    "px-3 py-2.5 text-xs transition-colors text-zinc-100 border-b-2 border-emerald-500 whitespace-nowrap",
+                    "px-3 py-2.5 text-xs transition-colors text-foreground border-b-2 border-accent whitespace-nowrap",
                 }}
               >
                 {tab.label}

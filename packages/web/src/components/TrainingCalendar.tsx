@@ -1,6 +1,7 @@
+import { surfaceColors } from "@dofek/scoring/colors";
 import type { CalendarDay } from "dofek-server/types";
-import type { EChartsOption } from "echarts";
-import ReactECharts from "echarts-for-react";
+import { chartThemeColors, dofekTooltip } from "../lib/chartTheme.ts";
+import { DofekChart } from "./DofekChart.tsx";
 
 interface TrainingCalendarProps {
   data: CalendarDay[];
@@ -9,11 +10,7 @@ interface TrainingCalendarProps {
 
 export function TrainingCalendar({ data, height = 180 }: TrainingCalendarProps) {
   if (data.length === 0) {
-    return (
-      <div className="flex items-center justify-center" style={{ height }}>
-        <span className="text-zinc-600 text-sm">No training data</span>
-      </div>
-    );
+    return <DofekChart option={{}} empty={true} height={height} emptyMessage="No training data" />;
   }
 
   // Build a lookup map for tooltips
@@ -35,12 +32,9 @@ export function TrainingCalendar({ data, height = 180 }: TrainingCalendarProps) 
     .filter((d) => d.date >= startDate)
     .map((d) => [d.date, d.totalMinutes]);
 
-  const option: EChartsOption = {
-    backgroundColor: "transparent",
-    tooltip: {
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
+  const option = {
+    tooltip: dofekTooltip({
+      trigger: "item",
       formatter(params: unknown): string {
         if (!params || typeof params !== "object" || !("value" in params)) return "";
         const rawValue = Array.isArray(params.value) ? params.value : ["", 0];
@@ -56,13 +50,13 @@ export function TrainingCalendar({ data, height = 180 }: TrainingCalendarProps) 
           `Types: ${types}`,
         ].join("<br/>");
       },
-    },
+    }),
     visualMap: {
       min: 0,
       max: Math.max(...data.map((d) => d.totalMinutes), 120),
       type: "piecewise" as const,
       pieces: [
-        { min: 0, max: 0, color: "#18181b" },
+        { min: 0, max: 0, color: "#ffffff" },
         { min: 1, max: 30, color: "#064e3b" },
         { min: 31, max: 60, color: "#059669" },
         { min: 61, max: 120, color: "#22c55e" },
@@ -71,7 +65,7 @@ export function TrainingCalendar({ data, height = 180 }: TrainingCalendarProps) 
       orient: "horizontal" as const,
       left: "center",
       bottom: 0,
-      textStyle: { color: "#71717a" },
+      textStyle: { color: chartThemeColors.axisLabel },
     },
     calendar: {
       range: [startDate, endDate],
@@ -79,14 +73,14 @@ export function TrainingCalendar({ data, height = 180 }: TrainingCalendarProps) 
       top: 30,
       left: 40,
       right: 10,
-      itemStyle: { borderColor: "#09090b", borderWidth: 2 },
-      splitLine: { lineStyle: { color: "#27272a" } },
+      itemStyle: { borderColor: surfaceColors.background, borderWidth: 2 },
+      splitLine: { lineStyle: { color: chartThemeColors.gridLine } },
       dayLabel: {
-        color: "#71717a",
+        color: chartThemeColors.axisLabel,
         fontSize: 10,
         nameMap: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
       },
-      monthLabel: { color: "#71717a", fontSize: 11 },
+      monthLabel: { color: chartThemeColors.axisLabel, fontSize: 11 },
       yearLabel: { show: false },
     },
     series: [
@@ -98,5 +92,5 @@ export function TrainingCalendar({ data, height = 180 }: TrainingCalendarProps) 
     ],
   };
 
-  return <ReactECharts option={option} style={{ height }} notMerge={true} />;
+  return <DofekChart option={option} height={height} />;
 }

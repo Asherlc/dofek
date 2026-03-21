@@ -211,7 +211,7 @@ describe("PolarizationTrendChart option builder", () => {
 
     // Should be scatter type with amber styling
     expect(incompleteSeries.type).toBe("scatter");
-    expect(incompleteSeries.itemStyle).toHaveProperty("color", "#f59e0b");
+    expect(incompleteSeries.itemStyle).toHaveProperty("color", "#d97706");
   });
 
   it("omits incomplete weeks series when all weeks have PI", () => {

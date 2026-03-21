@@ -1,6 +1,90 @@
 @import "tailwindcss";
 
-/* Hide scrollbar but keep scroll functionality */
+@theme {
+  /* ── Sage/Mint palette ── */
+  --color-page: #eef3ed;
+  --color-surface: rgba(255, 255, 255, 0.65);
+  --color-surface-hover: rgba(255, 255, 255, 0.8);
+  --color-surface-solid: #f5f9f5;
+  --color-border: rgba(74, 158, 122, 0.18);
+  --color-border-strong: rgba(74, 158, 122, 0.3);
+  --color-accent: #2d7a56;
+  --color-accent-secondary: #4a9e7a;
+  --color-foreground: #1a2e1a;
+  --color-muted: #4a6a4a;
+  --color-subtle: #6b8a6b;
+  --color-dim: #8aaa8a;
+  --color-skeleton: rgba(74, 158, 122, 0.1);
+
+  /* ── Fonts ── */
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "DM Mono", ui-monospace, monospace;
+}
+
+/* ── Page background with subtle radial texture ── */
+body {
+  background: #eef3ed;
+  background-image:
+    radial-gradient(ellipse at 30% 20%, rgba(74, 158, 122, 0.06) 0%, transparent 60%),
+    radial-gradient(ellipse at 70% 80%, rgba(45, 122, 86, 0.04) 0%, transparent 50%);
+  min-height: 100vh;
+}
+
+/* ── Card utility: frosted glass ── */
+@utility card {
+  background: rgba(255, 255, 255, 0.65);
+  border: 1px solid rgba(74, 158, 122, 0.18);
+  border-radius: 0.75rem;
+  backdrop-filter: blur(12px);
+}
+
+/* ── Scroll reveal animation ── */
+.reveal {
+  opacity: 0;
+  transform: translateY(12px);
+  transition:
+    opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.reveal.revealed {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ── Card hover micro-interaction ── */
+.card-hover {
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.card-hover:hover {
+  transform: scale(1.003);
+  box-shadow: 0 4px 20px rgba(74, 158, 122, 0.08);
+}
+
+/* ── Button press feedback ── */
+.press:active {
+  transform: scale(0.97);
+}
+
+/* ── Logo heartbeat pulse ── */
+@keyframes heartbeat {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.04);
+  }
+}
+
+.logo-pulse {
+  animation: heartbeat 3s ease-in-out infinite;
+}
+
+/* ── Hide scrollbar but keep scroll functionality ── */
 @utility scrollbar-hide {
   -ms-overflow-style: none;
   scrollbar-width: none;

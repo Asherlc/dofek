@@ -40,7 +40,7 @@ const statusColors = {
   green: "bg-emerald-500",
   yellow: "bg-amber-500",
   red: "bg-red-500",
-  unknown: "bg-zinc-700",
+  unknown: "bg-dim",
 };
 
 const statusText = {
@@ -55,7 +55,7 @@ export function HealthStatusBar({ metrics, loading }: HealthStatusBarProps) {
     return (
       <div className="flex gap-3">
         {["skeleton-1", "skeleton-2", "skeleton-3", "skeleton-4", "skeleton-5"].map((id) => (
-          <div key={id} className="flex-1 h-16 rounded-lg bg-zinc-800 animate-pulse" />
+          <div key={id} className="flex-1 h-16 rounded-lg bg-skeleton animate-pulse" />
         ))}
       </div>
     );
@@ -66,27 +66,24 @@ export function HealthStatusBar({ metrics, loading }: HealthStatusBarProps) {
       {metrics.map((m) => {
         const status = getStatus(m.value, m.avg, m.stddev, m.lowerBetter);
         return (
-          <div
-            key={m.label}
-            className="flex-1 min-w-[120px] rounded-lg border border-zinc-800 bg-zinc-900 p-3"
-          >
+          <div key={m.label} className="flex-1 min-w-[120px] card card-hover p-3">
             <div className="flex items-center gap-2 mb-1">
               <div className={`w-2 h-2 rounded-full ${statusColors[status]}`} />
-              <span className="text-xs text-zinc-400 uppercase tracking-wider">{m.label}</span>
+              <span className="text-xs text-muted uppercase tracking-wider">{m.label}</span>
             </div>
-            <div className="text-lg font-semibold tabular-nums">
+            <div className="text-lg font-semibold font-mono tabular-nums">
               {m.value != null ? (
                 <>
                   {typeof m.value === "number" && !Number.isInteger(m.value)
                     ? formatNumber(m.value)
                     : m.value}
-                  <span className="ml-1 text-xs font-normal text-zinc-500">{m.unit}</span>
+                  <span className="ml-1 text-xs font-normal text-subtle">{m.unit}</span>
                 </>
               ) : (
-                <span className="text-zinc-600">—</span>
+                <span className="text-dim">—</span>
               )}
             </div>
-            <div className="text-[10px] text-zinc-500">
+            <div className="text-[10px] text-subtle">
               {status !== "unknown" && m.avg != null
                 ? `avg ${formatNumber(Number(m.avg))} · ${statusText[status]}`
                 : ""}
