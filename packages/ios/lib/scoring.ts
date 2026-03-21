@@ -10,5 +10,7 @@ export {
   trendColor,
   rampRateColor,
   sleepDebtColor,
+  readinessLevelColor,
+  healthStatusColor,
 } from "@dofek/scoring/scoring";
 export type { WeekSummary } from "@dofek/scoring/scoring";

@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
-import { formatDurationRange } from "@dofek/format/format";
+import { formatDurationRange, parseValidDate } from "@dofek/format/format";
 import { convertDistance, distanceLabel, type UnitSystem } from "../lib/units";
 import { colors } from "../theme";
 
@@ -17,8 +17,8 @@ interface ActivityCardProps {
 }
 
 function formatTime(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "--";
+  const date = parseValidDate(iso);
+  if (!date) return "--";
   return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 

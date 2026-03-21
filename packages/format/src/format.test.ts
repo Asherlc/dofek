@@ -79,6 +79,10 @@ describe("formatDurationRange", () => {
   it("returns -- when end timestamp is invalid", () => {
     expect(formatDurationRange("2024-01-01T10:00:00Z", "not-a-date")).toBe("--");
   });
+
+  it("handles postgres-style space-separated timestamps", () => {
+    expect(formatDurationRange("2024-01-01 10:00:00+00", "2024-01-01 11:30:00+00")).toBe("1h 30m");
+  });
 });
 
 describe("formatSleepDebt", () => {
@@ -243,11 +247,19 @@ describe("formatRelativeTime", () => {
 
   it("handles postgres-style timestamp strings without T separator", () => {
     // postgres-js may return timestamps like "2024-01-15 10:30:00+00" (no T)
-    // Safari cannot parse this format
+    // Hermes (React Native) and older Safari cannot parse this format
     const now = new Date();
     const fiveMinAgo = new Date(now.getTime() - 5 * 60000);
     const pgFormat = fiveMinAgo.toISOString().replace("T", " ").replace("Z", "+00");
     expect(formatRelativeTime(pgFormat)).toBe("5m ago");
+  });
+
+  it("handles postgres-style timestamp strings with microseconds", () => {
+    // Production postgres returns: "2026-03-20 19:40:29.678162+00"
+    const now = new Date();
+    const twoHoursAgo = new Date(now.getTime() - 2 * 3600000);
+    const pgFormat = twoHoursAgo.toISOString().replace("T", " ").replace("Z", "162+00");
+    expect(formatRelativeTime(pgFormat)).toBe("2h ago");
   });
 
   it("returns null for completely invalid input", () => {
@@ -296,5 +308,11 @@ describe("formatTime", () => {
 
   it("returns -- for invalid timestamps", () => {
     expect(formatTime("not-a-date")).toBe("--");
+  });
+
+  it("handles postgres-style space-separated timestamps", () => {
+    const result = formatTime("2024-03-15 14:30:00+00");
+    expect(result).toContain("Mar");
+    expect(result).toContain("15");
   });
 });

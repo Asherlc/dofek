@@ -67,10 +67,10 @@ describe("PolarizationTrendChart option builder", () => {
       return series.name === "Polarization Index";
     });
     expect(polarizationSeries).toBeDefined();
-    expect(polarizationSeries?.data).toEqual([
-      ["2024-01-01", null],
-      ["2024-01-08", 1.9],
-    ]);
+    if (!polarizationSeries) throw new Error("Expected polarization series");
+    expect(polarizationSeries.data).toHaveLength(2);
+    expect(polarizationSeries.data[0]).toHaveProperty("value", ["2024-01-01", null]);
+    expect(polarizationSeries.data[1]).toHaveProperty("value", ["2024-01-08", 1.9]);
   });
 
   it("tooltip shows %HRmax zone labels (not Karvonen %HRR)", () => {
@@ -95,13 +95,62 @@ describe("PolarizationTrendChart option builder", () => {
     expect(html).not.toContain("resting");
   });
 
-  it("restricts visualMap to only the Polarization Index data series to avoid markLine coord crash", () => {
+  it("does not use visualMap (crashes ECharts piecewise with coord error)", () => {
     const option = buildPolarizationTrendOption(sampleWeeks);
-    const polarizationIndexSeriesIndex = option.series.findIndex(
+    expect(option).not.toHaveProperty("visualMap");
+  });
+
+  it("does not use markLine (incompatible with ECharts visualMap)", () => {
+    const option = buildPolarizationTrendOption(sampleWeeks);
+    for (const series of option.series) {
+      expect(series).not.toHaveProperty("markLine");
+    }
+  });
+
+  it("renders threshold as a regular line series at y=2.0", () => {
+    const option = buildPolarizationTrendOption(sampleWeeks);
+    const thresholdSeries = option.series.find((s: { name?: string }) => s.name === "Threshold");
+    expect(thresholdSeries).toBeDefined();
+    if (!thresholdSeries) throw new Error("Expected threshold series");
+    expect(thresholdSeries.data[0]).toEqual(["2024-01-01", 2.0]);
+    expect(thresholdSeries.data[1]).toEqual(["2024-01-08", 2.0]);
+  });
+
+  it("colors data points green at or above 2.0 and red below 2.0", () => {
+    const weeksWithBoundary = [
+      {
+        week: "2024-01-01",
+        polarizationIndex: 2.5,
+        z1Seconds: 3600,
+        z2Seconds: 600,
+        z3Seconds: 900,
+      },
+      {
+        week: "2024-01-08",
+        polarizationIndex: 1.8,
+        z1Seconds: 2400,
+        z2Seconds: 1200,
+        z3Seconds: 600,
+      },
+      {
+        week: "2024-01-15",
+        polarizationIndex: 2.0,
+        z1Seconds: 3000,
+        z2Seconds: 800,
+        z3Seconds: 700,
+      },
+    ];
+    const option = buildPolarizationTrendOption(weeksWithBoundary);
+    const polarizationIndexSeries = option.series.find(
       (s: { name?: string }) => s.name === "Polarization Index",
     );
-    expect(polarizationIndexSeriesIndex).toBeGreaterThan(0);
-    expect(option.visualMap.seriesIndex).toBe(polarizationIndexSeriesIndex);
+    if (!polarizationIndexSeries) throw new Error("Expected polarization index series");
+    // 2.5 (above threshold) → green
+    expect(polarizationIndexSeries.data[0]).toHaveProperty("itemStyle", { color: "#22c55e" });
+    // 1.8 (below threshold) → red
+    expect(polarizationIndexSeries.data[1]).toHaveProperty("itemStyle", { color: "#ef4444" });
+    // 2.0 (exactly at threshold) → green
+    expect(polarizationIndexSeries.data[2]).toHaveProperty("itemStyle", { color: "#22c55e" });
   });
 
   it("explains missing zones when PI is unavailable", () => {

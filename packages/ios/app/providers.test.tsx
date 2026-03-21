@@ -6,7 +6,9 @@ import { providerActionLabel } from "./providers";
 
 const mockPush = vi.fn();
 const mockReplace = vi.fn();
+const mockUseLocalSearchParams = vi.fn().mockReturnValue({});
 const mockSyncMutateAsync = vi.fn();
+const mockImportSharedFile = vi.fn();
 
 vi.mock("react-native", () => ({
 	View: ({ children, ...props }: Record<string, unknown>) => {
@@ -49,7 +51,7 @@ vi.mock("react-native", () => ({
 
 vi.mock("expo-router", () => ({
 	useRouter: () => ({ push: mockPush, replace: mockReplace }),
-	useLocalSearchParams: () => ({}),
+	useLocalSearchParams: (...args: unknown[]) => mockUseLocalSearchParams(...args),
 }));
 
 vi.mock("../theme", () => ({
@@ -84,7 +86,7 @@ vi.mock("expo-web-browser", () => ({
 }));
 
 vi.mock("../lib/share-import", () => ({
-	importSharedFile: vi.fn(),
+	importSharedFile: (...args: unknown[]) => mockImportSharedFile(...args),
 }));
 
 vi.mock("@dofek/format/format", () => ({
@@ -410,7 +412,9 @@ describe("ProvidersScreen", () => {
 	beforeEach(() => {
 		mockPush.mockReset();
 		mockReplace.mockReset();
+		mockUseLocalSearchParams.mockReturnValue({});
 		mockSyncMutateAsync.mockReset();
+		mockImportSharedFile.mockReset();
 		mockProvidersQuery.mockReset();
 		mockStatsQuery.mockReset();
 		mockLogsQuery.mockReset();
@@ -556,6 +560,49 @@ describe("ProvidersScreen", () => {
 				password: "secret123",
 			});
 		});
+	});
+
+	it("calls importSharedFile when sharedFile param is present", async () => {
+		mockImportSharedFile.mockResolvedValue({ providerId: "strong-csv", jobId: "job-share" });
+		mockUseLocalSearchParams.mockReturnValue({
+			sharedFile: "file:///tmp/Strong%20Export.csv",
+		});
+
+		const { default: ProvidersScreen } = await import("./providers");
+		render(<ProvidersScreen />);
+
+		await waitFor(() => {
+			expect(mockImportSharedFile).toHaveBeenCalledWith(
+				expect.objectContaining({
+					fileUri: "file:///tmp/Strong%20Export.csv",
+					serverUrl: "https://test.example.com",
+					sessionToken: "test-token",
+				}),
+			);
+		});
+	});
+
+	it("does not call router.replace before import completes", async () => {
+		let resolveImport!: (value: unknown) => void;
+		mockImportSharedFile.mockImplementation(
+			() => new Promise((resolve) => { resolveImport = resolve; }),
+		);
+		mockUseLocalSearchParams.mockReturnValue({
+			sharedFile: "file:///tmp/Strong%20Export.csv",
+		});
+
+		const { default: ProvidersScreen } = await import("./providers");
+		render(<ProvidersScreen />);
+
+		await waitFor(() => {
+			expect(mockImportSharedFile).toHaveBeenCalled();
+		});
+
+		// router.replace should NOT be called while import is still in progress
+		expect(mockReplace).not.toHaveBeenCalled();
+
+		// Clean up: resolve the pending import
+		resolveImport({ providerId: "strong-csv", jobId: "job-1" });
 	});
 
 	it("opens browser for OAuth provider connect", async () => {
