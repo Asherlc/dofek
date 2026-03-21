@@ -25,8 +25,6 @@ const dailyMetricsViewRowSchema = z.object({
   source_providers: z.array(z.string()),
 });
 
-export type DailyMetricsViewRow = z.infer<typeof dailyMetricsViewRowSchema>;
-
 export interface HrvBaselineRow {
   date: string;
   hrv: number | null;
