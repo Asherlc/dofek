@@ -256,19 +256,19 @@ export function parseFitbitWeightLog(log: FitbitWeightLog): ParsedFitbitBodyMeas
 const FITBIT_API_BASE = "https://api.fitbit.com";
 
 export class FitbitClient {
-  private accessToken: string;
-  private fetchFn: typeof globalThis.fetch;
+  #accessToken: string;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.accessToken = accessToken;
-    this.fetchFn = fetchFn;
+    this.#accessToken = accessToken;
+    this.#fetchFn = fetchFn;
   }
 
-  private async get<T>(path: string): Promise<T> {
+  async #get<T>(path: string): Promise<T> {
     const url = `${FITBIT_API_BASE}${path}`;
 
-    const response = await this.fetchFn(url, {
-      headers: { Authorization: `Bearer ${this.accessToken}` },
+    const response = await this.#fetchFn(url, {
+      headers: { Authorization: `Bearer ${this.#accessToken}` },
     });
 
     if (!response.ok) {
@@ -280,23 +280,23 @@ export class FitbitClient {
   }
 
   async getActivities(afterDate: string, offset = 0): Promise<FitbitActivityListResponse> {
-    return this.get<FitbitActivityListResponse>(
+    return this.#get<FitbitActivityListResponse>(
       `/1/user/-/activities/list.json?afterDate=${afterDate}&sort=asc&limit=20&offset=${offset}`,
     );
   }
 
   async getSleepLogs(afterDate: string, offset = 0): Promise<FitbitSleepListResponse> {
-    return this.get<FitbitSleepListResponse>(
+    return this.#get<FitbitSleepListResponse>(
       `/1.2/user/-/sleep/list.json?afterDate=${afterDate}&sort=asc&limit=20&offset=${offset}`,
     );
   }
 
   async getDailySummary(date: string): Promise<FitbitDailySummary> {
-    return this.get<FitbitDailySummary>(`/1/user/-/activities/date/${date}.json`);
+    return this.#get<FitbitDailySummary>(`/1/user/-/activities/date/${date}.json`);
   }
 
   async getWeightLogs(startDate: string): Promise<FitbitWeightListResponse> {
-    return this.get<FitbitWeightListResponse>(
+    return this.#get<FitbitWeightListResponse>(
       `/1/user/-/body/log/weight/date/${startDate}/30d.json`,
     );
   }
@@ -345,10 +345,10 @@ function formatDate(date: Date): string {
 export class FitbitProvider implements SyncProvider {
   readonly id = "fitbit";
   readonly name = "Fitbit";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -362,7 +362,7 @@ export class FitbitProvider implements SyncProvider {
     if (!config) throw new Error("FITBIT_CLIENT_ID and FITBIT_CLIENT_SECRET are required");
     const codeVerifier = generateCodeVerifier();
     const codeChallenge = generateCodeChallenge(codeVerifier);
-    const fetchFn = this.fetchFn;
+    const fetchFn = this.#fetchFn;
 
     return {
       oauthConfig: config,
@@ -389,13 +389,13 @@ export class FitbitProvider implements SyncProvider {
     };
   }
 
-  private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
+  async #resolveTokens(db: SyncDatabase): Promise<TokenSet> {
     return resolveOAuthTokens({
       db,
       providerId: this.id,
       providerName: this.name,
       getOAuthConfig: () => fitbitOAuthConfig(),
-      fetchFn: this.fetchFn,
+      fetchFn: this.#fetchFn,
     });
   }
 
@@ -408,13 +408,13 @@ export class FitbitProvider implements SyncProvider {
 
     let tokens: TokenSet;
     try {
-      tokens = await this.resolveTokens(db);
+      tokens = await this.#resolveTokens(db);
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
-    const client = new FitbitClient(tokens.accessToken, this.fetchFn);
+    const client = new FitbitClient(tokens.accessToken, this.#fetchFn);
     const sinceDate = formatDate(since);
 
     // 1. Sync activities

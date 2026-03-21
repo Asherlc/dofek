@@ -3,19 +3,19 @@ import type { TrainerRoadActivity, TrainerRoadCareer, TrainerRoadMemberInfo } fr
 const TRAINERROAD_BASE = "https://www.trainerroad.com";
 
 export class TrainerRoadClient {
-  private authCookie: string;
-  private fetchFn: typeof globalThis.fetch;
+  #authCookie: string;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(authCookie: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.authCookie = authCookie;
-    this.fetchFn = fetchFn;
+    this.#authCookie = authCookie;
+    this.#fetchFn = fetchFn;
   }
 
-  private async get<T>(path: string): Promise<T> {
+  async #get<T>(path: string): Promise<T> {
     const url = `${TRAINERROAD_BASE}${path}`;
-    const response = await this.fetchFn(url, {
+    const response = await this.#fetchFn(url, {
       headers: {
-        Cookie: `SharedTrainerRoadAuth=${this.authCookie}`,
+        Cookie: `SharedTrainerRoadAuth=${this.#authCookie}`,
         Accept: "application/json",
       },
     });
@@ -29,7 +29,7 @@ export class TrainerRoadClient {
   }
 
   async getMemberInfo(): Promise<TrainerRoadMemberInfo> {
-    return this.get<TrainerRoadMemberInfo>("/app/api/member-info");
+    return this.#get<TrainerRoadMemberInfo>("/app/api/member-info");
   }
 
   async getActivities(
@@ -37,13 +37,13 @@ export class TrainerRoadClient {
     startDate: string,
     endDate: string,
   ): Promise<TrainerRoadActivity[]> {
-    return this.get<TrainerRoadActivity[]>(
+    return this.#get<TrainerRoadActivity[]>(
       `/app/api/calendar/activities/${username}?startDate=${startDate}&endDate=${endDate}`,
     );
   }
 
   async getCareer(username: string): Promise<TrainerRoadCareer> {
-    return this.get<TrainerRoadCareer>(`/app/api/career/${username}/new`);
+    return this.#get<TrainerRoadCareer>(`/app/api/career/${username}/new`);
   }
 
   static async signIn(

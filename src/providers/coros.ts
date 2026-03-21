@@ -162,10 +162,10 @@ function formatDateCompact(date: Date): string {
 export class CorosProvider implements SyncProvider {
   readonly id = "coros";
   readonly name = "COROS";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -177,7 +177,7 @@ export class CorosProvider implements SyncProvider {
   authSetup(): ProviderAuthSetup {
     const config = corosOAuthConfig();
     if (!config) throw new Error("COROS_CLIENT_ID and CLIENT_SECRET required");
-    const fetchFn = this.fetchFn;
+    const fetchFn = this.#fetchFn;
     return {
       oauthConfig: config,
       exchangeCode: (code) => exchangeCodeForTokens(config, code, fetchFn),
@@ -185,19 +185,19 @@ export class CorosProvider implements SyncProvider {
     };
   }
 
-  private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
+  async #resolveTokens(db: SyncDatabase): Promise<TokenSet> {
     return resolveOAuthTokens({
       db,
       providerId: this.id,
       providerName: this.name,
       getOAuthConfig: () => corosOAuthConfig(),
-      fetchFn: this.fetchFn,
+      fetchFn: this.#fetchFn,
     });
   }
 
-  private async apiGet<T>(accessToken: string, path: string): Promise<T> {
+  async #apiGet<T>(accessToken: string, path: string): Promise<T> {
     const url = `${COROS_API_BASE}${path}`;
-    const response = await this.fetchFn(url, {
+    const response = await this.#fetchFn(url, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         Accept: "application/json",
@@ -219,7 +219,7 @@ export class CorosProvider implements SyncProvider {
 
     let accessToken: string;
     try {
-      const tokens = await this.resolveTokens(db);
+      const tokens = await this.#resolveTokens(db);
       accessToken = tokens.accessToken;
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
@@ -232,7 +232,7 @@ export class CorosProvider implements SyncProvider {
     // 1. Sync workouts
     try {
       const activityCount = await withSyncLog(db, this.id, "activity", async () => {
-        const data = await this.apiGet<CorosWorkoutsResponse>(
+        const data = await this.#apiGet<CorosWorkoutsResponse>(
           accessToken,
           `/v2/coros/sport/list?startDate=${sinceDate}&endDate=${toDate}`,
         );
@@ -285,7 +285,7 @@ export class CorosProvider implements SyncProvider {
     // 2. Sync daily data (sleep, HR, steps)
     try {
       const dailyCount = await withSyncLog(db, this.id, "daily_metrics", async () => {
-        const data = await this.apiGet<CorosDailyResponse>(
+        const data = await this.#apiGet<CorosDailyResponse>(
           accessToken,
           `/v2/coros/daily/list?startDate=${sinceDate}&endDate=${toDate}`,
         );

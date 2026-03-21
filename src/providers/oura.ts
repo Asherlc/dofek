@@ -309,19 +309,19 @@ export function mapOuraActivityType(ouraActivity: string): string {
 const OURA_API_BASE = "https://api.ouraring.com";
 
 export class OuraClient {
-  private accessToken: string;
-  private fetchFn: typeof globalThis.fetch;
+  #accessToken: string;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.accessToken = accessToken;
-    this.fetchFn = fetchFn;
+    this.#accessToken = accessToken;
+    this.#fetchFn = fetchFn;
   }
 
-  private async get<T>(path: string): Promise<T> {
+  async #get<T>(path: string): Promise<T> {
     const url = `${OURA_API_BASE}${path}`;
 
-    const response = await this.fetchFn(url, {
-      headers: { Authorization: `Bearer ${this.accessToken}` },
+    const response = await this.#fetchFn(url, {
+      headers: { Authorization: `Bearer ${this.#accessToken}` },
     });
 
     if (!response.ok) {
@@ -332,7 +332,7 @@ export class OuraClient {
     return response.json();
   }
 
-  private dateQuery(startDate: string, endDate: string, nextToken?: string): string {
+  #dateQuery(startDate: string, endDate: string, nextToken?: string): string {
     let qs = `start_date=${startDate}&end_date=${endDate}`;
     if (nextToken) qs += `&next_token=${nextToken}`;
     return qs;
@@ -343,7 +343,7 @@ export class OuraClient {
     endDate: string,
     nextToken?: string,
   ): Promise<OuraListResponse<OuraSleepDocument>> {
-    return this.get(`/v2/usercollection/sleep?${this.dateQuery(startDate, endDate, nextToken)}`);
+    return this.#get(`/v2/usercollection/sleep?${this.#dateQuery(startDate, endDate, nextToken)}`);
   }
 
   async getDailyReadiness(
@@ -351,8 +351,8 @@ export class OuraClient {
     endDate: string,
     nextToken?: string,
   ): Promise<OuraListResponse<OuraDailyReadiness>> {
-    return this.get(
-      `/v2/usercollection/daily_readiness?${this.dateQuery(startDate, endDate, nextToken)}`,
+    return this.#get(
+      `/v2/usercollection/daily_readiness?${this.#dateQuery(startDate, endDate, nextToken)}`,
     );
   }
 
@@ -361,8 +361,8 @@ export class OuraClient {
     endDate: string,
     nextToken?: string,
   ): Promise<OuraListResponse<OuraDailyActivity>> {
-    return this.get(
-      `/v2/usercollection/daily_activity?${this.dateQuery(startDate, endDate, nextToken)}`,
+    return this.#get(
+      `/v2/usercollection/daily_activity?${this.#dateQuery(startDate, endDate, nextToken)}`,
     );
   }
 
@@ -371,8 +371,8 @@ export class OuraClient {
     endDate: string,
     nextToken?: string,
   ): Promise<OuraListResponse<OuraDailySpO2>> {
-    return this.get(
-      `/v2/usercollection/daily_spo2?${this.dateQuery(startDate, endDate, nextToken)}`,
+    return this.#get(
+      `/v2/usercollection/daily_spo2?${this.#dateQuery(startDate, endDate, nextToken)}`,
     );
   }
 
@@ -381,7 +381,9 @@ export class OuraClient {
     endDate: string,
     nextToken?: string,
   ): Promise<OuraListResponse<OuraVO2Max>> {
-    return this.get(`/v2/usercollection/vO2_max?${this.dateQuery(startDate, endDate, nextToken)}`);
+    return this.#get(
+      `/v2/usercollection/vO2_max?${this.#dateQuery(startDate, endDate, nextToken)}`,
+    );
   }
 
   async getWorkouts(
@@ -389,7 +391,9 @@ export class OuraClient {
     endDate: string,
     nextToken?: string,
   ): Promise<OuraListResponse<OuraWorkout>> {
-    return this.get(`/v2/usercollection/workout?${this.dateQuery(startDate, endDate, nextToken)}`);
+    return this.#get(
+      `/v2/usercollection/workout?${this.#dateQuery(startDate, endDate, nextToken)}`,
+    );
   }
 
   async getHeartRate(
@@ -399,7 +403,7 @@ export class OuraClient {
   ): Promise<OuraListResponse<OuraHeartRate>> {
     let qs = `start_datetime=${startDate}T00:00:00&end_datetime=${endDate}T23:59:59`;
     if (nextToken) qs += `&next_token=${nextToken}`;
-    return this.get(`/v2/usercollection/heartrate?${qs}`);
+    return this.#get(`/v2/usercollection/heartrate?${qs}`);
   }
 
   async getSessions(
@@ -407,7 +411,9 @@ export class OuraClient {
     endDate: string,
     nextToken?: string,
   ): Promise<OuraListResponse<OuraSession>> {
-    return this.get(`/v2/usercollection/session?${this.dateQuery(startDate, endDate, nextToken)}`);
+    return this.#get(
+      `/v2/usercollection/session?${this.#dateQuery(startDate, endDate, nextToken)}`,
+    );
   }
 
   async getDailyStress(
@@ -415,8 +421,8 @@ export class OuraClient {
     endDate: string,
     nextToken?: string,
   ): Promise<OuraListResponse<OuraDailyStress>> {
-    return this.get(
-      `/v2/usercollection/daily_stress?${this.dateQuery(startDate, endDate, nextToken)}`,
+    return this.#get(
+      `/v2/usercollection/daily_stress?${this.#dateQuery(startDate, endDate, nextToken)}`,
     );
   }
 
@@ -425,8 +431,8 @@ export class OuraClient {
     endDate: string,
     nextToken?: string,
   ): Promise<OuraListResponse<OuraDailyResilience>> {
-    return this.get(
-      `/v2/usercollection/daily_resilience?${this.dateQuery(startDate, endDate, nextToken)}`,
+    return this.#get(
+      `/v2/usercollection/daily_resilience?${this.#dateQuery(startDate, endDate, nextToken)}`,
     );
   }
 
@@ -435,8 +441,8 @@ export class OuraClient {
     endDate: string,
     nextToken?: string,
   ): Promise<OuraListResponse<OuraDailyCardiovascularAge>> {
-    return this.get(
-      `/v2/usercollection/daily_cardiovascular_age?${this.dateQuery(startDate, endDate, nextToken)}`,
+    return this.#get(
+      `/v2/usercollection/daily_cardiovascular_age?${this.#dateQuery(startDate, endDate, nextToken)}`,
     );
   }
 
@@ -445,7 +451,7 @@ export class OuraClient {
     endDate: string,
     nextToken?: string,
   ): Promise<OuraListResponse<OuraTag>> {
-    return this.get(`/v2/usercollection/tag?${this.dateQuery(startDate, endDate, nextToken)}`);
+    return this.#get(`/v2/usercollection/tag?${this.#dateQuery(startDate, endDate, nextToken)}`);
   }
 
   async getEnhancedTags(
@@ -453,8 +459,8 @@ export class OuraClient {
     endDate: string,
     nextToken?: string,
   ): Promise<OuraListResponse<OuraEnhancedTag>> {
-    return this.get(
-      `/v2/usercollection/enhanced_tag?${this.dateQuery(startDate, endDate, nextToken)}`,
+    return this.#get(
+      `/v2/usercollection/enhanced_tag?${this.#dateQuery(startDate, endDate, nextToken)}`,
     );
   }
 
@@ -463,8 +469,8 @@ export class OuraClient {
     endDate: string,
     nextToken?: string,
   ): Promise<OuraListResponse<OuraRestModePeriod>> {
-    return this.get(
-      `/v2/usercollection/rest_mode_period?${this.dateQuery(startDate, endDate, nextToken)}`,
+    return this.#get(
+      `/v2/usercollection/rest_mode_period?${this.#dateQuery(startDate, endDate, nextToken)}`,
     );
   }
 
@@ -473,8 +479,8 @@ export class OuraClient {
     endDate: string,
     nextToken?: string,
   ): Promise<OuraListResponse<OuraSleepTime>> {
-    return this.get(
-      `/v2/usercollection/sleep_time?${this.dateQuery(startDate, endDate, nextToken)}`,
+    return this.#get(
+      `/v2/usercollection/sleep_time?${this.#dateQuery(startDate, endDate, nextToken)}`,
     );
   }
 }
@@ -550,10 +556,10 @@ const HEALTH_EVENT_BATCH_SIZE = 1000;
 export class OuraProvider implements SyncProvider {
   readonly id = "oura";
   readonly name = "Oura";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -565,7 +571,7 @@ export class OuraProvider implements SyncProvider {
   authSetup(): ProviderAuthSetup {
     const config = ouraOAuthConfig();
     if (!config) throw new Error("OURA_CLIENT_ID and OURA_CLIENT_SECRET are required");
-    const fetchFn = this.fetchFn;
+    const fetchFn = this.#fetchFn;
 
     return {
       oauthConfig: config,
@@ -593,13 +599,13 @@ export class OuraProvider implements SyncProvider {
     };
   }
 
-  private async resolveAccessToken(db: SyncDatabase): Promise<string> {
+  async #resolveAccessToken(db: SyncDatabase): Promise<string> {
     const tokens = await resolveOAuthTokens({
       db,
       providerId: this.id,
       providerName: this.name,
       getOAuthConfig: () => ouraOAuthConfig(),
-      fetchFn: this.fetchFn,
+      fetchFn: this.#fetchFn,
     });
     return tokens.accessToken;
   }
@@ -613,13 +619,13 @@ export class OuraProvider implements SyncProvider {
 
     let accessToken: string;
     try {
-      accessToken = await this.resolveAccessToken(db);
+      accessToken = await this.#resolveAccessToken(db);
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
-    const client = new OuraClient(accessToken, this.fetchFn);
+    const client = new OuraClient(accessToken, this.#fetchFn);
     const sinceDate = formatDate(since);
     const todayDate = formatDate(new Date());
 

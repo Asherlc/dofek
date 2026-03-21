@@ -249,17 +249,17 @@ function bodySpecOAuthConfig(): OAuthConfig | null {
 // ============================================================
 
 class BodySpecClient {
-  private accessToken: string;
-  private fetchFn: typeof globalThis.fetch;
+  #accessToken: string;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.accessToken = accessToken;
-    this.fetchFn = fetchFn;
+    this.#accessToken = accessToken;
+    this.#fetchFn = fetchFn;
   }
 
-  private async get<T>(path: string, schema: z.ZodType<T>): Promise<T> {
-    const response = await this.fetchFn(`${BODYSPEC_API_BASE}${path}`, {
-      headers: { Authorization: `Bearer ${this.accessToken}` },
+  async #get<T>(path: string, schema: z.ZodType<T>): Promise<T> {
+    const response = await this.#fetchFn(`${BODYSPEC_API_BASE}${path}`, {
+      headers: { Authorization: `Bearer ${this.#accessToken}` },
     });
 
     if (!response.ok) {
@@ -273,46 +273,46 @@ class BodySpecClient {
   }
 
   async listResults(page = 1, pageSize = 100): Promise<BodySpecResultsListResponse> {
-    return this.get(
+    return this.#get(
       `/api/v1/users/me/results/?page=${page}&page_size=${pageSize}`,
       resultsListResponseSchema,
     );
   }
 
   async getComposition(resultId: string): Promise<BodySpecCompositionResponse> {
-    return this.get(
+    return this.#get(
       `/api/v1/users/me/results/${resultId}/dexa/composition`,
       compositionResponseSchema,
     );
   }
 
   async getBoneDensity(resultId: string): Promise<BodySpecBoneDensityResponse> {
-    return this.get(
+    return this.#get(
       `/api/v1/users/me/results/${resultId}/dexa/bone-density`,
       boneDensityResponseSchema,
     );
   }
 
   async getVisceralFat(resultId: string): Promise<BodySpecVisceralFatResponse> {
-    return this.get(
+    return this.#get(
       `/api/v1/users/me/results/${resultId}/dexa/visceral-fat`,
       visceralFatResponseSchema,
     );
   }
 
   async getRmr(resultId: string): Promise<BodySpecRmrResponse> {
-    return this.get(`/api/v1/users/me/results/${resultId}/dexa/rmr`, rmrResponseSchema);
+    return this.#get(`/api/v1/users/me/results/${resultId}/dexa/rmr`, rmrResponseSchema);
   }
 
   async getPercentiles(resultId: string): Promise<BodySpecPercentilesResponse> {
-    return this.get(
+    return this.#get(
       `/api/v1/users/me/results/${resultId}/dexa/percentiles`,
       percentilesResponseSchema,
     );
   }
 
   async getScanInfo(resultId: string): Promise<BodySpecScanInfoResponse> {
-    return this.get(`/api/v1/users/me/results/${resultId}/dexa/scan-info`, scanInfoResponseSchema);
+    return this.#get(`/api/v1/users/me/results/${resultId}/dexa/scan-info`, scanInfoResponseSchema);
   }
 }
 
@@ -323,10 +323,10 @@ class BodySpecClient {
 export class BodySpecProvider implements SyncProvider {
   readonly id = "bodyspec";
   readonly name = "BodySpec";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -340,18 +340,18 @@ export class BodySpecProvider implements SyncProvider {
     if (!config) return undefined;
     return {
       oauthConfig: config,
-      exchangeCode: (code) => exchangeCodeForTokens(config, code, this.fetchFn),
+      exchangeCode: (code) => exchangeCodeForTokens(config, code, this.#fetchFn),
       apiBaseUrl: BODYSPEC_API_BASE,
     };
   }
 
-  private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
+  async #resolveTokens(db: SyncDatabase): Promise<TokenSet> {
     return resolveOAuthTokens({
       db,
       providerId: this.id,
       providerName: this.name,
       getOAuthConfig: () => bodySpecOAuthConfig(),
-      fetchFn: this.fetchFn,
+      fetchFn: this.#fetchFn,
     });
   }
 
@@ -364,13 +364,13 @@ export class BodySpecProvider implements SyncProvider {
 
     let tokens: TokenSet;
     try {
-      tokens = await this.resolveTokens(db);
+      tokens = await this.#resolveTokens(db);
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
-    const client = new BodySpecClient(tokens.accessToken, this.fetchFn);
+    const client = new BodySpecClient(tokens.accessToken, this.#fetchFn);
 
     try {
       const scanCount = await withSyncLog(db, this.id, "dexa_scan", async () => {
@@ -386,7 +386,7 @@ export class BodySpecProvider implements SyncProvider {
             if (resultTime < since) continue;
 
             try {
-              count += await this.syncResult(db, client, result.result_id, resultTime);
+              count += await this.#syncResult(db, client, result.result_id, resultTime);
             } catch (err) {
               errors.push({
                 message: err instanceof Error ? err.message : String(err),
@@ -418,7 +418,7 @@ export class BodySpecProvider implements SyncProvider {
     };
   }
 
-  private async syncResult(
+  async #syncResult(
     db: SyncDatabase,
     client: BodySpecClient,
     resultId: string,

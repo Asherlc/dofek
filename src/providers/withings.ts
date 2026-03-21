@@ -206,21 +206,21 @@ export async function refreshWithingsToken(
 // ============================================================
 
 export class WithingsClient {
-  private accessToken: string;
-  private fetchFn: typeof globalThis.fetch;
+  #accessToken: string;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.accessToken = accessToken;
-    this.fetchFn = fetchFn;
+    this.#accessToken = accessToken;
+    this.#fetchFn = fetchFn;
   }
 
-  private async post<T>(path: string, params: Record<string, string>): Promise<T> {
+  async #post<T>(path: string, params: Record<string, string>): Promise<T> {
     const body = new URLSearchParams(params);
 
-    const response = await this.fetchFn(`${WITHINGS_API_BASE}${path}`, {
+    const response = await this.#fetchFn(`${WITHINGS_API_BASE}${path}`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${this.accessToken}`,
+        Authorization: `Bearer ${this.#accessToken}`,
         "Content-Type": "application/x-www-form-urlencoded",
       },
       body: body.toString(),
@@ -244,7 +244,7 @@ export class WithingsClient {
     enddate: number,
     offset = 0,
   ): Promise<{ measuregrps: WithingsMeasureGroup[]; more: number; offset: number }> {
-    return this.post("/measure", {
+    return this.#post("/measure", {
       action: "getmeas",
       meastype: [
         MEAS_WEIGHT,
@@ -274,10 +274,10 @@ export class WithingsClient {
 export class WithingsProvider implements SyncProvider {
   readonly id = "withings";
   readonly name = "Withings";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -296,7 +296,7 @@ export class WithingsProvider implements SyncProvider {
     };
   }
 
-  private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
+  async #resolveTokens(db: SyncDatabase): Promise<TokenSet> {
     const tokens = await loadTokens(db, this.id);
     if (!tokens) {
       throw new Error("No OAuth tokens found for Withings. Run: health-data auth withings");
@@ -313,7 +313,7 @@ export class WithingsProvider implements SyncProvider {
         "WITHINGS_CLIENT_ID and WITHINGS_CLIENT_SECRET are required to refresh tokens",
       );
     if (!tokens.refreshToken) throw new Error("No refresh token for Withings");
-    const refreshed = await refreshWithingsToken(config, tokens.refreshToken, this.fetchFn);
+    const refreshed = await refreshWithingsToken(config, tokens.refreshToken, this.#fetchFn);
     await saveTokens(db, this.id, refreshed);
     return refreshed;
   }
@@ -327,13 +327,13 @@ export class WithingsProvider implements SyncProvider {
 
     let tokens: TokenSet;
     try {
-      tokens = await this.resolveTokens(db);
+      tokens = await this.#resolveTokens(db);
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
-    const client = new WithingsClient(tokens.accessToken, this.fetchFn);
+    const client = new WithingsClient(tokens.accessToken, this.#fetchFn);
     const sinceUnix = Math.floor(since.getTime() / 1000);
     const nowUnix = Math.floor(Date.now() / 1000);
 

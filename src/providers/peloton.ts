@@ -180,16 +180,16 @@ export function parsePerformanceGraph(
 const PELOTON_API_BASE = "https://api.onepeloton.com";
 
 export class PelotonClient {
-  private accessToken: string;
-  private userId: string | null = null;
-  private fetchFn: typeof globalThis.fetch;
+  #accessToken: string;
+  #userId: string | null = null;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.accessToken = accessToken;
-    this.fetchFn = fetchFn;
+    this.#accessToken = accessToken;
+    this.#fetchFn = fetchFn;
   }
 
-  private async get<T>(path: string, params?: Record<string, string>): Promise<T> {
+  async #get<T>(path: string, params?: Record<string, string>): Promise<T> {
     const url = new URL(path, PELOTON_API_BASE);
     if (params) {
       for (const [key, value] of Object.entries(params)) {
@@ -197,9 +197,9 @@ export class PelotonClient {
       }
     }
 
-    const response = await this.fetchFn(url.toString(), {
+    const response = await this.#fetchFn(url.toString(), {
       headers: {
-        Authorization: `Bearer ${this.accessToken}`,
+        Authorization: `Bearer ${this.#accessToken}`,
         "peloton-platform": "web",
       },
     });
@@ -213,15 +213,15 @@ export class PelotonClient {
   }
 
   async getUserId(): Promise<string> {
-    if (this.userId) return this.userId;
-    const me = await this.get<{ id: string }>("/api/me");
-    this.userId = me.id;
+    if (this.#userId) return this.#userId;
+    const me = await this.#get<{ id: string }>("/api/me");
+    this.#userId = me.id;
     return me.id;
   }
 
   async getWorkouts(page = 0, limit = 20): Promise<PelotonWorkoutListResponse> {
     const userId = await this.getUserId();
-    return this.get<PelotonWorkoutListResponse>(`/api/user/${userId}/workouts`, {
+    return this.#get<PelotonWorkoutListResponse>(`/api/user/${userId}/workouts`, {
       page: String(page),
       limit: String(limit),
       sort_by: "-created_at",
@@ -230,7 +230,7 @@ export class PelotonClient {
   }
 
   async getPerformanceGraph(workoutId: string, everyN = 5): Promise<PelotonPerformanceGraph> {
-    return this.get<PelotonPerformanceGraph>(`/api/workout/${workoutId}/performance_graph`, {
+    return this.#get<PelotonPerformanceGraph>(`/api/workout/${workoutId}/performance_graph`, {
       every_n: String(everyN),
     });
   }
@@ -305,23 +305,23 @@ function getSetCookieHeaders(headers: Headers): string[] {
  * Simple cookie jar that tracks cookies per domain.
  */
 class CookieJar {
-  private cookies = new Map<string, Map<string, string>>();
+  #cookies = new Map<string, Map<string, string>>();
 
   addFromResponse(url: string, headers: Headers): void {
     const domain = new URL(url).hostname;
-    const existing = this.cookies.get(domain) ?? new Map();
+    const existing = this.#cookies.get(domain) ?? new Map();
     for (const header of getSetCookieHeaders(headers)) {
       const match = header.match(/^([^=]+)=([^;]*)/);
       if (match) existing.set(match[1], match[2]);
     }
-    this.cookies.set(domain, existing);
+    this.#cookies.set(domain, existing);
   }
 
   getForUrl(url: string): string {
     const hostname = new URL(url).hostname;
     const parts: string[] = [];
     // Include cookies from matching domains (exact + parent domain)
-    for (const [domain, cookies] of this.cookies) {
+    for (const [domain, cookies] of this.#cookies) {
       if (hostname === domain || hostname.endsWith(`.${domain}`)) {
         for (const [name, value] of cookies) {
           parts.push(`${name}=${value}`);
@@ -497,10 +497,10 @@ export async function pelotonAutomatedLogin(
 export class PelotonProvider implements SyncProvider {
   readonly id = "peloton";
   readonly name = "Peloton";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -514,7 +514,7 @@ export class PelotonProvider implements SyncProvider {
     const config = pelotonOAuthConfig();
     const codeVerifier = generateCodeVerifier();
     const codeChallenge = generateCodeChallenge(codeVerifier);
-    const fetchFn = this.fetchFn;
+    const fetchFn = this.#fetchFn;
 
     return {
       oauthConfig: config,
@@ -525,13 +525,13 @@ export class PelotonProvider implements SyncProvider {
     };
   }
 
-  private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
+  async #resolveTokens(db: SyncDatabase): Promise<TokenSet> {
     return resolveOAuthTokens({
       db,
       providerId: this.id,
       providerName: this.name,
       getOAuthConfig: () => pelotonOAuthConfig(),
-      fetchFn: this.fetchFn,
+      fetchFn: this.#fetchFn,
     });
   }
 
@@ -546,13 +546,13 @@ export class PelotonProvider implements SyncProvider {
 
     let tokens: TokenSet;
     try {
-      tokens = await this.resolveTokens(db);
+      tokens = await this.#resolveTokens(db);
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
-    const client = new PelotonClient(tokens.accessToken, this.fetchFn);
+    const client = new PelotonClient(tokens.accessToken, this.#fetchFn);
     await ensureProvider(db, this.id, this.name, PELOTON_API_BASE);
 
     // Single-pass: fetch workouts, then for each fetch performance graph,
