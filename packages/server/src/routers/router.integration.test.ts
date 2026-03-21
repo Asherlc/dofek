@@ -466,6 +466,7 @@ describe("Router coverage", () => {
         {
           date: string;
           dailyLoad: number;
+          strain: number;
           acuteLoad: number;
           chronicLoad: number;
           workloadRatio: number | null;
@@ -478,6 +479,9 @@ describe("Router coverage", () => {
       for (const row of result) {
         expect(row.date).toBeTruthy();
         expect(typeof row.dailyLoad).toBe("number");
+        expect(typeof row.strain).toBe("number");
+        expect(row.strain).toBeGreaterThanOrEqual(0);
+        expect(row.strain).toBeLessThanOrEqual(21);
         expect(typeof row.acuteLoad).toBe("number");
         expect(typeof row.chronicLoad).toBe("number");
         expect(row.dailyLoad).toBeGreaterThanOrEqual(0);

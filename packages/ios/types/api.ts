@@ -35,6 +35,7 @@ export interface SleepAnalyticsResult {
 export interface WorkloadRow {
   date: string;
   dailyLoad: number;
+  strain: number;
   acuteLoad: number;
   chronicLoad: number;
   workloadRatio: number | null;

@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { rawLoadToStrain } from "@dofek/scoring/scoring";
 import { selectRecentDailyLoad } from "@dofek/training/training";
 import type { NextWorkoutRecommendation } from "dofek-server/types";
 import { useRouter } from "expo-router";
@@ -148,7 +147,7 @@ export default function OverviewScreen() {
   const stepsData = stepsQuery.data ?? [];
 
   const recoveryScore = todayReadiness?.readinessScore ?? null;
-  const dailyStrain = rawLoadToStrain(displayedWorkload?.dailyLoad ?? 0);
+  const dailyStrain = displayedWorkload?.strain ?? 0;
 
   const isLoading =
     readinessQuery.isLoading ||

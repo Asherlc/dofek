@@ -1,9 +1,4 @@
-import {
-  rawLoadToStrain,
-  strainColor,
-  strainLabel,
-  workloadRatioColor,
-} from "@dofek/scoring/scoring";
+import { strainColor, strainLabel, workloadRatioColor } from "@dofek/scoring/scoring";
 import { selectRecentDailyLoad } from "@dofek/training/training";
 import type { WorkloadRatioRow } from "dofek-server/types";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
@@ -80,7 +75,7 @@ export function StrainCard({ data, loading }: StrainCardProps) {
 
   const displayed = selectRecentDailyLoad(data);
   const today = data[data.length - 1];
-  const strain = rawLoadToStrain(displayed?.dailyLoad ?? 0);
+  const strain = displayed?.strain ?? 0;
   const label = strainLabel(strain);
   const color = strainColor(strain);
   const workloadRatio = today?.workloadRatio;

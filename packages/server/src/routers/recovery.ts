@@ -1,3 +1,4 @@
+import { rawLoadToStrain } from "@dofek/scoring/scoring";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
@@ -15,6 +16,8 @@ export interface HrvVariabilityRow {
 export interface WorkloadRatioRow {
   date: string;
   dailyLoad: number;
+  /** Strain score on 0-21 scale, derived from dailyLoad via rawLoadToStrain */
+  strain: number;
   acuteLoad: number;
   chronicLoad: number;
   workloadRatio: number | null;
@@ -256,14 +259,18 @@ export const recoveryRouter = router({
             ORDER BY date ASC`,
       );
 
-      return rows.map((row) => ({
-        date: row.date,
-        dailyLoad: Math.round(Number(row.daily_load) * 10) / 10,
-        acuteLoad: Math.round(Number(row.acute_load) * 10) / 10,
-        chronicLoad: Math.round(Number(row.chronic_load) * 10) / 10,
-        workloadRatio:
-          row.workload_ratio != null ? Math.round(Number(row.workload_ratio) * 100) / 100 : null,
-      }));
+      return rows.map((row) => {
+        const dailyLoad = Math.round(Number(row.daily_load) * 10) / 10;
+        return {
+          date: row.date,
+          dailyLoad,
+          strain: rawLoadToStrain(dailyLoad),
+          acuteLoad: Math.round(Number(row.acute_load) * 10) / 10,
+          chronicLoad: Math.round(Number(row.chronic_load) * 10) / 10,
+          workloadRatio:
+            row.workload_ratio != null ? Math.round(Number(row.workload_ratio) * 100) / 100 : null,
+        };
+      });
     }),
 
   /**
