@@ -1,4 +1,4 @@
-import { stressColor, stressLabel, trendColor } from "@dofek/scoring/scoring";
+import { StressScore, trendColor } from "@dofek/scoring/scoring";
 import type { StressResult } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
 import { createChartOptions } from "../lib/chart-theme.ts";
@@ -31,7 +31,8 @@ export function StressChart({ data, loading }: StressChartProps) {
   }
 
   const latest = data.latestScore ?? 0;
-  const latestColor = stressColor(latest);
+  const latestStress = new StressScore(latest);
+  const latestColor = latestStress.color;
 
   const option = createChartOptions({
     grid: { top: 50, right: 60, bottom: 40, left: 50 },
@@ -54,7 +55,8 @@ export function StressChart({ data, loading }: StressChartProps) {
           day: "numeric",
         });
         let html = `<div style="font-weight:600;margin-bottom:4px">${date}</div>`;
-        html += `<div>Stress: <b style="color:${stressColor(day.stressScore)}">${formatNumber(day.stressScore)} (${stressLabel(day.stressScore)})</b></div>`;
+        const dayStress = new StressScore(day.stressScore);
+        html += `<div>Stress: <b style="color:${dayStress.color}">${formatNumber(day.stressScore)} (${dayStress.label})</b></div>`;
         if (day.hrvDeviation != null)
           html += `<div>Heart rate variability deviation: <b>${day.hrvDeviation > 0 ? "+" : ""}${day.hrvDeviation}</b>σ</div>`;
         if (day.restingHrDeviation != null)
@@ -74,7 +76,7 @@ export function StressChart({ data, loading }: StressChartProps) {
         right: 10,
         top: 5,
         style: {
-          text: `Today: ${formatNumber(latest)} ${stressLabel(latest)} ${trendIcon(data.trend)}`,
+          text: `Today: ${formatNumber(latest)} ${latestStress.label} ${trendIcon(data.trend)}`,
           fill: latestColor,
           fontSize: 13,
           fontWeight: "bold" as const,

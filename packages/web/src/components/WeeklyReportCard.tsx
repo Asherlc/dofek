@@ -1,4 +1,4 @@
-import { strainZoneColor, strainZoneLabel } from "@dofek/scoring/scoring";
+import { StrainZone } from "@dofek/scoring/scoring";
 import type { WeeklyReportResult } from "dofek-server/types";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
@@ -33,7 +33,8 @@ export function WeeklyReportCard({ data, loading }: WeeklyReportCardProps) {
   }
 
   const { current, history } = data;
-  const zoneColor = strainZoneColor(current.strainZone);
+  const currentZone = new StrainZone(current.strainZone);
+  const zoneColor = currentZone.color;
   const prevWeek = history.length > 0 ? history[history.length - 1] : null;
 
   return (
@@ -53,7 +54,7 @@ export function WeeklyReportCard({ data, loading }: WeeklyReportCardProps) {
           className="px-3 py-1 rounded-full text-xs font-semibold"
           style={{ backgroundColor: `${zoneColor}20`, color: zoneColor }}
         >
-          {strainZoneLabel(current.strainZone)}
+          {currentZone.label}
         </div>
       </div>
 
@@ -91,14 +92,17 @@ export function WeeklyReportCard({ data, loading }: WeeklyReportCardProps) {
         <div>
           <p className="text-zinc-500 text-xs mb-2">Recent weeks</p>
           <div className="flex gap-1">
-            {history.slice(-8).map((w) => (
-              <div
-                key={w.weekStart}
-                className="flex-1 h-2 rounded-full"
-                style={{ backgroundColor: strainZoneColor(w.strainZone) }}
-                title={`${w.weekStart}: ${strainZoneLabel(w.strainZone)}`}
-              />
-            ))}
+            {history.slice(-8).map((w) => {
+              const zone = new StrainZone(w.strainZone);
+              return (
+                <div
+                  key={w.weekStart}
+                  className="flex-1 h-2 rounded-full"
+                  style={{ backgroundColor: zone.color }}
+                  title={`${w.weekStart}: ${zone.label}`}
+                />
+              );
+            })}
             <div
               className="flex-1 h-2 rounded-full ring-2 ring-zinc-600"
               style={{ backgroundColor: zoneColor }}

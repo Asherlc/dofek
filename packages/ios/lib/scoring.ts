@@ -1,18 +1,17 @@
 export {
   scoreColor,
   scoreLabel,
-  strainZoneColor,
-  strainZoneLabel,
-  workloadRatioColor,
-  workloadRatioHint,
+  StrainZone,
+  WorkloadRatio,
   aggregateWeeklyVolume,
   trendDirection,
-  stressColor,
-  stressLabel,
+  StressScore,
   trendColor,
   rampRateColor,
   sleepDebtColor,
   readinessLevelColor,
   healthStatusColor,
+  StrainScore,
+  FormZone,
 } from "@dofek/scoring/scoring";
 export type { WeekSummary } from "@dofek/scoring/scoring";

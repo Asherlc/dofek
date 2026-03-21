@@ -18,7 +18,7 @@ import { RecoveryRing } from "../../components/charts/RecoveryRing";
 import { SleepBar } from "../../components/charts/SleepBar";
 import { StrainGauge } from "../../components/charts/StrainGauge";
 import { formatDurationMinutes, formatNumber, formatSleepDebtInline } from "@dofek/format/format";
-import { readinessLevelColor, scoreColor, scoreLabel, strainZoneColor, strainZoneLabel, trendColor, trendDirection as computeTrend } from "../../lib/scoring";
+import { readinessLevelColor, scoreColor, scoreLabel, StrainZone, trendColor, trendDirection as computeTrend } from "../../lib/scoring";
 import { trpc } from "../../lib/trpc";
 import { convertTemperature, convertWeight, temperatureLabel, useUnitSystem, weightLabel } from "../../lib/units";
 import { useOnboarding } from "../../lib/useOnboarding";
@@ -509,17 +509,22 @@ export default function OverviewScreen() {
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Weekly Report</Text>
               <View style={styles.weeklyReportContent}>
-                <View style={styles.weeklyReportRow}>
-                  <Text style={styles.weeklyLabel}>Strain Balance</Text>
-                  <Text
-                    style={[
-                      styles.weeklyValue,
-                      { color: strainZoneColor(currentWeek.strainZone) },
-                    ]}
-                  >
-                    {strainZoneLabel(currentWeek.strainZone)}
-                  </Text>
-                </View>
+                {(() => {
+                  const zone = new StrainZone(currentWeek.strainZone);
+                  return (
+                    <View style={styles.weeklyReportRow}>
+                      <Text style={styles.weeklyLabel}>Strain Balance</Text>
+                      <Text
+                        style={[
+                          styles.weeklyValue,
+                          { color: zone.color },
+                        ]}
+                      >
+                        {zone.label}
+                      </Text>
+                    </View>
+                  );
+                })()}
                 <View style={styles.weeklyReportRow}>
                   <Text style={styles.weeklyLabel}>Sleep vs Baseline</Text>
                   <Text

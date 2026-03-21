@@ -5,7 +5,7 @@ import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
 import { trpc } from "../lib/trpc";
 import { convertDistance, convertElevation, convertPace, convertWeight, distanceLabel, elevationLabel, paceLabel, useUnitSystem, weightLabel } from "../lib/units";
 import { colors } from "../theme";
-import { scoreColor, scoreLabel, workloadRatioColor, workloadRatioHint, rampRateColor, formZoneColor, FORM_ZONE_COLORS } from "@dofek/scoring/scoring";
+import { scoreColor, scoreLabel, WorkloadRatio, rampRateColor, FormZone, FORM_ZONE_COLORS } from "@dofek/scoring/scoring";
 import { formatPace } from "@dofek/format/format";
 import { formatNumber, formatSigned } from "@dofek/format/format";
 import { statusColors } from "@dofek/scoring/colors";
@@ -210,7 +210,7 @@ function OverviewTab({ days }: { days: number }) {
           <Text
             style={[
               styles.summaryValue,
-              { color: latest?.tsb != null ? formZoneColor(latest.tsb) : colors.textSecondary },
+              { color: latest?.tsb != null ? new FormZone(latest.tsb).color : colors.textSecondary },
             ]}
           >
             {formatNullable(latest?.tsb, 1)}
@@ -477,7 +477,7 @@ function CyclingTab({ days }: { days: number }) {
               <Text
                 style={[
                   styles.summaryValue,
-                  { color: formZoneColor(latestPmc.tsb) },
+                  { color: new FormZone(latestPmc.tsb).color },
                 ]}
               >
                 {formatNullable(latestPmc.tsb, 1)}
@@ -1133,21 +1133,24 @@ function RecoveryTab({ days }: { days: number }) {
       )}
 
       {/* Workload Ratio */}
-      {latestWorkload && latestWorkload.workloadRatio != null && (
-        <View style={styles.card}>
-          <ChartTitleWithTooltip
-            title="Acute:Chronic Workload Ratio"
-            description="This ratio compares short-term load against longer-term load to highlight undertraining or overload risk."
-            textStyle={styles.cardTitle}
-          />
-          <Text style={[styles.bigValue, { color: workloadRatioColor(latestWorkload.workloadRatio) }]}>
-            {formatNumber(latestWorkload.workloadRatio, 2)}
-          </Text>
-          <Text style={[styles.cardSubtext, { color: workloadRatioColor(latestWorkload.workloadRatio) }]}>
-            {workloadRatioHint(latestWorkload.workloadRatio)}
-          </Text>
-        </View>
-      )}
+      {latestWorkload && latestWorkload.workloadRatio != null && (() => {
+        const ratio = new WorkloadRatio(latestWorkload.workloadRatio);
+        return (
+          <View style={styles.card}>
+            <ChartTitleWithTooltip
+              title="Acute:Chronic Workload Ratio"
+              description="This ratio compares short-term load against longer-term load to highlight undertraining or overload risk."
+              textStyle={styles.cardTitle}
+            />
+            <Text style={[styles.bigValue, { color: ratio.color }]}>
+              {formatNumber(latestWorkload.workloadRatio, 2)}
+            </Text>
+            <Text style={[styles.cardSubtext, { color: ratio.color }]}>
+              {ratio.hint}
+            </Text>
+          </View>
+        );
+      })()}
 
       {/* HRV Trends */}
       {hrvData.length > 1 && (

@@ -1,4 +1,4 @@
-import { strainColor, strainLabel, workloadRatioColor } from "@dofek/scoring/scoring";
+import { StrainScore, WorkloadRatio } from "@dofek/scoring/scoring";
 import type { WorkloadRatioResult } from "dofek-server/types";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
@@ -14,7 +14,7 @@ function StrainRing({ strain, size = 120 }: { strain: number; size?: number }) {
   const circumference = 2 * Math.PI * radius;
   const fraction = Math.min(strain / maxStrain, 1);
   const offset = circumference * (1 - fraction);
-  const color = strainColor(strain);
+  const color = new StrainScore(strain).color;
   const center = size / 2;
 
   return (
@@ -74,8 +74,9 @@ export function StrainCard({ data, loading }: StrainCardProps) {
 
   const today = data.timeSeries[data.timeSeries.length - 1];
   const strain = data.displayedStrain;
-  const label = strainLabel(strain);
-  const color = strainColor(strain);
+  const strainScore = new StrainScore(strain);
+  const label = strainScore.label;
+  const color = strainScore.color;
   const workloadRatio = today?.workloadRatio;
 
   const dateLabel =
@@ -117,7 +118,7 @@ export function StrainCard({ data, loading }: StrainCardProps) {
             <div>
               <p
                 className="text-lg font-bold tabular-nums"
-                style={{ color: workloadRatioColor(workloadRatio ?? null) }}
+                style={{ color: new WorkloadRatio(workloadRatio ?? null).color }}
               >
                 {workloadRatio != null ? workloadRatio.toFixed(2) : "--"}
               </p>

@@ -9,7 +9,7 @@ import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { DaySelector } from "../../components/DaySelector";
 import { StrainGauge } from "../../components/charts/StrainGauge";
 import { SparkLine } from "../../components/charts/SparkLine";
-import { aggregateWeeklyVolume, workloadRatioColor, workloadRatioHint } from "../../lib/scoring";
+import { aggregateWeeklyVolume, WorkloadRatio } from "../../lib/scoring";
 import type { WeekSummary } from "../../lib/scoring";
 import { formatNumber } from "@dofek/format/format";
 import { trpc } from "../../lib/trpc";
@@ -47,6 +47,7 @@ export default function StrainScreen() {
   const acuteLoad = todayWorkload?.acuteLoad ?? 0;
   const chronicLoad = todayWorkload?.chronicLoad ?? 0;
   const workloadRatio = todayWorkload?.workloadRatio;
+  const workloadRatioScore = new WorkloadRatio(workloadRatio ?? null);
   const displayedDate = workloadResult?.displayedDate;
   const strainDateLabel =
     displayedDate == null
@@ -102,7 +103,7 @@ export default function StrainScreen() {
                   style={[
                     styles.loadValue,
                     {
-                      color: workloadRatioColor(workloadRatio ?? null),
+                      color: workloadRatioScore.color,
                     },
                   ]}
                 >
@@ -113,7 +114,7 @@ export default function StrainScreen() {
             </View>
             {workloadRatio != null && (
               <Text style={styles.ratioHint}>
-                {workloadRatioHint(workloadRatio)}
+                {workloadRatioScore.hint}
               </Text>
             )}
           </View>
