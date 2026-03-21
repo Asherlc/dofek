@@ -313,7 +313,10 @@ export async function upsertDailyMetricsBatch(
   }
 
   // Select overnight HRV for each (date, source) using shared logic
-  for (const [compoundKey, heartRateVariabilitySamples] of heartRateVariabilitySamplesByDateSource) {
+  for (const [
+    compoundKey,
+    heartRateVariabilitySamples,
+  ] of heartRateVariabilitySamplesByDateSource) {
     const day = byDateSource.get(compoundKey);
     const selected = selectDailyHeartRateVariability(heartRateVariabilitySamples);
     if (day && selected !== null) {

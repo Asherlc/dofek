@@ -31,8 +31,8 @@ ALTER TABLE fitness.daily_metrics ALTER COLUMN source_name SET DEFAULT '';
 --> statement-breakpoint
 
 -- 4. Replace primary key to include source_name
-ALTER TABLE fitness.daily_metrics DROP CONSTRAINT daily_metrics_pkey;
-ALTER TABLE fitness.daily_metrics ADD PRIMARY KEY (date, provider_id, source_name);
+ALTER TABLE fitness.daily_metrics DROP CONSTRAINT daily_metrics_date_provider_id_pk;
+ALTER TABLE fitness.daily_metrics ADD CONSTRAINT daily_metrics_date_provider_id_source_name_pk PRIMARY KEY (date, provider_id, source_name);
 
 --> statement-breakpoint
 
