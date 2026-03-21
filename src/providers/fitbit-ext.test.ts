@@ -266,9 +266,7 @@ describe("FitbitClient — Zod runtime validation", () => {
   it("validates and returns a correct weight response", async () => {
     const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return Response.json({
-        weight: [
-          { logId: 1, weight: 80.0, bmi: 24.0, date: "2026-03-01", time: "08:00:00" },
-        ],
+        weight: [{ logId: 1, weight: 80.0, bmi: 24.0, date: "2026-03-01", time: "08:00:00" }],
       });
     };
 
