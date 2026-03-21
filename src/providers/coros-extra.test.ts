@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ZodError } from "zod";
 
 // Mock modules (needed for sync tests)
 vi.mock("../db/sync-log.ts", () => ({
@@ -26,7 +27,13 @@ vi.mock("../auth/oauth.ts", () => ({
   refreshAccessToken: vi.fn(),
 }));
 
-import { CorosProvider, corosOAuthConfig, mapCorosSportType, parseCorosWorkout } from "./coros.ts";
+import {
+  CorosClient,
+  CorosProvider,
+  corosOAuthConfig,
+  mapCorosSportType,
+  parseCorosWorkout,
+} from "./coros.ts";
 
 // ============================================================
 // Tests targeting uncovered paths in coros.ts
@@ -227,5 +234,100 @@ describe("CorosProvider", () => {
     const result = await new CorosProvider().sync(mockDb, new Date("2026-01-01"));
     expect(result.provider).toBe("coros");
     expect(result.errors.length).toBeGreaterThan(0);
+  });
+});
+
+describe("CorosClient", () => {
+  it("adds Accept: application/json header", async () => {
+    let capturedHeaders: Record<string, string> = {};
+    const mockFetch: typeof globalThis.fetch = async (
+      _input: RequestInfo | URL,
+      init?: RequestInit,
+    ): Promise<Response> => {
+      capturedHeaders = Object.fromEntries(Object.entries(init?.headers ?? {}));
+      return Response.json({ data: [], message: "OK", result: "0000" });
+    };
+
+    const client = new CorosClient("test-token", mockFetch);
+    await client.getWorkouts("20260301", "20260315");
+
+    expect(capturedHeaders.Authorization).toBe("Bearer test-token");
+    expect(capturedHeaders.Accept).toBe("application/json");
+  });
+
+  it("fetches workouts with correct URL", async () => {
+    let capturedUrl = "";
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL): Promise<Response> => {
+      capturedUrl = input.toString();
+      return Response.json({ data: [], message: "OK", result: "0000" });
+    };
+
+    const client = new CorosClient("token", mockFetch);
+    await client.getWorkouts("20260301", "20260315");
+
+    expect(capturedUrl).toContain("/v2/coros/sport/list");
+    expect(capturedUrl).toContain("startDate=20260301");
+    expect(capturedUrl).toContain("endDate=20260315");
+  });
+
+  it("fetches daily data with correct URL", async () => {
+    let capturedUrl = "";
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL): Promise<Response> => {
+      capturedUrl = input.toString();
+      return Response.json({ data: [], message: "OK", result: "0000" });
+    };
+
+    const client = new CorosClient("token", mockFetch);
+    await client.getDailyData("20260301", "20260315");
+
+    expect(capturedUrl).toContain("/v2/coros/daily/list");
+  });
+
+  it("throws on non-OK response", async () => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response("Unauthorized", { status: 401 });
+    };
+
+    const client = new CorosClient("bad-token", mockFetch);
+    await expect(client.getWorkouts("20260301", "20260315")).rejects.toThrow("API error 401");
+  });
+
+  it("rejects invalid response shapes via Zod", async () => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return Response.json({ data: "not-an-array" });
+    };
+
+    const client = new CorosClient("token", mockFetch);
+    await expect(client.getWorkouts("20260301", "20260315")).rejects.toThrow(ZodError);
+  });
+
+  it("validates and returns a correct workouts response", async () => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return Response.json({
+        data: [
+          {
+            labelId: "w-1",
+            mode: 9,
+            subMode: 0,
+            startTime: 1709290800,
+            endTime: 1709294400,
+            duration: 3600,
+            distance: 30000,
+            avgHeartRate: 145,
+            maxHeartRate: 175,
+            avgSpeed: 8.33,
+            maxSpeed: 12.0,
+            totalCalories: 700,
+          },
+        ],
+        message: "OK",
+        result: "0000",
+      });
+    };
+
+    const client = new CorosClient("token", mockFetch);
+    const result = await client.getWorkouts("20260301", "20260315");
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]?.labelId).toBe("w-1");
   });
 });

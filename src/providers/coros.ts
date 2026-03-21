@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
@@ -5,65 +6,68 @@ import type { SyncDatabase } from "../db/index.ts";
 import { activity, dailyMetrics, sleepSession } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
+import { ProviderHttpClient } from "./http-client.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
-// COROS API types
+// COROS API Zod schemas
 // ============================================================
 
 const COROS_API_BASE = "https://open.coros.com";
 const DEFAULT_REDIRECT_URI = "https://localhost:9876/callback";
 
-interface CorosWorkout {
-  labelId: string;
-  mode: number;
-  subMode: number;
-  startTime: number; // UNIX seconds
-  endTime: number; // UNIX seconds
-  duration: number; // seconds
-  distance: number; // meters
-  avgHeartRate: number;
-  maxHeartRate: number;
-  avgSpeed: number; // m/s
-  maxSpeed: number; // m/s
-  totalCalories: number;
-  avgCadence?: number;
-  avgPower?: number;
-  maxPower?: number;
-  totalAscent?: number;
-  totalDescent?: number;
-  avgStrokeRate?: number;
-  fitUrl?: string;
-}
+const corosWorkoutSchema = z.object({
+  labelId: z.string(),
+  mode: z.number(),
+  subMode: z.number(),
+  startTime: z.number(),
+  endTime: z.number(),
+  duration: z.number(),
+  distance: z.number(),
+  avgHeartRate: z.number(),
+  maxHeartRate: z.number(),
+  avgSpeed: z.number(),
+  maxSpeed: z.number(),
+  totalCalories: z.number(),
+  avgCadence: z.number().optional(),
+  avgPower: z.number().optional(),
+  maxPower: z.number().optional(),
+  totalAscent: z.number().optional(),
+  totalDescent: z.number().optional(),
+  avgStrokeRate: z.number().optional(),
+  fitUrl: z.string().optional(),
+});
 
-interface CorosWorkoutsResponse {
-  data: CorosWorkout[];
-  message: string;
-  result: string;
-}
+type CorosWorkout = z.infer<typeof corosWorkoutSchema>;
 
-interface CorosDailyData {
-  date: string; // YYYYMMDD
-  steps?: number;
-  distance?: number;
-  calories?: number;
-  restingHr?: number;
-  avgHr?: number;
-  maxHr?: number;
-  sleepDuration?: number; // minutes
-  deepSleep?: number; // minutes
-  lightSleep?: number; // minutes
-  remSleep?: number; // minutes
-  awakeDuration?: number; // minutes
-  spo2Avg?: number;
-  hrv?: number;
-}
+const corosWorkoutsResponseSchema = z.object({
+  data: z.array(corosWorkoutSchema),
+  message: z.string(),
+  result: z.string(),
+});
 
-interface CorosDailyResponse {
-  data: CorosDailyData[];
-  message: string;
-  result: string;
-}
+const corosDailyDataSchema = z.object({
+  date: z.string(),
+  steps: z.number().optional(),
+  distance: z.number().optional(),
+  calories: z.number().optional(),
+  restingHr: z.number().optional(),
+  avgHr: z.number().optional(),
+  maxHr: z.number().optional(),
+  sleepDuration: z.number().optional(),
+  deepSleep: z.number().optional(),
+  lightSleep: z.number().optional(),
+  remSleep: z.number().optional(),
+  awakeDuration: z.number().optional(),
+  spo2Avg: z.number().optional(),
+  hrv: z.number().optional(),
+});
+
+const corosDailyResponseSchema = z.object({
+  data: z.array(corosDailyDataSchema),
+  message: z.string(),
+  result: z.string(),
+});
 
 // ============================================================
 // Parsed types
@@ -156,6 +160,40 @@ function formatDateCompact(date: Date): string {
 }
 
 // ============================================================
+// COROS API client
+// ============================================================
+
+export class CorosClient extends ProviderHttpClient {
+  constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
+    super(accessToken, COROS_API_BASE, fetchFn);
+  }
+
+  protected override getHeaders(): Record<string, string> {
+    return { ...super.getHeaders(), Accept: "application/json" };
+  }
+
+  async getWorkouts(
+    sinceDate: string,
+    toDate: string,
+  ): Promise<z.infer<typeof corosWorkoutsResponseSchema>> {
+    return this.get(
+      `/v2/coros/sport/list?startDate=${sinceDate}&endDate=${toDate}`,
+      corosWorkoutsResponseSchema,
+    );
+  }
+
+  async getDailyData(
+    sinceDate: string,
+    toDate: string,
+  ): Promise<z.infer<typeof corosDailyResponseSchema>> {
+    return this.get(
+      `/v2/coros/daily/list?startDate=${sinceDate}&endDate=${toDate}`,
+      corosDailyResponseSchema,
+    );
+  }
+}
+
+// ============================================================
 // Provider implementation
 // ============================================================
 
@@ -195,21 +233,6 @@ export class CorosProvider implements SyncProvider {
     });
   }
 
-  private async apiGet<T>(accessToken: string, path: string): Promise<T> {
-    const url = `${COROS_API_BASE}${path}`;
-    const response = await this.fetchFn(url, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        Accept: "application/json",
-      },
-    });
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`COROS API error (${response.status}): ${text}`);
-    }
-    return response.json();
-  }
-
   async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
@@ -217,10 +240,10 @@ export class CorosProvider implements SyncProvider {
 
     await ensureProvider(db, this.id, this.name, COROS_API_BASE);
 
-    let accessToken: string;
+    let client: CorosClient;
     try {
       const tokens = await this.resolveTokens(db);
-      accessToken = tokens.accessToken;
+      client = new CorosClient(tokens.accessToken, this.fetchFn);
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
@@ -232,10 +255,7 @@ export class CorosProvider implements SyncProvider {
     // 1. Sync workouts
     try {
       const activityCount = await withSyncLog(db, this.id, "activity", async () => {
-        const data = await this.apiGet<CorosWorkoutsResponse>(
-          accessToken,
-          `/v2/coros/sport/list?startDate=${sinceDate}&endDate=${toDate}`,
-        );
+        const data = await client.getWorkouts(sinceDate, toDate);
         let count = 0;
 
         for (const raw of data.data ?? []) {
@@ -285,10 +305,7 @@ export class CorosProvider implements SyncProvider {
     // 2. Sync daily data (sleep, HR, steps)
     try {
       const dailyCount = await withSyncLog(db, this.id, "daily_metrics", async () => {
-        const data = await this.apiGet<CorosDailyResponse>(
-          accessToken,
-          `/v2/coros/daily/list?startDate=${sinceDate}&endDate=${toDate}`,
-        );
+        const data = await client.getDailyData(sinceDate, toDate);
         let count = 0;
 
         for (const raw of data.data ?? []) {
