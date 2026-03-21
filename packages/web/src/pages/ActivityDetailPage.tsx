@@ -9,16 +9,8 @@ import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.t
 import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
 import { formatNumber } from "../lib/format.ts";
 import { trpc } from "../lib/trpc.ts";
-import { useUnitSystem } from "../lib/unitContext.ts";
-import type { UnitSystem } from "../lib/units.ts";
-import {
-  convertDistance,
-  convertElevation,
-  convertSpeed,
-  distanceLabel,
-  elevationLabel,
-  speedLabel,
-} from "../lib/units.ts";
+import { useUnitConverter } from "../lib/unitContext.ts";
+import type { UnitConverter } from "../lib/units.ts";
 
 const CHART_COLORS = {
   heartRate: "#ef4444",
@@ -31,7 +23,7 @@ const CHART_COLORS = {
 export function ActivityDetailPage() {
   const { id } = useParams({ from: "/activity/$id" });
 
-  const { unitSystem } = useUnitSystem();
+  const units = useUnitConverter();
   const detail = trpc.activity.byId.useQuery({ id });
   const stream = trpc.activity.stream.useQuery({ id, maxPoints: 500 });
   const hrZones = trpc.activity.hrZones.useQuery({ id });
@@ -83,7 +75,7 @@ export function ActivityDetailPage() {
           <span className="text-zinc-300">{activity.name ?? activity.activityType}</span>
         </div>
 
-        <ActivityHeader activity={activity} unitSystem={unitSystem} />
+        <ActivityHeader activity={activity} units={units} />
 
         {hasGps && (
           <Section
@@ -106,7 +98,7 @@ export function ActivityDetailPage() {
               hasSpeed={hasSpeed}
               hasCadence={hasCadence}
               loading={stream.isLoading}
-              unitSystem={unitSystem}
+              units={units}
             />
           </Section>
         )}
@@ -117,7 +109,7 @@ export function ActivityDetailPage() {
               title="Elevation Profile"
               description="This chart shows how your elevation changed over time during the activity."
             >
-              <ElevationChart points={points} loading={stream.isLoading} unitSystem={unitSystem} />
+              <ElevationChart points={points} loading={stream.isLoading} units={units} />
             </Section>
           )}
 
@@ -135,13 +127,7 @@ export function ActivityDetailPage() {
   );
 }
 
-function ActivityHeader({
-  activity,
-  unitSystem,
-}: {
-  activity: ActivityDetail;
-  unitSystem: UnitSystem;
-}) {
+function ActivityHeader({ activity, units }: { activity: ActivityDetail; units: UnitConverter }) {
   const durationMin =
     activity.startedAt && activity.endedAt
       ? Math.round(
@@ -161,14 +147,14 @@ function ActivityHeader({
   if (activity.totalDistance != null)
     stats.push({
       label: "Distance",
-      value: `${formatNumber(convertDistance(activity.totalDistance / 1000, unitSystem))} ${distanceLabel(unitSystem)}`,
+      value: `${formatNumber(units.convertDistance(activity.totalDistance / 1000))} ${units.distanceLabel}`,
     });
   if (activity.calories != null)
     stats.push({ label: "Calories", value: `${Math.round(activity.calories)} kcal` });
   if (activity.elevationGain != null)
     stats.push({
       label: "Elevation Gain",
-      value: `${Math.round(convertElevation(activity.elevationGain, unitSystem))} ${elevationLabel(unitSystem)}`,
+      value: `${Math.round(units.convertElevation(activity.elevationGain))} ${units.elevationLabel}`,
     });
   if (activity.avgHr != null)
     stats.push({ label: "Avg Heart Rate", value: `${Math.round(activity.avgHr)} bpm` });
@@ -181,7 +167,7 @@ function ActivityHeader({
   if (activity.avgSpeed != null)
     stats.push({
       label: "Avg Speed",
-      value: `${formatNumber(convertSpeed(activity.avgSpeed * 3.6, unitSystem))} ${speedLabel(unitSystem)}`,
+      value: `${formatNumber(units.convertSpeed(activity.avgSpeed * 3.6))} ${units.speedLabel}`,
     });
   if (activity.avgCadence != null)
     stats.push({ label: "Avg Cadence", value: `${Math.round(activity.avgCadence)} rpm` });
@@ -304,7 +290,7 @@ function MetricsChart({
   hasSpeed,
   hasCadence,
   loading,
-  unitSystem,
+  units,
 }: {
   points: StreamPoint[];
   hasHr: boolean;
@@ -312,7 +298,7 @@ function MetricsChart({
   hasSpeed: boolean;
   hasCadence: boolean;
   loading: boolean;
-  unitSystem: UnitSystem;
+  units: UnitConverter;
 }) {
   if (loading) return <ChartLoadingSkeleton height={300} />;
   if (points.length === 0) return null;
@@ -367,7 +353,7 @@ function MetricsChart({
   if (hasSpeed) {
     yAxes.push({
       type: "value",
-      name: `Speed (${speedLabel(unitSystem)})`,
+      name: `Speed (${units.speedLabel})`,
       position: axisIndex === 0 ? "left" : "right",
       offset: axisIndex > 1 ? (axisIndex - 1) * 60 : 0,
       axisLabel: { color: CHART_COLORS.speed, fontSize: 11 },
@@ -379,7 +365,7 @@ function MetricsChart({
       type: "line",
       yAxisIndex: axisIndex,
       data: points.map((p) =>
-        p.speed != null ? +formatNumber(convertSpeed(p.speed * 3.6, unitSystem)) : null,
+        p.speed != null ? +formatNumber(units.convertSpeed(p.speed * 3.6)) : null,
       ),
       showSymbol: false,
       lineStyle: { width: 1.5, color: CHART_COLORS.speed },
@@ -464,11 +450,11 @@ function MetricsChart({
 function ElevationChart({
   points,
   loading,
-  unitSystem,
+  units,
 }: {
   points: StreamPoint[];
   loading: boolean;
-  unitSystem: UnitSystem;
+  units: UnitConverter;
 }) {
   if (loading) return <ChartLoadingSkeleton height={200} />;
 
@@ -486,7 +472,7 @@ function ElevationChart({
       formatter: (params: Array<{ value: number; dataIndex: number }>) => {
         const p = params[0];
         if (!p) return "";
-        return `Elevation: ${Math.round(convertElevation(p.value, unitSystem))} ${elevationLabel(unitSystem)}`;
+        return `Elevation: ${Math.round(units.convertElevation(p.value))} ${units.elevationLabel}`;
       },
     },
     xAxis: {
@@ -504,7 +490,7 @@ function ElevationChart({
     },
     yAxis: {
       type: "value",
-      name: `Elevation (${elevationLabel(unitSystem)})`,
+      name: `Elevation (${units.elevationLabel})`,
       nameTextStyle: { color: "#71717a", fontSize: 10 },
       axisLabel: { color: "#71717a", fontSize: 11 },
       splitLine: { lineStyle: { color: "#27272a" } },
@@ -513,7 +499,7 @@ function ElevationChart({
       {
         type: "line",
         data: elevPoints.map((p) =>
-          p.altitude != null ? Math.round(convertElevation(p.altitude, unitSystem)) : null,
+          p.altitude != null ? Math.round(units.convertElevation(p.altitude)) : null,
         ),
         showSymbol: false,
         lineStyle: { width: 1.5, color: CHART_COLORS.altitude },

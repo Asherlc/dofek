@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { UnitContext } from "../lib/unitContext.ts";
 import type { UnitSystem } from "../lib/units.ts";
-import { convertElevation, elevationLabel, speedLabel } from "../lib/units.ts";
+import { UnitConverter } from "../lib/units.ts";
 
 const capturedOptions: Array<Record<string, unknown>> = [];
 
@@ -180,8 +180,8 @@ describe("ActivityDetailPage", () => {
 
       const data = getSeriesData(elevOption);
       const firstValue = data[0];
-      expect(firstValue).toBe(Math.round(convertElevation(100, "imperial")));
-      expect(getYAxisName(elevOption)).toContain(elevationLabel("imperial"));
+      expect(firstValue).toBe(Math.round(new UnitConverter("imperial").convertElevation(100)));
+      expect(getYAxisName(elevOption)).toContain(new UnitConverter("imperial").elevationLabel);
     });
 
     it("keeps elevation in meters for metric", async () => {
@@ -213,7 +213,7 @@ describe("ActivityDetailPage", () => {
         (y: Record<string, unknown>) => typeof y.name === "string" && y.name.includes("Speed"),
       );
       expect(speedAxis).toBeDefined();
-      expect(String(speedAxis?.name)).toContain(speedLabel("imperial"));
+      expect(String(speedAxis?.name)).toContain(new UnitConverter("imperial").speedLabel);
     });
   });
 });

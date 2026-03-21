@@ -1,7 +1,6 @@
 import type { WalkingBiomechanicsRow } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
-import { useUnitSystem } from "../lib/unitContext.ts";
-import { convertHeight, convertSpeed, heightLabel, speedLabel } from "../lib/units.ts";
+import { useUnitConverter } from "../lib/unitContext.ts";
 
 interface WalkingBiomechanicsChartProps {
   data: WalkingBiomechanicsRow[];
@@ -57,7 +56,7 @@ function buildLineOption(
 }
 
 export function WalkingBiomechanicsChart({ data, loading }: WalkingBiomechanicsChartProps) {
-  const { unitSystem } = useUnitSystem();
+  const units = useUnitConverter();
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[400px]">
@@ -83,17 +82,17 @@ export function WalkingBiomechanicsChart({ data, loading }: WalkingBiomechanicsC
   }[] = [
     {
       name: "Walking Speed",
-      unit: speedLabel(unitSystem),
+      unit: units.speedLabel,
       color: "#22c55e",
       accessor: (d) => d.walkingSpeedKmh,
-      convert: (v) => convertSpeed(v, unitSystem),
+      convert: (v) => units.convertSpeed(v),
     },
     {
       name: "Step Length",
-      unit: heightLabel(unitSystem),
+      unit: units.heightLabel,
       color: "#3b82f6",
       accessor: (d) => d.stepLengthCm,
-      convert: (v) => convertHeight(v, unitSystem),
+      convert: (v) => units.convertHeight(v),
     },
     {
       name: "Double Support",

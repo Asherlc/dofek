@@ -1,7 +1,6 @@
 import ReactECharts from "echarts-for-react";
 import type { AdaptiveTdeeResult } from "../../../server/src/routers/nutrition-analytics.ts";
-import { useUnitSystem } from "../lib/unitContext.ts";
-import { convertWeight, weightLabel } from "../lib/units.ts";
+import { useUnitConverter } from "../lib/unitContext.ts";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface AdaptiveTdeeChartProps {
@@ -10,7 +9,7 @@ interface AdaptiveTdeeChartProps {
 }
 
 export function AdaptiveTdeeChart({ data, loading }: AdaptiveTdeeChartProps) {
-  const { unitSystem } = useUnitSystem();
+  const units = useUnitConverter();
   if (loading) {
     return <ChartLoadingSkeleton height={250} />;
   }
@@ -79,7 +78,7 @@ export function AdaptiveTdeeChart({ data, loading }: AdaptiveTdeeChartProps) {
             },
             {
               type: "value",
-              name: weightLabel(unitSystem),
+              name: units.weightLabel,
               position: "right",
               min: weightValues.length > 0 ? weightAxisMin : undefined,
               max: weightValues.length > 0 ? weightAxisMax : undefined,
@@ -117,7 +116,7 @@ export function AdaptiveTdeeChart({ data, loading }: AdaptiveTdeeChartProps) {
                 .filter((d) => d.smoothedWeight != null)
                 .map((d) => [
                   d.date,
-                  d.smoothedWeight != null ? convertWeight(d.smoothedWeight, unitSystem) : null,
+                  d.smoothedWeight != null ? units.convertWeight(d.smoothedWeight) : null,
                 ]),
               smooth: true,
               symbol: "none",

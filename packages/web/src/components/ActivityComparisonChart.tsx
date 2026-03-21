@@ -1,8 +1,7 @@
 import type { ActivityComparisonRow } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
 import { formatPace } from "../lib/format.ts";
-import { useUnitSystem } from "../lib/unitContext.ts";
-import { convertPace, paceLabel } from "../lib/units.ts";
+import { useUnitConverter } from "../lib/unitContext.ts";
 
 interface ActivityComparisonChartProps {
   data: ActivityComparisonRow[];
@@ -21,7 +20,7 @@ const SERIES_COLORS = [
 ];
 
 export function ActivityComparisonChart({ data, loading }: ActivityComparisonChartProps) {
-  const { unitSystem } = useUnitSystem();
+  const units = useUnitConverter();
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[280px]">
@@ -45,7 +44,7 @@ export function ActivityComparisonChart({ data, loading }: ActivityComparisonCha
     type: "line" as const,
     data: route.instances.map((instance) => [
       instance.date,
-      convertPace(instance.averagePaceMinPerKm * 60, unitSystem),
+      units.convertPace(instance.averagePaceMinPerKm * 60),
     ]),
     symbol: "circle",
     symbolSize: 8,
@@ -70,7 +69,7 @@ export function ActivityComparisonChart({ data, loading }: ActivityComparisonCha
         return [
           `<strong>${seriesName}</strong>`,
           `Date: ${date}`,
-          `Pace: ${formatPace(pace)} ${paceLabel(unitSystem)}`,
+          `Pace: ${formatPace(pace)} ${units.paceLabel}`,
         ].join("<br/>");
       },
     },
@@ -87,7 +86,7 @@ export function ActivityComparisonChart({ data, loading }: ActivityComparisonCha
     },
     yAxis: {
       type: "value",
-      name: `Pace (min${paceLabel(unitSystem)})`,
+      name: `Pace (min${units.paceLabel})`,
       inverse: true,
       splitLine: { lineStyle: { color: "#27272a" } },
       axisLabel: {

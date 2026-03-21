@@ -1,28 +1,16 @@
+import { UnitConverter } from "@dofek/format/units";
 import { trpc } from "./trpc";
 
-export {
-  convertDistance,
-  convertElevation,
-  convertPace,
-  convertSpeed,
-  convertTemperature,
-  convertWeight,
-  distanceLabel,
-  elevationLabel,
-  paceLabel,
-  speedLabel,
-  temperatureLabel,
-  weightLabel,
-} from "@dofek/format/units";
+export { UnitConverter } from "@dofek/format/units";
 export type { UnitSystem } from "@dofek/format/units";
 
 /**
- * Hook that fetches the user's unit system preference from the server.
+ * Hook that creates a UnitConverter for the user's unit system preference.
  * Falls back to "metric" if no preference is set.
  */
-export function useUnitSystem() {
+export function useUnitConverter(): UnitConverter {
   const setting = trpc.settings.get.useQuery({ key: "unitSystem" });
   const value = setting.data?.value;
-  if (value === "imperial" || value === "metric") return value;
-  return "metric";
+  const system = value === "imperial" || value === "metric" ? value : "metric";
+  return new UnitConverter(system);
 }

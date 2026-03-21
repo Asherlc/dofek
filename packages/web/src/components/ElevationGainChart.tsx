@@ -1,8 +1,7 @@
 import type { ElevationProfileRow } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
 import { formatNumber } from "../lib/format.ts";
-import { useUnitSystem } from "../lib/unitContext.ts";
-import { convertDistance, convertElevation, distanceLabel, elevationLabel } from "../lib/units.ts";
+import { useUnitConverter } from "../lib/unitContext.ts";
 
 interface ElevationGainChartProps {
   data: ElevationProfileRow[];
@@ -10,7 +9,7 @@ interface ElevationGainChartProps {
 }
 
 export function ElevationGainChart({ data, loading }: ElevationGainChartProps) {
-  const { unitSystem } = useUnitSystem();
+  const units = useUnitConverter();
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[280px]">
@@ -52,9 +51,9 @@ export function ElevationGainChart({ data, loading }: ElevationGainChartProps) {
         });
         return [
           `<strong>Week of ${dateLabel}</strong>`,
-          `Elevation Gain: ${formatNumber(convertElevation(row.elevationGainMeters, unitSystem), 0)} ${elevationLabel(unitSystem)}`,
+          `Elevation Gain: ${formatNumber(units.convertElevation(row.elevationGainMeters), 0)} ${units.elevationLabel}`,
           `Activities: ${row.activityCount}`,
-          `Distance: ${formatNumber(convertDistance(row.totalDistanceKm, unitSystem))} ${distanceLabel(unitSystem)}`,
+          `Distance: ${formatNumber(units.convertDistance(row.totalDistanceKm))} ${units.distanceLabel}`,
         ].join("<br/>");
       },
     },
@@ -66,7 +65,7 @@ export function ElevationGainChart({ data, loading }: ElevationGainChartProps) {
     },
     yAxis: {
       type: "value",
-      name: `Elevation Gain (${elevationLabel(unitSystem)})`,
+      name: `Elevation Gain (${units.elevationLabel})`,
       splitLine: { lineStyle: { color: "#27272a" } },
       axisLabel: { color: "#71717a", fontSize: 11 },
       axisLine: { show: true, lineStyle: { color: "#3f3f46" } },
@@ -75,7 +74,7 @@ export function ElevationGainChart({ data, loading }: ElevationGainChartProps) {
     series: [
       {
         type: "bar",
-        data: data.map((d) => [d.week, convertElevation(d.elevationGainMeters, unitSystem)]),
+        data: data.map((d) => [d.week, units.convertElevation(d.elevationGainMeters)]),
         itemStyle: { color: "#f59e0b" },
         barMaxWidth: 30,
       },

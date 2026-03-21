@@ -1,8 +1,7 @@
 import { parseValidDate } from "@dofek/format/format";
 import { useNavigate } from "@tanstack/react-router";
 import { formatNumber } from "../lib/format.ts";
-import { useUnitSystem } from "../lib/unitContext.ts";
-import { convertDistance, distanceLabel } from "../lib/units.ts";
+import { useUnitConverter } from "../lib/unitContext.ts";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 export interface Activity {
@@ -49,7 +48,7 @@ export function ActivityList({
   onPageChange,
 }: ActivityListProps) {
   const navigate = useNavigate();
-  const { unitSystem } = useUnitSystem();
+  const units = useUnitConverter();
 
   if (loading) {
     return <ChartLoadingSkeleton height={100} />;
@@ -112,7 +111,7 @@ export function ActivityList({
                 </td>
                 <td className="py-2 pr-4 tabular-nums whitespace-nowrap text-zinc-300">
                   {a.distance_meters
-                    ? `${formatNumber(convertDistance(a.distance_meters / 1000, unitSystem))} ${distanceLabel(unitSystem)}`
+                    ? `${formatNumber(units.convertDistance(a.distance_meters / 1000))} ${units.distanceLabel}`
                     : "—"}
                 </td>
                 <td className="py-2 pr-4 tabular-nums whitespace-nowrap text-zinc-300">

@@ -4,9 +4,8 @@ import { ChartDescriptionTooltip } from "../../components/ChartDescriptionToolti
 import { ChartLoadingSkeleton } from "../../components/LoadingSkeleton.tsx";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
 import { trpc } from "../../lib/trpc.ts";
-import { useUnitSystem } from "../../lib/unitContext.ts";
-import type { UnitSystem } from "../../lib/units.ts";
-import { convertDistance, convertPace, distanceLabel, paceLabel } from "../../lib/units.ts";
+import { useUnitConverter } from "../../lib/unitContext.ts";
+import type { UnitConverter } from "../../lib/units.ts";
 
 export const Route = createFileRoute("/training/running")({
   component: RunningTab,
@@ -16,7 +15,7 @@ import { formatNumber, formatPace } from "../../lib/format.ts";
 
 export function RunningTab() {
   const { days } = useTrainingDays();
-  const { unitSystem } = useUnitSystem();
+  const units = useUnitConverter();
 
   const paceCurve = trpc.durationCurves.paceCurve.useQuery({ days });
   const paceTrend = trpc.running.paceTrend.useQuery({ days });
@@ -29,18 +28,14 @@ export function RunningTab() {
         <PaceCurveChart
           data={paceCurve.data?.points ?? []}
           loading={paceCurve.isLoading}
-          unitSystem={unitSystem}
+          units={units}
         />
       </Section>
 
       {/* Pace Trend + Running Dynamics side by side */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Section title="Pace Trend" subtitle="Average pace per run over time">
-          <PaceTrendChart
-            data={paceTrend.data ?? []}
-            loading={paceTrend.isLoading}
-            unitSystem={unitSystem}
-          />
+          <PaceTrendChart data={paceTrend.data ?? []} loading={paceTrend.isLoading} units={units} />
         </Section>
 
         <Section title="Cadence Trend" subtitle="Steps per minute over time">
@@ -53,7 +48,7 @@ export function RunningTab() {
         <RunningDynamicsTable
           data={dynamics.data ?? []}
           loading={dynamics.isLoading}
-          unitSystem={unitSystem}
+          units={units}
         />
       </Section>
     </>
@@ -72,11 +67,11 @@ interface PaceCurvePoint {
 function PaceCurveChart({
   data,
   loading,
-  unitSystem,
+  units,
 }: {
   data: PaceCurvePoint[];
   loading: boolean;
-  unitSystem: UnitSystem;
+  units: UnitConverter;
 }) {
   if (loading) return <ChartLoadingSkeleton height={280} />;
 
@@ -104,7 +99,7 @@ function PaceCurveChart({
             : seconds < 3600
               ? `${Math.round(seconds / 60)}min`
               : `${Math.round(seconds / 3600)}h`;
-        return `${durLabel}: <strong>${formatPace(pace)} ${paceLabel(unitSystem)}</strong>`;
+        return `${durLabel}: <strong>${formatPace(pace)} ${units.paceLabel}</strong>`;
       },
     },
     xAxis: {
@@ -130,7 +125,7 @@ function PaceCurveChart({
     },
     yAxis: {
       type: "value" as const,
-      name: `Pace (min${paceLabel(unitSystem)})`,
+      name: `Pace (min${units.paceLabel})`,
       inverse: true, // faster pace (lower number) at top
       splitLine: { lineStyle: { color: "#27272a" } },
       axisLabel: {
@@ -145,7 +140,7 @@ function PaceCurveChart({
       {
         name: "Best Pace",
         type: "line",
-        data: data.map((d) => [d.durationSeconds, convertPace(d.bestPaceSecondsPerKm, unitSystem)]),
+        data: data.map((d) => [d.durationSeconds, units.convertPace(d.bestPaceSecondsPerKm)]),
         smooth: 0.3,
         symbol: "circle",
         symbolSize: 6,
@@ -172,11 +167,11 @@ interface PaceTrendPoint {
 function PaceTrendChart({
   data,
   loading,
-  unitSystem,
+  units,
 }: {
   data: PaceTrendPoint[];
   loading: boolean;
-  unitSystem: UnitSystem;
+  units: UnitConverter;
 }) {
   if (loading) return <ChartLoadingSkeleton height={250} />;
 
@@ -202,8 +197,8 @@ function PaceTrendChart({
         return [
           `<strong>${d.activityName}</strong>`,
           `${d.date}`,
-          `Pace: ${formatPace(convertPace(d.paceSecondsPerKm, unitSystem))} ${paceLabel(unitSystem)}`,
-          `Distance: ${formatNumber(convertDistance(d.distanceKm, unitSystem))} ${distanceLabel(unitSystem)} · ${d.durationMinutes} min`,
+          `Pace: ${formatPace(units.convertPace(d.paceSecondsPerKm))} ${units.paceLabel}`,
+          `Distance: ${formatNumber(units.convertDistance(d.distanceKm))} ${units.distanceLabel} · ${d.durationMinutes} min`,
         ].join("<br/>");
       },
     },
@@ -226,9 +221,9 @@ function PaceTrendChart({
     series: [
       {
         type: "scatter",
-        data: data.map((d) => [d.date, convertPace(d.paceSecondsPerKm, unitSystem)]),
+        data: data.map((d) => [d.date, units.convertPace(d.paceSecondsPerKm)]),
         symbolSize: (val: [string, number]) => {
-          const d = data.find((p) => convertPace(p.paceSecondsPerKm, unitSystem) === val[1]);
+          const d = data.find((p) => units.convertPace(p.paceSecondsPerKm) === val[1]);
           return Math.min(Math.max((d?.distanceKm ?? 5) * 1.5, 4), 16);
         },
         itemStyle: { color: "#10b981", opacity: 0.7 },
@@ -311,11 +306,11 @@ function CadenceTrendChart({ data, loading }: { data: DynamicsRow[]; loading: bo
 function RunningDynamicsTable({
   data,
   loading,
-  unitSystem,
+  units,
 }: {
   data: DynamicsRow[];
   loading: boolean;
-  unitSystem: UnitSystem;
+  units: UnitConverter;
 }) {
   if (loading) return <ChartLoadingSkeleton height={200} />;
 
@@ -354,11 +349,10 @@ function RunningDynamicsTable({
                 <td className="py-1.5 pr-3 text-zinc-500">{d.date}</td>
                 <td className="py-1.5 pr-3 truncate max-w-[150px]">{d.activityName}</td>
                 <td className="py-1.5 pr-3 text-right font-mono">
-                  {formatPace(convertPace(d.paceSecondsPerKm, unitSystem))} {paceLabel(unitSystem)}
+                  {formatPace(units.convertPace(d.paceSecondsPerKm))} {units.paceLabel}
                 </td>
                 <td className="py-1.5 pr-3 text-right font-mono">
-                  {formatNumber(convertDistance(d.distanceKm, unitSystem))}{" "}
-                  {distanceLabel(unitSystem)}
+                  {formatNumber(units.convertDistance(d.distanceKm))} {units.distanceLabel}
                 </td>
                 <td className="py-1.5 pr-3 text-right font-mono">{d.cadence}</td>
                 <td className="py-1.5 pr-3 text-right font-mono">

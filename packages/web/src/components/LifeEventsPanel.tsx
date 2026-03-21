@@ -2,8 +2,7 @@ import { useState } from "react";
 import { z } from "zod";
 import { formatNumber } from "../lib/format.ts";
 import { trpc } from "../lib/trpc.ts";
-import { useUnitSystem } from "../lib/unitContext.ts";
-import { convertWeight, weightLabel } from "../lib/units.ts";
+import { useUnitConverter } from "../lib/unitContext.ts";
 
 const lifeEventSchema = z.object({
   id: z.string(),
@@ -302,7 +301,7 @@ function EventAnalysis({
   onWindowChange: (days: number) => void;
   onDelete: () => void;
 }) {
-  const { unitSystem } = useUnitSystem();
+  const units = useUnitConverter();
   if (loading) {
     return <div className="h-32 rounded-lg bg-zinc-800 animate-pulse" />;
   }
@@ -424,15 +423,15 @@ function EventAnalysis({
         />
         <CompareCard
           label="Weight"
-          unit={weightLabel(unitSystem)}
+          unit={units.weightLabel}
           before={
             before.body?.avg_weight != null
-              ? convertWeight(Number(before.body.avg_weight), unitSystem)
+              ? units.convertWeight(Number(before.body.avg_weight))
               : undefined
           }
           after={
             after.body?.avg_weight != null
-              ? convertWeight(Number(after.body.avg_weight), unitSystem)
+              ? units.convertWeight(Number(after.body.avg_weight))
               : undefined
           }
           periodLabel={periodLabel}

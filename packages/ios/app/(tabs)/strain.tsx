@@ -13,14 +13,14 @@ import { aggregateWeeklyVolume, WorkloadRatio } from "../../lib/scoring";
 import type { WeekSummary } from "../../lib/scoring";
 import { formatNumber } from "@dofek/format/format";
 import { trpc } from "../../lib/trpc";
-import { useUnitSystem } from "../../lib/units";
+import { useUnitConverter } from "../../lib/units";
 import type { ActivityRow, WorkloadRatioRow } from "../../types/api";
 import { ActivityRowSchema, WeeklyVolumeRowSchema } from "../../types/api";
 import { colors } from "../../theme";
 
 export default function StrainScreen() {
   const [days, setDays] = useState(30);
-  const unitSystem = useUnitSystem();
+  const units = useUnitConverter();
   const workloadQuery = trpc.recovery.workloadRatio.useQuery({ days });
   const workloadResult = workloadQuery.data;
   const workloadData = workloadResult?.timeSeries ?? [];
@@ -199,7 +199,7 @@ export default function StrainScreen() {
                     avgPower={activity.avg_power ?? null}
                     distanceKm={activity.distance_meters ? activity.distance_meters / 1000 : null}
                     calories={activity.calories ?? null}
-                    unitSystem={unitSystem}
+                    units={units}
                   />
                 ))}
               </View>

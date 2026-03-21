@@ -1,8 +1,7 @@
 import ReactECharts from "echarts-for-react";
 import type { BodyRecompositionRow } from "../../../server/src/routers/body-analytics.ts";
 import { formatNumber } from "../lib/format.ts";
-import { useUnitSystem } from "../lib/unitContext.ts";
-import { convertWeight, weightLabel } from "../lib/units.ts";
+import { useUnitConverter } from "../lib/unitContext.ts";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface BodyRecompositionChartProps {
@@ -11,7 +10,7 @@ interface BodyRecompositionChartProps {
 }
 
 export function BodyRecompositionChart({ data, loading }: BodyRecompositionChartProps) {
-  const { unitSystem } = useUnitSystem();
+  const units = useUnitConverter();
   if (loading) {
     return <ChartLoadingSkeleton height={250} />;
   }
@@ -56,7 +55,7 @@ export function BodyRecompositionChart({ data, loading }: BodyRecompositionChart
     },
     yAxis: {
       type: "value" as const,
-      name: weightLabel(unitSystem),
+      name: units.weightLabel,
       axisLabel: { color: "#71717a", fontSize: 11 },
       splitLine: { lineStyle: { color: "#27272a" } },
       nameTextStyle: { color: "#71717a", fontSize: 11 },
@@ -65,7 +64,7 @@ export function BodyRecompositionChart({ data, loading }: BodyRecompositionChart
       {
         name: "Fat Mass (smoothed)",
         type: "line",
-        data: data.map((d) => [d.date, convertWeight(d.smoothedFatMass, unitSystem)]),
+        data: data.map((d) => [d.date, units.convertWeight(d.smoothedFatMass)]),
         smooth: true,
         symbol: "none",
         lineStyle: { color: "#f97316", width: 2 },
@@ -75,7 +74,7 @@ export function BodyRecompositionChart({ data, loading }: BodyRecompositionChart
       {
         name: "Lean Mass (smoothed)",
         type: "line",
-        data: data.map((d) => [d.date, convertWeight(d.smoothedLeanMass, unitSystem)]),
+        data: data.map((d) => [d.date, units.convertWeight(d.smoothedLeanMass)]),
         smooth: true,
         symbol: "none",
         lineStyle: { color: "#3b82f6", width: 2 },
@@ -90,11 +89,11 @@ export function BodyRecompositionChart({ data, loading }: BodyRecompositionChart
       <div className="flex gap-4 text-sm">
         <span className={`font-medium ${fatChange <= 0 ? "text-green-400" : "text-red-400"}`}>
           Fat: {fatChange > 0 ? "+" : ""}
-          {formatNumber(convertWeight(fatChange, unitSystem))} {weightLabel(unitSystem)}
+          {formatNumber(units.convertWeight(fatChange))} {units.weightLabel}
         </span>
         <span className={`font-medium ${leanChange >= 0 ? "text-green-400" : "text-red-400"}`}>
           Lean: {leanChange > 0 ? "+" : ""}
-          {formatNumber(convertWeight(leanChange, unitSystem))} {weightLabel(unitSystem)}
+          {formatNumber(units.convertWeight(leanChange))} {units.weightLabel}
         </span>
       </div>
       <ReactECharts option={option} style={{ height: 250 }} />
