@@ -2,7 +2,9 @@ import { createWriteStream } from "node:fs";
 import { Readable } from "node:stream";
 import archiver from "archiver";
 import { sql } from "drizzle-orm";
+import { z } from "zod";
 import type { SyncDatabase } from "./db/index.ts";
+import { executeWithSchema } from "./db/typed-sql.ts";
 import { logger } from "./logger.ts";
 
 /** Configuration for a single table to export. */
@@ -224,10 +226,12 @@ export async function generateExport(
 
     if (table.batched) {
       // Stream metric_stream in batches
-      const countResult = await db.execute(
+      const countResult = await executeWithSchema(
+        db,
+        z.object({ count: z.string() }),
         sql`SELECT COUNT(*)::text AS count FROM fitness.metric_stream WHERE user_id = ${userId}`,
       );
-      const count = parseInt(String(countResult[0]?.count ?? "0"), 10);
+      const count = parseInt(countResult[0]?.count ?? "0", 10);
       totalRecords += count;
 
       const stream = createBatchedJsonStream(db, userId);

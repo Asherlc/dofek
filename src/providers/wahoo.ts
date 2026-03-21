@@ -191,7 +191,14 @@ export class WahooClient extends ProviderHttpClient {
   }
 
   async downloadFitFile(url: string): Promise<Buffer> {
-    return this.getBuffer(url);
+    // FIT file URLs are pre-signed CDN/S3 URLs — do not send auth headers,
+    // as it causes 403 errors and leaks the OAuth token to a third party.
+    const response = await this.fetchFn(url);
+    if (!response.ok) {
+      throw new Error(`Failed to download FIT file (${response.status})`);
+    }
+    const arrayBuffer = await response.arrayBuffer();
+    return Buffer.from(arrayBuffer);
   }
 }
 

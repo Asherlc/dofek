@@ -335,6 +335,18 @@ describe("WahooClient — error handling", () => {
     await expect(client.getWorkouts()).rejects.toThrow("API error 401 on /v1/workouts");
   });
 
+  it("does not send auth headers when downloading FIT files", async () => {
+    let capturedHeaders: HeadersInit | undefined;
+    const mockFetch: typeof globalThis.fetch = async (_url, init): Promise<Response> => {
+      capturedHeaders = init?.headers;
+      return new Response(new ArrayBuffer(8));
+    };
+
+    const client = new WahooClient("secret-token", mockFetch);
+    await client.downloadFitFile("https://cdn.wahoo.com/presigned-file.fit");
+    expect(capturedHeaders).toBeUndefined();
+  });
+
   it("throws on FIT file download failure", async () => {
     const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Not Found", { status: 404 });
@@ -342,7 +354,7 @@ describe("WahooClient — error handling", () => {
 
     const client = new WahooClient("token", mockFetch);
     await expect(client.downloadFitFile("https://example.com/test.fit")).rejects.toThrow(
-      "Failed to download from https://example.com/test.fit (404)",
+      "Failed to download FIT file (404)",
     );
   });
 });
