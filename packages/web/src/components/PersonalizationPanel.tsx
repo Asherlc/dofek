@@ -105,9 +105,9 @@ export function PersonalizationPanel() {
             hrv: number;
             restingHr: number;
             sleep: number;
-            loadBalance: number;
+            respiratoryRate: number;
           }) =>
-            `Heart Rate Variability ${Math.round(v.hrv * 100)}%, Resting Heart Rate ${Math.round(v.restingHr * 100)}%, Sleep ${Math.round(v.sleep * 100)}%, Load ${Math.round(v.loadBalance * 100)}%`
+            `Heart Rate Variability ${Math.round(v.hrv * 100)}%, Resting Heart Rate ${Math.round(v.restingHr * 100)}%, Sleep ${Math.round(v.sleep * 100)}%, Respiratory Rate ${Math.round(v.respiratoryRate * 100)}%`
           }
           renderQuality={
             data.parameters.readinessWeights

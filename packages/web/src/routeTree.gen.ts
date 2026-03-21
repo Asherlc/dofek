@@ -12,19 +12,21 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as TrainingRouteImport } from './routes/training'
 import { Route as TrackingRouteImport } from './routes/tracking'
 import { Route as TermsRouteImport } from './routes/terms'
+import { Route as SleepRouteImport } from './routes/sleep'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ProvidersRouteImport } from './routes/providers'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as PredictionsRouteImport } from './routes/predictions'
-import { Route as NutritionAnalyticsRouteImport } from './routes/nutrition-analytics'
 import { Route as NutritionRouteImport } from './routes/nutrition'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as InsightsRouteImport } from './routes/insights'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as CorrelationRouteImport } from './routes/correlation'
+import { Route as BodyRouteImport } from './routes/body'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as TrainingIndexRouteImport } from './routes/training/index'
 import { Route as ProvidersIndexRouteImport } from './routes/providers/index'
+import { Route as NutritionIndexRouteImport } from './routes/nutrition/index'
 import { Route as TrainingStrengthRouteImport } from './routes/training/strength'
 import { Route as TrainingRunningRouteImport } from './routes/training/running'
 import { Route as TrainingRecoveryRouteImport } from './routes/training/recovery'
@@ -32,6 +34,8 @@ import { Route as TrainingHikingRouteImport } from './routes/training/hiking'
 import { Route as TrainingEnduranceRouteImport } from './routes/training/endurance'
 import { Route as TrainingCyclingRouteImport } from './routes/training/cycling'
 import { Route as ProvidersIdRouteImport } from './routes/providers/$id'
+import { Route as NutritionSupplementsRouteImport } from './routes/nutrition/supplements'
+import { Route as NutritionAnalyticsRouteImport } from './routes/nutrition/analytics'
 import { Route as ActivityIdRouteImport } from './routes/activity.$id'
 
 const TrainingRoute = TrainingRouteImport.update({
@@ -47,6 +51,11 @@ const TrackingRoute = TrackingRouteImport.update({
 const TermsRoute = TermsRouteImport.update({
   id: '/terms',
   path: '/terms',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SleepRoute = SleepRouteImport.update({
+  id: '/sleep',
+  path: '/sleep',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsRoute = SettingsRouteImport.update({
@@ -67,11 +76,6 @@ const PrivacyRoute = PrivacyRouteImport.update({
 const PredictionsRoute = PredictionsRouteImport.update({
   id: '/predictions',
   path: '/predictions',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const NutritionAnalyticsRoute = NutritionAnalyticsRouteImport.update({
-  id: '/nutrition-analytics',
-  path: '/nutrition-analytics',
   getParentRoute: () => rootRouteImport,
 } as any)
 const NutritionRoute = NutritionRouteImport.update({
@@ -99,6 +103,11 @@ const CorrelationRoute = CorrelationRouteImport.update({
   path: '/correlation',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BodyRoute = BodyRouteImport.update({
+  id: '/body',
+  path: '/body',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -113,6 +122,11 @@ const ProvidersIndexRoute = ProvidersIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => ProvidersRoute,
+} as any)
+const NutritionIndexRoute = NutritionIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => NutritionRoute,
 } as any)
 const TrainingStrengthRoute = TrainingStrengthRouteImport.update({
   id: '/strength',
@@ -149,6 +163,16 @@ const ProvidersIdRoute = ProvidersIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => ProvidersRoute,
 } as any)
+const NutritionSupplementsRoute = NutritionSupplementsRouteImport.update({
+  id: '/supplements',
+  path: '/supplements',
+  getParentRoute: () => NutritionRoute,
+} as any)
+const NutritionAnalyticsRoute = NutritionAnalyticsRouteImport.update({
+  id: '/analytics',
+  path: '/analytics',
+  getParentRoute: () => NutritionRoute,
+} as any)
 const ActivityIdRoute = ActivityIdRouteImport.update({
   id: '/activity/$id',
   path: '/activity/$id',
@@ -157,20 +181,23 @@ const ActivityIdRoute = ActivityIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/body': typeof BodyRoute
   '/correlation': typeof CorrelationRoute
   '/dashboard': typeof DashboardRoute
   '/insights': typeof InsightsRoute
   '/login': typeof LoginRoute
-  '/nutrition': typeof NutritionRoute
-  '/nutrition-analytics': typeof NutritionAnalyticsRoute
+  '/nutrition': typeof NutritionRouteWithChildren
   '/predictions': typeof PredictionsRoute
   '/privacy': typeof PrivacyRoute
   '/providers': typeof ProvidersRouteWithChildren
   '/settings': typeof SettingsRoute
+  '/sleep': typeof SleepRoute
   '/terms': typeof TermsRoute
   '/tracking': typeof TrackingRoute
   '/training': typeof TrainingRouteWithChildren
   '/activity/$id': typeof ActivityIdRoute
+  '/nutrition/analytics': typeof NutritionAnalyticsRoute
+  '/nutrition/supplements': typeof NutritionSupplementsRoute
   '/providers/$id': typeof ProvidersIdRoute
   '/training/cycling': typeof TrainingCyclingRoute
   '/training/endurance': typeof TrainingEnduranceRoute
@@ -178,23 +205,26 @@ export interface FileRoutesByFullPath {
   '/training/recovery': typeof TrainingRecoveryRoute
   '/training/running': typeof TrainingRunningRoute
   '/training/strength': typeof TrainingStrengthRoute
+  '/nutrition/': typeof NutritionIndexRoute
   '/providers/': typeof ProvidersIndexRoute
   '/training/': typeof TrainingIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/body': typeof BodyRoute
   '/correlation': typeof CorrelationRoute
   '/dashboard': typeof DashboardRoute
   '/insights': typeof InsightsRoute
   '/login': typeof LoginRoute
-  '/nutrition': typeof NutritionRoute
-  '/nutrition-analytics': typeof NutritionAnalyticsRoute
   '/predictions': typeof PredictionsRoute
   '/privacy': typeof PrivacyRoute
   '/settings': typeof SettingsRoute
+  '/sleep': typeof SleepRoute
   '/terms': typeof TermsRoute
   '/tracking': typeof TrackingRoute
   '/activity/$id': typeof ActivityIdRoute
+  '/nutrition/analytics': typeof NutritionAnalyticsRoute
+  '/nutrition/supplements': typeof NutritionSupplementsRoute
   '/providers/$id': typeof ProvidersIdRoute
   '/training/cycling': typeof TrainingCyclingRoute
   '/training/endurance': typeof TrainingEnduranceRoute
@@ -202,26 +232,30 @@ export interface FileRoutesByTo {
   '/training/recovery': typeof TrainingRecoveryRoute
   '/training/running': typeof TrainingRunningRoute
   '/training/strength': typeof TrainingStrengthRoute
+  '/nutrition': typeof NutritionIndexRoute
   '/providers': typeof ProvidersIndexRoute
   '/training': typeof TrainingIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/body': typeof BodyRoute
   '/correlation': typeof CorrelationRoute
   '/dashboard': typeof DashboardRoute
   '/insights': typeof InsightsRoute
   '/login': typeof LoginRoute
-  '/nutrition': typeof NutritionRoute
-  '/nutrition-analytics': typeof NutritionAnalyticsRoute
+  '/nutrition': typeof NutritionRouteWithChildren
   '/predictions': typeof PredictionsRoute
   '/privacy': typeof PrivacyRoute
   '/providers': typeof ProvidersRouteWithChildren
   '/settings': typeof SettingsRoute
+  '/sleep': typeof SleepRoute
   '/terms': typeof TermsRoute
   '/tracking': typeof TrackingRoute
   '/training': typeof TrainingRouteWithChildren
   '/activity/$id': typeof ActivityIdRoute
+  '/nutrition/analytics': typeof NutritionAnalyticsRoute
+  '/nutrition/supplements': typeof NutritionSupplementsRoute
   '/providers/$id': typeof ProvidersIdRoute
   '/training/cycling': typeof TrainingCyclingRoute
   '/training/endurance': typeof TrainingEnduranceRoute
@@ -229,6 +263,7 @@ export interface FileRoutesById {
   '/training/recovery': typeof TrainingRecoveryRoute
   '/training/running': typeof TrainingRunningRoute
   '/training/strength': typeof TrainingStrengthRoute
+  '/nutrition/': typeof NutritionIndexRoute
   '/providers/': typeof ProvidersIndexRoute
   '/training/': typeof TrainingIndexRoute
 }
@@ -236,20 +271,23 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/body'
     | '/correlation'
     | '/dashboard'
     | '/insights'
     | '/login'
     | '/nutrition'
-    | '/nutrition-analytics'
     | '/predictions'
     | '/privacy'
     | '/providers'
     | '/settings'
+    | '/sleep'
     | '/terms'
     | '/tracking'
     | '/training'
     | '/activity/$id'
+    | '/nutrition/analytics'
+    | '/nutrition/supplements'
     | '/providers/$id'
     | '/training/cycling'
     | '/training/endurance'
@@ -257,23 +295,26 @@ export interface FileRouteTypes {
     | '/training/recovery'
     | '/training/running'
     | '/training/strength'
+    | '/nutrition/'
     | '/providers/'
     | '/training/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/body'
     | '/correlation'
     | '/dashboard'
     | '/insights'
     | '/login'
-    | '/nutrition'
-    | '/nutrition-analytics'
     | '/predictions'
     | '/privacy'
     | '/settings'
+    | '/sleep'
     | '/terms'
     | '/tracking'
     | '/activity/$id'
+    | '/nutrition/analytics'
+    | '/nutrition/supplements'
     | '/providers/$id'
     | '/training/cycling'
     | '/training/endurance'
@@ -281,25 +322,29 @@ export interface FileRouteTypes {
     | '/training/recovery'
     | '/training/running'
     | '/training/strength'
+    | '/nutrition'
     | '/providers'
     | '/training'
   id:
     | '__root__'
     | '/'
+    | '/body'
     | '/correlation'
     | '/dashboard'
     | '/insights'
     | '/login'
     | '/nutrition'
-    | '/nutrition-analytics'
     | '/predictions'
     | '/privacy'
     | '/providers'
     | '/settings'
+    | '/sleep'
     | '/terms'
     | '/tracking'
     | '/training'
     | '/activity/$id'
+    | '/nutrition/analytics'
+    | '/nutrition/supplements'
     | '/providers/$id'
     | '/training/cycling'
     | '/training/endurance'
@@ -307,22 +352,24 @@ export interface FileRouteTypes {
     | '/training/recovery'
     | '/training/running'
     | '/training/strength'
+    | '/nutrition/'
     | '/providers/'
     | '/training/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  BodyRoute: typeof BodyRoute
   CorrelationRoute: typeof CorrelationRoute
   DashboardRoute: typeof DashboardRoute
   InsightsRoute: typeof InsightsRoute
   LoginRoute: typeof LoginRoute
-  NutritionRoute: typeof NutritionRoute
-  NutritionAnalyticsRoute: typeof NutritionAnalyticsRoute
+  NutritionRoute: typeof NutritionRouteWithChildren
   PredictionsRoute: typeof PredictionsRoute
   PrivacyRoute: typeof PrivacyRoute
   ProvidersRoute: typeof ProvidersRouteWithChildren
   SettingsRoute: typeof SettingsRoute
+  SleepRoute: typeof SleepRoute
   TermsRoute: typeof TermsRoute
   TrackingRoute: typeof TrackingRoute
   TrainingRoute: typeof TrainingRouteWithChildren
@@ -352,6 +399,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TermsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/sleep': {
+      id: '/sleep'
+      path: '/sleep'
+      fullPath: '/sleep'
+      preLoaderRoute: typeof SleepRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/settings': {
       id: '/settings'
       path: '/settings'
@@ -378,13 +432,6 @@ declare module '@tanstack/react-router' {
       path: '/predictions'
       fullPath: '/predictions'
       preLoaderRoute: typeof PredictionsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/nutrition-analytics': {
-      id: '/nutrition-analytics'
-      path: '/nutrition-analytics'
-      fullPath: '/nutrition-analytics'
-      preLoaderRoute: typeof NutritionAnalyticsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/nutrition': {
@@ -422,6 +469,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CorrelationRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/body': {
+      id: '/body'
+      path: '/body'
+      fullPath: '/body'
+      preLoaderRoute: typeof BodyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -442,6 +496,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/providers/'
       preLoaderRoute: typeof ProvidersIndexRouteImport
       parentRoute: typeof ProvidersRoute
+    }
+    '/nutrition/': {
+      id: '/nutrition/'
+      path: '/'
+      fullPath: '/nutrition/'
+      preLoaderRoute: typeof NutritionIndexRouteImport
+      parentRoute: typeof NutritionRoute
     }
     '/training/strength': {
       id: '/training/strength'
@@ -492,6 +553,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProvidersIdRouteImport
       parentRoute: typeof ProvidersRoute
     }
+    '/nutrition/supplements': {
+      id: '/nutrition/supplements'
+      path: '/supplements'
+      fullPath: '/nutrition/supplements'
+      preLoaderRoute: typeof NutritionSupplementsRouteImport
+      parentRoute: typeof NutritionRoute
+    }
+    '/nutrition/analytics': {
+      id: '/nutrition/analytics'
+      path: '/analytics'
+      fullPath: '/nutrition/analytics'
+      preLoaderRoute: typeof NutritionAnalyticsRouteImport
+      parentRoute: typeof NutritionRoute
+    }
     '/activity/$id': {
       id: '/activity/$id'
       path: '/activity/$id'
@@ -501,6 +576,22 @@ declare module '@tanstack/react-router' {
     }
   }
 }
+
+interface NutritionRouteChildren {
+  NutritionAnalyticsRoute: typeof NutritionAnalyticsRoute
+  NutritionSupplementsRoute: typeof NutritionSupplementsRoute
+  NutritionIndexRoute: typeof NutritionIndexRoute
+}
+
+const NutritionRouteChildren: NutritionRouteChildren = {
+  NutritionAnalyticsRoute: NutritionAnalyticsRoute,
+  NutritionSupplementsRoute: NutritionSupplementsRoute,
+  NutritionIndexRoute: NutritionIndexRoute,
+}
+
+const NutritionRouteWithChildren = NutritionRoute._addFileChildren(
+  NutritionRouteChildren,
+)
 
 interface ProvidersRouteChildren {
   ProvidersIdRoute: typeof ProvidersIdRoute
@@ -542,16 +633,17 @@ const TrainingRouteWithChildren = TrainingRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  BodyRoute: BodyRoute,
   CorrelationRoute: CorrelationRoute,
   DashboardRoute: DashboardRoute,
   InsightsRoute: InsightsRoute,
   LoginRoute: LoginRoute,
-  NutritionRoute: NutritionRoute,
-  NutritionAnalyticsRoute: NutritionAnalyticsRoute,
+  NutritionRoute: NutritionRouteWithChildren,
   PredictionsRoute: PredictionsRoute,
   PrivacyRoute: PrivacyRoute,
   ProvidersRoute: ProvidersRouteWithChildren,
   SettingsRoute: SettingsRoute,
+  SleepRoute: SleepRoute,
   TermsRoute: TermsRoute,
   TrackingRoute: TrackingRoute,
   TrainingRoute: TrainingRouteWithChildren,

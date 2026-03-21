@@ -1,6 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { PredictionsPage } from "../pages/PredictionsPage.tsx";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/predictions")({
-  component: PredictionsPage,
+  beforeLoad: () => {
+    throw redirect({ to: "/body" });
+  },
 });

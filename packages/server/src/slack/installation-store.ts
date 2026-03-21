@@ -2,6 +2,7 @@ import type { Installation, InstallationQuery, InstallationStore } from "@slack/
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 
 // Minimal Zod schema for Slack Installation from DB. We validate the structural
@@ -83,7 +84,9 @@ export function createInstallationStore(db: Database): InstallationStore {
         throw new Error("Cannot fetch installation without team ID");
       }
 
-      const rows = await db.execute<{ raw_installation: string }>(
+      const rows = await executeWithSchema(
+        db,
+        z.object({ raw_installation: z.union([z.string(), z.record(z.unknown())]) }),
         sql`SELECT raw_installation FROM fitness.slack_installation WHERE team_id = ${teamId} LIMIT 1`,
       );
 

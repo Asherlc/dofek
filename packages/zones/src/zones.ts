@@ -65,6 +65,16 @@ export const HEART_RATE_ZONES: HeartRateZoneDefinition[] = [
 export const HEART_RATE_ZONE_COLORS: string[] = HEART_RATE_ZONES.map((z) => z.color);
 
 /**
+ * Zone boundary fractions for SQL interpolation.
+ * These are the upper bounds of each zone (as %HRR fractions):
+ * [0.6, 0.7, 0.8, 0.9] — the boundary between zone N and zone N+1.
+ *
+ * Use these instead of hardcoding 0.6, 0.7, 0.8, 0.9 in SQL queries
+ * so zone definitions stay in sync across the codebase.
+ */
+export const ZONE_BOUNDARIES_HRR = HEART_RATE_ZONES.slice(0, -1).map((z) => z.maxPctHrr);
+
+/**
  * Compute absolute BPM boundaries for each zone given a user's max HR and resting HR.
  */
 export function heartRateZoneBoundaries(maxHr: number, restingHr: number): HeartRateZoneBoundary[] {

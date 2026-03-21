@@ -25,6 +25,10 @@ export function convertTemperature(celsius: number, system: UnitSystem): number 
   return system === "imperial" ? celsius * (9 / 5) + 32 : celsius;
 }
 
+export function scaleTemperatureStddev(stddev: number, system: UnitSystem): number {
+  return system === "imperial" ? stddev * (9 / 5) : stddev;
+}
+
 export function convertSpeed(kmh: number, system: UnitSystem): number {
   return system === "imperial" ? kmh * KM_TO_MILES : kmh;
 }
