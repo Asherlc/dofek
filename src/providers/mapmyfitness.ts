@@ -1,11 +1,11 @@
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
-import { exchangeCodeForTokens, refreshAccessToken } from "../auth/oauth.ts";
+import { exchangeCodeForTokens } from "../auth/oauth.ts";
+import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
-import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
-import { logger } from "../logger.ts";
-import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
+import { ensureProvider } from "../db/tokens.ts";
+import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
 
 // ============================================================
 // MapMyFitness API types
@@ -184,7 +184,7 @@ function formatDate(date: Date): string {
 // Provider implementation
 // ============================================================
 
-export class MapMyFitnessProvider implements SyncProvider {
+export class MapMyFitnessProvider implements Provider {
   readonly id = "mapmyfitness";
   readonly name = "MapMyFitness";
   private fetchFn: typeof globalThis.fetch;
@@ -212,20 +212,13 @@ export class MapMyFitnessProvider implements SyncProvider {
   }
 
   private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
-    const tokens = await loadTokens(db, this.id);
-    if (!tokens) {
-      throw new Error("No OAuth tokens found for MapMyFitness. Run: health-data auth mapmyfitness");
-    }
-
-    if (tokens.expiresAt > new Date()) return tokens;
-
-    logger.info("[mapmyfitness] Token expired, refreshing...");
-    const config = mapMyFitnessOAuthConfig();
-    if (!config) throw new Error("MapMyFitness OAuth config required");
-    if (!tokens.refreshToken) throw new Error("No refresh token for MapMyFitness");
-    const refreshed = await refreshAccessToken(config, tokens.refreshToken, this.fetchFn);
-    await saveTokens(db, this.id, refreshed);
-    return refreshed;
+    return resolveOAuthTokens({
+      db,
+      providerId: this.id,
+      providerName: this.name,
+      getOAuthConfig: () => mapMyFitnessOAuthConfig(),
+      fetchFn: this.fetchFn,
+    });
   }
 
   async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {

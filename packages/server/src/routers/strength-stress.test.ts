@@ -19,7 +19,7 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
     ...original,
     executeWithSchema: vi.fn(
       async (
-        db: { execute: (query: unknown) => Promise<unknown[]> },
+        db: { execute: (q: unknown) => Promise<unknown[]> },
         _schema: unknown,
         query: unknown,
       ) => db.execute(query),

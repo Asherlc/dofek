@@ -5,11 +5,11 @@ import {
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
-import { exchangeCodeForTokens, getOAuthRedirectUri, refreshAccessToken } from "../auth/oauth.ts";
+import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
+import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { activity, DEFAULT_USER_ID, metricStream, userSettings } from "../db/schema.ts";
-import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
-import { logger } from "../logger.ts";
+import { ensureProvider } from "../db/tokens.ts";
 import type {
   ProviderAuthSetup,
   ProviderIdentity,
@@ -356,22 +356,13 @@ export class RideWithGpsProvider implements SyncProvider {
   }
 
   private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
-    const tokens = await loadTokens(db, this.id);
-    if (!tokens) {
-      throw new Error("No RWGPS credentials found. Connect via the Data Sources page.");
-    }
-
-    if (tokens.expiresAt > new Date()) {
-      return tokens;
-    }
-
-    logger.info("[ride-with-gps] Access token expired, refreshing...");
-    const config = rideWithGpsOAuthConfig();
-    if (!config) throw new Error("RWGPS_CLIENT_ID is required to refresh tokens");
-    if (!tokens.refreshToken) throw new Error("No refresh token for RideWithGPS");
-    const refreshed = await refreshAccessToken(config, tokens.refreshToken, this.fetchFn);
-    await saveTokens(db, this.id, refreshed);
-    return refreshed;
+    return resolveOAuthTokens({
+      db,
+      providerId: this.id,
+      providerName: this.name,
+      getOAuthConfig: () => rideWithGpsOAuthConfig(),
+      fetchFn: this.fetchFn,
+    });
   }
 
   async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {

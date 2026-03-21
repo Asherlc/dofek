@@ -817,7 +817,7 @@ describe("BodySpecProvider", () => {
       const err = result.errors[0];
       expect(err).toBeDefined();
       if (!err) return;
-      expect(err.message).toContain("BODYSPEC_CLIENT_ID");
+      expect(err.message).toContain("OAuth config required to refresh BodySpec tokens");
     });
 
     it("handles token refresh failure when no refresh token", async () => {

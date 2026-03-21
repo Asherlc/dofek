@@ -139,7 +139,6 @@ export interface ParsedPolarSleep {
   deepMinutes: number;
   remMinutes: number;
   awakeMinutes: number;
-  efficiencyPct: number;
 }
 
 export function parsePolarSleep(sleep: PolarSleep): ParsedPolarSleep {
@@ -151,10 +150,6 @@ export function parsePolarSleep(sleep: PolarSleep): ParsedPolarSleep {
   const remMinutes = Math.round(sleep.rem_sleep / 60);
   const awakeMinutes = Math.round(sleep.total_interruption_duration / 60);
 
-  const totalSleepSeconds = sleep.light_sleep + sleep.deep_sleep + sleep.rem_sleep;
-  const totalInBedSeconds = (endedAt.getTime() - startedAt.getTime()) / 1000;
-  const efficiencyPct = totalInBedSeconds > 0 ? (totalSleepSeconds / totalInBedSeconds) * 100 : 0;
-
   return {
     externalId: sleep.date,
     startedAt,
@@ -164,7 +159,6 @@ export function parsePolarSleep(sleep: PolarSleep): ParsedPolarSleep {
     deepMinutes,
     remMinutes,
     awakeMinutes,
-    efficiencyPct,
   };
 }
 
@@ -450,7 +444,6 @@ export class PolarProvider implements SyncProvider {
                 deepMinutes: parsed.deepMinutes,
                 remMinutes: parsed.remMinutes,
                 awakeMinutes: parsed.awakeMinutes,
-                efficiencyPct: parsed.efficiencyPct,
               })
               .onConflictDoUpdate({
                 target: [sleepSession.providerId, sleepSession.externalId],
@@ -462,7 +455,6 @@ export class PolarProvider implements SyncProvider {
                   deepMinutes: parsed.deepMinutes,
                   remMinutes: parsed.remMinutes,
                   awakeMinutes: parsed.awakeMinutes,
-                  efficiencyPct: parsed.efficiencyPct,
                 },
               });
             count++;
@@ -531,7 +523,7 @@ export class PolarProvider implements SyncProvider {
                 respiratoryRateAvg: parsed.respiratoryRateAvg,
               })
               .onConflictDoUpdate({
-                target: [dailyMetrics.date, dailyMetrics.providerId],
+                target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
                 set: {
                   steps: parsed.steps,
                   activeEnergyKcal: parsed.activeEnergyKcal,

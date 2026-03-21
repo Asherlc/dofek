@@ -1,11 +1,11 @@
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
-import { exchangeCodeForTokens, refreshAccessToken } from "../auth/oauth.ts";
+import { exchangeCodeForTokens } from "../auth/oauth.ts";
+import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
-import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
-import { logger } from "../logger.ts";
-import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
+import { ensureProvider } from "../db/tokens.ts";
+import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
 
 // ============================================================
 // Cycling Analytics API types
@@ -112,7 +112,7 @@ export function cyclingAnalyticsOAuthConfig(): OAuthConfig | null {
 // Provider implementation
 // ============================================================
 
-export class CyclingAnalyticsProvider implements SyncProvider {
+export class CyclingAnalyticsProvider implements Provider {
   readonly id = "cycling_analytics";
   readonly name = "Cycling Analytics";
   private fetchFn: typeof globalThis.fetch;
@@ -140,19 +140,13 @@ export class CyclingAnalyticsProvider implements SyncProvider {
   }
 
   private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
-    const tokens = await loadTokens(db, this.id);
-    if (!tokens)
-      throw new Error(
-        "No OAuth tokens for Cycling Analytics. Run: health-data auth cycling_analytics",
-      );
-    if (tokens.expiresAt > new Date()) return tokens;
-
-    logger.info("[cycling_analytics] Token expired, refreshing...");
-    const config = cyclingAnalyticsOAuthConfig();
-    if (!config || !tokens.refreshToken) throw new Error("Cannot refresh Cycling Analytics tokens");
-    const refreshed = await refreshAccessToken(config, tokens.refreshToken, this.fetchFn);
-    await saveTokens(db, this.id, refreshed);
-    return refreshed;
+    return resolveOAuthTokens({
+      db,
+      providerId: this.id,
+      providerName: this.name,
+      getOAuthConfig: () => cyclingAnalyticsOAuthConfig(),
+      fetchFn: this.fetchFn,
+    });
   }
 
   async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {

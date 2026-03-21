@@ -504,7 +504,7 @@ describe("RideWithGpsProvider — sync", () => {
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]?.message).toContain("No RWGPS credentials found");
+    expect(result.errors[0]?.message).toContain("No OAuth tokens found for RideWithGPS");
     expect(result.duration).toBeGreaterThanOrEqual(0);
     expect(result.duration).toBeLessThan(10_000);
   });

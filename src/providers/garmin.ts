@@ -973,7 +973,7 @@ export class GarminProvider implements SyncProvider {
             vo2max,
           })
           .onConflictDoUpdate({
-            target: [dailyMetrics.date, dailyMetrics.providerId],
+            target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
             set: {
               steps: parsed.steps,
               distanceKm: parsed.distanceKm,
@@ -1184,7 +1184,7 @@ export class GarminProvider implements SyncProvider {
           exerciseMinutes: parsed.exerciseMinutes,
         })
         .onConflictDoUpdate({
-          target: [dailyMetrics.date, dailyMetrics.providerId],
+          target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
           set: {
             steps: parsed.steps,
             distanceKm: parsed.distanceKm,

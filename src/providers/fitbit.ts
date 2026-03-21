@@ -5,13 +5,12 @@ import {
   generateCodeChallenge,
   generateCodeVerifier,
   getOAuthRedirectUri,
-  refreshAccessToken,
 } from "../auth/oauth.ts";
+import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { activity, bodyMeasurement, dailyMetrics, sleepSession } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
-import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
-import { logger } from "../logger.ts";
+import { ensureProvider } from "../db/tokens.ts";
 import type {
   ProviderAuthSetup,
   ProviderIdentity,
@@ -391,26 +390,13 @@ export class FitbitProvider implements SyncProvider {
   }
 
   private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
-    const tokens = await loadTokens(db, this.id);
-    if (!tokens) {
-      throw new Error("No OAuth tokens found for Fitbit. Run: health-data auth fitbit");
-    }
-
-    if (tokens.expiresAt > new Date()) {
-      return tokens;
-    }
-
-    logger.info("[fitbit] Access token expired, refreshing...");
-    const config = fitbitOAuthConfig();
-    if (!config) {
-      throw new Error("FITBIT_CLIENT_ID and FITBIT_CLIENT_SECRET are required to refresh tokens");
-    }
-    if (!tokens.refreshToken) {
-      throw new Error("No refresh token for FitBit");
-    }
-    const refreshed = await refreshAccessToken(config, tokens.refreshToken, this.fetchFn);
-    await saveTokens(db, this.id, refreshed);
-    return refreshed;
+    return resolveOAuthTokens({
+      db,
+      providerId: this.id,
+      providerName: this.name,
+      getOAuthConfig: () => fitbitOAuthConfig(),
+      fetchFn: this.fetchFn,
+    });
   }
 
   async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
@@ -582,7 +568,7 @@ export class FitbitProvider implements SyncProvider {
                 flightsClimbed: parsed.flightsClimbed,
               })
               .onConflictDoUpdate({
-                target: [dailyMetrics.date, dailyMetrics.providerId],
+                target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
                 set: {
                   steps: parsed.steps,
                   restingHr: parsed.restingHr,

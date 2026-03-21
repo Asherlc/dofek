@@ -6,7 +6,6 @@ const {
   mockGetJob,
   mockGetJobs,
   mockGetAllProviders,
-  mockGetSyncProviders,
   mockRegisterProvider,
   mockLoggerWarn,
 } = vi.hoisted(() => ({
@@ -14,7 +13,6 @@ const {
   mockGetJob: vi.fn(),
   mockGetJobs: vi.fn().mockResolvedValue([]),
   mockGetAllProviders: vi.fn(() => []),
-  mockGetSyncProviders: vi.fn(() => []),
   mockRegisterProvider: vi.fn(),
   mockLoggerWarn: vi.fn(),
 }));
@@ -42,12 +40,7 @@ vi.mock("dofek/jobs/queues", () => ({
 
 vi.mock("dofek/providers/registry", () => ({
   getAllProviders: mockGetAllProviders,
-  getSyncProviders: mockGetSyncProviders,
   registerProvider: mockRegisterProvider,
-}));
-
-vi.mock("dofek/providers/types", () => ({
-  isSyncProvider: (p: { importOnly?: boolean }) => p.importOnly !== true,
 }));
 
 vi.mock("../lib/start-worker.ts", () => ({
@@ -57,11 +50,8 @@ vi.mock("../lib/start-worker.ts", () => ({
 vi.mock("../lib/typed-sql.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/typed-sql.ts")>()),
   executeWithSchema: vi.fn(
-    async (
-      db: { execute: (query: unknown) => Promise<unknown[]> },
-      _schema: unknown,
-      query: unknown,
-    ) => db.execute(query),
+    async (db: { execute: (q: unknown) => Promise<unknown[]> }, _schema: unknown, query: unknown) =>
+      db.execute(query),
   ),
 }));
 
@@ -339,7 +329,8 @@ describe("syncRouter", () => {
     it("excludes import-only providers from sync-all fan-out", async () => {
       mockGetAllProviders.mockReturnValue([
         { id: "strava", name: "Strava", validate: () => null },
-        { id: "strong-csv", name: "Strong CSV", validate: () => null, importOnly: true },
+        { id: "strong-csv", name: "Strong", validate: () => null, importOnly: true },
+        { id: "cronometer-csv", name: "Cronometer", validate: () => null, importOnly: true },
       ]);
       mockAdd.mockResolvedValueOnce({ id: "job-strava" });
 
@@ -411,7 +402,6 @@ describe("syncRouter", () => {
 
     it("throws for unknown provider", async () => {
       mockGetAllProviders.mockReturnValue([]);
-      mockGetSyncProviders.mockReturnValue([]);
 
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildSkinTempSeries, DASHBOARD_SECTION_IDS } from "./Dashboard";
+import { buildSkinTempSeries, DASHBOARD_SECTION_IDS, spo2TempSectionConfig } from "./Dashboard";
 
 describe("buildSkinTempSeries", () => {
   const metrics = [
@@ -53,6 +53,41 @@ describe("buildSkinTempSeries", () => {
   it("uses date strings as the x-axis values", () => {
     const series = buildSkinTempSeries(metrics, "metric");
     expect(series.data.map(([date]) => date)).toEqual(["2026-03-18", "2026-03-19", "2026-03-20"]);
+  });
+});
+
+describe("spo2TempSectionConfig", () => {
+  it("returns combined title and dual axes when both SpO2 and skin temp are present", () => {
+    const config = spo2TempSectionConfig(true, true, "imperial");
+    expect(config.title).toBe("SpO2 & Skin Temperature");
+    expect(config.subtitle).toContain("oxygen");
+    expect(config.subtitle).toContain("skin");
+    expect(config.yAxis).toHaveLength(2);
+    expect(config.yAxis[0]?.name).toBe("SpO2 (%)");
+    expect(config.yAxis[1]?.name).toBe("°F");
+  });
+
+  it("returns SpO2-only title and single axis when only SpO2 data exists", () => {
+    const config = spo2TempSectionConfig(true, false, "metric");
+    expect(config.title).toBe("Blood Oxygen (SpO2)");
+    expect(config.subtitle).toContain("oxygen");
+    expect(config.subtitle).not.toContain("skin");
+    expect(config.yAxis).toHaveLength(1);
+    expect(config.yAxis[0]?.name).toBe("SpO2 (%)");
+  });
+
+  it("returns skin temp-only title and single axis when only skin temp exists", () => {
+    const config = spo2TempSectionConfig(false, true, "metric");
+    expect(config.title).toBe("Skin Temperature");
+    expect(config.subtitle).toContain("skin");
+    expect(config.subtitle).not.toContain("oxygen");
+    expect(config.yAxis).toHaveLength(1);
+    expect(config.yAxis[0]?.name).toBe("°C");
+  });
+
+  it("uses imperial temperature label when unit system is imperial", () => {
+    const config = spo2TempSectionConfig(false, true, "imperial");
+    expect(config.yAxis[0]?.name).toBe("°F");
   });
 });
 

@@ -1,9 +1,9 @@
 import { createActivityTypeMapper, WAHOO_WORKOUT_TYPE_MAP } from "@dofek/training/training";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
-import { exchangeCodeForTokens, getOAuthRedirectUri, refreshAccessToken } from "../auth/oauth.ts";
+import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
+import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { activity, metricStream } from "../db/schema.ts";
-import { loadTokens, saveTokens } from "../db/tokens.ts";
 import { type ParsedFitRecord, parseFitFile } from "../fit/parser.ts";
 import { logger } from "../logger.ts";
 import type {
@@ -280,23 +280,13 @@ export class WahooProvider implements SyncProvider {
    * Resolve a valid access token — refreshing if expired.
    */
   private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
-    const tokens = await loadTokens(db, this.id);
-    if (!tokens) {
-      throw new Error("No OAuth tokens found for Wahoo. Run: health-data auth wahoo");
-    }
-
-    if (tokens.expiresAt > new Date()) {
-      return tokens;
-    }
-
-    logger.info("[wahoo] Access token expired, refreshing...");
-    const config = wahooOAuthConfig();
-    if (!config)
-      throw new Error("WAHOO_CLIENT_ID and WAHOO_CLIENT_SECRET are required to refresh tokens");
-    if (!tokens.refreshToken) throw new Error("No refresh token for Wahoo");
-    const refreshed = await refreshAccessToken(config, tokens.refreshToken, this.fetchFn);
-    await saveTokens(db, this.id, refreshed);
-    return refreshed;
+    return resolveOAuthTokens({
+      db,
+      providerId: this.id,
+      providerName: this.name,
+      getOAuthConfig: () => wahooOAuthConfig(),
+      fetchFn: this.fetchFn,
+    });
   }
 
   async sync(

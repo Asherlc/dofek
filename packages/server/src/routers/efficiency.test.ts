@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { z } from "zod";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
@@ -19,12 +20,12 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
     ...original,
     executeWithSchema: vi.fn(
       async (
-        db: { execute: (query: unknown) => Promise<unknown[]> },
-        schema: { array: () => { parse: (data: unknown) => unknown } },
+        db: { execute: (q: unknown) => Promise<unknown[]> },
+        schema: z.ZodType,
         query: unknown,
       ) => {
         const rows = await db.execute(query);
-        return schema.array().parse(rows);
+        return rows.map((row) => schema.parse(row));
       },
     ),
   };

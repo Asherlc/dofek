@@ -84,9 +84,9 @@ export const trainingRouter = router({
   hrZones: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
-      const hrZonesRowSchema = z.object({
-        max_hr: z.coerce.number().nullable(),
-        week: z.string(),
+      const hrZoneRowSchema = z.object({
+        max_hr: z.number().nullable(),
+        week: dateStringSchema,
         zone1: z.coerce.number(),
         zone2: z.coerce.number(),
         zone3: z.coerce.number(),
@@ -95,7 +95,7 @@ export const trainingRouter = router({
       });
       const rows = await executeWithSchema(
         ctx.db,
-        hrZonesRowSchema,
+        hrZoneRowSchema,
         sql`SELECT
               up.max_hr,
               date_trunc('week', a.started_at)::date AS week,
@@ -141,23 +141,7 @@ export const trainingRouter = router({
   activityStats: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
-      const activityStatsRowSchema = z.object({
-        id: z.string(),
-        activity_type: z.string(),
-        name: z.string().nullable(),
-        started_at: z.string(),
-        ended_at: z.string().nullable(),
-        avg_hr: z.coerce.number().nullable(),
-        max_hr: z.coerce.number().nullable(),
-        avg_power: z.coerce.number().nullable(),
-        max_power: z.coerce.number().nullable(),
-        avg_cadence: z.coerce.number().nullable(),
-        hr_samples: z.coerce.number().nullable(),
-        power_samples: z.coerce.number().nullable(),
-      });
-      const rows = await executeWithSchema(
-        ctx.db,
-        activityStatsRowSchema,
+      const rows = await ctx.db.execute(
         sql`SELECT
               asum.activity_id AS id,
               asum.activity_type,

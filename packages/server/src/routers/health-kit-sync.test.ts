@@ -63,7 +63,7 @@ describe("healthKitSyncRouter", () => {
       ];
 
       const daily = aggregateDailyMetricSamples(samples);
-      const jan15 = daily.get("2024-01-15");
+      const jan15 = daily.get("2024-01-15\x00iPhone");
 
       // Should use the first reading (45ms overnight), NOT average (71.7ms)
       // or last-write-wins (120ms Breathe session)
@@ -82,7 +82,7 @@ describe("healthKitSyncRouter", () => {
       ];
 
       const daily = aggregateDailyMetricSamples(samples);
-      const jan15 = daily.get("2024-01-15");
+      const jan15 = daily.get("2024-01-15\x00iPhone");
 
       expect(jan15?.hrv).toBe(52);
     });
@@ -152,7 +152,7 @@ describe("healthKitSyncRouter", () => {
       ];
 
       const daily = aggregateDailyMetricSamples(samples);
-      const jan15 = daily.get("2024-01-15");
+      const jan15 = daily.get("2024-01-15\x00iPhone");
 
       expect(jan15?.steps).toBe(8500);
       expect(jan15?.activeEnergyKcal).toBe(450);
@@ -173,7 +173,7 @@ describe("healthKitSyncRouter", () => {
       ];
 
       const daily = aggregateDailyMetricSamples(samples);
-      const jan15 = daily.get("2024-01-15");
+      const jan15 = daily.get("2024-01-15\x00iPhone");
 
       expect(jan15?.steps).toBe(3000);
     });

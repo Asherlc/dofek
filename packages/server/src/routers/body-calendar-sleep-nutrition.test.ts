@@ -13,16 +13,19 @@ vi.mock("../trpc.ts", async () => {
   };
 });
 
-vi.mock("../lib/typed-sql.ts", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../lib/typed-sql.ts")>()),
-  executeWithSchema: vi.fn(
-    async (
-      db: { execute: (query: unknown) => Promise<unknown[]> },
-      _schema: unknown,
-      query: unknown,
-    ) => db.execute(query),
-  ),
-}));
+vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../lib/typed-sql.ts")>();
+  return {
+    ...original,
+    executeWithSchema: vi.fn(
+      async (
+        db: { execute: (q: unknown) => Promise<unknown[]> },
+        _schema: unknown,
+        query: unknown,
+      ) => db.execute(query),
+    ),
+  };
+});
 
 import { bodyRouter } from "./body.ts";
 import { calendarRouter } from "./calendar.ts";
@@ -64,7 +67,7 @@ describe("calendarRouter", () => {
         {
           date: "2024-01-15",
           activity_count: 2,
-          total_minutes: "120",
+          total_minutes: 120,
           activity_types: ["cycling", "running"],
         },
       ];
