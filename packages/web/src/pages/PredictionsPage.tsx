@@ -579,9 +579,7 @@ function ModelConfidence({
   return (
     <div className="card p-4">
       <div className="flex items-center justify-between mb-2">
-        <p className="text-xs text-subtle uppercase tracking-wider">
-          How Much Can We Trust This?
-        </p>
+        <p className="text-xs text-subtle uppercase tracking-wider">How Much Can We Trust This?</p>
         <span className={`text-xs font-medium ${color} ${bg} px-2 py-0.5 rounded-full`}>
           {text}
         </span>

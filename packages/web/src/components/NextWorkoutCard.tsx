@@ -177,9 +177,7 @@ function NextWorkoutModal({
             <section className="rounded-lg border border-border bg-surface-solid/60 p-3">
               <h3 className="text-xs font-medium text-subtle uppercase mb-2">Strength Detail</h3>
               <p className="text-sm text-foreground">{data.strength.split}</p>
-              <p className="text-xs text-muted mt-1">
-                Target volume: {data.strength.targetSets}
-              </p>
+              <p className="text-xs text-muted mt-1">Target volume: {data.strength.targetSets}</p>
               {data.strength.focusMuscles.length > 0 && (
                 <p className="text-xs text-muted mt-1">
                   Priority muscles: {data.strength.focusMuscles.join(", ")}

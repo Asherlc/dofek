@@ -357,9 +357,7 @@ function EventAnalysis({
                 type="button"
                 onClick={() => onWindowChange(d)}
                 className={`text-xs px-2 py-0.5 rounded transition-colors ${
-                  windowDays === d
-                    ? "bg-accent/15 text-foreground"
-                    : "text-dim hover:text-muted"
+                  windowDays === d ? "bg-accent/15 text-foreground" : "text-dim hover:text-muted"
                 }`}
               >
                 {d}d
@@ -486,9 +484,7 @@ function CompareCard({
       <div className="flex items-baseline gap-2">
         <div className="text-center">
           <p className="text-[10px] text-dim">Before</p>
-          <p className="text-sm tabular-nums text-muted">
-            {before != null ? fmtNum(before) : "—"}
-          </p>
+          <p className="text-sm tabular-nums text-muted">{before != null ? fmtNum(before) : "—"}</p>
         </div>
         <div className="text-center">
           <p className="text-[10px] text-dim">{periodLabel}</p>

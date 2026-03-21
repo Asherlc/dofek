@@ -531,9 +531,7 @@ function SyncProviderCard({
               />
             </div>
           )}
-          {state.message && (
-            <span className="text-xs text-subtle mt-1 block">{state.message}</span>
-          )}
+          {state.message && <span className="text-xs text-subtle mt-1 block">{state.message}</span>}
         </div>
       )}
 
@@ -584,9 +582,7 @@ function SyncProviderCard({
               title={`${l.status} — ${formatTime(l.syncedAt)}`}
             />
           ))}
-          {recentLogs.length === 0 && (
-            <span className="text-xs text-dim">No sync history</span>
-          )}
+          {recentLogs.length === 0 && <span className="text-xs text-dim">No sync history</span>}
         </div>
         <div className="flex items-center gap-3">
           {!needsAuth && state.status !== "syncing" && (

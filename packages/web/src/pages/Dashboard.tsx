@@ -21,6 +21,7 @@ import { StressChart } from "../components/StressChart.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { TimeSeriesChart } from "../components/TimeSeriesChart.tsx";
 import { WeeklyReportCard } from "../components/WeeklyReportCard.tsx";
+import { useScrollReveal } from "../hooks/useScrollReveal.ts";
 import { useDashboardLayout } from "../lib/dashboardLayoutContext.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitSystem } from "../lib/unitContext.ts";
@@ -471,6 +472,7 @@ export function Dashboard() {
   // Build the ordered list of sections to render, skipping hidden and already-rendered (pair secondaries)
   const rendered = new Set<string>();
   const orderedElements: ReactNode[] = [];
+  let sectionIndex = 0;
 
   for (const id of layout.order) {
     if (!DASHBOARD_SECTION_IDS.has(id)) continue;
@@ -489,6 +491,8 @@ export function Dashboard() {
     rendered.add(id);
     if (pairId) rendered.add(pairId);
 
+    const currentIndex = sectionIndex++;
+
     if (pairId && pairSection && !pairHidden) {
       // Render as a grid pair
       const resolvedPairId = pairId;
@@ -503,6 +507,7 @@ export function Dashboard() {
             onMoveUp={() => moveSection(id, "up")}
             onMoveDown={() => moveSection(id, "down")}
             onHide={() => toggleHidden(id)}
+            staggerIndex={currentIndex}
           >
             {section.content}
           </CollapsibleSection>
@@ -515,6 +520,7 @@ export function Dashboard() {
             onMoveUp={() => moveSection(resolvedPairId, "up")}
             onMoveDown={() => moveSection(resolvedPairId, "down")}
             onHide={() => toggleHidden(resolvedPairId)}
+            staggerIndex={currentIndex + 1}
           >
             {pairSection.content}
           </CollapsibleSection>
@@ -533,6 +539,7 @@ export function Dashboard() {
           onMoveUp={() => moveSection(id, "up")}
           onMoveDown={() => moveSection(id, "down")}
           onHide={() => toggleHidden(id)}
+          staggerIndex={currentIndex}
         >
           {section.content}
         </CollapsibleSection>,
@@ -606,6 +613,7 @@ function CollapsibleSection({
   onMoveDown,
   onHide,
   children,
+  staggerIndex = 0,
 }: {
   id?: string;
   title: string;
@@ -616,18 +624,18 @@ function CollapsibleSection({
   onMoveDown?: () => void;
   onHide?: () => void;
   children: React.ReactNode;
+  staggerIndex?: number;
 }) {
+  const revealRef = useScrollReveal<HTMLElement>(staggerIndex);
   return (
-    <section className="group/section">
+    <section ref={revealRef} className="group/section reveal">
       <div className="mb-3 flex items-center gap-2 min-h-[44px]">
         <button
           type="button"
           onClick={onToggle}
           className="flex items-center gap-2 group cursor-pointer text-left flex-1"
         >
-          <span
-            className={`text-dim text-xs transition-transform ${collapsed ? "" : "rotate-90"}`}
-          >
+          <span className={`text-dim text-xs transition-transform ${collapsed ? "" : "rotate-90"}`}>
             ▶
           </span>
           <div>

@@ -6,6 +6,8 @@ import {
 } from "@dofek/scoring/scoring";
 import { selectRecentDailyLoad } from "@dofek/training/training";
 import type { WorkloadRatioRow } from "dofek-server/types";
+import { useEffect, useState } from "react";
+import { useCountUp } from "../hooks/useCountUp.ts";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface StrainCardProps {
@@ -19,9 +21,18 @@ function StrainRing({ strain, size = 120 }: { strain: number; size?: number }) {
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const fraction = Math.min(strain / maxStrain, 1);
-  const offset = circumference * (1 - fraction);
+  const targetOffset = circumference * (1 - fraction);
   const color = strainColor(strain);
   const center = size / 2;
+  const displayValue = useCountUp(strain, 1200, 1);
+
+  // Animate ring draw-in
+  const [animatedOffset, setAnimatedOffset] = useState(circumference);
+  useEffect(() => {
+    // Small delay so the transition is visible on mount
+    const timer = setTimeout(() => setAnimatedOffset(targetOffset), 50);
+    return () => clearTimeout(timer);
+  }, [targetOffset]);
 
   return (
     <div className="relative" style={{ width: size, height: size }}>
@@ -48,14 +59,15 @@ function StrainRing({ strain, size = 120 }: { strain: number; size?: number }) {
           stroke={color}
           strokeWidth={strokeWidth}
           strokeDasharray={circumference}
-          strokeDashoffset={offset}
+          strokeDashoffset={animatedOffset}
           strokeLinecap="round"
           transform={`rotate(-90 ${center} ${center})`}
+          style={{ transition: "stroke-dashoffset 1.2s cubic-bezier(0.16, 1, 0.3, 1)" }}
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-2xl font-bold tabular-nums" style={{ color }}>
-          {strain.toFixed(1)}
+        <span className="text-2xl font-bold font-mono tabular-nums" style={{ color }}>
+          {displayValue}
         </span>
         <span className="text-[10px] font-semibold uppercase tracking-widest text-subtle">
           Strain

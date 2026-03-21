@@ -278,9 +278,7 @@ export function AddFoodModal({
               <div className="px-3 py-2 border-b border-border text-xs font-medium uppercase tracking-wide text-subtle">
                 Open Food Facts Results
               </div>
-              {searchingFoods && (
-                <div className="px-3 py-3 text-sm text-subtle">Searching...</div>
-              )}
+              {searchingFoods && <div className="px-3 py-3 text-sm text-subtle">Searching...</div>}
               {!searchingFoods && searchResults.length === 0 && (
                 <div className="px-3 py-3 text-sm text-subtle">No results found</div>
               )}

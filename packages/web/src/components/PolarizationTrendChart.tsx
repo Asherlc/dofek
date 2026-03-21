@@ -232,9 +232,7 @@ export function PolarizationTrendChart({ weeks, maxHr, loading }: PolarizationTr
   if (weeks.length === 0) {
     return (
       <div className="flex items-center justify-center h-[100px]">
-        <span className="text-dim text-sm">
-          Not enough HR data to compute polarization index
-        </span>
+        <span className="text-dim text-sm">Not enough HR data to compute polarization index</span>
       </div>
     );
   }

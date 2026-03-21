@@ -17,7 +17,9 @@ export function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-lg font-semibold text-foreground mb-3">2. Description of Service</h2>
+            <h2 className="text-lg font-semibold text-foreground mb-3">
+              2. Description of Service
+            </h2>
             <p>
               Dofek is a personal fitness and health data aggregation platform. It connects to
               third-party fitness and health services to collect, store, and display your data in a
@@ -120,7 +122,9 @@ export function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-lg font-semibold text-foreground mb-3">9. Limitation of Liability</h2>
+            <h2 className="text-lg font-semibold text-foreground mb-3">
+              9. Limitation of Liability
+            </h2>
             <p>
               To the fullest extent permitted by law, Dofek and its operators shall not be liable
               for any indirect, incidental, special, consequential, or punitive damages, or any loss

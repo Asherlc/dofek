@@ -1,6 +1,7 @@
 import { scoreColor } from "@dofek/scoring/scoring";
 import type { ReadinessRow } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
+import { useCountUp } from "../hooks/useCountUp.ts";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface ReadinessScoreCardProps {
@@ -25,22 +26,22 @@ function ComponentBar({ label, value }: { label: string; value: number }) {
 }
 
 export function ReadinessScoreCard({ data, loading }: ReadinessScoreCardProps) {
+  const latest = data.length > 0 ? data[data.length - 1] : undefined;
+  const score = latest?.readinessScore ?? null;
+  const color = score != null ? scoreColor(score) : undefined;
+  const displayScore = useCountUp(score, 800);
+
   if (loading) {
     return <ChartLoadingSkeleton height={280} />;
   }
 
-  if (data.length === 0) {
+  if (!latest || color == null) {
     return (
       <div className="card p-6 flex items-center justify-center h-[280px]">
         <span className="text-dim text-sm">No readiness data</span>
       </div>
     );
   }
-
-  const latest = data[data.length - 1];
-  if (!latest) return null;
-  const score = latest.readinessScore;
-  const color = scoreColor(score);
 
   // Sparkline data for the mini chart
   const sparklineOption = {
@@ -88,8 +89,8 @@ export function ReadinessScoreCard({ data, loading }: ReadinessScoreCardProps) {
         <div>
           <h3 className="text-muted text-sm font-medium mb-1">Readiness Score</h3>
           <div className="flex items-baseline gap-2">
-            <span className="text-5xl font-bold" style={{ color }}>
-              {score}
+            <span className="text-5xl font-bold font-mono" style={{ color }}>
+              {displayScore}
             </span>
             <span className="text-subtle text-sm">/100</span>
           </div>

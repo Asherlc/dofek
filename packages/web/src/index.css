@@ -38,6 +38,52 @@ body {
   backdrop-filter: blur(12px);
 }
 
+/* ── Scroll reveal animation ── */
+.reveal {
+  opacity: 0;
+  transform: translateY(12px);
+  transition:
+    opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.reveal.revealed {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ── Card hover micro-interaction ── */
+.card-hover {
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.card-hover:hover {
+  transform: scale(1.003);
+  box-shadow: 0 4px 20px rgba(74, 158, 122, 0.08);
+}
+
+/* ── Button press feedback ── */
+.press:active {
+  transform: scale(0.97);
+}
+
+/* ── Logo heartbeat pulse ── */
+@keyframes heartbeat {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.04);
+  }
+}
+
+.logo-pulse {
+  animation: heartbeat 3s ease-in-out infinite;
+}
+
 /* ── Hide scrollbar but keep scroll functionality ── */
 @utility scrollbar-hide {
   -ms-overflow-style: none;

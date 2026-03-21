@@ -53,17 +53,12 @@ export function ProgressiveOverloadCards({ exercises, loading }: ProgressiveOver
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
       {exercises.map((exercise) => (
-        <div
-          key={exercise.exerciseName}
-          className="card p-4"
-        >
+        <div key={exercise.exerciseName} className="card p-4">
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium text-foreground truncate">
               {exercise.exerciseName}
             </span>
-            <span
-              className={`text-lg ${exercise.isProgressing ? "text-accent" : "text-red-400"}`}
-            >
+            <span className={`text-lg ${exercise.isProgressing ? "text-accent" : "text-red-400"}`}>
               {exercise.isProgressing ? "\u2191" : "\u2193"}
             </span>
           </div>

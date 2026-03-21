@@ -105,7 +105,9 @@ export function ActivityList({
                   {formatActivityDate(a.started_at)}
                 </td>
                 <td className="py-2 pr-4 capitalize whitespace-nowrap">{a.activity_type}</td>
-                <td className="py-2 pr-4 text-foreground max-w-[200px] truncate">{a.name ?? "—"}</td>
+                <td className="py-2 pr-4 text-foreground max-w-[200px] truncate">
+                  {a.name ?? "—"}
+                </td>
                 <td className="py-2 pr-4 tabular-nums whitespace-nowrap">
                   {formatActivityDuration(a.started_at, a.ended_at)}
                 </td>

@@ -103,5 +103,13 @@ export function AppHeader({ children }: { children?: React.ReactNode }) {
 }
 
 function DofekLogo() {
-  return <img src="/icon.svg" alt="Dofek logo" width={28} height={28} className="rounded-md" />;
+  return (
+    <img
+      src="/icon.svg"
+      alt="Dofek logo"
+      width={28}
+      height={28}
+      className="rounded-md logo-pulse"
+    />
+  );
 }

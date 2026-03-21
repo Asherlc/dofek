@@ -33,25 +33,25 @@ function PrivacyPage() {
                 percentage, and related measurements
               </li>
               <li>
-                <strong className="text-foreground">Sleep data</strong> — sleep stages, duration, and
-                recovery metrics
+                <strong className="text-foreground">Sleep data</strong> — sleep stages, duration,
+                and recovery metrics
               </li>
               <li>
                 <strong className="text-foreground">Nutrition data</strong> — food entries, calorie
                 and macro/micronutrient breakdowns, supplements
               </li>
               <li>
-                <strong className="text-foreground">Health metrics</strong> — heart rate variability,
-                resting heart rate, blood pressure, blood glucose, temperature, and clinical lab
-                results
+                <strong className="text-foreground">Health metrics</strong> — heart rate
+                variability, resting heart rate, blood pressure, blood glucose, temperature, and
+                clinical lab results
               </li>
               <li>
                 <strong className="text-foreground">Journal entries</strong> — self-reported mood,
                 energy, and wellness notes from connected providers
               </li>
               <li>
-                <strong className="text-foreground">Authentication credentials</strong> — OAuth tokens
-                and API keys required to access your connected provider accounts
+                <strong className="text-foreground">Authentication credentials</strong> — OAuth
+                tokens and API keys required to access your connected provider accounts
               </li>
             </ul>
           </section>
@@ -147,7 +147,9 @@ function PrivacyPage() {
           </section>
 
           <section>
-            <h2 className="text-lg font-semibold text-foreground mb-3">8. Changes to This Policy</h2>
+            <h2 className="text-lg font-semibold text-foreground mb-3">
+              8. Changes to This Policy
+            </h2>
             <p>
               We may update this privacy policy from time to time. Changes will be posted on this
               page with an updated revision date. Continued use of the platform after changes

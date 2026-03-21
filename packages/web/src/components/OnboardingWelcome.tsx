@@ -37,10 +37,7 @@ export function OnboardingWelcome({ onDismiss, providers }: OnboardingWelcomePro
           if (categoryProviders.length === 0) return null;
 
           return (
-            <div
-              key={category.title}
-              className="card p-5 flex flex-col gap-3"
-            >
+            <div key={category.title} className="card p-5 flex flex-col gap-3">
               <h3 className="text-sm font-semibold text-foreground uppercase tracking-wider">
                 {category.title}
               </h3>
@@ -53,9 +50,7 @@ export function OnboardingWelcome({ onDismiss, providers }: OnboardingWelcomePro
                   </div>
                 ))}
                 {categoryProviders.length > 5 && (
-                  <span className="text-xs text-subtle">
-                    +{categoryProviders.length - 5} more
-                  </span>
+                  <span className="text-xs text-subtle">+{categoryProviders.length - 5} more</span>
                 )}
               </div>
             </div>

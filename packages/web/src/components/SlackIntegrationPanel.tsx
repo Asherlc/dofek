@@ -9,9 +9,7 @@ export function SlackIntegrationPanel() {
 
   if (!data?.configured) {
     return (
-      <div className="text-xs text-subtle">
-        Slack integration is not configured on this server.
-      </div>
+      <div className="text-xs text-subtle">Slack integration is not configured on this server.</div>
     );
   }
 

@@ -64,9 +64,7 @@ export function PersonalizationPanel() {
       {/* Status header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div
-            className={`w-2 h-2 rounded-full ${data.isPersonalized ? "bg-accent" : "bg-dim"}`}
-          />
+          <div className={`w-2 h-2 rounded-full ${data.isPersonalized ? "bg-accent" : "bg-dim"}`} />
           <span className="text-sm text-foreground">
             {data.isPersonalized ? "Personalized" : "Using defaults"}
           </span>
@@ -220,9 +218,7 @@ function ParamCard<T>({
       {isPersonalized && renderQuality && (
         <p className="text-[11px] text-subtle">Quality: {renderQuality}</p>
       )}
-      {isPersonalized && (
-        <p className="text-[11px] text-dim">Default: {renderValue(defaults)}</p>
-      )}
+      {isPersonalized && <p className="text-[11px] text-dim">Default: {renderValue(defaults)}</p>}
     </div>
   );
 }

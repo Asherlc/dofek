@@ -161,7 +161,9 @@ export function ProviderDetailPage() {
             Providers
           </Link>
           <span>/</span>
-          <span className="text-foreground">{provider?.name ?? formatProviderName(providerId)}</span>
+          <span className="text-foreground">
+            {provider?.name ?? formatProviderName(providerId)}
+          </span>
         </div>
 
         {/* Provider header */}
@@ -280,9 +282,7 @@ export function ProviderDetailPage() {
               </div>
             </div>
             {syncMessage && (
-              <div
-                className={`text-xs ${syncStatus === "error" ? "text-red-400" : "text-accent"}`}
-              >
+              <div className={`text-xs ${syncStatus === "error" ? "text-red-400" : "text-accent"}`}>
                 {syncMessage}
               </div>
             )}
@@ -373,9 +373,7 @@ function SyncHistory({ providerId }: { providerId: string }) {
 
   return (
     <section>
-      <h2 className="text-sm font-medium text-muted uppercase tracking-wider mb-2">
-        Sync History
-      </h2>
+      <h2 className="text-sm font-medium text-muted uppercase tracking-wider mb-2">Sync History</h2>
 
       {logs.isLoading ? (
         <div className="text-xs text-subtle">Loading logs...</div>
@@ -707,9 +705,7 @@ export function RecordDetailModal({
 
         {/* Populated fields */}
         <div className="mb-4">
-          <h4 className="text-xs font-medium text-muted uppercase tracking-wider mb-2">
-            Fields
-          </h4>
+          <h4 className="text-xs font-medium text-muted uppercase tracking-wider mb-2">Fields</h4>
           <div className="rounded-lg border border-border bg-page divide-y divide-border/50">
             {populatedFields.map(([key, value]) => (
               <div key={key} className="flex gap-4 px-3 py-1.5 text-xs">

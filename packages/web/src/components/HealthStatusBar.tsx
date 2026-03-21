@@ -64,15 +64,12 @@ export function HealthStatusBar({ metrics, loading }: HealthStatusBarProps) {
       {metrics.map((m) => {
         const status = getStatus(m.value, m.avg, m.stddev, m.lowerBetter);
         return (
-          <div
-            key={m.label}
-            className="flex-1 min-w-[120px] card p-3"
-          >
+          <div key={m.label} className="flex-1 min-w-[120px] card card-hover p-3">
             <div className="flex items-center gap-2 mb-1">
               <div className={`w-2 h-2 rounded-full ${statusColors[status]}`} />
               <span className="text-xs text-muted uppercase tracking-wider">{m.label}</span>
             </div>
-            <div className="text-lg font-semibold tabular-nums">
+            <div className="text-lg font-semibold font-mono tabular-nums">
               {m.value != null ? (
                 <>
                   {typeof m.value === "number" && !Number.isInteger(m.value)

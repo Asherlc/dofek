@@ -67,11 +67,15 @@ export function ActivityVariabilityTable({
                   day: "numeric",
                 })}
               </td>
-              <td className="py-2 px-3 text-foreground max-w-[200px] truncate">{row.activityName}</td>
+              <td className="py-2 px-3 text-foreground max-w-[200px] truncate">
+                {row.activityName}
+              </td>
               <td className="py-2 px-3 text-right text-foreground">
                 {row.normalizedPower.toFixed(1)}
               </td>
-              <td className="py-2 px-3 text-right text-foreground">{row.averagePower.toFixed(1)}</td>
+              <td className="py-2 px-3 text-right text-foreground">
+                {row.averagePower.toFixed(1)}
+              </td>
               <td
                 className={`py-2 px-3 text-right font-mono ${getVariabilityColor(row.variabilityIndex)}`}
               >
