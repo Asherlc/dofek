@@ -151,6 +151,15 @@ const credentialProvider = {
 	lastSyncedAt: null,
 };
 
+const importOnlyProvider = {
+	id: "strong-csv",
+	name: "Strong",
+	authType: "none",
+	authorized: true,
+	importOnly: true,
+	lastSyncedAt: null,
+};
+
 function setupDefaultMocks() {
 	mockProvidersQuery.mockReturnValue({
 		data: [connectedProvider, disconnectedProvider],
@@ -168,6 +177,7 @@ function makeProvider(overrides: Partial<{
 	authStatus: "connected" | "not_connected" | "expired";
 	authType: string;
 	lastSyncAt: string | null;
+	importOnly: boolean;
 }> = {}) {
 	return {
 		id: overrides.id ?? "wahoo",
@@ -176,6 +186,7 @@ function makeProvider(overrides: Partial<{
 		authStatus: overrides.authStatus ?? "connected",
 		authType: overrides.authType ?? "oauth",
 		lastSyncAt: overrides.lastSyncAt ?? null,
+		importOnly: overrides.importOnly ?? false,
 		...overrides,
 	};
 }
@@ -406,6 +417,65 @@ describe("ProviderCard", () => {
 
 		expect(screen.getByText("Wahoo")).toBeTruthy();
 	});
+
+	describe("import-only providers", () => {
+		it("does not render Sync button for import-only providers", async () => {
+			const { ProviderCard } = await import("./providers");
+			render(
+				<ProviderCard
+					provider={makeProvider({ importOnly: true, authStatus: "connected" })}
+					stats={undefined}
+					syncing={false}
+					syncProgress={undefined}
+					onSync={noopFn}
+					onFullSync={noopFn}
+					onConnect={noopFn}
+					onPress={noopFn}
+				/>,
+			);
+
+			expect(screen.queryByText("Sync")).toBeNull();
+			expect(screen.queryByText("Connect")).toBeNull();
+		});
+
+		it("does not render Full sync link for import-only providers", async () => {
+			const { ProviderCard } = await import("./providers");
+			render(
+				<ProviderCard
+					provider={makeProvider({ importOnly: true, authStatus: "connected" })}
+					stats={undefined}
+					syncing={false}
+					syncProgress={undefined}
+					onSync={noopFn}
+					onFullSync={noopFn}
+					onConnect={noopFn}
+					onPress={noopFn}
+				/>,
+			);
+
+			expect(screen.queryByText("Full sync")).toBeNull();
+		});
+
+		it("shows 'Import only' instead of connection status", async () => {
+			const { ProviderCard } = await import("./providers");
+			render(
+				<ProviderCard
+					provider={makeProvider({ importOnly: true, authStatus: "connected" })}
+					stats={undefined}
+					syncing={false}
+					syncProgress={undefined}
+					onSync={noopFn}
+					onFullSync={noopFn}
+					onConnect={noopFn}
+					onPress={noopFn}
+				/>,
+			);
+
+			expect(screen.getByText("Import only")).toBeTruthy();
+			expect(screen.queryByText("Connected")).toBeNull();
+			expect(screen.queryByText("Never synced")).toBeNull();
+		});
+	});
 });
 
 describe("ProvidersScreen", () => {
@@ -603,6 +673,34 @@ describe("ProvidersScreen", () => {
 
 		// Clean up: resolve the pending import
 		resolveImport({ providerId: "strong-csv", jobId: "job-1" });
+	});
+
+	it("does not render Sync or Full sync for import-only providers", async () => {
+		mockProvidersQuery.mockReturnValue({
+			data: [importOnlyProvider],
+			isLoading: false,
+		});
+
+		const { default: ProvidersScreen } = await import("./providers");
+		render(<ProvidersScreen />);
+
+		expect(screen.getByText("Strong")).toBeTruthy();
+		expect(screen.queryByText("Sync")).toBeNull();
+		expect(screen.queryByText("Full sync")).toBeNull();
+		expect(screen.getByText("Import only")).toBeTruthy();
+	});
+
+	it("excludes import-only providers from Sync All", async () => {
+		mockProvidersQuery.mockReturnValue({
+			data: [importOnlyProvider],
+			isLoading: false,
+		});
+
+		const { default: ProvidersScreen } = await import("./providers");
+		render(<ProvidersScreen />);
+
+		// Sync All button should not appear when only import-only providers exist
+		expect(screen.queryByText("Sync All")).toBeNull();
 	});
 
 	it("opens browser for OAuth provider connect", async () => {
