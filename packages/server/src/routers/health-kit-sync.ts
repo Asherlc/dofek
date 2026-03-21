@@ -1,6 +1,7 @@
 import { selectDailyHeartRateVariability } from "@dofek/heart-rate-variability";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { logger } from "../logger.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 
 const PROVIDER_ID = "apple_health";
@@ -898,18 +899,35 @@ export const healthKitSyncRouter = router({
           await linkUnassignedHeartRateToWorkouts(ctx.db, ctx.userId, bounds ?? undefined);
 
           // Aggregate SpO2 and skin temperature from metric_stream into daily_metrics
+          let aggregatedDailyMetrics = false;
           if (bounds) {
             const hasSpo2 = metricStreamSamples.some(
               (s) => s.type === "HKQuantityTypeIdentifierOxygenSaturation",
             );
             if (hasSpo2) {
               await aggregateSpO2ToDailyMetrics(ctx.db, ctx.userId, bounds);
+              aggregatedDailyMetrics = true;
             }
-            const hasSkinTemp = metricStreamSamples.some(
+            const skinTempSamples = metricStreamSamples.filter(
               (s) => s.type === "HKQuantityTypeIdentifierAppleSleepingWristTemperature",
             );
-            if (hasSkinTemp) {
+            if (skinTempSamples.length > 0) {
+              logger.info(
+                `[apple_health] Received ${skinTempSamples.length} skin temperature samples, aggregating to daily_metrics`,
+              );
               await aggregateSkinTempToDailyMetrics(ctx.db, ctx.userId, bounds);
+              aggregatedDailyMetrics = true;
+            }
+          }
+
+          // Refresh the daily metrics view so the dashboard picks up new data immediately
+          if (aggregatedDailyMetrics) {
+            try {
+              await ctx.db.execute(
+                sql.raw("REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_daily_metrics"),
+              );
+            } catch {
+              await ctx.db.execute(sql.raw("REFRESH MATERIALIZED VIEW fitness.v_daily_metrics"));
             }
           }
         }
