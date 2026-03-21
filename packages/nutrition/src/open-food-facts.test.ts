@@ -128,3 +128,175 @@ describe("lookupBarcode", () => {
     expect(result).toBeNull();
   });
 });
+
+describe("micronutrient extraction", () => {
+  it("extracts micronutrients from per-serving nutriment data", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      createFetchResponse({
+        status: 1,
+        product: {
+          code: "123",
+          product_name: "Fortified Cereal",
+          nutriments: {
+            "energy-kcal_serving": 200,
+            "proteins_serving": 5,
+            "carbohydrates_serving": 40,
+            "fat_serving": 3,
+            "fiber_serving": 6,
+            "saturated-fat_serving": 1.2,
+            "trans-fat_serving": 0,
+            "sugars_serving": 12,
+            "sodium_serving": 0.3,
+            "cholesterol_serving": 0,
+            "potassium_serving": 200,
+            "calcium_serving": 130,
+            "iron_serving": 8.1,
+            "vitamin-a_serving": 150,
+            "vitamin-c_serving": 60,
+            "vitamin-d_serving": 2.5,
+            "vitamin-b12_serving": 1.2,
+            "magnesium_serving": 40,
+            "zinc_serving": 3.8,
+          },
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await lookupBarcode("123", "en-US");
+
+    expect(result).not.toBeNull();
+    expect(result?.name).toBe("Fortified Cereal");
+    expect(result?.calories).toBe(200);
+    // Fat breakdown
+    expect(result?.saturatedFatG).toBe(1.2);
+    expect(result?.transFatG).toBe(0);
+    expect(result?.sugarG).toBe(12);
+    // Sodium is stored in grams in OFF, converted to mg
+    expect(result?.sodiumMg).toBe(300);
+    expect(result?.cholesterolMg).toBe(0);
+    expect(result?.potassiumMg).toBe(200);
+    // Minerals
+    expect(result?.calciumMg).toBe(130);
+    expect(result?.ironMg).toBe(8.1);
+    expect(result?.magnesiumMg).toBe(40);
+    expect(result?.zincMg).toBe(3.8);
+    // Vitamins
+    expect(result?.vitaminAMcg).toBe(150);
+    expect(result?.vitaminCMg).toBe(60);
+    expect(result?.vitaminDMcg).toBe(2.5);
+    expect(result?.vitaminB12Mcg).toBe(1.2);
+  });
+
+  it("falls back to per-100g values when per-serving is unavailable", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      createFetchResponse({
+        status: 1,
+        product: {
+          code: "456",
+          product_name: "Plain Yogurt",
+          nutriments: {
+            "energy-kcal_100g": 60,
+            "proteins_100g": 3.5,
+            "carbohydrates_100g": 5,
+            "fat_100g": 3,
+            "calcium_100g": 120,
+            "vitamin-d_100g": 0.8,
+          },
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await lookupBarcode("456", "en-US");
+
+    expect(result).not.toBeNull();
+    expect(result?.calciumMg).toBe(120);
+    expect(result?.vitaminDMcg).toBe(0.8);
+  });
+
+  it("returns null for micronutrient fields not present in the response", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      createFetchResponse({
+        status: 1,
+        product: {
+          code: "789",
+          product_name: "Simple Bread",
+          nutriments: {
+            "energy-kcal_100g": 250,
+            "proteins_100g": 8,
+            "carbohydrates_100g": 48,
+            "fat_100g": 3,
+          },
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await lookupBarcode("789", "en-US");
+
+    expect(result).not.toBeNull();
+    expect(result?.vitaminAMcg).toBeNull();
+    expect(result?.calciumMg).toBeNull();
+    expect(result?.ironMg).toBeNull();
+    expect(result?.omega3Mg).toBeNull();
+  });
+
+  it("converts omega-3 and omega-6 from grams to milligrams", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      createFetchResponse({
+        status: 1,
+        product: {
+          code: "321",
+          product_name: "Salmon Fillet",
+          nutriments: {
+            "energy-kcal_serving": 350,
+            "proteins_serving": 40,
+            "carbohydrates_serving": 0,
+            "fat_serving": 20,
+            "omega-3-fat_serving": 2.5,
+            "omega-6-fat_serving": 0.8,
+          },
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await lookupBarcode("321", "en-US");
+
+    expect(result).not.toBeNull();
+    expect(result?.omega3Mg).toBe(2500);
+    expect(result?.omega6Mg).toBe(800);
+  });
+
+  it("includes micronutrients in search results", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      createFetchResponse({
+        products: [
+          {
+            code: "111",
+            product_name: "Orange Juice",
+            lang: "en",
+            nutriments: {
+              "energy-kcal_serving": 110,
+              "proteins_serving": 2,
+              "carbohydrates_serving": 26,
+              "fat_serving": 0,
+              "vitamin-c_serving": 72,
+              "potassium_serving": 450,
+              "calcium_serving": 20,
+            },
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const results = await searchFoods("orange juice", 5, "en-US");
+
+    expect(results).toHaveLength(1);
+    expect(results[0]?.vitaminCMg).toBe(72);
+    expect(results[0]?.potassiumMg).toBe(450);
+    expect(results[0]?.calciumMg).toBe(20);
+  });
+});

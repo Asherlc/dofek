@@ -23,6 +23,43 @@ export interface FoodDatabaseResult {
   fatG: number | null;
   fiberG: number | null;
   imageUrl: string | null;
+  // Fat breakdown
+  saturatedFatG: number | null;
+  polyunsaturatedFatG: number | null;
+  monounsaturatedFatG: number | null;
+  transFatG: number | null;
+  // Other macros
+  cholesterolMg: number | null;
+  sodiumMg: number | null;
+  potassiumMg: number | null;
+  sugarG: number | null;
+  // Vitamins
+  vitaminAMcg: number | null;
+  vitaminCMg: number | null;
+  vitaminDMcg: number | null;
+  vitaminEMg: number | null;
+  vitaminKMcg: number | null;
+  vitaminB1Mg: number | null;
+  vitaminB2Mg: number | null;
+  vitaminB3Mg: number | null;
+  vitaminB5Mg: number | null;
+  vitaminB6Mg: number | null;
+  vitaminB7Mcg: number | null;
+  vitaminB9Mcg: number | null;
+  vitaminB12Mcg: number | null;
+  // Minerals
+  calciumMg: number | null;
+  ironMg: number | null;
+  magnesiumMg: number | null;
+  zincMg: number | null;
+  seleniumMcg: number | null;
+  copperMg: number | null;
+  manganeseMg: number | null;
+  chromiumMcg: number | null;
+  iodineMcg: number | null;
+  // Fatty acids
+  omega3Mg: number | null;
+  omega6Mg: number | null;
 }
 
 interface SearchLocalePreferences {
@@ -107,6 +144,20 @@ function getNumericNutrimentValue(
   return null;
 }
 
+/** Get a nutriment value, preferring per-serving over per-100g, with optional unit conversion. */
+function getNutrimentWithConversion(
+  nutriments: Record<string, unknown> | undefined,
+  offKey: string,
+  conversionFactor = 1,
+): number | null {
+  const raw =
+    getNumericNutrimentValue(nutriments, `${offKey}_serving`) ??
+    getNumericNutrimentValue(nutriments, `${offKey}_100g`);
+  if (raw == null) return null;
+  const converted = raw * conversionFactor;
+  return Math.round(converted * 10) / 10;
+}
+
 function parseProduct(
   product: OpenFoodFactsProduct,
   preferredLanguageCode: string,
@@ -122,18 +173,6 @@ function parseProduct(
   const calories =
     getNumericNutrimentValue(nutriments, "energy-kcal_serving") ??
     getNumericNutrimentValue(nutriments, "energy-kcal_100g");
-  const proteinG =
-    getNumericNutrimentValue(nutriments, "proteins_serving") ??
-    getNumericNutrimentValue(nutriments, "proteins_100g");
-  const carbsG =
-    getNumericNutrimentValue(nutriments, "carbohydrates_serving") ??
-    getNumericNutrimentValue(nutriments, "carbohydrates_100g");
-  const fatG =
-    getNumericNutrimentValue(nutriments, "fat_serving") ??
-    getNumericNutrimentValue(nutriments, "fat_100g");
-  const fiberG =
-    getNumericNutrimentValue(nutriments, "fiber_serving") ??
-    getNumericNutrimentValue(nutriments, "fiber_100g");
 
   return {
     barcode: product.code ?? null,
@@ -141,11 +180,49 @@ function parseProduct(
     brand: product.brands ?? null,
     servingSize: product.serving_size ?? null,
     calories: calories != null ? Math.round(calories) : null,
-    proteinG: proteinG != null ? Math.round(proteinG * 10) / 10 : null,
-    carbsG: carbsG != null ? Math.round(carbsG * 10) / 10 : null,
-    fatG: fatG != null ? Math.round(fatG * 10) / 10 : null,
-    fiberG: fiberG != null ? Math.round(fiberG * 10) / 10 : null,
     imageUrl: product.image_front_small_url ?? null,
+    // Macronutrients
+    proteinG: getNutrimentWithConversion(nutriments, "proteins"),
+    carbsG: getNutrimentWithConversion(nutriments, "carbohydrates"),
+    fatG: getNutrimentWithConversion(nutriments, "fat"),
+    fiberG: getNutrimentWithConversion(nutriments, "fiber"),
+    // Fat breakdown
+    saturatedFatG: getNutrimentWithConversion(nutriments, "saturated-fat"),
+    polyunsaturatedFatG: getNutrimentWithConversion(nutriments, "polyunsaturated-fat"),
+    monounsaturatedFatG: getNutrimentWithConversion(nutriments, "monounsaturated-fat"),
+    transFatG: getNutrimentWithConversion(nutriments, "trans-fat"),
+    // Other macros
+    cholesterolMg: getNutrimentWithConversion(nutriments, "cholesterol"),
+    sodiumMg: getNutrimentWithConversion(nutriments, "sodium", 1000), // OFF stores sodium in grams
+    potassiumMg: getNutrimentWithConversion(nutriments, "potassium"),
+    sugarG: getNutrimentWithConversion(nutriments, "sugars"),
+    // Vitamins
+    vitaminAMcg: getNutrimentWithConversion(nutriments, "vitamin-a"),
+    vitaminCMg: getNutrimentWithConversion(nutriments, "vitamin-c"),
+    vitaminDMcg: getNutrimentWithConversion(nutriments, "vitamin-d"),
+    vitaminEMg: getNutrimentWithConversion(nutriments, "vitamin-e"),
+    vitaminKMcg: getNutrimentWithConversion(nutriments, "vitamin-k"),
+    vitaminB1Mg: getNutrimentWithConversion(nutriments, "vitamin-b1"),
+    vitaminB2Mg: getNutrimentWithConversion(nutriments, "vitamin-b2"),
+    vitaminB3Mg: getNutrimentWithConversion(nutriments, "vitamin-pp"), // OFF uses "vitamin-pp" for niacin/B3
+    vitaminB5Mg: getNutrimentWithConversion(nutriments, "pantothenic-acid"),
+    vitaminB6Mg: getNutrimentWithConversion(nutriments, "vitamin-b6"),
+    vitaminB7Mcg: getNutrimentWithConversion(nutriments, "biotin"),
+    vitaminB9Mcg: getNutrimentWithConversion(nutriments, "vitamin-b9"),
+    vitaminB12Mcg: getNutrimentWithConversion(nutriments, "vitamin-b12"),
+    // Minerals
+    calciumMg: getNutrimentWithConversion(nutriments, "calcium"),
+    ironMg: getNutrimentWithConversion(nutriments, "iron"),
+    magnesiumMg: getNutrimentWithConversion(nutriments, "magnesium"),
+    zincMg: getNutrimentWithConversion(nutriments, "zinc"),
+    seleniumMcg: getNutrimentWithConversion(nutriments, "selenium"),
+    copperMg: getNutrimentWithConversion(nutriments, "copper"),
+    manganeseMg: getNutrimentWithConversion(nutriments, "manganese"),
+    chromiumMcg: getNutrimentWithConversion(nutriments, "chromium"),
+    iodineMcg: getNutrimentWithConversion(nutriments, "iodine"),
+    // Fatty acids (OFF stores in grams, DB stores in mg)
+    omega3Mg: getNutrimentWithConversion(nutriments, "omega-3-fat", 1000),
+    omega6Mg: getNutrimentWithConversion(nutriments, "omega-6-fat", 1000),
   };
 }
 

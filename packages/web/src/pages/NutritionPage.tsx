@@ -117,6 +117,7 @@ export function NutritionPage() {
   }
 
   function handleAddFood(data: FoodFormData) {
+    const n = data.micronutrients;
     createMutation.mutate({
       date: dateString,
       foodName: data.foodName,
@@ -126,6 +127,39 @@ export function NutritionPage() {
       carbsG: data.carbsG,
       fatG: data.fatG,
       foodDescription: data.foodDescription || null,
+      // Micronutrients from Open Food Facts (if available)
+      saturatedFatG: n?.saturatedFatG ?? null,
+      polyunsaturatedFatG: n?.polyunsaturatedFatG ?? null,
+      monounsaturatedFatG: n?.monounsaturatedFatG ?? null,
+      transFatG: n?.transFatG ?? null,
+      cholesterolMg: n?.cholesterolMg ?? null,
+      sodiumMg: n?.sodiumMg ?? null,
+      potassiumMg: n?.potassiumMg ?? null,
+      sugarG: n?.sugarG ?? null,
+      vitaminAMcg: n?.vitaminAMcg ?? null,
+      vitaminCMg: n?.vitaminCMg ?? null,
+      vitaminDMcg: n?.vitaminDMcg ?? null,
+      vitaminEMg: n?.vitaminEMg ?? null,
+      vitaminKMcg: n?.vitaminKMcg ?? null,
+      vitaminB1Mg: n?.vitaminB1Mg ?? null,
+      vitaminB2Mg: n?.vitaminB2Mg ?? null,
+      vitaminB3Mg: n?.vitaminB3Mg ?? null,
+      vitaminB5Mg: n?.vitaminB5Mg ?? null,
+      vitaminB6Mg: n?.vitaminB6Mg ?? null,
+      vitaminB7Mcg: n?.vitaminB7Mcg ?? null,
+      vitaminB9Mcg: n?.vitaminB9Mcg ?? null,
+      vitaminB12Mcg: n?.vitaminB12Mcg ?? null,
+      calciumMg: n?.calciumMg ?? null,
+      ironMg: n?.ironMg ?? null,
+      magnesiumMg: n?.magnesiumMg ?? null,
+      zincMg: n?.zincMg ?? null,
+      seleniumMcg: n?.seleniumMcg ?? null,
+      copperMg: n?.copperMg ?? null,
+      manganeseMg: n?.manganeseMg ?? null,
+      chromiumMcg: n?.chromiumMcg ?? null,
+      iodineMcg: n?.iodineMcg ?? null,
+      omega3Mg: n?.omega3Mg ?? null,
+      omega6Mg: n?.omega6Mg ?? null,
     });
   }
 

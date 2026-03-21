@@ -13,6 +13,8 @@ export interface FoodFormData {
   carbsG: number | null;
   fatG: number | null;
   foodDescription: string;
+  /** Full micronutrient data from Open Food Facts (if available) */
+  micronutrients: Partial<FoodDatabaseResult> | null;
 }
 
 interface AddFoodModalProps {
@@ -45,6 +47,7 @@ export function AddFoodModal({
   const nameInputRef = useRef<HTMLInputElement>(null);
   const searchRequestCounterRef = useRef(0);
   const skipNextSearchRef = useRef(false);
+  const selectedFoodNutrients = useRef<Partial<FoodDatabaseResult> | null>(null);
   const browserLocale = typeof navigator !== "undefined" ? navigator.language : "en-US";
 
   const analyzeMutation = trpc.food.analyzeWithAi.useMutation({
@@ -74,6 +77,7 @@ export function AddFoodModal({
   function resetForm() {
     searchRequestCounterRef.current += 1;
     skipNextSearchRef.current = false;
+    selectedFoodNutrients.current = null;
     setFoodName("");
     setCalories("");
     setProteinGrams("");
@@ -99,6 +103,7 @@ export function AddFoodModal({
       carbsG: carbsGrams ? Number.parseFloat(carbsGrams) : null,
       fatG: fatGrams ? Number.parseFloat(fatGrams) : null,
       foodDescription: servingDescription.trim(),
+      micronutrients: selectedFoodNutrients.current,
     });
     resetForm();
   }
@@ -116,6 +121,7 @@ export function AddFoodModal({
 
   function applySearchResult(result: FoodDatabaseResult) {
     skipNextSearchRef.current = true;
+    selectedFoodNutrients.current = result;
     const selectedName = result.brand ? `${result.name} (${result.brand})` : result.name;
     setFoodName(selectedName);
     setServingDescription(result.servingSize ?? "");

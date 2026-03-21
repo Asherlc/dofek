@@ -17,7 +17,7 @@ import { BarcodeScanner } from "../../components/BarcodeScanner";
 import { useAuth } from "../../lib/auth-context";
 import { colors } from "../../theme";
 
-import { lookupBarcode, searchFoods } from "../../lib/food-database";
+import { type FoodDatabaseResult, lookupBarcode, searchFoods } from "../../lib/food-database";
 import { MEAL_OPTIONS, type MealType, autoMealType } from "@dofek/nutrition/meal";
 import { formatDateYmd } from "@dofek/format/format";
 import { SERVER_URL, getTrpcUrl } from "../../lib/server";
@@ -49,6 +49,8 @@ interface SearchResult {
   fatG: number | null;
   servingDescription: string | null;
   barcode: string | null;
+  /** Original OFF result with full micronutrient data */
+  offData?: FoodDatabaseResult;
 }
 
 export default function AddFoodScreen() {
@@ -86,6 +88,9 @@ export default function AddFoodScreen() {
   const [carbsGrams, setCarbsGrams] = useState("");
   const [fatGrams, setFatGrams] = useState("");
   const [servingDescription, setServingDescription] = useState("");
+
+  // ── Micronutrient data from selected food result (passed through to create mutation) ──
+  const selectedFoodNutrients = useRef<Partial<FoodDatabaseResult> | null>(null);
 
   // ── Recent foods (loaded once on mount) ──
   const [recentFoods, setRecentFoods] = useState<SearchResult[]>([]);
@@ -212,6 +217,7 @@ export default function AddFoodScreen() {
       fatG: r.fatG,
       servingDescription: r.servingSize,
       barcode: r.barcode,
+      offData: r,
     }));
 
     // History first, then Open Food Facts
@@ -241,6 +247,7 @@ export default function AddFoodScreen() {
     setScanningBarcode(false);
 
     if (result) {
+      selectedFoodNutrients.current = result;
       fillForm({
         source: "openfoodfacts",
         name: result.brand ? `${result.name} (${result.brand})` : result.name,
@@ -276,6 +283,7 @@ export default function AddFoodScreen() {
   }
 
   function handleSelectResult(result: SearchResult) {
+    selectedFoodNutrients.current = result.offData ?? null;
     fillForm(result);
   }
 
@@ -291,6 +299,7 @@ export default function AddFoodScreen() {
       return;
     }
 
+    const nutrients = selectedFoodNutrients.current;
     createMutation.mutate({
       date,
       foodName: foodName.trim(),
@@ -300,6 +309,39 @@ export default function AddFoodScreen() {
       carbsG: safeParseFloat(carbsGrams),
       fatG: safeParseFloat(fatGrams),
       foodDescription: servingDescription.trim() || null,
+      // Micronutrients from Open Food Facts (if available)
+      saturatedFatG: nutrients?.saturatedFatG ?? null,
+      polyunsaturatedFatG: nutrients?.polyunsaturatedFatG ?? null,
+      monounsaturatedFatG: nutrients?.monounsaturatedFatG ?? null,
+      transFatG: nutrients?.transFatG ?? null,
+      cholesterolMg: nutrients?.cholesterolMg ?? null,
+      sodiumMg: nutrients?.sodiumMg ?? null,
+      potassiumMg: nutrients?.potassiumMg ?? null,
+      sugarG: nutrients?.sugarG ?? null,
+      vitaminAMcg: nutrients?.vitaminAMcg ?? null,
+      vitaminCMg: nutrients?.vitaminCMg ?? null,
+      vitaminDMcg: nutrients?.vitaminDMcg ?? null,
+      vitaminEMg: nutrients?.vitaminEMg ?? null,
+      vitaminKMcg: nutrients?.vitaminKMcg ?? null,
+      vitaminB1Mg: nutrients?.vitaminB1Mg ?? null,
+      vitaminB2Mg: nutrients?.vitaminB2Mg ?? null,
+      vitaminB3Mg: nutrients?.vitaminB3Mg ?? null,
+      vitaminB5Mg: nutrients?.vitaminB5Mg ?? null,
+      vitaminB6Mg: nutrients?.vitaminB6Mg ?? null,
+      vitaminB7Mcg: nutrients?.vitaminB7Mcg ?? null,
+      vitaminB9Mcg: nutrients?.vitaminB9Mcg ?? null,
+      vitaminB12Mcg: nutrients?.vitaminB12Mcg ?? null,
+      calciumMg: nutrients?.calciumMg ?? null,
+      ironMg: nutrients?.ironMg ?? null,
+      magnesiumMg: nutrients?.magnesiumMg ?? null,
+      zincMg: nutrients?.zincMg ?? null,
+      seleniumMcg: nutrients?.seleniumMcg ?? null,
+      copperMg: nutrients?.copperMg ?? null,
+      manganeseMg: nutrients?.manganeseMg ?? null,
+      chromiumMcg: nutrients?.chromiumMcg ?? null,
+      iodineMcg: nutrients?.iodineMcg ?? null,
+      omega3Mg: nutrients?.omega3Mg ?? null,
+      omega6Mg: nutrients?.omega6Mg ?? null,
     });
   }
 
@@ -425,7 +467,7 @@ export default function AddFoodScreen() {
           <View style={styles.formButtons}>
             <TouchableOpacity
               style={styles.backButton}
-              onPress={() => setShowForm(false)}
+              onPress={() => { selectedFoodNutrients.current = null; setShowForm(false); }}
               activeOpacity={0.7}
             >
               <Text style={styles.backButtonText}>Back</Text>
@@ -568,6 +610,7 @@ export default function AddFoodScreen() {
             <TouchableOpacity
               style={styles.manualEntry}
               onPress={() => {
+                selectedFoodNutrients.current = null;
                 setFoodName(searchQuery.trim());
                 setCalories("");
                 setProteinGrams("");
