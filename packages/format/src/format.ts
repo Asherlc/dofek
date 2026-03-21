@@ -18,12 +18,14 @@ export function formatDurationMinutes(minutes: number): string {
 export function parseValidDate(value: string): Date | null {
   const parsed = new Date(value);
   if (!Number.isNaN(parsed.getTime())) return parsed;
-  // Postgres ::text casts use a space separator instead of T
-  if (value.includes(" ")) {
-    const normalized = new Date(value.replace(" ", "T"));
-    if (!Number.isNaN(normalized.getTime())) return normalized;
-  }
-  return null;
+  // Normalize postgres-style timestamps for strict JS engines (Hermes, older Safari):
+  // "2026-03-20 19:40:29.678162+00" → "2026-03-20T19:40:29.678+00:00"
+  const normalized = value
+    .replace(" ", "T")
+    .replace(/(\.\d{3})\d*/, "$1")
+    .replace(/([+-]\d{2})$/, "$1:00");
+  const retried = new Date(normalized);
+  return Number.isNaN(retried.getTime()) ? null : retried;
 }
 
 /** Format a duration between two ISO timestamps as "Xh Ym" */

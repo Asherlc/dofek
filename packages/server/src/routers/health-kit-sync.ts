@@ -745,8 +745,11 @@ async function processSleepSamples(
 
     const externalId = `hk:sleep:${session.uuid}`;
     const durationMinutes = Math.round((sessionEnd - sessionStart) / (1000 * 60));
+    const totalSleepMinutes = deepMinutes + remMinutes + lightMinutes;
+    const efficiencyPct =
+      durationMinutes > 0 ? Math.round((totalSleepMinutes / durationMinutes) * 1000) / 10 : null;
     await db.execute(
-      sql`INSERT INTO fitness.sleep_session (user_id, provider_id, external_id, started_at, ended_at, duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes, sleep_type)
+      sql`INSERT INTO fitness.sleep_session (user_id, provider_id, external_id, started_at, ended_at, duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes, efficiency_pct, sleep_type)
           VALUES (
             ${userId},
             ${PROVIDER_ID},
@@ -758,6 +761,7 @@ async function processSleepSamples(
             ${remMinutes},
             ${lightMinutes},
             ${awakeMinutes},
+            ${efficiencyPct},
             ${null}
           )
           ON CONFLICT (provider_id, external_id) DO UPDATE SET
@@ -768,6 +772,7 @@ async function processSleepSamples(
             rem_minutes = ${remMinutes},
             light_minutes = ${lightMinutes},
             awake_minutes = ${awakeMinutes},
+            efficiency_pct = ${efficiencyPct},
             sleep_type = ${null}`,
     );
     inserted++;

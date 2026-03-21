@@ -31,6 +31,10 @@ export const dateStringSchema = z
  * and strings on others (macOS). This schema normalizes both to ISO 8601
  * strings that all browsers (including Safari) can parse.
  */
-export const timestampStringSchema = z
-  .union([z.string(), z.date()])
-  .transform((value) => (value instanceof Date ? value.toISOString() : value));
+export const timestampStringSchema = z.union([z.string(), z.date()]).transform((value) => {
+  if (value instanceof Date) return value.toISOString();
+  // Normalize postgres-style strings ("2026-03-20 19:40:29.678162+00")
+  // to ISO 8601 so all clients (including Hermes/React Native) can parse them.
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString();
+});
