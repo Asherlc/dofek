@@ -397,7 +397,7 @@ function EnduranceTab({ days }: { days: number }) {
         );
       })()}
 
-      {polarizationWeeks.length === 0 && currentRampRate == null && (
+      {polarizationWeeks.length === 0 && currentRampRate == null && (monotony.data ?? []).length === 0 && (
         <EmptyText message="No endurance data available for this period." />
       )}
     </View>
@@ -633,15 +633,15 @@ function ActivityVariabilitySection({ days }: { days: number }) {
     <View style={styles.card}>
       <ChartTitleWithTooltip
         title="Activity Variability"
-        description="Variability Index (VI) shows how variable your power was — higher means more surging. Intensity Factor (IF) shows how hard you rode relative to FTP."
+        description="Variability Index (VI) shows how variable your power was — higher means more surging. Intensity Factor (IF) shows how hard you rode relative to your Functional Threshold Power (FTP)."
         textStyle={styles.cardTitle}
       />
       <View style={{ gap: 6, marginTop: 4 }}>
         <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
           <Text style={{ fontSize: 11, color: colors.textTertiary, flex: 1 }}>Activity</Text>
-          <Text style={{ fontSize: 11, color: colors.textTertiary, width: 50, textAlign: "right" }}>NP</Text>
-          <Text style={{ fontSize: 11, color: colors.textTertiary, width: 50, textAlign: "right" }}>VI</Text>
-          <Text style={{ fontSize: 11, color: colors.textTertiary, width: 50, textAlign: "right" }}>IF</Text>
+          <Text style={{ fontSize: 11, color: colors.textTertiary, width: 50, textAlign: "right" }}>Norm. Power</Text>
+          <Text style={{ fontSize: 11, color: colors.textTertiary, width: 50, textAlign: "right" }}>Var. Index</Text>
+          <Text style={{ fontSize: 11, color: colors.textTertiary, width: 50, textAlign: "right" }}>Int. Factor</Text>
         </View>
         {rows.map((row, i) => (
           <View key={`${row.date}-${i}`} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
@@ -846,7 +846,7 @@ function StrengthTab({ days }: { days: number }) {
   const overload = trpc.strength.progressiveOverload.useQuery({ days });
   const muscleGroup = trpc.strength.muscleGroupVolume.useQuery({ days });
 
-  if (volume.isLoading || oneRepMax.isLoading || overload.isLoading) return <LoadingText />;
+  if (volume.isLoading || oneRepMax.isLoading || overload.isLoading || muscleGroup.isLoading) return <LoadingText />;
 
   const volumeData = volume.data ?? [];
   const oneRepMaxData = oneRepMax.data ?? [];
@@ -981,7 +981,7 @@ function StrengthTab({ days }: { days: number }) {
         );
       })()}
 
-      {volumeData.length === 0 && oneRepMaxData.length === 0 && overloadData.length === 0 && (
+      {volumeData.length === 0 && oneRepMaxData.length === 0 && overloadData.length === 0 && (muscleGroup.data ?? []).length === 0 && (
         <EmptyText message="No strength data available for this period." />
       )}
     </View>

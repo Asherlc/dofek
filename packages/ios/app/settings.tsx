@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import { File as ExpoFile, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
+import { z } from "zod";
 import { providerLabel } from "@dofek/providers/providers";
 import { PersonalizationPanel } from "../components/PersonalizationPanel";
 import { SlackIntegrationPanel } from "../components/SlackIntegrationPanel";
@@ -17,6 +18,15 @@ const UNIT_OPTIONS: { value: UnitSystem; label: string; description: string }[] 
 ];
 
 type ExportState = "idle" | "processing" | "done" | "error";
+
+const ExportTriggerSchema = z.object({ jobId: z.string() });
+
+const ExportStatusSchema = z.object({
+  status: z.string(),
+  progress: z.number().optional(),
+  message: z.string().optional(),
+  downloadUrl: z.string().optional(),
+});
 
 export default function SettingsScreen() {
   const auth = useAuth();
@@ -98,7 +108,7 @@ export default function SettingsScreen() {
         return;
       }
 
-      const triggerData: { jobId: string } = await triggerRes.json();
+      const triggerData = ExportTriggerSchema.parse(await triggerRes.json());
       const { jobId } = triggerData;
 
       // Poll for status
@@ -116,8 +126,7 @@ export default function SettingsScreen() {
           return;
         }
 
-        const status: { status: string; progress?: number; message?: string; downloadUrl?: string } =
-          await statusRes.json();
+        const status = ExportStatusSchema.parse(await statusRes.json());
         setExportProgress(status.progress ?? 0);
         setExportMessage(status.message ?? "");
 
@@ -129,15 +138,19 @@ export default function SettingsScreen() {
           const downloadRes = await fetch(downloadUrl, {
             headers: { Authorization: `Bearer ${auth.sessionToken}` },
           });
+          if (!downloadRes.ok) {
+            setExportState("error");
+            setExportMessage("Failed to download export");
+            return;
+          }
           const blob = await downloadRes.blob();
-          const localUri = `${Paths.cache}/health-export.zip`;
+          const file = new ExpoFile(Paths.cache, "health-export.zip");
           const arrayBuffer = await blob.arrayBuffer();
           const bytes = new Uint8Array(arrayBuffer);
-          const file = new ExpoFile(localUri);
           file.write(bytes);
           setExportState("done");
           setExportMessage("Export complete");
-          await Sharing.shareAsync(localUri, {
+          await Sharing.shareAsync(file.uri, {
             mimeType: "application/zip",
             dialogTitle: "Save Health Data Export",
           });
