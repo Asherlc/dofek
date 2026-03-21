@@ -281,7 +281,7 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]?.message).toContain("No RWGPS credentials found");
+    expect(result.errors[0]?.message).toContain("No OAuth tokens found for RideWithGPS");
     expect(result.recordsSynced).toBe(0);
   });
 

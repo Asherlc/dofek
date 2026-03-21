@@ -84,15 +84,18 @@ export const trainingRouter = router({
   hrZones: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
-      const rows = await ctx.db.execute<{
-        max_hr: number | null;
-        week: string;
-        zone1: number;
-        zone2: number;
-        zone3: number;
-        zone4: number;
-        zone5: number;
-      }>(
+      const hrZoneRowSchema = z.object({
+        max_hr: z.number().nullable(),
+        week: dateStringSchema,
+        zone1: z.coerce.number(),
+        zone2: z.coerce.number(),
+        zone3: z.coerce.number(),
+        zone4: z.coerce.number(),
+        zone5: z.coerce.number(),
+      });
+      const rows = await executeWithSchema(
+        ctx.db,
+        hrZoneRowSchema,
         sql`SELECT
               up.max_hr,
               date_trunc('week', a.started_at)::date AS week,

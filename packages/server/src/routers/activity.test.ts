@@ -17,6 +17,20 @@ vi.mock("../trpc.ts", async () => {
   };
 });
 
+vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../lib/typed-sql.ts")>();
+  return {
+    ...original,
+    executeWithSchema: vi.fn(
+      async (
+        db: { execute: (q: unknown) => Promise<unknown[]> },
+        _schema: unknown,
+        query: unknown,
+      ) => db.execute(query),
+    ),
+  };
+});
+
 import { activityRouter } from "./activity.ts";
 
 const createCaller = createTestCallerFactory(activityRouter);
