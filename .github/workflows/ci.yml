@@ -437,7 +437,7 @@ jobs:
     needs: [lint, typecheck, knip, coverage, test-e2e-web, test-ios, build-ios, test-swift]
     if: github.ref == 'refs/heads/main'
     concurrency:
-      group: docker-${{ matrix.target }}
+      group: docker
       cancel-in-progress: false
     runs-on: ubuntu-24.04-arm
     permissions:
