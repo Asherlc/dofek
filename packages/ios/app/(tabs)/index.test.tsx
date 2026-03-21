@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from "react";
 import { render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 let mockTrendsData: Record<string, unknown> | undefined;
 let mockDailyMetricsData: Record<string, unknown>[];
@@ -80,6 +80,40 @@ vi.mock("../../theme", () => ({
     info: "#0af",
   },
 }));
+
+describe("Health Status stale date indicator", () => {
+  beforeEach(() => {
+    mockTrendsData = undefined;
+    mockDailyMetricsData = [];
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("shows 'Health Status' when data is from today", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-21T10:00:00"));
+    mockTrendsData = { latest_date: "2026-03-21", latest_steps: 5000 };
+
+    const { default: OverviewScreen } = await import("./index");
+    render(<OverviewScreen />);
+
+    expect(screen.getByText("Health Status")).toBeDefined();
+  });
+
+  it("shows date in title when data is stale", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-21T10:00:00"));
+    mockTrendsData = { latest_date: "2026-03-20", latest_steps: 2895 };
+
+    const { default: OverviewScreen } = await import("./index");
+    render(<OverviewScreen />);
+
+    const staleTitle = screen.getByText(/Health Status \(.*Mar.*20\)/);
+    expect(staleTitle).toBeDefined();
+  });
+});
 
 describe("OverviewScreen SpO2 and Skin Temperature cards", () => {
   beforeEach(() => {

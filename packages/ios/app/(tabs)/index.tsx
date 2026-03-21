@@ -465,7 +465,18 @@ export default function OverviewScreen() {
           {/* Health Status Bar — horizontal scrolling mini metrics */}
           {showDetailedSections && metrics != null && (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Health Status</Text>
+              <Text style={styles.sectionTitle}>
+                {(() => {
+                  if (!metrics.latest_date) return "Health Status";
+                  const today = new Date().toLocaleDateString("en-CA");
+                  if (metrics.latest_date === today) return "Health Status";
+                  const dateLabel = new Date(`${metrics.latest_date}T00:00:00`).toLocaleDateString(
+                    "en-US",
+                    { weekday: "short", month: "short", day: "numeric" },
+                  );
+                  return `Health Status (${dateLabel})`;
+                })()}
+              </Text>
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}

@@ -106,6 +106,18 @@ const activityRowSchema = z.object({
   calories: z.number().nullable().optional(),
 });
 
+export function healthMonitorSubtitle(latestDate: string | null | undefined): string {
+  if (!latestDate) return "Today's values vs. rolling average";
+  const today = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD in local tz
+  if (latestDate === today) return "Today's values vs. rolling average";
+  const dateLabel = new Date(`${latestDate}T00:00:00`).toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+  });
+  return `Latest values from ${dateLabel} — not yet updated today`;
+}
+
 /** Sections that render side-by-side in a 2-column grid. The key is the "primary" (left) section. */
 const GRID_PAIRS: Record<string, string> = {
   strain: "nextWorkout",
@@ -311,7 +323,7 @@ export function Dashboard() {
   const sectionContent: Record<string, { title: string; subtitle: string; content: ReactNode }> = {
     healthMonitor: {
       title: "Health Monitor",
-      subtitle: "Today's values vs. rolling average",
+      subtitle: healthMonitorSubtitle(trendData?.latest_date),
       content: <HealthStatusBar metrics={healthMetrics} loading={trends.isLoading} />,
     },
     topInsights: {
