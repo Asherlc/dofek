@@ -1,11 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink } from "@trpc/client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { Stack } from "expo-router";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { trpc } from "../lib/trpc";
 import { AuthProvider, useAuth } from "../lib/auth-context";
+import { initBackgroundHealthKitSync } from "../lib/background-health-kit-sync";
 import { getTrpcUrl } from "../lib/server";
 import { initTelemetry } from "../lib/telemetry";
 import { colors } from "../theme";
@@ -40,6 +41,15 @@ function AuthGate() {
       ],
     });
   }, [serverUrl, sessionToken]);
+
+  // Set up background HealthKit sync when authenticated
+  useEffect(() => {
+    if (!user || !trpcClient) return;
+    const client = trpcClient as unknown as Parameters<typeof initBackgroundHealthKitSync>[0];
+    initBackgroundHealthKitSync(client).catch(() => {
+      // Best-effort — don't block the app for background sync setup failures
+    });
+  }, [user, trpcClient]);
 
   if (isLoading) {
     return (

@@ -21,6 +21,7 @@ import { StressChart } from "../components/StressChart.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { TimeSeriesChart } from "../components/TimeSeriesChart.tsx";
 import { WeeklyReportCard } from "../components/WeeklyReportCard.tsx";
+import { useAutoSync } from "../hooks/useAutoSync.ts";
 import { useScrollReveal } from "../hooks/useScrollReveal.ts";
 import { chartColors } from "../lib/chartTheme.ts";
 import { useDashboardLayout } from "../lib/dashboardLayoutContext.ts";
@@ -221,6 +222,9 @@ export function Dashboard() {
   const trendData: TrendRow | undefined = trends.data
     ? trendRowSchema.parse(trends.data)
     : undefined;
+
+  // Auto-sync when data is stale (API providers only — HealthKit requires iOS)
+  useAutoSync(trendData?.latest_date);
 
   const topInsights = useMemo(() => {
     const all: Insight[] = insightsQuery.data ?? [];

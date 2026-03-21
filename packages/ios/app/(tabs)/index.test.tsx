@@ -31,7 +31,29 @@ vi.mock("../../lib/trpc", () => ({
     nutrition: { daily: q(() => []) },
     bodyAnalytics: { smoothedWeight: q(() => []) },
     anomalyDetection: { check: q() },
+    sync: {
+      triggerSync: { useMutation: () => ({ mutate: vi.fn() }) },
+      activeSyncs: { useQuery: () => ({ data: [], isLoading: false }) },
+    },
+    useUtils: () => ({
+      client: {
+        healthKitSync: {
+          pushQuantitySamples: { mutate: vi.fn().mockResolvedValue({ inserted: 0, errors: [] }) },
+          pushWorkouts: { mutate: vi.fn().mockResolvedValue({ inserted: 0 }) },
+          pushSleepSamples: { mutate: vi.fn().mockResolvedValue({ inserted: 0 }) },
+        },
+      },
+    }),
   },
+}));
+
+vi.mock("../../modules/health-kit", () => ({
+  isAvailable: () => false,
+  getRequestStatus: vi.fn().mockResolvedValue("unavailable"),
+  queryDailyStatistics: vi.fn().mockResolvedValue([]),
+  queryQuantitySamples: vi.fn().mockResolvedValue([]),
+  queryWorkouts: vi.fn().mockResolvedValue([]),
+  querySleepSamples: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock("../../lib/useOnboarding", () => ({

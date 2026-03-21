@@ -21,6 +21,7 @@ import { formatDurationMinutes, formatNumber, formatSleepDebtInline } from "@dof
 import { readinessLevelColor, scoreColor, scoreLabel, strainZoneColor, strainZoneLabel, trendColor, trendDirection as computeTrend } from "../../lib/scoring";
 import { trpc } from "../../lib/trpc";
 import { convertTemperature, convertWeight, temperatureLabel, useUnitSystem, weightLabel } from "../../lib/units";
+import { useAutoSync } from "../../lib/useAutoSync";
 import { useOnboarding } from "../../lib/useOnboarding";
 import { ActivityRowSchema } from "../../types/api";
 import { colors, statusColors } from "../../theme";
@@ -111,6 +112,9 @@ export default function OverviewScreen() {
   // Health metrics (latest)
   const dailyMetricsQuery = trpc.dailyMetrics.trends.useQuery({ days });
   const metrics = dailyMetricsQuery.data;
+
+  // Auto-sync when data is stale (API providers + HealthKit)
+  useAutoSync(metrics?.latest_date);
 
   // Weekly report
   const weeklyReportQuery = trpc.weeklyReport.report.useQuery({ weeks: Math.max(Math.ceil(days / 7), 1) });

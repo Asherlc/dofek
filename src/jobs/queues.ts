@@ -24,11 +24,17 @@ export interface ExportJobData {
   outputPath: string;
 }
 
+export interface ScheduledSyncJobData {
+  /** Marker to distinguish from regular sync jobs */
+  type: "scheduled-sync-all";
+}
+
 // ── Queue names ──
 
 export const SYNC_QUEUE = "sync";
 export const IMPORT_QUEUE = "import";
 export const EXPORT_QUEUE = "export";
+export const SCHEDULED_SYNC_QUEUE = "scheduled-sync";
 
 // ── Shared Redis connection config ──
 
@@ -57,4 +63,10 @@ export function createImportQueue(connection?: ConnectionOptions): Queue<ImportJ
 
 export function createExportQueue(connection?: ConnectionOptions): Queue<ExportJobData> {
   return new Queue(EXPORT_QUEUE, { connection: connection ?? getRedisConnection() });
+}
+
+export function createScheduledSyncQueue(
+  connection?: ConnectionOptions,
+): Queue<ScheduledSyncJobData> {
+  return new Queue(SCHEDULED_SYNC_QUEUE, { connection: connection ?? getRedisConnection() });
 }
