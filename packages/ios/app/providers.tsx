@@ -178,11 +178,7 @@ export function ProviderCard({
         </View>
       )}
 
-      {stats && (
-        <View style={styles.statsRow}>
-          <ProviderStatsBreakdown stats={stats} />
-        </View>
-      )}
+      {stats && <ProviderStatsBreakdown stats={stats} />}
     </TouchableOpacity>
   );
 }
@@ -888,16 +884,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
 
-  // Stats row
-  statsRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    marginTop: 10,
-    paddingTop: 10,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.surfaceSecondary,
-  },
 
   // Sync history logs
   logRow: {

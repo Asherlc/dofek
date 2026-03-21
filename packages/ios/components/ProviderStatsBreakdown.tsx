@@ -48,7 +48,7 @@ export function ProviderStatsBreakdown({
   }
 
   return (
-    <View style={styles.statsRow}>
+    <View style={styles.compactRow}>
       {breakdown.map((b) => (
         <StatBadge key={b.label} label={b.label} count={b.count} />
       ))}
@@ -81,6 +81,15 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
+  },
+  compactRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.surfaceSecondary,
   },
   statBadge: {
     flexDirection: "row",
