@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { analyzeNutrition } from "../lib/ai-nutrition.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
+import { logger } from "../logger.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
 const mealValues = ["breakfast", "lunch", "dinner", "snack", "other"] as const;
@@ -287,6 +288,9 @@ export const foodRouter = router({
               AND date = ${input.date}::date
             ORDER BY meal ASC, food_name ASC`,
       );
+      if (rows.length === 0) {
+        logger.info(`[food] byDate returned 0 rows for userId=${ctx.userId} date=${input.date}`);
+      }
       return rows;
     }),
 
