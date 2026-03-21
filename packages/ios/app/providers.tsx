@@ -1,3 +1,4 @@
+import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -15,6 +16,7 @@ import * as WebBrowser from "expo-web-browser";
 import { trpc } from "../lib/trpc";
 import { useAuth } from "../lib/auth-context";
 import { importSharedFile, type ShareImportProgress } from "../lib/share-import";
+import { ProviderStatsBreakdown } from "../components/ProviderStatsBreakdown";
 import { colors } from "../theme";
 import { formatRelativeTime } from "@dofek/format/format";
 
@@ -34,18 +36,6 @@ interface Provider {
   importOnly: boolean;
 }
 
-interface ProviderStats {
-  activities: number;
-  sleepSessions: number;
-  bodyMeasurements: number;
-  foodEntries: number;
-  dailyMetrics: number;
-  healthEvents: number;
-  metricStream: number;
-  nutritionDaily: number;
-  labResults: number;
-  journalEntries: number;
-}
 
 interface SyncLog {
   id: string;
@@ -100,16 +90,6 @@ function importProviderLabel(providerId: string | undefined): string {
     default:
       return "Shared file";
   }
-}
-
-function StatBadge({ label, count }: { label: string; count: number }) {
-  if (count === 0) return null;
-  return (
-    <View style={styles.statBadge}>
-      <Text style={styles.statBadgeCount}>{count.toLocaleString()}</Text>
-      <Text style={styles.statBadgeLabel}>{label}</Text>
-    </View>
-  );
 }
 
 export function ProviderCard({
@@ -200,11 +180,7 @@ export function ProviderCard({
 
       {stats && (
         <View style={styles.statsRow}>
-          <StatBadge label="activities" count={stats.activities} />
-          <StatBadge label="sleep" count={stats.sleepSessions} />
-          <StatBadge label="body" count={stats.bodyMeasurements} />
-          <StatBadge label="food" count={stats.foodEntries + stats.nutritionDaily} />
-          <StatBadge label="metrics" count={stats.dailyMetrics + stats.metricStream} />
+          <ProviderStatsBreakdown stats={stats} />
         </View>
       )}
     </TouchableOpacity>
@@ -921,24 +897,6 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.surfaceSecondary,
-  },
-  statBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: colors.surfaceSecondary,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  statBadgeCount: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: colors.text,
-  },
-  statBadgeLabel: {
-    fontSize: 12,
-    color: colors.textSecondary,
   },
 
   // Sync history logs
