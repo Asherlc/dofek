@@ -172,6 +172,16 @@ export default function SleepScreen() {
                       </View>
                     </View>
                   </View>
+                  <View style={styles.legend}>
+                    <View style={styles.legendItem}>
+                      <View style={[styles.legendLine, { backgroundColor: colors.purple }]} />
+                      <Text style={styles.legendText}>Consistency Score</Text>
+                    </View>
+                    <View style={styles.legendItem}>
+                      <View style={[styles.legendDashed, { borderColor: "#3a3a3e" }]} />
+                      <Text style={styles.legendText}>Average</Text>
+                    </View>
+                  </View>
                 );
               })()}
             </View>
@@ -315,6 +325,32 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: colors.textTertiary,
     fontVariant: ["tabular-nums"],
+  },
+  legend: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 16,
+    marginTop: 8,
+  },
+  legendItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  legendLine: {
+    width: 14,
+    height: 2,
+    borderRadius: 1,
+  },
+  legendDashed: {
+    width: 14,
+    height: 0,
+    borderTopWidth: 1,
+    borderStyle: "dashed",
+  },
+  legendText: {
+    fontSize: 10,
+    color: colors.textTertiary,
   },
   nightlyStack: {
     gap: 12,
