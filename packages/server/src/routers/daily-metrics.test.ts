@@ -18,10 +18,11 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   return {
     ...original,
     executeWithSchema: vi.fn(
-      async (db: { execute: () => Promise<unknown[]> }, schema: z.ZodType) => {
-        const rows = await db.execute();
-        return rows.map((row) => schema.parse(row));
-      },
+      async (
+        db: { execute: (query: unknown) => Promise<unknown[]> },
+        _schema: unknown,
+        query: unknown,
+      ) => db.execute(query),
     ),
   };
 });
