@@ -27,9 +27,13 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
 });
 
 const mockLinearRegression = vi.fn();
-vi.mock("../lib/math.ts", () => ({
-  linearRegression: (...args: unknown[]) => mockLinearRegression(...args),
-}));
+vi.mock("@dofek/training/power-analysis", async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return {
+    ...actual,
+    linearRegression: (...args: unknown[]) => mockLinearRegression(...args),
+  };
+});
 
 vi.mock("dofek/personalization/storage", () => ({
   loadPersonalizedParams: vi.fn().mockResolvedValue(null),

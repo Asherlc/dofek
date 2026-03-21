@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import type { z } from "zod";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
