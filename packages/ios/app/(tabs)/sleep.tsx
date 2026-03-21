@@ -150,38 +150,40 @@ export default function SleepScreen() {
                 const last = scored[scored.length - 1];
                 if (!first || !last) return null;
                 return (
-                  <View style={styles.chartWithAxes}>
-                    <View style={styles.yAxis}>
-                      <Text style={styles.axisLabel}>100</Text>
-                      <Text style={styles.axisLabel}>0</Text>
-                    </View>
-                    <View style={styles.chartBody}>
-                      <SparkLine
-                        data={scored.map((c) => c.consistencyScore)}
-                        height={60}
-                        color={colors.purple}
-                        showBaseline
-                      />
-                      <View style={styles.xAxis}>
-                        <Text style={styles.axisLabel}>
-                          {new Date(first.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                        </Text>
-                        <Text style={styles.axisLabel}>
-                          {new Date(last.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                        </Text>
+                  <>
+                    <View style={styles.chartWithAxes}>
+                      <View style={styles.yAxis}>
+                        <Text style={styles.axisLabel}>100</Text>
+                        <Text style={styles.axisLabel}>0</Text>
+                      </View>
+                      <View style={styles.chartBody}>
+                        <SparkLine
+                          data={scored.map((c) => c.consistencyScore)}
+                          height={60}
+                          color={colors.purple}
+                          showBaseline
+                        />
+                        <View style={styles.xAxis}>
+                          <Text style={styles.axisLabel}>
+                            {new Date(first.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                          </Text>
+                          <Text style={styles.axisLabel}>
+                            {new Date(last.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                          </Text>
+                        </View>
                       </View>
                     </View>
-                  </View>
-                  <View style={styles.legend}>
-                    <View style={styles.legendItem}>
-                      <View style={[styles.legendLine, { backgroundColor: colors.purple }]} />
-                      <Text style={styles.legendText}>Consistency Score</Text>
+                    <View style={styles.legend}>
+                      <View style={styles.legendItem}>
+                        <View style={[styles.legendLine, { backgroundColor: colors.purple }]} />
+                        <Text style={styles.legendText}>Consistency Score</Text>
+                      </View>
+                      <View style={styles.legendItem}>
+                        <View style={[styles.legendDashed, { borderColor: "#3a3a3e" }]} />
+                        <Text style={styles.legendText}>Average</Text>
+                      </View>
                     </View>
-                    <View style={styles.legendItem}>
-                      <View style={[styles.legendDashed, { borderColor: "#3a3a3e" }]} />
-                      <Text style={styles.legendText}>Average</Text>
-                    </View>
-                  </View>
+                  </>
                 );
               })()}
             </View>
