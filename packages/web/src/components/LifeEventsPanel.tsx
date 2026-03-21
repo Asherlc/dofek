@@ -159,7 +159,7 @@ function AddEventForm({
   const [eventType, setEventType] = useState<"point" | "range" | "ongoing">("point");
 
   return (
-    <div className="rounded-lg card p-4 space-y-3">
+    <div className="card p-4 space-y-3">
       <div className="grid grid-cols-2 gap-3">
         <div className="col-span-2">
           <label htmlFor="life-event-label" className="text-xs text-subtle block mb-1">
@@ -333,7 +333,7 @@ function EventAnalysis({
   const periodLabel = event.ended_at ? "During" : event.ongoing ? "Since" : "After";
 
   return (
-    <div className="rounded-lg card p-4 space-y-4">
+    <div className="card p-4 space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-sm font-medium text-foreground">
