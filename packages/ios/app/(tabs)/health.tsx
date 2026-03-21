@@ -75,11 +75,11 @@ function normalizeWorkoutsForSync(workouts: WorkoutSample[]): WorkoutSample[] {
 }
 
 const NAV_LINKS = [
+  { route: "/sleep" as const, label: "Sleep", emoji: "\uD83C\uDF19", description: "Sleep stages, debt & patterns" },
   { route: "/correlation" as const, label: "Correlation Explorer", emoji: "\u{1F50D}", description: "See how any two metrics relate" },
-  { route: "/training" as const, label: "Training", emoji: "\u{1F3CB}\u{FE0F}", description: "Performance, endurance & recovery" },
-  { route: "/providers" as const, label: "Data Sources", emoji: "🔗", description: "Manage providers & sync history" },
-  { route: "/tracking" as const, label: "Tracking", emoji: "📋", description: "Life events & supplements" },
-  { route: "/settings" as const, label: "Settings", emoji: "⚙️", description: "Accounts, units & export" },
+  { route: "/providers" as const, label: "Data Sources", emoji: "\uD83D\uDD17", description: "Manage providers & sync history" },
+  { route: "/tracking" as const, label: "Tracking", emoji: "\uD83D\uDCCB", description: "Life events" },
+  { route: "/settings" as const, label: "Settings", emoji: "\u2699\uFE0F", description: "Accounts, units & export" },
 ];
 
 export default function HealthScreen() {

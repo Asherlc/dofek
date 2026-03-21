@@ -574,9 +574,9 @@ export function Dashboard() {
           </p>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             <DashboardLink to="/training" label="Training" />
+            <DashboardLink to="/sleep" label="Sleep" />
             <DashboardLink to="/nutrition" label="Nutrition" />
-            <DashboardLink to="/insights" label="Insights" />
-            <DashboardLink to="/tracking" label="Tracking" />
+            <DashboardLink to="/body" label="Body" />
           </div>
         </section>
 
