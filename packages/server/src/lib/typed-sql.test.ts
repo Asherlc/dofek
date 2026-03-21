@@ -123,6 +123,15 @@ describe("dateStringSchema", () => {
     expect(() => dateStringSchema.parse(null)).toThrow(z.ZodError);
     expect(() => dateStringSchema.parse(undefined)).toThrow(z.ZodError);
   });
+
+  it("rejects empty strings", () => {
+    expect(() => dateStringSchema.parse("")).toThrow(z.ZodError);
+  });
+
+  it("rejects non-date strings", () => {
+    expect(() => dateStringSchema.parse("not-a-date")).toThrow(z.ZodError);
+    expect(() => dateStringSchema.parse("hello")).toThrow(z.ZodError);
+  });
 });
 
 describe("timestampStringSchema", () => {
