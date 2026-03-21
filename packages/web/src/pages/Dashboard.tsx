@@ -16,6 +16,7 @@ import { OnboardingWelcome } from "../components/OnboardingWelcome.tsx";
 import { SleepChart } from "../components/SleepChart.tsx";
 import { SleepNeedCard } from "../components/SleepNeedCard.tsx";
 import { SmoothedWeightChart } from "../components/SmoothedWeightChart.tsx";
+import { StrainCard } from "../components/StrainCard.tsx";
 import { StressChart } from "../components/StressChart.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { TimeSeriesChart } from "../components/TimeSeriesChart.tsx";
@@ -100,6 +101,7 @@ const activityRowSchema = z.object({
 
 /** Sections that render side-by-side in a 2-column grid. The key is the "primary" (left) section. */
 const GRID_PAIRS: Record<string, string> = {
+  strain: "nextWorkout",
   weeklyReport: "sleepNeed",
   stress: "healthspan",
   spo2Temp: "steps",
@@ -107,6 +109,7 @@ const GRID_PAIRS: Record<string, string> = {
 
 /** Reverse lookup: secondary -> primary */
 const GRID_PAIR_SECONDARY: Record<string, string> = {
+  nextWorkout: "strain",
   sleepNeed: "weeklyReport",
   healthspan: "stress",
   steps: "spo2Temp",
@@ -128,6 +131,7 @@ export function buildSkinTempSeries(metrics: DailyMetricRow[], unitSystem: UnitS
 
 export const DASHBOARD_SECTION_IDS = new Set([
   "healthMonitor",
+  "strain",
   "weeklyReport",
   "sleepNeed",
   "nextWorkout",
@@ -164,6 +168,7 @@ export function Dashboard() {
   const stressData = trpc.stress.scores.useQuery({ days });
   const weeklyReport = trpc.weeklyReport.report.useQuery({ weeks: Math.ceil(days / 7) });
   const nextWorkout = trpc.training.nextWorkout.useQuery();
+  const workloadRatio = trpc.recovery.workloadRatio.useQuery({ days });
   const healthspan = trpc.healthspan.score.useQuery({ weeks: Math.max(Math.ceil(days / 7), 4) });
   const anomalyCheck = trpc.anomalyDetection.check.useQuery({});
   const smoothedWeight = trpc.bodyAnalytics.smoothedWeight.useQuery({ days: Math.max(days, 90) });
@@ -295,6 +300,11 @@ export function Dashboard() {
       title: "Weekly Performance",
       subtitle: "Strain balance, sleep vs average, key vitals",
       content: <WeeklyReportCard data={weeklyReport.data} loading={weeklyReport.isLoading} />,
+    },
+    strain: {
+      title: "Strain",
+      subtitle: "Current training strain on a 0-21 scale with acute/chronic workload balance",
+      content: <StrainCard data={workloadRatio.data} loading={workloadRatio.isLoading} />,
     },
     nextWorkout: {
       title: "Next Workout",
