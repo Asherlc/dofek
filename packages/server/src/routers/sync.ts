@@ -353,19 +353,23 @@ export const syncRouter = router({
 
   /** Per-provider record counts broken down by table */
   providerStats: cachedProtectedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
-    const rows = await ctx.db.execute<{
-      provider_id: string;
-      activities: string;
-      daily_metrics: string;
-      sleep_sessions: string;
-      body_measurements: string;
-      food_entries: string;
-      health_events: string;
-      metric_stream: string;
-      nutrition_daily: string;
-      lab_results: string;
-      journal_entries: string;
-    }>(sql`
+    const providerStatsRowSchema = z.object({
+      provider_id: z.string(),
+      activities: z.string(),
+      daily_metrics: z.string(),
+      sleep_sessions: z.string(),
+      body_measurements: z.string(),
+      food_entries: z.string(),
+      health_events: z.string(),
+      metric_stream: z.string(),
+      nutrition_daily: z.string(),
+      lab_results: z.string(),
+      journal_entries: z.string(),
+    });
+    const rows = await executeWithSchema(
+      ctx.db,
+      providerStatsRowSchema,
+      sql`
       SELECT
         p.id AS provider_id,
         COALESCE(a.cnt, 0)::text AS activities,
@@ -390,7 +394,8 @@ export const syncRouter = router({
       LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.lab_result WHERE user_id = ${ctx.userId} GROUP BY provider_id) lr ON lr.provider_id = p.id
       LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.journal_entry WHERE user_id = ${ctx.userId} GROUP BY provider_id) je ON je.provider_id = p.id
       ORDER BY p.id
-    `);
+    `,
+    );
     return mapProviderStats(rows);
   }),
 });

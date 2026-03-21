@@ -6,12 +6,12 @@ import {
   exchangeCodeForTokens,
   generateCodeChallenge,
   generateCodeVerifier,
-  refreshAccessToken,
 } from "../auth/oauth.ts";
+import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { activity, metricStream } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
-import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import { ensureProvider } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
 import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
 
@@ -526,21 +526,13 @@ export class PelotonProvider implements Provider {
   }
 
   private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
-    const tokens = await loadTokens(db, this.id);
-    if (!tokens) {
-      throw new Error("No OAuth tokens found for Peloton. Run: pnpm dev auth peloton");
-    }
-
-    if (tokens.expiresAt > new Date()) {
-      return tokens;
-    }
-
-    logger.info("[peloton] Access token expired, refreshing...");
-    const config = pelotonOAuthConfig();
-    if (!tokens.refreshToken) throw new Error("No refresh token for Peloton");
-    const refreshed = await refreshAccessToken(config, tokens.refreshToken, this.fetchFn);
-    await saveTokens(db, this.id, refreshed);
-    return refreshed;
+    return resolveOAuthTokens({
+      db,
+      providerId: this.id,
+      providerName: this.name,
+      getOAuthConfig: () => pelotonOAuthConfig(),
+      fetchFn: this.fetchFn,
+    });
   }
 
   async sync(

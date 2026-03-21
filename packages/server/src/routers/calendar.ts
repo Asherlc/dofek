@@ -1,6 +1,14 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+
+const calendarRowSchema = z.object({
+  date: dateStringSchema,
+  activity_count: z.coerce.number(),
+  total_minutes: z.coerce.number(),
+  activity_types: z.array(z.string()),
+});
 
 export interface CalendarDay {
   date: string;
@@ -17,13 +25,10 @@ export const calendarRouter = router({
       }),
     )
     .query(async ({ ctx, input }): Promise<CalendarDay[]> => {
-      const rows = await ctx.db.execute<{
-        date: string;
-        activity_count: number;
-        total_minutes: string;
-        activity_types: string[];
-      }>(sql`
-        SELECT
+      const rows = await executeWithSchema(
+        ctx.db,
+        calendarRowSchema,
+        sql`SELECT
           a.started_at::date as date,
           COUNT(*)::int as activity_count,
           ROUND(SUM(EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 60)::numeric) as total_minutes,
@@ -33,13 +38,13 @@ export const calendarRouter = router({
           AND a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
           AND a.ended_at IS NOT NULL
         GROUP BY a.started_at::date
-        ORDER BY date
-      `);
+        ORDER BY date`,
+      );
 
       return rows.map((r) => ({
-        date: String(r.date),
-        activityCount: Number(r.activity_count),
-        totalMinutes: Number(r.total_minutes),
+        date: r.date,
+        activityCount: r.activity_count,
+        totalMinutes: r.total_minutes,
         activityTypes: r.activity_types,
       }));
     }),
