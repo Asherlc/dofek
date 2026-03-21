@@ -42,6 +42,16 @@ export interface SyncResult {
 	endDate: string;
 }
 
+/** Check whether HealthKit authorization has already been requested.
+ * Returns "unnecessary" if the user has already been asked,
+ * "shouldRequest" if permissions still need to be requested,
+ * or "unavailable"/"unknown" for edge cases. */
+export async function getRequestStatus(): Promise<
+	"unnecessary" | "shouldRequest" | "unavailable" | "unknown"
+> {
+	return HealthKitModule.getRequestStatus();
+}
+
 /** Request HealthKit read/write permissions for all data types we need */
 export async function requestPermissions(): Promise<boolean> {
 	return HealthKitModule.requestPermissions();

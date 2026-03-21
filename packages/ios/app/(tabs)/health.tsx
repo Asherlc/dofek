@@ -1,10 +1,11 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import { useRouter } from "expo-router";
 import { useAuth } from "../../lib/auth-context";
 import { colors } from "../../theme";
 import {
   enableBackgroundDelivery,
+  getRequestStatus,
   isAvailable,
   queryDailyStatistics,
   queryQuantitySamples,
@@ -113,6 +114,15 @@ export default function HealthScreen() {
   const setBackfillComplete = trpc.settings.set.useMutation();
 
   const available = isAvailable();
+
+  useEffect(() => {
+    if (!available) return;
+    getRequestStatus().then((status) => {
+      if (status === "unnecessary") {
+        setPermissionsGranted(true);
+      }
+    });
+  }, [available]);
 
   async function handleRequestPermissions() {
     try {

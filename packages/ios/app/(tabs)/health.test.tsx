@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const TEST_SERVER_URL = "https://test.dofek.example.com";
+const mockGetRequestStatus = vi.fn();
 const mockRequestPermissions = vi.fn();
 const mockQueryDailyStatistics = vi.fn();
 const mockQueryQuantitySamples = vi.fn();
@@ -51,6 +52,7 @@ vi.mock("expo-router", () => ({
 
 vi.mock("../../modules/health-kit", () => ({
 	isAvailable: () => true,
+	getRequestStatus: mockGetRequestStatus,
 	requestPermissions: mockRequestPermissions,
 	queryDailyStatistics: mockQueryDailyStatistics,
 	queryQuantitySamples: mockQueryQuantitySamples,
@@ -102,6 +104,8 @@ vi.mock("../../lib/auth-context", () => ({
 
 describe("HealthScreen", () => {
 	beforeEach(() => {
+		mockGetRequestStatus.mockReset();
+		mockGetRequestStatus.mockResolvedValue("shouldRequest");
 		mockRequestPermissions.mockReset();
 		mockQueryDailyStatistics.mockReset();
 		mockQueryQuantitySamples.mockReset();
@@ -123,6 +127,25 @@ describe("HealthScreen", () => {
 		mockPushSleepMutate.mockResolvedValue({ inserted: 0 });
 		// Default: backfill already completed
 		mockSettingsGet.mockReturnValue({ data: { value: true }, isLoading: false });
+	});
+
+	it("hides request permissions button when permissions already granted", async () => {
+		mockGetRequestStatus.mockResolvedValue("unnecessary");
+		const { default: HealthScreen } = await import("./health");
+		render(<HealthScreen />);
+		await waitFor(() => {
+			expect(screen.getByText("HealthKit permissions granted.")).toBeTruthy();
+		});
+		expect(screen.queryByText("Request Permissions")).toBeNull();
+	});
+
+	it("shows request permissions button when permissions not yet requested", async () => {
+		mockGetRequestStatus.mockResolvedValue("shouldRequest");
+		const { default: HealthScreen } = await import("./health");
+		render(<HealthScreen />);
+		await waitFor(() => {
+			expect(screen.getByText("Request Permissions")).toBeTruthy();
+		});
 	});
 
 	it("renders the server URL from auth context", async () => {

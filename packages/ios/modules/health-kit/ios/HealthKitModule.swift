@@ -11,6 +11,27 @@ public class HealthKitModule: Module {
             return HKHealthStore.isHealthDataAvailable()
         }
 
+        AsyncFunction("getRequestStatus") { (promise: Promise) in
+            guard HKHealthStore.isHealthDataAvailable() else {
+                promise.resolve("unavailable")
+                return
+            }
+            self.healthStore.statusForAuthorizationRequest(toShare: writeTypes, read: readTypes) { status, error in
+                if let error = error {
+                    promise.reject("HEALTHKIT_STATUS_ERROR", error.localizedDescription)
+                    return
+                }
+                switch status {
+                case .unnecessary:
+                    promise.resolve("unnecessary")
+                case .shouldRequest:
+                    promise.resolve("shouldRequest")
+                default:
+                    promise.resolve("unknown")
+                }
+            }
+        }
+
         AsyncFunction("requestPermissions") { (promise: Promise) in
             guard HKHealthStore.isHealthDataAvailable() else {
                 promise.resolve(false)
