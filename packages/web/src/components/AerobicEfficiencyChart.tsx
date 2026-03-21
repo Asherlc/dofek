@@ -8,6 +8,7 @@ import {
   dofekSeries,
   dofekTooltip,
 } from "../lib/chartTheme.ts";
+import { formatNumber } from "../lib/format.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
 const ACTIVITY_COLORS: Record<string, string> = {
@@ -120,7 +121,7 @@ export function AerobicEfficiencyChart({
         return [
           `<strong>${String(data.name)}</strong>`,
           `Date: ${date}`,
-          `Efficiency: ${ef.toFixed(3)} W/bpm`,
+          `Efficiency: ${formatNumber(ef, 3)} W/bpm`,
           `Avg Power (Zone 2): ${String(data.avgPower)}W`,
           `Avg Heart Rate (Zone 2): ${String(data.avgHr)} bpm`,
           `Zone 2 time: ${mins} min`,

@@ -103,7 +103,7 @@ export function ReadinessScoreCard({ data, loading }: ReadinessScoreCardProps) {
         <ComponentBar label="Heart Rate Variability" value={latest.components.hrvScore} />
         <ComponentBar label="Resting Heart Rate" value={latest.components.restingHrScore} />
         <ComponentBar label="Sleep" value={latest.components.sleepScore} />
-        <ComponentBar label="Load Balance" value={latest.components.loadBalanceScore} />
+        <ComponentBar label="Respiratory Rate" value={latest.components.respiratoryRateScore} />
       </div>
     </div>
   );

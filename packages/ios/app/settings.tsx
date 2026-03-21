@@ -1,4 +1,8 @@
+import { useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
+import { File as ExpoFile, Paths } from "expo-file-system";
+import * as Sharing from "expo-sharing";
+import { z } from "zod";
 import { providerLabel } from "@dofek/providers/providers";
 import { PersonalizationPanel } from "../components/PersonalizationPanel";
 import { SlackIntegrationPanel } from "../components/SlackIntegrationPanel";
@@ -13,11 +17,27 @@ const UNIT_OPTIONS: { value: UnitSystem; label: string; description: string }[] 
   { value: "imperial", label: "Imperial", description: "lbs, mi, °F" },
 ];
 
+type ExportState = "idle" | "processing" | "done" | "error";
+
+const ExportTriggerSchema = z.object({ jobId: z.string() });
+
+const ExportStatusSchema = z.object({
+  status: z.string(),
+  progress: z.number().optional(),
+  message: z.string().optional(),
+  downloadUrl: z.string().optional(),
+});
+
 export default function SettingsScreen() {
   const auth = useAuth();
   const { width } = useWindowDimensions();
   const isWide = width >= 600;
   const trpcUtils = trpc.useUtils();
+
+  // ── Data Export ──
+  const [exportState, setExportState] = useState<ExportState>("idle");
+  const [exportProgress, setExportProgress] = useState(0);
+  const [exportMessage, setExportMessage] = useState("");
 
   // ── Linked Accounts ──
   const linkedAccounts = trpc.auth.linkedAccounts.useQuery();
@@ -69,6 +89,87 @@ export default function SettingsScreen() {
         onPress: () => auth.logout(),
       },
     ]);
+  }
+
+  async function handleExport() {
+    setExportState("processing");
+    setExportProgress(0);
+    setExportMessage("Starting export...");
+
+    try {
+      const triggerRes = await fetch(`${auth.serverUrl}/api/export`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${auth.sessionToken}` },
+      });
+
+      if (!triggerRes.ok) {
+        setExportState("error");
+        setExportMessage("Failed to start export");
+        return;
+      }
+
+      const triggerData = ExportTriggerSchema.parse(await triggerRes.json());
+      const { jobId } = triggerData;
+
+      // Poll for status
+      const deadline = Date.now() + 10 * 60 * 1000;
+      while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 1000));
+
+        const statusRes = await fetch(`${auth.serverUrl}/api/export/status/${jobId}`, {
+          headers: { Authorization: `Bearer ${auth.sessionToken}` },
+        });
+
+        if (!statusRes.ok) {
+          setExportState("error");
+          setExportMessage("Failed to check export status");
+          return;
+        }
+
+        const status = ExportStatusSchema.parse(await statusRes.json());
+        setExportProgress(status.progress ?? 0);
+        setExportMessage(status.message ?? "");
+
+        if (status.status === "done" && status.downloadUrl) {
+          setExportMessage("Downloading...");
+          const downloadUrl = status.downloadUrl.startsWith("http")
+            ? status.downloadUrl
+            : `${auth.serverUrl}${status.downloadUrl}`;
+          const downloadRes = await fetch(downloadUrl, {
+            headers: { Authorization: `Bearer ${auth.sessionToken}` },
+          });
+          if (!downloadRes.ok) {
+            setExportState("error");
+            setExportMessage("Failed to download export");
+            return;
+          }
+          const blob = await downloadRes.blob();
+          const file = new ExpoFile(Paths.cache, "health-export.zip");
+          const arrayBuffer = await blob.arrayBuffer();
+          const bytes = new Uint8Array(arrayBuffer);
+          file.write(bytes);
+          setExportState("done");
+          setExportMessage("Export complete");
+          await Sharing.shareAsync(file.uri, {
+            mimeType: "application/zip",
+            dialogTitle: "Save Health Data Export",
+          });
+          return;
+        }
+
+        if (status.status === "error") {
+          setExportState("error");
+          setExportMessage(status.message ?? "Export failed");
+          return;
+        }
+      }
+
+      setExportState("error");
+      setExportMessage("Export timed out");
+    } catch {
+      setExportState("error");
+      setExportMessage("Network error during export");
+    }
   }
 
   function handleDeleteAllUserData() {
@@ -170,6 +271,40 @@ export default function SettingsScreen() {
         <Text style={styles.sectionDescription}>Connect external services</Text>
         <View style={styles.card}>
           <SlackIntegrationPanel />
+        </View>
+      </View>
+
+      {/* ── Data Export ── */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Data Export</Text>
+        <Text style={styles.sectionDescription}>
+          Download all your health data as a ZIP file containing JSON files
+        </Text>
+        <View style={styles.card}>
+          {exportState === "processing" && (
+            <View style={styles.exportProgressContainer}>
+              <View style={styles.exportProgressTrack}>
+                <View style={[styles.exportProgressFill, { width: `${exportProgress}%` }]} />
+              </View>
+              <Text style={styles.exportMessageText}>{exportMessage}</Text>
+            </View>
+          )}
+          {exportState === "done" && (
+            <Text style={styles.exportDoneText}>Export complete</Text>
+          )}
+          {exportState === "error" && (
+            <Text style={styles.exportErrorText}>{exportMessage}</Text>
+          )}
+          <TouchableOpacity
+            style={[styles.exportButton, exportState === "processing" && styles.exportButtonDisabled]}
+            onPress={handleExport}
+            activeOpacity={0.7}
+            disabled={exportState === "processing"}
+          >
+            <Text style={styles.exportButtonText}>
+              {exportState === "processing" ? "Exporting..." : "Download My Data"}
+            </Text>
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -313,6 +448,51 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textTertiary,
     marginTop: 2,
+  },
+
+  // ── Data Export ──
+  exportProgressContainer: {
+    gap: 4,
+    marginBottom: 12,
+  },
+  exportProgressTrack: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.surfaceSecondary,
+    overflow: "hidden",
+  },
+  exportProgressFill: {
+    height: "100%",
+    borderRadius: 2,
+    backgroundColor: colors.accent,
+  },
+  exportMessageText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  exportDoneText: {
+    fontSize: 13,
+    color: colors.positive,
+    marginBottom: 12,
+  },
+  exportErrorText: {
+    fontSize: 13,
+    color: colors.danger,
+    marginBottom: 12,
+  },
+  exportButton: {
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  exportButtonDisabled: {
+    opacity: 0.5,
+  },
+  exportButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.text,
   },
 
   // ── Danger Zone ──

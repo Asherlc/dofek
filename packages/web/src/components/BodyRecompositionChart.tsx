@@ -7,6 +7,7 @@ import {
   dofekSeries,
   dofekTooltip,
 } from "../lib/chartTheme.ts";
+import { formatNumber } from "../lib/format.ts";
 import { useUnitSystem } from "../lib/unitContext.ts";
 import { convertWeight, weightLabel } from "../lib/units.ts";
 import { DofekChart } from "./DofekChart.tsx";
@@ -64,11 +65,11 @@ export function BodyRecompositionChart({ data, loading }: BodyRecompositionChart
       <div className="flex gap-4 text-sm">
         <span className={`font-medium ${fatChange <= 0 ? "text-green-400" : "text-red-400"}`}>
           Fat: {fatChange > 0 ? "+" : ""}
-          {convertWeight(fatChange, unitSystem).toFixed(1)} {weightLabel(unitSystem)}
+          {formatNumber(convertWeight(fatChange, unitSystem))} {weightLabel(unitSystem)}
         </span>
         <span className={`font-medium ${leanChange >= 0 ? "text-green-400" : "text-red-400"}`}>
           Lean: {leanChange > 0 ? "+" : ""}
-          {convertWeight(leanChange, unitSystem).toFixed(1)} {weightLabel(unitSystem)}
+          {formatNumber(convertWeight(leanChange, unitSystem))} {weightLabel(unitSystem)}
         </span>
       </div>
       <DofekChart option={option} loading={loading} />

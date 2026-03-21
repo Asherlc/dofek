@@ -1,14 +1,13 @@
+import type { ActivityHrZone } from "@dofek/zones/zones";
+import { HEART_RATE_ZONE_COLORS } from "@dofek/zones/zones";
 import { Link, useParams } from "@tanstack/react-router";
 import ReactECharts from "echarts-for-react";
 import { useEffect, useRef } from "react";
-import type {
-  ActivityDetail,
-  ActivityHrZone,
-  StreamPoint,
-} from "../../../server/src/routers/activity.ts";
+import type { ActivityDetail, StreamPoint } from "../../../server/src/routers/activity.ts";
 import { AppHeader } from "../components/AppHeader.tsx";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
+import { formatNumber } from "../lib/format.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitSystem } from "../lib/unitContext.ts";
 import type { UnitSystem } from "../lib/units.ts";
@@ -28,8 +27,6 @@ const CHART_COLORS = {
   cadence: "#8b5cf6",
   altitude: "#6b7280",
 };
-
-const ZONE_COLORS = ["#22c55e", "#84cc16", "#eab308", "#f97316", "#ef4444"];
 
 export function ActivityDetailPage() {
   const { id } = useParams({ from: "/activity/$id" });
@@ -164,7 +161,7 @@ function ActivityHeader({
   if (activity.totalDistance != null)
     stats.push({
       label: "Distance",
-      value: `${convertDistance(activity.totalDistance / 1000, unitSystem).toFixed(1)} ${distanceLabel(unitSystem)}`,
+      value: `${formatNumber(convertDistance(activity.totalDistance / 1000, unitSystem))} ${distanceLabel(unitSystem)}`,
     });
   if (activity.calories != null)
     stats.push({ label: "Calories", value: `${Math.round(activity.calories)} kcal` });
@@ -184,7 +181,7 @@ function ActivityHeader({
   if (activity.avgSpeed != null)
     stats.push({
       label: "Avg Speed",
-      value: `${convertSpeed(activity.avgSpeed * 3.6, unitSystem).toFixed(1)} ${speedLabel(unitSystem)}`,
+      value: `${formatNumber(convertSpeed(activity.avgSpeed * 3.6, unitSystem))} ${speedLabel(unitSystem)}`,
     });
   if (activity.avgCadence != null)
     stats.push({ label: "Avg Cadence", value: `${Math.round(activity.avgCadence)} rpm` });
@@ -382,7 +379,7 @@ function MetricsChart({
       type: "line",
       yAxisIndex: axisIndex,
       data: points.map((p) =>
-        p.speed != null ? +convertSpeed(p.speed * 3.6, unitSystem).toFixed(1) : null,
+        p.speed != null ? +formatNumber(convertSpeed(p.speed * 3.6, unitSystem)) : null,
       ),
       showSymbol: false,
       lineStyle: { width: 1.5, color: CHART_COLORS.speed },
@@ -573,7 +570,7 @@ function HrZonesChart({ zones, loading }: { zones: ActivityHrZone[]; loading: bo
         const zone = zones[p.dataIndex];
         if (!zone) return "";
         const percentage =
-          totalSeconds > 0 ? ((zone.seconds / totalSeconds) * 100).toFixed(1) : "0";
+          totalSeconds > 0 ? formatNumber((zone.seconds / totalSeconds) * 100) : "0";
         return `<b>${zone.label}</b> (${zone.minPct}–${zone.maxPct}% HRR)<br/>
           ${formatTime(zone.seconds)} (${percentage}%)`;
       },
@@ -598,7 +595,7 @@ function HrZonesChart({ zones, loading }: { zones: ActivityHrZone[]; loading: bo
         type: "bar",
         data: zones.map((z, i) => ({
           value: z.seconds,
-          itemStyle: { color: ZONE_COLORS[i] ?? "#6b8a6b" },
+          itemStyle: { color: HEART_RATE_ZONE_COLORS[i] ?? "#6b8a6b" },
         })),
         barWidth: "60%",
         label: {
@@ -607,7 +604,8 @@ function HrZonesChart({ zones, loading }: { zones: ActivityHrZone[]; loading: bo
           color: "#4a6a4a",
           fontSize: 11,
           formatter: (p: { value: number }) => {
-            const percentage = totalSeconds > 0 ? ((p.value / totalSeconds) * 100).toFixed(0) : "0";
+            const percentage =
+              totalSeconds > 0 ? formatNumber((p.value / totalSeconds) * 100, 0) : "0";
             return `${percentage}%`;
           },
         },

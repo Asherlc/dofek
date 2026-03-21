@@ -7,6 +7,7 @@ import {
   dofekSeries,
   dofekTooltip,
 } from "../lib/chartTheme.ts";
+import { formatNumber } from "../lib/format.ts";
 import { useUnitSystem } from "../lib/unitContext.ts";
 import { convertDistance, convertElevation, distanceLabel, elevationLabel } from "../lib/units.ts";
 import { DofekChart } from "./DofekChart.tsx";
@@ -40,9 +41,9 @@ export function ElevationGainChart({ data, loading }: ElevationGainChartProps) {
         });
         return [
           `<strong>Week of ${dateLabel}</strong>`,
-          `Elevation Gain: ${convertElevation(row.elevationGainMeters, unitSystem).toFixed(0)} ${elevationLabel(unitSystem)}`,
+          `Elevation Gain: ${formatNumber(convertElevation(row.elevationGainMeters, unitSystem), 0)} ${elevationLabel(unitSystem)}`,
           `Activities: ${row.activityCount}`,
-          `Distance: ${convertDistance(row.totalDistanceKm, unitSystem).toFixed(1)} ${distanceLabel(unitSystem)}`,
+          `Distance: ${formatNumber(convertDistance(row.totalDistanceKm, unitSystem))} ${distanceLabel(unitSystem)}`,
         ].join("<br/>");
       },
     }),

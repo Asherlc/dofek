@@ -5,6 +5,7 @@ import {
   dofekSeries,
   dofekTooltip,
 } from "../lib/chartTheme.ts";
+import { formatNumber } from "../lib/format.ts";
 import { CorrelationStrengthBar } from "./CorrelationStrengthBar.tsx";
 import { DofekChart } from "./DofekChart.tsx";
 
@@ -161,7 +162,7 @@ function ConditionalChart({ insight }: { insight: Insight }) {
       <p className="text-center text-xs text-subtle mt-1">
         <span className={diff > 0 ? "text-emerald-400" : "text-rose-400"}>
           {sign}
-          {pctDiff != null ? `${pctDiff.toFixed(0)}%` : formatValue(diff)}
+          {pctDiff != null ? `${formatNumber(pctDiff, 0)}%` : formatValue(diff)}
         </span>{" "}
         difference
       </p>
@@ -271,5 +272,5 @@ export function CorrelationCardSkeleton() {
 
 function formatValue(v: number): string {
   if (Number.isInteger(v)) return v.toLocaleString();
-  return v.toFixed(1);
+  return formatNumber(v);
 }

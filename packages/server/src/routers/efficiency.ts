@@ -1,3 +1,4 @@
+import { computePolarizationIndex } from "@dofek/zones/zones";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { enduranceTypeFilter } from "../lib/endurance-types.ts";
@@ -247,24 +248,12 @@ export const efficiencyRouter = router({
         const z2 = Number(row.z2_seconds);
         const z3 = Number(row.z3_seconds);
 
-        // Treff Polarization Index: log10((f1 / (f2 * f3)) * 100)
-        // where f = fraction of total training time (not raw seconds)
-        let polarizationIndex: number | null = null;
-        const total = z1 + z2 + z3;
-        if (z2 > 0 && z3 > 0 && z1 > 0 && total > 0) {
-          const f1 = z1 / total;
-          const f2 = z2 / total;
-          const f3 = z3 / total;
-          const ratio = (f1 / (f2 * f3)) * 100;
-          polarizationIndex = Math.round(Math.log10(ratio) * 1000) / 1000;
-        }
-
         return {
           week: String(row.week),
           z1Seconds: z1,
           z2Seconds: z2,
           z3Seconds: z3,
-          polarizationIndex,
+          polarizationIndex: computePolarizationIndex(z1, z2, z3),
         };
       });
 

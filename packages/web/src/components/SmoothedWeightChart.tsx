@@ -7,6 +7,7 @@ import {
   dofekSeries,
   dofekTooltip,
 } from "../lib/chartTheme.ts";
+import { formatNumber } from "../lib/format.ts";
 import { useUnitSystem } from "../lib/unitContext.ts";
 import { convertWeight, weightLabel } from "../lib/units.ts";
 import { DofekChart } from "./DofekChart.tsx";
@@ -88,7 +89,7 @@ export function SmoothedWeightChart({ data, loading }: SmoothedWeightChartProps)
             className={`text-lg font-semibold ${latestWeeklyChange > 0 ? "text-green-400" : latestWeeklyChange < 0 ? "text-red-400" : "text-muted"}`}
           >
             {latestWeeklyChange > 0 ? "+" : ""}
-            {convertWeight(latestWeeklyChange, unitSystem).toFixed(1)} {weightLabel(unitSystem)}
+            {formatNumber(convertWeight(latestWeeklyChange, unitSystem))} {weightLabel(unitSystem)}
             /week
           </span>
         </div>

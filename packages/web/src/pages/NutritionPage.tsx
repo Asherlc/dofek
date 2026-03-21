@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import { z } from "zod";
 import { AddFoodModal, type FoodFormData, type MealType } from "../components/AddFoodModal.tsx";
-import { AppHeader } from "../components/AppHeader.tsx";
 import { FoodEntryRow } from "../components/FoodEntryRow.tsx";
 import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
 import { MacroBar } from "../components/MacroBar.tsx";
@@ -147,10 +146,8 @@ export function NutritionPage() {
   const calorieColor = dailyTotals.totalCalories > calorieGoal ? "bg-red-500" : "bg-emerald-500";
 
   return (
-    <div className="min-h-screen bg-page text-foreground overflow-x-hidden">
-      <AppHeader />
-
-      <main className="mx-auto max-w-3xl px-3 sm:px-6 py-4 sm:py-6 space-y-6">
+    <>
+      <div className="mx-auto max-w-3xl px-3 sm:px-6 py-4 sm:py-6 space-y-6">
         {/* Date selector */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -344,7 +341,7 @@ export function NutritionPage() {
               </div>
             );
           })}
-      </main>
+      </div>
 
       <AddFoodModal
         isOpen={modalOpen}
@@ -353,6 +350,6 @@ export function NutritionPage() {
         defaultMealType={modalMealType}
         submitting={createMutation.isPending}
       />
-    </div>
+    </>
   );
 }

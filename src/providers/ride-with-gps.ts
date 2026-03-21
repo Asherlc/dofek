@@ -1,3 +1,7 @@
+import {
+  createActivityTypeMapper,
+  RIDE_WITH_GPS_ACTIVITY_TYPE_MAP,
+} from "@dofek/training/training";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
@@ -7,10 +11,10 @@ import type { SyncDatabase } from "../db/index.ts";
 import { activity, DEFAULT_USER_ID, metricStream, userSettings } from "../db/schema.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import type {
-  Provider,
   ProviderAuthSetup,
   ProviderIdentity,
   SyncError,
+  SyncProvider,
   SyncResult,
 } from "./types.ts";
 
@@ -141,23 +145,11 @@ export function rideWithGpsOAuthConfig(): OAuthConfig | null {
 // Activity type mapping
 // ============================================================
 
-const ACTIVITY_TYPE_MAP: Record<string, string> = {
-  cycling: "cycling",
-  mountain_biking: "cycling",
-  road_cycling: "cycling",
-  gravel_cycling: "cycling",
-  cyclocross: "cycling",
-  track_cycling: "cycling",
-  running: "running",
-  trail_running: "running",
-  walking: "walking",
-  hiking: "hiking",
-  swimming: "swimming",
-};
+const mapRwgpsType = createActivityTypeMapper(RIDE_WITH_GPS_ACTIVITY_TYPE_MAP);
 
 export function mapActivityType(rawType: string | null | undefined): string {
   if (!rawType) return "cycling";
-  return ACTIVITY_TYPE_MAP[rawType] ?? "other";
+  return mapRwgpsType(rawType);
 }
 
 // ============================================================
@@ -311,7 +303,7 @@ async function saveSyncCursor(db: SyncDatabase, cursor: string): Promise<void> {
 
 const METRIC_STREAM_BATCH_SIZE = 500;
 
-export class RideWithGpsProvider implements Provider {
+export class RideWithGpsProvider implements SyncProvider {
   readonly id = "ride-with-gps";
   readonly name = "RideWithGPS";
   private fetchFn: typeof globalThis.fetch;

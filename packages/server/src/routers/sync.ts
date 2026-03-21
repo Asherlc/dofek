@@ -143,6 +143,11 @@ export const syncRouter = router({
     const all = getAllProviders();
 
     // Batch: load all tokens + last sync times in 2 queries instead of 2N
+    const providerIdRowSchema = z.object({ provider_id: z.string() });
+    const lastSyncRowSchema = z.object({
+      provider_id: z.string(),
+      last_synced: z.string(),
+    });
     const [allTokens, lastSyncs] = await Promise.all([
       executeWithSchema(
         ctx.db,

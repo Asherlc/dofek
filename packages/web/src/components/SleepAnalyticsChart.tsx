@@ -1,5 +1,6 @@
 import type { SleepNightlyRow } from "dofek-server/types";
 import { dofekAxis, dofekGrid, dofekLegend, dofekSeries, dofekTooltip } from "../lib/chartTheme.ts";
+import { formatNumber } from "../lib/format.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
 interface SleepAnalyticsChartProps {
@@ -51,7 +52,7 @@ export function buildSleepAnalyticsOption(nightly: SleepNightlyRow[], sleepDebt:
           }
           if (p.value[1] == null) continue;
           const mins = Math.round((p.value[1] / 100) * night.durationMinutes);
-          html += `<div>${p.marker} ${p.seriesName}: <b>${p.value[1].toFixed(1)}%</b> (${mins}m)</div>`;
+          html += `<div>${p.marker} ${p.seriesName}: <b>${formatNumber(p.value[1])}%</b> (${mins}m)</div>`;
         }
         return html;
       },

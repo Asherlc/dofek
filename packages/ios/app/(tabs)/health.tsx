@@ -1,11 +1,13 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import { useRouter } from "expo-router";
 import { useAuth } from "../../lib/auth-context";
 import { colors } from "../../theme";
 import {
   enableBackgroundDelivery,
+  getRequestStatus,
   isAvailable,
+  isBackgroundDeliveryEnabled,
   queryDailyStatistics,
   queryQuantitySamples,
   querySleepSamples,
@@ -75,18 +77,20 @@ function normalizeWorkoutsForSync(workouts: WorkoutSample[]): WorkoutSample[] {
 }
 
 const NAV_LINKS = [
+  { route: "/sleep" as const, label: "Sleep", emoji: "\uD83C\uDF19", description: "Sleep stages, debt & patterns" },
   { route: "/correlation" as const, label: "Correlation Explorer", emoji: "\u{1F50D}", description: "See how any two metrics relate" },
-  { route: "/training" as const, label: "Training", emoji: "\u{1F3CB}\u{FE0F}", description: "Performance, endurance & recovery" },
-  { route: "/providers" as const, label: "Data Sources", emoji: "🔗", description: "Manage providers & sync history" },
-  { route: "/tracking" as const, label: "Tracking", emoji: "📋", description: "Life events & supplements" },
-  { route: "/settings" as const, label: "Settings", emoji: "⚙️", description: "Accounts, units & export" },
+  { route: "/providers" as const, label: "Data Sources", emoji: "\uD83D\uDD17", description: "Manage providers & sync history" },
+  { route: "/tracking" as const, label: "Tracking", emoji: "\uD83D\uDCCB", description: "Life events" },
+  { route: "/settings" as const, label: "Settings", emoji: "\u2699\uFE0F", description: "Accounts, units & export" },
 ];
 
 export default function HealthScreen() {
   const router = useRouter();
   const { user, serverUrl, logout } = useAuth();
   const [permissionsGranted, setPermissionsGranted] = useState(false);
-  const [backgroundEnabled, setBackgroundEnabled] = useState(false);
+  const [backgroundEnabled, setBackgroundEnabled] = useState(() =>
+    isAvailable() ? isBackgroundDeliveryEnabled() : false,
+  );
   const [status, setStatus] = useState<SyncStatus>({
     lastSync: null,
     syncing: false,
@@ -113,6 +117,19 @@ export default function HealthScreen() {
   const setBackfillComplete = trpc.settings.set.useMutation();
 
   const available = isAvailable();
+
+  useEffect(() => {
+    if (!available) return;
+    getRequestStatus()
+      .then((status) => {
+        if (status === "unnecessary") {
+          setPermissionsGranted(true);
+        }
+      })
+      .catch(() => {
+        // Fall through — show Request Permissions button as fallback
+      });
+  }, [available]);
 
   async function handleRequestPermissions() {
     try {

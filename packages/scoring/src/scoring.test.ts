@@ -18,13 +18,46 @@ import {
   sleepDebtColor,
   strainColor,
   strainLabel,
+  strainZoneColor,
+  strainZoneLabel,
   stressColor,
   stressLabel,
   trendColor,
   trendDirection,
   workloadRatioColor,
   workloadRatioHint,
+  zScoreToRecoveryScore,
 } from "./scoring.ts";
+
+describe("zScoreToRecoveryScore", () => {
+  it("maps z=0 to 62 (Whoop-aligned average)", () => {
+    expect(zScoreToRecoveryScore(0)).toBe(62);
+  });
+  it("maps z=+1 to ~81 (1 SD above mean)", () => {
+    expect(zScoreToRecoveryScore(1)).toBe(81);
+  });
+  it("maps z=-1 to ~31 (1 SD below mean)", () => {
+    expect(zScoreToRecoveryScore(-1)).toBe(31);
+  });
+  it("maps z=+2 to ~92", () => {
+    expect(zScoreToRecoveryScore(2)).toBe(92);
+  });
+  it("maps z=-2 to ~12", () => {
+    expect(zScoreToRecoveryScore(-2)).toBe(12);
+  });
+  it("reaches 100 at extreme positive z", () => {
+    expect(zScoreToRecoveryScore(10)).toBe(100);
+  });
+  it("reaches 0 at extreme negative z", () => {
+    expect(zScoreToRecoveryScore(-10)).toBe(0);
+  });
+  it("is monotonically increasing", () => {
+    const scores = [-3, -2, -1, 0, 1, 2, 3].map(zScoreToRecoveryScore);
+    for (let i = 1; i < scores.length; i++) {
+      expect(scores[i]).toBeGreaterThanOrEqual(scores[i - 1] ?? 0);
+    }
+  });
+});
 
 describe("scoreColor", () => {
   it("returns positive for scores > 70", () => {
@@ -458,6 +491,42 @@ describe("healthStatusColor", () => {
 
   it("returns danger for poor", () => {
     expect(healthStatusColor("poor")).toBe(statusColors.danger);
+  });
+});
+
+describe("strainZoneColor", () => {
+  it("returns positive for optimal", () => {
+    expect(strainZoneColor("optimal")).toBe(statusColors.positive);
+  });
+
+  it("returns danger for overreaching", () => {
+    expect(strainZoneColor("overreaching")).toBe(statusColors.danger);
+  });
+
+  it("returns info for restoring", () => {
+    expect(strainZoneColor("restoring")).toBe(statusColors.info);
+  });
+
+  it("returns secondary for unknown zone", () => {
+    expect(strainZoneColor("unknown")).toBe(textColors.secondary);
+  });
+});
+
+describe("strainZoneLabel", () => {
+  it("returns Optimal for optimal", () => {
+    expect(strainZoneLabel("optimal")).toBe("Optimal");
+  });
+
+  it("returns Overreaching for overreaching", () => {
+    expect(strainZoneLabel("overreaching")).toBe("Overreaching");
+  });
+
+  it("returns Restoring for restoring", () => {
+    expect(strainZoneLabel("restoring")).toBe("Restoring");
+  });
+
+  it("returns the zone string for unknown zones", () => {
+    expect(strainZoneLabel("something")).toBe("something");
   });
 });
 

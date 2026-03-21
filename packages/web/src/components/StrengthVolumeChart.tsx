@@ -1,5 +1,6 @@
 import type { VolumeOverTimeRow } from "dofek-server/types";
 import { chartColors, dofekAxis, dofekGrid, dofekSeries, dofekTooltip } from "../lib/chartTheme.ts";
+import { formatNumber } from "../lib/format.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
 interface StrengthVolumeChartProps {
@@ -32,7 +33,7 @@ export function StrengthVolumeChart({ data, loading }: StrengthVolumeChartProps)
       name: "Volume (kg)",
       axisLabel: {
         formatter(value: number) {
-          return value >= 1000 ? `${(value / 1000).toFixed(1)}k` : String(value);
+          return value >= 1000 ? `${formatNumber(value / 1000)}k` : String(value);
         },
       },
     }),

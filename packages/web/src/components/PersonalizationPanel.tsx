@@ -1,3 +1,4 @@
+import { formatNumber } from "../lib/format.ts";
 import { trpc } from "../lib/trpc.ts";
 
 const PARAM_LABELS: Record<string, { label: string; description: string }> = {
@@ -102,9 +103,9 @@ export function PersonalizationPanel() {
             hrv: number;
             restingHr: number;
             sleep: number;
-            loadBalance: number;
+            respiratoryRate: number;
           }) =>
-            `Heart Rate Variability ${Math.round(v.hrv * 100)}%, Resting Heart Rate ${Math.round(v.restingHr * 100)}%, Sleep ${Math.round(v.sleep * 100)}%, Load ${Math.round(v.loadBalance * 100)}%`
+            `Heart Rate Variability ${Math.round(v.hrv * 100)}%, Resting Heart Rate ${Math.round(v.restingHr * 100)}%, Sleep ${Math.round(v.sleep * 100)}%, Respiratory Rate ${Math.round(v.respiratoryRate * 100)}%`
           }
           renderQuality={
             data.parameters.readinessWeights
@@ -135,7 +136,7 @@ export function PersonalizationPanel() {
             hrvThresholds: [number, number, number];
             rhrThresholds: [number, number, number];
           }) =>
-            `Heart Rate Variability: ${v.hrvThresholds.map((t) => t.toFixed(1)).join(", ")} · Resting Heart Rate: ${v.rhrThresholds.map((t) => t.toFixed(1)).join(", ")}`
+            `Heart Rate Variability: ${v.hrvThresholds.map((t) => formatNumber(t)).join(", ")} · Resting Heart Rate: ${v.rhrThresholds.map((t) => formatNumber(t)).join(", ")}`
           }
           renderQuality={
             data.parameters.stressThresholds

@@ -53,6 +53,22 @@ export function scoreLabel(score: number): string {
   return "Poor";
 }
 
+/** Get the color for a strain zone ("restoring" | "optimal" | "overreaching") */
+export function strainZoneColor(zone: string): string {
+  if (zone === "optimal") return statusColors.positive;
+  if (zone === "overreaching") return statusColors.danger;
+  if (zone === "restoring") return statusColors.info;
+  return textColors.secondary;
+}
+
+/** Get a human-readable label for a strain zone */
+export function strainZoneLabel(zone: string): string {
+  if (zone === "optimal") return "Optimal";
+  if (zone === "overreaching") return "Overreaching";
+  if (zone === "restoring") return "Restoring";
+  return zone;
+}
+
 /** Get the color for a workload ratio value */
 export function workloadRatioColor(ratio: number | null): string {
   if (ratio == null) return textColors.secondary;
@@ -144,6 +160,27 @@ export function rampRateColor(rate: number): string {
   if (absRate < 5) return statusColors.positive;
   if (absRate <= 7) return statusColors.warning;
   return statusColors.danger;
+}
+
+/**
+ * Map a z-score to a 0-100 recovery score using an asymmetric sigmoid.
+ * Tuned to match Whoop's recovery scoring:
+ *   z=0 (at baseline mean) → 62 (average day feels "recovered")
+ *   z=+1 → ~80, z=-1 → ~40
+ *   z=+2 → ~93, z=-2 → ~18
+ * Uses separate scales for positive/negative z to handle the asymmetric center.
+ */
+export function zScoreToRecoveryScore(zScore: number): number {
+  const center = 62;
+  const k = 1.1;
+  const sigmoid = 1 / (1 + Math.exp(-zScore * k));
+  const scaleUp = 100 - center; // 38: maps sigmoid 0.5→1.0 to 62→100
+  const scaleDown = center; // 62: maps sigmoid 0.0→0.5 to 0→62
+  const score =
+    sigmoid >= 0.5
+      ? center + scaleUp * ((sigmoid - 0.5) / 0.5)
+      : center - scaleDown * ((0.5 - sigmoid) / 0.5);
+  return Math.max(0, Math.min(100, Math.round(score)));
 }
 
 /** Get the color for sleep debt in minutes */

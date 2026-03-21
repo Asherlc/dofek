@@ -1,5 +1,6 @@
 import type { VerticalAscentRow } from "dofek-server/types";
 import { chartColors, dofekAxis, dofekGrid, dofekTooltip } from "../lib/chartTheme.ts";
+import { formatNumber } from "../lib/format.ts";
 import { useUnitSystem } from "../lib/unitContext.ts";
 import { convertElevation, elevationLabel } from "../lib/units.ts";
 import { DofekChart } from "./DofekChart.tsx";
@@ -61,8 +62,8 @@ export function VerticalAscentChart({ data, loading }: VerticalAscentChartProps)
         return [
           `<strong>${itemData.name}</strong>`,
           `Date: ${new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`,
-          `VAM: ${vam.toFixed(0)} ${eLabel}/h`,
-          `Elevation Gain: ${itemData.elevationGain.toFixed(0)} ${eLabel}`,
+          `VAM: ${formatNumber(vam, 0)} ${eLabel}/h`,
+          `Elevation Gain: ${formatNumber(itemData.elevationGain, 0)} ${eLabel}`,
         ].join("<br/>");
       },
     }),

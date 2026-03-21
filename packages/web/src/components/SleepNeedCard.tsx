@@ -7,7 +7,9 @@ import {
   dofekSeries,
   dofekTooltip,
 } from "../lib/chartTheme.ts";
+import { formatNumber } from "../lib/format.ts";
 import { DofekChart } from "./DofekChart.tsx";
+import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface SleepNeedCardProps {
   data: SleepNeedResult | undefined;
@@ -72,7 +74,7 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
     }),
     yAxis: dofekAxis.value({
       name: "hours",
-      axisLabel: { formatter: (v: number) => `${(v / 60).toFixed(0)}h` },
+      axisLabel: { formatter: (v: number) => `${formatNumber(v / 60, 0)}h` },
     }),
     series: [
       {

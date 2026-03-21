@@ -1,6 +1,8 @@
 import type { Database } from "dofek/db";
 import { DEFAULT_USER_ID } from "dofek/db/schema";
 import { sql } from "drizzle-orm";
+import { z } from "zod";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 
 export interface ProviderIdentity {
@@ -22,6 +24,7 @@ export interface ResolveUserResult {
  * 1. If loggedInUserId is provided, link to that user (account linking flow).
  * 2. Lookup existing auth_account by (providerName, providerAccountId).
  * 3. Lookup user_profile by email match (email-based auto-linking).
+ * 3.5. Cross-provider email match: check if another auth_account has the same email.
  * 4. If no accounts exist at all, claim DEFAULT_USER_ID (first-user migration).
  * 5. Create a new user_profile.
  *
@@ -68,6 +71,26 @@ export async function resolveOrCreateUser(
         `[auth] Auto-linked ${providerName} to existing user ${matchedUser.id} by email ${identity.email}`,
       );
       return { userId: matchedUser.id, isNewUser: false };
+    }
+
+    // 3.5. Cross-provider email match: check if another auth_account has the same email.
+    //      Catches the case where the user has different emails on different providers
+    //      (e.g., Google email != Strava email) but previously connected a provider
+    //      using this email.
+    const crossProviderMatch = await executeWithSchema(
+      db,
+      z.object({ user_id: z.string() }),
+      sql`SELECT user_id FROM fitness.auth_account
+          WHERE LOWER(email) = LOWER(${identity.email})
+          LIMIT 1`,
+    );
+    const crossMatched = crossProviderMatch[0];
+    if (crossProviderMatch.length > 0 && crossMatched) {
+      await upsertAuthAccount(db, crossMatched.user_id, providerName, identity);
+      logger.info(
+        `[auth] Cross-provider linked ${providerName} to user ${crossMatched.user_id} by auth_account email ${identity.email}`,
+      );
+      return { userId: crossMatched.user_id, isNewUser: false };
     }
   }
 

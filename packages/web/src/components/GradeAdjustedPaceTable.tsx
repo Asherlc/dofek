@@ -1,5 +1,5 @@
 import type { GradeAdjustedPaceRow } from "dofek-server/types";
-import { formatPace } from "../lib/format.ts";
+import { formatNumber, formatPace } from "../lib/format.ts";
 import { useUnitSystem } from "../lib/unitContext.ts";
 import {
   convertDistance,
@@ -68,10 +68,12 @@ export function GradeAdjustedPaceTable({ data, loading }: GradeAdjustedPaceTable
                   </td>
                   <td className="py-2 pr-4 text-foreground">{row.activityName}</td>
                   <td className="py-2 pr-4 tabular-nums">
-                    {convertDistance(row.distanceKm, unitSystem).toFixed(1)}{" "}
+                    {formatNumber(convertDistance(row.distanceKm, unitSystem))}{" "}
                     {distanceLabel(unitSystem)}
                   </td>
-                  <td className="py-2 pr-4 tabular-nums">{row.durationMinutes.toFixed(0)} min</td>
+                  <td className="py-2 pr-4 tabular-nums">
+                    {formatNumber(row.durationMinutes, 0)} min
+                  </td>
                   <td className="py-2 pr-4 tabular-nums">
                     {formatPace(convertPace(row.averagePaceMinPerKm * 60, unitSystem))}{" "}
                     {paceLabel(unitSystem)}

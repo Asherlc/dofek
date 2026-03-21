@@ -1,9 +1,15 @@
+import { computeReadinessScore, type ReadinessComponents } from "@dofek/recovery/readiness";
+import { computeSleepConsistencyScore } from "@dofek/recovery/sleep-consistency";
+import { rawLoadToStrain, zScoreToRecoveryScore } from "@dofek/scoring/scoring";
+import { selectRecentDailyLoad } from "@dofek/training/training";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+
+export type { ReadinessComponents };
 
 export interface HrvVariabilityRow {
   date: string;
@@ -15,9 +21,16 @@ export interface HrvVariabilityRow {
 export interface WorkloadRatioRow {
   date: string;
   dailyLoad: number;
+  strain: number;
   acuteLoad: number;
   chronicLoad: number;
   workloadRatio: number | null;
+}
+
+export interface WorkloadRatioResult {
+  timeSeries: WorkloadRatioRow[];
+  displayedStrain: number;
+  displayedDate: string | null;
 }
 
 export interface SleepNightlyRow {
@@ -43,13 +56,6 @@ export interface SleepConsistencyRow {
   rollingBedtimeStddev: number | null;
   rollingWaketimeStddev: number | null;
   consistencyScore: number | null;
-}
-
-export interface ReadinessComponents {
-  hrvScore: number;
-  restingHrScore: number;
-  sleepScore: number;
-  loadBalanceScore: number;
 }
 
 export interface ReadinessRow {
@@ -108,14 +114,10 @@ export const recoveryRouter = router({
         const wakeStddev =
           row.rolling_waketime_stddev != null ? Number(row.rolling_waketime_stddev) : null;
 
-        // Consistency score: average of bed/wake stddev mapped to 0-100
-        // < 0.5 hr stddev = 100, > 1.5 hr stddev = 0
-        let consistencyScore: number | null = null;
-        if (bedStddev != null && wakeStddev != null && Number(row.window_count) >= 7) {
-          const avgStddevHours = (bedStddev + wakeStddev) / 2;
-          const score = Math.max(0, Math.min(100, (1 - (avgStddevHours - 0.5) / 1.0) * 100));
-          consistencyScore = Math.round(score);
-        }
+        const consistencyScore =
+          Number(row.window_count) >= 7
+            ? computeSleepConsistencyScore(bedStddev, wakeStddev)
+            : null;
 
         return {
           date: row.date,
@@ -189,7 +191,7 @@ export const recoveryRouter = router({
    */
   workloadRatio: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({ days: z.number().default(90) }))
-    .query(async ({ ctx, input }): Promise<WorkloadRatioRow[]> => {
+    .query(async ({ ctx, input }): Promise<WorkloadRatioResult> => {
       const queryDays = input.days + 28;
       const workloadRowSchema = z.object({
         date: dateStringSchema,
@@ -256,14 +258,25 @@ export const recoveryRouter = router({
             ORDER BY date ASC`,
       );
 
-      return rows.map((row) => ({
-        date: row.date,
-        dailyLoad: Math.round(Number(row.daily_load) * 10) / 10,
-        acuteLoad: Math.round(Number(row.acute_load) * 10) / 10,
-        chronicLoad: Math.round(Number(row.chronic_load) * 10) / 10,
-        workloadRatio:
-          row.workload_ratio != null ? Math.round(Number(row.workload_ratio) * 100) / 100 : null,
-      }));
+      const timeSeries = rows.map((row) => {
+        const dailyLoad = Math.round(Number(row.daily_load) * 10) / 10;
+        return {
+          date: row.date,
+          dailyLoad,
+          strain: rawLoadToStrain(dailyLoad),
+          acuteLoad: Math.round(Number(row.acute_load) * 10) / 10,
+          chronicLoad: Math.round(Number(row.chronic_load) * 10) / 10,
+          workloadRatio:
+            row.workload_ratio != null ? Math.round(Number(row.workload_ratio) * 100) / 100 : null,
+        };
+      });
+
+      const displayed = selectRecentDailyLoad(timeSeries);
+      return {
+        timeSeries,
+        displayedStrain: displayed?.strain ?? 0,
+        displayedDate: displayed?.date ?? null,
+      };
     }),
 
   /**
@@ -348,10 +361,10 @@ export const recoveryRouter = router({
     }),
 
   /**
-   * Composite readiness score 0-100 from:
-   *   HRV vs 60d baseline (40%), resting HR vs baseline (20%),
-   *   sleep efficiency (20%), ACWR balance (20%).
-   * Reads ACWR from activity_summary rollup instead of raw metric_stream.
+   * Composite readiness score 0-100 modeled after Whoop's recovery algorithm:
+   *   HRV vs 30d baseline (50%), resting HR vs baseline (20%),
+   *   sleep efficiency (15%), respiratory rate vs baseline (15%).
+   * Uses asymmetric sigmoid mapping instead of linear z-score for more natural scaling.
    */
   readinessScore: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({ days: z.number().default(30) }))
@@ -361,19 +374,21 @@ export const recoveryRouter = router({
       const effective = getEffectiveParams(storedParams);
       const weights = effective.readinessWeights;
 
-      const queryDays = input.days + 60;
+      const queryDays = input.days + 30;
 
-      // Fetch HRV + resting HR baselines, sleep efficiency, and ACWR in one query
+      // Fetch HRV + resting HR + respiratory rate baselines and sleep efficiency
       const readinessRowSchema = z.object({
         date: dateStringSchema,
         hrv: z.coerce.number().nullable(),
         resting_hr: z.coerce.number().nullable(),
-        hrv_mean_60d: z.coerce.number().nullable(),
-        hrv_sd_60d: z.coerce.number().nullable(),
-        rhr_mean_60d: z.coerce.number().nullable(),
-        rhr_sd_60d: z.coerce.number().nullable(),
+        respiratory_rate: z.coerce.number().nullable(),
+        hrv_mean_30d: z.coerce.number().nullable(),
+        hrv_sd_30d: z.coerce.number().nullable(),
+        rhr_mean_30d: z.coerce.number().nullable(),
+        rhr_sd_30d: z.coerce.number().nullable(),
+        rr_mean_30d: z.coerce.number().nullable(),
+        rr_sd_30d: z.coerce.number().nullable(),
         efficiency_pct: z.coerce.number().nullable(),
-        acwr: z.coerce.number().nullable(),
       });
       const combinedRows = await executeWithSchema(
         ctx.db,
@@ -383,10 +398,13 @@ export const recoveryRouter = router({
                 date::text AS date,
                 hrv,
                 resting_hr,
-                AVG(hrv) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS hrv_mean_60d,
-                STDDEV_POP(hrv) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS hrv_sd_60d,
-                AVG(resting_hr) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS rhr_mean_60d,
-                STDDEV_POP(resting_hr) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS rhr_sd_60d
+                respiratory_rate_avg AS respiratory_rate,
+                AVG(hrv) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS hrv_mean_30d,
+                STDDEV_POP(hrv) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS hrv_sd_30d,
+                AVG(resting_hr) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rhr_mean_30d,
+                STDDEV_POP(resting_hr) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rhr_sd_30d,
+                AVG(respiratory_rate_avg) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rr_mean_30d,
+                STDDEV_POP(respiratory_rate_avg) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rr_sd_30d
               FROM fitness.v_daily_metrics
               WHERE user_id = ${ctx.userId}
                 AND date > CURRENT_DATE - ${queryDays}::int
@@ -400,141 +418,89 @@ export const recoveryRouter = router({
                 AND is_nap = false
                 AND started_at > NOW() - ${queryDays}::int * INTERVAL '1 day'
               ORDER BY COALESCE(ended_at, started_at + interval '8 hours')::date, started_at DESC
-            ),
-            date_series AS (
-              SELECT generate_series(
-                CURRENT_DATE - ${queryDays}::int,
-                CURRENT_DATE,
-                '1 day'::interval
-              )::date AS date
-            ),
-            per_activity AS (
-              SELECT
-                asum.started_at::date AS date,
-                EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0
-                  * asum.avg_hr
-                  / NULLIF(asum.max_hr, 0) AS load
-              FROM fitness.activity_summary asum
-              WHERE asum.user_id = ${ctx.userId}
-                AND asum.started_at::date >= CURRENT_DATE - ${queryDays}::int
-                AND asum.ended_at IS NOT NULL
-                AND asum.avg_hr IS NOT NULL
-            ),
-            activity_load AS (
-              SELECT date, SUM(load) AS daily_load
-              FROM per_activity
-              GROUP BY date
-            ),
-            daily AS (
-              SELECT
-                ds.date,
-                COALESCE(al.daily_load, 0) AS daily_load
-              FROM date_series ds
-              LEFT JOIN activity_load al ON al.date = ds.date
-            ),
-            acwr_daily AS (
-              SELECT
-                date::text AS date,
-                CASE
-                  WHEN AVG(daily_load) OVER (ORDER BY date ROWS BETWEEN 27 PRECEDING AND CURRENT ROW) * 7 > 0
-                  THEN SUM(daily_load) OVER (ORDER BY date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW)
-                       / (AVG(daily_load) OVER (ORDER BY date ROWS BETWEEN 27 PRECEDING AND CURRENT ROW) * 7)
-                  ELSE NULL
-                END AS acwr
-              FROM daily
             )
             SELECT
               m.date,
               m.hrv,
               m.resting_hr,
-              m.hrv_mean_60d,
-              m.hrv_sd_60d,
-              m.rhr_mean_60d,
-              m.rhr_sd_60d,
-              s.efficiency_pct,
-              ac.acwr
+              m.respiratory_rate,
+              m.hrv_mean_30d,
+              m.hrv_sd_30d,
+              m.rhr_mean_30d,
+              m.rhr_sd_30d,
+              m.rr_mean_30d,
+              m.rr_sd_30d,
+              s.efficiency_pct
             FROM metrics_with_baselines m
             LEFT JOIN sleep_eff s ON s.date = m.date
-            LEFT JOIN acwr_daily ac ON ac.date = m.date
             ORDER BY m.date ASC`,
       );
-      const combined = combinedRows;
-
-      // Map z-score to 0-100 (z=0 -> 50, clamped)
-      function zScoreToScore(zScore: number): number {
-        const score = 50 + zScore * 15;
-        return Math.max(0, Math.min(100, Math.round(score * 10) / 10));
-      }
-
-      // ACWR: optimal is 1.0, penalize deviation
-      function acwrToScore(acwr: number | null): number {
-        if (acwr == null) return 50;
-        const deviation = Math.abs(acwr - 1.0);
-        // 0 deviation = 100, 1.0 deviation = 0
-        return Math.max(0, Math.min(100, Math.round((1 - deviation) * 100)));
-      }
-
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - input.days);
       const cutoffStr = cutoffDate.toISOString().split("T")[0] ?? "";
 
       const results: ReadinessRow[] = [];
 
-      for (const metrics of combined) {
+      for (const metrics of combinedRows) {
         if (metrics.date <= cutoffStr) continue;
 
         // HRV score: higher HRV = better (positive z = good)
-        let hrvScore = 50;
+        let hrvScore = 62;
         if (
           metrics.hrv != null &&
-          metrics.hrv_mean_60d != null &&
-          metrics.hrv_sd_60d != null &&
-          Number(metrics.hrv_sd_60d) > 0
+          metrics.hrv_mean_30d != null &&
+          metrics.hrv_sd_30d != null &&
+          Number(metrics.hrv_sd_30d) > 0
         ) {
           const zHrv =
-            (Number(metrics.hrv) - Number(metrics.hrv_mean_60d)) / Number(metrics.hrv_sd_60d);
-          hrvScore = zScoreToScore(zHrv);
+            (Number(metrics.hrv) - Number(metrics.hrv_mean_30d)) / Number(metrics.hrv_sd_30d);
+          hrvScore = zScoreToRecoveryScore(zHrv);
         }
 
-        // Resting HR score: lower HR = better (negative z = good, so invert)
-        let restingHrScore = 50;
+        // Resting HR score: lower HR = better (invert z)
+        let restingHrScore = 62;
         if (
           metrics.resting_hr != null &&
-          metrics.rhr_mean_60d != null &&
-          metrics.rhr_sd_60d != null &&
-          Number(metrics.rhr_sd_60d) > 0
+          metrics.rhr_mean_30d != null &&
+          metrics.rhr_sd_30d != null &&
+          Number(metrics.rhr_sd_30d) > 0
         ) {
           const zRhr =
-            (Number(metrics.resting_hr) - Number(metrics.rhr_mean_60d)) /
-            Number(metrics.rhr_sd_60d);
-          restingHrScore = zScoreToScore(-zRhr);
+            (Number(metrics.resting_hr) - Number(metrics.rhr_mean_30d)) /
+            Number(metrics.rhr_sd_30d);
+          restingHrScore = zScoreToRecoveryScore(-zRhr);
         }
 
         // Sleep efficiency score: direct mapping (0-100 already)
         const efficiency = metrics.efficiency_pct != null ? Number(metrics.efficiency_pct) : null;
         const sleepScore =
-          efficiency != null ? Math.max(0, Math.min(100, Math.round(efficiency))) : 50;
+          efficiency != null ? Math.max(0, Math.min(100, Math.round(efficiency))) : 62;
 
-        // Load balance score from ACWR
-        const acwr = metrics.acwr != null ? Number(metrics.acwr) : null;
-        const loadBalanceScore = acwrToScore(acwr);
+        // Respiratory rate score: lower is better (invert z, like RHR)
+        let respiratoryRateScore = 62;
+        if (
+          metrics.respiratory_rate != null &&
+          metrics.rr_mean_30d != null &&
+          metrics.rr_sd_30d != null &&
+          Number(metrics.rr_sd_30d) > 0
+        ) {
+          const zRr =
+            (Number(metrics.respiratory_rate) - Number(metrics.rr_mean_30d)) /
+            Number(metrics.rr_sd_30d);
+          respiratoryRateScore = zScoreToRecoveryScore(-zRr);
+        }
 
-        const readinessScore = Math.round(
-          hrvScore * weights.hrv +
-            restingHrScore * weights.restingHr +
-            sleepScore * weights.sleep +
-            loadBalanceScore * weights.loadBalance,
-        );
+        const components: ReadinessComponents = {
+          hrvScore: Math.round(hrvScore),
+          restingHrScore: Math.round(restingHrScore),
+          sleepScore,
+          respiratoryRateScore: Math.round(respiratoryRateScore),
+        };
 
         results.push({
           date: metrics.date,
-          readinessScore: Math.max(0, Math.min(100, readinessScore)),
-          components: {
-            hrvScore: Math.round(hrvScore),
-            restingHrScore: Math.round(restingHrScore),
-            sleepScore,
-            loadBalanceScore: Math.round(loadBalanceScore),
-          },
+          readinessScore: computeReadinessScore(components, weights),
+          components,
         });
       }
 

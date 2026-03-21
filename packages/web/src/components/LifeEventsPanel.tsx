@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { z } from "zod";
+import { formatNumber } from "../lib/format.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitSystem } from "../lib/unitContext.ts";
 import { convertWeight, weightLabel } from "../lib/units.ts";
@@ -499,7 +500,7 @@ function CompareCard({
             }`}
           >
             {pctDiff > 0 ? "+" : ""}
-            {pctDiff.toFixed(0)}%
+            {formatNumber(pctDiff, 0)}%
           </span>
         )}
       </div>
@@ -535,5 +536,5 @@ function formatDate(d: string): string {
 
 function fmtNum(v: number): string {
   if (Number.isInteger(v) || Math.abs(v) >= 100) return Math.round(v).toLocaleString();
-  return v.toFixed(1);
+  return formatNumber(v);
 }

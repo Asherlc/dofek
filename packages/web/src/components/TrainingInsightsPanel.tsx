@@ -3,6 +3,7 @@ import {
   formatActivityTypeLabel,
   OTHER_ACTIVITY_TYPE,
 } from "@dofek/training/training";
+import { HEART_RATE_ZONES } from "@dofek/zones/zones";
 import { z } from "zod";
 import {
   chartThemeColors,
@@ -11,26 +12,18 @@ import {
   dofekLegend,
   dofekTooltip,
 } from "../lib/chartTheme.ts";
+import { formatNumber } from "../lib/format.ts";
 import { trpc } from "../lib/trpc.ts";
 import { ChartDescriptionTooltip } from "./ChartDescriptionTooltip.tsx";
 import { DofekChart } from "./DofekChart.tsx";
 
-// HR zone colors (blue->green->yellow->orange->red)
-const ZONE_COLORS = {
-  zone1: "#3b82f6", // Recovery (blue)
-  zone2: "#22c55e", // Aerobic (green)
-  zone3: "#eab308", // Tempo (yellow)
-  zone4: "#f97316", // Threshold (orange)
-  zone5: "#ef4444", // VO2max (red)
-};
+const ZONE_COLORS: Record<string, string> = Object.fromEntries(
+  HEART_RATE_ZONES.map((z) => [`zone${z.zone}`, z.color]),
+);
 
-const ZONE_LABELS = {
-  zone1: "Z1 Recovery",
-  zone2: "Z2 Aerobic",
-  zone3: "Z3 Tempo",
-  zone4: "Z4 Threshold",
-  zone5: "Z5 VO2max",
-};
+const ZONE_LABELS: Record<string, string> = Object.fromEntries(
+  HEART_RATE_ZONES.map((z) => [`zone${z.zone}`, `Z${z.zone} ${z.label}`]),
+);
 
 // Activity type colors
 const ACTIVITY_COLORS: Record<string, string> = {
@@ -169,9 +162,9 @@ function WeeklyVolumeChart({ data }: { data: WeeklyVolumeRow[] }) {
           .filter((p) => p.value[1] > 0)
           .map((p) => {
             total += p.value[1];
-            return `<span style="color:${p.color}">\u25CF</span> ${p.seriesName}: ${p.value[1].toFixed(1)}h`;
+            return `<span style="color:${p.color}">\u25CF</span> ${p.seriesName}: ${formatNumber(p.value[1])}h`;
           });
-        return `<strong>${dateLabel}</strong> (${total.toFixed(1)}h total)<br/>${lines.join("<br/>")}`;
+        return `<strong>${dateLabel}</strong> (${formatNumber(total)}h total)<br/>${lines.join("<br/>")}`;
       },
     }),
     xAxis: dofekAxis.time(),
@@ -245,7 +238,7 @@ function HrZoneChart({ weeks, maxHr }: { weeks: HrZoneWeek[]; maxHr: number }) {
             const zoneKey = zoneKeys[params.indexOf(p)];
             const secs = raw && zoneKey ? (raw[zoneKey] ?? 0) : 0;
             const mins = Math.round(secs / 60);
-            return `<span style="color:${p.color}">\u25CF</span> ${p.seriesName}: ${p.value[1].toFixed(1)}% (${mins}m)`;
+            return `<span style="color:${p.color}">\u25CF</span> ${p.seriesName}: ${formatNumber(p.value[1])}% (${mins}m)`;
           });
         return `<strong>${dateLabel}</strong><br/>${lines.join("<br/>")}`;
       },

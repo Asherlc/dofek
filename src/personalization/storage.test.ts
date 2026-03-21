@@ -82,7 +82,7 @@ describe("loadPersonalizedParams", () => {
         hrv: 0.5,
         restingHr: 0.15,
         sleep: 0.2,
-        loadBalance: 0.15,
+        respiratoryRate: 0.15,
         sampleCount: 90,
         correlation: 0.25,
       },

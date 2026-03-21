@@ -1,23 +1,16 @@
 import { useState } from "react";
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { useRouter } from "expo-router";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { DaySelector } from "../../components/DaySelector";
 import { MetricCard } from "../../components/MetricCard";
 import { SparkLine } from "../../components/charts/SparkLine";
+import { formatNumber } from "@dofek/format/format";
 import { trendDirection as computeTrend } from "../../lib/scoring";
 import { trpc } from "../../lib/trpc";
 import { convertTemperature, temperatureLabel, useUnitSystem } from "../../lib/units";
-import type {
-  HeartRateVariabilityRow,
-  ReadinessRow,
-  StressResult,
-  WorkloadRow,
-} from "../../types/api";
 import { colors } from "../../theme";
 
 export default function MetricsScreen() {
-  const router = useRouter();
   const unitSystem = useUnitSystem();
   const [days, setDays] = useState(30);
 
@@ -42,14 +35,6 @@ export default function MetricsScreen() {
   const latestStress = stressResult?.latestScore;
   const stressTrend = stressResult?.trend;
 
-  // Workload ratio trend
-  const workloadQuery = trpc.recovery.workloadRatio.useQuery({ days });
-  const workloadData = workloadQuery.data ?? [];
-  const workloadRatioValues = workloadData
-    .filter((d) => d.workloadRatio != null)
-    .map((d) => d.workloadRatio as number);
-  const latestRatio = workloadData[workloadData.length - 1]?.workloadRatio;
-
   // Daily metrics for SpO2 and skin temp
   const trendsQuery = trpc.dailyMetrics.trends.useQuery({ days });
   const trendsData = trendsQuery.data;
@@ -72,35 +57,9 @@ export default function MetricsScreen() {
       style={styles.container}
       contentContainerStyle={styles.content}
     >
-      <Text style={styles.header}>{days}-Day Trends</Text>
+      <Text style={styles.header}>Body</Text>
 
       <DaySelector days={days} onChange={setDays} />
-
-      <TouchableOpacity
-        style={styles.insightsButton}
-        onPress={() => router.push("/insights")}
-        activeOpacity={0.7}
-      >
-        <Text style={styles.insightsButtonEmoji}>{"\uD83D\uDCA1"}</Text>
-        <View style={styles.insightsButtonText}>
-          <Text style={styles.insightsButtonLabel}>Insights</Text>
-          <Text style={styles.insightsButtonDescription}>Patterns and correlations in your data</Text>
-        </View>
-        <Text style={styles.insightsButtonChevron}>{"\u203A"}</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={styles.insightsButton}
-        onPress={() => router.push("/predictions")}
-        activeOpacity={0.7}
-      >
-        <Text style={styles.insightsButtonEmoji}>{"\uD83D\uDD2E"}</Text>
-        <View style={styles.insightsButtonText}>
-          <Text style={styles.insightsButtonLabel}>Predictions</Text>
-          <Text style={styles.insightsButtonDescription}>Machine learning forecasts for your metrics</Text>
-        </View>
-        <Text style={styles.insightsButtonChevron}>{"\u203A"}</Text>
-      </TouchableOpacity>
 
       {isLoading ? (
         <View style={styles.loadingContainer}>
@@ -182,7 +141,7 @@ export default function MetricsScreen() {
           {/* Stress */}
           <MetricCard
             title="Stress Level"
-            value={latestStress != null ? latestStress.toFixed(1) : "--"}
+            value={latestStress != null ? formatNumber(latestStress) : "--"}
             unit="/ 3"
             trend={stressValues.slice(-14)}
             color={
@@ -220,7 +179,7 @@ export default function MetricsScreen() {
                       })}
                     </Text>
                     <Text style={styles.weeklyValue}>
-                      {week.avgDailyStress.toFixed(1)}
+                      {formatNumber(week.avgDailyStress)}
                     </Text>
                     <Text style={styles.weeklyLabel}>
                       {week.highStressDays} high days
@@ -254,7 +213,7 @@ export default function MetricsScreen() {
           {trendsData?.latest_skin_temp != null && (
             <MetricCard
               title="Skin Temperature"
-              value={convertTemperature(trendsData.latest_skin_temp, unitSystem).toFixed(1)}
+              value={formatNumber(convertTemperature(trendsData.latest_skin_temp, unitSystem))}
               unit={temperatureLabel(unitSystem)}
               trend={skinTempTrend}
               color={colors.orange}
@@ -269,22 +228,6 @@ export default function MetricsScreen() {
             />
           )}
 
-          {/* Workload ratio */}
-          <MetricCard
-            title="Workload Ratio"
-            value={latestRatio != null ? latestRatio.toFixed(2) : "--"}
-            trend={workloadRatioValues.slice(-14)}
-            color={
-              latestRatio != null
-                ? latestRatio >= 0.8 && latestRatio <= 1.3
-                  ? colors.positive
-                  : latestRatio <= 1.5
-                    ? colors.warning
-                    : colors.danger
-                : colors.textSecondary
-            }
-            subtitle="Short-term vs long-term training load ratio (sweet spot: 0.8-1.3)"
-          />
         </>
       )}
     </ScrollView>
@@ -365,34 +308,5 @@ const styles = StyleSheet.create({
   weeklyLabel: {
     fontSize: 10,
     color: colors.textTertiary,
-  },
-  insightsButton: {
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    padding: 16,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  insightsButtonEmoji: {
-    fontSize: 24,
-    marginRight: 12,
-  },
-  insightsButtonText: {
-    flex: 1,
-  },
-  insightsButtonLabel: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: colors.text,
-  },
-  insightsButtonDescription: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  insightsButtonChevron: {
-    fontSize: 24,
-    color: colors.textTertiary,
-    marginLeft: 8,
   },
 });

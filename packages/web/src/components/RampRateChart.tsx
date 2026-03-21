@@ -1,6 +1,7 @@
 import { rampRateColor } from "@dofek/scoring/scoring";
 import type { RampRateWeek } from "dofek-server/types";
 import { dofekAxis, dofekGrid, dofekTooltip } from "../lib/chartTheme.ts";
+import { formatNumber } from "../lib/format.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
 interface RampRateChartProps {
@@ -34,7 +35,7 @@ export function buildRampRateOption(data: RampRateWeekData[]) {
         });
         return [
           `<strong>${dateLabel}</strong>`,
-          `Ramp Rate: <span style="color:${color}">${d.rampRate.toFixed(2)}</span>`,
+          `Ramp Rate: <span style="color:${color}">${formatNumber(d.rampRate, 2)}</span>`,
         ].join("<br/>");
       },
     }),
@@ -86,7 +87,7 @@ export function RampRateChart({
             backgroundColor: `${badgeColor}15`,
           }}
         >
-          Current: {currentRampRate.toFixed(2)}
+          Current: {formatNumber(currentRampRate, 2)}
         </span>
         <span className="text-xs text-subtle">{recommendation}</span>
       </div>

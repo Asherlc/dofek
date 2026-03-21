@@ -8,6 +8,7 @@ import {
 } from "@dofek/scoring/scoring";
 import type { PmcDataPoint, TssModelInfo } from "dofek-server/types";
 import { chartThemeColors, dofekTooltip } from "../lib/chartTheme.ts";
+import { formatNumber } from "../lib/format.ts";
 import { DofekChart } from "./DofekChart.tsx";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
@@ -26,7 +27,8 @@ function ModelBadge({ model }: { model: TssModelInfo }) {
     return (
       <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs bg-accent/10 text-accent border border-accent/30">
         <span className="inline-block w-1.5 h-1.5 rounded-full bg-accent" />
-        Learned model (fit={model.r2?.toFixed(2)}, {model.pairedActivities} paired activities
+        Learned model (fit={model.r2 != null ? formatNumber(model.r2, 2) : "?"},{" "}
+        {model.pairedActivities} paired activities
         {model.ftp != null && `, threshold ${model.ftp}W`})
       </span>
     );
@@ -100,10 +102,10 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
 
         return [
           `<strong>${label}</strong>`,
-          `<span style="color:${chartThemeColors.axisLabel}">Load:</span> ${load.toFixed(1)}`,
-          `<span style="color:${COLOR_FITNESS}">Fitness:</span> ${fitness.toFixed(1)}`,
-          `<span style="color:${COLOR_FATIGUE}">Fatigue:</span> ${fatigue.toFixed(1)}`,
-          `<span style="color:${formZoneColor(form)}">Form:</span> ${form.toFixed(1)}`,
+          `<span style="color:${chartThemeColors.axisLabel}">Load:</span> ${formatNumber(load)}`,
+          `<span style="color:${COLOR_FITNESS}">Fitness:</span> ${formatNumber(fitness)}`,
+          `<span style="color:${COLOR_FATIGUE}">Fatigue:</span> ${formatNumber(fatigue)}`,
+          `<span style="color:${formZoneColor(form)}">Form:</span> ${formatNumber(form)}`,
         ].join("<br/>");
       },
     }),

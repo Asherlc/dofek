@@ -1,5 +1,6 @@
 import type { ProgressiveOverloadRow } from "dofek-server/types";
 import { dofekAxis, dofekGrid, dofekSeries } from "../lib/chartTheme.ts";
+import { formatNumber } from "../lib/format.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
 interface ProgressiveOverloadCardsProps {
@@ -56,7 +57,7 @@ export function ProgressiveOverloadCards({ exercises, loading }: ProgressiveOver
           </div>
           <div className="text-xs text-muted mb-2">
             {exercise.isProgressing ? "+" : ""}
-            {exercise.slopeKgPerWeek.toFixed(1)} kg/week
+            {formatNumber(exercise.slopeKgPerWeek)} kg/week
           </div>
           {exercise.weeklyVolumes.length >= 2 && (
             <SparklineChart

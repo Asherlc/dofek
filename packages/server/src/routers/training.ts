@@ -1,3 +1,4 @@
+import { zScoreToRecoveryScore } from "@dofek/scoring/scoring";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
@@ -141,7 +142,23 @@ export const trainingRouter = router({
   activityStats: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
-      const rows = await ctx.db.execute(
+      const activityStatsRowSchema = z.object({
+        id: z.string(),
+        activity_type: z.string(),
+        name: z.string().nullable(),
+        started_at: z.string(),
+        ended_at: z.string().nullable(),
+        avg_hr: z.coerce.number().nullable(),
+        max_hr: z.coerce.number().nullable(),
+        avg_power: z.coerce.number().nullable(),
+        max_power: z.coerce.number().nullable(),
+        avg_cadence: z.coerce.number().nullable(),
+        hr_samples: z.coerce.number().nullable(),
+        power_samples: z.coerce.number().nullable(),
+      });
+      const rows = await executeWithSchema(
+        ctx.db,
+        activityStatsRowSchema,
         sql`SELECT
               asum.activity_id AS id,
               asum.activity_type,
@@ -175,10 +192,13 @@ export const trainingRouter = router({
       date: dateStringSchema,
       hrv: z.coerce.number().nullable(),
       resting_hr: z.coerce.number().nullable(),
-      hrv_mean_60d: z.coerce.number().nullable(),
-      hrv_sd_60d: z.coerce.number().nullable(),
-      rhr_mean_60d: z.coerce.number().nullable(),
-      rhr_sd_60d: z.coerce.number().nullable(),
+      respiratory_rate: z.coerce.number().nullable(),
+      hrv_mean_30d: z.coerce.number().nullable(),
+      hrv_sd_30d: z.coerce.number().nullable(),
+      rhr_mean_30d: z.coerce.number().nullable(),
+      rhr_sd_30d: z.coerce.number().nullable(),
+      rr_mean_30d: z.coerce.number().nullable(),
+      rr_sd_30d: z.coerce.number().nullable(),
     });
     const latestMetrics = await executeWithSchema(
       ctx.db,
@@ -187,7 +207,8 @@ export const trainingRouter = router({
             SELECT
               date,
               hrv,
-              resting_hr
+              resting_hr,
+              respiratory_rate_avg AS respiratory_rate
             FROM fitness.v_daily_metrics
             WHERE user_id = ${ctx.userId}
             ORDER BY date DESC
@@ -197,20 +218,25 @@ export const trainingRouter = router({
             latest.date::text AS date,
             latest.hrv,
             latest.resting_hr,
-            baseline.hrv_mean_60d,
-            baseline.hrv_sd_60d,
-            baseline.rhr_mean_60d,
-            baseline.rhr_sd_60d
+            latest.respiratory_rate,
+            baseline.hrv_mean_30d,
+            baseline.hrv_sd_30d,
+            baseline.rhr_mean_30d,
+            baseline.rhr_sd_30d,
+            baseline.rr_mean_30d,
+            baseline.rr_sd_30d
           FROM latest
           CROSS JOIN LATERAL (
             SELECT
-              AVG(dm.hrv) AS hrv_mean_60d,
-              STDDEV_POP(dm.hrv) AS hrv_sd_60d,
-              AVG(dm.resting_hr) AS rhr_mean_60d,
-              STDDEV_POP(dm.resting_hr) AS rhr_sd_60d
+              AVG(dm.hrv) AS hrv_mean_30d,
+              STDDEV_POP(dm.hrv) AS hrv_sd_30d,
+              AVG(dm.resting_hr) AS rhr_mean_30d,
+              STDDEV_POP(dm.resting_hr) AS rhr_sd_30d,
+              AVG(dm.respiratory_rate_avg) AS rr_mean_30d,
+              STDDEV_POP(dm.respiratory_rate_avg) AS rr_sd_30d
             FROM fitness.v_daily_metrics dm
             WHERE dm.user_id = ${ctx.userId}
-              AND dm.date BETWEEN latest.date - 59 AND latest.date
+              AND dm.date BETWEEN latest.date - 29 AND latest.date
           ) baseline`,
     );
     const latestMetric = latestMetrics[0];
@@ -456,36 +482,48 @@ export const trainingRouter = router({
           ORDER BY training_date DESC`,
     );
 
-    let hrvScore = 50;
+    let hrvScore = 62;
     if (
       latestMetric?.hrv != null &&
-      latestMetric.hrv_mean_60d != null &&
-      latestMetric.hrv_sd_60d != null &&
-      latestMetric.hrv_sd_60d > 0
+      latestMetric.hrv_mean_30d != null &&
+      latestMetric.hrv_sd_30d != null &&
+      latestMetric.hrv_sd_30d > 0
     ) {
-      const hrvZ = (latestMetric.hrv - latestMetric.hrv_mean_60d) / latestMetric.hrv_sd_60d;
-      hrvScore = zScoreToScore(hrvZ);
+      const hrvZ = (latestMetric.hrv - latestMetric.hrv_mean_30d) / latestMetric.hrv_sd_30d;
+      hrvScore = zScoreToRecoveryScore(hrvZ);
     }
 
-    let restingHrScore = 50;
+    let restingHrScore = 62;
     if (
       latestMetric?.resting_hr != null &&
-      latestMetric.rhr_mean_60d != null &&
-      latestMetric.rhr_sd_60d != null &&
-      latestMetric.rhr_sd_60d > 0
+      latestMetric.rhr_mean_30d != null &&
+      latestMetric.rhr_sd_30d != null &&
+      latestMetric.rhr_sd_30d > 0
     ) {
-      const rhrZ = (latestMetric.resting_hr - latestMetric.rhr_mean_60d) / latestMetric.rhr_sd_60d;
-      restingHrScore = zScoreToScore(-rhrZ);
+      const rhrZ = (latestMetric.resting_hr - latestMetric.rhr_mean_30d) / latestMetric.rhr_sd_30d;
+      restingHrScore = zScoreToRecoveryScore(-rhrZ);
     }
 
     const sleepScore =
-      latestSleepEfficiency != null ? clamp(Math.round(latestSleepEfficiency), 0, 100) : 50;
-    const loadBalanceScore = acwrToScore(acwr);
+      latestSleepEfficiency != null ? clamp(Math.round(latestSleepEfficiency), 0, 100) : 62;
+
+    let respiratoryRateScore = 62;
+    if (
+      latestMetric?.respiratory_rate != null &&
+      latestMetric.rr_mean_30d != null &&
+      latestMetric.rr_sd_30d != null &&
+      latestMetric.rr_sd_30d > 0
+    ) {
+      const rrZ =
+        (latestMetric.respiratory_rate - latestMetric.rr_mean_30d) / latestMetric.rr_sd_30d;
+      respiratoryRateScore = zScoreToRecoveryScore(-rrZ);
+    }
+
     const readinessScoreRaw = latestMetric
       ? hrvScore * weights.hrv +
         restingHrScore * weights.restingHr +
         sleepScore * weights.sleep +
-        loadBalanceScore * weights.loadBalance
+        respiratoryRateScore * weights.respiratoryRate
       : null;
     const readinessScore = readinessScoreRaw != null ? Math.round(readinessScoreRaw) : null;
     const readinessLevel = getReadinessLevel(readinessScore);
@@ -678,16 +716,6 @@ export const trainingRouter = router({
 // Exported for unit testing — these are pure helpers with no side effects.
 export function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
-}
-
-export function zScoreToScore(zScore: number): number {
-  return clamp(Math.round((50 + zScore * 15) * 10) / 10, 0, 100);
-}
-
-export function acwrToScore(acwr: number | null): number {
-  if (acwr == null) return 50;
-  const deviation = Math.abs(acwr - 1);
-  return clamp(Math.round((1 - deviation) * 100), 0, 100);
 }
 
 export function getReadinessLevel(score: number | null): ReadinessLevel {

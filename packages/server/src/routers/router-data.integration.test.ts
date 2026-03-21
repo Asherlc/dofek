@@ -1301,12 +1301,24 @@ describe("Router data coverage", () => {
       expect(result.length).toBeGreaterThan(0);
     });
 
-    it("workloadRatio returns acute/chronic ratio", async () => {
-      const result = await query<
-        { date: string; acuteLoad: number; chronicLoad: number; ratio: number | null }[]
-      >("recovery.workloadRatio", { days: 90 });
+    it("workloadRatio returns acute/chronic ratio with displayed strain", async () => {
+      const result = await query<{
+        timeSeries: {
+          date: string;
+          dailyLoad: number;
+          strain: number;
+          acuteLoad: number;
+          chronicLoad: number;
+          workloadRatio: number | null;
+        }[];
+        displayedStrain: number;
+        displayedDate: string | null;
+      }>("recovery.workloadRatio", { days: 90 });
 
-      expect(Array.isArray(result)).toBe(true);
+      expect(Array.isArray(result.timeSeries)).toBe(true);
+      expect(typeof result.displayedStrain).toBe("number");
+      expect(result.displayedStrain).toBeGreaterThanOrEqual(0);
+      expect(result.displayedStrain).toBeLessThanOrEqual(21);
     });
 
     it("readinessScore returns composite score", async () => {

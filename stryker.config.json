@@ -14,6 +14,8 @@
     "packages/scoring/src/**/*.ts",
     "packages/nutrition/src/**/*.ts",
     "packages/training/src/**/*.ts",
+    "packages/recovery/src/**/*.ts",
+    "packages/zones/src/**/*.ts",
     "packages/stats/src/**/*.ts",
     "packages/onboarding/src/**/*.ts",
     "packages/providers-meta/src/**/*.ts",

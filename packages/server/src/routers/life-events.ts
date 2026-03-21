@@ -1,10 +1,54 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
+
+const lifeEventRowSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  started_at: z.string(),
+  ended_at: z.string().nullable(),
+  category: z.string().nullable(),
+  ongoing: z.coerce.boolean(),
+  notes: z.string().nullable(),
+  created_at: z.string(),
+});
+
+/** Schema for life event rows from RETURNING * (includes user_id) */
+const lifeEventFullRowSchema = lifeEventRowSchema.extend({
+  user_id: z.string(),
+});
+
+const metricsComparisonRowSchema = z.object({
+  period: z.string(),
+  days: z.coerce.number(),
+  avg_resting_hr: z.coerce.number().nullable(),
+  avg_hrv: z.coerce.number().nullable(),
+  avg_steps: z.coerce.number().nullable(),
+  avg_active_energy: z.coerce.number().nullable(),
+});
+
+const sleepComparisonRowSchema = z.object({
+  period: z.string(),
+  nights: z.coerce.number(),
+  avg_sleep_min: z.coerce.number().nullable(),
+  avg_deep_min: z.coerce.number().nullable(),
+  avg_rem_min: z.coerce.number().nullable(),
+  avg_efficiency: z.coerce.number().nullable(),
+});
+
+const bodyComparisonRowSchema = z.object({
+  period: z.string(),
+  measurements: z.coerce.number(),
+  avg_weight: z.coerce.number().nullable(),
+  avg_body_fat: z.coerce.number().nullable(),
+});
 
 export const lifeEventsRouter = router({
   list: cachedProtectedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
-    const rows = await ctx.db.execute(
+    const rows = await executeWithSchema(
+      ctx.db,
+      lifeEventRowSchema,
       sql`SELECT id, label, started_at, ended_at, category, ongoing, notes, created_at
           FROM fitness.life_events
           WHERE user_id = ${ctx.userId}
@@ -25,7 +69,9 @@ export const lifeEventsRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const rows = await ctx.db.execute(
+      const rows = await executeWithSchema(
+        ctx.db,
+        lifeEventFullRowSchema,
         sql`INSERT INTO fitness.life_events (user_id, label, started_at, ended_at, category, ongoing, notes)
             VALUES (${ctx.userId}, ${input.label}, ${input.startedAt}::date, ${input.endedAt}::date, ${input.category}, ${input.ongoing}, ${input.notes})
             RETURNING *`,
@@ -66,7 +112,9 @@ export const lifeEventsRouter = router({
       if (setClauses.length === 0) return null;
 
       const setExpr = sql.join(setClauses, sql`, `);
-      const rows = await ctx.db.execute(
+      const rows = await executeWithSchema(
+        ctx.db,
+        lifeEventFullRowSchema,
         sql`UPDATE fitness.life_events SET ${setExpr} WHERE user_id = ${ctx.userId} AND id = ${id} RETURNING *`,
       );
       return rows[0] ?? null;
@@ -99,11 +147,13 @@ export const lifeEventsRouter = router({
         })
         .passthrough();
 
-      const events = await ctx.db.execute(
+      const events = await executeWithSchema(
+        ctx.db,
+        lifeEventSchema,
         sql`SELECT * FROM fitness.life_events WHERE user_id = ${ctx.userId} AND id = ${input.id}`,
       );
       if (!events[0]) return null;
-      const event = lifeEventSchema.parse(events[0]);
+      const event = events[0];
 
       const startDate = event.started_at;
       const endDate = event.ended_at ?? (event.ongoing ? "NOW()" : null);
@@ -116,7 +166,10 @@ export const lifeEventsRouter = router({
         ? sql`user_id = ${ctx.userId} AND date BETWEEN ${startDate}::date AND ${endDate === "NOW()" ? sql`CURRENT_DATE` : sql`${endDate}::date`}`
         : sql`user_id = ${ctx.userId} AND date BETWEEN ${startDate}::date AND (${startDate}::date + ${w}::int)`;
 
-      const results = await ctx.db.execute(sql`
+      const results = await executeWithSchema(
+        ctx.db,
+        metricsComparisonRowSchema,
+        sql`
         WITH before_period AS (
           SELECT 'before' as period, *
           FROM fitness.v_daily_metrics
@@ -142,11 +195,15 @@ export const lifeEventsRouter = router({
         FROM combined
         GROUP BY period
         ORDER BY period
-      `);
+      `,
+      );
 
       // Sleep + body comp queries in parallel
       const [sleepResults, bodyResults] = await Promise.all([
-        ctx.db.execute(sql`
+        executeWithSchema(
+          ctx.db,
+          sleepComparisonRowSchema,
+          sql`
           WITH before_sleep AS (
             SELECT 'before' as period, *
             FROM fitness.v_sleep
@@ -182,8 +239,12 @@ export const lifeEventsRouter = router({
           FROM combined
           GROUP BY period
           ORDER BY period
-        `),
-        ctx.db.execute(sql`
+        `,
+        ),
+        executeWithSchema(
+          ctx.db,
+          bodyComparisonRowSchema,
+          sql`
           WITH before_body AS (
             SELECT 'before' as period, *
             FROM fitness.v_body_measurement
@@ -215,7 +276,8 @@ export const lifeEventsRouter = router({
           FROM combined
           GROUP BY period
           ORDER BY period
-        `),
+        `,
+        ),
       ]);
 
       return {

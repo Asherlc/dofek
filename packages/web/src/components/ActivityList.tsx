@@ -1,5 +1,6 @@
 import { parseValidDate } from "@dofek/format/format";
 import { useNavigate } from "@tanstack/react-router";
+import { formatNumber } from "../lib/format.ts";
 import { useUnitSystem } from "../lib/unitContext.ts";
 import { convertDistance, distanceLabel } from "../lib/units.ts";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
@@ -113,7 +114,7 @@ export function ActivityList({
                 </td>
                 <td className="py-2 pr-4 tabular-nums whitespace-nowrap text-foreground">
                   {a.distance_meters
-                    ? `${convertDistance(a.distance_meters / 1000, unitSystem).toFixed(1)} ${distanceLabel(unitSystem)}`
+                    ? `${formatNumber(convertDistance(a.distance_meters / 1000, unitSystem))} ${distanceLabel(unitSystem)}`
                     : "—"}
                 </td>
                 <td className="py-2 pr-4 tabular-nums whitespace-nowrap text-foreground">

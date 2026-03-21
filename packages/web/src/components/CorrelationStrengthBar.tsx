@@ -1,3 +1,5 @@
+import { formatSigned } from "../lib/format.ts";
+
 interface CorrelationStrengthBarProps {
   rho: number;
 }
@@ -27,8 +29,7 @@ export function CorrelationStrengthBar({ rho }: CorrelationStrengthBarProps) {
           isPositive ? "text-emerald-400" : "text-rose-400"
         }`}
       >
-        {clampedRho >= 0 ? "+" : ""}
-        {clampedRho.toFixed(2)}
+        {formatSigned(clampedRho, 2)}
       </span>
     </div>
   );

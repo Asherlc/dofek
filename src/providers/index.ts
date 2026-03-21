@@ -1,4 +1,4 @@
-import type { Provider } from "./types.ts";
+import { isSyncProvider, type Provider, type SyncProvider } from "./types.ts";
 
 /**
  * Registry of all available providers.
@@ -19,6 +19,11 @@ export function getProvider(id: string): Provider | undefined {
 
 export function getAllProviders(): Provider[] {
   return Array.from(providers.values());
+}
+
+/** Returns only providers that sync via API (excludes import-only providers). */
+export function getSyncProviders(): SyncProvider[] {
+  return getAllProviders().filter(isSyncProvider);
 }
 
 export function getEnabledProviders(): Provider[] {

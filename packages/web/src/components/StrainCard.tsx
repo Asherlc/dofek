@@ -5,13 +5,13 @@ import {
   workloadRatioColor,
 } from "@dofek/scoring/scoring";
 import { selectRecentDailyLoad } from "@dofek/training/training";
-import type { WorkloadRatioRow } from "dofek-server/types";
+import type { WorkloadRatioResult } from "dofek-server/types";
 import { useEffect, useState } from "react";
 import { useCountUp } from "../hooks/useCountUp.ts";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface StrainCardProps {
-  data: WorkloadRatioRow[] | undefined;
+  data: WorkloadRatioResult | undefined;
   loading?: boolean;
 }
 
@@ -82,7 +82,7 @@ export function StrainCard({ data, loading }: StrainCardProps) {
     return <ChartLoadingSkeleton height={200} />;
   }
 
-  if (!data || data.length === 0) {
+  if (!data || data.timeSeries.length === 0) {
     return (
       <div className="card p-6 flex items-center justify-center h-[200px]">
         <span className="text-dim text-sm">No strain data yet</span>
@@ -90,19 +90,18 @@ export function StrainCard({ data, loading }: StrainCardProps) {
     );
   }
 
-  const displayed = selectRecentDailyLoad(data);
-  const today = data[data.length - 1];
-  const strain = rawLoadToStrain(displayed?.dailyLoad ?? 0);
+  const today = data.timeSeries[data.timeSeries.length - 1];
+  const strain = data.displayedStrain;
   const label = strainLabel(strain);
   const color = strainColor(strain);
   const workloadRatio = today?.workloadRatio;
 
   const dateLabel =
-    displayed == null
+    data.displayedDate == null
       ? ""
-      : displayed.date === today?.date
+      : data.displayedDate === today?.date
         ? "Today"
-        : `Last training: ${new Date(displayed.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
+        : `Last training: ${new Date(data.displayedDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
 
   return (
     <div className="card p-6">

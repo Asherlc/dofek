@@ -6,6 +6,7 @@ import {
   dofekSeries,
   dofekTooltip,
 } from "../lib/chartTheme.ts";
+import { formatNumber } from "../lib/format.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
 interface HrvVariabilityChartProps {
@@ -54,7 +55,7 @@ export function HrvVariabilityChart({ data, loading }: HrvVariabilityChartProps)
           const unit = p.seriesName === "Rolling Variability" ? "%" : " ms";
           html += `<div style="display:flex;align-items:center;gap:6px">`;
           html += `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color}"></span>`;
-          html += `<span>${p.seriesName}: <b>${p.data[1].toFixed(1)}${unit}</b></span>`;
+          html += `<span>${p.seriesName}: <b>${formatNumber(p.data[1])}${unit}</b></span>`;
           html += `</div>`;
         }
         return html;

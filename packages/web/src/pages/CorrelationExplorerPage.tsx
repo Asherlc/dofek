@@ -5,6 +5,7 @@ import { AppHeader } from "../components/AppHeader.tsx";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import { CorrelationStrengthBar } from "../components/CorrelationStrengthBar.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
+import { formatNumber } from "../lib/format.ts";
 import { trpc } from "../lib/trpc.ts";
 
 const LAG_OPTIONS = [
@@ -85,7 +86,7 @@ function MetricSelect({
 
 function formatValue(v: number): string {
   if (Number.isInteger(v)) return v.toLocaleString();
-  return v.toFixed(1);
+  return formatNumber(v);
 }
 
 export function CorrelationExplorerPage() {
@@ -214,10 +215,11 @@ export function CorrelationExplorerPage() {
                 </div>
 
                 <div className="flex gap-4 text-[11px] text-dim pt-1">
-                  <span>R² = {data.regression.rSquared.toFixed(3)}</span>
+                  <span>R² = {formatNumber(data.regression.rSquared, 3)}</span>
                   <span>n = {data.sampleCount}</span>
                   <span>
-                    p = {data.spearmanPValue < 0.001 ? "< 0.001" : data.spearmanPValue.toFixed(3)}
+                    p ={" "}
+                    {data.spearmanPValue < 0.001 ? "< 0.001" : formatNumber(data.spearmanPValue, 3)}
                   </span>
                 </div>
               </div>

@@ -5,12 +5,10 @@ import { useAuth } from "../lib/auth-context.tsx";
 const navItems = [
   { to: "/dashboard", label: "Dashboard" },
   { to: "/training", label: "Training" },
+  { to: "/sleep", label: "Sleep" },
   { to: "/nutrition", label: "Nutrition" },
-  { to: "/nutrition-analytics", label: "Nutrition Analytics" },
-  { to: "/insights", label: "Insights" },
+  { to: "/body", label: "Body" },
   { to: "/correlation", label: "Correlation" },
-  { to: "/predictions", label: "ML" },
-  { to: "/providers", label: "Providers" },
   { to: "/tracking", label: "Tracking" },
   { to: "/settings", label: "Settings" },
 ] as const;

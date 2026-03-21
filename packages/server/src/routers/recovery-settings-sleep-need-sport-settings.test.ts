@@ -131,7 +131,7 @@ describe("recoveryRouter", () => {
   });
 
   describe("workloadRatio", () => {
-    it("returns workload ratio data", async () => {
+    it("returns workload ratio data with displayed strain", async () => {
       const rows = [
         {
           date: "2024-01-15",
@@ -144,8 +144,11 @@ describe("recoveryRouter", () => {
       const caller = makeCaller(rows);
       const result = await caller.workloadRatio({ days: 90 });
 
-      expect(result).toHaveLength(1);
-      expect(result[0]?.workloadRatio).toBe(1.14);
+      expect(result.timeSeries).toHaveLength(1);
+      expect(result.timeSeries[0]?.workloadRatio).toBe(1.14);
+      expect(result.timeSeries[0]?.strain).toBeGreaterThan(0);
+      expect(result.displayedStrain).toBeGreaterThan(0);
+      expect(result.displayedDate).toBe("2024-01-15");
     });
 
     it("handles null workload ratio", async () => {
@@ -155,7 +158,8 @@ describe("recoveryRouter", () => {
       const caller = makeCaller(rows);
       const result = await caller.workloadRatio({ days: 90 });
 
-      expect(result[0]?.workloadRatio).toBeNull();
+      expect(result.timeSeries[0]?.workloadRatio).toBeNull();
+      expect(result.displayedStrain).toBe(0);
     });
   });
 
@@ -233,8 +237,8 @@ describe("recoveryRouter", () => {
       const result = await caller.readinessScore({ days: 30 });
 
       if (result.length > 0) {
-        // All null defaults to 50 for each component
-        expect(result[0]?.readinessScore).toBe(50);
+        // All null defaults to 62 for each component (sigmoid center)
+        expect(result[0]?.readinessScore).toBe(62);
       }
     });
   });

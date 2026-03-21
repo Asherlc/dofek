@@ -4,6 +4,7 @@ import { z } from "zod";
 import { AppHeader } from "../components/AppHeader.tsx";
 import { ProviderLogo } from "../components/ProviderLogo.tsx";
 import { formatRelativeTime, formatTime } from "../lib/dates.ts";
+import { formatNumber } from "../lib/format.ts";
 import { pollSyncJob } from "../lib/poll-sync-job.ts";
 import { trpc } from "../lib/trpc.ts";
 
@@ -433,7 +434,7 @@ function SyncHistory({ providerId }: { providerId: string }) {
                       {row.recordCount ?? "—"}
                     </td>
                     <td className="px-4 py-2 text-right text-muted tabular-nums">
-                      {row.durationMs != null ? `${(row.durationMs / 1000).toFixed(1)}s` : "—"}
+                      {row.durationMs != null ? `${formatNumber(row.durationMs / 1000)}s` : "—"}
                     </td>
                     <td className="px-4 py-2 text-red-400/80 max-w-xs truncate">
                       {row.errorMessage ?? ""}
