@@ -12,7 +12,7 @@ import type {
   HeartRateVariabilityRow,
   ReadinessRow,
   StressResult,
-  WorkloadRow,
+  WorkloadRatioRow,
 } from "../../types/api";
 import { colors } from "../../theme";
 

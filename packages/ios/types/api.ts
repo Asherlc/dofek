@@ -1,82 +1,18 @@
 import { z } from "zod";
 
-// ── Schemas for well-typed tRPC endpoints (used for documentation/reuse) ──
+// ── Re-export server types used by iOS screens ──
 
-export interface ReadinessComponents {
-  // Field names match the server's recovery router output
-  hrvScore: number;
-  restingHrScore: number;
-  sleepScore: number;
-  loadBalanceScore: number;
-}
-
-export interface ReadinessRow {
-  date: string;
-  readinessScore: number;
-  components: ReadinessComponents;
-}
-
-export interface SleepNightlyRow {
-  date: string;
-  durationMinutes: number;
-  deepPct: number;
-  remPct: number;
-  lightPct: number;
-  awakePct: number;
-  efficiency: number;
-  rollingAvgDuration: number | null;
-}
-
-export interface SleepAnalyticsResult {
-  nightly: SleepNightlyRow[];
-  sleepDebt: number;
-}
-
-export interface WorkloadRow {
-  date: string;
-  dailyLoad: number;
-  strain: number;
-  acuteLoad: number;
-  chronicLoad: number;
-  workloadRatio: number | null;
-}
-
-export interface WorkloadResult {
-  timeSeries: WorkloadRow[];
-  displayedStrain: number;
-  displayedDate: string | null;
-}
-
-export interface HeartRateVariabilityRow {
-  date: string;
-  hrv: number | null;
-  rollingCoefficientOfVariation: number | null;
-  rollingMean: number | null;
-}
-
-export interface StressResult {
-  daily: Array<{
-    date: string;
-    stressScore: number;
-  }>;
-  weekly: Array<{
-    weekStart: string;
-    cumulativeStress: number;
-    avgDailyStress: number;
-    highStressDays: number;
-  }>;
-  latestScore: number | null;
-  trend: "improving" | "worsening" | "stable";
-}
-
-export interface SleepConsistencyRow {
-  date: string;
-  bedtimeHour: number;
-  waketimeHour: number;
-  rollingBedtimeStddev: number | null;
-  rollingWaketimeStddev: number | null;
-  consistencyScore: number | null;
-}
+export type {
+  HrvVariabilityRow as HeartRateVariabilityRow,
+  ReadinessComponents,
+  ReadinessRow,
+  SleepAnalyticsResult,
+  SleepConsistencyRow,
+  SleepNightlyRow,
+  StressResult,
+  WorkloadRatioResult,
+  WorkloadRatioRow,
+} from "dofek-server/types";
 
 // ── Zod schemas for untyped tRPC endpoints (raw SQL results) ──
 

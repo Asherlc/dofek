@@ -13,7 +13,7 @@ import { aggregateWeeklyVolume, workloadRatioColor, workloadRatioHint } from "..
 import type { WeekSummary } from "../../lib/scoring";
 import { trpc } from "../../lib/trpc";
 import { useUnitSystem } from "../../lib/units";
-import type { ActivityRow, WorkloadRow } from "../../types/api";
+import type { ActivityRow, WorkloadRatioRow } from "../../types/api";
 import { ActivityRowSchema, WeeklyVolumeRowSchema } from "../../types/api";
 import { colors } from "../../theme";
 
