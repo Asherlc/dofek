@@ -389,14 +389,20 @@ describe("XertProvider.authSetup()", () => {
     process.env = { ...originalEnv };
   });
 
-  it("returns auth setup with public OAuth config", () => {
+  it("returns auth setup with automatedLogin (credential provider)", () => {
     delete process.env.XERT_CLIENT_ID;
     delete process.env.XERT_CLIENT_SECRET;
     const provider = new XertProvider();
     const setup = provider.authSetup();
     expect(setup.oauthConfig.clientId).toBe("xert_public");
-    expect(setup.exchangeCode).toBeTypeOf("function");
+    expect(setup.automatedLogin).toBeTypeOf("function");
     expect(setup.apiBaseUrl).toContain("xertonline.com");
+  });
+
+  it("exchangeCode throws (not supported for credential providers)", async () => {
+    const provider = new XertProvider();
+    const setup = provider.authSetup();
+    await expect(setup.exchangeCode("code")).rejects.toThrow();
   });
 
   it("always works even without env vars", () => {

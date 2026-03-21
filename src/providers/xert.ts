@@ -1,5 +1,6 @@
+import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
-import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
+import { getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { activity } from "../db/schema.ts";
@@ -103,7 +104,65 @@ export function parseXertActivity(raw: XertActivity): ParsedXertActivity {
 }
 
 // ============================================================
-// OAuth configuration
+// Token response schema (Zod — runtime boundary)
+// ============================================================
+
+const XertTokenResponseSchema = z.object({
+  access_token: z.string(),
+  refresh_token: z.string().optional(),
+  expires_in: z.number().optional(),
+  token_type: z.string().optional(),
+});
+
+/** Default expiry when the provider omits `expires_in` — 1 year. */
+const DEFAULT_EXPIRES_IN_SECONDS = 365 * 24 * 60 * 60;
+
+/**
+ * Sign in to Xert using the password grant.
+ * Xert does not support the OAuth authorization code flow —
+ * it only supports `grant_type=password` with Basic auth.
+ */
+export async function signInToXert(
+  email: string,
+  password: string,
+  fetchFn: typeof globalThis.fetch = globalThis.fetch,
+): Promise<TokenSet> {
+  const clientId = process.env.XERT_CLIENT_ID ?? "xert_public";
+  const clientSecret = process.env.XERT_CLIENT_SECRET ?? "xert_public";
+
+  const params = new URLSearchParams({
+    grant_type: "password",
+    username: email,
+    password: password,
+  });
+
+  const response = await fetchFn(`${XERT_API_BASE}/oauth/token`, {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${btoa(`${clientId}:${clientSecret}`)}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: params.toString(),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Xert sign-in failed (${response.status}): ${text}`);
+  }
+
+  const data = await response.json();
+  const parsed = XertTokenResponseSchema.parse(data);
+
+  return {
+    accessToken: parsed.access_token,
+    refreshToken: parsed.refresh_token ?? null,
+    expiresAt: new Date(Date.now() + (parsed.expires_in ?? DEFAULT_EXPIRES_IN_SECONDS) * 1000),
+    scopes: null,
+  };
+}
+
+// ============================================================
+// OAuth configuration (used for token refresh)
 // ============================================================
 
 export function xertOAuthConfig(): OAuthConfig | null {
@@ -147,7 +206,10 @@ export class XertProvider implements SyncProvider {
     const fetchFn = this.fetchFn;
     return {
       oauthConfig: config,
-      exchangeCode: (code) => exchangeCodeForTokens(config, code, fetchFn),
+      automatedLogin: (email, password) => signInToXert(email, password, fetchFn),
+      exchangeCode: async () => {
+        throw new Error("Xert uses automated login, not OAuth code exchange");
+      },
       apiBaseUrl: XERT_API_BASE,
     };
   }
