@@ -116,14 +116,41 @@ describe("PolarizationTrendChart option builder", () => {
     expect(thresholdSeries.data[1]).toEqual(["2024-01-08", 2.0]);
   });
 
-  it("colors data points green above 2.0 and red at or below 2.0", () => {
-    const option = buildPolarizationTrendOption(sampleWeeks);
-    const piSeries = option.series.find((s: { name?: string }) => s.name === "Polarization Index");
-    if (!piSeries) throw new Error("Expected PI series");
-    // First week: PI = 2.5 (above threshold) → green
-    expect(piSeries.data[0]).toHaveProperty("itemStyle", { color: "#22c55e" });
-    // Second week: PI = 1.8 (below threshold) → red
-    expect(piSeries.data[1]).toHaveProperty("itemStyle", { color: "#ef4444" });
+  it("colors data points green at or above 2.0 and red below 2.0", () => {
+    const weeksWithBoundary = [
+      {
+        week: "2024-01-01",
+        polarizationIndex: 2.5,
+        z1Seconds: 3600,
+        z2Seconds: 600,
+        z3Seconds: 900,
+      },
+      {
+        week: "2024-01-08",
+        polarizationIndex: 1.8,
+        z1Seconds: 2400,
+        z2Seconds: 1200,
+        z3Seconds: 600,
+      },
+      {
+        week: "2024-01-15",
+        polarizationIndex: 2.0,
+        z1Seconds: 3000,
+        z2Seconds: 800,
+        z3Seconds: 700,
+      },
+    ];
+    const option = buildPolarizationTrendOption(weeksWithBoundary);
+    const polarizationIndexSeries = option.series.find(
+      (s: { name?: string }) => s.name === "Polarization Index",
+    );
+    if (!polarizationIndexSeries) throw new Error("Expected polarization index series");
+    // 2.5 (above threshold) → green
+    expect(polarizationIndexSeries.data[0]).toHaveProperty("itemStyle", { color: "#22c55e" });
+    // 1.8 (below threshold) → red
+    expect(polarizationIndexSeries.data[1]).toHaveProperty("itemStyle", { color: "#ef4444" });
+    // 2.0 (exactly at threshold) → green
+    expect(polarizationIndexSeries.data[2]).toHaveProperty("itemStyle", { color: "#22c55e" });
   });
 
   it("explains missing zones when PI is unavailable", () => {
