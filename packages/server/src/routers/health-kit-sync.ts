@@ -43,7 +43,7 @@ const sleepSampleSchema = z.object({
 
 export type HealthKitSample = z.infer<typeof healthKitSampleSchema>;
 type WorkoutSample = z.infer<typeof workoutSampleSchema>;
-type SleepSample = z.infer<typeof sleepSampleSchema>;
+export type SleepSample = z.infer<typeof sleepSampleSchema>;
 
 // ── Type routing maps ──
 
@@ -315,6 +315,52 @@ function deriveSleepSessionsFromStages(samples: SleepSample[]): SleepSample[] {
   }
 
   return sessions;
+}
+
+function isGranularStage(value: string): boolean {
+  return value === "asleepCore" || value === "asleepDeep" || value === "asleepREM";
+}
+
+/**
+ * Filter sleep stages for a session to prevent cross-source double-counting.
+ *
+ * HealthKit returns samples from ALL sources (iPhone, Apple Watch, third-party apps).
+ * When multiple sources cover the same night:
+ * - iPhone may write `asleep` (unspecified) covering the full sleep period
+ * - Apple Watch writes granular stages (`asleepCore`, `asleepDeep`, `asleepREM`)
+ *
+ * Without filtering, the iPhone's `asleep` inflates light sleep, drowning out
+ * the Apple Watch's granular deep/REM data. This function picks the single best
+ * source — the one with the most granular stage records — and discards the rest.
+ *
+ * If no source has granular stages, all stages are kept (backwards-compatible).
+ */
+export function filterStagesByBestSource(stages: SleepSample[]): SleepSample[] {
+  // Count granular stages per source
+  const granularCountBySource = new Map<string, number>();
+  for (const stage of stages) {
+    if (isGranularStage(stage.value)) {
+      granularCountBySource.set(
+        stage.sourceName,
+        (granularCountBySource.get(stage.sourceName) ?? 0) + 1,
+      );
+    }
+  }
+
+  // No granular data from any source — keep everything (legacy behavior)
+  if (granularCountBySource.size === 0) return stages;
+
+  // Pick the source with the most granular stage records
+  let bestSource = "";
+  let bestCount = 0;
+  for (const [source, count] of granularCountBySource) {
+    if (count > bestCount) {
+      bestCount = count;
+      bestSource = source;
+    }
+  }
+
+  return stages.filter((s) => s.sourceName === bestSource);
 }
 
 async function linkUnassignedHeartRateToWorkouts(
@@ -719,42 +765,54 @@ async function processSleepSamples(
     const sessionStart = new Date(session.startDate).getTime();
     const sessionEnd = new Date(session.endDate).getTime();
 
+    // Filter stages that overlap this session
+    const overlapping = stageSamples.filter((stage) => {
+      const stageStart = new Date(stage.startDate).getTime();
+      const stageEnd = new Date(stage.endDate).getTime();
+      return stageStart >= sessionStart && stageEnd <= sessionEnd;
+    });
+
+    // Pick the best source to avoid cross-source double-counting
+    // (e.g., iPhone's "asleep" inflating light over Apple Watch's granular stages)
+    const filtered = filterStagesByBestSource(overlapping);
+
     let deepMinutes = 0;
     let remMinutes = 0;
     let lightMinutes = 0;
     let awakeMinutes = 0;
 
-    for (const stage of stageSamples) {
+    for (const stage of filtered) {
       const stageStart = new Date(stage.startDate).getTime();
       const stageEnd = new Date(stage.endDate).getTime();
-
-      if (stageStart >= sessionStart && stageEnd <= sessionEnd) {
-        const durationMinutes = Math.round((stageEnd - stageStart) / (1000 * 60));
-        switch (stage.value) {
-          case "asleep":
-          case "asleepUnspecified":
-            lightMinutes += durationMinutes;
-            break;
-          case "asleepDeep":
-            deepMinutes += durationMinutes;
-            break;
-          case "asleepREM":
-            remMinutes += durationMinutes;
-            break;
-          case "asleepCore":
-            lightMinutes += durationMinutes;
-            break;
-          case "awake":
-            awakeMinutes += durationMinutes;
-            break;
-        }
+      const durationMinutes = Math.round((stageEnd - stageStart) / (1000 * 60));
+      switch (stage.value) {
+        case "asleep":
+        case "asleepUnspecified":
+          lightMinutes += durationMinutes;
+          break;
+        case "asleepDeep":
+          deepMinutes += durationMinutes;
+          break;
+        case "asleepREM":
+          remMinutes += durationMinutes;
+          break;
+        case "asleepCore":
+          lightMinutes += durationMinutes;
+          break;
+        case "awake":
+          awakeMinutes += durationMinutes;
+          break;
       }
     }
 
+    // Use the stage source's name (e.g., "Apple Watch") so v_sleep device
+    // priority can kick in. Falls back to the inBed session's source.
+    const bestStageSource = filtered[0];
+    const sourceName = bestStageSource != null ? bestStageSource.sourceName : session.sourceName;
     const externalId = `hk:sleep:${session.uuid}`;
     const durationMinutes = Math.round((sessionEnd - sessionStart) / (1000 * 60));
     await db.execute(
-      sql`INSERT INTO fitness.sleep_session (user_id, provider_id, external_id, started_at, ended_at, duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes, sleep_type)
+      sql`INSERT INTO fitness.sleep_session (user_id, provider_id, external_id, started_at, ended_at, duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes, sleep_type, source_name)
           VALUES (
             ${userId},
             ${PROVIDER_ID},
@@ -766,7 +824,8 @@ async function processSleepSamples(
             ${remMinutes},
             ${lightMinutes},
             ${awakeMinutes},
-            ${null}
+            ${null},
+            ${sourceName}
           )
           ON CONFLICT (provider_id, external_id) DO UPDATE SET
             started_at = ${session.startDate}::timestamptz,
@@ -776,7 +835,8 @@ async function processSleepSamples(
             rem_minutes = ${remMinutes},
             light_minutes = ${lightMinutes},
             awake_minutes = ${awakeMinutes},
-            sleep_type = ${null}`,
+            sleep_type = ${null},
+            source_name = ${sourceName}`,
     );
     inserted++;
   }
