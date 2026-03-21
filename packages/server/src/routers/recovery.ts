@@ -1,7 +1,4 @@
-import {
-  computeReadinessScore,
-  type ReadinessComponents,
-} from "@dofek/recovery/readiness";
+import { computeReadinessScore, type ReadinessComponents } from "@dofek/recovery/readiness";
 import { computeSleepConsistencyScore } from "@dofek/recovery/sleep-consistency";
 import { rawLoadToStrain, zScoreToRecoveryScore } from "@dofek/scoring/scoring";
 import { selectRecentDailyLoad } from "@dofek/training/training";
