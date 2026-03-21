@@ -102,6 +102,7 @@ describe("trpc", () => {
       const caller = createCaller({
         db: {},
         userId: "user-123",
+        timezone: "UTC",
       });
 
       const result = await caller.test();
