@@ -84,33 +84,35 @@ describe("formatSleepDebtInline", () => {
 });
 
 describe("formatHour", () => {
-  it("formats midnight as 12:00 AM", () => {
-    expect(formatHour(0)).toBe("12:00 AM");
+  it("formats midnight as 12:00 AM in en-US", () => {
+    expect(formatHour(0, "en-US")).toBe("12:00 AM");
   });
 
-  it("formats noon as 12:00 PM", () => {
-    expect(formatHour(12)).toBe("12:00 PM");
+  it("formats noon as 12:00 PM in en-US", () => {
+    expect(formatHour(12, "en-US")).toBe("12:00 PM");
   });
 
-  it("formats 22.5 as 10:30 PM", () => {
-    expect(formatHour(22.5)).toBe("10:30 PM");
+  it("formats 22.5 as 10:30 PM in en-US", () => {
+    expect(formatHour(22.5, "en-US")).toBe("10:30 PM");
   });
 
-  it("formats 7.25 as 7:15 AM", () => {
-    expect(formatHour(7.25)).toBe("7:15 AM");
+  it("formats 7.25 as 7:15 AM in en-US", () => {
+    expect(formatHour(7.25, "en-US")).toBe("7:15 AM");
   });
 
   it("does not produce :60 minutes for edge case", () => {
-    // 22.999: the old code would produce Math.round(0.999*60)=60 → "10:60 PM"
-    // Fixed: converts to total minutes first, then divides
-    const result = formatHour(22.999);
+    const result = formatHour(22.999, "en-US");
     expect(result).not.toContain(":60");
     expect(result).toBe("11:00 PM");
   });
 
   it("handles 23.999 wrapping correctly", () => {
-    const result = formatHour(23.999);
+    const result = formatHour(23.999, "en-US");
     expect(result).not.toContain(":60");
     expect(result).toBe("12:00 AM");
+  });
+
+  it("uses 24-hour format for de-DE locale", () => {
+    expect(formatHour(22.5, "de-DE")).toBe("22:30");
   });
 });

@@ -108,32 +108,45 @@ describe("formatSleepDebt", () => {
 });
 
 describe("formatHour", () => {
-  it("formats midnight (0) as 12:00 AM", () => {
-    expect(formatHour(0)).toBe("12:00 AM");
+  it("formats midnight (0) as 12:00 AM in en-US", () => {
+    expect(formatHour(0, "en-US")).toBe("12:00 AM");
   });
 
-  it("formats 1am", () => {
-    expect(formatHour(1)).toBe("1:00 AM");
+  it("formats 1am in en-US", () => {
+    expect(formatHour(1, "en-US")).toBe("1:00 AM");
   });
 
-  it("formats 11am", () => {
-    expect(formatHour(11)).toBe("11:00 AM");
+  it("formats 11am in en-US", () => {
+    expect(formatHour(11, "en-US")).toBe("11:00 AM");
   });
 
-  it("formats noon (12) as 12:00 PM", () => {
-    expect(formatHour(12)).toBe("12:00 PM");
+  it("formats noon (12) as 12:00 PM in en-US", () => {
+    expect(formatHour(12, "en-US")).toBe("12:00 PM");
   });
 
-  it("formats 1pm", () => {
-    expect(formatHour(13)).toBe("1:00 PM");
+  it("formats 1pm in en-US", () => {
+    expect(formatHour(13, "en-US")).toBe("1:00 PM");
   });
 
-  it("formats decimal hours with minutes", () => {
-    expect(formatHour(22.5)).toBe("10:30 PM");
+  it("formats decimal hours with minutes in en-US", () => {
+    expect(formatHour(22.5, "en-US")).toBe("10:30 PM");
   });
 
-  it("pads minutes to 2 digits", () => {
-    expect(formatHour(9.083)).toBe("9:05 AM");
+  it("pads minutes to 2 digits in en-US", () => {
+    expect(formatHour(9.083, "en-US")).toBe("9:05 AM");
+  });
+
+  it("uses 24-hour format for de-DE locale", () => {
+    expect(formatHour(22.5, "de-DE")).toBe("22:30");
+  });
+
+  it("formats midnight in 24-hour locale", () => {
+    expect(formatHour(0, "de-DE")).toBe("0:00");
+  });
+
+  it("uses device locale when no locale specified", () => {
+    // Should not throw regardless of environment locale
+    expect(() => formatHour(12)).not.toThrow();
   });
 });
 

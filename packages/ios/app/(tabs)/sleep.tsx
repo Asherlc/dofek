@@ -141,19 +141,39 @@ export default function SleepScreen() {
                   <Text style={styles.consistencyLabel}>Avg Wake</Text>
                 </View>
               </View>
-              {consistency.length >= 2 && (
-                <View style={styles.sparkContainer}>
-                  <SparkLine
-                    data={consistency
-                      .filter((c) => c.consistencyScore != null)
-                      .map((c) => c.consistencyScore as number)}
-                    width={300}
-                    height={50}
-                    color={colors.purple}
-                    showBaseline
-                  />
-                </View>
-              )}
+              {consistency.length >= 2 && (() => {
+                const scored = consistency.filter(
+                  (c): c is SleepConsistencyRow & { consistencyScore: number } =>
+                    c.consistencyScore != null,
+                );
+                const first = scored[0];
+                const last = scored[scored.length - 1];
+                if (!first || !last) return null;
+                return (
+                  <View style={styles.chartWithAxes}>
+                    <View style={styles.yAxis}>
+                      <Text style={styles.axisLabel}>100</Text>
+                      <Text style={styles.axisLabel}>0</Text>
+                    </View>
+                    <View style={styles.chartBody}>
+                      <SparkLine
+                        data={scored.map((c) => c.consistencyScore)}
+                        height={60}
+                        color={colors.purple}
+                        showBaseline
+                      />
+                      <View style={styles.xAxis}>
+                        <Text style={styles.axisLabel}>
+                          {new Date(first.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                        </Text>
+                        <Text style={styles.axisLabel}>
+                          {new Date(last.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                );
+              })()}
             </View>
           )}
 
@@ -274,9 +294,27 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.textTertiary,
   },
-  sparkContainer: {
-    alignItems: "center",
+  chartWithAxes: {
+    flexDirection: "row",
     marginTop: 4,
+  },
+  yAxis: {
+    justifyContent: "space-between",
+    paddingRight: 6,
+    paddingBottom: 18,
+  },
+  chartBody: {
+    flex: 1,
+  },
+  xAxis: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 4,
+  },
+  axisLabel: {
+    fontSize: 10,
+    color: colors.textTertiary,
+    fontVariant: ["tabular-nums"],
   },
   nightlyStack: {
     gap: 12,
