@@ -57,6 +57,8 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
   const firstDate = weeks[0]?.week ?? "";
   const lastDate = weeks[weeks.length - 1]?.week ?? "";
 
+  const incompleteWeeks = weeks.filter((w) => w.polarizationIndex === null);
+
   return {
     backgroundColor: "transparent",
     grid: { top: 40, right: 20, bottom: 40, left: 55 },
@@ -195,6 +197,22 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
         itemStyle: { borderWidth: 2 },
         z: 10,
       },
+      // Weeks where PI couldn't be computed (missing zone coverage)
+      ...(incompleteWeeks.length > 0
+        ? [
+            {
+              name: "Incomplete weeks",
+              type: "scatter" as const,
+              data: incompleteWeeks.map((w) => ({
+                value: [w.week, yMin],
+              })),
+              symbol: "diamond",
+              symbolSize: 8,
+              itemStyle: { color: "#f59e0b", opacity: 0.6 },
+              z: 5,
+            },
+          ]
+        : []),
     ],
     legend: {
       show: false,
