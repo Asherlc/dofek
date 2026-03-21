@@ -18,7 +18,7 @@ import { OnboardingWelcome } from "../../components/OnboardingWelcome";
 import { RecoveryRing } from "../../components/charts/RecoveryRing";
 import { SleepBar } from "../../components/charts/SleepBar";
 import { StrainGauge } from "../../components/charts/StrainGauge";
-import { formatDurationMinutes, formatSleepDebtInline } from "../../lib/format";
+import { formatDurationMinutes, formatSleepDebtInline } from "@dofek/format/format";
 import { readinessLevelColor, scoreColor, scoreLabel, trendColor, trendDirection as computeTrend } from "../../lib/scoring";
 import { trpc } from "../../lib/trpc";
 import { convertTemperature, convertWeight, temperatureLabel, useUnitSystem, weightLabel } from "../../lib/units";
