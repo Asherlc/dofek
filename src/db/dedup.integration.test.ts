@@ -539,6 +539,45 @@ describe("Deduplication materialized views", () => {
       expect(mainSleep[0]?.provider_id).toBe("whoop");
     });
 
+    it("v_daily_metrics picks Apple Watch over iPhone for steps within apple_health", async () => {
+      // Same date, same provider (apple_health), different source_name values.
+      // Apple Watch has daily_activity_priority 15 (from provider-level config),
+      // iPhone has daily_activity_priority 50 (from device_priority pattern).
+      // The view should pick Apple Watch's step count.
+      await ctx.db.insert(dailyMetrics).values([
+        {
+          date: "2026-03-18",
+          providerId: "apple_health",
+          sourceName: "Apple Watch",
+          steps: 4200,
+          activeEnergyKcal: 280,
+          distanceKm: 3.1,
+        },
+        {
+          date: "2026-03-18",
+          providerId: "apple_health",
+          sourceName: "iPhone",
+          steps: 3800,
+          activeEnergyKcal: 250,
+          distanceKm: 2.9,
+        },
+      ]);
+
+      await refreshDedupViews(ctx.db);
+
+      const rows = await ctx.db.execute<DailyMetricsViewRow>(
+        sql`SELECT * FROM fitness.v_daily_metrics WHERE date = '2026-03-18'`,
+      );
+
+      expect(rows.length).toBe(1);
+      const day = rows[0];
+      expect(day).toBeDefined();
+      // Apple Watch (activity priority 15) beats iPhone (activity priority 50)
+      expect(day?.steps).toBe(4200);
+      expect(Number(day?.active_energy_kcal)).toBeCloseTo(280);
+      expect(Number(day?.distance_km)).toBeCloseTo(3.1);
+    });
+
     it("v_activity uses device priority: Apple Health + Wahoo TICKR beats WHOOP", async () => {
       // Apple Health with source_name="Wahoo TICKR" should get device priority (5)
       // which beats WHOOP's provider-level activity priority (30)

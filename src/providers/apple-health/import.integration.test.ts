@@ -790,18 +790,26 @@ describe("importAppleHealthFile — full DB integration", () => {
     expect(bpRow?.diastolicBp).toBe(80);
   });
 
-  it("creates daily_metrics rows with aggregated steps, distance, resting HR", async () => {
+  it("creates per-source daily_metrics rows with steps, distance, resting HR", async () => {
     const rows = await ctx.db.select().from(schema.dailyMetrics);
-    const day = rows.find((r) => r.date === "2024-03-01");
-    expect(day).toBeDefined();
-    // Steps: 1250 + 800 = 2050
-    expect(day?.steps).toBe(2050);
-    expect(day?.restingHr).toBe(52);
-    expect(day?.flightsClimbed).toBe(3);
-    // Distance: 523.7 m → 0.5237 km
-    expect(day?.distanceKm).toBeCloseTo(0.5237);
-    // Active energy: 300 + 223.4 = 523.4
-    expect(day?.activeEnergyKcal).toBeCloseTo(523.4);
+    const dayRows = rows.filter((r) => r.date === "2024-03-01");
+    expect(dayRows.length).toBeGreaterThanOrEqual(1);
+
+    // With per-source rows, different sources get separate rows.
+    // Find values across all sources for the day.
+    const iPhoneRow = dayRows.find((r) => r.sourceName === "iPhone");
+    const watchRow = dayRows.find((r) => r.sourceName === "Apple Watch");
+
+    // Steps come from iPhone source in the test fixture: 1250 + 800 = 2050
+    expect(iPhoneRow?.steps).toBe(2050);
+    // Resting HR comes from Apple Watch source
+    expect(watchRow?.restingHr).toBe(52);
+    // Flights come from iPhone source (same as steps)
+    expect(iPhoneRow?.flightsClimbed).toBe(3);
+    // Distance from iPhone: 523.7 m → 0.5237 km
+    expect(iPhoneRow?.distanceKm).toBeCloseTo(0.5237);
+    // Active energy from Apple Watch: 300 + 223.4 = 523.4
+    expect(watchRow?.activeEnergyKcal).toBeCloseTo(523.4);
   });
 
   it("creates nutrition_daily rows with aggregated nutrition", async () => {

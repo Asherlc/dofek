@@ -221,7 +221,7 @@ export class UltrahumanProvider implements Provider {
                   skinTempC: daily.skinTempC,
                 })
                 .onConflictDoUpdate({
-                  target: [dailyMetrics.date, dailyMetrics.providerId],
+                  target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
                   set: {
                     restingHr: daily.restingHr,
                     hrv: daily.hrv,
