@@ -218,6 +218,45 @@ describe("WhoopProvider.sync() (integration)", () => {
     expect(day.skinTempC).toBeCloseTo(33.7);
   });
 
+  it("syncs BFF v0 flat recovery format into daily_metrics", async () => {
+    const cycles = [
+      fakeCycle({
+        recovery: {
+          cycle_id: 100,
+          sleep_id: 10235,
+          user_id: 10129,
+          created_at: "2026-03-01T11:25:44.774Z",
+          updated_at: "2026-03-01T14:25:44.774Z",
+          score_state: "complete",
+          recovery_score: 88,
+          resting_heart_rate: 57,
+          hrv_rmssd: 0.077110276,
+          spo2_percentage: 96.5,
+          skin_temp_celsius: 34.2,
+          calibrating: false,
+        },
+      }),
+    ];
+    server.use(...whoopHandlers(cycles));
+    const provider = new WhoopProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+
+    expect(result.errors).toHaveLength(0);
+
+    const rows = await ctx.db
+      .select()
+      .from(dailyMetrics)
+      .where(eq(dailyMetrics.providerId, "whoop"));
+
+    expect(rows.length).toBeGreaterThanOrEqual(1);
+    const day = rows.find((r) => r.date === "2026-03-01");
+    if (!day) throw new Error("expected day 2026-03-01");
+    expect(day.restingHr).toBe(57);
+    expect(day.hrv).toBeCloseTo(77.1, 0);
+    expect(day.spo2Avg).toBeCloseTo(96.5);
+    expect(day.skinTempC).toBeCloseTo(34.2);
+  });
+
   it("syncs sleep sessions", async () => {
     const cycles = [fakeCycle()];
     server.use(...whoopHandlers(cycles));
