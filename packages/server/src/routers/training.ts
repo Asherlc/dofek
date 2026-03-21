@@ -1,3 +1,4 @@
+import { zScoreToRecoveryScore } from "@dofek/scoring/scoring";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
@@ -715,26 +716,6 @@ export const trainingRouter = router({
 // Exported for unit testing — these are pure helpers with no side effects.
 export function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
-}
-
-/**
- * Map a z-score to a 0-100 recovery score using an asymmetric sigmoid.
- * Tuned to match Whoop's recovery scoring:
- *   z=0 (at baseline mean) → 62
- *   z=+1 → ~80, z=-1 → ~40
- *   z=+2 → ~93, z=-2 → ~18
- */
-export function zScoreToRecoveryScore(zScore: number): number {
-  const center = 62;
-  const k = 1.1;
-  const sigmoid = 1 / (1 + Math.exp(-zScore * k));
-  const scaleUp = 100 - center;
-  const scaleDown = center;
-  const score =
-    sigmoid >= 0.5
-      ? center + scaleUp * ((sigmoid - 0.5) / 0.5)
-      : center - scaleDown * ((0.5 - sigmoid) / 0.5);
-  return clamp(Math.round(score), 0, 100);
 }
 
 export function getReadinessLevel(score: number | null): ReadinessLevel {

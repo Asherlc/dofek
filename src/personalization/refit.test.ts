@@ -303,42 +303,42 @@ describe("parseReadinessRows", () => {
     expect(parseReadinessRows([validReadinessRow({ next_day_hrv_sd: 0 })])).toHaveLength(0);
   });
 
-  it("computes hrvScore correctly using z-score formula", () => {
-    // hrv=70, hrv_mean=50, hrv_sd=10 => zHrv=(70-50)/10=2 => score=50+2*15=80
+  it("computes hrvScore correctly using sigmoid z-score formula", () => {
+    // hrv=70, hrv_mean=50, hrv_sd=10 => zHrv=2 => zScoreToRecoveryScore(2) = 92
     const result = parseReadinessRows([validReadinessRow({ hrv: 70, hrv_mean: 50, hrv_sd: 10 })]);
-    expect(result[0]?.hrvScore).toBe(80);
+    expect(result[0]?.hrvScore).toBe(92);
   });
 
-  it("clamps hrvScore at 0 for very negative z-score", () => {
-    // hrv=10, mean=50, sd=10 => z=-4 => 50+(-4)*15=-10 => clamp to 0
+  it("hrvScore near 0 for very negative z-score", () => {
+    // hrv=10, mean=50, sd=10 => z=-4 => zScoreToRecoveryScore(-4) ≈ 2
     const result = parseReadinessRows([validReadinessRow({ hrv: 10, hrv_mean: 50, hrv_sd: 10 })]);
-    expect(result[0]?.hrvScore).toBe(0);
+    expect(result[0]?.hrvScore).toBeLessThanOrEqual(5);
   });
 
-  it("clamps hrvScore at 100 for very positive z-score", () => {
-    // hrv=100, mean=50, sd=10 => z=5 => 50+5*15=125 => clamp to 100
+  it("hrvScore reaches 100 for very positive z-score", () => {
+    // hrv=100, mean=50, sd=10 => z=5 => zScoreToRecoveryScore(5) = 100
     const result = parseReadinessRows([validReadinessRow({ hrv: 100, hrv_mean: 50, hrv_sd: 10 })]);
     expect(result[0]?.hrvScore).toBe(100);
   });
 
   it("computes rhrScore with inverted sign (higher RHR = lower score)", () => {
-    // resting_hr=65, rhr_mean=55, rhr_sd=5 => zRhr=(65-55)/5=2 => score=50+(-2)*15=20
+    // resting_hr=65, rhr_mean=55, rhr_sd=5 => zRhr=2, -zRhr=-2 => zScoreToRecoveryScore(-2) = 12
     const result = parseReadinessRows([
       validReadinessRow({ resting_hr: 65, rhr_mean: 55, rhr_sd: 5 }),
     ]);
-    expect(result[0]?.rhrScore).toBe(20);
+    expect(result[0]?.rhrScore).toBe(12);
   });
 
-  it("clamps rhrScore at 0 for very high resting HR z-score", () => {
-    // resting_hr=80, mean=55, sd=5 => z=5 => score=50+(-5)*15=-25 => clamp to 0
+  it("rhrScore near 0 for very high resting HR z-score", () => {
+    // resting_hr=80, mean=55, sd=5 => z=5, -z=-5 => zScoreToRecoveryScore(-5) ≈ 1
     const result = parseReadinessRows([
       validReadinessRow({ resting_hr: 80, rhr_mean: 55, rhr_sd: 5 }),
     ]);
-    expect(result[0]?.rhrScore).toBe(0);
+    expect(result[0]?.rhrScore).toBeLessThanOrEqual(5);
   });
 
-  it("clamps rhrScore at 100 for very low resting HR z-score", () => {
-    // resting_hr=30, mean=55, sd=5 => z=-5 => score=50+5*15=125 => clamp to 100
+  it("rhrScore reaches 100 for very low resting HR z-score", () => {
+    // resting_hr=30, mean=55, sd=5 => z=-5, -z=5 => zScoreToRecoveryScore(5) = 100
     const result = parseReadinessRows([
       validReadinessRow({ resting_hr: 30, rhr_mean: 55, rhr_sd: 5 }),
     ]);
@@ -350,9 +350,9 @@ describe("parseReadinessRows", () => {
     expect(result[0]?.sleepScore).toBe(92);
   });
 
-  it("defaults sleepScore to 50 when efficiency_pct is null", () => {
+  it("defaults sleepScore to 62 when efficiency_pct is null", () => {
     const result = parseReadinessRows([validReadinessRow({ efficiency_pct: null })]);
-    expect(result[0]?.sleepScore).toBe(50);
+    expect(result[0]?.sleepScore).toBe(62);
   });
 
   it("clamps sleepScore at 0 for negative efficiency_pct", () => {
@@ -365,25 +365,25 @@ describe("parseReadinessRows", () => {
     expect(result[0]?.sleepScore).toBe(100);
   });
 
-  it("computes respiratoryRateScore using z-score (lower RR = better, inverted)", () => {
-    // respiratory_rate=15, rr_mean=16, rr_sd=1 => z=(15-16)/1=-1 => score=50+(-1)*(-15)=50+15=65
+  it("computes respiratoryRateScore using sigmoid z-score (lower RR = better, inverted)", () => {
+    // respiratory_rate=15, rr_mean=16, rr_sd=1 => z=-1, -z=1 => zScoreToRecoveryScore(1) = 81
     const result = parseReadinessRows([
       validReadinessRow({ respiratory_rate: 15, rr_mean: 16, rr_sd: 1 }),
     ]);
-    expect(result[0]?.respiratoryRateScore).toBe(65);
+    expect(result[0]?.respiratoryRateScore).toBe(81);
   });
 
-  it("computes respiratoryRateScore as 50 when respiratory rate equals mean", () => {
-    // respiratory_rate=16, rr_mean=16, rr_sd=1 => z=0 => score=50
+  it("computes respiratoryRateScore as 62 when respiratory rate equals mean", () => {
+    // respiratory_rate=16, rr_mean=16, rr_sd=1 => z=0 => zScoreToRecoveryScore(0) = 62
     const result = parseReadinessRows([
       validReadinessRow({ respiratory_rate: 16, rr_mean: 16, rr_sd: 1 }),
     ]);
-    expect(result[0]?.respiratoryRateScore).toBe(50);
+    expect(result[0]?.respiratoryRateScore).toBe(62);
   });
 
-  it("defaults respiratoryRateScore to 50 when respiratory_rate is null", () => {
+  it("defaults respiratoryRateScore to 62 when respiratory_rate is null", () => {
     const result = parseReadinessRows([validReadinessRow({ respiratory_rate: null })]);
-    expect(result[0]?.respiratoryRateScore).toBe(50);
+    expect(result[0]?.respiratoryRateScore).toBe(62);
   });
 
   it("computes nextDayHrvZScore correctly", () => {

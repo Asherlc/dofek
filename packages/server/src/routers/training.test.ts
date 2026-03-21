@@ -9,7 +9,6 @@ import {
   pickCardioFocus,
   pickStrengthSplit,
   uniqueStrings,
-  zScoreToRecoveryScore,
 } from "./training.ts";
 
 describe("clamp", () => {
@@ -24,36 +23,6 @@ describe("clamp", () => {
   });
   it("handles equal min and max", () => {
     expect(clamp(5, 3, 3)).toBe(3);
-  });
-});
-
-describe("zScoreToRecoveryScore", () => {
-  it("maps z=0 to 62 (Whoop-aligned average)", () => {
-    expect(zScoreToRecoveryScore(0)).toBe(62);
-  });
-  it("maps z=+1 to ~81 (1 SD above mean)", () => {
-    expect(zScoreToRecoveryScore(1)).toBe(81);
-  });
-  it("maps z=-1 to ~31 (1 SD below mean)", () => {
-    expect(zScoreToRecoveryScore(-1)).toBe(31);
-  });
-  it("maps z=+2 to ~92", () => {
-    expect(zScoreToRecoveryScore(2)).toBe(92);
-  });
-  it("maps z=-2 to ~12", () => {
-    expect(zScoreToRecoveryScore(-2)).toBe(12);
-  });
-  it("reaches 100 at extreme positive z", () => {
-    expect(zScoreToRecoveryScore(10)).toBe(100);
-  });
-  it("reaches 0 at extreme negative z", () => {
-    expect(zScoreToRecoveryScore(-10)).toBe(0);
-  });
-  it("is monotonically increasing", () => {
-    const scores = [-3, -2, -1, 0, 1, 2, 3].map(zScoreToRecoveryScore);
-    for (let i = 1; i < scores.length; i++) {
-      expect(scores[i]).toBeGreaterThanOrEqual(scores[i - 1] ?? 0);
-    }
   });
 });
 

@@ -1,3 +1,4 @@
+import { zScoreToRecoveryScore } from "@dofek/scoring/scoring";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { logger } from "../logger.ts";
@@ -168,16 +169,16 @@ export function parseReadinessRows(rows: Record<string, unknown>[]): ReadinessWe
 
     const zHrv = (Number(p.hrv) - Number(p.hrv_mean)) / Number(p.hrv_sd);
     const zRhr = (Number(p.resting_hr) - Number(p.rhr_mean)) / Number(p.rhr_sd);
-    const hrvScore = Math.max(0, Math.min(100, 50 + zHrv * 15));
-    const rhrScore = Math.max(0, Math.min(100, 50 + -zRhr * 15));
+    const hrvScore = zScoreToRecoveryScore(zHrv);
+    const rhrScore = zScoreToRecoveryScore(-zRhr);
     const sleepScore =
-      p.efficiency_pct != null ? Math.max(0, Math.min(100, Number(p.efficiency_pct))) : 50;
+      p.efficiency_pct != null ? Math.max(0, Math.min(100, Number(p.efficiency_pct))) : 62;
 
     // Respiratory rate score: lower is better (like RHR), inverted z-score
-    let respiratoryRateScore = 50;
+    let respiratoryRateScore = 62;
     if (p.respiratory_rate != null && p.rr_mean != null && p.rr_sd != null && Number(p.rr_sd) > 0) {
       const zRr = (Number(p.respiratory_rate) - Number(p.rr_mean)) / Number(p.rr_sd);
-      respiratoryRateScore = Math.max(0, Math.min(100, 50 + -zRr * 15));
+      respiratoryRateScore = zScoreToRecoveryScore(-zRr);
     }
 
     const nextDayHrvZScore =
