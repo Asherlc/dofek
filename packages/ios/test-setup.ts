@@ -225,6 +225,7 @@ vi.mock("expo-status-bar", () => ({
 // ── HealthKit native module mock ─────────────────────────────────────
 vi.mock("./modules/health-kit", () => ({
   getRequestStatus: vi.fn(() => Promise.resolve("shouldRequest")),
+  isBackgroundDeliveryEnabled: vi.fn(() => false),
   requestAuthorization: vi.fn(() => Promise.resolve(true)),
   queryWorkouts: vi.fn(() => Promise.resolve([])),
   querySleepSamples: vi.fn(() => Promise.resolve([])),

@@ -129,6 +129,11 @@ export async function queryAnchoredSamples(
 	return HealthKitModule.queryAnchoredSamples(typeIdentifier, anchor);
 }
 
+/** Check if background delivery was previously enabled on this device */
+export function isBackgroundDeliveryEnabled(): boolean {
+	return HealthKitModule.isBackgroundDeliveryEnabled();
+}
+
 /** Register for background delivery of a HealthKit type */
 export async function enableBackgroundDelivery(
 	typeIdentifier: string,

@@ -10,6 +10,7 @@ const mockQueryDailyStatistics = vi.fn();
 const mockQueryQuantitySamples = vi.fn();
 const mockQueryWorkouts = vi.fn();
 const mockQuerySleepSamples = vi.fn();
+const mockIsBackgroundDeliveryEnabled = vi.fn();
 const mockEnableBackgroundDelivery = vi.fn();
 const mockPushQuantityMutate = vi.fn();
 const mockPushWorkoutsMutate = vi.fn();
@@ -58,6 +59,7 @@ vi.mock("../../modules/health-kit", () => ({
 	queryQuantitySamples: mockQueryQuantitySamples,
 	queryWorkouts: mockQueryWorkouts,
 	querySleepSamples: mockQuerySleepSamples,
+	isBackgroundDeliveryEnabled: mockIsBackgroundDeliveryEnabled,
 	enableBackgroundDelivery: mockEnableBackgroundDelivery,
 }));
 
@@ -106,6 +108,8 @@ describe("HealthScreen", () => {
 	beforeEach(() => {
 		mockGetRequestStatus.mockReset();
 		mockGetRequestStatus.mockResolvedValue("shouldRequest");
+		mockIsBackgroundDeliveryEnabled.mockReset();
+		mockIsBackgroundDeliveryEnabled.mockReturnValue(false);
 		mockRequestPermissions.mockReset();
 		mockQueryDailyStatistics.mockReset();
 		mockQueryQuantitySamples.mockReset();
@@ -276,6 +280,15 @@ describe("HealthScreen", () => {
 		});
 
 		expect(mockSettingsSetMutate).not.toHaveBeenCalled();
+	});
+
+	it("shows background delivery as enabled when previously enabled on device", async () => {
+		mockIsBackgroundDeliveryEnabled.mockReturnValue(true);
+		const { default: HealthScreen } = await import("./health");
+		render(<HealthScreen />);
+		expect(screen.getByText("Background Delivery Enabled")).toBeTruthy();
+		const button = screen.getByText("Background Delivery Enabled").closest("button");
+		expect(button).toHaveProperty("disabled", true);
 	});
 
 	it("shows enabled state after enabling background delivery", async () => {

@@ -7,6 +7,7 @@ import {
   enableBackgroundDelivery,
   getRequestStatus,
   isAvailable,
+  isBackgroundDeliveryEnabled,
   queryDailyStatistics,
   queryQuantitySamples,
   querySleepSamples,
@@ -87,7 +88,9 @@ export default function HealthScreen() {
   const router = useRouter();
   const { user, serverUrl, logout } = useAuth();
   const [permissionsGranted, setPermissionsGranted] = useState(false);
-  const [backgroundEnabled, setBackgroundEnabled] = useState(false);
+  const [backgroundEnabled, setBackgroundEnabled] = useState(() =>
+    isAvailable() ? isBackgroundDeliveryEnabled() : false,
+  );
   const [status, setStatus] = useState<SyncStatus>({
     lastSync: null,
     syncing: false,
