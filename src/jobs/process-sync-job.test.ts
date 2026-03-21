@@ -178,11 +178,11 @@ describe("processSyncJob", () => {
     });
   });
 
-  it("logs success to sync log", async () => {
+  it("logs success to sync log with userId", async () => {
     const provider = createMockProvider({ id: "test", name: "Test" });
     mockGetSyncProviders.mockReturnValue([provider]);
 
-    await runSyncJob(createMockJob(), mockDb);
+    await runSyncJob(createMockJob({ userId: "user-1" }), mockDb);
 
     expect(mockLogSync).toHaveBeenCalledWith(
       mockDb,
@@ -192,6 +192,7 @@ describe("processSyncJob", () => {
         status: "success",
         recordCount: 5,
         errorMessage: undefined,
+        userId: "user-1",
       }),
     );
   });
@@ -222,6 +223,7 @@ describe("processSyncJob", () => {
         status: "error",
         errorMessage: "API timeout",
         durationMs: expect.any(Number),
+        userId: "user-1",
       }),
     );
 
@@ -268,6 +270,7 @@ describe("processSyncJob", () => {
         providerId: "partial",
         status: "error",
         errorMessage: "bad record 1; bad record 2",
+        userId: "user-1",
       }),
     );
 

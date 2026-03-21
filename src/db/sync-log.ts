@@ -8,6 +8,8 @@ export interface SyncLogEntry {
   recordCount?: number;
   errorMessage?: string;
   durationMs?: number;
+  /** User ID for this sync log entry. When omitted, falls back to the DB default (DEFAULT_USER_ID). */
+  userId?: string;
 }
 
 /**
@@ -21,6 +23,7 @@ export async function logSync(db: SyncDatabase, entry: SyncLogEntry): Promise<vo
     recordCount: entry.recordCount ?? 0,
     errorMessage: entry.errorMessage,
     durationMs: entry.durationMs,
+    userId: entry.userId,
   });
 }
 

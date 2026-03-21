@@ -97,6 +97,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
         recordCount: result.recordsSynced,
         errorMessage: hasErrors ? result.errors.map((e) => e.message).join("; ") : undefined,
         durationMs: Date.now() - syncStart,
+        userId: job.data.userId,
       });
     } catch (err: unknown) {
       completedCount++;
@@ -113,6 +114,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
         status: "error",
         errorMessage: message,
         durationMs: Date.now() - syncStart,
+        userId: job.data.userId,
       });
     }
   }

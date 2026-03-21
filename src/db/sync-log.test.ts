@@ -17,6 +17,7 @@ describe("logSync", () => {
       status: "success",
       recordCount: 42,
       durationMs: 1500,
+      userId: "user-123",
     };
 
     await logSync(db.db, entry);
@@ -29,6 +30,7 @@ describe("logSync", () => {
       recordCount: 42,
       errorMessage: undefined,
       durationMs: 1500,
+      userId: "user-123",
     });
   });
 
@@ -39,6 +41,7 @@ describe("logSync", () => {
       status: "error",
       errorMessage: "API timeout",
       durationMs: 5000,
+      userId: "user-456",
     };
 
     await logSync(db.db, entry);
@@ -50,6 +53,7 @@ describe("logSync", () => {
       recordCount: 0,
       errorMessage: "API timeout",
       durationMs: 5000,
+      userId: "user-456",
     });
   });
 
