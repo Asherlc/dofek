@@ -1,9 +1,4 @@
-import {
-  acwrToScore,
-  computeReadinessScore,
-  type ReadinessComponents,
-  zScoreToScore,
-} from "@dofek/recovery/readiness";
+import { type ReadinessComponents, ReadinessScore } from "@dofek/recovery/readiness";
 import { computeSleepConsistencyScore } from "@dofek/recovery/sleep-consistency";
 import { rawLoadToStrain } from "@dofek/scoring/scoring";
 import { selectRecentDailyLoad } from "@dofek/training/training";
@@ -485,53 +480,24 @@ export const recoveryRouter = router({
       for (const metrics of combinedRows) {
         if (metrics.date <= cutoffStr) continue;
 
-        // HRV score: higher HRV = better (positive z = good)
-        let hrvScore = 50;
-        if (
-          metrics.hrv != null &&
-          metrics.hrv_mean_60d != null &&
-          metrics.hrv_sd_60d != null &&
-          Number(metrics.hrv_sd_60d) > 0
-        ) {
-          const zHrv =
-            (Number(metrics.hrv) - Number(metrics.hrv_mean_60d)) / Number(metrics.hrv_sd_60d);
-          hrvScore = zScoreToScore(zHrv);
-        }
-
-        // Resting HR score: lower HR = better (negative z = good, so invert)
-        let restingHrScore = 50;
-        if (
-          metrics.resting_hr != null &&
-          metrics.rhr_mean_60d != null &&
-          metrics.rhr_sd_60d != null &&
-          Number(metrics.rhr_sd_60d) > 0
-        ) {
-          const zRhr =
-            (Number(metrics.resting_hr) - Number(metrics.rhr_mean_60d)) /
-            Number(metrics.rhr_sd_60d);
-          restingHrScore = zScoreToScore(-zRhr);
-        }
-
-        // Sleep efficiency score: direct mapping (0-100 already)
-        const efficiency = metrics.efficiency_pct != null ? Number(metrics.efficiency_pct) : null;
-        const sleepScore =
-          efficiency != null ? Math.max(0, Math.min(100, Math.round(efficiency))) : 50;
-
-        // Load balance score from ACWR
-        const acwr = metrics.acwr != null ? Number(metrics.acwr) : null;
-        const loadBalanceScore = acwrToScore(acwr);
-
-        const components: ReadinessComponents = {
-          hrvScore: Math.round(hrvScore),
-          restingHrScore: Math.round(restingHrScore),
-          sleepScore,
-          loadBalanceScore: Math.round(loadBalanceScore),
-        };
+        const readiness = ReadinessScore.fromMetrics(
+          {
+            hrv: metrics.hrv,
+            restingHr: metrics.resting_hr,
+            hrvMean: metrics.hrv_mean_60d,
+            hrvStddev: metrics.hrv_sd_60d,
+            rhrMean: metrics.rhr_mean_60d,
+            rhrStddev: metrics.rhr_sd_60d,
+            sleepEfficiency: metrics.efficiency_pct,
+            acwr: metrics.acwr,
+          },
+          weights,
+        );
 
         results.push({
           date: metrics.date,
-          readinessScore: computeReadinessScore(components, weights),
-          components,
+          readinessScore: readiness.score,
+          components: readiness.components,
         });
       }
 

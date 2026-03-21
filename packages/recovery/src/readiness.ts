@@ -1,7 +1,7 @@
 /**
  * Readiness scoring: composite metric from HRV, resting HR, sleep, and workload balance.
  *
- * Pure functions with no database dependencies.
+ * Pure class with no database dependencies.
  * Shared between web and iOS via @dofek/recovery.
  */
 
@@ -21,6 +21,17 @@ export interface ReadinessWeights {
   loadBalance: number;
 }
 
+export interface ReadinessMetrics {
+  hrv: number | null;
+  restingHr: number | null;
+  hrvMean: number | null;
+  hrvStddev: number | null;
+  rhrMean: number | null;
+  rhrStddev: number | null;
+  sleepEfficiency: number | null;
+  acwr: number | null;
+}
+
 // ── Default weights ─────────────────────────────────────────────
 
 export function defaultReadinessWeights(): ReadinessWeights {
@@ -32,43 +43,80 @@ export function defaultReadinessWeights(): ReadinessWeights {
   };
 }
 
-// ── Score helpers ───────────────────────────────────────────────
+// ── ReadinessScore ──────────────────────────────────────────────
 
-/**
- * Map a z-score to a 0-100 score.
- * z=0 → 50 (baseline), positive → higher (better for HRV), negative → lower.
- * Clamped to [0, 100].
- */
-export function zScoreToScore(zScore: number): number {
-  const score = 50 + zScore * 15;
-  return Math.max(0, Math.min(100, Math.round(score * 10) / 10));
-}
+export class ReadinessScore {
+  constructor(
+    readonly components: ReadinessComponents,
+    private readonly weights: ReadinessWeights,
+  ) {}
 
-/**
- * Map ACWR (Acute:Chronic Workload Ratio) to a 0-100 score.
- * Optimal is 1.0. Deviation in either direction is penalized.
- * null → 50 (neutral, insufficient data).
- */
-export function acwrToScore(acwr: number | null): number {
-  if (acwr == null) return 50;
-  const deviation = Math.abs(acwr - 1.0);
-  return Math.max(0, Math.min(100, Math.round((1 - deviation) * 100)));
-}
+  get score(): number {
+    const raw =
+      this.components.hrvScore * this.weights.hrv +
+      this.components.restingHrScore * this.weights.restingHr +
+      this.components.sleepScore * this.weights.sleep +
+      this.components.loadBalanceScore * this.weights.loadBalance;
 
-// ── Composite readiness ─────────────────────────────────────────
+    return Math.max(0, Math.min(100, Math.round(raw)));
+  }
 
-/**
- * Compute a composite readiness score (0-100) from weighted components.
- */
-export function computeReadinessScore(
-  components: ReadinessComponents,
-  weights: ReadinessWeights,
-): number {
-  const raw =
-    components.hrvScore * weights.hrv +
-    components.restingHrScore * weights.restingHr +
-    components.sleepScore * weights.sleep +
-    components.loadBalanceScore * weights.loadBalance;
+  static fromMetrics(metrics: ReadinessMetrics, weights: ReadinessWeights): ReadinessScore {
+    return new ReadinessScore(
+      {
+        hrvScore: Math.round(ReadinessScore.computeHrvScore(metrics)),
+        restingHrScore: Math.round(ReadinessScore.computeRestingHrScore(metrics)),
+        sleepScore: ReadinessScore.computeSleepScore(metrics.sleepEfficiency),
+        loadBalanceScore: Math.round(ReadinessScore.computeLoadBalanceScore(metrics.acwr)),
+      },
+      weights,
+    );
+  }
 
-  return Math.max(0, Math.min(100, Math.round(raw)));
+  private static computeHrvScore(metrics: ReadinessMetrics): number {
+    if (
+      metrics.hrv == null ||
+      metrics.hrvMean == null ||
+      metrics.hrvStddev == null ||
+      metrics.hrvStddev <= 0
+    ) {
+      return 50;
+    }
+    const zScore = (metrics.hrv - metrics.hrvMean) / metrics.hrvStddev;
+    return ReadinessScore.zScoreToScore(zScore);
+  }
+
+  private static computeRestingHrScore(metrics: ReadinessMetrics): number {
+    if (
+      metrics.restingHr == null ||
+      metrics.rhrMean == null ||
+      metrics.rhrStddev == null ||
+      metrics.rhrStddev <= 0
+    ) {
+      return 50;
+    }
+    const zScore = (metrics.restingHr - metrics.rhrMean) / metrics.rhrStddev;
+    return ReadinessScore.zScoreToScore(-zScore);
+  }
+
+  private static computeSleepScore(efficiency: number | null): number {
+    if (efficiency == null) return 50;
+    return Math.max(0, Math.min(100, Math.round(efficiency)));
+  }
+
+  private static computeLoadBalanceScore(acwr: number | null): number {
+    if (acwr == null) return 50;
+    const deviation = Math.abs(acwr - 1.0);
+    return Math.max(0, Math.min(100, Math.round((1 - deviation) * 100)));
+  }
+
+  /**
+   * Map a z-score to a 0-100 score.
+   * z=0 → 50 (baseline), positive → higher, negative → lower.
+   * Clamped to [0, 100].
+   */
+  private static zScoreToScore(zScore: number): number {
+    const score = 50 + zScore * 15;
+    return Math.max(0, Math.min(100, Math.round(score * 10) / 10));
+  }
 }

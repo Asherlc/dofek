@@ -1,111 +1,273 @@
 import { describe, expect, it } from "vitest";
-import {
-  acwrToScore,
-  computeReadinessScore,
-  defaultReadinessWeights,
-  type ReadinessComponents,
-  zScoreToScore,
-} from "./readiness.ts";
+import { ReadinessScore, defaultReadinessWeights } from "./readiness.ts";
 
-describe("zScoreToScore", () => {
-  it("maps z=0 to 50", () => {
-    expect(zScoreToScore(0)).toBe(50);
-  });
-
-  it("maps positive z-scores above 50", () => {
-    expect(zScoreToScore(1)).toBe(65);
-  });
-
-  it("maps negative z-scores below 50", () => {
-    expect(zScoreToScore(-1)).toBe(35);
-  });
-
-  it("clamps at 0", () => {
-    expect(zScoreToScore(-10)).toBe(0);
-  });
-
-  it("clamps at 100", () => {
-    expect(zScoreToScore(10)).toBe(100);
-  });
-});
-
-describe("acwrToScore", () => {
-  it("returns 100 for optimal ratio of 1.0", () => {
-    expect(acwrToScore(1.0)).toBe(100);
-  });
-
-  it("returns 50 for null", () => {
-    expect(acwrToScore(null)).toBe(50);
-  });
-
-  it("returns 0 for deviation >= 1.0", () => {
-    expect(acwrToScore(2.0)).toBe(0);
-    expect(acwrToScore(0.0)).toBe(0);
-  });
-
-  it("penalizes deviation from 1.0", () => {
-    const score = acwrToScore(1.3);
-    expect(score).toBeGreaterThan(0);
-    expect(score).toBeLessThan(100);
-  });
-});
-
-describe("computeReadinessScore", () => {
+describe("ReadinessScore", () => {
   const weights = defaultReadinessWeights();
 
-  it("returns 50 for all-neutral components", () => {
-    const components: ReadinessComponents = {
-      hrvScore: 50,
-      restingHrScore: 50,
-      sleepScore: 50,
-      loadBalanceScore: 50,
-    };
-    expect(computeReadinessScore(components, weights)).toBe(50);
+  describe("constructor + score", () => {
+    it("returns 50 for all-neutral components", () => {
+      const score = new ReadinessScore(
+        { hrvScore: 50, restingHrScore: 50, sleepScore: 50, loadBalanceScore: 50 },
+        weights,
+      );
+      expect(score.score).toBe(50);
+    });
+
+    it("returns 100 for perfect components", () => {
+      const score = new ReadinessScore(
+        { hrvScore: 100, restingHrScore: 100, sleepScore: 100, loadBalanceScore: 100 },
+        weights,
+      );
+      expect(score.score).toBe(100);
+    });
+
+    it("returns 0 for worst components", () => {
+      const score = new ReadinessScore(
+        { hrvScore: 0, restingHrScore: 0, sleepScore: 0, loadBalanceScore: 0 },
+        weights,
+      );
+      expect(score.score).toBe(0);
+    });
+
+    it("weighs HRV most heavily", () => {
+      const highHrv = new ReadinessScore(
+        { hrvScore: 100, restingHrScore: 50, sleepScore: 50, loadBalanceScore: 50 },
+        weights,
+      );
+      const highSleep = new ReadinessScore(
+        { hrvScore: 50, restingHrScore: 50, sleepScore: 100, loadBalanceScore: 50 },
+        weights,
+      );
+      expect(highHrv.score).toBeGreaterThan(highSleep.score);
+    });
+
+    it("clamps result between 0 and 100", () => {
+      const score = new ReadinessScore(
+        { hrvScore: 200, restingHrScore: 200, sleepScore: 200, loadBalanceScore: 200 },
+        weights,
+      );
+      expect(score.score).toBeLessThanOrEqual(100);
+    });
   });
 
-  it("returns 100 for perfect components", () => {
-    const components: ReadinessComponents = {
-      hrvScore: 100,
-      restingHrScore: 100,
-      sleepScore: 100,
-      loadBalanceScore: 100,
-    };
-    expect(computeReadinessScore(components, weights)).toBe(100);
-  });
+  describe("fromMetrics", () => {
+    it("computes baseline score when HRV and RHR are at mean", () => {
+      const score = ReadinessScore.fromMetrics(
+        {
+          hrv: 50,
+          restingHr: 60,
+          hrvMean: 50,
+          hrvStddev: 10,
+          rhrMean: 60,
+          rhrStddev: 5,
+          sleepEfficiency: 85,
+          acwr: 1.0,
+        },
+        weights,
+      );
 
-  it("returns 0 for worst components", () => {
-    const components: ReadinessComponents = {
-      hrvScore: 0,
-      restingHrScore: 0,
-      sleepScore: 0,
-      loadBalanceScore: 0,
-    };
-    expect(computeReadinessScore(components, weights)).toBe(0);
-  });
+      expect(score.components.hrvScore).toBe(50);
+      expect(score.components.restingHrScore).toBe(50);
+      expect(score.components.loadBalanceScore).toBe(100);
+    });
 
-  it("weighs HRV most heavily", () => {
-    const highHrv: ReadinessComponents = {
-      hrvScore: 100,
-      restingHrScore: 50,
-      sleepScore: 50,
-      loadBalanceScore: 50,
-    };
-    const highSleep: ReadinessComponents = {
-      hrvScore: 50,
-      restingHrScore: 50,
-      sleepScore: 100,
-      loadBalanceScore: 50,
-    };
-    expect(computeReadinessScore(highHrv, weights)).toBeGreaterThan(
-      computeReadinessScore(highSleep, weights),
-    );
-  });
+    it("scores higher HRV above baseline positively", () => {
+      const score = ReadinessScore.fromMetrics(
+        {
+          hrv: 60,
+          restingHr: 60,
+          hrvMean: 50,
+          hrvStddev: 10,
+          rhrMean: 60,
+          rhrStddev: 5,
+          sleepEfficiency: 85,
+          acwr: 1.0,
+        },
+        weights,
+      );
 
-  it("clamps result between 0 and 100", () => {
-    const result = computeReadinessScore(
-      { hrvScore: 200, restingHrScore: 200, sleepScore: 200, loadBalanceScore: 200 },
-      weights,
-    );
-    expect(result).toBeLessThanOrEqual(100);
+      // HRV z=1 → 65
+      expect(score.components.hrvScore).toBe(65);
+    });
+
+    it("scores lower resting HR positively (inverted z-score)", () => {
+      const score = ReadinessScore.fromMetrics(
+        {
+          hrv: 50,
+          restingHr: 55,
+          hrvMean: 50,
+          hrvStddev: 10,
+          rhrMean: 60,
+          rhrStddev: 5,
+          sleepEfficiency: 85,
+          acwr: 1.0,
+        },
+        weights,
+      );
+
+      // RHR z = (55-60)/5 = -1, inverted → z=1 → 65
+      expect(score.components.restingHrScore).toBe(65);
+    });
+
+    it("defaults to neutral (50) when all data is null", () => {
+      const score = ReadinessScore.fromMetrics(
+        {
+          hrv: null,
+          restingHr: null,
+          hrvMean: null,
+          hrvStddev: null,
+          rhrMean: null,
+          rhrStddev: null,
+          sleepEfficiency: null,
+          acwr: null,
+        },
+        weights,
+      );
+
+      expect(score.components.hrvScore).toBe(50);
+      expect(score.components.restingHrScore).toBe(50);
+      expect(score.components.sleepScore).toBe(50);
+      expect(score.components.loadBalanceScore).toBe(50);
+      expect(score.score).toBe(50);
+    });
+
+    it("clamps extreme z-scores to 100", () => {
+      const score = ReadinessScore.fromMetrics(
+        {
+          hrv: 150,
+          restingHr: 60,
+          hrvMean: 50,
+          hrvStddev: 10,
+          rhrMean: 60,
+          rhrStddev: 5,
+          sleepEfficiency: 85,
+          acwr: 1.0,
+        },
+        weights,
+      );
+
+      expect(score.components.hrvScore).toBe(100);
+    });
+
+    it("clamps extreme negative z-scores to 0", () => {
+      const score = ReadinessScore.fromMetrics(
+        {
+          hrv: 0,
+          restingHr: 60,
+          hrvMean: 50,
+          hrvStddev: 5,
+          rhrMean: 60,
+          rhrStddev: 5,
+          sleepEfficiency: 85,
+          acwr: 1.0,
+        },
+        weights,
+      );
+
+      expect(score.components.hrvScore).toBe(0);
+    });
+
+    it("penalizes ACWR deviation from 1.0 in either direction", () => {
+      const optimal = ReadinessScore.fromMetrics(
+        {
+          hrv: 50,
+          restingHr: 60,
+          hrvMean: 50,
+          hrvStddev: 10,
+          rhrMean: 60,
+          rhrStddev: 5,
+          sleepEfficiency: 85,
+          acwr: 1.0,
+        },
+        weights,
+      );
+
+      const overloaded = ReadinessScore.fromMetrics(
+        {
+          hrv: 50,
+          restingHr: 60,
+          hrvMean: 50,
+          hrvStddev: 10,
+          rhrMean: 60,
+          rhrStddev: 5,
+          sleepEfficiency: 85,
+          acwr: 1.5,
+        },
+        weights,
+      );
+
+      const underloaded = ReadinessScore.fromMetrics(
+        {
+          hrv: 50,
+          restingHr: 60,
+          hrvMean: 50,
+          hrvStddev: 10,
+          rhrMean: 60,
+          rhrStddev: 5,
+          sleepEfficiency: 85,
+          acwr: 0.5,
+        },
+        weights,
+      );
+
+      expect(optimal.components.loadBalanceScore).toBe(100);
+      expect(overloaded.components.loadBalanceScore).toBe(50);
+      expect(underloaded.components.loadBalanceScore).toBe(50);
+    });
+
+    it("returns 0 for ACWR deviation >= 1.0", () => {
+      const score = ReadinessScore.fromMetrics(
+        {
+          hrv: 50,
+          restingHr: 60,
+          hrvMean: 50,
+          hrvStddev: 10,
+          rhrMean: 60,
+          rhrStddev: 5,
+          sleepEfficiency: 85,
+          acwr: 2.0,
+        },
+        weights,
+      );
+
+      expect(score.components.loadBalanceScore).toBe(0);
+    });
+
+    it("handles zero stddev gracefully (defaults to neutral)", () => {
+      const score = ReadinessScore.fromMetrics(
+        {
+          hrv: 50,
+          restingHr: 60,
+          hrvMean: 50,
+          hrvStddev: 0,
+          rhrMean: 60,
+          rhrStddev: 0,
+          sleepEfficiency: 85,
+          acwr: 1.0,
+        },
+        weights,
+      );
+
+      expect(score.components.hrvScore).toBe(50);
+      expect(score.components.restingHrScore).toBe(50);
+    });
+
+    it("uses sleep efficiency directly as sleep score", () => {
+      const score = ReadinessScore.fromMetrics(
+        {
+          hrv: 50,
+          restingHr: 60,
+          hrvMean: 50,
+          hrvStddev: 10,
+          rhrMean: 60,
+          rhrStddev: 5,
+          sleepEfficiency: 92,
+          acwr: 1.0,
+        },
+        weights,
+      );
+
+      expect(score.components.sleepScore).toBe(92);
+    });
   });
 });
