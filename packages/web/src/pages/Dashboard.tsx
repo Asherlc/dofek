@@ -3,7 +3,6 @@ import { type ReactNode, useCallback, useMemo, useState } from "react";
 import { z } from "zod";
 import { ActivityList } from "../components/ActivityList.tsx";
 import { AnomalyAlertBanner } from "../components/AnomalyAlertBanner.tsx";
-import { AppHeader } from "../components/AppHeader.tsx";
 import { BodyRecompositionChart } from "../components/BodyRecompositionChart.tsx";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import { CorrelationCard, type Insight } from "../components/CorrelationCard.tsx";
@@ -13,6 +12,7 @@ import { HrvBaselineChart } from "../components/HrvBaselineChart.tsx";
 import { NextWorkoutCard } from "../components/NextWorkoutCard.tsx";
 import { NutritionChart } from "../components/NutritionChart.tsx";
 import { OnboardingWelcome } from "../components/OnboardingWelcome.tsx";
+import { PageLayout } from "../components/PageLayout.tsx";
 import { SleepChart } from "../components/SleepChart.tsx";
 import { SleepNeedCard } from "../components/SleepNeedCard.tsx";
 import { SmoothedWeightChart } from "../components/SmoothedWeightChart.tsx";
@@ -557,8 +557,8 @@ export function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-page text-foreground overflow-x-hidden">
-      <AppHeader>
+    <PageLayout
+      headerChildren={
         <div className="flex items-center gap-2 sm:gap-4 shrink-0">
           <p className="text-xs text-subtle hidden sm:block">
             {trendData?.latest_date
@@ -567,38 +567,36 @@ export function Dashboard() {
           </p>
           <TimeRangeSelector days={days} onChange={setDays} />
         </div>
-      </AppHeader>
+      }
+    >
+      {/* Onboarding — shown to new users with no connected providers */}
+      {onboarding.showOnboarding && (
+        <OnboardingWelcome onDismiss={onboarding.dismiss} providers={onboarding.providers} />
+      )}
 
-      <main className="mx-auto max-w-7xl px-3 sm:px-6 py-4 sm:py-6 space-y-6 sm:space-y-8">
-        {/* Onboarding — shown to new users with no connected providers */}
-        {onboarding.showOnboarding && (
-          <OnboardingWelcome onDismiss={onboarding.dismiss} providers={onboarding.providers} />
-        )}
+      {/* Anomaly Alert — always at the top, not reorderable */}
+      <AnomalyAlertBanner
+        anomalies={anomalyCheck.data?.anomalies ?? []}
+        loading={anomalyCheck.isLoading}
+      />
 
-        {/* Anomaly Alert — always at the top, not reorderable */}
-        <AnomalyAlertBanner
-          anomalies={anomalyCheck.data?.anomalies ?? []}
-          loading={anomalyCheck.isLoading}
-        />
+      <section>
+        <h2 className="text-sm font-medium text-muted uppercase tracking-wider mb-1">
+          Detailed Views
+        </h2>
+        <p className="text-xs text-dim mb-3">
+          Deep dives are available in dedicated pages, not on the dashboard.
+        </p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+          <DashboardLink to="/training" label="Training" />
+          <DashboardLink to="/sleep" label="Sleep" />
+          <DashboardLink to="/nutrition" label="Nutrition" />
+          <DashboardLink to="/body" label="Body" />
+        </div>
+      </section>
 
-        <section>
-          <h2 className="text-sm font-medium text-muted uppercase tracking-wider mb-1">
-            Detailed Views
-          </h2>
-          <p className="text-xs text-dim mb-3">
-            Deep dives are available in dedicated pages, not on the dashboard.
-          </p>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-            <DashboardLink to="/training" label="Training" />
-            <DashboardLink to="/sleep" label="Sleep" />
-            <DashboardLink to="/nutrition" label="Nutrition" />
-            <DashboardLink to="/body" label="Body" />
-          </div>
-        </section>
-
-        {orderedElements}
-      </main>
-    </div>
+      {orderedElements}
+    </PageLayout>
   );
 }
 

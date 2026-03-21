@@ -3,10 +3,10 @@ import { HEART_RATE_ZONE_COLORS } from "@dofek/zones/zones";
 import { Link, useParams } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 import type { ActivityDetail, StreamPoint } from "../../../server/src/routers/activity.ts";
-import { AppHeader } from "../components/AppHeader.tsx";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import { DofekChart } from "../components/DofekChart.tsx";
 import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
+import { PageLayout } from "../components/PageLayout.tsx";
 import {
   chartThemeColors,
   dofekAxis,
@@ -45,26 +45,22 @@ export function ActivityDetailPage() {
 
   if (detail.isLoading) {
     return (
-      <div className="min-h-screen bg-page text-foreground">
-        <AppHeader />
-        <main className="mx-auto max-w-7xl px-3 sm:px-6 py-4 sm:py-6">
-          <ChartLoadingSkeleton height={400} />
-        </main>
-      </div>
+      <PageLayout>
+        <ChartLoadingSkeleton height={400} />
+      </PageLayout>
     );
   }
 
   if (detail.error || !detail.data) {
     return (
-      <div className="min-h-screen bg-page text-foreground">
-        <AppHeader />
-        <main className="mx-auto max-w-7xl px-3 sm:px-6 py-8 text-center">
+      <PageLayout>
+        <div className="py-8 text-center">
           <p className="text-muted mb-4">Activity not found</p>
           <Link to="/dashboard" className="text-accent hover:text-accent-secondary text-sm">
             Back to dashboard
           </Link>
-        </main>
-      </div>
+        </div>
+      </PageLayout>
     );
   }
 
@@ -79,66 +75,63 @@ export function ActivityDetailPage() {
   const hasAltitude = points.some((p) => p.altitude != null);
 
   return (
-    <div className="min-h-screen bg-page text-foreground overflow-x-hidden">
-      <AppHeader />
-      <main className="mx-auto max-w-7xl px-3 sm:px-6 py-4 sm:py-6 space-y-6">
-        <div className="flex items-center gap-2 text-xs text-subtle">
-          <Link to="/dashboard" className="hover:text-foreground">
-            Dashboard
-          </Link>
-          <span>/</span>
-          <span className="text-foreground">{activity.name ?? activity.activityType}</span>
-        </div>
+    <PageLayout>
+      <div className="flex items-center gap-2 text-xs text-subtle">
+        <Link to="/dashboard" className="hover:text-foreground">
+          Dashboard
+        </Link>
+        <span>/</span>
+        <span className="text-foreground">{activity.name ?? activity.activityType}</span>
+      </div>
 
-        <ActivityHeader activity={activity} unitSystem={unitSystem} />
+      <ActivityHeader activity={activity} unitSystem={unitSystem} />
 
-        {hasGps && (
+      {hasGps && (
+        <Section
+          title="Route Map"
+          description="This map shows your recorded route, including start and finish locations."
+        >
+          <RouteMap points={points} />
+        </Section>
+      )}
+
+      {(hasHr || hasPower || hasSpeed || hasCadence) && (
+        <Section
+          title="Performance"
+          description="This chart overlays heart rate, power, speed, and cadence so you can see how effort changed during the workout."
+        >
+          <MetricsChart
+            points={points}
+            hasHr={hasHr}
+            hasPower={hasPower}
+            hasSpeed={hasSpeed}
+            hasCadence={hasCadence}
+            loading={stream.isLoading}
+            unitSystem={unitSystem}
+          />
+        </Section>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {hasAltitude && (
           <Section
-            title="Route Map"
-            description="This map shows your recorded route, including start and finish locations."
+            title="Elevation Profile"
+            description="This chart shows how your elevation changed over time during the activity."
           >
-            <RouteMap points={points} />
+            <ElevationChart points={points} loading={stream.isLoading} unitSystem={unitSystem} />
           </Section>
         )}
 
-        {(hasHr || hasPower || hasSpeed || hasCadence) && (
+        {zones.length > 0 && (
           <Section
-            title="Performance"
-            description="This chart overlays heart rate, power, speed, and cadence so you can see how effort changed during the workout."
+            title="Heart Rate Zones"
+            description="This chart shows how much time you spent in each heart rate zone."
           >
-            <MetricsChart
-              points={points}
-              hasHr={hasHr}
-              hasPower={hasPower}
-              hasSpeed={hasSpeed}
-              hasCadence={hasCadence}
-              loading={stream.isLoading}
-              unitSystem={unitSystem}
-            />
+            <HrZonesChart zones={zones} loading={hrZones.isLoading} />
           </Section>
         )}
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {hasAltitude && (
-            <Section
-              title="Elevation Profile"
-              description="This chart shows how your elevation changed over time during the activity."
-            >
-              <ElevationChart points={points} loading={stream.isLoading} unitSystem={unitSystem} />
-            </Section>
-          )}
-
-          {zones.length > 0 && (
-            <Section
-              title="Heart Rate Zones"
-              description="This chart shows how much time you spent in each heart rate zone."
-            >
-              <HrZonesChart zones={zones} loading={hrZones.isLoading} />
-            </Section>
-          )}
-        </div>
-      </main>
-    </div>
+      </div>
+    </PageLayout>
   );
 }
 
