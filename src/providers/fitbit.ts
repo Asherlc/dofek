@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import {
   buildAuthorizationUrl,
@@ -11,6 +12,7 @@ import type { SyncDatabase } from "../db/index.ts";
 import { activity, bodyMeasurement, dailyMetrics, sleepSession } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
+import { ProviderHttpClient } from "./http-client.ts";
 import type {
   ProviderAuthSetup,
   ProviderIdentity,
@@ -20,95 +22,118 @@ import type {
 } from "./types.ts";
 
 // ============================================================
-// Fitbit API types
+// Fitbit API Zod schemas
 // ============================================================
 
-export interface FitbitActivity {
-  logId: number;
-  activityName: string;
-  activityTypeId: number;
-  startTime: string; // "HH:mm"
-  activeDuration: number; // ms
-  calories: number;
-  distance?: number; // km (metric users)
-  distanceUnit: string;
-  steps?: number;
-  averageHeartRate?: number;
-  heartRateZones?: Array<{ name: string; min: number; max: number; minutes: number }>;
-  logType: string;
-  startDate: string; // "YYYY-MM-DD"
-  tcxLink?: string;
-}
+const fitbitHeartRateZoneSchema = z.object({
+  name: z.string(),
+  min: z.number(),
+  max: z.number(),
+  minutes: z.number(),
+});
 
-export interface FitbitActivityListResponse {
-  activities: FitbitActivity[];
-  pagination: {
-    next: string;
-    previous: string;
-    limit: number;
-    offset: number;
-    sort: string;
-  };
-}
+export const fitbitActivitySchema = z.object({
+  logId: z.number(),
+  activityName: z.string(),
+  activityTypeId: z.number(),
+  startTime: z.string(),
+  activeDuration: z.number(),
+  calories: z.number(),
+  distance: z.number().optional(),
+  distanceUnit: z.string(),
+  steps: z.number().optional(),
+  averageHeartRate: z.number().optional(),
+  heartRateZones: z.array(fitbitHeartRateZoneSchema).optional(),
+  logType: z.string(),
+  startDate: z.string(),
+  tcxLink: z.string().optional(),
+});
 
-export interface FitbitSleepLog {
-  logId: number;
-  dateOfSleep: string; // "YYYY-MM-DD"
-  startTime: string; // ISO datetime
-  endTime: string; // ISO datetime
-  duration: number; // ms
-  efficiency: number;
-  isMainSleep: boolean;
-  type: "stages" | "classic";
-  levels: {
-    summary: {
-      deep?: { count: number; minutes: number; thirtyDayAvgMinutes: number };
-      light?: { count: number; minutes: number; thirtyDayAvgMinutes: number };
-      rem?: { count: number; minutes: number; thirtyDayAvgMinutes: number };
-      wake?: { count: number; minutes: number; thirtyDayAvgMinutes: number };
-    };
-  };
-}
+export type FitbitActivity = z.infer<typeof fitbitActivitySchema>;
 
-export interface FitbitSleepListResponse {
-  sleep: FitbitSleepLog[];
-  pagination: {
-    next: string;
-    previous: string;
-    limit: number;
-    offset: number;
-    sort: string;
-  };
-}
+const fitbitPaginationSchema = z.object({
+  next: z.string(),
+  previous: z.string(),
+  limit: z.number(),
+  offset: z.number(),
+  sort: z.string(),
+});
 
-export interface FitbitDailySummary {
-  summary: {
-    steps: number;
-    caloriesOut: number;
-    activeScore: number;
-    activityCalories: number;
-    restingHeartRate?: number;
-    distances: Array<{ activity: string; distance: number }>;
-    fairlyActiveMinutes: number;
-    veryActiveMinutes: number;
-    lightlyActiveMinutes: number;
-    sedentaryMinutes: number;
-    floors?: number;
-  };
-}
+const fitbitActivityListResponseSchema = z.object({
+  activities: z.array(fitbitActivitySchema),
+  pagination: fitbitPaginationSchema,
+});
 
-export interface FitbitWeightLog {
-  logId: number;
-  weight: number; // kg
-  bmi: number;
-  fat?: number; // body fat %
-  date: string; // "YYYY-MM-DD"
-  time: string; // "HH:mm:ss"
-}
+export type FitbitActivityListResponse = z.infer<typeof fitbitActivityListResponseSchema>;
 
-interface FitbitWeightListResponse {
-  weight: FitbitWeightLog[];
-}
+const fitbitSleepStageSummarySchema = z.object({
+  count: z.number(),
+  minutes: z.number(),
+  thirtyDayAvgMinutes: z.number(),
+});
+
+export const fitbitSleepLogSchema = z.object({
+  logId: z.number(),
+  dateOfSleep: z.string(),
+  startTime: z.string(),
+  endTime: z.string(),
+  duration: z.number(),
+  efficiency: z.number(),
+  isMainSleep: z.boolean(),
+  type: z.enum(["stages", "classic"]),
+  levels: z.object({
+    summary: z.object({
+      deep: fitbitSleepStageSummarySchema.optional(),
+      light: fitbitSleepStageSummarySchema.optional(),
+      rem: fitbitSleepStageSummarySchema.optional(),
+      wake: fitbitSleepStageSummarySchema.optional(),
+    }),
+  }),
+});
+
+export type FitbitSleepLog = z.infer<typeof fitbitSleepLogSchema>;
+
+const fitbitSleepListResponseSchema = z.object({
+  sleep: z.array(fitbitSleepLogSchema),
+  pagination: fitbitPaginationSchema,
+});
+
+export type FitbitSleepListResponse = z.infer<typeof fitbitSleepListResponseSchema>;
+
+export const fitbitDailySummarySchema = z.object({
+  summary: z.object({
+    steps: z.number(),
+    caloriesOut: z.number(),
+    activeScore: z.number(),
+    activityCalories: z.number(),
+    restingHeartRate: z.number().optional(),
+    distances: z.array(z.object({ activity: z.string(), distance: z.number() })),
+    fairlyActiveMinutes: z.number(),
+    veryActiveMinutes: z.number(),
+    lightlyActiveMinutes: z.number(),
+    sedentaryMinutes: z.number(),
+    floors: z.number().optional(),
+  }),
+});
+
+export type FitbitDailySummary = z.infer<typeof fitbitDailySummarySchema>;
+
+export const fitbitWeightLogSchema = z.object({
+  logId: z.number(),
+  weight: z.number(),
+  bmi: z.number(),
+  fat: z.number().optional(),
+  date: z.string(),
+  time: z.string(),
+});
+
+export type FitbitWeightLog = z.infer<typeof fitbitWeightLogSchema>;
+
+const fitbitWeightListResponseSchema = z.object({
+  weight: z.array(fitbitWeightLogSchema),
+});
+
+type FitbitWeightListResponse = z.infer<typeof fitbitWeightListResponseSchema>;
 
 // ============================================================
 // Parsed types
@@ -255,49 +280,33 @@ export function parseFitbitWeightLog(log: FitbitWeightLog): ParsedFitbitBodyMeas
 
 const FITBIT_API_BASE = "https://api.fitbit.com";
 
-export class FitbitClient {
-  private accessToken: string;
-  private fetchFn: typeof globalThis.fetch;
-
+export class FitbitClient extends ProviderHttpClient {
   constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.accessToken = accessToken;
-    this.fetchFn = fetchFn;
-  }
-
-  private async get<T>(path: string): Promise<T> {
-    const url = `${FITBIT_API_BASE}${path}`;
-
-    const response = await this.fetchFn(url, {
-      headers: { Authorization: `Bearer ${this.accessToken}` },
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`Fitbit API error (${response.status}): ${text}`);
-    }
-
-    return response.json();
+    super(accessToken, FITBIT_API_BASE, fetchFn);
   }
 
   async getActivities(afterDate: string, offset = 0): Promise<FitbitActivityListResponse> {
-    return this.get<FitbitActivityListResponse>(
+    return this.get(
       `/1/user/-/activities/list.json?afterDate=${afterDate}&sort=asc&limit=20&offset=${offset}`,
+      fitbitActivityListResponseSchema,
     );
   }
 
   async getSleepLogs(afterDate: string, offset = 0): Promise<FitbitSleepListResponse> {
-    return this.get<FitbitSleepListResponse>(
+    return this.get(
       `/1.2/user/-/sleep/list.json?afterDate=${afterDate}&sort=asc&limit=20&offset=${offset}`,
+      fitbitSleepListResponseSchema,
     );
   }
 
   async getDailySummary(date: string): Promise<FitbitDailySummary> {
-    return this.get<FitbitDailySummary>(`/1/user/-/activities/date/${date}.json`);
+    return this.get(`/1/user/-/activities/date/${date}.json`, fitbitDailySummarySchema);
   }
 
   async getWeightLogs(startDate: string): Promise<FitbitWeightListResponse> {
-    return this.get<FitbitWeightListResponse>(
+    return this.get(
       `/1/user/-/body/log/weight/date/${startDate}/30d.json`,
+      fitbitWeightListResponseSchema,
     );
   }
 }

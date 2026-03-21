@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { ZodError } from "zod";
 import type { ParsedFitRecord } from "../fit/parser.ts";
 import {
   fitRecordsToMetricStream,
@@ -331,7 +332,7 @@ describe("WahooClient — error handling", () => {
     };
 
     const client = new WahooClient("bad-token", mockFetch);
-    await expect(client.getWorkouts()).rejects.toThrow("Wahoo API error (401)");
+    await expect(client.getWorkouts()).rejects.toThrow("API error 401 on /v1/workouts");
   });
 
   it("throws on FIT file download failure", async () => {
@@ -341,8 +342,55 @@ describe("WahooClient — error handling", () => {
 
     const client = new WahooClient("token", mockFetch);
     await expect(client.downloadFitFile("https://example.com/test.fit")).rejects.toThrow(
-      "Failed to download FIT file (404)",
+      "Failed to download from https://example.com/test.fit (404)",
     );
+  });
+});
+
+describe("WahooClient — Zod runtime validation", () => {
+  it("rejects a workout list response with missing required fields", async () => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return Response.json({ workouts: "not-an-array" });
+    };
+
+    const client = new WahooClient("token", mockFetch);
+    await expect(client.getWorkouts()).rejects.toThrow(ZodError);
+  });
+
+  it("rejects a single workout response with wrong shape", async () => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return Response.json({ workout: { id: "not-a-number" } });
+    };
+
+    const client = new WahooClient("token", mockFetch);
+    await expect(client.getWorkout(42)).rejects.toThrow(ZodError);
+  });
+
+  it("validates and returns a correct workout list response", async () => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return Response.json({
+        workouts: [
+          {
+            id: 1,
+            workout_type_id: 0,
+            starts: "2026-03-01T10:00:00Z",
+            created_at: "2026-03-01T10:00:00Z",
+            updated_at: "2026-03-01T10:00:00Z",
+          },
+        ],
+        total: 1,
+        page: 1,
+        per_page: 30,
+        order: "desc",
+        sort: "starts",
+      });
+    };
+
+    const client = new WahooClient("token", mockFetch);
+    const result = await client.getWorkouts();
+    expect(result.workouts).toHaveLength(1);
+    expect(result.workouts[0]?.id).toBe(1);
+    expect(result.total).toBe(1);
   });
 });
 

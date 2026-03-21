@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { ZodError } from "zod";
 import {
   FitbitClient,
   FitbitProvider,
@@ -116,7 +117,7 @@ describe("FitbitClient — API calls", () => {
     };
 
     const client = new FitbitClient("bad-token", mockFetch);
-    await expect(client.getActivities("2026-03-01")).rejects.toThrow("Fitbit API error (401)");
+    await expect(client.getActivities("2026-03-01")).rejects.toThrow("API error 401");
   });
 
   it("includes response body in error message", async () => {
@@ -240,6 +241,41 @@ describe("FitbitProvider — authSetup", () => {
     delete process.env.FITBIT_CLIENT_SECRET;
     const provider = new FitbitProvider();
     expect(() => provider.authSetup()).toThrow("FITBIT_CLIENT_ID");
+  });
+});
+
+describe("FitbitClient — Zod runtime validation", () => {
+  it("rejects an activity response with invalid shape", async () => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return Response.json({ activities: "not-an-array" });
+    };
+
+    const client = new FitbitClient("token", mockFetch);
+    await expect(client.getActivities("2026-03-01")).rejects.toThrow(ZodError);
+  });
+
+  it("rejects a sleep response with missing pagination", async () => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return Response.json({ sleep: [] });
+    };
+
+    const client = new FitbitClient("token", mockFetch);
+    await expect(client.getSleepLogs("2026-03-01")).rejects.toThrow(ZodError);
+  });
+
+  it("validates and returns a correct weight response", async () => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return Response.json({
+        weight: [
+          { logId: 1, weight: 80.0, bmi: 24.0, date: "2026-03-01", time: "08:00:00" },
+        ],
+      });
+    };
+
+    const client = new FitbitClient("token", mockFetch);
+    const result = await client.getWeightLogs("2026-03-01");
+    expect(result.weight).toHaveLength(1);
+    expect(result.weight[0]?.weight).toBe(80.0);
   });
 });
 
