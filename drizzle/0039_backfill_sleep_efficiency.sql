@@ -15,7 +15,7 @@ WHERE efficiency_pct IS NULL
 -- 2. Fix fractional efficiency values from Apple Health XML import (stored as 0-1 instead of 0-100)
 -- Any efficiency_pct <= 1.0 is almost certainly a fraction that needs rescaling
 UPDATE fitness.sleep_session
-SET efficiency_pct = ROUND(efficiency_pct * 100, 1)
+SET efficiency_pct = ROUND((efficiency_pct * 100)::numeric, 1)
 WHERE efficiency_pct > 0
   AND efficiency_pct <= 1.0;
 
