@@ -576,8 +576,8 @@ describe("Router coverage", () => {
       // Find the Apple Health night (latest entry)
       const latest = result.nightly[result.nightly.length - 1];
       expect(latest).toBeDefined();
-      expect(latest!.durationMinutes).toBe(inBedDuration);
-      expect(latest!.sleepMinutes).toBe(expectedSleepMinutes);
+      expect(latest?.durationMinutes).toBe(inBedDuration);
+      expect(latest?.sleepMinutes).toBe(expectedSleepMinutes);
     });
 
     it("readinessScore returns composite scores with component breakdown", async () => {
