@@ -237,6 +237,82 @@ describe("computePowerCurve", () => {
   it("returns empty array for empty input", () => {
     expect(computePowerCurve([])).toEqual([]);
   });
+
+  it("handles non-1-second intervals", () => {
+    // 20 samples at 5s intervals = 100s of data
+    // Only 5s duration maps to windowSize = Math.round(5/5) = 1
+    // 15s → Math.round(15/5) = 3, 30s → 6, 60s → 12
+    const samples = Array.from({ length: 20 }, (_, i) => ({
+      activity_id: "a1",
+      activity_date: "2024-01-01",
+      interval_s: 5,
+      power: 150 + i * 5, // increasing: 150, 155, 160, ..., 245
+    }));
+    const result = computePowerCurve(samples);
+
+    // 5s (window=1): best is the last sample → 245W
+    const d5 = result.find((r) => r.durationSeconds === 5);
+    expect(d5?.bestPower).toBe(245);
+
+    // 15s (window=3): best 3-sample avg is last 3: (235+240+245)/3 = 240
+    const d15 = result.find((r) => r.durationSeconds === 15);
+    expect(d15?.bestPower).toBe(240);
+
+    // 60s (window=12): best 12-sample avg is last 12: indices 8..19
+    // powers: 190,195,200,205,210,215,220,225,230,235,240,245 → avg = 217.5 → rounds to 218
+    const d60 = result.find((r) => r.durationSeconds === 60);
+    expect(d60?.bestPower).toBe(218);
+
+    // 120s would need window of 24, but only 20 samples → should not appear
+    const d120 = result.find((r) => r.durationSeconds === 120);
+    expect(d120).toBeUndefined();
+  });
+
+  it("picks the best window from non-monotonic data", () => {
+    // Data has a spike in the middle: tests that max tracking works
+    const powers = [100, 100, 100, 300, 300, 300, 300, 300, 100, 100];
+    const samples = powers.map((power) => ({
+      activity_id: "a1",
+      activity_date: "2024-01-01",
+      interval_s: 1,
+      power,
+    }));
+    const result = computePowerCurve(samples);
+    const d5 = result.find((r) => r.durationSeconds === 5);
+    // Best 5-sample window: indices 3..7 (all 300W) → 300
+    expect(d5?.bestPower).toBe(300);
+  });
+
+  it("skips zero-power activities", () => {
+    const samples = Array.from({ length: 10 }, () => ({
+      activity_id: "a1",
+      activity_date: "2024-01-01",
+      interval_s: 1,
+      power: 0,
+    }));
+    const result = computePowerCurve(samples);
+    expect(result).toEqual([]);
+  });
+
+  it("uses the last activity date when two activities tie on power", () => {
+    // Two activities with identical power — second should win or tie
+    const activity1 = Array.from({ length: 10 }, () => ({
+      activity_id: "a1",
+      activity_date: "2024-01-01",
+      interval_s: 1,
+      power: 200,
+    }));
+    const activity2 = Array.from({ length: 10 }, () => ({
+      activity_id: "a2",
+      activity_date: "2024-01-02",
+      interval_s: 1,
+      power: 200,
+    }));
+    const result = computePowerCurve([...activity1, ...activity2]);
+    const d5 = result.find((r) => r.durationSeconds === 5);
+    // First activity sets the best, second has equal power so does NOT replace (strict >)
+    expect(d5?.activityDate).toBe("2024-01-01");
+  });
 });
 
 describe("computeNormalizedPower", () => {
@@ -292,5 +368,62 @@ describe("computeNormalizedPower", () => {
     const result = computeNormalizedPower([...activity1, ...activity2]);
     expect(result[0]?.activityDate).toBe("2024-01-01");
     expect(result[1]?.activityDate).toBe("2024-01-02");
+  });
+
+  it("handles non-1-second intervals", () => {
+    // 12 samples at 5s intervals = 60s; windowSize = Math.round(30/5) = 6
+    const samples = Array.from({ length: 12 }, () => ({
+      activity_id: "a1",
+      activity_date: "2024-01-01",
+      activity_name: "Ride",
+      interval_s: 5,
+      power: 200,
+    }));
+    const result = computeNormalizedPower(samples);
+    expect(result).toHaveLength(1);
+    // Constant 200W → NP should be 200
+    expect(result[0]?.normalizedPower).toBeCloseTo(200, 0);
+  });
+
+  it("skips activity with fewer samples than the rolling window", () => {
+    // 3 samples at 1s intervals → windowSize = 30, but only 3 samples → count = 0
+    const samples = Array.from({ length: 3 }, () => ({
+      activity_id: "a1",
+      activity_date: "2024-01-01",
+      activity_name: "Short",
+      interval_s: 1,
+      power: 200,
+    }));
+    const result = computeNormalizedPower(samples);
+    expect(result).toEqual([]);
+  });
+
+  it("uses null for missing activity_name", () => {
+    const samples = Array.from({ length: 60 }, () => ({
+      activity_id: "a1",
+      activity_date: "2024-01-01",
+      activity_name: null,
+      interval_s: 1,
+      power: 200,
+    }));
+    const result = computeNormalizedPower(samples);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.activityName).toBeNull();
+  });
+
+  it("computes correct NP for variable power with exact values", () => {
+    // 60 samples alternating 100W and 300W at 1s intervals
+    const samples = Array.from({ length: 60 }, (_, i) => ({
+      activity_id: "a1",
+      activity_date: "2024-01-01",
+      activity_name: "Intervals",
+      interval_s: 1,
+      power: i % 2 === 0 ? 100 : 300,
+    }));
+    const result = computeNormalizedPower(samples);
+    expect(result).toHaveLength(1);
+    // 30s rolling avg of alternating 100/300 → each window averages to 200
+    // NP = (mean(200^4))^0.25 = 200
+    expect(result[0]?.normalizedPower).toBeCloseTo(200, 0);
   });
 });
