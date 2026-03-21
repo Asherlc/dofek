@@ -805,13 +805,13 @@ export async function upsertSleepBatch(
     startedAt: s.bed.startDate,
     endedAt: s.bed.endDate,
     durationMinutes: s.bed.durationMinutes,
-    deepMinutes: s.deepMinutes || undefined,
-    remMinutes: s.remMinutes || undefined,
-    lightMinutes: s.lightMinutes || undefined,
-    awakeMinutes: s.awakeMinutes || undefined,
+    deepMinutes: s.deepMinutes,
+    remMinutes: s.remMinutes,
+    lightMinutes: s.lightMinutes,
+    awakeMinutes: s.awakeMinutes,
     efficiencyPct:
       s.bed.durationMinutes > 0
-        ? Math.round((s.totalSleepMinutes / s.bed.durationMinutes) * 100) / 100
+        ? Math.round((s.totalSleepMinutes / s.bed.durationMinutes) * 1000) / 10
         : undefined,
     sleepType: null,
     sourceName: s.bed.sourceName,

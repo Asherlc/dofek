@@ -1187,8 +1187,8 @@ describe("upsertSleepBatch", () => {
     ];
 
     await upsertSleepBatch(db, "p1", records);
-    // efficiency = (120 + 240) / 480 * 100 = 75, then /100 = 0.75
-    expect(capture.values[0]?.[0]).toMatchObject({ efficiencyPct: 0.75 });
+    // efficiency = (120 + 240) / 480 * 100 = 75%
+    expect(capture.values[0]?.[0]).toMatchObject({ efficiencyPct: 75 });
   });
 
   it("sets efficiency to undefined for zero-duration sessions", async () => {
@@ -1226,16 +1226,16 @@ describe("upsertSleepBatch", () => {
     });
   });
 
-  it("uses undefined instead of 0 for zero stage durations", async () => {
+  it("stores 0 for zero stage durations instead of undefined", async () => {
     const { db, capture } = createMockDb();
     // No stage records — all durations are 0
     const records = [makeSleep()];
 
     await upsertSleepBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toHaveProperty("deepMinutes", undefined);
-    expect(capture.values[0]?.[0]).toHaveProperty("remMinutes", undefined);
-    expect(capture.values[0]?.[0]).toHaveProperty("lightMinutes", undefined);
-    expect(capture.values[0]?.[0]).toHaveProperty("awakeMinutes", undefined);
+    expect(capture.values[0]?.[0]).toHaveProperty("deepMinutes", 0);
+    expect(capture.values[0]?.[0]).toHaveProperty("remMinutes", 0);
+    expect(capture.values[0]?.[0]).toHaveProperty("lightMinutes", 0);
+    expect(capture.values[0]?.[0]).toHaveProperty("awakeMinutes", 0);
   });
 
   it("only includes stage records within the inBed time window", async () => {
@@ -1271,7 +1271,7 @@ describe("upsertSleepBatch", () => {
     await upsertSleepBatch(db, "p1", records);
     // Only the 60min deep inside the window should be counted
     expect(capture.values[0]?.[0]).toMatchObject({ deepMinutes: 60 });
-    expect(capture.values[0]?.[0]).toHaveProperty("remMinutes", undefined);
+    expect(capture.values[0]?.[0]).toHaveProperty("remMinutes", 0);
   });
 
   it("returns 0 for empty records", async () => {
