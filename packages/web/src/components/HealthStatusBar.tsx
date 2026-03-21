@@ -1,3 +1,5 @@
+import { formatNumber } from "../lib/format.ts";
+
 interface HealthMetric {
   label: string;
   value: number | null | undefined;
@@ -76,7 +78,7 @@ export function HealthStatusBar({ metrics, loading }: HealthStatusBarProps) {
               {m.value != null ? (
                 <>
                   {typeof m.value === "number" && !Number.isInteger(m.value)
-                    ? m.value.toFixed(1)
+                    ? formatNumber(m.value)
                     : m.value}
                   <span className="ml-1 text-xs font-normal text-zinc-500">{m.unit}</span>
                 </>
@@ -86,7 +88,7 @@ export function HealthStatusBar({ metrics, loading }: HealthStatusBarProps) {
             </div>
             <div className="text-[10px] text-zinc-500">
               {status !== "unknown" && m.avg != null
-                ? `avg ${Number(m.avg).toFixed(1)} · ${statusText[status]}`
+                ? `avg ${formatNumber(Number(m.avg))} · ${statusText[status]}`
                 : ""}
             </div>
           </div>

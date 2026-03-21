@@ -11,7 +11,7 @@ const linkedAccountRowSchema = z.object({
   name: z.string().nullable(),
   created_at: timestampStringSchema,
 });
-const countRowSchema = z.object({ count: z.string() });
+const countRowSchema = z.object({ count: z.coerce.number() });
 const idRowSchema = z.object({ id: z.string() });
 
 export const authRouter = router({
@@ -43,7 +43,7 @@ export const authRouter = router({
         sql`SELECT COUNT(*)::text AS count FROM fitness.auth_account WHERE user_id = ${ctx.userId}`,
       );
       const countRow = countRows[0];
-      if (!countRow || parseInt(countRow.count, 10) < 2) {
+      if (!countRow || countRow.count < 2) {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "Cannot unlink your only login method",

@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import Svg, { Path, Line, Circle, Text as SvgText } from "react-native-svg";
 import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
+import { formatNumber } from "@dofek/format/format";
 import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
 import { statusColors } from "@dofek/scoring/colors";
@@ -168,7 +169,7 @@ export default function PredictionsScreen() {
   // Diagnostics
   const diagnostics = prediction?.diagnostics;
   const crossValidatedPercent = diagnostics
-    ? (diagnostics.crossValidatedRSquared * 100).toFixed(0)
+    ? formatNumber(diagnostics.crossValidatedRSquared * 100, 0)
     : null;
   const modelStrength = diagnostics
     ? diagnostics.crossValidatedRSquared > 0.5
@@ -237,7 +238,7 @@ export default function PredictionsScreen() {
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Tomorrow's Prediction</Text>
               <Text style={styles.bigValue}>
-                {tomorrowAvg.toFixed(1)} {prediction.targetUnit}
+                {formatNumber(tomorrowAvg)} {prediction.targetUnit}
               </Text>
               <View style={styles.agreementRow}>
                 <View

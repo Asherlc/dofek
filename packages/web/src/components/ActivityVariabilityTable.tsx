@@ -1,4 +1,5 @@
 import type { ActivityVariabilityRow } from "dofek-server/types";
+import { formatNumber } from "../lib/format.ts";
 
 interface ActivityVariabilityTableProps {
   data: ActivityVariabilityRow[];
@@ -69,16 +70,18 @@ export function ActivityVariabilityTable({
               </td>
               <td className="py-2 px-3 text-zinc-300 max-w-[200px] truncate">{row.activityName}</td>
               <td className="py-2 px-3 text-right text-zinc-300">
-                {row.normalizedPower.toFixed(1)}
+                {formatNumber(row.normalizedPower)}
               </td>
-              <td className="py-2 px-3 text-right text-zinc-300">{row.averagePower.toFixed(1)}</td>
+              <td className="py-2 px-3 text-right text-zinc-300">
+                {formatNumber(row.averagePower)}
+              </td>
               <td
                 className={`py-2 px-3 text-right font-mono ${getVariabilityColor(row.variabilityIndex)}`}
               >
-                {row.variabilityIndex.toFixed(3)}
+                {formatNumber(row.variabilityIndex, 3)}
               </td>
               <td className="py-2 px-3 text-right text-zinc-300 font-mono">
-                {row.intensityFactor.toFixed(3)}
+                {formatNumber(row.intensityFactor, 3)}
               </td>
             </tr>
           ))}

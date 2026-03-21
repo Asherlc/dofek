@@ -245,12 +245,93 @@ describe("pickCardioFocus", () => {
       }),
     ).toBe("z2");
   });
+
+  it("returns z2 (not intervals) when highIntensityPct is exactly at threshold 0.2", () => {
+    // HIGH_INTENSITY_RATIO_TARGET = 0.2; condition is `< 0.2`, so 0.2 should NOT match intervals
+    expect(pickCardioFocus({ ...baseInput, highIntensityPct: 0.2, lowIntensityPct: 0.7 })).toBe(
+      "z2",
+    );
+  });
+
+  it("returns z2 when lowIntensityPct is exactly 0.6 (boundary for intervals)", () => {
+    // Condition is `> 0.6`, so exactly 0.6 should NOT match intervals
+    expect(pickCardioFocus({ ...baseInput, highIntensityPct: 0.15, lowIntensityPct: 0.6 })).toBe(
+      "z2",
+    );
+  });
+
+  it("returns intervals when lowIntensityPct is just above 0.6", () => {
+    expect(pickCardioFocus({ ...baseInput, highIntensityPct: 0.15, lowIntensityPct: 0.61 })).toBe(
+      "intervals",
+    );
+  });
+
+  it("returns z2 when highIntensityPct is exactly 0.25 (boundary, kills >= mutant)", () => {
+    // Condition is `> 0.25`, so exactly 0.25 should NOT match this branch
+    // Falls through to default z2
+    expect(
+      pickCardioFocus({
+        ...baseInput,
+        highIntensityPct: 0.25,
+        moderateIntensityPct: 0.2,
+        lowIntensityPct: 0.55,
+      }),
+    ).toBe("z2");
+  });
+
+  it("returns z2 when moderateIntensityPct is exactly 0.3 (boundary)", () => {
+    // Condition is `> 0.3`, so exactly 0.3 should NOT match
+    expect(
+      pickCardioFocus({
+        ...baseInput,
+        highIntensityPct: 0.22,
+        moderateIntensityPct: 0.3,
+        lowIntensityPct: 0.48,
+      }),
+    ).toBe("z2");
+  });
+
+  it("returns z2 when only highIntensityPct > 0.25 (kills || to && mutant)", () => {
+    // Only first condition true: highIntensityPct=0.26 > 0.25, moderateIntensityPct=0.2 <= 0.3
+    expect(
+      pickCardioFocus({
+        ...baseInput,
+        highIntensityPct: 0.26,
+        moderateIntensityPct: 0.2,
+        lowIntensityPct: 0.54,
+      }),
+    ).toBe("z2");
+  });
+
+  it("returns z2 when only moderateIntensityPct > 0.3 (kills || to && mutant)", () => {
+    // Only second condition true: highIntensityPct=0.22 <= 0.25, moderateIntensityPct=0.35 > 0.3
+    // But highIntensityPct < HIGH_INTENSITY_RATIO_TARGET (0.2)? No, 0.22 > 0.2. Let's use 0.21.
+    // Actually wait: 0.22 > 0.2, so line 813 check (< 0.2) is false. Line 815 checks > 0.25 || > 0.3.
+    // With only moderateIntensityPct > 0.3, it should still return z2 via ||.
+    expect(
+      pickCardioFocus({
+        ...baseInput,
+        highIntensityPct: 0.22,
+        moderateIntensityPct: 0.35,
+        lowIntensityPct: 0.43,
+      }),
+    ).toBe("z2");
+  });
+
+  it("returns z2 for readinessScore below threshold even with high readinessLevel", () => {
+    // readinessScore < 65 should return z2 even when readinessLevel = "high"
+    expect(pickCardioFocus({ ...baseInput, readinessLevel: "high", readinessScore: 50 })).toBe(
+      "z2",
+    );
+  });
 });
 
 describe("cardioPlan", () => {
   it("returns HIIT plan", () => {
     const plan = cardioPlan("hiit");
     expect(plan.title).toBe("Cardio HIIT Session");
+    expect(plan.shortBlurb).toContain("HIIT");
+    expect(plan.shortBlurb).toContain("8 x 30s");
     expect(plan.durationMinutes).toBe(35);
     expect(plan.targetZones).toEqual(["Z1", "Z5"]);
     expect(plan.structure).toContain("30s Z5");
@@ -263,6 +344,8 @@ describe("cardioPlan", () => {
   it("returns intervals plan", () => {
     const plan = cardioPlan("intervals");
     expect(plan.title).toBe("Cardio Intervals Session");
+    expect(plan.shortBlurb).toContain("threshold");
+    expect(plan.shortBlurb).toContain("4 x 4 min");
     expect(plan.durationMinutes).toBe(50);
     expect(plan.targetZones).toEqual(["Z2", "Z4"]);
     expect(plan.structure).toContain("4 x 4 min Z4");
@@ -275,6 +358,8 @@ describe("cardioPlan", () => {
   it("returns recovery plan", () => {
     const plan = cardioPlan("recovery");
     expect(plan.title).toBe("Easy Recovery Cardio");
+    expect(plan.shortBlurb).toContain("Z1");
+    expect(plan.shortBlurb).toContain("recovery");
     expect(plan.durationMinutes).toBe(30);
     expect(plan.targetZones).toEqual(["Z1"]);
     expect(plan.structure).toContain("Z1");
@@ -287,6 +372,8 @@ describe("cardioPlan", () => {
   it("returns z2 base plan", () => {
     const plan = cardioPlan("z2");
     expect(plan.title).toBe("Aerobic Base Cardio");
+    expect(plan.shortBlurb).toContain("Z2");
+    expect(plan.shortBlurb).toContain("45-60 min");
     expect(plan.durationMinutes).toBe(50);
     expect(plan.targetZones).toEqual(["Z2"]);
     expect(plan.structure).toContain("Z2");

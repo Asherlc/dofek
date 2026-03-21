@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { AppHeader } from "../components/AppHeader.tsx";
 import { DataSourcesPanel } from "../components/DataSourcesPanel.tsx";
+import { formatNumber } from "../lib/format.ts";
 import { trpc } from "../lib/trpc.ts";
 
 export function ProvidersPage() {
@@ -124,7 +125,7 @@ export function ProvidersPage() {
                         {row.recordCount ?? "—"}
                       </td>
                       <td className="px-4 py-2 text-right text-zinc-400 tabular-nums">
-                        {row.durationMs != null ? `${(row.durationMs / 1000).toFixed(1)}s` : "—"}
+                        {row.durationMs != null ? `${formatNumber(row.durationMs / 1000)}s` : "—"}
                       </td>
                       <td className="px-4 py-2 text-red-400/80 max-w-xs truncate">
                         {row.errorMessage ?? ""}

@@ -17,7 +17,7 @@ import { OnboardingWelcome } from "../../components/OnboardingWelcome";
 import { RecoveryRing } from "../../components/charts/RecoveryRing";
 import { SleepBar } from "../../components/charts/SleepBar";
 import { StrainGauge } from "../../components/charts/StrainGauge";
-import { formatDurationMinutes, formatSleepDebtInline } from "@dofek/format/format";
+import { formatDurationMinutes, formatNumber, formatSleepDebtInline } from "@dofek/format/format";
 import { readinessLevelColor, scoreColor, scoreLabel, strainZoneColor, strainZoneLabel, trendColor, trendDirection as computeTrend } from "../../lib/scoring";
 import { trpc } from "../../lib/trpc";
 import { convertTemperature, convertWeight, temperatureLabel, useUnitSystem, weightLabel } from "../../lib/units";
@@ -332,7 +332,7 @@ export default function OverviewScreen() {
               title="Stress"
               value={
                 stressData?.latestScore != null
-                  ? stressData.latestScore.toFixed(1)
+                  ? formatNumber(stressData.latestScore)
                   : "--"
               }
               unit="/ 3"
@@ -365,7 +365,7 @@ export default function OverviewScreen() {
             {metrics?.latest_skin_temp != null && (
               <MetricCard
                 title="Skin Temperature"
-                value={convertTemperature(metrics.latest_skin_temp, unitSystem).toFixed(1)}
+                value={formatNumber(convertTemperature(metrics.latest_skin_temp, unitSystem))}
                 unit={temperatureLabel(unitSystem)}
                 trend={skinTempTrend}
                 color={colors.orange}
@@ -497,7 +497,7 @@ export default function OverviewScreen() {
                 />
                 <MiniMetricCard
                   label="Skin Temp"
-                  value={metrics.latest_skin_temp != null ? convertTemperature(metrics.latest_skin_temp, unitSystem).toFixed(1) : "--"}
+                  value={metrics.latest_skin_temp != null ? formatNumber(convertTemperature(metrics.latest_skin_temp, unitSystem)) : "--"}
                   unit={temperatureLabel(unitSystem)}
                 />
               </ScrollView>
@@ -757,7 +757,7 @@ export default function OverviewScreen() {
               <View style={styles.weightRow}>
                 <View>
                   <Text style={styles.weightValue}>
-                    {convertWeight(latestWeight.smoothedWeight, unitSystem).toFixed(1)}
+                    {formatNumber(convertWeight(latestWeight.smoothedWeight, unitSystem))}
                   </Text>
                   <Text style={styles.weightUnit}>{weightLabel(unitSystem)}</Text>
                 </View>

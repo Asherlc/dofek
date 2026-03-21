@@ -1,5 +1,6 @@
 import type { WorkloadRatioRow } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
+import { formatNumber } from "../lib/format.ts";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface WorkloadRatioChartProps {
@@ -50,7 +51,7 @@ export function WorkloadRatioChart({ data, loading }: WorkloadRatioChartProps) {
           if (p.data[1] == null) continue;
           html += `<div style="display:flex;align-items:center;gap:6px">`;
           html += `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color}"></span>`;
-          html += `<span>${p.seriesName}: <b>${p.data[1].toFixed(2)}</b></span>`;
+          html += `<span>${p.seriesName}: <b>${formatNumber(p.data[1], 2)}</b></span>`;
           html += `</div>`;
         }
         return html;

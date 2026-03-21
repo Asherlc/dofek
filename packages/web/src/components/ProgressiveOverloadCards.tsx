@@ -1,5 +1,6 @@
 import type { ProgressiveOverloadRow } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
+import { formatNumber } from "../lib/format.ts";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface ProgressiveOverloadCardsProps {
@@ -69,7 +70,7 @@ export function ProgressiveOverloadCards({ exercises, loading }: ProgressiveOver
           </div>
           <div className="text-xs text-zinc-400 mb-2">
             {exercise.isProgressing ? "+" : ""}
-            {exercise.slopeKgPerWeek.toFixed(1)} kg/week
+            {formatNumber(exercise.slopeKgPerWeek)} kg/week
           </div>
           {exercise.weeklyVolumes.length >= 2 && (
             <SparklineChart

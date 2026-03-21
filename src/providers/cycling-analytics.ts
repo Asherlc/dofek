@@ -5,7 +5,7 @@ import type { SyncDatabase } from "../db/index.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
-import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
+import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
 // Cycling Analytics API types
@@ -112,7 +112,7 @@ export function cyclingAnalyticsOAuthConfig(): OAuthConfig | null {
 // Provider implementation
 // ============================================================
 
-export class CyclingAnalyticsProvider implements Provider {
+export class CyclingAnalyticsProvider implements SyncProvider {
   readonly id = "cycling_analytics";
   readonly name = "Cycling Analytics";
   private fetchFn: typeof globalThis.fetch;

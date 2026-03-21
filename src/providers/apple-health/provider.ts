@@ -1,8 +1,8 @@
 import type { SyncDatabase } from "../../db/index.ts";
-import type { Provider, SyncResult } from "../types.ts";
+import type { SyncProvider, SyncResult } from "../types.ts";
 import { findLatestExport, importAppleHealthFile } from "./import.ts";
 
-export class AppleHealthProvider implements Provider {
+export class AppleHealthProvider implements SyncProvider {
   readonly id = "apple_health";
   readonly name = "Apple Health";
 

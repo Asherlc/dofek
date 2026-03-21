@@ -4,6 +4,7 @@ import { useState } from "react";
 import { AppHeader } from "../components/AppHeader.tsx";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
+import { formatNumber } from "../lib/format.ts";
 import { trpc } from "../lib/trpc.ts";
 
 const TARGET_DESCRIPTIONS: Record<string, string> = {
@@ -283,14 +284,14 @@ function TomorrowCard({
       : agreement === "high"
         ? "Two independent models arrived at nearly the same prediction — this gives us more confidence."
         : agreement === "moderate"
-          ? `The two models predict ${prediction.linear.toFixed(0)} and ${prediction.tree.toFixed(0)} — reasonably close.`
-          : `The models disagree (${prediction.linear.toFixed(0)} vs ${prediction.tree.toFixed(0)}) — ${isActivityTarget ? "this metric" : "tomorrow"} may be hard to predict.`;
+          ? `The two models predict ${formatNumber(prediction.linear, 0)} and ${formatNumber(prediction.tree, 0)} — reasonably close.`
+          : `The models disagree (${formatNumber(prediction.linear, 0)} vs ${formatNumber(prediction.tree, 0)}) — ${isActivityTarget ? "this metric" : "tomorrow"} may be hard to predict.`;
 
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
       <p className="text-xs text-zinc-500 uppercase tracking-wider mb-2">{heading}</p>
       <div className="flex items-baseline gap-3">
-        <span className="text-3xl font-bold text-emerald-400">{avg.toFixed(0)}</span>
+        <span className="text-3xl font-bold text-emerald-400">{formatNumber(avg, 0)}</span>
         <span className="text-sm text-zinc-500">{unit}</span>
         {agreementText && (
           <span

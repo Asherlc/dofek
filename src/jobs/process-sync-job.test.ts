@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
-import type { Provider, SyncResult } from "../providers/types.ts";
+import type { SyncProvider, SyncResult } from "../providers/types.ts";
 
 const mockLoggerInfo = vi.fn();
 const mockLoggerError = vi.fn();
@@ -20,9 +20,9 @@ vi.mock("./provider-registration.ts", () => ({
   ensureProvidersRegistered: vi.fn().mockResolvedValue(undefined),
 }));
 
-const mockGetAllProviders = vi.fn<() => Provider[]>().mockReturnValue([]);
+const mockGetSyncProviders = vi.fn<() => SyncProvider[]>().mockReturnValue([]);
 vi.mock("../providers/index.ts", () => ({
-  getAllProviders: (...args: []) => mockGetAllProviders(...args),
+  getSyncProviders: (...args: []) => mockGetSyncProviders(...args),
 }));
 
 const mockLogSync = vi.fn().mockResolvedValue(undefined);
@@ -67,7 +67,7 @@ function createMockJob(
   };
 }
 
-function createMockProvider(overrides: Partial<Provider> = {}): Provider {
+function createMockProvider(overrides: Partial<SyncProvider> = {}): SyncProvider {
   return {
     id: "test-provider",
     name: "Test Provider",
@@ -92,7 +92,7 @@ describe("processSyncJob", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // Restore default return values after clearAllMocks
-    mockGetAllProviders.mockReturnValue([]);
+    mockGetSyncProviders.mockReturnValue([]);
     mockLogSync.mockResolvedValue(undefined);
     mockEnsureProvider.mockResolvedValue("test-id");
     mockUpdateUserMaxHr.mockResolvedValue(undefined);
@@ -106,7 +106,7 @@ describe("processSyncJob", () => {
   it("syncs all valid providers when no providerId specified", async () => {
     const providerA = createMockProvider({ id: "a", name: "Provider A" });
     const providerB = createMockProvider({ id: "b", name: "Provider B" });
-    mockGetAllProviders.mockReturnValue([providerA, providerB]);
+    mockGetSyncProviders.mockReturnValue([providerA, providerB]);
 
     await runSyncJob(createMockJob(), mockDb);
 
@@ -121,7 +121,7 @@ describe("processSyncJob", () => {
       name: "Invalid",
       validate: () => "missing API key",
     });
-    mockGetAllProviders.mockReturnValue([valid, invalid]);
+    mockGetSyncProviders.mockReturnValue([valid, invalid]);
 
     await runSyncJob(createMockJob(), mockDb);
 
@@ -132,7 +132,7 @@ describe("processSyncJob", () => {
   it("syncs only the specified provider when providerId is given", async () => {
     const providerA = createMockProvider({ id: "a", name: "Provider A" });
     const providerB = createMockProvider({ id: "b", name: "Provider B" });
-    mockGetAllProviders.mockReturnValue([providerA, providerB]);
+    mockGetSyncProviders.mockReturnValue([providerA, providerB]);
 
     await runSyncJob(createMockJob({ providerId: "b" }), mockDb);
 
@@ -142,7 +142,7 @@ describe("processSyncJob", () => {
 
   it("throws for unknown providerId", async () => {
     const providerA = createMockProvider({ id: "a", name: "Provider A" });
-    mockGetAllProviders.mockReturnValue([providerA]);
+    mockGetSyncProviders.mockReturnValue([providerA]);
 
     await expect(runSyncJob(createMockJob({ providerId: "nonexistent" }), mockDb)).rejects.toThrow(
       "Unknown provider: nonexistent",
@@ -151,7 +151,7 @@ describe("processSyncJob", () => {
 
   it("updates job progress through pending → running → done states", async () => {
     const provider = createMockProvider({ id: "test", name: "Test" });
-    mockGetAllProviders.mockReturnValue([provider]);
+    mockGetSyncProviders.mockReturnValue([provider]);
 
     // Capture snapshots since the status object is mutated in place
     const progressSnapshots: Array<Record<string, unknown>> = [];
@@ -180,7 +180,7 @@ describe("processSyncJob", () => {
 
   it("logs success to sync log", async () => {
     const provider = createMockProvider({ id: "test", name: "Test" });
-    mockGetAllProviders.mockReturnValue([provider]);
+    mockGetSyncProviders.mockReturnValue([provider]);
 
     await runSyncJob(createMockJob(), mockDb);
 
@@ -202,7 +202,7 @@ describe("processSyncJob", () => {
       name: "Broken",
       sync: vi.fn().mockRejectedValue(new Error("API timeout")),
     });
-    mockGetAllProviders.mockReturnValue([provider]);
+    mockGetSyncProviders.mockReturnValue([provider]);
 
     const progressSnapshots: Array<Record<string, unknown>> = [];
     const job = createMockJob();
@@ -244,7 +244,7 @@ describe("processSyncJob", () => {
         duration: 50,
       }),
     });
-    mockGetAllProviders.mockReturnValue([provider]);
+    mockGetSyncProviders.mockReturnValue([provider]);
 
     const progressSnapshots: Array<Record<string, unknown>> = [];
     const job = createMockJob();
@@ -278,7 +278,7 @@ describe("processSyncJob", () => {
 
   it("calls ensureProvider for each synced provider", async () => {
     const provider = createMockProvider({ id: "test", name: "Test Provider" });
-    mockGetAllProviders.mockReturnValue([provider]);
+    mockGetSyncProviders.mockReturnValue([provider]);
 
     await runSyncJob(createMockJob(), mockDb);
 
@@ -286,7 +286,7 @@ describe("processSyncJob", () => {
   });
 
   it("calls updateUserMaxHr and refreshDedupViews post-sync", async () => {
-    mockGetAllProviders.mockReturnValue([]);
+    mockGetSyncProviders.mockReturnValue([]);
 
     await runSyncJob(createMockJob(), mockDb);
 
@@ -295,7 +295,7 @@ describe("processSyncJob", () => {
   });
 
   it("handles post-sync cleanup failures gracefully and logs errors", async () => {
-    mockGetAllProviders.mockReturnValue([]);
+    mockGetSyncProviders.mockReturnValue([]);
     mockUpdateUserMaxHr.mockRejectedValue(new Error("db gone"));
     mockRefreshDedupViews.mockRejectedValue(new Error("db gone"));
 
@@ -330,7 +330,7 @@ describe("processSyncJob", () => {
           },
         ),
     });
-    mockGetAllProviders.mockReturnValue([provider]);
+    mockGetSyncProviders.mockReturnValue([provider]);
 
     const progressSnapshots: Array<Record<string, unknown>> = [];
     const job = createMockJob();
@@ -355,7 +355,7 @@ describe("processSyncJob", () => {
   it("computes percentage across multiple providers", async () => {
     const providerA = createMockProvider({ id: "a", name: "A" });
     const providerB = createMockProvider({ id: "b", name: "B" });
-    mockGetAllProviders.mockReturnValue([providerA, providerB]);
+    mockGetSyncProviders.mockReturnValue([providerA, providerB]);
 
     const progressSnapshots: Array<Record<string, unknown>> = [];
     const job = createMockJob();
@@ -377,7 +377,7 @@ describe("processSyncJob", () => {
 
   it("computes since date from sinceDays", async () => {
     const provider = createMockProvider({ id: "test", name: "Test" });
-    mockGetAllProviders.mockReturnValue([provider]);
+    mockGetSyncProviders.mockReturnValue([provider]);
 
     const now = Date.now();
     vi.spyOn(Date, "now").mockReturnValue(now);
@@ -390,7 +390,7 @@ describe("processSyncJob", () => {
 
   it("uses epoch when sinceDays is not provided", async () => {
     const provider = createMockProvider({ id: "test", name: "Test" });
-    mockGetAllProviders.mockReturnValue([provider]);
+    mockGetSyncProviders.mockReturnValue([provider]);
 
     await runSyncJob(createMockJob({}), mockDb);
 

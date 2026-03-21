@@ -1,3 +1,4 @@
+import { createActivityTypeMapper } from "@dofek/training/training";
 import { and, eq } from "drizzle-orm";
 import {
   GarminConnectClient,
@@ -27,7 +28,7 @@ import {
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
-import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
+import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
 // Garmin Health API types (official REST API response shapes)
@@ -158,6 +159,7 @@ export interface ParsedGarminBodyMeasurement {
 // Activity type mapping
 // ============================================================
 
+/** Garmin activityType → canonical activity type */
 const GARMIN_ACTIVITY_TYPE_MAP: Record<string, string> = {
   // Running
   RUNNING: "running",
@@ -188,8 +190,10 @@ const GARMIN_ACTIVITY_TYPE_MAP: Record<string, string> = {
   ROWING: "rowing",
 };
 
+const mapGarminType = createActivityTypeMapper(GARMIN_ACTIVITY_TYPE_MAP);
+
 export function mapGarminActivityType(activityType: string): string {
-  return GARMIN_ACTIVITY_TYPE_MAP[activityType] ?? "other";
+  return mapGarminType(activityType);
 }
 
 // ============================================================
@@ -469,7 +473,7 @@ async function saveSyncCursor(db: SyncDatabase, cursor: string): Promise<void> {
 // Provider
 // ============================================================
 
-export class GarminProvider implements Provider {
+export class GarminProvider implements SyncProvider {
   readonly id = "garmin";
   readonly name = "Garmin Connect";
   private fetchFn: typeof globalThis.fetch;
