@@ -1,3 +1,4 @@
+import { surfaceColors } from "@dofek/scoring/colors";
 import type { CalendarDay } from "dofek-server/types";
 import { chartThemeColors, dofekTooltip } from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
@@ -72,7 +73,7 @@ export function TrainingCalendar({ data, height = 180 }: TrainingCalendarProps) 
       top: 30,
       left: 40,
       right: 10,
-      itemStyle: { borderColor: "#eef3ed", borderWidth: 2 },
+      itemStyle: { borderColor: surfaceColors.background, borderWidth: 2 },
       splitLine: { lineStyle: { color: chartThemeColors.gridLine } },
       dayLabel: {
         color: chartThemeColors.axisLabel,

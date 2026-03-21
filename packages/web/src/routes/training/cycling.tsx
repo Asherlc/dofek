@@ -7,6 +7,7 @@ import { EftpTrendChart } from "../../components/EftpTrendChart.tsx";
 import { PmcChart } from "../../components/PmcChart.tsx";
 import { PowerCurveChart } from "../../components/PowerCurveChart.tsx";
 import { VerticalAscentChart } from "../../components/VerticalAscentChart.tsx";
+import { chartColors, chartThemeColors } from "../../lib/chartTheme.ts";
 import { formatNumber } from "../../lib/format.ts";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
 import { trpc } from "../../lib/trpc.ts";
@@ -128,8 +129,8 @@ function CyclingTab() {
         </div>
         {/* Period labels */}
         <div className="mt-3 flex flex-wrap gap-4 text-xs">
-          <PeriodLabel color="#8b5cf6" label={`${days} days`} model={recentModel} />
-          <PeriodLabel color="#6b8a6b" label="This season" model={seasonModel} />
+          <PeriodLabel color={chartColors.purple} label={`${days} days`} model={recentModel} />
+          <PeriodLabel color={chartThemeColors.axisLabel} label="This season" model={seasonModel} />
         </div>
       </Section>
 

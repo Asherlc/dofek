@@ -1,4 +1,5 @@
 import {
+  chartColors,
   chartThemeColors,
   dofekAxis,
   dofekGrid,
@@ -140,7 +141,7 @@ function ConditionalChart({ insight }: { insight: Insight }) {
             },
             {
               value: Math.abs(whenTrue.mean),
-              itemStyle: { color: "#34d399" },
+              itemStyle: { color: chartColors.emerald },
               label: {
                 show: true,
                 position: "right",
@@ -205,7 +206,7 @@ function ScatterPlot({ insight }: { insight: Insight }) {
   const slope = den !== 0 ? num / den : 0;
   const intercept = yMean - slope * xMean;
 
-  const trendColor = rho >= 0 ? "#34d399" : "#fb7185";
+  const trendColor = rho >= 0 ? chartColors.emerald : "#fb7185";
 
   const option = {
     grid: dofekGrid("single", { left: 8, right: 16, top: 16, bottom: 24, containLabel: true }),

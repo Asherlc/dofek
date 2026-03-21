@@ -1,5 +1,5 @@
 import type { ProgressiveOverloadRow } from "dofek-server/types";
-import { dofekAxis, dofekGrid, dofekSeries } from "../lib/chartTheme.ts";
+import { chartColors, dofekAxis, dofekGrid, dofekSeries } from "../lib/chartTheme.ts";
 import { formatNumber } from "../lib/format.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
@@ -9,7 +9,7 @@ interface ProgressiveOverloadCardsProps {
 }
 
 function SparklineChart({ values, isProgressing }: { values: number[]; isProgressing: boolean }) {
-  const color = isProgressing ? "#10b981" : "#ef4444";
+  const color = isProgressing ? chartColors.emerald : "#ef4444";
 
   const option = {
     grid: dofekGrid("single", { top: 2, right: 2, bottom: 2, left: 2 }),

@@ -1,6 +1,7 @@
 import type { SmoothedWeightRow } from "../../../server/src/routers/body-analytics.ts";
 import {
   chartColors,
+  chartThemeColors,
   dofekAxis,
   dofekGrid,
   dofekLegend,
@@ -50,7 +51,7 @@ export function SmoothedWeightChart({ data, loading }: SmoothedWeightChartProps)
         "Raw Weight",
         data.map((d) => [d.date, convertWeight(d.rawWeight, unitSystem)]),
         {
-          color: "#6b8a6b",
+          color: chartThemeColors.axisLabel,
           symbolSize: 4,
           itemStyle: { opacity: 0.5 },
         },

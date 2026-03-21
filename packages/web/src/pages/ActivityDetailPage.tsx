@@ -1,12 +1,19 @@
 import type { ActivityHrZone } from "@dofek/zones/zones";
 import { HEART_RATE_ZONE_COLORS } from "@dofek/zones/zones";
 import { Link, useParams } from "@tanstack/react-router";
-import ReactECharts from "echarts-for-react";
 import { useEffect, useRef } from "react";
 import type { ActivityDetail, StreamPoint } from "../../../server/src/routers/activity.ts";
 import { AppHeader } from "../components/AppHeader.tsx";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
+import { DofekChart } from "../components/DofekChart.tsx";
 import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
+import {
+  chartThemeColors,
+  dofekAxis,
+  dofekGrid,
+  dofekLegend,
+  dofekTooltip,
+} from "../lib/chartTheme.ts";
 import { formatNumber } from "../lib/format.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitSystem } from "../lib/unitContext.ts";
@@ -323,14 +330,14 @@ function MetricsChart({
   let axisIndex = 0;
 
   if (hasHr) {
-    yAxes.push({
-      type: "value",
-      name: "Heart Rate (bpm)",
-      position: "left",
-      axisLabel: { color: CHART_COLORS.heartRate, fontSize: 11 },
-      nameTextStyle: { color: CHART_COLORS.heartRate, fontSize: 10 },
-      splitLine: { show: axisIndex === 0, lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
-    });
+    yAxes.push(
+      dofekAxis.value({
+        name: "Heart Rate (bpm)",
+        position: "left",
+        showSplitLine: axisIndex === 0,
+        axisLabel: { color: CHART_COLORS.heartRate },
+      }),
+    );
     series.push({
       name: "Heart Rate",
       type: "line",
@@ -344,14 +351,14 @@ function MetricsChart({
   }
 
   if (hasPower) {
-    yAxes.push({
-      type: "value",
-      name: "Power (W)",
-      position: axisIndex === 0 ? "left" : "right",
-      axisLabel: { color: CHART_COLORS.power, fontSize: 11 },
-      nameTextStyle: { color: CHART_COLORS.power, fontSize: 10 },
-      splitLine: { show: axisIndex === 0, lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
-    });
+    yAxes.push(
+      dofekAxis.value({
+        name: "Power (W)",
+        position: axisIndex === 0 ? "left" : "right",
+        showSplitLine: axisIndex === 0,
+        axisLabel: { color: CHART_COLORS.power },
+      }),
+    );
     series.push({
       name: "Power",
       type: "line",
@@ -366,13 +373,13 @@ function MetricsChart({
 
   if (hasSpeed) {
     yAxes.push({
-      type: "value",
-      name: `Speed (${speedLabel(unitSystem)})`,
-      position: axisIndex === 0 ? "left" : "right",
+      ...dofekAxis.value({
+        name: `Speed (${speedLabel(unitSystem)})`,
+        position: axisIndex === 0 ? "left" : "right",
+        showSplitLine: axisIndex === 0,
+        axisLabel: { color: CHART_COLORS.speed },
+      }),
       offset: axisIndex > 1 ? (axisIndex - 1) * 60 : 0,
-      axisLabel: { color: CHART_COLORS.speed, fontSize: 11 },
-      nameTextStyle: { color: CHART_COLORS.speed, fontSize: 10 },
-      splitLine: { show: axisIndex === 0, lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
     });
     series.push({
       name: "Speed",
@@ -390,13 +397,13 @@ function MetricsChart({
 
   if (hasCadence) {
     yAxes.push({
-      type: "value",
-      name: "Cadence (rpm)",
-      position: axisIndex === 0 ? "left" : "right",
+      ...dofekAxis.value({
+        name: "Cadence (rpm)",
+        position: axisIndex === 0 ? "left" : "right",
+        showSplitLine: axisIndex === 0,
+        axisLabel: { color: CHART_COLORS.cadence },
+      }),
       offset: axisIndex > 1 ? (axisIndex - 1) * 60 : 0,
-      axisLabel: { color: CHART_COLORS.cadence, fontSize: 11 },
-      nameTextStyle: { color: CHART_COLORS.cadence, fontSize: 10 },
-      splitLine: { show: axisIndex === 0, lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
     });
     series.push({
       name: "Cadence",
@@ -413,18 +420,9 @@ function MetricsChart({
   const rightAxisCount = yAxes.filter((_, i) => i > 0).length;
 
   const option = {
-    backgroundColor: "transparent",
     grid: { top: 40, right: 60 + Math.max(0, rightAxisCount - 1) * 60, bottom: 60, left: 60 },
-    tooltip: {
-      trigger: "axis",
-      backgroundColor: "#ffffff",
-      borderColor: "rgba(74, 158, 122, 0.2)",
-      textStyle: { color: "#1a2e1a", fontSize: 12 },
-    },
-    legend: {
-      top: 0,
-      textStyle: { color: "#4a6a4a", fontSize: 11 },
-    },
+    tooltip: dofekTooltip(),
+    legend: dofekLegend(true),
     dataZoom: [
       { type: "inside", xAxisIndex: 0, start: 0, end: 100 },
       {
@@ -434,31 +432,27 @@ function MetricsChart({
         end: 100,
         height: 20,
         bottom: 10,
-        borderColor: "rgba(74, 158, 122, 0.2)",
-        backgroundColor: "#ffffff",
+        borderColor: chartThemeColors.tooltipBorder,
+        backgroundColor: chartThemeColors.tooltipBackground,
         fillerColor: "rgba(34,197,94,0.15)",
         handleStyle: { color: "#22c55e" },
-        textStyle: { color: "#6b8a6b" },
+        textStyle: { color: chartThemeColors.axisLabel },
       },
     ],
-    xAxis: {
-      type: "category",
+    xAxis: dofekAxis.category({
       data: times,
       axisLabel: {
-        color: "#6b8a6b",
-        fontSize: 11,
         formatter: (v: string) => {
           const d = new Date(v);
           return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
         },
       },
-      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
-    },
+    }),
     yAxis: yAxes,
     series,
   };
 
-  return <ReactECharts option={option} style={{ height: 350 }} />;
+  return <DofekChart option={option} height={350} />;
 }
 
 function ElevationChart({
@@ -476,39 +470,24 @@ function ElevationChart({
   if (elevPoints.length === 0) return null;
 
   const option = {
-    backgroundColor: "transparent",
-    grid: { top: 10, right: 20, bottom: 30, left: 50 },
-    tooltip: {
-      trigger: "axis",
-      backgroundColor: "#ffffff",
-      borderColor: "rgba(74, 158, 122, 0.2)",
-      textStyle: { color: "#1a2e1a", fontSize: 12 },
+    grid: dofekGrid("single", { top: 10, right: 20, bottom: 30, left: 50 }),
+    tooltip: dofekTooltip({
       formatter: (params: Array<{ value: number; dataIndex: number }>) => {
         const p = params[0];
         if (!p) return "";
         return `Elevation: ${Math.round(convertElevation(p.value, unitSystem))} ${elevationLabel(unitSystem)}`;
       },
-    },
-    xAxis: {
-      type: "category",
+    }),
+    xAxis: dofekAxis.category({
       data: elevPoints.map((p) => p.recordedAt),
       axisLabel: {
-        color: "#6b8a6b",
-        fontSize: 11,
         formatter: (v: string) => {
           const d = new Date(v);
           return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
         },
       },
-      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
-    },
-    yAxis: {
-      type: "value",
-      name: `Elevation (${elevationLabel(unitSystem)})`,
-      nameTextStyle: { color: "#6b8a6b", fontSize: 10 },
-      axisLabel: { color: "#6b8a6b", fontSize: 11 },
-      splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
-    },
+    }),
+    yAxis: dofekAxis.value({ name: `Elevation (${elevationLabel(unitSystem)})` }),
     series: [
       {
         type: "line",
@@ -534,7 +513,7 @@ function ElevationChart({
     ],
   };
 
-  return <ReactECharts option={option} style={{ height: 200 }} />;
+  return <DofekChart option={option} height={200} />;
 }
 
 function HrZonesChart({ zones, loading }: { zones: ActivityHrZone[]; loading: boolean }) {
@@ -556,14 +535,9 @@ function HrZonesChart({ zones, loading }: { zones: ActivityHrZone[]; loading: bo
   };
 
   const option = {
-    backgroundColor: "transparent",
-    grid: { top: 10, right: 80, bottom: 30, left: 100 },
-    tooltip: {
-      trigger: "axis",
+    grid: dofekGrid("single", { top: 10, right: 80, bottom: 30, left: 100 }),
+    tooltip: dofekTooltip({
       axisPointer: { type: "shadow" },
-      backgroundColor: "#ffffff",
-      borderColor: "rgba(74, 158, 122, 0.2)",
-      textStyle: { color: "#1a2e1a", fontSize: 12 },
       formatter: (params: Array<{ name: string; value: number; dataIndex: number }>) => {
         const p = params[0];
         if (!p) return "";
@@ -574,34 +548,25 @@ function HrZonesChart({ zones, loading }: { zones: ActivityHrZone[]; loading: bo
         return `<b>${zone.label}</b> (${zone.minPct}–${zone.maxPct}% HRR)<br/>
           ${formatTime(zone.seconds)} (${percentage}%)`;
       },
-    },
-    xAxis: {
-      type: "value",
-      axisLabel: {
-        color: "#6b8a6b",
-        fontSize: 11,
-        formatter: (v: number) => formatTime(v),
-      },
-      splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
-    },
-    yAxis: {
-      type: "category",
+    }),
+    xAxis: dofekAxis.value({
+      axisLabel: { formatter: (v: number) => formatTime(v) },
+    }),
+    yAxis: dofekAxis.category({
       data: zones.map((z) => `Z${z.zone} ${z.label}`),
-      axisLabel: { color: "#4a6a4a", fontSize: 11 },
-      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
-    },
+    }),
     series: [
       {
         type: "bar",
         data: zones.map((z, i) => ({
           value: z.seconds,
-          itemStyle: { color: HEART_RATE_ZONE_COLORS[i] ?? "#6b8a6b" },
+          itemStyle: { color: HEART_RATE_ZONE_COLORS[i] ?? chartThemeColors.axisLabel },
         })),
         barWidth: "60%",
         label: {
           show: true,
           position: "right",
-          color: "#4a6a4a",
+          color: chartThemeColors.axisLabel,
           fontSize: 11,
           formatter: (p: { value: number }) => {
             const percentage =
@@ -613,7 +578,7 @@ function HrZonesChart({ zones, loading }: { zones: ActivityHrZone[]; loading: bo
     ],
   };
 
-  return <ReactECharts option={option} style={{ height: 200 }} />;
+  return <DofekChart option={option} height={200} />;
 }
 
 function Section({

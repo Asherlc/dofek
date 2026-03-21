@@ -1,5 +1,12 @@
 import type { PolarizationWeek } from "dofek-server/types";
-import { dofekAxis, dofekGrid, dofekLegend, dofekTooltip } from "../lib/chartTheme.ts";
+import {
+  chartColors,
+  chartThemeColors,
+  dofekAxis,
+  dofekGrid,
+  dofekLegend,
+  dofekTooltip,
+} from "../lib/chartTheme.ts";
 import { formatNumber } from "../lib/format.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
@@ -157,7 +164,7 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
           [lastDate, 2.0],
         ],
         symbol: "none",
-        lineStyle: { color: "#4a6a4a", type: "dashed", width: 1 },
+        lineStyle: { color: chartThemeColors.legendText, type: "dashed", width: 1 },
         silent: true,
         tooltip: { show: false },
         z: 1,
@@ -177,7 +184,7 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
         smooth: true,
         symbol: "circle",
         symbolSize: 6,
-        lineStyle: { width: 2.5, color: "#4a6a4a" },
+        lineStyle: { width: 2.5, color: chartThemeColors.legendText },
         itemStyle: { borderWidth: 2 },
         z: 10,
       },
@@ -192,7 +199,7 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
               })),
               symbol: "diamond",
               symbolSize: 8,
-              itemStyle: { color: "#f59e0b", opacity: 0.6 },
+              itemStyle: { color: chartColors.amber, opacity: 0.6 },
               z: 5,
             },
           ]

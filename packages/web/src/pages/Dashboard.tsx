@@ -22,6 +22,7 @@ import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { TimeSeriesChart } from "../components/TimeSeriesChart.tsx";
 import { WeeklyReportCard } from "../components/WeeklyReportCard.tsx";
 import { useScrollReveal } from "../hooks/useScrollReveal.ts";
+import { chartColors } from "../lib/chartTheme.ts";
 import { useDashboardLayout } from "../lib/dashboardLayoutContext.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitSystem } from "../lib/unitContext.ts";
@@ -156,7 +157,7 @@ export function buildSkinTempSeries(metrics: DailyMetricRow[], unitSystem: UnitS
       d.date,
       d.skin_temp_c != null ? convertTemperature(d.skin_temp_c, unitSystem) : null,
     ]),
-    color: "#f59e0b",
+    color: chartColors.amber,
     yAxisIndex: 1 as const,
   };
 }
@@ -283,7 +284,7 @@ export function Dashboard() {
     () => ({
       name: "SpO2",
       data: metrics.map((d): [string, number | null] => [d.date, d.spo2_avg]),
-      color: "#3b82f6",
+      color: chartColors.blue,
       areaStyle: true,
     }),
     [metrics],
@@ -300,7 +301,7 @@ export function Dashboard() {
     () => ({
       name: "Steps",
       data: metrics.map((d): [string, number | null] => [d.date, d.steps]),
-      color: "#8b5cf6",
+      color: chartColors.purple,
       areaStyle: true,
     }),
     [metrics],

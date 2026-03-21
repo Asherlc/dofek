@@ -1,7 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
-import ReactECharts from "echarts-for-react";
 import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
+import { DofekChart } from "../../components/DofekChart.tsx";
 import { ChartLoadingSkeleton } from "../../components/LoadingSkeleton.tsx";
+import {
+  chartColors,
+  dofekAxis,
+  dofekGrid,
+  dofekLegend,
+  dofekSeries,
+  dofekTooltip,
+} from "../../lib/chartTheme.ts";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
 import { trpc } from "../../lib/trpc.ts";
 import { useUnitSystem } from "../../lib/unitContext.ts";
@@ -78,24 +86,10 @@ function PaceCurveChart({
   loading: boolean;
   unitSystem: UnitSystem;
 }) {
-  if (loading) return <ChartLoadingSkeleton height={280} />;
-
-  if (data.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-[280px]">
-        <span className="text-dim text-sm">No running pace data</span>
-      </div>
-    );
-  }
-
   const option = {
-    backgroundColor: "transparent",
-    grid: { top: 30, right: 20, bottom: 40, left: 65 },
-    tooltip: {
-      trigger: "item" as const,
-      backgroundColor: "#ffffff",
-      borderColor: "rgba(74, 158, 122, 0.2)",
-      textStyle: { color: "#1a2e1a", fontSize: 12 },
+    grid: { ...dofekGrid("single"), top: 30, bottom: 40, left: 65 },
+    tooltip: dofekTooltip({
+      trigger: "item",
       formatter: (params: { data: [number, number]; seriesName: string }) => {
         const [seconds, pace] = params.data;
         const durLabel =
@@ -106,57 +100,61 @@ function PaceCurveChart({
               : `${Math.round(seconds / 3600)}h`;
         return `${durLabel}: <strong>${formatPace(pace)} ${paceLabel(unitSystem)}</strong>`;
       },
-    },
+    }),
     xAxis: {
-      type: "log" as const,
+      ...dofekAxis.value({
+        type: "log",
+        min: 5,
+        max: 7200,
+        axisLabel: {
+          formatter: (value: number) =>
+            value < 60
+              ? `${value}s`
+              : value < 3600
+                ? `${Math.round(value / 60)}m`
+                : `${Math.round(value / 3600)}h`,
+        },
+      }),
       name: "Duration",
       nameLocation: "center" as const,
       nameGap: 25,
-      nameTextStyle: { color: "#6b8a6b", fontSize: 11 },
-      min: 5,
-      max: 7200,
-      axisLabel: {
-        color: "#6b8a6b",
-        fontSize: 11,
-        formatter: (value: number) =>
-          value < 60
-            ? `${value}s`
-            : value < 3600
-              ? `${Math.round(value / 60)}m`
-              : `${Math.round(value / 3600)}h`,
-      },
-      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
       splitLine: { show: false },
     },
     yAxis: {
-      type: "value" as const,
-      name: `Pace (min${paceLabel(unitSystem)})`,
+      ...dofekAxis.value({
+        name: `Pace (min${paceLabel(unitSystem)})`,
+        axisLabel: {
+          formatter: (value: number) => formatPace(value),
+        },
+      }),
       inverse: true, // faster pace (lower number) at top
-      splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
-      axisLabel: {
-        color: "#6b8a6b",
-        fontSize: 11,
-        formatter: (value: number) => formatPace(value),
-      },
-      axisLine: { show: true, lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
-      nameTextStyle: { color: "#6b8a6b", fontSize: 11 },
     },
+    legend: dofekLegend(false),
     series: [
-      {
-        name: "Best Pace",
-        type: "line",
-        data: data.map((d) => [d.durationSeconds, convertPace(d.bestPaceSecondsPerKm, unitSystem)]),
-        smooth: 0.3,
-        symbol: "circle",
-        symbolSize: 6,
-        lineStyle: { width: 3, color: "#10b981" },
-        itemStyle: { color: "#10b981" },
-        areaStyle: { opacity: 0.1, color: "#10b981" },
-      },
+      dofekSeries.line(
+        "Best Pace",
+        data.map((d) => [d.durationSeconds, convertPace(d.bestPaceSecondsPerKm, unitSystem)]),
+        {
+          color: chartColors.emerald,
+          smooth: 0.3,
+          symbol: "circle",
+          symbolSize: 6,
+          width: 3,
+          areaStyle: { opacity: 0.1, color: chartColors.emerald },
+        },
+      ),
     ],
   };
 
-  return <ReactECharts option={option} style={{ height: 280 }} notMerge={true} />;
+  return (
+    <DofekChart
+      option={option}
+      loading={loading}
+      empty={data.length === 0}
+      height={280}
+      emptyMessage="No running pace data"
+    />
+  );
 }
 
 // ── Pace Trend Chart ──
@@ -178,24 +176,10 @@ function PaceTrendChart({
   loading: boolean;
   unitSystem: UnitSystem;
 }) {
-  if (loading) return <ChartLoadingSkeleton height={250} />;
-
-  if (data.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-[250px]">
-        <span className="text-dim text-sm">No running data</span>
-      </div>
-    );
-  }
-
   const option = {
-    backgroundColor: "transparent",
-    grid: { top: 20, right: 20, bottom: 40, left: 65 },
-    tooltip: {
-      trigger: "item" as const,
-      backgroundColor: "#ffffff",
-      borderColor: "rgba(74, 158, 122, 0.2)",
-      textStyle: { color: "#1a2e1a", fontSize: 12 },
+    grid: { ...dofekGrid("single"), top: 20, bottom: 40, left: 65 },
+    tooltip: dofekTooltip({
+      trigger: "item",
       formatter: (params: { data: [string, number]; dataIndex: number }) => {
         const d = data[params.dataIndex];
         if (!d) return "";
@@ -206,37 +190,39 @@ function PaceTrendChart({
           `Distance: ${formatNumber(convertDistance(d.distanceKm, unitSystem))} ${distanceLabel(unitSystem)} · ${d.durationMinutes} min`,
         ].join("<br/>");
       },
-    },
-    xAxis: {
-      type: "time" as const,
-      axisLabel: { color: "#6b8a6b", fontSize: 11 },
-      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
-    },
+    }),
+    xAxis: dofekAxis.time(),
     yAxis: {
-      type: "value" as const,
-      inverse: true,
-      axisLabel: {
-        color: "#6b8a6b",
-        fontSize: 11,
-        formatter: (value: number) => formatPace(value),
-      },
-      splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
-      axisLine: { show: false },
+      ...dofekAxis.value({
+        axisLabel: {
+          formatter: (value: number) => formatPace(value),
+        },
+      }),
+      inverse: true, // faster pace (lower number) at top
     },
+    legend: dofekLegend(false),
     series: [
       {
-        type: "scatter",
+        type: "scatter" as const,
         data: data.map((d) => [d.date, convertPace(d.paceSecondsPerKm, unitSystem)]),
         symbolSize: (val: [string, number]) => {
           const d = data.find((p) => convertPace(p.paceSecondsPerKm, unitSystem) === val[1]);
           return Math.min(Math.max((d?.distanceKm ?? 5) * 1.5, 4), 16);
         },
-        itemStyle: { color: "#10b981", opacity: 0.7 },
+        itemStyle: { color: chartColors.emerald, opacity: 0.7 },
       },
     ],
   };
 
-  return <ReactECharts option={option} style={{ height: 250 }} notMerge={true} />;
+  return (
+    <DofekChart
+      option={option}
+      loading={loading}
+      empty={data.length === 0}
+      height={250}
+      emptyMessage="No running data"
+    />
+  );
 }
 
 // ── Cadence Trend Chart ──
@@ -253,57 +239,42 @@ interface DynamicsRow {
 }
 
 function CadenceTrendChart({ data, loading }: { data: DynamicsRow[]; loading: boolean }) {
-  if (loading) return <ChartLoadingSkeleton height={250} />;
-
-  if (data.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-[250px]">
-        <span className="text-dim text-sm">No cadence data</span>
-      </div>
-    );
-  }
-
   const option = {
-    backgroundColor: "transparent",
-    grid: { top: 20, right: 20, bottom: 40, left: 55 },
-    tooltip: {
-      trigger: "item" as const,
-      backgroundColor: "#ffffff",
-      borderColor: "rgba(74, 158, 122, 0.2)",
-      textStyle: { color: "#1a2e1a", fontSize: 12 },
+    grid: { ...dofekGrid("single"), top: 20, bottom: 40, left: 55 },
+    tooltip: dofekTooltip({
+      trigger: "item",
       formatter: (params: { data: [string, number]; dataIndex: number }) => {
         const d = data[params.dataIndex];
         if (!d) return "";
         return `<strong>${d.activityName}</strong><br/>${d.date}<br/>Cadence: ${d.cadence} spm`;
       },
-    },
-    xAxis: {
-      type: "time" as const,
-      axisLabel: { color: "#6b8a6b", fontSize: 11 },
-      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
-    },
-    yAxis: {
-      type: "value" as const,
-      name: "Steps/min",
-      splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
-      axisLabel: { color: "#6b8a6b", fontSize: 11 },
-      axisLine: { show: false },
-      nameTextStyle: { color: "#6b8a6b", fontSize: 11 },
-    },
+    }),
+    xAxis: dofekAxis.time(),
+    yAxis: dofekAxis.value({ name: "Steps/min" }),
+    legend: dofekLegend(false),
     series: [
-      {
-        type: "line",
-        data: data.map((d) => [d.date, d.cadence]),
-        smooth: true,
-        symbol: "circle",
-        symbolSize: 5,
-        lineStyle: { width: 2, color: "#f59e0b" },
-        itemStyle: { color: "#f59e0b" },
-      },
+      dofekSeries.line(
+        "Cadence",
+        data.map((d) => [d.date, d.cadence]),
+        {
+          color: chartColors.amber,
+          smooth: true,
+          symbol: "circle",
+          symbolSize: 5,
+        },
+      ),
     ],
   };
 
-  return <ReactECharts option={option} style={{ height: 250 }} notMerge={true} />;
+  return (
+    <DofekChart
+      option={option}
+      loading={loading}
+      empty={data.length === 0}
+      height={250}
+      emptyMessage="No cadence data"
+    />
+  );
 }
 
 // ── Running Dynamics Table ──

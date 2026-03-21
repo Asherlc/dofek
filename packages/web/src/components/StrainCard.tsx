@@ -8,6 +8,7 @@ import { selectRecentDailyLoad } from "@dofek/training/training";
 import type { WorkloadRatioResult } from "dofek-server/types";
 import { useEffect, useState } from "react";
 import { useCountUp } from "../hooks/useCountUp.ts";
+import { chartThemeColors } from "../lib/chartTheme.ts";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface StrainCardProps {
@@ -48,7 +49,7 @@ function StrainRing({ strain, size = 120 }: { strain: number; size?: number }) {
           cy={center}
           r={radius}
           fill="none"
-          stroke="rgba(74, 158, 122, 0.12)"
+          stroke={chartThemeColors.gridLine}
           strokeWidth={strokeWidth}
         />
         <circle

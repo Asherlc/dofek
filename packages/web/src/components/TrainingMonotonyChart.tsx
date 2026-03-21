@@ -38,7 +38,7 @@ export function TrainingMonotonyChart({ data, loading }: TrainingMonotonyChartPr
           day: "numeric",
           year: "numeric",
         });
-        const monotonyColor = d.monotony > 2.0 ? "#ef4444" : "#3b82f6";
+        const monotonyColor = d.monotony > 2.0 ? "#ef4444" : chartColors.blue;
         return [
           `<strong>${dateLabel}</strong>`,
           `Monotony: <span style="color:${monotonyColor}">${formatNumber(d.monotony, 2)}</span>${d.monotony > 2.0 ? " (high!)" : ""}`,
@@ -59,7 +59,7 @@ export function TrainingMonotonyChart({ data, loading }: TrainingMonotonyChartPr
           data.map((d) => ({
             value: [d.week, d.monotony],
             itemStyle: {
-              color: d.monotony > 2.0 ? "#ef4444" : "#3b82f6",
+              color: d.monotony > 2.0 ? "#ef4444" : chartColors.blue,
             },
           })),
           {},

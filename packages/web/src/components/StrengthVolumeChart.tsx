@@ -51,7 +51,7 @@ export function StrengthVolumeChart({ data, loading }: StrengthVolumeChartProps)
           borderRadius: [4, 4, 0, 0],
         },
         emphasis: {
-          itemStyle: { color: "#34d399" },
+          itemStyle: { color: chartColors.emerald },
         },
       },
     ],

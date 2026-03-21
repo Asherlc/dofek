@@ -7,7 +7,7 @@ import {
   formZoneColor,
 } from "@dofek/scoring/scoring";
 import type { PmcDataPoint, TssModelInfo } from "dofek-server/types";
-import { chartThemeColors, dofekTooltip } from "../lib/chartTheme.ts";
+import { chartColors, chartThemeColors, dofekTooltip } from "../lib/chartTheme.ts";
 import { formatNumber } from "../lib/format.ts";
 import { DofekChart } from "./DofekChart.tsx";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
@@ -19,7 +19,7 @@ interface PmcChartProps {
 }
 
 /** Colors matching intervals.icu */
-const COLOR_FITNESS = "#3b82f6"; // blue
+const COLOR_FITNESS = chartColors.blue; // blue
 const COLOR_FATIGUE = "#8b5cf6"; // purple (intervals.icu uses purple, not pink)
 
 function ModelBadge({ model }: { model: TssModelInfo }) {

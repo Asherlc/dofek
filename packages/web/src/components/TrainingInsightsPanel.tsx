@@ -6,6 +6,7 @@ import {
 import { HEART_RATE_ZONES } from "@dofek/zones/zones";
 import { z } from "zod";
 import {
+  chartColors,
   chartThemeColors,
   dofekAxis,
   dofekGrid,
@@ -27,20 +28,20 @@ const ZONE_LABELS: Record<string, string> = Object.fromEntries(
 
 // Activity type colors
 const ACTIVITY_COLORS: Record<string, string> = {
-  cycling: "#f97316",
+  cycling: chartColors.orange,
   running: "#22c55e",
   walking: "#8b5cf6",
-  swimming: "#3b82f6",
+  swimming: chartColors.blue,
   hiking: "#a3e635",
   yoga: "#c084fc",
   functional_strength: "#dc2626",
   strength_training: "#ef4444",
   strength: "#ef4444",
-  [OTHER_ACTIVITY_TYPE]: "#6b8a6b",
+  [OTHER_ACTIVITY_TYPE]: chartThemeColors.axisLabel,
 };
 
 function getActivityColor(type: string): string {
-  return ACTIVITY_COLORS[type.toLowerCase()] ?? "#6b8a6b";
+  return ACTIVITY_COLORS[type.toLowerCase()] ?? chartThemeColors.axisLabel;
 }
 
 const weeklyVolumeRowSchema = z.object({
@@ -305,7 +306,12 @@ function IntensityDonut({ weeks }: { weeks: HrZoneWeek[] }) {
           position: "center",
           formatter: `{bold|${lowPct}%}\n{sub|low intensity}`,
           rich: {
-            bold: { fontSize: 28, fontWeight: "bold", color: "#1a2e1a", lineHeight: 36 },
+            bold: {
+              fontSize: 28,
+              fontWeight: "bold",
+              color: chartThemeColors.tooltipText,
+              lineHeight: 36,
+            },
             sub: { fontSize: 11, color: chartThemeColors.axisLabel, lineHeight: 16 },
           },
         },

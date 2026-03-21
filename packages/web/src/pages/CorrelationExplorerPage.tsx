@@ -1,10 +1,10 @@
-import type { EChartsOption } from "echarts";
-import ReactECharts from "echarts-for-react";
 import { useState } from "react";
 import { AppHeader } from "../components/AppHeader.tsx";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import { CorrelationStrengthBar } from "../components/CorrelationStrengthBar.tsx";
+import { DofekChart } from "../components/DofekChart.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
+import { chartThemeColors, dofekAxis, dofekGrid, dofekTooltip } from "../lib/chartTheme.ts";
 import { formatNumber } from "../lib/format.ts";
 import { trpc } from "../lib/trpc.ts";
 
@@ -294,32 +294,28 @@ function ScatterPlot({
   const xMax = Math.max(...xs);
   const trendColor = rho >= 0 ? "#34d399" : "#fb7185";
 
-  const option: EChartsOption = {
-    grid: { left: 8, right: 16, top: 16, bottom: 32, containLabel: true },
-    xAxis: {
-      type: "value",
+  const option = {
+    grid: dofekGrid("single", { left: 8, right: 16, top: 16, bottom: 32, containLabel: true }),
+    xAxis: dofekAxis.value({
       name: xLabel,
-      nameLocation: "middle",
-      nameGap: 24,
-      nameTextStyle: { color: "#6b8a6b", fontSize: 10 },
-      axisLabel: { color: "#6b8a6b", fontSize: 9 },
-      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
-      splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
-    },
-    yAxis: {
-      type: "value",
+      axisLabel: {
+        color: chartThemeColors.axisLabel,
+        fontSize: 9,
+        nameLocation: "middle",
+        nameGap: 24,
+        nameTextStyle: { color: chartThemeColors.axisLabel, fontSize: 10 },
+      },
+    }),
+    yAxis: dofekAxis.value({
       name: yLabel,
-      nameTextStyle: { color: "#6b8a6b", fontSize: 10 },
-      axisLabel: { color: "#6b8a6b", fontSize: 9 },
-      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
-      splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
-    },
+      axisLabel: { color: chartThemeColors.axisLabel, fontSize: 9 },
+    }),
     series: [
       {
         type: "scatter",
         data: dataPoints.map((p) => [p.x, p.y]),
         symbolSize: 5,
-        itemStyle: { color: "#4a6a4a", opacity: 0.5 },
+        itemStyle: { color: chartThemeColors.legendText, opacity: 0.5 },
       },
       {
         type: "line",
@@ -332,11 +328,8 @@ function ScatterPlot({
         silent: true,
       },
     ],
-    tooltip: {
+    tooltip: dofekTooltip({
       trigger: "item",
-      backgroundColor: "#ffffff",
-      borderColor: "rgba(74, 158, 122, 0.2)",
-      textStyle: { color: "#1a2e1a", fontSize: 11 },
       formatter: (params: unknown) => {
         if (!params || typeof params !== "object" || !("value" in params)) return "";
         const rawValue = Array.isArray(params.value) ? params.value : [0, 0];
@@ -344,8 +337,8 @@ function ScatterPlot({
         const v1 = Number(rawValue[1] ?? 0);
         return `${xLabel}: ${formatValue(v0)}<br/>${yLabel}: ${formatValue(v1)}`;
       },
-    },
+    }),
   };
 
-  return <ReactECharts option={option} style={{ height: 340 }} opts={{ renderer: "svg" }} />;
+  return <DofekChart option={option} height={340} opts={{ renderer: "svg" }} />;
 }

@@ -1,5 +1,7 @@
+import { surfaceColors } from "@dofek/scoring/colors";
 import type { WorkloadRatioRow } from "dofek-server/types";
 import {
+  chartColors,
   chartThemeColors,
   dofekAxis,
   dofekLegend,
@@ -109,7 +111,7 @@ export function WorkloadRatioChart({ data, loading }: WorkloadRatioChartProps) {
         ],
         symbol: "none",
         lineStyle: { width: 0 },
-        areaStyle: { color: "#eef3ed", opacity: 1, origin: "start" },
+        areaStyle: { color: surfaceColors.background, opacity: 1, origin: "start" },
         z: 0,
         silent: true,
       },
@@ -166,7 +168,7 @@ export function WorkloadRatioChart({ data, loading }: WorkloadRatioChartProps) {
           "Workload Ratio",
           data.map((d) => [d.date, d.workloadRatio]),
           {
-            color: "#f59e0b",
+            color: chartColors.amber,
             width: 2.5,
             z: 5,
           },
@@ -195,7 +197,7 @@ export function WorkloadRatioChart({ data, loading }: WorkloadRatioChartProps) {
           "Acute Load",
           data.map((d) => [d.date, d.acuteLoad]),
           {
-            color: "#ec4899",
+            color: chartColors.pink,
             areaStyle: { opacity: 0.15 },
             z: 3,
           },
@@ -209,7 +211,7 @@ export function WorkloadRatioChart({ data, loading }: WorkloadRatioChartProps) {
           "Chronic Load",
           data.map((d) => [d.date, d.chronicLoad]),
           {
-            color: "#3b82f6",
+            color: chartColors.blue,
             areaStyle: { opacity: 0.1 },
             z: 2,
           },
