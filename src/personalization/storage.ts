@@ -1,11 +1,8 @@
 import { sql } from "drizzle-orm";
+import type { Database } from "../db/typed-sql.ts";
 import { type PersonalizedParams, personalizedParamsSchema } from "./params.ts";
 
 export const SETTINGS_KEY = "personalized_params";
-
-interface Database {
-  execute: (query: ReturnType<typeof sql>) => Promise<Record<string, unknown>[]>;
-}
 
 export async function loadPersonalizedParams(
   db: Database,

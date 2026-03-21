@@ -45,7 +45,7 @@ export function ProviderLogo({ provider, size = 20, className = "" }: ProviderLo
   // Styled letter fallback for providers without a logo file
   const label = PROVIDER_LABELS[provider] ?? provider;
   const letter = label[0]?.toUpperCase() ?? "?";
-  const color = BRAND_COLORS[provider] ?? "#71717a";
+  const color = BRAND_COLORS[provider] ?? "#6b8a6b";
   const fontSize = Math.round(size * 0.55);
 
   return (

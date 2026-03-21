@@ -1,9 +1,8 @@
 import { rampRateColor } from "@dofek/scoring/scoring";
 import type { RampRateWeek } from "dofek-server/types";
-import ReactECharts from "echarts-for-react";
-import { createChartOptions } from "../lib/chart-theme.ts";
+import { dofekAxis, dofekGrid, dofekTooltip } from "../lib/chartTheme.ts";
 import { formatNumber } from "../lib/format.ts";
-import { ChartContainer } from "./ChartContainer.tsx";
+import { DofekChart } from "./DofekChart.tsx";
 
 interface RampRateChartProps {
   data: RampRateWeek[];
@@ -18,10 +17,9 @@ interface RampRateWeekData {
 }
 
 export function buildRampRateOption(data: RampRateWeekData[]) {
-  return createChartOptions({
-    grid: { top: 50, right: 20, bottom: 50, left: 55 },
-    tooltip: {
-      trigger: "axis" as const,
+  return {
+    grid: dofekGrid("single", { top: 50, bottom: 50, left: 55 }),
+    tooltip: dofekTooltip({
       formatter(params: Array<{ dataIndex: number; value: [string, number]; marker: string }>) {
         if (!params.length) return "";
         const first = params[0];
@@ -40,15 +38,9 @@ export function buildRampRateOption(data: RampRateWeekData[]) {
           `Ramp Rate: <span style="color:${color}">${formatNumber(d.rampRate, 2)}</span>`,
         ].join("<br/>");
       },
-    },
-    xAxis: {
-      type: "time" as const,
-    },
-    yAxis: {
-      type: "value" as const,
-      name: "Ramp Rate (fitness/week)",
-      axisLine: { show: false },
-    },
+    }),
+    xAxis: dofekAxis.time(),
+    yAxis: dofekAxis.value({ name: "Ramp Rate (fitness/week)" }),
     series: [
       {
         name: "Ramp Rate",
@@ -72,7 +64,7 @@ export function buildRampRateOption(data: RampRateWeekData[]) {
         tooltip: { show: false },
       },
     ],
-  });
+  };
 }
 
 export function RampRateChart({
@@ -81,29 +73,31 @@ export function RampRateChart({
   recommendation,
   loading,
 }: RampRateChartProps) {
+  const option = data.length > 0 ? buildRampRateOption(data) : {};
+  const badgeColor = rampRateColor(currentRampRate);
+
   return (
-    <ChartContainer
-      loading={!!loading}
-      data={data}
-      height={300}
-      emptyMessage="No ramp rate data available"
-    >
-      <div>
-        <div className="flex items-center gap-3 mb-2">
-          <span
-            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs border"
-            style={{
-              color: rampRateColor(currentRampRate),
-              borderColor: `${rampRateColor(currentRampRate)}40`,
-              backgroundColor: `${rampRateColor(currentRampRate)}15`,
-            }}
-          >
-            Current: {formatNumber(currentRampRate, 2)}
-          </span>
-          <span className="text-xs text-zinc-500">{recommendation}</span>
-        </div>
-        <ReactECharts option={buildRampRateOption(data)} style={{ height: 300 }} notMerge={true} />
+    <div>
+      <div className="flex items-center gap-3 mb-2">
+        <span
+          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs border"
+          style={{
+            color: badgeColor,
+            borderColor: `${badgeColor}40`,
+            backgroundColor: `${badgeColor}15`,
+          }}
+        >
+          Current: {formatNumber(currentRampRate, 2)}
+        </span>
+        <span className="text-xs text-subtle">{recommendation}</span>
       </div>
-    </ChartContainer>
+      <DofekChart
+        option={option}
+        loading={loading}
+        empty={data.length === 0}
+        height={300}
+        emptyMessage="No ramp rate data available"
+      />
+    </div>
   );
 }

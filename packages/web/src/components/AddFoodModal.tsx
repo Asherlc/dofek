@@ -170,7 +170,7 @@ export function AddFoodModal({
   if (!isOpen) return null;
 
   const inputClass =
-    "w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500";
+    "w-full rounded-lg border border-border-strong bg-accent/10 px-3 py-2 text-sm text-foreground placeholder-subtle focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -187,13 +187,13 @@ export function AddFoodModal({
       />
 
       {/* Modal */}
-      <div className="relative w-full max-w-md rounded-xl border border-zinc-800 bg-zinc-900 shadow-2xl max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between border-b border-zinc-800 px-5 py-4">
-          <h2 className="text-lg font-semibold text-zinc-100">Add Food</h2>
+      <div className="relative w-full max-w-md rounded-xl border border-border bg-surface-solid shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+          <h2 className="text-lg font-semibold text-foreground">Add Food</h2>
           <button
             type="button"
             onClick={handleClose}
-            className="text-zinc-500 hover:text-zinc-300 transition-colors"
+            className="text-subtle hover:text-foreground transition-colors"
             aria-label="Close"
           >
             <svg
@@ -211,7 +211,7 @@ export function AddFoodModal({
         <form onSubmit={handleSubmit} className="px-5 py-4 space-y-4">
           {/* Food name + AI analyze */}
           <div>
-            <label htmlFor="food-name" className="block text-sm font-medium text-zinc-400 mb-1">
+            <label htmlFor="food-name" className="block text-sm font-medium text-muted mb-1">
               What did you eat? *
             </label>
             <div className="flex gap-2">
@@ -274,15 +274,13 @@ export function AddFoodModal({
           )}
 
           {foodName.trim().length >= 2 && (
-            <div className="rounded-lg border border-zinc-800 bg-zinc-950/60 overflow-hidden">
-              <div className="px-3 py-2 border-b border-zinc-800 text-xs font-medium uppercase tracking-wide text-zinc-500">
+            <div className="rounded-lg border border-border bg-page/60 overflow-hidden">
+              <div className="px-3 py-2 border-b border-border text-xs font-medium uppercase tracking-wide text-subtle">
                 Open Food Facts Results
               </div>
-              {searchingFoods && (
-                <div className="px-3 py-3 text-sm text-zinc-500">Searching...</div>
-              )}
+              {searchingFoods && <div className="px-3 py-3 text-sm text-subtle">Searching...</div>}
               {!searchingFoods && searchResults.length === 0 && (
-                <div className="px-3 py-3 text-sm text-zinc-500">No results found</div>
+                <div className="px-3 py-3 text-sm text-subtle">No results found</div>
               )}
               {!searchingFoods && searchResults.length > 0 && (
                 <div className="max-h-56 overflow-y-auto">
@@ -300,24 +298,24 @@ export function AddFoodModal({
                         key={`${result.barcode ?? "no-barcode"}-${result.name}-${result.brand ?? "no-brand"}-${result.servingSize ?? "no-serving"}-${result.calories ?? "no-calories"}`}
                         type="button"
                         onClick={() => applySearchResult(result)}
-                        className="w-full px-3 py-2 text-left hover:bg-zinc-900 transition-colors border-b border-zinc-800 last:border-b-0"
+                        className="w-full px-3 py-2 text-left hover:bg-surface-hover transition-colors border-b border-border last:border-b-0"
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
-                            <div className="text-sm text-zinc-200 truncate">{displayName}</div>
+                            <div className="text-sm text-foreground truncate">{displayName}</div>
                             {result.servingSize && (
-                              <div className="text-xs text-zinc-500 truncate mt-0.5">
+                              <div className="text-xs text-subtle truncate mt-0.5">
                                 {result.servingSize}
                               </div>
                             )}
                             {macroParts.length > 0 && (
-                              <div className="text-xs text-zinc-500 mt-1">
+                              <div className="text-xs text-subtle mt-1">
                                 {macroParts.join(" · ")}
                               </div>
                             )}
                           </div>
                           {result.calories != null && (
-                            <div className="text-xs font-semibold text-zinc-300 whitespace-nowrap">
+                            <div className="text-xs font-semibold text-foreground whitespace-nowrap">
                               {result.calories} cal
                             </div>
                           )}
@@ -332,7 +330,7 @@ export function AddFoodModal({
 
           {/* Meal type */}
           <div>
-            <label htmlFor="meal-type" className="block text-sm font-medium text-zinc-400 mb-1">
+            <label htmlFor="meal-type" className="block text-sm font-medium text-muted mb-1">
               Meal
             </label>
             <select
@@ -362,7 +360,7 @@ export function AddFoodModal({
 
           {/* Calories */}
           <div>
-            <label htmlFor="calories" className="block text-sm font-medium text-zinc-400 mb-1">
+            <label htmlFor="calories" className="block text-sm font-medium text-muted mb-1">
               Calories *
             </label>
             <input
@@ -381,7 +379,7 @@ export function AddFoodModal({
           <div>
             <label
               htmlFor="serving-description"
-              className="block text-sm font-medium text-zinc-400 mb-1"
+              className="block text-sm font-medium text-muted mb-1"
             >
               Serving description
             </label>
@@ -410,7 +408,7 @@ export function AddFoodModal({
           {showMacros && (
             <div className="grid grid-cols-3 gap-3">
               <div>
-                <label htmlFor="protein" className="block text-sm font-medium text-zinc-400 mb-1">
+                <label htmlFor="protein" className="block text-sm font-medium text-muted mb-1">
                   Protein (g)
                 </label>
                 <input
@@ -424,7 +422,7 @@ export function AddFoodModal({
                 />
               </div>
               <div>
-                <label htmlFor="carbs" className="block text-sm font-medium text-zinc-400 mb-1">
+                <label htmlFor="carbs" className="block text-sm font-medium text-muted mb-1">
                   Carbs (g)
                 </label>
                 <input
@@ -438,7 +436,7 @@ export function AddFoodModal({
                 />
               </div>
               <div>
-                <label htmlFor="fat" className="block text-sm font-medium text-zinc-400 mb-1">
+                <label htmlFor="fat" className="block text-sm font-medium text-muted mb-1">
                   Fat (g)
                 </label>
                 <input
@@ -459,7 +457,7 @@ export function AddFoodModal({
             <button
               type="button"
               onClick={handleClose}
-              className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-400 hover:text-zinc-200 transition-colors"
+              className="rounded-lg px-4 py-2 text-sm font-medium text-muted hover:text-foreground transition-colors cursor-pointer"
             >
               Cancel
             </button>

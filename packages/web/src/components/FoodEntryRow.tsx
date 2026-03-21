@@ -14,20 +14,20 @@ export function FoodEntryRow({
   deleting,
 }: FoodEntryRowProps) {
   return (
-    <div className="flex items-center justify-between py-2 px-3 rounded-md hover:bg-zinc-800/50 group transition-colors">
+    <div className="flex items-center justify-between py-2 px-3 rounded-md hover:bg-surface-hover group transition-colors">
       <div className="min-w-0 flex-1">
-        <div className="text-sm text-zinc-200 truncate">{foodName}</div>
+        <div className="text-sm text-foreground truncate">{foodName}</div>
         {servingDescription && (
-          <div className="text-xs text-zinc-500 truncate">{servingDescription}</div>
+          <div className="text-xs text-subtle truncate">{servingDescription}</div>
         )}
       </div>
       <div className="flex items-center gap-3 shrink-0 ml-3">
-        <span className="text-sm text-zinc-300 tabular-nums">{calories} kcal</span>
+        <span className="text-sm text-foreground tabular-nums">{calories} kcal</span>
         <button
           type="button"
           onClick={onDelete}
           disabled={deleting}
-          className="text-zinc-600 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100 disabled:opacity-50"
+          className="text-dim hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100 disabled:opacity-50"
           aria-label={`Delete ${foodName}`}
         >
           <svg

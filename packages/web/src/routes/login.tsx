@@ -29,22 +29,22 @@ function LoginPage() {
   const returnToQuery = returnTo ? `?return_to=${encodeURIComponent(returnTo)}` : "";
 
   return (
-    <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
-      <div className="w-full max-w-sm p-8 rounded-2xl bg-zinc-900 border border-zinc-800 shadow-xl">
-        <h1 className="text-2xl font-bold text-zinc-100 text-center mb-2">Dofek</h1>
-        <p className="text-zinc-400 text-center mb-8 text-sm">Sign in to view your health data</p>
+    <div className="min-h-screen bg-page flex items-center justify-center">
+      <div className="w-full max-w-sm p-8 rounded-2xl bg-surface-solid border border-border shadow-xl">
+        <h1 className="text-2xl font-bold text-foreground text-center mb-2">Dofek</h1>
+        <p className="text-muted text-center mb-8 text-sm">Sign in to view your health data</p>
 
         {loading ? (
           <div className="flex justify-center py-8">
-            <div className="w-6 h-6 border-2 border-zinc-600 border-t-emerald-500 rounded-full animate-spin" />
+            <div className="w-6 h-6 border-2 border-border-strong border-t-accent rounded-full animate-spin" />
           </div>
         ) : error ? (
           <div className="text-center">
             <p className="text-red-400 text-sm mb-2">Unable to connect to server</p>
-            <p className="text-zinc-500 text-xs">{error}</p>
+            <p className="text-subtle text-xs">{error}</p>
           </div>
         ) : allProviders.length === 0 ? (
-          <p className="text-zinc-500 text-center text-sm">No login providers configured.</p>
+          <p className="text-subtle text-center text-sm">No login providers configured.</p>
         ) : (
           <div className="space-y-3">
             {allProviders.map(({ id, type }) => (
@@ -55,7 +55,7 @@ function LoginPage() {
                     ? `/auth/login/${id}${returnToQuery}`
                     : `/auth/login/data/${id}${returnToQuery}`
                 }
-                className="flex items-center justify-center gap-3 w-full px-4 py-3 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 hover:border-zinc-600 text-zinc-200 transition-colors text-sm font-medium"
+                className="flex items-center justify-center gap-3 w-full px-4 py-3 rounded-lg bg-accent/10 hover:bg-surface-hover border border-border-strong hover:border-border-strong text-foreground transition-colors text-sm font-medium"
               >
                 <ProviderLogo provider={id} size={20} />
                 Sign in with {providerLabel(id)}

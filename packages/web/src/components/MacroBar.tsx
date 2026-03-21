@@ -20,11 +20,11 @@ export function MacroBar({ label, grams, caloriesFromMacro, totalCalories, color
     <div className="space-y-1">
       <div className="flex items-center justify-between text-sm">
         <span className={`font-medium ${text}`}>{label}</span>
-        <span className="text-zinc-400 tabular-nums">
-          {grams}g<span className="ml-1.5 text-zinc-500">({percentage}%)</span>
+        <span className="text-muted tabular-nums">
+          {grams}g<span className="ml-1.5 text-subtle">({percentage}%)</span>
         </span>
       </div>
-      <div className="h-2 rounded-full bg-zinc-800 overflow-hidden">
+      <div className="h-2 rounded-full bg-accent/10 overflow-hidden">
         <div
           className={`h-full rounded-full ${bar} transition-all duration-300`}
           style={{ width: `${Math.min(percentage, 100)}%` }}

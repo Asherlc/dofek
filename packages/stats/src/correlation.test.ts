@@ -112,7 +112,7 @@ describe("correlationConfidence", () => {
 
 describe("correlationColor", () => {
   it("returns emerald for positive correlation", () => {
-    expect(correlationColor(0.5)).toBe("#10b981");
+    expect(correlationColor(0.5)).toBe("#059669");
   });
 
   it("returns rose for negative correlation", () => {
@@ -120,15 +120,15 @@ describe("correlationColor", () => {
   });
 
   it("returns neutral for negligible correlation", () => {
-    expect(correlationColor(0.05)).toBe("#71717a");
+    expect(correlationColor(0.05)).toBe("#8aaa8a");
   });
 
   it("returns emerald at exact boundary rho=0.2", () => {
-    expect(correlationColor(0.2)).toBe("#10b981");
+    expect(correlationColor(0.2)).toBe("#059669");
   });
 
   it("returns neutral at exactly zero", () => {
-    expect(correlationColor(0)).toBe("#71717a");
+    expect(correlationColor(0)).toBe("#8aaa8a");
   });
 });
 

@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     "./scoring": "./src/scoring.ts",
-    "./colors": "./src/colors.ts"
+    "./colors": "./src/colors.ts",
+    "./tokens": "./src/tokens.ts"
   }
 }

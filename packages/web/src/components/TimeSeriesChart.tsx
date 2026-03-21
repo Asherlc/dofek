@@ -1,5 +1,5 @@
-import ReactECharts from "echarts-for-react";
-import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
+import { dofekAxis, dofekGrid, dofekLegend, dofekSeries, dofekTooltip } from "../lib/chartTheme.ts";
+import { DofekChart } from "./DofekChart.tsx";
 
 interface Series {
   name: string;
@@ -17,55 +17,32 @@ interface TimeSeriesChartProps {
 }
 
 export function TimeSeriesChart({ series, height = 200, yAxis, loading }: TimeSeriesChartProps) {
-  if (loading) {
-    return <ChartLoadingSkeleton height={height} />;
-  }
+  const yAxisConfig = (yAxis ?? [{}]).map((axis, i) =>
+    dofekAxis.value({
+      name: axis.name,
+      min: axis.min,
+      max: axis.max,
+      position: i === 0 ? "left" : "right",
+      showSplitLine: i === 0,
+    }),
+  );
 
-  const yAxisConfig = (yAxis ?? [{}]).map((axis, i) => ({
-    type: "value" as const,
-    name: axis.name,
-    min: axis.min,
-    max: axis.max,
-    splitLine: i === 0 ? { lineStyle: { color: "#27272a" } } : { show: false },
-    axisLabel: { color: "#71717a", fontSize: 11 },
-    axisLine: { show: true, lineStyle: { color: "#3f3f46" } },
-    nameTextStyle: { color: "#71717a", fontSize: 11 },
-    position: i === 0 ? ("left" as const) : ("right" as const),
-  }));
+  const hasDualAxis = yAxisConfig.length > 1;
 
   const option = {
-    backgroundColor: "transparent",
-    grid: { top: 30, right: yAxisConfig.length > 1 ? 50 : 12, bottom: 30, left: 40 },
-    tooltip: {
-      trigger: "axis",
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
-    },
-    xAxis: {
-      type: "time",
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
-      splitLine: { show: false },
-    },
+    tooltip: dofekTooltip(),
+    xAxis: dofekAxis.time(),
     yAxis: yAxisConfig,
-    series: series.map((s) => ({
-      name: s.name,
-      type: "line",
-      data: s.data.filter(([, v]) => v != null),
-      smooth: true,
-      symbol: "none",
-      lineStyle: { width: 2, color: s.color },
-      itemStyle: { color: s.color },
-      areaStyle: s.areaStyle ? { opacity: 0.15 } : undefined,
-      yAxisIndex: s.yAxisIndex ?? 0,
-    })),
-    legend: {
-      show: series.length > 1,
-      textStyle: { color: "#a1a1aa", fontSize: 11 },
-      top: 0,
-    },
+    grid: dofekGrid(hasDualAxis ? "dualAxis" : "single"),
+    legend: dofekLegend(series.length > 1),
+    series: series.map((s) =>
+      dofekSeries.line(
+        s.name,
+        s.data.filter(([, v]) => v != null),
+        { color: s.color, areaStyle: s.areaStyle, yAxisIndex: s.yAxisIndex },
+      ),
+    ),
   };
 
-  return <ReactECharts option={option} style={{ height, width: "100%" }} notMerge={true} />;
+  return <DofekChart option={option} loading={loading} height={height} />;
 }

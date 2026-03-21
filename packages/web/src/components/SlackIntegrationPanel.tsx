@@ -4,24 +4,22 @@ export function SlackIntegrationPanel() {
   const { data, isLoading } = trpc.settings.slackStatus.useQuery();
 
   if (isLoading) {
-    return <div className="text-xs text-zinc-500">Checking Slack status...</div>;
+    return <div className="text-xs text-subtle">Checking Slack status...</div>;
   }
 
   if (!data?.configured) {
     return (
-      <div className="text-xs text-zinc-500">
-        Slack integration is not configured on this server.
-      </div>
+      <div className="text-xs text-subtle">Slack integration is not configured on this server.</div>
     );
   }
 
   if (data.connected) {
     return (
       <div className="flex items-center gap-3">
-        <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-400" />
+        <span className="inline-block w-2.5 h-2.5 rounded-full bg-green-400" />
         <div>
-          <div className="text-sm text-zinc-200">Connected</div>
-          <div className="text-xs text-zinc-500">DM the bot in Slack to log what you ate</div>
+          <div className="text-sm text-foreground">Connected</div>
+          <div className="text-xs text-subtle">DM the bot in Slack to log what you ate</div>
         </div>
       </div>
     );
@@ -30,8 +28,8 @@ export function SlackIntegrationPanel() {
   return (
     <div className="flex items-center justify-between">
       <div>
-        <div className="text-sm text-zinc-300">Log food via Slack</div>
-        <div className="text-xs text-zinc-500">
+        <div className="text-sm text-foreground">Log food via Slack</div>
+        <div className="text-xs text-subtle">
           Add the bot to your workspace, then DM it what you ate
         </div>
       </div>

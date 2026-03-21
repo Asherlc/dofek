@@ -77,20 +77,20 @@ export function ExportPanel() {
 
   return (
     <div className="space-y-3">
-      <p className="text-sm text-zinc-400">
+      <p className="text-sm text-muted">
         Download all your health data as a ZIP file containing JSON files. This may take several
         minutes for large datasets.
       </p>
 
       {state === "processing" && (
         <div className="space-y-2">
-          <div className="h-2 rounded-full bg-zinc-800 overflow-hidden">
+          <div className="h-2 rounded-full bg-accent/10 overflow-hidden">
             <div
               className="h-full bg-blue-500 rounded-full transition-all duration-300"
               style={{ width: `${progress}%` }}
             />
           </div>
-          <p className="text-xs text-zinc-500">{message}</p>
+          <p className="text-xs text-subtle">{message}</p>
         </div>
       )}
 
@@ -106,7 +106,7 @@ export function ExportPanel() {
         type="button"
         onClick={startExport}
         disabled={state === "processing"}
-        className="inline-flex items-center gap-2 text-sm border border-zinc-700 rounded px-4 py-2 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed hover:bg-zinc-800"
+        className="inline-flex items-center gap-2 text-sm border border-border-strong rounded px-4 py-2 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed hover:bg-accent/10"
       >
         <svg
           className="w-4 h-4"

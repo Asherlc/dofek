@@ -7,6 +7,7 @@ import type { SyncDatabase } from "../db/index.ts";
 import { activity, dailyMetrics, healthEvent, metricStream, sleepSession } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
+import { ProviderHttpClient } from "./http-client.ts";
 import type {
   ProviderAuthSetup,
   ProviderIdentity,
@@ -16,177 +17,220 @@ import type {
 } from "./types.ts";
 
 // ============================================================
-// Oura API v2 types
+// Oura API v2 Zod schemas
 // ============================================================
 
-export interface OuraSleepDocument {
-  id: string;
-  day: string; // "YYYY-MM-DD"
-  bedtime_start: string; // ISO datetime
-  bedtime_end: string; // ISO datetime
-  total_sleep_duration: number | null; // seconds
-  deep_sleep_duration: number | null; // seconds
-  rem_sleep_duration: number | null; // seconds
-  light_sleep_duration: number | null; // seconds
-  awake_time: number | null; // seconds
-  efficiency: number; // 0-100
-  type: "long_sleep" | "rest" | "sleep" | "late_nap";
-  average_heart_rate: number | null;
-  lowest_heart_rate: number | null;
-  average_hrv: number | null;
-  time_in_bed: number; // seconds
-  readiness_score_delta: number | null;
-  latency: number | null; // seconds
-}
+export const ouraSleepDocumentSchema = z.object({
+  id: z.string(),
+  day: z.string(),
+  bedtime_start: z.string(),
+  bedtime_end: z.string(),
+  total_sleep_duration: z.number().nullable(),
+  deep_sleep_duration: z.number().nullable(),
+  rem_sleep_duration: z.number().nullable(),
+  light_sleep_duration: z.number().nullable(),
+  awake_time: z.number().nullable(),
+  efficiency: z.number(),
+  type: z.enum(["long_sleep", "rest", "sleep", "late_nap"]),
+  average_heart_rate: z.number().nullable(),
+  lowest_heart_rate: z.number().nullable(),
+  average_hrv: z.number().nullable(),
+  time_in_bed: z.number(),
+  readiness_score_delta: z.number().nullable(),
+  latency: z.number().nullable(),
+});
 
-export interface OuraDailyReadiness {
-  id: string;
-  day: string;
-  score: number | null;
-  temperature_deviation: number | null; // celsius deviation from baseline
-  temperature_trend_deviation: number | null;
-  contributors: {
-    resting_heart_rate: number | null;
-    hrv_balance: number | null;
-    body_temperature: number | null;
-    recovery_index: number | null;
-    sleep_balance: number | null;
-    previous_night: number | null;
-    previous_day_activity: number | null;
-    activity_balance: number | null;
-  };
-}
+export type OuraSleepDocument = z.infer<typeof ouraSleepDocumentSchema>;
 
-export interface OuraDailyActivity {
-  id: string;
-  day: string;
-  steps: number;
-  active_calories: number;
-  equivalent_walking_distance: number; // meters
-  high_activity_time: number; // seconds
-  medium_activity_time: number; // seconds
-  low_activity_time: number; // seconds
-  resting_time: number; // seconds
-  sedentary_time: number; // seconds
-  total_calories: number;
-}
+export const ouraDailyReadinessSchema = z.object({
+  id: z.string(),
+  day: z.string(),
+  score: z.number().nullable(),
+  temperature_deviation: z.number().nullable(),
+  temperature_trend_deviation: z.number().nullable(),
+  contributors: z.object({
+    resting_heart_rate: z.number().nullable(),
+    hrv_balance: z.number().nullable(),
+    body_temperature: z.number().nullable(),
+    recovery_index: z.number().nullable(),
+    sleep_balance: z.number().nullable(),
+    previous_night: z.number().nullable(),
+    previous_day_activity: z.number().nullable(),
+    activity_balance: z.number().nullable(),
+  }),
+});
 
-export interface OuraDailySpO2 {
-  id: string;
-  day: string;
-  spo2_percentage: { average: number } | null;
-  breathing_disturbance_index: number | null;
-}
+export type OuraDailyReadiness = z.infer<typeof ouraDailyReadinessSchema>;
 
-export interface OuraVO2Max {
-  id: string;
-  day: string;
-  timestamp: string;
-  vo2_max: number | null;
-}
+export const ouraDailyActivitySchema = z.object({
+  id: z.string(),
+  day: z.string(),
+  steps: z.number(),
+  active_calories: z.number(),
+  equivalent_walking_distance: z.number(),
+  high_activity_time: z.number(),
+  medium_activity_time: z.number(),
+  low_activity_time: z.number(),
+  resting_time: z.number(),
+  sedentary_time: z.number(),
+  total_calories: z.number(),
+});
 
-export interface OuraWorkout {
-  id: string;
-  activity: string;
-  calories: number | null;
-  day: string;
-  distance: number | null; // meters
-  end_datetime: string;
-  intensity: "easy" | "moderate" | "hard";
-  label: string | null;
-  source: "manual" | "autodetected" | "confirmed" | "workout_heart_rate";
-  start_datetime: string;
-}
+export type OuraDailyActivity = z.infer<typeof ouraDailyActivitySchema>;
 
-export interface OuraHeartRate {
-  bpm: number;
-  source: "awake" | "rest" | "sleep" | "session" | "live" | "workout";
-  timestamp: string;
-}
+export const ouraDailySpO2Schema = z.object({
+  id: z.string(),
+  day: z.string(),
+  spo2_percentage: z.object({ average: z.number() }).nullable(),
+  breathing_disturbance_index: z.number().nullable(),
+});
 
-export interface OuraSession {
-  id: string;
-  day: string;
-  start_datetime: string;
-  end_datetime: string;
-  type: "breathing" | "meditation" | "nap" | "relaxation" | "rest" | "body_status";
-  mood: "bad" | "worse" | "same" | "good" | "great" | null;
-}
+export type OuraDailySpO2 = z.infer<typeof ouraDailySpO2Schema>;
 
-export interface OuraDailyStress {
-  id: string;
-  day: string;
-  stress_high: number | null; // seconds
-  recovery_high: number | null; // seconds
-  day_summary: "restored" | "normal" | "stressful" | null;
-}
+export const ouraVO2MaxSchema = z.object({
+  id: z.string(),
+  day: z.string(),
+  timestamp: z.string(),
+  vo2_max: z.number().nullable(),
+});
 
-export interface OuraDailyResilience {
-  id: string;
-  day: string;
-  contributors: {
-    sleep_recovery: number;
-    daytime_recovery: number;
-    stress: number;
-  };
-  level: "limited" | "adequate" | "solid" | "strong" | "exceptional";
-}
+export type OuraVO2Max = z.infer<typeof ouraVO2MaxSchema>;
 
-export interface OuraDailyCardiovascularAge {
-  day: string;
-  vascular_age: number | null;
-}
+export const ouraWorkoutSchema = z.object({
+  id: z.string(),
+  activity: z.string(),
+  calories: z.number().nullable(),
+  day: z.string(),
+  distance: z.number().nullable(),
+  end_datetime: z.string(),
+  intensity: z.enum(["easy", "moderate", "hard"]),
+  label: z.string().nullable(),
+  source: z.enum(["manual", "autodetected", "confirmed", "workout_heart_rate"]),
+  start_datetime: z.string(),
+});
 
-export interface OuraTag {
-  id: string;
-  day: string;
-  text: string | null;
-  timestamp: string;
-  tags: string[];
-}
+export type OuraWorkout = z.infer<typeof ouraWorkoutSchema>;
 
-export interface OuraEnhancedTag {
-  id: string;
-  tag_type_code: string | null;
-  start_time: string;
-  end_time: string | null;
-  start_day: string;
-  end_day: string | null;
-  comment: string | null;
-  custom_name: string | null;
-}
+export const ouraHeartRateSchema = z.object({
+  bpm: z.number(),
+  source: z.enum(["awake", "rest", "sleep", "session", "live", "workout"]),
+  timestamp: z.string(),
+});
 
-export interface OuraRestModePeriod {
-  id: string;
-  end_day: string | null;
-  end_time: string | null;
-  start_day: string;
-  start_time: string | null;
-}
+export type OuraHeartRate = z.infer<typeof ouraHeartRateSchema>;
 
-export interface OuraSleepTime {
-  id: string;
-  day: string;
-  optimal_bedtime: {
-    day_tz: number;
-    end_offset: number;
-    start_offset: number;
-  } | null;
-  recommendation:
-    | "improve_efficiency"
-    | "earlier_bedtime"
-    | "later_bedtime"
-    | "earlier_wake_up_time"
-    | "later_wake_up_time"
-    | "follow_optimal_bedtime"
-    | null;
-  status:
-    | "not_enough_nights"
-    | "not_enough_recent_nights"
-    | "bad_sleep_quality"
-    | "only_recommended_found"
-    | "optimal_found"
-    | null;
+export const ouraSessionSchema = z.object({
+  id: z.string(),
+  day: z.string(),
+  start_datetime: z.string(),
+  end_datetime: z.string(),
+  type: z.enum(["breathing", "meditation", "nap", "relaxation", "rest", "body_status"]),
+  mood: z.enum(["bad", "worse", "same", "good", "great"]).nullable(),
+});
+
+export type OuraSession = z.infer<typeof ouraSessionSchema>;
+
+export const ouraDailyStressSchema = z.object({
+  id: z.string(),
+  day: z.string(),
+  stress_high: z.number().nullable(),
+  recovery_high: z.number().nullable(),
+  day_summary: z.enum(["restored", "normal", "stressful"]).nullable(),
+});
+
+export type OuraDailyStress = z.infer<typeof ouraDailyStressSchema>;
+
+export const ouraDailyResilienceSchema = z.object({
+  id: z.string(),
+  day: z.string(),
+  contributors: z.object({
+    sleep_recovery: z.number(),
+    daytime_recovery: z.number(),
+    stress: z.number(),
+  }),
+  level: z.enum(["limited", "adequate", "solid", "strong", "exceptional"]),
+});
+
+export type OuraDailyResilience = z.infer<typeof ouraDailyResilienceSchema>;
+
+export const ouraDailyCardiovascularAgeSchema = z.object({
+  day: z.string(),
+  vascular_age: z.number().nullable(),
+});
+
+export type OuraDailyCardiovascularAge = z.infer<typeof ouraDailyCardiovascularAgeSchema>;
+
+export const ouraTagSchema = z.object({
+  id: z.string(),
+  day: z.string(),
+  text: z.string().nullable(),
+  timestamp: z.string(),
+  tags: z.array(z.string()),
+});
+
+export type OuraTag = z.infer<typeof ouraTagSchema>;
+
+export const ouraEnhancedTagSchema = z.object({
+  id: z.string(),
+  tag_type_code: z.string().nullable(),
+  start_time: z.string(),
+  end_time: z.string().nullable(),
+  start_day: z.string(),
+  end_day: z.string().nullable(),
+  comment: z.string().nullable(),
+  custom_name: z.string().nullable(),
+});
+
+export type OuraEnhancedTag = z.infer<typeof ouraEnhancedTagSchema>;
+
+export const ouraRestModePeriodSchema = z.object({
+  id: z.string(),
+  end_day: z.string().nullable(),
+  end_time: z.string().nullable(),
+  start_day: z.string(),
+  start_time: z.string().nullable(),
+});
+
+export type OuraRestModePeriod = z.infer<typeof ouraRestModePeriodSchema>;
+
+export const ouraSleepTimeSchema = z.object({
+  id: z.string(),
+  day: z.string(),
+  optimal_bedtime: z
+    .object({
+      day_tz: z.number(),
+      end_offset: z.number(),
+      start_offset: z.number(),
+    })
+    .nullable(),
+  recommendation: z
+    .enum([
+      "improve_efficiency",
+      "earlier_bedtime",
+      "later_bedtime",
+      "earlier_wake_up_time",
+      "later_wake_up_time",
+      "follow_optimal_bedtime",
+    ])
+    .nullable(),
+  status: z
+    .enum([
+      "not_enough_nights",
+      "not_enough_recent_nights",
+      "bad_sleep_quality",
+      "only_recommended_found",
+      "optimal_found",
+    ])
+    .nullable(),
+});
+
+export type OuraSleepTime = z.infer<typeof ouraSleepTimeSchema>;
+
+function ouraListResponseSchema<T extends z.ZodType>(itemSchema: T) {
+  return z.object({
+    data: z.array(itemSchema),
+    next_token: z.string().nullish(),
+  });
 }
 
 interface OuraListResponse<T> {
@@ -308,28 +352,9 @@ export function mapOuraActivityType(ouraActivity: string): string {
 
 const OURA_API_BASE = "https://api.ouraring.com";
 
-export class OuraClient {
-  #accessToken: string;
-  #fetchFn: typeof globalThis.fetch;
-
+export class OuraClient extends ProviderHttpClient {
   constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#accessToken = accessToken;
-    this.#fetchFn = fetchFn;
-  }
-
-  async #get<T>(path: string): Promise<T> {
-    const url = `${OURA_API_BASE}${path}`;
-
-    const response = await this.#fetchFn(url, {
-      headers: { Authorization: `Bearer ${this.#accessToken}` },
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`Oura API error (${response.status}): ${text}`);
-    }
-
-    return response.json();
+    super(accessToken, OURA_API_BASE, fetchFn);
   }
 
   #dateQuery(startDate: string, endDate: string, nextToken?: string): string {
@@ -343,7 +368,10 @@ export class OuraClient {
     endDate: string,
     nextToken?: string,
   ): Promise<OuraListResponse<OuraSleepDocument>> {
-    return this.#get(`/v2/usercollection/sleep?${this.#dateQuery(startDate, endDate, nextToken)}`);
+    return this.get(
+      `/v2/usercollection/sleep?${this.#dateQuery(startDate, endDate, nextToken)}`,
+      ouraListResponseSchema(ouraSleepDocumentSchema),
+    );
   }
 
   async getDailyReadiness(
@@ -351,8 +379,9 @@ export class OuraClient {
     endDate: string,
     nextToken?: string,
   ): Promise<OuraListResponse<OuraDailyReadiness>> {
-    return this.#get(
+    return this.get(
       `/v2/usercollection/daily_readiness?${this.#dateQuery(startDate, endDate, nextToken)}`,
+      ouraListResponseSchema(ouraDailyReadinessSchema),
     );
   }
 
@@ -361,8 +390,9 @@ export class OuraClient {
     endDate: string,
     nextToken?: string,
   ): Promise<OuraListResponse<OuraDailyActivity>> {
-    return this.#get(
+    return this.get(
       `/v2/usercollection/daily_activity?${this.#dateQuery(startDate, endDate, nextToken)}`,
+      ouraListResponseSchema(ouraDailyActivitySchema),
     );
   }
 
@@ -371,8 +401,9 @@ export class OuraClient {
     endDate: string,
     nextToken?: string,
   ): Promise<OuraListResponse<OuraDailySpO2>> {
-    return this.#get(
+    return this.get(
       `/v2/usercollection/daily_spo2?${this.#dateQuery(startDate, endDate, nextToken)}`,
+      ouraListResponseSchema(ouraDailySpO2Schema),
     );
   }
 
@@ -381,8 +412,9 @@ export class OuraClient {
     endDate: string,
     nextToken?: string,
   ): Promise<OuraListResponse<OuraVO2Max>> {
-    return this.#get(
+    return this.get(
       `/v2/usercollection/vO2_max?${this.#dateQuery(startDate, endDate, nextToken)}`,
+      ouraListResponseSchema(ouraVO2MaxSchema),
     );
   }
 
@@ -391,8 +423,9 @@ export class OuraClient {
     endDate: string,
     nextToken?: string,
   ): Promise<OuraListResponse<OuraWorkout>> {
-    return this.#get(
+    return this.get(
       `/v2/usercollection/workout?${this.#dateQuery(startDate, endDate, nextToken)}`,
+      ouraListResponseSchema(ouraWorkoutSchema),
     );
   }
 
@@ -403,7 +436,10 @@ export class OuraClient {
   ): Promise<OuraListResponse<OuraHeartRate>> {
     let qs = `start_datetime=${startDate}T00:00:00&end_datetime=${endDate}T23:59:59`;
     if (nextToken) qs += `&next_token=${nextToken}`;
-    return this.#get(`/v2/usercollection/heartrate?${qs}`);
+    return this.get(
+      `/v2/usercollection/heartrate?${qs}`,
+      ouraListResponseSchema(ouraHeartRateSchema),
+    );
   }
 
   async getSessions(
@@ -411,8 +447,9 @@ export class OuraClient {
     endDate: string,
     nextToken?: string,
   ): Promise<OuraListResponse<OuraSession>> {
-    return this.#get(
+    return this.get(
       `/v2/usercollection/session?${this.#dateQuery(startDate, endDate, nextToken)}`,
+      ouraListResponseSchema(ouraSessionSchema),
     );
   }
 
@@ -421,8 +458,9 @@ export class OuraClient {
     endDate: string,
     nextToken?: string,
   ): Promise<OuraListResponse<OuraDailyStress>> {
-    return this.#get(
+    return this.get(
       `/v2/usercollection/daily_stress?${this.#dateQuery(startDate, endDate, nextToken)}`,
+      ouraListResponseSchema(ouraDailyStressSchema),
     );
   }
 
@@ -431,8 +469,9 @@ export class OuraClient {
     endDate: string,
     nextToken?: string,
   ): Promise<OuraListResponse<OuraDailyResilience>> {
-    return this.#get(
+    return this.get(
       `/v2/usercollection/daily_resilience?${this.#dateQuery(startDate, endDate, nextToken)}`,
+      ouraListResponseSchema(ouraDailyResilienceSchema),
     );
   }
 
@@ -441,8 +480,9 @@ export class OuraClient {
     endDate: string,
     nextToken?: string,
   ): Promise<OuraListResponse<OuraDailyCardiovascularAge>> {
-    return this.#get(
+    return this.get(
       `/v2/usercollection/daily_cardiovascular_age?${this.#dateQuery(startDate, endDate, nextToken)}`,
+      ouraListResponseSchema(ouraDailyCardiovascularAgeSchema),
     );
   }
 
@@ -451,7 +491,10 @@ export class OuraClient {
     endDate: string,
     nextToken?: string,
   ): Promise<OuraListResponse<OuraTag>> {
-    return this.#get(`/v2/usercollection/tag?${this.#dateQuery(startDate, endDate, nextToken)}`);
+    return this.get(
+      `/v2/usercollection/tag?${this.#dateQuery(startDate, endDate, nextToken)}`,
+      ouraListResponseSchema(ouraTagSchema),
+    );
   }
 
   async getEnhancedTags(
@@ -459,8 +502,9 @@ export class OuraClient {
     endDate: string,
     nextToken?: string,
   ): Promise<OuraListResponse<OuraEnhancedTag>> {
-    return this.#get(
+    return this.get(
       `/v2/usercollection/enhanced_tag?${this.#dateQuery(startDate, endDate, nextToken)}`,
+      ouraListResponseSchema(ouraEnhancedTagSchema),
     );
   }
 
@@ -469,8 +513,9 @@ export class OuraClient {
     endDate: string,
     nextToken?: string,
   ): Promise<OuraListResponse<OuraRestModePeriod>> {
-    return this.#get(
+    return this.get(
       `/v2/usercollection/rest_mode_period?${this.#dateQuery(startDate, endDate, nextToken)}`,
+      ouraListResponseSchema(ouraRestModePeriodSchema),
     );
   }
 
@@ -479,8 +524,9 @@ export class OuraClient {
     endDate: string,
     nextToken?: string,
   ): Promise<OuraListResponse<OuraSleepTime>> {
-    return this.#get(
+    return this.get(
       `/v2/usercollection/sleep_time?${this.#dateQuery(startDate, endDate, nextToken)}`,
+      ouraListResponseSchema(ouraSleepTimeSchema),
     );
   }
 }

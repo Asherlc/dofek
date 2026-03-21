@@ -24,16 +24,16 @@ export function AnomalyAlertBanner({ anomalies, loading }: AnomalyAlertBannerPro
       </h3>
       <ul className="space-y-1">
         {anomalies.map((a) => (
-          <li key={`${a.date}-${a.metric}`} className="text-sm text-zinc-300">
+          <li key={`${a.date}-${a.metric}`} className="text-sm text-foreground">
             <span className="font-medium">{a.metric}</span>: {a.value}{" "}
-            <span className="text-zinc-500">
+            <span className="text-subtle">
               (baseline: {a.baselineMean} ± {a.baselineStddev}, z-score: {a.zScore})
             </span>
           </li>
         ))}
       </ul>
       {illnessPattern && (
-        <p className="text-xs text-zinc-400 italic">
+        <p className="text-xs text-muted italic">
           Combined elevated resting HR and depressed HRV may indicate your body is fighting
           something. Consider taking it easy today.
         </p>
