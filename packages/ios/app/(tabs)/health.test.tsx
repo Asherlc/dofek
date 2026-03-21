@@ -4,11 +4,13 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const TEST_SERVER_URL = "https://test.dofek.example.com";
+const mockGetRequestStatus = vi.fn();
 const mockRequestPermissions = vi.fn();
 const mockQueryDailyStatistics = vi.fn();
 const mockQueryQuantitySamples = vi.fn();
 const mockQueryWorkouts = vi.fn();
 const mockQuerySleepSamples = vi.fn();
+const mockIsBackgroundDeliveryEnabled = vi.fn();
 const mockEnableBackgroundDelivery = vi.fn();
 const mockPushQuantityMutate = vi.fn();
 const mockPushWorkoutsMutate = vi.fn();
@@ -51,11 +53,13 @@ vi.mock("expo-router", () => ({
 
 vi.mock("../../modules/health-kit", () => ({
 	isAvailable: () => true,
+	getRequestStatus: mockGetRequestStatus,
 	requestPermissions: mockRequestPermissions,
 	queryDailyStatistics: mockQueryDailyStatistics,
 	queryQuantitySamples: mockQueryQuantitySamples,
 	queryWorkouts: mockQueryWorkouts,
 	querySleepSamples: mockQuerySleepSamples,
+	isBackgroundDeliveryEnabled: mockIsBackgroundDeliveryEnabled,
 	enableBackgroundDelivery: mockEnableBackgroundDelivery,
 }));
 
@@ -102,6 +106,10 @@ vi.mock("../../lib/auth-context", () => ({
 
 describe("HealthScreen", () => {
 	beforeEach(() => {
+		mockGetRequestStatus.mockReset();
+		mockGetRequestStatus.mockResolvedValue("shouldRequest");
+		mockIsBackgroundDeliveryEnabled.mockReset();
+		mockIsBackgroundDeliveryEnabled.mockReturnValue(false);
 		mockRequestPermissions.mockReset();
 		mockQueryDailyStatistics.mockReset();
 		mockQueryQuantitySamples.mockReset();
@@ -123,6 +131,25 @@ describe("HealthScreen", () => {
 		mockPushSleepMutate.mockResolvedValue({ inserted: 0 });
 		// Default: backfill already completed
 		mockSettingsGet.mockReturnValue({ data: { value: true }, isLoading: false });
+	});
+
+	it("hides request permissions button when permissions already granted", async () => {
+		mockGetRequestStatus.mockResolvedValue("unnecessary");
+		const { default: HealthScreen } = await import("./health");
+		render(<HealthScreen />);
+		await waitFor(() => {
+			expect(screen.getByText("HealthKit permissions granted.")).toBeTruthy();
+		});
+		expect(screen.queryByText("Request Permissions")).toBeNull();
+	});
+
+	it("shows request permissions button when permissions not yet requested", async () => {
+		mockGetRequestStatus.mockResolvedValue("shouldRequest");
+		const { default: HealthScreen } = await import("./health");
+		render(<HealthScreen />);
+		await waitFor(() => {
+			expect(screen.getByText("Request Permissions")).toBeTruthy();
+		});
 	});
 
 	it("renders the server URL from auth context", async () => {
@@ -253,6 +280,15 @@ describe("HealthScreen", () => {
 		});
 
 		expect(mockSettingsSetMutate).not.toHaveBeenCalled();
+	});
+
+	it("shows background delivery as enabled when previously enabled on device", async () => {
+		mockIsBackgroundDeliveryEnabled.mockReturnValue(true);
+		const { default: HealthScreen } = await import("./health");
+		render(<HealthScreen />);
+		expect(screen.getByText("Background Delivery Enabled")).toBeTruthy();
+		const button = screen.getByText("Background Delivery Enabled").closest("button");
+		expect(button).toHaveProperty("disabled", true);
 	});
 
 	it("shows enabled state after enabling background delivery", async () => {
