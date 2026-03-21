@@ -3,6 +3,15 @@ import React from "react";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+vi.mock("expo-file-system", () => ({
+  Paths: { cache: "/tmp/cache" },
+  File: vi.fn(),
+}));
+
+vi.mock("expo-sharing", () => ({
+  shareAsync: vi.fn(),
+}));
+
 vi.mock("../components/PersonalizationPanel", () => ({
   PersonalizationPanel: () => React.createElement("div", null, "PersonalizationPanel"),
 }));

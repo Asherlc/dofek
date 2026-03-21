@@ -81,6 +81,18 @@ function sparklinePath(data: number[], width: number, height: number, padding: n
 
 const GROUP_ORDER: TargetGroup[] = ["Recovery", "Fitness", "Body"];
 
+const TARGET_DESCRIPTIONS: Record<string, string> = {
+  hrv: "Heart rate variability measures how well your nervous system recovers. Higher is generally better.",
+  resting_hr: "Your resting heart rate reflects cardiovascular fitness. Lower is generally better.",
+  sleep_efficiency:
+    "Sleep efficiency is the percentage of time in bed you actually spend asleep. Higher is better.",
+  weight: "Body weight predicted from nutrition, exercise, and sleep patterns.",
+  cardio_power:
+    "Predicts your average power output for your next cardio session based on recent recovery, training load, and nutrition.",
+  strength_volume:
+    "Predicts your total training volume (weight x reps) for your next strength session based on recovery and recent training.",
+};
+
 // ── Main Screen ──
 
 export default function PredictionsScreen() {
@@ -111,12 +123,12 @@ export default function PredictionsScreen() {
     return groups;
   }, [targets]);
 
-  // Top 3 features by tree importance
+  // Top 8 features by tree importance
   const topFeatures = useMemo(() => {
     if (!prediction?.featureImportances) return [];
     return [...prediction.featureImportances]
       .sort((a, b) => b.treeImportance - a.treeImportance)
-      .slice(0, 3);
+      .slice(0, 8);
   }, [prediction?.featureImportances]);
 
   const maxImportance = topFeatures.length > 0 ? topFeatures[0].treeImportance : 1;
@@ -221,6 +233,11 @@ export default function PredictionsScreen() {
           );
         })}
       </ScrollView>
+
+      {/* Target description */}
+      {activeTarget != null && TARGET_DESCRIPTIONS[activeTarget] != null && (
+        <Text style={styles.targetDescription}>{TARGET_DESCRIPTIONS[activeTarget]}</Text>
+      )}
 
       {isLoading ? (
         <View style={styles.loadingContainer}>
@@ -444,6 +461,13 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 16,
     color: colors.textTertiary,
+  },
+
+  targetDescription: {
+    fontSize: 13,
+    color: colors.textTertiary,
+    lineHeight: 18,
+    marginTop: -8,
   },
 
   // ── Chip selector ──

@@ -77,9 +77,9 @@ export default function OverviewScreen() {
   const router = useRouter();
   const onboarding = useOnboarding();
   const unitSystem = useUnitSystem();
-  const [days, setDays] = useState(7);
+  const [days, setDays] = useState(30);
   const [recentActivityPage, setRecentActivityPage] = useState(0);
-  const showDetailedSections = false;
+  const showDetailedSections = true;
 
   // Fetch readiness/recovery score
   const readinessQuery = trpc.recovery.readinessScore.useQuery({ days });

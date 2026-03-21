@@ -94,9 +94,10 @@ describe("OverviewScreen SpO2 and Skin Temperature cards", () => {
     const { default: OverviewScreen } = await import("./index");
     render(<OverviewScreen />);
 
-    expect(screen.getByText("Blood Oxygen")).toBeTruthy();
-    expect(screen.getByText("98")).toBeTruthy();
-    expect(screen.getByText("%")).toBeTruthy();
+    // May appear in both key metrics and Health Status Bar
+    expect(screen.getAllByText("Blood Oxygen").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("98").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("%").length).toBeGreaterThanOrEqual(1);
   });
 
   it("renders Skin Temperature card when latest_skin_temp is present", async () => {
@@ -106,26 +107,32 @@ describe("OverviewScreen SpO2 and Skin Temperature cards", () => {
     const { default: OverviewScreen } = await import("./index");
     render(<OverviewScreen />);
 
-    expect(screen.getByText("Skin Temperature")).toBeTruthy();
+    expect(screen.getAllByText("Skin Temperature").length).toBeGreaterThanOrEqual(1);
   });
 
-  it("does not render Blood Oxygen card when latest_spo2 is null", async () => {
+  it("does not render Blood Oxygen key metrics card when latest_spo2 is null", async () => {
     mockTrendsData = { latest_spo2: null };
     mockDailyMetricsData = [];
 
     const { default: OverviewScreen } = await import("./index");
     render(<OverviewScreen />);
 
-    expect(screen.queryByText("Blood Oxygen")).toBeNull();
+    // The key metrics card (with the large value) should not render when null,
+    // but the Health Status Bar mini-metric still shows the label with "--" fallback
+    const elements = screen.queryAllByText("Blood Oxygen");
+    // Should only appear in the Health Status Bar, not as a key metrics card
+    expect(elements.length).toBeLessThanOrEqual(1);
   });
 
-  it("does not render Skin Temperature card when latest_skin_temp is null", async () => {
+  it("does not render Skin Temperature key metrics card when latest_skin_temp is null", async () => {
     mockTrendsData = { latest_skin_temp: null };
     mockDailyMetricsData = [];
 
     const { default: OverviewScreen } = await import("./index");
     render(<OverviewScreen />);
 
-    expect(screen.queryByText("Skin Temperature")).toBeNull();
+    // Same as above — only the Health Status Bar mini-metric should appear
+    const elements = screen.queryAllByText("Skin Temperature");
+    expect(elements.length).toBeLessThanOrEqual(1);
   });
 });
