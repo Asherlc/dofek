@@ -81,6 +81,15 @@ vi.mock("../lib/auth-context", () => ({
 	}),
 }));
 
+vi.mock("expo-file-system", () => ({
+	File: class MockFile {
+		constructor(public uri: string) {}
+		async text() { return ""; }
+		get type() { return ""; }
+		get size() { return 0; }
+	},
+}));
+
 vi.mock("expo-web-browser", () => ({
 	openBrowserAsync: vi.fn().mockResolvedValue({ type: "cancel" }),
 }));
@@ -647,6 +656,9 @@ describe("ProvidersScreen", () => {
 					fileUri: "file:///tmp/Strong%20Export.csv",
 					serverUrl: "https://test.example.com",
 					sessionToken: "test-token",
+				}),
+				expect.objectContaining({
+					readBlob: expect.any(Function),
 				}),
 			);
 		});
