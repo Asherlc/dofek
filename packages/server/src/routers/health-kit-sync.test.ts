@@ -287,6 +287,86 @@ describe("healthKitSyncRouter", () => {
       expect(result.inserted).toBe(1);
     });
 
+    it("refreshes v_daily_metrics materialized view after processing skin temp samples", async () => {
+      const execute = makeExecute();
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+      });
+
+      await caller.pushQuantitySamples({
+        samples: [
+          makeSample({
+            type: "HKQuantityTypeIdentifierAppleSleepingWristTemperature",
+            value: 34.5,
+            unit: "degC",
+            uuid: "skin-temp-1",
+          }),
+        ],
+      });
+
+      const refreshCall = execute.mock.calls.find((call: unknown[]) => {
+        const serialized = JSON.stringify(call[0]);
+        return (
+          serialized.includes("REFRESH MATERIALIZED VIEW") && serialized.includes("v_daily_metrics")
+        );
+      });
+      expect(refreshCall).toBeDefined();
+    });
+
+    it("refreshes v_daily_metrics after processing SpO2 samples", async () => {
+      const execute = makeExecute();
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+      });
+
+      await caller.pushQuantitySamples({
+        samples: [
+          makeSample({
+            type: "HKQuantityTypeIdentifierOxygenSaturation",
+            value: 0.97,
+            unit: "%",
+            uuid: "spo2-1",
+          }),
+        ],
+      });
+
+      const refreshCall = execute.mock.calls.find((call: unknown[]) => {
+        const serialized = JSON.stringify(call[0]);
+        return (
+          serialized.includes("REFRESH MATERIALIZED VIEW") && serialized.includes("v_daily_metrics")
+        );
+      });
+      expect(refreshCall).toBeDefined();
+    });
+
+    it("does not refresh v_daily_metrics when no metric stream samples present", async () => {
+      const execute = makeExecute();
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+      });
+
+      await caller.pushQuantitySamples({
+        samples: [
+          makeSample({
+            type: "HKQuantityTypeIdentifierStepCount",
+            value: 5000,
+            uuid: "steps-only",
+          }),
+        ],
+      });
+
+      const refreshCall = execute.mock.calls.find((call: unknown[]) => {
+        const serialized = JSON.stringify(call[0]);
+        return (
+          serialized.includes("REFRESH MATERIALIZED VIEW") && serialized.includes("v_daily_metrics")
+        );
+      });
+      expect(refreshCall).toBeUndefined();
+    });
+
     it("reports errors when processing fails", async () => {
       const execute = vi.fn();
       // ensureProvider succeeds
