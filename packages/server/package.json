@@ -16,6 +16,7 @@
     "@dofek/auth": "workspace:*",
     "@dofek/heart-rate-variability": "workspace:*",
     "@dofek/stats": "workspace:*",
+    "@dofek/zones": "workspace:*",
     "@sentry/node": "^10.45.0",
     "@slack/bolt": "^4.6.0",
     "@slack/socket-mode": "^2.0.6",

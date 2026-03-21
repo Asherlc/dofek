@@ -16,6 +16,7 @@
     "@dofek/providers": "workspace:*",
     "@dofek/scoring": "workspace:*",
     "@dofek/training": "workspace:*",
+    "@dofek/zones": "workspace:*",
     "@sentry/react": "^10.45.0",
     "@tailwindcss/vite": "4.2.1",
     "@tanstack/react-query": "5.90.21",

@@ -7,6 +7,7 @@ packages:
   - packages/stats
   - packages/onboarding
   - packages/providers-meta
+  - packages/zones
   - packages/auth
   - packages/heart-rate-variability
   - packages/server

@@ -6,5 +6,8 @@
   "exports": {
     "./training": "./src/training.ts",
     "./workout-recommendation": "./src/workout-recommendation.ts"
+  },
+  "dependencies": {
+    "@dofek/zones": "workspace:*"
   }
 }
