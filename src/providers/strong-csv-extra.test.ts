@@ -6,7 +6,6 @@ import {
   STRONG_PROVIDER_ID,
   StrongCsvProvider,
 } from "./strong-csv.ts";
-import { createMockDatabase } from "./test-helpers.ts";
 
 // ============================================================
 // Tests targeting uncovered CSV parsing paths in strong-csv.ts
