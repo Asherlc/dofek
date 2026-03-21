@@ -1,5 +1,44 @@
 import { statusColors, textColors } from "./colors.ts";
 
+/**
+ * Scaling constant for converting raw training load to Whoop-like 0-21 strain.
+ * Calibrated so a moderate 60-min workout (~45 raw) maps to ~13 strain,
+ * a hard 90-min workout (~76 raw) maps to ~15, and extreme multi-hour efforts
+ * approach but don't exceed 21.
+ */
+const STRAIN_SCALE_FACTOR = 3.5;
+const STRAIN_MAX = 21;
+
+/**
+ * Convert raw daily training load (duration_min × avg_hr/max_hr) to a
+ * Whoop-like 0–21 strain score using logarithmic scaling.
+ *
+ * The logarithmic transformation produces diminishing returns at higher loads,
+ * matching Whoop's bounded scale where going from 15→16 requires more effort
+ * than going from 5→6.
+ */
+export function rawLoadToStrain(rawLoad: number): number {
+  if (rawLoad <= 0) return 0;
+  const strain = STRAIN_SCALE_FACTOR * Math.log(1 + rawLoad);
+  return Math.round(Math.min(strain, STRAIN_MAX) * 10) / 10;
+}
+
+/** Get the color for a strain score (0-21 Whoop-like scale) */
+export function strainColor(strain: number): string {
+  if (strain > 17) return statusColors.danger;
+  if (strain >= 14) return statusColors.warning;
+  if (strain >= 10) return statusColors.positive;
+  return textColors.secondary;
+}
+
+/** Get a human-readable label for a strain score (0-21 Whoop-like scale) */
+export function strainLabel(strain: number): string {
+  if (strain > 17) return "All Out";
+  if (strain >= 14) return "High";
+  if (strain >= 10) return "Moderate";
+  return "Light";
+}
+
 /** Get the color for a recovery/readiness score (0-100) */
 export function scoreColor(score: number): string {
   if (score > 70) return statusColors.positive;

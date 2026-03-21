@@ -11,10 +11,13 @@ import {
   formZoneLabel,
   healthStatusColor,
   rampRateColor,
+  rawLoadToStrain,
   readinessLevelColor,
   scoreColor,
   scoreLabel,
   sleepDebtColor,
+  strainColor,
+  strainLabel,
   stressColor,
   stressLabel,
   trendColor,
@@ -455,5 +458,118 @@ describe("healthStatusColor", () => {
 
   it("returns danger for poor", () => {
     expect(healthStatusColor("poor")).toBe(statusColors.danger);
+  });
+});
+
+describe("rawLoadToStrain", () => {
+  it("returns 0 for zero raw load", () => {
+    expect(rawLoadToStrain(0)).toBe(0);
+  });
+
+  it("returns 0 for negative raw load", () => {
+    expect(rawLoadToStrain(-5)).toBe(0);
+  });
+
+  it("maps a light 30-min workout (~20 raw) to light strain (8-11)", () => {
+    // 30 min at avg_hr/max_hr ≈ 0.65 → raw load ≈ 19.5
+    const strain = rawLoadToStrain(19.5);
+    expect(strain).toBeGreaterThanOrEqual(8);
+    expect(strain).toBeLessThanOrEqual(11);
+  });
+
+  it("maps a moderate 60-min workout (~45 raw) to moderate strain (12-14)", () => {
+    // 60 min at avg_hr/max_hr ≈ 0.76 → raw load ≈ 45
+    const strain = rawLoadToStrain(45);
+    expect(strain).toBeGreaterThanOrEqual(12);
+    expect(strain).toBeLessThanOrEqual(14);
+  });
+
+  it("maps a hard 90-min workout (~76 raw) to high strain (14-16)", () => {
+    // 90 min at avg_hr/max_hr ≈ 0.84 → raw load ≈ 76
+    const strain = rawLoadToStrain(76);
+    expect(strain).toBeGreaterThanOrEqual(14);
+    expect(strain).toBeLessThanOrEqual(16);
+  });
+
+  it("maps a very hard 2-hour workout (~96 raw) to high strain (15-17)", () => {
+    const strain = rawLoadToStrain(96);
+    expect(strain).toBeGreaterThanOrEqual(15);
+    expect(strain).toBeLessThanOrEqual(17);
+  });
+
+  it("maps an extreme 3-hour endurance effort (~141 raw) to very high strain (17-19)", () => {
+    const strain = rawLoadToStrain(141);
+    expect(strain).toBeGreaterThanOrEqual(17);
+    expect(strain).toBeLessThanOrEqual(19);
+  });
+
+  it("never exceeds 21 even for extreme values", () => {
+    expect(rawLoadToStrain(500)).toBeLessThanOrEqual(21);
+    expect(rawLoadToStrain(1000)).toBeLessThanOrEqual(21);
+  });
+
+  it("increases monotonically with raw load", () => {
+    let previous = rawLoadToStrain(0);
+    for (const load of [10, 20, 50, 100, 200, 500]) {
+      const current = rawLoadToStrain(load);
+      expect(current).toBeGreaterThan(previous);
+      previous = current;
+    }
+  });
+
+  it("shows diminishing returns at higher loads (logarithmic behavior)", () => {
+    // Going from 0→50 should add more strain than going from 100→150
+    const lowGain = rawLoadToStrain(50) - rawLoadToStrain(0);
+    const highGain = rawLoadToStrain(150) - rawLoadToStrain(100);
+    expect(lowGain).toBeGreaterThan(highGain);
+  });
+
+  it("returns a rounded value with 1 decimal place", () => {
+    const strain = rawLoadToStrain(45);
+    expect(strain).toBe(Math.round(strain * 10) / 10);
+  });
+});
+
+describe("strainColor", () => {
+  it("returns textSecondary for light strain (< 10)", () => {
+    expect(strainColor(5)).toBe(textColors.secondary);
+    expect(strainColor(9.9)).toBe(textColors.secondary);
+  });
+
+  it("returns positive for moderate strain (10-13)", () => {
+    expect(strainColor(10)).toBe(statusColors.positive);
+    expect(strainColor(13)).toBe(statusColors.positive);
+  });
+
+  it("returns warning for high strain (14-17)", () => {
+    expect(strainColor(14)).toBe(statusColors.warning);
+    expect(strainColor(17)).toBe(statusColors.warning);
+  });
+
+  it("returns danger for all-out strain (> 17)", () => {
+    expect(strainColor(17.1)).toBe(statusColors.danger);
+    expect(strainColor(21)).toBe(statusColors.danger);
+  });
+});
+
+describe("strainLabel", () => {
+  it("returns Light for strain < 10", () => {
+    expect(strainLabel(5)).toBe("Light");
+    expect(strainLabel(0)).toBe("Light");
+  });
+
+  it("returns Moderate for strain 10-13", () => {
+    expect(strainLabel(10)).toBe("Moderate");
+    expect(strainLabel(13)).toBe("Moderate");
+  });
+
+  it("returns High for strain 14-17", () => {
+    expect(strainLabel(14)).toBe("High");
+    expect(strainLabel(17)).toBe("High");
+  });
+
+  it("returns All Out for strain > 17", () => {
+    expect(strainLabel(17.1)).toBe("All Out");
+    expect(strainLabel(21)).toBe("All Out");
   });
 });
