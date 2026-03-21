@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import Svg, { Circle, Line } from "react-native-svg";
 import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
-import { formatNumber, formatSigned } from "../lib/format";
+import { formatNumber, formatSigned } from "@dofek/format/format";
 import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
 import { statusColors } from "@dofek/scoring/colors";

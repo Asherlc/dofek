@@ -13,7 +13,7 @@ import { StrainGauge } from "../../components/charts/StrainGauge";
 import { SparkLine } from "../../components/charts/SparkLine";
 import { aggregateWeeklyVolume, workloadRatioColor, workloadRatioHint } from "../../lib/scoring";
 import type { WeekSummary } from "../../lib/scoring";
-import { formatNumber } from "../../lib/format";
+import { formatNumber } from "@dofek/format/format";
 import { trpc } from "../../lib/trpc";
 import { useUnitSystem } from "../../lib/units";
 import type { ActivityRow, WorkloadRow } from "../../types/api";

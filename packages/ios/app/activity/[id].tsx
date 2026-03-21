@@ -18,7 +18,7 @@ import Svg, {
   Text as SvgText,
 } from "react-native-svg";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
-import { formatDurationRange, formatNumber } from "../../lib/format";
+import { formatDurationRange, formatNumber } from "@dofek/format/format";
 import { trpc } from "../../lib/trpc";
 import { convertDistance, convertElevation, convertSpeed, distanceLabel, elevationLabel, speedLabel, useUnitSystem } from "../../lib/units";
 import { colors } from "../../theme";

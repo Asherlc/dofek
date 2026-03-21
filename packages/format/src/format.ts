@@ -48,14 +48,17 @@ export function formatSleepDebt(minutes: number): string {
   return `${hours}h ${mins}m debt`;
 }
 
-/** Format a decimal hour (e.g. 22.5) as "10:30 PM" */
-export function formatHour(decimalHour: number): string {
+/** Format a decimal hour (e.g. 22.5) in the user's locale time format.
+ *  Uses 12-hour or 24-hour notation based on device locale.
+ *  Pass an explicit locale for deterministic output (e.g. in tests). */
+export function formatHour(decimalHour: number, locale?: string): string {
   const totalMinutes = Math.round(decimalHour * 60);
   const hour24 = Math.floor(totalMinutes / 60) % 24;
   const minutes = totalMinutes % 60;
-  const period = hour24 >= 12 ? "PM" : "AM";
-  const hour12 = hour24 === 0 ? 12 : hour24 > 12 ? hour24 - 12 : hour24;
-  return `${hour12}:${String(minutes).padStart(2, "0")} ${period}`;
+  const date = new Date(2000, 0, 1, hour24, minutes, 0);
+  return date
+    .toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" })
+    .replace(/\u202f/g, " ");
 }
 
 /** Format sleep debt for inline display: "Xh Ym sleep debt (14 days)" */

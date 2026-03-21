@@ -7,7 +7,7 @@ import { convertDistance, convertElevation, convertPace, convertWeight, distance
 import { colors } from "../theme";
 import { scoreColor, scoreLabel, workloadRatioColor, workloadRatioHint, rampRateColor, formZoneColor, FORM_ZONE_COLORS } from "@dofek/scoring/scoring";
 import { formatPace } from "@dofek/format/format";
-import { formatNumber, formatSigned } from "../lib/format";
+import { formatNumber, formatSigned } from "@dofek/format/format";
 import { statusColors } from "@dofek/scoring/colors";
 
 // ── Types ──
