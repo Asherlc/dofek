@@ -1,5 +1,5 @@
-import { useState, useMemo } from "react";
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
+import { useState, useMemo, useCallback } from "react";
+import { LayoutAnimation, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import { formatNumber, formatSigned } from "@dofek/format/format";
 import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
@@ -188,8 +188,22 @@ function InsightCard({ insight }: { insight: Insight }) {
 export default function InsightsScreen() {
   const [days, setDays] = useState(365);
   const [confidenceFilter, setConfidenceFilter] = useState<ConfidenceFilter>("all");
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const { width } = useWindowDimensions();
   const isWide = width >= 600;
+
+  const toggleCategory = useCallback((category: string) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(category)) {
+        next.delete(category);
+      } else {
+        next.add(category);
+      }
+      return next;
+    });
+  }, []);
 
   const query = trpc.insights.compute.useQuery({ days });
   const insights = query.data ?? [];
@@ -217,7 +231,7 @@ export default function InsightsScreen() {
     const order = ["Recovery", "Sleep", "Body", "Performance", "Other"];
     return order
       .filter((cat) => groups[cat] != null && groups[cat].length > 0)
-      .map((cat) => ({ category: cat, insights: groups[cat] }));
+      .map((cat) => ({ category: cat, insights: groups[cat] ?? [] }));
   }, [filtered]);
 
   return (
@@ -258,16 +272,32 @@ export default function InsightsScreen() {
       )}
 
       {/* Grouped insight cards */}
-      {grouped.map(({ category, insights: categoryInsights }) => (
-        <View key={category} style={styles.categoryGroup}>
-          <Text style={styles.categoryTitle}>
-            {CATEGORY_EMOJIS[category] ?? ""} {category}
-          </Text>
-          {categoryInsights.map((insight) => (
-            <InsightCard key={insight.id} insight={insight} />
-          ))}
-        </View>
-      ))}
+      {grouped.map(({ category, insights: categoryInsights }) => {
+        const isCollapsed = collapsed.has(category);
+        return (
+          <View key={category} style={styles.categoryGroup}>
+            <TouchableOpacity
+              style={styles.categoryHeader}
+              onPress={() => toggleCategory(category)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.categoryTitle}>
+                {CATEGORY_EMOJIS[category] ?? ""} {category}
+              </Text>
+              <View style={styles.categoryRight}>
+                <View style={styles.countBadge}>
+                  <Text style={styles.countBadgeText}>{categoryInsights.length}</Text>
+                </View>
+                <Text style={styles.chevron}>{isCollapsed ? "\u25B6" : "\u25BC"}</Text>
+              </View>
+            </TouchableOpacity>
+            {!isCollapsed &&
+              categoryInsights.map((insight) => (
+                <InsightCard key={insight.id} insight={insight} />
+              ))}
+          </View>
+        );
+      })}
     </ScrollView>
   );
 }
@@ -328,10 +358,37 @@ const styles = StyleSheet.create({
     gap: 10,
     marginTop: 8,
   },
+  categoryHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
   categoryTitle: {
     fontSize: 18,
     fontWeight: "700",
     color: colors.text,
+  },
+  categoryRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  countBadge: {
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    minWidth: 24,
+    alignItems: "center",
+  },
+  countBadgeText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.textSecondary,
+  },
+  chevron: {
+    fontSize: 12,
+    color: colors.textTertiary,
   },
 
   // Insight cards

@@ -1,13 +1,15 @@
-import { useLocalSearchParams } from "expo-router";
-import { useCallback, useState } from "react";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Linking,
   Modal,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -842,9 +844,19 @@ const tabStyles = StyleSheet.create({
 export default function ProviderDetailScreen() {
   const { id: providerId } = useLocalSearchParams<{ id: string }>();
   const { serverUrl } = useAuth();
+  const router = useRouter();
+  const trpcUtils = trpc.useUtils();
 
   const providers = trpc.sync.providers.useQuery();
   const stats = trpc.sync.providerStats.useQuery();
+  const syncMutation = trpc.sync.triggerSync.useMutation();
+  const disconnectMutation = trpc.providerDetail.disconnect.useMutation();
+
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [syncProgress, setSyncProgress] = useState<number | null>(null);
+  const [customDays, setCustomDays] = useState("30");
+  const pollingRef = useRef(false);
 
   const provider = (providers.data ?? []).find(
     (p: { id: string }) => p.id === providerId,
@@ -852,6 +864,98 @@ export default function ProviderDetailScreen() {
   const providerStats = (stats.data ?? []).find(
     (s: { providerId: string }) => s.providerId === providerId,
   );
+
+  const pollSyncJob = useCallback(
+    async (jobId: string) => {
+      if (pollingRef.current) return;
+      pollingRef.current = true;
+
+      const poll = async (): Promise<void> => {
+        let status: Awaited<ReturnType<typeof trpcUtils.sync.syncStatus.fetch>>;
+        try {
+          status = await trpcUtils.sync.syncStatus.fetch({ jobId }, { staleTime: 0 });
+        } catch {
+          pollingRef.current = false;
+          setIsSyncing(false);
+          setSyncMessage("Sync failed");
+          return;
+        }
+
+        if (!status) {
+          pollingRef.current = false;
+          setIsSyncing(false);
+          return;
+        }
+
+        setSyncProgress(status.percentage);
+        const providerStatus = providerId ? status.providers[providerId] : null;
+        if (providerStatus?.message) {
+          setSyncMessage(providerStatus.message);
+        }
+
+        if (status.status === "done" || status.status === "error") {
+          pollingRef.current = false;
+          setIsSyncing(false);
+          setSyncMessage(status.status === "done" ? "Sync complete" : "Sync failed");
+          trpcUtils.sync.providers.invalidate();
+          trpcUtils.sync.providerStats.invalidate();
+          trpcUtils.sync.logs.invalidate();
+          return;
+        }
+
+        await new Promise((r) => setTimeout(r, 1000));
+        return poll();
+      };
+
+      return poll();
+    },
+    [trpcUtils, providerId],
+  );
+
+  const handleSync = useCallback(
+    async (sinceDays: number | undefined) => {
+      if (!providerId || isSyncing) return;
+      setIsSyncing(true);
+      setSyncMessage("Starting sync...");
+      setSyncProgress(0);
+      try {
+        const { jobId } = await syncMutation.mutateAsync({
+          providerId,
+          sinceDays,
+        });
+        await pollSyncJob(jobId);
+      } catch {
+        setIsSyncing(false);
+        setSyncMessage("Failed to start sync");
+      }
+    },
+    [providerId, isSyncing, syncMutation, pollSyncJob],
+  );
+
+  const handleDisconnect = useCallback(() => {
+    if (!providerId) return;
+    Alert.alert(
+      "Disconnect Provider",
+      "This will permanently delete all synced data from this provider. This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Disconnect",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await disconnectMutation.mutateAsync({ providerId });
+              trpcUtils.sync.providers.invalidate();
+              trpcUtils.sync.providerStats.invalidate();
+              router.back();
+            } catch {
+              Alert.alert("Error", "Failed to disconnect provider");
+            }
+          },
+        },
+      ],
+    );
+  }, [providerId, disconnectMutation, trpcUtils, router]);
 
   const handleReauthorize = useCallback(() => {
     if (!providerId) return;
@@ -902,6 +1006,72 @@ export default function ProviderDetailScreen() {
         </View>
       </View>
 
+      {/* Sync controls */}
+      {provider?.authorized && !provider.importOnly && (
+        <View style={styles.syncControlsCard}>
+          <Text style={styles.syncControlsTitle}>Sync Controls</Text>
+          <View style={styles.syncButtonRow}>
+            <TouchableOpacity
+              style={[styles.syncButton, isSyncing && styles.syncButtonDisabled]}
+              onPress={() => handleSync(7)}
+              activeOpacity={0.7}
+              disabled={isSyncing}
+            >
+              <Text style={styles.syncButtonText}>Sync Last 7 Days</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.syncButton, isSyncing && styles.syncButtonDisabled]}
+              onPress={() => handleSync(undefined)}
+              activeOpacity={0.7}
+              disabled={isSyncing}
+            >
+              <Text style={styles.syncButtonText}>Full Sync</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.customSyncRow}>
+            <TextInput
+              style={styles.customDaysInput}
+              value={customDays}
+              onChangeText={setCustomDays}
+              keyboardType="number-pad"
+              placeholder="Days"
+              placeholderTextColor={colors.textTertiary}
+            />
+            <TouchableOpacity
+              style={[styles.syncButton, styles.syncRangeButton, isSyncing && styles.syncButtonDisabled]}
+              onPress={() => {
+                const days = Number.parseInt(customDays, 10);
+                if (days >= 1 && days <= 3650) {
+                  handleSync(days);
+                }
+              }}
+              activeOpacity={0.7}
+              disabled={isSyncing}
+            >
+              <Text style={styles.syncButtonText}>Sync Range</Text>
+            </TouchableOpacity>
+          </View>
+          {isSyncing && (
+            <View style={styles.syncProgressContainer}>
+              <View style={styles.syncProgressTrack}>
+                <View
+                  style={[
+                    styles.syncProgressFill,
+                    { width: `${syncProgress ?? 0}%` },
+                  ]}
+                />
+              </View>
+              {syncMessage != null && (
+                <Text style={styles.syncMessageText}>{syncMessage}</Text>
+              )}
+            </View>
+          )}
+          {!isSyncing && syncMessage != null && (
+            <Text style={styles.syncMessageText}>{syncMessage}</Text>
+          )}
+        </View>
+      )}
+
       {/* Stats overview */}
       {providerStats && <StatsOverview stats={providerStats} />}
 
@@ -911,6 +1081,17 @@ export default function ProviderDetailScreen() {
 
       {/* Records browser */}
       <RecordsBrowser providerId={providerId} stats={providerStats} />
+
+      {/* Disconnect */}
+      {provider?.authorized && (
+        <TouchableOpacity
+          style={styles.disconnectButton}
+          onPress={handleDisconnect}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.disconnectButtonText}>Disconnect Provider</Text>
+        </TouchableOpacity>
+      )}
     </ScrollView>
   );
 }
@@ -985,5 +1166,87 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textTransform: "uppercase",
     letterSpacing: 0.5,
+  },
+
+  // Sync controls
+  syncControlsCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: 16,
+    gap: 12,
+  },
+  syncControlsTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: colors.text,
+  },
+  syncButtonRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  syncButton: {
+    flex: 1,
+    backgroundColor: colors.accent,
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  syncButtonDisabled: {
+    opacity: 0.5,
+  },
+  syncButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.text,
+  },
+  customSyncRow: {
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "center",
+  },
+  customDaysInput: {
+    flex: 1,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: colors.text,
+  },
+  syncRangeButton: {
+    flex: 0,
+    paddingHorizontal: 16,
+  },
+  syncProgressContainer: {
+    gap: 4,
+  },
+  syncProgressTrack: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.surfaceSecondary,
+    overflow: "hidden",
+  },
+  syncProgressFill: {
+    height: "100%",
+    borderRadius: 2,
+    backgroundColor: colors.accent,
+  },
+  syncMessageText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+
+  // Disconnect
+  disconnectButton: {
+    backgroundColor: "rgba(239, 68, 68, 0.15)",
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+    marginTop: 8,
+  },
+  disconnectButtonText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#ef4444",
   },
 });
