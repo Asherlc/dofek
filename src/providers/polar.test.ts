@@ -185,12 +185,9 @@ describe("parsePolarSleep", () => {
     expect(result.durationMinutes).toBe(390);
   });
 
-  it("computes efficiency as sleep time / total time in bed", () => {
+  it("does not include efficiencyPct (derived in v_sleep view)", () => {
     const result = parsePolarSleep(sampleSleep);
-    // Total sleep = 10800 + 7200 + 5400 = 23400s
-    // Total in bed = sleep_end - sleep_start = 8h15m = 29700s
-    // Efficiency = 23400 / 29700 * 100 = 78.79%
-    expect(result.efficiencyPct).toBeCloseTo(78.79, 0);
+    expect(result).not.toHaveProperty("efficiencyPct");
   });
 });
 

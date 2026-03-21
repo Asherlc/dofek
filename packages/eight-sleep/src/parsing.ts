@@ -9,7 +9,6 @@ export interface ParsedEightSleepSession {
   remMinutes: number;
   lightMinutes: number;
   awakeMinutes: number;
-  efficiencyPct: number;
   sleepType: null;
   isNap: boolean;
 }
@@ -32,21 +31,15 @@ function secondsToMinutes(seconds: number): number {
 }
 
 export function parseEightSleepTrendDay(day: EightSleepTrendDay): ParsedEightSleepSession {
-  const totalSleepSeconds = day.sleepDuration;
-  const totalInBedSeconds = day.presenceDuration;
-  const efficiency =
-    totalInBedSeconds > 0 ? Math.round((totalSleepSeconds / totalInBedSeconds) * 100) : 0;
-
   return {
     externalId: `eightsleep-${day.day}`,
     startedAt: new Date(day.presenceStart),
     endedAt: new Date(day.presenceEnd),
-    durationMinutes: secondsToMinutes(totalSleepSeconds),
+    durationMinutes: secondsToMinutes(day.sleepDuration),
     deepMinutes: secondsToMinutes(day.deepDuration),
     remMinutes: secondsToMinutes(day.remDuration),
     lightMinutes: secondsToMinutes(day.lightDuration),
     awakeMinutes: secondsToMinutes(day.presenceDuration - day.sleepDuration),
-    efficiencyPct: efficiency,
     sleepType: null,
     isNap: false,
   };

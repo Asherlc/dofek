@@ -784,7 +784,6 @@ export async function upsertSleepBatch(
       }
     }
 
-    const totalSleepMinutes = deepMinutes + remMinutes + lightMinutes;
     const externalId = `ah:sleep:${bed.startDate.toISOString()}`;
 
     return {
@@ -793,7 +792,6 @@ export async function upsertSleepBatch(
       remMinutes,
       lightMinutes,
       awakeMinutes,
-      totalSleepMinutes,
       externalId,
     };
   });
@@ -809,10 +807,6 @@ export async function upsertSleepBatch(
     remMinutes: s.remMinutes,
     lightMinutes: s.lightMinutes,
     awakeMinutes: s.awakeMinutes,
-    efficiencyPct:
-      s.bed.durationMinutes > 0
-        ? Math.round((s.totalSleepMinutes / s.bed.durationMinutes) * 1000) / 10
-        : undefined,
     sleepType: null,
     sourceName: s.bed.sourceName,
   }));
