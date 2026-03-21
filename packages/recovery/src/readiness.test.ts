@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ReadinessScore, defaultReadinessWeights } from "./readiness.ts";
+import { defaultReadinessWeights, ReadinessScore } from "./readiness.ts";
 
 describe("ReadinessScore", () => {
   const weights = defaultReadinessWeights();
