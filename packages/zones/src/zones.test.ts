@@ -5,6 +5,7 @@ import {
   computePolarizationIndex,
   HEART_RATE_ZONE_COLORS,
   HEART_RATE_ZONES,
+  ZONE_BOUNDARIES_HRR,
   heartRateZoneBoundaries,
   mapHrZones,
   POLARIZATION_ZONES,
@@ -39,6 +40,18 @@ describe("HEART_RATE_ZONES", () => {
       expect(curr).toBeDefined();
       expect(prev).toBeDefined();
       expect(curr?.minPctHrr).toBe(prev?.maxPctHrr);
+    }
+  });
+});
+
+describe("ZONE_BOUNDARIES_HRR", () => {
+  it("has 4 boundaries derived from zone maxPctHrr values", () => {
+    expect(ZONE_BOUNDARIES_HRR).toEqual([0.6, 0.7, 0.8, 0.9]);
+  });
+
+  it("matches the maxPctHrr of zones 1-4", () => {
+    for (let i = 0; i < 4; i++) {
+      expect(ZONE_BOUNDARIES_HRR[i]).toBe(HEART_RATE_ZONES[i]?.maxPctHrr);
     }
   });
 });
