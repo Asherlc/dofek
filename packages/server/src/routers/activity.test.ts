@@ -274,7 +274,7 @@ describe("activityRouter", () => {
         maxPct: 60,
         seconds: 600,
       });
-      expect(result[4]).toMatchObject({ zone: 5, label: "Anaerobic" });
+      expect(result[4]).toMatchObject({ zone: 5, label: "VO2max" });
     });
 
     it("defaults missing zones to 0 seconds", async () => {
@@ -430,7 +430,7 @@ describe("mapHrZones", () => {
       { zone: 2, label: "Aerobic", minPct: 60, maxPct: 70, seconds: 600 },
       { zone: 3, label: "Tempo", minPct: 70, maxPct: 80, seconds: 900 },
       { zone: 4, label: "Threshold", minPct: 80, maxPct: 90, seconds: 300 },
-      { zone: 5, label: "Anaerobic", minPct: 90, maxPct: 100, seconds: 60 },
+      { zone: 5, label: "VO2max", minPct: 90, maxPct: 100, seconds: 60 },
     ]);
   });
 

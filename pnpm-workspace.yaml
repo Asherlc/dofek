@@ -8,9 +8,9 @@ packages:
   - packages/recovery
   - packages/onboarding
   - packages/providers-meta
+  - packages/zones
   - packages/auth
   - packages/heart-rate-variability
-  - packages/zones
   - packages/server
   - packages/web
   - packages/ios

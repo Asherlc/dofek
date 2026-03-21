@@ -4,6 +4,6 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./heart-rate-zones": "./src/heart-rate-zones.ts"
+    "./zones": "./src/zones.ts"
   }
 }

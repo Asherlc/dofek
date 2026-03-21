@@ -19,6 +19,7 @@ import Svg, {
 } from "react-native-svg";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { formatDurationRange, formatNumber } from "@dofek/format/format";
+import { HEART_RATE_ZONE_COLORS } from "@dofek/zones/zones";
 import { trpc } from "../../lib/trpc";
 import { convertDistance, convertElevation, convertSpeed, distanceLabel, elevationLabel, speedLabel, useUnitSystem } from "../../lib/units";
 import { colors } from "../../theme";
@@ -26,8 +27,6 @@ import { colors } from "../../theme";
 const CHART_WIDTH = 340;
 const CHART_HEIGHT = 180;
 const CHART_PADDING = { top: 20, right: 16, bottom: 28, left: 44 };
-
-const ZONE_COLORS = ["#22c55e", "#84cc16", "#eab308", "#f97316", "#ef4444"];
 
 const CHART_COLORS = {
   heartRate: "#ef4444",
@@ -309,7 +308,7 @@ function HrZonesChart({ zones }: { zones: HrZone[] }) {
           const percentage = totalSeconds > 0 ? zone.seconds / totalSeconds : 0;
           const barWidth = Math.max(percentage * barAreaWidth, 2);
           const y = i * (barHeight + gap);
-          const zoneColor = ZONE_COLORS[i] ?? "#71717a";
+          const zoneColor = HEART_RATE_ZONE_COLORS[i] ?? "#71717a";
 
           return (
             <G key={zone.zone}>

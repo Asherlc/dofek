@@ -3,28 +3,20 @@ import {
   formatActivityTypeLabel,
   OTHER_ACTIVITY_TYPE,
 } from "@dofek/training/training";
+import { HEART_RATE_ZONES } from "@dofek/zones/zones";
 import ReactECharts from "echarts-for-react";
 import { z } from "zod";
 import { formatNumber } from "../lib/format.ts";
 import { trpc } from "../lib/trpc.ts";
 import { ChartDescriptionTooltip } from "./ChartDescriptionTooltip.tsx";
 
-// HR zone colors (blue->green->yellow->orange->red)
-const ZONE_COLORS = {
-  zone1: "#3b82f6", // Recovery (blue)
-  zone2: "#22c55e", // Aerobic (green)
-  zone3: "#eab308", // Tempo (yellow)
-  zone4: "#f97316", // Threshold (orange)
-  zone5: "#ef4444", // VO2max (red)
-};
+const ZONE_COLORS: Record<string, string> = Object.fromEntries(
+  HEART_RATE_ZONES.map((z) => [`zone${z.zone}`, z.color]),
+);
 
-const ZONE_LABELS = {
-  zone1: "Z1 Recovery",
-  zone2: "Z2 Aerobic",
-  zone3: "Z3 Tempo",
-  zone4: "Z4 Threshold",
-  zone5: "Z5 VO2max",
-};
+const ZONE_LABELS: Record<string, string> = Object.fromEntries(
+  HEART_RATE_ZONES.map((z) => [`zone${z.zone}`, `Z${z.zone} ${z.label}`]),
+);
 
 // Activity type colors
 const ACTIVITY_COLORS: Record<string, string> = {

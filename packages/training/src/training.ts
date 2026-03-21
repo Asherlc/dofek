@@ -117,18 +117,8 @@ export const CANONICAL_ACTIVITY_TYPES = [
 // Endurance activity types
 // ============================================================
 
-/**
- * Activity types considered "endurance" for training analysis.
- * Used to filter endurance-tab queries (HR zones, polarization, ramp rate, etc.)
- * so that strength training, yoga, etc. don't skew intensity metrics.
- */
-export const ENDURANCE_ACTIVITY_TYPES = [
-  "cycling",
-  "running",
-  "swimming",
-  "walking",
-  "hiking",
-] as const;
+// Re-export from dedicated module for backward compatibility
+export { ENDURANCE_ACTIVITY_TYPES, isEnduranceActivity } from "./endurance-types.ts";
 
 // ============================================================
 // Activity type mapper factory

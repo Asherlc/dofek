@@ -211,6 +211,9 @@ importers:
       '@dofek/training':
         specifier: workspace:*
         version: link:../training
+      '@dofek/zones':
+        specifier: workspace:*
+        version: link:../zones
       '@sentry/react-native':
         specifier: ^8.5.0
         version: 8.5.0(expo@55.0.6)(react-native@0.83.4(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.4))(react@19.2.4)
@@ -316,6 +319,9 @@ importers:
       '@dofek/training':
         specifier: workspace:*
         version: link:../training
+      '@dofek/zones':
+        specifier: workspace:*
+        version: link:../zones
       '@sentry/node':
         specifier: ^10.45.0
         version: 10.45.0
@@ -393,7 +399,11 @@ importers:
         specifier: 3.2.4
         version: 3.2.4(@types/node@22.19.15)(jiti@2.6.1)(jsdom@29.0.0)(lightningcss@1.31.1)(msw@2.12.11(@types/node@22.19.15)(typescript@5.9.3))(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
 
-  packages/training: {}
+  packages/training:
+    dependencies:
+      '@dofek/zones':
+        specifier: workspace:*
+        version: link:../zones
 
   packages/trainingpeaks-connect:
     devDependencies:
@@ -436,6 +446,9 @@ importers:
       '@dofek/training':
         specifier: workspace:*
         version: link:../training
+      '@dofek/zones':
+        specifier: workspace:*
+        version: link:../zones
       '@sentry/react':
         specifier: ^10.45.0
         version: 10.45.0(react@19.2.4)

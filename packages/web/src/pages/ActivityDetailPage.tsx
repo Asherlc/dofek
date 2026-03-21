@@ -1,11 +1,9 @@
+import type { ActivityHrZone } from "@dofek/zones/zones";
+import { HEART_RATE_ZONE_COLORS } from "@dofek/zones/zones";
 import { Link, useParams } from "@tanstack/react-router";
 import ReactECharts from "echarts-for-react";
 import { useEffect, useRef } from "react";
-import type {
-  ActivityDetail,
-  ActivityHrZone,
-  StreamPoint,
-} from "../../../server/src/routers/activity.ts";
+import type { ActivityDetail, StreamPoint } from "../../../server/src/routers/activity.ts";
 import { AppHeader } from "../components/AppHeader.tsx";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
@@ -29,8 +27,6 @@ const CHART_COLORS = {
   cadence: "#8b5cf6",
   altitude: "#6b7280",
 };
-
-const ZONE_COLORS = ["#22c55e", "#84cc16", "#eab308", "#f97316", "#ef4444"];
 
 export function ActivityDetailPage() {
   const { id } = useParams({ from: "/activity/$id" });
@@ -599,7 +595,7 @@ function HrZonesChart({ zones, loading }: { zones: ActivityHrZone[]; loading: bo
         type: "bar",
         data: zones.map((z, i) => ({
           value: z.seconds,
-          itemStyle: { color: ZONE_COLORS[i] ?? "#71717a" },
+          itemStyle: { color: HEART_RATE_ZONE_COLORS[i] ?? "#71717a" },
         })),
         barWidth: "60%",
         label: {

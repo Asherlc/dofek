@@ -116,7 +116,7 @@ describe("Activity router", () => {
         expect(zones[0].label).toBe("Recovery");
         expect(zones[0].minPct).toBe(50);
         expect(zones[0].maxPct).toBe(60);
-        expect(zones[4].label).toBe("Anaerobic");
+        expect(zones[4].label).toBe("VO2max");
         expect(zones[4].minPct).toBe(90);
         expect(zones[4].maxPct).toBe(100);
       }

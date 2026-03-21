@@ -1,3 +1,4 @@
+import { mapHrZones } from "@dofek/zones/zones";
 import { TRPCError } from "@trpc/server";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -95,15 +96,8 @@ export interface StreamPoint {
   lng: number | null;
 }
 
-export interface ActivityHrZone {
-  zone: number;
-  label: string;
-  minPct: number;
-  maxPct: number;
-  seconds: number;
-}
-
-export type ActivityHrZones = ActivityHrZone[];
+export type { ActivityHrZone } from "@dofek/zones/zones";
+export type ActivityHrZones = import("@dofek/zones/zones").ActivityHrZone[];
 
 export const activityRouter = router({
   list: cachedProtectedQuery(CacheTTL.MEDIUM)
@@ -370,24 +364,5 @@ export function mapStreamPoint(row: {
   };
 }
 
-/** Map raw HR zone rows to the full 5-zone structure. Exported for unit testing. */
-export function mapHrZones(rows: { zone: number; seconds: number }[]): ActivityHrZones {
-  const zoneLabels = [
-    { zone: 1, label: "Recovery", minPct: 50, maxPct: 60 },
-    { zone: 2, label: "Aerobic", minPct: 60, maxPct: 70 },
-    { zone: 3, label: "Tempo", minPct: 70, maxPct: 80 },
-    { zone: 4, label: "Threshold", minPct: 80, maxPct: 90 },
-    { zone: 5, label: "Anaerobic", minPct: 90, maxPct: 100 },
-  ];
-
-  return zoneLabels.map((zl) => {
-    const row = rows.find((r) => Number(r.zone) === zl.zone);
-    return {
-      zone: zl.zone,
-      label: zl.label,
-      minPct: zl.minPct,
-      maxPct: zl.maxPct,
-      seconds: row ? Number(row.seconds) : 0,
-    };
-  });
-}
+// Re-export mapHrZones for backward compatibility with consumers
+export { mapHrZones } from "@dofek/zones/zones";
