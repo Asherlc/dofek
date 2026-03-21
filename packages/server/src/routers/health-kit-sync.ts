@@ -805,10 +805,14 @@ async function processSleepSamples(
       }
     }
 
+    // Use the stage source's name (e.g., "Apple Watch") so v_sleep device
+    // priority can kick in. Falls back to the inBed session's source.
+    const bestStageSource = filtered[0];
+    const sourceName = bestStageSource != null ? bestStageSource.sourceName : session.sourceName;
     const externalId = `hk:sleep:${session.uuid}`;
     const durationMinutes = Math.round((sessionEnd - sessionStart) / (1000 * 60));
     await db.execute(
-      sql`INSERT INTO fitness.sleep_session (user_id, provider_id, external_id, started_at, ended_at, duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes, sleep_type)
+      sql`INSERT INTO fitness.sleep_session (user_id, provider_id, external_id, started_at, ended_at, duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes, sleep_type, source_name)
           VALUES (
             ${userId},
             ${PROVIDER_ID},
@@ -820,7 +824,8 @@ async function processSleepSamples(
             ${remMinutes},
             ${lightMinutes},
             ${awakeMinutes},
-            ${null}
+            ${null},
+            ${sourceName}
           )
           ON CONFLICT (provider_id, external_id) DO UPDATE SET
             started_at = ${session.startDate}::timestamptz,
@@ -830,7 +835,8 @@ async function processSleepSamples(
             rem_minutes = ${remMinutes},
             light_minutes = ${lightMinutes},
             awake_minutes = ${awakeMinutes},
-            sleep_type = ${null}`,
+            sleep_type = ${null},
+            source_name = ${sourceName}`,
     );
     inserted++;
   }
