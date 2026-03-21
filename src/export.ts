@@ -32,22 +32,17 @@ const BATCH_SIZE = 50_000;
 const EXPORT_TABLES: ExportTableConfig[] = [
   {
     name: "user-profile.json",
-    query: (db, userId) =>
-      db.execute<Record<string, unknown>>(
-        sql`SELECT * FROM fitness.user_profile WHERE id = ${userId}`,
-      ),
+    query: (db, userId) => db.execute(sql`SELECT * FROM fitness.user_profile WHERE id = ${userId}`),
   },
   {
     name: "activities.json",
     query: (db, userId) =>
-      db.execute<Record<string, unknown>>(
-        sql`SELECT * FROM fitness.activity WHERE user_id = ${userId} ORDER BY started_at`,
-      ),
+      db.execute(sql`SELECT * FROM fitness.activity WHERE user_id = ${userId} ORDER BY started_at`),
   },
   {
     name: "activity-intervals.json",
     query: (db, userId) =>
-      db.execute<Record<string, unknown>>(
+      db.execute(
         sql`SELECT ai.* FROM fitness.activity_interval ai
             JOIN fitness.activity a ON a.id = ai.activity_id
             WHERE a.user_id = ${userId}
@@ -57,49 +52,45 @@ const EXPORT_TABLES: ExportTableConfig[] = [
   {
     name: "sleep-sessions.json",
     query: (db, userId) =>
-      db.execute<Record<string, unknown>>(
+      db.execute(
         sql`SELECT * FROM fitness.sleep_session WHERE user_id = ${userId} ORDER BY started_at`,
       ),
   },
   {
     name: "body-measurements.json",
     query: (db, userId) =>
-      db.execute<Record<string, unknown>>(
+      db.execute(
         sql`SELECT * FROM fitness.body_measurement WHERE user_id = ${userId} ORDER BY recorded_at`,
       ),
   },
   {
     name: "nutrition-daily.json",
     query: (db, userId) =>
-      db.execute<Record<string, unknown>>(
+      db.execute(
         sql`SELECT * FROM fitness.nutrition_daily WHERE user_id = ${userId} ORDER BY date`,
       ),
   },
   {
     name: "food-entries.json",
     query: (db, userId) =>
-      db.execute<Record<string, unknown>>(
-        sql`SELECT * FROM fitness.food_entry WHERE user_id = ${userId} ORDER BY date`,
-      ),
+      db.execute(sql`SELECT * FROM fitness.food_entry WHERE user_id = ${userId} ORDER BY date`),
   },
   {
     name: "daily-metrics.json",
     query: (db, userId) =>
-      db.execute<Record<string, unknown>>(
-        sql`SELECT * FROM fitness.daily_metrics WHERE user_id = ${userId} ORDER BY date`,
-      ),
+      db.execute(sql`SELECT * FROM fitness.daily_metrics WHERE user_id = ${userId} ORDER BY date`),
   },
   {
     name: "strength-workouts.json",
     query: (db, userId) =>
-      db.execute<Record<string, unknown>>(
+      db.execute(
         sql`SELECT * FROM fitness.strength_workout WHERE user_id = ${userId} ORDER BY started_at`,
       ),
   },
   {
     name: "strength-sets.json",
     query: (db, userId) =>
-      db.execute<Record<string, unknown>>(
+      db.execute(
         sql`SELECT ss.* FROM fitness.strength_set ss
             JOIN fitness.strength_workout sw ON sw.id = ss.workout_id
             WHERE sw.user_id = ${userId}
@@ -109,35 +100,33 @@ const EXPORT_TABLES: ExportTableConfig[] = [
   {
     name: "lab-results.json",
     query: (db, userId) =>
-      db.execute<Record<string, unknown>>(
+      db.execute(
         sql`SELECT * FROM fitness.lab_result WHERE user_id = ${userId} ORDER BY recorded_at`,
       ),
   },
   {
     name: "journal-entries.json",
     query: (db, userId) =>
-      db.execute<Record<string, unknown>>(
-        sql`SELECT * FROM fitness.journal_entry WHERE user_id = ${userId} ORDER BY date`,
-      ),
+      db.execute(sql`SELECT * FROM fitness.journal_entry WHERE user_id = ${userId} ORDER BY date`),
   },
   {
     name: "life-events.json",
     query: (db, userId) =>
-      db.execute<Record<string, unknown>>(
+      db.execute(
         sql`SELECT * FROM fitness.life_events WHERE user_id = ${userId} ORDER BY started_at`,
       ),
   },
   {
     name: "health-events.json",
     query: (db, userId) =>
-      db.execute<Record<string, unknown>>(
+      db.execute(
         sql`SELECT * FROM fitness.health_event WHERE user_id = ${userId} ORDER BY start_date`,
       ),
   },
   {
     name: "sport-settings.json",
     query: (db, userId) =>
-      db.execute<Record<string, unknown>>(
+      db.execute(
         sql`SELECT * FROM fitness.sport_settings WHERE user_id = ${userId} ORDER BY sport, effective_from`,
       ),
   },
@@ -145,7 +134,7 @@ const EXPORT_TABLES: ExportTableConfig[] = [
     name: "metric-streams.json",
     batched: true,
     query: (db, userId) =>
-      db.execute<Record<string, unknown>>(
+      db.execute(
         sql`SELECT * FROM fitness.metric_stream WHERE user_id = ${userId} ORDER BY recorded_at`,
       ),
   },
@@ -168,7 +157,7 @@ function createBatchedJsonStream(db: SyncDatabase, userId: string): Readable {
       }
 
       try {
-        const rows = await db.execute<Record<string, unknown>>(
+        const rows = await db.execute(
           sql`SELECT * FROM fitness.metric_stream
               WHERE user_id = ${userId}
               ORDER BY recorded_at
@@ -235,10 +224,10 @@ export async function generateExport(
 
     if (table.batched) {
       // Stream metric_stream in batches
-      const countResult = await db.execute<{ count: string }>(
+      const countResult = await db.execute(
         sql`SELECT COUNT(*)::text AS count FROM fitness.metric_stream WHERE user_id = ${userId}`,
       );
-      const count = parseInt(countResult[0]?.count ?? "0", 10);
+      const count = parseInt(String(countResult[0]?.count ?? "0"), 10);
       totalRecords += count;
 
       const stream = createBatchedJsonStream(db, userId);
