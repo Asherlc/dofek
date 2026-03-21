@@ -120,11 +120,15 @@ export default function HealthScreen() {
 
   useEffect(() => {
     if (!available) return;
-    getRequestStatus().then((status) => {
-      if (status === "unnecessary") {
-        setPermissionsGranted(true);
-      }
-    });
+    getRequestStatus()
+      .then((status) => {
+        if (status === "unnecessary") {
+          setPermissionsGranted(true);
+        }
+      })
+      .catch(() => {
+        // Fall through — show Request Permissions button as fallback
+      });
   }, [available]);
 
   async function handleRequestPermissions() {
