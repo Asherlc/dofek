@@ -23,8 +23,8 @@ const COLOR_FATIGUE = "#8b5cf6"; // purple (intervals.icu uses purple, not pink)
 function ModelBadge({ model }: { model: TssModelInfo }) {
   if (model.type === "learned") {
     return (
-      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs bg-emerald-900/40 text-emerald-400 border border-emerald-800/50">
-        <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400" />
+      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs bg-accent/10 text-accent border border-accent/30">
+        <span className="inline-block w-1.5 h-1.5 rounded-full bg-accent" />
         Learned model (fit={model.r2?.toFixed(2)}, {model.pairedActivities} paired activities
         {model.ftp != null && `, threshold ${model.ftp}W`})
       </span>
@@ -32,8 +32,8 @@ function ModelBadge({ model }: { model: TssModelInfo }) {
   }
 
   return (
-    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs bg-zinc-800 text-zinc-400 border border-zinc-700/50">
-      <span className="inline-block w-1.5 h-1.5 rounded-full bg-zinc-500" />
+    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs bg-accent/10 text-muted border border-border-strong/50">
+      <span className="inline-block w-1.5 h-1.5 rounded-full bg-subtle" />
       Generic heart rate model
       {model.pairedActivities > 0 && ` (${model.pairedActivities} paired activities — need 10+)`}
       {model.ftp != null && ` · threshold ${model.ftp}W`}
@@ -49,7 +49,7 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
   if (data.length === 0) {
     return (
       <div className="flex items-center justify-center h-[420px]">
-        <span className="text-zinc-600 text-sm">No training load data</span>
+        <span className="text-dim text-sm">No training load data</span>
       </div>
     );
   }
@@ -270,21 +270,21 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
           <div className="flex flex-col w-[100px] pl-2 shrink-0">
             {/* Top pane values — positioned in top ~55% */}
             <div className="flex flex-col items-end justify-center gap-1" style={{ height: "58%" }}>
-              <span className="text-zinc-500 text-[10px] leading-tight text-right">{lastDate}</span>
+              <span className="text-subtle text-[10px] leading-tight text-right">{lastDate}</span>
               <div className="text-right">
-                <div className="text-zinc-500 text-[10px]">Fitness</div>
+                <div className="text-subtle text-[10px]">Fitness</div>
                 <div className="text-sm font-semibold" style={{ color: COLOR_FITNESS }}>
                   {Math.round(lastPoint.ctl)}
                 </div>
               </div>
               <div className="text-right">
-                <div className="text-zinc-500 text-[10px]">Fatigue</div>
+                <div className="text-subtle text-[10px]">Fatigue</div>
                 <div className="text-sm font-semibold" style={{ color: COLOR_FATIGUE }}>
                   {Math.round(lastPoint.atl)}
                 </div>
               </div>
               <div className="text-right">
-                <div className="text-zinc-500 text-[10px]">Form</div>
+                <div className="text-subtle text-[10px]">Form</div>
                 <div
                   className="text-sm font-semibold"
                   style={{ color: formZoneColor(lastPoint.tsb) }}

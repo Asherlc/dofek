@@ -54,7 +54,7 @@ export function AerobicEfficiencyChart({
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[280px]">
-        <span className="text-zinc-600 text-sm">Loading efficiency data...</span>
+        <span className="text-dim text-sm">Loading efficiency data...</span>
       </div>
     );
   }
@@ -62,7 +62,7 @@ export function AerobicEfficiencyChart({
   if (activities.length === 0) {
     return (
       <div className="flex items-center justify-center h-[100px]">
-        <span className="text-zinc-600 text-sm">
+        <span className="text-dim text-sm">
           No activities with sufficient Zone 2 power + heart rate data
         </span>
       </div>
@@ -174,17 +174,17 @@ export function AerobicEfficiencyChart({
 
   return (
     <div>
-      <h3 className="text-xs font-medium text-zinc-500 mb-2">
+      <h3 className="text-xs font-medium text-subtle mb-2">
         Aerobic Efficiency (Power / Heart Rate in Zone 2)
-        {maxHr && <span className="text-zinc-700 ml-2">(max heart rate: {maxHr} bpm)</span>}
+        {maxHr && <span className="text-dim ml-2">(max heart rate: {maxHr} bpm)</span>}
         <span
-          className={`ml-2 ${trendDirection === "improving" ? "text-green-500" : trendDirection === "declining" ? "text-red-400" : "text-zinc-500"}`}
+          className={`ml-2 ${trendDirection === "improving" ? "text-green-500" : trendDirection === "declining" ? "text-red-400" : "text-subtle"}`}
         >
           Trend: {trendDirection}
         </span>
       </h3>
       <ReactECharts option={option} style={{ height: 280 }} notMerge={true} />
-      <p className="text-xs text-zinc-700 mt-1">
+      <p className="text-xs text-dim mt-1">
         Higher efficiency = better aerobic fitness. Each dot is one activity with 5+ min of Zone 2
         data (60-70% max heart rate).
       </p>

@@ -224,7 +224,7 @@ function PowerSummaryTable({
   recentDays,
 }: PowerSummaryTableProps) {
   if (loading) {
-    return <div className="w-[260px] animate-pulse bg-zinc-800 rounded h-[280px]" />;
+    return <div className="w-[260px] animate-pulse bg-skeleton rounded h-[280px]" />;
   }
 
   function wkg(watts: number | null): string {
@@ -234,18 +234,18 @@ function PowerSummaryTable({
 
   return (
     <div className="min-w-[260px]">
-      <table className="w-full text-xs text-zinc-300 font-mono">
+      <table className="w-full text-xs text-foreground font-mono">
         <thead>
-          <tr className="border-b border-zinc-700 text-zinc-500">
+          <tr className="border-b border-border-strong text-subtle">
             <th className="text-left py-1 pr-3">Time</th>
             <th className="text-right px-2" colSpan={2}>
               <span className="text-violet-400">{recentDays}d</span>
             </th>
             <th className="text-right pl-2" colSpan={2}>
-              <span className="text-zinc-400">Season</span>
+              <span className="text-muted">Season</span>
             </th>
           </tr>
-          <tr className="border-b border-zinc-800 text-zinc-600">
+          <tr className="border-b border-border text-dim">
             <th />
             <th className="text-right px-2 font-normal">w</th>
             <th className="text-right px-2 font-normal">w/kg</th>
@@ -258,8 +258,8 @@ function PowerSummaryTable({
             const recent = recentByDuration.get(dur) ?? null;
             const season = seasonByDuration.get(dur) ?? null;
             return (
-              <tr key={dur} className="border-b border-zinc-800/50">
-                <td className="py-1.5 pr-3 text-zinc-400">{DURATION_LABELS[dur]}</td>
+              <tr key={dur} className="border-b border-border/50">
+                <td className="py-1.5 pr-3 text-muted">{DURATION_LABELS[dur]}</td>
                 <td className="text-right px-2 text-violet-300">{recent ?? "--"}</td>
                 <td className="text-right px-2 text-violet-300">{wkg(recent)}</td>
                 <td className="text-right px-2">{season ?? "--"}</td>
@@ -313,11 +313,11 @@ function DerivedRow({
   const r = recentStr ?? (recent != null ? `${recent}${unit}` : "--");
   const s = seasonStr ?? (season != null ? `${season}${unit}` : "--");
   return (
-    <div className="flex justify-between text-zinc-400">
+    <div className="flex justify-between text-muted">
       <span>{label}</span>
       <span>
         <span className="text-violet-300">{r}</span>
-        <span className="mx-1 text-zinc-700">/</span>
+        <span className="mx-1 text-dim">/</span>
         <span>{s}</span>
       </span>
     </div>
@@ -334,11 +334,11 @@ function PeriodLabel({
   model: { cp: number; wPrime: number; r2: number } | null;
 }) {
   return (
-    <span className="inline-flex items-center gap-1.5 text-zinc-500">
+    <span className="inline-flex items-center gap-1.5 text-subtle">
       <span className="w-3 h-0.5 rounded-full inline-block" style={{ backgroundColor: color }} />
       <span style={{ color }}>{label}</span>
       {model && (
-        <span className="text-zinc-600">
+        <span className="text-dim">
           Estimated Threshold Power {model.cp}w · Anaerobic Reserve (W'){" "}
           {Math.round(model.wPrime / 1000)}kJ
         </span>
@@ -363,11 +363,11 @@ function Section({
   return (
     <section>
       <div className="mb-1 flex items-center gap-2">
-        <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider">{title}</h2>
+        <h2 className="text-sm font-medium text-muted uppercase tracking-wider">{title}</h2>
         <ChartDescriptionTooltip description={description} />
       </div>
-      {subtitle && <p className="text-xs text-zinc-600 mb-4">{subtitle}</p>}
-      <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4" title={description}>
+      {subtitle && <p className="text-xs text-dim mb-4">{subtitle}</p>}
+      <div className="card p-4" title={description}>
         {children}
       </div>
     </section>

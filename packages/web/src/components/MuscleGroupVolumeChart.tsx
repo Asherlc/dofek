@@ -28,7 +28,7 @@ export function MuscleGroupVolumeChart({ data, loading }: MuscleGroupVolumeChart
   if (data.length === 0) {
     return (
       <div className="flex items-center justify-center h-[320px]">
-        <span className="text-zinc-600 text-sm">No muscle group data</span>
+        <span className="text-dim text-sm">No muscle group data</span>
       </div>
     );
   }

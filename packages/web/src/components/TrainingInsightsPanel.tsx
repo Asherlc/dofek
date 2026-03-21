@@ -85,7 +85,7 @@ export function TrainingInsightsPanel({ days }: TrainingInsightsPanelProps) {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[200px]">
-        <span className="text-zinc-600 text-sm">Loading training data...</span>
+        <span className="text-dim text-sm">Loading training data...</span>
       </div>
     );
   }
@@ -93,7 +93,7 @@ export function TrainingInsightsPanel({ days }: TrainingInsightsPanelProps) {
   if (!hasVolume && !hasZones) {
     return (
       <div className="flex items-center justify-center h-[100px]">
-        <span className="text-zinc-600 text-sm">No training data in this period</span>
+        <span className="text-dim text-sm">No training data in this period</span>
       </div>
     );
   }
@@ -196,7 +196,7 @@ function WeeklyVolumeChart({ data }: { data: WeeklyVolumeRow[] }) {
   return (
     <div>
       <div className="mb-2 flex items-center gap-2">
-        <h3 className="text-xs font-medium text-zinc-500">Weekly Training Volume</h3>
+        <h3 className="text-xs font-medium text-subtle">Weekly Training Volume</h3>
         <ChartDescriptionTooltip description="This chart shows how many training hours you completed each week, broken down by activity type." />
       </div>
       <ReactECharts option={option} style={{ height: 220 }} notMerge={true} />
@@ -292,8 +292,8 @@ function HrZoneChart({ weeks, maxHr }: { weeks: HrZoneWeek[]; maxHr: number }) {
   return (
     <div>
       <div className="mb-2 flex items-center gap-2">
-        <h3 className="text-xs font-medium text-zinc-500">
-          HR Zone Distribution <span className="text-zinc-700">(max HR: {maxHr} bpm)</span>
+        <h3 className="text-xs font-medium text-subtle">
+          HR Zone Distribution <span className="text-dim">(max HR: {maxHr} bpm)</span>
         </h3>
         <ChartDescriptionTooltip description="This chart shows the percentage of weekly training time spent in each heart rate zone." />
       </div>
@@ -373,7 +373,7 @@ function IntensityDonut({ weeks }: { weeks: HrZoneWeek[] }) {
   return (
     <div>
       <div className="mb-2 flex items-center gap-2">
-        <h3 className="text-xs font-medium text-zinc-500">
+        <h3 className="text-xs font-medium text-subtle">
           Intensity Distribution{" "}
           <span className={`${statusColor} ml-2`}>
             {status} ({lowPct}/{medPct}/{highPct})
@@ -382,7 +382,7 @@ function IntensityDonut({ weeks }: { weeks: HrZoneWeek[] }) {
         <ChartDescriptionTooltip description="This chart summarizes your full time split between low, medium, and high intensity training." />
       </div>
       <ReactECharts option={option} style={{ height: 200 }} notMerge={true} />
-      <p className="text-xs text-zinc-700 mt-1">
+      <p className="text-xs text-dim mt-1">
         Target: ~80% low (Z1-Z2), minimal medium (Z3), ~20% high (Z4-Z5)
       </p>
     </div>

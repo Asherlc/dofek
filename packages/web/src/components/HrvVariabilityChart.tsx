@@ -15,7 +15,7 @@ export function HrvVariabilityChart({ data, loading }: HrvVariabilityChartProps)
   if (data.length === 0) {
     return (
       <div className="flex items-center justify-center h-[300px]">
-        <span className="text-zinc-600 text-sm">No heart rate variability data</span>
+        <span className="text-dim text-sm">No heart rate variability data</span>
       </div>
     );
   }

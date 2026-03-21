@@ -15,7 +15,7 @@ export function MicronutrientChart({ data, loading }: MicronutrientChartProps) {
   if (data.length === 0) {
     return (
       <div className="flex items-center justify-center h-[300px]">
-        <span className="text-zinc-600 text-sm">No micronutrient data available</span>
+        <span className="text-dim text-sm">No micronutrient data available</span>
       </div>
     );
   }

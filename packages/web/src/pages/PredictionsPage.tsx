@@ -56,16 +56,16 @@ export function PredictionsPage() {
   const isActivityTarget = targets.data?.find((t) => t.id === targetId)?.type === "activity";
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 overflow-x-hidden">
+    <div className="min-h-screen bg-page text-foreground overflow-x-hidden">
       <AppHeader>
         <TimeRangeSelector days={days} onChange={setDays} />
       </AppHeader>
       <main className="mx-auto max-w-7xl px-3 sm:px-6 py-4 sm:py-6 space-y-6">
         <div>
-          <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider">
+          <h2 className="text-sm font-medium text-muted uppercase tracking-wider">
             What Drives Your Health?
           </h2>
-          <p className="text-xs text-zinc-600 mt-0.5">
+          <p className="text-xs text-dim mt-0.5">
             Machine learning models analyze your sleep, exercise, and nutrition data to find what
             actually moves the needle on key health metrics.
           </p>
@@ -78,7 +78,7 @@ export function PredictionsPage() {
               if (sectionTargets.length === 0) return null;
               return (
                 <div key={section.label} className="flex flex-col gap-1.5">
-                  <span className="text-[10px] text-zinc-600 uppercase tracking-wider">
+                  <span className="text-[10px] text-dim uppercase tracking-wider">
                     {section.label}
                   </span>
                   <div className="flex gap-2">
@@ -89,8 +89,8 @@ export function PredictionsPage() {
                         onClick={() => setTargetId(t.id)}
                         className={`px-3 py-1.5 rounded-lg border transition-colors text-left ${
                           targetId === t.id
-                            ? "border-emerald-700 bg-emerald-950/50 text-zinc-100"
-                            : "border-zinc-800 bg-zinc-900 text-zinc-500 hover:text-zinc-300 hover:border-zinc-700"
+                            ? "border-accent bg-accent/10 text-foreground"
+                            : "border-border bg-surface-solid text-subtle hover:text-foreground hover:border-border-strong"
                         }`}
                       >
                         <span className="text-xs font-medium block">
@@ -106,7 +106,7 @@ export function PredictionsPage() {
         )}
 
         {TARGET_DESCRIPTIONS[targetId] && (
-          <p className="text-xs text-zinc-500 -mt-3">{TARGET_DESCRIPTIONS[targetId]}</p>
+          <p className="text-xs text-subtle -mt-3">{TARGET_DESCRIPTIONS[targetId]}</p>
         )}
 
         {prediction.isLoading && <LoadingSkeleton />}
@@ -118,7 +118,7 @@ export function PredictionsPage() {
         )}
 
         {prediction.data === null && !prediction.isLoading && !prediction.isError && (
-          <div className="flex items-center justify-center h-32 text-zinc-600 text-sm">
+          <div className="flex items-center justify-center h-32 text-dim text-sm">
             Not enough data yet.{" "}
             {isActivityTarget
               ? "Need at least 20 sessions with recorded data to find patterns."
@@ -199,10 +199,10 @@ function KeyTakeaway({
   const sampleUnit = isActivityTarget ? "sessions" : "days";
 
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4 flex flex-col justify-between">
+    <div className="card p-4 flex flex-col justify-between">
       <div>
-        <p className="text-xs text-zinc-500 uppercase tracking-wider mb-2">Key Finding</p>
-        <p className="text-sm text-zinc-200 leading-relaxed">
+        <p className="text-xs text-subtle uppercase tracking-wider mb-2">Key Finding</p>
+        <p className="text-sm text-foreground leading-relaxed">
           Your <span className="text-emerald-400 font-medium">{top3[0]}</span> has the biggest
           impact on {timeframe} {targetLabel.toLowerCase()}
           {top3.length > 1 && (
@@ -219,7 +219,7 @@ function KeyTakeaway({
           .
         </p>
       </div>
-      <p className="text-[10px] text-zinc-600 mt-3">
+      <p className="text-[10px] text-dim mt-3">
         Based on {diagnostics.sampleCount} {sampleUnit} of data.{" "}
         {confidenceLevel === "strong"
           ? "The models found clear patterns in your data."
@@ -287,16 +287,16 @@ function TomorrowCard({
           : `The models disagree (${prediction.linear.toFixed(0)} vs ${prediction.tree.toFixed(0)}) — ${isActivityTarget ? "this metric" : "tomorrow"} may be hard to predict.`;
 
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-      <p className="text-xs text-zinc-500 uppercase tracking-wider mb-2">{heading}</p>
+    <div className="card p-4">
+      <p className="text-xs text-subtle uppercase tracking-wider mb-2">{heading}</p>
       <div className="flex items-baseline gap-3">
         <span className="text-3xl font-bold text-emerald-400">{avg.toFixed(0)}</span>
-        <span className="text-sm text-zinc-500">{unit}</span>
+        <span className="text-sm text-subtle">{unit}</span>
         {agreementText && (
           <span
             className={
               agreement === "fallback"
-                ? "text-[10px] text-zinc-300 bg-zinc-800 px-2 py-0.5 rounded-full"
+                ? "text-[10px] text-foreground bg-accent/10 px-2 py-0.5 rounded-full"
                 : "text-[10px] text-emerald-600 bg-emerald-950/50 px-2 py-0.5 rounded-full"
             }
           >
@@ -304,7 +304,7 @@ function TomorrowCard({
           </span>
         )}
       </div>
-      <p className="text-[10px] text-zinc-600 mt-2">{agreementDescription}</p>
+      <p className="text-[10px] text-dim mt-2">{agreementDescription}</p>
     </div>
   );
 }
@@ -442,9 +442,9 @@ function FeatureImportanceChart({
   const description =
     "This chart ranks which inputs had the biggest effect on your prediction. Longer bars mean stronger influence.";
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4" title={description}>
+    <div className="card p-4" title={description}>
       <div className="mb-2 flex items-center gap-2">
-        <p className="text-xs text-zinc-500 uppercase tracking-wider">Feature Influence</p>
+        <p className="text-xs text-subtle uppercase tracking-wider">Feature Influence</p>
         <ChartDescriptionTooltip description={description} />
       </div>
       <ReactECharts option={option} style={{ height }} opts={{ renderer: "svg" }} />
@@ -542,13 +542,13 @@ function TimelineChart({
   };
 
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4" title={description}>
+    <div className="card p-4" title={description}>
       <div className="mb-2 flex items-center gap-2">
-        <p className="text-xs text-zinc-500 uppercase tracking-wider">Prediction Timeline</p>
+        <p className="text-xs text-subtle uppercase tracking-wider">Prediction Timeline</p>
         <ChartDescriptionTooltip description={description} />
       </div>
       <ReactECharts option={option} style={{ height: 300 }} opts={{ renderer: "svg" }} />
-      <p className="text-[10px] text-zinc-600 mt-2">
+      <p className="text-[10px] text-dim mt-2">
         When the lines move together, the model understands what's driving your{" "}
         {targetLabel.toLowerCase()}. Big gaps mean something unusual happened that day.
       </p>
@@ -577,25 +577,25 @@ function ModelConfidence({
   const { text, color, bg } = confidenceLabels[confidence];
 
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+    <div className="card p-4">
       <div className="flex items-center justify-between mb-2">
-        <p className="text-xs text-zinc-500 uppercase tracking-wider">
+        <p className="text-xs text-subtle uppercase tracking-wider">
           How Much Can We Trust This?
         </p>
         <span className={`text-xs font-medium ${color} ${bg} px-2 py-0.5 rounded-full`}>
           {text}
         </span>
       </div>
-      <div className="flex gap-6 text-xs text-zinc-500">
+      <div className="flex gap-6 text-xs text-subtle">
         <span>
-          Based on <span className="text-zinc-300">{diagnostics.sampleCount}</span>{" "}
+          Based on <span className="text-foreground">{diagnostics.sampleCount}</span>{" "}
           {isActivityTarget ? "sessions" : "days"}
         </span>
         <span>
-          Using <span className="text-zinc-300">{diagnostics.featureCount}</span> factors
+          Using <span className="text-foreground">{diagnostics.featureCount}</span> factors
         </span>
       </div>
-      <p className="text-[10px] text-zinc-600 mt-2">
+      <p className="text-[10px] text-dim mt-2">
         {confidence === "strong"
           ? "The model was tested on data it hadn't seen before and still predicted well. These patterns are reliable."
           : confidence === "moderate"
@@ -603,7 +603,7 @@ function ModelConfidence({
             : "Health is complex and many factors aren't captured here (stress, illness, etc). These patterns are suggestive but not definitive."}
       </p>
       {diagnostics.linearFallbackUsed && (
-        <p className="text-[10px] text-zinc-500 mt-2">
+        <p className="text-[10px] text-subtle mt-2">
           The linear model could not be fit for this target because the inputs overlap too much.
           Impact ranking and confidence are based on the tree model.
         </p>
@@ -618,11 +618,11 @@ function LoadingSkeleton() {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
-        <div className="h-28 rounded-lg bg-zinc-800 animate-pulse" />
-        <div className="h-28 rounded-lg bg-zinc-800 animate-pulse" />
+        <div className="h-28 rounded-lg bg-skeleton animate-pulse" />
+        <div className="h-28 rounded-lg bg-skeleton animate-pulse" />
       </div>
-      <div className="h-80 rounded-lg bg-zinc-800 animate-pulse" />
-      <div className="h-64 rounded-lg bg-zinc-800 animate-pulse" />
+      <div className="h-80 rounded-lg bg-skeleton animate-pulse" />
+      <div className="h-64 rounded-lg bg-skeleton animate-pulse" />
     </div>
   );
 }

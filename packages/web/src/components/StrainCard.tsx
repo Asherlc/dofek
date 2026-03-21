@@ -57,7 +57,7 @@ function StrainRing({ strain, size = 120 }: { strain: number; size?: number }) {
         <span className="text-2xl font-bold tabular-nums" style={{ color }}>
           {strain.toFixed(1)}
         </span>
-        <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500">
+        <span className="text-[10px] font-semibold uppercase tracking-widest text-subtle">
           Strain
         </span>
       </div>
@@ -72,8 +72,8 @@ export function StrainCard({ data, loading }: StrainCardProps) {
 
   if (!data || data.length === 0) {
     return (
-      <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-6 flex items-center justify-center h-[200px]">
-        <span className="text-zinc-600 text-sm">No strain data yet</span>
+      <div className="card p-6 flex items-center justify-center h-[200px]">
+        <span className="text-dim text-sm">No strain data yet</span>
       </div>
     );
   }
@@ -93,7 +93,7 @@ export function StrainCard({ data, loading }: StrainCardProps) {
         : `Last training: ${new Date(displayed.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
 
   return (
-    <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-6">
+    <div className="card p-6">
       <div className="flex items-center gap-6">
         <StrainRing strain={strain} size={120} />
 
@@ -105,21 +105,21 @@ export function StrainCard({ data, loading }: StrainCardProps) {
             >
               {label}
             </span>
-            {dateLabel && <p className="text-xs text-zinc-500 mt-1">{dateLabel}</p>}
+            {dateLabel && <p className="text-xs text-subtle mt-1">{dateLabel}</p>}
           </div>
 
           <div className="grid grid-cols-3 gap-2">
             <div>
-              <p className="text-lg font-bold text-zinc-100 tabular-nums">
+              <p className="text-lg font-bold text-foreground tabular-nums">
                 {today?.acuteLoad.toFixed(0) ?? "--"}
               </p>
-              <p className="text-[10px] text-zinc-500">Acute (7d)</p>
+              <p className="text-[10px] text-subtle">Acute (7d)</p>
             </div>
             <div>
-              <p className="text-lg font-bold text-zinc-100 tabular-nums">
+              <p className="text-lg font-bold text-foreground tabular-nums">
                 {today?.chronicLoad.toFixed(0) ?? "--"}
               </p>
-              <p className="text-[10px] text-zinc-500">Chronic (28d)</p>
+              <p className="text-[10px] text-subtle">Chronic (28d)</p>
             </div>
             <div>
               <p
@@ -128,7 +128,7 @@ export function StrainCard({ data, loading }: StrainCardProps) {
               >
                 {workloadRatio != null ? workloadRatio.toFixed(2) : "--"}
               </p>
-              <p className="text-[10px] text-zinc-500">Workload Ratio</p>
+              <p className="text-[10px] text-subtle">Workload Ratio</p>
             </div>
           </div>
         </div>

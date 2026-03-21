@@ -90,7 +90,7 @@ export function RampRateChart({
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[300px]">
-        <span className="text-zinc-600 text-sm">Loading ramp rate data...</span>
+        <span className="text-dim text-sm">Loading ramp rate data...</span>
       </div>
     );
   }
@@ -98,7 +98,7 @@ export function RampRateChart({
   if (data.length === 0) {
     return (
       <div className="flex items-center justify-center h-[300px]">
-        <span className="text-zinc-600 text-sm">No ramp rate data available</span>
+        <span className="text-dim text-sm">No ramp rate data available</span>
       </div>
     );
   }
@@ -120,7 +120,7 @@ export function RampRateChart({
         >
           Current: {currentRampRate.toFixed(2)}
         </span>
-        <span className="text-xs text-zinc-500">{recommendation}</span>
+        <span className="text-xs text-subtle">{recommendation}</span>
       </div>
       <ReactECharts option={option} style={{ height: 300 }} notMerge={true} />
     </div>

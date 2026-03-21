@@ -41,7 +41,7 @@ export function ActivityDetailPage() {
 
   if (detail.isLoading) {
     return (
-      <div className="min-h-screen bg-zinc-950 text-zinc-100">
+      <div className="min-h-screen bg-page text-foreground">
         <AppHeader />
         <main className="mx-auto max-w-7xl px-3 sm:px-6 py-4 sm:py-6">
           <ChartLoadingSkeleton height={400} />
@@ -52,11 +52,11 @@ export function ActivityDetailPage() {
 
   if (detail.error || !detail.data) {
     return (
-      <div className="min-h-screen bg-zinc-950 text-zinc-100">
+      <div className="min-h-screen bg-page text-foreground">
         <AppHeader />
         <main className="mx-auto max-w-7xl px-3 sm:px-6 py-8 text-center">
-          <p className="text-zinc-400 mb-4">Activity not found</p>
-          <Link to="/dashboard" className="text-emerald-500 hover:text-emerald-400 text-sm">
+          <p className="text-muted mb-4">Activity not found</p>
+          <Link to="/dashboard" className="text-accent hover:text-accent-secondary text-sm">
             Back to dashboard
           </Link>
         </main>
@@ -75,15 +75,15 @@ export function ActivityDetailPage() {
   const hasAltitude = points.some((p) => p.altitude != null);
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 overflow-x-hidden">
+    <div className="min-h-screen bg-page text-foreground overflow-x-hidden">
       <AppHeader />
       <main className="mx-auto max-w-7xl px-3 sm:px-6 py-4 sm:py-6 space-y-6">
-        <div className="flex items-center gap-2 text-xs text-zinc-500">
-          <Link to="/dashboard" className="hover:text-zinc-300">
+        <div className="flex items-center gap-2 text-xs text-subtle">
+          <Link to="/dashboard" className="hover:text-foreground">
             Dashboard
           </Link>
           <span>/</span>
-          <span className="text-zinc-300">{activity.name ?? activity.activityType}</span>
+          <span className="text-foreground">{activity.name ?? activity.activityType}</span>
         </div>
 
         <ActivityHeader activity={activity} unitSystem={unitSystem} />
@@ -192,12 +192,12 @@ function ActivityHeader({
   return (
     <div>
       <div className="flex items-baseline gap-3 mb-1">
-        <h1 className="text-xl font-semibold text-zinc-100">
+        <h1 className="text-xl font-semibold text-foreground">
           {activity.name ?? activity.activityType}
         </h1>
-        <span className="text-xs text-zinc-500 capitalize">{activity.activityType}</span>
+        <span className="text-xs text-subtle capitalize">{activity.activityType}</span>
       </div>
-      <p className="text-sm text-zinc-500 mb-4">
+      <p className="text-sm text-subtle mb-4">
         {new Date(activity.startedAt).toLocaleDateString(undefined, {
           weekday: "long",
           year: "numeric",
@@ -214,8 +214,8 @@ function ActivityHeader({
       {stats.length > 0 && (
         <div className="flex flex-wrap gap-4">
           {stats.map((s) => (
-            <div key={s.label} className="bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3">
-              <div className="text-xs text-zinc-500 mb-0.5">{s.label}</div>
+            <div key={s.label} className="card px-4 py-3">
+              <div className="text-xs text-subtle mb-0.5">{s.label}</div>
               <div className="text-lg font-medium tabular-nums">{s.value}</div>
             </div>
           ))}
@@ -547,7 +547,7 @@ function HrZonesChart({ zones, loading }: { zones: ActivityHrZone[]; loading: bo
   if (totalSeconds === 0) {
     return (
       <div className="flex items-center justify-center h-[200px]">
-        <span className="text-zinc-600 text-sm">No heart rate zone data</span>
+        <span className="text-dim text-sm">No heart rate zone data</span>
       </div>
     );
   }
@@ -630,10 +630,10 @@ function Section({
   return (
     <section>
       <div className="mb-2 flex items-center gap-2">
-        <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider">{title}</h2>
+        <h2 className="text-sm font-medium text-muted uppercase tracking-wider">{title}</h2>
         <ChartDescriptionTooltip description={description} />
       </div>
-      <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4" title={description}>
+      <div className="card p-4" title={description}>
         {children}
       </div>
     </section>

@@ -169,7 +169,7 @@ export function SleepAnalyticsChart({ nightly, sleepDebt, loading }: SleepAnalyt
   if (nightly.length === 0) {
     return (
       <div className="flex items-center justify-center h-[350px]">
-        <span className="text-zinc-600 text-sm">No sleep data</span>
+        <span className="text-dim text-sm">No sleep data</span>
       </div>
     );
   }

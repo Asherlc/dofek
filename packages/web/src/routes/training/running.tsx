@@ -83,7 +83,7 @@ function PaceCurveChart({
   if (data.length === 0) {
     return (
       <div className="flex items-center justify-center h-[280px]">
-        <span className="text-zinc-600 text-sm">No running pace data</span>
+        <span className="text-dim text-sm">No running pace data</span>
       </div>
     );
   }
@@ -183,7 +183,7 @@ function PaceTrendChart({
   if (data.length === 0) {
     return (
       <div className="flex items-center justify-center h-[250px]">
-        <span className="text-zinc-600 text-sm">No running data</span>
+        <span className="text-dim text-sm">No running data</span>
       </div>
     );
   }
@@ -258,7 +258,7 @@ function CadenceTrendChart({ data, loading }: { data: DynamicsRow[]; loading: bo
   if (data.length === 0) {
     return (
       <div className="flex items-center justify-center h-[250px]">
-        <span className="text-zinc-600 text-sm">No cadence data</span>
+        <span className="text-dim text-sm">No cadence data</span>
       </div>
     );
   }
@@ -322,7 +322,7 @@ function RunningDynamicsTable({
   if (data.length === 0) {
     return (
       <div className="flex items-center justify-center h-[100px]">
-        <span className="text-zinc-600 text-sm">No running dynamics data</span>
+        <span className="text-dim text-sm">No running dynamics data</span>
       </div>
     );
   }
@@ -331,7 +331,7 @@ function RunningDynamicsTable({
     <div className="overflow-x-auto">
       <table className="w-full text-xs">
         <thead>
-          <tr className="border-b border-zinc-700 text-zinc-500 text-left">
+          <tr className="border-b border-border-strong text-subtle text-left">
             <th className="py-2 pr-3">Date</th>
             <th className="py-2 pr-3">Activity</th>
             <th className="py-2 pr-3 text-right">Pace</th>
@@ -349,9 +349,9 @@ function RunningDynamicsTable({
             .map((d) => (
               <tr
                 key={`${d.date}-${d.activityName}`}
-                className="border-b border-zinc-800/50 text-zinc-300"
+                className="border-b border-border/50 text-foreground"
               >
-                <td className="py-1.5 pr-3 text-zinc-500">{d.date}</td>
+                <td className="py-1.5 pr-3 text-subtle">{d.date}</td>
                 <td className="py-1.5 pr-3 truncate max-w-[150px]">{d.activityName}</td>
                 <td className="py-1.5 pr-3 text-right font-mono">
                   {formatPace(convertPace(d.paceSecondsPerKm, unitSystem))} {paceLabel(unitSystem)}
@@ -395,11 +395,11 @@ function Section({
   return (
     <section>
       <div className="mb-1 flex items-center gap-2">
-        <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider">{title}</h2>
+        <h2 className="text-sm font-medium text-muted uppercase tracking-wider">{title}</h2>
         <ChartDescriptionTooltip description={description} />
       </div>
-      {subtitle && <p className="text-xs text-zinc-600 mb-4">{subtitle}</p>}
-      <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4" title={description}>
+      {subtitle && <p className="text-xs text-dim mb-4">{subtitle}</p>}
+      <div className="card p-4" title={description}>
         {children}
       </div>
     </section>

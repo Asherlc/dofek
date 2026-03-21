@@ -10,7 +10,7 @@ export function TrainingMonotonyChart({ data, loading }: TrainingMonotonyChartPr
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[300px]">
-        <span className="text-zinc-600 text-sm">Loading monotony data...</span>
+        <span className="text-dim text-sm">Loading monotony data...</span>
       </div>
     );
   }
@@ -18,7 +18,7 @@ export function TrainingMonotonyChart({ data, loading }: TrainingMonotonyChartPr
   if (data.length === 0) {
     return (
       <div className="flex items-center justify-center h-[300px]">
-        <span className="text-zinc-600 text-sm">No training monotony data available</span>
+        <span className="text-dim text-sm">No training monotony data available</span>
       </div>
     );
   }
@@ -115,7 +115,7 @@ export function TrainingMonotonyChart({ data, loading }: TrainingMonotonyChartPr
 
   return (
     <div>
-      <p className="text-xs text-zinc-600 mb-2">
+      <p className="text-xs text-dim mb-2">
         Monotony &gt; 2.0 (red) with high strain indicates elevated overtraining risk.
       </p>
       <ReactECharts option={option} style={{ height: 300 }} notMerge={true} />

@@ -25,7 +25,7 @@ export function ActivityComparisonChart({ data, loading }: ActivityComparisonCha
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[280px]">
-        <span className="text-zinc-600 text-sm">Loading activity comparison data...</span>
+        <span className="text-dim text-sm">Loading activity comparison data...</span>
       </div>
     );
   }
@@ -33,7 +33,7 @@ export function ActivityComparisonChart({ data, loading }: ActivityComparisonCha
   if (data.length === 0) {
     return (
       <div className="flex items-center justify-center h-[100px]">
-        <span className="text-zinc-600 text-sm">
+        <span className="text-dim text-sm">
           No repeated routes found (need 2+ instances with the same name)
         </span>
       </div>
@@ -103,11 +103,11 @@ export function ActivityComparisonChart({ data, loading }: ActivityComparisonCha
 
   return (
     <div>
-      <h3 className="text-xs font-medium text-zinc-500 mb-2">
+      <h3 className="text-xs font-medium text-subtle mb-2">
         Repeated Route Comparison (lower = faster)
       </h3>
       <ReactECharts option={option} style={{ height: 280 }} notMerge={true} />
-      <p className="text-xs text-zinc-700 mt-1">
+      <p className="text-xs text-dim mt-1">
         Each line tracks pace over time for a repeated route. Y-axis is inverted so lower (faster)
         pace appears higher.
       </p>

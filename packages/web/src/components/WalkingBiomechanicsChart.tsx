@@ -61,7 +61,7 @@ export function WalkingBiomechanicsChart({ data, loading }: WalkingBiomechanicsC
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[400px]">
-        <span className="text-zinc-600 text-sm">Loading biomechanics data...</span>
+        <span className="text-dim text-sm">Loading biomechanics data...</span>
       </div>
     );
   }
@@ -69,7 +69,7 @@ export function WalkingBiomechanicsChart({ data, loading }: WalkingBiomechanicsC
   if (data.length === 0) {
     return (
       <div className="flex items-center justify-center h-[100px]">
-        <span className="text-zinc-600 text-sm">No walking biomechanics data available</span>
+        <span className="text-dim text-sm">No walking biomechanics data available</span>
       </div>
     );
   }
@@ -106,10 +106,10 @@ export function WalkingBiomechanicsChart({ data, loading }: WalkingBiomechanicsC
 
   return (
     <div>
-      <h3 className="text-xs font-medium text-zinc-500 mb-2">Walking Biomechanics</h3>
+      <h3 className="text-xs font-medium text-subtle mb-2">Walking Biomechanics</h3>
       <div className="grid grid-cols-2 gap-4">
         {charts.map((chart) => (
-          <div key={chart.name} className="bg-zinc-900 rounded-lg p-2">
+          <div key={chart.name} className="bg-surface-solid rounded-lg p-2">
             <ReactECharts
               option={buildLineOption(
                 data,

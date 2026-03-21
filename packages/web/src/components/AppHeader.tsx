@@ -20,13 +20,13 @@ export function AppHeader({ children }: { children?: React.ReactNode }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
-    <header className="border-b border-zinc-800">
+    <header className="border-b border-border">
       <div className="px-3 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-2 min-w-0">
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <button
             type="button"
             onClick={() => setMenuOpen((v) => !v)}
-            className="lg:hidden p-1 text-zinc-400 hover:text-zinc-200 transition-colors"
+            className="lg:hidden p-1 text-muted hover:text-foreground transition-colors"
             aria-label="Toggle navigation menu"
           >
             <svg
@@ -51,10 +51,10 @@ export function AppHeader({ children }: { children?: React.ReactNode }) {
               <Link
                 key={to}
                 to={to}
-                className="px-3 py-2 text-xs rounded-md transition-colors text-zinc-500 hover:text-zinc-300 whitespace-nowrap"
+                className="px-3 py-2 text-xs rounded-md transition-colors text-subtle hover:text-foreground whitespace-nowrap"
                 activeProps={{
                   className:
-                    "px-3 py-2 text-xs rounded-md transition-colors bg-zinc-700 text-zinc-100 whitespace-nowrap",
+                    "px-3 py-2 text-xs rounded-md transition-colors bg-accent/15 text-foreground whitespace-nowrap",
                 }}
                 activeOptions={{ exact: to === "/dashboard" }}
               >
@@ -67,11 +67,11 @@ export function AppHeader({ children }: { children?: React.ReactNode }) {
           {children}
           {user && (
             <div className="flex items-center gap-2">
-              <span className="text-xs text-zinc-400 hidden sm:inline">{user.name}</span>
+              <span className="text-xs text-muted hidden sm:inline">{user.name}</span>
               <button
                 type="button"
                 onClick={logout}
-                className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+                className="text-xs text-subtle hover:text-foreground transition-colors cursor-pointer"
               >
                 Sign out
               </button>
@@ -86,10 +86,10 @@ export function AppHeader({ children }: { children?: React.ReactNode }) {
               key={to}
               to={to}
               onClick={() => setMenuOpen(false)}
-              className="px-3 py-2 text-xs rounded-md transition-colors text-zinc-500 hover:text-zinc-300 whitespace-nowrap"
+              className="px-3 py-2 text-xs rounded-md transition-colors text-subtle hover:text-foreground whitespace-nowrap"
               activeProps={{
                 className:
-                  "px-3 py-2 text-xs rounded-md transition-colors bg-zinc-700 text-zinc-100 whitespace-nowrap",
+                  "px-3 py-2 text-xs rounded-md transition-colors bg-accent/15 text-foreground whitespace-nowrap",
               }}
               activeOptions={{ exact: to === "/dashboard" }}
             >

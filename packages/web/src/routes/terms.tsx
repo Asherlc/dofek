@@ -2,14 +2,14 @@ import { createFileRoute } from "@tanstack/react-router";
 
 export function TermsPage() {
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-300">
+    <div className="min-h-screen bg-page text-foreground">
       <div className="max-w-3xl mx-auto px-6 py-16">
-        <h1 className="text-3xl font-bold text-zinc-100 mb-2">Terms of Service</h1>
-        <p className="text-zinc-500 text-sm mb-10">Last updated: March 17, 2026</p>
+        <h1 className="text-3xl font-bold text-foreground mb-2">Terms of Service</h1>
+        <p className="text-subtle text-sm mb-10">Last updated: March 17, 2026</p>
 
         <div className="space-y-8 text-sm leading-relaxed">
           <section>
-            <h2 className="text-lg font-semibold text-zinc-100 mb-3">1. Acceptance of Terms</h2>
+            <h2 className="text-lg font-semibold text-foreground mb-3">1. Acceptance of Terms</h2>
             <p>
               By accessing or using Dofek ("the platform", "we", "our"), you agree to be bound by
               these Terms of Service. If you do not agree to these terms, do not use the platform.
@@ -17,7 +17,7 @@ export function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-lg font-semibold text-zinc-100 mb-3">2. Description of Service</h2>
+            <h2 className="text-lg font-semibold text-foreground mb-3">2. Description of Service</h2>
             <p>
               Dofek is a personal fitness and health data aggregation platform. It connects to
               third-party fitness and health services to collect, store, and display your data in a
@@ -27,7 +27,7 @@ export function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-lg font-semibold text-zinc-100 mb-3">3. User Accounts</h2>
+            <h2 className="text-lg font-semibold text-foreground mb-3">3. User Accounts</h2>
             <ul className="list-disc pl-6 space-y-1.5">
               <li>You must authenticate to use the platform</li>
               <li>
@@ -42,7 +42,7 @@ export function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-lg font-semibold text-zinc-100 mb-3">
+            <h2 className="text-lg font-semibold text-foreground mb-3">
               4. Third-Party Integrations
             </h2>
             <p>
@@ -66,7 +66,7 @@ export function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-lg font-semibold text-zinc-100 mb-3">5. Acceptable Use</h2>
+            <h2 className="text-lg font-semibold text-foreground mb-3">5. Acceptable Use</h2>
             <p>You agree not to:</p>
             <ul className="list-disc pl-6 space-y-1.5 mt-2">
               <li>Use the platform for any unlawful purpose</li>
@@ -85,10 +85,10 @@ export function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-lg font-semibold text-zinc-100 mb-3">6. Data and Privacy</h2>
+            <h2 className="text-lg font-semibold text-foreground mb-3">6. Data and Privacy</h2>
             <p>
               Your use of the platform is also governed by our{" "}
-              <a href="/privacy" className="text-emerald-400 hover:text-emerald-300 underline">
+              <a href="/privacy" className="text-accent hover:text-accent-secondary underline">
                 Privacy Policy
               </a>
               , which describes how we collect, use, and protect your data. By using the platform,
@@ -97,7 +97,7 @@ export function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-lg font-semibold text-zinc-100 mb-3">7. Data Accuracy</h2>
+            <h2 className="text-lg font-semibold text-foreground mb-3">7. Data Accuracy</h2>
             <p>
               Dofek aggregates and displays data from third-party sources. We do not guarantee the
               accuracy, completeness, or reliability of any data synced from external providers. The
@@ -107,7 +107,7 @@ export function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-lg font-semibold text-zinc-100 mb-3">
+            <h2 className="text-lg font-semibold text-foreground mb-3">
               8. Disclaimer of Warranties
             </h2>
             <p>
@@ -120,7 +120,7 @@ export function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-lg font-semibold text-zinc-100 mb-3">9. Limitation of Liability</h2>
+            <h2 className="text-lg font-semibold text-foreground mb-3">9. Limitation of Liability</h2>
             <p>
               To the fullest extent permitted by law, Dofek and its operators shall not be liable
               for any indirect, incidental, special, consequential, or punitive damages, or any loss
@@ -129,7 +129,7 @@ export function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-lg font-semibold text-zinc-100 mb-3">10. Termination</h2>
+            <h2 className="text-lg font-semibold text-foreground mb-3">10. Termination</h2>
             <p>
               We reserve the right to suspend or terminate your access to the platform at any time,
               with or without cause. Upon termination, your right to use the platform ceases
@@ -138,7 +138,7 @@ export function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-lg font-semibold text-zinc-100 mb-3">11. Changes to Terms</h2>
+            <h2 className="text-lg font-semibold text-foreground mb-3">11. Changes to Terms</h2>
             <p>
               We may update these terms from time to time. Changes will be posted on this page with
               an updated revision date. Continued use of the platform after changes constitutes
@@ -147,13 +147,13 @@ export function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-lg font-semibold text-zinc-100 mb-3">12. Contact</h2>
+            <h2 className="text-lg font-semibold text-foreground mb-3">12. Contact</h2>
             <p>For questions about these terms, contact the administrator of this instance.</p>
           </section>
         </div>
 
-        <div className="mt-16 pt-8 border-t border-zinc-800">
-          <a href="/" className="text-sm text-zinc-500 hover:text-zinc-400 transition-colors">
+        <div className="mt-16 pt-8 border-t border-border">
+          <a href="/" className="text-sm text-subtle hover:text-muted transition-colors">
             &larr; Back to Dofek
           </a>
         </div>

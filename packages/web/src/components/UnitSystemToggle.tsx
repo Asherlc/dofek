@@ -18,12 +18,12 @@ export function UnitSystemToggle() {
           onClick={() => setUnitSystem(option.value)}
           className={`flex-1 rounded-lg border px-4 py-3 text-left transition-colors ${
             unitSystem === option.value
-              ? "border-cyan-600 bg-cyan-950/40 text-zinc-100"
-              : "border-zinc-700 bg-zinc-800/50 text-zinc-400 hover:border-zinc-600"
+              ? "border-accent bg-accent/10 text-foreground"
+              : "border-border-strong bg-accent/10 text-muted hover:border-border-strong"
           }`}
         >
           <div className="text-sm font-medium">{option.label}</div>
-          <div className="text-xs text-zinc-500 mt-0.5">{option.description}</div>
+          <div className="text-xs text-subtle mt-0.5">{option.description}</div>
         </button>
       ))}
     </div>

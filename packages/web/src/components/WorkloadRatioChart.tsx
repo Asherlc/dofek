@@ -15,7 +15,7 @@ export function WorkloadRatioChart({ data, loading }: WorkloadRatioChartProps) {
   if (data.length === 0) {
     return (
       <div className="flex items-center justify-center h-[400px]">
-        <span className="text-zinc-600 text-sm">No workload data</span>
+        <span className="text-dim text-sm">No workload data</span>
       </div>
     );
   }

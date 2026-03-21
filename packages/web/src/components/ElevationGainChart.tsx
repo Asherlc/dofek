@@ -13,7 +13,7 @@ export function ElevationGainChart({ data, loading }: ElevationGainChartProps) {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[280px]">
-        <span className="text-zinc-600 text-sm">Loading elevation data...</span>
+        <span className="text-dim text-sm">Loading elevation data...</span>
       </div>
     );
   }
@@ -21,7 +21,7 @@ export function ElevationGainChart({ data, loading }: ElevationGainChartProps) {
   if (data.length === 0) {
     return (
       <div className="flex items-center justify-center h-[100px]">
-        <span className="text-zinc-600 text-sm">No elevation data available</span>
+        <span className="text-dim text-sm">No elevation data available</span>
       </div>
     );
   }
@@ -83,7 +83,7 @@ export function ElevationGainChart({ data, loading }: ElevationGainChartProps) {
 
   return (
     <div>
-      <h3 className="text-xs font-medium text-zinc-500 mb-2">
+      <h3 className="text-xs font-medium text-subtle mb-2">
         Weekly Elevation Gain (Hiking & Walking)
       </h3>
       <ReactECharts option={option} style={{ height: 280 }} notMerge={true} />

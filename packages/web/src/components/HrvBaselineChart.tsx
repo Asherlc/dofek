@@ -23,7 +23,7 @@ export function HrvBaselineChart({ data, loading }: HrvBaselineChartProps) {
   if (data.length === 0) {
     return (
       <div className="flex items-center justify-center" style={{ height: 280 }}>
-        <span className="text-zinc-600 text-sm">No heart rate variability data</span>
+        <span className="text-dim text-sm">No heart rate variability data</span>
       </div>
     );
   }

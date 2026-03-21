@@ -28,8 +28,8 @@ export function NextWorkoutCard({ data, loading }: NextWorkoutCardProps) {
 
   if (!data) {
     return (
-      <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-6 flex items-center justify-center h-[260px]">
-        <span className="text-zinc-600 text-sm">Not enough data for a workout recommendation</span>
+      <div className="card p-6 flex items-center justify-center h-[260px]">
+        <span className="text-dim text-sm">Not enough data for a workout recommendation</span>
       </div>
     );
   }
@@ -39,11 +39,11 @@ export function NextWorkoutCard({ data, loading }: NextWorkoutCardProps) {
 
   return (
     <>
-      <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-6">
+      <div className="card p-6">
         <div className="flex items-start justify-between gap-3 mb-4">
           <div>
-            <h3 className="text-zinc-400 text-sm font-medium mb-1">Today&apos;s Recommendation</h3>
-            <p className="text-2xl font-semibold text-zinc-100">{data.title}</p>
+            <h3 className="text-muted text-sm font-medium mb-1">Today&apos;s Recommendation</h3>
+            <p className="text-2xl font-semibold text-foreground">{data.title}</p>
           </div>
           <span
             className="px-2.5 py-1 rounded-full text-xs font-medium"
@@ -53,7 +53,7 @@ export function NextWorkoutCard({ data, loading }: NextWorkoutCardProps) {
           </span>
         </div>
 
-        <p className="text-sm text-zinc-300 leading-relaxed">{data.shortBlurb}</p>
+        <p className="text-sm text-foreground leading-relaxed">{data.shortBlurb}</p>
 
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <span
@@ -66,12 +66,12 @@ export function NextWorkoutCard({ data, loading }: NextWorkoutCardProps) {
               : "Unknown"}
           </span>
           {data.cardio && (
-            <span className="px-2 py-1 rounded text-xs bg-zinc-800 text-zinc-300">
+            <span className="px-2 py-1 rounded text-xs bg-accent/10 text-foreground">
               Cardio: {data.cardio.focus.toUpperCase()} for {data.cardio.durationMinutes} min
             </span>
           )}
           {data.strength && data.strength.focusMuscles.length > 0 && (
-            <span className="px-2 py-1 rounded text-xs bg-zinc-800 text-zinc-300">
+            <span className="px-2 py-1 rounded text-xs bg-accent/10 text-foreground">
               Focus: {data.strength.focusMuscles.join(", ")}
             </span>
           )}
@@ -81,7 +81,7 @@ export function NextWorkoutCard({ data, loading }: NextWorkoutCardProps) {
           <button
             type="button"
             onClick={() => setOpen(true)}
-            className="inline-flex items-center rounded-lg bg-zinc-800 hover:bg-zinc-700 px-3 py-1.5 text-xs text-zinc-200 transition-colors"
+            className="inline-flex items-center rounded-lg bg-accent/10 hover:bg-surface-hover px-3 py-1.5 text-xs text-foreground transition-colors"
           >
             View Detailed Plan
           </button>
@@ -118,11 +118,11 @@ function NextWorkoutModal({
         aria-label="Close recommendation details"
       />
 
-      <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl border border-zinc-800 bg-zinc-900 shadow-2xl">
-        <div className="flex items-start justify-between gap-4 border-b border-zinc-800 px-5 py-4">
+      <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto card shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
           <div>
-            <h2 className="text-lg font-semibold text-zinc-100">{data.title}</h2>
-            <p className="text-xs text-zinc-500 mt-1">
+            <h2 className="text-lg font-semibold text-foreground">{data.title}</h2>
+            <p className="text-xs text-subtle mt-1">
               Generated{" "}
               {new Date(data.generatedAt).toLocaleString("en-US", {
                 month: "short",
@@ -135,7 +135,7 @@ function NextWorkoutModal({
           <button
             type="button"
             onClick={onClose}
-            className="text-zinc-500 hover:text-zinc-300 transition-colors"
+            className="text-subtle hover:text-foreground transition-colors"
             aria-label="Close modal"
           >
             <svg
@@ -152,10 +152,10 @@ function NextWorkoutModal({
 
         <div className="px-5 py-4 space-y-5">
           <section>
-            <h3 className="text-xs font-medium text-zinc-500 uppercase mb-2">Plan</h3>
+            <h3 className="text-xs font-medium text-subtle uppercase mb-2">Plan</h3>
             <ul className="space-y-2">
               {data.details.map((item) => (
-                <li key={item} className="text-sm text-zinc-200">
+                <li key={item} className="text-sm text-foreground">
                   • {item}
                 </li>
               ))}
@@ -163,10 +163,10 @@ function NextWorkoutModal({
           </section>
 
           <section>
-            <h3 className="text-xs font-medium text-zinc-500 uppercase mb-2">Why This</h3>
+            <h3 className="text-xs font-medium text-subtle uppercase mb-2">Why This</h3>
             <ul className="space-y-2">
               {data.rationale.map((item) => (
-                <li key={item} className="text-sm text-zinc-300">
+                <li key={item} className="text-sm text-foreground">
                   • {item}
                 </li>
               ))}
@@ -174,14 +174,14 @@ function NextWorkoutModal({
           </section>
 
           {data.strength && (
-            <section className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-3">
-              <h3 className="text-xs font-medium text-zinc-500 uppercase mb-2">Strength Detail</h3>
-              <p className="text-sm text-zinc-200">{data.strength.split}</p>
-              <p className="text-xs text-zinc-400 mt-1">
+            <section className="rounded-lg border border-border bg-surface-solid/60 p-3">
+              <h3 className="text-xs font-medium text-subtle uppercase mb-2">Strength Detail</h3>
+              <p className="text-sm text-foreground">{data.strength.split}</p>
+              <p className="text-xs text-muted mt-1">
                 Target volume: {data.strength.targetSets}
               </p>
               {data.strength.focusMuscles.length > 0 && (
-                <p className="text-xs text-zinc-400 mt-1">
+                <p className="text-xs text-muted mt-1">
                   Priority muscles: {data.strength.focusMuscles.join(", ")}
                 </p>
               )}
@@ -189,10 +189,10 @@ function NextWorkoutModal({
           )}
 
           {data.cardio && (
-            <section className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-3">
-              <h3 className="text-xs font-medium text-zinc-500 uppercase mb-2">Cardio Detail</h3>
-              <p className="text-sm text-zinc-200">{data.cardio.structure}</p>
-              <p className="text-xs text-zinc-400 mt-1">
+            <section className="rounded-lg border border-border bg-surface-solid/60 p-3">
+              <h3 className="text-xs font-medium text-subtle uppercase mb-2">Cardio Detail</h3>
+              <p className="text-sm text-foreground">{data.cardio.structure}</p>
+              <p className="text-xs text-muted mt-1">
                 Target zones: {data.cardio.targetZones.join(", ")}
               </p>
             </section>

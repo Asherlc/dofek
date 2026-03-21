@@ -13,7 +13,7 @@ export function VerticalAscentChart({ data, loading }: VerticalAscentChartProps)
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[300px]">
-        <span className="text-zinc-600 text-sm">Loading vertical ascent data...</span>
+        <span className="text-dim text-sm">Loading vertical ascent data...</span>
       </div>
     );
   }
@@ -21,7 +21,7 @@ export function VerticalAscentChart({ data, loading }: VerticalAscentChartProps)
   if (data.length === 0) {
     return (
       <div className="flex items-center justify-center h-[300px]">
-        <span className="text-zinc-600 text-sm">No activities with altitude data available</span>
+        <span className="text-dim text-sm">No activities with altitude data available</span>
       </div>
     );
   }
@@ -116,7 +116,7 @@ export function VerticalAscentChart({ data, loading }: VerticalAscentChartProps)
   return (
     <div>
       <ReactECharts option={option} style={{ height: 300 }} notMerge={true} />
-      <p className="text-xs text-zinc-600 mt-1">
+      <p className="text-xs text-dim mt-1">
         Bubble size indicates elevation gain. Higher VAM = stronger climbing performance.
       </p>
     </div>

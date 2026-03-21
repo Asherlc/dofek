@@ -108,7 +108,7 @@ export function InsightsPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 overflow-x-hidden">
+    <div className="min-h-screen bg-page text-foreground overflow-x-hidden">
       <AppHeader>
         <TimeRangeSelector days={days} onChange={setDays} />
       </AppHeader>
@@ -116,10 +116,10 @@ export function InsightsPage() {
         {/* Header + filters */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider">
+            <h2 className="text-sm font-medium text-muted uppercase tracking-wider">
               Correlations & Outcomes
             </h2>
-            <p className="text-xs text-zinc-600 mt-0.5">
+            <p className="text-xs text-dim mt-0.5">
               Statistical associations in your health data. Correlation does not imply causation.
             </p>
           </div>
@@ -131,8 +131,8 @@ export function InsightsPage() {
                 onClick={() => setFilter(f.value)}
                 className={`px-2.5 py-1.5 text-xs rounded-md transition-colors ${
                   filter === f.value
-                    ? "bg-zinc-700 text-zinc-100"
-                    : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800"
+                    ? "bg-accent/15 text-foreground"
+                    : "text-subtle hover:text-foreground hover:bg-accent/10"
                 }`}
               >
                 {f.label}
@@ -159,7 +159,7 @@ export function InsightsPage() {
 
         {/* Empty state */}
         {!insightsData.isLoading && filtered.length === 0 && (
-          <div className="flex items-center justify-center h-32 text-zinc-600 text-sm">
+          <div className="flex items-center justify-center h-32 text-dim text-sm">
             {allInsights.length === 0
               ? "Not enough data to find correlations yet. Keep logging!"
               : "No insights match this filter."}
@@ -177,13 +177,13 @@ export function InsightsPage() {
                   onClick={() => toggle(group.key)}
                   className="flex items-center gap-2 mb-3 group cursor-pointer"
                 >
-                  <span className="text-xs text-zinc-500 group-hover:text-zinc-300 transition-colors">
+                  <span className="text-xs text-subtle group-hover:text-foreground transition-colors">
                     {isCollapsed ? "+" : "-"}
                   </span>
-                  <h3 className="text-xs font-medium text-zinc-400 uppercase tracking-wider">
+                  <h3 className="text-xs font-medium text-muted uppercase tracking-wider">
                     {group.label}
                   </h3>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-zinc-800 text-zinc-500">
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-accent/10 text-subtle">
                     {group.insights.length}
                   </span>
                 </button>

@@ -18,7 +18,7 @@ export function BodyRecompositionChart({ data, loading }: BodyRecompositionChart
   if (data.length === 0) {
     return (
       <div className="flex items-center justify-center h-[250px]">
-        <span className="text-zinc-600 text-sm">
+        <span className="text-dim text-sm">
           Need weight + body fat data for recomposition tracking
         </span>
       </div>

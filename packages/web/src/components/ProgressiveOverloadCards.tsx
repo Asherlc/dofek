@@ -45,7 +45,7 @@ export function ProgressiveOverloadCards({ exercises, loading }: ProgressiveOver
   if (exercises.length === 0) {
     return (
       <div className="flex items-center justify-center h-[200px]">
-        <span className="text-zinc-600 text-sm">No progressive overload data</span>
+        <span className="text-dim text-sm">No progressive overload data</span>
       </div>
     );
   }
@@ -55,19 +55,19 @@ export function ProgressiveOverloadCards({ exercises, loading }: ProgressiveOver
       {exercises.map((exercise) => (
         <div
           key={exercise.exerciseName}
-          className="rounded-lg border border-zinc-800 bg-zinc-900 p-4"
+          className="card p-4"
         >
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-zinc-100 truncate">
+            <span className="text-sm font-medium text-foreground truncate">
               {exercise.exerciseName}
             </span>
             <span
-              className={`text-lg ${exercise.isProgressing ? "text-emerald-400" : "text-red-400"}`}
+              className={`text-lg ${exercise.isProgressing ? "text-accent" : "text-red-400"}`}
             >
               {exercise.isProgressing ? "\u2191" : "\u2193"}
             </span>
           </div>
-          <div className="text-xs text-zinc-400 mb-2">
+          <div className="text-xs text-muted mb-2">
             {exercise.isProgressing ? "+" : ""}
             {exercise.slopeKgPerWeek.toFixed(1)} kg/week
           </div>

@@ -18,7 +18,7 @@ export function SmoothedWeightChart({ data, loading }: SmoothedWeightChartProps)
   if (data.length === 0) {
     return (
       <div className="flex items-center justify-center h-[250px]">
-        <span className="text-zinc-600 text-sm">No weight data available</span>
+        <span className="text-dim text-sm">No weight data available</span>
       </div>
     );
   }
@@ -100,7 +100,7 @@ export function SmoothedWeightChart({ data, loading }: SmoothedWeightChartProps)
       {latestWeeklyChange != null && (
         <div className="flex items-baseline gap-2">
           <span
-            className={`text-lg font-semibold ${latestWeeklyChange > 0 ? "text-green-400" : latestWeeklyChange < 0 ? "text-red-400" : "text-zinc-400"}`}
+            className={`text-lg font-semibold ${latestWeeklyChange > 0 ? "text-green-400" : latestWeeklyChange < 0 ? "text-red-400" : "text-muted"}`}
           >
             {latestWeeklyChange > 0 ? "+" : ""}
             {convertWeight(latestWeeklyChange, unitSystem).toFixed(1)} {weightLabel(unitSystem)}

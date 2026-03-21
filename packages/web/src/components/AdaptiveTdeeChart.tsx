@@ -18,7 +18,7 @@ export function AdaptiveTdeeChart({ data, loading }: AdaptiveTdeeChartProps) {
   if (!data || data.dailyData.length === 0) {
     return (
       <div className="flex items-center justify-center h-[250px]">
-        <span className="text-zinc-600 text-sm">
+        <span className="text-dim text-sm">
           Need calorie tracking + weight measurements for TDEE estimation
         </span>
       </div>
@@ -41,9 +41,9 @@ export function AdaptiveTdeeChart({ data, loading }: AdaptiveTdeeChartProps) {
       {/* Summary stat */}
       {data.estimatedTdee != null && (
         <div className="flex items-baseline gap-3">
-          <span className="text-2xl font-bold text-zinc-100">{data.estimatedTdee}</span>
-          <span className="text-sm text-zinc-400">kcal/day estimated TDEE</span>
-          <span className="text-xs text-zinc-600">
+          <span className="text-2xl font-bold text-foreground">{data.estimatedTdee}</span>
+          <span className="text-sm text-muted">kcal/day estimated TDEE</span>
+          <span className="text-xs text-dim">
             ({Math.round(data.confidence * 100)}% confidence, {data.dataPoints} data points)
           </span>
         </div>

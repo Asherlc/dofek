@@ -11,7 +11,7 @@ export function TrainingCalendar({ data, height = 180 }: TrainingCalendarProps) 
   if (data.length === 0) {
     return (
       <div className="flex items-center justify-center" style={{ height }}>
-        <span className="text-zinc-600 text-sm">No training data</span>
+        <span className="text-dim text-sm">No training data</span>
       </div>
     );
   }

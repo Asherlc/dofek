@@ -27,8 +27,8 @@ export function HealthspanScoreCard({ data, loading }: HealthspanScoreCardProps)
 
   if (!data || data.healthspanScore == null || data.metrics.length === 0) {
     return (
-      <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-6 flex items-center justify-center h-[400px]">
-        <span className="text-zinc-600 text-sm">Insufficient data for healthspan analysis</span>
+      <div className="bg-page border border-border rounded-xl p-6 flex items-center justify-center h-[400px]">
+        <span className="text-dim text-sm">Insufficient data for healthspan analysis</span>
       </div>
     );
   }
@@ -69,16 +69,16 @@ export function HealthspanScoreCard({ data, loading }: HealthspanScoreCardProps)
   };
 
   return (
-    <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-6">
+    <div className="bg-page border border-border rounded-xl p-6">
       {/* Header with score + age */}
       <div className="flex items-start justify-between mb-4">
         <div>
-          <h3 className="text-zinc-400 text-sm font-medium mb-1">Healthspan Score</h3>
+          <h3 className="text-muted text-sm font-medium mb-1">Healthspan Score</h3>
           <div className="flex items-baseline gap-2">
             <span className="text-5xl font-bold" style={{ color }}>
               {data.healthspanScore}
             </span>
-            <span className="text-zinc-500 text-sm">/100</span>
+            <span className="text-subtle text-sm">/100</span>
           </div>
         </div>
 
@@ -92,14 +92,14 @@ export function HealthspanScoreCard({ data, loading }: HealthspanScoreCardProps)
       <div className="space-y-2 mt-2">
         {data.metrics.map((m) => (
           <div key={m.name} className="flex items-center gap-3">
-            <span className="text-zinc-400 text-xs w-32 shrink-0">{m.name}</span>
-            <div className="flex-1 bg-zinc-800 rounded-full h-2 overflow-hidden">
+            <span className="text-muted text-xs w-32 shrink-0">{m.name}</span>
+            <div className="flex-1 bg-accent/10 rounded-full h-2 overflow-hidden">
               <div
                 className="h-full rounded-full transition-all duration-300"
                 style={{ width: `${m.score}%`, backgroundColor: healthStatusColor(m.status) }}
               />
             </div>
-            <span className="text-zinc-500 text-xs w-20 text-right tabular-nums">
+            <span className="text-subtle text-xs w-20 text-right tabular-nums">
               {m.value != null ? `${m.value} ${m.unit}` : "—"}
             </span>
           </div>

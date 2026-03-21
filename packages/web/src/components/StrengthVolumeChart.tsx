@@ -15,7 +15,7 @@ export function StrengthVolumeChart({ data, loading }: StrengthVolumeChartProps)
   if (data.length === 0) {
     return (
       <div className="flex items-center justify-center h-[280px]">
-        <span className="text-zinc-600 text-sm">No strength volume data</span>
+        <span className="text-dim text-sm">No strength volume data</span>
       </div>
     );
   }

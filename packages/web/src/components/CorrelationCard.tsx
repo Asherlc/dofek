@@ -34,11 +34,11 @@ const confidenceBadge = {
   },
   early: {
     label: "Early signal",
-    className: "bg-zinc-800 text-zinc-400 border-zinc-700",
+    className: "bg-accent/10 text-muted border-border-strong",
   },
   insufficient: {
     label: "Insufficient",
-    className: "bg-zinc-800 text-zinc-600 border-zinc-700",
+    className: "bg-accent/10 text-dim border-border-strong",
   },
 };
 
@@ -50,10 +50,10 @@ export function CorrelationCard({ insight }: CorrelationCardProps) {
   const badge = confidenceBadge[insight.confidence];
 
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4 space-y-3">
+    <div className="card p-4 space-y-3">
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
-        <p className="text-sm text-zinc-100 font-medium leading-tight">{insight.message}</p>
+        <p className="text-sm text-foreground font-medium leading-tight">{insight.message}</p>
         <span className={`shrink-0 text-[10px] px-2 py-0.5 rounded-full border ${badge.className}`}>
           {badge.label}
         </span>
@@ -67,7 +67,7 @@ export function CorrelationCard({ insight }: CorrelationCardProps) {
       )}
 
       {/* Explanation */}
-      {insight.explanation && <p className="text-xs text-zinc-400 italic">{insight.explanation}</p>}
+      {insight.explanation && <p className="text-xs text-muted italic">{insight.explanation}</p>}
 
       {/* Confounders */}
       {insight.confounders && insight.confounders.length > 0 && (
@@ -82,7 +82,7 @@ export function CorrelationCard({ insight }: CorrelationCardProps) {
       )}
 
       {/* Stats footer */}
-      <p className="text-[11px] text-zinc-600">{insight.detail}</p>
+      <p className="text-[11px] text-dim">{insight.detail}</p>
     </div>
   );
 }
@@ -152,7 +152,7 @@ function ConditionalChart({ insight }: { insight: Insight }) {
   return (
     <div>
       <ReactECharts option={option} style={{ height: 64 }} opts={{ renderer: "svg" }} />
-      <p className="text-center text-xs text-zinc-500 mt-1">
+      <p className="text-center text-xs text-subtle mt-1">
         <span className={diff > 0 ? "text-emerald-400" : "text-rose-400"}>
           {sign}
           {pctDiff != null ? `${pctDiff.toFixed(0)}%` : formatValue(diff)}
@@ -173,7 +173,7 @@ function CorrelationViz({ insight }: { insight: Insight }) {
   return (
     <div className="space-y-1">
       <CorrelationStrengthBar rho={rho} />
-      <p className="text-[11px] text-zinc-600 text-center">Spearman rho | n={insight.whenTrue.n}</p>
+      <p className="text-[11px] text-dim text-center">Spearman rho | n={insight.whenTrue.n}</p>
     </div>
   );
 }
@@ -264,7 +264,7 @@ function ScatterPlot({ insight }: { insight: Insight }) {
 }
 
 export function CorrelationCardSkeleton() {
-  return <div className="h-48 rounded-lg bg-zinc-800 animate-pulse" />;
+  return <div className="h-48 rounded-lg bg-skeleton animate-pulse" />;
 }
 
 function formatValue(v: number): string {

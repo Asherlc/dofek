@@ -21,7 +21,7 @@ export function EftpTrendChart({ data, currentEftp, loading }: EftpTrendChartPro
   if (data.length === 0) {
     return (
       <div className="flex items-center justify-center h-[240px]">
-        <span className="text-zinc-600 text-sm">
+        <span className="text-dim text-sm">
           No threshold power data (need 20+ min activities with power)
         </span>
       </div>

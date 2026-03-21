@@ -22,7 +22,7 @@ export function NutritionChart({ data, loading }: NutritionChartProps) {
   if (data.length === 0) {
     return (
       <div className="flex items-center justify-center h-[200px]">
-        <span className="text-zinc-600 text-sm">No nutrition data</span>
+        <span className="text-dim text-sm">No nutrition data</span>
       </div>
     );
   }

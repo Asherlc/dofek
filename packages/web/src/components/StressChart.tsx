@@ -22,7 +22,7 @@ export function StressChart({ data, loading }: StressChartProps) {
   if (!data || data.daily.length === 0) {
     return (
       <div className="flex items-center justify-center h-[350px]">
-        <span className="text-zinc-600 text-sm">No stress data</span>
+        <span className="text-dim text-sm">No stress data</span>
       </div>
     );
   }
@@ -158,7 +158,7 @@ export function StressChart({ data, loading }: StressChartProps) {
               : "Stable"}
         </span>
         {data.weekly.length > 0 && (
-          <span className="text-zinc-600 text-xs">
+          <span className="text-dim text-xs">
             This week: {data.weekly[data.weekly.length - 1]?.cumulativeStress.toFixed(1)} cumulative
           </span>
         )}

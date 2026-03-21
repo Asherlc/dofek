@@ -224,7 +224,7 @@ export function PolarizationTrendChart({ weeks, maxHr, loading }: PolarizationTr
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[280px]">
-        <span className="text-zinc-600 text-sm">Loading polarization data...</span>
+        <span className="text-dim text-sm">Loading polarization data...</span>
       </div>
     );
   }
@@ -232,7 +232,7 @@ export function PolarizationTrendChart({ weeks, maxHr, loading }: PolarizationTr
   if (weeks.length === 0) {
     return (
       <div className="flex items-center justify-center h-[100px]">
-        <span className="text-zinc-600 text-sm">
+        <span className="text-dim text-sm">
           Not enough HR data to compute polarization index
         </span>
       </div>
@@ -243,12 +243,12 @@ export function PolarizationTrendChart({ weeks, maxHr, loading }: PolarizationTr
 
   return (
     <div>
-      <h3 className="text-xs font-medium text-zinc-500 mb-2">
+      <h3 className="text-xs font-medium text-subtle mb-2">
         Polarization Index (3-Zone Model)
-        {maxHr && <span className="text-zinc-700 ml-2">(max heart rate: {maxHr} bpm)</span>}
+        {maxHr && <span className="text-dim ml-2">(max heart rate: {maxHr} bpm)</span>}
       </h3>
       <ReactECharts option={option} style={{ height: 280 }} notMerge={true} />
-      <p className="text-xs text-zinc-700 mt-1">
+      <p className="text-xs text-dim mt-1">
         Index above 2.0 = well-polarized training. Zone 1 = easy (&lt;80% max HR), Zone 2 =
         threshold (80-90% max HR), Zone 3 = high intensity (&ge;90% max HR).
       </p>

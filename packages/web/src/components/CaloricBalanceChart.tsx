@@ -15,7 +15,7 @@ export function CaloricBalanceChart({ data, loading }: CaloricBalanceChartProps)
   if (data.length === 0) {
     return (
       <div className="flex items-center justify-center h-[250px]">
-        <span className="text-zinc-600 text-sm">
+        <span className="text-dim text-sm">
           Need both nutrition and energy expenditure data
         </span>
       </div>

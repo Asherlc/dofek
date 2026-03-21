@@ -74,11 +74,11 @@ function Section({
   return (
     <section>
       <div className="mb-1 flex items-center gap-2">
-        <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider">{title}</h2>
+        <h2 className="text-sm font-medium text-muted uppercase tracking-wider">{title}</h2>
         <ChartDescriptionTooltip description={description} />
       </div>
-      {subtitle && <p className="text-xs text-zinc-600 mb-4">{subtitle}</p>}
-      <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4" title={description}>
+      {subtitle && <p className="text-xs text-dim mb-4">{subtitle}</p>}
+      <div className="card p-4" title={description}>
         {children}
       </div>
     </section>
