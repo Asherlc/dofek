@@ -76,14 +76,29 @@ export interface ParsedRecovery {
 }
 
 export function parseRecovery(record: WhoopRecoveryRecord): ParsedRecovery {
-  const score = record.score_state === "SCORED" ? record.score : undefined;
-  return {
-    cycleId: record.cycle_id,
-    restingHr: score?.resting_heart_rate,
-    hrv: score?.hrv_rmssd_milli,
-    spo2: score?.spo2_percentage,
-    skinTemp: score?.skin_temp_celsius,
-  };
+  // Legacy format: score_state === "SCORED" with nested `score` object
+  if (record.score_state === "SCORED" && record.score) {
+    return {
+      cycleId: record.cycle_id,
+      restingHr: record.score.resting_heart_rate,
+      hrv: record.score.hrv_rmssd_milli,
+      spo2: record.score.spo2_percentage,
+      skinTemp: record.score.skin_temp_celsius,
+    };
+  }
+  // BFF v0 format: state === "complete" with flat fields at top level
+  if (record.score_state === "complete" && record.resting_heart_rate != null) {
+    return {
+      cycleId: record.cycle_id,
+      restingHr: record.resting_heart_rate,
+      // BFF returns hrv_rmssd in seconds; convert to milliseconds
+      hrv: record.hrv_rmssd != null ? record.hrv_rmssd * 1000 : undefined,
+      spo2: record.spo2_percentage,
+      skinTemp: record.skin_temp_celsius,
+    };
+  }
+  // Unscored or unrecognized format
+  return { cycleId: record.cycle_id };
 }
 
 export interface ParsedSleep {
@@ -556,7 +571,11 @@ export class WhoopProvider implements SyncProvider {
       const recoveryCount = await withSyncLog(db, this.id, "recovery", async () => {
         let count = 0;
         for (const cycle of cycles) {
-          if (cycle.recovery?.score_state === "SCORED" && cycle.recovery.score) {
+          const hasLegacyRecovery =
+            cycle.recovery?.score_state === "SCORED" && cycle.recovery.score;
+          const hasBffRecovery =
+            cycle.recovery?.score_state === "complete" && cycle.recovery.resting_heart_rate != null;
+          if (cycle.recovery && (hasLegacyRecovery || hasBffRecovery)) {
             const parsed = parseRecovery(cycle.recovery);
             const cycleDayRaw =
               cycle.days?.[0] ?? new Date(cycle.recovery.created_at).toISOString().split("T")[0];

@@ -125,14 +125,6 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
       max: yMax,
       axisLine: { show: true, lineStyle: { color: "#3f3f46" } },
     },
-    visualMap: {
-      show: false,
-      seriesIndex: 3, // Only apply to the "Polarization Index" data series
-      pieces: [
-        { lte: 2.0, color: "#ef4444" },
-        { gt: 2.0, color: "#22c55e" },
-      ],
-    },
     series: [
       // Shaded green area above Threshold = 2.0
       {
@@ -164,35 +156,36 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
         tooltip: { show: false },
         z: 0,
       },
-      // Reference line at Threshold = 2.0
+      // Dashed threshold reference line at PI = 2.0
       {
-        name: "Threshold = 2.0",
+        name: "Threshold",
         type: "line",
-        markLine: {
-          silent: true,
-          symbol: "none",
-          lineStyle: { color: "#a1a1aa", type: "dashed", width: 1 },
-          data: [{ yAxis: 2.0 }],
-          label: {
-            formatter: "Threshold = 2.0",
-            color: "#a1a1aa",
-            fontSize: 10,
-          },
-          tooltip: { show: false },
-        },
-        data: [],
+        data: [
+          [firstDate, 2.0],
+          [lastDate, 2.0],
+        ],
+        symbol: "none",
+        lineStyle: { color: "#a1a1aa", type: "dashed", width: 1 },
+        silent: true,
         tooltip: { show: false },
+        z: 1,
       },
-      // Actual PI line
+      // Actual PI data line with per-point coloring
       {
         name: "Polarization Index",
         type: "line",
-        data: weeks.map((w) => [w.week, w.polarizationIndex]),
+        data: weeks.map((w) => ({
+          value: [w.week, w.polarizationIndex],
+          itemStyle:
+            w.polarizationIndex !== null
+              ? { color: w.polarizationIndex >= 2.0 ? "#22c55e" : "#ef4444" }
+              : undefined,
+        })),
         connectNulls: false,
         smooth: true,
         symbol: "circle",
         symbolSize: 6,
-        lineStyle: { width: 2.5 },
+        lineStyle: { width: 2.5, color: "#a1a1aa" },
         itemStyle: { borderWidth: 2 },
         z: 10,
       },

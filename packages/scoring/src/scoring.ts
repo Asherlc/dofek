@@ -118,8 +118,24 @@ export function stressLabel(score: number): string {
 /** Get the color for a trend direction */
 export function trendColor(trend: "improving" | "worsening" | "stable" | "declining"): string {
   if (trend === "improving") return statusColors.positive;
-  if (trend === "worsening") return statusColors.danger;
+  if (trend === "worsening" || trend === "declining") return statusColors.danger;
   return textColors.neutral;
+}
+
+/** Get the color for a categorical readiness level (high/moderate/low) */
+export function readinessLevelColor(level: "high" | "moderate" | "low" | "unknown"): string {
+  if (level === "high") return statusColors.positive;
+  if (level === "moderate") return statusColors.warning;
+  if (level === "low") return statusColors.danger;
+  return textColors.neutral;
+}
+
+/** Get the color for a health metric status (excellent/good/fair/poor) */
+export function healthStatusColor(status: "excellent" | "good" | "fair" | "poor"): string {
+  if (status === "excellent") return statusColors.positive;
+  if (status === "good") return statusColors.info;
+  if (status === "fair") return statusColors.warning;
+  return statusColors.danger;
 }
 
 /** Get the color for a ramp rate value (always uses absolute value) */

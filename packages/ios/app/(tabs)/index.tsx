@@ -19,7 +19,7 @@ import { RecoveryRing } from "../../components/charts/RecoveryRing";
 import { SleepBar } from "../../components/charts/SleepBar";
 import { StrainGauge } from "../../components/charts/StrainGauge";
 import { formatDurationMinutes, formatNumber, formatSleepDebtInline } from "../../lib/format";
-import { scoreColor, scoreLabel, trendDirection as computeTrend } from "../../lib/scoring";
+import { readinessLevelColor, scoreColor, scoreLabel, trendColor, trendDirection as computeTrend } from "../../lib/scoring";
 import { trpc } from "../../lib/trpc";
 import { convertTemperature, convertWeight, temperatureLabel, useUnitSystem, weightLabel } from "../../lib/units";
 import { useOnboarding } from "../../lib/useOnboarding";
@@ -53,15 +53,6 @@ function strainZoneColor(zone: string): string {
   return colors.textSecondary;
 }
 
-/** Color for healthspan status */
-function healthspanStatusColor(status: string): string {
-  if (status === "excellent") return statusColors.positive;
-  if (status === "good") return statusColors.positive;
-  if (status === "fair") return statusColors.warning;
-  if (status === "poor") return statusColors.danger;
-  return colors.textSecondary;
-}
-
 /** Trend arrow for healthspan */
 function trendArrow(trend: string | null): string {
   if (trend === "improving") return "\u2191";
@@ -76,15 +67,6 @@ function recommendationTypeColor(
   if (type === "rest") return colors.orange;
   if (type === "strength") return colors.positive;
   return colors.blue;
-}
-
-function readinessLevelColor(
-  level: NextWorkoutRecommendation["readiness"]["level"],
-): string {
-  if (level === "high") return colors.positive;
-  if (level === "moderate") return colors.warning;
-  if (level === "low") return colors.danger;
-  return colors.textSecondary;
 }
 
 function capitalize(value: string): string {
@@ -720,12 +702,7 @@ export default function OverviewScreen() {
                       style={[
                         styles.healthspanTrend,
                         {
-                          color:
-                            healthspan.trend === "improving"
-                              ? statusColors.positive
-                              : healthspan.trend === "declining"
-                                ? statusColors.danger
-                                : colors.textSecondary,
+                          color: trendColor(healthspan.trend),
                         },
                       ]}
                     >

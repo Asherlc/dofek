@@ -12,4 +12,5 @@ export {
   formatNumber,
   formatPercent,
   formatSigned,
+  parseValidDate,
 } from "@dofek/format/format";
