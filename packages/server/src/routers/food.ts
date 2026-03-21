@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { analyzeNutrition } from "../lib/ai-nutrition.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
 const mealValues = ["breakfast", "lunch", "dinner", "snack", "other"] as const;
@@ -154,6 +155,87 @@ const fieldColumnMap: Record<string, string> = {
   omega6Mg: "omega6_mg",
 };
 
+/** Zod schema for food_entry rows returned by SELECT * / RETURNING * */
+const foodEntryRowSchema = z.object({
+  id: z.string(),
+  provider_id: z.string(),
+  user_id: z.string(),
+  external_id: z.string().nullable(),
+  date: z.string(),
+  meal: z.string().nullable(),
+  food_name: z.string(),
+  food_description: z.string().nullable(),
+  category: z.string().nullable(),
+  provider_food_id: z.string().nullable(),
+  provider_serving_id: z.string().nullable(),
+  number_of_units: z.coerce.number().nullable(),
+  logged_at: z.string().nullable(),
+  barcode: z.string().nullable(),
+  serving_unit: z.string().nullable(),
+  serving_weight_grams: z.coerce.number().nullable(),
+  calories: z.coerce.number().nullable(),
+  protein_g: z.coerce.number().nullable(),
+  carbs_g: z.coerce.number().nullable(),
+  fat_g: z.coerce.number().nullable(),
+  saturated_fat_g: z.coerce.number().nullable(),
+  polyunsaturated_fat_g: z.coerce.number().nullable(),
+  monounsaturated_fat_g: z.coerce.number().nullable(),
+  trans_fat_g: z.coerce.number().nullable(),
+  cholesterol_mg: z.coerce.number().nullable(),
+  sodium_mg: z.coerce.number().nullable(),
+  potassium_mg: z.coerce.number().nullable(),
+  fiber_g: z.coerce.number().nullable(),
+  sugar_g: z.coerce.number().nullable(),
+  vitamin_a_mcg: z.coerce.number().nullable(),
+  vitamin_c_mg: z.coerce.number().nullable(),
+  vitamin_d_mcg: z.coerce.number().nullable(),
+  vitamin_e_mg: z.coerce.number().nullable(),
+  vitamin_k_mcg: z.coerce.number().nullable(),
+  vitamin_b1_mg: z.coerce.number().nullable(),
+  vitamin_b2_mg: z.coerce.number().nullable(),
+  vitamin_b3_mg: z.coerce.number().nullable(),
+  vitamin_b5_mg: z.coerce.number().nullable(),
+  vitamin_b6_mg: z.coerce.number().nullable(),
+  vitamin_b7_mcg: z.coerce.number().nullable(),
+  vitamin_b9_mcg: z.coerce.number().nullable(),
+  vitamin_b12_mcg: z.coerce.number().nullable(),
+  calcium_mg: z.coerce.number().nullable(),
+  iron_mg: z.coerce.number().nullable(),
+  magnesium_mg: z.coerce.number().nullable(),
+  zinc_mg: z.coerce.number().nullable(),
+  selenium_mcg: z.coerce.number().nullable(),
+  copper_mg: z.coerce.number().nullable(),
+  manganese_mg: z.coerce.number().nullable(),
+  chromium_mcg: z.coerce.number().nullable(),
+  iodine_mcg: z.coerce.number().nullable(),
+  omega3_mg: z.coerce.number().nullable(),
+  omega6_mg: z.coerce.number().nullable(),
+  raw: z.unknown().nullable(),
+  confirmed: z.boolean(),
+  created_at: z.string(),
+});
+
+const dailyTotalsRowSchema = z.object({
+  date: z.string(),
+  calories: z.coerce.number().nullable(),
+  protein_g: z.coerce.number().nullable(),
+  carbs_g: z.coerce.number().nullable(),
+  fat_g: z.coerce.number().nullable(),
+  fiber_g: z.coerce.number().nullable(),
+});
+
+const foodSearchRowSchema = z.object({
+  food_name: z.string(),
+  food_description: z.string().nullable(),
+  category: z.string().nullable(),
+  calories: z.coerce.number().nullable(),
+  protein_g: z.coerce.number().nullable(),
+  carbs_g: z.coerce.number().nullable(),
+  fat_g: z.coerce.number().nullable(),
+  fiber_g: z.coerce.number().nullable(),
+  number_of_units: z.coerce.number().nullable(),
+});
+
 export const foodRouter = router({
   /** List food entries for a date range, optionally filtered by meal */
   list: cachedProtectedQuery(CacheTTL.SHORT)
@@ -166,7 +248,9 @@ export const foodRouter = router({
     )
     .query(async ({ ctx, input }) => {
       if (input.meal) {
-        const rows = await ctx.db.execute(
+        const rows = await executeWithSchema(
+          ctx.db,
+          foodEntryRowSchema,
           sql`SELECT * FROM fitness.food_entry
               WHERE user_id = ${ctx.userId}
                 AND confirmed = true
@@ -177,7 +261,9 @@ export const foodRouter = router({
         );
         return rows;
       }
-      const rows = await ctx.db.execute(
+      const rows = await executeWithSchema(
+        ctx.db,
+        foodEntryRowSchema,
         sql`SELECT * FROM fitness.food_entry
             WHERE user_id = ${ctx.userId}
               AND confirmed = true
@@ -192,7 +278,9 @@ export const foodRouter = router({
   byDate: cachedProtectedQuery(CacheTTL.SHORT)
     .input(z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }))
     .query(async ({ ctx, input }) => {
-      const rows = await ctx.db.execute(
+      const rows = await executeWithSchema(
+        ctx.db,
+        foodEntryRowSchema,
         sql`SELECT * FROM fitness.food_entry
             WHERE user_id = ${ctx.userId}
               AND confirmed = true
@@ -206,7 +294,9 @@ export const foodRouter = router({
   dailyTotals: cachedProtectedQuery(CacheTTL.SHORT)
     .input(z.object({ days: z.number().default(30) }))
     .query(async ({ ctx, input }) => {
-      const rows = await ctx.db.execute(
+      const rows = await executeWithSchema(
+        ctx.db,
+        dailyTotalsRowSchema,
         sql`SELECT
               date,
               SUM(calories) as calories,
@@ -234,7 +324,9 @@ export const foodRouter = router({
     )
     .query(async ({ ctx, input }) => {
       const searchPattern = `%${input.query}%`;
-      const rows = await ctx.db.execute(
+      const rows = await executeWithSchema(
+        ctx.db,
+        foodSearchRowSchema,
         sql`SELECT DISTINCT ON (food_name)
               food_name, food_description, category, calories,
               protein_g, carbs_g, fat_g, fiber_g, number_of_units
@@ -252,7 +344,9 @@ export const foodRouter = router({
   create: protectedProcedure.input(createFoodEntrySchema).mutation(async ({ ctx, input }) => {
     await ensureDofekProvider(ctx.db);
 
-    const rows = await ctx.db.execute(
+    const rows = await executeWithSchema(
+      ctx.db,
+      foodEntryRowSchema,
       sql`INSERT INTO fitness.food_entry (
             user_id, provider_id, date, meal, food_name, food_description, category, number_of_units,
             calories, protein_g, carbs_g, fat_g,
@@ -321,7 +415,9 @@ export const foodRouter = router({
     if (setClauses.length === 0) return null;
 
     const setExpression = sql.join(setClauses, sql`, `);
-    const rows = await ctx.db.execute(
+    const rows = await executeWithSchema(
+      ctx.db,
+      foodEntryRowSchema,
       sql`UPDATE fitness.food_entry SET ${setExpression} WHERE user_id = ${ctx.userId} AND confirmed = true AND id = ${id} RETURNING *`,
     );
     return rows[0] ?? null;
@@ -360,7 +456,9 @@ export const foodRouter = router({
     .mutation(async ({ ctx, input }) => {
       await ensureDofekProvider(ctx.db);
 
-      const rows = await ctx.db.execute(
+      const rows = await executeWithSchema(
+        ctx.db,
+        foodEntryRowSchema,
         sql`INSERT INTO fitness.food_entry (
               user_id, provider_id, date, meal, food_name,
               calories, protein_g, carbs_g, fat_g

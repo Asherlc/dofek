@@ -1,9 +1,10 @@
 import ReactECharts from "echarts-for-react";
 import type { SmoothedWeightRow } from "../../../server/src/routers/body-analytics.ts";
+import { createChartOptions } from "../lib/chart-theme.ts";
 import { formatNumber } from "../lib/format.ts";
 import { useUnitSystem } from "../lib/unitContext.ts";
 import { convertWeight, weightLabel } from "../lib/units.ts";
-import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
+import { ChartContainer } from "./ChartContainer.tsx";
 
 interface SmoothedWeightChartProps {
   data: SmoothedWeightRow[];
@@ -12,28 +13,13 @@ interface SmoothedWeightChartProps {
 
 export function SmoothedWeightChart({ data, loading }: SmoothedWeightChartProps) {
   const { unitSystem } = useUnitSystem();
-  if (loading) {
-    return <ChartLoadingSkeleton height={250} />;
-  }
-
-  if (data.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-[250px]">
-        <span className="text-zinc-600 text-sm">No weight data available</span>
-      </div>
-    );
-  }
 
   const latestWeeklyChange = data[data.length - 1]?.weeklyChange;
 
-  const option = {
-    backgroundColor: "transparent",
+  const option = createChartOptions({
     grid: { top: 30, right: 50, bottom: 30, left: 50 },
     tooltip: {
       trigger: "axis" as const,
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
     },
     legend: {
       top: 0,
@@ -41,8 +27,6 @@ export function SmoothedWeightChart({ data, loading }: SmoothedWeightChartProps)
     },
     xAxis: {
       type: "time" as const,
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
       splitLine: { show: false },
     },
     yAxis: [
@@ -94,22 +78,30 @@ export function SmoothedWeightChart({ data, loading }: SmoothedWeightChartProps)
         barWidth: "60%",
       },
     ],
-  };
+  });
 
   return (
-    <div className="space-y-2">
-      {latestWeeklyChange != null && (
-        <div className="flex items-baseline gap-2">
-          <span
-            className={`text-lg font-semibold ${latestWeeklyChange > 0 ? "text-green-400" : latestWeeklyChange < 0 ? "text-red-400" : "text-zinc-400"}`}
-          >
-            {latestWeeklyChange > 0 ? "+" : ""}
-            {formatNumber(convertWeight(latestWeeklyChange, unitSystem))} {weightLabel(unitSystem)}
-            /week
-          </span>
-        </div>
-      )}
-      <ReactECharts option={option} style={{ height: 250 }} />
-    </div>
+    <ChartContainer
+      loading={!!loading}
+      data={data}
+      height={250}
+      emptyMessage="No weight data available"
+    >
+      <div className="space-y-2">
+        {latestWeeklyChange != null && (
+          <div className="flex items-baseline gap-2">
+            <span
+              className={`text-lg font-semibold ${latestWeeklyChange > 0 ? "text-green-400" : latestWeeklyChange < 0 ? "text-red-400" : "text-zinc-400"}`}
+            >
+              {latestWeeklyChange > 0 ? "+" : ""}
+              {formatNumber(convertWeight(latestWeeklyChange, unitSystem))}{" "}
+              {weightLabel(unitSystem)}
+              /week
+            </span>
+          </div>
+        )}
+        <ReactECharts option={option} style={{ height: 250 }} />
+      </div>
+    </ChartContainer>
   );
 }

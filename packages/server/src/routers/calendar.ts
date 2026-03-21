@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export interface CalendarDay {
@@ -17,12 +18,16 @@ export const calendarRouter = router({
       }),
     )
     .query(async ({ ctx, input }): Promise<CalendarDay[]> => {
-      const rows = await ctx.db.execute<{
-        date: string;
-        activity_count: number;
-        total_minutes: string;
-        activity_types: string[];
-      }>(sql`
+      const calendarRowSchema = z.object({
+        date: z.string(),
+        activity_count: z.coerce.number(),
+        total_minutes: z.coerce.number(),
+        activity_types: z.array(z.string()),
+      });
+      const rows = await executeWithSchema(
+        ctx.db,
+        calendarRowSchema,
+        sql`
         SELECT
           a.started_at::date as date,
           COUNT(*)::int as activity_count,
@@ -34,7 +39,8 @@ export const calendarRouter = router({
           AND a.ended_at IS NOT NULL
         GROUP BY a.started_at::date
         ORDER BY date
-      `);
+      `,
+      );
 
       return rows.map((r) => ({
         date: String(r.date),

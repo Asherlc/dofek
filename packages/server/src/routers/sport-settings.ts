@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
 const zonePctsSchema = z.array(z.number().min(0).max(3)).min(2).max(10);
@@ -19,18 +20,38 @@ const sportSettingsInput = z.object({
   notes: z.string().optional(),
 });
 
+const sportSettingsRowSchema = z.object({
+  id: z.string(),
+  user_id: z.string(),
+  sport: z.string(),
+  ftp: z.coerce.number().nullable(),
+  threshold_hr: z.coerce.number().nullable(),
+  threshold_pace_per_km: z.coerce.number().nullable(),
+  power_zone_pcts: z.unknown().nullable(),
+  hr_zone_pcts: z.unknown().nullable(),
+  pace_zone_pcts: z.unknown().nullable(),
+  effective_from: z.string(),
+  notes: z.string().nullable(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
 export const sportSettingsRouter = router({
   /**
    * List all sport settings for the user, grouped by sport.
    * Returns the most recent effective setting per sport.
    */
   list: cachedProtectedQuery(CacheTTL.LONG).query(async ({ ctx }) => {
-    const rows = await ctx.db.execute(sql`
+    const rows = await executeWithSchema(
+      ctx.db,
+      sportSettingsRowSchema,
+      sql`
       SELECT DISTINCT ON (sport) *
       FROM fitness.sport_settings
       WHERE user_id = ${ctx.userId}
       ORDER BY sport, effective_from DESC
-    `);
+    `,
+    );
     return rows;
   }),
 
@@ -50,7 +71,10 @@ export const sportSettingsRouter = router({
     )
     .query(async ({ ctx, input }) => {
       const asOf = input.asOfDate ?? new Date().toISOString().slice(0, 10);
-      const rows = await ctx.db.execute(sql`
+      const rows = await executeWithSchema(
+        ctx.db,
+        sportSettingsRowSchema,
+        sql`
         SELECT *
         FROM fitness.sport_settings
         WHERE user_id = ${ctx.userId}
@@ -58,7 +82,8 @@ export const sportSettingsRouter = router({
           AND effective_from <= ${asOf}::date
         ORDER BY effective_from DESC
         LIMIT 1
-      `);
+      `,
+      );
       return rows[0] ?? null;
     }),
 
@@ -68,13 +93,17 @@ export const sportSettingsRouter = router({
   history: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ sport: z.string() }))
     .query(async ({ ctx, input }) => {
-      const rows = await ctx.db.execute(sql`
+      const rows = await executeWithSchema(
+        ctx.db,
+        sportSettingsRowSchema,
+        sql`
         SELECT *
         FROM fitness.sport_settings
         WHERE user_id = ${ctx.userId}
           AND sport = ${input.sport}
         ORDER BY effective_from DESC
-      `);
+      `,
+      );
       return rows;
     }),
 
@@ -85,7 +114,10 @@ export const sportSettingsRouter = router({
   upsert: protectedProcedure.input(sportSettingsInput).mutation(async ({ ctx, input }) => {
     const effectiveFrom = input.effectiveFrom ?? new Date().toISOString().slice(0, 10);
 
-    const rows = await ctx.db.execute(sql`
+    const rows = await executeWithSchema(
+      ctx.db,
+      sportSettingsRowSchema,
+      sql`
       INSERT INTO fitness.sport_settings (
         user_id, sport, ftp, threshold_hr, threshold_pace_per_km,
         power_zone_pcts, hr_zone_pcts, pace_zone_pcts,
@@ -114,7 +146,8 @@ export const sportSettingsRouter = router({
         notes = EXCLUDED.notes,
         updated_at = NOW()
       RETURNING *
-    `);
+    `,
+    );
     return rows[0];
   }),
 

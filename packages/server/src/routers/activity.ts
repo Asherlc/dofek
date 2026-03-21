@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export interface ActivityDetail {
@@ -47,7 +48,11 @@ export interface ActivityHrZone {
 
 export type ActivityHrZones = ActivityHrZone[];
 
-type ActivityListRow = Record<string, unknown> & { total_count: number };
+const activityListRowSchema = z
+  .object({
+    total_count: z.coerce.number(),
+  })
+  .passthrough();
 
 export const activityRouter = router({
   list: cachedProtectedQuery(CacheTTL.MEDIUM)
@@ -59,7 +64,9 @@ export const activityRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const rows = await ctx.db.execute<ActivityListRow>(
+      const rows = await executeWithSchema(
+        ctx.db,
+        activityListRowSchema,
         sql`SELECT *, COUNT(*) OVER()::int AS total_count
             FROM fitness.v_activity
             WHERE user_id = ${ctx.userId}
@@ -82,28 +89,31 @@ export const activityRouter = router({
   byId: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ ctx, input }): Promise<ActivityDetail> => {
-      const rows = await ctx.db.execute<{
-        id: string;
-        activity_type: string;
-        started_at: string;
-        ended_at: string | null;
-        name: string | null;
-        notes: string | null;
-        provider_id: string;
-        source_providers: string[];
-        avg_hr: number | null;
-        max_hr: number | null;
-        avg_power: number | null;
-        max_power: number | null;
-        avg_speed: number | null;
-        max_speed: number | null;
-        avg_cadence: number | null;
-        total_distance: number | null;
-        elevation_gain_m: number | null;
-        elevation_loss_m: number | null;
-        calories: number | null;
-        sample_count: number | null;
-      }>(
+      const activityDetailRowSchema = z.object({
+        id: z.string(),
+        activity_type: z.string(),
+        started_at: z.string(),
+        ended_at: z.string().nullable(),
+        name: z.string().nullable(),
+        notes: z.string().nullable(),
+        provider_id: z.string(),
+        source_providers: z.array(z.string()),
+        avg_hr: z.coerce.number().nullable(),
+        max_hr: z.coerce.number().nullable(),
+        avg_power: z.coerce.number().nullable(),
+        max_power: z.coerce.number().nullable(),
+        avg_speed: z.coerce.number().nullable(),
+        max_speed: z.coerce.number().nullable(),
+        avg_cadence: z.coerce.number().nullable(),
+        total_distance: z.coerce.number().nullable(),
+        elevation_gain_m: z.coerce.number().nullable(),
+        elevation_loss_m: z.coerce.number().nullable(),
+        calories: z.coerce.number().nullable(),
+        sample_count: z.coerce.number().nullable(),
+      });
+      const rows = await executeWithSchema(
+        ctx.db,
+        activityDetailRowSchema,
         sql`SELECT
               a.id,
               a.activity_type,
@@ -155,16 +165,19 @@ export const activityRouter = router({
       }),
     )
     .query(async ({ ctx, input }): Promise<StreamPoint[]> => {
-      const rows = await ctx.db.execute<{
-        recorded_at: string;
-        heart_rate: number | null;
-        power: number | null;
-        speed: number | null;
-        cadence: number | null;
-        altitude: number | null;
-        lat: number | null;
-        lng: number | null;
-      }>(
+      const streamRowSchema = z.object({
+        recorded_at: z.string(),
+        heart_rate: z.coerce.number().nullable(),
+        power: z.coerce.number().nullable(),
+        speed: z.coerce.number().nullable(),
+        cadence: z.coerce.number().nullable(),
+        altitude: z.coerce.number().nullable(),
+        lat: z.coerce.number().nullable(),
+        lng: z.coerce.number().nullable(),
+      });
+      const rows = await executeWithSchema(
+        ctx.db,
+        streamRowSchema,
         sql`WITH numbered AS (
               SELECT ms.*, ROW_NUMBER() OVER (ORDER BY ms.recorded_at) AS rn,
                      COUNT(*) OVER () AS total
@@ -198,10 +211,13 @@ export const activityRouter = router({
   hrZones: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ ctx, input }): Promise<ActivityHrZones> => {
-      const rows = await ctx.db.execute<{
-        zone: number;
-        seconds: number;
-      }>(
+      const hrZoneRowSchema = z.object({
+        zone: z.coerce.number(),
+        seconds: z.coerce.number(),
+      });
+      const rows = await executeWithSchema(
+        ctx.db,
+        hrZoneRowSchema,
         sql`WITH params AS (
               SELECT
                 up.max_hr,

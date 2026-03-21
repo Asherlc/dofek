@@ -3,6 +3,28 @@ import { buildPolarizationTrendOption } from "./PolarizationTrendChart.tsx";
 import { buildRampRateOption } from "./RampRateChart.tsx";
 import { buildSleepAnalyticsOption } from "./SleepAnalyticsChart.tsx";
 
+/**
+ * Helper to extract typed fields from ECharts options (which return ECBasicOption).
+ * Uses runtime checks instead of `as` casts to satisfy the linter.
+ */
+function getSeriesArray(
+  option: Record<string, unknown>,
+): Array<{ data: unknown[]; tooltip?: { show: boolean }; name?: string }> {
+  const series = option.series;
+  if (!Array.isArray(series)) throw new Error("Expected series to be an array");
+  return series;
+}
+
+function getTooltipFormatter(option: Record<string, unknown>): (...args: unknown[]) => string {
+  const tooltip = option.tooltip;
+  if (typeof tooltip !== "object" || tooltip === null) throw new Error("Expected tooltip object");
+  const record: Record<string, unknown> = Object.assign({}, tooltip);
+  const formatter = record.formatter;
+  if (typeof formatter !== "function")
+    throw new Error("Expected tooltip.formatter to be a function");
+  return (...args: unknown[]) => String(formatter(...args));
+}
+
 describe("PolarizationTrendChart option builder", () => {
   const sampleWeeks = [
     {
@@ -23,9 +45,8 @@ describe("PolarizationTrendChart option builder", () => {
 
   it("marks series with empty data as tooltip-hidden", () => {
     const option = buildPolarizationTrendOption(sampleWeeks);
-    const seriesWithEmptyData = option.series.filter(
-      (s: { data: unknown[] }) => Array.isArray(s.data) && s.data.length === 0,
-    );
+    const series = getSeriesArray(option);
+    const seriesWithEmptyData = series.filter((s) => Array.isArray(s.data) && s.data.length === 0);
     for (const s of seriesWithEmptyData) {
       expect(s.tooltip).toEqual(expect.objectContaining({ show: false }));
     }
@@ -33,14 +54,13 @@ describe("PolarizationTrendChart option builder", () => {
 
   it("tooltip formatter returns empty string for empty params", () => {
     const option = buildPolarizationTrendOption(sampleWeeks);
-    const formatter = option.tooltip.formatter;
+    const formatter = getTooltipFormatter(option);
     expect(formatter([])).toBe("");
   });
 
   it("tooltip formatter handles params with missing data", () => {
     const option = buildPolarizationTrendOption(sampleWeeks);
-    const formatter = option.tooltip.formatter;
-    // Pass empty params to test robustness (formatter should handle gracefully)
+    const formatter = getTooltipFormatter(option);
     expect(formatter([{ axisValue: "", value: ["", 0], dataIndex: -1, color: "" }])).toBeDefined();
   });
 
@@ -63,9 +83,8 @@ describe("PolarizationTrendChart option builder", () => {
     ];
 
     const option = buildPolarizationTrendOption(weeksWithGap);
-    const polarizationSeries = option.series.find((series: { name?: string }) => {
-      return series.name === "Polarization Index";
-    });
+    const series = getSeriesArray(option);
+    const polarizationSeries = series.find((s) => s.name === "Polarization Index");
     expect(polarizationSeries).toBeDefined();
     expect(polarizationSeries?.data).toEqual([
       ["2024-01-01", null],
@@ -75,7 +94,7 @@ describe("PolarizationTrendChart option builder", () => {
 
   it("tooltip shows %HRmax zone labels (not Karvonen %HRR)", () => {
     const option = buildPolarizationTrendOption(sampleWeeks);
-    const formatter = option.tooltip.formatter;
+    const formatter = getTooltipFormatter(option);
     const html = formatter([
       {
         axisValue: "2024-01-01",
@@ -85,11 +104,9 @@ describe("PolarizationTrendChart option builder", () => {
         seriesName: "Polarization Index",
       },
     ]);
-    // Zone labels should reference %HRmax thresholds
     expect(html).toContain("<80% max HR");
     expect(html).toContain("80-90% max HR");
     expect(html).toContain("≥90% max HR");
-    // Should NOT contain Karvonen/HRR references
     expect(html).not.toContain("HRR");
     expect(html).not.toContain("Karvonen");
     expect(html).not.toContain("resting");
@@ -114,7 +131,7 @@ describe("PolarizationTrendChart option builder", () => {
     ];
 
     const option = buildPolarizationTrendOption(weeksWithGap);
-    const formatter = option.tooltip.formatter;
+    const formatter = getTooltipFormatter(option);
     const html = formatter([
       {
         axisValue: "2024-01-01",
@@ -137,9 +154,8 @@ describe("RampRateChart option builder", () => {
 
   it("marks series with empty data as tooltip-hidden", () => {
     const option = buildRampRateOption(sampleWeeks);
-    const seriesWithEmptyData = option.series.filter(
-      (s: { data: unknown[] }) => Array.isArray(s.data) && s.data.length === 0,
-    );
+    const series = getSeriesArray(option);
+    const seriesWithEmptyData = series.filter((s) => Array.isArray(s.data) && s.data.length === 0);
     for (const s of seriesWithEmptyData) {
       expect(s.tooltip).toEqual(expect.objectContaining({ show: false }));
     }
@@ -147,14 +163,13 @@ describe("RampRateChart option builder", () => {
 
   it("tooltip formatter returns empty string for empty params", () => {
     const option = buildRampRateOption(sampleWeeks);
-    const formatter = option.tooltip.formatter;
+    const formatter = getTooltipFormatter(option);
     expect(formatter([])).toBe("");
   });
 
   it("tooltip formatter handles params with missing data", () => {
     const option = buildRampRateOption(sampleWeeks);
-    const formatter = option.tooltip.formatter;
-    // Pass params with out-of-range index to test robustness
+    const formatter = getTooltipFormatter(option);
     expect(formatter([{ dataIndex: -1, value: ["", 0], marker: "" }])).toBeDefined();
   });
 });
@@ -185,20 +200,30 @@ describe("SleepAnalyticsChart option builder", () => {
 
   it("places sleep debt annotation on its own row beneath the legend", () => {
     const option = buildSleepAnalyticsOption(sampleNightly, -72);
-    const [firstGraphic] = option.graphic;
+    const graphic = option.graphic;
+    if (!Array.isArray(graphic)) throw new Error("Expected graphic to be an array");
+    const [firstGraphic] = graphic;
     expect(firstGraphic).toBeDefined();
     if (!firstGraphic) {
       throw new Error("Expected a sleep debt graphic annotation");
     }
 
-    expect(option.legend.top).toBe(0);
+    const legend = option.legend;
+    if (typeof legend !== "object" || legend === null) throw new Error("Expected legend");
+    const legendRecord: Record<string, unknown> = Object.assign({}, legend);
+    expect(legendRecord.top).toBe(0);
     expect(firstGraphic.top).toBeGreaterThanOrEqual(24);
-    expect(option.grid.top).toBeGreaterThan(60);
+    const grid = option.grid;
+    if (typeof grid !== "object" || grid === null) throw new Error("Expected grid");
+    const gridRecord: Record<string, unknown> = Object.assign({}, grid);
+    expect(gridRecord.top).toBeGreaterThan(60);
   });
 
   it("formats debt text as deficit when debt is positive", () => {
     const option = buildSleepAnalyticsOption(sampleNightly, 126);
-    const [firstGraphic] = option.graphic;
+    const graphic = option.graphic;
+    if (!Array.isArray(graphic)) throw new Error("Expected graphic to be an array");
+    const [firstGraphic] = graphic;
     expect(firstGraphic).toBeDefined();
     if (!firstGraphic) {
       throw new Error("Expected a sleep debt graphic annotation");

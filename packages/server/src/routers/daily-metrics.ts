@@ -12,6 +12,39 @@ export interface HrvBaselineRow {
   mean_7d: number | null;
 }
 
+const dailyMetricsRowSchema = z.object({
+  date: z.string(),
+  provider_id: z.string(),
+  user_id: z.string(),
+  resting_hr: z.coerce.number().nullable(),
+  hrv: z.coerce.number().nullable(),
+  vo2max: z.coerce.number().nullable(),
+  spo2_avg: z.coerce.number().nullable(),
+  respiratory_rate_avg: z.coerce.number().nullable(),
+  steps: z.coerce.number().nullable(),
+  active_energy_kcal: z.coerce.number().nullable(),
+  basal_energy_kcal: z.coerce.number().nullable(),
+  distance_km: z.coerce.number().nullable(),
+  cycling_distance_km: z.coerce.number().nullable(),
+  flights_climbed: z.coerce.number().nullable(),
+  exercise_minutes: z.coerce.number().nullable(),
+  mindful_minutes: z.coerce.number().nullable(),
+  walking_speed: z.coerce.number().nullable(),
+  walking_step_length: z.coerce.number().nullable(),
+  walking_double_support_pct: z.coerce.number().nullable(),
+  walking_asymmetry_pct: z.coerce.number().nullable(),
+  walking_steadiness: z.coerce.number().nullable(),
+  stand_hours: z.coerce.number().nullable(),
+  environmental_audio_exposure: z.coerce.number().nullable(),
+  headphone_audio_exposure: z.coerce.number().nullable(),
+  skin_temp_c: z.coerce.number().nullable(),
+  stress_high_minutes: z.coerce.number().nullable(),
+  recovery_high_minutes: z.coerce.number().nullable(),
+  resilience_level: z.string().nullable(),
+  source_name: z.string().nullable(),
+  created_at: z.string(),
+});
+
 export const dailyMetricsRouter = router({
   list: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(
@@ -20,7 +53,9 @@ export const dailyMetricsRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const rows = await ctx.db.execute(
+      const rows = await executeWithSchema(
+        ctx.db,
+        dailyMetricsRowSchema,
         sql`SELECT * FROM fitness.v_daily_metrics
             WHERE user_id = ${ctx.userId}
               AND date > CURRENT_DATE - ${input.days}::int
@@ -30,7 +65,9 @@ export const dailyMetricsRouter = router({
     }),
 
   latest: cachedProtectedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
-    const rows = await ctx.db.execute(
+    const rows = await executeWithSchema(
+      ctx.db,
+      dailyMetricsRowSchema,
       sql`SELECT * FROM fitness.v_daily_metrics WHERE user_id = ${ctx.userId} ORDER BY date DESC LIMIT 1`,
     );
     return rows[0] ?? null;

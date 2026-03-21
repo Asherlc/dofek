@@ -1,8 +1,9 @@
 import { stressColor, stressLabel, trendColor } from "@dofek/scoring/scoring";
 import type { StressResult } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
+import { createChartOptions } from "../lib/chart-theme.ts";
 import { formatNumber } from "../lib/format.ts";
-import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
+import { ChartContainer } from "./ChartContainer.tsx";
 
 interface StressChartProps {
   data: StressResult | undefined;
@@ -16,29 +17,26 @@ function trendIcon(trend: StressResult["trend"]): string {
 }
 
 export function StressChart({ data, loading }: StressChartProps) {
-  if (loading) {
-    return <ChartLoadingSkeleton height={350} />;
-  }
-
-  if (!data || data.daily.length === 0) {
+  if (loading || !data || data.daily.length === 0) {
     return (
-      <div className="flex items-center justify-center h-[350px]">
-        <span className="text-zinc-600 text-sm">No stress data</span>
-      </div>
+      <ChartContainer
+        loading={!!loading}
+        data={data?.daily ?? []}
+        height={350}
+        emptyMessage="No stress data"
+      >
+        <div />
+      </ChartContainer>
     );
   }
 
   const latest = data.latestScore ?? 0;
   const latestColor = stressColor(latest);
 
-  const option = {
-    backgroundColor: "transparent",
+  const option = createChartOptions({
     grid: { top: 50, right: 60, bottom: 40, left: 50 },
     tooltip: {
       trigger: "axis" as const,
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
       formatter: (
         params: {
           dataIndex: number;
@@ -68,7 +66,6 @@ export function StressChart({ data, loading }: StressChartProps) {
     },
     legend: {
       data: ["Daily Stress", "Weekly Avg"],
-      textStyle: { color: "#a1a1aa", fontSize: 11 },
       top: 0,
     },
     graphic: [
@@ -86,8 +83,6 @@ export function StressChart({ data, loading }: StressChartProps) {
     ],
     xAxis: {
       type: "time" as const,
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
     },
     yAxis: [
       {
@@ -141,7 +136,7 @@ export function StressChart({ data, loading }: StressChartProps) {
         yAxisIndex: 0,
       },
     ],
-  };
+  });
 
   return (
     <div>

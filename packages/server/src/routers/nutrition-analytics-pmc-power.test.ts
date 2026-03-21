@@ -14,7 +14,13 @@ vi.mock("../trpc.ts", async () => {
 });
 
 vi.mock("../lib/typed-sql.ts", () => ({
-  executeWithSchema: vi.fn(async (db: { execute: () => Promise<unknown[]> }) => db.execute()),
+  executeWithSchema: vi.fn(
+    async (
+      db: { execute: (query: unknown) => Promise<unknown[]> },
+      _schema: unknown,
+      query: unknown,
+    ) => db.execute(query),
+  ),
 }));
 
 vi.mock("../lib/endurance-types.ts", () => ({

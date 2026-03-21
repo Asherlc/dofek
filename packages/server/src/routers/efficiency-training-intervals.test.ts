@@ -13,6 +13,16 @@ vi.mock("../trpc.ts", async () => {
   };
 });
 
+vi.mock("../lib/typed-sql.ts", () => ({
+  executeWithSchema: vi.fn(
+    async (
+      db: { execute: (query: unknown) => Promise<unknown[]> },
+      _schema: unknown,
+      query: unknown,
+    ) => db.execute(query),
+  ),
+}));
+
 vi.mock("../lib/endurance-types.ts", () => ({
   enduranceTypeFilter: () => ({ sql: "true" }),
 }));
@@ -150,9 +160,10 @@ describe("trainingRouter", () => {
       expect(result).toEqual(rows);
     });
 
-    it("coerces string hours from Postgres numeric type", async () => {
-      // Postgres ROUND(...)::numeric returns strings via the pg driver
-      const rows = [{ week: "2024-01-15", activity_type: "cycling", count: 3, hours: "5.50" }];
+    it("passes through rows from executeWithSchema (coercion tested via Zod schema)", async () => {
+      // In production, executeWithSchema applies z.coerce.number() to coerce
+      // Postgres ROUND(...)::numeric strings. Mock bypasses parsing.
+      const rows = [{ week: "2024-01-15", activity_type: "cycling", count: 3, hours: 5.5 }];
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",

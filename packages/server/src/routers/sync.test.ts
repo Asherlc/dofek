@@ -32,6 +32,16 @@ vi.mock("../trpc.ts", async () => {
   };
 });
 
+vi.mock("../lib/typed-sql.ts", () => ({
+  executeWithSchema: vi.fn(
+    async (
+      db: { execute: (query: unknown) => Promise<unknown[]> },
+      _schema: unknown,
+      query: unknown,
+    ) => db.execute(query),
+  ),
+}));
+
 vi.mock("dofek/jobs/queues", () => ({
   createSyncQueue: vi.fn(() => ({
     add: mockAdd,

@@ -14,12 +14,22 @@ vi.mock("../trpc.ts", async () => {
 });
 
 vi.mock("../lib/typed-sql.ts", () => ({
-  executeWithSchema: vi.fn(async (db: { execute: () => Promise<unknown[]> }) => db.execute()),
+  executeWithSchema: vi.fn(
+    async (
+      db: { execute: (query: unknown) => Promise<unknown[]> },
+      _schema: unknown,
+      query: unknown,
+    ) => db.execute(query),
+  ),
 }));
 
-vi.mock("../insights/engine.ts", () => ({
-  computeInsights: vi.fn(() => ({ insights: ["test-insight"] })),
-}));
+vi.mock("../insights/engine.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../insights/engine.ts")>();
+  return {
+    ...actual,
+    computeInsights: vi.fn(() => ({ insights: ["test-insight"] })),
+  };
+});
 
 import { hikingRouter } from "./hiking.ts";
 import { insightsRouter } from "./insights.ts";

@@ -1,6 +1,8 @@
 import type { PolarizationWeek } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
+import { createChartOptions } from "../lib/chart-theme.ts";
 import { formatNumber } from "../lib/format.ts";
+import { ChartContainer } from "./ChartContainer.tsx";
 
 interface PolarizationTrendChartProps {
   weeks: PolarizationWeek[];
@@ -58,14 +60,10 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
   const firstDate = weeks[0]?.week ?? "";
   const lastDate = weeks[weeks.length - 1]?.week ?? "";
 
-  return {
-    backgroundColor: "transparent",
+  return createChartOptions({
     grid: { top: 40, right: 20, bottom: 40, left: 55 },
     tooltip: {
       trigger: "axis",
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
       formatter: (
         params: Array<{
           axisValue: string;
@@ -119,18 +117,13 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
     },
     xAxis: {
       type: "time" as const,
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
     },
     yAxis: {
       type: "value",
       name: "Polarization Index",
       min: yMin,
       max: yMax,
-      splitLine: { lineStyle: { color: "#27272a" } },
-      axisLabel: { color: "#71717a", fontSize: 11 },
       axisLine: { show: true, lineStyle: { color: "#3f3f46" } },
-      nameTextStyle: { color: "#71717a", fontSize: 11 },
     },
     visualMap: {
       show: false,
@@ -206,41 +199,32 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
     legend: {
       show: false,
     },
-  };
+  });
 }
 
 export function PolarizationTrendChart({ weeks, maxHr, loading }: PolarizationTrendChartProps) {
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-[280px]">
-        <span className="text-zinc-600 text-sm">Loading polarization data...</span>
-      </div>
-    );
-  }
-
-  if (weeks.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-[100px]">
-        <span className="text-zinc-600 text-sm">
-          Not enough HR data to compute polarization index
-        </span>
-      </div>
-    );
-  }
-
-  const option = buildPolarizationTrendOption(weeks);
-
   return (
-    <div>
-      <h3 className="text-xs font-medium text-zinc-500 mb-2">
-        Polarization Index (3-Zone Model)
-        {maxHr && <span className="text-zinc-700 ml-2">(max heart rate: {maxHr} bpm)</span>}
-      </h3>
-      <ReactECharts option={option} style={{ height: 280 }} notMerge={true} />
-      <p className="text-xs text-zinc-700 mt-1">
-        Index above 2.0 = well-polarized training. Zone 1 = easy (&lt;80% max HR), Zone 2 =
-        threshold (80-90% max HR), Zone 3 = high intensity (&ge;90% max HR).
-      </p>
-    </div>
+    <ChartContainer
+      loading={!!loading}
+      data={weeks}
+      height={280}
+      emptyMessage="Not enough HR data to compute polarization index"
+    >
+      <div>
+        <h3 className="text-xs font-medium text-zinc-500 mb-2">
+          Polarization Index (3-Zone Model)
+          {maxHr && <span className="text-zinc-700 ml-2">(max heart rate: {maxHr} bpm)</span>}
+        </h3>
+        <ReactECharts
+          option={buildPolarizationTrendOption(weeks)}
+          style={{ height: 280 }}
+          notMerge={true}
+        />
+        <p className="text-xs text-zinc-700 mt-1">
+          Index above 2.0 = well-polarized training. Zone 1 = easy (&lt;80% max HR), Zone 2 =
+          threshold (80-90% max HR), Zone 3 = high intensity (&ge;90% max HR).
+        </p>
+      </div>
+    </ChartContainer>
   );
 }

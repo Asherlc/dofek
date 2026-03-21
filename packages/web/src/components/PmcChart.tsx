@@ -8,8 +8,9 @@ import {
 } from "@dofek/scoring/scoring";
 import type { PmcDataPoint, TssModelInfo } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
+import { createChartOptions } from "../lib/chart-theme.ts";
 import { formatNumber } from "../lib/format.ts";
-import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
+import { ChartContainer } from "./ChartContainer.tsx";
 
 interface PmcChartProps {
   data: PmcDataPoint[];
@@ -44,18 +45,6 @@ function ModelBadge({ model }: { model: TssModelInfo }) {
 }
 
 export function PmcChart({ data, model, loading }: PmcChartProps) {
-  if (loading) {
-    return <ChartLoadingSkeleton height={420} />;
-  }
-
-  if (data.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-[420px]">
-        <span className="text-zinc-600 text-sm">No training load data</span>
-      </div>
-    );
-  }
-
   const lastPoint = data[data.length - 1];
   const lastDate = lastPoint
     ? new Date(lastPoint.date).toLocaleDateString("en-US", {
@@ -65,8 +54,7 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
       })
     : "";
 
-  const option = {
-    backgroundColor: "transparent",
+  const option = createChartOptions({
     grid: [
       { top: 10, right: 15, bottom: "42%", left: 50 },
       { top: "64%", right: 15, bottom: 30, left: 50 },
@@ -76,9 +64,6 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
     },
     tooltip: {
       trigger: "axis" as const,
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
       formatter(
         params: Array<{
           seriesName: string;
@@ -254,62 +239,74 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
         },
       },
     ],
-  };
+  });
 
   return (
-    <div>
-      {model && (
-        <div className="mb-2">
-          <ModelBadge model={model} />
-        </div>
-      )}
-      <div className="flex">
-        <div className="flex-1 min-w-0">
-          <ReactECharts option={option} style={{ height: 420 }} notMerge={true} />
-        </div>
-        {/* Right-side current values, matching intervals.icu */}
-        {lastPoint && (
-          <div className="flex flex-col w-[100px] pl-2 shrink-0">
-            {/* Top pane values — positioned in top ~55% */}
-            <div className="flex flex-col items-end justify-center gap-1" style={{ height: "58%" }}>
-              <span className="text-zinc-500 text-[10px] leading-tight text-right">{lastDate}</span>
-              <div className="text-right">
-                <div className="text-zinc-500 text-[10px]">Fitness</div>
-                <div className="text-sm font-semibold" style={{ color: COLOR_FITNESS }}>
-                  {Math.round(lastPoint.ctl)}
-                </div>
-              </div>
-              <div className="text-right">
-                <div className="text-zinc-500 text-[10px]">Fatigue</div>
-                <div className="text-sm font-semibold" style={{ color: COLOR_FATIGUE }}>
-                  {Math.round(lastPoint.atl)}
-                </div>
-              </div>
-              <div className="text-right">
-                <div className="text-zinc-500 text-[10px]">Form</div>
-                <div
-                  className="text-sm font-semibold"
-                  style={{ color: formZoneColor(lastPoint.tsb) }}
-                >
-                  {Math.round(lastPoint.tsb)}
-                </div>
-              </div>
-            </div>
-            {/* Bottom pane zone labels — positioned in bottom ~42% */}
-            <div
-              className="flex flex-col items-end justify-center gap-0.5 text-[10px]"
-              style={{ height: "42%" }}
-            >
-              <ZoneTag label="Transition" color={FORM_ZONE_COLORS.transition} />
-              <ZoneTag label="Fresh" color={FORM_ZONE_COLORS.fresh} />
-              <ZoneTag label="Grey Zone" color={FORM_ZONE_COLORS.grey} />
-              <ZoneTag label="Optimal" color={FORM_ZONE_COLORS.optimal} />
-              <ZoneTag label="High Risk" color={FORM_ZONE_COLORS.highRisk} />
-            </div>
+    <ChartContainer
+      loading={!!loading}
+      data={data}
+      height={420}
+      emptyMessage="No training load data"
+    >
+      <div>
+        {model && (
+          <div className="mb-2">
+            <ModelBadge model={model} />
           </div>
         )}
+        <div className="flex">
+          <div className="flex-1 min-w-0">
+            <ReactECharts option={option} style={{ height: 420 }} notMerge={true} />
+          </div>
+          {/* Right-side current values, matching intervals.icu */}
+          {lastPoint && (
+            <div className="flex flex-col w-[100px] pl-2 shrink-0">
+              {/* Top pane values — positioned in top ~55% */}
+              <div
+                className="flex flex-col items-end justify-center gap-1"
+                style={{ height: "58%" }}
+              >
+                <span className="text-zinc-500 text-[10px] leading-tight text-right">
+                  {lastDate}
+                </span>
+                <div className="text-right">
+                  <div className="text-zinc-500 text-[10px]">Fitness</div>
+                  <div className="text-sm font-semibold" style={{ color: COLOR_FITNESS }}>
+                    {Math.round(lastPoint.ctl)}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-zinc-500 text-[10px]">Fatigue</div>
+                  <div className="text-sm font-semibold" style={{ color: COLOR_FATIGUE }}>
+                    {Math.round(lastPoint.atl)}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-zinc-500 text-[10px]">Form</div>
+                  <div
+                    className="text-sm font-semibold"
+                    style={{ color: formZoneColor(lastPoint.tsb) }}
+                  >
+                    {Math.round(lastPoint.tsb)}
+                  </div>
+                </div>
+              </div>
+              {/* Bottom pane zone labels — positioned in bottom ~42% */}
+              <div
+                className="flex flex-col items-end justify-center gap-0.5 text-[10px]"
+                style={{ height: "42%" }}
+              >
+                <ZoneTag label="Transition" color={FORM_ZONE_COLORS.transition} />
+                <ZoneTag label="Fresh" color={FORM_ZONE_COLORS.fresh} />
+                <ZoneTag label="Grey Zone" color={FORM_ZONE_COLORS.grey} />
+                <ZoneTag label="Optimal" color={FORM_ZONE_COLORS.optimal} />
+                <ZoneTag label="High Risk" color={FORM_ZONE_COLORS.highRisk} />
+              </div>
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+    </ChartContainer>
   );
 }
 

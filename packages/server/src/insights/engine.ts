@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
   benjaminiHochberg,
   type CorrelationResult,
@@ -68,6 +69,51 @@ export interface BodyCompRow {
   weight_kg: number | null;
   body_fat_pct: number | null;
 }
+
+// ── Zod schemas for runtime validation of DB query results ───────────────
+
+export const dailyRowSchema = z.object({
+  date: z.coerce.string(),
+  resting_hr: z.coerce.number().nullable(),
+  hrv: z.coerce.number().nullable(),
+  spo2_avg: z.coerce.number().nullable(),
+  steps: z.coerce.number().nullable(),
+  active_energy_kcal: z.coerce.number().nullable(),
+  skin_temp_c: z.coerce.number().nullable(),
+});
+
+export const sleepRowSchema = z.object({
+  started_at: z.string(),
+  duration_minutes: z.coerce.number().nullable(),
+  deep_minutes: z.coerce.number().nullable(),
+  rem_minutes: z.coerce.number().nullable(),
+  light_minutes: z.coerce.number().nullable(),
+  awake_minutes: z.coerce.number().nullable(),
+  efficiency_pct: z.coerce.number().nullable(),
+  is_nap: z.coerce.boolean(),
+});
+
+export const activityRowSchema = z.object({
+  started_at: z.string(),
+  ended_at: z.string().nullable(),
+  activity_type: z.string(),
+});
+
+export const nutritionRowSchema = z.object({
+  date: z.coerce.string(),
+  calories: z.coerce.number().nullable(),
+  protein_g: z.coerce.number().nullable(),
+  carbs_g: z.coerce.number().nullable(),
+  fat_g: z.coerce.number().nullable(),
+  fiber_g: z.coerce.number().nullable(),
+  water_ml: z.coerce.number().nullable(),
+});
+
+export const bodyCompRowSchema = z.object({
+  recorded_at: z.string(),
+  weight_kg: z.coerce.number().nullable(),
+  body_fat_pct: z.coerce.number().nullable(),
+});
 
 export type ConfidenceLevel = "strong" | "emerging" | "early" | "insufficient";
 

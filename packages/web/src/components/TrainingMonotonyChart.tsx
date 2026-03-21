@@ -1,6 +1,8 @@
 import type { TrainingMonotonyWeek } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
+import { createChartOptions } from "../lib/chart-theme.ts";
 import { formatNumber } from "../lib/format.ts";
+import { ChartContainer } from "./ChartContainer.tsx";
 
 interface TrainingMonotonyChartProps {
   data: TrainingMonotonyWeek[];
@@ -8,30 +10,10 @@ interface TrainingMonotonyChartProps {
 }
 
 export function TrainingMonotonyChart({ data, loading }: TrainingMonotonyChartProps) {
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-[300px]">
-        <span className="text-zinc-600 text-sm">Loading monotony data...</span>
-      </div>
-    );
-  }
-
-  if (data.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-[300px]">
-        <span className="text-zinc-600 text-sm">No training monotony data available</span>
-      </div>
-    );
-  }
-
-  const option = {
-    backgroundColor: "transparent",
+  const option = createChartOptions({
     grid: { top: 50, right: 70, bottom: 50, left: 55 },
     tooltip: {
       trigger: "axis" as const,
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
       formatter(
         params: Array<{
           seriesName: string;
@@ -61,13 +43,10 @@ export function TrainingMonotonyChart({ data, loading }: TrainingMonotonyChartPr
     },
     legend: {
       data: ["Monotony", "Strain"],
-      textStyle: { color: "#a1a1aa", fontSize: 11 },
       top: 0,
     },
     xAxis: {
       type: "time" as const,
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
     },
     yAxis: [
       {
@@ -112,14 +91,21 @@ export function TrainingMonotonyChart({ data, loading }: TrainingMonotonyChartPr
         yAxisIndex: 1,
       },
     ],
-  };
+  });
 
   return (
-    <div>
-      <p className="text-xs text-zinc-600 mb-2">
-        Monotony &gt; 2.0 (red) with high strain indicates elevated overtraining risk.
-      </p>
-      <ReactECharts option={option} style={{ height: 300 }} notMerge={true} />
-    </div>
+    <ChartContainer
+      loading={!!loading}
+      data={data}
+      height={300}
+      emptyMessage="No training monotony data available"
+    >
+      <div>
+        <p className="text-xs text-zinc-600 mb-2">
+          Monotony &gt; 2.0 (red) with high strain indicates elevated overtraining risk.
+        </p>
+        <ReactECharts option={option} style={{ height: 300 }} notMerge={true} />
+      </div>
+    </ChartContainer>
   );
 }
