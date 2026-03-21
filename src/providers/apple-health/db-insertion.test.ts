@@ -1165,7 +1165,7 @@ describe("upsertSleepBatch", () => {
     });
   });
 
-  it("calculates sleep efficiency as totalSleep / duration", async () => {
+  it("does not store efficiencyPct (derived in v_sleep view)", async () => {
     const { db, capture } = createMockDb();
     const bedStart = new Date("2024-03-01T23:00:00Z");
     const bedEnd = new Date("2024-03-02T07:00:00Z");
@@ -1187,16 +1187,7 @@ describe("upsertSleepBatch", () => {
     ];
 
     await upsertSleepBatch(db, "p1", records);
-    // efficiency = (120 + 240) / 480 * 100 = 75%
-    expect(capture.values[0]?.[0]).toMatchObject({ efficiencyPct: 75 });
-  });
-
-  it("sets efficiency to undefined for zero-duration sessions", async () => {
-    const { db, capture } = createMockDb();
-    const records = [makeSleep({ durationMinutes: 0 })];
-
-    await upsertSleepBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toHaveProperty("efficiencyPct", undefined);
+    expect(capture.values[0]?.[0]).not.toHaveProperty("efficiencyPct");
   });
 
   it("stores null sleep_type for short sessions", async () => {

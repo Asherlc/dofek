@@ -514,8 +514,8 @@ describe("HealthKit sync router", () => {
       expect(rows[0]?.rem_minutes).toBe(60);
       expect(rows[0]?.light_minutes).toBe(240);
       expect(rows[0]?.awake_minutes).toBe(15);
-      // Total sleep = 60 + 60 + 240 = 360 min, in bed = 510 min → 70.6%
-      expect(rows[0]?.efficiency_pct).toBeCloseTo(70.6, 0);
+      // Efficiency is not stored — derived in v_sleep view
+      expect(rows[0]?.efficiency_pct).toBeNull();
     });
 
     it("derives a session from stage-only samples when inBed is missing", async () => {
@@ -564,8 +564,8 @@ describe("HealthKit sync router", () => {
       expect(rows[0]?.rem_minutes).toBe(60);
       expect(rows[0]?.light_minutes).toBe(180);
       expect(rows[0]?.awake_minutes).toBe(15);
-      // Total sleep = 180 + 60 + 180 = 420 min, in bed = 435 min → 96.6%
-      expect(rows[0]?.efficiency_pct).toBeCloseTo(96.6, 0);
+      // Efficiency is not stored — derived in v_sleep view
+      expect(rows[0]?.efficiency_pct).toBeNull();
     });
   });
 

@@ -135,7 +135,6 @@ export class EightSleepProvider implements Provider {
                 remMinutes: parsed.remMinutes,
                 lightMinutes: parsed.lightMinutes,
                 awakeMinutes: parsed.awakeMinutes,
-                efficiencyPct: parsed.efficiencyPct,
                 sleepType: parsed.sleepType,
               })
               .onConflictDoUpdate({
@@ -148,7 +147,6 @@ export class EightSleepProvider implements Provider {
                   remMinutes: parsed.remMinutes,
                   lightMinutes: parsed.lightMinutes,
                   awakeMinutes: parsed.awakeMinutes,
-                  efficiencyPct: parsed.efficiencyPct,
                   sleepType: parsed.sleepType,
                 },
               });

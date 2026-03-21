@@ -192,7 +192,7 @@ describe("parsePolarSleep — edge cases", () => {
     };
 
     const result = parsePolarSleep(sleep);
-    expect(result.efficiencyPct).toBe(0);
+    expect(result).not.toHaveProperty("efficiencyPct");
     expect(result.durationMinutes).toBe(0);
   });
 });
