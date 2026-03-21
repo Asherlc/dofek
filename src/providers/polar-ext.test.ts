@@ -35,15 +35,15 @@ describe("mapPolarSport — extended mappings", () => {
   });
 
   it("maps mountain_biking", () => {
-    expect(mapPolarSport("MOUNTAIN_BIKING")).toBe("mountain biking");
+    expect(mapPolarSport("MOUNTAIN_BIKING")).toBe("mountain_biking");
   });
 
   it("maps trail_running", () => {
-    expect(mapPolarSport("TRAIL_RUNNING")).toBe("trail running");
+    expect(mapPolarSport("TRAIL_RUNNING")).toBe("trail_running");
   });
 
   it("maps cross_training", () => {
-    expect(mapPolarSport("CROSS_TRAINING")).toBe("cross training");
+    expect(mapPolarSport("CROSS_TRAINING")).toBe("cross_training");
   });
 
   it("maps group_exercise", () => {

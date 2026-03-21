@@ -112,4 +112,3 @@ export function getZoneForHeartRate(hr: number, zones: HeartRateZone[]): number 
   }
   return 0;
 }
-// CI trigger
