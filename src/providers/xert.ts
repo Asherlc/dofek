@@ -150,7 +150,7 @@ export async function signInToXert(
     throw new Error(`Xert sign-in failed (${response.status}): ${text}`);
   }
 
-  const data = await response.json();
+  const data: unknown = await response.json();
   const parsed = XertTokenResponseSchema.parse(data);
 
   return {
