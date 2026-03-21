@@ -1,13 +1,13 @@
 import {
   type ActivityRow,
-  type PmcChartResult,
-  type PmcDataPoint,
-  type TssModelInfo,
   buildTssModel,
   computeHrTss,
   computePowerTss,
   computeTrimp,
   estimateFtp,
+  type PmcChartResult,
+  type PmcDataPoint,
+  type TssModelInfo,
 } from "@dofek/training/pmc";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";

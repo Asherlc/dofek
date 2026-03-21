@@ -5,10 +5,10 @@ import {
   computePolarizationIndex,
   HEART_RATE_ZONE_COLORS,
   HEART_RATE_ZONES,
-  ZONE_BOUNDARIES_HRR,
   heartRateZoneBoundaries,
   mapHrZones,
   POLARIZATION_ZONES,
+  ZONE_BOUNDARIES_HRR,
 } from "./zones.ts";
 
 describe("HEART_RATE_ZONES", () => {

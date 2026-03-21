@@ -1,4 +1,8 @@
-import { POLARIZATION_ZONES, ZONE_BOUNDARIES_HRR, computePolarizationIndex } from "@dofek/zones/zones";
+import {
+  computePolarizationIndex,
+  POLARIZATION_ZONES,
+  ZONE_BOUNDARIES_HRR,
+} from "@dofek/zones/zones";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { enduranceTypeFilter } from "../lib/endurance-types.ts";
