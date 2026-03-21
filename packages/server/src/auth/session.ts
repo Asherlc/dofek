@@ -1,6 +1,8 @@
 import { randomBytes } from "node:crypto";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
+import { z } from "zod";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 
 const SESSION_DURATION_DAYS = 30;
 
@@ -14,6 +16,10 @@ export interface SessionInfo {
   userId: string;
   expiresAt: Date;
 }
+
+const sessionRowSchema = z.object({
+  user_id: z.string(),
+});
 
 /** Create a new session for a user. Returns the session token and expiry. */
 export async function createSession(db: Database, userId: string): Promise<SessionInfo> {
@@ -33,13 +39,14 @@ export async function validateSession(
   db: Database,
   sessionId: string,
 ): Promise<{ userId: string } | null> {
-  const rows = await db.execute<{ user_id: string; expires_at: Date }>(
-    sql`SELECT user_id, expires_at FROM fitness.session
+  const rows = await executeWithSchema(
+    db,
+    sessionRowSchema,
+    sql`SELECT user_id FROM fitness.session
         WHERE id = ${sessionId} AND expires_at > NOW()
         LIMIT 1`,
   );
 
-  if (rows.length === 0) return null;
   const row = rows[0];
   if (!row) return null;
   return { userId: row.user_id };

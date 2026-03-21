@@ -64,8 +64,8 @@ describe("session", () => {
       expect(result).toBeNull();
     });
 
-    it("returns null when row is undefined", async () => {
-      mockExecute.mockResolvedValue([undefined]);
+    it("returns null when result set is empty", async () => {
+      mockExecute.mockResolvedValue([]);
 
       const result = await validateSession(mockDb, "bad-session");
 

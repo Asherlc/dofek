@@ -4,6 +4,7 @@ import { getOAuthRedirectUri } from "dofek/auth/oauth";
 import { DEFAULT_USER_ID } from "dofek/db/schema";
 import { sql } from "drizzle-orm";
 import { Router } from "express";
+import { z } from "zod";
 import { resolveOrCreateUser } from "../auth/account-linking.ts";
 import {
   clearOAuthFlowCookies,
@@ -30,6 +31,7 @@ import {
 } from "../auth/providers.ts";
 import { createSession, deleteSession, validateSession } from "../auth/session.ts";
 import { queryCache } from "../lib/cache.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 
 /**
@@ -366,7 +368,9 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       res.status(401).json({ error: "Session expired" });
       return;
     }
-    const rows = await db.execute<{ id: string; name: string; email: string | null }>(
+    const rows = await executeWithSchema(
+      db,
+      z.object({ id: z.string(), name: z.string(), email: z.string().nullable() }),
       sql`SELECT id, name, email FROM fitness.user_profile WHERE id = ${session.userId}`,
     );
     if (rows.length === 0) {
@@ -619,7 +623,9 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
         const installerSlackUserId = tokenData.authed_user?.id;
         if (installerSlackUserId && slackState) {
           // Check for existing orphaned auth_account pointing to wrong user
-          const existingLink = await db.execute<{ user_id: string }>(
+          const existingLink = await executeWithSchema(
+            db,
+            z.object({ user_id: z.string() }),
             sql`SELECT user_id FROM fitness.auth_account
                 WHERE auth_provider = 'slack' AND provider_account_id = ${installerSlackUserId}
                 LIMIT 1`,
