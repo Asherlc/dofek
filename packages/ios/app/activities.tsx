@@ -10,7 +10,7 @@ import {
 } from "react-native";
 import { ActivityCard } from "../components/ActivityCard";
 import { trpc } from "../lib/trpc";
-import { useUnitSystem } from "../lib/units";
+import { useUnitConverter } from "../lib/units";
 import { ActivityRowSchema } from "../types/api";
 import { colors } from "../theme";
 
@@ -19,7 +19,7 @@ const PAGE_SIZE = 20;
 export default function ActivitiesScreen() {
   const router = useRouter();
   const [page, setPage] = useState(0);
-  const unitSystem = useUnitSystem();
+  const units = useUnitConverter();
 
   const query = trpc.activity.list.useQuery({
     days: 90,
@@ -55,7 +55,7 @@ export default function ActivitiesScreen() {
               avgPower={item.avg_power ?? null}
               distanceKm={item.distance_meters ? item.distance_meters / 1000 : null}
               calories={item.calories ?? null}
-              unitSystem={unitSystem}
+              units={units}
             />
           </TouchableOpacity>
         )}

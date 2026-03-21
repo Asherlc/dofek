@@ -1,7 +1,7 @@
 /**
  * Readiness scoring: composite metric from HRV, resting HR, sleep, and respiratory rate.
  *
- * Pure functions with no database dependencies.
+ * Pure class with no database dependencies.
  * Shared between web and iOS via @dofek/recovery.
  */
 
@@ -32,20 +32,21 @@ export function defaultReadinessWeights(): ReadinessWeights {
   };
 }
 
-// ── Composite readiness ─────────────────────────────────────────
+// ── ReadinessScore ──────────────────────────────────────────────
 
-/**
- * Compute a composite readiness score (0-100) from weighted components.
- */
-export function computeReadinessScore(
-  components: ReadinessComponents,
-  weights: ReadinessWeights,
-): number {
-  const raw =
-    components.hrvScore * weights.hrv +
-    components.restingHrScore * weights.restingHr +
-    components.sleepScore * weights.sleep +
-    components.respiratoryRateScore * weights.respiratoryRate;
+export class ReadinessScore {
+  constructor(
+    readonly components: ReadinessComponents,
+    private readonly weights: ReadinessWeights,
+  ) {}
 
-  return Math.max(0, Math.min(100, Math.round(raw)));
+  get score(): number {
+    const raw =
+      this.components.hrvScore * this.weights.hrv +
+      this.components.restingHrScore * this.weights.restingHr +
+      this.components.sleepScore * this.weights.sleep +
+      this.components.respiratoryRateScore * this.weights.respiratoryRate;
+
+    return Math.max(0, Math.min(100, Math.round(raw)));
+  }
 }

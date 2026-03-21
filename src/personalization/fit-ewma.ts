@@ -1,3 +1,5 @@
+import { pearsonCorrelation } from "@dofek/stats/correlation";
+
 export interface ExponentialMovingAverageInput {
   date: string;
   load: number;
@@ -106,32 +108,5 @@ function computeTsbPerformanceCorrelation(
   return pearsonCorrelation(
     pairs.map((p) => p.tsb),
     pairs.map((p) => p.performance),
-  );
-}
-
-function pearsonCorrelation(xs: number[], ys: number[]): number {
-  const n = xs.length;
-  if (n === 0) return 0;
-
-  let sumX = 0;
-  let sumY = 0;
-  let sumXY = 0;
-  let sumX2 = 0;
-  let sumY2 = 0;
-
-  for (let i = 0; i < n; i++) {
-    const x = xs[i] ?? 0;
-    const y = ys[i] ?? 0;
-    sumX += x;
-    sumY += y;
-    sumXY += x * y;
-    sumX2 += x * x;
-    sumY2 += y * y;
-  }
-
-  const numerator = n * sumXY - sumX * sumY;
-  const denominator = Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
-
-  if (denominator === 0) return 0;
-  return numerator / denominator;
+  ).r;
 }

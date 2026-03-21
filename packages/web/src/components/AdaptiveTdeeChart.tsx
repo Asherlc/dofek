@@ -7,8 +7,7 @@ import {
   dofekSeries,
   dofekTooltip,
 } from "../lib/chartTheme.ts";
-import { useUnitSystem } from "../lib/unitContext.ts";
-import { convertWeight, weightLabel } from "../lib/units.ts";
+import { useUnitConverter } from "../lib/unitContext.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
 interface AdaptiveTdeeChartProps {
@@ -17,7 +16,7 @@ interface AdaptiveTdeeChartProps {
 }
 
 export function AdaptiveTdeeChart({ data, loading }: AdaptiveTdeeChartProps) {
-  const { unitSystem } = useUnitSystem();
+  const units = useUnitConverter();
 
   if (!data || data.dailyData.length === 0) {
     return (
@@ -49,7 +48,7 @@ export function AdaptiveTdeeChart({ data, loading }: AdaptiveTdeeChartProps) {
     yAxis: [
       dofekAxis.value({ name: "kcal" }),
       dofekAxis.value({
-        name: weightLabel(unitSystem),
+        name: units.weightLabel,
         position: "right",
         min: weightValues.length > 0 ? weightAxisMin : undefined,
         max: weightValues.length > 0 ? weightAxisMax : undefined,
@@ -73,7 +72,7 @@ export function AdaptiveTdeeChart({ data, loading }: AdaptiveTdeeChartProps) {
           .filter((d) => d.smoothedWeight != null)
           .map((d) => [
             d.date,
-            d.smoothedWeight != null ? convertWeight(d.smoothedWeight, unitSystem) : null,
+            d.smoothedWeight != null ? units.convertWeight(d.smoothedWeight) : null,
           ]),
         { color: chartColors.teal, yAxisIndex: 1 },
       ),
