@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
-import { formatDurationRange, formatNumber, parseValidDate } from "../lib/format";
+import { formatDurationRange, formatNumber, parseValidDate } from "@dofek/format/format";
 import { convertDistance, distanceLabel, type UnitSystem } from "../lib/units";
 import { colors } from "../theme";
 

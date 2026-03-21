@@ -26,6 +26,7 @@ interface Provider {
   authStatus: AuthStatus;
   authType: string;
   lastSyncAt: string | null;
+  importOnly: boolean;
 }
 
 interface ProviderStats {
@@ -134,20 +135,22 @@ export function ProviderCard({
           <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
           <Text style={styles.cardTitle}>{provider.label}</Text>
         </View>
-        <TouchableOpacity
-          style={[styles.syncButton, syncing && styles.syncButtonDisabled]}
-          onPress={provider.authStatus === "connected" ? onSync : onConnect}
-          activeOpacity={0.7}
-          disabled={syncing}
-        >
-          {syncing ? (
-            <ActivityIndicator color={colors.text} size="small" />
-          ) : (
-            <Text style={styles.syncButtonText}>
-              {providerActionLabel(provider.authStatus)}
-            </Text>
-          )}
-        </TouchableOpacity>
+        {!provider.importOnly && (
+          <TouchableOpacity
+            style={[styles.syncButton, syncing && styles.syncButtonDisabled]}
+            onPress={provider.authStatus === "connected" ? onSync : onConnect}
+            activeOpacity={0.7}
+            disabled={syncing}
+          >
+            {syncing ? (
+              <ActivityIndicator color={colors.text} size="small" />
+            ) : (
+              <Text style={styles.syncButtonText}>
+                {providerActionLabel(provider.authStatus)}
+              </Text>
+            )}
+          </TouchableOpacity>
+        )}
       </View>
 
       {syncing && syncProgress ? (
@@ -170,15 +173,19 @@ export function ProviderCard({
         </View>
       ) : (
         <View style={styles.cardMeta}>
-          <Text style={styles.cardMetaText}>{statusLabel(provider.authStatus)}</Text>
-          {provider.lastSyncAt && formatRelativeTime(provider.lastSyncAt) ? (
-            <Text style={styles.cardMetaText}>
-              Last sync: {formatRelativeTime(provider.lastSyncAt)}
-            </Text>
-          ) : (
-            <Text style={styles.cardMetaText}>Never synced</Text>
+          <Text style={styles.cardMetaText}>
+            {provider.importOnly ? "Import only" : statusLabel(provider.authStatus)}
+          </Text>
+          {!provider.importOnly && (
+            provider.lastSyncAt && formatRelativeTime(provider.lastSyncAt) ? (
+              <Text style={styles.cardMetaText}>
+                Last sync: {formatRelativeTime(provider.lastSyncAt)}
+              </Text>
+            ) : (
+              <Text style={styles.cardMetaText}>Never synced</Text>
+            )
           )}
-          {provider.authStatus === "connected" && !syncing && (
+          {provider.authStatus === "connected" && !syncing && !provider.importOnly && (
             <TouchableOpacity onPress={onFullSync} activeOpacity={0.7}>
               <Text style={styles.fullSyncLink}>Full sync</Text>
             </TouchableOpacity>
@@ -483,6 +490,7 @@ export default function ProvidersScreen() {
     authStatus: p.authorized ? "connected" : "not_connected",
     authType: p.authType,
     lastSyncAt: p.lastSyncedAt,
+    importOnly: p.importOnly,
   }));
   const statsMap: Record<string, ProviderStats> = {};
   for (const s of stats.data ?? []) {

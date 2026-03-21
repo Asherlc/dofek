@@ -175,16 +175,20 @@ export function ProviderDetailPage() {
               </h1>
               {provider && (
                 <div className="flex items-center gap-2 mt-0.5">
-                  {provider.authorized ? (
+                  {provider.importOnly ? (
+                    <span className="text-xs text-zinc-500">Import only</span>
+                  ) : provider.authorized ? (
                     <span className="text-xs text-emerald-400">Connected</span>
                   ) : (
                     <span className="text-xs text-zinc-500">Not connected</span>
                   )}
-                  {provider.lastSyncedAt && formatRelativeTime(provider.lastSyncedAt) && (
-                    <span className="text-xs text-zinc-600">
-                      Last sync: {formatRelativeTime(provider.lastSyncedAt)}
-                    </span>
-                  )}
+                  {!provider.importOnly &&
+                    provider.lastSyncedAt &&
+                    formatRelativeTime(provider.lastSyncedAt) && (
+                      <span className="text-xs text-zinc-600">
+                        Last sync: {formatRelativeTime(provider.lastSyncedAt)}
+                      </span>
+                    )}
                 </div>
               )}
             </div>
@@ -192,97 +196,99 @@ export function ProviderDetailPage() {
         </div>
 
         {/* Sync controls */}
-        <section className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 space-y-3">
-          <h2 className="text-sm font-medium text-zinc-300">Sync Controls</h2>
-          <div className="flex flex-wrap items-end gap-3">
-            <button
-              type="button"
-              onClick={() => handleSync(false)}
-              disabled={syncStatus === "syncing"}
-              className="px-3 py-1.5 text-xs rounded bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
-            >
-              {syncStatus === "syncing" ? "Syncing..." : "Sync Last 7 Days"}
-            </button>
-            <button
-              type="button"
-              onClick={() => handleSync(true)}
-              disabled={syncStatus === "syncing"}
-              className="px-3 py-1.5 text-xs rounded bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50 transition-colors"
-            >
-              Full Sync
-            </button>
-            <div className="flex items-end gap-1.5">
-              <div>
-                <label htmlFor="since-days" className="block text-xs text-zinc-500 mb-1">
-                  Days back
-                </label>
-                <input
-                  id="since-days"
-                  type="number"
-                  min="1"
-                  max="3650"
-                  value={sinceDays}
-                  onChange={(e) => setSinceDays(e.target.value)}
-                  className="w-20 px-2 py-1.5 text-xs bg-zinc-800 border border-zinc-700 rounded text-zinc-200 focus:outline-none focus:border-zinc-500"
-                />
-              </div>
+        {!provider?.importOnly && (
+          <section className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 space-y-3">
+            <h2 className="text-sm font-medium text-zinc-300">Sync Controls</h2>
+            <div className="flex flex-wrap items-end gap-3">
               <button
                 type="button"
-                onClick={() => handleSync(false, Number(sinceDays))}
-                disabled={syncStatus === "syncing" || !sinceDays}
+                onClick={() => handleSync(false)}
+                disabled={syncStatus === "syncing"}
+                className="px-3 py-1.5 text-xs rounded bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
+              >
+                {syncStatus === "syncing" ? "Syncing..." : "Sync Last 7 Days"}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSync(true)}
+                disabled={syncStatus === "syncing"}
                 className="px-3 py-1.5 text-xs rounded bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50 transition-colors"
               >
-                Sync Range
+                Full Sync
               </button>
-            </div>
-            <div className="ml-auto flex items-center gap-3">
-              {provider?.authType === "oauth" && provider.authorized && (
+              <div className="flex items-end gap-1.5">
+                <div>
+                  <label htmlFor="since-days" className="block text-xs text-zinc-500 mb-1">
+                    Days back
+                  </label>
+                  <input
+                    id="since-days"
+                    type="number"
+                    min="1"
+                    max="3650"
+                    value={sinceDays}
+                    onChange={(e) => setSinceDays(e.target.value)}
+                    className="w-20 px-2 py-1.5 text-xs bg-zinc-800 border border-zinc-700 rounded text-zinc-200 focus:outline-none focus:border-zinc-500"
+                  />
+                </div>
                 <button
                   type="button"
-                  onClick={handleReauthorize}
-                  className="px-3 py-1.5 text-xs rounded bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors"
+                  onClick={() => handleSync(false, Number(sinceDays))}
+                  disabled={syncStatus === "syncing" || !sinceDays}
+                  className="px-3 py-1.5 text-xs rounded bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50 transition-colors"
                 >
-                  Re-authorize
+                  Sync Range
                 </button>
-              )}
-              {showDisconnectConfirm ? (
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-zinc-400">Are you sure?</span>
+              </div>
+              <div className="ml-auto flex items-center gap-3">
+                {provider?.authType === "oauth" && provider.authorized && (
                   <button
                     type="button"
-                    onClick={handleDisconnect}
-                    disabled={disconnectMutation.isPending}
-                    className="px-3 py-1.5 text-xs rounded bg-red-600 text-white hover:bg-red-500 disabled:opacity-50 transition-colors"
-                  >
-                    {disconnectMutation.isPending ? "Disconnecting..." : "Confirm"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowDisconnectConfirm(false)}
+                    onClick={handleReauthorize}
                     className="px-3 py-1.5 text-xs rounded bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors"
                   >
-                    Cancel
+                    Re-authorize
                   </button>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setShowDisconnectConfirm(true)}
-                  className="px-3 py-1.5 text-xs rounded bg-zinc-800 text-red-400 hover:bg-zinc-700 transition-colors"
-                >
-                  Disconnect
-                </button>
-              )}
+                )}
+                {showDisconnectConfirm ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-zinc-400">Are you sure?</span>
+                    <button
+                      type="button"
+                      onClick={handleDisconnect}
+                      disabled={disconnectMutation.isPending}
+                      className="px-3 py-1.5 text-xs rounded bg-red-600 text-white hover:bg-red-500 disabled:opacity-50 transition-colors"
+                    >
+                      {disconnectMutation.isPending ? "Disconnecting..." : "Confirm"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowDisconnectConfirm(false)}
+                      className="px-3 py-1.5 text-xs rounded bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setShowDisconnectConfirm(true)}
+                    className="px-3 py-1.5 text-xs rounded bg-zinc-800 text-red-400 hover:bg-zinc-700 transition-colors"
+                  >
+                    Disconnect
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
-          {syncMessage && (
-            <div
-              className={`text-xs ${syncStatus === "error" ? "text-red-400" : "text-emerald-400"}`}
-            >
-              {syncMessage}
-            </div>
-          )}
-        </section>
+            {syncMessage && (
+              <div
+                className={`text-xs ${syncStatus === "error" ? "text-red-400" : "text-emerald-400"}`}
+              >
+                {syncMessage}
+              </div>
+            )}
+          </section>
+        )}
 
         {/* Stats overview */}
         {providerStats && <StatsOverview stats={providerStats} />}

@@ -5,7 +5,7 @@ import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { DaySelector } from "../../components/DaySelector";
 import { MetricCard } from "../../components/MetricCard";
 import { SparkLine } from "../../components/charts/SparkLine";
-import { formatNumber } from "../../lib/format";
+import { formatNumber } from "@dofek/format/format";
 import { trendDirection as computeTrend } from "../../lib/scoring";
 import { trpc } from "../../lib/trpc";
 import { convertTemperature, temperatureLabel, useUnitSystem } from "../../lib/units";
