@@ -134,7 +134,6 @@ RUN ln -sf /app node_modules/dofek && \
     ln -sf /app/packages/training node_modules/@dofek/training && \
     ln -sf /app/packages/auth node_modules/@dofek/auth && \
     ln -sf /app/packages/heart-rate-variability node_modules/@dofek/heart-rate-variability && \
-    ln -sf /app/packages/training node_modules/@dofek/training && \
     ln -sf /app/packages/zones node_modules/@dofek/zones
 
 # SOPS-encrypted .env — decrypted at runtime via SOPS_AGE_KEY env var

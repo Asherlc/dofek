@@ -224,6 +224,22 @@ describe("formatActivityTypeLabel", () => {
   it("formats the grouped bucket label", () => {
     expect(formatActivityTypeLabel(OTHER_ACTIVITY_TYPE)).toBe("Other");
   });
+
+  it("returns 'Other' for the literal string 'other'", () => {
+    expect(formatActivityTypeLabel("other")).toBe("Other");
+  });
+
+  it("uppercases HIIT in title-cased fallback", () => {
+    expect(formatActivityTypeLabel("hiit")).toBe("HIIT");
+  });
+
+  it("trims whitespace before matching", () => {
+    expect(formatActivityTypeLabel("  cycling  ")).toBe("Cycling");
+  });
+
+  it("handles consecutive delimiters (filter(Boolean) needed)", () => {
+    expect(formatActivityTypeLabel("power__zone")).toBe("Power Zone");
+  });
 });
 
 describe("collapseWeeklyVolumeActivityTypes", () => {
@@ -268,6 +284,92 @@ describe("collapseWeeklyVolumeActivityTypes", () => {
     expect(otherRows[0]?.hours).toBe(15);
     expect(otherRows[0]?.count).toBe(3);
   });
+
+  it("returns empty array for empty input", () => {
+    const result = collapseWeeklyVolumeActivityTypes([]);
+    expect(result).toEqual([]);
+  });
+
+  it("accumulates hours for duplicate types (kills ?? vs && mutant)", () => {
+    const rows = [
+      { week: "2026-03-01", activity_type: "cycling", count: 1, hours: 5 },
+      { week: "2026-03-01", activity_type: "cycling", count: 1, hours: 3 },
+    ];
+    const result = collapseWeeklyVolumeActivityTypes(rows, 6);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.hours).toBe(8);
+  });
+
+  it("does not collapse when types count equals maxLegendItems (boundary)", () => {
+    const rows = [
+      { week: "2026-03-01", activity_type: "cycling", count: 1, hours: 10 },
+      { week: "2026-03-01", activity_type: "running", count: 1, hours: 8 },
+      { week: "2026-03-01", activity_type: "swimming", count: 1, hours: 6 },
+    ];
+    const result = collapseWeeklyVolumeActivityTypes(rows, 3);
+    const types = result.map((r) => r.activity_type);
+    expect(types).not.toContain(OTHER_ACTIVITY_TYPE);
+    expect(types).toContain("cycling");
+    expect(types).toContain("running");
+    expect(types).toContain("swimming");
+  });
+
+  it("collapses when types count exceeds maxLegendItems by one", () => {
+    const rows = [
+      { week: "2026-03-01", activity_type: "cycling", count: 1, hours: 10 },
+      { week: "2026-03-01", activity_type: "running", count: 1, hours: 8 },
+      { week: "2026-03-01", activity_type: "swimming", count: 1, hours: 6 },
+      { week: "2026-03-01", activity_type: "walking", count: 1, hours: 2 },
+    ];
+    const result = collapseWeeklyVolumeActivityTypes(rows, 3);
+    const types = result.map((r) => r.activity_type);
+    expect(types).toContain(OTHER_ACTIVITY_TYPE);
+    // Smallest type (walking) collapsed into Other
+    expect(types).not.toContain("walking");
+    expect(types).not.toContain("swimming");
+  });
+
+  it("sorts results by week ascending then activity_type ascending", () => {
+    const rows = [
+      { week: "2026-03-08", activity_type: "running", count: 1, hours: 5 },
+      { week: "2026-03-01", activity_type: "cycling", count: 1, hours: 10 },
+      { week: "2026-03-01", activity_type: "running", count: 1, hours: 8 },
+      { week: "2026-03-08", activity_type: "cycling", count: 1, hours: 3 },
+    ];
+    const result = collapseWeeklyVolumeActivityTypes(rows, 6);
+    expect(result.map((r) => `${r.week}:${r.activity_type}`)).toEqual([
+      "2026-03-01:cycling",
+      "2026-03-01:running",
+      "2026-03-08:cycling",
+      "2026-03-08:running",
+    ]);
+  });
+
+  it("sorts activity_types alphabetically within the same week", () => {
+    const rows = [
+      { week: "2026-03-01", activity_type: "yoga", count: 1, hours: 3 },
+      { week: "2026-03-01", activity_type: "cycling", count: 1, hours: 5 },
+      { week: "2026-03-01", activity_type: "running", count: 1, hours: 4 },
+    ];
+    const result = collapseWeeklyVolumeActivityTypes(rows, 6);
+    expect(result.map((r) => r.activity_type)).toEqual(["cycling", "running", "yoga"]);
+  });
+
+  it("keeps largest types by total hours across weeks (kills sort removal)", () => {
+    const rows = [
+      { week: "2026-03-01", activity_type: "cycling", count: 1, hours: 1 },
+      { week: "2026-03-08", activity_type: "cycling", count: 1, hours: 1 },
+      { week: "2026-03-01", activity_type: "running", count: 1, hours: 10 },
+      { week: "2026-03-01", activity_type: "swimming", count: 1, hours: 5 },
+      { week: "2026-03-01", activity_type: "walking", count: 1, hours: 3 },
+    ];
+    const result = collapseWeeklyVolumeActivityTypes(rows, 3);
+    const types = new Set(result.map((r) => r.activity_type));
+    // running (10) and swimming (5) are largest; cycling (2) and walking (3) collapse
+    expect(types).toContain("running");
+    expect(types).toContain("swimming");
+    expect(types).toContain(OTHER_ACTIVITY_TYPE);
+  });
 });
 
 describe("selectRecentDailyLoad", () => {
@@ -300,6 +402,45 @@ describe("selectRecentDailyLoad", () => {
       { date: "2026-03-16", dailyLoad: 0 },
     ];
 
+    expect(selectRecentDailyLoad(rows)).toEqual(rows[1]);
+  });
+
+  it("returns the single element for a one-element array", () => {
+    const rows = [{ date: "2026-03-15", dailyLoad: 10 }];
+    expect(selectRecentDailyLoad(rows)).toEqual(rows[0]);
+  });
+
+  it("falls back correctly with exactly 2 rows (kills length-2 vs length+2)", () => {
+    const rows = [
+      { date: "2026-03-15", dailyLoad: 25 },
+      { date: "2026-03-16", dailyLoad: 0 },
+    ];
+    expect(selectRecentDailyLoad(rows)).toEqual(rows[0]);
+  });
+
+  it("skips NaN dailyLoad rows (kills Number.isFinite check)", () => {
+    const rows = [
+      { date: "2026-03-14", dailyLoad: 10 },
+      { date: "2026-03-15", dailyLoad: Number.NaN },
+      { date: "2026-03-16", dailyLoad: 0 },
+    ];
+    expect(selectRecentDailyLoad(rows)).toEqual(rows[0]);
+  });
+
+  it("skips Infinity dailyLoad rows (kills Number.isFinite check)", () => {
+    const rows = [
+      { date: "2026-03-14", dailyLoad: 10 },
+      { date: "2026-03-15", dailyLoad: Number.POSITIVE_INFINITY },
+    ];
+    // Infinity is not finite, so falls back. Latest is Infinity, not finite → loop finds row[0]
+    expect(selectRecentDailyLoad(rows)).toEqual(rows[0]);
+  });
+
+  it("returns latest zero-load row when only non-zero rows have NaN load", () => {
+    const rows = [
+      { date: "2026-03-14", dailyLoad: Number.NaN },
+      { date: "2026-03-15", dailyLoad: 0 },
+    ];
     expect(selectRecentDailyLoad(rows)).toEqual(rows[1]);
   });
 });

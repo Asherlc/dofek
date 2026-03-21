@@ -162,7 +162,7 @@ export interface FileImportProvider extends ImportProvider {}
  * Used by the sync router to tell the frontend which auth flow to use.
  */
 export function getProviderAuthType(provider: Provider): ProviderAuthType | "none" {
-  if ("importOnly" in provider && provider.importOnly) return "file-import";
+  if ("importOnly" in provider && provider.importOnly === true) return "file-import";
   let setup: ProviderAuthSetup | undefined;
   try {
     setup = provider.authSetup?.();

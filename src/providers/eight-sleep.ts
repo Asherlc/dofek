@@ -10,7 +10,8 @@ import {
 import type { SyncDatabase } from "../db/index.ts";
 import { bodyMeasurement, dailyMetrics, metricStream, sleepSession } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
-import { ensureProvider, loadTokens } from "../db/tokens.ts";
+import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import { logger } from "../logger.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================

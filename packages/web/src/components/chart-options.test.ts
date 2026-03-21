@@ -18,10 +18,9 @@ function getSeriesArray(
 function getTooltipFormatter(option: Record<string, unknown>): (...args: unknown[]) => string {
   const tooltip = option.tooltip;
   if (typeof tooltip !== "object" || tooltip === null) throw new Error("Expected tooltip object");
-  if (!("formatter" in tooltip)) throw new Error("Expected tooltip.formatter");
-  const { formatter } = tooltip;
-  if (typeof formatter !== "function")
+  if (!("formatter" in tooltip) || typeof tooltip.formatter !== "function")
     throw new Error("Expected tooltip.formatter to be a function");
+  const formatter = tooltip.formatter;
   return (...args: unknown[]) => String(formatter(...args));
 }
 
@@ -119,19 +118,20 @@ describe("PolarizationTrendChart option builder", () => {
 
   it("does not use markLine (incompatible with ECharts visualMap)", () => {
     const option = buildPolarizationTrendOption(sampleWeeks);
-    for (const series of getSeriesArray(option)) {
-      expect(series).not.toHaveProperty("markLine");
+    const series = getSeriesArray(option);
+    for (const s of series) {
+      expect(s).not.toHaveProperty("markLine");
     }
   });
 
   it("renders threshold as a regular line series at y=2.0", () => {
     const option = buildPolarizationTrendOption(sampleWeeks);
-    const thresholdSeries = getSeriesArray(option).find((s) => s.name === "Threshold");
+    const allSeries = getSeriesArray(option);
+    const thresholdSeries = allSeries.find((s) => s.name === "Threshold");
     expect(thresholdSeries).toBeDefined();
     if (!thresholdSeries) throw new Error("Expected threshold series");
-    const data = thresholdSeries.data;
-    expect(data[0]).toEqual(["2024-01-01", 2.0]);
-    expect(data[1]).toEqual(["2024-01-08", 2.0]);
+    expect(thresholdSeries.data[0]).toEqual(["2024-01-01", 2.0]);
+    expect(thresholdSeries.data[1]).toEqual(["2024-01-08", 2.0]);
   });
 
   it("colors data points green at or above 2.0 and red below 2.0", () => {
@@ -159,17 +159,15 @@ describe("PolarizationTrendChart option builder", () => {
       },
     ];
     const option = buildPolarizationTrendOption(weeksWithBoundary);
-    const polarizationIndexSeries = getSeriesArray(option).find(
-      (s) => s.name === "Polarization Index",
-    );
+    const allSeries = getSeriesArray(option);
+    const polarizationIndexSeries = allSeries.find((s) => s.name === "Polarization Index");
     if (!polarizationIndexSeries) throw new Error("Expected polarization index series");
-    const piData = polarizationIndexSeries.data;
     // 2.5 (above threshold) → green
-    expect(piData[0]).toHaveProperty("itemStyle", { color: "#22c55e" });
+    expect(polarizationIndexSeries.data[0]).toHaveProperty("itemStyle", { color: "#22c55e" });
     // 1.8 (below threshold) → red
-    expect(piData[1]).toHaveProperty("itemStyle", { color: "#ef4444" });
+    expect(polarizationIndexSeries.data[1]).toHaveProperty("itemStyle", { color: "#ef4444" });
     // 2.0 (exactly at threshold) → green
-    expect(piData[2]).toHaveProperty("itemStyle", { color: "#22c55e" });
+    expect(polarizationIndexSeries.data[2]).toHaveProperty("itemStyle", { color: "#22c55e" });
   });
 
   it("shows incomplete weeks as distinct markers at yMin", () => {
@@ -198,7 +196,9 @@ describe("PolarizationTrendChart option builder", () => {
     ];
 
     const option = buildPolarizationTrendOption(weeksWithGap);
-    const incompleteSeries = option.series.find(
+    const seriesArr = option.series;
+    if (!Array.isArray(seriesArr)) throw new Error("Expected series array");
+    const incompleteSeries = seriesArr.find(
       (s: { name?: string }) => s.name === "Incomplete weeks",
     );
     expect(incompleteSeries).toBeDefined();
@@ -216,7 +216,9 @@ describe("PolarizationTrendChart option builder", () => {
 
   it("omits incomplete weeks series when all weeks have PI", () => {
     const option = buildPolarizationTrendOption(sampleWeeks);
-    const incompleteSeries = option.series.find(
+    const seriesArr = option.series;
+    if (!Array.isArray(seriesArr)) throw new Error("Expected series array");
+    const incompleteSeries = seriesArr.find(
       (s: { name?: string }) => s.name === "Incomplete weeks",
     );
     expect(incompleteSeries).toBeUndefined();

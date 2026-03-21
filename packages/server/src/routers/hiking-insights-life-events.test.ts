@@ -27,9 +27,13 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   };
 });
 
-vi.mock("../insights/engine.ts", () => ({
-  computeInsights: vi.fn(() => ({ insights: ["test-insight"] })),
-}));
+vi.mock("../insights/engine.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../insights/engine.ts")>();
+  return {
+    ...actual,
+    computeInsights: vi.fn(() => ({ insights: ["test-insight"] })),
+  };
+});
 
 import { hikingRouter } from "./hiking.ts";
 import { insightsRouter } from "./insights.ts";

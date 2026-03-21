@@ -54,6 +54,19 @@ export function AerobicEfficiencyChart({
   maxHr,
   loading,
 }: AerobicEfficiencyChartProps) {
+  if (!loading && activities.length === 0) {
+    return (
+      <ChartContainer
+        loading={false}
+        data={activities}
+        height={280}
+        emptyMessage="No activities with sufficient Zone 2 power + heart rate data"
+      >
+        <div />
+      </ChartContainer>
+    );
+  }
+
   // Group by activity type for coloring
   const typeSet = [...new Set(activities.map((a) => a.activityType))];
 
@@ -74,19 +87,6 @@ export function AerobicEfficiencyChart({
   }));
 
   // Compute trend line across all activities
-  if (activities.length === 0) {
-    return (
-      <ChartContainer
-        loading={!!loading}
-        data={activities}
-        height={280}
-        emptyMessage="No activities with sufficient Zone 2 power + heart rate data"
-      >
-        <div />
-      </ChartContainer>
-    );
-  }
-
   const timestamps = activities.map((a) => new Date(a.date).getTime());
   const minTime = Math.min(...timestamps);
   const maxTime = Math.max(...timestamps);

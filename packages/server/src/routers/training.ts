@@ -141,7 +141,23 @@ export const trainingRouter = router({
   activityStats: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
-      const rows = await ctx.db.execute(
+      const activityStatsRowSchema = z.object({
+        id: z.string(),
+        activity_type: z.string(),
+        name: z.string().nullable(),
+        started_at: z.string(),
+        ended_at: z.string().nullable(),
+        avg_hr: z.coerce.number().nullable(),
+        max_hr: z.coerce.number().nullable(),
+        avg_power: z.coerce.number().nullable(),
+        max_power: z.coerce.number().nullable(),
+        avg_cadence: z.coerce.number().nullable(),
+        hr_samples: z.coerce.number().nullable(),
+        power_samples: z.coerce.number().nullable(),
+      });
+      const rows = await executeWithSchema(
+        ctx.db,
+        activityStatsRowSchema,
         sql`SELECT
               asum.activity_id AS id,
               asum.activity_type,
