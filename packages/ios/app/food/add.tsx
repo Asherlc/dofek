@@ -49,8 +49,8 @@ interface SearchResult {
   fatG: number | null;
   servingDescription: string | null;
   barcode: string | null;
-  /** Original OFF result with full micronutrient data */
-  offData?: FoodDatabaseResult;
+  /** Original Open Food Facts result with full micronutrient data */
+  openFoodFactsData?: FoodDatabaseResult;
 }
 
 export default function AddFoodScreen() {
@@ -217,7 +217,7 @@ export default function AddFoodScreen() {
       fatG: r.fatG,
       servingDescription: r.servingSize,
       barcode: r.barcode,
-      offData: r,
+      openFoodFactsData: r,
     }));
 
     // History first, then Open Food Facts
@@ -283,7 +283,7 @@ export default function AddFoodScreen() {
   }
 
   function handleSelectResult(result: SearchResult) {
-    selectedFoodNutrients.current = result.offData ?? null;
+    selectedFoodNutrients.current = result.openFoodFactsData ?? null;
     fillForm(result);
   }
 
