@@ -51,6 +51,17 @@ describe("UnitConverter", () => {
     });
   });
 
+  describe("temperature stddev scaling", () => {
+    it("returns stddev unchanged for metric", () => {
+      expect(metric.scaleTemperatureStddev(0.5)).toBeCloseTo(0.5);
+    });
+
+    it("scales stddev by 9/5 for imperial", () => {
+      expect(imperial.scaleTemperatureStddev(0.5)).toBeCloseTo(0.9);
+      expect(imperial.scaleTemperatureStddev(1)).toBeCloseTo(1.8);
+    });
+  });
+
   describe("speed (km/h input)", () => {
     it("returns km/h unchanged for metric", () => {
       expect(metric.convertSpeed(100)).toBeCloseTo(100);

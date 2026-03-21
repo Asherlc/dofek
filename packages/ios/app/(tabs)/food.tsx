@@ -117,13 +117,21 @@ export default function FoodScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Nutrition Analytics link */}
-        <TouchableOpacity
-          onPress={() => router.push("/nutrition-analytics")}
-          style={styles.analyticsButton}
-        >
-          <Text style={styles.analyticsButtonText}>Nutrition Analytics</Text>
-        </TouchableOpacity>
+        {/* Section links */}
+        <View style={styles.sectionLinksRow}>
+          <TouchableOpacity
+            onPress={() => router.push("/nutrition-analytics")}
+            style={styles.sectionLinkButton}
+          >
+            <Text style={styles.sectionLinkText}>Analytics</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => router.push("/supplements")}
+            style={styles.sectionLinkButton}
+          >
+            <Text style={styles.sectionLinkText}>Supplements</Text>
+          </TouchableOpacity>
+        </View>
 
         {!isToday(selectedDate) && (
           <TouchableOpacity onPress={() => setSelectedDate(new Date())} style={styles.todayButton}>
@@ -205,16 +213,20 @@ const styles = StyleSheet.create({
     color: colors.accent,
     fontWeight: "500",
   },
-  analyticsButton: {
-    alignSelf: "center",
+  sectionLinksRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 12,
+    marginBottom: 12,
+  },
+  sectionLinkButton: {
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: colors.accent,
-    marginBottom: 12,
   },
-  analyticsButtonText: {
+  sectionLinkText: {
     fontSize: 14,
     color: colors.accent,
     fontWeight: "600",

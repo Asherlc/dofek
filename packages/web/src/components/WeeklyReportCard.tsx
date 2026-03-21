@@ -26,8 +26,8 @@ export function WeeklyReportCard({ data, loading }: WeeklyReportCardProps) {
 
   if (!data?.current) {
     return (
-      <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-6 flex items-center justify-center h-[320px]">
-        <span className="text-zinc-600 text-sm">No weekly data yet</span>
+      <div className="card p-6 flex items-center justify-center h-[320px]">
+        <span className="text-dim text-sm">No weekly data yet</span>
       </div>
     );
   }
@@ -38,11 +38,11 @@ export function WeeklyReportCard({ data, loading }: WeeklyReportCardProps) {
   const prevWeek = history.length > 0 ? history[history.length - 1] : null;
 
   return (
-    <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-6">
+    <div className="card p-6">
       <div className="flex items-start justify-between mb-5">
         <div>
-          <h3 className="text-zinc-400 text-sm font-medium mb-1">Weekly Performance</h3>
-          <p className="text-zinc-600 text-xs">
+          <h3 className="text-muted text-sm font-medium mb-1">Weekly Performance</h3>
+          <p className="text-dim text-xs">
             Week of{" "}
             {new Date(current.weekStart).toLocaleDateString("en-US", {
               month: "short",
@@ -90,7 +90,7 @@ export function WeeklyReportCard({ data, loading }: WeeklyReportCardProps) {
       {/* Strain zone history mini bar */}
       {history.length > 0 && (
         <div>
-          <p className="text-zinc-500 text-xs mb-2">Recent weeks</p>
+          <p className="text-subtle text-xs mb-2">Recent weeks</p>
           <div className="flex gap-1">
             {history.slice(-8).map((w) => {
               const zone = new StrainZone(w.strainZone);
@@ -104,7 +104,7 @@ export function WeeklyReportCard({ data, loading }: WeeklyReportCardProps) {
               );
             })}
             <div
-              className="flex-1 h-2 rounded-full ring-2 ring-zinc-600"
+              className="flex-1 h-2 rounded-full ring-2 ring-border-strong"
               style={{ backgroundColor: zoneColor }}
               title="This week"
             />
@@ -128,11 +128,11 @@ function StatBlock({
 }) {
   return (
     <div>
-      <p className="text-zinc-500 text-xs mb-1">{label}</p>
-      <p className="text-zinc-100 text-lg font-semibold tabular-nums">{value}</p>
-      <div className="text-zinc-500 text-xs">
+      <p className="text-subtle text-xs mb-1">{label}</p>
+      <p className="text-foreground text-lg font-semibold tabular-nums">{value}</p>
+      <div className="text-subtle text-xs">
         {sub}
-        {prevValue && <span className="ml-1 text-zinc-600">(prev: {prevValue})</span>}
+        {prevValue && <span className="ml-1 text-dim">(prev: {prevValue})</span>}
       </div>
     </div>
   );

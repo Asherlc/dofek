@@ -55,7 +55,7 @@ export function ActivityList({
   }
 
   if (activities.length === 0) {
-    return <div className="text-zinc-500 text-sm py-4">No recent activities</div>;
+    return <div className="text-subtle text-sm py-4">No recent activities</div>;
   }
 
   const totalPages =
@@ -66,7 +66,7 @@ export function ActivityList({
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-zinc-800 text-left text-xs text-zinc-400 uppercase tracking-wider">
+          <tr className="border-b border-border text-left text-xs text-muted uppercase tracking-wider">
             <th scope="col" className="pb-2 pr-4 whitespace-nowrap">
               Date
             </th>
@@ -99,26 +99,28 @@ export function ActivityList({
               <tr
                 key={a.id}
                 onClick={() => navigate({ to: "/activity/$id", params: { id: a.id } })}
-                className="border-b border-zinc-800/50 hover:bg-zinc-900/50 cursor-pointer"
+                className="border-b border-border/50 hover:bg-surface-hover cursor-pointer"
               >
-                <td className="py-2 pr-4 text-zinc-300 whitespace-nowrap">
+                <td className="py-2 pr-4 text-foreground whitespace-nowrap">
                   {formatActivityDate(a.started_at)}
                 </td>
                 <td className="py-2 pr-4 capitalize whitespace-nowrap">{a.activity_type}</td>
-                <td className="py-2 pr-4 text-zinc-300 max-w-[200px] truncate">{a.name ?? "—"}</td>
+                <td className="py-2 pr-4 text-foreground max-w-[200px] truncate">
+                  {a.name ?? "—"}
+                </td>
                 <td className="py-2 pr-4 tabular-nums whitespace-nowrap">
                   {formatActivityDuration(a.started_at, a.ended_at)}
                 </td>
-                <td className="py-2 pr-4 tabular-nums whitespace-nowrap text-zinc-300">
+                <td className="py-2 pr-4 tabular-nums whitespace-nowrap text-foreground">
                   {a.distance_meters
                     ? `${formatNumber(units.convertDistance(a.distance_meters / 1000))} ${units.distanceLabel}`
                     : "—"}
                 </td>
-                <td className="py-2 pr-4 tabular-nums whitespace-nowrap text-zinc-300">
+                <td className="py-2 pr-4 tabular-nums whitespace-nowrap text-foreground">
                   {a.calories ? `${Math.round(a.calories)} kcal` : "—"}
                 </td>
-                <td className="py-2 pr-4 text-zinc-400 whitespace-nowrap">{a.provider_id}</td>
-                <td className="py-2 text-zinc-500 text-xs whitespace-nowrap">
+                <td className="py-2 pr-4 text-muted whitespace-nowrap">{a.provider_id}</td>
+                <td className="py-2 text-subtle text-xs whitespace-nowrap">
                   {a.source_providers?.join(", ")}
                 </td>
               </tr>
@@ -128,25 +130,25 @@ export function ActivityList({
       </table>
 
       {totalPages != null && totalPages > 1 && onPageChange && (
-        <div className="flex items-center justify-between pt-3 border-t border-zinc-800/50 mt-2">
-          <span className="text-xs text-zinc-500 tabular-nums">{totalCount} activities</span>
+        <div className="flex items-center justify-between pt-3 border-t border-border/50 mt-2">
+          <span className="text-xs text-subtle tabular-nums">{totalCount} activities</span>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => onPageChange(currentPage - 1)}
               disabled={currentPage <= 0}
-              className="px-2 py-1 text-xs text-zinc-400 hover:text-zinc-200 disabled:text-zinc-700 disabled:cursor-not-allowed transition-colors cursor-pointer"
+              className="px-2 py-1 text-xs text-muted hover:text-foreground disabled:text-dim disabled:cursor-not-allowed transition-colors cursor-pointer"
             >
               Previous
             </button>
-            <span className="text-xs text-zinc-500 tabular-nums">
+            <span className="text-xs text-subtle tabular-nums">
               {currentPage + 1} / {totalPages}
             </span>
             <button
               type="button"
               onClick={() => onPageChange(currentPage + 1)}
               disabled={currentPage >= totalPages - 1}
-              className="px-2 py-1 text-xs text-zinc-400 hover:text-zinc-200 disabled:text-zinc-700 disabled:cursor-not-allowed transition-colors cursor-pointer"
+              className="px-2 py-1 text-xs text-muted hover:text-foreground disabled:text-dim disabled:cursor-not-allowed transition-colors cursor-pointer"
             >
               Next
             </button>

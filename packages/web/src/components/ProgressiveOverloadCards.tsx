@@ -1,7 +1,7 @@
 import type { ProgressiveOverloadRow } from "dofek-server/types";
-import ReactECharts from "echarts-for-react";
+import { chartColors, dofekAxis, dofekGrid, dofekSeries } from "../lib/chartTheme.ts";
 import { formatNumber } from "../lib/format.ts";
-import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
+import { DofekChart } from "./DofekChart.tsx";
 
 interface ProgressiveOverloadCardsProps {
   exercises: ProgressiveOverloadRow[];
@@ -9,66 +9,53 @@ interface ProgressiveOverloadCardsProps {
 }
 
 function SparklineChart({ values, isProgressing }: { values: number[]; isProgressing: boolean }) {
-  const color = isProgressing ? "#10b981" : "#ef4444";
+  const color = isProgressing ? chartColors.emerald : "#ef4444";
 
   const option = {
-    backgroundColor: "transparent",
-    grid: { top: 2, right: 2, bottom: 2, left: 2 },
-    xAxis: {
-      type: "category",
+    grid: dofekGrid("single", { top: 2, right: 2, bottom: 2, left: 2 }),
+    xAxis: dofekAxis.category({
+      data: values.map((_, i) => String(i)),
       show: false,
-      data: values.map((_, i) => i),
-    },
-    yAxis: {
-      type: "value",
-      show: false,
-    },
+    }),
+    yAxis: { type: "value" as const, show: false },
     series: [
-      {
-        type: "line",
-        data: values,
+      dofekSeries.line("Volume", values, {
+        color,
         smooth: 0.3,
-        symbol: "none",
-        lineStyle: { width: 2, color },
-        areaStyle: { color, opacity: 0.1 },
-      },
+        areaStyle: { opacity: 0.1, color },
+      }),
     ],
   };
 
-  return <ReactECharts option={option} style={{ height: 40, width: "100%" }} />;
+  return <DofekChart option={option} height={40} />;
 }
 
 export function ProgressiveOverloadCards({ exercises, loading }: ProgressiveOverloadCardsProps) {
-  if (loading) {
-    return <ChartLoadingSkeleton height={200} />;
-  }
-
-  if (exercises.length === 0) {
+  if (loading || exercises.length === 0) {
     return (
-      <div className="flex items-center justify-center h-[200px]">
-        <span className="text-zinc-600 text-sm">No progressive overload data</span>
-      </div>
+      <DofekChart
+        option={{}}
+        loading={loading}
+        empty={exercises.length === 0}
+        height={200}
+        emptyMessage="No progressive overload data"
+      />
     );
   }
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
       {exercises.map((exercise) => (
-        <div
-          key={exercise.exerciseName}
-          className="rounded-lg border border-zinc-800 bg-zinc-900 p-4"
-        >
+        <div key={exercise.exerciseName} className="card p-4">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-zinc-100 truncate">
+            <span className="text-sm font-medium text-foreground truncate">
               {exercise.exerciseName}
             </span>
-            <span
-              className={`text-lg ${exercise.isProgressing ? "text-emerald-400" : "text-red-400"}`}
-            >
+            <span className={`text-lg ${exercise.isProgressing ? "text-accent" : "text-red-400"}`}>
               {exercise.isProgressing ? "\u2191" : "\u2193"}
             </span>
           </div>
-          <div className="text-xs text-zinc-400 mb-2">
+          <div className="text-xs text-muted mb-2">
             {exercise.isProgressing ? "+" : ""}
             {formatNumber(exercise.slopeKgPerWeek)} kg/week
           </div>

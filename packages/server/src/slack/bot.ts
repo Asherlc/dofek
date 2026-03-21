@@ -14,6 +14,7 @@ import {
   refineNutritionItems,
 } from "../lib/ai-nutrition.ts";
 import { queryCache } from "../lib/cache.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import { formatConfirmationMessage, formatSavedMessage } from "./formatting.ts";
 
@@ -117,7 +118,9 @@ function extractEntryIdsFromThread(
 async function resolveUserByEmail(db: Database, email: string | null): Promise<string> {
   if (email) {
     // Check auth_account first (Google/Apple login creates these)
-    const existingByAuthEmail = await db.execute<{ user_id: string }>(
+    const existingByAuthEmail = await executeWithSchema(
+      db,
+      z.object({ user_id: z.string() }),
       sql`SELECT user_id FROM fitness.auth_account
           WHERE LOWER(email) = LOWER(${email})
           LIMIT 1`,
@@ -129,7 +132,9 @@ async function resolveUserByEmail(db: Database, email: string | null): Promise<s
     }
 
     // Also check user_profile.email (web login updates this for DEFAULT_USER_ID)
-    const existingByProfileEmail = await db.execute<{ id: string }>(
+    const existingByProfileEmail = await executeWithSchema(
+      db,
+      z.object({ id: z.string() }),
       sql`SELECT id FROM fitness.user_profile
           WHERE LOWER(email) = LOWER(${email})
           LIMIT 1`,
@@ -176,7 +181,9 @@ async function lookupOrCreateUserId(
   }
 
   // Check for existing Slack auth link
-  const existing = await db.execute<{ user_id: string }>(
+  const existing = await executeWithSchema(
+    db,
+    z.object({ user_id: z.string() }),
     sql`SELECT user_id FROM fitness.auth_account
         WHERE auth_provider = 'slack' AND provider_account_id = ${slackUserId}
         LIMIT 1`,
@@ -187,7 +194,9 @@ async function lookupOrCreateUserId(
     // with the same email but a different user_id, the Slack link is stale
     // (e.g., Slack bot ran before the user logged in on the web).
     if (email) {
-      const canonical = await db.execute<{ user_id: string }>(
+      const canonical = await executeWithSchema(
+        db,
+        z.object({ user_id: z.string() }),
         sql`SELECT user_id FROM fitness.auth_account
             WHERE LOWER(email) = LOWER(${email}) AND auth_provider != 'slack'
             LIMIT 1`,
@@ -254,7 +263,9 @@ async function saveUnconfirmedFoodEntries(
 
   const ids: string[] = [];
   for (const item of items) {
-    const rows = await db.execute<{ id: string }>(
+    const rows = await executeWithSchema(
+      db,
+      z.object({ id: z.string() }),
       sql`INSERT INTO fitness.food_entry (
             user_id, provider_id, date, meal, food_name, food_description, category,
             calories, protein_g, carbs_g, fat_g, fiber_g,
@@ -305,7 +316,9 @@ async function saveUnconfirmedFoodEntries(
 /** Confirm food entries by setting confirmed = true */
 async function confirmFoodEntries(db: Database, entryIds: string[]): Promise<number> {
   if (entryIds.length === 0) return 0;
-  const result = await db.execute<{ id: string }>(
+  const result = await executeWithSchema(
+    db,
+    z.object({ id: z.string() }),
     sql`UPDATE fitness.food_entry
         SET confirmed = true
         WHERE id IN (${sqlIdList(entryIds)})
@@ -399,20 +412,22 @@ function registerHandlers(app: AppType, db: Database) {
 
           if (previousEntryIds) {
             // Load the previous items from the database for refinement context
-            const previousRows = await db.execute<{
-              food_name: string;
-              food_description: string | null;
-              category: NutritionItemWithMeal["category"] | null;
-              calories: number | null;
-              protein_g: number | null;
-              carbs_g: number | null;
-              fat_g: number | null;
-              fiber_g: number | null;
-              saturated_fat_g: number | null;
-              sugar_g: number | null;
-              sodium_mg: number | null;
-              meal: string | null;
-            }>(
+            const previousRows = await executeWithSchema(
+              db,
+              z.object({
+                food_name: z.string(),
+                food_description: z.string().nullable(),
+                category: z.string().nullable(),
+                calories: z.coerce.number().nullable(),
+                protein_g: z.coerce.number().nullable(),
+                carbs_g: z.coerce.number().nullable(),
+                fat_g: z.coerce.number().nullable(),
+                fiber_g: z.coerce.number().nullable(),
+                saturated_fat_g: z.coerce.number().nullable(),
+                sugar_g: z.coerce.number().nullable(),
+                sodium_mg: z.coerce.number().nullable(),
+                meal: z.string().nullable(),
+              }),
               sql`SELECT food_name, food_description, category, calories,
                          protein_g, carbs_g, fat_g, fiber_g,
                          saturated_fat_g, sugar_g, sodium_mg, meal
@@ -650,10 +665,9 @@ function registerHandlers(app: AppType, db: Database) {
 
       // Always load items to show the success message, even if entries were
       // already confirmed by a prior delivery (Socket Mode retry).
-      const rows = await db.execute<{
-        food_name: string;
-        calories: number | null;
-      }>(
+      const rows = await executeWithSchema(
+        db,
+        z.object({ food_name: z.string(), calories: z.coerce.number().nullable() }),
         sql`SELECT food_name, calories
             FROM fitness.food_entry
             WHERE id IN (${sqlIdList(entryIds)})`,
@@ -689,7 +703,9 @@ function registerHandlers(app: AppType, db: Database) {
       }
 
       // Invalidate cached food/nutrition queries so the UI reflects the new entries.
-      const userRow = await db.execute<{ user_id: string }>(
+      const userRow = await executeWithSchema(
+        db,
+        z.object({ user_id: z.string() }),
         sql`SELECT DISTINCT user_id FROM fitness.food_entry WHERE id IN (${sqlIdList(entryIds)}) LIMIT 1`,
       );
       if (userRow[0]) {
@@ -878,11 +894,13 @@ export function createSlackBot(db: Database): SlackBotResult | null {
           throw new Error("Missing teamId in Slack event");
         }
         logger.info(`[slack] authorize: looking up installation for team ${teamId}`);
-        const rows = await db.execute<{
-          bot_token: string;
-          bot_id: string | null;
-          bot_user_id: string | null;
-        }>(
+        const rows = await executeWithSchema(
+          db,
+          z.object({
+            bot_token: z.string(),
+            bot_id: z.string().nullable(),
+            bot_user_id: z.string().nullable(),
+          }),
           sql`SELECT bot_token, bot_id, bot_user_id
               FROM fitness.slack_installation
               WHERE team_id = ${teamId}

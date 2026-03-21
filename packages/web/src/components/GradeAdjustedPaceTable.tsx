@@ -12,7 +12,7 @@ export function GradeAdjustedPaceTable({ data, loading }: GradeAdjustedPaceTable
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[200px]">
-        <span className="text-zinc-600 text-sm">Loading grade-adjusted pace data...</span>
+        <span className="text-dim text-sm">Loading grade-adjusted pace data...</span>
       </div>
     );
   }
@@ -20,18 +20,18 @@ export function GradeAdjustedPaceTable({ data, loading }: GradeAdjustedPaceTable
   if (data.length === 0) {
     return (
       <div className="flex items-center justify-center h-[100px]">
-        <span className="text-zinc-600 text-sm">No hiking/walking activities found</span>
+        <span className="text-dim text-sm">No hiking/walking activities found</span>
       </div>
     );
   }
 
   return (
     <div>
-      <h3 className="text-xs font-medium text-zinc-500 mb-2">Grade-Adjusted Pace</h3>
+      <h3 className="text-xs font-medium text-subtle mb-2">Grade-Adjusted Pace</h3>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-zinc-800 text-left text-xs text-zinc-400 uppercase tracking-wider">
+            <tr className="border-b border-border text-left text-xs text-muted uppercase tracking-wider">
               <th className="pb-2 pr-4">Date</th>
               <th className="pb-2 pr-4">Name</th>
               <th className="pb-2 pr-4">Distance</th>
@@ -53,12 +53,12 @@ export function GradeAdjustedPaceTable({ data, loading }: GradeAdjustedPaceTable
               return (
                 <tr
                   key={`${row.date}-${row.activityName}`}
-                  className="border-b border-zinc-800/50 hover:bg-zinc-900/50"
+                  className="border-b border-border/50 hover:bg-surface-hover"
                 >
-                  <td className="py-2 pr-4 text-zinc-300">
+                  <td className="py-2 pr-4 text-foreground">
                     {new Date(row.date).toLocaleDateString()}
                   </td>
-                  <td className="py-2 pr-4 text-zinc-300">{row.activityName}</td>
+                  <td className="py-2 pr-4 text-foreground">{row.activityName}</td>
                   <td className="py-2 pr-4 tabular-nums">
                     {formatNumber(units.convertDistance(row.distanceKm))} {units.distanceLabel}
                   </td>
@@ -84,7 +84,7 @@ export function GradeAdjustedPaceTable({ data, loading }: GradeAdjustedPaceTable
           </tbody>
         </table>
       </div>
-      <p className="text-xs text-zinc-700 mt-1">
+      <p className="text-xs text-dim mt-1">
         GAP highlighted in amber when it differs from actual pace by more than 15%.
       </p>
     </div>

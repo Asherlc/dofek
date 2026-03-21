@@ -1,10 +1,10 @@
-import type { EChartsOption } from "echarts";
-import ReactECharts from "echarts-for-react";
 import { useState } from "react";
 import { AppHeader } from "../components/AppHeader.tsx";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import { CorrelationStrengthBar } from "../components/CorrelationStrengthBar.tsx";
+import { DofekChart } from "../components/DofekChart.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
+import { chartThemeColors, dofekAxis, dofekGrid, dofekTooltip } from "../lib/chartTheme.ts";
 import { formatNumber } from "../lib/format.ts";
 import { trpc } from "../lib/trpc.ts";
 
@@ -26,11 +26,11 @@ const confidenceBadge = {
   },
   early: {
     label: "Early signal",
-    className: "bg-zinc-800 text-zinc-400 border-zinc-700",
+    className: "bg-accent/10 text-muted border-border-strong",
   },
   insufficient: {
     label: "Insufficient data",
-    className: "bg-zinc-800 text-zinc-600 border-zinc-700",
+    className: "bg-accent/10 text-dim border-border-strong",
   },
 };
 
@@ -64,11 +64,11 @@ function MetricSelect({
 }) {
   return (
     <label className="flex-1 min-w-0 block">
-      <span className="block text-[10px] text-zinc-500 uppercase tracking-wider mb-1">{label}</span>
+      <span className="block text-[10px] text-subtle uppercase tracking-wider mb-1">{label}</span>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-zinc-500"
+        className="w-full bg-accent/10 border border-border-strong rounded-md px-3 py-2 text-sm text-foreground focus:outline-none focus:border-border-strong"
       >
         {Object.entries(grouped).map(([domain, metrics]) => (
           <optgroup key={domain} label={domain}>
@@ -108,17 +108,17 @@ export function CorrelationExplorerPage() {
   const yMetric = metricsQuery.data?.find((m) => m.id === metricY);
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 overflow-x-hidden">
+    <div className="min-h-screen bg-page text-foreground overflow-x-hidden">
       <AppHeader>
         <TimeRangeSelector days={days} onChange={setDays} />
       </AppHeader>
       <main className="mx-auto max-w-7xl px-3 sm:px-6 py-4 sm:py-6 space-y-6">
         {/* Title */}
         <div>
-          <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider">
+          <h2 className="text-sm font-medium text-muted uppercase tracking-wider">
             Correlation Explorer
           </h2>
-          <p className="text-xs text-zinc-600 mt-0.5">
+          <p className="text-xs text-dim mt-0.5">
             Pick any two metrics to see how they relate. Correlation does not imply causation.
           </p>
         </div>
@@ -133,7 +133,7 @@ export function CorrelationExplorerPage() {
                 grouped={grouped}
                 label="X axis"
               />
-              <span className="text-zinc-600 text-sm pb-2">vs</span>
+              <span className="text-dim text-sm pb-2">vs</span>
               <MetricSelect
                 value={metricY}
                 onChange={setMetricY}
@@ -144,7 +144,7 @@ export function CorrelationExplorerPage() {
 
             {/* Lag selector */}
             <div className="flex items-center gap-2">
-              <span className="text-[10px] text-zinc-500 uppercase tracking-wider">Lag:</span>
+              <span className="text-[10px] text-subtle uppercase tracking-wider">Lag:</span>
               <div className="flex gap-1">
                 {LAG_OPTIONS.map((opt) => (
                   <button
@@ -153,15 +153,15 @@ export function CorrelationExplorerPage() {
                     onClick={() => setLag(opt.value)}
                     className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
                       lag === opt.value
-                        ? "bg-zinc-700 text-zinc-100"
-                        : "text-zinc-500 hover:text-zinc-300"
+                        ? "bg-accent/15 text-foreground"
+                        : "text-subtle hover:text-foreground"
                     }`}
                   >
                     {opt.label}
                   </button>
                 ))}
               </div>
-              <span className="text-[10px] text-zinc-600 ml-1">
+              <span className="text-[10px] text-dim ml-1">
                 {lag > 0
                   ? `How ${xMetric?.label ?? "X"} today relates to ${yMetric?.label ?? "Y"} ${lag === 1 ? "tomorrow" : `${lag} days later`}`
                   : "Same-day comparison"}
@@ -180,8 +180,8 @@ export function CorrelationExplorerPage() {
         {/* Loading */}
         {correlationQuery.isLoading && metricX !== metricY && (
           <div className="space-y-4">
-            <div className="h-48 rounded-lg bg-zinc-800 animate-pulse" />
-            <div className="h-64 rounded-lg bg-zinc-800 animate-pulse" />
+            <div className="h-48 rounded-lg bg-skeleton animate-pulse" />
+            <div className="h-64 rounded-lg bg-skeleton animate-pulse" />
           </div>
         )}
 
@@ -191,9 +191,9 @@ export function CorrelationExplorerPage() {
             {/* Summary row */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Correlation stats card */}
-              <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4 space-y-3">
+              <div className="card p-4 space-y-3">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-xs text-zinc-500 uppercase tracking-wider">
+                  <h3 className="text-xs text-subtle uppercase tracking-wider">
                     Correlation Strength
                   </h3>
                   <span
@@ -205,16 +205,16 @@ export function CorrelationExplorerPage() {
 
                 <div className="space-y-2">
                   <div>
-                    <p className="text-[10px] text-zinc-600 mb-0.5">Spearman (rank)</p>
+                    <p className="text-[10px] text-dim mb-0.5">Spearman (rank)</p>
                     <CorrelationStrengthBar rho={data.spearmanRho} />
                   </div>
                   <div>
-                    <p className="text-[10px] text-zinc-600 mb-0.5">Pearson (linear)</p>
+                    <p className="text-[10px] text-dim mb-0.5">Pearson (linear)</p>
                     <CorrelationStrengthBar rho={data.pearsonR} />
                   </div>
                 </div>
 
-                <div className="flex gap-4 text-[11px] text-zinc-600 pt-1">
+                <div className="flex gap-4 text-[11px] text-dim pt-1">
                   <span>R² = {formatNumber(data.regression.rSquared, 3)}</span>
                   <span>n = {data.sampleCount}</span>
                   <span>
@@ -225,24 +225,24 @@ export function CorrelationExplorerPage() {
               </div>
 
               {/* Insight card */}
-              <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4 space-y-3">
-                <h3 className="text-xs text-zinc-500 uppercase tracking-wider">Finding</h3>
-                <p className="text-sm text-zinc-200 leading-relaxed">{data.insight}</p>
+              <div className="card p-4 space-y-3">
+                <h3 className="text-xs text-subtle uppercase tracking-wider">Finding</h3>
+                <p className="text-sm text-foreground leading-relaxed">{data.insight}</p>
 
                 {data.sampleCount > 0 && (
                   <div className="grid grid-cols-2 gap-3 pt-1">
                     <div>
-                      <p className="text-[10px] text-zinc-600">{xMetric?.label ?? metricX}</p>
-                      <p className="text-sm text-zinc-300">
+                      <p className="text-[10px] text-dim">{xMetric?.label ?? metricX}</p>
+                      <p className="text-sm text-foreground">
                         {formatValue(data.xStats.mean)} ± {formatValue(data.xStats.stddev)}{" "}
-                        <span className="text-zinc-600">{xMetric?.unit}</span>
+                        <span className="text-dim">{xMetric?.unit}</span>
                       </p>
                     </div>
                     <div>
-                      <p className="text-[10px] text-zinc-600">{yMetric?.label ?? metricY}</p>
-                      <p className="text-sm text-zinc-300">
+                      <p className="text-[10px] text-dim">{yMetric?.label ?? metricY}</p>
+                      <p className="text-sm text-foreground">
                         {formatValue(data.yStats.mean)} ± {formatValue(data.yStats.stddev)}{" "}
-                        <span className="text-zinc-600">{yMetric?.unit}</span>
+                        <span className="text-dim">{yMetric?.unit}</span>
                       </p>
                     </div>
                   </div>
@@ -253,11 +253,11 @@ export function CorrelationExplorerPage() {
             {/* Scatter plot */}
             {data.dataPoints.length > 0 && (
               <div
-                className="rounded-lg border border-zinc-800 bg-zinc-900 p-4"
+                className="card p-4"
                 title="This chart plots each data point and overlays a trend line so you can see whether two metrics move together."
               >
                 <div className="mb-2 flex items-center gap-2">
-                  <h3 className="text-xs text-zinc-500 uppercase tracking-wider">Scatter Plot</h3>
+                  <h3 className="text-xs text-subtle uppercase tracking-wider">Scatter Plot</h3>
                   <ChartDescriptionTooltip description="This chart plots each data point and overlays a trend line so you can see whether two metrics move together." />
                 </div>
                 <ScatterPlot
@@ -294,32 +294,28 @@ function ScatterPlot({
   const xMax = Math.max(...xs);
   const trendColor = rho >= 0 ? "#34d399" : "#fb7185";
 
-  const option: EChartsOption = {
-    grid: { left: 8, right: 16, top: 16, bottom: 32, containLabel: true },
-    xAxis: {
-      type: "value",
+  const option = {
+    grid: dofekGrid("single", { left: 8, right: 16, top: 16, bottom: 32, containLabel: true }),
+    xAxis: dofekAxis.value({
       name: xLabel,
-      nameLocation: "middle",
-      nameGap: 24,
-      nameTextStyle: { color: "#71717a", fontSize: 10 },
-      axisLabel: { color: "#52525b", fontSize: 9 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
-      splitLine: { lineStyle: { color: "#27272a" } },
-    },
-    yAxis: {
-      type: "value",
+      axisLabel: {
+        color: chartThemeColors.axisLabel,
+        fontSize: 9,
+        nameLocation: "middle",
+        nameGap: 24,
+        nameTextStyle: { color: chartThemeColors.axisLabel, fontSize: 10 },
+      },
+    }),
+    yAxis: dofekAxis.value({
       name: yLabel,
-      nameTextStyle: { color: "#71717a", fontSize: 10 },
-      axisLabel: { color: "#52525b", fontSize: 9 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
-      splitLine: { lineStyle: { color: "#27272a" } },
-    },
+      axisLabel: { color: chartThemeColors.axisLabel, fontSize: 9 },
+    }),
     series: [
       {
         type: "scatter",
         data: dataPoints.map((p) => [p.x, p.y]),
         symbolSize: 5,
-        itemStyle: { color: "#a1a1aa", opacity: 0.5 },
+        itemStyle: { color: chartThemeColors.legendText, opacity: 0.5 },
       },
       {
         type: "line",
@@ -332,11 +328,8 @@ function ScatterPlot({
         silent: true,
       },
     ],
-    tooltip: {
+    tooltip: dofekTooltip({
       trigger: "item",
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 11 },
       formatter: (params: unknown) => {
         if (!params || typeof params !== "object" || !("value" in params)) return "";
         const rawValue = Array.isArray(params.value) ? params.value : [0, 0];
@@ -344,8 +337,8 @@ function ScatterPlot({
         const v1 = Number(rawValue[1] ?? 0);
         return `${xLabel}: ${formatValue(v0)}<br/>${yLabel}: ${formatValue(v1)}`;
       },
-    },
+    }),
   };
 
-  return <ReactECharts option={option} style={{ height: 340 }} opts={{ renderer: "svg" }} />;
+  return <DofekChart option={option} height={340} opts={{ renderer: "svg" }} />;
 }

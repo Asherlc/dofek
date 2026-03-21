@@ -2,8 +2,13 @@ import { createWriteStream } from "node:fs";
 import { Readable } from "node:stream";
 import archiver from "archiver";
 import { sql } from "drizzle-orm";
+import { z } from "zod";
 import type { SyncDatabase } from "./db/index.ts";
+import { executeWithSchema } from "./lib/typed-sql.ts";
 import { logger } from "./logger.ts";
+
+const exportRowSchema = z.record(z.string(), z.unknown());
+const countRowSchema = z.object({ count: z.string() });
 
 /** Configuration for a single table to export. */
 interface ExportTableConfig {
@@ -33,21 +38,27 @@ const EXPORT_TABLES: ExportTableConfig[] = [
   {
     name: "user-profile.json",
     query: (db, userId) =>
-      db.execute<Record<string, unknown>>(
+      executeWithSchema(
+        db,
+        exportRowSchema,
         sql`SELECT * FROM fitness.user_profile WHERE id = ${userId}`,
       ),
   },
   {
     name: "activities.json",
     query: (db, userId) =>
-      db.execute<Record<string, unknown>>(
+      executeWithSchema(
+        db,
+        exportRowSchema,
         sql`SELECT * FROM fitness.activity WHERE user_id = ${userId} ORDER BY started_at`,
       ),
   },
   {
     name: "activity-intervals.json",
     query: (db, userId) =>
-      db.execute<Record<string, unknown>>(
+      executeWithSchema(
+        db,
+        exportRowSchema,
         sql`SELECT ai.* FROM fitness.activity_interval ai
             JOIN fitness.activity a ON a.id = ai.activity_id
             WHERE a.user_id = ${userId}
@@ -57,49 +68,63 @@ const EXPORT_TABLES: ExportTableConfig[] = [
   {
     name: "sleep-sessions.json",
     query: (db, userId) =>
-      db.execute<Record<string, unknown>>(
+      executeWithSchema(
+        db,
+        exportRowSchema,
         sql`SELECT * FROM fitness.sleep_session WHERE user_id = ${userId} ORDER BY started_at`,
       ),
   },
   {
     name: "body-measurements.json",
     query: (db, userId) =>
-      db.execute<Record<string, unknown>>(
+      executeWithSchema(
+        db,
+        exportRowSchema,
         sql`SELECT * FROM fitness.body_measurement WHERE user_id = ${userId} ORDER BY recorded_at`,
       ),
   },
   {
     name: "nutrition-daily.json",
     query: (db, userId) =>
-      db.execute<Record<string, unknown>>(
+      executeWithSchema(
+        db,
+        exportRowSchema,
         sql`SELECT * FROM fitness.nutrition_daily WHERE user_id = ${userId} ORDER BY date`,
       ),
   },
   {
     name: "food-entries.json",
     query: (db, userId) =>
-      db.execute<Record<string, unknown>>(
+      executeWithSchema(
+        db,
+        exportRowSchema,
         sql`SELECT * FROM fitness.food_entry WHERE user_id = ${userId} ORDER BY date`,
       ),
   },
   {
     name: "daily-metrics.json",
     query: (db, userId) =>
-      db.execute<Record<string, unknown>>(
+      executeWithSchema(
+        db,
+        exportRowSchema,
         sql`SELECT * FROM fitness.daily_metrics WHERE user_id = ${userId} ORDER BY date`,
       ),
   },
   {
     name: "strength-workouts.json",
     query: (db, userId) =>
-      db.execute<Record<string, unknown>>(
+      executeWithSchema(
+        db,
+        exportRowSchema,
         sql`SELECT * FROM fitness.strength_workout WHERE user_id = ${userId} ORDER BY started_at`,
       ),
   },
   {
     name: "strength-sets.json",
     query: (db, userId) =>
-      db.execute<Record<string, unknown>>(
+      executeWithSchema(
+        db,
+        exportRowSchema,
         sql`SELECT ss.* FROM fitness.strength_set ss
             JOIN fitness.strength_workout sw ON sw.id = ss.workout_id
             WHERE sw.user_id = ${userId}
@@ -109,35 +134,45 @@ const EXPORT_TABLES: ExportTableConfig[] = [
   {
     name: "lab-results.json",
     query: (db, userId) =>
-      db.execute<Record<string, unknown>>(
+      executeWithSchema(
+        db,
+        exportRowSchema,
         sql`SELECT * FROM fitness.lab_result WHERE user_id = ${userId} ORDER BY recorded_at`,
       ),
   },
   {
     name: "journal-entries.json",
     query: (db, userId) =>
-      db.execute<Record<string, unknown>>(
+      executeWithSchema(
+        db,
+        exportRowSchema,
         sql`SELECT * FROM fitness.journal_entry WHERE user_id = ${userId} ORDER BY date`,
       ),
   },
   {
     name: "life-events.json",
     query: (db, userId) =>
-      db.execute<Record<string, unknown>>(
+      executeWithSchema(
+        db,
+        exportRowSchema,
         sql`SELECT * FROM fitness.life_events WHERE user_id = ${userId} ORDER BY started_at`,
       ),
   },
   {
     name: "health-events.json",
     query: (db, userId) =>
-      db.execute<Record<string, unknown>>(
+      executeWithSchema(
+        db,
+        exportRowSchema,
         sql`SELECT * FROM fitness.health_event WHERE user_id = ${userId} ORDER BY start_date`,
       ),
   },
   {
     name: "sport-settings.json",
     query: (db, userId) =>
-      db.execute<Record<string, unknown>>(
+      executeWithSchema(
+        db,
+        exportRowSchema,
         sql`SELECT * FROM fitness.sport_settings WHERE user_id = ${userId} ORDER BY sport, effective_from`,
       ),
   },
@@ -145,7 +180,9 @@ const EXPORT_TABLES: ExportTableConfig[] = [
     name: "metric-streams.json",
     batched: true,
     query: (db, userId) =>
-      db.execute<Record<string, unknown>>(
+      executeWithSchema(
+        db,
+        exportRowSchema,
         sql`SELECT * FROM fitness.metric_stream WHERE user_id = ${userId} ORDER BY recorded_at`,
       ),
   },
@@ -168,7 +205,9 @@ function createBatchedJsonStream(db: SyncDatabase, userId: string): Readable {
       }
 
       try {
-        const rows = await db.execute<Record<string, unknown>>(
+        const rows = await executeWithSchema(
+          db,
+          exportRowSchema,
           sql`SELECT * FROM fitness.metric_stream
               WHERE user_id = ${userId}
               ORDER BY recorded_at
@@ -235,7 +274,9 @@ export async function generateExport(
 
     if (table.batched) {
       // Stream metric_stream in batches
-      const countResult = await db.execute<{ count: string }>(
+      const countResult = await executeWithSchema(
+        db,
+        countRowSchema,
         sql`SELECT COUNT(*)::text AS count FROM fitness.metric_stream WHERE user_id = ${userId}`,
       );
       const count = parseInt(countResult[0]?.count ?? "0", 10);

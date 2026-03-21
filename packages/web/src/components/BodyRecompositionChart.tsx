@@ -1,8 +1,15 @@
-import ReactECharts from "echarts-for-react";
 import type { BodyRecompositionRow } from "../../../server/src/routers/body-analytics.ts";
+import {
+  chartColors,
+  dofekAxis,
+  dofekGrid,
+  dofekLegend,
+  dofekSeries,
+  dofekTooltip,
+} from "../lib/chartTheme.ts";
 import { formatNumber } from "../lib/format.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
-import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
+import { DofekChart } from "./DofekChart.tsx";
 
 interface BodyRecompositionChartProps {
   data: BodyRecompositionRow[];
@@ -11,17 +18,15 @@ interface BodyRecompositionChartProps {
 
 export function BodyRecompositionChart({ data, loading }: BodyRecompositionChartProps) {
   const units = useUnitConverter();
-  if (loading) {
-    return <ChartLoadingSkeleton height={250} />;
-  }
 
   if (data.length === 0) {
     return (
-      <div className="flex items-center justify-center h-[250px]">
-        <span className="text-zinc-600 text-sm">
-          Need weight + body fat data for recomposition tracking
-        </span>
-      </div>
+      <DofekChart
+        option={{}}
+        loading={loading}
+        empty={true}
+        emptyMessage="Need weight + body fat data for recomposition tracking"
+      />
     );
   }
 
@@ -35,52 +40,22 @@ export function BodyRecompositionChart({ data, loading }: BodyRecompositionChart
   const leanChange = last.smoothedLeanMass - first.smoothedLeanMass;
 
   const option = {
-    backgroundColor: "transparent",
-    grid: { top: 30, right: 12, bottom: 30, left: 50 },
-    tooltip: {
-      trigger: "axis" as const,
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
-    },
-    legend: {
-      top: 0,
-      textStyle: { color: "#71717a", fontSize: 11 },
-    },
-    xAxis: {
-      type: "time" as const,
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
-      splitLine: { show: false },
-    },
-    yAxis: {
-      type: "value" as const,
-      name: units.weightLabel,
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      splitLine: { lineStyle: { color: "#27272a" } },
-      nameTextStyle: { color: "#71717a", fontSize: 11 },
-    },
+    grid: dofekGrid("single", { left: 50 }),
+    tooltip: dofekTooltip(),
+    legend: dofekLegend(true),
+    xAxis: dofekAxis.time(),
+    yAxis: dofekAxis.value({ name: units.weightLabel }),
     series: [
-      {
-        name: "Fat Mass (smoothed)",
-        type: "line",
-        data: data.map((d) => [d.date, units.convertWeight(d.smoothedFatMass)]),
-        smooth: true,
-        symbol: "none",
-        lineStyle: { color: "#f97316", width: 2 },
-        itemStyle: { color: "#f97316" },
-        areaStyle: { color: "rgba(249,115,22,0.1)" },
-      },
-      {
-        name: "Lean Mass (smoothed)",
-        type: "line",
-        data: data.map((d) => [d.date, units.convertWeight(d.smoothedLeanMass)]),
-        smooth: true,
-        symbol: "none",
-        lineStyle: { color: "#3b82f6", width: 2 },
-        itemStyle: { color: "#3b82f6" },
-        areaStyle: { color: "rgba(59,130,246,0.1)" },
-      },
+      dofekSeries.line(
+        "Fat Mass (smoothed)",
+        data.map((d) => [d.date, units.convertWeight(d.smoothedFatMass)]),
+        { color: chartColors.orange, areaStyle: { opacity: 0.1 } },
+      ),
+      dofekSeries.line(
+        "Lean Mass (smoothed)",
+        data.map((d) => [d.date, units.convertWeight(d.smoothedLeanMass)]),
+        { color: chartColors.blue, areaStyle: { opacity: 0.1 } },
+      ),
     ],
   };
 
@@ -96,7 +71,7 @@ export function BodyRecompositionChart({ data, loading }: BodyRecompositionChart
           {formatNumber(units.convertWeight(leanChange))} {units.weightLabel}
         </span>
       </div>
-      <ReactECharts option={option} style={{ height: 250 }} />
+      <DofekChart option={option} loading={loading} />
     </div>
   );
 }

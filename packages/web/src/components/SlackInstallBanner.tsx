@@ -17,12 +17,12 @@ export function SlackInstallBanner() {
   }
 
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900 px-5 py-4 flex items-center justify-between gap-4">
+    <div className="card px-5 py-4 flex items-center justify-between gap-4">
       <div className="flex items-center gap-3 min-w-0">
         <SlackIcon />
         <div className="min-w-0">
-          <div className="text-sm font-medium text-zinc-200">Log food with Slack</div>
-          <div className="text-xs text-zinc-500">
+          <div className="text-sm font-medium text-foreground">Log food with Slack</div>
+          <div className="text-xs text-subtle">
             Add the bot to your workspace, then DM it what you ate — it uses AI to estimate
             nutrition automatically.
           </div>
@@ -38,7 +38,7 @@ export function SlackInstallBanner() {
         <button
           type="button"
           onClick={dismiss}
-          className="p-1.5 text-zinc-500 hover:text-zinc-300 transition-colors"
+          className="p-1.5 text-subtle hover:text-foreground transition-colors"
           aria-label="Dismiss"
         >
           <svg

@@ -24,12 +24,12 @@ describe("Provider detail page", () => {
     cy.get("main").contains("a", "Providers").should("be.visible");
   });
 
-  it("breadcrumb navigates back to providers list", () => {
+  it("breadcrumb navigates back to settings (providers moved to settings)", () => {
     cy.visit("/providers/strava");
     cy.contains("h1", "Strava").should("be.visible");
 
-    // Click the breadcrumb
+    // Click the breadcrumb — providers list now redirects to settings
     cy.get("main").contains("a", "Providers").click();
-    cy.url().should("match", /\/providers\/?$/);
+    cy.url().should("include", "/settings");
   });
 });

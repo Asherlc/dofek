@@ -1108,7 +1108,7 @@ function RecoveryTab({ days }: { days: number }) {
               { label: "Heart Rate Variability", value: latestReadiness.components.hrvScore },
               { label: "Resting Heart Rate", value: latestReadiness.components.restingHrScore },
               { label: "Sleep", value: latestReadiness.components.sleepScore },
-              { label: "Load Balance", value: latestReadiness.components.loadBalanceScore },
+              { label: "Respiratory Rate", value: latestReadiness.components.respiratoryRateScore },
             ].map((comp) => (
               <View key={comp.label} style={styles.componentRow}>
                 <Text style={styles.componentLabel}>{comp.label}</Text>

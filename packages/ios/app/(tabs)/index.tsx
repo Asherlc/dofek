@@ -281,8 +281,8 @@ export default function OverviewScreen() {
                   score={todayReadiness.components.sleepScore}
                 />
                 <ComponentRow
-                  label="Training Balance"
-                  score={todayReadiness.components.loadBalanceScore}
+                  label="Respiratory Rate"
+                  score={todayReadiness.components.respiratoryRateScore}
                 />
               </View>
             </View>

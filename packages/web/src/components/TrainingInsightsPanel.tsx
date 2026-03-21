@@ -4,11 +4,19 @@ import {
   OTHER_ACTIVITY_TYPE,
 } from "@dofek/training/training";
 import { HEART_RATE_ZONES } from "@dofek/zones/zones";
-import ReactECharts from "echarts-for-react";
 import { z } from "zod";
+import {
+  chartColors,
+  chartThemeColors,
+  dofekAxis,
+  dofekGrid,
+  dofekLegend,
+  dofekTooltip,
+} from "../lib/chartTheme.ts";
 import { formatNumber } from "../lib/format.ts";
 import { trpc } from "../lib/trpc.ts";
 import { ChartDescriptionTooltip } from "./ChartDescriptionTooltip.tsx";
+import { DofekChart } from "./DofekChart.tsx";
 
 const ZONE_COLORS: Record<string, string> = Object.fromEntries(
   HEART_RATE_ZONES.map((z) => [`zone${z.zone}`, z.color]),
@@ -20,20 +28,20 @@ const ZONE_LABELS: Record<string, string> = Object.fromEntries(
 
 // Activity type colors
 const ACTIVITY_COLORS: Record<string, string> = {
-  cycling: "#f97316",
+  cycling: chartColors.orange,
   running: "#22c55e",
   walking: "#8b5cf6",
-  swimming: "#3b82f6",
+  swimming: chartColors.blue,
   hiking: "#a3e635",
   yoga: "#c084fc",
   functional_strength: "#dc2626",
   strength_training: "#ef4444",
   strength: "#ef4444",
-  [OTHER_ACTIVITY_TYPE]: "#71717a",
+  [OTHER_ACTIVITY_TYPE]: chartThemeColors.axisLabel,
 };
 
 function getActivityColor(type: string): string {
-  return ACTIVITY_COLORS[type.toLowerCase()] ?? "#71717a";
+  return ACTIVITY_COLORS[type.toLowerCase()] ?? chartThemeColors.axisLabel;
 }
 
 const weeklyVolumeRowSchema = z.object({
@@ -78,7 +86,7 @@ export function TrainingInsightsPanel({ days }: TrainingInsightsPanelProps) {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[200px]">
-        <span className="text-zinc-600 text-sm">Loading training data...</span>
+        <span className="text-dim text-sm">Loading training data...</span>
       </div>
     );
   }
@@ -86,7 +94,7 @@ export function TrainingInsightsPanel({ days }: TrainingInsightsPanelProps) {
   if (!hasVolume && !hasZones) {
     return (
       <div className="flex items-center justify-center h-[100px]">
-        <span className="text-zinc-600 text-sm">No training data in this period</span>
+        <span className="text-dim text-sm">No training data in this period</span>
       </div>
     );
   }
@@ -137,13 +145,8 @@ function WeeklyVolumeChart({ data }: { data: WeeklyVolumeRow[] }) {
   }));
 
   const option = {
-    backgroundColor: "transparent",
-    grid: { top: 30, right: 20, bottom: 40, left: 50 },
-    tooltip: {
-      trigger: "axis",
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
+    grid: dofekGrid("single", { top: 30, bottom: 40 }),
+    tooltip: dofekTooltip({
       formatter: (
         params: Array<{ seriesName: string; value: [string, number]; color: string }>,
       ) => {
@@ -164,35 +167,20 @@ function WeeklyVolumeChart({ data }: { data: WeeklyVolumeRow[] }) {
           });
         return `<strong>${dateLabel}</strong> (${formatNumber(total)}h total)<br/>${lines.join("<br/>")}`;
       },
-    },
-    xAxis: {
-      type: "time" as const,
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
-    },
-    yAxis: {
-      type: "value",
-      name: "Hours",
-      splitLine: { lineStyle: { color: "#27272a" } },
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      axisLine: { show: false },
-      nameTextStyle: { color: "#71717a", fontSize: 11 },
-    },
-    legend: {
-      type: "scroll" as const,
-      textStyle: { color: "#a1a1aa", fontSize: 11 },
-      top: 0,
-    },
+    }),
+    xAxis: dofekAxis.time(),
+    yAxis: dofekAxis.value({ name: "Hours" }),
+    legend: dofekLegend(true, { type: "scroll" }),
     series,
   };
 
   return (
     <div>
       <div className="mb-2 flex items-center gap-2">
-        <h3 className="text-xs font-medium text-zinc-500">Weekly Training Volume</h3>
+        <h3 className="text-xs font-medium text-subtle">Weekly Training Volume</h3>
         <ChartDescriptionTooltip description="This chart shows how many training hours you completed each week, broken down by activity type." />
       </div>
-      <ReactECharts option={option} style={{ height: 220 }} notMerge={true} />
+      <DofekChart option={option} height={220} />
     </div>
   );
 }
@@ -224,13 +212,8 @@ function HrZoneChart({ weeks, maxHr }: { weeks: HrZoneWeek[]; maxHr: number }) {
   }));
 
   const option = {
-    backgroundColor: "transparent",
-    grid: { top: 30, right: 20, bottom: 40, left: 50 },
-    tooltip: {
-      trigger: "axis",
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
+    grid: dofekGrid("single", { top: 30, bottom: 40 }),
+    tooltip: dofekTooltip({
       formatter: (
         params: Array<{
           seriesName: string;
@@ -260,37 +243,22 @@ function HrZoneChart({ weeks, maxHr }: { weeks: HrZoneWeek[]; maxHr: number }) {
           });
         return `<strong>${dateLabel}</strong><br/>${lines.join("<br/>")}`;
       },
-    },
-    xAxis: {
-      type: "time" as const,
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
-    },
-    yAxis: {
-      type: "value",
-      name: "%",
-      max: 100,
-      splitLine: { lineStyle: { color: "#27272a" } },
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      axisLine: { show: false },
-      nameTextStyle: { color: "#71717a", fontSize: 11 },
-    },
-    legend: {
-      textStyle: { color: "#a1a1aa", fontSize: 11 },
-      top: 0,
-    },
+    }),
+    xAxis: dofekAxis.time(),
+    yAxis: dofekAxis.value({ name: "%", max: 100 }),
+    legend: dofekLegend(true),
     series,
   };
 
   return (
     <div>
       <div className="mb-2 flex items-center gap-2">
-        <h3 className="text-xs font-medium text-zinc-500">
-          HR Zone Distribution <span className="text-zinc-700">(max HR: {maxHr} bpm)</span>
+        <h3 className="text-xs font-medium text-subtle">
+          HR Zone Distribution <span className="text-dim">(max HR: {maxHr} bpm)</span>
         </h3>
         <ChartDescriptionTooltip description="This chart shows the percentage of weekly training time spent in each heart rate zone." />
       </div>
-      <ReactECharts option={option} style={{ height: 220 }} notMerge={true} />
+      <DofekChart option={option} height={220} />
     </div>
   );
 }
@@ -314,21 +282,18 @@ function IntensityDonut({ weeks }: { weeks: HrZoneWeek[] }) {
   const highPct = 100 - lowPct - medPct;
 
   const option = {
-    backgroundColor: "transparent",
-    tooltip: {
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
+    tooltip: dofekTooltip({
+      trigger: "item",
       formatter: ({ name, value, percent }: { name: string; value: number; percent: number }) => {
         const hours = Math.round(value / 3600);
         return `${name}: ${percent}% (${hours}h)`;
       },
-    },
+    }),
     legend: {
       orient: "vertical",
       right: 20,
       top: "center",
-      textStyle: { color: "#a1a1aa", fontSize: 12 },
+      textStyle: { color: chartThemeColors.legendText, fontSize: 12 },
     },
     series: [
       {
@@ -341,8 +306,13 @@ function IntensityDonut({ weeks }: { weeks: HrZoneWeek[] }) {
           position: "center",
           formatter: `{bold|${lowPct}%}\n{sub|low intensity}`,
           rich: {
-            bold: { fontSize: 28, fontWeight: "bold", color: "#e4e4e7", lineHeight: 36 },
-            sub: { fontSize: 11, color: "#71717a", lineHeight: 16 },
+            bold: {
+              fontSize: 28,
+              fontWeight: "bold",
+              color: chartThemeColors.tooltipText,
+              lineHeight: 36,
+            },
+            sub: { fontSize: 11, color: chartThemeColors.axisLabel, lineHeight: 16 },
           },
         },
         data: [
@@ -366,7 +336,7 @@ function IntensityDonut({ weeks }: { weeks: HrZoneWeek[] }) {
   return (
     <div>
       <div className="mb-2 flex items-center gap-2">
-        <h3 className="text-xs font-medium text-zinc-500">
+        <h3 className="text-xs font-medium text-subtle">
           Intensity Distribution{" "}
           <span className={`${statusColor} ml-2`}>
             {status} ({lowPct}/{medPct}/{highPct})
@@ -374,8 +344,8 @@ function IntensityDonut({ weeks }: { weeks: HrZoneWeek[] }) {
         </h3>
         <ChartDescriptionTooltip description="This chart summarizes your full time split between low, medium, and high intensity training." />
       </div>
-      <ReactECharts option={option} style={{ height: 200 }} notMerge={true} />
-      <p className="text-xs text-zinc-700 mt-1">
+      <DofekChart option={option} height={200} />
+      <p className="text-xs text-dim mt-1">
         Target: ~80% low (Z1-Z2), minimal medium (Z3), ~20% high (Z4-Z5)
       </p>
     </div>

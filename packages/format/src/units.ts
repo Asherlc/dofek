@@ -26,6 +26,10 @@ export class UnitConverter {
     return this.system === "imperial" ? meters * METERS_TO_FEET : meters;
   }
 
+  scaleTemperatureStddev(stddev: number): number {
+    return this.system === "imperial" ? stddev * (9 / 5) : stddev;
+  }
+
   convertTemperature(celsius: number): number {
     return this.system === "imperial" ? celsius * (9 / 5) + 32 : celsius;
   }

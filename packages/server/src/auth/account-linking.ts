@@ -46,7 +46,9 @@ export async function resolveOrCreateUser(
   }
 
   // 2. Existing auth_account for this exact provider identity
-  const existingAccount = await db.execute<{ user_id: string }>(
+  const existingAccount = await executeWithSchema(
+    db,
+    z.object({ user_id: z.string() }),
     sql`SELECT user_id FROM fitness.auth_account
         WHERE auth_provider = ${providerName} AND provider_account_id = ${identity.providerAccountId}
         LIMIT 1`,
@@ -59,7 +61,9 @@ export async function resolveOrCreateUser(
 
   // 3. Email-based auto-linking: find an existing user with the same email
   if (identity.email) {
-    const emailMatch = await db.execute<{ id: string }>(
+    const emailMatch = await executeWithSchema(
+      db,
+      z.object({ id: z.string() }),
       sql`SELECT id FROM fitness.user_profile
           WHERE LOWER(email) = LOWER(${identity.email})
           LIMIT 1`,
@@ -95,7 +99,9 @@ export async function resolveOrCreateUser(
   }
 
   // 4. First-ever user: claim the default user profile
-  const accountCount = await db.execute<{ count: string }>(
+  const accountCount = await executeWithSchema(
+    db,
+    z.object({ count: z.string() }),
     sql`SELECT COUNT(*)::text AS count FROM fitness.auth_account`,
   );
   const countRow = accountCount[0];
@@ -118,7 +124,9 @@ export async function resolveOrCreateUser(
   }
 
   // 5. New user: create a user profile
-  const newUser = await db.execute<{ id: string }>(
+  const newUser = await executeWithSchema(
+    db,
+    z.object({ id: z.string() }),
     sql`INSERT INTO fitness.user_profile (name, email)
         VALUES (${identity.name ?? "User"}, ${identity.email})
         RETURNING id`,

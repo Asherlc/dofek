@@ -1,5 +1,6 @@
-import { TrainingStressCalculator, type TssModelInfo } from "@dofek/training/training-load";
-export type { TssModelInfo };
+import type { PmcChartResult, PmcDataPoint, TssModelInfo } from "@dofek/training/pmc";
+import { TrainingStressCalculator } from "@dofek/training/training-load";
+export type { PmcChartResult, PmcDataPoint, TssModelInfo };
 
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
@@ -7,24 +8,6 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
-
-export interface PmcDataPoint {
-  date: string;
-  load: number;
-  ctl: number;
-  atl: number;
-  tsb: number;
-}
-
-export interface PmcChartResult {
-  data: PmcDataPoint[];
-  model: {
-    type: "learned" | "generic";
-    pairedActivities: number;
-    r2: number | null;
-    ftp: number | null;
-  };
-}
 
 export const pmcRouter = router({
   /**

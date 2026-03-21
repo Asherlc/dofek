@@ -6,6 +6,7 @@ import type { SyncDatabase } from "../db/index.ts";
 import { dexaScan, dexaScanRegion } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
+import { ProviderHttpClient } from "./http-client.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
@@ -221,7 +222,7 @@ export async function catchNotFound<T>(promise: Promise<T>): Promise<T | null> {
   try {
     return await promise;
   } catch (err) {
-    if (err instanceof Error && err.message.includes("(404)")) return null;
+    if (err instanceof Error && /\b404\b/.test(err.message)) return null;
     throw err;
   }
 }
@@ -248,28 +249,9 @@ function bodySpecOAuthConfig(): OAuthConfig | null {
 // BodySpec API client
 // ============================================================
 
-class BodySpecClient {
-  private accessToken: string;
-  private fetchFn: typeof globalThis.fetch;
-
+class BodySpecClient extends ProviderHttpClient {
   constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.accessToken = accessToken;
-    this.fetchFn = fetchFn;
-  }
-
-  private async get<T>(path: string, schema: z.ZodType<T>): Promise<T> {
-    const response = await this.fetchFn(`${BODYSPEC_API_BASE}${path}`, {
-      headers: { Authorization: `Bearer ${this.accessToken}` },
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      const truncated = text.length > 200 ? `${text.slice(0, 200)}…` : text;
-      throw new Error(`BodySpec API error (${response.status}): ${truncated}`);
-    }
-
-    const json: unknown = await response.json();
-    return schema.parse(json);
+    super(accessToken, BODYSPEC_API_BASE, fetchFn);
   }
 
   async listResults(page = 1, pageSize = 100): Promise<BodySpecResultsListResponse> {

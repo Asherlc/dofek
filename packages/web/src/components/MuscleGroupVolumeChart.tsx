@@ -1,38 +1,13 @@
 import type { MuscleGroupVolumeRow } from "dofek-server/types";
-import ReactECharts from "echarts-for-react";
-import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
+import { dofekAxis, dofekGrid, dofekLegend, dofekTooltip, seriesColor } from "../lib/chartTheme.ts";
+import { DofekChart } from "./DofekChart.tsx";
 
 interface MuscleGroupVolumeChartProps {
   data: MuscleGroupVolumeRow[];
   loading?: boolean;
 }
 
-const COLORS = [
-  "#10b981",
-  "#8b5cf6",
-  "#f59e0b",
-  "#ef4444",
-  "#3b82f6",
-  "#ec4899",
-  "#14b8a6",
-  "#f97316",
-  "#a855f7",
-  "#06b6d4",
-];
-
 export function MuscleGroupVolumeChart({ data, loading }: MuscleGroupVolumeChartProps) {
-  if (loading) {
-    return <ChartLoadingSkeleton height={320} />;
-  }
-
-  if (data.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-[320px]">
-        <span className="text-zinc-600 text-sm">No muscle group data</span>
-      </div>
-    );
-  }
-
   // Collect all unique weeks across all muscle groups
   const allWeeks = new Set<string>();
   for (const group of data) {
@@ -50,7 +25,7 @@ export function MuscleGroupVolumeChart({ data, loading }: MuscleGroupVolumeChart
       stack: "total",
       data: sortedWeeks.map((w) => [w, weekMap.get(w) ?? 0]),
       itemStyle: {
-        color: COLORS[index % COLORS.length],
+        color: seriesColor(index),
       },
       emphasis: {
         focus: "series" as const,
@@ -59,37 +34,23 @@ export function MuscleGroupVolumeChart({ data, loading }: MuscleGroupVolumeChart
   });
 
   const option = {
-    backgroundColor: "transparent",
-    grid: { top: 40, right: 20, bottom: 40, left: 50 },
-    tooltip: {
-      trigger: "axis",
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
+    grid: dofekGrid("single", { top: 40, left: 50 }),
+    tooltip: dofekTooltip({
       axisPointer: { type: "shadow" },
-    },
-    legend: {
-      type: "scroll",
-      top: 0,
-      textStyle: { color: "#a1a1aa", fontSize: 11 },
-      pageTextStyle: { color: "#a1a1aa" },
-      pageIconColor: "#71717a",
-      pageIconInactiveColor: "#3f3f46",
-    },
-    xAxis: {
-      type: "time" as const,
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
-    },
-    yAxis: {
-      type: "value",
-      name: "Sets",
-      nameTextStyle: { color: "#71717a", fontSize: 11 },
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      splitLine: { lineStyle: { color: "#27272a" } },
-    },
+    }),
+    legend: dofekLegend(true, { type: "scroll" }),
+    xAxis: dofekAxis.time(),
+    yAxis: dofekAxis.value({ name: "Sets" }),
     series,
   };
 
-  return <ReactECharts option={option} style={{ height: 320 }} />;
+  return (
+    <DofekChart
+      option={option}
+      loading={loading}
+      empty={data.length === 0}
+      emptyMessage="No muscle group data"
+      height={320}
+    />
+  );
 }

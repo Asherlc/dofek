@@ -17,6 +17,9 @@ importers:
       '@dofek/heart-rate-variability':
         specifier: workspace:*
         version: link:packages/heart-rate-variability
+      '@dofek/scoring':
+        specifier: workspace:*
+        version: link:packages/scoring
       '@dofek/stats':
         specifier: workspace:*
         version: link:packages/stats

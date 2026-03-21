@@ -1,3 +1,5 @@
+import { zScoreToRecoveryScore } from "@dofek/scoring/scoring";
+import { HEART_RATE_ZONES, ZONE_BOUNDARIES_HRR } from "@dofek/zones/zones";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
@@ -99,14 +101,14 @@ export const trainingRouter = router({
         sql`SELECT
               up.max_hr,
               date_trunc('week', a.started_at)::date AS week,
-              COUNT(*) FILTER (WHERE ms.heart_rate < rhr.resting_hr + (up.max_hr - rhr.resting_hr) * 0.6)::int AS zone1,
-              COUNT(*) FILTER (WHERE ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * 0.6
-                                AND ms.heart_rate <  rhr.resting_hr + (up.max_hr - rhr.resting_hr) * 0.7)::int AS zone2,
-              COUNT(*) FILTER (WHERE ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * 0.7
-                                AND ms.heart_rate <  rhr.resting_hr + (up.max_hr - rhr.resting_hr) * 0.8)::int AS zone3,
-              COUNT(*) FILTER (WHERE ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * 0.8
-                                AND ms.heart_rate <  rhr.resting_hr + (up.max_hr - rhr.resting_hr) * 0.9)::int AS zone4,
-              COUNT(*) FILTER (WHERE ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * 0.9)::int AS zone5
+              COUNT(*) FILTER (WHERE ms.heart_rate < rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[0]}::numeric)::int AS zone1,
+              COUNT(*) FILTER (WHERE ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[0]}::numeric
+                                AND ms.heart_rate <  rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[1]}::numeric)::int AS zone2,
+              COUNT(*) FILTER (WHERE ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[1]}::numeric
+                                AND ms.heart_rate <  rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[2]}::numeric)::int AS zone3,
+              COUNT(*) FILTER (WHERE ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[2]}::numeric
+                                AND ms.heart_rate <  rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[3]}::numeric)::int AS zone4,
+              COUNT(*) FILTER (WHERE ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[3]}::numeric)::int AS zone5
             FROM fitness.user_profile up
             JOIN fitness.v_activity a ON a.user_id = up.id
             JOIN fitness.metric_stream ms ON ms.activity_id = a.id
@@ -191,10 +193,13 @@ export const trainingRouter = router({
       date: dateStringSchema,
       hrv: z.coerce.number().nullable(),
       resting_hr: z.coerce.number().nullable(),
-      hrv_mean_60d: z.coerce.number().nullable(),
-      hrv_sd_60d: z.coerce.number().nullable(),
-      rhr_mean_60d: z.coerce.number().nullable(),
-      rhr_sd_60d: z.coerce.number().nullable(),
+      respiratory_rate: z.coerce.number().nullable(),
+      hrv_mean_30d: z.coerce.number().nullable(),
+      hrv_sd_30d: z.coerce.number().nullable(),
+      rhr_mean_30d: z.coerce.number().nullable(),
+      rhr_sd_30d: z.coerce.number().nullable(),
+      rr_mean_30d: z.coerce.number().nullable(),
+      rr_sd_30d: z.coerce.number().nullable(),
     });
     const latestMetrics = await executeWithSchema(
       ctx.db,
@@ -203,7 +208,8 @@ export const trainingRouter = router({
             SELECT
               date,
               hrv,
-              resting_hr
+              resting_hr,
+              respiratory_rate_avg AS respiratory_rate
             FROM fitness.v_daily_metrics
             WHERE user_id = ${ctx.userId}
             ORDER BY date DESC
@@ -213,20 +219,25 @@ export const trainingRouter = router({
             latest.date::text AS date,
             latest.hrv,
             latest.resting_hr,
-            baseline.hrv_mean_60d,
-            baseline.hrv_sd_60d,
-            baseline.rhr_mean_60d,
-            baseline.rhr_sd_60d
+            latest.respiratory_rate,
+            baseline.hrv_mean_30d,
+            baseline.hrv_sd_30d,
+            baseline.rhr_mean_30d,
+            baseline.rhr_sd_30d,
+            baseline.rr_mean_30d,
+            baseline.rr_sd_30d
           FROM latest
           CROSS JOIN LATERAL (
             SELECT
-              AVG(dm.hrv) AS hrv_mean_60d,
-              STDDEV_POP(dm.hrv) AS hrv_sd_60d,
-              AVG(dm.resting_hr) AS rhr_mean_60d,
-              STDDEV_POP(dm.resting_hr) AS rhr_sd_60d
+              AVG(dm.hrv) AS hrv_mean_30d,
+              STDDEV_POP(dm.hrv) AS hrv_sd_30d,
+              AVG(dm.resting_hr) AS rhr_mean_30d,
+              STDDEV_POP(dm.resting_hr) AS rhr_sd_30d,
+              AVG(dm.respiratory_rate_avg) AS rr_mean_30d,
+              STDDEV_POP(dm.respiratory_rate_avg) AS rr_sd_30d
             FROM fitness.v_daily_metrics dm
             WHERE dm.user_id = ${ctx.userId}
-              AND dm.date BETWEEN latest.date - 59 AND latest.date
+              AND dm.date BETWEEN latest.date - 29 AND latest.date
           ) baseline`,
     );
     const latestMetric = latestMetrics[0];
@@ -371,14 +382,14 @@ export const trainingRouter = router({
       ctx.db,
       zoneTotalsSchema,
       sql`SELECT
-            COUNT(*) FILTER (WHERE ms.heart_rate < rhr.resting_hr + (up.max_hr - rhr.resting_hr) * 0.6)::int AS zone1,
-            COUNT(*) FILTER (WHERE ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * 0.6
-                              AND ms.heart_rate <  rhr.resting_hr + (up.max_hr - rhr.resting_hr) * 0.7)::int AS zone2,
-            COUNT(*) FILTER (WHERE ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * 0.7
-                              AND ms.heart_rate <  rhr.resting_hr + (up.max_hr - rhr.resting_hr) * 0.8)::int AS zone3,
-            COUNT(*) FILTER (WHERE ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * 0.8
-                              AND ms.heart_rate <  rhr.resting_hr + (up.max_hr - rhr.resting_hr) * 0.9)::int AS zone4,
-            COUNT(*) FILTER (WHERE ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * 0.9)::int AS zone5
+            COUNT(*) FILTER (WHERE ms.heart_rate < rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[0]}::numeric)::int AS zone1,
+            COUNT(*) FILTER (WHERE ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[0]}::numeric
+                              AND ms.heart_rate <  rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[1]}::numeric)::int AS zone2,
+            COUNT(*) FILTER (WHERE ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[1]}::numeric
+                              AND ms.heart_rate <  rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[2]}::numeric)::int AS zone3,
+            COUNT(*) FILTER (WHERE ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[2]}::numeric
+                              AND ms.heart_rate <  rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[3]}::numeric)::int AS zone4,
+            COUNT(*) FILTER (WHERE ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[3]}::numeric)::int AS zone5
           FROM fitness.user_profile up
           JOIN fitness.v_activity a ON a.user_id = up.id
           JOIN fitness.metric_stream ms ON ms.activity_id = a.id
@@ -411,7 +422,7 @@ export const trainingRouter = router({
             SELECT
               a.id,
               a.started_at::date AS activity_date,
-              BOOL_OR(ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * 0.8) AS had_high_intensity
+              BOOL_OR(ms.heart_rate >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[2]}::numeric) AS had_high_intensity
             FROM fitness.user_profile up
             JOIN fitness.v_activity a ON a.user_id = up.id
             JOIN fitness.metric_stream ms ON ms.activity_id = a.id
@@ -472,36 +483,48 @@ export const trainingRouter = router({
           ORDER BY training_date DESC`,
     );
 
-    let hrvScore = 50;
+    let hrvScore = 62;
     if (
       latestMetric?.hrv != null &&
-      latestMetric.hrv_mean_60d != null &&
-      latestMetric.hrv_sd_60d != null &&
-      latestMetric.hrv_sd_60d > 0
+      latestMetric.hrv_mean_30d != null &&
+      latestMetric.hrv_sd_30d != null &&
+      latestMetric.hrv_sd_30d > 0
     ) {
-      const hrvZ = (latestMetric.hrv - latestMetric.hrv_mean_60d) / latestMetric.hrv_sd_60d;
-      hrvScore = zScoreToScore(hrvZ);
+      const hrvZ = (latestMetric.hrv - latestMetric.hrv_mean_30d) / latestMetric.hrv_sd_30d;
+      hrvScore = zScoreToRecoveryScore(hrvZ);
     }
 
-    let restingHrScore = 50;
+    let restingHrScore = 62;
     if (
       latestMetric?.resting_hr != null &&
-      latestMetric.rhr_mean_60d != null &&
-      latestMetric.rhr_sd_60d != null &&
-      latestMetric.rhr_sd_60d > 0
+      latestMetric.rhr_mean_30d != null &&
+      latestMetric.rhr_sd_30d != null &&
+      latestMetric.rhr_sd_30d > 0
     ) {
-      const rhrZ = (latestMetric.resting_hr - latestMetric.rhr_mean_60d) / latestMetric.rhr_sd_60d;
-      restingHrScore = zScoreToScore(-rhrZ);
+      const rhrZ = (latestMetric.resting_hr - latestMetric.rhr_mean_30d) / latestMetric.rhr_sd_30d;
+      restingHrScore = zScoreToRecoveryScore(-rhrZ);
     }
 
     const sleepScore =
-      latestSleepEfficiency != null ? clamp(Math.round(latestSleepEfficiency), 0, 100) : 50;
-    const loadBalanceScore = acwrToScore(acwr);
+      latestSleepEfficiency != null ? clamp(Math.round(latestSleepEfficiency), 0, 100) : 62;
+
+    let respiratoryRateScore = 62;
+    if (
+      latestMetric?.respiratory_rate != null &&
+      latestMetric.rr_mean_30d != null &&
+      latestMetric.rr_sd_30d != null &&
+      latestMetric.rr_sd_30d > 0
+    ) {
+      const rrZ =
+        (latestMetric.respiratory_rate - latestMetric.rr_mean_30d) / latestMetric.rr_sd_30d;
+      respiratoryRateScore = zScoreToRecoveryScore(-rrZ);
+    }
+
     const readinessScoreRaw = latestMetric
       ? hrvScore * weights.hrv +
         restingHrScore * weights.restingHr +
         sleepScore * weights.sleep +
-        loadBalanceScore * weights.loadBalance
+        respiratoryRateScore * weights.respiratoryRate
       : null;
     const readinessScore = readinessScoreRaw != null ? Math.round(readinessScoreRaw) : null;
     const readinessLevel = getReadinessLevel(readinessScore);
@@ -694,16 +717,6 @@ export const trainingRouter = router({
 // Exported for unit testing — these are pure helpers with no side effects.
 export function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
-}
-
-export function zScoreToScore(zScore: number): number {
-  return clamp(Math.round((50 + zScore * 15) * 10) / 10, 0, 100);
-}
-
-export function acwrToScore(acwr: number | null): number {
-  if (acwr == null) return 50;
-  const deviation = Math.abs(acwr - 1);
-  return clamp(Math.round((1 - deviation) * 100), 0, 100);
 }
 
 export function getReadinessLevel(score: number | null): ReadinessLevel {
