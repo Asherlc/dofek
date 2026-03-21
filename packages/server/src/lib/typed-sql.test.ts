@@ -137,8 +137,14 @@ describe("timestampStringSchema", () => {
     expect(timestampStringSchema.parse(date)).toBe("2024-01-15T10:30:00.000Z");
   });
 
-  it("passes through a postgres-format string", () => {
-    expect(timestampStringSchema.parse("2024-01-15 10:30:00+00")).toBe("2024-01-15 10:30:00+00");
+  it("normalizes a postgres-format string to ISO 8601", () => {
+    expect(timestampStringSchema.parse("2024-01-15 10:30:00+00")).toBe("2024-01-15T10:30:00.000Z");
+  });
+
+  it("normalizes a postgres-format string with microseconds to ISO 8601", () => {
+    expect(timestampStringSchema.parse("2024-01-15 10:30:00.678162+00")).toBe(
+      "2024-01-15T10:30:00.678Z",
+    );
   });
 
   it("rejects non-string non-date values", () => {
