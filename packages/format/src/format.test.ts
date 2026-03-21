@@ -79,6 +79,10 @@ describe("formatDurationRange", () => {
   it("returns -- when end timestamp is invalid", () => {
     expect(formatDurationRange("2024-01-01T10:00:00Z", "not-a-date")).toBe("--");
   });
+
+  it("handles postgres-style space-separated timestamps", () => {
+    expect(formatDurationRange("2024-01-01 10:00:00+00", "2024-01-01 11:30:00+00")).toBe("1h 30m");
+  });
 });
 
 describe("formatSleepDebt", () => {
@@ -291,5 +295,11 @@ describe("formatTime", () => {
 
   it("returns -- for invalid timestamps", () => {
     expect(formatTime("not-a-date")).toBe("--");
+  });
+
+  it("handles postgres-style space-separated timestamps", () => {
+    const result = formatTime("2024-03-15 14:30:00+00");
+    expect(result).toContain("Mar");
+    expect(result).toContain("15");
   });
 });

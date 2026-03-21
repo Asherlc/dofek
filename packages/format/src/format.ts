@@ -12,7 +12,10 @@ export function formatDurationMinutes(minutes: number): string {
   return `${hours}h ${mins}m`;
 }
 
-function parseValidDate(value: string): Date | null {
+/** Parse a timestamp string into a Date, returning null if invalid.
+ *  Handles both ISO 8601 and postgres ::text format (space-separated, e.g. "2024-03-20 14:30:00+00")
+ *  which Hermes and Safari cannot parse natively. */
+export function parseValidDate(value: string): Date | null {
   const parsed = new Date(value);
   if (!Number.isNaN(parsed.getTime())) return parsed;
   // Normalize postgres-style timestamps for strict JS engines (Hermes, older Safari):

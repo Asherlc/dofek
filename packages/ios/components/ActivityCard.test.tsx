@@ -89,6 +89,18 @@ describe("ActivityCard", () => {
     expect(screen.getByText("\u{26A1}")).toBeTruthy();
   });
 
+  it("parses postgres-style space-separated timestamps", () => {
+    render(
+      <ActivityCard
+        {...baseProps}
+        startedAt="2026-03-18 07:00:00+00"
+        endedAt="2026-03-18 07:45:00+00"
+      />,
+    );
+    // Should NOT show placeholders — timestamps are valid
+    expect(screen.queryByText("-- · --")).toBeNull();
+  });
+
   it("falls back to placeholders for invalid timestamps", () => {
     render(<ActivityCard {...baseProps} startedAt="not-a-date" endedAt="still-not-a-date" />);
     expect(screen.getByText("-- · --")).toBeTruthy();
