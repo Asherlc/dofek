@@ -187,6 +187,71 @@ describe("createChartOptions", () => {
     expect(options.graphic).toEqual([{ type: "text", right: 10, top: 5 }]);
   });
 
+  it("deep-merges nested tooltip.textStyle overrides (kills deepMerge recursion NoCoverage)", () => {
+    const options = createChartOptions({
+      tooltip: { textStyle: { color: "#ff0000" } },
+    });
+    // Override applied
+    expect(options.tooltip.textStyle).toEqual({ color: "#ff0000", fontSize: 12 });
+  });
+
+  it("deep-merges nested xAxis.axisLine.lineStyle overrides", () => {
+    const options = createChartOptions({
+      xAxis: { axisLine: { lineStyle: { color: "#ff0000", width: 2 } } },
+    });
+    expect(Array.isArray(options.xAxis)).toBe(false);
+    if (Array.isArray(options.xAxis)) throw new Error("Expected object");
+    expect(options.xAxis.axisLine).toEqual({ lineStyle: { color: "#ff0000", width: 2 } });
+    // Other defaults preserved
+    expect(options.xAxis.axisLabel).toEqual({ color: "#71717a", fontSize: 11 });
+  });
+
+  it("handles null override values for themed keys (kills isPlainObject null check)", () => {
+    const options = createChartOptions({
+      tooltip: null,
+    });
+    // null is not a plain object, so mergeSection returns defaults clone
+    expect(options.tooltip.backgroundColor).toBe("#18181b");
+  });
+
+  it("themed keys (tooltip, xAxis, yAxis, legend) get defaults merged in", () => {
+    // Each themed key should have its defaults applied even with empty overrides
+    const options = createChartOptions({
+      tooltip: {},
+      xAxis: {},
+      yAxis: {},
+      legend: {},
+    });
+    expect(options.tooltip.backgroundColor).toBe("#18181b");
+    expect(options.tooltip.borderColor).toBe("#3f3f46");
+    expect(Array.isArray(options.xAxis)).toBe(false);
+    if (Array.isArray(options.xAxis)) throw new Error("Expected object");
+    expect(options.xAxis.axisLabel).toEqual({
+      color: "#71717a",
+      fontSize: 11,
+    });
+    expect(Array.isArray(options.yAxis)).toBe(false);
+    if (Array.isArray(options.yAxis)) throw new Error("Expected object");
+    expect(options.yAxis.splitLine).toEqual({
+      lineStyle: { color: "#27272a" },
+    });
+    expect(options.legend.textStyle).toEqual({ color: "#a1a1aa", fontSize: 11 });
+  });
+
+  it("non-themed keys are not filtered by themedKeys set (kills themedKeys.has continue)", () => {
+    const options = createChartOptions({
+      tooltip: { trigger: "axis" },
+      grid: { top: 10 },
+      series: [{ type: "line" }],
+    });
+    // tooltip should have defaults merged
+    expect(options.tooltip.backgroundColor).toBe("#18181b");
+    // grid should pass through
+    expect(options.grid).toEqual({ top: 10 });
+    // series should pass through
+    expect(options.series).toEqual([{ type: "line" }]);
+  });
+
   it("does not mutate the CHART_THEME constant", () => {
     const originalBg = CHART_THEME.tooltip.backgroundColor;
     createChartOptions({
