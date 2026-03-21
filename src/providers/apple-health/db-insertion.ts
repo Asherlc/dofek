@@ -295,7 +295,7 @@ export async function upsertDailyMetricsBatch(
   for (const r of records) {
     if (!DAILY_METRIC_TYPES.has(r.type)) continue;
     const dateKey = dateToString(r.startDate);
-    const sourceName = r.sourceName ?? "";
+    const sourceName = r.sourceName ?? null;
     const compoundKey = `${dateKey}\0${sourceName}`;
     if (!byDateSource.has(compoundKey)) byDateSource.set(compoundKey, new Map());
     const day = byDateSource.get(compoundKey) ?? new Map();
@@ -455,13 +455,13 @@ export async function aggregateSpO2ToDailyMetrics(
           (recorded_at AT TIME ZONE 'UTC')::date AS date,
           provider_id,
           user_id,
-          COALESCE(source_name, '') AS source_name,
+          source_name,
           AVG(spo2) * 100 AS spo2_avg
         FROM fitness.metric_stream
         WHERE provider_id = ${providerId}
           AND spo2 IS NOT NULL
           AND recorded_at >= ${since.toISOString()}::timestamptz
-        GROUP BY (recorded_at AT TIME ZONE 'UTC')::date, provider_id, user_id, COALESCE(source_name, '')
+        GROUP BY (recorded_at AT TIME ZONE 'UTC')::date, provider_id, user_id, source_name
         ON CONFLICT (date, provider_id, source_name) DO UPDATE SET
           spo2_avg = EXCLUDED.spo2_avg`,
   );
@@ -483,13 +483,13 @@ export async function aggregateSkinTempToDailyMetrics(
           (recorded_at AT TIME ZONE 'UTC')::date AS date,
           provider_id,
           user_id,
-          COALESCE(source_name, '') AS source_name,
+          source_name,
           AVG(skin_temperature) AS skin_temp_c
         FROM fitness.metric_stream
         WHERE provider_id = ${providerId}
           AND skin_temperature IS NOT NULL
           AND recorded_at >= ${since.toISOString()}::timestamptz
-        GROUP BY (recorded_at AT TIME ZONE 'UTC')::date, provider_id, user_id, COALESCE(source_name, '')
+        GROUP BY (recorded_at AT TIME ZONE 'UTC')::date, provider_id, user_id, source_name
         ON CONFLICT (date, provider_id, source_name) DO UPDATE SET
           skin_temp_c = EXCLUDED.skin_temp_c`,
   );

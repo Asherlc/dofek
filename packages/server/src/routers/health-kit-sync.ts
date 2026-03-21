@@ -538,7 +538,7 @@ async function processDailyMetrics(
     insertColumns.push(sql`user_id`);
     insertValues.push(sql`${userId}`);
     insertColumns.push(sql`source_name`);
-    insertValues.push(sql`${sourceName ?? ""}`);
+    insertValues.push(sql`${sourceName ?? null}`);
 
     // Additive fields: replace with the complete day-total from this sync.
     // Each iOS sync sends all samples for the 7-day window, so the in-memory
@@ -800,7 +800,7 @@ async function aggregateSpO2ToDailyMetrics(
           (recorded_at AT TIME ZONE 'UTC')::date AS date,
           provider_id,
           user_id,
-          COALESCE(source_name, '') AS source_name,
+          source_name,
           AVG(spo2) * 100 AS spo2_avg
         FROM fitness.metric_stream
         WHERE provider_id = ${PROVIDER_ID}
@@ -808,7 +808,7 @@ async function aggregateSpO2ToDailyMetrics(
           AND spo2 IS NOT NULL
           AND recorded_at >= ${bounds.startAt}::timestamptz
           AND recorded_at <= ${bounds.endAt}::timestamptz
-        GROUP BY (recorded_at AT TIME ZONE 'UTC')::date, provider_id, user_id, COALESCE(source_name, '')
+        GROUP BY (recorded_at AT TIME ZONE 'UTC')::date, provider_id, user_id, source_name
         ON CONFLICT (date, provider_id, source_name) DO UPDATE SET
           spo2_avg = EXCLUDED.spo2_avg`,
   );
@@ -830,7 +830,7 @@ async function aggregateSkinTempToDailyMetrics(
           (recorded_at AT TIME ZONE 'UTC')::date AS date,
           provider_id,
           user_id,
-          COALESCE(source_name, '') AS source_name,
+          source_name,
           AVG(skin_temperature) AS skin_temp_c
         FROM fitness.metric_stream
         WHERE provider_id = ${PROVIDER_ID}
@@ -838,7 +838,7 @@ async function aggregateSkinTempToDailyMetrics(
           AND skin_temperature IS NOT NULL
           AND recorded_at >= ${bounds.startAt}::timestamptz
           AND recorded_at <= ${bounds.endAt}::timestamptz
-        GROUP BY (recorded_at AT TIME ZONE 'UTC')::date, provider_id, user_id, COALESCE(source_name, '')
+        GROUP BY (recorded_at AT TIME ZONE 'UTC')::date, provider_id, user_id, source_name
         ON CONFLICT (date, provider_id, source_name) DO UPDATE SET
           skin_temp_c = EXCLUDED.skin_temp_c`,
   );

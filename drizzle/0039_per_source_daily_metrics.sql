@@ -8,10 +8,15 @@
 -- across all sources at insert time — roughly doubling values for users
 -- with both iPhone and Apple Watch.
 --
--- This migration adds source_name to the primary key so each device gets
--- its own row. The v_daily_metrics materialized view already has
--- device-level priority logic (from migration 0032) that picks the best
--- source per metric — it just needs multiple source rows to choose from.
+-- This migration adds source_name to the uniqueness constraint so each
+-- device gets its own row. The v_daily_metrics materialized view already
+-- has device-level priority logic (from migration 0032) that picks the
+-- best source per metric — it just needs multiple source rows to choose
+-- from.
+--
+-- source_name stays nullable: NULL means "single source / not applicable"
+-- (most providers). NULLS NOT DISTINCT ensures that two rows with
+-- (date, provider_id, NULL) are treated as duplicates.
 -- ============================================================
 
 -- 1. Drop dependent materialized view
@@ -19,24 +24,22 @@ DROP MATERIALIZED VIEW IF EXISTS fitness.v_daily_metrics;
 
 --> statement-breakpoint
 
--- 2. Backfill NULL source_name with provider_id for existing rows
-UPDATE fitness.daily_metrics SET source_name = provider_id WHERE source_name IS NULL;
-
---> statement-breakpoint
-
--- 3. Make source_name NOT NULL
-ALTER TABLE fitness.daily_metrics ALTER COLUMN source_name SET NOT NULL;
-ALTER TABLE fitness.daily_metrics ALTER COLUMN source_name SET DEFAULT '';
-
---> statement-breakpoint
-
--- 4. Replace primary key to include source_name
+-- 2. Add UUID primary key column, replace composite PK with a
+--    NULLS NOT DISTINCT unique index that includes source_name.
+--    This allows multiple rows per (date, provider_id) when source_name
+--    differs (Apple Health), while treating NULL source_name values as
+--    equal (all other providers).
+ALTER TABLE fitness.daily_metrics ADD COLUMN id uuid DEFAULT gen_random_uuid();
+UPDATE fitness.daily_metrics SET id = gen_random_uuid() WHERE id IS NULL;
+ALTER TABLE fitness.daily_metrics ALTER COLUMN id SET NOT NULL;
 ALTER TABLE fitness.daily_metrics DROP CONSTRAINT daily_metrics_date_provider_id_pk;
-ALTER TABLE fitness.daily_metrics ADD CONSTRAINT daily_metrics_date_provider_id_source_name_pk PRIMARY KEY (date, provider_id, source_name);
+ALTER TABLE fitness.daily_metrics ADD PRIMARY KEY (id);
+CREATE UNIQUE INDEX daily_metrics_date_provider_source_idx
+  ON fitness.daily_metrics (date, provider_id, source_name) NULLS NOT DISTINCT;
 
 --> statement-breakpoint
 
--- 5. Add iPhone device priority for apple_health (lower priority than Watch
+-- 3. Add iPhone device priority for apple_health (lower priority than Watch
 --    for daily activity, so the view prefers Apple Watch step counts)
 INSERT INTO fitness.device_priority (provider_id, source_name_pattern, daily_activity_priority)
 VALUES ('apple_health', '%iPhone%', 50)
@@ -44,7 +47,7 @@ ON CONFLICT (provider_id, source_name_pattern) DO UPDATE SET daily_activity_prio
 
 --> statement-breakpoint
 
--- 6. Recreate v_daily_metrics (same as migration 0032, device-aware priorities)
+-- 4. Recreate v_daily_metrics (same as migration 0032, device-aware priorities)
 CREATE MATERIALIZED VIEW fitness.v_daily_metrics AS
 WITH ranked AS (
   SELECT

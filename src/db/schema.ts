@@ -394,6 +394,7 @@ export const metricStream = fitness.table(
 export const dailyMetrics = fitness.table(
   "daily_metrics",
   {
+    id: uuid("id").primaryKey().defaultRandom(),
     date: date("date").notNull(),
     providerId: text("provider_id")
       .notNull()
@@ -427,11 +428,12 @@ export const dailyMetrics = fitness.table(
     stressHighMinutes: integer("stress_high_minutes"), // minutes of high stress (Oura)
     recoveryHighMinutes: integer("recovery_high_minutes"), // minutes of high recovery (Oura)
     resilienceLevel: text("resilience_level"), // e.g. "limited", "adequate", "solid", "strong", "exceptional"
-    sourceName: text("source_name").notNull().default(""),
+    sourceName: text("source_name"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    primaryKey({ columns: [table.date, table.providerId, table.sourceName] }),
+    // Business uniqueness: NULLS NOT DISTINCT index created in migration 0039
+    // (Drizzle doesn't support NULLS NOT DISTINCT natively)
     index("daily_metrics_user_provider_idx").on(table.userId, table.providerId),
   ],
 );
