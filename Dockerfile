@@ -30,6 +30,8 @@ COPY packages/onboarding/package.json ./packages/onboarding/
 COPY packages/providers-meta/package.json ./packages/providers-meta/
 COPY packages/auth/package.json ./packages/auth/
 COPY packages/heart-rate-variability/package.json ./packages/heart-rate-variability/
+COPY packages/recovery/package.json ./packages/recovery/
+COPY packages/zones/package.json ./packages/zones/
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile --prod --node-linker=hoisted
 
@@ -55,6 +57,8 @@ COPY packages/onboarding/package.json ./packages/onboarding/
 COPY packages/providers-meta/package.json ./packages/providers-meta/
 COPY packages/auth/package.json ./packages/auth/
 COPY packages/heart-rate-variability/package.json ./packages/heart-rate-variability/
+COPY packages/recovery/package.json ./packages/recovery/
+COPY packages/zones/package.json ./packages/zones/
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile
 COPY . .
@@ -111,8 +115,10 @@ COPY --from=source --chown=node:node /app/packages/training/src ./packages/train
 COPY --from=source --chown=node:node /app/packages/training/package.json ./packages/training/
 COPY --from=source --chown=node:node /app/packages/heart-rate-variability/src ./packages/heart-rate-variability/src
 COPY --from=source --chown=node:node /app/packages/heart-rate-variability/package.json ./packages/heart-rate-variability/
-COPY --from=source --chown=node:node /app/packages/training/src ./packages/training/src
-COPY --from=source --chown=node:node /app/packages/training/package.json ./packages/training/
+COPY --from=source --chown=node:node /app/packages/recovery/src ./packages/recovery/src
+COPY --from=source --chown=node:node /app/packages/recovery/package.json ./packages/recovery/
+COPY --from=source --chown=node:node /app/packages/zones/src ./packages/zones/src
+COPY --from=source --chown=node:node /app/packages/zones/package.json ./packages/zones/
 COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules
 # Link workspace packages so bare-specifier imports resolve
 # Use ln -sf to overwrite any links pnpm's hoisted mode may have created
@@ -130,7 +136,8 @@ RUN ln -sf /app node_modules/dofek && \
     ln -sf /app/packages/training node_modules/@dofek/training && \
     ln -sf /app/packages/auth node_modules/@dofek/auth && \
     ln -sf /app/packages/heart-rate-variability node_modules/@dofek/heart-rate-variability && \
-    ln -sf /app/packages/training node_modules/@dofek/training
+    ln -sf /app/packages/recovery node_modules/@dofek/recovery && \
+    ln -sf /app/packages/zones node_modules/@dofek/zones
 
 # SOPS-encrypted .env — decrypted at runtime via SOPS_AGE_KEY env var
 COPY --from=source --chown=node:node /app/.env .

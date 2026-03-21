@@ -1,0 +1,11 @@
+{
+  "name": "@dofek/recovery",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./stress": "./src/stress.ts",
+    "./readiness": "./src/readiness.ts",
+    "./sleep-consistency": "./src/sleep-consistency.ts"
+  }
+}

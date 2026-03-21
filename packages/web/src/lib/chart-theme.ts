@@ -74,7 +74,7 @@ function mergeSection(
 
 // ── Factory function ────────────────────────────────────────────────
 
-interface ChartOptions {
+export interface ChartOptions {
   backgroundColor: string;
   tooltip: Record<string, unknown>;
   xAxis: Record<string, unknown> | unknown[];
