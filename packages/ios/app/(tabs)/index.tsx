@@ -297,7 +297,7 @@ export default function OverviewScreen() {
                 textStyle={styles.cardTitle}
               />
               <SleepBar
-                durationMinutes={lastNight.sleepMinutes}
+                durationMinutes={lastNight.durationMinutes}
                 deepPercentage={lastNight.deepPct}
                 remPercentage={lastNight.remPct}
                 lightPercentage={lastNight.lightPct}

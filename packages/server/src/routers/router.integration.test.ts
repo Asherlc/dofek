@@ -499,6 +499,7 @@ describe("Router coverage", () => {
         nightly: {
           date: string;
           durationMinutes: number;
+          sleepMinutes: number;
           deepPct: number;
           remPct: number;
           lightPct: number;
@@ -514,6 +515,8 @@ describe("Router coverage", () => {
       for (const night of result.nightly) {
         expect(night.date).toBeTruthy();
         expect(night.durationMinutes).toBeGreaterThan(0);
+        // For non-Apple Health providers, sleepMinutes should equal durationMinutes
+        expect(night.sleepMinutes).toBe(night.durationMinutes);
         // Stage percentages should roughly sum to 100
         const totalPct = night.deepPct + night.remPct + night.lightPct + night.awakePct;
         expect(totalPct).toBeGreaterThan(90);
@@ -523,6 +526,58 @@ describe("Router coverage", () => {
 
       // Sleep debt is computed from last 14 nights vs 480min target
       expect(typeof result.sleepDebt).toBe("number");
+    });
+
+    it("sleepAnalytics computes sleepMinutes from stages for Apple Health", async () => {
+      // Insert apple_health provider
+      await testCtx.db.execute(
+        sql`INSERT INTO fitness.provider (id, name, user_id)
+            VALUES ('apple_health', 'Apple Health', ${DEFAULT_USER_ID})
+            ON CONFLICT DO NOTHING`,
+      );
+
+      // Insert an Apple Health sleep session where duration = in-bed time (480 min)
+      // but stages sum to less (deep + rem + light = 390 min, awake = 90 min)
+      const deep = 100;
+      const rem = 110;
+      const light = 180;
+      const awake = 90;
+      const inBedDuration = deep + rem + light + awake; // 480
+      const expectedSleepMinutes = deep + rem + light; // 390
+
+      await testCtx.db.execute(
+        sql`INSERT INTO fitness.sleep_session (
+              provider_id, user_id, started_at, ended_at,
+              duration_minutes, deep_minutes, rem_minutes, light_minutes,
+              awake_minutes, efficiency_pct, sleep_type
+            ) VALUES (
+              'apple_health', ${DEFAULT_USER_ID},
+              CURRENT_TIMESTAMP - INTERVAL '2 hours',
+              CURRENT_TIMESTAMP,
+              ${inBedDuration}, ${deep}, ${rem}, ${light}, ${awake}, 81, 'sleep'
+            )`,
+      );
+
+      // Refresh materialized view so v_sleep picks up the new row
+      await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
+
+      // Clear cache so the query hits the DB
+      queryCache.reset();
+
+      const result = await query<{
+        nightly: {
+          date: string;
+          durationMinutes: number;
+          sleepMinutes: number;
+        }[];
+        sleepDebt: number;
+      }>("recovery.sleepAnalytics", { days: 1 });
+
+      // Find the Apple Health night (latest entry)
+      const latest = result.nightly[result.nightly.length - 1];
+      expect(latest).toBeDefined();
+      expect(latest!.durationMinutes).toBe(inBedDuration);
+      expect(latest!.sleepMinutes).toBe(expectedSleepMinutes);
     });
 
     it("readinessScore returns composite scores with component breakdown", async () => {

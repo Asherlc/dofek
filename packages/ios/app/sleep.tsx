@@ -63,7 +63,7 @@ export default function SleepScreen() {
                 textStyle={styles.cardTitle}
               />
               <SleepBar
-                durationMinutes={lastNight.sleepMinutes}
+                durationMinutes={lastNight.durationMinutes}
                 deepPercentage={lastNight.deepPct}
                 remPercentage={lastNight.remPct}
                 lightPercentage={lastNight.lightPct}
@@ -209,7 +209,7 @@ export default function SleepScreen() {
                     </Text>
                     <View style={styles.nightlyBarContainer}>
                       <SleepBar
-                        durationMinutes={night.sleepMinutes}
+                        durationMinutes={night.durationMinutes}
                         deepPercentage={night.deepPct}
                         remPercentage={night.remPct}
                         lightPercentage={night.lightPct}
