@@ -610,4 +610,144 @@ describe("Deduplication materialized views", () => {
       expect(rows[0]?.provider_id).toBe("whoop");
     });
   });
+
+  describe("v_sleep efficiency derivation", () => {
+    it("derives efficiency for Apple Health as (deep + rem + light) / duration", async () => {
+      await ctx.db.insert(sleepSession).values({
+        providerId: "apple_health",
+        externalId: "ah-eff-derive",
+        startedAt: new Date("2026-04-01T23:00:00Z"),
+        endedAt: new Date("2026-04-02T07:00:00Z"),
+        durationMinutes: 480,
+        deepMinutes: 90,
+        remMinutes: 90,
+        lightMinutes: 120,
+        awakeMinutes: 15,
+        efficiencyPct: null,
+        sleepType: "sleep",
+      });
+
+      await refreshDedupViews(ctx.db);
+
+      const rows = await ctx.db.execute<SleepViewRow>(
+        sql`SELECT * FROM fitness.v_sleep WHERE started_at::date = '2026-04-01'`,
+      );
+
+      const mainSleep = rows.filter((r) => !r.is_nap);
+      expect(mainSleep.length).toBe(1);
+      // (90 + 90 + 120) / 480 * 100 = 62.5
+      expect(Number(mainSleep[0]?.efficiency_pct)).toBeCloseTo(62.5, 1);
+    });
+
+    it("derives efficiency for Eight Sleep as duration / (duration + awake)", async () => {
+      await ensureProvider(ctx.db, "eight-sleep", "Eight Sleep");
+
+      await ctx.db.insert(sleepSession).values({
+        providerId: "eight-sleep",
+        externalId: "es-eff-derive",
+        startedAt: new Date("2026-04-02T23:00:00Z"),
+        endedAt: new Date("2026-04-03T07:00:00Z"),
+        durationMinutes: 420,
+        deepMinutes: 100,
+        remMinutes: 90,
+        lightMinutes: 230,
+        awakeMinutes: 60,
+        efficiencyPct: null,
+        sleepType: "sleep",
+      });
+
+      await refreshDedupViews(ctx.db);
+
+      const rows = await ctx.db.execute<SleepViewRow>(
+        sql`SELECT * FROM fitness.v_sleep WHERE started_at::date = '2026-04-02'`,
+      );
+
+      const mainSleep = rows.filter((r) => !r.is_nap);
+      expect(mainSleep.length).toBe(1);
+      // 420 / (420 + 60) * 100 = 87.5
+      expect(Number(mainSleep[0]?.efficiency_pct)).toBeCloseTo(87.5, 1);
+    });
+
+    it("derives efficiency for Polar as duration / (duration + awake)", async () => {
+      await ensureProvider(ctx.db, "polar", "Polar");
+
+      await ctx.db.insert(sleepSession).values({
+        providerId: "polar",
+        externalId: "polar-eff-derive",
+        startedAt: new Date("2026-04-03T23:00:00Z"),
+        endedAt: new Date("2026-04-04T07:00:00Z"),
+        durationMinutes: 360,
+        deepMinutes: 100,
+        remMinutes: 90,
+        lightMinutes: 170,
+        awakeMinutes: 40,
+        efficiencyPct: null,
+        sleepType: "sleep",
+      });
+
+      await refreshDedupViews(ctx.db);
+
+      const rows = await ctx.db.execute<SleepViewRow>(
+        sql`SELECT * FROM fitness.v_sleep WHERE started_at::date = '2026-04-03'`,
+      );
+
+      const mainSleep = rows.filter((r) => !r.is_nap);
+      expect(mainSleep.length).toBe(1);
+      // 360 / (360 + 40) * 100 = 90.0
+      expect(Number(mainSleep[0]?.efficiency_pct)).toBeCloseTo(90.0, 1);
+    });
+
+    it("uses stored efficiency_pct when present (Whoop)", async () => {
+      await ctx.db.insert(sleepSession).values({
+        providerId: "whoop",
+        externalId: "whoop-eff-stored",
+        startedAt: new Date("2026-04-04T23:00:00Z"),
+        endedAt: new Date("2026-04-05T06:30:00Z"),
+        durationMinutes: 420,
+        deepMinutes: 110,
+        remMinutes: 80,
+        lightMinutes: 200,
+        awakeMinutes: 30,
+        efficiencyPct: 93.2,
+        sleepType: "sleep",
+      });
+
+      await refreshDedupViews(ctx.db);
+
+      const rows = await ctx.db.execute<SleepViewRow>(
+        sql`SELECT * FROM fitness.v_sleep WHERE started_at::date = '2026-04-04'`,
+      );
+
+      const mainSleep = rows.filter((r) => !r.is_nap);
+      expect(mainSleep.length).toBe(1);
+      // Stored value used as-is
+      expect(Number(mainSleep[0]?.efficiency_pct)).toBeCloseTo(93.2, 1);
+    });
+
+    it("returns null efficiency when awake_minutes is null", async () => {
+      await ctx.db.insert(sleepSession).values({
+        providerId: "apple_health",
+        externalId: "ah-eff-no-awake",
+        startedAt: new Date("2026-04-05T23:00:00Z"),
+        endedAt: new Date("2026-04-06T07:00:00Z"),
+        durationMinutes: 480,
+        deepMinutes: null,
+        remMinutes: null,
+        lightMinutes: null,
+        awakeMinutes: null,
+        efficiencyPct: null,
+        sleepType: "sleep",
+      });
+
+      await refreshDedupViews(ctx.db);
+
+      const rows = await ctx.db.execute<SleepViewRow>(
+        sql`SELECT * FROM fitness.v_sleep WHERE started_at::date = '2026-04-05'`,
+      );
+
+      const mainSleep = rows.filter((r) => !r.is_nap);
+      expect(mainSleep.length).toBe(1);
+      expect(mainSleep[0]?.efficiency_pct).toBeNull();
+    });
+  });
 });

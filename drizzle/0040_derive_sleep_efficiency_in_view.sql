@@ -1,13 +1,13 @@
 -- Stop storing derived sleep efficiency for providers that don't supply it
--- (Apple Health, Eight Sleep, Polar, HealthKit). Instead, compute it in the
--- v_sleep materialized view using COALESCE: use the stored value when present
--- (Whoop, Oura, Fitbit), fall back to (duration - awake) / duration * 100.
+-- (Apple Health, Eight Sleep, Polar). Instead, compute it in the v_sleep
+-- materialized view using COALESCE: use the stored value when present
+-- (Whoop, Oura, Fitbit), fall back to a provider-specific derivation.
 
 -- NULL out efficiency_pct for providers that were computing it client-side,
 -- since it's now derived in the view.
 UPDATE fitness.sleep_session
 SET efficiency_pct = NULL
-WHERE provider_id IN ('apple_health', 'eight_sleep', 'polar', 'apple_health_kit');
+WHERE provider_id IN ('apple_health', 'eight-sleep', 'polar');
 
 -- Recreate the materialized view with computed efficiency fallback.
 DROP MATERIALIZED VIEW IF EXISTS fitness.v_sleep;
@@ -88,8 +88,23 @@ SELECT
   b.awake_minutes,
   COALESCE(
     b.efficiency_pct,
-    CASE WHEN b.duration_minutes > 0 AND b.awake_minutes IS NOT NULL
-      THEN ROUND((b.duration_minutes - b.awake_minutes)::numeric / b.duration_minutes * 100, 1)
+    CASE
+      -- Apple Health: duration_minutes = total in-bed time, stages are subsets.
+      -- efficiency = total classified sleep time / in-bed time.
+      WHEN b.provider_id = 'apple_health'
+        AND b.duration_minutes > 0
+        AND (b.deep_minutes IS NOT NULL OR b.rem_minutes IS NOT NULL OR b.light_minutes IS NOT NULL)
+        THEN ROUND(
+          (COALESCE(b.deep_minutes, 0) + COALESCE(b.rem_minutes, 0) + COALESCE(b.light_minutes, 0))::numeric
+          / b.duration_minutes * 100, 1)
+      -- Eight Sleep / Polar: duration_minutes = sleep time only (excludes awake).
+      -- efficiency = sleep time / (sleep time + awake time).
+      WHEN b.provider_id IN ('eight-sleep', 'polar')
+        AND b.duration_minutes > 0
+        AND b.awake_minutes IS NOT NULL
+        THEN ROUND(
+          b.duration_minutes::numeric
+          / (b.duration_minutes + b.awake_minutes) * 100, 1)
     END
   ) AS efficiency_pct,
   b.sleep_type,
