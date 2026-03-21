@@ -99,15 +99,18 @@ describe("signInToXert", () => {
     const result = await signInToXert("user@example.com", "hunter2", mockFetch);
 
     expect(mockFetch).toHaveBeenCalledOnce();
-    const call = mockFetch.mock.calls[0];
-    expect(call).toBeDefined();
-    const [url, options] = call;
-    expect(url).toBe("https://www.xertonline.com/oauth/token");
-    expect(options.method).toBe("POST");
-    expect(options.headers.Authorization).toMatch(/^Basic /);
-    expect(options.headers["Content-Type"]).toBe("application/x-www-form-urlencoded");
+    expect(mockFetch).toHaveBeenCalledWith(
+      "https://www.xertonline.com/oauth/token",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          Authorization: expect.stringMatching(/^Basic /),
+          "Content-Type": "application/x-www-form-urlencoded",
+        }),
+      }),
+    );
 
-    const body = new URLSearchParams(options.body);
+    const body = new URLSearchParams(String(mockFetch.mock.calls[0]?.[1]?.body));
     expect(body.get("grant_type")).toBe("password");
     expect(body.get("username")).toBe("user@example.com");
     expect(body.get("password")).toBe("hunter2");
