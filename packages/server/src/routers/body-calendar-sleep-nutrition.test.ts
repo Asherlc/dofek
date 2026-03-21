@@ -13,7 +13,8 @@ vi.mock("../trpc.ts", async () => {
   };
 });
 
-vi.mock("../lib/typed-sql.ts", () => ({
+vi.mock("../lib/typed-sql.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/typed-sql.ts")>()),
   executeWithSchema: vi.fn(
     async (
       db: { execute: (query: unknown) => Promise<unknown[]> },
