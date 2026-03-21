@@ -1,6 +1,7 @@
 import { sleepDebtColor } from "@dofek/scoring/scoring";
 import type { SleepNeedResult } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
+import { formatNumber } from "../lib/format.ts";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface SleepNeedCardProps {
@@ -78,7 +79,7 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
       axisLabel: {
         color: "#71717a",
         fontSize: 11,
-        formatter: (v: number) => `${(v / 60).toFixed(0)}h`,
+        formatter: (v: number) => `${formatNumber(v / 60, 0)}h`,
       },
       splitLine: { lineStyle: { color: "#27272a" } },
       axisLine: { show: false },

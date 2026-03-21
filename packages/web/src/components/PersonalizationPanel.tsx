@@ -1,3 +1,4 @@
+import { formatNumber } from "../lib/format.ts";
 import { trpc } from "../lib/trpc.ts";
 
 const PARAM_LABELS: Record<string, { label: string; description: string }> = {
@@ -137,7 +138,7 @@ export function PersonalizationPanel() {
             hrvThresholds: [number, number, number];
             rhrThresholds: [number, number, number];
           }) =>
-            `Heart Rate Variability: ${v.hrvThresholds.map((t) => t.toFixed(1)).join(", ")} · Resting Heart Rate: ${v.rhrThresholds.map((t) => t.toFixed(1)).join(", ")}`
+            `Heart Rate Variability: ${v.hrvThresholds.map((t) => formatNumber(t)).join(", ")} · Resting Heart Rate: ${v.rhrThresholds.map((t) => formatNumber(t)).join(", ")}`
           }
           renderQuality={
             data.parameters.stressThresholds

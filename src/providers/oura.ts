@@ -1,3 +1,4 @@
+import { createActivityTypeMapper, OURA_ACTIVITY_TYPE_MAP } from "@dofek/training/training";
 import { z } from "zod";
 import type { OAuthConfig } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
@@ -7,10 +8,10 @@ import { activity, dailyMetrics, healthEvent, metricStream, sleepSession } from 
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import type {
-  Provider,
   ProviderAuthSetup,
   ProviderIdentity,
   SyncError,
+  SyncProvider,
   SyncResult,
 } from "./types.ts";
 
@@ -291,26 +292,14 @@ export function parseOuraDailyMetrics(
   };
 }
 
-const OURA_ACTIVITY_TYPE_MAP: Record<string, string> = {
-  walking: "walking",
-  running: "running",
-  cycling: "cycling",
-  swimming: "swimming",
-  hiking: "hiking",
-  yoga: "yoga",
-  elliptical: "elliptical",
-  rowing: "rowing",
-  strength_training: "strength",
-  weight_training: "strength",
-  dancing: "dancing",
-  pilates: "pilates",
-  indoor_cycling: "cycling",
-  stairmaster: "stairmaster",
-  other: "other",
-};
+const mapOuraType = createActivityTypeMapper(OURA_ACTIVITY_TYPE_MAP);
 
 export function mapOuraActivityType(ouraActivity: string): string {
-  return OURA_ACTIVITY_TYPE_MAP[ouraActivity.toLowerCase()] ?? ouraActivity.toLowerCase();
+  const key = ouraActivity.toLowerCase();
+  const mapped = mapOuraType(key);
+  // Oura falls back to the lowercased activity name rather than "other"
+  // to preserve unrecognized Oura-specific types as-is
+  return mapped === "other" && key !== "other" ? key : mapped;
 }
 
 // ============================================================
@@ -558,7 +547,7 @@ const HEALTH_EVENT_BATCH_SIZE = 1000;
 // Provider implementation
 // ============================================================
 
-export class OuraProvider implements Provider {
+export class OuraProvider implements SyncProvider {
   readonly id = "oura";
   readonly name = "Oura";
   private fetchFn: typeof globalThis.fetch;

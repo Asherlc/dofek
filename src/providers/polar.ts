@@ -1,10 +1,11 @@
+import { createActivityTypeMapper, POLAR_SPORT_MAP } from "@dofek/training/training";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { activity, dailyMetrics, sleepSession } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
-import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
+import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
 // Polar AccessLink API types
@@ -71,54 +72,11 @@ export interface PolarNightlyRecharge {
 // Sport mapping
 // ============================================================
 
-const POLAR_SPORT_MAP: Record<string, string> = {
-  running: "running",
-  cycling: "cycling",
-  swimming: "swimming",
-  walking: "walking",
-  hiking: "hiking",
-  strength_training: "strength",
-  yoga: "yoga",
-  pilates: "pilates",
-  cross_country_skiing: "cross country skiing",
-  rowing: "rowing",
-  elliptical: "elliptical",
-  mountain_biking: "mountain biking",
-  trail_running: "trail running",
-  cross_training: "cross training",
-  group_exercise: "group exercise",
-  stretching: "stretching",
-  dance: "dance",
-  martial_arts: "martial arts",
-  tennis: "tennis",
-  basketball: "basketball",
-  soccer: "soccer",
-  golf: "golf",
-  ice_hockey: "ice hockey",
-  skiing: "skiing",
-  snowboarding: "snowboarding",
-  skating: "skating",
-  rock_climbing: "rock climbing",
-  surfing: "surfing",
-  kayaking: "kayaking",
-  functional_training: "functional fitness",
-  bootcamp: "bootcamp",
-  boxing: "boxing",
-  core: "core",
-  aqua_fitness: "aqua fitness",
-  circuit_training: "circuit training",
-  triathlon: "triathlon",
-  indoor_cycling: "cycling",
-  indoor_rowing: "rowing",
-  indoor_running: "running",
-  indoor_walking: "walking",
-  treadmill_running: "running",
-  stair_climbing: "stairmaster",
-};
+const mapPolarType = createActivityTypeMapper(POLAR_SPORT_MAP);
 
 export function mapPolarSport(sport: string): string {
   const key = sport.toLowerCase();
-  return POLAR_SPORT_MAP[key] ?? "other";
+  return mapPolarType(key);
 }
 
 // ============================================================
@@ -332,7 +290,7 @@ export class PolarClient {
 // Provider implementation
 // ============================================================
 
-export class PolarProvider implements Provider {
+export class PolarProvider implements SyncProvider {
   readonly id = "polar";
   readonly name = "Polar";
   private fetchFn: typeof globalThis.fetch;

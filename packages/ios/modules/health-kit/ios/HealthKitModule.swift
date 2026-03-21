@@ -11,6 +11,27 @@ public class HealthKitModule: Module {
             return HKHealthStore.isHealthDataAvailable()
         }
 
+        AsyncFunction("getRequestStatus") { (promise: Promise) in
+            guard HKHealthStore.isHealthDataAvailable() else {
+                promise.resolve("unavailable")
+                return
+            }
+            self.healthStore.statusForAuthorizationRequest(toShare: writeTypes, read: readTypes) { status, error in
+                if let error = error {
+                    promise.reject("HEALTHKIT_STATUS_ERROR", error.localizedDescription)
+                    return
+                }
+                switch status {
+                case .unnecessary:
+                    promise.resolve("unnecessary")
+                case .shouldRequest:
+                    promise.resolve("shouldRequest")
+                default:
+                    promise.resolve("unknown")
+                }
+            }
+        }
+
         AsyncFunction("requestPermissions") { (promise: Promise) in
             guard HKHealthStore.isHealthDataAvailable() else {
                 promise.resolve(false)
@@ -285,6 +306,10 @@ public class HealthKitModule: Module {
             self.healthStore.execute(query)
         }
 
+        Function("isBackgroundDeliveryEnabled") {
+            return UserDefaults.standard.bool(forKey: "healthkit_background_delivery_enabled")
+        }
+
         AsyncFunction("enableBackgroundDelivery") { (typeIdentifier: String, promise: Promise) in
             guard let sampleType = HKQuantityType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: typeIdentifier)) else {
                 promise.reject("INVALID_TYPE", "Unknown quantity type: \(typeIdentifier)")
@@ -295,6 +320,9 @@ public class HealthKitModule: Module {
                 if let error = error {
                     promise.reject("BG_DELIVERY_ERROR", error.localizedDescription)
                 } else {
+                    if success {
+                        UserDefaults.standard.set(true, forKey: "healthkit_background_delivery_enabled")
+                    }
                     promise.resolve(success)
                 }
             }

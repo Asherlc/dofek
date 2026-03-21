@@ -1,6 +1,8 @@
 export {
   scoreColor,
   scoreLabel,
+  strainZoneColor,
+  strainZoneLabel,
   workloadRatioColor,
   workloadRatioHint,
   aggregateWeeklyVolume,

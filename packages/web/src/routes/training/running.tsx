@@ -12,7 +12,7 @@ export const Route = createFileRoute("/training/running")({
   component: RunningTab,
 });
 
-import { formatPace } from "../../lib/format.ts";
+import { formatNumber, formatPace } from "../../lib/format.ts";
 
 export function RunningTab() {
   const { days } = useTrainingDays();
@@ -203,7 +203,7 @@ function PaceTrendChart({
           `<strong>${d.activityName}</strong>`,
           `${d.date}`,
           `Pace: ${formatPace(convertPace(d.paceSecondsPerKm, unitSystem))} ${paceLabel(unitSystem)}`,
-          `Distance: ${convertDistance(d.distanceKm, unitSystem).toFixed(1)} ${distanceLabel(unitSystem)} · ${d.durationMinutes} min`,
+          `Distance: ${formatNumber(convertDistance(d.distanceKm, unitSystem))} ${distanceLabel(unitSystem)} · ${d.durationMinutes} min`,
         ].join("<br/>");
       },
     },
@@ -357,18 +357,21 @@ function RunningDynamicsTable({
                   {formatPace(convertPace(d.paceSecondsPerKm, unitSystem))} {paceLabel(unitSystem)}
                 </td>
                 <td className="py-1.5 pr-3 text-right font-mono">
-                  {convertDistance(d.distanceKm, unitSystem).toFixed(1)} {distanceLabel(unitSystem)}
+                  {formatNumber(convertDistance(d.distanceKm, unitSystem))}{" "}
+                  {distanceLabel(unitSystem)}
                 </td>
                 <td className="py-1.5 pr-3 text-right font-mono">{d.cadence}</td>
                 <td className="py-1.5 pr-3 text-right font-mono">
-                  {d.strideLengthMeters != null ? `${d.strideLengthMeters.toFixed(2)} m` : "--"}
+                  {d.strideLengthMeters != null
+                    ? `${formatNumber(d.strideLengthMeters, 2)} m`
+                    : "--"}
                 </td>
                 <td className="py-1.5 pr-3 text-right font-mono">
                   {d.stanceTimeMs != null ? `${Math.round(d.stanceTimeMs)} ms` : "--"}
                 </td>
                 <td className="py-1.5 text-right font-mono">
                   {d.verticalOscillationMm != null
-                    ? `${d.verticalOscillationMm.toFixed(1)} mm`
+                    ? `${formatNumber(d.verticalOscillationMm)} mm`
                     : "--"}
                 </td>
               </tr>

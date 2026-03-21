@@ -7,6 +7,7 @@ import { convertDistance, convertElevation, convertPace, convertWeight, distance
 import { colors } from "../theme";
 import { scoreColor, scoreLabel, workloadRatioColor, workloadRatioHint, rampRateColor, formZoneColor, FORM_ZONE_COLORS } from "@dofek/scoring/scoring";
 import { formatPace } from "@dofek/format/format";
+import { formatNumber, formatSigned } from "@dofek/format/format";
 import { statusColors } from "@dofek/scoring/colors";
 
 // ── Types ──
@@ -53,9 +54,9 @@ function sparklinePath(data: number[], width: number, height: number): string {
     .join(" ");
 }
 
-function formatNumber(value: number | null | undefined, decimals = 0): string {
+function formatNullable(value: number | null | undefined, decimals = 0): string {
   if (value == null || Number.isNaN(value)) return "--";
-  return value.toFixed(decimals);
+  return formatNumber(value, decimals);
 }
 
 function Sparkline({ data, width, height, color }: { data: number[]; width: number; height: number; color: string }) {
@@ -198,11 +199,11 @@ function OverviewTab({ days }: { days: number }) {
       <View style={styles.summaryRow}>
         <View style={styles.summaryCard}>
           <Text style={styles.summaryLabel}>Fitness</Text>
-          <Text style={[styles.summaryValue, { color: colors.blue }]}>{formatNumber(latest?.ctl, 1)}</Text>
+          <Text style={[styles.summaryValue, { color: colors.blue }]}>{formatNullable(latest?.ctl, 1)}</Text>
         </View>
         <View style={styles.summaryCard}>
           <Text style={styles.summaryLabel}>Fatigue</Text>
-          <Text style={[styles.summaryValue, { color: colors.purple }]}>{formatNumber(latest?.atl, 1)}</Text>
+          <Text style={[styles.summaryValue, { color: colors.purple }]}>{formatNullable(latest?.atl, 1)}</Text>
         </View>
         <View style={styles.summaryCard}>
           <Text style={styles.summaryLabel}>Form</Text>
@@ -212,7 +213,7 @@ function OverviewTab({ days }: { days: number }) {
               { color: latest?.tsb != null ? formZoneColor(latest.tsb) : colors.textSecondary },
             ]}
           >
-            {formatNumber(latest?.tsb, 1)}
+            {formatNullable(latest?.tsb, 1)}
           </Text>
         </View>
       </View>
@@ -228,7 +229,7 @@ function OverviewTab({ days }: { days: number }) {
           <Text style={styles.bigValue}>{Math.round(model.ftp)} W</Text>
           {model.r2 != null && (
             <Text style={styles.cardSubtext}>
-              Model fit: {(model.r2 * 100).toFixed(0)}% (from {model.pairedActivities} samples)
+              Model fit: {formatNumber(model.r2 * 100, 0)}% (from {model.pairedActivities} samples)
             </Text>
           )}
         </View>
@@ -304,7 +305,7 @@ function EnduranceTab({ days }: { days: number }) {
             const total = week.z1Seconds + week.z2Seconds + week.z3Seconds || 1;
             const hasPolarizationIndex = week.polarizationIndex !== null;
             const polarizationIndexText = week.polarizationIndex !== null
-              ? `Polarization score ${week.polarizationIndex.toFixed(2)}`
+              ? `Polarization score ${formatNumber(week.polarizationIndex, 2)}`
               : missingZonesLabel(week);
             return (
               <View key={week.week} style={styles.polarizationRow}>
@@ -350,7 +351,7 @@ function EnduranceTab({ days }: { days: number }) {
           textStyle={styles.cardTitle}
         />
         <Text style={[styles.bigValue, { color: currentRampRate != null ? rampRateColor(Math.abs(currentRampRate)) : colors.text }]}>
-          {currentRampRate != null ? `${currentRampRate > 0 ? "+" : ""}${currentRampRate.toFixed(1)}%` : "--"}
+          {currentRampRate != null ? `${formatSigned(currentRampRate)}%` : "--"}
         </Text>
         <Text style={styles.cardSubtext}>Weekly training load change rate</Text>
       </View>
@@ -465,11 +466,11 @@ function CyclingTab({ days }: { days: number }) {
           <View style={styles.summaryRow}>
             <View style={styles.summaryCard}>
               <Text style={styles.summaryLabel}>Fitness</Text>
-              <Text style={[styles.summaryValue, { color: colors.blue }]}>{formatNumber(latestPmc.ctl, 1)}</Text>
+              <Text style={[styles.summaryValue, { color: colors.blue }]}>{formatNullable(latestPmc.ctl, 1)}</Text>
             </View>
             <View style={styles.summaryCard}>
               <Text style={styles.summaryLabel}>Fatigue</Text>
-              <Text style={[styles.summaryValue, { color: colors.purple }]}>{formatNumber(latestPmc.atl, 1)}</Text>
+              <Text style={[styles.summaryValue, { color: colors.purple }]}>{formatNullable(latestPmc.atl, 1)}</Text>
             </View>
             <View style={styles.summaryCard}>
               <Text style={styles.summaryLabel}>Form</Text>
@@ -479,7 +480,7 @@ function CyclingTab({ days }: { days: number }) {
                   { color: formZoneColor(latestPmc.tsb) },
                 ]}
               >
-                {formatNumber(latestPmc.tsb, 1)}
+                {formatNullable(latestPmc.tsb, 1)}
               </Text>
             </View>
           </View>
@@ -535,7 +536,7 @@ function CyclingTab({ days }: { days: number }) {
               <Text style={[styles.summaryValue, { color: colors.orange }]}>{Math.round(model.wPrime / 1000)} kJ</Text>
             </View>
           </View>
-          <Text style={styles.cardSubtext}>Model fit: {(model.r2 * 100).toFixed(0)}%</Text>
+          <Text style={styles.cardSubtext}>Model fit: {formatNumber(model.r2 * 100, 0)}%</Text>
         </View>
       )}
 
@@ -762,7 +763,7 @@ function RunningTab({ days }: { days: number }) {
                     {formatPace(convertPace(run.paceSecondsPerKm, unitSystem))} {paceLabel(unitSystem)}
                   </Text>
                   <Text style={styles.cardSubtext}>
-                    {convertDistance(run.distanceKm, unitSystem).toFixed(1)} {distanceLabel(unitSystem)} · {run.durationMinutes} min
+                    {formatNumber(convertDistance(run.distanceKm, unitSystem))} {distanceLabel(unitSystem)} · {run.durationMinutes} min
                   </Text>
                 </View>
               </View>
@@ -784,13 +785,13 @@ function RunningTab({ days }: { days: number }) {
                 <View style={{ gap: 8, marginTop: 8 }}>
                   <FormRow label="Cadence" value={`${latest.cadence} spm`} />
                   {latest.strideLengthMeters != null && (
-                    <FormRow label="Stride Length" value={`${latest.strideLengthMeters.toFixed(2)} m`} />
+                    <FormRow label="Stride Length" value={`${formatNumber(latest.strideLengthMeters, 2)} m`} />
                   )}
                   {latest.stanceTimeMs != null && (
                     <FormRow label="Ground Contact" value={`${Math.round(latest.stanceTimeMs)} ms`} />
                   )}
                   {latest.verticalOscillationMm != null && (
-                    <FormRow label="Vertical Oscillation" value={`${latest.verticalOscillationMm.toFixed(1)} mm`} />
+                    <FormRow label="Vertical Oscillation" value={`${formatNumber(latest.verticalOscillationMm)} mm`} />
                   )}
                 </View>
               </View>
@@ -916,7 +917,7 @@ function StrengthTab({ days }: { days: number }) {
                   <View style={styles.overloadInfo}>
                     <Text style={styles.cardTitle}>{exercise.exerciseName}</Text>
                     <Text style={styles.cardSubtext}>
-                      Slope: {exercise.slopeKgPerWeek > 0 ? "+" : ""}{convertWeight(exercise.slopeKgPerWeek, unitSystem).toFixed(1)} {weightLabel(unitSystem)}/week
+                      Slope: {formatSigned(convertWeight(exercise.slopeKgPerWeek, unitSystem))} {weightLabel(unitSystem)}/week
                     </Text>
                   </View>
                   <View style={styles.overloadChange}>
@@ -1023,10 +1024,10 @@ function HikingTab({ days }: { days: number }) {
                 <Text style={styles.tableCellSecondary}>{hike.date}</Text>
               </View>
               <Text style={[styles.tableCell, { flex: 1 }]}>
-                {convertDistance(hike.distanceKm, unitSystem).toFixed(1)} {distanceLabel(unitSystem)}
+                {formatNumber(convertDistance(hike.distanceKm, unitSystem))} {distanceLabel(unitSystem)}
               </Text>
               <Text style={[styles.tableCell, { flex: 1 }]}>
-                {(convertPace(hike.gradeAdjustedPaceMinPerKm * 60, unitSystem) / 60).toFixed(1)} min{paceLabel(unitSystem)}
+                {formatNumber(convertPace(hike.gradeAdjustedPaceMinPerKm * 60, unitSystem) / 60)} min{paceLabel(unitSystem)}
               </Text>
               <Text style={[styles.tableCell, { flex: 1 }]}>
                 {Math.round(convertElevation(hike.elevationGainMeters, unitSystem))} {elevationLabel(unitSystem)}
@@ -1076,7 +1077,7 @@ function RecoveryTab({ days }: { days: number }) {
   if (readiness.isLoading || workload.isLoading || hrv.isLoading) return <LoadingText />;
 
   const readinessData = readiness.data ?? [];
-  const workloadData = workload.data ?? [];
+  const workloadData = workload.data?.timeSeries ?? [];
   const hrvData = hrv.data ?? [];
 
   const latestReadiness = readinessData[readinessData.length - 1];
@@ -1140,7 +1141,7 @@ function RecoveryTab({ days }: { days: number }) {
             textStyle={styles.cardTitle}
           />
           <Text style={[styles.bigValue, { color: workloadRatioColor(latestWorkload.workloadRatio) }]}>
-            {latestWorkload.workloadRatio.toFixed(2)}
+            {formatNumber(latestWorkload.workloadRatio, 2)}
           </Text>
           <Text style={[styles.cardSubtext, { color: workloadRatioColor(latestWorkload.workloadRatio) }]}>
             {workloadRatioHint(latestWorkload.workloadRatio)}

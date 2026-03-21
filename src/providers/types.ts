@@ -79,18 +79,14 @@ export type SyncProgressCallback = (percentage: number, message: string) => void
 export type ProviderAuthType = "oauth" | "credential" | "file-import" | "oauth1";
 
 /**
- * Every provider implements this interface.
- * The sync framework calls `sync()` on a schedule.
+ * Common fields shared by all providers (sync and import).
  */
-export interface Provider {
+interface BaseProvider {
   /** Unique provider ID — matches the `provider.id` in the DB */
   readonly id: string;
 
   /** Human-readable name */
   readonly name: string;
-
-  /** True for file-import-only providers (e.g. Strong CSV, Cronometer CSV) that have no API sync. */
-  readonly importOnly?: boolean;
 
   /**
    * Validate that the provider is configured (API keys present, etc.)
@@ -104,7 +100,13 @@ export interface Provider {
    * Call sites should treat undefined as "not available for login" and surface configuration errors to the user.
    */
   authSetup?(): ProviderAuthSetup | undefined;
+}
 
+/**
+ * A provider that syncs data from an API on a schedule.
+ * The sync framework calls `sync()` periodically.
+ */
+export interface SyncProvider extends BaseProvider {
   /**
    * Pull data from the provider API and upsert into the database.
    * @param db - Drizzle database instance
@@ -114,26 +116,42 @@ export interface Provider {
   sync(db: SyncDatabase, since: Date, onProgress?: SyncProgressCallback): Promise<SyncResult>;
 }
 
+/**
+ * A file-import-only provider (e.g. Strong CSV, Cronometer CSV) that has no API sync.
+ * Data is imported via dedicated import functions, not via `sync()`.
+ */
+export interface ImportProvider extends BaseProvider {
+  readonly importOnly: true;
+}
+
+/**
+ * Union of all provider types. Use `isSyncProvider()` to narrow.
+ */
+export type Provider = SyncProvider | ImportProvider;
+
+/** Type guard: narrows a Provider to SyncProvider. */
+export function isSyncProvider(provider: Provider): provider is SyncProvider {
+  return !("importOnly" in provider && provider.importOnly === true);
+}
+
 // ============================================================
 // Specialized provider interfaces
 // ============================================================
 
 /** Provider that authenticates via OAuth 2.0 redirect (Strava, Fitbit, Wahoo, etc.) */
-export interface OAuthProvider extends Provider {
+export interface OAuthProvider extends SyncProvider {
   authSetup(): ProviderAuthSetup;
 }
 
 /** Provider that authenticates via user-provided credentials (Eight Sleep, Zwift, etc.) */
-export interface CredentialProvider extends Provider {
+export interface CredentialProvider extends SyncProvider {
   authSetup(): ProviderAuthSetup & {
     automatedLogin: NonNullable<ProviderAuthSetup["automatedLogin"]>;
   };
 }
 
 /** Provider that uses file import only (Strong CSV, Cronometer CSV) */
-export interface FileImportProvider extends Provider {
-  readonly importOnly: true;
-}
+export interface FileImportProvider extends ImportProvider {}
 
 // ============================================================
 // Runtime auth type detection
@@ -144,7 +162,7 @@ export interface FileImportProvider extends Provider {
  * Used by the sync router to tell the frontend which auth flow to use.
  */
 export function getProviderAuthType(provider: Provider): ProviderAuthType | "none" {
-  if (provider.importOnly) return "file-import";
+  if ("importOnly" in provider && provider.importOnly === true) return "file-import";
   let setup: ProviderAuthSetup | undefined;
   try {
     setup = provider.authSetup?.();

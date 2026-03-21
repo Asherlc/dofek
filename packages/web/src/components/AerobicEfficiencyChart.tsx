@@ -1,5 +1,8 @@
 import type { AerobicEfficiencyActivity } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
+import { createChartOptions } from "../lib/chart-theme.ts";
+import { formatNumber } from "../lib/format.ts";
+import { ChartContainer } from "./ChartContainer.tsx";
 
 const ACTIVITY_COLORS: Record<string, string> = {
   cycling: "#f97316",
@@ -51,21 +54,16 @@ export function AerobicEfficiencyChart({
   maxHr,
   loading,
 }: AerobicEfficiencyChartProps) {
-  if (loading) {
+  if (!loading && activities.length === 0) {
     return (
-      <div className="flex items-center justify-center h-[280px]">
-        <span className="text-zinc-600 text-sm">Loading efficiency data...</span>
-      </div>
-    );
-  }
-
-  if (activities.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-[100px]">
-        <span className="text-zinc-600 text-sm">
-          No activities with sufficient Zone 2 power + heart rate data
-        </span>
-      </div>
+      <ChartContainer
+        loading={false}
+        data={activities}
+        height={280}
+        emptyMessage="No activities with sufficient Zone 2 power + heart rate data"
+      >
+        <div />
+      </ChartContainer>
     );
   }
 
@@ -105,14 +103,10 @@ export function AerobicEfficiencyChart({
 
   const trendDirection = slope > 0 ? "improving" : slope < 0 ? "declining" : "flat";
 
-  const option = {
-    backgroundColor: "transparent",
+  const option = createChartOptions({
     grid: { top: 40, right: 20, bottom: 30, left: 55 },
     tooltip: {
       trigger: "item",
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
       formatter: (params: Record<string, unknown>) => {
         const data = params.data;
         if (
@@ -133,7 +127,7 @@ export function AerobicEfficiencyChart({
         return [
           `<strong>${String(data.name)}</strong>`,
           `Date: ${date}`,
-          `Efficiency: ${ef.toFixed(3)} W/bpm`,
+          `Efficiency: ${formatNumber(ef, 3)} W/bpm`,
           `Avg Power (Zone 2): ${String(data.avgPower)}W`,
           `Avg Heart Rate (Zone 2): ${String(data.avgHr)} bpm`,
           `Zone 2 time: ${mins} min`,
@@ -142,20 +136,14 @@ export function AerobicEfficiencyChart({
     },
     xAxis: {
       type: "time",
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
       splitLine: { show: false },
     },
     yAxis: {
       type: "value",
       name: "Efficiency Factor (W/bpm)",
-      splitLine: { lineStyle: { color: "#27272a" } },
-      axisLabel: { color: "#71717a", fontSize: 11 },
       axisLine: { show: true, lineStyle: { color: "#3f3f46" } },
-      nameTextStyle: { color: "#71717a", fontSize: 11 },
     },
     legend: {
-      textStyle: { color: "#a1a1aa", fontSize: 11 },
       top: 0,
     },
     series: [
@@ -170,24 +158,31 @@ export function AerobicEfficiencyChart({
         tooltip: { show: false },
       },
     ],
-  };
+  });
 
   return (
-    <div>
-      <h3 className="text-xs font-medium text-zinc-500 mb-2">
-        Aerobic Efficiency (Power / Heart Rate in Zone 2)
-        {maxHr && <span className="text-zinc-700 ml-2">(max heart rate: {maxHr} bpm)</span>}
-        <span
-          className={`ml-2 ${trendDirection === "improving" ? "text-green-500" : trendDirection === "declining" ? "text-red-400" : "text-zinc-500"}`}
-        >
-          Trend: {trendDirection}
-        </span>
-      </h3>
-      <ReactECharts option={option} style={{ height: 280 }} notMerge={true} />
-      <p className="text-xs text-zinc-700 mt-1">
-        Higher efficiency = better aerobic fitness. Each dot is one activity with 5+ min of Zone 2
-        data (60-70% max heart rate).
-      </p>
-    </div>
+    <ChartContainer
+      loading={!!loading}
+      data={activities}
+      height={280}
+      emptyMessage="No activities with sufficient Zone 2 power + heart rate data"
+    >
+      <div>
+        <h3 className="text-xs font-medium text-zinc-500 mb-2">
+          Aerobic Efficiency (Power / Heart Rate in Zone 2)
+          {maxHr && <span className="text-zinc-700 ml-2">(max heart rate: {maxHr} bpm)</span>}
+          <span
+            className={`ml-2 ${trendDirection === "improving" ? "text-green-500" : trendDirection === "declining" ? "text-red-400" : "text-zinc-500"}`}
+          >
+            Trend: {trendDirection}
+          </span>
+        </h3>
+        <ReactECharts option={option} style={{ height: 280 }} notMerge={true} />
+        <p className="text-xs text-zinc-700 mt-1">
+          Higher efficiency = better aerobic fitness. Each dot is one activity with 5+ min of Zone 2
+          data (60-70% max heart rate).
+        </p>
+      </div>
+    </ChartContainer>
   );
 }

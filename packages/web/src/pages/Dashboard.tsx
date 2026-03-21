@@ -117,6 +117,32 @@ const GRID_PAIR_SECONDARY: Record<string, string> = {
 
 type DailyMetricRow = z.infer<typeof dailyMetricRowSchema>;
 
+export function spo2TempSectionConfig(
+  hasSpO2: boolean,
+  hasSkinTemp: boolean,
+  unitSystem: UnitSystem,
+): { title: string; subtitle: string; yAxis: { name: string; min?: number }[] } {
+  if (hasSpO2 && hasSkinTemp) {
+    return {
+      title: "SpO2 & Skin Temperature",
+      subtitle: "Blood oxygen saturation and wrist skin temperature over time",
+      yAxis: [{ name: "SpO2 (%)", min: 90 }, { name: temperatureLabel(unitSystem) }],
+    };
+  }
+  if (hasSpO2) {
+    return {
+      title: "Blood Oxygen (SpO2)",
+      subtitle: "Blood oxygen saturation over time",
+      yAxis: [{ name: "SpO2 (%)", min: 90 }],
+    };
+  }
+  return {
+    title: "Skin Temperature",
+    subtitle: "Wrist skin temperature over time",
+    yAxis: [{ name: temperatureLabel(unitSystem) }],
+  };
+}
+
 export function buildSkinTempSeries(metrics: DailyMetricRow[], unitSystem: UnitSystem) {
   return {
     name: "Skin Temp",
@@ -259,6 +285,8 @@ export function Dashboard() {
     [metrics, unitSystem],
   );
 
+  const spo2TempConfig = spo2TempSectionConfig(hasSpO2, hasSkinTemp, unitSystem);
+
   const stepsSeries = useMemo(
     () => ({
       name: "Steps",
@@ -340,15 +368,20 @@ export function Dashboard() {
       ),
     },
     spo2Temp: {
-      title: "SpO2 & Skin Temperature",
-      subtitle: "Blood oxygen saturation and wrist skin temperature over time",
+      title: spo2TempConfig.title,
+      subtitle: spo2TempConfig.subtitle,
       content:
         hasSpO2 || hasSkinTemp ? (
           <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
             <TimeSeriesChart
-              series={[...(hasSpO2 ? [spo2Series] : []), ...(hasSkinTemp ? [skinTempSeries] : [])]}
+              series={[
+                ...(hasSpO2 ? [spo2Series] : []),
+                ...(hasSkinTemp
+                  ? [hasSpO2 ? skinTempSeries : { ...skinTempSeries, yAxisIndex: 0 as const }]
+                  : []),
+              ]}
               height={200}
-              yAxis={[{ name: "SpO2 (%)", min: 90 }, { name: temperatureLabel(unitSystem) }]}
+              yAxis={spo2TempConfig.yAxis}
               loading={dailyMetrics.isLoading}
             />
           </div>

@@ -1,21 +1,10 @@
-import type { WeeklyReportResult, WeekSummary } from "dofek-server/types";
+import { strainZoneColor, strainZoneLabel } from "@dofek/scoring/scoring";
+import type { WeeklyReportResult } from "dofek-server/types";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface WeeklyReportCardProps {
   data: WeeklyReportResult | undefined;
   loading?: boolean;
-}
-
-function strainZoneColor(zone: WeekSummary["strainZone"]): string {
-  if (zone === "restoring") return "#3b82f6";
-  if (zone === "optimal") return "#22c55e";
-  return "#ef4444";
-}
-
-function strainZoneLabel(zone: WeekSummary["strainZone"]): string {
-  if (zone === "restoring") return "Restoring";
-  if (zone === "optimal") return "Optimal";
-  return "Overreaching";
 }
 
 function sleepPerfColor(percentage: number): string {

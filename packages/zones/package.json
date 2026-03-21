@@ -1,0 +1,9 @@
+{
+  "name": "@dofek/zones",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./heart-rate-zones": "./src/heart-rate-zones.ts"
+  }
+}

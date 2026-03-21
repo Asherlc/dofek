@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
-import { formatDurationRange, parseValidDate } from "@dofek/format/format";
+import { formatDurationRange, formatNumber, parseValidDate } from "@dofek/format/format";
 import { convertDistance, distanceLabel, type UnitSystem } from "../lib/units";
 import { colors } from "../theme";
 
@@ -79,7 +79,7 @@ export function ActivityCard({
       <View style={styles.stats}>
         {distanceKm != null && distanceKm > 0 && (
           <Stat
-            value={convertDistance(distanceKm, unitSystem).toFixed(2)}
+            value={formatNumber(convertDistance(distanceKm, unitSystem), 2)}
             label="Distance"
             unit={distanceLabel(unitSystem)}
           />

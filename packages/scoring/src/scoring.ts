@@ -53,6 +53,22 @@ export function scoreLabel(score: number): string {
   return "Poor";
 }
 
+/** Get the color for a strain zone ("restoring" | "optimal" | "overreaching") */
+export function strainZoneColor(zone: string): string {
+  if (zone === "optimal") return statusColors.positive;
+  if (zone === "overreaching") return statusColors.danger;
+  if (zone === "restoring") return statusColors.info;
+  return textColors.secondary;
+}
+
+/** Get a human-readable label for a strain zone */
+export function strainZoneLabel(zone: string): string {
+  if (zone === "optimal") return "Optimal";
+  if (zone === "overreaching") return "Overreaching";
+  if (zone === "restoring") return "Restoring";
+  return zone;
+}
+
 /** Get the color for a workload ratio value */
 export function workloadRatioColor(ratio: number | null): string {
   if (ratio == null) return textColors.secondary;
