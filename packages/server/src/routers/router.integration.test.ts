@@ -562,7 +562,7 @@ describe("Router coverage", () => {
       await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
 
       // Clear cache so the query hits the DB
-      queryCache.reset();
+      await queryCache.invalidateAll();
 
       const result = await query<{
         nightly: {
