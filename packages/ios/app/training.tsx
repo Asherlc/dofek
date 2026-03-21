@@ -820,7 +820,7 @@ function RecoveryTab({ days }: { days: number }) {
   if (readiness.isLoading || workload.isLoading || hrv.isLoading) return <LoadingText />;
 
   const readinessData = readiness.data ?? [];
-  const workloadData = workload.data ?? [];
+  const workloadData = workload.data?.timeSeries ?? [];
   const hrvData = hrv.data ?? [];
 
   const latestReadiness = readinessData[readinessData.length - 1];

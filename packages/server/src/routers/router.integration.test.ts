@@ -461,23 +461,33 @@ describe("Router coverage", () => {
       }
     });
 
-    it("workloadRatio returns acute:chronic workload ratio", async () => {
-      const result = await query<
-        {
+    it("workloadRatio returns acute:chronic workload ratio with displayed strain", async () => {
+      const result = await query<{
+        timeSeries: {
           date: string;
           dailyLoad: number;
+          strain: number;
           acuteLoad: number;
           chronicLoad: number;
           workloadRatio: number | null;
-        }[]
-      >("recovery.workloadRatio", { days: 90 });
+        }[];
+        displayedStrain: number;
+        displayedDate: string | null;
+      }>("recovery.workloadRatio", { days: 90 });
 
-      expect(Array.isArray(result)).toBe(true);
-      expect(result.length).toBeGreaterThan(0);
+      expect(Array.isArray(result.timeSeries)).toBe(true);
+      expect(result.timeSeries.length).toBeGreaterThan(0);
 
-      for (const row of result) {
+      expect(typeof result.displayedStrain).toBe("number");
+      expect(result.displayedStrain).toBeGreaterThanOrEqual(0);
+      expect(result.displayedStrain).toBeLessThanOrEqual(21);
+
+      for (const row of result.timeSeries) {
         expect(row.date).toBeTruthy();
         expect(typeof row.dailyLoad).toBe("number");
+        expect(typeof row.strain).toBe("number");
+        expect(row.strain).toBeGreaterThanOrEqual(0);
+        expect(row.strain).toBeLessThanOrEqual(21);
         expect(typeof row.acuteLoad).toBe("number");
         expect(typeof row.chronicLoad).toBe("number");
         expect(row.dailyLoad).toBeGreaterThanOrEqual(0);

@@ -262,7 +262,7 @@ export function collapseWeeklyVolumeActivityTypes(
  * If the latest day is a rest day (0 load), fall back to the most recent
  * day with positive load so recent training is still represented.
  */
-export function selectRecentDailyLoad(rows: DailyLoadRow[]): DailyLoadRow | null {
+export function selectRecentDailyLoad<T extends DailyLoadRow>(rows: T[]): T | null {
   if (rows.length === 0) return null;
 
   const latest = rows[rows.length - 1];

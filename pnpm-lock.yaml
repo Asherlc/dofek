@@ -302,6 +302,9 @@ importers:
       '@dofek/heart-rate-variability':
         specifier: workspace:*
         version: link:../heart-rate-variability
+      '@dofek/scoring':
+        specifier: workspace:*
+        version: link:../scoring
       '@dofek/stats':
         specifier: workspace:*
         version: link:../stats

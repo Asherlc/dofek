@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { selectRecentDailyLoad } from "@dofek/training/training";
 import type { NextWorkoutRecommendation } from "dofek-server/types";
 import { useRouter } from "expo-router";
 import {
@@ -19,7 +18,7 @@ import { RecoveryRing } from "../../components/charts/RecoveryRing";
 import { SleepBar } from "../../components/charts/SleepBar";
 import { StrainGauge } from "../../components/charts/StrainGauge";
 import { formatDurationMinutes, formatNumber, formatSleepDebtInline } from "@dofek/format/format";
-import { readinessLevelColor, scoreColor, scoreLabel, trendColor, trendDirection as computeTrend } from "../../lib/scoring";
+import { readinessLevelColor, scoreColor, scoreLabel, strainZoneColor, strainZoneLabel, trendColor, trendDirection as computeTrend } from "../../lib/scoring";
 import { trpc } from "../../lib/trpc";
 import { convertTemperature, convertWeight, temperatureLabel, useUnitSystem, weightLabel } from "../../lib/units";
 import { useOnboarding } from "../../lib/useOnboarding";
@@ -36,22 +35,6 @@ function todayString(): string {
 }
 
 const RECENT_ACTIVITY_PAGE_SIZE = 3;
-
-/** Strain zone label for weekly report */
-function strainZoneLabel(zone: string): string {
-  if (zone === "optimal") return "Optimal";
-  if (zone === "overreaching") return "Overreaching";
-  if (zone === "restoring") return "Restoring";
-  return zone;
-}
-
-/** Color for strain zone */
-function strainZoneColor(zone: string): string {
-  if (zone === "optimal") return statusColors.positive;
-  if (zone === "overreaching") return statusColors.danger;
-  if (zone === "restoring") return statusColors.info;
-  return colors.textSecondary;
-}
 
 /** Trend arrow for healthspan */
 function trendArrow(trend: string | null): string {
@@ -95,8 +78,7 @@ export default function OverviewScreen() {
 
   // Fetch workload ratio for strain
   const workloadQuery = trpc.recovery.workloadRatio.useQuery({ days });
-  const workloadData = workloadQuery.data ?? [];
-  const displayedWorkload = selectRecentDailyLoad(workloadData);
+  const workloadResult = workloadQuery.data;
 
   // Fetch HRV trend
   const hrvQuery = trpc.recovery.hrvVariability.useQuery({ days: Math.max(days, 14) });
@@ -163,7 +145,7 @@ export default function OverviewScreen() {
   const stepsData = stepsQuery.data ?? [];
 
   const recoveryScore = todayReadiness?.readinessScore ?? null;
-  const dailyStrain = displayedWorkload?.dailyLoad ?? 0;
+  const dailyStrain = workloadResult?.displayedStrain ?? 0;
 
   const isLoading =
     readinessQuery.isLoading ||
