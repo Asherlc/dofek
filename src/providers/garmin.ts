@@ -31,9 +31,9 @@ import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./t
 // Internal token serialization
 // ============================================================
 
-const INTERNAL_SCOPE_MARKER = "garmin-connect-internal";
+export const INTERNAL_SCOPE_MARKER = "garmin-connect-internal";
 
-function serializeInternalTokens(tokens: GarminTokens): TokenSet {
+export function serializeInternalTokens(tokens: GarminTokens): TokenSet {
   return {
     accessToken: JSON.stringify(tokens),
     refreshToken: null,
@@ -62,7 +62,7 @@ const garminTokensSchema = z.object({
   }),
 });
 
-function deserializeInternalTokens(stored: TokenSet): GarminTokens | null {
+export function deserializeInternalTokens(stored: TokenSet): GarminTokens | null {
   try {
     const parsed: unknown = JSON.parse(stored.accessToken);
     const result = garminTokensSchema.safeParse(parsed);
@@ -76,11 +76,11 @@ function deserializeInternalTokens(stored: TokenSet): GarminTokens | null {
 // Date helpers for internal API (day-by-day iteration)
 // ============================================================
 
-function formatDate(d: Date): string {
+export function formatDate(d: Date): string {
   return d.toISOString().split("T")[0] ?? "";
 }
 
-function eachDay(since: Date, until: Date): string[] {
+export function eachDay(since: Date, until: Date): string[] {
   const dates: string[] = [];
   const current = new Date(since);
   current.setUTCHours(0, 0, 0, 0);
