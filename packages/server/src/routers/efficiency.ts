@@ -238,7 +238,7 @@ export const efficiencyRouter = router({
               AND ${enduranceTypeFilter("a")}
               AND up.max_hr IS NOT NULL
               AND ms.heart_rate IS NOT NULL
-            GROUP BY up.max_hr, date_trunc('week', (a.started_at AT TIME ZONE ${ctx.timezone})::date)
+            GROUP BY up.max_hr, 2
             ORDER BY week`,
       );
 

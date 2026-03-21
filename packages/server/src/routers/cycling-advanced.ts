@@ -100,7 +100,7 @@ export const cyclingAdvancedRouter = router({
               AND asum.ended_at IS NOT NULL
               AND asum.avg_hr IS NOT NULL
               AND asum.avg_hr > 0
-            GROUP BY (asum.started_at AT TIME ZONE ${ctx.timezone})::date
+            GROUP BY 1
             ORDER BY day`,
       );
 
@@ -242,7 +242,7 @@ export const cyclingAdvancedRouter = router({
                 AND asum.ended_at IS NOT NULL
                 AND asum.avg_hr IS NOT NULL
                 AND asum.avg_hr > 0
-              GROUP BY (asum.started_at AT TIME ZONE ${ctx.timezone})::date
+              GROUP BY 1
             ),
             weekly_stats AS (
               SELECT

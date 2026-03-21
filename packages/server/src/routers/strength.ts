@@ -73,7 +73,7 @@ export const strengthRouter = router({
             JOIN fitness.strength_set ss ON ss.workout_id = sw.id
             WHERE sw.user_id = ${ctx.userId}
               AND sw.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
-            GROUP BY date_trunc('week', (sw.started_at AT TIME ZONE ${ctx.timezone})::date)
+            GROUP BY 1
             ORDER BY week`,
       );
       return rows.map((r) => ({
@@ -183,7 +183,7 @@ export const strengthRouter = router({
             WHERE sw.user_id = ${ctx.userId}
               AND sw.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
               AND e.muscle_group IS NOT NULL
-            GROUP BY e.muscle_group, date_trunc('week', (sw.started_at AT TIME ZONE ${ctx.timezone})::date)
+            GROUP BY e.muscle_group, 2
             ORDER BY e.muscle_group, week`,
       );
 
@@ -224,7 +224,7 @@ export const strengthRouter = router({
             WHERE sw.user_id = ${ctx.userId}
               AND sw.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
               AND ss.weight_kg > 0
-            GROUP BY e.name, date_trunc('week', (sw.started_at AT TIME ZONE ${ctx.timezone})::date)
+            GROUP BY e.name, 2
             ORDER BY e.name, week`,
       );
 

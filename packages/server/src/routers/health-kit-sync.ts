@@ -880,7 +880,7 @@ async function aggregateSpO2ToDailyMetrics(
           AND spo2 IS NOT NULL
           AND recorded_at >= ${bounds.startAt}::timestamptz
           AND recorded_at <= ${bounds.endAt}::timestamptz
-        GROUP BY (recorded_at AT TIME ZONE ${timezone})::date, provider_id, user_id, source_name
+        GROUP BY 1, provider_id, user_id, source_name
         ON CONFLICT (date, provider_id, source_name) DO UPDATE SET
           spo2_avg = EXCLUDED.spo2_avg`,
   );
@@ -911,7 +911,7 @@ async function aggregateSkinTempToDailyMetrics(
           AND skin_temperature IS NOT NULL
           AND recorded_at >= ${bounds.startAt}::timestamptz
           AND recorded_at <= ${bounds.endAt}::timestamptz
-        GROUP BY (recorded_at AT TIME ZONE ${timezone})::date, provider_id, user_id, source_name
+        GROUP BY 1, provider_id, user_id, source_name
         ON CONFLICT (date, provider_id, source_name) DO UPDATE SET
           skin_temp_c = EXCLUDED.skin_temp_c`,
   );

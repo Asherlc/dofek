@@ -143,7 +143,7 @@ export const hikingRouter = router({
             WHERE a.user_id = ${ctx.userId}
               AND a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
               AND a.activity_type IN ('walking', 'hiking')
-            GROUP BY date_trunc('week', (a.started_at AT TIME ZONE ${ctx.timezone})::date)
+            GROUP BY 1
             ORDER BY week`,
       );
 

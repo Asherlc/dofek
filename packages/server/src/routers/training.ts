@@ -73,7 +73,7 @@ export const trainingRouter = router({
             WHERE user_id = ${ctx.userId}
               AND started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
               AND ended_at IS NOT NULL
-            GROUP BY date_trunc('week', (started_at AT TIME ZONE ${ctx.timezone})::date), activity_type
+            GROUP BY 1, activity_type
             ORDER BY week`,
       );
     }),
@@ -127,7 +127,7 @@ export const trainingRouter = router({
               AND ${enduranceTypeFilter("a")}
               AND up.max_hr IS NOT NULL
               AND ms.heart_rate IS NOT NULL
-            GROUP BY up.max_hr, date_trunc('week', (a.started_at AT TIME ZONE ${ctx.timezone})::date)
+            GROUP BY up.max_hr, 2
             ORDER BY week`,
       );
       const rawMaxHr = rows[0]?.max_hr;
@@ -440,7 +440,7 @@ export const trainingRouter = router({
               AND ${enduranceTypeFilter("a")}
               AND up.max_hr IS NOT NULL
               AND ms.heart_rate IS NOT NULL
-            GROUP BY a.id, (a.started_at AT TIME ZONE ${ctx.timezone})::date
+            GROUP BY a.id, 2
           )
           SELECT
             SUM(

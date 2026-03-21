@@ -37,7 +37,7 @@ export const calendarRouter = router({
         WHERE a.user_id = ${ctx.userId}
           AND a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
           AND a.ended_at IS NOT NULL
-        GROUP BY (a.started_at AT TIME ZONE ${ctx.timezone})::date
+        GROUP BY 1
         ORDER BY date`,
       );
 
