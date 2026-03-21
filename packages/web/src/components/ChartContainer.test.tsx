@@ -73,7 +73,8 @@ describe("ChartContainer", () => {
     );
     const emptyDiv = container.querySelector(".flex.items-center.justify-center");
     expect(emptyDiv).not.toBeNull();
-    expect((emptyDiv as HTMLElement).style.height).toBe("300px");
+    const el: HTMLElement | null = emptyDiv instanceof HTMLElement ? emptyDiv : null;
+    expect(el?.style.height).toBe("300px");
   });
 
   it("uses custom height for empty state", () => {
@@ -84,7 +85,8 @@ describe("ChartContainer", () => {
     );
     const emptyDiv = container.querySelector(".flex.items-center.justify-center");
     expect(emptyDiv).not.toBeNull();
-    expect((emptyDiv as HTMLElement).style.height).toBe("450px");
+    const el: HTMLElement | null = emptyDiv instanceof HTMLElement ? emptyDiv : null;
+    expect(el?.style.height).toBe("450px");
   });
 
   it("prioritizes loading state over empty state", () => {

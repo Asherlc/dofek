@@ -121,7 +121,8 @@ describe("dailyMetricsRouter", () => {
 
       // Temporarily restore real schema parsing for this test
       mockExecuteWithSchema.mockImplementationOnce(async (_db, schema, query) => {
-        const rawRows = await (_db as { execute: (q: unknown) => Promise<unknown[]> }).execute(query);
+        const dbTyped: { execute: (q: unknown) => Promise<unknown[]> } = _db;
+        const rawRows = await dbTyped.execute(query);
         return rawRows.map((row) => schema.parse(row));
       });
 

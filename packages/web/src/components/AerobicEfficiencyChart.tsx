@@ -76,7 +76,12 @@ export function AerobicEfficiencyChart({
   // Compute trend line across all activities
   if (activities.length === 0) {
     return (
-      <ChartContainer loading={!!loading} data={activities} height={280} emptyMessage="No activities with sufficient Zone 2 power + heart rate data">
+      <ChartContainer
+        loading={!!loading}
+        data={activities}
+        height={280}
+        emptyMessage="No activities with sufficient Zone 2 power + heart rate data"
+      >
         <div />
       </ChartContainer>
     );

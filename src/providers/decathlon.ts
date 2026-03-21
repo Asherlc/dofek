@@ -5,7 +5,7 @@ import type { SyncDatabase } from "../db/index.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
-import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
+import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
 // Decathlon API types
@@ -136,7 +136,7 @@ export function decathlonOAuthConfig(): OAuthConfig | null {
 // Provider implementation
 // ============================================================
 
-export class DecathlonProvider implements Provider {
+export class DecathlonProvider implements SyncProvider {
   readonly id = "decathlon";
   readonly name = "Decathlon";
   private fetchFn: typeof globalThis.fetch;
