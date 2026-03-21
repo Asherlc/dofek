@@ -9,4 +9,5 @@ export {
   isToday,
   formatRelativeTime,
   formatTime,
+  parseValidDate,
 } from "@dofek/format/format";

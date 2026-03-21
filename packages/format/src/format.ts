@@ -12,9 +12,18 @@ export function formatDurationMinutes(minutes: number): string {
   return `${hours}h ${mins}m`;
 }
 
-function parseValidDate(value: string): Date | null {
+/** Parse a timestamp string into a Date, returning null if invalid.
+ *  Handles both ISO 8601 and postgres ::text format (space-separated, e.g. "2024-03-20 14:30:00+00")
+ *  which Hermes and Safari cannot parse natively. */
+export function parseValidDate(value: string): Date | null {
   const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
+  if (!Number.isNaN(parsed.getTime())) return parsed;
+  // Postgres ::text casts use a space separator instead of T
+  if (value.includes(" ")) {
+    const normalized = new Date(value.replace(" ", "T"));
+    if (!Number.isNaN(normalized.getTime())) return normalized;
+  }
+  return null;
 }
 
 /** Format a duration between two ISO timestamps as "Xh Ym" */
