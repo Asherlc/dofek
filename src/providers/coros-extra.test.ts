@@ -257,7 +257,9 @@ describe("CorosClient", () => {
 
   it("fetches workouts with correct URL", async () => {
     let capturedUrl = "";
-    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       capturedUrl = input.toString();
       return Response.json({ data: [], message: "OK", result: "0000" });
     };
@@ -272,7 +274,9 @@ describe("CorosClient", () => {
 
   it("fetches daily data with correct URL", async () => {
     let capturedUrl = "";
-    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       capturedUrl = input.toString();
       return Response.json({ data: [], message: "OK", result: "0000" });
     };

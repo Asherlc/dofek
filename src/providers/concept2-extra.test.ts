@@ -234,7 +234,9 @@ describe("Concept2Client", () => {
 
   it("fetches results with correct URL", async () => {
     let capturedUrl = "";
-    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL): Promise<Response> => {
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
       capturedUrl = input.toString();
       return Response.json({
         data: [],
