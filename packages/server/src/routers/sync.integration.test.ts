@@ -1,6 +1,8 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 
 /**
  * Test that raw SQL queries use schema-qualified table names.
@@ -34,5 +36,67 @@ describe("countProviderRecords SQL", () => {
       AS total
     `);
     expect(Number(result[0]?.total ?? 0)).toBe(0);
+  });
+});
+
+describe("triggerSync token lookup SQL", () => {
+  let testCtx: TestContext;
+  const testUserId = "00000000-0000-0000-0000-000000000099";
+
+  beforeAll(async () => {
+    testCtx = await setupTestDatabase();
+    await testCtx.db.execute(sql`SET search_path TO public`);
+
+    // Seed a user, two providers, and one oauth token
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.user_profile (id, name) VALUES (${testUserId}, 'Test User')`,
+    );
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.provider (id, name, user_id) VALUES ('strava', 'Strava', ${testUserId})`,
+    );
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.provider (id, name, user_id) VALUES ('wahoo', 'Wahoo', ${testUserId})`,
+    );
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.oauth_token (provider_id, access_token, expires_at) VALUES ('strava', 'tok', '2099-01-01T00:00:00Z')`,
+    );
+  });
+
+  afterAll(async () => {
+    await testCtx?.cleanup();
+  });
+
+  const tokenRowSchema = z.object({ provider_id: z.string() });
+
+  it("returns only providers that have oauth tokens for the given user", async () => {
+    const rows = await executeWithSchema(
+      testCtx.db,
+      tokenRowSchema,
+      sql`SELECT DISTINCT ot.provider_id
+          FROM fitness.oauth_token ot
+          JOIN fitness.provider p ON p.id = ot.provider_id
+          WHERE p.user_id = ${testUserId}`,
+    );
+    expect(rows).toEqual([{ provider_id: "strava" }]);
+  });
+
+  it("returns empty when user has no tokens", async () => {
+    const otherUserId = "00000000-0000-0000-0000-000000000098";
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.user_profile (id, name) VALUES (${otherUserId}, 'Other')`,
+    );
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.provider (id, name, user_id) VALUES ('polar', 'Polar', ${otherUserId})`,
+    );
+
+    const rows = await executeWithSchema(
+      testCtx.db,
+      tokenRowSchema,
+      sql`SELECT DISTINCT ot.provider_id
+          FROM fitness.oauth_token ot
+          JOIN fitness.provider p ON p.id = ot.provider_id
+          WHERE p.user_id = ${otherUserId}`,
+    );
+    expect(rows).toEqual([]);
   });
 });

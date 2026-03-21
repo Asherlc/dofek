@@ -90,20 +90,8 @@ function fakeTrendDay(overrides: Partial<FakeTrendDay> = {}): FakeTrendDay {
   };
 }
 
-function eightSleepHandlers(trendDays: FakeTrendDay[], opts?: { signInError?: boolean }) {
+function eightSleepHandlers(trendDays: FakeTrendDay[]) {
   return [
-    // Sign-in (re-auth)
-    http.post("https://auth-api.8slp.net/v1/tokens", () => {
-      if (opts?.signInError) {
-        return new HttpResponse("Unauthorized", { status: 401 });
-      }
-      return HttpResponse.json({
-        access_token: "refreshed-eight-sleep-token",
-        expires_in: 86400,
-        userId: "user-123",
-      });
-    }),
-
     // Trends API
     http.get("https://client-api.8slp.net/v1/users/:userId/trends", () => {
       return HttpResponse.json({
@@ -254,59 +242,21 @@ describe("EightSleepProvider.sync() (integration)", () => {
     expect(sleepRows[0]?.externalId).toBe("eightsleep-2026-03-11");
   });
 
-  it("re-authenticates when tokens are expired using env credentials", async () => {
+  it("returns error when tokens are expired", async () => {
     await saveTokens(ctx.db, "eight-sleep", {
       accessToken: "expired-token",
       refreshToken: null,
       expiresAt: new Date("2025-01-01T00:00:00Z"), // expired
       scopes: "userId:user-123",
     });
-
-    process.env.EIGHT_SLEEP_USERNAME = "test@example.com";
-    process.env.EIGHT_SLEEP_PASSWORD = "test-password";
-
-    // Clear existing data
-    await ctx.db.delete(sleepSession).where(eq(sleepSession.providerId, "eight-sleep"));
-    await ctx.db.delete(dailyMetrics).where(eq(dailyMetrics.providerId, "eight-sleep"));
-    await ctx.db.delete(bodyMeasurement).where(eq(bodyMeasurement.providerId, "eight-sleep"));
-    await ctx.db.delete(metricStream).where(eq(metricStream.providerId, "eight-sleep"));
-
-    const days = [fakeTrendDay({ day: "2026-03-15" })];
-    server.use(...eightSleepHandlers(days));
-
-    const provider = new EightSleepProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
-
-    expect(result.errors).toHaveLength(0);
-    expect(result.recordsSynced).toBeGreaterThan(0);
-
-    // Verify tokens were saved after re-auth
-    const { loadTokens } = await import("../db/tokens.ts");
-    const tokens = await loadTokens(ctx.db, "eight-sleep");
-    expect(tokens?.accessToken).toBe("refreshed-eight-sleep-token");
-
-    delete process.env.EIGHT_SLEEP_USERNAME;
-    delete process.env.EIGHT_SLEEP_PASSWORD;
-  });
-
-  it("returns error when tokens expired and no env vars for re-auth", async () => {
-    await saveTokens(ctx.db, "eight-sleep", {
-      accessToken: "expired-token",
-      refreshToken: null,
-      expiresAt: new Date("2025-01-01T00:00:00Z"), // expired
-      scopes: "userId:user-123",
-    });
-
-    // Ensure env vars are not set
-    delete process.env.EIGHT_SLEEP_USERNAME;
-    delete process.env.EIGHT_SLEEP_PASSWORD;
 
     const provider = new EightSleepProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]?.message).toContain("EIGHT_SLEEP_USERNAME");
-    expect(result.errors[0]?.message).toContain("EIGHT_SLEEP_PASSWORD");
+    expect(result.errors[0]?.message).toContain(
+      "Eight Sleep token expired — please re-authenticate via Settings",
+    );
     expect(result.recordsSynced).toBe(0);
   });
 

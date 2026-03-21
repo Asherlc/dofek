@@ -247,16 +247,39 @@ export function stravaStreamsToMetricStream(
 
 const STRAVA_API_BASE = "https://www.strava.com/api/v3/";
 
+/** Minimum delay between consecutive Strava API requests (ms).
+ *  Strava allows 100 requests per 15 minutes = 9s/request average.
+ *  10s provides a safety margin. */
+export const STRAVA_THROTTLE_MS = 10_000;
+
 export class StravaClient {
   private accessToken: string;
   private fetchFn: typeof globalThis.fetch;
+  private lastRequestTime = 0;
+  private throttleMs: number;
 
-  constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
+  constructor(
+    accessToken: string,
+    fetchFn: typeof globalThis.fetch = globalThis.fetch,
+    throttleMs = STRAVA_THROTTLE_MS,
+  ) {
     this.accessToken = accessToken;
     this.fetchFn = fetchFn;
+    this.throttleMs = throttleMs;
+  }
+
+  private async throttle(): Promise<void> {
+    if (this.throttleMs <= 0) return;
+    const now = Date.now();
+    const elapsed = now - this.lastRequestTime;
+    if (this.lastRequestTime > 0 && elapsed < this.throttleMs) {
+      await new Promise((resolve) => setTimeout(resolve, this.throttleMs - elapsed));
+    }
+    this.lastRequestTime = Date.now();
   }
 
   private async get<T>(path: string, params?: Record<string, string>): Promise<T> {
+    await this.throttle();
     const url = new URL(path, STRAVA_API_BASE);
     if (params) {
       for (const [key, value] of Object.entries(params)) {
@@ -393,9 +416,14 @@ export class StravaProvider implements SyncProvider {
   readonly id = "strava";
   readonly name = "Strava";
   private fetchFn: typeof globalThis.fetch;
+  private throttleMs: number;
 
-  constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
+  constructor(
+    fetchFn: typeof globalThis.fetch = globalThis.fetch,
+    throttleMs = STRAVA_THROTTLE_MS,
+  ) {
     this.fetchFn = fetchFn;
+    this.throttleMs = throttleMs;
   }
 
   validate(): string | null {
@@ -472,7 +500,7 @@ export class StravaProvider implements SyncProvider {
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
-    const client = new StravaClient(tokens.accessToken, this.fetchFn);
+    const client = new StravaClient(tokens.accessToken, this.fetchFn, this.throttleMs);
 
     // Strava uses epoch seconds for the `after` parameter
     const afterEpoch = Math.floor(since.getTime() / 1000);

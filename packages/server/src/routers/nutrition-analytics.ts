@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 // ── RDA Reference Data ───────────────────────────────────────────────
@@ -161,7 +161,7 @@ export const nutritionAnalyticsRouter = router({
       const queryDays = input.days + 7; // extra for rolling average warmup
 
       const caloricBalanceRowSchema = z.object({
-        date: z.string(),
+        date: dateStringSchema,
         calories_in: z.coerce.number(),
         active_energy: z.coerce.number(),
         basal_energy: z.coerce.number(),
@@ -240,7 +240,7 @@ export const nutritionAnalyticsRouter = router({
     .query(async ({ ctx, input }): Promise<AdaptiveTdeeResult> => {
       // Get daily calorie intake and weight measurements
       const adaptiveTdeeRowSchema = z.object({
-        date: z.string(),
+        date: dateStringSchema,
         calories_in: z.coerce.number(),
         weight_kg: z.coerce.number().nullable(),
       });
@@ -364,7 +364,7 @@ export const nutritionAnalyticsRouter = router({
     .input(z.object({ days: z.number().default(30) }))
     .query(async ({ ctx, input }): Promise<MacroRatioRow[]> => {
       const macroRatioRowSchema = z.object({
-        date: z.string(),
+        date: dateStringSchema,
         protein_g: z.coerce.number(),
         carbs_g: z.coerce.number(),
         fat_g: z.coerce.number(),

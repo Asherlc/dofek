@@ -23,4 +23,60 @@ enum HealthKitQueries {
     static func formatDate(_ date: Date) -> String {
         return ISO8601DateFormatter().string(from: date)
     }
+
+    /// Return the preferred unit for a given quantity type
+    static func preferredUnit(for quantityType: HKQuantityType) -> HKUnit {
+        switch quantityType.identifier {
+        case HKQuantityTypeIdentifier.heartRate.rawValue,
+             HKQuantityTypeIdentifier.restingHeartRate.rawValue:
+            return HKUnit.count().unitDivided(by: .minute())
+        case HKQuantityTypeIdentifier.bodyMass.rawValue,
+             HKQuantityTypeIdentifier.leanBodyMass.rawValue:
+            return .gramUnit(with: .kilo)
+        case HKQuantityTypeIdentifier.bodyFatPercentage.rawValue,
+             HKQuantityTypeIdentifier.oxygenSaturation.rawValue,
+             HKQuantityTypeIdentifier.walkingDoubleSupportPercentage.rawValue,
+             HKQuantityTypeIdentifier.walkingAsymmetryPercentage.rawValue:
+            return .percent()
+        case HKQuantityTypeIdentifier.height.rawValue:
+            return .meterUnit(with: .centi)
+        case HKQuantityTypeIdentifier.heartRateVariabilitySDNN.rawValue:
+            return .secondUnit(with: .milli)
+        case HKQuantityTypeIdentifier.distanceWalkingRunning.rawValue,
+             HKQuantityTypeIdentifier.distanceCycling.rawValue:
+            return .meter()
+        case HKQuantityTypeIdentifier.activeEnergyBurned.rawValue,
+             HKQuantityTypeIdentifier.basalEnergyBurned.rawValue,
+             HKQuantityTypeIdentifier.dietaryEnergyConsumed.rawValue:
+            return .kilocalorie()
+        case HKQuantityTypeIdentifier.stepCount.rawValue,
+             HKQuantityTypeIdentifier.flightsClimbed.rawValue:
+            return .count()
+        case HKQuantityTypeIdentifier.appleExerciseTime.rawValue,
+             HKQuantityTypeIdentifier.appleStandTime.rawValue:
+            return .minute()
+        case HKQuantityTypeIdentifier.respiratoryRate.rawValue:
+            return HKUnit.count().unitDivided(by: .minute())
+        case HKQuantityTypeIdentifier.vo2Max.rawValue:
+            return HKUnit(from: "mL/kg*min")
+        case HKQuantityTypeIdentifier.walkingSpeed.rawValue:
+            return HKUnit.meter().unitDivided(by: .second())
+        case HKQuantityTypeIdentifier.walkingStepLength.rawValue:
+            return .meterUnit(with: .centi)
+        case HKQuantityTypeIdentifier.bodyTemperature.rawValue,
+             HKQuantityTypeIdentifier.appleSleepingWristTemperature.rawValue:
+            return .degreeCelsius()
+        case HKQuantityTypeIdentifier.bloodGlucose.rawValue:
+            return HKUnit(from: "mmol/L")
+        case HKQuantityTypeIdentifier.environmentalAudioExposure.rawValue,
+             HKQuantityTypeIdentifier.headphoneAudioExposure.rawValue:
+            return .decibelAWeightedSoundPressureLevel()
+        case HKQuantityTypeIdentifier.dietaryProtein.rawValue,
+             HKQuantityTypeIdentifier.dietaryCarbohydrates.rawValue,
+             HKQuantityTypeIdentifier.dietaryFatTotal.rawValue:
+            return .gram()
+        default:
+            return .count()
+        }
+    }
 }

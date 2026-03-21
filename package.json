@@ -9,6 +9,7 @@
     "./db/schema": "./src/db/schema.ts",
     "./db/dedup": "./src/db/dedup.ts",
     "./providers/types": "./src/providers/types.ts",
+    "./providers/provider-model": "./src/providers/provider-model.ts",
     "./providers/registry": "./src/providers/index.ts",
     "./providers/wahoo": "./src/providers/wahoo.ts",
     "./providers/withings": "./src/providers/withings.ts",
@@ -77,10 +78,10 @@
     "ios:device": "pnpm --filter dofek-ios ios:device"
   },
   "dependencies": {
-    "@dofek/heart-rate-variability": "workspace:*",
-    "@dofek/training": "workspace:*",
     "@bull-board/api": "^6.20.5",
     "@bull-board/express": "^6.20.5",
+    "@dofek/heart-rate-variability": "workspace:*",
+    "@dofek/training": "workspace:*",
     "@opentelemetry/exporter-logs-otlp-proto": "^0.213.0",
     "@opentelemetry/exporter-trace-otlp-proto": "^0.213.0",
     "@opentelemetry/instrumentation-express": "^0.61.0",
@@ -89,6 +90,7 @@
     "@opentelemetry/sdk-node": "^0.213.0",
     "@opentelemetry/sdk-trace-node": "^2.6.0",
     "@opentelemetry/winston-transport": "^0.23.0",
+    "@sentry/node": "^10.45.0",
     "archiver": "^7.0.1",
     "bullmq": "^5.71.0",
     "drizzle-orm": "0.38.4",
@@ -107,11 +109,11 @@
     "zwift-client": "workspace:*"
   },
   "devDependencies": {
-    "@types/archiver": "^7.0.0",
     "@biomejs/biome": "2.4.6",
     "@stryker-mutator/core": "^9.6.0",
     "@stryker-mutator/vitest-runner": "^9.6.0",
     "@testing-library/react": "^16.3.2",
+    "@types/archiver": "^7.0.0",
     "@types/node": "22.19.15",
     "@types/sax": "1.2.7",
     "@types/yauzl": "2.10.3",

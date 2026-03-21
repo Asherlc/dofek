@@ -41,19 +41,13 @@ export async function insertWithDuplicateDiag<T extends Record<string, unknown>>
   rows: T[],
   doInsert: (rows: T[]) => Promise<unknown>,
 ): Promise<void> {
-  try {
-    await doInsert(rows);
-  } catch (err) {
-    if (err instanceof Error && err.message.includes("cannot affect row a second time")) {
-      const uniqueRows = deduplicateByKey(rows, conflictKey);
-      logger.warn(
-        `[apple_health] Deduplicated ${label} batch: ${rows.length} → ${uniqueRows.length} rows (${rows.length - uniqueRows.length} duplicates removed)`,
-      );
-      await doInsert(uniqueRows);
-      return;
-    }
-    throw err;
+  const uniqueRows = deduplicateByKey(rows, conflictKey);
+  if (uniqueRows.length < rows.length) {
+    logger.warn(
+      `[apple_health] Deduplicated ${label} batch: ${rows.length} → ${uniqueRows.length} rows (${rows.length - uniqueRows.length} duplicates removed)`,
+    );
   }
+  await doInsert(uniqueRows);
 }
 
 // Records that map to metric_stream (granular time-series)
@@ -811,13 +805,13 @@ export async function upsertSleepBatch(
     startedAt: s.bed.startDate,
     endedAt: s.bed.endDate,
     durationMinutes: s.bed.durationMinutes,
-    deepMinutes: s.deepMinutes || undefined,
-    remMinutes: s.remMinutes || undefined,
-    lightMinutes: s.lightMinutes || undefined,
-    awakeMinutes: s.awakeMinutes || undefined,
+    deepMinutes: s.deepMinutes,
+    remMinutes: s.remMinutes,
+    lightMinutes: s.lightMinutes,
+    awakeMinutes: s.awakeMinutes,
     efficiencyPct:
       s.bed.durationMinutes > 0
-        ? Math.round((s.totalSleepMinutes / s.bed.durationMinutes) * 100) / 100
+        ? Math.round((s.totalSleepMinutes / s.bed.durationMinutes) * 1000) / 10
         : undefined,
     sleepType: null,
     sourceName: s.bed.sourceName,

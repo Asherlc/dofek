@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export interface SleepNeedResult {
@@ -40,7 +40,7 @@ export const sleepNeedRouter = router({
   calculate: cachedProtectedQuery(CacheTTL.SHORT).query(
     async ({ ctx }): Promise<SleepNeedResult> => {
       const sleepNeedRowSchema = z.object({
-        date: z.string(),
+        date: dateStringSchema,
         duration_minutes: z.coerce.number(),
         next_day_hrv: z.coerce.number().nullable(),
         median_hrv: z.coerce.number().nullable(),

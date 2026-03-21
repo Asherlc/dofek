@@ -161,36 +161,6 @@ export class UltrahumanProvider implements SyncProvider {
     return null;
   }
 
-  authSetup(): ProviderAuthSetup {
-    // Ultrahuman uses a static API token, no OAuth flow needed
-    // The token is stored as the access token for consistency
-    return {
-      oauthConfig: {
-        clientId: "",
-        authorizeUrl: "",
-        tokenUrl: "",
-        redirectUri: "",
-        scopes: [],
-      },
-      automatedLogin: async () => {
-        const token = process.env.ULTRAHUMAN_API_TOKEN;
-        const email = process.env.ULTRAHUMAN_EMAIL;
-        if (!token || !email) {
-          throw new Error("ULTRAHUMAN_API_TOKEN and ULTRAHUMAN_EMAIL required");
-        }
-        return {
-          accessToken: token,
-          refreshToken: null,
-          expiresAt: new Date("2099-12-31T23:59:59Z"),
-          scopes: `email:${email}`,
-        };
-      },
-      exchangeCode: async () => {
-        throw new Error("Ultrahuman uses API token auth, not OAuth code exchange");
-      },
-    };
-  }
-
   async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];

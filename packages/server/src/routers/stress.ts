@@ -2,7 +2,7 @@ import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 /**
@@ -62,7 +62,7 @@ export const stressRouter = router({
       const queryDays = input.days + 60; // extra for baseline windows
 
       const rawRowSchema = z.object({
-        date: z.string(),
+        date: dateStringSchema,
         hrv: z.coerce.number().nullable(),
         resting_hr: z.coerce.number().nullable(),
         hrv_mean_60d: z.coerce.number().nullable(),

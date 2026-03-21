@@ -838,6 +838,12 @@ function registerSocketModeDiagnostics(client: SocketModeClient): void {
   client.on("unable_to_socket_mode_start", (payload) => {
     logger.error(`[slack] Socket Mode failed to start: ${formatSocketDiagnosticPayload(payload)}`);
   });
+  // Log all incoming Slack events at the WebSocket level — helps diagnose
+  // when Slack stops delivering events despite showing "connected".
+  client.on("slack_event", (args: { type?: string; body?: { event?: { type?: string } } }) => {
+    const eventType = args.body?.event?.type ?? args.type ?? "unknown";
+    logger.info(`[slack] Socket Mode received raw event: ${eventType}`);
+  });
 }
 
 /**
@@ -953,6 +959,20 @@ export async function startSlackBot(db: Database, expressApp?: express.Express):
     } else if (result.mode === "socket") {
       await result.app.start();
       logger.info("[slack] Slack bot connected (Socket Mode)");
+
+      // Graceful shutdown: close the Socket Mode WebSocket before the process
+      // exits so Slack immediately cleans up this connection.  Without this,
+      // container restarts (e.g. Watchtower) leave stale connections and Slack
+      // may route events to dead sockets, causing dropped messages.
+      process.once("SIGTERM", async () => {
+        logger.info("[slack] Shutting down Socket Mode connection (SIGTERM)");
+        try {
+          await result.app.stop();
+        } catch (stopError) {
+          const msg = stopError instanceof Error ? stopError.message : String(stopError);
+          logger.error(`[slack] Error stopping Slack bot: ${msg}`);
+        }
+      });
     } else if (result.mode === "http") {
       logger.warn("[slack] HTTP mode requires Express app reference — pass it to startSlackBot()");
     }

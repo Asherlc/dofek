@@ -14,13 +14,17 @@ vi.mock("../trpc.ts", async () => {
   };
 });
 
-vi.mock("../lib/typed-sql.ts", () => ({
-  executeWithSchema: async (
-    db: { execute: (query: unknown) => Promise<unknown[]> },
-    _schema: unknown,
-    query: unknown,
-  ) => db.execute(query),
-}));
+vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../lib/typed-sql.ts")>();
+  return {
+    ...original,
+    executeWithSchema: async (
+      db: { execute: (query: unknown) => Promise<unknown[]> },
+      _schema: unknown,
+      query: unknown,
+    ) => db.execute(query),
+  };
+});
 
 vi.mock("dofek/db/schema", () => ({
   syncLog: {

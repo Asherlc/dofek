@@ -64,6 +64,11 @@ vi.mock("../lib/start-worker.ts", () => ({
   startWorker: vi.fn(),
 }));
 
+vi.mock("../lib/typed-sql.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/typed-sql.ts")>()),
+  executeWithSchema: vi.fn(async (db: { execute: () => Promise<unknown[]> }) => db.execute()),
+}));
+
 vi.mock("../logger.ts", () => ({
   logger: { warn: mockLoggerWarn, info: vi.fn() },
 }));
@@ -164,20 +169,18 @@ describe("syncRouter", () => {
           id: "whoop",
           name: "WHOOP",
           validate: () => null,
-          authSetup: undefined,
+          authSetup: () => undefined,
         },
         {
           id: "strong-csv",
           name: "Strong CSV",
           validate: () => null,
-          authSetup: undefined,
           importOnly: true,
         },
         {
           id: "cronometer-csv",
           name: "Cronometer CSV",
           validate: () => null,
-          authSetup: undefined,
           importOnly: true,
         },
       ]);
@@ -200,18 +203,16 @@ describe("syncRouter", () => {
       expect(result).toHaveLength(4);
       expect(result.find((p: { id: string }) => p.id === "peloton")).toBeUndefined();
 
-      // Wahoo: needs OAuth, authorized (has token)
+      // Wahoo: OAuth provider, authorized (has token)
       const wahoo = result.find((p: { id: string }) => p.id === "wahoo");
-      expect(wahoo?.needsOAuth).toBe(true);
-      expect(wahoo?.needsCustomAuth).toBe(false);
+      expect(wahoo?.authType).toBe("oauth");
       expect(wahoo?.authorized).toBe(true);
       expect(wahoo?.lastSyncedAt).toBe("2024-01-01");
       expect(wahoo?.importOnly).toBe(false);
 
-      // WHOOP: needs custom auth, not authorized (no token)
+      // WHOOP: custom auth, not authorized (no token)
       const whoop = result.find((p: { id: string }) => p.id === "whoop");
-      expect(whoop?.needsCustomAuth).toBe(true);
-      expect(whoop?.needsOAuth).toBe(false);
+      expect(whoop?.authType).toBe("custom:whoop");
       expect(whoop?.authorized).toBe(false);
 
       // Strong CSV: import only
@@ -244,7 +245,7 @@ describe("syncRouter", () => {
 
       const result = await caller.providers();
       expect(result).toHaveLength(1);
-      expect(result[0]?.needsOAuth).toBe(false);
+      expect(result[0]?.authType).toBe("none");
     });
   });
 
@@ -281,6 +282,62 @@ describe("syncRouter", () => {
         sinceDays: undefined,
         userId: "user-1",
       });
+    });
+
+    it("excludes unconnected providers from sync-all fan-out", async () => {
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "strava",
+          name: "Strava",
+          validate: () => null,
+          authSetup: () => ({ oauthConfig: { authUrl: "https://example.com" } }),
+        },
+        {
+          id: "wahoo",
+          name: "Wahoo",
+          validate: () => null,
+          authSetup: () => ({ oauthConfig: { authUrl: "https://example.com" } }),
+        },
+        {
+          id: "whoop",
+          name: "WHOOP",
+          validate: () => null,
+          authSetup: () => ({
+            oauthConfig: { clientId: "whoop", authorizeUrl: "", tokenUrl: "", redirectUri: "" },
+            automatedLogin: async () => ({}),
+          }),
+        },
+        {
+          id: "intervals",
+          name: "Intervals.icu",
+          validate: () => null,
+        },
+      ]);
+      // Only strava has tokens
+      mockAdd
+        .mockResolvedValueOnce({ id: "job-strava" })
+        .mockResolvedValueOnce({ id: "job-intervals" });
+
+      const caller = createCaller({
+        db: {
+          execute: vi
+            .fn()
+            // tokens query — only strava has tokens
+            .mockResolvedValueOnce([{ provider_id: "strava" }]),
+        },
+        userId: "user-1",
+      });
+
+      const result = await caller.triggerSync({});
+      // wahoo has authSetup but no token — excluded
+      // whoop has authSetup but no token — excluded
+      // strava has authSetup and has token — included
+      // intervals has no authSetup — included (no auth needed)
+      expect(result.providerJobs).toEqual([
+        { providerId: "strava", jobId: "job-strava" },
+        { providerId: "intervals", jobId: "job-intervals" },
+      ]);
+      expect(mockAdd).toHaveBeenCalledTimes(2);
     });
 
     it("excludes import-only providers from sync-all fan-out", async () => {

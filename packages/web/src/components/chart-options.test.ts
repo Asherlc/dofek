@@ -112,6 +112,15 @@ describe("PolarizationTrendChart option builder", () => {
     expect(html).not.toContain("resting");
   });
 
+  it("restricts visualMap to only the Polarization Index data series to avoid markLine coord crash", () => {
+    const option = buildPolarizationTrendOption(sampleWeeks);
+    const polarizationIndexSeriesIndex = option.series.findIndex(
+      (s: { name?: string }) => s.name === "Polarization Index",
+    );
+    expect(polarizationIndexSeriesIndex).toBeGreaterThan(0);
+    expect(option.visualMap.seriesIndex).toBe(polarizationIndexSeriesIndex);
+  });
+
   it("explains missing zones when PI is unavailable", () => {
     const weeksWithGap = [
       {

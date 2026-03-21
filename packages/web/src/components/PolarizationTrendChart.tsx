@@ -127,6 +127,7 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
     },
     visualMap: {
       show: false,
+      seriesIndex: 3, // Only apply to the "Polarization Index" data series
       pieces: [
         { lte: 2.0, color: "#ef4444" },
         { gt: 2.0, color: "#22c55e" },

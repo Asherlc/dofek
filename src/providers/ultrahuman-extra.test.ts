@@ -141,24 +141,9 @@ describe("UltrahumanProvider", () => {
     expect(new UltrahumanProvider().validate()).toBeNull();
   });
 
-  it("authSetup returns automatedLogin", () => {
-    const setup = new UltrahumanProvider().authSetup();
-    expect(setup.automatedLogin).toBeTypeOf("function");
-  });
-
-  it("authSetup.automatedLogin returns token set", async () => {
-    process.env.ULTRAHUMAN_API_TOKEN = "my-token";
-    process.env.ULTRAHUMAN_EMAIL = "test@test.com";
-    const setup = new UltrahumanProvider().authSetup();
-    if (!setup.automatedLogin) throw new Error("no automatedLogin");
-    const tokens = await setup.automatedLogin("", "");
-    expect(tokens.accessToken).toBe("my-token");
-    expect(tokens.scopes).toBe("email:test@test.com");
-  });
-
-  it("authSetup.exchangeCode throws", async () => {
-    const setup = new UltrahumanProvider().authSetup();
-    await expect(setup.exchangeCode("code")).rejects.toThrow("API token auth");
+  it("does not have authSetup (uses server-side env var auth)", () => {
+    const provider = new UltrahumanProvider();
+    expect("authSetup" in provider).toBe(false);
   });
 
   it("sync returns error when no tokens or env vars", async () => {

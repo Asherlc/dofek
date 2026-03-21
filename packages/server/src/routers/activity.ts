@@ -50,6 +50,18 @@ export type ActivityHrZones = ActivityHrZone[];
 
 const activityListRowSchema = z
   .object({
+    id: z.string(),
+    activity_type: z.string(),
+    started_at: z.string(),
+    ended_at: z.string().nullable(),
+    name: z.string().nullable(),
+    provider_id: z.string(),
+    source_providers: z.array(z.string()).nullable(),
+    avg_hr: z.number().nullable().optional(),
+    max_hr: z.number().nullable().optional(),
+    avg_power: z.number().nullable().optional(),
+    distance_meters: z.number().nullable().optional(),
+    calories: z.number().nullable().optional(),
     total_count: z.coerce.number(),
   })
   .passthrough();
@@ -67,11 +79,29 @@ export const activityRouter = router({
       const rows = await executeWithSchema(
         ctx.db,
         activityListRowSchema,
-        sql`SELECT *, COUNT(*) OVER()::int AS total_count
-            FROM fitness.v_activity
-            WHERE user_id = ${ctx.userId}
-              AND started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
-            ORDER BY started_at DESC
+        sql`SELECT
+              a.id,
+              a.activity_type,
+              a.started_at::text AS started_at,
+              a.ended_at::text AS ended_at,
+              a.name,
+              a.provider_id,
+              a.source_providers,
+              s.avg_hr,
+              s.max_hr,
+              s.avg_power,
+              s.total_distance AS distance_meters,
+              COALESCE(
+                (a.raw->>'calories')::REAL,
+                (a.raw->>'totalEnergyBurned')::REAL,
+                (a.raw->>'total_energy_burned')::REAL
+              ) AS calories,
+              COUNT(*) OVER()::int AS total_count
+            FROM fitness.v_activity a
+            LEFT JOIN fitness.activity_summary s ON s.activity_id = a.id
+            WHERE a.user_id = ${ctx.userId}
+              AND a.started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+            ORDER BY a.started_at DESC
             LIMIT ${input.limit} OFFSET ${input.offset}`,
       );
       const totalCount = rows.length > 0 ? Number(rows[0]?.total_count) : 0;

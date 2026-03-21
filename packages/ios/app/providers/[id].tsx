@@ -1,7 +1,8 @@
 import { useLocalSearchParams } from "expo-router";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
+  Linking,
   Modal,
   Pressable,
   ScrollView,
@@ -11,6 +12,7 @@ import {
   View,
 } from "react-native";
 import { formatRelativeTime, formatTime } from "@dofek/format/format";
+import { useAuth } from "../../lib/auth-context";
 import { trpc } from "../../lib/trpc";
 import { colors } from "../../theme";
 
@@ -839,6 +841,7 @@ const tabStyles = StyleSheet.create({
 
 export default function ProviderDetailScreen() {
   const { id: providerId } = useLocalSearchParams<{ id: string }>();
+  const { serverUrl } = useAuth();
 
   const providers = trpc.sync.providers.useQuery();
   const stats = trpc.sync.providerStats.useQuery();
@@ -849,6 +852,11 @@ export default function ProviderDetailScreen() {
   const providerStats = (stats.data ?? []).find(
     (s: { providerId: string }) => s.providerId === providerId,
   );
+
+  const handleReauthorize = useCallback(() => {
+    if (!providerId) return;
+    Linking.openURL(`${serverUrl}/auth/provider/${providerId}`);
+  }, [providerId, serverUrl]);
 
   if (providers.isLoading || !providerId) {
     return (
@@ -863,7 +871,7 @@ export default function ProviderDetailScreen() {
       {/* Provider header */}
       <View style={styles.headerCard}>
         <View style={styles.headerRow}>
-          <View>
+          <View style={styles.headerInfo}>
             <Text style={styles.providerName}>
               {provider?.name ?? formatProviderName(providerId)}
             </Text>
@@ -874,7 +882,7 @@ export default function ProviderDetailScreen() {
                 ) : (
                   <Text style={styles.statusDisconnected}>Not connected</Text>
                 )}
-                {provider.lastSyncedAt && (
+                {provider.lastSyncedAt && formatRelativeTime(provider.lastSyncedAt) && (
                   <Text style={styles.lastSync}>
                     Last sync: {formatRelativeTime(provider.lastSyncedAt)}
                   </Text>
@@ -882,6 +890,15 @@ export default function ProviderDetailScreen() {
               </View>
             )}
           </View>
+          {provider?.needsOAuth && provider.authorized && (
+            <TouchableOpacity
+              style={styles.reauthorizeButton}
+              onPress={handleReauthorize}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.reauthorizeButtonText}>Re-authorize</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
@@ -922,7 +939,22 @@ const styles = StyleSheet.create({
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
     gap: 12,
+  },
+  headerInfo: {
+    flex: 1,
+  },
+  reauthorizeButton: {
+    backgroundColor: colors.surfaceSecondary,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  reauthorizeButtonText: {
+    fontSize: 13,
+    color: colors.text,
+    fontWeight: "500",
   },
   providerName: {
     fontSize: 20,

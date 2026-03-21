@@ -1,3 +1,4 @@
+import { rawLoadToStrain } from "@dofek/scoring/scoring";
 import {
   collapseWeeklyVolumeActivityTypes,
   formatActivityTypeLabel,
@@ -44,7 +45,7 @@ export default function StrainScreen() {
     .sort((a, b) => b[1] - a[1])
     .map(([activityType, hours]) => ({ activityType, hours }));
 
-  const dailyStrain = displayedWorkload?.dailyLoad ?? 0;
+  const dailyStrain = rawLoadToStrain(displayedWorkload?.dailyLoad ?? 0);
   const acuteLoad = todayWorkload?.acuteLoad ?? 0;
   const chronicLoad = todayWorkload?.chronicLoad ?? 0;
   const workloadRatio = todayWorkload?.workloadRatio;
@@ -58,7 +59,7 @@ export default function StrainScreen() {
             day: "numeric",
           })}`;
 
-  const strainTrend = workloadData.slice(-14).map((d) => d.dailyLoad);
+  const strainTrend = workloadData.slice(-14).map((d) => rawLoadToStrain(d.dailyLoad));
 
   const isLoading = workloadQuery.isLoading;
 
