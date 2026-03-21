@@ -116,8 +116,8 @@ export function PersonalizationPanel() {
       <ParamCard
         paramKey="readinessWeights"
         personalized={data.parameters.readinessWeights}
-        value={`HRV: ${Math.round(data.effective.readinessWeights.hrv * 100)}%, RHR: ${Math.round(data.effective.readinessWeights.restingHr * 100)}%, Sleep: ${Math.round(data.effective.readinessWeights.sleep * 100)}%, Load: ${Math.round(data.effective.readinessWeights.loadBalance * 100)}%`}
-        defaultValue={`HRV: ${Math.round(data.defaults.readinessWeights.hrv * 100)}%, RHR: ${Math.round(data.defaults.readinessWeights.restingHr * 100)}%, Sleep: ${Math.round(data.defaults.readinessWeights.sleep * 100)}%, Load: ${Math.round(data.defaults.readinessWeights.loadBalance * 100)}%`}
+        value={`Heart Rate Variability ${Math.round(data.effective.readinessWeights.hrv * 100)}%, Resting Heart Rate ${Math.round(data.effective.readinessWeights.restingHr * 100)}%, Sleep ${Math.round(data.effective.readinessWeights.sleep * 100)}%, Respiratory Rate ${Math.round(data.effective.readinessWeights.respiratoryRate * 100)}%`}
+        defaultValue={`Heart Rate Variability ${Math.round(data.defaults.readinessWeights.hrv * 100)}%, Resting Heart Rate ${Math.round(data.defaults.readinessWeights.restingHr * 100)}%, Sleep ${Math.round(data.defaults.readinessWeights.sleep * 100)}%, Respiratory Rate ${Math.round(data.defaults.readinessWeights.respiratoryRate * 100)}%`}
         quality={
           data.parameters.readinessWeights
             ? `${data.parameters.readinessWeights.sampleCount} days, r=${data.parameters.readinessWeights.correlation}`

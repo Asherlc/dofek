@@ -78,10 +78,10 @@
     "ios:device": "pnpm --filter dofek-ios ios:device"
   },
   "dependencies": {
-    "@dofek/training": "workspace:*",
     "@bull-board/api": "^6.20.5",
     "@bull-board/express": "^6.20.5",
     "@dofek/heart-rate-variability": "workspace:*",
+    "@dofek/scoring": "workspace:*",
     "@dofek/training": "workspace:*",
     "@opentelemetry/exporter-logs-otlp-proto": "^0.213.0",
     "@opentelemetry/exporter-trace-otlp-proto": "^0.213.0",

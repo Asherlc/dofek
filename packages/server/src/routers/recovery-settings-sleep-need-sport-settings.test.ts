@@ -237,8 +237,8 @@ describe("recoveryRouter", () => {
       const result = await caller.readinessScore({ days: 30 });
 
       if (result.length > 0) {
-        // All null defaults to 50 for each component
-        expect(result[0]?.readinessScore).toBe(50);
+        // All null defaults to 62 for each component (sigmoid center)
+        expect(result[0]?.readinessScore).toBe(62);
       }
     });
   });
