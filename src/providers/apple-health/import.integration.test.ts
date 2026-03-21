@@ -808,8 +808,8 @@ describe("importAppleHealthFile — full DB integration", () => {
     expect(iPhoneRow?.flightsClimbed).toBe(3);
     // Distance from iPhone: 523.7 m → 0.5237 km
     expect(iPhoneRow?.distanceKm).toBeCloseTo(0.5237);
-    // Active energy from iPhone: 300 + 223.4 = 523.4
-    expect(iPhoneRow?.activeEnergyKcal).toBeCloseTo(523.4);
+    // Active energy from Apple Watch: 300 + 223.4 = 523.4
+    expect(watchRow?.activeEnergyKcal).toBeCloseTo(523.4);
   });
 
   it("creates nutrition_daily rows with aggregated nutrition", async () => {
