@@ -13,7 +13,7 @@ import { activity, metricStream } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
-import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
+import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
 // Peloton API types
@@ -494,7 +494,7 @@ export async function pelotonAutomatedLogin(
   return exchangeCodeForTokens(config, authCode, fetchFn, { codeVerifier });
 }
 
-export class PelotonProvider implements Provider {
+export class PelotonProvider implements SyncProvider {
   readonly id = "peloton";
   readonly name = "Peloton";
   private fetchFn: typeof globalThis.fetch;

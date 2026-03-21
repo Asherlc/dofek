@@ -1,5 +1,141 @@
 export const OTHER_ACTIVITY_TYPE = "__other__";
 
+// ============================================================
+// Canonical activity types
+// ============================================================
+
+/**
+ * Superset of all valid internal activity types across all providers.
+ * Providers map their domain-specific types to one of these canonical values.
+ */
+export const CANONICAL_ACTIVITY_TYPES = [
+  "cycling",
+  "running",
+  "swimming",
+  "walking",
+  "hiking",
+  "strength",
+  "strength_training",
+  "functional_strength",
+  "yoga",
+  "pilates",
+  "elliptical",
+  "rowing",
+  "skiing",
+  "skating",
+  "climbing",
+  "cardio",
+  "hiit",
+  "cross_training",
+  "mountain_biking",
+  "trail_running",
+  "stair_climbing",
+  "stairmaster",
+  "cross country skiing",
+  "group exercise",
+  "stretching",
+  "dance",
+  "martial arts",
+  "tennis",
+  "basketball",
+  "soccer",
+  "golf",
+  "ice hockey",
+  "snowboarding",
+  "rock climbing",
+  "surfing",
+  "kayaking",
+  "functional fitness",
+  "bootcamp",
+  "boxing",
+  "core",
+  "aqua fitness",
+  "circuit training",
+  "triathlon",
+  "dancing",
+  // Apple Health granular types
+  "american_football",
+  "archery",
+  "australian_football",
+  "badminton",
+  "baseball",
+  "bowling",
+  "cricket",
+  "curling",
+  "equestrian",
+  "fencing",
+  "fishing",
+  "gymnastics",
+  "handball",
+  "hockey",
+  "hunting",
+  "lacrosse",
+  "mind_and_body",
+  "mixed_cardio",
+  "paddle_sports",
+  "play",
+  "preparation_and_recovery",
+  "racquetball",
+  "rugby",
+  "sailing",
+  "snow_sports",
+  "softball",
+  "squash",
+  "table_tennis",
+  "track_and_field",
+  "volleyball",
+  "water_fitness",
+  "water_polo",
+  "water_sports",
+  "wrestling",
+  "barre",
+  "core_training",
+  "flexibility",
+  "jump_rope",
+  "kickboxing",
+  "stairs",
+  "step_training",
+  "wheelchair_walk",
+  "wheelchair_run",
+  "tai_chi",
+  "mixed_metabolic_cardio",
+  "hand_cycling",
+  "disc_sports",
+  "fitness_gaming",
+  "cardio_dance",
+  "social_dance",
+  "paddle_racquet",
+  "cooldown",
+  "transition",
+  "underwater_diving",
+  "cross_country_skiing",
+  "downhill_skiing",
+  "other",
+] as const;
+
+// ============================================================
+// Endurance activity types
+// ============================================================
+
+// Re-export from dedicated module for backward compatibility
+export { ENDURANCE_ACTIVITY_TYPES, isEnduranceActivity } from "./endurance-types.ts";
+
+// ============================================================
+// Activity type mapper factory
+// ============================================================
+
+/**
+ * Creates a mapping function from provider-specific types to canonical types.
+ * Unknown provider types default to "other".
+ */
+export function createActivityTypeMapper<K extends string | number>(
+  providerMappings: Record<K, string>,
+): (providerType: K) => string {
+  return (providerType: K): string => {
+    return providerMappings[providerType] ?? "other";
+  };
+}
+
 export interface WeeklyVolumeChartRow {
   week: string;
   activity_type: string;

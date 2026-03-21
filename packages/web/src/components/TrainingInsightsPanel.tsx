@@ -6,6 +6,7 @@ import {
 import { HEART_RATE_ZONES } from "@dofek/zones/zones";
 import ReactECharts from "echarts-for-react";
 import { z } from "zod";
+import { formatNumber } from "../lib/format.ts";
 import { trpc } from "../lib/trpc.ts";
 import { ChartDescriptionTooltip } from "./ChartDescriptionTooltip.tsx";
 
@@ -159,9 +160,9 @@ function WeeklyVolumeChart({ data }: { data: WeeklyVolumeRow[] }) {
           .filter((p) => p.value[1] > 0)
           .map((p) => {
             total += p.value[1];
-            return `<span style="color:${p.color}">\u25CF</span> ${p.seriesName}: ${p.value[1].toFixed(1)}h`;
+            return `<span style="color:${p.color}">\u25CF</span> ${p.seriesName}: ${formatNumber(p.value[1])}h`;
           });
-        return `<strong>${dateLabel}</strong> (${total.toFixed(1)}h total)<br/>${lines.join("<br/>")}`;
+        return `<strong>${dateLabel}</strong> (${formatNumber(total)}h total)<br/>${lines.join("<br/>")}`;
       },
     },
     xAxis: {
@@ -255,7 +256,7 @@ function HrZoneChart({ weeks, maxHr }: { weeks: HrZoneWeek[]; maxHr: number }) {
             const zoneKey = zoneKeys[params.indexOf(p)];
             const secs = raw && zoneKey ? (raw[zoneKey] ?? 0) : 0;
             const mins = Math.round(secs / 60);
-            return `<span style="color:${p.color}">\u25CF</span> ${p.seriesName}: ${p.value[1].toFixed(1)}% (${mins}m)`;
+            return `<span style="color:${p.color}">\u25CF</span> ${p.seriesName}: ${formatNumber(p.value[1])}% (${mins}m)`;
           });
         return `<strong>${dateLabel}</strong><br/>${lines.join("<br/>")}`;
       },

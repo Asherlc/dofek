@@ -1,6 +1,7 @@
 import { strainColor } from "@dofek/scoring/scoring";
 import { StyleSheet, Text, View } from "react-native";
 import Svg, { Circle } from "react-native-svg";
+import { formatNumber } from "@dofek/format/format";
 import { colors } from "../../theme";
 
 interface StrainGaugeProps {
@@ -51,7 +52,7 @@ export function StrainGauge({
         />
       </Svg>
       <View style={styles.labelContainer}>
-        <Text style={[styles.value, { color }]}>{strain.toFixed(1)}</Text>
+        <Text style={[styles.value, { color }]}>{formatNumber(strain)}</Text>
         <Text style={styles.label}>Strain</Text>
       </View>
     </View>

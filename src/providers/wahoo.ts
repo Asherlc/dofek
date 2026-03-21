@@ -1,3 +1,4 @@
+import { createActivityTypeMapper } from "@dofek/training/training";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
@@ -6,10 +7,10 @@ import { activity, metricStream } from "../db/schema.ts";
 import { type ParsedFitRecord, parseFitFile } from "../fit/parser.ts";
 import { logger } from "../logger.ts";
 import type {
-  Provider,
   ProviderAuthSetup,
   ProviderIdentity,
   SyncError,
+  SyncProvider,
   SyncResult,
 } from "./types.ts";
 
@@ -62,7 +63,8 @@ interface WahooWorkoutListResponse {
 // Activity type mapping
 // ============================================================
 
-const WORKOUT_TYPE_MAP: Record<number, string> = {
+/** Wahoo workout_type_id (numeric) → canonical activity type */
+const WAHOO_WORKOUT_TYPE_MAP: Record<number, string> = {
   0: "cycling",
   1: "running",
   2: "running", // treadmill
@@ -79,8 +81,10 @@ const WORKOUT_TYPE_MAP: Record<number, string> = {
   13: "skiing",
 };
 
+const mapWahooWorkoutType = createActivityTypeMapper(WAHOO_WORKOUT_TYPE_MAP);
+
 function mapWorkoutType(typeId: number): string {
-  return WORKOUT_TYPE_MAP[typeId] ?? "other";
+  return mapWahooWorkoutType(typeId);
 }
 
 // ============================================================
@@ -244,7 +248,7 @@ export function wahooOAuthConfig(): OAuthConfig | null {
   };
 }
 
-export class WahooProvider implements Provider {
+export class WahooProvider implements SyncProvider {
   readonly id = "wahoo";
   readonly name = "Wahoo";
   private fetchFn: typeof globalThis.fetch;

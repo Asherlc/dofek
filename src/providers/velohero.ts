@@ -4,7 +4,7 @@ import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
-import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
+import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 const VELOHERO_BASE_URL = "https://app.velohero.com";
 
@@ -20,7 +20,7 @@ function formatDate(date: Date): string {
 // Provider implementation
 // ============================================================
 
-export class VeloHeroProvider implements Provider {
+export class VeloHeroProvider implements SyncProvider {
   readonly id = "velohero";
   readonly name = "VeloHero";
   private fetchFn: typeof globalThis.fetch;

@@ -5,12 +5,16 @@ import {
   formatDurationMinutes,
   formatDurationRange,
   formatHour,
+  formatNumber,
   formatPace,
+  formatPercent,
   formatRelativeTime,
+  formatSigned,
   formatSleepDebt,
   formatSleepDebtInline,
   formatTime,
   isToday,
+  parseValidDate,
 } from "./format.ts";
 
 describe("formatDateYmd", () => {
@@ -83,6 +87,14 @@ describe("formatDurationRange", () => {
   it("handles postgres-style space-separated timestamps", () => {
     expect(formatDurationRange("2024-01-01 10:00:00+00", "2024-01-01 11:30:00+00")).toBe("1h 30m");
   });
+
+  it("returns 0m for identical timestamps (kills < 0 → <= 0 mutant)", () => {
+    expect(formatDurationRange("2024-01-01T10:00:00Z", "2024-01-01T10:00:00Z")).toBe("0m");
+  });
+
+  it("returns -- when end is before start (negative duration)", () => {
+    expect(formatDurationRange("2024-01-01T11:00:00Z", "2024-01-01T10:00:00Z")).toBe("--");
+  });
 });
 
 describe("formatSleepDebt", () => {
@@ -146,6 +158,14 @@ describe("formatHour", () => {
 
   it("formats midnight in 24-hour locale", () => {
     expect(formatHour(0, "de-DE")).toBe("0:00");
+  });
+
+  it("wraps 25 to 1:00 AM (kills % 24 removal)", () => {
+    expect(formatHour(25, "en-US")).toBe("1:00 AM");
+  });
+
+  it("wraps 24 to 12:00 AM (midnight)", () => {
+    expect(formatHour(24, "en-US")).toBe("12:00 AM");
   });
 
   it("uses device locale when no locale specified", () => {
@@ -296,6 +316,14 @@ describe("formatPace", () => {
   it("formats sub-minute pace", () => {
     expect(formatPace(45)).toBe("0:45");
   });
+
+  it("formats 0 pace", () => {
+    expect(formatPace(0)).toBe("0:00");
+  });
+
+  it("formats exactly 60 seconds as 1:00", () => {
+    expect(formatPace(60)).toBe("1:00");
+  });
 });
 
 describe("formatTime", () => {
@@ -310,9 +338,141 @@ describe("formatTime", () => {
     expect(formatTime("not-a-date")).toBe("--");
   });
 
+  it("returns -- for empty string", () => {
+    expect(formatTime("")).toBe("--");
+  });
+
   it("handles postgres-style space-separated timestamps", () => {
     const result = formatTime("2024-03-15 14:30:00+00");
     expect(result).toContain("Mar");
     expect(result).toContain("15");
+  });
+});
+
+describe("formatNumber", () => {
+  it("formats with default 1 decimal", () => {
+    expect(formatNumber(Math.PI)).toBe("3.1");
+  });
+
+  it("formats with 0 decimals", () => {
+    expect(formatNumber(3.7, 0)).toBe("4");
+  });
+
+  it("formats with 2 decimals", () => {
+    expect(formatNumber(1.456, 2)).toBe("1.46");
+  });
+
+  it("formats with 3 decimals", () => {
+    expect(formatNumber(0.12345, 3)).toBe("0.123");
+  });
+
+  it("handles zero", () => {
+    expect(formatNumber(0)).toBe("0.0");
+  });
+
+  it("handles negative numbers", () => {
+    expect(formatNumber(-2.567, 1)).toBe("-2.6");
+  });
+
+  it("returns -- for NaN", () => {
+    expect(formatNumber(Number.NaN)).toBe("--");
+  });
+
+  it("returns -- for Infinity", () => {
+    expect(formatNumber(Number.POSITIVE_INFINITY)).toBe("--");
+  });
+
+  it("returns -- for negative Infinity", () => {
+    expect(formatNumber(Number.NEGATIVE_INFINITY)).toBe("--");
+  });
+});
+
+describe("formatPercent", () => {
+  it("formats a ratio as percentage with default 0 decimals", () => {
+    expect(formatPercent(0.75)).toBe("75%");
+  });
+
+  it("formats with 1 decimal", () => {
+    expect(formatPercent(0.756, 1)).toBe("75.6%");
+  });
+
+  it("handles 0", () => {
+    expect(formatPercent(0)).toBe("0%");
+  });
+
+  it("handles 1 (100%)", () => {
+    expect(formatPercent(1)).toBe("100%");
+  });
+
+  it("handles values already in percentage scale", () => {
+    expect(formatPercent(75.6, 1)).toBe("7560.0%");
+  });
+
+  it("returns -- for NaN", () => {
+    expect(formatPercent(Number.NaN)).toBe("--");
+  });
+});
+
+describe("formatSigned", () => {
+  it("prepends + for positive numbers", () => {
+    expect(formatSigned(2.5, 1)).toBe("+2.5");
+  });
+
+  it("prepends - for negative numbers", () => {
+    expect(formatSigned(-2.5, 1)).toBe("-2.5");
+  });
+
+  it("formats zero without sign", () => {
+    expect(formatSigned(0, 1)).toBe("0.0");
+  });
+
+  it("formats zero with 0 decimals without + prefix (kills > 0 → >= 0 mutant)", () => {
+    expect(formatSigned(0, 0)).toBe("0");
+    expect(formatSigned(0, 0)).not.toMatch(/^\+/);
+  });
+
+  it("returns -- for NaN", () => {
+    expect(formatSigned(Number.NaN)).toBe("--");
+  });
+
+  it("returns -- for Infinity", () => {
+    expect(formatSigned(Number.POSITIVE_INFINITY)).toBe("--");
+    expect(formatSigned(Number.NEGATIVE_INFINITY)).toBe("--");
+  });
+
+  it("prepends + for small positive values", () => {
+    expect(formatSigned(0.1, 1)).toBe("+0.1");
+    expect(formatSigned(0.1, 1)[0]).toBe("+");
+  });
+});
+
+describe("parseValidDate", () => {
+  it("parses valid ISO 8601 strings", () => {
+    const date = parseValidDate("2024-01-15T10:30:00Z");
+    expect(date).toBeInstanceOf(Date);
+    expect(date?.toISOString()).toBe("2024-01-15T10:30:00.000Z");
+  });
+
+  it("returns null for empty string", () => {
+    expect(parseValidDate("")).toBeNull();
+  });
+
+  it("returns null for invalid string", () => {
+    expect(parseValidDate("not-a-date")).toBeNull();
+  });
+
+  it("parses postgres-style space-separated timestamps", () => {
+    const date = parseValidDate("2024-01-15 10:30:00+00");
+    expect(date).toBeInstanceOf(Date);
+  });
+
+  it("handles postgres timestamps with microseconds", () => {
+    const date = parseValidDate("2026-03-20 19:40:29.678162+00");
+    expect(date).toBeInstanceOf(Date);
+  });
+
+  it("handles bare timezone offsets without colon", () => {
+    const date = parseValidDate("2026-03-20 19:40:29+05");
+    expect(date).toBeInstanceOf(Date);
   });
 });

@@ -7,6 +7,7 @@ import type { ActivityDetail, StreamPoint } from "../../../server/src/routers/ac
 import { AppHeader } from "../components/AppHeader.tsx";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
+import { formatNumber } from "../lib/format.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitSystem } from "../lib/unitContext.ts";
 import type { UnitSystem } from "../lib/units.ts";
@@ -160,7 +161,7 @@ function ActivityHeader({
   if (activity.totalDistance != null)
     stats.push({
       label: "Distance",
-      value: `${convertDistance(activity.totalDistance / 1000, unitSystem).toFixed(1)} ${distanceLabel(unitSystem)}`,
+      value: `${formatNumber(convertDistance(activity.totalDistance / 1000, unitSystem))} ${distanceLabel(unitSystem)}`,
     });
   if (activity.calories != null)
     stats.push({ label: "Calories", value: `${Math.round(activity.calories)} kcal` });
@@ -180,7 +181,7 @@ function ActivityHeader({
   if (activity.avgSpeed != null)
     stats.push({
       label: "Avg Speed",
-      value: `${convertSpeed(activity.avgSpeed * 3.6, unitSystem).toFixed(1)} ${speedLabel(unitSystem)}`,
+      value: `${formatNumber(convertSpeed(activity.avgSpeed * 3.6, unitSystem))} ${speedLabel(unitSystem)}`,
     });
   if (activity.avgCadence != null)
     stats.push({ label: "Avg Cadence", value: `${Math.round(activity.avgCadence)} rpm` });
@@ -378,7 +379,7 @@ function MetricsChart({
       type: "line",
       yAxisIndex: axisIndex,
       data: points.map((p) =>
-        p.speed != null ? +convertSpeed(p.speed * 3.6, unitSystem).toFixed(1) : null,
+        p.speed != null ? +formatNumber(convertSpeed(p.speed * 3.6, unitSystem)) : null,
       ),
       showSymbol: false,
       lineStyle: { width: 1.5, color: CHART_COLORS.speed },
@@ -569,7 +570,7 @@ function HrZonesChart({ zones, loading }: { zones: ActivityHrZone[]; loading: bo
         const zone = zones[p.dataIndex];
         if (!zone) return "";
         const percentage =
-          totalSeconds > 0 ? ((zone.seconds / totalSeconds) * 100).toFixed(1) : "0";
+          totalSeconds > 0 ? formatNumber((zone.seconds / totalSeconds) * 100) : "0";
         return `<b>${zone.label}</b> (${zone.minPct}–${zone.maxPct}% HRR)<br/>
           ${formatTime(zone.seconds)} (${percentage}%)`;
       },
@@ -603,7 +604,8 @@ function HrZonesChart({ zones, loading }: { zones: ActivityHrZone[]; loading: bo
           color: "#a1a1aa",
           fontSize: 11,
           formatter: (p: { value: number }) => {
-            const percentage = totalSeconds > 0 ? ((p.value / totalSeconds) * 100).toFixed(0) : "0";
+            const percentage =
+              totalSeconds > 0 ? formatNumber((p.value / totalSeconds) * 100, 0) : "0";
             return `${percentage}%`;
           },
         },

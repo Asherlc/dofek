@@ -29,10 +29,10 @@ import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
 import type {
-  Provider,
   ProviderAuthSetup,
   ProviderIdentity,
   SyncError,
+  SyncProvider,
   SyncResult,
 } from "./types.ts";
 
@@ -432,7 +432,7 @@ export function parseJournalResponse(raw: unknown): ParsedJournalEntry[] {
 // Provider implementation
 // ============================================================
 
-export class WhoopProvider implements Provider {
+export class WhoopProvider implements SyncProvider {
   readonly id = "whoop";
   readonly name = "WHOOP";
   private fetchFn: typeof globalThis.fetch;

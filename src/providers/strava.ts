@@ -1,3 +1,4 @@
+import { createActivityTypeMapper } from "@dofek/training/training";
 import { sql } from "drizzle-orm";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
@@ -6,10 +7,10 @@ import type { SyncDatabase } from "../db/index.ts";
 import { activity, metricStream } from "../db/schema.ts";
 import { logger } from "../logger.ts";
 import type {
-  Provider,
   ProviderAuthSetup,
   ProviderIdentity,
   SyncError,
+  SyncProvider,
   SyncResult,
 } from "./types.ts";
 
@@ -95,7 +96,8 @@ function isStreamKey(key: string): key is keyof StravaStreamSet {
 // Activity type mapping
 // ============================================================
 
-const ACTIVITY_TYPE_MAP: Record<string, string> = {
+/** Strava sport_type → canonical activity type */
+const STRAVA_ACTIVITY_TYPE_MAP: Record<string, string> = {
   Ride: "cycling",
   VirtualRide: "cycling",
   MountainBikeRide: "cycling",
@@ -123,8 +125,10 @@ const ACTIVITY_TYPE_MAP: Record<string, string> = {
   RockClimbing: "climbing",
 };
 
+const mapStravaType = createActivityTypeMapper(STRAVA_ACTIVITY_TYPE_MAP);
+
 export function mapStravaActivityType(sportType: string): string {
-  return ACTIVITY_TYPE_MAP[sportType] ?? "other";
+  return mapStravaType(sportType);
 }
 
 // ============================================================
@@ -408,7 +412,7 @@ export function stravaOAuthConfig(): OAuthConfig | null {
   };
 }
 
-export class StravaProvider implements Provider {
+export class StravaProvider implements SyncProvider {
   readonly id = "strava";
   readonly name = "Strava";
   private fetchFn: typeof globalThis.fetch;

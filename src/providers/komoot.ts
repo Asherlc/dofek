@@ -5,7 +5,7 @@ import type { SyncDatabase } from "../db/index.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
-import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
+import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
 // Komoot API types
@@ -127,7 +127,7 @@ export function komootOAuthConfig(): OAuthConfig | null {
 // Provider implementation
 // ============================================================
 
-export class KomootProvider implements Provider {
+export class KomootProvider implements SyncProvider {
   readonly id = "komoot";
   readonly name = "Komoot";
   private fetchFn: typeof globalThis.fetch;

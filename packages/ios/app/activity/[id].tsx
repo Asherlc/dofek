@@ -18,7 +18,7 @@ import Svg, {
   Text as SvgText,
 } from "react-native-svg";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
-import { formatDurationRange } from "@dofek/format/format";
+import { formatDurationRange, formatNumber } from "@dofek/format/format";
 import { HEART_RATE_ZONE_COLORS } from "@dofek/zones/zones";
 import { trpc } from "../../lib/trpc";
 import { convertDistance, convertElevation, convertSpeed, distanceLabel, elevationLabel, speedLabel, useUnitSystem } from "../../lib/units";
@@ -477,7 +477,7 @@ export default function ActivityDetailScreen() {
   if (activity.totalDistance != null) {
     stats.push({
       label: "Distance",
-      value: `${convertDistance(activity.totalDistance / 1000, unitSystem).toFixed(1)} ${distanceLabel(unitSystem)}`,
+      value: `${formatNumber(convertDistance(activity.totalDistance / 1000, unitSystem))} ${distanceLabel(unitSystem)}`,
     });
   }
   if (activity.elevationGain != null) {
@@ -513,7 +513,7 @@ export default function ActivityDetailScreen() {
   if (activity.avgSpeed != null) {
     stats.push({
       label: "Avg Speed",
-      value: `${convertSpeed(activity.avgSpeed * 3.6, unitSystem).toFixed(1)} ${speedLabel(unitSystem)}`,
+      value: `${formatNumber(convertSpeed(activity.avgSpeed * 3.6, unitSystem))} ${speedLabel(unitSystem)}`,
     });
   }
   if (activity.avgCadence != null) {

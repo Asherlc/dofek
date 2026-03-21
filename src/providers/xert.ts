@@ -5,7 +5,7 @@ import type { SyncDatabase } from "../db/index.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
-import type { Provider, ProviderAuthSetup, SyncError, SyncResult } from "./types.ts";
+import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
 // Xert API types
@@ -126,7 +126,7 @@ export function xertOAuthConfig(): OAuthConfig | null {
 // Provider implementation
 // ============================================================
 
-export class XertProvider implements Provider {
+export class XertProvider implements SyncProvider {
   readonly id = "xert";
   readonly name = "Xert";
   private fetchFn: typeof globalThis.fetch;
