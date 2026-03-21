@@ -18,10 +18,9 @@ function getSeriesArray(
 function getTooltipFormatter(option: Record<string, unknown>): (...args: unknown[]) => string {
   const tooltip = option.tooltip;
   if (typeof tooltip !== "object" || tooltip === null) throw new Error("Expected tooltip object");
-  const record: Record<string, unknown> = Object.assign({}, tooltip);
-  const formatter = record.formatter;
-  if (typeof formatter !== "function")
+  if (!("formatter" in tooltip) || typeof tooltip.formatter !== "function")
     throw new Error("Expected tooltip.formatter to be a function");
+  const formatter = tooltip.formatter;
   return (...args: unknown[]) => String(formatter(...args));
 }
 
@@ -119,14 +118,16 @@ describe("PolarizationTrendChart option builder", () => {
 
   it("does not use markLine (incompatible with ECharts visualMap)", () => {
     const option = buildPolarizationTrendOption(sampleWeeks);
-    for (const series of option.series) {
-      expect(series).not.toHaveProperty("markLine");
+    const series = getSeriesArray(option);
+    for (const s of series) {
+      expect(s).not.toHaveProperty("markLine");
     }
   });
 
   it("renders threshold as a regular line series at y=2.0", () => {
     const option = buildPolarizationTrendOption(sampleWeeks);
-    const thresholdSeries = option.series.find((s: { name?: string }) => s.name === "Threshold");
+    const allSeries = getSeriesArray(option);
+    const thresholdSeries = allSeries.find((s) => s.name === "Threshold");
     expect(thresholdSeries).toBeDefined();
     if (!thresholdSeries) throw new Error("Expected threshold series");
     expect(thresholdSeries.data[0]).toEqual(["2024-01-01", 2.0]);
@@ -158,9 +159,8 @@ describe("PolarizationTrendChart option builder", () => {
       },
     ];
     const option = buildPolarizationTrendOption(weeksWithBoundary);
-    const polarizationIndexSeries = option.series.find(
-      (s: { name?: string }) => s.name === "Polarization Index",
-    );
+    const allSeries = getSeriesArray(option);
+    const polarizationIndexSeries = allSeries.find((s) => s.name === "Polarization Index");
     if (!polarizationIndexSeries) throw new Error("Expected polarization index series");
     // 2.5 (above threshold) → green
     expect(polarizationIndexSeries.data[0]).toHaveProperty("itemStyle", { color: "#22c55e" });
@@ -267,14 +267,14 @@ describe("SleepAnalyticsChart option builder", () => {
     }
 
     const legend = option.legend;
-    if (typeof legend !== "object" || legend === null) throw new Error("Expected legend");
-    const legendRecord: Record<string, unknown> = Object.assign({}, legend);
-    expect(legendRecord.top).toBe(0);
+    if (typeof legend !== "object" || legend === null || !("top" in legend))
+      throw new Error("Expected legend with top");
+    expect(legend.top).toBe(0);
     expect(firstGraphic.top).toBeGreaterThanOrEqual(24);
     const grid = option.grid;
-    if (typeof grid !== "object" || grid === null) throw new Error("Expected grid");
-    const gridRecord: Record<string, unknown> = Object.assign({}, grid);
-    expect(gridRecord.top).toBeGreaterThan(60);
+    if (typeof grid !== "object" || grid === null || !("top" in grid))
+      throw new Error("Expected grid with top");
+    expect(grid.top).toBeGreaterThan(60);
   });
 
   it("formats debt text as deficit when debt is positive", () => {

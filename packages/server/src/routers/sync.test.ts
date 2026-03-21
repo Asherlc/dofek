@@ -32,16 +32,6 @@ vi.mock("../trpc.ts", async () => {
   };
 });
 
-vi.mock("../lib/typed-sql.ts", () => ({
-  executeWithSchema: vi.fn(
-    async (
-      db: { execute: (query: unknown) => Promise<unknown[]> },
-      _schema: unknown,
-      query: unknown,
-    ) => db.execute(query),
-  ),
-}));
-
 vi.mock("dofek/jobs/queues", () => ({
   createSyncQueue: vi.fn(() => ({
     add: mockAdd,
@@ -251,7 +241,7 @@ describe("syncRouter", () => {
 
   describe("triggerSync", () => {
     it("enqueues one sync job per configured provider when providerId is omitted", async () => {
-      mockGetSyncProviders.mockReturnValue([
+      mockGetAllProviders.mockReturnValue([
         { id: "strava", name: "Strava", validate: () => null },
         { id: "wahoo", name: "Wahoo", validate: () => null },
         { id: "peloton", name: "Peloton", validate: () => "Missing credentials" },
@@ -261,7 +251,12 @@ describe("syncRouter", () => {
         .mockResolvedValueOnce({ id: "job-wahoo" });
 
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue([]) },
+        db: {
+          execute: vi
+            .fn()
+            // tokens query — no auth needed for these providers (no authSetup)
+            .mockResolvedValueOnce([]),
+        },
         userId: "user-1",
       });
 
@@ -341,13 +336,14 @@ describe("syncRouter", () => {
     });
 
     it("excludes import-only providers from sync-all fan-out", async () => {
-      mockGetSyncProviders.mockReturnValue([
+      mockGetAllProviders.mockReturnValue([
         { id: "strava", name: "Strava", validate: () => null },
+        { id: "strong-csv", name: "Strong CSV", validate: () => null, importOnly: true },
       ]);
       mockAdd.mockResolvedValueOnce({ id: "job-strava" });
 
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue([]) },
+        db: { execute: vi.fn().mockResolvedValueOnce([]) },
         userId: "user-1",
       });
 
@@ -398,7 +394,7 @@ describe("syncRouter", () => {
 
     it("reuses the sync queue across calls", async () => {
       const { createSyncQueue } = await import("dofek/jobs/queues");
-      mockGetSyncProviders.mockReturnValue([{ id: "wahoo", name: "Wahoo", validate: () => null }]);
+      mockGetAllProviders.mockReturnValue([{ id: "wahoo", name: "Wahoo", validate: () => null }]);
 
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
@@ -443,7 +439,7 @@ describe("syncRouter", () => {
 
     it("generates fallback jobId when BullMQ returns no id", async () => {
       mockAdd.mockResolvedValueOnce({ id: undefined });
-      mockGetSyncProviders.mockReturnValue([{ id: "wahoo", name: "Wahoo", validate: () => null }]);
+      mockGetAllProviders.mockReturnValue([{ id: "wahoo", name: "Wahoo", validate: () => null }]);
 
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
