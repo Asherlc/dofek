@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  acwrToScore,
   cardioPlan,
   clamp,
   computeTrainingStreak,
@@ -10,7 +9,6 @@ import {
   pickCardioFocus,
   pickStrengthSplit,
   uniqueStrings,
-  zScoreToScore,
 } from "./training.ts";
 
 describe("clamp", () => {
@@ -25,42 +23,6 @@ describe("clamp", () => {
   });
   it("handles equal min and max", () => {
     expect(clamp(5, 3, 3)).toBe(3);
-  });
-});
-
-describe("zScoreToScore", () => {
-  it("maps z=0 to 50", () => {
-    expect(zScoreToScore(0)).toBe(50);
-  });
-  it("maps positive z-score above 50", () => {
-    expect(zScoreToScore(1)).toBe(65);
-  });
-  it("maps negative z-score below 50", () => {
-    expect(zScoreToScore(-1)).toBe(35);
-  });
-  it("clamps extreme positive", () => {
-    expect(zScoreToScore(10)).toBe(100);
-  });
-  it("clamps extreme negative", () => {
-    expect(zScoreToScore(-10)).toBe(0);
-  });
-});
-
-describe("acwrToScore", () => {
-  it("returns 50 for null", () => {
-    expect(acwrToScore(null)).toBe(50);
-  });
-  it("returns 100 for perfect ACWR of 1.0", () => {
-    expect(acwrToScore(1.0)).toBe(100);
-  });
-  it("penalizes deviation above 1", () => {
-    expect(acwrToScore(1.5)).toBe(50);
-  });
-  it("penalizes deviation below 1", () => {
-    expect(acwrToScore(0.5)).toBe(50);
-  });
-  it("clamps to 0 for extreme values", () => {
-    expect(acwrToScore(3.0)).toBe(0);
   });
 });
 

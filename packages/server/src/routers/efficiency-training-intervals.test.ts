@@ -38,10 +38,10 @@ vi.mock("dofek/personalization/storage", () => ({
 vi.mock("dofek/personalization/params", () => ({
   getEffectiveParams: vi.fn(() => ({
     readinessWeights: {
-      hrv: 0.4,
+      hrv: 0.5,
       restingHr: 0.2,
-      sleep: 0.2,
-      loadBalance: 0.2,
+      sleep: 0.15,
+      respiratoryRate: 0.15,
     },
   })),
 }));

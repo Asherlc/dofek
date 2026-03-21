@@ -10,8 +10,11 @@ describe("Navigation", () => {
   const routes = [
     { path: "/dashboard", label: "Dashboard" },
     { path: "/training", label: "Training" },
+    { path: "/sleep", label: "Sleep" },
     { path: "/nutrition", label: "Nutrition" },
-    { path: "/providers", label: "Providers" },
+    { path: "/body", label: "Body" },
+    { path: "/correlation", label: "Correlation" },
+    { path: "/tracking", label: "Tracking" },
     { path: "/settings", label: "Settings" },
   ];
 

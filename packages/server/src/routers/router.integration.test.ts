@@ -534,7 +534,7 @@ describe("Router coverage", () => {
             hrvScore: number;
             restingHrScore: number;
             sleepScore: number;
-            loadBalanceScore: number;
+            respiratoryRateScore: number;
           };
         }[]
       >("recovery.readinessScore", { days: 30 });
@@ -553,8 +553,8 @@ describe("Router coverage", () => {
         expect(row.components.restingHrScore).toBeLessThanOrEqual(100);
         expect(row.components.sleepScore).toBeGreaterThanOrEqual(0);
         expect(row.components.sleepScore).toBeLessThanOrEqual(100);
-        expect(row.components.loadBalanceScore).toBeGreaterThanOrEqual(0);
-        expect(row.components.loadBalanceScore).toBeLessThanOrEqual(100);
+        expect(row.components.respiratoryRateScore).toBeGreaterThanOrEqual(0);
+        expect(row.components.respiratoryRateScore).toBeLessThanOrEqual(100);
       }
     });
   });

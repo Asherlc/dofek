@@ -35,7 +35,7 @@ describe("personalizedParamsSchema", () => {
         hrv: 0.5,
         restingHr: 0.15,
         sleep: 0.2,
-        loadBalance: 0.15,
+        respiratoryRate: 0.15,
         sampleCount: 90,
         correlation: 0.25,
       },
@@ -308,7 +308,7 @@ describe("personalizedParamsSchema", () => {
               hrv: 0.5,
               restingHr: 0.3,
               sleep: 0.2,
-              loadBalance: 0.2,
+              respiratoryRate: 0.2,
               sampleCount: 60,
               correlation: 0.2,
             },
@@ -321,10 +321,10 @@ describe("personalizedParamsSchema", () => {
       const result = personalizedParamsSchema.parse(
         baseParams({
           readinessWeights: {
-            hrv: 0.4,
+            hrv: 0.5,
             restingHr: 0.2,
-            sleep: 0.2,
-            loadBalance: 0.2,
+            sleep: 0.15,
+            respiratoryRate: 0.15,
             sampleCount: 60,
             correlation: 0.2,
           },
@@ -341,7 +341,7 @@ describe("personalizedParamsSchema", () => {
             hrv: 0.33,
             restingHr: 0.23,
             sleep: 0.22,
-            loadBalance: 0.22,
+            respiratoryRate: 0.22,
             sampleCount: 60,
             correlation: 0.2,
           },
@@ -358,7 +358,7 @@ describe("personalizedParamsSchema", () => {
             hrv: 0.409,
             restingHr: 0.2,
             sleep: 0.2,
-            loadBalance: 0.2,
+            respiratoryRate: 0.2,
             sampleCount: 60,
             correlation: 0.2,
           },
@@ -376,7 +376,7 @@ describe("personalizedParamsSchema", () => {
               hrv: 0.411,
               restingHr: 0.2,
               sleep: 0.2,
-              loadBalance: 0.2,
+              respiratoryRate: 0.2,
               sampleCount: 60,
               correlation: 0.2,
             },
@@ -393,7 +393,7 @@ describe("personalizedParamsSchema", () => {
               hrv: 0.3,
               restingHr: 0.2,
               sleep: 0.23,
-              loadBalance: 0.25,
+              respiratoryRate: 0.25,
               sampleCount: 60,
               correlation: 0.2,
             },
@@ -410,7 +410,7 @@ describe("personalizedParamsSchema", () => {
               hrv: 0.04,
               restingHr: 0.32,
               sleep: 0.32,
-              loadBalance: 0.32,
+              respiratoryRate: 0.32,
               sampleCount: 60,
               correlation: 0.2,
             },
@@ -426,7 +426,7 @@ describe("personalizedParamsSchema", () => {
             hrv: 0.05,
             restingHr: 0.35,
             sleep: 0.3,
-            loadBalance: 0.3,
+            respiratoryRate: 0.3,
             sampleCount: 60,
             correlation: 0.2,
           },
@@ -443,7 +443,7 @@ describe("personalizedParamsSchema", () => {
               hrv: 0.32,
               restingHr: 0.04,
               sleep: 0.32,
-              loadBalance: 0.32,
+              respiratoryRate: 0.32,
               sampleCount: 60,
               correlation: 0.2,
             },
@@ -460,7 +460,7 @@ describe("personalizedParamsSchema", () => {
               hrv: 0.32,
               restingHr: 0.32,
               sleep: 0.04,
-              loadBalance: 0.32,
+              respiratoryRate: 0.32,
               sampleCount: 60,
               correlation: 0.2,
             },
@@ -469,7 +469,7 @@ describe("personalizedParamsSchema", () => {
       ).toThrow();
     });
 
-    it("rejects loadBalance weight below minimum 0.05", () => {
+    it("rejects respiratoryRate weight below minimum 0.05", () => {
       expect(() =>
         personalizedParamsSchema.parse(
           baseParams({
@@ -477,7 +477,7 @@ describe("personalizedParamsSchema", () => {
               hrv: 0.32,
               restingHr: 0.32,
               sleep: 0.32,
-              loadBalance: 0.04,
+              respiratoryRate: 0.04,
               sampleCount: 60,
               correlation: 0.2,
             },
@@ -494,7 +494,7 @@ describe("personalizedParamsSchema", () => {
               hrv: 1.01,
               restingHr: 0.05,
               sleep: 0.05,
-              loadBalance: 0.05,
+              respiratoryRate: 0.05,
               sampleCount: 60,
               correlation: 0.2,
             },
@@ -514,7 +514,7 @@ describe("personalizedParamsSchema", () => {
               hrv: 1.0,
               restingHr: 0.05,
               sleep: 0.05,
-              loadBalance: 0.05,
+              respiratoryRate: 0.05,
               sampleCount: 60,
               correlation: 0.2,
             },
@@ -528,10 +528,10 @@ describe("personalizedParamsSchema", () => {
         personalizedParamsSchema.parse(
           baseParams({
             readinessWeights: {
-              hrv: 0.4,
+              hrv: 0.5,
               restingHr: 0.2,
-              sleep: 0.2,
-              loadBalance: 0.2,
+              sleep: 0.15,
+              respiratoryRate: 0.15,
               sampleCount: -1,
               correlation: 0.2,
             },
@@ -545,10 +545,10 @@ describe("personalizedParamsSchema", () => {
         personalizedParamsSchema.parse(
           baseParams({
             readinessWeights: {
-              hrv: 0.4,
+              hrv: 0.5,
               restingHr: 0.2,
-              sleep: 0.2,
-              loadBalance: 0.2,
+              sleep: 0.15,
+              respiratoryRate: 0.15,
               sampleCount: 60.5,
               correlation: 0.2,
             },
@@ -962,10 +962,10 @@ describe("DEFAULT_PARAMS", () => {
   it("matches current hardcoded values", () => {
     expect(DEFAULT_PARAMS.exponentialMovingAverage.chronicTrainingLoadDays).toBe(42);
     expect(DEFAULT_PARAMS.exponentialMovingAverage.acuteTrainingLoadDays).toBe(7);
-    expect(DEFAULT_PARAMS.readinessWeights.hrv).toBe(0.4);
+    expect(DEFAULT_PARAMS.readinessWeights.hrv).toBe(0.5);
     expect(DEFAULT_PARAMS.readinessWeights.restingHr).toBe(0.2);
-    expect(DEFAULT_PARAMS.readinessWeights.sleep).toBe(0.2);
-    expect(DEFAULT_PARAMS.readinessWeights.loadBalance).toBe(0.2);
+    expect(DEFAULT_PARAMS.readinessWeights.sleep).toBe(0.15);
+    expect(DEFAULT_PARAMS.readinessWeights.respiratoryRate).toBe(0.15);
     expect(DEFAULT_PARAMS.sleepTarget.minutes).toBe(480);
     expect(DEFAULT_PARAMS.stressThresholds.hrvThresholds).toEqual([-1.5, -1.0, -0.5]);
     expect(DEFAULT_PARAMS.stressThresholds.rhrThresholds).toEqual([1.5, 1.0, 0.5]);
@@ -975,7 +975,7 @@ describe("DEFAULT_PARAMS", () => {
 
   it("readiness weights sum to 1", () => {
     const w = DEFAULT_PARAMS.readinessWeights;
-    expect(w.hrv + w.restingHr + w.sleep + w.loadBalance).toBeCloseTo(1.0);
+    expect(w.hrv + w.restingHr + w.sleep + w.respiratoryRate).toBeCloseTo(1.0);
   });
 
   it("stress thresholds are in correct order", () => {
@@ -1044,7 +1044,7 @@ describe("getEffectiveParams", () => {
         hrv: 0.5,
         restingHr: 0.15,
         sleep: 0.2,
-        loadBalance: 0.15,
+        respiratoryRate: 0.15,
         sampleCount: 90,
         correlation: 0.25,
       },
@@ -1057,7 +1057,7 @@ describe("getEffectiveParams", () => {
     expect(result.readinessWeights.hrv).toBe(0.5);
     expect(result.readinessWeights.restingHr).toBe(0.15);
     expect(result.readinessWeights.sleep).toBe(0.2);
-    expect(result.readinessWeights.loadBalance).toBe(0.15);
+    expect(result.readinessWeights.respiratoryRate).toBe(0.15);
   });
 
   it("uses personalized sleep target when available", () => {
@@ -1176,10 +1176,10 @@ describe("getEffectiveParams", () => {
       fittedAt: "2026-03-18T12:00:00Z",
       exponentialMovingAverage: null,
       readinessWeights: {
-        hrv: 0.4,
+        hrv: 0.5,
         restingHr: 0.2,
-        sleep: 0.2,
-        loadBalance: 0.2,
+        sleep: 0.15,
+        respiratoryRate: 0.15,
         sampleCount: 90,
         correlation: 0.25,
       },
@@ -1191,7 +1191,7 @@ describe("getEffectiveParams", () => {
     const result = getEffectiveParams(stored);
     expect(Object.keys(result.readinessWeights).sort()).toEqual([
       "hrv",
-      "loadBalance",
+      "respiratoryRate",
       "restingHr",
       "sleep",
     ]);
@@ -1314,7 +1314,7 @@ describe("getEffectiveParams", () => {
     expect(result.exponentialMovingAverage.acuteTrainingLoadDays).not.toBe(49);
   });
 
-  it("picks stored hrv weight, not restingHr/sleep/loadBalance for readiness hrv", () => {
+  it("picks stored hrv weight, not restingHr/sleep/respiratoryRate for readiness hrv", () => {
     const stored: PersonalizedParams = {
       version: 1,
       fittedAt: "2026-03-18T12:00:00Z",
@@ -1323,7 +1323,7 @@ describe("getEffectiveParams", () => {
         hrv: 0.5,
         restingHr: 0.15,
         sleep: 0.2,
-        loadBalance: 0.15,
+        respiratoryRate: 0.15,
         sampleCount: 90,
         correlation: 0.25,
       },
@@ -1335,7 +1335,7 @@ describe("getEffectiveParams", () => {
     expect(result.readinessWeights.hrv).toBe(0.5);
     expect(result.readinessWeights.restingHr).toBe(0.15);
     expect(result.readinessWeights.sleep).toBe(0.2);
-    expect(result.readinessWeights.loadBalance).toBe(0.15);
+    expect(result.readinessWeights.respiratoryRate).toBe(0.15);
   });
 
   it("picks stored genderFactor not exponent for trainingImpulseConstants", () => {

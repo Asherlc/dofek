@@ -18,6 +18,7 @@ export {
   formatWeight,
   heightLabel,
   paceLabel,
+  scaleTemperatureStddev,
   speedLabel,
   temperatureLabel,
   weightLabel,
