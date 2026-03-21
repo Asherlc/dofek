@@ -302,6 +302,9 @@ importers:
       '@dofek/stats':
         specifier: workspace:*
         version: link:../stats
+      '@dofek/training':
+        specifier: workspace:*
+        version: link:../training
       '@sentry/node':
         specifier: ^10.45.0
         version: 10.45.0

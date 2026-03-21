@@ -49,6 +49,7 @@ export type {
   ReadinessRow,
   SleepAnalyticsResult,
   SleepNightlyRow,
+  WorkloadRatioResult,
   WorkloadRatioRow,
 } from "./routers/recovery.ts";
 // Running router types

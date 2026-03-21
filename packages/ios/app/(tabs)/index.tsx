@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { selectRecentDailyLoad } from "@dofek/training/training";
 import type { NextWorkoutRecommendation } from "dofek-server/types";
 import { useRouter } from "expo-router";
 import {
@@ -79,8 +78,7 @@ export default function OverviewScreen() {
 
   // Fetch workload ratio for strain
   const workloadQuery = trpc.recovery.workloadRatio.useQuery({ days });
-  const workloadData = workloadQuery.data ?? [];
-  const displayedWorkload = selectRecentDailyLoad(workloadData);
+  const workloadResult = workloadQuery.data;
 
   // Fetch HRV trend
   const hrvQuery = trpc.recovery.hrvVariability.useQuery({ days: Math.max(days, 14) });
@@ -147,7 +145,7 @@ export default function OverviewScreen() {
   const stepsData = stepsQuery.data ?? [];
 
   const recoveryScore = todayReadiness?.readinessScore ?? null;
-  const dailyStrain = displayedWorkload?.strain ?? 0;
+  const dailyStrain = workloadResult?.displayedStrain ?? 0;
 
   const isLoading =
     readinessQuery.isLoading ||

@@ -44,7 +44,7 @@ export default function MetricsScreen() {
 
   // Workload ratio trend
   const workloadQuery = trpc.recovery.workloadRatio.useQuery({ days });
-  const workloadData = workloadQuery.data ?? [];
+  const workloadData = workloadQuery.data?.timeSeries ?? [];
   const workloadRatioValues = workloadData
     .filter((d) => d.workloadRatio != null)
     .map((d) => d.workloadRatio as number);

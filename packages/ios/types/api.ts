@@ -41,6 +41,12 @@ export interface WorkloadRow {
   workloadRatio: number | null;
 }
 
+export interface WorkloadResult {
+  timeSeries: WorkloadRow[];
+  displayedStrain: number;
+  displayedDate: string | null;
+}
+
 export interface HeartRateVariabilityRow {
   date: string;
   hrv: number | null;
