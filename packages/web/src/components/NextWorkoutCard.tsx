@@ -1,3 +1,5 @@
+import { chartColors, statusColors } from "@dofek/scoring/colors";
+import { readinessLevelColor } from "@dofek/scoring/scoring";
 import type { NextWorkoutRecommendation } from "dofek-server/types";
 import { useEffect, useState } from "react";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
@@ -8,16 +10,9 @@ interface NextWorkoutCardProps {
 }
 
 function typeColor(type: NextWorkoutRecommendation["recommendationType"]): string {
-  if (type === "rest") return "#f59e0b";
-  if (type === "strength") return "#22c55e";
-  return "#3b82f6";
-}
-
-function readinessColor(level: NextWorkoutRecommendation["readiness"]["level"]): string {
-  if (level === "high") return "#22c55e";
-  if (level === "moderate") return "#eab308";
-  if (level === "low") return "#ef4444";
-  return "#71717a";
+  if (type === "rest") return chartColors.amber;
+  if (type === "strength") return statusColors.positive;
+  return statusColors.info;
 }
 
 function capitalize(value: string): string {
@@ -40,7 +35,7 @@ export function NextWorkoutCard({ data, loading }: NextWorkoutCardProps) {
   }
 
   const recColor = typeColor(data.recommendationType);
-  const readColor = readinessColor(data.readiness.level);
+  const readColor = readinessLevelColor(data.readiness.level);
 
   return (
     <>
