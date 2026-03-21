@@ -3,12 +3,12 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const t = initTRPC.context<{ db: unknown; userId: string | null }>().create();
+  const trpc = initTRPC.context<{ db: unknown; userId: string | null }>().create();
   return {
-    router: t.router,
-    protectedProcedure: t.procedure,
-    cachedProtectedQuery: () => t.procedure,
-    cachedProtectedQueryLight: () => t.procedure,
+    router: trpc.router,
+    protectedProcedure: trpc.procedure,
+    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQueryLight: () => trpc.procedure,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -36,24 +36,24 @@ vi.mock("@dofek/training/power-analysis", async (importOriginal) => {
   return {
     ...actual,
     linearRegression: vi.fn((xs: number[], ys: number[]) => {
-      const n = xs.length;
-      if (n < 2) return { slope: 0, intercept: 0, r2: 0 };
+      const count = xs.length;
+      if (count < 2) return { slope: 0, intercept: 0, r2: 0 };
       let sumX = 0,
         sumY = 0,
         sumXY = 0,
         sumX2 = 0;
-      for (let i = 0; i < n; i++) {
-        const x = xs[i] ?? 0;
-        const y = ys[i] ?? 0;
-        sumX += x;
-        sumY += y;
-        sumXY += x * y;
-        sumX2 += x * x;
+      for (let i = 0; i < count; i++) {
+        const xValue = xs[i] ?? 0;
+        const yValue = ys[i] ?? 0;
+        sumX += xValue;
+        sumY += yValue;
+        sumXY += xValue * yValue;
+        sumX2 += xValue * xValue;
       }
-      const denom = n * sumX2 - sumX * sumX;
+      const denom = count * sumX2 - sumX * sumX;
       if (denom === 0) return { slope: 0, intercept: 0, r2: 0 };
-      const slope = (n * sumXY - sumX * sumY) / denom;
-      const intercept = (sumY - slope * sumX) / n;
+      const slope = (count * sumXY - sumX * sumY) / denom;
+      const intercept = (sumY - slope * sumX) / count;
       return { slope, intercept, r2: 0.8 };
     }),
     fitCriticalPower: vi.fn(() => ({ cp: 250, wPrime: 20000, r2: 0.99 })),
@@ -139,10 +139,10 @@ describe("nutritionAnalyticsRouter", () => {
       // Create 35 days of data (enough for 28-day window)
       const rows = [];
       for (let i = 0; i < 35; i++) {
-        const d = new Date("2024-01-01");
-        d.setDate(d.getDate() + i);
+        const date = new Date("2024-01-01");
+        date.setDate(date.getDate() + i);
         rows.push({
-          date: d.toISOString().slice(0, 10),
+          date: date.toISOString().slice(0, 10),
           calories_in: 2200,
           weight_kg: i < 10 || i > 25 ? 75 - i * 0.01 : null,
         });
@@ -170,10 +170,10 @@ describe("nutritionAnalyticsRouter", () => {
       const result = await caller.macroRatios({ days: 30 });
 
       expect(result).toHaveLength(1);
-      const r = result[0];
+      const firstRow = result[0];
       // protein: 150*4=600, carbs: 250*4=1000, fat: 70*9=630. total=2230
-      expect(r.proteinPct).toBeCloseTo(26.9, 0);
-      expect(r.proteinPerKg).toBe(2); // 150/75
+      expect(firstRow.proteinPct).toBeCloseTo(26.9, 0);
+      expect(firstRow.proteinPerKg).toBe(2); // 150/75
     });
 
     it("handles null weight", async () => {
@@ -241,13 +241,13 @@ describe("pmcRouter", () => {
       // Need 10+ paired activities for learned model
       const rows = [];
       for (let i = 0; i < 12; i++) {
-        const d = new Date(today);
-        d.setDate(d.getDate() - i);
+        const date = new Date(today);
+        date.setDate(date.getDate() - i);
         rows.push({
           global_max_hr: 190,
           resting_hr: 55,
           id: `a${i}`,
-          date: d.toISOString().slice(0, 10),
+          date: date.toISOString().slice(0, 10),
           duration_min: 60,
           avg_hr: 155,
           max_hr: 180,

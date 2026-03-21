@@ -422,12 +422,12 @@ export const healthspanRouter = router({
       // Trend direction from linear regression slope of weekly scores
       let trend: "improving" | "declining" | "stable" | null = null;
       if (history.length >= 4) {
-        const n = history.length;
-        const xMean = (n - 1) / 2;
-        const yMean = history.reduce((s, h) => s + h.score, 0) / n;
+        const weekCount = history.length;
+        const xMean = (weekCount - 1) / 2;
+        const yMean = history.reduce((s, h) => s + h.score, 0) / weekCount;
         let num = 0;
         let den = 0;
-        for (let i = 0; i < n; i++) {
+        for (let i = 0; i < weekCount; i++) {
           const score = history[i]?.score ?? 0;
           num += (i - xMean) * (score - yMean);
           den += (i - xMean) * (i - xMean);

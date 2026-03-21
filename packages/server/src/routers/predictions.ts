@@ -353,39 +353,41 @@ function buildDailyContext(
   // Index by date
   const metricsMap = new Map<string, DailyRow>();
   for (const m of metrics) {
-    const d = typeof m.date === "string" ? m.date.slice(0, 10) : m.date.toISOString().slice(0, 10);
-    metricsMap.set(d, m);
+    const dateKey =
+      typeof m.date === "string" ? m.date.slice(0, 10) : m.date.toISOString().slice(0, 10);
+    metricsMap.set(dateKey, m);
   }
 
   const sleepMap = new Map<string, SleepRow>();
   for (const s of sleep) {
     if (s.is_nap) continue;
     // Sleep attributed to the date it ends (wake-up date)
-    const d = new Date(s.started_at);
-    d.setMinutes(d.getMinutes() + (s.duration_minutes ?? 0));
-    const dateStr = d.toISOString().slice(0, 10);
+    const wakeDate = new Date(s.started_at);
+    wakeDate.setMinutes(wakeDate.getMinutes() + (s.duration_minutes ?? 0));
+    const dateStr = wakeDate.toISOString().slice(0, 10);
     sleepMap.set(dateStr, s);
   }
 
   const nutritionMap = new Map<string, NutritionRow>();
   for (const n of nutrition) {
-    const d = typeof n.date === "string" ? n.date.slice(0, 10) : n.date.toISOString().slice(0, 10);
-    nutritionMap.set(d, n);
+    const dateKey =
+      typeof n.date === "string" ? n.date.slice(0, 10) : n.date.toISOString().slice(0, 10);
+    nutritionMap.set(dateKey, n);
   }
 
   const bodyCompMap = new Map<string, BodyCompRow>();
   for (const b of bodyComp) {
-    const d = new Date(b.recorded_at).toISOString().slice(0, 10);
-    bodyCompMap.set(d, b);
+    const dateKey = new Date(b.recorded_at).toISOString().slice(0, 10);
+    bodyCompMap.set(dateKey, b);
   }
 
   const exerciseMap = new Map<string, number>();
   for (const e of exerciseMinutes) {
-    const d =
+    const dateKey =
       typeof e.date === "string"
         ? e.date.slice(0, 10)
         : new Date(e.date).toISOString().slice(0, 10);
-    if (e.exercise_minutes != null) exerciseMap.set(d, e.exercise_minutes);
+    if (e.exercise_minutes != null) exerciseMap.set(dateKey, e.exercise_minutes);
   }
 
   // Get all unique dates
@@ -399,24 +401,24 @@ function buildDailyContext(
 
   let lastWeight: number | null = null;
   return sortedDates.map((date) => {
-    const m = metricsMap.get(date);
-    const s = sleepMap.get(date);
-    const n = nutritionMap.get(date);
-    const b = bodyCompMap.get(date);
-    if (b?.weight_kg != null) lastWeight = b.weight_kg;
+    const metricsRow = metricsMap.get(date);
+    const sleepRow = sleepMap.get(date);
+    const nutritionRow = nutritionMap.get(date);
+    const bodyCompRow = bodyCompMap.get(date);
+    if (bodyCompRow?.weight_kg != null) lastWeight = bodyCompRow.weight_kg;
 
     return {
       date,
-      hrv: m?.hrv ?? null,
-      restingHr: m?.resting_hr ?? null,
-      sleepDurationMin: s?.duration_minutes ?? null,
-      deepMin: s?.deep_minutes ?? null,
-      sleepEfficiency: s?.efficiency_pct ?? null,
-      calories: n?.calories ?? null,
-      proteinG: n?.protein_g ?? null,
+      hrv: metricsRow?.hrv ?? null,
+      restingHr: metricsRow?.resting_hr ?? null,
+      sleepDurationMin: sleepRow?.duration_minutes ?? null,
+      deepMin: sleepRow?.deep_minutes ?? null,
+      sleepEfficiency: sleepRow?.efficiency_pct ?? null,
+      calories: nutritionRow?.calories ?? null,
+      proteinG: nutritionRow?.protein_g ?? null,
       weightKg: lastWeight,
       exerciseMinutes: exerciseMap.get(date) ?? null,
-      steps: m?.steps ?? null,
+      steps: metricsRow?.steps ?? null,
     };
   });
 }

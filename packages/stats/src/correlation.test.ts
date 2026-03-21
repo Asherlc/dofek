@@ -225,24 +225,24 @@ describe("generateCorrelationInsight", () => {
 
 describe("pearsonCorrelation", () => {
   it("returns r = 1 for perfectly correlated data", () => {
-    const x = [1, 2, 3, 4, 5];
-    const y = [2, 4, 6, 8, 10];
-    const result = pearsonCorrelation(x, y);
+    const xValues = [1, 2, 3, 4, 5];
+    const yValues = [2, 4, 6, 8, 10];
+    const result = pearsonCorrelation(xValues, yValues);
     expect(result.r).toBeCloseTo(1, 5);
     expect(result.n).toBe(5);
   });
 
   it("returns r = -1 for perfectly inversely correlated data", () => {
-    const x = [1, 2, 3, 4, 5];
-    const y = [10, 8, 6, 4, 2];
-    const result = pearsonCorrelation(x, y);
+    const xValues = [1, 2, 3, 4, 5];
+    const yValues = [10, 8, 6, 4, 2];
+    const result = pearsonCorrelation(xValues, yValues);
     expect(result.r).toBeCloseTo(-1, 5);
   });
 
   it("returns r ≈ 0 for uncorrelated data", () => {
-    const x = [1, 2, 3, 4, 5];
-    const y = [5, 1, 4, 2, 3];
-    const result = pearsonCorrelation(x, y);
+    const xValues = [1, 2, 3, 4, 5];
+    const yValues = [5, 1, 4, 2, 3];
+    const result = pearsonCorrelation(xValues, yValues);
     expect(Math.abs(result.r)).toBeLessThan(0.5);
   });
 
@@ -253,17 +253,17 @@ describe("pearsonCorrelation", () => {
   });
 
   it("returns valid r for exactly 3 data points (boundary)", () => {
-    const x = [1, 2, 3];
-    const y = [2, 4, 6];
-    const result = pearsonCorrelation(x, y);
+    const xValues = [1, 2, 3];
+    const yValues = [2, 4, 6];
+    const result = pearsonCorrelation(xValues, yValues);
     expect(result.r).toBeCloseTo(1, 5);
     expect(result.n).toBe(3);
   });
 
   it("returns reasonable pValue for non-perfectly-correlated data", () => {
-    const x = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    const y = [2, 3, 5, 4, 7, 6, 9, 8, 10, 11];
-    const result = pearsonCorrelation(x, y);
+    const xValues = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    const yValues = [2, 3, 5, 4, 7, 6, 9, 8, 10, 11];
+    const result = pearsonCorrelation(xValues, yValues);
     expect(result.pValue).toBeGreaterThan(0);
     expect(result.pValue).toBeLessThan(1);
   });
@@ -271,9 +271,9 @@ describe("pearsonCorrelation", () => {
 
 describe("linearRegression", () => {
   it("computes correct slope and intercept for a perfect line", () => {
-    const x = [1, 2, 3, 4, 5];
-    const y = [3, 5, 7, 9, 11]; // y = 2x + 1
-    const result = linearRegression(x, y);
+    const xValues = [1, 2, 3, 4, 5];
+    const yValues = [3, 5, 7, 9, 11]; // y = 2x + 1
+    const result = linearRegression(xValues, yValues);
     expect(result.slope).toBeCloseTo(2, 5);
     expect(result.intercept).toBeCloseTo(1, 5);
     expect(result.rSquared).toBeCloseTo(1, 5);
@@ -287,9 +287,9 @@ describe("linearRegression", () => {
   });
 
   it("computes correct results for exactly 2 data points (boundary)", () => {
-    const x = [1, 2];
-    const y = [3, 5];
-    const result = linearRegression(x, y);
+    const xValues = [1, 2];
+    const yValues = [3, 5];
+    const result = linearRegression(xValues, yValues);
     expect(result.slope).toBeCloseTo(2, 5);
     expect(result.intercept).toBeCloseTo(1, 5);
     expect(result.rSquared).toBeCloseTo(1, 5);

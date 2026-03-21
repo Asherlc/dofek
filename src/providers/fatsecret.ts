@@ -199,8 +199,8 @@ function dateIntToIso(dateInt: string): string {
  */
 function optNum(val: string | undefined): number | undefined {
   if (val === undefined) return undefined;
-  const n = parseFloat(val);
-  return Number.isNaN(n) ? undefined : n;
+  const parsed = parseFloat(val);
+  return Number.isNaN(parsed) ? undefined : parsed;
 }
 
 /**

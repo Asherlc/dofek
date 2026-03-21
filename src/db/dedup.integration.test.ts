@@ -358,15 +358,15 @@ describe("Deduplication materialized views", () => {
     );
 
     expect(rows.length).toBe(1);
-    const m = rows[0];
-    expect(m).toBeDefined();
+    const measurement = rows[0];
+    expect(measurement).toBeDefined();
     // Withings wins (priority 15)
-    expect(m?.provider_id).toBe("withings");
-    expect(m?.weight_kg).toBeCloseTo(75.2);
+    expect(measurement?.provider_id).toBe("withings");
+    expect(measurement?.weight_kg).toBeCloseTo(75.2);
     // Body fat from Withings (Apple Health was null)
-    expect(m?.body_fat_pct).toBeCloseTo(18.5);
-    expect(m?.source_providers).toContain("withings");
-    expect(m?.source_providers).toContain("apple_health");
+    expect(measurement?.body_fat_pct).toBeCloseTo(18.5);
+    expect(measurement?.source_providers).toContain("withings");
+    expect(measurement?.source_providers).toContain("apple_health");
   });
 
   it("v_daily_metrics merges per-field across providers", async () => {

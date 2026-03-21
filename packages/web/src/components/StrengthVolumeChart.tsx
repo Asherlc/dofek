@@ -16,16 +16,16 @@ export function StrengthVolumeChart({ data, loading }: StrengthVolumeChartProps)
         const first = params[0];
         if (!first) return "";
         const index = first.dataIndex;
-        const d = data[index];
-        if (!d) return "";
-        const dateLabel = new Date(d.week).toLocaleDateString("en-US", {
+        const dataPoint = data[index];
+        if (!dataPoint) return "";
+        const dateLabel = new Date(dataPoint.week).toLocaleDateString("en-US", {
           month: "short",
           day: "numeric",
           year: "numeric",
         });
         return `<strong>${dateLabel ?? ""}</strong><br/>
-          Volume: ${Math.round(d.totalVolumeKg).toLocaleString()} kg<br/>
-          Sets: ${d.setCount}`;
+          Volume: ${Math.round(dataPoint.totalVolumeKg).toLocaleString()} kg<br/>
+          Sets: ${dataPoint.setCount}`;
       },
     }),
     xAxis: dofekAxis.time(),

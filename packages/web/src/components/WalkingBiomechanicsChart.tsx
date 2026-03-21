@@ -27,8 +27,8 @@ function buildLineOption(
         ...dofekSeries.line(
           name,
           data.map((d) => {
-            const v = valueAccessor(d);
-            return [d.date, v != null && convert ? convert(v) : v];
+            const value = valueAccessor(d);
+            return [d.date, value != null && convert ? convert(value) : value];
           }),
           { color },
         ),

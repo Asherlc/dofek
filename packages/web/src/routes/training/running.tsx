@@ -181,13 +181,13 @@ function PaceTrendChart({
     tooltip: dofekTooltip({
       trigger: "item",
       formatter: (params: { data: [string, number]; dataIndex: number }) => {
-        const d = data[params.dataIndex];
-        if (!d) return "";
+        const dataPoint = data[params.dataIndex];
+        if (!dataPoint) return "";
         return [
-          `<strong>${d.activityName}</strong>`,
-          `${d.date}`,
-          `Pace: ${formatPace(convertPace(d.paceSecondsPerKm, unitSystem))} ${paceLabel(unitSystem)}`,
-          `Distance: ${formatNumber(convertDistance(d.distanceKm, unitSystem))} ${distanceLabel(unitSystem)} · ${d.durationMinutes} min`,
+          `<strong>${dataPoint.activityName}</strong>`,
+          `${dataPoint.date}`,
+          `Pace: ${formatPace(convertPace(dataPoint.paceSecondsPerKm, unitSystem))} ${paceLabel(unitSystem)}`,
+          `Distance: ${formatNumber(convertDistance(dataPoint.distanceKm, unitSystem))} ${distanceLabel(unitSystem)} · ${dataPoint.durationMinutes} min`,
         ].join("<br/>");
       },
     }),
@@ -206,8 +206,10 @@ function PaceTrendChart({
         type: "scatter" as const,
         data: data.map((d) => [d.date, convertPace(d.paceSecondsPerKm, unitSystem)]),
         symbolSize: (val: [string, number]) => {
-          const d = data.find((p) => convertPace(p.paceSecondsPerKm, unitSystem) === val[1]);
-          return Math.min(Math.max((d?.distanceKm ?? 5) * 1.5, 4), 16);
+          const matchedActivity = data.find(
+            (p) => convertPace(p.paceSecondsPerKm, unitSystem) === val[1],
+          );
+          return Math.min(Math.max((matchedActivity?.distanceKm ?? 5) * 1.5, 4), 16);
         },
         itemStyle: { color: chartColors.emerald, opacity: 0.7 },
       },
@@ -244,9 +246,9 @@ function CadenceTrendChart({ data, loading }: { data: DynamicsRow[]; loading: bo
     tooltip: dofekTooltip({
       trigger: "item",
       formatter: (params: { data: [string, number]; dataIndex: number }) => {
-        const d = data[params.dataIndex];
-        if (!d) return "";
-        return `<strong>${d.activityName}</strong><br/>${d.date}<br/>Cadence: ${d.cadence} spm`;
+        const dataPoint = data[params.dataIndex];
+        if (!dataPoint) return "";
+        return `<strong>${dataPoint.activityName}</strong><br/>${dataPoint.date}<br/>Cadence: ${dataPoint.cadence} spm`;
       },
     }),
     xAxis: dofekAxis.time(),

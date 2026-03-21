@@ -30,29 +30,29 @@ export class LinearRegression {
   private _nFeatures = 0;
 
   fit(X: number[][], y: number[]): void {
-    const n = X.length;
-    const p = X[0]?.length ?? 0;
+    const sampleCount = X.length;
+    const featureCount = X[0]?.length ?? 0;
 
-    if (n !== y.length) {
-      throw new Error(`X has ${n} rows but y has ${y.length} elements`);
+    if (sampleCount !== y.length) {
+      throw new Error(`X has ${sampleCount} rows but y has ${y.length} elements`);
     }
-    if (n <= p) {
-      throw new Error(`Need more samples (${n}) than features (${p}) for OLS`);
+    if (sampleCount <= featureCount) {
+      throw new Error(`Need more samples (${sampleCount}) than features (${featureCount}) for OLS`);
     }
 
-    this._nSamples = n;
-    this._nFeatures = p;
+    this._nSamples = sampleCount;
+    this._nFeatures = featureCount;
 
     // Add intercept column (column of 1s prepended)
     const augmented = X.map((row) => [1, ...row]);
-    const cols = p + 1;
+    const cols = featureCount + 1;
 
     // Compute X'X (cols × cols)
     const xtx = newMatrix(cols, cols);
     for (let i = 0; i < cols; i++) {
       for (let j = i; j < cols; j++) {
         let sum = 0;
-        for (let k = 0; k < n; k++) {
+        for (let k = 0; k < sampleCount; k++) {
           sum += (augmented[k]?.[i] ?? 0) * (augmented[k]?.[j] ?? 0);
         }
         const xtxRow_i = xtx[i];
@@ -66,7 +66,7 @@ export class LinearRegression {
     const xty = new Array<number>(cols).fill(0);
     for (let i = 0; i < cols; i++) {
       let sum = 0;
-      for (let k = 0; k < n; k++) {
+      for (let k = 0; k < sampleCount; k++) {
         sum += (augmented[k]?.[i] ?? 0) * (y[k] ?? 0);
       }
       xty[i] = sum;
@@ -79,10 +79,10 @@ export class LinearRegression {
     this.coefficients = beta.slice(1);
 
     // Compute R² and adjusted R²
-    const yMean = y.reduce((a, b) => a + b, 0) / n;
+    const yMean = y.reduce((a, b) => a + b, 0) / sampleCount;
     let ssRes = 0;
     let ssTot = 0;
-    for (let i = 0; i < n; i++) {
+    for (let i = 0; i < sampleCount; i++) {
       const row = X[i];
       if (!row) continue;
       const predicted = this.predict(row);
@@ -90,11 +90,14 @@ export class LinearRegression {
       ssTot += ((y[i] ?? 0) - yMean) ** 2;
     }
     this.rSquared = ssTot === 0 ? 1 : 1 - ssRes / ssTot;
-    this.adjustedRSquared = ssTot === 0 ? 1 : 1 - ((1 - this.rSquared) * (n - 1)) / (n - p - 1);
+    this.adjustedRSquared =
+      ssTot === 0
+        ? 1
+        : 1 - ((1 - this.rSquared) * (sampleCount - 1)) / (sampleCount - featureCount - 1);
 
     // Feature importances: standardized coefficients (|βᵢ * σ(xᵢ) / σ(y)|)
     this._featureStdDevs = [];
-    for (let j = 0; j < p; j++) {
+    for (let j = 0; j < featureCount; j++) {
       const col = X.map((row) => row[j] ?? 0);
       this._featureStdDevs.push(stdDev(col));
     }
@@ -150,10 +153,10 @@ function newMatrix(rows: number, cols: number): number[][] {
 }
 
 function stdDev(arr: number[]): number {
-  const n = arr.length;
-  if (n < 2) return 0;
-  const m = arr.reduce((a, b) => a + b, 0) / n;
-  const variance = arr.reduce((sum, v) => sum + (v - m) ** 2, 0) / (n - 1);
+  const count = arr.length;
+  if (count < 2) return 0;
+  const mean = arr.reduce((a, b) => a + b, 0) / count;
+  const variance = arr.reduce((sum, v) => sum + (v - mean) ** 2, 0) / (count - 1);
   return Math.sqrt(variance);
 }
 
@@ -162,14 +165,14 @@ function stdDev(arr: number[]): number {
  * Modifies A and b in place.
  */
 function solveLinearSystem(A: number[][], b: number[]): number[] {
-  const n = A.length;
+  const systemSize = A.length;
 
   // Forward elimination
-  for (let col = 0; col < n; col++) {
+  for (let col = 0; col < systemSize; col++) {
     // Partial pivoting: find row with largest absolute value in this column
     let maxVal = Math.abs(A[col]?.[col] ?? 0);
     let maxRow = col;
-    for (let row = col + 1; row < n; row++) {
+    for (let row = col + 1; row < systemSize; row++) {
       const val = Math.abs(A[row]?.[col] ?? 0);
       if (val > maxVal) {
         maxVal = val;
@@ -193,11 +196,11 @@ function solveLinearSystem(A: number[][], b: number[]): number[] {
     }
 
     // Eliminate below
-    for (let row = col + 1; row < n; row++) {
+    for (let row = col + 1; row < systemSize; row++) {
       const aRow = A[row];
       if (!aRow) continue;
       const factor = (aRow[col] ?? 0) / pivot;
-      for (let j = col; j < n; j++) {
+      for (let j = col; j < systemSize; j++) {
         aRow[j] = (aRow[j] ?? 0) - factor * (A[col]?.[j] ?? 0);
       }
       b[row] = (b[row] ?? 0) - factor * (b[col] ?? 0);
@@ -205,14 +208,14 @@ function solveLinearSystem(A: number[][], b: number[]): number[] {
   }
 
   // Back substitution
-  const x = new Array<number>(n).fill(0);
-  for (let i = n - 1; i >= 0; i--) {
+  const solution = new Array<number>(systemSize).fill(0);
+  for (let i = systemSize - 1; i >= 0; i--) {
     let sum = b[i] ?? 0;
-    for (let j = i + 1; j < n; j++) {
-      sum -= (A[i]?.[j] ?? 0) * (x[j] ?? 0);
+    for (let j = i + 1; j < systemSize; j++) {
+      sum -= (A[i]?.[j] ?? 0) * (solution[j] ?? 0);
     }
-    x[i] = sum / (A[i]?.[i] ?? 1);
+    solution[i] = sum / (A[i]?.[i] ?? 1);
   }
 
-  return x;
+  return solution;
 }

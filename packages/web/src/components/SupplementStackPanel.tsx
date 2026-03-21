@@ -295,8 +295,8 @@ function SupplementForm({
   const [nutrients, setNutrients] = useState<Record<string, string>>(() => {
     const vals: Record<string, string> = {};
     for (const f of NUTRIENT_FIELDS) {
-      const v = initial?.[f.key];
-      vals[f.key] = v != null ? String(v) : "";
+      const fieldValue = initial?.[f.key];
+      vals[f.key] = fieldValue != null ? String(fieldValue) : "";
     }
     return vals;
   });
@@ -304,8 +304,8 @@ function SupplementForm({
   const amountNum = amount ? Number(amount) : null;
   const hasAmount = amountNum != null && !Number.isNaN(amountNum) && amountNum > 0;
   const invalidNutrients = NUTRIENT_FIELDS.some((f) => {
-    const v = nutrients[f.key];
-    return v !== "" && (Number.isNaN(Number(v)) || Number(v) < 0);
+    const fieldValue = nutrients[f.key];
+    return fieldValue !== "" && (Number.isNaN(Number(fieldValue)) || Number(fieldValue) < 0);
   });
   const canSubmit = name.trim().length > 0 && !invalidNutrients && !saving;
 
@@ -333,9 +333,9 @@ function SupplementForm({
     if (descParts.length > 0) supp.description = descParts.join(" ");
 
     for (const f of NUTRIENT_FIELDS) {
-      const v = nutrients[f.key];
-      if (v !== "" && !Number.isNaN(Number(v)) && Number(v) >= 0) {
-        Object.assign(supp, { [f.key]: Number(v) });
+      const fieldValue = nutrients[f.key];
+      if (fieldValue !== "" && !Number.isNaN(Number(fieldValue)) && Number(fieldValue) >= 0) {
+        Object.assign(supp, { [f.key]: Number(fieldValue) });
       }
     }
     onSubmit(supp);

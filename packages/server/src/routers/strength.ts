@@ -297,23 +297,23 @@ export const strengthRouter = router({
  * where x is the zero-based index (i.e. week number).
  */
 function linearRegressionSlope(values: number[]): number {
-  const n = values.length;
-  if (n < 2) return 0;
+  const valueCount = values.length;
+  if (valueCount < 2) return 0;
 
   let sumX = 0;
   let sumY = 0;
   let sumXY = 0;
   let sumX2 = 0;
 
-  for (let i = 0; i < n; i++) {
+  for (let i = 0; i < valueCount; i++) {
     sumX += i;
     sumY += values[i] ?? 0;
     sumXY += i * (values[i] ?? 0);
     sumX2 += i * i;
   }
 
-  const denominator = n * sumX2 - sumX * sumX;
+  const denominator = valueCount * sumX2 - sumX * sumX;
   if (denominator === 0) return 0;
 
-  return (n * sumXY - sumX * sumY) / denominator;
+  return (valueCount * sumXY - sumX * sumY) / denominator;
 }

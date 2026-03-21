@@ -157,9 +157,9 @@ function ActivityHeader({
       : null;
 
   const formatDuration = (mins: number) => {
-    const h = Math.floor(mins / 60);
-    const m = mins % 60;
-    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+    const hours = Math.floor(mins / 60);
+    const remainingMinutes = mins % 60;
+    return hours > 0 ? `${hours}h ${remainingMinutes}m` : `${remainingMinutes}m`;
   };
 
   const stats: Array<{ label: string; value: string }> = [];
@@ -443,8 +443,8 @@ function MetricsChart({
       data: times,
       axisLabel: {
         formatter: (v: string) => {
-          const d = new Date(v);
-          return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
+          const date = new Date(v);
+          return `${date.getHours().toString().padStart(2, "0")}:${date.getMinutes().toString().padStart(2, "0")}`;
         },
       },
     }),
@@ -473,17 +473,17 @@ function ElevationChart({
     grid: dofekGrid("single", { top: 10, right: 20, bottom: 30, left: 50 }),
     tooltip: dofekTooltip({
       formatter: (params: Array<{ value: number; dataIndex: number }>) => {
-        const p = params[0];
-        if (!p) return "";
-        return `Elevation: ${Math.round(convertElevation(p.value, unitSystem))} ${elevationLabel(unitSystem)}`;
+        const firstParam = params[0];
+        if (!firstParam) return "";
+        return `Elevation: ${Math.round(convertElevation(firstParam.value, unitSystem))} ${elevationLabel(unitSystem)}`;
       },
     }),
     xAxis: dofekAxis.category({
       data: elevPoints.map((p) => p.recordedAt),
       axisLabel: {
         formatter: (v: string) => {
-          const d = new Date(v);
-          return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
+          const date = new Date(v);
+          return `${date.getHours().toString().padStart(2, "0")}:${date.getMinutes().toString().padStart(2, "0")}`;
         },
       },
     }),
@@ -529,9 +529,9 @@ function HrZonesChart({ zones, loading }: { zones: ActivityHrZone[]; loading: bo
   }
 
   const formatTime = (secs: number) => {
-    const m = Math.floor(secs / 60);
-    const s = secs % 60;
-    return m > 0 ? `${m}m ${s}s` : `${s}s`;
+    const minutes = Math.floor(secs / 60);
+    const seconds = secs % 60;
+    return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
   };
 
   const option = {
@@ -539,9 +539,9 @@ function HrZonesChart({ zones, loading }: { zones: ActivityHrZone[]; loading: bo
     tooltip: dofekTooltip({
       axisPointer: { type: "shadow" },
       formatter: (params: Array<{ name: string; value: number; dataIndex: number }>) => {
-        const p = params[0];
-        if (!p) return "";
-        const zone = zones[p.dataIndex];
+        const firstParam = params[0];
+        if (!firstParam) return "";
+        const zone = zones[firstParam.dataIndex];
         if (!zone) return "";
         const percentage =
           totalSeconds > 0 ? formatNumber((zone.seconds / totalSeconds) * 100) : "0";

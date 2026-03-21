@@ -179,7 +179,7 @@ export interface JoinedDay {
 }
 
 function classifyActivity(type: string): "cardio" | "strength" | "flexibility" | "other" {
-  const t = type.toLowerCase();
+  const typeLower = type.toLowerCase();
   if (
     [
       "cycling",
@@ -193,11 +193,12 @@ function classifyActivity(type: string): "cardio" | "strength" | "flexibility" |
       "cross_training",
       "tennis",
       "climbing",
-    ].includes(t)
+    ].includes(typeLower)
   )
     return "cardio";
-  if (["strength_training", "functional_strength", "strength"].includes(t)) return "strength";
-  if (["yoga", "stretching", "preparation_and_recovery"].includes(t)) return "flexibility";
+  if (["strength_training", "functional_strength", "strength"].includes(typeLower))
+    return "strength";
+  if (["yoga", "stretching", "preparation_and_recovery"].includes(typeLower)) return "flexibility";
   return "other";
 }
 
@@ -263,9 +264,9 @@ export function joinByDate(
 
   const joined: JoinedDay[] = [];
   for (const [date, m] of metricsByDate) {
-    const s = sleepByWakeDate.get(date);
-    const a = activityByDate.get(date);
-    const n = nutritionByDate.get(date);
+    const sleepRow = sleepByWakeDate.get(date);
+    const activityRow = activityByDate.get(date);
+    const nutritionRow = nutritionByDate.get(date);
     const bc = bodyCompByDate.get(date);
     joined.push({
       date,
@@ -275,19 +276,19 @@ export function joinByDate(
       steps: m.steps,
       active_energy_kcal: m.active_energy_kcal,
       skin_temp_c: m.skin_temp_c,
-      sleep_duration_min: s?.duration_minutes ?? null,
-      deep_min: s?.deep_minutes ?? null,
-      rem_min: s?.rem_minutes ?? null,
-      sleep_efficiency: s?.efficiency_pct ?? null,
-      exercise_minutes: a?.minutes ?? null,
-      cardio_minutes: a?.cardio ?? null,
-      strength_minutes: a?.strength ?? null,
-      flexibility_minutes: a?.flexibility ?? null,
-      calories: n?.calories ?? null,
-      protein_g: n?.protein_g ?? null,
-      carbs_g: n?.carbs_g ?? null,
-      fat_g: n?.fat_g ?? null,
-      fiber_g: n?.fiber_g ?? null,
+      sleep_duration_min: sleepRow?.duration_minutes ?? null,
+      deep_min: sleepRow?.deep_minutes ?? null,
+      rem_min: sleepRow?.rem_minutes ?? null,
+      sleep_efficiency: sleepRow?.efficiency_pct ?? null,
+      exercise_minutes: activityRow?.minutes ?? null,
+      cardio_minutes: activityRow?.cardio ?? null,
+      strength_minutes: activityRow?.strength ?? null,
+      flexibility_minutes: activityRow?.flexibility ?? null,
+      calories: nutritionRow?.calories ?? null,
+      protein_g: nutritionRow?.protein_g ?? null,
+      carbs_g: nutritionRow?.carbs_g ?? null,
+      fat_g: nutritionRow?.fat_g ?? null,
+      fiber_g: nutritionRow?.fiber_g ?? null,
       weight_kg: bc?.weight_kg ?? null,
       body_fat_pct: bc?.body_fat_pct ?? null,
       // rolling values computed below
@@ -960,11 +961,11 @@ function exhaustiveSweep(joined: JoinedDay[], existingIds: Set<string>): Insight
           const dayX = joined[i];
           const dayY = joined[i + lag];
           if (!dayX || !dayY) continue;
-          const x = mx.extract(dayX, joined, i);
-          const y = my.extract(dayY, joined, i + lag);
-          if (x != null && y != null) {
-            xs.push(x);
-            ys.push(y);
+          const xValue = mx.extract(dayX, joined, i);
+          const yValue = my.extract(dayY, joined, i + lag);
+          if (xValue != null && yValue != null) {
+            xs.push(xValue);
+            ys.push(yValue);
             dates.push(dayX.date);
           }
         }
@@ -1005,30 +1006,35 @@ function exhaustiveSweep(joined: JoinedDay[], existingIds: Set<string>): Insight
 
   const discoveries: Insight[] = [];
   for (let i = 0; i < candidates.length; i++) {
-    const c = candidates[i];
-    if (!significant[i] || !c) continue;
-    const absRho = Math.abs(c.rho);
-    const direction = c.rho > 0 ? "positively" : "negatively";
+    const candidate = candidates[i];
+    if (!significant[i] || !candidate) continue;
+    const absRho = Math.abs(candidate.rho);
+    const direction = candidate.rho > 0 ? "positively" : "negatively";
     const strength = absRho >= 0.6 ? "strongly" : absRho >= 0.4 ? "moderately" : "";
-    const lagText = c.lag === 0 ? "same day" : c.lag === 1 ? "next day" : `${c.lag} days later`;
-    const confidence = classifyCorrelationConfidence(c.rho, c.n);
+    const lagText =
+      candidate.lag === 0
+        ? "same day"
+        : candidate.lag === 1
+          ? "next day"
+          : `${candidate.lag} days later`;
+    const confidence = classifyCorrelationConfidence(candidate.rho, candidate.n);
 
-    const yWithLag = c.lag > 0 ? `${lagText} ${c.yLabel}` : c.yLabel;
+    const yWithLag = candidate.lag > 0 ? `${lagText} ${candidate.yLabel}` : candidate.yLabel;
 
     discoveries.push({
-      id: c.id,
+      id: candidate.id,
       type: "discovery",
       confidence,
-      metric: c.yLabel,
-      action: c.xLabel,
-      message: `${c.xLabel} is ${strength ? `${strength} ` : ""}${direction} associated with ${yWithLag}`,
-      detail: `Spearman ρ=${c.rho.toFixed(2)}, ${lagText}, n=${c.n}`,
+      metric: candidate.yLabel,
+      action: candidate.xLabel,
+      message: `${candidate.xLabel} is ${strength ? `${strength} ` : ""}${direction} associated with ${yWithLag}`,
+      detail: `Spearman ρ=${candidate.rho.toFixed(2)}, ${lagText}, n=${candidate.n}`,
       whenTrue: describe([]),
       whenFalse: describe([]),
-      effectSize: c.rho,
-      pValue: c.pValue,
-      correlation: { rho: c.rho, pValue: c.pValue, n: c.n },
-      dataPoints: c.dataPoints,
+      effectSize: candidate.rho,
+      pValue: candidate.pValue,
+      correlation: { rho: candidate.rho, pValue: candidate.pValue, n: candidate.n },
+      dataPoints: candidate.dataPoints,
     });
   }
 
@@ -1297,11 +1303,11 @@ function computeMonthlyInsights(joined: JoinedDay[]): Insight[] {
     const ys: number[] = [];
 
     for (const m of months) {
-      const x = pair.xFn(m);
-      const y = pair.yFn(m);
-      if (x != null && y != null) {
-        xs.push(x);
-        ys.push(y);
+      const xValue = pair.xFn(m);
+      const yValue = pair.yFn(m);
+      if (xValue != null && yValue != null) {
+        xs.push(xValue);
+        ys.push(yValue);
       }
     }
 
@@ -1347,9 +1353,9 @@ function computeMonthlyInsights(joined: JoinedDay[]): Insight[] {
       const lowWeightDeltas = lowEx.map((m) => m.weightDelta).filter((v): v is number => v != null);
 
       if (highWeightDeltas.length >= 5 && lowWeightDeltas.length >= 5) {
-        const d = cohensD(highWeightDeltas, lowWeightDeltas);
+        const effectSize = cohensD(highWeightDeltas, lowWeightDeltas);
         const conf = classifyConfidence(
-          d,
+          effectSize,
           Math.min(highWeightDeltas.length, lowWeightDeltas.length),
         );
         if (conf !== "insufficient") {
@@ -1368,7 +1374,7 @@ function computeMonthlyInsights(joined: JoinedDay[]): Insight[] {
             detail: `High exercise months: avg ${trueStats.mean.toFixed(1)} kg vs ${falseStats.mean.toFixed(1)} kg (n=${highWeightDeltas.length}/${lowWeightDeltas.length})`,
             whenTrue: trueStats,
             whenFalse: falseStats,
-            effectSize: d,
+            effectSize: effectSize,
             pValue: tResult.pValue,
           });
         }
@@ -1447,11 +1453,11 @@ function findCorrelationConfounders(
       if (idx === undefined) continue;
       const day = joined[idx];
       if (!day) continue;
-      const z = cv.extract(day);
+      const contextValue = cv.extract(day);
       const xv = xValues[j];
       const yv = yValues[j];
-      if (z != null && xv !== undefined && yv !== undefined) {
-        zValues.push(z);
+      if (contextValue != null && xv !== undefined && yv !== undefined) {
+        zValues.push(contextValue);
         xFiltered.push(xv);
         yFiltered.push(yv);
       }
@@ -1582,21 +1588,21 @@ function findConfounders(test: ConditionalTest, joined: JoinedDay[]): string[] {
 
     const trueVals = trueIndices
       .map((i) => {
-        const d = joined[i];
-        return d ? cv.extract(d) : undefined;
+        const joinedDay = joined[i];
+        return joinedDay ? cv.extract(joinedDay) : undefined;
       })
       .filter((v): v is number => v != null);
     const falseVals = falseIndices
       .map((i) => {
-        const d = joined[i];
-        return d ? cv.extract(d) : undefined;
+        const joinedDay = joined[i];
+        return joinedDay ? cv.extract(joinedDay) : undefined;
       })
       .filter((v): v is number => v != null);
 
     if (trueVals.length < 5 || falseVals.length < 5) continue;
 
-    const d = cohensD(trueVals, falseVals);
-    if (Math.abs(d) < 0.3) continue; // only report meaningful differences
+    const effectSize = cohensD(trueVals, falseVals);
+    if (Math.abs(effectSize) < 0.3) continue; // only report meaningful differences
 
     const trueAvg = trueVals.reduce((a, b) => a + b, 0) / trueVals.length;
     const falseAvg = falseVals.reduce((a, b) => a + b, 0) / falseVals.length;
@@ -1766,9 +1772,9 @@ export function computeInsights(
       test.scope === "month" ? Math.floor(rawMinN / MONTHLY_WINDOW_SIZE) : rawMinN;
     if (effectiveMinN < 3) continue;
 
-    const d = cohensD(trueValues, falseValues);
+    const effectSize = cohensD(trueValues, falseValues);
     const tResult = welchTTest(trueValues, falseValues);
-    const confidence = classifyConfidence(d, effectiveMinN, tResult.pValue);
+    const confidence = classifyConfidence(effectSize, effectiveMinN, tResult.pValue);
     if (confidence === "insufficient") continue;
 
     const trueStats = describe(trueValues);
@@ -1798,7 +1804,7 @@ export function computeInsights(
       detail: `${test.action}: avg ${trueStats.mean.toFixed(1)} vs ${falseStats.mean.toFixed(1)} without (n=${trueValues.length}/${falseValues.length})`,
       whenTrue: trueStats,
       whenFalse: falseStats,
-      effectSize: d,
+      effectSize: effectSize,
       pValue: tResult.pValue,
       confounders: confounders.length > 0 ? confounders : undefined,
       distributions: {
@@ -1832,11 +1838,11 @@ export function computeInsights(
     for (let i = 0; i < joined.length; i++) {
       const day = joined[i];
       if (!day) continue;
-      const x = pair.xFn(day, joined, i);
-      const y = pair.yFn(day, joined, i);
-      if (x != null && y != null) {
-        xs.push(x);
-        ys.push(y);
+      const xValue = pair.xFn(day, joined, i);
+      const yValue = pair.yFn(day, joined, i);
+      if (xValue != null && yValue != null) {
+        xs.push(xValue);
+        ys.push(yValue);
         indices.push(i);
       }
     }

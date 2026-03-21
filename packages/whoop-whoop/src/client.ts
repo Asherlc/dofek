@@ -287,15 +287,15 @@ export class WhoopClient {
   }
 
   private async get<T>(url: string, params?: Record<string, string>): Promise<T> {
-    const u = new URL(url);
+    const requestUrl = new URL(url);
     if (params) {
       for (const [key, value] of Object.entries(params)) {
-        u.searchParams.set(key, value);
+        requestUrl.searchParams.set(key, value);
       }
     }
-    u.searchParams.set("apiVersion", WHOOP_API_VERSION);
+    requestUrl.searchParams.set("apiVersion", WHOOP_API_VERSION);
 
-    const response = await this.fetchFn(u.toString(), {
+    const response = await this.fetchFn(requestUrl.toString(), {
       headers: {
         Authorization: `Bearer ${this.accessToken}`,
         "User-Agent": "WHOOP/4.0",
@@ -363,12 +363,12 @@ export class WhoopClient {
   async getWeightliftingWorkout(
     activityId: string,
   ): Promise<WhoopWeightliftingWorkoutResponse | null> {
-    const u = new URL(
+    const requestUrl = new URL(
       `${WHOOP_API_BASE}/weightlifting-service/v2/weightlifting-workout/${activityId}`,
     );
-    u.searchParams.set("apiVersion", WHOOP_API_VERSION);
+    requestUrl.searchParams.set("apiVersion", WHOOP_API_VERSION);
 
-    const response = await this.fetchFn(u.toString(), {
+    const response = await this.fetchFn(requestUrl.toString(), {
       headers: {
         Authorization: `Bearer ${this.accessToken}`,
         "User-Agent": "WHOOP/4.0",

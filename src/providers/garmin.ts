@@ -604,13 +604,13 @@ export class GarminProvider implements SyncProvider {
     // Sync activities
     try {
       const count = await withSyncLog(db, this.id, "activities", async () => {
-        const c = await this.syncOfficialActivities(
+        const activitiesCount = await this.syncOfficialActivities(
           db,
           client,
           sinceEpochSeconds,
           untilEpochSeconds,
         );
-        return { recordCount: c, result: c };
+        return { recordCount: activitiesCount, result: activitiesCount };
       });
       recordsSynced += count;
     } catch (err) {
@@ -623,8 +623,13 @@ export class GarminProvider implements SyncProvider {
     // Sync sleep
     try {
       const count = await withSyncLog(db, this.id, "sleep", async () => {
-        const c = await this.syncOfficialSleep(db, client, sinceEpochSeconds, untilEpochSeconds);
-        return { recordCount: c, result: c };
+        const sleepCount = await this.syncOfficialSleep(
+          db,
+          client,
+          sinceEpochSeconds,
+          untilEpochSeconds,
+        );
+        return { recordCount: sleepCount, result: sleepCount };
       });
       recordsSynced += count;
     } catch (err) {
@@ -637,13 +642,13 @@ export class GarminProvider implements SyncProvider {
     // Sync daily summaries
     try {
       const count = await withSyncLog(db, this.id, "daily_metrics", async () => {
-        const c = await this.syncOfficialDailyMetrics(
+        const dailyMetricsCount = await this.syncOfficialDailyMetrics(
           db,
           client,
           sinceEpochSeconds,
           untilEpochSeconds,
         );
-        return { recordCount: c, result: c };
+        return { recordCount: dailyMetricsCount, result: dailyMetricsCount };
       });
       recordsSynced += count;
     } catch (err) {
@@ -656,13 +661,13 @@ export class GarminProvider implements SyncProvider {
     // Sync body composition
     try {
       const count = await withSyncLog(db, this.id, "body_composition", async () => {
-        const c = await this.syncOfficialBodyComposition(
+        const bodyCompositionCount = await this.syncOfficialBodyComposition(
           db,
           client,
           sinceEpochSeconds,
           untilEpochSeconds,
         );
-        return { recordCount: c, result: c };
+        return { recordCount: bodyCompositionCount, result: bodyCompositionCount };
       });
       recordsSynced += count;
     } catch (err) {
@@ -709,8 +714,8 @@ export class GarminProvider implements SyncProvider {
     // Sync activities (paginated)
     try {
       const count = await withSyncLog(db, this.id, "activities", async () => {
-        const c = await this.syncConnectActivities(db, client);
-        return { recordCount: c, result: c };
+        const activitiesCount = await this.syncConnectActivities(db, client);
+        return { recordCount: activitiesCount, result: activitiesCount };
       });
       recordsSynced += count;
     } catch (err) {
@@ -723,8 +728,8 @@ export class GarminProvider implements SyncProvider {
     // Sync sleep (day-by-day)
     try {
       const count = await withSyncLog(db, this.id, "sleep", async () => {
-        const c = await this.syncConnectSleep(db, client, dates);
-        return { recordCount: c, result: c };
+        const sleepCount = await this.syncConnectSleep(db, client, dates);
+        return { recordCount: sleepCount, result: sleepCount };
       });
       recordsSynced += count;
     } catch (err) {
@@ -737,8 +742,8 @@ export class GarminProvider implements SyncProvider {
     // Sync daily metrics with training data (day-by-day)
     try {
       const count = await withSyncLog(db, this.id, "daily_metrics", async () => {
-        const c = await this.syncConnectDailyMetrics(db, client, dates);
-        return { recordCount: c, result: c };
+        const dailyMetricsCount = await this.syncConnectDailyMetrics(db, client, dates);
+        return { recordCount: dailyMetricsCount, result: dailyMetricsCount };
       });
       recordsSynced += count;
     } catch (err) {
@@ -751,8 +756,8 @@ export class GarminProvider implements SyncProvider {
     // Sync stress time-series (day-by-day)
     try {
       const count = await withSyncLog(db, this.id, "stress", async () => {
-        const c = await this.syncConnectStress(db, client, dates);
-        return { recordCount: c, result: c };
+        const stressCount = await this.syncConnectStress(db, client, dates);
+        return { recordCount: stressCount, result: stressCount };
       });
       recordsSynced += count;
     } catch (err) {
@@ -765,8 +770,8 @@ export class GarminProvider implements SyncProvider {
     // Sync heart rate time-series (day-by-day)
     try {
       const count = await withSyncLog(db, this.id, "heart_rate", async () => {
-        const c = await this.syncConnectHeartRate(db, client, dates);
-        return { recordCount: c, result: c };
+        const heartRateCount = await this.syncConnectHeartRate(db, client, dates);
+        return { recordCount: heartRateCount, result: heartRateCount };
       });
       recordsSynced += count;
     } catch (err) {

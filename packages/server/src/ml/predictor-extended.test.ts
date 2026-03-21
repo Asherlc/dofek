@@ -64,19 +64,19 @@ function generateSyntheticDays(n: number, seed: number = 42): DailyFeatureRow[] 
 describe("trainFromDataset", () => {
   it("trains both models from a pre-built dataset", () => {
     const rng = mulberry32(123);
-    const n = 100;
+    const sampleCount = 100;
     const featureNames = ["feature_a", "feature_b", "feature_c"];
     const X: number[][] = [];
     const y: number[] = [];
     const dates: string[] = [];
 
-    for (let i = 0; i < n; i++) {
-      const a = rng() * 10;
-      const b = rng() * 5;
-      const c = rng() * 3;
-      X.push([a, b, c]);
-      // y is a function of a and b with noise
-      y.push(a * 2 + b * 0.5 + (rng() - 0.5) * 2);
+    for (let i = 0; i < sampleCount; i++) {
+      const featureA = rng() * 10;
+      const featureB = rng() * 5;
+      const featureC = rng() * 3;
+      X.push([featureA, featureB, featureC]);
+      // y is a function of featureA and featureB with noise
+      y.push(featureA * 2 + featureB * 0.5 + (rng() - 0.5) * 2);
       dates.push(new Date(2024, 0, 1 + i).toISOString().slice(0, 10));
     }
 
@@ -87,9 +87,9 @@ describe("trainFromDataset", () => {
     expect(result.targetId).toBe("test_target");
     expect(result.targetLabel).toBe("Test Target");
     expect(result.targetUnit).toBe("units");
-    expect(result.predictions.length).toBe(n);
+    expect(result.predictions.length).toBe(sampleCount);
     expect(result.featureImportances.length).toBe(3);
-    expect(result.diagnostics.sampleCount).toBe(n);
+    expect(result.diagnostics.sampleCount).toBe(sampleCount);
     expect(result.diagnostics.featureCount).toBe(3);
 
     // Activity-level predictions should not produce tomorrow prediction
@@ -110,18 +110,18 @@ describe("trainFromDataset", () => {
 
   it("produces deterministic diagnostics and predictions for seeded data", () => {
     const rng = mulberry32(123);
-    const n = 100;
+    const sampleCount = 100;
     const featureNames = ["feature_a", "feature_b", "feature_c"];
     const X: number[][] = [];
     const y: number[] = [];
     const dates: string[] = [];
 
-    for (let i = 0; i < n; i++) {
-      const a = rng() * 10;
-      const b = rng() * 5;
-      const c = rng() * 3;
-      X.push([a, b, c]);
-      y.push(a * 2 + b * 0.5 + (rng() - 0.5) * 2);
+    for (let i = 0; i < sampleCount; i++) {
+      const featureA = rng() * 10;
+      const featureB = rng() * 5;
+      const featureC = rng() * 3;
+      X.push([featureA, featureB, featureC]);
+      y.push(featureA * 2 + featureB * 0.5 + (rng() - 0.5) * 2);
       dates.push(new Date(2024, 0, 1 + i).toISOString().slice(0, 10));
     }
 
@@ -165,45 +165,45 @@ describe("trainFromDataset", () => {
 
   it("handles minimal dataset (just enough for CV)", () => {
     const rng = mulberry32(456);
-    const n = 30;
+    const sampleCount = 30;
     const featureNames = ["x"];
     const X: number[][] = [];
     const y: number[] = [];
     const dates: string[] = [];
 
-    for (let i = 0; i < n; i++) {
-      const x = rng() * 10;
-      X.push([x]);
-      y.push(x + (rng() - 0.5));
+    for (let i = 0; i < sampleCount; i++) {
+      const featureValue = rng() * 10;
+      X.push([featureValue]);
+      y.push(featureValue + (rng() - 0.5));
       dates.push(new Date(2024, 0, 1 + i).toISOString().slice(0, 10));
     }
 
     const dataset: ExtractedDataset = { featureNames, X, y, dates };
     const result = trainFromDataset(dataset, "min", "Minimal", "u");
 
-    expect(result.predictions.length).toBe(n);
+    expect(result.predictions.length).toBe(sampleCount);
     // With only 30 samples, CV might return 0 (not enough for 5-fold)
     expect(result.diagnostics.crossValidatedRSquared).toBeTypeOf("number");
   });
 
   it("falls back when linear regression fails on collinear features", () => {
-    const n = 24;
+    const sampleCount = 24;
     const featureNames = ["x", "x_dup", "constant"];
     const X: number[][] = [];
     const y: number[] = [];
     const dates: string[] = [];
 
-    for (let i = 0; i < n; i++) {
-      const x = i + 1;
-      X.push([x, x, 1]); // perfect collinearity + constant feature
-      y.push(x * 2);
+    for (let i = 0; i < sampleCount; i++) {
+      const featureValue = i + 1;
+      X.push([featureValue, featureValue, 1]); // perfect collinearity + constant feature
+      y.push(featureValue * 2);
       dates.push(new Date(2024, 0, 1 + i).toISOString().slice(0, 10));
     }
 
     const dataset: ExtractedDataset = { featureNames, X, y, dates };
     const result = trainFromDataset(dataset, "cardio_power", "Cardio Power Output", "W");
 
-    expect(result.predictions.length).toBe(n);
+    expect(result.predictions.length).toBe(sampleCount);
     expect(result.featureImportances).toHaveLength(3);
     // Linear diagnostics should degrade gracefully instead of throwing.
     expect(result.diagnostics).toEqual({
@@ -232,9 +232,9 @@ describe("trainFromDataset", () => {
     const dates: string[] = [];
 
     for (let i = 0; i < 25; i++) {
-      const x = i + 1;
-      X.push([x]);
-      y.push(x * 2 + 1);
+      const featureValue = i + 1;
+      X.push([featureValue]);
+      y.push(featureValue * 2 + 1);
       dates.push(new Date(2024, 0, 1 + i).toISOString().slice(0, 10));
     }
 

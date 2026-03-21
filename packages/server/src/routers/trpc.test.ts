@@ -78,8 +78,8 @@ describe("trpc", () => {
         test: protectedProcedure.query(() => "ok"),
       });
 
-      const t = initTRPC.context<Context>().create();
-      const createCaller = t.createCallerFactory(testRouter);
+      const trpc = initTRPC.context<Context>().create();
+      const createCaller = trpc.createCallerFactory(testRouter);
       const caller = createCaller({
         db: {},
         userId: null,
@@ -96,8 +96,8 @@ describe("trpc", () => {
         test: protectedProcedure.query(({ ctx }) => ctx.userId),
       });
 
-      const t = initTRPC.context<Context>().create();
-      const createCaller = t.createCallerFactory(testRouter);
+      const trpc = initTRPC.context<Context>().create();
+      const createCaller = trpc.createCallerFactory(testRouter);
       const caller = createCaller({
         db: {},
         userId: "user-123",
@@ -114,8 +114,8 @@ describe("trpc", () => {
         cachedQuery: cachedProtectedQuery(CacheTTL.SHORT).query(() => "db-result"),
         lightQuery: cachedProtectedQueryLight(CacheTTL.MEDIUM).query(() => "light-result"),
       });
-      const t = initTRPC.context<Context>().create();
-      const createCaller = t.createCallerFactory(testRouter);
+      const trpc = initTRPC.context<Context>().create();
+      const createCaller = trpc.createCallerFactory(testRouter);
       return createCaller;
     }
 

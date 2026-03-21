@@ -149,40 +149,50 @@ export function parseReadinessRows(rows: Record<string, unknown>[]): ReadinessWe
   for (const row of rows) {
     const parsed = readinessRowSchema.safeParse(row);
     if (!parsed.success) continue;
-    const p = parsed.data;
+    const parsedRow = parsed.data;
 
     if (
-      p.hrv == null ||
-      p.hrv_mean == null ||
-      p.hrv_sd == null ||
-      Number(p.hrv_sd) === 0 ||
-      p.resting_hr == null ||
-      p.rhr_mean == null ||
-      p.rhr_sd == null ||
-      Number(p.rhr_sd) === 0 ||
-      p.next_day_hrv == null ||
-      p.next_day_hrv_mean == null ||
-      p.next_day_hrv_sd == null ||
-      Number(p.next_day_hrv_sd) === 0
+      parsedRow.hrv == null ||
+      parsedRow.hrv_mean == null ||
+      parsedRow.hrv_sd == null ||
+      Number(parsedRow.hrv_sd) === 0 ||
+      parsedRow.resting_hr == null ||
+      parsedRow.rhr_mean == null ||
+      parsedRow.rhr_sd == null ||
+      Number(parsedRow.rhr_sd) === 0 ||
+      parsedRow.next_day_hrv == null ||
+      parsedRow.next_day_hrv_mean == null ||
+      parsedRow.next_day_hrv_sd == null ||
+      Number(parsedRow.next_day_hrv_sd) === 0
     )
       continue;
 
-    const zHrv = (Number(p.hrv) - Number(p.hrv_mean)) / Number(p.hrv_sd);
-    const zRhr = (Number(p.resting_hr) - Number(p.rhr_mean)) / Number(p.rhr_sd);
+    const zHrv = (Number(parsedRow.hrv) - Number(parsedRow.hrv_mean)) / Number(parsedRow.hrv_sd);
+    const zRhr =
+      (Number(parsedRow.resting_hr) - Number(parsedRow.rhr_mean)) / Number(parsedRow.rhr_sd);
     const hrvScore = zScoreToRecoveryScore(zHrv);
     const rhrScore = zScoreToRecoveryScore(-zRhr);
     const sleepScore =
-      p.efficiency_pct != null ? Math.max(0, Math.min(100, Number(p.efficiency_pct))) : 62;
+      parsedRow.efficiency_pct != null
+        ? Math.max(0, Math.min(100, Number(parsedRow.efficiency_pct)))
+        : 62;
 
     // Respiratory rate score: lower is better (like RHR), inverted z-score
     let respiratoryRateScore = 62;
-    if (p.respiratory_rate != null && p.rr_mean != null && p.rr_sd != null && Number(p.rr_sd) > 0) {
-      const zRr = (Number(p.respiratory_rate) - Number(p.rr_mean)) / Number(p.rr_sd);
+    if (
+      parsedRow.respiratory_rate != null &&
+      parsedRow.rr_mean != null &&
+      parsedRow.rr_sd != null &&
+      Number(parsedRow.rr_sd) > 0
+    ) {
+      const zRr =
+        (Number(parsedRow.respiratory_rate) - Number(parsedRow.rr_mean)) / Number(parsedRow.rr_sd);
       respiratoryRateScore = zScoreToRecoveryScore(-zRr);
     }
 
     const nextDayHrvZScore =
-      (Number(p.next_day_hrv) - Number(p.next_day_hrv_mean)) / Number(p.next_day_hrv_sd);
+      (Number(parsedRow.next_day_hrv) - Number(parsedRow.next_day_hrv_mean)) /
+      Number(parsedRow.next_day_hrv_sd);
 
     data.push({ hrvScore, rhrScore: rhrScore, sleepScore, respiratoryRateScore, nextDayHrvZScore });
   }
@@ -339,14 +349,19 @@ export function parseTrainingImpulseRows(rows: Record<string, unknown>[]): Train
   for (const row of rows) {
     const parsed = trainingImpulseActivityRowSchema.safeParse(row);
     if (!parsed.success) continue;
-    const p = parsed.data;
-    if (p.duration_min <= 0 || p.max_hr <= p.resting_hr || p.power_tss <= 0) continue;
+    const parsedRow = parsed.data;
+    if (
+      parsedRow.duration_min <= 0 ||
+      parsedRow.max_hr <= parsedRow.resting_hr ||
+      parsedRow.power_tss <= 0
+    )
+      continue;
     data.push({
-      durationMin: p.duration_min,
-      avgHr: p.avg_hr,
-      maxHr: p.max_hr,
-      restingHr: p.resting_hr,
-      powerTss: p.power_tss,
+      durationMin: parsedRow.duration_min,
+      avgHr: parsedRow.avg_hr,
+      maxHr: parsedRow.max_hr,
+      restingHr: parsedRow.resting_hr,
+      powerTss: parsedRow.power_tss,
     });
   }
   return data;

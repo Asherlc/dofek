@@ -164,12 +164,12 @@ export async function runImport(
         for (const c of results) recordsSynced += c;
       },
       onSleepBatch: async (records) => {
-        const c = await upsertSleepBatch(db, providerId, records);
-        recordsSynced += c;
+        const sleepCount = await upsertSleepBatch(db, providerId, records);
+        recordsSynced += sleepCount;
       },
       onWorkoutBatch: async (workouts) => {
-        const c = await upsertWorkoutBatch(db, providerId, workouts);
-        recordsSynced += c;
+        const workoutCount = await upsertWorkoutBatch(db, providerId, workouts);
+        recordsSynced += workoutCount;
       },
       onCategoryBatch: async (records) => {
         // Insert category records into health_event table

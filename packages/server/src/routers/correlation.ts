@@ -95,16 +95,16 @@ export function computeCorrelation(joined: JoinedDay[], input: CorrelationInput)
     const dayY = joined[i + lag];
     if (!dayX || !dayY) continue;
 
-    const x = extractMetricValue(dayX, metricX);
-    const y = extractMetricValue(dayY, metricY);
-    if (x == null || y == null) continue;
+    const metricXValue = extractMetricValue(dayX, metricX);
+    const metricYValue = extractMetricValue(dayY, metricY);
+    if (metricXValue == null || metricYValue == null) continue;
 
-    pairs.push({ x, y, date: dayX.date });
+    pairs.push({ x: metricXValue, y: metricYValue, date: dayX.date });
   }
 
-  const n = pairs.length;
+  const pairCount = pairs.length;
 
-  if (n < 5) {
+  if (pairCount < 5) {
     return {
       spearmanRho: 0,
       spearmanPValue: 1,
@@ -112,10 +112,10 @@ export function computeCorrelation(joined: JoinedDay[], input: CorrelationInput)
       pearsonPValue: 1,
       regression: { slope: 0, intercept: 0, rSquared: 0 },
       dataPoints: pairs,
-      sampleCount: n,
+      sampleCount: pairCount,
       xStats: emptyStats(),
       yStats: emptyStats(),
-      insight: `Insufficient data to analyze the relationship between ${METRIC_LABEL_MAP.get(metricX) ?? metricX} and ${METRIC_LABEL_MAP.get(metricY) ?? metricY} (only ${n} overlapping data points).`,
+      insight: `Insufficient data to analyze the relationship between ${METRIC_LABEL_MAP.get(metricX) ?? metricX} and ${METRIC_LABEL_MAP.get(metricY) ?? metricY} (only ${pairCount} overlapping data points).`,
       confidenceLevel: "insufficient" as const,
       correlationColor: "#71717a",
     };
@@ -138,7 +138,7 @@ export function computeCorrelation(joined: JoinedDay[], input: CorrelationInput)
   const yStats = computeStats(ys);
 
   // Confidence
-  const confidenceLevel = correlationConfidence(spearman.rho, n);
+  const confidenceLevel = correlationConfidence(spearman.rho, pairCount);
 
   // Insight text
   const xLabel = (METRIC_LABEL_MAP.get(metricX) ?? metricX).toLowerCase();
@@ -148,7 +148,7 @@ export function computeCorrelation(joined: JoinedDay[], input: CorrelationInput)
     yLabel,
     rho: spearman.rho,
     pValue: spearman.pValue,
-    n,
+    n: pairCount,
     lag,
   });
 
@@ -159,7 +159,7 @@ export function computeCorrelation(joined: JoinedDay[], input: CorrelationInput)
     pearsonPValue: pearson.pValue,
     regression,
     dataPoints: downsample(pairs, MAX_DATA_POINTS),
-    sampleCount: n,
+    sampleCount: pairCount,
     xStats,
     yStats,
     insight,
@@ -170,18 +170,19 @@ export function computeCorrelation(joined: JoinedDay[], input: CorrelationInput)
 
 export function computeStats(values: number[]) {
   const sorted = [...values].sort((a, b) => a - b);
-  const n = sorted.length;
+  const valueCount = sorted.length;
   const sum = sorted.reduce((a, b) => a + b, 0);
-  const mean = sum / n;
+  const mean = sum / valueCount;
   const min = sorted[0] ?? 0;
-  const max = sorted[n - 1] ?? 0;
+  const max = sorted[valueCount - 1] ?? 0;
   const median =
-    n % 2 === 0
-      ? ((sorted[n / 2 - 1] ?? 0) + (sorted[n / 2] ?? 0)) / 2
-      : (sorted[Math.floor(n / 2)] ?? 0);
-  const variance = sorted.reduce((s, v) => s + (v - mean) ** 2, 0) / (n > 1 ? n - 1 : 1);
+    valueCount % 2 === 0
+      ? ((sorted[valueCount / 2 - 1] ?? 0) + (sorted[valueCount / 2] ?? 0)) / 2
+      : (sorted[Math.floor(valueCount / 2)] ?? 0);
+  const variance =
+    sorted.reduce((s, v) => s + (v - mean) ** 2, 0) / (valueCount > 1 ? valueCount - 1 : 1);
   const stddev = Math.sqrt(variance);
-  return { mean, median, stddev, min, max, n };
+  return { mean, median, stddev, min, max, n: valueCount };
 }
 
 export function emptyStats() {

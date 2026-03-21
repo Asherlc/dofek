@@ -70,10 +70,10 @@ function makeBodyCompRow(recorded_at: string, overrides: Partial<BodyCompRow> = 
 /** Generate `n` consecutive dates starting from a base date */
 function dateRange(start: string, count: number): string[] {
   const dates: string[] = [];
-  const d = new Date(start);
+  const cursor = new Date(start);
   for (let i = 0; i < count; i++) {
-    dates.push(d.toISOString().slice(0, 10));
-    d.setDate(d.getDate() + 1);
+    dates.push(cursor.toISOString().slice(0, 10));
+    cursor.setDate(cursor.getDate() + 1);
   }
   return dates;
 }

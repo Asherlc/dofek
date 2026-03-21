@@ -370,23 +370,25 @@ export function DataSourcesPanel() {
               );
             }
 
-            const p = entry.provider;
-            const state = providerStates[p.id] ?? { status: "idle" };
+            const provider = entry.provider;
+            const state = providerStates[provider.id] ?? { status: "idle" };
             const needsAuth =
-              p.authType !== "none" && p.authType !== "file-import" && !p.authorized;
-            const providerStats = statsByProvider.get(p.id);
-            const recentLogs = (logsByProvider.get(p.id) ?? []).slice(0, 5);
+              provider.authType !== "none" &&
+              provider.authType !== "file-import" &&
+              !provider.authorized;
+            const providerStats = statsByProvider.get(provider.id);
+            const recentLogs = (logsByProvider.get(provider.id) ?? []).slice(0, 5);
 
             return (
               <SyncProviderCard
-                key={p.id}
-                provider={p}
+                key={provider.id}
+                provider={provider}
                 state={state}
                 needsAuth={needsAuth}
                 stats={providerStats}
                 recentLogs={recentLogs}
-                onSync={() => handleProviderClick(p)}
-                onFullSync={() => handleProviderClick(p, true)}
+                onSync={() => handleProviderClick(provider)}
+                onFullSync={() => handleProviderClick(provider, true)}
               />
             );
           })}

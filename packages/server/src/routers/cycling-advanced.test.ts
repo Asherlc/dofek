@@ -3,12 +3,12 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const t = initTRPC.context<{ db: unknown; userId: string | null }>().create();
+  const trpc = initTRPC.context<{ db: unknown; userId: string | null }>().create();
   return {
-    router: t.router,
-    protectedProcedure: t.procedure,
-    cachedProtectedQuery: () => t.procedure,
-    cachedProtectedQueryLight: () => t.procedure,
+    router: trpc.router,
+    protectedProcedure: trpc.procedure,
+    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQueryLight: () => trpc.procedure,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -62,9 +62,9 @@ function buildRows(
 ): { day: string; trimp: number }[] {
   const rows: { day: string; trimp: number }[] = [];
   for (let i = dayStart; i >= dayEnd; i--) {
-    const d = new Date(base);
-    d.setDate(d.getDate() - i);
-    rows.push({ day: d.toISOString().slice(0, 10), trimp });
+    const date = new Date(base);
+    date.setDate(date.getDate() - i);
+    rows.push({ day: date.toISOString().slice(0, 10), trimp });
   }
   return rows;
 }
@@ -188,9 +188,9 @@ describe("cyclingAdvancedRouter", () => {
       const rows: { day: string; trimp: number }[] = [];
       const base = new Date(now);
       for (let i = 14; i >= 0; i--) {
-        const d = new Date(base);
-        d.setDate(d.getDate() - i);
-        rows.push({ day: d.toISOString().slice(0, 10), trimp: 50 + i * 2 });
+        const date = new Date(base);
+        date.setDate(date.getDate() - i);
+        rows.push({ day: date.toISOString().slice(0, 10), trimp: 50 + i * 2 });
       }
       const caller = makeCaller(rows);
       const result = await caller.rampRate({ days: 90 });
@@ -204,9 +204,9 @@ describe("cyclingAdvancedRouter", () => {
       const rows: { day: string; trimp: number }[] = [];
       const base = new Date();
       for (let i = 30; i >= 0; i--) {
-        const d = new Date(base);
-        d.setDate(d.getDate() - i);
-        rows.push({ day: d.toISOString().slice(0, 10), trimp: 50 });
+        const date = new Date(base);
+        date.setDate(date.getDate() - i);
+        rows.push({ day: date.toISOString().slice(0, 10), trimp: 50 });
       }
       const caller = makeCaller(rows);
       const result = await caller.rampRate({ days: 90 });
@@ -224,15 +224,15 @@ describe("cyclingAdvancedRouter", () => {
         const base = new Date();
         // First 3 weeks: low load
         for (let i = 28; i >= 14; i--) {
-          const d = new Date(base);
-          d.setDate(d.getDate() - i);
-          rows.push({ day: d.toISOString().slice(0, 10), trimp: 10 });
+          const date = new Date(base);
+          date.setDate(date.getDate() - i);
+          rows.push({ day: date.toISOString().slice(0, 10), trimp: 10 });
         }
         // Last 2 weeks: very high load
         for (let i = 13; i >= 0; i--) {
-          const d = new Date(base);
-          d.setDate(d.getDate() - i);
-          rows.push({ day: d.toISOString().slice(0, 10), trimp: 1000 });
+          const date = new Date(base);
+          date.setDate(date.getDate() - i);
+          rows.push({ day: date.toISOString().slice(0, 10), trimp: 1000 });
         }
         const caller = makeCaller(rows);
         const result = await caller.rampRate({ days: 90 });
@@ -272,9 +272,9 @@ describe("cyclingAdvancedRouter", () => {
       const rows: { day: string; trimp: number }[] = [];
       const base = new Date();
       for (let i = 21; i >= 0; i--) {
-        const d = new Date(base);
-        d.setDate(d.getDate() - i);
-        rows.push({ day: d.toISOString().slice(0, 10), trimp: 50 + i });
+        const date = new Date(base);
+        date.setDate(date.getDate() - i);
+        rows.push({ day: date.toISOString().slice(0, 10), trimp: 50 + i });
       }
       const caller = makeCaller(rows);
       const result = await caller.rampRate({ days: 90 });

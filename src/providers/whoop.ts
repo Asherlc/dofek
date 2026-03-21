@@ -360,29 +360,33 @@ export function parseJournalResponse(raw: unknown): ParsedJournalEntry[] {
 
     if (Array.isArray(answers)) {
       for (const answer of answers) {
-        const a = toRecord(answer);
-        if (!a) continue;
+        const answerRecord = toRecord(answer);
+        if (!answerRecord) continue;
         const question =
-          getString(a, "name") ??
-          getString(a, "behavior") ??
-          getString(a, "question") ??
-          getString(a, "type") ??
+          getString(answerRecord, "name") ??
+          getString(answerRecord, "behavior") ??
+          getString(answerRecord, "question") ??
+          getString(answerRecord, "type") ??
           "unknown";
         const answerNumeric =
-          typeof a.value === "number" ? a.value : typeof a.score === "number" ? a.score : null;
+          typeof answerRecord.value === "number"
+            ? answerRecord.value
+            : typeof answerRecord.score === "number"
+              ? answerRecord.score
+              : null;
         const answerText =
-          typeof a.answer === "string"
-            ? a.answer
-            : typeof a.response === "string"
-              ? a.response
-              : typeof a.value === "string"
-                ? a.value
+          typeof answerRecord.answer === "string"
+            ? answerRecord.answer
+            : typeof answerRecord.response === "string"
+              ? answerRecord.response
+              : typeof answerRecord.value === "string"
+                ? answerRecord.value
                 : null;
         const impactScore =
-          typeof a.impact === "number"
-            ? a.impact
-            : typeof a.impact_score === "number"
-              ? a.impact_score
+          typeof answerRecord.impact === "number"
+            ? answerRecord.impact
+            : typeof answerRecord.impact_score === "number"
+              ? answerRecord.impact_score
               : null;
 
         entries.push({

@@ -10,11 +10,11 @@ interface HealthspanScoreCardProps {
 }
 
 function TrendBadge({ trend }: { trend: "improving" | "declining" | "stable" }) {
-  const c = trendColor(trend);
+  const color = trendColor(trend);
   return (
     <div
       className="inline-block px-2 py-1 rounded text-xs font-medium"
-      style={{ color: c, backgroundColor: `${c}15` }}
+      style={{ color: color, backgroundColor: `${color}15` }}
     >
       {trend.charAt(0).toUpperCase() + trend.slice(1)}
     </div>

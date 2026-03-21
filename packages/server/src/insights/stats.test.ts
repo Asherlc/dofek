@@ -48,26 +48,26 @@ d("welchTTest()", () => {
   });
 
   it("returns pValue near 1.0 for identical groups", () => {
-    const a = [10, 10, 10, 10, 10];
-    const b = [10, 10, 10, 10, 10];
-    const result = welchTTest(a, b);
+    const groupA = [10, 10, 10, 10, 10];
+    const groupB = [10, 10, 10, 10, 10];
+    const result = welchTTest(groupA, groupB);
     expect(result.t).toBe(0);
     expect(result.pValue).toBe(1);
   });
 
   it("returns low pValue for clearly different groups", () => {
-    const a = [100, 101, 102, 103, 104, 105, 106, 107, 108, 109];
-    const b = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
-    const result = welchTTest(a, b);
+    const groupA = [100, 101, 102, 103, 104, 105, 106, 107, 108, 109];
+    const groupB = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    const result = welchTTest(groupA, groupB);
     expect(result.pValue).toBeLessThan(0.001);
-    expect(result.t).toBeGreaterThan(0); // a has higher mean
+    expect(result.t).toBeGreaterThan(0); // groupA has higher mean
     expect(result.df).toBeGreaterThan(0);
   });
 
   it("handles groups with zero variance (se=0)", () => {
-    const a = [5, 5, 5];
-    const b = [5, 5, 5];
-    const result = welchTTest(a, b);
+    const groupA = [5, 5, 5];
+    const groupB = [5, 5, 5];
+    const result = welchTTest(groupA, groupB);
     expect(result.pValue).toBe(1);
     expect(result.t).toBe(0);
   });
@@ -84,19 +84,19 @@ d("cohensD()", () => {
   });
 
   it("returns positive d when group a has higher mean", () => {
-    const d = cohensD([10, 11, 12], [1, 2, 3]);
-    expect(d).toBeGreaterThan(0);
+    const effectSize = cohensD([10, 11, 12], [1, 2, 3]);
+    expect(effectSize).toBeGreaterThan(0);
   });
 
   it("returns negative d when group a has lower mean", () => {
-    const d = cohensD([1, 2, 3], [10, 11, 12]);
-    expect(d).toBeLessThan(0);
+    const effectSize = cohensD([1, 2, 3], [10, 11, 12]);
+    expect(effectSize).toBeLessThan(0);
   });
 
   it("returns large d (≈ 2.0+) for well-separated groups", () => {
     // Mean diff = 10, pooled SD ≈ 1.58 → d ≈ 6.3
-    const d = cohensD([10, 11, 12, 13, 14], [0, 1, 2, 3, 4]);
-    expect(Math.abs(d)).toBeGreaterThan(2);
+    const effectSize = cohensD([10, 11, 12, 13, 14], [0, 1, 2, 3, 4]);
+    expect(Math.abs(effectSize)).toBeGreaterThan(2);
   });
 });
 
@@ -122,9 +122,9 @@ d("spearmanCorrelation()", () => {
 
   it("returns rho near 0 for unrelated data", () => {
     // Alternating pattern with no monotonic relationship
-    const x = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    const y = [5, 1, 5, 1, 5, 1, 5, 1, 5, 1];
-    const result = spearmanCorrelation(x, y);
+    const xValues = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    const yValues = [5, 1, 5, 1, 5, 1, 5, 1, 5, 1];
+    const result = spearmanCorrelation(xValues, yValues);
     expect(Math.abs(result.rho)).toBeLessThan(0.5);
   });
 });

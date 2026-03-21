@@ -22,9 +22,9 @@ describe("streamToFile", () => {
   const tmpFiles: string[] = [];
 
   function tmpPath(name: string): string {
-    const p = join(tmpdir(), `server-utils-test-${name}-${Date.now()}`);
-    tmpFiles.push(p);
-    return p;
+    const filePath = join(tmpdir(), `server-utils-test-${name}-${Date.now()}`);
+    tmpFiles.push(filePath);
+    return filePath;
   }
 
   afterEach(async () => {
@@ -68,9 +68,9 @@ describe("assembleChunks", () => {
   const tmpPaths: string[] = [];
 
   function tmpPath(name: string): string {
-    const p = join(tmpdir(), `assemble-test-${name}-${Date.now()}`);
-    tmpPaths.push(p);
-    return p;
+    const filePath = join(tmpdir(), `assemble-test-${name}-${Date.now()}`);
+    tmpPaths.push(filePath);
+    return filePath;
   }
 
   afterEach(async () => {

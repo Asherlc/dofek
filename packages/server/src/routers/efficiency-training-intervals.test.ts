@@ -3,12 +3,12 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const t = initTRPC.context<{ db: unknown; userId: string | null }>().create();
+  const trpc = initTRPC.context<{ db: unknown; userId: string | null }>().create();
   return {
-    router: t.router,
-    protectedProcedure: t.procedure,
-    cachedProtectedQuery: () => t.procedure,
-    cachedProtectedQueryLight: () => t.procedure,
+    router: trpc.router,
+    protectedProcedure: trpc.procedure,
+    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQueryLight: () => trpc.procedure,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -234,9 +234,9 @@ describe("trainingRouter", () => {
 
   describe("nextWorkout", () => {
     function dateDaysAgo(days: number): string {
-      const d = new Date();
-      d.setUTCDate(d.getUTCDate() - days);
-      return d.toISOString().slice(0, 10);
+      const date = new Date();
+      date.setUTCDate(date.getUTCDate() - days);
+      return date.toISOString().slice(0, 10);
     }
 
     it("recommends rest when readiness is low", async () => {

@@ -110,8 +110,8 @@ function computeTsbPerformanceCorrelation(
 }
 
 function pearsonCorrelation(xs: number[], ys: number[]): number {
-  const n = xs.length;
-  if (n === 0) return 0;
+  const count = xs.length;
+  if (count === 0) return 0;
 
   let sumX = 0;
   let sumY = 0;
@@ -119,18 +119,18 @@ function pearsonCorrelation(xs: number[], ys: number[]): number {
   let sumX2 = 0;
   let sumY2 = 0;
 
-  for (let i = 0; i < n; i++) {
-    const x = xs[i] ?? 0;
-    const y = ys[i] ?? 0;
-    sumX += x;
-    sumY += y;
-    sumXY += x * y;
-    sumX2 += x * x;
-    sumY2 += y * y;
+  for (let i = 0; i < count; i++) {
+    const xValue = xs[i] ?? 0;
+    const yValue = ys[i] ?? 0;
+    sumX += xValue;
+    sumY += yValue;
+    sumXY += xValue * yValue;
+    sumX2 += xValue * xValue;
+    sumY2 += yValue * yValue;
   }
 
-  const numerator = n * sumXY - sumX * sumY;
-  const denominator = Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
+  const numerator = count * sumXY - sumX * sumY;
+  const denominator = Math.sqrt((count * sumX2 - sumX * sumX) * (count * sumY2 - sumY * sumY));
 
   if (denominator === 0) return 0;
   return numerator / denominator;

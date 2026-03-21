@@ -172,8 +172,8 @@ export function rampRateColor(rate: number): string {
  */
 export function zScoreToRecoveryScore(zScore: number): number {
   const center = 62;
-  const k = 1.1;
-  const sigmoid = 1 / (1 + Math.exp(-zScore * k));
+  const sigmoidSteepness = 1.1;
+  const sigmoid = 1 / (1 + Math.exp(-zScore * sigmoidSteepness));
   const scaleUp = 100 - center; // 38: maps sigmoid 0.5→1.0 to 62→100
   const scaleDown = center; // 62: maps sigmoid 0.0→0.5 to 0→62
   const score =
