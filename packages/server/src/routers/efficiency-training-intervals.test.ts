@@ -164,8 +164,19 @@ describe("trainingRouter", () => {
       expect(result).toEqual(rows);
     });
 
-    it("returns hours as numeric values", async () => {
-      const rows = [{ week: "2024-01-15", activity_type: "cycling", count: 3, hours: 5.5 }];
+    it("coerces PostgreSQL numeric strings to numbers via Zod schema", async () => {
+      // PostgreSQL ROUND(...)::numeric returns strings like "5.50".
+      // The weeklyVolumeRowSchema uses z.coerce.number() to convert them.
+      const { executeWithSchema } = await import("../lib/typed-sql.ts");
+      const mockExecuteWithSchema = vi.mocked(executeWithSchema);
+
+      mockExecuteWithSchema.mockImplementationOnce(async (_db, schema, query) => {
+        const dbTyped: { execute: (q: unknown) => Promise<unknown[]> } = _db;
+        const rawRows = await dbTyped.execute(query);
+        return rawRows.map((row) => schema.parse(row));
+      });
+
+      const rows = [{ week: "2024-01-15", activity_type: "cycling", count: 3, hours: "5.50" }];
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",

@@ -1,4 +1,4 @@
-import { createActivityTypeMapper } from "@dofek/training/training";
+import { createActivityTypeMapper, STRAVA_ACTIVITY_TYPE_MAP } from "@dofek/training/training";
 import { sql } from "drizzle-orm";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
@@ -95,35 +95,6 @@ function isStreamKey(key: string): key is keyof StravaStreamSet {
 // ============================================================
 // Activity type mapping
 // ============================================================
-
-/** Strava sport_type → canonical activity type */
-const STRAVA_ACTIVITY_TYPE_MAP: Record<string, string> = {
-  Ride: "cycling",
-  VirtualRide: "cycling",
-  MountainBikeRide: "cycling",
-  GravelRide: "cycling",
-  EBikeRide: "cycling",
-  Run: "running",
-  VirtualRun: "running",
-  TrailRun: "running",
-  Walk: "walking",
-  Hike: "hiking",
-  Swim: "swimming",
-  WeightTraining: "strength",
-  Yoga: "yoga",
-  Rowing: "rowing",
-  Canoeing: "rowing",
-  Kayaking: "rowing",
-  Elliptical: "elliptical",
-  NordicSki: "skiing",
-  AlpineSki: "skiing",
-  BackcountrySki: "skiing",
-  Snowboard: "skiing",
-  IceSkate: "skating",
-  RollerSki: "skiing",
-  Crossfit: "strength",
-  RockClimbing: "climbing",
-};
 
 const mapStravaType = createActivityTypeMapper(STRAVA_ACTIVITY_TYPE_MAP);
 

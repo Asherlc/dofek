@@ -1,4 +1,7 @@
-import { createActivityTypeMapper } from "@dofek/training/training";
+import {
+  createActivityTypeMapper,
+  RIDE_WITH_GPS_ACTIVITY_TYPE_MAP,
+} from "@dofek/training/training";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
@@ -141,21 +144,6 @@ export function rideWithGpsOAuthConfig(): OAuthConfig | null {
 // ============================================================
 // Activity type mapping
 // ============================================================
-
-/** RideWithGPS activity_type → canonical activity type */
-const RIDE_WITH_GPS_ACTIVITY_TYPE_MAP: Record<string, string> = {
-  cycling: "cycling",
-  mountain_biking: "cycling",
-  road_cycling: "cycling",
-  gravel_cycling: "cycling",
-  cyclocross: "cycling",
-  track_cycling: "cycling",
-  running: "running",
-  trail_running: "running",
-  walking: "walking",
-  hiking: "hiking",
-  swimming: "swimming",
-};
 
 const mapRwgpsType = createActivityTypeMapper(RIDE_WITH_GPS_ACTIVITY_TYPE_MAP);
 

@@ -1,11 +1,13 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import { useRouter } from "expo-router";
 import { useAuth } from "../../lib/auth-context";
 import { colors } from "../../theme";
 import {
   enableBackgroundDelivery,
+  getRequestStatus,
   isAvailable,
+  isBackgroundDeliveryEnabled,
   queryDailyStatistics,
   queryQuantitySamples,
   querySleepSamples,
@@ -86,7 +88,9 @@ export default function HealthScreen() {
   const router = useRouter();
   const { user, serverUrl, logout } = useAuth();
   const [permissionsGranted, setPermissionsGranted] = useState(false);
-  const [backgroundEnabled, setBackgroundEnabled] = useState(false);
+  const [backgroundEnabled, setBackgroundEnabled] = useState(() =>
+    isAvailable() ? isBackgroundDeliveryEnabled() : false,
+  );
   const [status, setStatus] = useState<SyncStatus>({
     lastSync: null,
     syncing: false,
@@ -113,6 +117,19 @@ export default function HealthScreen() {
   const setBackfillComplete = trpc.settings.set.useMutation();
 
   const available = isAvailable();
+
+  useEffect(() => {
+    if (!available) return;
+    getRequestStatus()
+      .then((status) => {
+        if (status === "unnecessary") {
+          setPermissionsGranted(true);
+        }
+      })
+      .catch(() => {
+        // Fall through — show Request Permissions button as fallback
+      });
+  }, [available]);
 
   async function handleRequestPermissions() {
     try {

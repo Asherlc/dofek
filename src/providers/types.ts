@@ -150,6 +150,9 @@ export interface CredentialProvider extends SyncProvider {
   };
 }
 
+/** Provider that uses file import only (Strong CSV, Cronometer CSV) */
+export interface FileImportProvider extends ImportProvider {}
+
 // ============================================================
 // Runtime auth type detection
 // ============================================================
