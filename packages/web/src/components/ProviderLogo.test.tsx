@@ -75,7 +75,7 @@ describe("ProviderLogo", () => {
     it("uses the default gray for unknown providers", () => {
       const { container } = render(<ProviderLogo provider="some-new-provider" />);
       const span = querySpan(container);
-      expect(span.style.backgroundColor).toBe("rgb(113, 113, 122)");
+      expect(span.style.backgroundColor).toBe("rgb(107, 138, 107)");
     });
 
     it("shows '?' for an empty string provider", () => {

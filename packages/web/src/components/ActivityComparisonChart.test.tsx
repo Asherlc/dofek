@@ -69,8 +69,8 @@ describe("ActivityComparisonChart", () => {
   });
 
   it("shows loading state", () => {
-    renderWithUnits(<ActivityComparisonChart data={[]} loading={true} />);
-    expect(screen.getByText(/Loading activity comparison data/)).toBeDefined();
+    const { container } = renderWithUnits(<ActivityComparisonChart data={[]} loading={true} />);
+    expect(container.querySelector(".animate-spin")).not.toBeNull();
   });
 
   it("uses /km pace label for metric", () => {
