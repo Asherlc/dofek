@@ -56,20 +56,20 @@ export class GradientBoostedTrees {
   #config: GradientBoostedTreesConfig;
   #basePrediction = 0;
   #trees: TreeNode[] = [];
-  #_featureImportances: number[] = [];
-  #_rSquared = 0;
-  #_nFeatures = 0;
+  #featureImportances: number[] = [];
+  #rSquared = 0;
+  #nFeatures = 0;
 
   constructor(config?: Partial<GradientBoostedTreesConfig>) {
     this.#config = { ...DEFAULT_CONFIG, ...config };
   }
 
   get featureImportances(): number[] {
-    return this.#_featureImportances;
+    return this.#featureImportances;
   }
 
   get rSquared(): number {
-    return this.#_rSquared;
+    return this.#rSquared;
   }
 
   fit(X: number[][], y: number[]): void {
@@ -80,7 +80,7 @@ export class GradientBoostedTrees {
       throw new Error(`X has ${n} rows but y has ${y.length} elements`);
     }
 
-    this.#_nFeatures = p;
+    this.#nFeatures = p;
     this.#basePrediction = mean(y);
     this.#trees = [];
 
@@ -108,7 +108,7 @@ export class GradientBoostedTrees {
 
     // Normalize feature importances to sum to 1
     const totalImportance = rawImportances.reduce((a, b) => a + b, 0);
-    this.#_featureImportances =
+    this.#featureImportances =
       totalImportance > 0 ? rawImportances.map((v) => v / totalImportance) : rawImportances;
 
     // Compute R² on training data
@@ -119,7 +119,7 @@ export class GradientBoostedTrees {
       ssRes += ((y[i] ?? 0) - (predictions[i] ?? 0)) ** 2;
       ssTot += ((y[i] ?? 0) - yMean) ** 2;
     }
-    this.#_rSquared = ssTot === 0 ? 1 : 1 - ssRes / ssTot;
+    this.#rSquared = ssTot === 0 ? 1 : 1 - ssRes / ssTot;
   }
 
   predict(x: number[]): number {
@@ -135,9 +135,9 @@ export class GradientBoostedTrees {
       config: this.#config,
       basePrediction: this.#basePrediction,
       trees: this.#trees.map(serializeNode),
-      featureImportances: this.#_featureImportances,
-      rSquared: this.#_rSquared,
-      nFeatures: this.#_nFeatures,
+      featureImportances: this.#featureImportances,
+      rSquared: this.#rSquared,
+      nFeatures: this.#nFeatures,
     };
   }
 
@@ -145,9 +145,9 @@ export class GradientBoostedTrees {
     const model = new GradientBoostedTrees(json.config);
     model.#basePrediction = json.basePrediction;
     model.#trees = json.trees.map(deserializeNode);
-    model.#_featureImportances = json.featureImportances;
-    model.#_rSquared = json.rSquared;
-    model.#_nFeatures = json.nFeatures;
+    model.#featureImportances = json.featureImportances;
+    model.#rSquared = json.rSquared;
+    model.#nFeatures = json.nFeatures;
     return model;
   }
 

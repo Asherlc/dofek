@@ -24,10 +24,10 @@ export class LinearRegression {
   adjustedRSquared = 0;
   featureImportances: number[] = [];
 
-  #_featureStdDevs: number[] = [];
-  #_targetStdDev = 0;
-  #_nSamples = 0;
-  #_nFeatures = 0;
+  #featureStdDevs: number[] = [];
+  #targetStdDev = 0;
+  #nSamples = 0;
+  #nFeatures = 0;
 
   fit(X: number[][], y: number[]): void {
     const n = X.length;
@@ -40,8 +40,8 @@ export class LinearRegression {
       throw new Error(`Need more samples (${n}) than features (${p}) for OLS`);
     }
 
-    this.#_nSamples = n;
-    this.#_nFeatures = p;
+    this.#nSamples = n;
+    this.#nFeatures = p;
 
     // Add intercept column (column of 1s prepended)
     const augmented = X.map((row) => [1, ...row]);
@@ -93,16 +93,16 @@ export class LinearRegression {
     this.adjustedRSquared = ssTot === 0 ? 1 : 1 - ((1 - this.rSquared) * (n - 1)) / (n - p - 1);
 
     // Feature importances: standardized coefficients (|βᵢ * σ(xᵢ) / σ(y)|)
-    this.#_featureStdDevs = [];
+    this.#featureStdDevs = [];
     for (let j = 0; j < p; j++) {
       const col = X.map((row) => row[j] ?? 0);
-      this.#_featureStdDevs.push(stdDev(col));
+      this.#featureStdDevs.push(stdDev(col));
     }
-    this.#_targetStdDev = stdDev(y);
+    this.#targetStdDev = stdDev(y);
 
     this.featureImportances = this.coefficients.map((coef, j) => {
-      if (this.#_targetStdDev === 0) return 0;
-      return Math.abs((coef * (this.#_featureStdDevs[j] ?? 0)) / this.#_targetStdDev);
+      if (this.#targetStdDev === 0) return 0;
+      return Math.abs((coef * (this.#featureStdDevs[j] ?? 0)) / this.#targetStdDev);
     });
   }
 
@@ -121,10 +121,10 @@ export class LinearRegression {
       rSquared: this.rSquared,
       adjustedRSquared: this.adjustedRSquared,
       featureImportances: this.featureImportances,
-      featureStdDevs: this.#_featureStdDevs,
-      targetStdDev: this.#_targetStdDev,
-      nSamples: this.#_nSamples,
-      nFeatures: this.#_nFeatures,
+      featureStdDevs: this.#featureStdDevs,
+      targetStdDev: this.#targetStdDev,
+      nSamples: this.#nSamples,
+      nFeatures: this.#nFeatures,
     };
   }
 
@@ -135,10 +135,10 @@ export class LinearRegression {
     model.rSquared = json.rSquared;
     model.adjustedRSquared = json.adjustedRSquared;
     model.featureImportances = json.featureImportances;
-    model.#_featureStdDevs = json.featureStdDevs;
-    model.#_targetStdDev = json.targetStdDev;
-    model.#_nSamples = json.nSamples;
-    model.#_nFeatures = json.nFeatures;
+    model.#featureStdDevs = json.featureStdDevs;
+    model.#targetStdDev = json.targetStdDev;
+    model.#nSamples = json.nSamples;
+    model.#nFeatures = json.nFeatures;
     return model;
   }
 }
