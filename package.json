@@ -78,6 +78,7 @@
   },
   "dependencies": {
     "@dofek/heart-rate-variability": "workspace:*",
+    "@dofek/training": "workspace:*",
     "@bull-board/api": "^6.20.5",
     "@bull-board/express": "^6.20.5",
     "@opentelemetry/exporter-logs-otlp-proto": "^0.213.0",
