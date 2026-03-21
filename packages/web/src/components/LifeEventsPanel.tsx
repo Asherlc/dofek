@@ -83,12 +83,12 @@ export function LifeEventsPanel() {
               className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
                 selectedEvent === e.id
                   ? "bg-blue-900/50 border-blue-700 text-blue-300"
-                  : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700"
+                  : "bg-surface-solid border-border text-muted hover:text-foreground hover:border-border-strong"
               }`}
             >
               <span className="mr-1.5">{categoryIcon(e.category)}</span>
               {e.label}
-              <span className="ml-1.5 text-zinc-600">
+              <span className="ml-1.5 text-dim">
                 {formatDate(e.started_at)}
                 {e.ended_at ? ` — ${formatDate(e.ended_at)}` : e.ongoing ? " — now" : ""}
               </span>
@@ -98,7 +98,7 @@ export function LifeEventsPanel() {
         <button
           type="button"
           onClick={() => setShowForm(!showForm)}
-          className="shrink-0 text-xs px-3 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-300 hover:bg-zinc-700 transition-colors"
+          className="shrink-0 text-xs px-3 py-1.5 rounded-lg bg-accent/10 border border-border-strong text-foreground hover:bg-surface-hover transition-colors"
         >
           + Add event
         </button>
@@ -159,10 +159,10 @@ function AddEventForm({
   const [eventType, setEventType] = useState<"point" | "range" | "ongoing">("point");
 
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4 space-y-3">
+    <div className="card p-4 space-y-3">
       <div className="grid grid-cols-2 gap-3">
         <div className="col-span-2">
-          <label htmlFor="life-event-label" className="text-xs text-zinc-500 block mb-1">
+          <label htmlFor="life-event-label" className="text-xs text-subtle block mb-1">
             Label
           </label>
           <input
@@ -171,12 +171,12 @@ function AddEventForm({
             value={label}
             onChange={(e) => setLabel(e.target.value)}
             placeholder="e.g., Started Whole 30, Got injured, Started creatine"
-            className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500"
+            className="w-full bg-accent/10 border border-border-strong rounded px-3 py-1.5 text-sm text-foreground placeholder:text-dim focus:outline-none focus:border-accent"
           />
         </div>
 
         <div>
-          <span className="text-xs text-zinc-500 block mb-1">Type</span>
+          <span className="text-xs text-subtle block mb-1">Type</span>
           <div className="flex gap-2">
             {(["point", "range", "ongoing"] as const).map((t) => (
               <button
@@ -185,8 +185,8 @@ function AddEventForm({
                 onClick={() => setEventType(t)}
                 className={`text-xs px-2.5 py-1 rounded border transition-colors ${
                   eventType === t
-                    ? "bg-zinc-700 border-zinc-600 text-zinc-100"
-                    : "bg-zinc-800 border-zinc-700 text-zinc-500 hover:text-zinc-300"
+                    ? "bg-accent/15 border-border-strong text-foreground"
+                    : "bg-accent/10 border-border-strong text-subtle hover:text-foreground"
                 }`}
               >
                 {t === "point" ? "One-time" : t === "range" ? "Date range" : "Ongoing"}
@@ -196,14 +196,14 @@ function AddEventForm({
         </div>
 
         <div>
-          <label htmlFor="life-event-category" className="text-xs text-zinc-500 block mb-1">
+          <label htmlFor="life-event-category" className="text-xs text-subtle block mb-1">
             Category
           </label>
           <select
             id="life-event-category"
             value={category}
             onChange={(e) => setCategory(e.target.value)}
-            className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-zinc-500"
+            className="w-full bg-accent/10 border border-border-strong rounded px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-accent"
           >
             <option value="">None</option>
             {CATEGORIES.map((c) => (
@@ -215,7 +215,7 @@ function AddEventForm({
         </div>
 
         <div>
-          <label htmlFor="life-event-start-date" className="text-xs text-zinc-500 block mb-1">
+          <label htmlFor="life-event-start-date" className="text-xs text-subtle block mb-1">
             Start date
           </label>
           <input
@@ -223,13 +223,13 @@ function AddEventForm({
             type="date"
             value={startedAt}
             onChange={(e) => setStartedAt(e.target.value)}
-            className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-zinc-500"
+            className="w-full bg-accent/10 border border-border-strong rounded px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-accent"
           />
         </div>
 
         {eventType === "range" && (
           <div>
-            <label htmlFor="life-event-end-date" className="text-xs text-zinc-500 block mb-1">
+            <label htmlFor="life-event-end-date" className="text-xs text-subtle block mb-1">
               End date
             </label>
             <input
@@ -237,13 +237,13 @@ function AddEventForm({
               type="date"
               value={endedAt}
               onChange={(e) => setEndedAt(e.target.value)}
-              className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-zinc-500"
+              className="w-full bg-accent/10 border border-border-strong rounded px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-accent"
             />
           </div>
         )}
 
         <div className="col-span-2">
-          <label htmlFor="life-event-notes" className="text-xs text-zinc-500 block mb-1">
+          <label htmlFor="life-event-notes" className="text-xs text-subtle block mb-1">
             Notes (optional)
           </label>
           <input
@@ -252,7 +252,7 @@ function AddEventForm({
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             placeholder="Any additional context"
-            className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500"
+            className="w-full bg-accent/10 border border-border-strong rounded px-3 py-1.5 text-sm text-foreground placeholder:text-dim focus:outline-none focus:border-accent"
           />
         </div>
       </div>
@@ -261,7 +261,7 @@ function AddEventForm({
         <button
           type="button"
           onClick={onCancel}
-          className="text-xs px-3 py-1.5 rounded text-zinc-500 hover:text-zinc-300 transition-colors"
+          className="text-xs px-3 py-1.5 rounded text-subtle hover:text-foreground transition-colors"
         >
           Cancel
         </button>
@@ -304,7 +304,7 @@ function EventAnalysis({
 }) {
   const { unitSystem } = useUnitSystem();
   if (loading) {
-    return <div className="h-32 rounded-lg bg-zinc-800 animate-pulse" />;
+    return <div className="h-32 rounded-lg bg-skeleton animate-pulse" />;
   }
   if (!analysis) return null;
 
@@ -333,13 +333,13 @@ function EventAnalysis({
   const periodLabel = event.ended_at ? "During" : event.ongoing ? "Since" : "After";
 
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4 space-y-4">
+    <div className="card p-4 space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-medium text-zinc-200">
+          <h3 className="text-sm font-medium text-foreground">
             {categoryIcon(event.category)} {event.label}
           </h3>
-          <p className="text-xs text-zinc-500 mt-0.5">
+          <p className="text-xs text-subtle mt-0.5">
             {formatDate(event.started_at)}
             {event.ended_at
               ? ` — ${formatDate(event.ended_at)}`
@@ -351,16 +351,14 @@ function EventAnalysis({
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5">
-            <span className="text-xs text-zinc-600">Window:</span>
+            <span className="text-xs text-dim">Window:</span>
             {[14, 30, 60, 90].map((d) => (
               <button
                 key={d}
                 type="button"
                 onClick={() => onWindowChange(d)}
                 className={`text-xs px-2 py-0.5 rounded transition-colors ${
-                  windowDays === d
-                    ? "bg-zinc-700 text-zinc-200"
-                    : "text-zinc-600 hover:text-zinc-400"
+                  windowDays === d ? "bg-accent/15 text-foreground" : "text-dim hover:text-muted"
                 }`}
               >
                 {d}d
@@ -448,7 +446,7 @@ function EventAnalysis({
         />
       </div>
 
-      <p className="text-[11px] text-zinc-600">
+      <p className="text-[11px] text-dim">
         Comparing {windowDays} days before vs. {periodLabel.toLowerCase()}. Before:{" "}
         {before.metrics?.days ?? 0} days of metrics, {before.sleep?.nights ?? 0} nights of sleep,{" "}
         {before.body?.measurements ?? 0} body measurements.
@@ -482,18 +480,16 @@ function CompareCard({
   const improved = diff != null ? (lowerBetter ? diff < 0 : diff > 0) : null;
 
   return (
-    <div className="rounded border border-zinc-800 bg-zinc-950 p-2.5">
-      <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-1.5">{label}</p>
+    <div className="rounded border border-border bg-page p-2.5">
+      <p className="text-[10px] text-dim uppercase tracking-wider mb-1.5">{label}</p>
       <div className="flex items-baseline gap-2">
         <div className="text-center">
-          <p className="text-[10px] text-zinc-600">Before</p>
-          <p className="text-sm tabular-nums text-zinc-400">
-            {before != null ? fmtNum(before) : "—"}
-          </p>
+          <p className="text-[10px] text-dim">Before</p>
+          <p className="text-sm tabular-nums text-muted">{before != null ? fmtNum(before) : "—"}</p>
         </div>
         <div className="text-center">
-          <p className="text-[10px] text-zinc-600">{periodLabel}</p>
-          <p className="text-sm tabular-nums text-zinc-100 font-medium">
+          <p className="text-[10px] text-dim">{periodLabel}</p>
+          <p className="text-sm tabular-nums text-foreground font-medium">
             {after != null ? fmtNum(after) : "—"}
           </p>
         </div>
@@ -508,7 +504,7 @@ function CompareCard({
           </span>
         )}
       </div>
-      {unit && <p className="text-[10px] text-zinc-700 mt-0.5">{unit}</p>}
+      {unit && <p className="text-[10px] text-dim mt-0.5">{unit}</p>}
     </div>
   );
 }

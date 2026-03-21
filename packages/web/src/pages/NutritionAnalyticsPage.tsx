@@ -42,11 +42,11 @@ export function NutritionAnalyticsPage() {
 
       {/* Macro summary */}
       {latestProteinPerKg != null && (
-        <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+        <div className="card p-4">
           <div className="flex items-baseline gap-2">
-            <span className="text-xl font-bold text-zinc-100">{latestProteinPerKg}</span>
-            <span className="text-sm text-zinc-400">g protein / kg bodyweight</span>
-            <span className="text-xs text-zinc-600">
+            <span className="text-xl font-bold text-foreground">{latestProteinPerKg}</span>
+            <span className="text-sm text-muted">g protein / kg bodyweight</span>
+            <span className="text-xs text-dim">
               {latestProteinPerKg >= 1.6
                 ? "(meets muscle-building target)"
                 : latestProteinPerKg >= 1.2
@@ -82,11 +82,11 @@ function Section({
   return (
     <section>
       <div className="mb-1 flex items-center gap-2">
-        <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider">{title}</h2>
+        <h2 className="text-sm font-medium text-muted uppercase tracking-wider">{title}</h2>
         <ChartDescriptionTooltip description={description} />
       </div>
-      {subtitle && <p className="text-xs text-zinc-600 mb-4">{subtitle}</p>}
-      <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4" title={description}>
+      {subtitle && <p className="text-xs text-dim mb-4">{subtitle}</p>}
+      <div className="card p-2 sm:p-4" title={description}>
         {children}
       </div>
     </section>

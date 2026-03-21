@@ -1,17 +1,34 @@
 /**
- * Shared color palette for the dark Whoop-style UI.
+ * Shared color palette for the sage/mint light UI.
  *
  * Re-exported from @dofek/scoring — this module composes the shared semantic
  * color tokens into the flat `colors` object that iOS components expect.
  */
 import { chartColors, statusColors, surfaceColors, textColors } from "@dofek/scoring/colors";
+import {
+  duration,
+  easing,
+  fontFamily,
+  fontSize,
+  fontWeight,
+  radius,
+  spacing,
+} from "@dofek/scoring/tokens";
 
 export { chartColors, statusColors, surfaceColors, textColors };
+export { duration, easing, fontSize, fontWeight, radius, spacing };
+
+/** Font families — maps shared token names to platform-specific names */
+export const fonts = {
+  body: fontFamily.body,
+  /** DM Mono ships as "DMMono" in Expo font assets (no space in filename) */
+  mono: "DMMono",
+} as const;
 
 export const colors = {
-  /** Pure black background */
+  /** Light sage background */
   background: surfaceColors.background,
-  /** Elevated surface (cards) */
+  /** Elevated surface (cards) — opaque equivalent for RN (no backdrop-filter) */
   surface: surfaceColors.surface,
   /** Subtle divider / secondary surface */
   surfaceSecondary: surfaceColors.surfaceSecondary,

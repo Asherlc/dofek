@@ -14,6 +14,7 @@ import { SmoothedWeightChart } from "../components/SmoothedWeightChart.tsx";
 import { StressChart } from "../components/StressChart.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { TimeSeriesChart } from "../components/TimeSeriesChart.tsx";
+import { chartColors } from "../lib/chartTheme.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitSystem } from "../lib/unitContext.ts";
 import {
@@ -77,7 +78,7 @@ function buildSkinTempSeries(
       d.date,
       d.skin_temp_c != null ? convertTemperature(d.skin_temp_c, unitSystem) : null,
     ]),
-    color: "#f59e0b",
+    color: chartColors.amber,
     yAxisIndex: 1 as const,
   };
 }
@@ -104,7 +105,7 @@ export function BodyPage() {
     () => ({
       name: "SpO2",
       data: metrics.map((d): [string, number | null] => [d.date, d.spo2_avg]),
-      color: "#3b82f6",
+      color: chartColors.blue,
       areaStyle: true,
     }),
     [metrics],

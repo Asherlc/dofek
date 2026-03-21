@@ -154,7 +154,7 @@ export function NutritionPage() {
             <button
               type="button"
               onClick={goToPreviousDay}
-              className="rounded-lg p-2 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+              className="rounded-lg p-2 text-muted hover:text-foreground hover:bg-accent/10 transition-colors"
               aria-label="Previous day"
             >
               <svg
@@ -175,7 +175,7 @@ export function NutritionPage() {
             <button
               type="button"
               onClick={goToNextDay}
-              className="rounded-lg p-2 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+              className="rounded-lg p-2 text-muted hover:text-foreground hover:bg-accent/10 transition-colors"
               aria-label="Next day"
             >
               <svg
@@ -197,7 +197,7 @@ export function NutritionPage() {
             <button
               type="button"
               onClick={goToToday}
-              className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:bg-zinc-800 transition-colors"
+              className="rounded-lg border border-border-strong px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent/10 transition-colors"
             >
               Today
             </button>
@@ -207,24 +207,24 @@ export function NutritionPage() {
         <SlackInstallBanner />
 
         {/* Daily summary */}
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5 space-y-5">
+        <div className="rounded-xl border border-border bg-surface-solid p-5 space-y-5">
           <div className="space-y-2">
             <div className="flex items-baseline justify-between">
-              <span className="text-sm font-medium text-zinc-400">Calories</span>
-              <span className="text-sm text-zinc-400 tabular-nums">
-                <span className="text-xl font-semibold text-zinc-100">
+              <span className="text-sm font-medium text-muted">Calories</span>
+              <span className="text-sm text-muted tabular-nums">
+                <span className="text-xl font-semibold text-foreground">
                   {dailyTotals.totalCalories}
                 </span>
                 <span className="ml-1">/ {calorieGoal} kcal</span>
               </span>
             </div>
-            <div className="h-3 rounded-full bg-zinc-800 overflow-hidden">
+            <div className="h-3 rounded-full bg-accent/10 overflow-hidden">
               <div
                 className={`h-full rounded-full ${calorieColor} transition-all duration-300`}
                 style={{ width: `${calorieProgress}%` }}
               />
             </div>
-            <div className="text-xs text-zinc-500 tabular-nums">
+            <div className="text-xs text-subtle tabular-nums">
               {calorieGoal - dailyTotals.totalCalories > 0
                 ? `${calorieGoal - dailyTotals.totalCalories} kcal remaining`
                 : `${dailyTotals.totalCalories - calorieGoal} kcal over goal`}
@@ -270,20 +270,20 @@ export function NutritionPage() {
             return (
               <div
                 key={mealType}
-                className="rounded-xl border border-zinc-800 bg-zinc-900 overflow-hidden"
+                className="rounded-xl border border-border bg-surface-solid overflow-hidden"
               >
                 {/* Meal header */}
                 <button
                   type="button"
                   onClick={() => toggleMeal(mealType)}
-                  className="w-full flex items-center justify-between px-5 py-3 hover:bg-zinc-800/50 transition-colors"
+                  className="w-full flex items-center justify-between px-5 py-3 hover:bg-surface-hover transition-colors"
                 >
                   <div className="flex items-center gap-2">
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
                       viewBox="0 0 20 20"
                       fill="currentColor"
-                      className={`w-4 h-4 text-zinc-500 transition-transform ${isCollapsed ? "" : "rotate-90"}`}
+                      className={`w-4 h-4 text-subtle transition-transform ${isCollapsed ? "" : "rotate-90"}`}
                     >
                       <title>Toggle meal section</title>
                       <path
@@ -292,23 +292,23 @@ export function NutritionPage() {
                         clipRule="evenodd"
                       />
                     </svg>
-                    <span className="text-sm font-medium text-zinc-200">
+                    <span className="text-sm font-medium text-foreground">
                       {MEAL_LABELS[mealType]}
                     </span>
                     {mealEntries.length > 0 && (
-                      <span className="text-xs text-zinc-500">
+                      <span className="text-xs text-subtle">
                         ({mealEntries.length} {mealEntries.length === 1 ? "item" : "items"})
                       </span>
                     )}
                   </div>
-                  <span className="text-sm text-zinc-400 tabular-nums">
+                  <span className="text-sm text-muted tabular-nums">
                     {mealCalories > 0 ? `${mealCalories} kcal` : ""}
                   </span>
                 </button>
 
                 {/* Meal entries */}
                 {!isCollapsed && (
-                  <div className="border-t border-zinc-800">
+                  <div className="border-t border-border">
                     {mealEntries.length > 0 ? (
                       <div className="px-2 py-1">
                         {mealEntries.map((entry) => (
@@ -323,15 +323,15 @@ export function NutritionPage() {
                         ))}
                       </div>
                     ) : (
-                      <div className="px-5 py-4 text-sm text-zinc-600">No entries yet</div>
+                      <div className="px-5 py-4 text-sm text-dim">No entries yet</div>
                     )}
 
                     {/* Add food button */}
-                    <div className="border-t border-zinc-800 px-5 py-2">
+                    <div className="border-t border-border px-5 py-2">
                       <button
                         type="button"
                         onClick={() => openAddFood(mealType)}
-                        className="text-sm text-emerald-400 hover:text-emerald-300 transition-colors"
+                        className="text-sm text-accent hover:text-accent-secondary transition-colors"
                       >
                         + Add food
                       </button>

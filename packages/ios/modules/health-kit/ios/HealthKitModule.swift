@@ -16,18 +16,19 @@ public class HealthKitModule: Module {
                 promise.resolve("unavailable")
                 return
             }
-            self.healthStore.statusForAuthorizationRequest(toShare: writeTypes, read: readTypes) { status, error in
-                if let error = error {
+            Task {
+                do {
+                    let status = try await self.healthStore.statusForAuthorizationRequest(toShare: writeTypes, read: readTypes)
+                    switch status {
+                    case .unnecessary:
+                        promise.resolve("unnecessary")
+                    case .shouldRequest:
+                        promise.resolve("shouldRequest")
+                    default:
+                        promise.resolve("unknown")
+                    }
+                } catch {
                     promise.reject("HEALTHKIT_STATUS_ERROR", error.localizedDescription)
-                    return
-                }
-                switch status {
-                case .unnecessary:
-                    promise.resolve("unnecessary")
-                case .shouldRequest:
-                    promise.resolve("shouldRequest")
-                default:
-                    promise.resolve("unknown")
                 }
             }
         }
@@ -37,11 +38,12 @@ public class HealthKitModule: Module {
                 promise.resolve(false)
                 return
             }
-            self.healthStore.requestAuthorization(toShare: writeTypes, read: readTypes) { success, error in
-                if let error = error {
+            Task {
+                do {
+                    try await self.healthStore.requestAuthorization(toShare: writeTypes, read: readTypes)
+                    promise.resolve(true)
+                } catch {
                     promise.reject("HEALTHKIT_AUTH_ERROR", error.localizedDescription)
-                } else {
-                    promise.resolve(success)
                 }
             }
         }
@@ -186,11 +188,12 @@ public class HealthKitModule: Module {
             let quantity = HKQuantity(unit: .kilocalorie(), doubleValue: calories)
             let sample = HKQuantitySample(type: type, quantity: quantity, start: date, end: date)
 
-            self.healthStore.save(sample) { success, error in
-                if let error = error {
+            Task {
+                do {
+                    try await self.healthStore.save(sample)
+                    promise.resolve(true)
+                } catch {
                     promise.reject("WRITE_ERROR", error.localizedDescription)
-                } else {
-                    promise.resolve(success)
                 }
             }
         }
@@ -316,14 +319,13 @@ public class HealthKitModule: Module {
                 return
             }
 
-            self.healthStore.enableBackgroundDelivery(for: sampleType, frequency: .hourly) { success, error in
-                if let error = error {
+            Task {
+                do {
+                    try await self.healthStore.enableBackgroundDelivery(for: sampleType, frequency: .hourly)
+                    UserDefaults.standard.set(true, forKey: "healthkit_background_delivery_enabled")
+                    promise.resolve(true)
+                } catch {
                     promise.reject("BG_DELIVERY_ERROR", error.localizedDescription)
-                } else {
-                    if success {
-                        UserDefaults.standard.set(true, forKey: "healthkit_background_delivery_enabled")
-                    }
-                    promise.resolve(success)
                 }
             }
         }

@@ -1,21 +1,28 @@
 import type { AerobicEfficiencyActivity } from "dofek-server/types";
-import ReactECharts from "echarts-for-react";
-import { createChartOptions } from "../lib/chart-theme.ts";
+import {
+  chartColors,
+  chartThemeColors,
+  dofekAxis,
+  dofekGrid,
+  dofekLegend,
+  dofekSeries,
+  dofekTooltip,
+} from "../lib/chartTheme.ts";
 import { formatNumber } from "../lib/format.ts";
-import { ChartContainer } from "./ChartContainer.tsx";
+import { DofekChart } from "./DofekChart.tsx";
 
 const ACTIVITY_COLORS: Record<string, string> = {
-  cycling: "#f97316",
-  running: "#22c55e",
-  walking: "#8b5cf6",
-  swimming: "#3b82f6",
+  cycling: chartColors.orange,
+  running: chartColors.green,
+  walking: chartColors.purple,
+  swimming: chartColors.blue,
   hiking: "#a3e635",
   yoga: "#c084fc",
   strength_training: "#ef4444",
 };
 
 function getActivityColor(type: string): string {
-  return ACTIVITY_COLORS[type.toLowerCase()] ?? "#71717a";
+  return ACTIVITY_COLORS[type.toLowerCase()] ?? chartThemeColors.axisLabel;
 }
 
 interface AerobicEfficiencyChartProps {
@@ -54,36 +61,23 @@ export function AerobicEfficiencyChart({
   maxHr,
   loading,
 }: AerobicEfficiencyChartProps) {
-  if (!loading && activities.length === 0) {
-    return (
-      <ChartContainer
-        loading={false}
-        data={activities}
-        height={280}
-        emptyMessage="No activities with sufficient Zone 2 power + heart rate data"
-      >
-        <div />
-      </ChartContainer>
-    );
-  }
-
   // Group by activity type for coloring
   const typeSet = [...new Set(activities.map((a) => a.activityType))];
 
   const scatterSeries = typeSet.map((type) => ({
-    name: type,
-    type: "scatter" as const,
-    data: activities
-      .filter((a) => a.activityType === type)
-      .map((a) => ({
-        value: [a.date, a.efficiencyFactor],
-        name: a.name,
-        avgPower: a.avgPowerZ2,
-        avgHr: a.avgHrZ2,
-        z2Samples: a.z2Samples,
-      })),
-    symbolSize: 10,
-    itemStyle: { color: getActivityColor(type) },
+    ...dofekSeries.scatter(
+      type,
+      activities
+        .filter((a) => a.activityType === type)
+        .map((a) => ({
+          value: [a.date, a.efficiencyFactor],
+          name: a.name,
+          avgPower: a.avgPowerZ2,
+          avgHr: a.avgHrZ2,
+          z2Samples: a.z2Samples,
+        })),
+      { color: getActivityColor(type), symbolSize: 10, itemStyle: { opacity: 1 } },
+    ),
   }));
 
   // Compute trend line across all activities
@@ -103,9 +97,9 @@ export function AerobicEfficiencyChart({
 
   const trendDirection = slope > 0 ? "improving" : slope < 0 ? "declining" : "flat";
 
-  const option = createChartOptions({
-    grid: { top: 40, right: 20, bottom: 30, left: 55 },
-    tooltip: {
+  const option = {
+    grid: dofekGrid("single", { top: 40, left: 55 }),
+    tooltip: dofekTooltip({
       trigger: "item",
       formatter: (params: Record<string, unknown>) => {
         const data = params.data;
@@ -133,56 +127,45 @@ export function AerobicEfficiencyChart({
           `Zone 2 time: ${mins} min`,
         ].join("<br/>");
       },
-    },
-    xAxis: {
-      type: "time",
-      splitLine: { show: false },
-    },
-    yAxis: {
-      type: "value",
-      name: "Efficiency Factor (W/bpm)",
-      axisLine: { show: true, lineStyle: { color: "#3f3f46" } },
-    },
-    legend: {
-      top: 0,
-    },
+    }),
+    xAxis: dofekAxis.time(),
+    yAxis: dofekAxis.value({ name: "Efficiency Factor (W/bpm)" }),
+    legend: dofekLegend(true),
     series: [
       ...scatterSeries,
       {
-        name: "Trend",
-        type: "line",
-        data: trendData,
-        symbol: "none",
-        lineStyle: { color: "#a1a1aa", width: 2, type: "dashed" as const },
-        itemStyle: { color: "#a1a1aa" },
+        ...dofekSeries.line("Trend", trendData, {
+          color: chartThemeColors.legendText,
+          smooth: false,
+          lineStyle: { type: "dashed" },
+        }),
         tooltip: { show: false },
       },
     ],
-  });
+  };
 
   return (
-    <ChartContainer
-      loading={!!loading}
-      data={activities}
-      height={280}
-      emptyMessage="No activities with sufficient Zone 2 power + heart rate data"
-    >
-      <div>
-        <h3 className="text-xs font-medium text-zinc-500 mb-2">
-          Aerobic Efficiency (Power / Heart Rate in Zone 2)
-          {maxHr && <span className="text-zinc-700 ml-2">(max heart rate: {maxHr} bpm)</span>}
-          <span
-            className={`ml-2 ${trendDirection === "improving" ? "text-green-500" : trendDirection === "declining" ? "text-red-400" : "text-zinc-500"}`}
-          >
-            Trend: {trendDirection}
-          </span>
-        </h3>
-        <ReactECharts option={option} style={{ height: 280 }} notMerge={true} />
-        <p className="text-xs text-zinc-700 mt-1">
-          Higher efficiency = better aerobic fitness. Each dot is one activity with 5+ min of Zone 2
-          data (60-70% max heart rate).
-        </p>
-      </div>
-    </ChartContainer>
+    <div>
+      <h3 className="text-xs font-medium text-subtle mb-2">
+        Aerobic Efficiency (Power / Heart Rate in Zone 2)
+        {maxHr && <span className="text-dim ml-2">(max heart rate: {maxHr} bpm)</span>}
+        <span
+          className={`ml-2 ${trendDirection === "improving" ? "text-green-500" : trendDirection === "declining" ? "text-red-400" : "text-subtle"}`}
+        >
+          Trend: {trendDirection}
+        </span>
+      </h3>
+      <DofekChart
+        option={option}
+        loading={loading}
+        empty={activities.length === 0}
+        height={280}
+        emptyMessage="No activities with sufficient Zone 2 power + heart rate data"
+      />
+      <p className="text-xs text-dim mt-1">
+        Higher efficiency = better aerobic fitness. Each dot is one activity with 5+ min of Zone 2
+        data (60-70% max heart rate).
+      </p>
+    </div>
   );
 }
