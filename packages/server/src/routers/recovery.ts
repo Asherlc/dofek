@@ -1,3 +1,5 @@
+import { rawLoadToStrain } from "@dofek/scoring/scoring";
+import { selectRecentDailyLoad } from "@dofek/training/training";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
@@ -15,9 +17,19 @@ export interface HrvVariabilityRow {
 export interface WorkloadRatioRow {
   date: string;
   dailyLoad: number;
+  /** Strain score on 0-21 scale, derived from dailyLoad via rawLoadToStrain */
+  strain: number;
   acuteLoad: number;
   chronicLoad: number;
   workloadRatio: number | null;
+}
+
+export interface WorkloadRatioResult {
+  timeSeries: WorkloadRatioRow[];
+  /** Strain from the most recent day with positive load (or latest day if all zero) */
+  displayedStrain: number;
+  /** Date of the displayed strain value */
+  displayedDate: string | null;
 }
 
 export interface SleepNightlyRow {
@@ -189,7 +201,7 @@ export const recoveryRouter = router({
    */
   workloadRatio: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({ days: z.number().default(90) }))
-    .query(async ({ ctx, input }): Promise<WorkloadRatioRow[]> => {
+    .query(async ({ ctx, input }): Promise<WorkloadRatioResult> => {
       const queryDays = input.days + 28;
       const workloadRowSchema = z.object({
         date: dateStringSchema,
@@ -256,14 +268,25 @@ export const recoveryRouter = router({
             ORDER BY date ASC`,
       );
 
-      return rows.map((row) => ({
-        date: row.date,
-        dailyLoad: Math.round(Number(row.daily_load) * 10) / 10,
-        acuteLoad: Math.round(Number(row.acute_load) * 10) / 10,
-        chronicLoad: Math.round(Number(row.chronic_load) * 10) / 10,
-        workloadRatio:
-          row.workload_ratio != null ? Math.round(Number(row.workload_ratio) * 100) / 100 : null,
-      }));
+      const timeSeries = rows.map((row) => {
+        const dailyLoad = Math.round(Number(row.daily_load) * 10) / 10;
+        return {
+          date: row.date,
+          dailyLoad,
+          strain: rawLoadToStrain(dailyLoad),
+          acuteLoad: Math.round(Number(row.acute_load) * 10) / 10,
+          chronicLoad: Math.round(Number(row.chronic_load) * 10) / 10,
+          workloadRatio:
+            row.workload_ratio != null ? Math.round(Number(row.workload_ratio) * 100) / 100 : null,
+        };
+      });
+
+      const displayed = selectRecentDailyLoad(timeSeries);
+      return {
+        timeSeries,
+        displayedStrain: displayed?.strain ?? 0,
+        displayedDate: displayed?.date ?? null,
+      };
     }),
 
   /**
