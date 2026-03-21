@@ -373,6 +373,11 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
       res.status(401).json({ error: "User not found" });
       return;
     }
+    const userAgent = req.headers["user-agent"] ?? "unknown";
+    const isMobile = userAgent.includes("Darwin") || userAgent.includes("CFNetwork");
+    if (isMobile) {
+      logger.info(`[auth] /me resolved userId=${session.userId} (mobile)`);
+    }
     res.json(rows[0]);
   });
 
