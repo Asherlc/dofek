@@ -31,10 +31,10 @@ vi.mock("../lib/endurance-types.ts", () => ({
   enduranceTypeFilter: () => ({ sql: "true" }),
 }));
 
-vi.mock("../lib/math.ts", () => ({
+vi.mock("@dofek/stats/correlation", () => ({
   linearRegression: vi.fn((xs: number[], ys: number[]) => {
     const n = xs.length;
-    if (n < 2) return { slope: 0, intercept: 0, r2: 0 };
+    if (n < 2) return { slope: 0, intercept: 0, rSquared: 0 };
     let sumX = 0,
       sumY = 0,
       sumXY = 0,
@@ -48,16 +48,16 @@ vi.mock("../lib/math.ts", () => ({
       sumX2 += x * x;
     }
     const denom = n * sumX2 - sumX * sumX;
-    if (denom === 0) return { slope: 0, intercept: 0, r2: 0 };
+    if (denom === 0) return { slope: 0, intercept: 0, rSquared: 0 };
     const slope = (n * sumXY - sumX * sumY) / denom;
     const intercept = (sumY - slope * sumX) / n;
-    return { slope, intercept, r2: 0.8 };
+    return { slope, intercept, rSquared: 0.8 };
   }),
-  fitCriticalPower: vi.fn(() => ({ cp: 250, wPrime: 20000, r2: 0.99 })),
 }));
 
-vi.mock("../lib/duration-labels.ts", () => ({
+vi.mock("@dofek/training/power-analysis", () => ({
   DURATION_LABELS: { 60: "1 min", 300: "5 min", 1200: "20 min" },
+  fitCriticalPower: vi.fn(() => ({ cp: 250, wPrime: 20000, r2: 0.99 })),
 }));
 
 import { nutritionAnalyticsRouter } from "./nutrition-analytics.ts";

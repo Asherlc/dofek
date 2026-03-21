@@ -27,7 +27,7 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
 });
 
 const mockLinearRegression = vi.fn();
-vi.mock("../lib/math.ts", () => ({
+vi.mock("@dofek/stats/correlation", () => ({
   linearRegression: (...args: unknown[]) => mockLinearRegression(...args),
 }));
 
@@ -212,7 +212,7 @@ describe("buildTssModel", () => {
   });
 
   it("returns null when r2 below 0.3", () => {
-    mockLinearRegression.mockReturnValue({ slope: 1, intercept: 0, r2: 0.2 });
+    mockLinearRegression.mockReturnValue({ slope: 1, intercept: 0, rSquared: 0.2 });
     const paired = Array.from({ length: 10 }, (_, i) => ({
       trimp: i * 10 + 10,
       powerTss: Math.random() * 100,
@@ -222,31 +222,31 @@ describe("buildTssModel", () => {
 
   it("returns null when r2 exactly 0.3 threshold boundary", () => {
     // r2 < 0.3 → null, so r2 = 0.29 → null, r2 = 0.3 → valid (>= 0.3)
-    mockLinearRegression.mockReturnValue({ slope: 1, intercept: 0, r2: 0.29 });
+    mockLinearRegression.mockReturnValue({ slope: 1, intercept: 0, rSquared: 0.29 });
     const paired = Array.from({ length: 10 }, () => ({ trimp: 50, powerTss: 60 }));
     expect(buildTssModel(paired)).toBeNull();
   });
 
   it("returns model when r2 exactly 0.3", () => {
-    mockLinearRegression.mockReturnValue({ slope: 1, intercept: 0, r2: 0.3 });
+    mockLinearRegression.mockReturnValue({ slope: 1, intercept: 0, rSquared: 0.3 });
     const paired = Array.from({ length: 10 }, () => ({ trimp: 50, powerTss: 60 }));
     expect(buildTssModel(paired)).not.toBeNull();
   });
 
   it("returns null when slope is 0", () => {
-    mockLinearRegression.mockReturnValue({ slope: 0, intercept: 50, r2: 0.5 });
+    mockLinearRegression.mockReturnValue({ slope: 0, intercept: 50, rSquared: 0.5 });
     const paired = Array.from({ length: 10 }, () => ({ trimp: 50, powerTss: 50 }));
     expect(buildTssModel(paired)).toBeNull();
   });
 
   it("returns null when slope is negative", () => {
-    mockLinearRegression.mockReturnValue({ slope: -0.5, intercept: 100, r2: 0.5 });
+    mockLinearRegression.mockReturnValue({ slope: -0.5, intercept: 100, rSquared: 0.5 });
     const paired = Array.from({ length: 10 }, () => ({ trimp: 50, powerTss: 50 }));
     expect(buildTssModel(paired)).toBeNull();
   });
 
   it("returns model when r2 >= 0.3 and slope > 0", () => {
-    mockLinearRegression.mockReturnValue({ slope: 0.8, intercept: 5, r2: 0.7 });
+    mockLinearRegression.mockReturnValue({ slope: 0.8, intercept: 5, rSquared: 0.7 });
     const paired = Array.from({ length: 10 }, (_, i) => ({
       trimp: i * 10 + 10,
       powerTss: i * 8 + 13,
@@ -256,7 +256,7 @@ describe("buildTssModel", () => {
   });
 
   it("passes correct xs and ys to linearRegression", () => {
-    mockLinearRegression.mockReturnValue({ slope: 1, intercept: 0, r2: 0.9 });
+    mockLinearRegression.mockReturnValue({ slope: 1, intercept: 0, rSquared: 0.9 });
     const paired = Array.from({ length: 10 }, (_, i) => ({
       trimp: (i + 1) * 10,
       powerTss: (i + 1) * 12,
@@ -269,7 +269,7 @@ describe("buildTssModel", () => {
   });
 
   it("returns model with exactly 10 data points", () => {
-    mockLinearRegression.mockReturnValue({ slope: 1.2, intercept: 10, r2: 0.85 });
+    mockLinearRegression.mockReturnValue({ slope: 1.2, intercept: 10, rSquared: 0.85 });
     const paired = Array.from({ length: 10 }, (_, i) => ({
       trimp: i * 10 + 10,
       powerTss: i * 12 + 22,
@@ -489,7 +489,7 @@ describe("pmcRouter", () => {
     });
 
     it("computes FTP from NP data and uses power TSS", async () => {
-      mockLinearRegression.mockReturnValue({ slope: 0.8, intercept: 5, r2: 0.7 });
+      mockLinearRegression.mockReturnValue({ slope: 0.8, intercept: 5, rSquared: 0.7 });
       const today = new Date();
       const execute = vi.fn();
 

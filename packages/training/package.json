@@ -5,9 +5,13 @@
   "type": "module",
   "exports": {
     "./training": "./src/training.ts",
-    "./workout-recommendation": "./src/workout-recommendation.ts"
+    "./workout-recommendation": "./src/workout-recommendation.ts",
+    "./training-load": "./src/training-load.ts",
+    "./endurance-types": "./src/endurance-types.ts",
+    "./power-analysis": "./src/power-analysis.ts"
   },
   "dependencies": {
+    "@dofek/stats": "workspace:*",
     "@dofek/zones": "workspace:*"
   }
 }

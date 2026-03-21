@@ -1,8 +1,11 @@
+import {
+  type CriticalPowerModel,
+  DURATION_LABELS,
+  fitCriticalPower,
+} from "@dofek/training/power-analysis";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { DURATION_LABELS } from "../lib/duration-labels.ts";
 import { enduranceTypeFilter } from "../lib/endurance-types.ts";
-import { type CriticalPowerModel, fitCriticalPower } from "../lib/math.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 

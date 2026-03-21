@@ -305,6 +305,9 @@ importers:
       '@dofek/stats':
         specifier: workspace:*
         version: link:../stats
+      '@dofek/training':
+        specifier: workspace:*
+        version: link:../training
       '@dofek/zones':
         specifier: workspace:*
         version: link:../zones
@@ -387,6 +390,9 @@ importers:
 
   packages/training:
     dependencies:
+      '@dofek/stats':
+        specifier: workspace:*
+        version: link:../stats
       '@dofek/zones':
         specifier: workspace:*
         version: link:../zones
