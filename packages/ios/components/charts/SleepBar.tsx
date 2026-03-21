@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
-import { formatDurationMinutes } from "../../lib/format";
+import { formatDurationMinutes } from "@dofek/format/format";
 import { colors } from "../../theme";
 
 interface SleepBarProps {
