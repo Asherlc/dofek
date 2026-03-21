@@ -1,6 +1,8 @@
 import type { Database } from "dofek/db";
 import { DEFAULT_USER_ID } from "dofek/db/schema";
 import { sql } from "drizzle-orm";
+import { z } from "zod";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 
 export interface ProviderIdentity {
@@ -75,7 +77,9 @@ export async function resolveOrCreateUser(
     //      Catches the case where the user has different emails on different providers
     //      (e.g., Google email != Strava email) but previously connected a provider
     //      using this email.
-    const crossProviderMatch = await db.execute<{ user_id: string }>(
+    const crossProviderMatch = await executeWithSchema(
+      db,
+      z.object({ user_id: z.string() }),
       sql`SELECT user_id FROM fitness.auth_account
           WHERE LOWER(email) = LOWER(${identity.email})
           LIMIT 1`,
