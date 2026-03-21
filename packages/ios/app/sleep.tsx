@@ -24,14 +24,14 @@ export default function SleepScreen() {
 
   const durationTrend = nightly
     .slice(-14)
-    .map((n) => n.durationMinutes);
+    .map((n) => n.sleepMinutes);
   const efficiencyTrend = nightly
     .slice(-14)
     .map((n) => n.efficiency);
 
   const avgDuration =
     nightly.length > 0
-      ? nightly.reduce((sum, n) => sum + n.durationMinutes, 0) / nightly.length
+      ? nightly.reduce((sum, n) => sum + n.sleepMinutes, 0) / nightly.length
       : 0;
 
   const avgEfficiency =
@@ -63,7 +63,7 @@ export default function SleepScreen() {
                 textStyle={styles.cardTitle}
               />
               <SleepBar
-                durationMinutes={lastNight.durationMinutes}
+                durationMinutes={lastNight.sleepMinutes}
                 deepPercentage={lastNight.deepPct}
                 remPercentage={lastNight.remPct}
                 lightPercentage={lastNight.lightPct}
@@ -209,7 +209,7 @@ export default function SleepScreen() {
                     </Text>
                     <View style={styles.nightlyBarContainer}>
                       <SleepBar
-                        durationMinutes={night.durationMinutes}
+                        durationMinutes={night.sleepMinutes}
                         deepPercentage={night.deepPct}
                         remPercentage={night.remPct}
                         lightPercentage={night.lightPct}

@@ -164,10 +164,11 @@ describe("recoveryRouter", () => {
   });
 
   describe("sleepAnalytics", () => {
-    it("computes sleep analytics with debt", async () => {
+    it("computes sleep analytics with debt using actual sleep time", async () => {
       const rows = Array.from({ length: 14 }, (_, i) => ({
         date: `2024-01-${String(i + 1).padStart(2, "0")}`,
-        duration_minutes: 420,
+        duration_minutes: 480,
+        sleep_minutes: 420,
         deep_pct: 15,
         rem_pct: 20,
         light_pct: 55,
@@ -179,7 +180,9 @@ describe("recoveryRouter", () => {
       const result = await caller.sleepAnalytics({ days: 90 });
 
       expect(result.nightly).toHaveLength(14);
-      // 14 nights * (480 - 420) = 840 min debt
+      expect(result.nightly[0]?.durationMinutes).toBe(480);
+      expect(result.nightly[0]?.sleepMinutes).toBe(420);
+      // 14 nights * (480 - 420) = 840 min debt (based on sleepMinutes)
       expect(result.sleepDebt).toBe(840);
     });
 
