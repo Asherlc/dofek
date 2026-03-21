@@ -189,7 +189,7 @@ export class EightSleepProvider implements Provider {
                 skinTempC: parsed.skinTempC,
               })
               .onConflictDoUpdate({
-                target: [dailyMetrics.date, dailyMetrics.providerId],
+                target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
                 set: {
                   restingHr: parsed.restingHr ? Math.round(parsed.restingHr) : undefined,
                   hrv: parsed.hrv,

@@ -27,6 +27,7 @@ export interface ImportSharedFileArgs {
 
 interface ImportSharedFileDeps {
   fetchImpl?: typeof fetch;
+  readBlob?: (fileUri: string) => Promise<Blob>;
   sleep?: (milliseconds: number) => Promise<void>;
   now?: () => number;
 }
@@ -362,7 +363,8 @@ export async function importSharedFile(
   });
 
   try {
-    const blob = await readBlob(fetchImpl, args.fileUri);
+    const readBlobFn = deps.readBlob ?? ((uri: string) => readBlob(fetchImpl, uri));
+    const blob = await readBlobFn(args.fileUri);
     const mimeType = blob.type || null;
 
     const csvHeaderLine =

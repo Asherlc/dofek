@@ -188,6 +188,75 @@ describe("Deduplication materialized views", () => {
     expect(yoga?.source_providers).toHaveLength(1);
   });
 
+  it("v_activity dedupes overlapping activities with different activity types", async () => {
+    // Same outdoor ride recorded by Wahoo as "cycling" and RideWithGPS as "other"
+    await ensureProvider(ctx.db, "ride-with-gps", "RideWithGPS");
+    await ctx.db.insert(activity).values([
+      {
+        providerId: "wahoo",
+        externalId: "wahoo-ride-cross-type",
+        activityType: "cycling",
+        startedAt: new Date("2026-03-14T18:16:28Z"),
+        endedAt: new Date("2026-03-14T19:47:39Z"),
+        name: "Cycling",
+      },
+      {
+        providerId: "ride-with-gps",
+        externalId: "rwgps-ride-cross-type",
+        activityType: "other",
+        startedAt: new Date("2026-03-14T18:16:28Z"),
+        endedAt: new Date("2026-03-14T19:47:38Z"),
+        name: "03/14/26",
+      },
+    ]);
+
+    await refreshDedupViews(ctx.db);
+
+    const rows = await ctx.db.execute<ActivityViewRow>(
+      sql`SELECT * FROM fitness.v_activity WHERE started_at::date = '2026-03-14'`,
+    );
+
+    // Should merge into 1 activity — Wahoo wins (priority 10)
+    expect(rows.length).toBe(1);
+    expect(rows[0]?.provider_id).toBe("wahoo");
+    expect(rows[0]?.activity_type).toBe("cycling");
+    expect(rows[0]?.source_providers).toContain("wahoo");
+    expect(rows[0]?.source_providers).toContain("ride-with-gps");
+  });
+
+  it("v_activity dedupes WHOOP and Apple Health with different type names", async () => {
+    // WHOOP records "commuting", Apple Health republishes it as "other"
+    await ctx.db.insert(activity).values([
+      {
+        providerId: "whoop",
+        externalId: "whoop-commute-cross-type",
+        activityType: "commuting",
+        startedAt: new Date("2026-03-12T15:21:00Z"),
+        endedAt: new Date("2026-03-12T15:36:00Z"),
+      },
+      {
+        providerId: "apple_health",
+        externalId: "ah-whoop-commute-cross-type",
+        activityType: "other",
+        startedAt: new Date("2026-03-12T15:21:00Z"),
+        endedAt: new Date("2026-03-12T15:36:00Z"),
+        sourceName: "WHOOP",
+      },
+    ]);
+
+    await refreshDedupViews(ctx.db);
+
+    const rows = await ctx.db.execute<ActivityViewRow>(
+      sql`SELECT * FROM fitness.v_activity
+          WHERE started_at >= '2026-03-12T15:00:00Z' AND started_at < '2026-03-12T16:00:00Z'`,
+    );
+
+    // Should merge into 1 activity — WHOOP wins (priority 30 < 90)
+    expect(rows.length).toBe(1);
+    expect(rows[0]?.provider_id).toBe("whoop");
+    expect(rows[0]?.activity_type).toBe("commuting");
+  });
+
   it("v_activity keeps non-overlapping same-type activities separate", async () => {
     // Morning run and evening run — same type but no overlap
     await ctx.db.insert(activity).values([
@@ -537,6 +606,45 @@ describe("Deduplication materialized views", () => {
       expect(mainSleep.length).toBe(1);
       // WHOOP sleep_priority (20) < Garmin sleep_priority (40) → WHOOP wins
       expect(mainSleep[0]?.provider_id).toBe("whoop");
+    });
+
+    it("v_daily_metrics picks Apple Watch over iPhone for steps within apple_health", async () => {
+      // Same date, same provider (apple_health), different source_name values.
+      // Apple Watch has daily_activity_priority 15 (from provider-level config),
+      // iPhone has daily_activity_priority 50 (from device_priority pattern).
+      // The view should pick Apple Watch's step count.
+      await ctx.db.insert(dailyMetrics).values([
+        {
+          date: "2026-03-18",
+          providerId: "apple_health",
+          sourceName: "Apple Watch",
+          steps: 4200,
+          activeEnergyKcal: 280,
+          distanceKm: 3.1,
+        },
+        {
+          date: "2026-03-18",
+          providerId: "apple_health",
+          sourceName: "iPhone",
+          steps: 3800,
+          activeEnergyKcal: 250,
+          distanceKm: 2.9,
+        },
+      ]);
+
+      await refreshDedupViews(ctx.db);
+
+      const rows = await ctx.db.execute<DailyMetricsViewRow>(
+        sql`SELECT * FROM fitness.v_daily_metrics WHERE date = '2026-03-18'`,
+      );
+
+      expect(rows.length).toBe(1);
+      const day = rows[0];
+      expect(day).toBeDefined();
+      // Apple Watch (activity priority 15) beats iPhone (activity priority 50)
+      expect(day?.steps).toBe(4200);
+      expect(Number(day?.active_energy_kcal)).toBeCloseTo(280);
+      expect(Number(day?.distance_km)).toBeCloseTo(3.1);
     });
 
     it("v_activity uses device priority: Apple Health + Wahoo TICKR beats WHOOP", async () => {

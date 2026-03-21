@@ -568,7 +568,7 @@ export class FitbitProvider implements Provider {
                 flightsClimbed: parsed.flightsClimbed,
               })
               .onConflictDoUpdate({
-                target: [dailyMetrics.date, dailyMetrics.providerId],
+                target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
                 set: {
                   steps: parsed.steps,
                   restingHr: parsed.restingHr,

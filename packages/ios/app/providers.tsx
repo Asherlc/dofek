@@ -10,12 +10,17 @@ import {
   View,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { File as ExpoFile } from "expo-file-system";
 import * as WebBrowser from "expo-web-browser";
 import { trpc } from "../lib/trpc";
 import { useAuth } from "../lib/auth-context";
 import { importSharedFile, type ShareImportProgress } from "../lib/share-import";
 import { colors } from "../theme";
 import { formatRelativeTime } from "@dofek/format/format";
+
+function readBlobFromFileUri(fileUri: string): Promise<Blob> {
+  return Promise.resolve(new ExpoFile(fileUri));
+}
 
 type AuthStatus = "connected" | "not_connected" | "expired";
 
@@ -389,12 +394,15 @@ export default function ProvidersScreen() {
 
     void (async () => {
       try {
-        await importSharedFile({
-          fileUri: sharedFileUri,
-          serverUrl,
-          sessionToken,
-          onProgress: setSharedImportState,
-        });
+        await importSharedFile(
+          {
+            fileUri: sharedFileUri,
+            serverUrl,
+            sessionToken,
+            onProgress: setSharedImportState,
+          },
+          { readBlob: readBlobFromFileUri },
+        );
         trpcUtils.sync.providers.invalidate();
         trpcUtils.sync.providerStats.invalidate();
         trpcUtils.sync.logs.invalidate();
