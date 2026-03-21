@@ -283,6 +283,8 @@ importers:
 
   packages/providers-meta: {}
 
+  packages/recovery: {}
+
   packages/scoring: {}
 
   packages/server:
@@ -299,6 +301,9 @@ importers:
       '@dofek/heart-rate-variability':
         specifier: workspace:*
         version: link:../heart-rate-variability
+      '@dofek/recovery':
+        specifier: workspace:*
+        version: link:../recovery
       '@dofek/scoring':
         specifier: workspace:*
         version: link:../scoring

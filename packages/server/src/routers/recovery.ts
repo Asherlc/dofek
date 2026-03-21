@@ -1,3 +1,10 @@
+import {
+  acwrToScore,
+  computeReadinessScore,
+  type ReadinessComponents,
+  zScoreToScore,
+} from "@dofek/recovery/readiness";
+import { computeSleepConsistencyScore } from "@dofek/recovery/sleep-consistency";
 import { rawLoadToStrain } from "@dofek/scoring/scoring";
 import { selectRecentDailyLoad } from "@dofek/training/training";
 import { getEffectiveParams } from "dofek/personalization/params";
@@ -6,6 +13,8 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+
+export type { ReadinessComponents };
 
 export interface HrvVariabilityRow {
   date: string;
@@ -17,7 +26,6 @@ export interface HrvVariabilityRow {
 export interface WorkloadRatioRow {
   date: string;
   dailyLoad: number;
-  /** Strain score on 0-21 scale, derived from dailyLoad via rawLoadToStrain */
   strain: number;
   acuteLoad: number;
   chronicLoad: number;
@@ -26,9 +34,7 @@ export interface WorkloadRatioRow {
 
 export interface WorkloadRatioResult {
   timeSeries: WorkloadRatioRow[];
-  /** Strain from the most recent day with positive load (or latest day if all zero) */
   displayedStrain: number;
-  /** Date of the displayed strain value */
   displayedDate: string | null;
 }
 
@@ -55,13 +61,6 @@ export interface SleepConsistencyRow {
   rollingBedtimeStddev: number | null;
   rollingWaketimeStddev: number | null;
   consistencyScore: number | null;
-}
-
-export interface ReadinessComponents {
-  hrvScore: number;
-  restingHrScore: number;
-  sleepScore: number;
-  loadBalanceScore: number;
 }
 
 export interface ReadinessRow {
@@ -120,14 +119,10 @@ export const recoveryRouter = router({
         const wakeStddev =
           row.rolling_waketime_stddev != null ? Number(row.rolling_waketime_stddev) : null;
 
-        // Consistency score: average of bed/wake stddev mapped to 0-100
-        // < 0.5 hr stddev = 100, > 1.5 hr stddev = 0
-        let consistencyScore: number | null = null;
-        if (bedStddev != null && wakeStddev != null && Number(row.window_count) >= 7) {
-          const avgStddevHours = (bedStddev + wakeStddev) / 2;
-          const score = Math.max(0, Math.min(100, (1 - (avgStddevHours - 0.5) / 1.0) * 100));
-          consistencyScore = Math.round(score);
-        }
+        const consistencyScore =
+          Number(row.window_count) >= 7
+            ? computeSleepConsistencyScore(bedStddev, wakeStddev)
+            : null;
 
         return {
           date: row.date,
@@ -481,29 +476,13 @@ export const recoveryRouter = router({
             LEFT JOIN acwr_daily ac ON ac.date = m.date
             ORDER BY m.date ASC`,
       );
-      const combined = combinedRows;
-
-      // Map z-score to 0-100 (z=0 -> 50, clamped)
-      function zScoreToScore(zScore: number): number {
-        const score = 50 + zScore * 15;
-        return Math.max(0, Math.min(100, Math.round(score * 10) / 10));
-      }
-
-      // ACWR: optimal is 1.0, penalize deviation
-      function acwrToScore(acwr: number | null): number {
-        if (acwr == null) return 50;
-        const deviation = Math.abs(acwr - 1.0);
-        // 0 deviation = 100, 1.0 deviation = 0
-        return Math.max(0, Math.min(100, Math.round((1 - deviation) * 100)));
-      }
-
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - input.days);
       const cutoffStr = cutoffDate.toISOString().split("T")[0] ?? "";
 
       const results: ReadinessRow[] = [];
 
-      for (const metrics of combined) {
+      for (const metrics of combinedRows) {
         if (metrics.date <= cutoffStr) continue;
 
         // HRV score: higher HRV = better (positive z = good)
@@ -542,22 +521,17 @@ export const recoveryRouter = router({
         const acwr = metrics.acwr != null ? Number(metrics.acwr) : null;
         const loadBalanceScore = acwrToScore(acwr);
 
-        const readinessScore = Math.round(
-          hrvScore * weights.hrv +
-            restingHrScore * weights.restingHr +
-            sleepScore * weights.sleep +
-            loadBalanceScore * weights.loadBalance,
-        );
+        const components: ReadinessComponents = {
+          hrvScore: Math.round(hrvScore),
+          restingHrScore: Math.round(restingHrScore),
+          sleepScore,
+          loadBalanceScore: Math.round(loadBalanceScore),
+        };
 
         results.push({
           date: metrics.date,
-          readinessScore: Math.max(0, Math.min(100, readinessScore)),
-          components: {
-            hrvScore: Math.round(hrvScore),
-            restingHrScore: Math.round(restingHrScore),
-            sleepScore,
-            loadBalanceScore: Math.round(loadBalanceScore),
-          },
+          readinessScore: computeReadinessScore(components, weights),
+          components,
         });
       }
 
