@@ -5,6 +5,7 @@ packages:
   - packages/nutrition
   - packages/training
   - packages/stats
+  - packages/recovery
   - packages/onboarding
   - packages/providers-meta
   - packages/zones

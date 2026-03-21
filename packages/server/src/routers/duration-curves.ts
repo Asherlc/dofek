@@ -1,5 +1,4 @@
-import { linearRegression } from "@dofek/stats/correlation";
-import { DURATION_LABELS } from "@dofek/training/power-analysis";
+import { DURATION_LABELS, linearRegression } from "@dofek/training/power-analysis";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { enduranceTypeFilter } from "../lib/endurance-types.ts";
@@ -42,13 +41,13 @@ export function fitCriticalHeartRate(
   const xs = valid.map((p) => p.durationSeconds);
   const ys = valid.map((p) => p.bestHeartRate * p.durationSeconds);
 
-  const { slope: thresholdHr, rSquared } = linearRegression(xs, ys);
+  const { slope: thresholdHr, r2 } = linearRegression(xs, ys);
 
   if (thresholdHr <= 0) return null;
 
   return {
     thresholdHr: Math.round(thresholdHr),
-    r2: Math.round(rSquared * 1000) / 1000,
+    r2: Math.round(r2 * 1000) / 1000,
   };
 }
 

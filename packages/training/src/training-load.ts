@@ -9,7 +9,7 @@
  * - FTP estimation from activity data
  */
 
-import { linearRegression } from "@dofek/stats/correlation";
+import { linearRegression } from "./power-analysis.ts";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -110,9 +110,9 @@ export function buildTssModel(
   const result = linearRegression(xs, ys);
 
   // Require a reasonable fit (R² >= 0.3) and positive slope
-  if (result.rSquared < 0.3 || result.slope <= 0) return null;
+  if (result.r2 < 0.3 || result.slope <= 0) return null;
 
-  return { slope: result.slope, intercept: result.intercept, r2: result.rSquared };
+  return result;
 }
 
 // ── FTP Estimation ───────────────────────────────────────────────────

@@ -31,34 +31,35 @@ vi.mock("../lib/endurance-types.ts", () => ({
   enduranceTypeFilter: () => ({ sql: "true" }),
 }));
 
-vi.mock("@dofek/stats/correlation", () => ({
-  linearRegression: vi.fn((xs: number[], ys: number[]) => {
-    const n = xs.length;
-    if (n < 2) return { slope: 0, intercept: 0, rSquared: 0 };
-    let sumX = 0,
-      sumY = 0,
-      sumXY = 0,
-      sumX2 = 0;
-    for (let i = 0; i < n; i++) {
-      const x = xs[i] ?? 0;
-      const y = ys[i] ?? 0;
-      sumX += x;
-      sumY += y;
-      sumXY += x * y;
-      sumX2 += x * x;
-    }
-    const denom = n * sumX2 - sumX * sumX;
-    if (denom === 0) return { slope: 0, intercept: 0, rSquared: 0 };
-    const slope = (n * sumXY - sumX * sumY) / denom;
-    const intercept = (sumY - slope * sumX) / n;
-    return { slope, intercept, rSquared: 0.8 };
-  }),
-}));
-
-vi.mock("@dofek/training/power-analysis", () => ({
-  DURATION_LABELS: { 60: "1 min", 300: "5 min", 1200: "20 min" },
-  fitCriticalPower: vi.fn(() => ({ cp: 250, wPrime: 20000, r2: 0.99 })),
-}));
+vi.mock("@dofek/training/power-analysis", async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return {
+    ...actual,
+    linearRegression: vi.fn((xs: number[], ys: number[]) => {
+      const n = xs.length;
+      if (n < 2) return { slope: 0, intercept: 0, r2: 0 };
+      let sumX = 0,
+        sumY = 0,
+        sumXY = 0,
+        sumX2 = 0;
+      for (let i = 0; i < n; i++) {
+        const x = xs[i] ?? 0;
+        const y = ys[i] ?? 0;
+        sumX += x;
+        sumY += y;
+        sumXY += x * y;
+        sumX2 += x * x;
+      }
+      const denom = n * sumX2 - sumX * sumX;
+      if (denom === 0) return { slope: 0, intercept: 0, r2: 0 };
+      const slope = (n * sumXY - sumX * sumY) / denom;
+      const intercept = (sumY - slope * sumX) / n;
+      return { slope, intercept, r2: 0.8 };
+    }),
+    fitCriticalPower: vi.fn(() => ({ cp: 250, wPrime: 20000, r2: 0.99 })),
+    DURATION_LABELS: { 60: "1 min", 300: "5 min", 1200: "20 min" },
+  };
+});
 
 import { nutritionAnalyticsRouter } from "./nutrition-analytics.ts";
 import { pmcRouter } from "./pmc.ts";
