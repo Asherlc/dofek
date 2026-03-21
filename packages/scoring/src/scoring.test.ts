@@ -9,8 +9,10 @@ import {
   FORM_ZONE_TRANSITION,
   formZoneColor,
   formZoneLabel,
+  healthStatusColor,
   rampRateColor,
   rawLoadToStrain,
+  readinessLevelColor,
   scoreColor,
   scoreLabel,
   sleepDebtColor,
@@ -277,8 +279,8 @@ describe("trendColor", () => {
     expect(trendColor("stable")).toBe(textColors.neutral);
   });
 
-  it("returns neutral for declining", () => {
-    expect(trendColor("declining")).toBe(textColors.neutral);
+  it("returns danger for declining", () => {
+    expect(trendColor("declining")).toBe(statusColors.danger);
   });
 });
 
@@ -420,6 +422,42 @@ describe("formZoneLabel", () => {
 
   it("returns High Risk for values below optimal", () => {
     expect(formZoneLabel(-50)).toBe("High Risk");
+  });
+});
+
+describe("readinessLevelColor", () => {
+  it("returns positive for high", () => {
+    expect(readinessLevelColor("high")).toBe(statusColors.positive);
+  });
+
+  it("returns warning for moderate", () => {
+    expect(readinessLevelColor("moderate")).toBe(statusColors.warning);
+  });
+
+  it("returns danger for low", () => {
+    expect(readinessLevelColor("low")).toBe(statusColors.danger);
+  });
+
+  it("returns neutral for unknown", () => {
+    expect(readinessLevelColor("unknown")).toBe(textColors.neutral);
+  });
+});
+
+describe("healthStatusColor", () => {
+  it("returns positive for excellent", () => {
+    expect(healthStatusColor("excellent")).toBe(statusColors.positive);
+  });
+
+  it("returns info for good", () => {
+    expect(healthStatusColor("good")).toBe(statusColors.info);
+  });
+
+  it("returns warning for fair", () => {
+    expect(healthStatusColor("fair")).toBe(statusColors.warning);
+  });
+
+  it("returns danger for poor", () => {
+    expect(healthStatusColor("poor")).toBe(statusColors.danger);
   });
 });
 

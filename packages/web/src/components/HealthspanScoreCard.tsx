@@ -1,4 +1,5 @@
-import type { HealthspanMetric, HealthspanResult } from "dofek-server/types";
+import { healthStatusColor, scoreColor, trendColor } from "@dofek/scoring/scoring";
+import type { HealthspanResult } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
@@ -7,23 +8,16 @@ interface HealthspanScoreCardProps {
   loading?: boolean;
 }
 
-function statusColor(status: HealthspanMetric["status"]): string {
-  if (status === "excellent") return "#22c55e";
-  if (status === "good") return "#3b82f6";
-  if (status === "fair") return "#eab308";
-  return "#ef4444";
-}
-
-function trendColor(trend: string): string {
-  if (trend === "improving") return "#22c55e";
-  if (trend === "stable") return "#3b82f6";
-  return "#ef4444";
-}
-
-function trendLabel(trend: string): string {
-  if (trend === "improving") return "Improving";
-  if (trend === "stable") return "Stable";
-  return "Declining";
+function TrendBadge({ trend }: { trend: "improving" | "declining" | "stable" }) {
+  const c = trendColor(trend);
+  return (
+    <div
+      className="inline-block px-2 py-1 rounded text-xs font-medium"
+      style={{ color: c, backgroundColor: `${c}15` }}
+    >
+      {trend.charAt(0).toUpperCase() + trend.slice(1)}
+    </div>
+  );
 }
 
 export function HealthspanScoreCard({ data, loading }: HealthspanScoreCardProps) {
@@ -39,8 +33,7 @@ export function HealthspanScoreCard({ data, loading }: HealthspanScoreCardProps)
     );
   }
 
-  const scoreColor =
-    data.healthspanScore >= 75 ? "#22c55e" : data.healthspanScore >= 50 ? "#eab308" : "#ef4444";
+  const color = scoreColor(data.healthspanScore);
 
   // Radar chart for the 9 metrics
   const radarOption = {
@@ -60,9 +53,9 @@ export function HealthspanScoreCard({ data, loading }: HealthspanScoreCardProps)
           {
             value: data.metrics.map((m) => m.score),
             name: "Healthspan",
-            areaStyle: { color: `${scoreColor}20` },
-            lineStyle: { color: scoreColor, width: 2 },
-            itemStyle: { color: scoreColor },
+            areaStyle: { color: `${color}20` },
+            lineStyle: { color, width: 2 },
+            itemStyle: { color },
           },
         ],
       },
@@ -82,26 +75,14 @@ export function HealthspanScoreCard({ data, loading }: HealthspanScoreCardProps)
         <div>
           <h3 className="text-zinc-400 text-sm font-medium mb-1">Healthspan Score</h3>
           <div className="flex items-baseline gap-2">
-            <span className="text-5xl font-bold" style={{ color: scoreColor }}>
+            <span className="text-5xl font-bold" style={{ color }}>
               {data.healthspanScore}
             </span>
             <span className="text-zinc-500 text-sm">/100</span>
           </div>
         </div>
 
-        <div className="text-right">
-          {data.trend != null && (
-            <div
-              className="inline-block px-2 py-1 rounded text-xs font-medium"
-              style={{
-                color: trendColor(data.trend),
-                backgroundColor: `${trendColor(data.trend)}15`,
-              }}
-            >
-              {trendLabel(data.trend)}
-            </div>
-          )}
-        </div>
+        <div className="text-right">{data.trend != null && <TrendBadge trend={data.trend} />}</div>
       </div>
 
       {/* Radar chart */}
@@ -115,7 +96,7 @@ export function HealthspanScoreCard({ data, loading }: HealthspanScoreCardProps)
             <div className="flex-1 bg-zinc-800 rounded-full h-2 overflow-hidden">
               <div
                 className="h-full rounded-full transition-all duration-300"
-                style={{ width: `${m.score}%`, backgroundColor: statusColor(m.status) }}
+                style={{ width: `${m.score}%`, backgroundColor: healthStatusColor(m.status) }}
               />
             </div>
             <span className="text-zinc-500 text-xs w-20 text-right tabular-nums">
