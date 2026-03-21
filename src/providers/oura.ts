@@ -1,4 +1,4 @@
-import { createActivityTypeMapper, OURA_ACTIVITY_TYPE_MAP } from "@dofek/training/training";
+import { createActivityTypeMapper } from "@dofek/training/training";
 import { z } from "zod";
 import type { OAuthConfig } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri, refreshAccessToken } from "../auth/oauth.ts";
@@ -291,6 +291,25 @@ export function parseOuraDailyMetrics(
     resilienceLevel: resilience?.level ?? undefined,
   };
 }
+
+/** Oura activity (lowercased) → canonical activity type */
+const OURA_ACTIVITY_TYPE_MAP: Record<string, string> = {
+  walking: "walking",
+  running: "running",
+  cycling: "cycling",
+  swimming: "swimming",
+  hiking: "hiking",
+  yoga: "yoga",
+  elliptical: "elliptical",
+  rowing: "rowing",
+  strength_training: "strength",
+  weight_training: "strength",
+  dancing: "dancing",
+  pilates: "pilates",
+  indoor_cycling: "cycling",
+  stairmaster: "stairmaster",
+  other: "other",
+};
 
 const mapOuraType = createActivityTypeMapper(OURA_ACTIVITY_TYPE_MAP);
 

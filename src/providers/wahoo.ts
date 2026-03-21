@@ -1,4 +1,4 @@
-import { createActivityTypeMapper, WAHOO_WORKOUT_TYPE_MAP } from "@dofek/training/training";
+import { createActivityTypeMapper } from "@dofek/training/training";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri, refreshAccessToken } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
@@ -62,6 +62,24 @@ interface WahooWorkoutListResponse {
 // ============================================================
 // Activity type mapping
 // ============================================================
+
+/** Wahoo workout_type_id (numeric) → canonical activity type */
+const WAHOO_WORKOUT_TYPE_MAP: Record<number, string> = {
+  0: "cycling",
+  1: "running",
+  2: "running", // treadmill
+  3: "cycling", // indoor cycling
+  4: "cycling", // mountain biking
+  5: "cycling", // gravel
+  6: "swimming",
+  7: "yoga",
+  8: "walking",
+  9: "hiking",
+  10: "rowing",
+  11: "strength",
+  12: "elliptical",
+  13: "skiing",
+};
 
 const mapWahooWorkoutType = createActivityTypeMapper(WAHOO_WORKOUT_TYPE_MAP);
 

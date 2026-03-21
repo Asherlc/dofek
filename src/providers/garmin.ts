@@ -1,4 +1,4 @@
-import { createActivityTypeMapper, GARMIN_ACTIVITY_TYPE_MAP } from "@dofek/training/training";
+import { createActivityTypeMapper } from "@dofek/training/training";
 import { and, eq } from "drizzle-orm";
 import {
   GarminConnectClient,
@@ -158,6 +158,37 @@ export interface ParsedGarminBodyMeasurement {
 // ============================================================
 // Activity type mapping
 // ============================================================
+
+/** Garmin activityType → canonical activity type */
+const GARMIN_ACTIVITY_TYPE_MAP: Record<string, string> = {
+  // Running
+  RUNNING: "running",
+  TRAIL_RUNNING: "running",
+  TREADMILL_RUNNING: "running",
+  TRACK_RUNNING: "running",
+  // Cycling
+  CYCLING: "cycling",
+  MOUNTAIN_BIKING: "cycling",
+  ROAD_BIKING: "cycling",
+  INDOOR_CYCLING: "cycling",
+  GRAVEL_CYCLING: "cycling",
+  VIRTUAL_RIDE: "cycling",
+  // Swimming
+  SWIMMING: "swimming",
+  LAP_SWIMMING: "swimming",
+  OPEN_WATER_SWIMMING: "swimming",
+  // Walking / Hiking
+  WALKING: "walking",
+  HIKING: "hiking",
+  // Strength / Cardio
+  STRENGTH_TRAINING: "strength",
+  INDOOR_CARDIO: "cardio",
+  // Other fitness
+  YOGA: "yoga",
+  PILATES: "pilates",
+  ELLIPTICAL: "elliptical",
+  ROWING: "rowing",
+};
 
 const mapGarminType = createActivityTypeMapper(GARMIN_ACTIVITY_TYPE_MAP);
 

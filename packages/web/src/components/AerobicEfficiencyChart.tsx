@@ -54,6 +54,19 @@ export function AerobicEfficiencyChart({
   maxHr,
   loading,
 }: AerobicEfficiencyChartProps) {
+  if (!loading && activities.length === 0) {
+    return (
+      <ChartContainer
+        loading={false}
+        data={activities}
+        height={280}
+        emptyMessage="No activities with sufficient Zone 2 power + heart rate data"
+      >
+        <div />
+      </ChartContainer>
+    );
+  }
+
   // Group by activity type for coloring
   const typeSet = [...new Set(activities.map((a) => a.activityType))];
 
