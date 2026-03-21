@@ -56,7 +56,7 @@ function sparklinePath(data: number[], width: number, height: number): string {
 
 function formatNullable(value: number | null | undefined, decimals = 0): string {
   if (value == null || Number.isNaN(value)) return "--";
-  return formatNullable(value, decimals);
+  return formatNumber(value, decimals);
 }
 
 function Sparkline({ data, width, height, color }: { data: number[]; width: number; height: number; color: string }) {

@@ -151,6 +151,12 @@ describe("POLAR_SPORT_MAP", () => {
   it("maps indoor_cycling to cycling", () => {
     expect(POLAR_SPORT_MAP.indoor_cycling).toBe("cycling");
   });
+
+  it("maps all entries to canonical types", () => {
+    for (const value of Object.values(POLAR_SPORT_MAP)) {
+      expect(CANONICAL_ACTIVITY_TYPES).toContain(value);
+    }
+  });
 });
 
 describe("GARMIN_ACTIVITY_TYPE_MAP", () => {
@@ -180,6 +186,12 @@ describe("OURA_ACTIVITY_TYPE_MAP", () => {
 
   it("maps strength_training to strength", () => {
     expect(OURA_ACTIVITY_TYPE_MAP.strength_training).toBe("strength");
+  });
+
+  it("maps all entries to canonical types", () => {
+    for (const value of Object.values(OURA_ACTIVITY_TYPE_MAP)) {
+      expect(CANONICAL_ACTIVITY_TYPES).toContain(value);
+    }
   });
 });
 
