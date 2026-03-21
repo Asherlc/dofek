@@ -6,8 +6,8 @@ on:
   pull_request:
 
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   REGISTRY: ghcr.io
@@ -436,6 +436,9 @@ jobs:
     name: Docker (${{ matrix.target }})
     needs: [lint, typecheck, knip, coverage, test-e2e-web, test-ios, build-ios, test-swift]
     if: github.ref == 'refs/heads/main'
+    concurrency:
+      group: docker
+      cancel-in-progress: false
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read

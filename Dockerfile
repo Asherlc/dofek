@@ -109,12 +109,12 @@ COPY --from=source --chown=node:node /app/packages/scoring/src ./packages/scorin
 COPY --from=source --chown=node:node /app/packages/scoring/package.json ./packages/scoring/
 COPY --from=source --chown=node:node /app/packages/auth/src ./packages/auth/src
 COPY --from=source --chown=node:node /app/packages/auth/package.json ./packages/auth/
+COPY --from=source --chown=node:node /app/packages/training/src ./packages/training/src
+COPY --from=source --chown=node:node /app/packages/training/package.json ./packages/training/
 COPY --from=source --chown=node:node /app/packages/heart-rate-variability/src ./packages/heart-rate-variability/src
 COPY --from=source --chown=node:node /app/packages/heart-rate-variability/package.json ./packages/heart-rate-variability/
 COPY --from=source --chown=node:node /app/packages/zones/src ./packages/zones/src
 COPY --from=source --chown=node:node /app/packages/zones/package.json ./packages/zones/
-COPY --from=source --chown=node:node /app/packages/training/src ./packages/training/src
-COPY --from=source --chown=node:node /app/packages/training/package.json ./packages/training/
 COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules
 # Link workspace packages so bare-specifier imports resolve
 # Use ln -sf to overwrite any links pnpm's hoisted mode may have created
@@ -129,10 +129,10 @@ RUN ln -sf /app node_modules/dofek && \
     mkdir -p node_modules/@dofek && \
     ln -sf /app/packages/stats node_modules/@dofek/stats && \
     ln -sf /app/packages/scoring node_modules/@dofek/scoring && \
+    ln -sf /app/packages/training node_modules/@dofek/training && \
     ln -sf /app/packages/auth node_modules/@dofek/auth && \
     ln -sf /app/packages/heart-rate-variability node_modules/@dofek/heart-rate-variability && \
-    ln -sf /app/packages/zones node_modules/@dofek/zones && \
-    ln -sf /app/packages/training node_modules/@dofek/training
+    ln -sf /app/packages/zones node_modules/@dofek/zones
 
 # SOPS-encrypted .env — decrypted at runtime via SOPS_AGE_KEY env var
 COPY --from=source --chown=node:node /app/.env .

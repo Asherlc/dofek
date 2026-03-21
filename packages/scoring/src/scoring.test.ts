@@ -18,6 +18,8 @@ import {
   sleepDebtColor,
   strainColor,
   strainLabel,
+  strainZoneColor,
+  strainZoneLabel,
   stressColor,
   stressLabel,
   trendColor,
@@ -458,6 +460,42 @@ describe("healthStatusColor", () => {
 
   it("returns danger for poor", () => {
     expect(healthStatusColor("poor")).toBe(statusColors.danger);
+  });
+});
+
+describe("strainZoneColor", () => {
+  it("returns positive for optimal", () => {
+    expect(strainZoneColor("optimal")).toBe(statusColors.positive);
+  });
+
+  it("returns danger for overreaching", () => {
+    expect(strainZoneColor("overreaching")).toBe(statusColors.danger);
+  });
+
+  it("returns info for restoring", () => {
+    expect(strainZoneColor("restoring")).toBe(statusColors.info);
+  });
+
+  it("returns secondary for unknown zone", () => {
+    expect(strainZoneColor("unknown")).toBe(textColors.secondary);
+  });
+});
+
+describe("strainZoneLabel", () => {
+  it("returns Optimal for optimal", () => {
+    expect(strainZoneLabel("optimal")).toBe("Optimal");
+  });
+
+  it("returns Overreaching for overreaching", () => {
+    expect(strainZoneLabel("overreaching")).toBe("Overreaching");
+  });
+
+  it("returns Restoring for restoring", () => {
+    expect(strainZoneLabel("restoring")).toBe("Restoring");
+  });
+
+  it("returns the zone string for unknown zones", () => {
+    expect(strainZoneLabel("something")).toBe("something");
   });
 });
 
