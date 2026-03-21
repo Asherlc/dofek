@@ -6,6 +6,7 @@ import {
   convertPace,
   convertSpeed,
   convertTemperature,
+  scaleTemperatureStddev,
   convertWeight,
   detectUnitSystem,
   distanceLabel,
@@ -67,6 +68,17 @@ describe("unit conversions", () => {
       expect(convertTemperature(0, "imperial")).toBeCloseTo(32);
       expect(convertTemperature(100, "imperial")).toBeCloseTo(212);
       expect(convertTemperature(37, "imperial")).toBeCloseTo(98.6, 1);
+    });
+  });
+
+  describe("temperature stddev scaling", () => {
+    it("returns stddev unchanged for metric", () => {
+      expect(scaleTemperatureStddev(0.5, "metric")).toBeCloseTo(0.5);
+    });
+
+    it("scales stddev by 9/5 for imperial", () => {
+      expect(scaleTemperatureStddev(0.5, "imperial")).toBeCloseTo(0.9);
+      expect(scaleTemperatureStddev(1, "imperial")).toBeCloseTo(1.8);
     });
   });
 

@@ -24,7 +24,12 @@ import { WeeklyReportCard } from "../components/WeeklyReportCard.tsx";
 import { useDashboardLayout } from "../lib/dashboardLayoutContext.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitSystem } from "../lib/unitContext.ts";
-import { convertTemperature, temperatureLabel, type UnitSystem } from "../lib/units.ts";
+import {
+  convertTemperature,
+  scaleTemperatureStddev,
+  temperatureLabel,
+  type UnitSystem,
+} from "../lib/units.ts";
 import { useOnboarding } from "../lib/useOnboarding.ts";
 import { assertRows } from "../lib/utils.ts";
 
@@ -223,7 +228,7 @@ export function Dashboard() {
         lowerBetter: true,
       },
       {
-        label: "HRV",
+        label: "Heart Rate Variability (HRV)",
         value: trendData.latest_hrv,
         avg: trendData.avg_hrv,
         stddev: trendData.stddev_hrv,
@@ -258,7 +263,10 @@ export function Dashboard() {
           trendData.avg_skin_temp != null
             ? convertTemperature(trendData.avg_skin_temp, unitSystem)
             : null,
-        stddev: trendData.stddev_skin_temp,
+        stddev:
+          trendData.stddev_skin_temp != null
+            ? scaleTemperatureStddev(trendData.stddev_skin_temp, unitSystem)
+            : null,
         unit: temperatureLabel(unitSystem),
       },
     ];
