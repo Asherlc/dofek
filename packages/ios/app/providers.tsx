@@ -379,7 +379,6 @@ export default function ProvidersScreen() {
     if (!sessionToken) return;
     if (importedSharedUris.current.has(sharedFileUri)) return;
     importedSharedUris.current.add(sharedFileUri);
-    router.replace("/providers");
 
     void (async () => {
       try {
@@ -400,7 +399,7 @@ export default function ProvidersScreen() {
         });
       }
     })();
-  }, [sharedFileUri, router, serverUrl, sessionToken, trpcUtils]);
+  }, [sharedFileUri, serverUrl, sessionToken, trpcUtils]);
 
   const handleSyncProvider = useCallback(
     async (providerId: string, fullSync = false) => {
