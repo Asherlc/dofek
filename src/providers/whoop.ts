@@ -571,12 +571,30 @@ export class WhoopProvider implements Provider {
       const recoveryCount = await withSyncLog(db, this.id, "recovery", async () => {
         let count = 0;
         for (const cycle of cycles) {
+          if (cycle.recovery) {
+            logger.info(
+              `[whoop] Recovery raw: score_state=${cycle.recovery.score_state}, ` +
+                `has_score=${!!cycle.recovery.score}, ` +
+                `resting_hr=${cycle.recovery.resting_heart_rate}, ` +
+                `skin_temp=${cycle.recovery.skin_temp_celsius}, ` +
+                `score_skin_temp=${cycle.recovery.score?.skin_temp_celsius}, ` +
+                `keys=${Object.keys(cycle.recovery).join(",")}`,
+            );
+          } else {
+            logger.info(
+              `[whoop] Cycle has no recovery object. Cycle keys: ${Object.keys(cycle).join(",")}`,
+            );
+          }
           const hasLegacyRecovery =
             cycle.recovery?.score_state === "SCORED" && cycle.recovery.score;
           const hasBffRecovery =
             cycle.recovery?.score_state === "complete" && cycle.recovery.resting_heart_rate != null;
           if (cycle.recovery && (hasLegacyRecovery || hasBffRecovery)) {
             const parsed = parseRecovery(cycle.recovery);
+            logger.info(
+              `[whoop] Parsed recovery: rhr=${parsed.restingHr}, hrv=${parsed.hrv}, ` +
+                `spo2=${parsed.spo2}, skinTemp=${parsed.skinTemp}`,
+            );
             const cycleDayRaw =
               cycle.days?.[0] ?? new Date(cycle.recovery.created_at).toISOString().split("T")[0];
             if (!cycleDayRaw) throw new Error("Could not determine cycle day");
@@ -602,8 +620,15 @@ export class WhoopProvider implements Provider {
                 },
               });
             count++;
+          } else if (cycle.recovery) {
+            logger.warn(
+              `[whoop] Skipping unrecognized recovery format: score_state=${cycle.recovery.score_state}`,
+            );
           }
         }
+        logger.info(
+          `[whoop] Recovery sync: ${count} records inserted from ${cycles.length} cycles`,
+        );
         return { recordCount: count, result: count };
       });
       recordsSynced += recoveryCount;
