@@ -19,7 +19,7 @@ import { RecoveryRing } from "../../components/charts/RecoveryRing";
 import { SleepBar } from "../../components/charts/SleepBar";
 import { StrainGauge } from "../../components/charts/StrainGauge";
 import { formatDurationMinutes, formatSleepDebtInline } from "../../lib/format";
-import { readinessLevelColor, scoreColor, scoreLabel, trendDirection as computeTrend } from "../../lib/scoring";
+import { readinessLevelColor, scoreColor, scoreLabel, trendColor, trendDirection as computeTrend } from "../../lib/scoring";
 import { trpc } from "../../lib/trpc";
 import { convertTemperature, convertWeight, temperatureLabel, useUnitSystem, weightLabel } from "../../lib/units";
 import { useOnboarding } from "../../lib/useOnboarding";
@@ -702,12 +702,7 @@ export default function OverviewScreen() {
                       style={[
                         styles.healthspanTrend,
                         {
-                          color:
-                            healthspan.trend === "improving"
-                              ? statusColors.positive
-                              : healthspan.trend === "declining"
-                                ? statusColors.danger
-                                : colors.textSecondary,
+                          color: trendColor(healthspan.trend),
                         },
                       ]}
                     >
