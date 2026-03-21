@@ -1,3 +1,4 @@
+import { parseValidDate } from "@dofek/format/format";
 import { useNavigate } from "@tanstack/react-router";
 import { formatNumber } from "../lib/format.ts";
 import { useUnitSystem } from "../lib/unitContext.ts";
@@ -23,11 +24,6 @@ interface ActivityListProps {
   page?: number;
   pageSize?: number;
   onPageChange?: (page: number) => void;
-}
-
-function parseValidDate(iso: string): Date | null {
-  const parsed = new Date(iso);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
 function formatActivityDate(startedAt: string): string {

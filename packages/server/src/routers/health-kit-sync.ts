@@ -1,6 +1,7 @@
 import { selectDailyHeartRateVariability } from "@dofek/heart-rate-variability";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { logger } from "../logger.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 
 const PROVIDER_ID = "apple_health";
@@ -745,8 +746,11 @@ async function processSleepSamples(
 
     const externalId = `hk:sleep:${session.uuid}`;
     const durationMinutes = Math.round((sessionEnd - sessionStart) / (1000 * 60));
+    const totalSleepMinutes = deepMinutes + remMinutes + lightMinutes;
+    const efficiencyPct =
+      durationMinutes > 0 ? Math.round((totalSleepMinutes / durationMinutes) * 1000) / 10 : null;
     await db.execute(
-      sql`INSERT INTO fitness.sleep_session (user_id, provider_id, external_id, started_at, ended_at, duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes, sleep_type)
+      sql`INSERT INTO fitness.sleep_session (user_id, provider_id, external_id, started_at, ended_at, duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes, efficiency_pct, sleep_type)
           VALUES (
             ${userId},
             ${PROVIDER_ID},
@@ -758,6 +762,7 @@ async function processSleepSamples(
             ${remMinutes},
             ${lightMinutes},
             ${awakeMinutes},
+            ${efficiencyPct},
             ${null}
           )
           ON CONFLICT (provider_id, external_id) DO UPDATE SET
@@ -768,6 +773,7 @@ async function processSleepSamples(
             rem_minutes = ${remMinutes},
             light_minutes = ${lightMinutes},
             awake_minutes = ${awakeMinutes},
+            efficiency_pct = ${efficiencyPct},
             sleep_type = ${null}`,
     );
     inserted++;
@@ -893,18 +899,35 @@ export const healthKitSyncRouter = router({
           await linkUnassignedHeartRateToWorkouts(ctx.db, ctx.userId, bounds ?? undefined);
 
           // Aggregate SpO2 and skin temperature from metric_stream into daily_metrics
+          let aggregatedDailyMetrics = false;
           if (bounds) {
             const hasSpo2 = metricStreamSamples.some(
               (s) => s.type === "HKQuantityTypeIdentifierOxygenSaturation",
             );
             if (hasSpo2) {
               await aggregateSpO2ToDailyMetrics(ctx.db, ctx.userId, bounds);
+              aggregatedDailyMetrics = true;
             }
-            const hasSkinTemp = metricStreamSamples.some(
+            const skinTempSamples = metricStreamSamples.filter(
               (s) => s.type === "HKQuantityTypeIdentifierAppleSleepingWristTemperature",
             );
-            if (hasSkinTemp) {
+            if (skinTempSamples.length > 0) {
+              logger.info(
+                `[apple_health] Received ${skinTempSamples.length} skin temperature samples, aggregating to daily_metrics`,
+              );
               await aggregateSkinTempToDailyMetrics(ctx.db, ctx.userId, bounds);
+              aggregatedDailyMetrics = true;
+            }
+          }
+
+          // Refresh the daily metrics view so the dashboard picks up new data immediately
+          if (aggregatedDailyMetrics) {
+            try {
+              await ctx.db.execute(
+                sql.raw("REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_daily_metrics"),
+              );
+            } catch {
+              await ctx.db.execute(sql.raw("REFRESH MATERIALIZED VIEW fitness.v_daily_metrics"));
             }
           }
         }

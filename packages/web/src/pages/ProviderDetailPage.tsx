@@ -1,11 +1,22 @@
 import { Link, useParams } from "@tanstack/react-router";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { z } from "zod";
 import { AppHeader } from "../components/AppHeader.tsx";
 import { ProviderLogo } from "../components/ProviderLogo.tsx";
 import { formatRelativeTime, formatTime } from "../lib/dates.ts";
 import { formatNumber } from "../lib/format.ts";
 import { pollSyncJob } from "../lib/poll-sync-job.ts";
 import { trpc } from "../lib/trpc.ts";
+
+const oauthBroadcastMessage = z.object({
+  type: z.literal("complete"),
+  providerId: z.string().optional(),
+});
+
+const oauthPostMessage = z.object({
+  type: z.literal("oauth-complete"),
+  providerId: z.string().optional(),
+});
 
 const DATA_TYPES = [
   { key: "activities", label: "Activities" },
@@ -88,6 +99,41 @@ export function ProviderDetailPage() {
     [providerId, syncMutation, trpcUtils],
   );
 
+  const handleReauthorize = useCallback(() => {
+    window.open(`/auth/provider/${providerId}`, "_blank");
+  }, [providerId]);
+
+  // Listen for OAuth completion (re-authorize flow)
+  const lastOAuthHandledAt = useRef(0);
+  useEffect(() => {
+    const onOAuthComplete = () => {
+      const now = Date.now();
+      if (now - lastOAuthHandledAt.current < 2000) return;
+      lastOAuthHandledAt.current = now;
+      trpcUtils.sync.providers.invalidate();
+    };
+    let channel: BroadcastChannel | undefined;
+    try {
+      channel = new BroadcastChannel("oauth-complete");
+      channel.onmessage = (event: MessageEvent) => {
+        const parsed = oauthBroadcastMessage.safeParse(event.data);
+        if (parsed.success) onOAuthComplete();
+      };
+    } catch {
+      /* BroadcastChannel not supported */
+    }
+    const onMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      const parsed = oauthPostMessage.safeParse(event.data);
+      if (parsed.success) onOAuthComplete();
+    };
+    window.addEventListener("message", onMessage);
+    return () => {
+      channel?.close();
+      window.removeEventListener("message", onMessage);
+    };
+  }, [trpcUtils]);
+
   const handleDisconnect = useCallback(async () => {
     await disconnectMutation.mutateAsync({ providerId });
     trpcUtils.sync.providers.invalidate();
@@ -134,7 +180,7 @@ export function ProviderDetailPage() {
                   ) : (
                     <span className="text-xs text-zinc-500">Not connected</span>
                   )}
-                  {provider.lastSyncedAt && (
+                  {provider.lastSyncedAt && formatRelativeTime(provider.lastSyncedAt) && (
                     <span className="text-xs text-zinc-600">
                       Last sync: {formatRelativeTime(provider.lastSyncedAt)}
                     </span>
@@ -189,7 +235,16 @@ export function ProviderDetailPage() {
                 Sync Range
               </button>
             </div>
-            <div className="ml-auto">
+            <div className="ml-auto flex items-center gap-3">
+              {provider?.authType === "oauth" && provider.authorized && (
+                <button
+                  type="button"
+                  onClick={handleReauthorize}
+                  className="px-3 py-1.5 text-xs rounded bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors"
+                >
+                  Re-authorize
+                </button>
+              )}
               {showDisconnectConfirm ? (
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-zinc-400">Are you sure?</span>

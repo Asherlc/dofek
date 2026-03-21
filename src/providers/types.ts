@@ -65,6 +65,19 @@ export interface SyncError {
  */
 export type SyncProgressCallback = (percentage: number, message: string) => void;
 
+// ============================================================
+// Provider auth type discrimination
+// ============================================================
+
+/**
+ * How a provider authenticates users.
+ * - 'oauth': Standard OAuth 2.0 redirect flow (Strava, Fitbit, etc.)
+ * - 'credential': User provides username/password, server authenticates (Eight Sleep, Zwift, etc.)
+ * - 'file-import': No authentication needed, user uploads files
+ * - 'oauth1': OAuth 1.0 3-legged flow (FatSecret)
+ */
+export type ProviderAuthType = "oauth" | "credential" | "file-import" | "oauth1";
+
 /**
  * Common fields shared by all providers (sync and import).
  */
@@ -119,4 +132,46 @@ export type Provider = SyncProvider | ImportProvider;
 /** Type guard: narrows a Provider to SyncProvider. */
 export function isSyncProvider(provider: Provider): provider is SyncProvider {
   return !("importOnly" in provider && provider.importOnly === true);
+}
+
+// ============================================================
+// Specialized provider interfaces
+// ============================================================
+
+/** Provider that authenticates via OAuth 2.0 redirect (Strava, Fitbit, Wahoo, etc.) */
+export interface OAuthProvider extends SyncProvider {
+  authSetup(): ProviderAuthSetup;
+}
+
+/** Provider that authenticates via user-provided credentials (Eight Sleep, Zwift, etc.) */
+export interface CredentialProvider extends SyncProvider {
+  authSetup(): ProviderAuthSetup & {
+    automatedLogin: NonNullable<ProviderAuthSetup["automatedLogin"]>;
+  };
+}
+
+/** Provider that uses file import only (Strong CSV, Cronometer CSV) */
+export interface FileImportProvider extends ImportProvider {}
+
+// ============================================================
+// Runtime auth type detection
+// ============================================================
+
+/**
+ * Detect a provider's authentication type from its interface.
+ * Used by the sync router to tell the frontend which auth flow to use.
+ */
+export function getProviderAuthType(provider: Provider): ProviderAuthType | "none" {
+  if ("importOnly" in provider && provider.importOnly) return "file-import";
+  let setup: ProviderAuthSetup | undefined;
+  try {
+    setup = provider.authSetup?.();
+  } catch {
+    return "none";
+  }
+  if (!setup) return "none";
+  if (setup.automatedLogin) return "credential";
+  if (setup.oauth1Flow) return "oauth1";
+  if (setup.oauthConfig) return "oauth";
+  return "none";
 }

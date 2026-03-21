@@ -3,11 +3,11 @@ import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { enduranceTypeFilter } from "../lib/endurance-types.ts";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 const weeklyVolumeRowSchema = z.object({
-  week: z.string(),
+  week: dateStringSchema,
   activity_type: z.string(),
   count: z.number(),
   hours: z.coerce.number(),
@@ -188,7 +188,7 @@ export const trainingRouter = router({
     const weights = getEffectiveParams(storedParams).readinessWeights;
 
     const readinessMetricSchema = z.object({
-      date: z.string(),
+      date: dateStringSchema,
       hrv: z.coerce.number().nullable(),
       resting_hr: z.coerce.number().nullable(),
       hrv_mean_60d: z.coerce.number().nullable(),
@@ -305,7 +305,7 @@ export const trainingRouter = router({
 
     const muscleFreshnessSchema = z.object({
       muscle_group: z.string(),
-      last_trained_date: z.string(),
+      last_trained_date: dateStringSchema,
     });
     const muscleFreshnessRows = await executeWithSchema(
       ctx.db,
@@ -324,8 +324,8 @@ export const trainingRouter = router({
     const balanceSchema = z.object({
       strength_7d: z.coerce.number(),
       endurance_7d: z.coerce.number(),
-      last_strength_date: z.string().nullable(),
-      last_endurance_date: z.string().nullable(),
+      last_strength_date: dateStringSchema.nullable(),
+      last_endurance_date: dateStringSchema.nullable(),
     });
     const balanceRows = await executeWithSchema(
       ctx.db,
@@ -402,7 +402,7 @@ export const trainingRouter = router({
 
     const hiitLoadSchema = z.object({
       hiit_count_7d: z.coerce.number(),
-      last_hiit_date: z.string().nullable(),
+      last_hiit_date: dateStringSchema.nullable(),
     });
     const hiitLoadRows = await executeWithSchema(
       ctx.db,
@@ -451,7 +451,7 @@ export const trainingRouter = router({
     const hiitLoad = hiitLoadRows[0] ?? { hiit_count_7d: 0, last_hiit_date: null };
 
     const trainingDaySchema = z.object({
-      training_date: z.string(),
+      training_date: dateStringSchema,
     });
     const trainingDays = await executeWithSchema(
       ctx.db,
@@ -691,28 +691,29 @@ export const trainingRouter = router({
   }),
 });
 
-function clamp(value: number, min: number, max: number): number {
+// Exported for unit testing — these are pure helpers with no side effects.
+export function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-function zScoreToScore(zScore: number): number {
+export function zScoreToScore(zScore: number): number {
   return clamp(Math.round((50 + zScore * 15) * 10) / 10, 0, 100);
 }
 
-function acwrToScore(acwr: number | null): number {
+export function acwrToScore(acwr: number | null): number {
   if (acwr == null) return 50;
   const deviation = Math.abs(acwr - 1);
   return clamp(Math.round((1 - deviation) * 100), 0, 100);
 }
 
-function getReadinessLevel(score: number | null): ReadinessLevel {
+export function getReadinessLevel(score: number | null): ReadinessLevel {
   if (score == null) return "unknown";
   if (score < READINESS_REST_THRESHOLD) return "low";
   if (score < READINESS_HIGH_THRESHOLD) return "moderate";
   return "high";
 }
 
-function daysAgoFromDate(date: string | null, todayDate: string): number | null {
+export function daysAgoFromDate(date: string | null, todayDate: string): number | null {
   if (!date) return null;
   const lhs = Date.parse(`${todayDate}T00:00:00Z`);
   const rhs = Date.parse(`${date}T00:00:00Z`);
@@ -720,11 +721,11 @@ function daysAgoFromDate(date: string | null, todayDate: string): number | null 
   return Math.max(0, Math.floor((lhs - rhs) / 86_400_000));
 }
 
-function uniqueStrings(values: string[]): string[] {
+export function uniqueStrings(values: string[]): string[] {
   return [...new Set(values)];
 }
 
-function normalizeMuscleName(name: string): string {
+export function normalizeMuscleName(name: string): string {
   const cleaned = name.replace(/_/g, " ").trim().toLowerCase();
   const aliases: Record<string, string> = {
     delts: "shoulders",
@@ -739,7 +740,7 @@ function normalizeMuscleName(name: string): string {
   return aliases[cleaned] ?? cleaned;
 }
 
-function pickStrengthSplit(focusMuscles: string[]): string {
+export function pickStrengthSplit(focusMuscles: string[]): string {
   if (focusMuscles.length === 0) return "Full-body strength";
 
   const lower = new Set(["legs", "quadriceps", "hamstrings", "glutes", "calves"]);
@@ -767,7 +768,7 @@ function pickStrengthSplit(focusMuscles: string[]): string {
   return "Full-body strength";
 }
 
-function computeTrainingStreak(trainingDates: string[]): number {
+export function computeTrainingStreak(trainingDates: string[]): number {
   if (trainingDates.length === 0) return 0;
   const normalized = trainingDates
     .map((d) => Date.parse(`${d}T00:00:00Z`))
@@ -790,7 +791,7 @@ function computeTrainingStreak(trainingDates: string[]): number {
   return streak;
 }
 
-function pickCardioFocus(input: {
+export function pickCardioFocus(input: {
   readinessLevel: ReadinessLevel;
   readinessScore: number | null;
   highIntensityPct: number;
@@ -815,7 +816,7 @@ function pickCardioFocus(input: {
   return "z2";
 }
 
-function cardioPlan(focus: CardioFocus): {
+export function cardioPlan(focus: CardioFocus): {
   title: string;
   shortBlurb: string;
   durationMinutes: number;

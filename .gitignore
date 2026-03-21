@@ -26,3 +26,8 @@ cypress/screenshots/
 cypress/downloads/
 # Code coverage
 coverage/
+# Swift Package Manager
+.build/
+.swiftpm/
+# Muter mutation testing
+muter_logs/

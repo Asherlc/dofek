@@ -527,7 +527,7 @@ describe("createAuthRouter", () => {
       expect(res.body).toContain("does not use OAuth");
     });
 
-    it("handles automated login when env vars are missing", async () => {
+    it("rejects credential providers with guidance to use Settings page", async () => {
       vi.mocked(getAllProviders).mockReturnValue([
         {
           id: "peloton",
@@ -538,42 +538,10 @@ describe("createAuthRouter", () => {
           }),
         },
       ]);
-      delete process.env.PELOTON_USERNAME;
-      delete process.env.PELOTON_PASSWORD;
       const { app } = createTestApp();
       const res = await request(app, "get", "/auth/provider/peloton");
       expect(res.status).toBe(400);
-      expect(res.body).toContain("PELOTON_USERNAME");
-    });
-
-    it("handles automated login with env vars set", async () => {
-      const mockAutoLogin = vi.fn(() =>
-        Promise.resolve({
-          accessToken: "tok-123",
-          refreshToken: null,
-          expiresAt: new Date("2027-01-01"),
-          scopes: "",
-        }),
-      );
-      vi.mocked(getAllProviders).mockReturnValue([
-        {
-          id: "peloton",
-          name: "Peloton",
-          authSetup: () => ({
-            oauthConfig: {},
-            automatedLogin: mockAutoLogin,
-            apiBaseUrl: "https://api.peloton.com",
-          }),
-        },
-      ]);
-      process.env.PELOTON_USERNAME = "user@test.com";
-      process.env.PELOTON_PASSWORD = "pass123";
-      const { app } = createTestApp();
-      const res = await request(app, "get", "/auth/provider/peloton");
-      expect(res.status).toBe(200);
-      expect(res.body).toContain("Authorized!");
-      delete process.env.PELOTON_USERNAME;
-      delete process.env.PELOTON_PASSWORD;
+      expect(res.body).toContain("credential authentication");
     });
 
     it("redirects to OAuth for standard providers", async () => {
@@ -695,29 +663,6 @@ describe("createAuthRouter", () => {
       const { app } = createTestApp();
       const res = await request(app, "get", "/auth/provider/strava");
       expect(res.status).toBe(302);
-    });
-  });
-
-  describe("GET /auth/provider/:provider (automated login error)", () => {
-    it("returns 500 when automated login throws", async () => {
-      vi.mocked(getAllProviders).mockReturnValue([
-        {
-          id: "peloton",
-          name: "Peloton",
-          authSetup: () => ({
-            oauthConfig: {},
-            automatedLogin: vi.fn().mockRejectedValue(new Error("Login failed")),
-            apiBaseUrl: "https://api.peloton.com",
-          }),
-        },
-      ]);
-      process.env.PELOTON_USERNAME = "user@test.com";
-      process.env.PELOTON_PASSWORD = "pass123";
-      const { app } = createTestApp();
-      const res = await request(app, "get", "/auth/provider/peloton");
-      expect(res.status).toBe(500);
-      delete process.env.PELOTON_USERNAME;
-      delete process.env.PELOTON_PASSWORD;
     });
   });
 
@@ -955,35 +900,21 @@ describe("oauthSuccessHtml", () => {
 });
 
 describe("OAuth callback success responses include notification script", () => {
-  it("automated login response includes BroadcastChannel script", async () => {
-    const mockAutoLogin = vi.fn(() =>
-      Promise.resolve({
-        accessToken: "tok-123",
-        refreshToken: null,
-        expiresAt: new Date("2027-01-01"),
-        scopes: "",
-      }),
-    );
+  it("credential providers are rejected at the OAuth route", async () => {
     vi.mocked(getAllProviders).mockReturnValue([
       {
         id: "peloton",
         name: "Peloton",
         authSetup: () => ({
           oauthConfig: {},
-          automatedLogin: mockAutoLogin,
+          automatedLogin: vi.fn(),
           apiBaseUrl: "https://api.peloton.com",
         }),
       },
     ]);
-    process.env.PELOTON_USERNAME = "user@test.com";
-    process.env.PELOTON_PASSWORD = "pass123";
     const { app } = createTestApp();
     const res = await request(app, "get", "/auth/provider/peloton");
-    expect(res.status).toBe(200);
-    expect(res.body).toContain("BroadcastChannel('oauth-complete')");
-    expect(res.body).toContain('"providerId":"peloton"');
-    expect(res.body).toContain("window.close()");
-    delete process.env.PELOTON_USERNAME;
-    delete process.env.PELOTON_PASSWORD;
+    expect(res.status).toBe(400);
+    expect(res.body).toContain("credential authentication");
   });
 });

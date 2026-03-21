@@ -117,7 +117,7 @@ describe("STRAVA_ACTIVITY_TYPE_MAP", () => {
   });
 
   it("maps all entries to canonical types", () => {
-    for (const [key, value] of Object.entries(STRAVA_ACTIVITY_TYPE_MAP)) {
+    for (const [, value] of Object.entries(STRAVA_ACTIVITY_TYPE_MAP)) {
       expect(CANONICAL_ACTIVITY_TYPES).toContain(value);
     }
   });

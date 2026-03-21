@@ -18,8 +18,8 @@ function getSeriesArray(
 function getTooltipFormatter(option: Record<string, unknown>): (...args: unknown[]) => string {
   const tooltip = option.tooltip;
   if (typeof tooltip !== "object" || tooltip === null) throw new Error("Expected tooltip object");
-  const record: Record<string, unknown> = Object.assign({}, tooltip);
-  const formatter = record.formatter;
+  if (!("formatter" in tooltip)) throw new Error("Expected tooltip.formatter");
+  const { formatter } = tooltip;
   if (typeof formatter !== "function")
     throw new Error("Expected tooltip.formatter to be a function");
   return (...args: unknown[]) => String(formatter(...args));
@@ -86,10 +86,10 @@ describe("PolarizationTrendChart option builder", () => {
     const series = getSeriesArray(option);
     const polarizationSeries = series.find((s) => s.name === "Polarization Index");
     expect(polarizationSeries).toBeDefined();
-    expect(polarizationSeries?.data).toEqual([
-      ["2024-01-01", null],
-      ["2024-01-08", 1.9],
-    ]);
+    if (!polarizationSeries) throw new Error("Expected polarization series");
+    expect(polarizationSeries.data).toHaveLength(2);
+    expect(polarizationSeries.data[0]).toHaveProperty("value", ["2024-01-01", null]);
+    expect(polarizationSeries.data[1]).toHaveProperty("value", ["2024-01-08", 1.9]);
   });
 
   it("tooltip shows %HRmax zone labels (not Karvonen %HRR)", () => {
@@ -110,6 +110,66 @@ describe("PolarizationTrendChart option builder", () => {
     expect(html).not.toContain("HRR");
     expect(html).not.toContain("Karvonen");
     expect(html).not.toContain("resting");
+  });
+
+  it("does not use visualMap (crashes ECharts piecewise with coord error)", () => {
+    const option = buildPolarizationTrendOption(sampleWeeks);
+    expect(option).not.toHaveProperty("visualMap");
+  });
+
+  it("does not use markLine (incompatible with ECharts visualMap)", () => {
+    const option = buildPolarizationTrendOption(sampleWeeks);
+    for (const series of getSeriesArray(option)) {
+      expect(series).not.toHaveProperty("markLine");
+    }
+  });
+
+  it("renders threshold as a regular line series at y=2.0", () => {
+    const option = buildPolarizationTrendOption(sampleWeeks);
+    const thresholdSeries = getSeriesArray(option).find((s) => s.name === "Threshold");
+    expect(thresholdSeries).toBeDefined();
+    if (!thresholdSeries) throw new Error("Expected threshold series");
+    const data = thresholdSeries.data;
+    expect(data[0]).toEqual(["2024-01-01", 2.0]);
+    expect(data[1]).toEqual(["2024-01-08", 2.0]);
+  });
+
+  it("colors data points green at or above 2.0 and red below 2.0", () => {
+    const weeksWithBoundary = [
+      {
+        week: "2024-01-01",
+        polarizationIndex: 2.5,
+        z1Seconds: 3600,
+        z2Seconds: 600,
+        z3Seconds: 900,
+      },
+      {
+        week: "2024-01-08",
+        polarizationIndex: 1.8,
+        z1Seconds: 2400,
+        z2Seconds: 1200,
+        z3Seconds: 600,
+      },
+      {
+        week: "2024-01-15",
+        polarizationIndex: 2.0,
+        z1Seconds: 3000,
+        z2Seconds: 800,
+        z3Seconds: 700,
+      },
+    ];
+    const option = buildPolarizationTrendOption(weeksWithBoundary);
+    const polarizationIndexSeries = getSeriesArray(option).find(
+      (s) => s.name === "Polarization Index",
+    );
+    if (!polarizationIndexSeries) throw new Error("Expected polarization index series");
+    const piData = polarizationIndexSeries.data;
+    // 2.5 (above threshold) → green
+    expect(piData[0]).toHaveProperty("itemStyle", { color: "#22c55e" });
+    // 1.8 (below threshold) → red
+    expect(piData[1]).toHaveProperty("itemStyle", { color: "#ef4444" });
+    // 2.0 (exactly at threshold) → green
+    expect(piData[2]).toHaveProperty("itemStyle", { color: "#22c55e" });
   });
 
   it("explains missing zones when PI is unavailable", () => {
@@ -209,14 +269,14 @@ describe("SleepAnalyticsChart option builder", () => {
     }
 
     const legend = option.legend;
-    if (typeof legend !== "object" || legend === null) throw new Error("Expected legend");
-    const legendRecord: Record<string, unknown> = Object.assign({}, legend);
-    expect(legendRecord.top).toBe(0);
+    if (typeof legend !== "object" || legend === null || !("top" in legend))
+      throw new Error("Expected legend with top");
+    expect(legend.top).toBe(0);
     expect(firstGraphic.top).toBeGreaterThanOrEqual(24);
     const grid = option.grid;
-    if (typeof grid !== "object" || grid === null) throw new Error("Expected grid");
-    const gridRecord: Record<string, unknown> = Object.assign({}, grid);
-    expect(gridRecord.top).toBeGreaterThan(60);
+    if (typeof grid !== "object" || grid === null || !("top" in grid))
+      throw new Error("Expected grid with top");
+    expect(grid.top).toBeGreaterThan(60);
   });
 
   it("formats debt text as deficit when debt is positive", () => {

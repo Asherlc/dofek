@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { enduranceTypeFilter } from "../lib/endurance-types.ts";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export interface AerobicEfficiencyActivity {
@@ -54,7 +54,7 @@ export const efficiencyRouter = router({
     .query(async ({ ctx, input }): Promise<AerobicEfficiencyResult> => {
       const efficiencyRowSchema = z.object({
         max_hr: z.coerce.number(),
-        date: z.string(),
+        date: dateStringSchema,
         activity_type: z.string(),
         name: z.string(),
         avg_power_z2: z.coerce.number(),
@@ -124,7 +124,7 @@ export const efficiencyRouter = router({
     .input(z.object({ days: z.number().default(180) }))
     .query(async ({ ctx, input }): Promise<AerobicDecouplingActivity[]> => {
       const decouplingRowSchema = z.object({
-        date: z.string(),
+        date: dateStringSchema,
         activity_type: z.string(),
         name: z.string(),
         first_half_ratio: z.coerce.number(),
@@ -209,7 +209,7 @@ export const efficiencyRouter = router({
     .query(async ({ ctx, input }): Promise<PolarizationTrendResult> => {
       const polarizationRowSchema = z.object({
         max_hr: z.coerce.number(),
-        week: z.string(),
+        week: dateStringSchema,
         z1_seconds: z.coerce.number(),
         z2_seconds: z.coerce.number(),
         z3_seconds: z.coerce.number(),

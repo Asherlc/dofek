@@ -2,8 +2,7 @@ import { parseTrainerRoadActivity, TrainerRoadClient } from "trainerroad-client"
 import type { SyncDatabase } from "../db/index.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
-import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
-import { logger } from "../logger.ts";
+import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 const TRAINERROAD_BASE = "https://www.trainerroad.com";
@@ -80,28 +79,11 @@ export class TrainerRoadProvider implements SyncProvider {
         throw new Error("TrainerRoad username not found — re-authenticate");
       }
 
-      // Re-auth if cookie expired
+      // TrainerRoad cookies expire — user must re-authenticate when expired
       if (stored.expiresAt <= new Date()) {
-        const email = process.env.TRAINERROAD_USERNAME;
-        const password = process.env.TRAINERROAD_PASSWORD;
-        if (!email || !password) {
-          throw new Error(
-            "TrainerRoad cookie expired and TRAINERROAD_USERNAME/TRAINERROAD_PASSWORD not set",
-          );
-        }
-        logger.info("[trainerroad] Cookie expired, re-authenticating...");
-        const result = await TrainerRoadClient.signIn(email, password, this.fetchFn);
-        await saveTokens(db, this.id, {
-          accessToken: result.authCookie,
-          refreshToken: null,
-          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-          scopes: `username:${result.username}`,
-        });
-        client = new TrainerRoadClient(result.authCookie, this.fetchFn);
-        username = result.username;
-      } else {
-        client = new TrainerRoadClient(stored.accessToken, this.fetchFn);
+        throw new Error("TrainerRoad session expired — please re-authenticate via Settings");
       }
+      client = new TrainerRoadClient(stored.accessToken, this.fetchFn);
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };

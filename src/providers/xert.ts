@@ -1,5 +1,5 @@
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
-import { exchangeCodeForTokens, refreshAccessToken } from "../auth/oauth.ts";
+import { exchangeCodeForTokens, getOAuthRedirectUri, refreshAccessToken } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
@@ -12,7 +12,6 @@ import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./t
 // ============================================================
 
 const XERT_API_BASE = "https://www.xertonline.com";
-const DEFAULT_REDIRECT_URI = "https://localhost:9876/callback";
 
 interface XertActivity {
   id: number;
@@ -110,7 +109,7 @@ export function parseXertActivity(raw: XertActivity): ParsedXertActivity {
 export function xertOAuthConfig(): OAuthConfig | null {
   const clientId = process.env.XERT_CLIENT_ID ?? "xert_public";
   const clientSecret = process.env.XERT_CLIENT_SECRET ?? "xert_public";
-  const redirectUri = process.env.OAUTH_REDIRECT_URI ?? DEFAULT_REDIRECT_URI;
+  const redirectUri = getOAuthRedirectUri();
 
   return {
     clientId,

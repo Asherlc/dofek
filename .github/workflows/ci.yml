@@ -122,7 +122,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec vitest run --project integration --reporter=blob --coverage.enabled --coverage.reporter=json --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 --coverage.thresholds.statements=0
+      - run: pnpm exec vitest run --project integration --reporter=blob --reporter=verbose --coverage.enabled --coverage.reporter=json --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 --coverage.thresholds.statements=0
         timeout-minutes: 10
       - run: mv .vitest-reports/blob.json .vitest-reports/integration.json
       - uses: actions/upload-artifact@v4
@@ -177,6 +177,96 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Verify iOS Metro bundle
         run: cd packages/ios && pnpm expo export --platform ios --clear
+
+  lint-ios-podspecs:
+    name: iOS Podspec Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate podspec deployment targets
+        run: |
+          APP_TARGET=$(python3 -c "import json; print(json.load(open('packages/ios/app.json'))['expo']['ios']['deploymentTarget'])")
+          echo "App deployment target: iOS $APP_TARGET"
+          FAILED=0
+          for spec in packages/ios/modules/*/ios/*.podspec; do
+            SPEC_TARGET=$(grep -oP "s\.platform\s*=\s*:ios,\s*'\K[^']+" "$spec")
+            echo "  $(basename "$spec"): iOS $SPEC_TARGET"
+            if [ "$(printf '%s\n' "$APP_TARGET" "$SPEC_TARGET" | sort -V | head -1)" != "$APP_TARGET" ]; then
+              echo "  ERROR: podspec targets iOS $SPEC_TARGET which is below app target iOS $APP_TARGET"
+              FAILED=1
+            fi
+          done
+          exit $FAILED
+
+  check-ios-changes:
+    name: Check iOS Changes
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.check.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: check
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- packages/ios/)
+            if [ -n "$CHANGED" ]; then
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+              echo "iOS files changed:"
+              echo "$CHANGED"
+            else
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+              echo "No iOS changes detected, skipping native build"
+            fi
+          fi
+
+  build-ios-native:
+    name: iOS Native Build
+    needs: check-ios-changes
+    if: needs.check-ios-changes.outputs.changed == 'true'
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Cache CocoaPods
+        uses: actions/cache@v4
+        with:
+          path: packages/ios/ios/Pods
+          key: pods-${{ hashFiles('packages/ios/ios/Podfile.lock') }}
+          restore-keys: pods-
+      - name: Install CocoaPods dependencies
+        run: cd packages/ios/ios && pod install
+      - name: Build for simulator
+        run: |
+          xcodebuild build \
+            -workspace packages/ios/ios/Dofek.xcworkspace \
+            -scheme Dofek \
+            -sdk iphonesimulator \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            | tail -20
+        timeout-minutes: 20
+
+  ios-native-gate:
+    name: iOS Native Gate
+    needs: [check-ios-changes, build-ios-native]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          if [ "${{ needs.build-ios-native.result }}" = "failure" ] || [ "${{ needs.build-ios-native.result }}" = "cancelled" ]; then
+            echo "iOS native build failed or was cancelled"
+            exit 1
+          fi
 
   test-e2e-web:
     name: E2E Tests (Web)
@@ -270,9 +360,81 @@ jobs:
           path: reports/mutation/
           retention-days: 7
 
+  test-swift:
+    name: Swift Tests
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: packages/ios/modules/health-kit/.build
+          key: swift-build-v1-${{ hashFiles('packages/ios/modules/health-kit/Package.swift') }}
+          restore-keys: swift-build-v1-
+      - name: Run Swift tests with coverage
+        run: |
+          cd packages/ios/modules/health-kit
+          bash scripts/check-coverage.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: swift-coverage
+          path: packages/ios/modules/health-kit/.build/debug/codecov/
+          retention-days: 7
+
+  mutation-swift:
+    name: Swift Mutation Testing
+    runs-on: macos-14
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/cache@v4
+        with:
+          path: packages/ios/modules/health-kit/.build
+          key: swift-build-v1-${{ hashFiles('packages/ios/modules/health-kit/Package.swift') }}
+          restore-keys: swift-build-v1-
+      - name: Install Muter
+        run: brew install muter-mutation-testing/formulae/muter
+      - name: Get changed Swift files
+        id: changed
+        run: |
+          # Filter to mutatable Swift source files, strip prefix for Muter's working directory
+          CHANGED=$(git diff --name-only origin/main...HEAD \
+            | { grep '\.swift$' || true; } \
+            | { grep -v 'Tests/' || true; } \
+            | { grep -v 'HealthKitModule.swift' || true; } \
+            | { grep -v 'Package.swift' || true; } \
+            | sed 's|^packages/ios/modules/health-kit/||' \
+            | tr '\n' ',' \
+            | sed 's/,$//')
+          echo "files=$CHANGED" >> "$GITHUB_OUTPUT"
+          echo "Mutating changed Swift files: $CHANGED"
+      - name: Run Muter
+        if: steps.changed.outputs.files != ''
+        working-directory: packages/ios/modules/health-kit
+        timeout-minutes: 30
+        run: |
+          muter --files-to-mutate "${{ steps.changed.outputs.files }}" || {
+            EXIT_CODE=$?
+            # Exit 255 = "no mutatable code found" — expected for incremental runs
+            # when changed files have no patterns Muter's operators can target
+            if [ $EXIT_CODE -eq 255 ]; then
+              echo "Muter found no mutatable code in changed files — skipping."
+              exit 0
+            fi
+            exit $EXIT_CODE
+          }
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: muter-report
+          path: packages/ios/modules/health-kit/muter_logs/
+          retention-days: 7
+
   docker:
     name: Docker (${{ matrix.target }})
-    needs: [lint, typecheck, knip, coverage, test-e2e-web, test-ios, build-ios]
+    needs: [lint, typecheck, knip, coverage, test-e2e-web, test-ios, build-ios, test-swift]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04-arm
     permissions:

@@ -55,6 +55,7 @@ const NON_ADDITIVE_QUANTITY_TYPES = [
   "HKQuantityTypeIdentifierVO2Max",
   "HKQuantityTypeIdentifierOxygenSaturation",
   "HKQuantityTypeIdentifierRespiratoryRate",
+  "HKQuantityTypeIdentifierAppleSleepingWristTemperature",
 ];
 
 const ALL_QUANTITY_TYPES = [...ADDITIVE_QUANTITY_TYPES, ...NON_ADDITIVE_QUANTITY_TYPES];

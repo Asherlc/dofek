@@ -28,6 +28,13 @@ export interface WhoopRecoveryRecord {
   updated_at: string;
   score_state: string;
   score?: WhoopRecoveryScore;
+  // BFF v0 flat fields (fields at top level instead of nested under `score`)
+  recovery_score?: number;
+  resting_heart_rate?: number;
+  hrv_rmssd?: number; // seconds (not milliseconds)
+  spo2_percentage?: number;
+  skin_temp_celsius?: number;
+  calibrating?: boolean;
 }
 
 export interface WhoopSleepStageSummary {

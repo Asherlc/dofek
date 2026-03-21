@@ -12,6 +12,7 @@ import { isAdmin } from "./auth/admin.ts";
 import { getSessionIdFromRequest } from "./auth/cookies.ts";
 import { validateSession } from "./auth/session.ts";
 import { httpRequestDuration, registry } from "./lib/metrics.ts";
+import { initSentry, sentryErrorHandler } from "./lib/sentry.ts";
 import { warmCache } from "./lib/warm-cache.ts";
 import { logger } from "./logger.ts";
 import { appRouter } from "./router.ts";
@@ -25,8 +26,11 @@ const PORT = parseInt(process.env.PORT ?? "3000", 10);
 
 /** Create the Express app with all routes. Exported for testing. */
 export function createApp(db: import("dofek/db").Database): express.Express {
+  initSentry();
   const app = express();
   setupRoutes(app, db);
+  // Sentry error handler must be after all routes
+  app.use(sentryErrorHandler());
   return app;
 }
 

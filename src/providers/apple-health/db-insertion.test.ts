@@ -1187,8 +1187,8 @@ describe("upsertSleepBatch", () => {
     ];
 
     await upsertSleepBatch(db, "p1", records);
-    // efficiency = (120 + 240) / 480 * 100 = 75, then /100 = 0.75
-    expect(capture.values[0]?.[0]).toMatchObject({ efficiencyPct: 0.75 });
+    // efficiency = (120 + 240) / 480 * 100 = 75%
+    expect(capture.values[0]?.[0]).toMatchObject({ efficiencyPct: 75 });
   });
 
   it("sets efficiency to undefined for zero-duration sessions", async () => {
@@ -1226,16 +1226,16 @@ describe("upsertSleepBatch", () => {
     });
   });
 
-  it("uses undefined instead of 0 for zero stage durations", async () => {
+  it("stores 0 for zero stage durations instead of undefined", async () => {
     const { db, capture } = createMockDb();
     // No stage records — all durations are 0
     const records = [makeSleep()];
 
     await upsertSleepBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toHaveProperty("deepMinutes", undefined);
-    expect(capture.values[0]?.[0]).toHaveProperty("remMinutes", undefined);
-    expect(capture.values[0]?.[0]).toHaveProperty("lightMinutes", undefined);
-    expect(capture.values[0]?.[0]).toHaveProperty("awakeMinutes", undefined);
+    expect(capture.values[0]?.[0]).toHaveProperty("deepMinutes", 0);
+    expect(capture.values[0]?.[0]).toHaveProperty("remMinutes", 0);
+    expect(capture.values[0]?.[0]).toHaveProperty("lightMinutes", 0);
+    expect(capture.values[0]?.[0]).toHaveProperty("awakeMinutes", 0);
   });
 
   it("only includes stage records within the inBed time window", async () => {
@@ -1271,7 +1271,7 @@ describe("upsertSleepBatch", () => {
     await upsertSleepBatch(db, "p1", records);
     // Only the 60min deep inside the window should be counted
     expect(capture.values[0]?.[0]).toMatchObject({ deepMinutes: 60 });
-    expect(capture.values[0]?.[0]).toHaveProperty("remMinutes", undefined);
+    expect(capture.values[0]?.[0]).toHaveProperty("remMinutes", 0);
   });
 
   it("returns 0 for empty records", async () => {
@@ -1427,8 +1427,8 @@ describe("upsertNutritionBatch — deduplication", () => {
 // Safety-net dedup: insertWithDuplicateDiag retries with deduplicated batch
 // ---------------------------------------------------------------------------
 
-describe("insertWithDuplicateDiag — dedup and retry", () => {
-  it("deduplicates and retries when batch has duplicate conflict keys", async () => {
+describe("insertWithDuplicateDiag — upfront dedup", () => {
+  it("deduplicates before inserting when batch has duplicate conflict keys", async () => {
     const insertCalls: Record<string, unknown>[][] = [];
 
     const rows: Record<string, unknown>[] = [
@@ -1438,9 +1438,6 @@ describe("insertWithDuplicateDiag — dedup and retry", () => {
 
     const doInsert = vi.fn(async (batch: Record<string, unknown>[]) => {
       insertCalls.push(batch);
-      if (insertCalls.length === 1) {
-        throw new Error("ON CONFLICT DO UPDATE command cannot affect row a second time");
-      }
     });
 
     await insertWithDuplicateDiag(
@@ -1450,19 +1447,31 @@ describe("insertWithDuplicateDiag — dedup and retry", () => {
       doInsert,
     );
 
-    expect(doInsert).toHaveBeenCalledTimes(2);
-    // First call gets both rows (including duplicate)
-    expect(insertCalls[0]).toHaveLength(2);
-    // Second call gets deduplicated rows (last one wins)
-    expect(insertCalls[1]).toHaveLength(1);
-    expect(insertCalls[1]?.[0]).toEqual({
+    // Only one call with deduplicated rows
+    expect(doInsert).toHaveBeenCalledTimes(1);
+    expect(insertCalls[0]).toHaveLength(1);
+    expect(insertCalls[0]?.[0]).toEqual({
       providerId: "apple_health",
       externalId: "dup-key",
       weightKg: 81,
     });
   });
 
-  it("re-throws non-duplicate errors", async () => {
+  it("passes through rows unchanged when no duplicates", async () => {
+    const rows: Record<string, unknown>[] = [
+      { id: 1, name: "a" },
+      { id: 2, name: "b" },
+    ];
+
+    const doInsert = vi.fn(async () => {});
+
+    await insertWithDuplicateDiag("test", (row) => String(row.id), rows, doInsert);
+
+    expect(doInsert).toHaveBeenCalledTimes(1);
+    expect(doInsert).toHaveBeenCalledWith(rows);
+  });
+
+  it("propagates insert errors", async () => {
     const doInsert = vi.fn(async () => {
       throw new Error("connection reset");
     });

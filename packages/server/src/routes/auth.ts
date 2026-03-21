@@ -105,31 +105,13 @@ async function startDataProviderOAuth(
     return;
   }
 
-  // Providers with automatedLogin (e.g. Peloton) — only for data intent
+  // Credential providers use the generic credentialAuth.signIn tRPC endpoint instead
   if (setup.automatedLogin && stateEntry.intent === "data") {
-    const envPrefix = providerId.toUpperCase();
-    const email = process.env[`${envPrefix}_USERNAME`];
-    const password = process.env[`${envPrefix}_PASSWORD`];
-    if (!email || !password) {
-      res.status(400).send(`${envPrefix}_USERNAME and ${envPrefix}_PASSWORD must be set`);
-      return;
-    }
-
-    logger.info(`[auth] Running automated login for ${providerId}...`);
-    const tokens = await setup.automatedLogin(email, password);
-    const { ensureProvider, saveTokens } = await import("dofek/db/tokens");
-    await ensureProvider(db, provider.id, provider.name, setup.apiBaseUrl, stateEntry.userId);
-    await saveTokens(db, provider.id, tokens);
-    await queryCache.invalidateByPrefix(`${stateEntry.userId}:sync.providers`);
-
-    logger.info(`[auth] ${providerId} tokens saved. Expires: ${tokens.expiresAt.toISOString()}`);
-    res.send(
-      oauthSuccessHtml(
-        provider.name,
-        `Token expires: ${tokens.expiresAt.toISOString()}`,
-        provider.id,
-      ),
-    );
+    res
+      .status(400)
+      .send(
+        `Provider ${providerId} uses credential authentication — sign in via the Settings page`,
+      );
     return;
   }
 

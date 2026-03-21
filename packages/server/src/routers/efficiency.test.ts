@@ -13,15 +13,19 @@ vi.mock("../trpc.ts", async () => {
   };
 });
 
-vi.mock("../lib/typed-sql.ts", () => ({
-  executeWithSchema: vi.fn(
-    async (
-      db: { execute: (query: unknown) => Promise<unknown[]> },
-      _schema: unknown,
-      query: unknown,
-    ) => db.execute(query),
-  ),
-}));
+vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../lib/typed-sql.ts")>();
+  return {
+    ...original,
+    executeWithSchema: vi.fn(
+      async (
+        db: { execute: (query: unknown) => Promise<unknown[]> },
+        _schema: unknown,
+        query: unknown,
+      ) => db.execute(query),
+    ),
+  };
+});
 
 vi.mock("../lib/endurance-types.ts", () => ({
   enduranceTypeFilter: () => ({ sql: "true" }),
@@ -73,6 +77,29 @@ describe("efficiencyRouter", () => {
       const result = await caller.aerobicEfficiency({ days: 180 });
       expect(result.maxHr).toBeNull();
       expect(result.activities).toEqual([]);
+    });
+
+    it("returns date as string when DB driver returns Date objects", async () => {
+      const rows = [
+        {
+          max_hr: 190,
+          date: new Date("2024-01-15T00:00:00.000Z"),
+          activity_type: "cycling",
+          name: "Ride",
+          avg_power_z2: 180,
+          avg_hr_z2: 140,
+          efficiency_factor: 1.286,
+          z2_samples: 600,
+        },
+      ];
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue(rows) },
+        userId: "user-1",
+      });
+      const result = await caller.aerobicEfficiency({ days: 180 });
+
+      expect(typeof result.activities[0]?.date).toBe("string");
+      expect(result.activities[0]?.date).toBe("2024-01-15");
     });
 
     it("maps multiple activities", async () => {
@@ -149,6 +176,28 @@ describe("efficiencyRouter", () => {
       });
       const result = await caller.aerobicDecoupling({ days: 180 });
       expect(result).toEqual([]);
+    });
+
+    it("returns date as string when DB driver returns Date objects", async () => {
+      const rows = [
+        {
+          date: new Date("2024-01-15T00:00:00.000Z"),
+          activity_type: "running",
+          name: "Long Run",
+          first_half_ratio: 1.5,
+          second_half_ratio: 1.3,
+          decoupling_pct: 13.33,
+          total_samples: 3600,
+        },
+      ];
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue(rows) },
+        userId: "user-1",
+      });
+      const result = await caller.aerobicDecoupling({ days: 180 });
+
+      expect(typeof result[0]?.date).toBe("string");
+      expect(result[0]?.date).toBe("2024-01-15");
     });
   });
 
@@ -231,6 +280,27 @@ describe("efficiencyRouter", () => {
       expect(result.weeks[0]?.z2Seconds).toBe(2000);
       expect(result.weeks[0]?.z3Seconds).toBe(500);
       expect(result.weeks[0]?.week).toBe("2024-02-01");
+    });
+
+    it("returns week as string when DB driver returns Date objects", async () => {
+      // Some postgres drivers/platforms return Date objects for ::date columns
+      const rows = [
+        {
+          max_hr: 190,
+          week: new Date("2024-01-15T00:00:00.000Z"),
+          z1_seconds: 5000,
+          z2_seconds: 500,
+          z3_seconds: 100,
+        },
+      ];
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue(rows) },
+        userId: "user-1",
+      });
+      const result = await caller.polarizationTrend({ days: 180 });
+
+      expect(typeof result.weeks[0]?.week).toBe("string");
+      expect(result.weeks[0]?.week).toBe("2024-01-15");
     });
 
     it("returns null maxHr when no data", async () => {

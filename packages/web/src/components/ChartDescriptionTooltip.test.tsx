@@ -8,13 +8,23 @@ describe("ChartDescriptionTooltip", () => {
     render(<ChartDescriptionTooltip description="This chart shows your weekly training load." />);
 
     const marker = screen.getByText("i");
-    expect(marker.getAttribute("title")).toBe("This chart shows your weekly training load.");
+    expect(marker).toBeTruthy();
+
+    // Tooltip text is rendered in the DOM (visible on hover via CSS)
+    expect(screen.getByText("This chart shows your weekly training load.")).toBeTruthy();
   });
 
   it("applies custom classes", () => {
     render(<ChartDescriptionTooltip description="Chart info" className="my-custom-class" />);
 
-    const marker = screen.getByText("i");
-    expect(marker.className).toContain("my-custom-class");
+    // The wrapper should contain the custom class
+    const tooltip = screen.getByText("Chart info");
+    expect(tooltip.closest(".my-custom-class")).toBeTruthy();
+  });
+
+  it("tooltip text has role=tooltip for accessibility", () => {
+    render(<ChartDescriptionTooltip description="Chart info" />);
+    expect(screen.getByRole("tooltip")).toBeTruthy();
+    expect(screen.getByRole("tooltip").textContent).toBe("Chart info");
   });
 });
