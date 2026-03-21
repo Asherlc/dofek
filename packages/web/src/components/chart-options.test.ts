@@ -186,14 +186,14 @@ describe("PolarizationTrendChart option builder", () => {
     if (!incompleteSeries) throw new Error("Expected incomplete weeks series");
 
     // Should only contain the two null-PI weeks
-    const data = incompleteSeries.data as Array<{ value: [string, number] }>;
+    const data: Array<{ value: [string, number] }> = incompleteSeries.data;
     expect(data).toHaveLength(2);
     expect(data[0]?.value[0]).toBe("2024-01-01");
     expect(data[1]?.value[0]).toBe("2024-01-15");
 
     // Should be scatter type with amber styling
     expect(incompleteSeries.type).toBe("scatter");
-    const style = incompleteSeries.itemStyle as { color: string };
+    const style: { color: string } = incompleteSeries.itemStyle;
     expect(style.color).toBe("#f59e0b");
   });
 
