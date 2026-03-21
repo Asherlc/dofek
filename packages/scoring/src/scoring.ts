@@ -79,8 +79,8 @@ export class WorkloadRatio {
     return statusColors.danger;
   }
 
-  get hint(): string {
-    if (this.value == null) return "";
+  get hint(): string | null {
+    if (this.value == null) return null;
     if (this.value >= 0.8 && this.value <= 1.3) return "Optimal training zone";
     if (this.value < 0.8) return "Detraining risk - increase load gradually";
     if (this.value <= 1.5) return "High load - monitor recovery closely";

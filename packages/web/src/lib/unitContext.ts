@@ -1,4 +1,4 @@
-import { createContext, useContext } from "react";
+import { createContext, useContext, useMemo } from "react";
 import type { UnitSystem } from "./units.ts";
 import { UnitConverter } from "./units.ts";
 
@@ -21,5 +21,5 @@ export function useUnitSystem(): UnitContextValue {
  */
 export function useUnitConverter(): UnitConverter {
   const { unitSystem } = useContext(UnitContext);
-  return new UnitConverter(unitSystem);
+  return useMemo(() => new UnitConverter(unitSystem), [unitSystem]);
 }

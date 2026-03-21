@@ -104,8 +104,8 @@ describe("WorkloadRatio", () => {
   });
 
   describe("hint", () => {
-    it("returns empty string for null", () => {
-      expect(new WorkloadRatio(null).hint).toBe("");
+    it("returns null for null", () => {
+      expect(new WorkloadRatio(null).hint).toBeNull();
     });
 
     it("returns optimal hint for 0.8-1.3", () => {
