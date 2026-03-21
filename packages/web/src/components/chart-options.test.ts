@@ -95,7 +95,16 @@ describe("PolarizationTrendChart option builder", () => {
     expect(html).not.toContain("resting");
   });
 
-  it("restricts visualMap to only the Polarization Index data series to avoid markLine coord crash", () => {
+  it("does not have any series with empty data and markLine (ECharts coord crash)", () => {
+    const option = buildPolarizationTrendOption(sampleWeeks);
+    for (const series of option.series) {
+      if (series.markLine) {
+        expect(series.data.length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("restricts visualMap to only the Polarization Index data series", () => {
     const option = buildPolarizationTrendOption(sampleWeeks);
     const polarizationIndexSeriesIndex = option.series.findIndex(
       (s: { name?: string }) => s.name === "Polarization Index",

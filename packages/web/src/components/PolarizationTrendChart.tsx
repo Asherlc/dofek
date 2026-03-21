@@ -132,8 +132,9 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
       nameTextStyle: { color: "#71717a", fontSize: 11 },
     },
     visualMap: {
+      type: "piecewise",
       show: false,
-      seriesIndex: 3, // Only apply to the "Polarization Index" data series
+      seriesIndex: 2,
       pieces: [
         { lte: 2.0, color: "#ef4444" },
         { gt: 2.0, color: "#22c55e" },
@@ -170,10 +171,18 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
         tooltip: { show: false },
         z: 0,
       },
-      // Reference line at Threshold = 2.0
+      // Actual PI line with threshold reference line
       {
-        name: "Threshold = 2.0",
+        name: "Polarization Index",
         type: "line",
+        data: weeks.map((w) => [w.week, w.polarizationIndex]),
+        connectNulls: false,
+        smooth: true,
+        symbol: "circle",
+        symbolSize: 6,
+        lineStyle: { width: 2.5 },
+        itemStyle: { borderWidth: 2 },
+        z: 10,
         markLine: {
           silent: true,
           symbol: "none",
@@ -186,21 +195,6 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
           },
           tooltip: { show: false },
         },
-        data: [],
-        tooltip: { show: false },
-      },
-      // Actual PI line
-      {
-        name: "Polarization Index",
-        type: "line",
-        data: weeks.map((w) => [w.week, w.polarizationIndex]),
-        connectNulls: false,
-        smooth: true,
-        symbol: "circle",
-        symbolSize: 6,
-        lineStyle: { width: 2.5 },
-        itemStyle: { borderWidth: 2 },
-        z: 10,
       },
     ],
     legend: {
