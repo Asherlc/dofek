@@ -1,10 +1,10 @@
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
-import { exchangeCodeForTokens, refreshAccessToken } from "../auth/oauth.ts";
+import { exchangeCodeForTokens } from "../auth/oauth.ts";
+import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
-import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
-import { logger } from "../logger.ts";
+import { ensureProvider } from "../db/tokens.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
@@ -163,16 +163,13 @@ export class DecathlonProvider implements SyncProvider {
   }
 
   private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
-    const tokens = await loadTokens(db, this.id);
-    if (!tokens) throw new Error("No OAuth tokens for Decathlon. Run: health-data auth decathlon");
-    if (tokens.expiresAt > new Date()) return tokens;
-
-    logger.info("[decathlon] Token expired, refreshing...");
-    const config = decathlonOAuthConfig();
-    if (!config || !tokens.refreshToken) throw new Error("Cannot refresh Decathlon tokens");
-    const refreshed = await refreshAccessToken(config, tokens.refreshToken, this.fetchFn);
-    await saveTokens(db, this.id, refreshed);
-    return refreshed;
+    return resolveOAuthTokens({
+      db,
+      providerId: this.id,
+      providerName: this.name,
+      getOAuthConfig: () => decathlonOAuthConfig(),
+      fetchFn: this.fetchFn,
+    });
   }
 
   async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {

@@ -1,13 +1,13 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { computeInsights } from "../insights/engine.ts";
 import {
   activityRowSchema,
   bodyCompRowSchema,
-  computeInsights,
   dailyRowSchema,
   nutritionRowSchema,
   sleepRowSchema,
-} from "../insights/engine.ts";
+} from "../insights/schemas.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 

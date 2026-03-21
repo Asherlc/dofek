@@ -1,8 +1,65 @@
 import { TRPCError } from "@trpc/server";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+
+const activityListRowSchema = z
+  .object({
+    id: z.string(),
+    activity_type: z.string(),
+    started_at: timestampStringSchema,
+    ended_at: timestampStringSchema.nullable(),
+    name: z.string().nullable(),
+    provider_id: z.string(),
+    source_providers: z.array(z.string()),
+    avg_hr: z.number().nullable(),
+    max_hr: z.number().nullable(),
+    avg_power: z.number().nullable(),
+    distance_meters: z.number().nullable(),
+    calories: z.number().nullable(),
+    total_count: z.coerce.number(),
+  })
+  .passthrough();
+
+const activityDetailRowSchema = z.object({
+  id: z.string(),
+  activity_type: z.string(),
+  started_at: timestampStringSchema,
+  ended_at: timestampStringSchema.nullable(),
+  name: z.string().nullable(),
+  notes: z.string().nullable(),
+  provider_id: z.string(),
+  source_providers: z.array(z.string()),
+  avg_hr: z.number().nullable(),
+  max_hr: z.number().nullable(),
+  avg_power: z.number().nullable(),
+  max_power: z.number().nullable(),
+  avg_speed: z.number().nullable(),
+  max_speed: z.number().nullable(),
+  avg_cadence: z.number().nullable(),
+  total_distance: z.number().nullable(),
+  elevation_gain_m: z.number().nullable(),
+  elevation_loss_m: z.number().nullable(),
+  calories: z.number().nullable(),
+  sample_count: z.number().nullable(),
+});
+
+const streamPointRowSchema = z.object({
+  recorded_at: timestampStringSchema,
+  heart_rate: z.number().nullable(),
+  power: z.number().nullable(),
+  speed: z.number().nullable(),
+  cadence: z.number().nullable(),
+  altitude: z.number().nullable(),
+  lat: z.number().nullable(),
+  lng: z.number().nullable(),
+});
+
+const hrZoneRowSchema = z.object({
+  zone: z.coerce.number(),
+  seconds: z.coerce.number(),
+});
 
 export interface ActivityDetail {
   id: string;
@@ -48,24 +105,6 @@ export interface ActivityHrZone {
 
 export type ActivityHrZones = ActivityHrZone[];
 
-const activityListRowSchema = z
-  .object({
-    id: z.string(),
-    activity_type: z.string(),
-    started_at: z.string(),
-    ended_at: z.string().nullable(),
-    name: z.string().nullable(),
-    provider_id: z.string(),
-    source_providers: z.array(z.string()).nullable(),
-    avg_hr: z.number().nullable().optional(),
-    max_hr: z.number().nullable().optional(),
-    avg_power: z.number().nullable().optional(),
-    distance_meters: z.number().nullable().optional(),
-    calories: z.number().nullable().optional(),
-    total_count: z.coerce.number(),
-  })
-  .passthrough();
-
 export const activityRouter = router({
   list: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(
@@ -104,11 +143,8 @@ export const activityRouter = router({
             ORDER BY a.started_at DESC
             LIMIT ${input.limit} OFFSET ${input.offset}`,
       );
-      const totalCount = rows.length > 0 ? Number(rows[0]?.total_count) : 0;
-      const items = rows.map((row) => {
-        const { total_count, ...rest } = row;
-        return rest;
-      });
+      const totalCount = rows.length > 0 ? (rows[0]?.total_count ?? 0) : 0;
+      const items = rows.map(({ total_count, ...rest }) => rest);
       return { items, totalCount };
     }),
 
@@ -119,28 +155,6 @@ export const activityRouter = router({
   byId: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ ctx, input }): Promise<ActivityDetail> => {
-      const activityDetailRowSchema = z.object({
-        id: z.string(),
-        activity_type: z.string(),
-        started_at: z.string(),
-        ended_at: z.string().nullable(),
-        name: z.string().nullable(),
-        notes: z.string().nullable(),
-        provider_id: z.string(),
-        source_providers: z.array(z.string()),
-        avg_hr: z.coerce.number().nullable(),
-        max_hr: z.coerce.number().nullable(),
-        avg_power: z.coerce.number().nullable(),
-        max_power: z.coerce.number().nullable(),
-        avg_speed: z.coerce.number().nullable(),
-        max_speed: z.coerce.number().nullable(),
-        avg_cadence: z.coerce.number().nullable(),
-        total_distance: z.coerce.number().nullable(),
-        elevation_gain_m: z.coerce.number().nullable(),
-        elevation_loss_m: z.coerce.number().nullable(),
-        calories: z.coerce.number().nullable(),
-        sample_count: z.coerce.number().nullable(),
-      });
       const rows = await executeWithSchema(
         ctx.db,
         activityDetailRowSchema,
@@ -195,19 +209,9 @@ export const activityRouter = router({
       }),
     )
     .query(async ({ ctx, input }): Promise<StreamPoint[]> => {
-      const streamRowSchema = z.object({
-        recorded_at: z.string(),
-        heart_rate: z.coerce.number().nullable(),
-        power: z.coerce.number().nullable(),
-        speed: z.coerce.number().nullable(),
-        cadence: z.coerce.number().nullable(),
-        altitude: z.coerce.number().nullable(),
-        lat: z.coerce.number().nullable(),
-        lng: z.coerce.number().nullable(),
-      });
       const rows = await executeWithSchema(
         ctx.db,
-        streamRowSchema,
+        streamPointRowSchema,
         sql`WITH numbered AS (
               SELECT ms.*, ROW_NUMBER() OVER (ORDER BY ms.recorded_at) AS rn,
                      COUNT(*) OVER () AS total
@@ -241,10 +245,6 @@ export const activityRouter = router({
   hrZones: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ ctx, input }): Promise<ActivityHrZones> => {
-      const hrZoneRowSchema = z.object({
-        zone: z.coerce.number(),
-        seconds: z.coerce.number(),
-      });
       const rows = await executeWithSchema(
         ctx.db,
         hrZoneRowSchema,

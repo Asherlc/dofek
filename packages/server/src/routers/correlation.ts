@@ -8,15 +8,15 @@ import {
 } from "@dofek/stats/correlation";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import type { JoinedDay } from "../insights/engine.ts";
+import { joinByDate } from "../insights/engine.ts";
 import {
   activityRowSchema,
   bodyCompRowSchema,
   dailyRowSchema,
-  type JoinedDay,
-  joinByDate,
   nutritionRowSchema,
   sleepRowSchema,
-} from "../insights/engine.ts";
+} from "../insights/schemas.ts";
 import { spearmanCorrelation } from "../insights/stats.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";

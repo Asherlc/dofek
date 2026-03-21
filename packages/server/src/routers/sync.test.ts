@@ -56,7 +56,10 @@ vi.mock("../lib/start-worker.ts", () => ({
 
 vi.mock("../lib/typed-sql.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/typed-sql.ts")>()),
-  executeWithSchema: vi.fn(async (db: { execute: () => Promise<unknown[]> }) => db.execute()),
+  executeWithSchema: vi.fn(
+    async (db: { execute: (q: unknown) => Promise<unknown[]> }, _schema: unknown, query: unknown) =>
+      db.execute(query),
+  ),
 }));
 
 vi.mock("../logger.ts", () => ({

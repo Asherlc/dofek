@@ -19,7 +19,7 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
     ...original,
     executeWithSchema: vi.fn(
       async (
-        db: { execute: (query: unknown) => Promise<unknown[]> },
+        db: { execute: (q: unknown) => Promise<unknown[]> },
         _schema: unknown,
         query: unknown,
       ) => db.execute(query),
@@ -111,10 +111,7 @@ describe("dailyMetricsRouter", () => {
       expect(result).toEqual(rows[0]);
     });
 
-    it("passes through rows from executeWithSchema (coercion tested via Zod schema)", async () => {
-      // In production, executeWithSchema applies z.coerce.number() to coerce
-      // PostgreSQL string aggregates to numbers. Here the mock bypasses parsing,
-      // so we verify the router forwards the result from executeWithSchema as-is.
+    it("returns aggregate values from PostgreSQL", async () => {
       const rows = [
         {
           avg_resting_hr: 55,

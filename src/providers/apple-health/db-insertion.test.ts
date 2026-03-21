@@ -1165,7 +1165,7 @@ describe("upsertSleepBatch", () => {
     });
   });
 
-  it("calculates sleep efficiency as totalSleep / duration", async () => {
+  it("does not store efficiencyPct (derived in v_sleep view)", async () => {
     const { db, capture } = createMockDb();
     const bedStart = new Date("2024-03-01T23:00:00Z");
     const bedEnd = new Date("2024-03-02T07:00:00Z");
@@ -1187,16 +1187,7 @@ describe("upsertSleepBatch", () => {
     ];
 
     await upsertSleepBatch(db, "p1", records);
-    // efficiency = (120 + 240) / 480 * 100 = 75%
-    expect(capture.values[0]?.[0]).toMatchObject({ efficiencyPct: 75 });
-  });
-
-  it("sets efficiency to undefined for zero-duration sessions", async () => {
-    const { db, capture } = createMockDb();
-    const records = [makeSleep({ durationMinutes: 0 })];
-
-    await upsertSleepBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toHaveProperty("efficiencyPct", undefined);
+    expect(capture.values[0]?.[0]).not.toHaveProperty("efficiencyPct");
   });
 
   it("stores null sleep_type for short sessions", async () => {
@@ -1329,8 +1320,8 @@ describe("upsertBodyMeasurementBatch — deduplication", () => {
   });
 });
 
-describe("upsertDailyMetricsBatch — deduplication", () => {
-  it("aggregates daily metrics for the same date into one row", async () => {
+describe("upsertDailyMetricsBatch — per-source rows", () => {
+  it("stores separate rows per source for the same date", async () => {
     const { db, capture } = createMockDb();
 
     // Two step count records on the same day from different sources
@@ -1352,10 +1343,38 @@ describe("upsertDailyMetricsBatch — deduplication", () => {
     ];
 
     const count = await upsertDailyMetricsBatch(db, "apple_health", records);
-    // Both records are on the same day → aggregated into 1 row
-    expect(count).toBe(1);
+    // Different sources → separate rows (dedup happens at query time in the view)
+    expect(count).toBe(2);
     expect(capture.values).toHaveLength(1);
-    expect(capture.values[0]).toHaveLength(1);
+    expect(capture.values[0]).toHaveLength(2);
+    const sourceNames = capture.values[0]?.map((r: Record<string, unknown>) => r.sourceName).sort();
+    expect(sourceNames).toEqual(["Apple Watch", "iPhone"]);
+  });
+
+  it("sums records from the same source on the same day", async () => {
+    const { db, capture } = createMockDb();
+
+    const records = [
+      makeRecord({
+        type: "HKQuantityTypeIdentifierStepCount",
+        sourceName: "Apple Watch",
+        value: 2000,
+        startDate: new Date("2024-06-01T10:00:00Z"),
+        endDate: new Date("2024-06-01T10:30:00Z"),
+      }),
+      makeRecord({
+        type: "HKQuantityTypeIdentifierStepCount",
+        sourceName: "Apple Watch",
+        value: 3000,
+        startDate: new Date("2024-06-01T14:00:00Z"),
+        endDate: new Date("2024-06-01T14:30:00Z"),
+      }),
+    ];
+
+    const count = await upsertDailyMetricsBatch(db, "apple_health", records);
+    // Same source → summed into one row
+    expect(count).toBe(1);
+    expect(capture.values[0]?.[0]).toMatchObject({ steps: 5000, sourceName: "Apple Watch" });
   });
 });
 

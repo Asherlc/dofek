@@ -19,7 +19,7 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
     ...original,
     executeWithSchema: vi.fn(
       async (
-        db: { execute: (query: unknown) => Promise<unknown[]> },
+        db: { execute: (q: unknown) => Promise<unknown[]> },
         _schema: unknown,
         query: unknown,
       ) => db.execute(query),
@@ -164,9 +164,7 @@ describe("trainingRouter", () => {
       expect(result).toEqual(rows);
     });
 
-    it("passes through rows from executeWithSchema (coercion tested via Zod schema)", async () => {
-      // In production, executeWithSchema applies z.coerce.number() to coerce
-      // Postgres ROUND(...)::numeric strings. Mock bypasses parsing.
+    it("returns hours as numeric values", async () => {
       const rows = [{ week: "2024-01-15", activity_type: "cycling", count: 3, hours: 5.5 }];
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },

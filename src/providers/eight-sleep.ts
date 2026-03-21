@@ -136,7 +136,6 @@ export class EightSleepProvider implements SyncProvider {
                 remMinutes: parsed.remMinutes,
                 lightMinutes: parsed.lightMinutes,
                 awakeMinutes: parsed.awakeMinutes,
-                efficiencyPct: parsed.efficiencyPct,
                 sleepType: parsed.sleepType,
               })
               .onConflictDoUpdate({
@@ -149,7 +148,6 @@ export class EightSleepProvider implements SyncProvider {
                   remMinutes: parsed.remMinutes,
                   lightMinutes: parsed.lightMinutes,
                   awakeMinutes: parsed.awakeMinutes,
-                  efficiencyPct: parsed.efficiencyPct,
                   sleepType: parsed.sleepType,
                 },
               });
@@ -192,7 +190,7 @@ export class EightSleepProvider implements SyncProvider {
                 skinTempC: parsed.skinTempC,
               })
               .onConflictDoUpdate({
-                target: [dailyMetrics.date, dailyMetrics.providerId],
+                target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
                 set: {
                   restingHr: parsed.restingHr ? Math.round(parsed.restingHr) : undefined,
                   hrv: parsed.hrv,

@@ -285,33 +285,39 @@ export async function upsertDailyMetricsBatch(
   providerId: string,
   records: HealthRecord[],
 ): Promise<number> {
-  // Aggregate by date -- sum steps/energy, select overnight HRV, take latest for other point-in-time values
-  const byDate = new Map<string, Map<string, number>>();
-  const heartRateVariabilitySamplesByDate = new Map<
+  // Aggregate by (date, source) -- each source device gets its own row.
+  // Deduplication happens at query time in the v_daily_metrics materialized view.
+  const byDateSource = new Map<string, Map<string, number>>();
+  const heartRateVariabilitySamplesByDateSource = new Map<
     string,
     Array<{ value: number; startDate: Date }>
   >();
   for (const r of records) {
     if (!DAILY_METRIC_TYPES.has(r.type)) continue;
     const dateKey = dateToString(r.startDate);
-    if (!byDate.has(dateKey)) byDate.set(dateKey, new Map());
-    const day = byDate.get(dateKey) ?? new Map();
+    const sourceName = r.sourceName ?? null;
+    const compoundKey = `${dateKey}\0${sourceName}`;
+    if (!byDateSource.has(compoundKey)) byDateSource.set(compoundKey, new Map());
+    const day = byDateSource.get(compoundKey) ?? new Map();
 
     if (ADDITIVE_DAILY_TYPES.has(r.type)) {
       day.set(r.type, (day.get(r.type) ?? 0) + r.value);
     } else if (r.type === "HKQuantityTypeIdentifierHeartRateVariabilitySDNN") {
-      const daySamples = heartRateVariabilitySamplesByDate.get(dateKey) ?? [];
+      const daySamples = heartRateVariabilitySamplesByDateSource.get(compoundKey) ?? [];
       daySamples.push({ value: r.value, startDate: r.startDate });
-      heartRateVariabilitySamplesByDate.set(dateKey, daySamples);
+      heartRateVariabilitySamplesByDateSource.set(compoundKey, daySamples);
     } else {
       // Point-in-time: keep latest
       day.set(r.type, r.value);
     }
   }
 
-  // Select overnight HRV for each date using shared logic
-  for (const [dateKey, heartRateVariabilitySamples] of heartRateVariabilitySamplesByDate) {
-    const day = byDate.get(dateKey);
+  // Select overnight HRV for each (date, source) using shared logic
+  for (const [
+    compoundKey,
+    heartRateVariabilitySamples,
+  ] of heartRateVariabilitySamplesByDateSource) {
+    const day = byDateSource.get(compoundKey);
     const selected = selectDailyHeartRateVariability(heartRateVariabilitySamples);
     if (day && selected !== null) {
       day.set("HKQuantityTypeIdentifierHeartRateVariabilitySDNN", selected);
@@ -319,10 +325,14 @@ export async function upsertDailyMetricsBatch(
   }
 
   const rows: { row: typeof dailyMetrics.$inferInsert }[] = [];
-  for (const [dateKey, metrics] of byDate) {
+  for (const [compoundKey, metrics] of byDateSource) {
+    const separatorIndex = compoundKey.indexOf("\0");
+    const dateKey = compoundKey.slice(0, separatorIndex);
+    const sourceName = compoundKey.slice(separatorIndex + 1);
     const row: typeof dailyMetrics.$inferInsert = {
       date: dateKey,
       providerId,
+      sourceName,
     };
 
     for (const [type, value] of metrics) {
@@ -389,14 +399,14 @@ export async function upsertDailyMetricsBatch(
     const batch = insertRows.slice(i, i + 500);
     await insertWithDuplicateDiag(
       "daily_metrics",
-      (row) => `${row.date}:${row.providerId}`,
+      (row) => `${row.date}:${row.providerId}:${row.sourceName}`,
       batch,
       (b) =>
         db
           .insert(dailyMetrics)
           .values(b)
           .onConflictDoUpdate({
-            target: [dailyMetrics.date, dailyMetrics.providerId],
+            target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
             set: {
               // Point-in-time metrics: prefer new value, fall back to existing
               restingHr: sql`coalesce(excluded.resting_hr, ${dailyMetrics.restingHr})`,
@@ -440,18 +450,19 @@ export async function aggregateSpO2ToDailyMetrics(
   since: Date,
 ): Promise<void> {
   await db.execute(
-    sql`INSERT INTO fitness.daily_metrics (date, provider_id, user_id, spo2_avg)
+    sql`INSERT INTO fitness.daily_metrics (date, provider_id, user_id, source_name, spo2_avg)
         SELECT
           (recorded_at AT TIME ZONE 'UTC')::date AS date,
           provider_id,
           user_id,
+          source_name,
           AVG(spo2) * 100 AS spo2_avg
         FROM fitness.metric_stream
         WHERE provider_id = ${providerId}
           AND spo2 IS NOT NULL
           AND recorded_at >= ${since.toISOString()}::timestamptz
-        GROUP BY (recorded_at AT TIME ZONE 'UTC')::date, provider_id, user_id
-        ON CONFLICT (date, provider_id) DO UPDATE SET
+        GROUP BY (recorded_at AT TIME ZONE 'UTC')::date, provider_id, user_id, source_name
+        ON CONFLICT (date, provider_id, source_name) DO UPDATE SET
           spo2_avg = EXCLUDED.spo2_avg`,
   );
 }
@@ -467,18 +478,19 @@ export async function aggregateSkinTempToDailyMetrics(
   since: Date,
 ): Promise<void> {
   await db.execute(
-    sql`INSERT INTO fitness.daily_metrics (date, provider_id, user_id, skin_temp_c)
+    sql`INSERT INTO fitness.daily_metrics (date, provider_id, user_id, source_name, skin_temp_c)
         SELECT
           (recorded_at AT TIME ZONE 'UTC')::date AS date,
           provider_id,
           user_id,
+          source_name,
           AVG(skin_temperature) AS skin_temp_c
         FROM fitness.metric_stream
         WHERE provider_id = ${providerId}
           AND skin_temperature IS NOT NULL
           AND recorded_at >= ${since.toISOString()}::timestamptz
-        GROUP BY (recorded_at AT TIME ZONE 'UTC')::date, provider_id, user_id
-        ON CONFLICT (date, provider_id) DO UPDATE SET
+        GROUP BY (recorded_at AT TIME ZONE 'UTC')::date, provider_id, user_id, source_name
+        ON CONFLICT (date, provider_id, source_name) DO UPDATE SET
           skin_temp_c = EXCLUDED.skin_temp_c`,
   );
 }
@@ -784,7 +796,6 @@ export async function upsertSleepBatch(
       }
     }
 
-    const totalSleepMinutes = deepMinutes + remMinutes + lightMinutes;
     const externalId = `ah:sleep:${bed.startDate.toISOString()}`;
 
     return {
@@ -793,7 +804,6 @@ export async function upsertSleepBatch(
       remMinutes,
       lightMinutes,
       awakeMinutes,
-      totalSleepMinutes,
       externalId,
     };
   });
@@ -809,10 +819,6 @@ export async function upsertSleepBatch(
     remMinutes: s.remMinutes,
     lightMinutes: s.lightMinutes,
     awakeMinutes: s.awakeMinutes,
-    efficiencyPct:
-      s.bed.durationMinutes > 0
-        ? Math.round((s.totalSleepMinutes / s.bed.durationMinutes) * 1000) / 10
-        : undefined,
     sleepType: null,
     sourceName: s.bed.sourceName,
   }));

@@ -1,12 +1,12 @@
 import { createActivityTypeMapper } from "@dofek/training/training";
 import { z } from "zod";
 import type { OAuthConfig } from "../auth/oauth.ts";
-import { exchangeCodeForTokens, getOAuthRedirectUri, refreshAccessToken } from "../auth/oauth.ts";
+import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
+import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { activity, dailyMetrics, healthEvent, metricStream, sleepSession } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
-import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
-import { logger } from "../logger.ts";
+import { ensureProvider } from "../db/tokens.ts";
 import type {
   ProviderAuthSetup,
   ProviderIdentity,
@@ -613,26 +613,14 @@ export class OuraProvider implements SyncProvider {
   }
 
   private async resolveAccessToken(db: SyncDatabase): Promise<string> {
-    const tokens = await loadTokens(db, this.id);
-    if (!tokens) {
-      throw new Error("No OAuth tokens found for Oura. Run: health-data auth oura");
-    }
-
-    if (tokens.expiresAt > new Date()) {
-      return tokens.accessToken;
-    }
-
-    logger.info("[oura] Access token expired, refreshing...");
-    const config = ouraOAuthConfig();
-    if (!config) {
-      throw new Error("OURA_CLIENT_ID and OURA_CLIENT_SECRET are required to refresh tokens");
-    }
-    if (!tokens.refreshToken) {
-      throw new Error("No refresh token for Oura");
-    }
-    const refreshed = await refreshAccessToken(config, tokens.refreshToken, this.fetchFn);
-    await saveTokens(db, this.id, refreshed);
-    return refreshed.accessToken;
+    const tokens = await resolveOAuthTokens({
+      db,
+      providerId: this.id,
+      providerName: this.name,
+      getOAuthConfig: () => ouraOAuthConfig(),
+      fetchFn: this.fetchFn,
+    });
+    return tokens.accessToken;
   }
 
   async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
@@ -1206,7 +1194,7 @@ export class OuraProvider implements SyncProvider {
                 resilienceLevel: parsed.resilienceLevel,
               })
               .onConflictDoUpdate({
-                target: [dailyMetrics.date, dailyMetrics.providerId],
+                target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
                 set: {
                   steps: parsed.steps,
                   restingHr: parsed.restingHr,

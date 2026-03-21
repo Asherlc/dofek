@@ -5,14 +5,15 @@ import { executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQueryLight, protectedProcedure, router } from "../trpc.ts";
 import { DISCONNECT_CHILD_TABLES } from "./provider-detail.ts";
 
+const settingRowSchema = z.object({ key: z.string(), value: z.unknown() });
+const providerAccountRowSchema = z.object({ provider_account_id: z.string() });
+
 const USER_SCOPED_DELETE_TABLES = [
   "fitness.user_settings",
   "fitness.life_events",
   "fitness.sport_settings",
   "fitness.supplement",
 ];
-
-const settingRowSchema = z.object({ key: z.string(), value: z.unknown() });
 
 export const settingsRouter = router({
   get: cachedProtectedQueryLight(CacheTTL.LONG)
@@ -59,10 +60,9 @@ export const settingsRouter = router({
     }),
 
   slackStatus: cachedProtectedQueryLight(CacheTTL.MEDIUM).query(async ({ ctx }) => {
-    const slackRowSchema = z.object({ provider_account_id: z.string() });
     const rows = await executeWithSchema(
       ctx.db,
-      slackRowSchema,
+      providerAccountRowSchema,
       sql`SELECT provider_account_id FROM fitness.auth_account
           WHERE user_id = ${ctx.userId} AND auth_provider = 'slack'
           LIMIT 1`,

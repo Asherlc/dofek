@@ -1,7 +1,37 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+
+const intervalRowSchema = z.object({
+  id: z.string(),
+  interval_index: z.coerce.number(),
+  label: z.string().nullable(),
+  interval_type: z.string().nullable(),
+  started_at: timestampStringSchema,
+  ended_at: timestampStringSchema.nullable(),
+  duration_seconds: z.coerce.number().nullable(),
+  avg_heart_rate: z.number().nullable(),
+  max_heart_rate: z.number().nullable(),
+  avg_power: z.number().nullable(),
+  max_power: z.number().nullable(),
+  avg_speed: z.number().nullable(),
+  max_speed: z.number().nullable(),
+  avg_cadence: z.number().nullable(),
+  distance_meters: z.number().nullable(),
+  elevation_gain: z.number().nullable(),
+});
+
+const minuteAggRowSchema = z.object({
+  minute_start: timestampStringSchema,
+  avg_power: z.coerce.number().nullable(),
+  avg_hr: z.coerce.number().nullable(),
+  avg_speed: z.coerce.number().nullable(),
+  avg_cadence: z.coerce.number().nullable(),
+  max_power: z.number().nullable(),
+  max_hr: z.number().nullable(),
+  max_speed: z.number().nullable(),
+});
 
 export const intervalsRouter = router({
   /**
@@ -11,24 +41,6 @@ export const intervalsRouter = router({
   byActivity: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ activityId: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
-      const intervalRowSchema = z.object({
-        id: z.string(),
-        interval_index: z.coerce.number(),
-        label: z.string().nullable(),
-        interval_type: z.string().nullable(),
-        started_at: z.string(),
-        ended_at: z.string().nullable(),
-        duration_seconds: z.coerce.number().nullable(),
-        avg_heart_rate: z.coerce.number().nullable(),
-        max_heart_rate: z.coerce.number().nullable(),
-        avg_power: z.coerce.number().nullable(),
-        max_power: z.coerce.number().nullable(),
-        avg_speed: z.coerce.number().nullable(),
-        max_speed: z.coerce.number().nullable(),
-        avg_cadence: z.coerce.number().nullable(),
-        distance_meters: z.coerce.number().nullable(),
-        elevation_gain: z.coerce.number().nullable(),
-      });
       const rows = await executeWithSchema(
         ctx.db,
         intervalRowSchema,
@@ -104,16 +116,6 @@ export const intervalsRouter = router({
     .input(z.object({ activityId: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
       // Get per-minute aggregates for the activity
-      const minuteAggRowSchema = z.object({
-        minute_start: z.string(),
-        avg_power: z.coerce.number().nullable(),
-        avg_hr: z.coerce.number().nullable(),
-        avg_speed: z.coerce.number().nullable(),
-        avg_cadence: z.coerce.number().nullable(),
-        max_power: z.coerce.number().nullable(),
-        max_hr: z.coerce.number().nullable(),
-        max_speed: z.coerce.number().nullable(),
-      });
       const rows = await executeWithSchema(
         ctx.db,
         minuteAggRowSchema,
