@@ -426,14 +426,18 @@ export const recoveryRouter = router({
                 AND date > CURRENT_DATE - ${queryDays}::int
             ),
             sleep_eff AS (
-              SELECT DISTINCT ON ((COALESCE(ended_at, started_at + interval '8 hours') AT TIME ZONE ${ctx.timezone})::date)
-                (COALESCE(ended_at, started_at + interval '8 hours') AT TIME ZONE ${ctx.timezone})::date::text AS date,
+              SELECT DISTINCT ON (local_date)
+                local_date::text AS date,
                 efficiency_pct
-              FROM fitness.v_sleep
-              WHERE user_id = ${ctx.userId}
-                AND is_nap = false
-                AND started_at > NOW() - ${queryDays}::int * INTERVAL '1 day'
-              ORDER BY (COALESCE(ended_at, started_at + interval '8 hours') AT TIME ZONE ${ctx.timezone})::date, started_at DESC
+              FROM (
+                SELECT (COALESCE(ended_at, started_at + interval '8 hours') AT TIME ZONE ${ctx.timezone})::date AS local_date,
+                       efficiency_pct, started_at
+                FROM fitness.v_sleep
+                WHERE user_id = ${ctx.userId}
+                  AND is_nap = false
+                  AND started_at > NOW() - ${queryDays}::int * INTERVAL '1 day'
+              ) sleep_sub
+              ORDER BY local_date, started_at DESC
             )
             SELECT
               m.date,

@@ -76,17 +76,24 @@ export async function checkAnomalies(
             AND date > CURRENT_DATE - 35
           ORDER BY date ASC
         ),
-        sleep AS (
+        sleep_raw AS (
           SELECT
             (started_at AT TIME ZONE ${timezone})::date AS date,
             duration_minutes,
-            AVG(duration_minutes) OVER (ORDER BY (started_at AT TIME ZONE ${timezone})::date ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING) AS sleep_mean,
-            STDDEV_POP(duration_minutes) OVER (ORDER BY (started_at AT TIME ZONE ${timezone})::date ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING) AS sleep_sd,
-            COUNT(*) OVER (ORDER BY (started_at AT TIME ZONE ${timezone})::date ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING) AS sleep_count
+            started_at
           FROM fitness.v_sleep
           WHERE user_id = ${userId}
             AND is_nap = false
             AND started_at > NOW() - INTERVAL '35 days'
+        ),
+        sleep AS (
+          SELECT
+            date,
+            duration_minutes,
+            AVG(duration_minutes) OVER (ORDER BY date ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING) AS sleep_mean,
+            STDDEV_POP(duration_minutes) OVER (ORDER BY date ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING) AS sleep_sd,
+            COUNT(*) OVER (ORDER BY date ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING) AS sleep_count
+          FROM sleep_raw
           ORDER BY started_at ASC
         )
         SELECT
