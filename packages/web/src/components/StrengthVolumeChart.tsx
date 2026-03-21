@@ -25,9 +25,9 @@ export function StrengthVolumeChart({ data, loading }: StrengthVolumeChartProps)
     grid: { top: 30, right: 20, bottom: 40, left: 60 },
     tooltip: {
       trigger: "axis",
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
+      backgroundColor: "#ffffff",
+      borderColor: "rgba(74, 158, 122, 0.2)",
+      textStyle: { color: "#1a2e1a", fontSize: 12 },
       formatter(params: { dataIndex: number }[]) {
         const first = params[0];
         if (!first) return "";
@@ -46,21 +46,21 @@ export function StrengthVolumeChart({ data, loading }: StrengthVolumeChartProps)
     },
     xAxis: {
       type: "time" as const,
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
+      axisLabel: { color: "#6b8a6b", fontSize: 11 },
+      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
     },
     yAxis: {
       type: "value",
       name: "Volume (kg)",
-      nameTextStyle: { color: "#71717a", fontSize: 11 },
+      nameTextStyle: { color: "#6b8a6b", fontSize: 11 },
       axisLabel: {
-        color: "#71717a",
+        color: "#6b8a6b",
         fontSize: 11,
         formatter(value: number) {
           return value >= 1000 ? `${(value / 1000).toFixed(1)}k` : String(value);
         },
       },
-      splitLine: { lineStyle: { color: "#27272a" } },
+      splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
     },
     series: [
       {

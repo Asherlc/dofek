@@ -20,9 +20,9 @@ export function buildRampRateOption(data: RampRateWeekData[]) {
     grid: { top: 50, right: 20, bottom: 50, left: 55 },
     tooltip: {
       trigger: "axis" as const,
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
+      backgroundColor: "#ffffff",
+      borderColor: "rgba(74, 158, 122, 0.2)",
+      textStyle: { color: "#1a2e1a", fontSize: 12 },
       formatter(params: Array<{ dataIndex: number; value: [string, number]; marker: string }>) {
         if (!params.length) return "";
         const first = params[0];
@@ -44,16 +44,16 @@ export function buildRampRateOption(data: RampRateWeekData[]) {
     },
     xAxis: {
       type: "time" as const,
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
+      axisLabel: { color: "#6b8a6b", fontSize: 11 },
+      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.25)" } },
     },
     yAxis: {
       type: "value" as const,
       name: "Ramp Rate (fitness/week)",
-      splitLine: { lineStyle: { color: "#27272a" } },
-      axisLabel: { color: "#71717a", fontSize: 11 },
+      splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
+      axisLabel: { color: "#6b8a6b", fontSize: 11 },
       axisLine: { show: false },
-      nameTextStyle: { color: "#71717a", fontSize: 11 },
+      nameTextStyle: { color: "#6b8a6b", fontSize: 11 },
     },
     series: [
       {

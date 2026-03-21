@@ -31,9 +31,9 @@ export function ElevationGainChart({ data, loading }: ElevationGainChartProps) {
     grid: { top: 40, right: 20, bottom: 30, left: 55 },
     tooltip: {
       trigger: "axis",
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
+      backgroundColor: "#ffffff",
+      borderColor: "rgba(74, 158, 122, 0.2)",
+      textStyle: { color: "#1a2e1a", fontSize: 12 },
       formatter: (params: Record<string, unknown>[]) => {
         const rawParam = params[0];
         if (!rawParam) return "";
@@ -59,17 +59,17 @@ export function ElevationGainChart({ data, loading }: ElevationGainChartProps) {
     },
     xAxis: {
       type: "time" as const,
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
+      axisLabel: { color: "#6b8a6b", fontSize: 11 },
+      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
       splitLine: { show: false },
     },
     yAxis: {
       type: "value",
       name: `Elevation Gain (${elevationLabel(unitSystem)})`,
-      splitLine: { lineStyle: { color: "#27272a" } },
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      axisLine: { show: true, lineStyle: { color: "#3f3f46" } },
-      nameTextStyle: { color: "#71717a", fontSize: 11 },
+      splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
+      axisLabel: { color: "#6b8a6b", fontSize: 11 },
+      axisLine: { show: true, lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
+      nameTextStyle: { color: "#6b8a6b", fontSize: 11 },
     },
     series: [
       {

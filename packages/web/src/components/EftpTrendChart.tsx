@@ -49,9 +49,9 @@ export function EftpTrendChart({ data, currentEftp, loading }: EftpTrendChartPro
     grid: { top: 30, right: 20, bottom: 30, left: 55 },
     tooltip: {
       trigger: "axis" as const,
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
+      backgroundColor: "#ffffff",
+      borderColor: "rgba(74, 158, 122, 0.2)",
+      textStyle: { color: "#1a2e1a", fontSize: 12 },
       formatter: (
         params: Array<{
           data: [string, number];
@@ -64,24 +64,24 @@ export function EftpTrendChart({ data, currentEftp, loading }: EftpTrendChartPro
         const match = data.find((d) => d.date === dateStr);
         const name = match?.activityName ?? "";
         const lines = [`<strong>${watts}W</strong>`, point.axisValueLabel];
-        if (name) lines.push(`<span style="color:#a1a1aa">${name}</span>`);
+        if (name) lines.push(`<span style="color:#4a6a4a">${name}</span>`);
         return lines.join("<br/>");
       },
     },
     xAxis: {
       type: "time" as const,
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
+      axisLabel: { color: "#6b8a6b", fontSize: 11 },
+      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
       splitLine: { show: false },
     },
     yAxis: {
       type: "value" as const,
       name: "Est. Threshold Power (W)",
       min: "dataMin" as const,
-      splitLine: { lineStyle: { color: "#27272a" } },
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      axisLine: { show: true, lineStyle: { color: "#3f3f46" } },
-      nameTextStyle: { color: "#71717a", fontSize: 11 },
+      splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
+      axisLabel: { color: "#6b8a6b", fontSize: 11 },
+      axisLine: { show: true, lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
+      nameTextStyle: { color: "#6b8a6b", fontSize: 11 },
     },
     series: [
       {

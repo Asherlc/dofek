@@ -100,8 +100,8 @@ export function PowerCurveChart({ data, comparisonData, model, loading }: PowerC
       smooth: 0.3,
       symbol: "circle",
       symbolSize: 4,
-      lineStyle: { width: 2, color: "#71717a" },
-      itemStyle: { color: "#71717a" },
+      lineStyle: { width: 2, color: "#6b8a6b" },
+      itemStyle: { color: "#6b8a6b" },
     });
   }
 
@@ -110,9 +110,9 @@ export function PowerCurveChart({ data, comparisonData, model, loading }: PowerC
     grid: { top: 30, right: 20, bottom: 40, left: 55 },
     tooltip: {
       trigger: "item" as const,
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
+      backgroundColor: "#ffffff",
+      borderColor: "rgba(74, 158, 122, 0.2)",
+      textStyle: { color: "#1a2e1a", fontSize: 12 },
       formatter: (params: { data: [number, number]; seriesName: string }) => {
         const [seconds, watts] = params.data;
         return `${params.seriesName}<br/>${formatDuration(seconds)}: <strong>${watts}W</strong>`;
@@ -123,28 +123,28 @@ export function PowerCurveChart({ data, comparisonData, model, loading }: PowerC
       name: "Duration",
       nameLocation: "center" as const,
       nameGap: 25,
-      nameTextStyle: { color: "#71717a", fontSize: 11 },
+      nameTextStyle: { color: "#6b8a6b", fontSize: 11 },
       min: 5,
       max: 7200,
       axisLabel: {
-        color: "#71717a",
+        color: "#6b8a6b",
         fontSize: 11,
         formatter: (value: number) => formatDuration(value),
       },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
+      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.25)" } },
       splitLine: { show: false },
     },
     yAxis: {
       type: "value" as const,
       name: "Watts",
-      splitLine: { lineStyle: { color: "#27272a" } },
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      axisLine: { show: true, lineStyle: { color: "#3f3f46" } },
-      nameTextStyle: { color: "#71717a", fontSize: 11 },
+      splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
+      axisLabel: { color: "#6b8a6b", fontSize: 11 },
+      axisLine: { show: true, lineStyle: { color: "rgba(74, 158, 122, 0.25)" } },
+      nameTextStyle: { color: "#6b8a6b", fontSize: 11 },
     },
     legend: {
       show: series.length > 1,
-      textStyle: { color: "#a1a1aa", fontSize: 10 },
+      textStyle: { color: "#4a6a4a", fontSize: 10 },
       top: 0,
     },
     series,

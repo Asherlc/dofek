@@ -55,27 +55,27 @@ export function AdaptiveTdeeChart({ data, loading }: AdaptiveTdeeChartProps) {
           grid: { top: 30, right: 50, bottom: 30, left: 50 },
           tooltip: {
             trigger: "axis",
-            backgroundColor: "#18181b",
-            borderColor: "#3f3f46",
-            textStyle: { color: "#e4e4e7", fontSize: 12 },
+            backgroundColor: "#ffffff",
+            borderColor: "rgba(74, 158, 122, 0.2)",
+            textStyle: { color: "#1a2e1a", fontSize: 12 },
           },
           legend: {
             top: 0,
-            textStyle: { color: "#71717a", fontSize: 11 },
+            textStyle: { color: "#6b8a6b", fontSize: 11 },
           },
           xAxis: {
             type: "time",
-            axisLabel: { color: "#71717a", fontSize: 11 },
-            axisLine: { lineStyle: { color: "#3f3f46" } },
+            axisLabel: { color: "#6b8a6b", fontSize: 11 },
+            axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
             splitLine: { show: false },
           },
           yAxis: [
             {
               type: "value",
               name: "kcal",
-              axisLabel: { color: "#71717a", fontSize: 11 },
-              splitLine: { lineStyle: { color: "#27272a" } },
-              nameTextStyle: { color: "#71717a", fontSize: 11 },
+              axisLabel: { color: "#6b8a6b", fontSize: 11 },
+              splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
+              nameTextStyle: { color: "#6b8a6b", fontSize: 11 },
             },
             {
               type: "value",
@@ -83,9 +83,9 @@ export function AdaptiveTdeeChart({ data, loading }: AdaptiveTdeeChartProps) {
               position: "right",
               min: weightValues.length > 0 ? weightAxisMin : undefined,
               max: weightValues.length > 0 ? weightAxisMax : undefined,
-              axisLabel: { color: "#71717a", fontSize: 11 },
+              axisLabel: { color: "#6b8a6b", fontSize: 11 },
               splitLine: { show: false },
-              nameTextStyle: { color: "#71717a", fontSize: 11 },
+              nameTextStyle: { color: "#6b8a6b", fontSize: 11 },
             },
           ],
           series: [

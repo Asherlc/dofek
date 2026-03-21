@@ -64,9 +64,9 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
     grid: { top: 40, right: 20, bottom: 40, left: 55 },
     tooltip: {
       trigger: "axis",
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
+      backgroundColor: "#ffffff",
+      borderColor: "rgba(74, 158, 122, 0.2)",
+      textStyle: { color: "#1a2e1a", fontSize: 12 },
       formatter: (
         params: Array<{
           axisValue: string;
@@ -120,18 +120,18 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
     },
     xAxis: {
       type: "time" as const,
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
+      axisLabel: { color: "#6b8a6b", fontSize: 11 },
+      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
     },
     yAxis: {
       type: "value",
       name: "Polarization Index",
       min: yMin,
       max: yMax,
-      splitLine: { lineStyle: { color: "#27272a" } },
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      axisLine: { show: true, lineStyle: { color: "#3f3f46" } },
-      nameTextStyle: { color: "#71717a", fontSize: 11 },
+      splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
+      axisLabel: { color: "#6b8a6b", fontSize: 11 },
+      axisLine: { show: true, lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
+      nameTextStyle: { color: "#6b8a6b", fontSize: 11 },
     },
     series: [
       // Shaded green area above Threshold = 2.0
@@ -173,7 +173,7 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
           [lastDate, 2.0],
         ],
         symbol: "none",
-        lineStyle: { color: "#a1a1aa", type: "dashed", width: 1 },
+        lineStyle: { color: "#4a6a4a", type: "dashed", width: 1 },
         silent: true,
         tooltip: { show: false },
         z: 1,
@@ -193,7 +193,7 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
         smooth: true,
         symbol: "circle",
         symbolSize: 6,
-        lineStyle: { width: 2.5, color: "#a1a1aa" },
+        lineStyle: { width: 2.5, color: "#4a6a4a" },
         itemStyle: { borderWidth: 2 },
         z: 10,
       },

@@ -332,7 +332,7 @@ function MetricsChart({
       position: "left",
       axisLabel: { color: CHART_COLORS.heartRate, fontSize: 11 },
       nameTextStyle: { color: CHART_COLORS.heartRate, fontSize: 10 },
-      splitLine: { show: axisIndex === 0, lineStyle: { color: "#27272a" } },
+      splitLine: { show: axisIndex === 0, lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
     });
     series.push({
       name: "Heart Rate",
@@ -353,7 +353,7 @@ function MetricsChart({
       position: axisIndex === 0 ? "left" : "right",
       axisLabel: { color: CHART_COLORS.power, fontSize: 11 },
       nameTextStyle: { color: CHART_COLORS.power, fontSize: 10 },
-      splitLine: { show: axisIndex === 0, lineStyle: { color: "#27272a" } },
+      splitLine: { show: axisIndex === 0, lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
     });
     series.push({
       name: "Power",
@@ -375,7 +375,7 @@ function MetricsChart({
       offset: axisIndex > 1 ? (axisIndex - 1) * 60 : 0,
       axisLabel: { color: CHART_COLORS.speed, fontSize: 11 },
       nameTextStyle: { color: CHART_COLORS.speed, fontSize: 10 },
-      splitLine: { show: axisIndex === 0, lineStyle: { color: "#27272a" } },
+      splitLine: { show: axisIndex === 0, lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
     });
     series.push({
       name: "Speed",
@@ -399,7 +399,7 @@ function MetricsChart({
       offset: axisIndex > 1 ? (axisIndex - 1) * 60 : 0,
       axisLabel: { color: CHART_COLORS.cadence, fontSize: 11 },
       nameTextStyle: { color: CHART_COLORS.cadence, fontSize: 10 },
-      splitLine: { show: axisIndex === 0, lineStyle: { color: "#27272a" } },
+      splitLine: { show: axisIndex === 0, lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
     });
     series.push({
       name: "Cadence",
@@ -420,13 +420,13 @@ function MetricsChart({
     grid: { top: 40, right: 60 + Math.max(0, rightAxisCount - 1) * 60, bottom: 60, left: 60 },
     tooltip: {
       trigger: "axis",
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
+      backgroundColor: "#ffffff",
+      borderColor: "rgba(74, 158, 122, 0.2)",
+      textStyle: { color: "#1a2e1a", fontSize: 12 },
     },
     legend: {
       top: 0,
-      textStyle: { color: "#a1a1aa", fontSize: 11 },
+      textStyle: { color: "#4a6a4a", fontSize: 11 },
     },
     dataZoom: [
       { type: "inside", xAxisIndex: 0, start: 0, end: 100 },
@@ -437,25 +437,25 @@ function MetricsChart({
         end: 100,
         height: 20,
         bottom: 10,
-        borderColor: "#3f3f46",
-        backgroundColor: "#18181b",
+        borderColor: "rgba(74, 158, 122, 0.2)",
+        backgroundColor: "#ffffff",
         fillerColor: "rgba(34,197,94,0.15)",
         handleStyle: { color: "#22c55e" },
-        textStyle: { color: "#71717a" },
+        textStyle: { color: "#6b8a6b" },
       },
     ],
     xAxis: {
       type: "category",
       data: times,
       axisLabel: {
-        color: "#71717a",
+        color: "#6b8a6b",
         fontSize: 11,
         formatter: (v: string) => {
           const d = new Date(v);
           return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
         },
       },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
+      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
     },
     yAxis: yAxes,
     series,
@@ -483,9 +483,9 @@ function ElevationChart({
     grid: { top: 10, right: 20, bottom: 30, left: 50 },
     tooltip: {
       trigger: "axis",
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
+      backgroundColor: "#ffffff",
+      borderColor: "rgba(74, 158, 122, 0.2)",
+      textStyle: { color: "#1a2e1a", fontSize: 12 },
       formatter: (params: Array<{ value: number; dataIndex: number }>) => {
         const p = params[0];
         if (!p) return "";
@@ -496,21 +496,21 @@ function ElevationChart({
       type: "category",
       data: elevPoints.map((p) => p.recordedAt),
       axisLabel: {
-        color: "#71717a",
+        color: "#6b8a6b",
         fontSize: 11,
         formatter: (v: string) => {
           const d = new Date(v);
           return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
         },
       },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
+      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
     },
     yAxis: {
       type: "value",
       name: `Elevation (${elevationLabel(unitSystem)})`,
-      nameTextStyle: { color: "#71717a", fontSize: 10 },
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      splitLine: { lineStyle: { color: "#27272a" } },
+      nameTextStyle: { color: "#6b8a6b", fontSize: 10 },
+      axisLabel: { color: "#6b8a6b", fontSize: 11 },
+      splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
     },
     series: [
       {
@@ -564,9 +564,9 @@ function HrZonesChart({ zones, loading }: { zones: ActivityHrZone[]; loading: bo
     tooltip: {
       trigger: "axis",
       axisPointer: { type: "shadow" },
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
+      backgroundColor: "#ffffff",
+      borderColor: "rgba(74, 158, 122, 0.2)",
+      textStyle: { color: "#1a2e1a", fontSize: 12 },
       formatter: (params: Array<{ name: string; value: number; dataIndex: number }>) => {
         const p = params[0];
         if (!p) return "";
@@ -581,30 +581,30 @@ function HrZonesChart({ zones, loading }: { zones: ActivityHrZone[]; loading: bo
     xAxis: {
       type: "value",
       axisLabel: {
-        color: "#71717a",
+        color: "#6b8a6b",
         fontSize: 11,
         formatter: (v: number) => formatTime(v),
       },
-      splitLine: { lineStyle: { color: "#27272a" } },
+      splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
     },
     yAxis: {
       type: "category",
       data: zones.map((z) => `Z${z.zone} ${z.label}`),
-      axisLabel: { color: "#a1a1aa", fontSize: 11 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
+      axisLabel: { color: "#4a6a4a", fontSize: 11 },
+      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
     },
     series: [
       {
         type: "bar",
         data: zones.map((z, i) => ({
           value: z.seconds,
-          itemStyle: { color: ZONE_COLORS[i] ?? "#71717a" },
+          itemStyle: { color: ZONE_COLORS[i] ?? "#6b8a6b" },
         })),
         barWidth: "60%",
         label: {
           show: true,
           position: "right",
-          color: "#a1a1aa",
+          color: "#4a6a4a",
           fontSize: 11,
           formatter: (p: { value: number }) => {
             const percentage = totalSeconds > 0 ? ((p.value / totalSeconds) * 100).toFixed(0) : "0";

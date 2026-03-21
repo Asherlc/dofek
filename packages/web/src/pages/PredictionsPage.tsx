@@ -379,16 +379,16 @@ function FeatureImportanceChart({
     title: {
       text: `What Influences Your ${targetLabel} Most`,
       subtext: "Ranked by impact — longer bars mean bigger effect",
-      textStyle: { color: "#a1a1aa", fontSize: 13, fontWeight: "normal" },
-      subtextStyle: { color: "#52525b", fontSize: 10 },
+      textStyle: { color: "#4a6a4a", fontSize: 13, fontWeight: "normal" },
+      subtextStyle: { color: "#6b8a6b", fontSize: 10 },
       left: 0,
       top: 0,
     },
     tooltip: {
       trigger: "axis",
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 11 },
+      backgroundColor: "#ffffff",
+      borderColor: "rgba(74, 158, 122, 0.2)",
+      textStyle: { color: "#1a2e1a", fontSize: 11 },
       formatter: (params: unknown) => {
         if (!Array.isArray(params) || params.length === 0) return "";
         // ECharts tooltip params: each item has seriesName, value, name
@@ -413,7 +413,7 @@ function FeatureImportanceChart({
       type: "category",
       data: labels.slice().reverse(),
       axisLabel: {
-        color: "#a1a1aa",
+        color: "#4a6a4a",
         fontSize: 11,
         width: 160,
         overflow: "truncate",
@@ -476,20 +476,20 @@ function TimelineChart({
     title: {
       text: `Your ${targetLabel} Over Time`,
       subtext: "White = actual, green dashed = what the model expected",
-      textStyle: { color: "#a1a1aa", fontSize: 13, fontWeight: "normal" },
-      subtextStyle: { color: "#52525b", fontSize: 10 },
+      textStyle: { color: "#4a6a4a", fontSize: 13, fontWeight: "normal" },
+      subtextStyle: { color: "#6b8a6b", fontSize: 10 },
       left: 0,
       top: 0,
     },
     tooltip: {
       trigger: "axis",
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 11 },
+      backgroundColor: "#ffffff",
+      borderColor: "rgba(74, 158, 122, 0.2)",
+      textStyle: { color: "#1a2e1a", fontSize: 11 },
     },
     legend: {
       data: [`Actual`, "Model prediction"],
-      textStyle: { color: "#71717a", fontSize: 10 },
+      textStyle: { color: "#6b8a6b", fontSize: 10 },
       right: 0,
       top: 0,
     },
@@ -497,16 +497,16 @@ function TimelineChart({
     xAxis: {
       type: "category",
       data: predictions.map((p) => p.date),
-      axisLabel: { color: "#52525b", fontSize: 9, rotate: 45 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
+      axisLabel: { color: "#6b8a6b", fontSize: 9, rotate: 45 },
+      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
     },
     yAxis: {
       type: "value",
       name: `${targetLabel} (${unit})`,
-      nameTextStyle: { color: "#71717a", fontSize: 10 },
-      axisLabel: { color: "#52525b", fontSize: 9 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
-      splitLine: { lineStyle: { color: "#27272a" } },
+      nameTextStyle: { color: "#6b8a6b", fontSize: 10 },
+      axisLabel: { color: "#6b8a6b", fontSize: 9 },
+      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
+      splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
     },
     dataZoom: [
       { type: "inside", start: TIMELINE_ZOOM_START, end: 100 },
@@ -516,9 +516,9 @@ function TimelineChart({
         end: 100,
         height: 20,
         bottom: 0,
-        borderColor: "#3f3f46",
+        borderColor: "rgba(74, 158, 122, 0.2)",
         fillerColor: "rgba(52,211,153,0.1)",
-        textStyle: { color: "#71717a", fontSize: 9 },
+        textStyle: { color: "#6b8a6b", fontSize: 9 },
       },
     ],
     series: [
@@ -526,8 +526,8 @@ function TimelineChart({
         name: "Actual",
         type: "line",
         data: predictions.map((p) => p.actual),
-        lineStyle: { color: "#e4e4e7", width: 1.5 },
-        itemStyle: { color: "#e4e4e7" },
+        lineStyle: { color: "#1a2e1a", width: 1.5 },
+        itemStyle: { color: "#1a2e1a" },
         symbol: "none",
       },
       {

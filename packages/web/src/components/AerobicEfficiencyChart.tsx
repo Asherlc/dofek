@@ -12,7 +12,7 @@ const ACTIVITY_COLORS: Record<string, string> = {
 };
 
 function getActivityColor(type: string): string {
-  return ACTIVITY_COLORS[type.toLowerCase()] ?? "#71717a";
+  return ACTIVITY_COLORS[type.toLowerCase()] ?? "#6b8a6b";
 }
 
 interface AerobicEfficiencyChartProps {
@@ -110,9 +110,9 @@ export function AerobicEfficiencyChart({
     grid: { top: 40, right: 20, bottom: 30, left: 55 },
     tooltip: {
       trigger: "item",
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
+      backgroundColor: "#ffffff",
+      borderColor: "rgba(74, 158, 122, 0.2)",
+      textStyle: { color: "#1a2e1a", fontSize: 12 },
       formatter: (params: Record<string, unknown>) => {
         const data = params.data;
         if (
@@ -142,20 +142,20 @@ export function AerobicEfficiencyChart({
     },
     xAxis: {
       type: "time",
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
+      axisLabel: { color: "#6b8a6b", fontSize: 11 },
+      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
       splitLine: { show: false },
     },
     yAxis: {
       type: "value",
       name: "Efficiency Factor (W/bpm)",
-      splitLine: { lineStyle: { color: "#27272a" } },
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      axisLine: { show: true, lineStyle: { color: "#3f3f46" } },
-      nameTextStyle: { color: "#71717a", fontSize: 11 },
+      splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
+      axisLabel: { color: "#6b8a6b", fontSize: 11 },
+      axisLine: { show: true, lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
+      nameTextStyle: { color: "#6b8a6b", fontSize: 11 },
     },
     legend: {
-      textStyle: { color: "#a1a1aa", fontSize: 11 },
+      textStyle: { color: "#4a6a4a", fontSize: 11 },
       top: 0,
     },
     series: [
@@ -165,8 +165,8 @@ export function AerobicEfficiencyChart({
         type: "line",
         data: trendData,
         symbol: "none",
-        lineStyle: { color: "#a1a1aa", width: 2, type: "dashed" as const },
-        itemStyle: { color: "#a1a1aa" },
+        lineStyle: { color: "#4a6a4a", width: 2, type: "dashed" as const },
+        itemStyle: { color: "#4a6a4a" },
         tooltip: { show: false },
       },
     ],

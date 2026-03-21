@@ -299,25 +299,25 @@ function ScatterPlot({
       name: xLabel,
       nameLocation: "middle",
       nameGap: 24,
-      nameTextStyle: { color: "#71717a", fontSize: 10 },
-      axisLabel: { color: "#52525b", fontSize: 9 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
-      splitLine: { lineStyle: { color: "#27272a" } },
+      nameTextStyle: { color: "#6b8a6b", fontSize: 10 },
+      axisLabel: { color: "#6b8a6b", fontSize: 9 },
+      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
+      splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
     },
     yAxis: {
       type: "value",
       name: yLabel,
-      nameTextStyle: { color: "#71717a", fontSize: 10 },
-      axisLabel: { color: "#52525b", fontSize: 9 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
-      splitLine: { lineStyle: { color: "#27272a" } },
+      nameTextStyle: { color: "#6b8a6b", fontSize: 10 },
+      axisLabel: { color: "#6b8a6b", fontSize: 9 },
+      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
+      splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
     },
     series: [
       {
         type: "scatter",
         data: dataPoints.map((p) => [p.x, p.y]),
         symbolSize: 5,
-        itemStyle: { color: "#a1a1aa", opacity: 0.5 },
+        itemStyle: { color: "#4a6a4a", opacity: 0.5 },
       },
       {
         type: "line",
@@ -332,9 +332,9 @@ function ScatterPlot({
     ],
     tooltip: {
       trigger: "item",
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 11 },
+      backgroundColor: "#ffffff",
+      borderColor: "rgba(74, 158, 122, 0.2)",
+      textStyle: { color: "#1a2e1a", fontSize: 11 },
       formatter: (params: unknown) => {
         if (!params || typeof params !== "object" || !("value" in params)) return "";
         const rawValue = Array.isArray(params.value) ? params.value : [0, 0];

@@ -41,10 +41,10 @@ export function HealthspanScoreCard({ data, loading }: HealthspanScoreCardProps)
     radar: {
       indicator: data.metrics.map((m) => ({ name: m.name, max: 100 })),
       shape: "circle" as const,
-      axisName: { color: "#a1a1aa", fontSize: 10 },
+      axisName: { color: "#4a6a4a", fontSize: 10 },
       splitArea: { areaStyle: { color: ["transparent"] } },
-      splitLine: { lineStyle: { color: "#3f3f46" } },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
+      splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
+      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
     },
     series: [
       {
@@ -62,9 +62,9 @@ export function HealthspanScoreCard({ data, loading }: HealthspanScoreCardProps)
     ],
     tooltip: {
       trigger: "item" as const,
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
+      backgroundColor: "#ffffff",
+      borderColor: "rgba(74, 158, 122, 0.2)",
+      textStyle: { color: "#1a2e1a", fontSize: 12 },
     },
   };
 

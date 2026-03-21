@@ -74,9 +74,9 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
     },
     tooltip: {
       trigger: "axis" as const,
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
+      backgroundColor: "#ffffff",
+      borderColor: "rgba(74, 158, 122, 0.2)",
+      textStyle: { color: "#1a2e1a", fontSize: 12 },
       formatter(
         params: Array<{
           seriesName: string;
@@ -103,7 +103,7 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
 
         return [
           `<strong>${label}</strong>`,
-          `<span style="color:#71717a">Load:</span> ${load.toFixed(1)}`,
+          `<span style="color:#6b8a6b">Load:</span> ${load.toFixed(1)}`,
           `<span style="color:${COLOR_FITNESS}">Fitness:</span> ${fitness.toFixed(1)}`,
           `<span style="color:${COLOR_FATIGUE}">Fatigue:</span> ${fatigue.toFixed(1)}`,
           `<span style="color:${formZoneColor(form)}">Form:</span> ${form.toFixed(1)}`,
@@ -115,15 +115,15 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
         type: "time" as const,
         gridIndex: 0,
         axisLabel: { show: false },
-        axisLine: { lineStyle: { color: "#3f3f46" } },
+        axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.25)" } },
         axisTick: { show: false },
         splitLine: { show: false },
       },
       {
         type: "time" as const,
         gridIndex: 1,
-        axisLabel: { color: "#71717a", fontSize: 11 },
-        axisLine: { lineStyle: { color: "#3f3f46" } },
+        axisLabel: { color: "#6b8a6b", fontSize: 11 },
+        axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.25)" } },
         splitLine: { show: false },
       },
     ],
@@ -132,18 +132,18 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
         type: "value" as const,
         gridIndex: 0,
         name: "Training Load",
-        nameTextStyle: { color: "#52525b", fontSize: 10 },
-        splitLine: { lineStyle: { color: "#27272a" } },
-        axisLabel: { color: "#71717a", fontSize: 11 },
+        nameTextStyle: { color: "#6b8a6b", fontSize: 10 },
+        splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
+        axisLabel: { color: "#6b8a6b", fontSize: 11 },
         axisLine: { show: false },
       },
       {
         type: "value" as const,
         gridIndex: 1,
         name: "Form",
-        nameTextStyle: { color: "#52525b", fontSize: 10 },
-        splitLine: { lineStyle: { color: "#27272a" } },
-        axisLabel: { color: "#71717a", fontSize: 11 },
+        nameTextStyle: { color: "#6b8a6b", fontSize: 10 },
+        splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
+        axisLabel: { color: "#6b8a6b", fontSize: 11 },
         axisLine: { show: false },
       },
       // Hidden axis for load bars so they don't compress the CTL/ATL scale
@@ -195,7 +195,7 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
           ? {
               silent: true,
               symbol: "none",
-              lineStyle: { color: "#71717a", type: "dashed" as const, width: 1 },
+              lineStyle: { color: "#6b8a6b", type: "dashed" as const, width: 1 },
               label: { show: false },
               data: [{ yAxis: lastPoint.ctl }],
             }

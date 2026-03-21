@@ -36,11 +36,11 @@ const ACTIVITY_COLORS: Record<string, string> = {
   functional_strength: "#dc2626",
   strength_training: "#ef4444",
   strength: "#ef4444",
-  [OTHER_ACTIVITY_TYPE]: "#71717a",
+  [OTHER_ACTIVITY_TYPE]: "#6b8a6b",
 };
 
 function getActivityColor(type: string): string {
-  return ACTIVITY_COLORS[type.toLowerCase()] ?? "#71717a";
+  return ACTIVITY_COLORS[type.toLowerCase()] ?? "#6b8a6b";
 }
 
 const weeklyVolumeRowSchema = z.object({
@@ -148,9 +148,9 @@ function WeeklyVolumeChart({ data }: { data: WeeklyVolumeRow[] }) {
     grid: { top: 30, right: 20, bottom: 40, left: 50 },
     tooltip: {
       trigger: "axis",
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
+      backgroundColor: "#ffffff",
+      borderColor: "rgba(74, 158, 122, 0.2)",
+      textStyle: { color: "#1a2e1a", fontSize: 12 },
       formatter: (
         params: Array<{ seriesName: string; value: [string, number]; color: string }>,
       ) => {
@@ -174,20 +174,20 @@ function WeeklyVolumeChart({ data }: { data: WeeklyVolumeRow[] }) {
     },
     xAxis: {
       type: "time" as const,
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
+      axisLabel: { color: "#6b8a6b", fontSize: 11 },
+      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
     },
     yAxis: {
       type: "value",
       name: "Hours",
-      splitLine: { lineStyle: { color: "#27272a" } },
-      axisLabel: { color: "#71717a", fontSize: 11 },
+      splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
+      axisLabel: { color: "#6b8a6b", fontSize: 11 },
       axisLine: { show: false },
-      nameTextStyle: { color: "#71717a", fontSize: 11 },
+      nameTextStyle: { color: "#6b8a6b", fontSize: 11 },
     },
     legend: {
       type: "scroll" as const,
-      textStyle: { color: "#a1a1aa", fontSize: 11 },
+      textStyle: { color: "#4a6a4a", fontSize: 11 },
       top: 0,
     },
     series,
@@ -235,9 +235,9 @@ function HrZoneChart({ weeks, maxHr }: { weeks: HrZoneWeek[]; maxHr: number }) {
     grid: { top: 30, right: 20, bottom: 40, left: 50 },
     tooltip: {
       trigger: "axis",
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
+      backgroundColor: "#ffffff",
+      borderColor: "rgba(74, 158, 122, 0.2)",
+      textStyle: { color: "#1a2e1a", fontSize: 12 },
       formatter: (
         params: Array<{
           seriesName: string;
@@ -270,20 +270,20 @@ function HrZoneChart({ weeks, maxHr }: { weeks: HrZoneWeek[]; maxHr: number }) {
     },
     xAxis: {
       type: "time" as const,
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
+      axisLabel: { color: "#6b8a6b", fontSize: 11 },
+      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
     },
     yAxis: {
       type: "value",
       name: "%",
       max: 100,
-      splitLine: { lineStyle: { color: "#27272a" } },
-      axisLabel: { color: "#71717a", fontSize: 11 },
+      splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
+      axisLabel: { color: "#6b8a6b", fontSize: 11 },
       axisLine: { show: false },
-      nameTextStyle: { color: "#71717a", fontSize: 11 },
+      nameTextStyle: { color: "#6b8a6b", fontSize: 11 },
     },
     legend: {
-      textStyle: { color: "#a1a1aa", fontSize: 11 },
+      textStyle: { color: "#4a6a4a", fontSize: 11 },
       top: 0,
     },
     series,
@@ -323,9 +323,9 @@ function IntensityDonut({ weeks }: { weeks: HrZoneWeek[] }) {
   const option = {
     backgroundColor: "transparent",
     tooltip: {
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
+      backgroundColor: "#ffffff",
+      borderColor: "rgba(74, 158, 122, 0.2)",
+      textStyle: { color: "#1a2e1a", fontSize: 12 },
       formatter: ({ name, value, percent }: { name: string; value: number; percent: number }) => {
         const hours = Math.round(value / 3600);
         return `${name}: ${percent}% (${hours}h)`;
@@ -335,7 +335,7 @@ function IntensityDonut({ weeks }: { weeks: HrZoneWeek[] }) {
       orient: "vertical",
       right: 20,
       top: "center",
-      textStyle: { color: "#a1a1aa", fontSize: 12 },
+      textStyle: { color: "#4a6a4a", fontSize: 12 },
     },
     series: [
       {
@@ -348,8 +348,8 @@ function IntensityDonut({ weeks }: { weeks: HrZoneWeek[] }) {
           position: "center",
           formatter: `{bold|${lowPct}%}\n{sub|low intensity}`,
           rich: {
-            bold: { fontSize: 28, fontWeight: "bold", color: "#e4e4e7", lineHeight: 36 },
-            sub: { fontSize: 11, color: "#71717a", lineHeight: 16 },
+            bold: { fontSize: 28, fontWeight: "bold", color: "#1a2e1a", lineHeight: 36 },
+            sub: { fontSize: 11, color: "#6b8a6b", lineHeight: 16 },
           },
         },
         data: [

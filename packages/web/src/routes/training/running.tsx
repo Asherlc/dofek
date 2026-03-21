@@ -93,9 +93,9 @@ function PaceCurveChart({
     grid: { top: 30, right: 20, bottom: 40, left: 65 },
     tooltip: {
       trigger: "item" as const,
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
+      backgroundColor: "#ffffff",
+      borderColor: "rgba(74, 158, 122, 0.2)",
+      textStyle: { color: "#1a2e1a", fontSize: 12 },
       formatter: (params: { data: [number, number]; seriesName: string }) => {
         const [seconds, pace] = params.data;
         const durLabel =
@@ -112,11 +112,11 @@ function PaceCurveChart({
       name: "Duration",
       nameLocation: "center" as const,
       nameGap: 25,
-      nameTextStyle: { color: "#71717a", fontSize: 11 },
+      nameTextStyle: { color: "#6b8a6b", fontSize: 11 },
       min: 5,
       max: 7200,
       axisLabel: {
-        color: "#71717a",
+        color: "#6b8a6b",
         fontSize: 11,
         formatter: (value: number) =>
           value < 60
@@ -125,21 +125,21 @@ function PaceCurveChart({
               ? `${Math.round(value / 60)}m`
               : `${Math.round(value / 3600)}h`,
       },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
+      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
       splitLine: { show: false },
     },
     yAxis: {
       type: "value" as const,
       name: `Pace (min${paceLabel(unitSystem)})`,
       inverse: true, // faster pace (lower number) at top
-      splitLine: { lineStyle: { color: "#27272a" } },
+      splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
       axisLabel: {
-        color: "#71717a",
+        color: "#6b8a6b",
         fontSize: 11,
         formatter: (value: number) => formatPace(value),
       },
-      axisLine: { show: true, lineStyle: { color: "#3f3f46" } },
-      nameTextStyle: { color: "#71717a", fontSize: 11 },
+      axisLine: { show: true, lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
+      nameTextStyle: { color: "#6b8a6b", fontSize: 11 },
     },
     series: [
       {
@@ -193,9 +193,9 @@ function PaceTrendChart({
     grid: { top: 20, right: 20, bottom: 40, left: 65 },
     tooltip: {
       trigger: "item" as const,
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
+      backgroundColor: "#ffffff",
+      borderColor: "rgba(74, 158, 122, 0.2)",
+      textStyle: { color: "#1a2e1a", fontSize: 12 },
       formatter: (params: { data: [string, number]; dataIndex: number }) => {
         const d = data[params.dataIndex];
         if (!d) return "";
@@ -209,18 +209,18 @@ function PaceTrendChart({
     },
     xAxis: {
       type: "time" as const,
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
+      axisLabel: { color: "#6b8a6b", fontSize: 11 },
+      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
     },
     yAxis: {
       type: "value" as const,
       inverse: true,
       axisLabel: {
-        color: "#71717a",
+        color: "#6b8a6b",
         fontSize: 11,
         formatter: (value: number) => formatPace(value),
       },
-      splitLine: { lineStyle: { color: "#27272a" } },
+      splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
       axisLine: { show: false },
     },
     series: [
@@ -268,9 +268,9 @@ function CadenceTrendChart({ data, loading }: { data: DynamicsRow[]; loading: bo
     grid: { top: 20, right: 20, bottom: 40, left: 55 },
     tooltip: {
       trigger: "item" as const,
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
+      backgroundColor: "#ffffff",
+      borderColor: "rgba(74, 158, 122, 0.2)",
+      textStyle: { color: "#1a2e1a", fontSize: 12 },
       formatter: (params: { data: [string, number]; dataIndex: number }) => {
         const d = data[params.dataIndex];
         if (!d) return "";
@@ -279,16 +279,16 @@ function CadenceTrendChart({ data, loading }: { data: DynamicsRow[]; loading: bo
     },
     xAxis: {
       type: "time" as const,
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
+      axisLabel: { color: "#6b8a6b", fontSize: 11 },
+      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
     },
     yAxis: {
       type: "value" as const,
       name: "Steps/min",
-      splitLine: { lineStyle: { color: "#27272a" } },
-      axisLabel: { color: "#71717a", fontSize: 11 },
+      splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
+      axisLabel: { color: "#6b8a6b", fontSize: 11 },
       axisLine: { show: false },
-      nameTextStyle: { color: "#71717a", fontSize: 11 },
+      nameTextStyle: { color: "#6b8a6b", fontSize: 11 },
     },
     series: [
       {

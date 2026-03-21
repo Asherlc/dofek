@@ -128,7 +128,7 @@ function CyclingTab() {
         {/* Period labels */}
         <div className="mt-3 flex flex-wrap gap-4 text-xs">
           <PeriodLabel color="#8b5cf6" label={`${days} days`} model={recentModel} />
-          <PeriodLabel color="#71717a" label="This season" model={seasonModel} />
+          <PeriodLabel color="#6b8a6b" label="This season" model={seasonModel} />
         </div>
       </Section>
 

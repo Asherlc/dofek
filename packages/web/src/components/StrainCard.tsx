@@ -37,7 +37,7 @@ function StrainRing({ strain, size = 120 }: { strain: number; size?: number }) {
           cy={center}
           r={radius}
           fill="none"
-          stroke="#27272a"
+          stroke="rgba(74, 158, 122, 0.12)"
           strokeWidth={strokeWidth}
         />
         <circle

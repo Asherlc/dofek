@@ -110,7 +110,7 @@ function ConditionalChart({ insight }: { insight: Insight }) {
       axisLine: { show: false },
       axisTick: { show: false },
       axisLabel: {
-        color: "#a1a1aa",
+        color: "#4a6a4a",
         fontSize: 11,
         width: 120,
         overflow: "truncate",
@@ -122,12 +122,12 @@ function ConditionalChart({ insight }: { insight: Insight }) {
         data: [
           {
             value: Math.abs(whenFalse.mean),
-            itemStyle: { color: "#52525b" },
+            itemStyle: { color: "#6b8a6b" },
             label: {
               show: true,
               position: "right",
               formatter: `${formatValue(whenFalse.mean)} (n=${whenFalse.n})`,
-              color: "#a1a1aa",
+              color: "#4a6a4a",
               fontSize: 10,
             },
           },
@@ -207,25 +207,25 @@ function ScatterPlot({ insight }: { insight: Insight }) {
       name: insight.action,
       nameLocation: "middle",
       nameGap: 20,
-      nameTextStyle: { color: "#71717a", fontSize: 10 },
-      axisLabel: { color: "#52525b", fontSize: 9 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
-      splitLine: { lineStyle: { color: "#27272a" } },
+      nameTextStyle: { color: "#6b8a6b", fontSize: 10 },
+      axisLabel: { color: "#6b8a6b", fontSize: 9 },
+      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
+      splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
     },
     yAxis: {
       type: "value",
       name: insight.metric,
-      nameTextStyle: { color: "#71717a", fontSize: 10 },
-      axisLabel: { color: "#52525b", fontSize: 9 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
-      splitLine: { lineStyle: { color: "#27272a" } },
+      nameTextStyle: { color: "#6b8a6b", fontSize: 10 },
+      axisLabel: { color: "#6b8a6b", fontSize: 9 },
+      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
+      splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
     },
     series: [
       {
         type: "scatter",
         data: points.map((p) => [p.x, p.y]),
         symbolSize: 4,
-        itemStyle: { color: "#a1a1aa", opacity: 0.5 },
+        itemStyle: { color: "#4a6a4a", opacity: 0.5 },
       },
       {
         type: "line",
@@ -240,9 +240,9 @@ function ScatterPlot({ insight }: { insight: Insight }) {
     ],
     tooltip: {
       trigger: "item",
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 11 },
+      backgroundColor: "#ffffff",
+      borderColor: "rgba(74, 158, 122, 0.2)",
+      textStyle: { color: "#1a2e1a", fontSize: 11 },
       formatter: (params: unknown) => {
         if (!params || typeof params !== "object" || !("value" in params)) return "";
         const rawValue = Array.isArray(params.value) ? params.value : [0, 0];

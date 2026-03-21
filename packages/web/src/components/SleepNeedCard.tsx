@@ -36,9 +36,9 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
     grid: { top: 20, right: 10, bottom: 30, left: 40 },
     tooltip: {
       trigger: "axis" as const,
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
+      backgroundColor: "#ffffff",
+      borderColor: "rgba(74, 158, 122, 0.2)",
+      textStyle: { color: "#1a2e1a", fontSize: 12 },
       formatter: (
         params: {
           dataIndex: number;
@@ -69,20 +69,20 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
       data: data.recentNights.map((n) =>
         new Date(n.date).toLocaleDateString("en-US", { weekday: "short" }),
       ),
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
+      axisLabel: { color: "#6b8a6b", fontSize: 11 },
+      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
     },
     yAxis: {
       type: "value" as const,
       name: "hours",
       axisLabel: {
-        color: "#71717a",
+        color: "#6b8a6b",
         fontSize: 11,
         formatter: (v: number) => `${(v / 60).toFixed(0)}h`,
       },
-      splitLine: { lineStyle: { color: "#27272a" } },
+      splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
       axisLine: { show: false },
-      nameTextStyle: { color: "#71717a", fontSize: 11 },
+      nameTextStyle: { color: "#6b8a6b", fontSize: 11 },
     },
     series: [
       {
@@ -99,7 +99,7 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
         type: "line",
         data: data.recentNights.map((n) => n.neededMinutes),
         symbol: "none",
-        lineStyle: { color: "#71717a", width: 1.5, type: "dashed" as const },
+        lineStyle: { color: "#6b8a6b", width: 1.5, type: "dashed" as const },
         z: 5,
       },
     ],
