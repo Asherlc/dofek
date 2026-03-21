@@ -67,10 +67,10 @@ describe("PolarizationTrendChart option builder", () => {
       return series.name === "Polarization Index";
     });
     expect(polarizationSeries).toBeDefined();
-    expect(polarizationSeries?.data).toEqual([
-      ["2024-01-01", null],
-      ["2024-01-08", 1.9],
-    ]);
+    if (!polarizationSeries) throw new Error("Expected polarization series");
+    expect(polarizationSeries.data).toHaveLength(2);
+    expect(polarizationSeries.data[0]).toHaveProperty("value", ["2024-01-01", null]);
+    expect(polarizationSeries.data[1]).toHaveProperty("value", ["2024-01-08", 1.9]);
   });
 
   it("tooltip shows %HRmax zone labels (not Karvonen %HRR)", () => {
@@ -95,22 +95,35 @@ describe("PolarizationTrendChart option builder", () => {
     expect(html).not.toContain("resting");
   });
 
-  it("does not have any series with empty data and markLine (ECharts coord crash)", () => {
+  it("does not use visualMap (crashes ECharts piecewise with coord error)", () => {
+    const option = buildPolarizationTrendOption(sampleWeeks);
+    expect(option).not.toHaveProperty("visualMap");
+  });
+
+  it("does not use markLine (incompatible with ECharts visualMap)", () => {
     const option = buildPolarizationTrendOption(sampleWeeks);
     for (const series of option.series) {
-      if (series.markLine) {
-        expect(series.data.length).toBeGreaterThan(0);
-      }
+      expect(series).not.toHaveProperty("markLine");
     }
   });
 
-  it("restricts visualMap to only the Polarization Index data series", () => {
+  it("renders threshold as a regular line series at y=2.0", () => {
     const option = buildPolarizationTrendOption(sampleWeeks);
-    const polarizationIndexSeriesIndex = option.series.findIndex(
-      (s: { name?: string }) => s.name === "Polarization Index",
-    );
-    expect(polarizationIndexSeriesIndex).toBeGreaterThan(0);
-    expect(option.visualMap.seriesIndex).toBe(polarizationIndexSeriesIndex);
+    const thresholdSeries = option.series.find((s: { name?: string }) => s.name === "Threshold");
+    expect(thresholdSeries).toBeDefined();
+    if (!thresholdSeries) throw new Error("Expected threshold series");
+    expect(thresholdSeries.data[0]).toEqual(["2024-01-01", 2.0]);
+    expect(thresholdSeries.data[1]).toEqual(["2024-01-08", 2.0]);
+  });
+
+  it("colors data points green above 2.0 and red at or below 2.0", () => {
+    const option = buildPolarizationTrendOption(sampleWeeks);
+    const piSeries = option.series.find((s: { name?: string }) => s.name === "Polarization Index");
+    if (!piSeries) throw new Error("Expected PI series");
+    // First week: PI = 2.5 (above threshold) → green
+    expect(piSeries.data[0]).toHaveProperty("itemStyle", { color: "#22c55e" });
+    // Second week: PI = 1.8 (below threshold) → red
+    expect(piSeries.data[1]).toHaveProperty("itemStyle", { color: "#ef4444" });
   });
 
   it("explains missing zones when PI is unavailable", () => {

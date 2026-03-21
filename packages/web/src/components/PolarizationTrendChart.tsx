@@ -131,15 +131,6 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
       axisLine: { show: true, lineStyle: { color: "#3f3f46" } },
       nameTextStyle: { color: "#71717a", fontSize: 11 },
     },
-    visualMap: {
-      type: "piecewise",
-      show: false,
-      seriesIndex: 2,
-      pieces: [
-        { lte: 2.0, color: "#ef4444" },
-        { gt: 2.0, color: "#22c55e" },
-      ],
-    },
     series: [
       // Shaded green area above Threshold = 2.0
       {
@@ -171,30 +162,38 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
         tooltip: { show: false },
         z: 0,
       },
-      // Actual PI line with threshold reference line
+      // Dashed threshold reference line at PI = 2.0
+      {
+        name: "Threshold",
+        type: "line",
+        data: [
+          [firstDate, 2.0],
+          [lastDate, 2.0],
+        ],
+        symbol: "none",
+        lineStyle: { color: "#a1a1aa", type: "dashed", width: 1 },
+        silent: true,
+        tooltip: { show: false },
+        z: 1,
+      },
+      // Actual PI data line with per-point coloring
       {
         name: "Polarization Index",
         type: "line",
-        data: weeks.map((w) => [w.week, w.polarizationIndex]),
+        data: weeks.map((w) => ({
+          value: [w.week, w.polarizationIndex],
+          itemStyle:
+            w.polarizationIndex !== null
+              ? { color: w.polarizationIndex >= 2.0 ? "#22c55e" : "#ef4444" }
+              : undefined,
+        })),
         connectNulls: false,
         smooth: true,
         symbol: "circle",
         symbolSize: 6,
-        lineStyle: { width: 2.5 },
+        lineStyle: { width: 2.5, color: "#a1a1aa" },
         itemStyle: { borderWidth: 2 },
         z: 10,
-        markLine: {
-          silent: true,
-          symbol: "none",
-          lineStyle: { color: "#a1a1aa", type: "dashed", width: 1 },
-          data: [{ yAxis: 2.0 }],
-          label: {
-            formatter: "Threshold = 2.0",
-            color: "#a1a1aa",
-            fontSize: 10,
-          },
-          tooltip: { show: false },
-        },
       },
     ],
     legend: {
