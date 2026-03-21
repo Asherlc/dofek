@@ -573,7 +573,7 @@ export class PolarProvider implements Provider {
                 respiratoryRateAvg: parsed.respiratoryRateAvg,
               })
               .onConflictDoUpdate({
-                target: [dailyMetrics.date, dailyMetrics.providerId],
+                target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
                 set: {
                   steps: parsed.steps,
                   activeEnergyKcal: parsed.activeEnergyKcal,

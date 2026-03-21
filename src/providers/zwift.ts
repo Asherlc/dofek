@@ -229,7 +229,7 @@ export class ZwiftProvider implements Provider {
             vo2max: curve.vo2Max,
           })
           .onConflictDoUpdate({
-            target: [dailyMetrics.date, dailyMetrics.providerId],
+            target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
             set: { vo2max: curve.vo2Max },
           });
 

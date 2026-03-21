@@ -455,22 +455,23 @@ const columnToAccumulatorKey: Record<string, keyof DailyMetricAccumulator> = {
   walking_asymmetry_pct: "walkingAsymmetryPct",
 };
 
-/** Aggregate daily metrics per date. */
+/** Aggregate daily metrics per (date, source). Key is "date\0sourceName". */
 export function aggregateDailyMetricSamples(
   samples: HealthKitSample[],
 ): Map<string, DailyMetricAccumulator> {
-  const byDate = new Map<string, DailyMetricAccumulator>();
-  const heartRateVariabilitySamplesByDate = new Map<
+  const byDateSource = new Map<string, DailyMetricAccumulator>();
+  const heartRateVariabilitySamplesByDateSource = new Map<
     string,
     Array<{ value: number; startDate: string }>
   >();
 
   for (const sample of samples) {
     const dateStr = extractDate(sample.startDate);
-    let accumulator = byDate.get(dateStr);
+    const compoundKey = `${dateStr}\0${sample.sourceName}`;
+    let accumulator = byDateSource.get(compoundKey);
     if (!accumulator) {
       accumulator = createEmptyAccumulator();
-      byDate.set(dateStr, accumulator);
+      byDateSource.set(compoundKey, accumulator);
     }
 
     const additiveMapping = additiveDailyMetricTypes[sample.type];
@@ -489,9 +490,9 @@ export function aggregateDailyMetricSamples(
     if (!pointMapping) continue;
 
     if (pointMapping.column === "hrv") {
-      const daySamples = heartRateVariabilitySamplesByDate.get(dateStr) ?? [];
+      const daySamples = heartRateVariabilitySamplesByDateSource.get(compoundKey) ?? [];
       daySamples.push({ value: sample.value, startDate: sample.startDate });
-      heartRateVariabilitySamplesByDate.set(dateStr, daySamples);
+      heartRateVariabilitySamplesByDateSource.set(compoundKey, daySamples);
       continue;
     }
 
@@ -501,15 +502,18 @@ export function aggregateDailyMetricSamples(
     }
   }
 
-  // Select overnight HRV for each date using shared logic
-  for (const [dateStr, heartRateVariabilitySamples] of heartRateVariabilitySamplesByDate) {
-    const accumulator = byDate.get(dateStr);
+  // Select overnight HRV for each (date, source) using shared logic
+  for (const [
+    compoundKey,
+    heartRateVariabilitySamples,
+  ] of heartRateVariabilitySamplesByDateSource) {
+    const accumulator = byDateSource.get(compoundKey);
     if (accumulator) {
       accumulator.hrv = selectDailyHeartRateVariability(heartRateVariabilitySamples);
     }
   }
 
-  return byDate;
+  return byDateSource;
 }
 
 /** Process daily metric samples (both additive and point-in-time) */
@@ -518,10 +522,11 @@ async function processDailyMetrics(
   userId: string,
   samples: HealthKitSample[],
 ): Promise<number> {
-  const byDate = aggregateDailyMetricSamples(samples);
+  const byDateSource = aggregateDailyMetricSamples(samples);
 
-  // Upsert each date
-  for (const [dateStr, accumulator] of byDate) {
+  // Upsert each (date, source)
+  for (const [compoundKey, accumulator] of byDateSource) {
+    const [dateStr, sourceName] = compoundKey.split("\0");
     const setClauses: ReturnType<typeof sql>[] = [];
     const insertColumns: ReturnType<typeof sql>[] = [];
     const insertValues: ReturnType<typeof sql>[] = [];
@@ -532,6 +537,8 @@ async function processDailyMetrics(
     insertValues.push(sql`${PROVIDER_ID}`);
     insertColumns.push(sql`user_id`);
     insertValues.push(sql`${userId}`);
+    insertColumns.push(sql`source_name`);
+    insertValues.push(sql`${sourceName ?? ""}`);
 
     // Additive fields: replace with the complete day-total from this sync.
     // Each iOS sync sends all samples for the 7-day window, so the in-memory
@@ -584,7 +591,7 @@ async function processDailyMetrics(
     await db.execute(
       sql`INSERT INTO fitness.daily_metrics (${columnsSql})
           VALUES (${valuesSql})
-          ON CONFLICT (date, provider_id) DO UPDATE SET ${setSql}`,
+          ON CONFLICT (date, provider_id, source_name) DO UPDATE SET ${setSql}`,
     );
   }
 
@@ -788,11 +795,12 @@ async function aggregateSpO2ToDailyMetrics(
   bounds: { startAt: string; endAt: string },
 ): Promise<void> {
   await db.execute(
-    sql`INSERT INTO fitness.daily_metrics (date, provider_id, user_id, spo2_avg)
+    sql`INSERT INTO fitness.daily_metrics (date, provider_id, user_id, source_name, spo2_avg)
         SELECT
           (recorded_at AT TIME ZONE 'UTC')::date AS date,
           provider_id,
           user_id,
+          COALESCE(source_name, '') AS source_name,
           AVG(spo2) * 100 AS spo2_avg
         FROM fitness.metric_stream
         WHERE provider_id = ${PROVIDER_ID}
@@ -800,8 +808,8 @@ async function aggregateSpO2ToDailyMetrics(
           AND spo2 IS NOT NULL
           AND recorded_at >= ${bounds.startAt}::timestamptz
           AND recorded_at <= ${bounds.endAt}::timestamptz
-        GROUP BY (recorded_at AT TIME ZONE 'UTC')::date, provider_id, user_id
-        ON CONFLICT (date, provider_id) DO UPDATE SET
+        GROUP BY (recorded_at AT TIME ZONE 'UTC')::date, provider_id, user_id, COALESCE(source_name, '')
+        ON CONFLICT (date, provider_id, source_name) DO UPDATE SET
           spo2_avg = EXCLUDED.spo2_avg`,
   );
 }
@@ -817,11 +825,12 @@ async function aggregateSkinTempToDailyMetrics(
   bounds: { startAt: string; endAt: string },
 ): Promise<void> {
   await db.execute(
-    sql`INSERT INTO fitness.daily_metrics (date, provider_id, user_id, skin_temp_c)
+    sql`INSERT INTO fitness.daily_metrics (date, provider_id, user_id, source_name, skin_temp_c)
         SELECT
           (recorded_at AT TIME ZONE 'UTC')::date AS date,
           provider_id,
           user_id,
+          COALESCE(source_name, '') AS source_name,
           AVG(skin_temperature) AS skin_temp_c
         FROM fitness.metric_stream
         WHERE provider_id = ${PROVIDER_ID}
@@ -829,8 +838,8 @@ async function aggregateSkinTempToDailyMetrics(
           AND skin_temperature IS NOT NULL
           AND recorded_at >= ${bounds.startAt}::timestamptz
           AND recorded_at <= ${bounds.endAt}::timestamptz
-        GROUP BY (recorded_at AT TIME ZONE 'UTC')::date, provider_id, user_id
-        ON CONFLICT (date, provider_id) DO UPDATE SET
+        GROUP BY (recorded_at AT TIME ZONE 'UTC')::date, provider_id, user_id, COALESCE(source_name, '')
+        ON CONFLICT (date, provider_id, source_name) DO UPDATE SET
           skin_temp_c = EXCLUDED.skin_temp_c`,
   );
 }

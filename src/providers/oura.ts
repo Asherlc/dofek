@@ -1198,7 +1198,7 @@ export class OuraProvider implements Provider {
                 resilienceLevel: parsed.resilienceLevel,
               })
               .onConflictDoUpdate({
-                target: [dailyMetrics.date, dailyMetrics.providerId],
+                target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
                 set: {
                   steps: parsed.steps,
                   restingHr: parsed.restingHr,

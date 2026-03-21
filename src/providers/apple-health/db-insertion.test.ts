@@ -1329,8 +1329,8 @@ describe("upsertBodyMeasurementBatch — deduplication", () => {
   });
 });
 
-describe("upsertDailyMetricsBatch — deduplication", () => {
-  it("aggregates daily metrics for the same date into one row", async () => {
+describe("upsertDailyMetricsBatch — per-source rows", () => {
+  it("stores separate rows per source for the same date", async () => {
     const { db, capture } = createMockDb();
 
     // Two step count records on the same day from different sources
@@ -1352,10 +1352,38 @@ describe("upsertDailyMetricsBatch — deduplication", () => {
     ];
 
     const count = await upsertDailyMetricsBatch(db, "apple_health", records);
-    // Both records are on the same day → aggregated into 1 row
-    expect(count).toBe(1);
+    // Different sources → separate rows (dedup happens at query time in the view)
+    expect(count).toBe(2);
     expect(capture.values).toHaveLength(1);
-    expect(capture.values[0]).toHaveLength(1);
+    expect(capture.values[0]).toHaveLength(2);
+    const sourceNames = capture.values[0]?.map((r: Record<string, unknown>) => r.sourceName).sort();
+    expect(sourceNames).toEqual(["Apple Watch", "iPhone"]);
+  });
+
+  it("sums records from the same source on the same day", async () => {
+    const { db, capture } = createMockDb();
+
+    const records = [
+      makeRecord({
+        type: "HKQuantityTypeIdentifierStepCount",
+        sourceName: "Apple Watch",
+        value: 2000,
+        startDate: new Date("2024-06-01T10:00:00Z"),
+        endDate: new Date("2024-06-01T10:30:00Z"),
+      }),
+      makeRecord({
+        type: "HKQuantityTypeIdentifierStepCount",
+        sourceName: "Apple Watch",
+        value: 3000,
+        startDate: new Date("2024-06-01T14:00:00Z"),
+        endDate: new Date("2024-06-01T14:30:00Z"),
+      }),
+    ];
+
+    const count = await upsertDailyMetricsBatch(db, "apple_health", records);
+    // Same source → summed into one row
+    expect(count).toBe(1);
+    expect(capture.values[0]?.[0]).toMatchObject({ steps: 5000, sourceName: "Apple Watch" });
   });
 });
 
