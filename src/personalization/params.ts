@@ -12,11 +12,11 @@ const readinessWeightsSchema = z
     hrv: z.number().min(0.05).max(1),
     restingHr: z.number().min(0.05).max(1),
     sleep: z.number().min(0.05).max(1),
-    loadBalance: z.number().min(0.05).max(1),
+    respiratoryRate: z.number().min(0.05).max(1),
     sampleCount: z.number().int().nonnegative(),
     correlation: z.number(),
   })
-  .refine((w) => Math.abs(w.hrv + w.restingHr + w.sleep + w.loadBalance - 1.0) < 0.01, {
+  .refine((w) => Math.abs(w.hrv + w.restingHr + w.sleep + w.respiratoryRate - 1.0) < 0.01, {
     message: "Readiness weights must sum to 1.0",
   });
 
@@ -69,7 +69,7 @@ export type PersonalizedParams = z.infer<typeof personalizedParamsSchema>;
 
 export interface EffectiveParams {
   exponentialMovingAverage: { chronicTrainingLoadDays: number; acuteTrainingLoadDays: number };
-  readinessWeights: { hrv: number; restingHr: number; sleep: number; loadBalance: number };
+  readinessWeights: { hrv: number; restingHr: number; sleep: number; respiratoryRate: number };
   sleepTarget: { minutes: number };
   stressThresholds: {
     hrvThresholds: [number, number, number];
@@ -80,7 +80,7 @@ export interface EffectiveParams {
 
 export const DEFAULT_PARAMS: EffectiveParams = {
   exponentialMovingAverage: { chronicTrainingLoadDays: 42, acuteTrainingLoadDays: 7 },
-  readinessWeights: { hrv: 0.4, restingHr: 0.2, sleep: 0.2, loadBalance: 0.2 },
+  readinessWeights: { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 },
   sleepTarget: { minutes: 480 },
   stressThresholds: {
     hrvThresholds: [-1.5, -1.0, -0.5],
@@ -109,7 +109,7 @@ export function getEffectiveParams(stored: PersonalizedParams | null): Effective
           hrv: stored.readinessWeights.hrv,
           restingHr: stored.readinessWeights.restingHr,
           sleep: stored.readinessWeights.sleep,
-          loadBalance: stored.readinessWeights.loadBalance,
+          respiratoryRate: stored.readinessWeights.respiratoryRate,
         }
       : DEFAULT_PARAMS.readinessWeights,
     sleepTarget: stored.sleepTarget

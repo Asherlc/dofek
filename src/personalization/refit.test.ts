@@ -231,7 +231,9 @@ describe("parseReadinessRows", () => {
       rhr_mean: 55,
       rhr_sd: 5,
       efficiency_pct: 85,
-      acwr: 1.0,
+      respiratory_rate: 16,
+      rr_mean: 16,
+      rr_sd: 1,
       next_day_hrv: 65,
       next_day_hrv_mean: 50,
       next_day_hrv_sd: 10,
@@ -249,7 +251,7 @@ describe("parseReadinessRows", () => {
     expect(result[0]).toHaveProperty("hrvScore");
     expect(result[0]).toHaveProperty("rhrScore");
     expect(result[0]).toHaveProperty("sleepScore");
-    expect(result[0]).toHaveProperty("loadBalanceScore");
+    expect(result[0]).toHaveProperty("respiratoryRateScore");
     expect(result[0]).toHaveProperty("nextDayHrvZScore");
   });
 
@@ -363,26 +365,25 @@ describe("parseReadinessRows", () => {
     expect(result[0]?.sleepScore).toBe(100);
   });
 
-  it("computes loadBalanceScore with acwr=1 as 100 (perfect balance)", () => {
-    const result = parseReadinessRows([validReadinessRow({ acwr: 1.0 })]);
-    expect(result[0]?.loadBalanceScore).toBe(100);
+  it("computes respiratoryRateScore using z-score (lower RR = better, inverted)", () => {
+    // respiratory_rate=15, rr_mean=16, rr_sd=1 => z=(15-16)/1=-1 => score=50+(-1)*(-15)=50+15=65
+    const result = parseReadinessRows([
+      validReadinessRow({ respiratory_rate: 15, rr_mean: 16, rr_sd: 1 }),
+    ]);
+    expect(result[0]?.respiratoryRateScore).toBe(65);
   });
 
-  it("computes loadBalanceScore that decreases as acwr deviates from 1", () => {
-    // acwr=1.5 => (1 - |1.5-1.0|)*100 = (1-0.5)*100 = 50
-    const result = parseReadinessRows([validReadinessRow({ acwr: 1.5 })]);
-    expect(result[0]?.loadBalanceScore).toBe(50);
+  it("computes respiratoryRateScore as 50 when respiratory rate equals mean", () => {
+    // respiratory_rate=16, rr_mean=16, rr_sd=1 => z=0 => score=50
+    const result = parseReadinessRows([
+      validReadinessRow({ respiratory_rate: 16, rr_mean: 16, rr_sd: 1 }),
+    ]);
+    expect(result[0]?.respiratoryRateScore).toBe(50);
   });
 
-  it("clamps loadBalanceScore at 0 for extreme acwr", () => {
-    // acwr=2.5 => (1 - |2.5-1.0|)*100 = (1-1.5)*100 = -50 => clamp to 0
-    const result = parseReadinessRows([validReadinessRow({ acwr: 2.5 })]);
-    expect(result[0]?.loadBalanceScore).toBe(0);
-  });
-
-  it("defaults loadBalanceScore to 50 when acwr is null", () => {
-    const result = parseReadinessRows([validReadinessRow({ acwr: null })]);
-    expect(result[0]?.loadBalanceScore).toBe(50);
+  it("defaults respiratoryRateScore to 50 when respiratory_rate is null", () => {
+    const result = parseReadinessRows([validReadinessRow({ respiratory_rate: null })]);
+    expect(result[0]?.respiratoryRateScore).toBe(50);
   });
 
   it("computes nextDayHrvZScore correctly", () => {

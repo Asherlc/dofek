@@ -18,7 +18,7 @@ function mulberry32(seed: number): () => number {
  */
 function generateWeightsData(
   n: number,
-  trueWeights: { hrv: number; restingHr: number; sleep: number; loadBalance: number },
+  trueWeights: { hrv: number; restingHr: number; sleep: number; respiratoryRate: number },
   seed: number = 42,
 ): ReadinessWeightsInput[] {
   const rng = mulberry32(seed);
@@ -28,19 +28,19 @@ function generateWeightsData(
     const hrvScore = 30 + rng() * 40;
     const rhrScore = 30 + rng() * 40;
     const sleepScore = 40 + rng() * 40;
-    const loadBalanceScore = 30 + rng() * 40;
+    const respiratoryRateScore = 30 + rng() * 40;
 
     // Next-day HRV z-score driven by today's component scores with true weights
     const signal =
       trueWeights.hrv * hrvScore +
       trueWeights.restingHr * rhrScore +
       trueWeights.sleep * sleepScore +
-      trueWeights.loadBalance * loadBalanceScore;
+      trueWeights.respiratoryRate * respiratoryRateScore;
 
     // Normalize to z-score-like range and add noise
     const nextDayHrvZScore = (signal - 50) / 15 + (rng() - 0.5) * 0.5;
 
-    data.push({ hrvScore, rhrScore: rhrScore, sleepScore, loadBalanceScore, nextDayHrvZScore });
+    data.push({ hrvScore, rhrScore: rhrScore, sleepScore, respiratoryRateScore, nextDayHrvZScore });
   }
 
   return data;
@@ -52,7 +52,7 @@ describe("fitReadinessWeights", () => {
       hrv: 0.4,
       restingHr: 0.2,
       sleep: 0.2,
-      loadBalance: 0.2,
+      respiratoryRate: 0.2,
     });
     expect(fitReadinessWeights(data)).toBeNull();
   });
@@ -62,7 +62,7 @@ describe("fitReadinessWeights", () => {
       hrv: 0.4,
       restingHr: 0.2,
       sleep: 0.2,
-      loadBalance: 0.2,
+      respiratoryRate: 0.2,
     });
     expect(fitReadinessWeights(data)).toBeNull();
   });
@@ -70,7 +70,7 @@ describe("fitReadinessWeights", () => {
   it("processes exactly 60 days (boundary at MIN_DAYS)", () => {
     const data = generateWeightsData(
       60,
-      { hrv: 0.7, restingHr: 0.1, sleep: 0.1, loadBalance: 0.1 },
+      { hrv: 0.7, restingHr: 0.1, sleep: 0.1, respiratoryRate: 0.1 },
       555,
     );
     const result = fitReadinessWeights(data);
@@ -88,7 +88,7 @@ describe("fitReadinessWeights", () => {
     // HRV dominates heavily
     const data = generateWeightsData(
       120,
-      { hrv: 0.7, restingHr: 0.1, sleep: 0.1, loadBalance: 0.1 },
+      { hrv: 0.7, restingHr: 0.1, sleep: 0.1, respiratoryRate: 0.1 },
       123,
     );
     const result = fitReadinessWeights(data);
@@ -99,7 +99,7 @@ describe("fitReadinessWeights", () => {
     // HRV should have the highest weight
     expect(result.hrv).toBeGreaterThan(result.restingHr);
     expect(result.hrv).toBeGreaterThan(result.sleep);
-    expect(result.hrv).toBeGreaterThan(result.loadBalance);
+    expect(result.hrv).toBeGreaterThan(result.respiratoryRate);
   });
 
   it("weights sum to 1.0", () => {
@@ -107,14 +107,14 @@ describe("fitReadinessWeights", () => {
       hrv: 0.5,
       restingHr: 0.15,
       sleep: 0.2,
-      loadBalance: 0.15,
+      respiratoryRate: 0.15,
     });
     const result = fitReadinessWeights(data);
 
     expect(result).not.toBeNull();
     if (!result) return;
 
-    const sum = result.hrv + result.restingHr + result.sleep + result.loadBalance;
+    const sum = result.hrv + result.restingHr + result.sleep + result.respiratoryRate;
     expect(sum).toBeCloseTo(1.0, 2);
   });
 
@@ -123,7 +123,7 @@ describe("fitReadinessWeights", () => {
       hrv: 0.85,
       restingHr: 0.05,
       sleep: 0.05,
-      loadBalance: 0.05,
+      respiratoryRate: 0.05,
     });
     const result = fitReadinessWeights(data);
 
@@ -133,7 +133,7 @@ describe("fitReadinessWeights", () => {
     expect(result.hrv).toBeGreaterThanOrEqual(0.05);
     expect(result.restingHr).toBeGreaterThanOrEqual(0.05);
     expect(result.sleep).toBeGreaterThanOrEqual(0.05);
-    expect(result.loadBalance).toBeGreaterThanOrEqual(0.05);
+    expect(result.respiratoryRate).toBeGreaterThanOrEqual(0.05);
   });
 
   it("returns null when scores have no correlation with outcome", () => {
@@ -144,7 +144,7 @@ describe("fitReadinessWeights", () => {
         hrvScore: rng() * 100,
         rhrScore: rng() * 100,
         sleepScore: rng() * 100,
-        loadBalanceScore: rng() * 100,
+        respiratoryRateScore: rng() * 100,
         nextDayHrvZScore: rng() * 4 - 2, // random, no relationship
       });
     }
@@ -158,7 +158,7 @@ describe("fitReadinessWeights", () => {
       hrv: 0.4,
       restingHr: 0.2,
       sleep: 0.2,
-      loadBalance: 0.2,
+      respiratoryRate: 0.2,
     });
     const result = fitReadinessWeights(data);
     if (!result) return;
@@ -166,7 +166,7 @@ describe("fitReadinessWeights", () => {
     expect(typeof result.hrv).toBe("number");
     expect(typeof result.restingHr).toBe("number");
     expect(typeof result.sleep).toBe("number");
-    expect(typeof result.loadBalance).toBe("number");
+    expect(typeof result.respiratoryRate).toBe("number");
     expect(typeof result.sampleCount).toBe("number");
     expect(typeof result.correlation).toBe("number");
   });
@@ -176,7 +176,7 @@ describe("fitReadinessWeights", () => {
       hrv: 0.5,
       restingHr: 0.15,
       sleep: 0.2,
-      loadBalance: 0.15,
+      respiratoryRate: 0.15,
     });
     const result = fitReadinessWeights(data);
 
@@ -190,7 +190,7 @@ describe("fitReadinessWeights", () => {
   it("sampleCount matches input data length", () => {
     const data = generateWeightsData(
       120,
-      { hrv: 0.7, restingHr: 0.1, sleep: 0.1, loadBalance: 0.1 },
+      { hrv: 0.7, restingHr: 0.1, sleep: 0.1, respiratoryRate: 0.1 },
       123,
     );
     const result = fitReadinessWeights(data);
@@ -204,7 +204,7 @@ describe("fitReadinessWeights", () => {
   it("correlation must be >= MIN_CORRELATION (0.15) to produce a result", () => {
     const data = generateWeightsData(
       120,
-      { hrv: 0.7, restingHr: 0.1, sleep: 0.1, loadBalance: 0.1 },
+      { hrv: 0.7, restingHr: 0.1, sleep: 0.1, respiratoryRate: 0.1 },
       123,
     );
     const result = fitReadinessWeights(data);
@@ -222,7 +222,7 @@ describe("fitReadinessWeights", () => {
         hrvScore: 50,
         rhrScore: 50,
         sleepScore: 50,
-        loadBalanceScore: 50,
+        respiratoryRateScore: 50,
         nextDayHrvZScore: 0,
       });
     }
@@ -237,7 +237,7 @@ describe("fitReadinessWeights", () => {
     // considers positive correlations. Generate data with strong positive relationship.
     const data = generateWeightsData(
       150,
-      { hrv: 0.6, restingHr: 0.1, sleep: 0.15, loadBalance: 0.15 },
+      { hrv: 0.6, restingHr: 0.1, sleep: 0.15, respiratoryRate: 0.15 },
       222,
     );
     const result = fitReadinessWeights(data);
@@ -253,7 +253,7 @@ describe("fitReadinessWeights", () => {
     // Sleep dominates
     const data = generateWeightsData(
       120,
-      { hrv: 0.1, restingHr: 0.1, sleep: 0.7, loadBalance: 0.1 },
+      { hrv: 0.1, restingHr: 0.1, sleep: 0.7, respiratoryRate: 0.1 },
       333,
     );
     const result = fitReadinessWeights(data);
@@ -263,13 +263,13 @@ describe("fitReadinessWeights", () => {
 
     expect(result.sleep).toBeGreaterThan(result.hrv);
     expect(result.sleep).toBeGreaterThan(result.restingHr);
-    expect(result.sleep).toBeGreaterThan(result.loadBalance);
+    expect(result.sleep).toBeGreaterThan(result.respiratoryRate);
   });
 
-  it("emphasizes loadBalance when loadBalance is the dominant driver", () => {
+  it("emphasizes respiratoryRate when respiratoryRate is the dominant driver", () => {
     const data = generateWeightsData(
       120,
-      { hrv: 0.1, restingHr: 0.1, sleep: 0.1, loadBalance: 0.7 },
+      { hrv: 0.1, restingHr: 0.1, sleep: 0.1, respiratoryRate: 0.7 },
       444,
     );
     const result = fitReadinessWeights(data);
@@ -277,8 +277,8 @@ describe("fitReadinessWeights", () => {
     expect(result).not.toBeNull();
     if (!result) return;
 
-    expect(result.loadBalance).toBeGreaterThan(result.hrv);
-    expect(result.loadBalance).toBeGreaterThan(result.restingHr);
-    expect(result.loadBalance).toBeGreaterThan(result.sleep);
+    expect(result.respiratoryRate).toBeGreaterThan(result.hrv);
+    expect(result.respiratoryRate).toBeGreaterThan(result.restingHr);
+    expect(result.respiratoryRate).toBeGreaterThan(result.sleep);
   });
 });
