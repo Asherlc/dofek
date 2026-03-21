@@ -1,6 +1,7 @@
 import { healthStatusColor, scoreColor, trendColor } from "@dofek/scoring/scoring";
 import type { HealthspanResult } from "dofek-server/types";
-import ReactECharts from "echarts-for-react";
+import { chartThemeColors, dofekTooltip } from "../lib/chartTheme.ts";
+import { DofekChart } from "./DofekChart.tsx";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface HealthspanScoreCardProps {
@@ -37,14 +38,13 @@ export function HealthspanScoreCard({ data, loading }: HealthspanScoreCardProps)
 
   // Radar chart for the 9 metrics
   const radarOption = {
-    backgroundColor: "transparent",
     radar: {
       indicator: data.metrics.map((m) => ({ name: m.name, max: 100 })),
       shape: "circle" as const,
-      axisName: { color: "#4a6a4a", fontSize: 10 },
+      axisName: { color: chartThemeColors.legendText, fontSize: 10 },
       splitArea: { areaStyle: { color: ["transparent"] } },
-      splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
-      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
+      splitLine: { lineStyle: { color: chartThemeColors.tooltipBorder } },
+      axisLine: { lineStyle: { color: chartThemeColors.tooltipBorder } },
     },
     series: [
       {
@@ -60,12 +60,7 @@ export function HealthspanScoreCard({ data, loading }: HealthspanScoreCardProps)
         ],
       },
     ],
-    tooltip: {
-      trigger: "item" as const,
-      backgroundColor: "#ffffff",
-      borderColor: "rgba(74, 158, 122, 0.2)",
-      textStyle: { color: "#1a2e1a", fontSize: 12 },
-    },
+    tooltip: dofekTooltip({ trigger: "item" }),
   };
 
   return (
@@ -86,7 +81,7 @@ export function HealthspanScoreCard({ data, loading }: HealthspanScoreCardProps)
       </div>
 
       {/* Radar chart */}
-      <ReactECharts option={radarOption} style={{ height: 220 }} notMerge={true} />
+      <DofekChart option={radarOption} height={220} />
 
       {/* Metric detail bars */}
       <div className="space-y-2 mt-2">
@@ -100,7 +95,7 @@ export function HealthspanScoreCard({ data, loading }: HealthspanScoreCardProps)
               />
             </div>
             <span className="text-subtle text-xs w-20 text-right tabular-nums">
-              {m.value != null ? `${m.value} ${m.unit}` : "—"}
+              {m.value != null ? `${m.value} ${m.unit}` : "\u2014"}
             </span>
           </div>
         ))}

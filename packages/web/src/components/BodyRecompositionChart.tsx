@@ -1,8 +1,15 @@
-import ReactECharts from "echarts-for-react";
 import type { BodyRecompositionRow } from "../../../server/src/routers/body-analytics.ts";
+import {
+  chartColors,
+  dofekAxis,
+  dofekGrid,
+  dofekLegend,
+  dofekSeries,
+  dofekTooltip,
+} from "../lib/chartTheme.ts";
 import { useUnitSystem } from "../lib/unitContext.ts";
 import { convertWeight, weightLabel } from "../lib/units.ts";
-import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
+import { DofekChart } from "./DofekChart.tsx";
 
 interface BodyRecompositionChartProps {
   data: BodyRecompositionRow[];
@@ -11,17 +18,15 @@ interface BodyRecompositionChartProps {
 
 export function BodyRecompositionChart({ data, loading }: BodyRecompositionChartProps) {
   const { unitSystem } = useUnitSystem();
-  if (loading) {
-    return <ChartLoadingSkeleton height={250} />;
-  }
 
   if (data.length === 0) {
     return (
-      <div className="flex items-center justify-center h-[250px]">
-        <span className="text-dim text-sm">
-          Need weight + body fat data for recomposition tracking
-        </span>
-      </div>
+      <DofekChart
+        option={{}}
+        loading={loading}
+        empty={true}
+        emptyMessage="Need weight + body fat data for recomposition tracking"
+      />
     );
   }
 
@@ -35,52 +40,22 @@ export function BodyRecompositionChart({ data, loading }: BodyRecompositionChart
   const leanChange = last.smoothedLeanMass - first.smoothedLeanMass;
 
   const option = {
-    backgroundColor: "transparent",
-    grid: { top: 30, right: 12, bottom: 30, left: 50 },
-    tooltip: {
-      trigger: "axis" as const,
-      backgroundColor: "#ffffff",
-      borderColor: "rgba(74, 158, 122, 0.2)",
-      textStyle: { color: "#1a2e1a", fontSize: 12 },
-    },
-    legend: {
-      top: 0,
-      textStyle: { color: "#6b8a6b", fontSize: 11 },
-    },
-    xAxis: {
-      type: "time" as const,
-      axisLabel: { color: "#6b8a6b", fontSize: 11 },
-      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.25)" } },
-      splitLine: { show: false },
-    },
-    yAxis: {
-      type: "value" as const,
-      name: weightLabel(unitSystem),
-      axisLabel: { color: "#6b8a6b", fontSize: 11 },
-      splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
-      nameTextStyle: { color: "#6b8a6b", fontSize: 11 },
-    },
+    grid: dofekGrid("single", { left: 50 }),
+    tooltip: dofekTooltip(),
+    legend: dofekLegend(true),
+    xAxis: dofekAxis.time(),
+    yAxis: dofekAxis.value({ name: weightLabel(unitSystem) }),
     series: [
-      {
-        name: "Fat Mass (smoothed)",
-        type: "line",
-        data: data.map((d) => [d.date, convertWeight(d.smoothedFatMass, unitSystem)]),
-        smooth: true,
-        symbol: "none",
-        lineStyle: { color: "#f97316", width: 2 },
-        itemStyle: { color: "#f97316" },
-        areaStyle: { color: "rgba(249,115,22,0.1)" },
-      },
-      {
-        name: "Lean Mass (smoothed)",
-        type: "line",
-        data: data.map((d) => [d.date, convertWeight(d.smoothedLeanMass, unitSystem)]),
-        smooth: true,
-        symbol: "none",
-        lineStyle: { color: "#3b82f6", width: 2 },
-        itemStyle: { color: "#3b82f6" },
-        areaStyle: { color: "rgba(59,130,246,0.1)" },
-      },
+      dofekSeries.line(
+        "Fat Mass (smoothed)",
+        data.map((d) => [d.date, convertWeight(d.smoothedFatMass, unitSystem)]),
+        { color: chartColors.orange, areaStyle: { opacity: 0.1 } },
+      ),
+      dofekSeries.line(
+        "Lean Mass (smoothed)",
+        data.map((d) => [d.date, convertWeight(d.smoothedLeanMass, unitSystem)]),
+        { color: chartColors.blue, areaStyle: { opacity: 0.1 } },
+      ),
     ],
   };
 
@@ -96,7 +71,7 @@ export function BodyRecompositionChart({ data, loading }: BodyRecompositionChart
           {convertWeight(leanChange, unitSystem).toFixed(1)} {weightLabel(unitSystem)}
         </span>
       </div>
-      <ReactECharts option={option} style={{ height: 250 }} />
+      <DofekChart option={option} loading={loading} />
     </div>
   );
 }

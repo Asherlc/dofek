@@ -1,5 +1,6 @@
 import type { PolarizationWeek } from "dofek-server/types";
-import ReactECharts from "echarts-for-react";
+import { dofekAxis, dofekGrid, dofekLegend, dofekTooltip } from "../lib/chartTheme.ts";
+import { DofekChart } from "./DofekChart.tsx";
 
 interface PolarizationTrendChartProps {
   weeks: PolarizationWeek[];
@@ -60,13 +61,8 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
   const incompleteWeeks = weeks.filter((w) => w.polarizationIndex === null);
 
   return {
-    backgroundColor: "transparent",
-    grid: { top: 40, right: 20, bottom: 40, left: 55 },
-    tooltip: {
-      trigger: "axis",
-      backgroundColor: "#ffffff",
-      borderColor: "rgba(74, 158, 122, 0.2)",
-      textStyle: { color: "#1a2e1a", fontSize: 12 },
+    grid: dofekGrid("single", { top: 40, bottom: 40, left: 55 }),
+    tooltip: dofekTooltip({
       formatter: (
         params: Array<{
           axisValue: string;
@@ -117,22 +113,9 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
           .filter((line): line is string => typeof line === "string")
           .join("<br/>");
       },
-    },
-    xAxis: {
-      type: "time" as const,
-      axisLabel: { color: "#6b8a6b", fontSize: 11 },
-      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
-    },
-    yAxis: {
-      type: "value",
-      name: "Polarization Index",
-      min: yMin,
-      max: yMax,
-      splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
-      axisLabel: { color: "#6b8a6b", fontSize: 11 },
-      axisLine: { show: true, lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
-      nameTextStyle: { color: "#6b8a6b", fontSize: 11 },
-    },
+    }),
+    xAxis: dofekAxis.time(),
+    yAxis: dofekAxis.value({ name: "Polarization Index", min: yMin, max: yMax }),
     series: [
       // Shaded green area above Threshold = 2.0
       {
@@ -214,30 +197,12 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
           ]
         : []),
     ],
-    legend: {
-      show: false,
-    },
+    legend: dofekLegend(false),
   };
 }
 
 export function PolarizationTrendChart({ weeks, maxHr, loading }: PolarizationTrendChartProps) {
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-[280px]">
-        <span className="text-dim text-sm">Loading polarization data...</span>
-      </div>
-    );
-  }
-
-  if (weeks.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-[100px]">
-        <span className="text-dim text-sm">Not enough HR data to compute polarization index</span>
-      </div>
-    );
-  }
-
-  const option = buildPolarizationTrendOption(weeks);
+  const option = weeks.length > 0 ? buildPolarizationTrendOption(weeks) : {};
 
   return (
     <div>
@@ -245,7 +210,13 @@ export function PolarizationTrendChart({ weeks, maxHr, loading }: PolarizationTr
         Polarization Index (3-Zone Model)
         {maxHr && <span className="text-dim ml-2">(max heart rate: {maxHr} bpm)</span>}
       </h3>
-      <ReactECharts option={option} style={{ height: 280 }} notMerge={true} />
+      <DofekChart
+        option={option}
+        loading={loading}
+        empty={weeks.length === 0}
+        height={280}
+        emptyMessage="Not enough HR data to compute polarization index"
+      />
       <p className="text-xs text-dim mt-1">
         Index above 2.0 = well-polarized training. Zone 1 = easy (&lt;80% max HR), Zone 2 =
         threshold (80-90% max HR), Zone 3 = high intensity (&ge;90% max HR).

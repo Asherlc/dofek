@@ -1,5 +1,5 @@
-import ReactECharts from "echarts-for-react";
-import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
+import { dofekAxis, dofekGrid, dofekLegend, dofekSeries, dofekTooltip } from "../lib/chartTheme.ts";
+import { DofekChart } from "./DofekChart.tsx";
 
 interface SleepData {
   started_at: string;
@@ -16,18 +16,9 @@ interface SleepChartProps {
 }
 
 export function SleepChart({ data, loading }: SleepChartProps) {
-  if (loading) {
-    return <ChartLoadingSkeleton height={250} />;
-  }
-
   const option = {
-    backgroundColor: "transparent",
-    grid: { top: 30, right: 20, bottom: 40, left: 50 },
-    tooltip: {
-      trigger: "axis",
-      backgroundColor: "#ffffff",
-      borderColor: "rgba(74, 158, 122, 0.2)",
-      textStyle: { color: "#1a2e1a", fontSize: 12 },
+    grid: dofekGrid("single", { top: 30, bottom: 40, left: 50 }),
+    tooltip: dofekTooltip({
       formatter: (
         params: { seriesName: string; value: [string, number | null]; color: string }[],
       ) => {
@@ -47,55 +38,45 @@ export function SleepChart({ data, loading }: SleepChartProps) {
         });
         return `<strong>${date}</strong> (${Math.floor(total / 60)}h ${total % 60}m)<br/>${lines.join("<br/>")}`;
       },
-    },
-    xAxis: {
-      type: "time" as const,
-      axisLabel: { color: "#6b8a6b", fontSize: 11 },
-      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.25)" } },
-    },
-    yAxis: {
-      type: "value",
-      name: "minutes",
-      splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
-      axisLabel: { color: "#6b8a6b", fontSize: 11 },
-      axisLine: { show: false },
-      nameTextStyle: { color: "#6b8a6b", fontSize: 11 },
-    },
-    legend: {
-      textStyle: { color: "#4a6a4a", fontSize: 11 },
-      top: 0,
-    },
+    }),
+    xAxis: dofekAxis.time(),
+    yAxis: dofekAxis.value({ name: "minutes" }),
+    legend: dofekLegend(true),
     series: [
-      {
-        name: "Deep",
-        type: "bar",
-        stack: "sleep",
-        data: data.map((d) => [d.started_at, d.deep_minutes]),
-        itemStyle: { color: "#6366f1" },
-      },
-      {
-        name: "REM",
-        type: "bar",
-        stack: "sleep",
-        data: data.map((d) => [d.started_at, d.rem_minutes]),
-        itemStyle: { color: "#8b5cf6" },
-      },
-      {
-        name: "Light",
-        type: "bar",
-        stack: "sleep",
-        data: data.map((d) => [d.started_at, d.light_minutes]),
-        itemStyle: { color: "#a78bfa" },
-      },
-      {
-        name: "Awake",
-        type: "bar",
-        stack: "sleep",
-        data: data.map((d) => [d.started_at, d.awake_minutes]),
-        itemStyle: { color: "#f87171" },
-      },
+      dofekSeries.bar(
+        "Deep",
+        data.map((d) => [d.started_at, d.deep_minutes]),
+        {
+          stack: "sleep",
+          color: "#6366f1",
+        },
+      ),
+      dofekSeries.bar(
+        "REM",
+        data.map((d) => [d.started_at, d.rem_minutes]),
+        {
+          stack: "sleep",
+          color: "#8b5cf6",
+        },
+      ),
+      dofekSeries.bar(
+        "Light",
+        data.map((d) => [d.started_at, d.light_minutes]),
+        {
+          stack: "sleep",
+          color: "#a78bfa",
+        },
+      ),
+      dofekSeries.bar(
+        "Awake",
+        data.map((d) => [d.started_at, d.awake_minutes]),
+        {
+          stack: "sleep",
+          color: "#f87171",
+        },
+      ),
     ],
   };
 
-  return <ReactECharts option={option} style={{ height: 250 }} notMerge={true} />;
+  return <DofekChart option={option} loading={loading} empty={data.length === 0} />;
 }

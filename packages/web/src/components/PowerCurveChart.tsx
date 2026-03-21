@@ -1,5 +1,13 @@
-import ReactECharts from "echarts-for-react";
-import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
+import {
+  chartColors,
+  chartThemeColors,
+  dofekAxis,
+  dofekGrid,
+  dofekLegend,
+  dofekSeries,
+  dofekTooltip,
+} from "../lib/chartTheme.ts";
+import { DofekChart } from "./DofekChart.tsx";
 
 interface PowerCurvePoint {
   durationSeconds: number;
@@ -28,18 +36,6 @@ function formatDuration(seconds: number): string {
 }
 
 export function PowerCurveChart({ data, comparisonData, model, loading }: PowerCurveChartProps) {
-  if (loading) {
-    return <ChartLoadingSkeleton height={280} />;
-  }
-
-  if (data.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-[280px]">
-        <span className="text-dim text-sm">No power data</span>
-      </div>
-    );
-  }
-
   // Generate CP model curve points (smooth line from 120s to 7200s)
   const modelCurveData: [number, number][] = [];
   if (model && model.cp > 0) {
@@ -53,102 +49,86 @@ export function PowerCurveChart({ data, comparisonData, model, loading }: PowerC
     }
   }
 
-  interface SeriesItem {
-    name: string;
-    type: "line";
-    data: [number, number][];
-    smooth: number | boolean;
-    symbol: string;
-    symbolSize: number;
-    lineStyle: { width: number; color: string; type?: "dashed" | "solid" };
-    itemStyle: { color: string };
-    areaStyle?: { opacity: number; color: string };
-  }
-
-  const series: SeriesItem[] = [
-    {
-      name: "Best Power",
-      type: "line",
-      data: data.map((d) => [d.durationSeconds, d.bestPower]),
-      smooth: 0.3,
-      symbol: "circle",
-      symbolSize: 6,
-      lineStyle: { width: 3, color: "#8b5cf6" },
-      itemStyle: { color: "#8b5cf6" },
-      areaStyle: { opacity: 0.1, color: "#8b5cf6" },
-    },
+  const series = [
+    dofekSeries.line(
+      "Best Power",
+      data.map((d) => [d.durationSeconds, d.bestPower]),
+      {
+        color: chartColors.purple,
+        smooth: 0.3,
+        width: 3,
+        symbol: "circle",
+        symbolSize: 6,
+        areaStyle: { opacity: 0.1, color: chartColors.purple },
+      },
+    ),
   ];
 
   if (modelCurveData.length > 0 && model) {
-    series.push({
-      name: `Threshold Model (${model.cp}W, reserve=${Math.round(model.wPrime / 1000)}kJ)`,
-      type: "line",
-      data: modelCurveData,
-      smooth: true,
-      symbol: "none",
-      symbolSize: 0,
-      lineStyle: { width: 2, color: "#f97316", type: "dashed" },
-      itemStyle: { color: "#f97316" },
-    });
+    series.push(
+      dofekSeries.line(
+        `Threshold Model (${model.cp}W, reserve=${Math.round(model.wPrime / 1000)}kJ)`,
+        modelCurveData,
+        {
+          color: chartColors.orange,
+          lineStyle: { type: "dashed" },
+        },
+      ),
+    );
   }
 
   if (comparisonData && comparisonData.length > 0) {
-    series.push({
-      name: "Previous Period",
-      type: "line",
-      data: comparisonData.map((d) => [d.durationSeconds, d.bestPower]),
-      smooth: 0.3,
-      symbol: "circle",
-      symbolSize: 4,
-      lineStyle: { width: 2, color: "#6b8a6b" },
-      itemStyle: { color: "#6b8a6b" },
-    });
+    series.push(
+      dofekSeries.line(
+        "Previous Period",
+        comparisonData.map((d) => [d.durationSeconds, d.bestPower]),
+        {
+          color: chartThemeColors.axisLabel,
+          smooth: 0.3,
+          symbol: "circle",
+          symbolSize: 4,
+        },
+      ),
+    );
   }
 
   const option = {
-    backgroundColor: "transparent",
-    grid: { top: 30, right: 20, bottom: 40, left: 55 },
-    tooltip: {
-      trigger: "item" as const,
-      backgroundColor: "#ffffff",
-      borderColor: "rgba(74, 158, 122, 0.2)",
-      textStyle: { color: "#1a2e1a", fontSize: 12 },
+    grid: dofekGrid("single", { top: 30, bottom: 40, left: 55 }),
+    tooltip: dofekTooltip({
+      trigger: "item",
       formatter: (params: { data: [number, number]; seriesName: string }) => {
         const [seconds, watts] = params.data;
         return `${params.seriesName}<br/>${formatDuration(seconds)}: <strong>${watts}W</strong>`;
       },
-    },
+    }),
     xAxis: {
       type: "log" as const,
       name: "Duration",
       nameLocation: "center" as const,
       nameGap: 25,
-      nameTextStyle: { color: "#6b8a6b", fontSize: 11 },
+      nameTextStyle: { color: chartThemeColors.axisLabel, fontSize: 11 },
       min: 5,
       max: 7200,
       axisLabel: {
-        color: "#6b8a6b",
+        color: chartThemeColors.axisLabel,
         fontSize: 11,
         formatter: (value: number) => formatDuration(value),
       },
-      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.25)" } },
+      axisLine: { lineStyle: { color: chartThemeColors.axisLine } },
       splitLine: { show: false },
     },
-    yAxis: {
-      type: "value" as const,
-      name: "Watts",
-      splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
-      axisLabel: { color: "#6b8a6b", fontSize: 11 },
-      axisLine: { show: true, lineStyle: { color: "rgba(74, 158, 122, 0.25)" } },
-      nameTextStyle: { color: "#6b8a6b", fontSize: 11 },
-    },
-    legend: {
-      show: series.length > 1,
-      textStyle: { color: "#4a6a4a", fontSize: 10 },
-      top: 0,
-    },
+    yAxis: dofekAxis.value({ name: "Watts" }),
+    legend: dofekLegend(series.length > 1),
     series,
   };
 
-  return <ReactECharts option={option} style={{ height: 280 }} notMerge={true} />;
+  return (
+    <DofekChart
+      option={option}
+      loading={loading}
+      empty={data.length === 0}
+      height={280}
+      emptyMessage="No power data"
+    />
+  );
 }

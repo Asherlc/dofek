@@ -1,6 +1,6 @@
-import ReactECharts from "echarts-for-react";
 import type { MicronutrientAdequacyRow } from "../../../server/src/routers/nutrition-analytics.ts";
-import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
+import { chartThemeColors, dofekAxis, dofekTooltip } from "../lib/chartTheme.ts";
+import { DofekChart } from "./DofekChart.tsx";
 
 interface MicronutrientChartProps {
   data: MicronutrientAdequacyRow[];
@@ -8,29 +8,12 @@ interface MicronutrientChartProps {
 }
 
 export function MicronutrientChart({ data, loading }: MicronutrientChartProps) {
-  if (loading) {
-    return <ChartLoadingSkeleton height={300} />;
-  }
-
-  if (data.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-[300px]">
-        <span className="text-dim text-sm">No micronutrient data available</span>
-      </div>
-    );
-  }
-
   const sorted = [...data].sort((a, b) => a.percentRda - b.percentRda);
 
   const option = {
-    backgroundColor: "transparent",
     grid: { top: 10, right: 60, bottom: 30, left: 120 },
-    tooltip: {
-      trigger: "axis" as const,
-      axisPointer: { type: "shadow" as const },
-      backgroundColor: "#ffffff",
-      borderColor: "rgba(74, 158, 122, 0.2)",
-      textStyle: { color: "#1a2e1a", fontSize: 12 },
+    tooltip: dofekTooltip({
+      axisPointer: { type: "shadow" },
       formatter: (params: Array<{ name: string; value: number; dataIndex: number }>) => {
         const p = params[0];
         if (!p) return "";
@@ -39,25 +22,19 @@ export function MicronutrientChart({ data, loading }: MicronutrientChartProps) {
         return `<b>${row.nutrient}</b><br/>
           ${row.avgIntake} ${row.unit} / ${row.rda} ${row.unit}<br/>
           <b>${row.percentRda}% of RDA</b><br/>
-          <span style="color:#6b8a6b">(${row.daysTracked} days tracked)</span>`;
+          <span style="color:${chartThemeColors.axisLabel}">(${row.daysTracked} days tracked)</span>`;
       },
-    },
+    }),
     xAxis: {
-      type: "value" as const,
+      ...dofekAxis.value({
+        axisLabel: { formatter: (v: number) => `${v}%` },
+      }),
       max: (value: { max: number }) => Math.max(value.max, 150),
-      axisLabel: {
-        color: "#6b8a6b",
-        fontSize: 11,
-        formatter: (v: number) => `${v}%`,
-      },
-      splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
     },
-    yAxis: {
-      type: "category" as const,
+    yAxis: dofekAxis.category({
       data: sorted.map((d) => d.nutrient),
-      axisLabel: { color: "#4a6a4a", fontSize: 11 },
-      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
-    },
+      axisLabel: { color: chartThemeColors.legendText, fontSize: 11 },
+    }),
     series: [
       {
         type: "bar",
@@ -78,21 +55,34 @@ export function MicronutrientChart({ data, loading }: MicronutrientChartProps) {
         label: {
           show: true,
           position: "right" as const,
-          color: "#4a6a4a",
+          color: chartThemeColors.legendText,
           fontSize: 11,
           formatter: (p: { value: number }) => `${p.value}%`,
         },
         markLine: {
           silent: true,
           symbol: "none",
-          lineStyle: { color: "rgba(74, 158, 122, 0.2)", type: "dashed" as const },
+          lineStyle: { color: chartThemeColors.tooltipBorder, type: "dashed" as const },
           data: [{ xAxis: 100 }],
-          label: { show: true, position: "end" as const, formatter: "100% RDA", color: "#6b8a6b" },
+          label: {
+            show: true,
+            position: "end" as const,
+            formatter: "100% RDA",
+            color: chartThemeColors.axisLabel,
+          },
           tooltip: { show: false },
         },
       },
     ],
   };
 
-  return <ReactECharts option={option} style={{ height: Math.max(300, sorted.length * 28) }} />;
+  return (
+    <DofekChart
+      option={option}
+      loading={loading}
+      empty={data.length === 0}
+      emptyMessage="No micronutrient data available"
+      height={Math.max(300, sorted.length * 28)}
+    />
+  );
 }

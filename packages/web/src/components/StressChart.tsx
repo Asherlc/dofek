@@ -1,7 +1,7 @@
 import { stressColor, stressLabel, trendColor } from "@dofek/scoring/scoring";
 import type { StressResult } from "dofek-server/types";
-import ReactECharts from "echarts-for-react";
-import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
+import { dofekAxis, dofekGrid, dofekLegend, dofekSeries, dofekTooltip } from "../lib/chartTheme.ts";
+import { DofekChart } from "./DofekChart.tsx";
 
 interface StressChartProps {
   data: StressResult | undefined;
@@ -9,35 +9,26 @@ interface StressChartProps {
 }
 
 function trendIcon(trend: StressResult["trend"]): string {
-  if (trend === "improving") return "↓";
-  if (trend === "worsening") return "↑";
-  return "→";
+  if (trend === "improving") return "\u2193";
+  if (trend === "worsening") return "\u2191";
+  return "\u2192";
 }
 
 export function StressChart({ data, loading }: StressChartProps) {
   if (loading) {
-    return <ChartLoadingSkeleton height={350} />;
+    return <DofekChart option={{}} loading={true} height={350} />;
   }
 
   if (!data || data.daily.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-[350px]">
-        <span className="text-dim text-sm">No stress data</span>
-      </div>
-    );
+    return <DofekChart option={{}} empty={true} height={350} emptyMessage="No stress data" />;
   }
 
   const latest = data.latestScore ?? 0;
   const latestColor = stressColor(latest);
 
   const option = {
-    backgroundColor: "transparent",
-    grid: { top: 50, right: 60, bottom: 40, left: 50 },
-    tooltip: {
-      trigger: "axis" as const,
-      backgroundColor: "#ffffff",
-      borderColor: "rgba(74, 158, 122, 0.2)",
-      textStyle: { color: "#1a2e1a", fontSize: 12 },
+    grid: dofekGrid("dualAxis", { top: 50, bottom: 40 }),
+    tooltip: dofekTooltip({
       formatter: (
         params: {
           dataIndex: number;
@@ -57,19 +48,15 @@ export function StressChart({ data, loading }: StressChartProps) {
         let html = `<div style="font-weight:600;margin-bottom:4px">${date}</div>`;
         html += `<div>Stress: <b style="color:${stressColor(day.stressScore)}">${day.stressScore.toFixed(1)} (${stressLabel(day.stressScore)})</b></div>`;
         if (day.hrvDeviation != null)
-          html += `<div>Heart rate variability deviation: <b>${day.hrvDeviation > 0 ? "+" : ""}${day.hrvDeviation}</b>σ</div>`;
+          html += `<div>Heart rate variability deviation: <b>${day.hrvDeviation > 0 ? "+" : ""}${day.hrvDeviation}</b>\u03C3</div>`;
         if (day.restingHrDeviation != null)
-          html += `<div>Resting heart rate deviation: <b>${day.restingHrDeviation > 0 ? "+" : ""}${day.restingHrDeviation}</b>σ</div>`;
+          html += `<div>Resting heart rate deviation: <b>${day.restingHrDeviation > 0 ? "+" : ""}${day.restingHrDeviation}</b>\u03C3</div>`;
         if (day.sleepEfficiency != null)
           html += `<div>Sleep efficiency: <b>${day.sleepEfficiency}%</b></div>`;
         return html;
       },
-    },
-    legend: {
-      data: ["Daily Stress", "Weekly Avg"],
-      textStyle: { color: "#4a6a4a", fontSize: 11 },
-      top: 0,
-    },
+    }),
+    legend: dofekLegend(true, { data: ["Daily Stress", "Weekly Avg"] }),
     graphic: [
       {
         type: "text" as const,
@@ -83,32 +70,10 @@ export function StressChart({ data, loading }: StressChartProps) {
         },
       },
     ],
-    xAxis: {
-      type: "time" as const,
-      axisLabel: { color: "#6b8a6b", fontSize: 11 },
-      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.25)" } },
-    },
+    xAxis: dofekAxis.time(),
     yAxis: [
-      {
-        type: "value" as const,
-        name: "Stress (0-3)",
-        min: 0,
-        max: 3,
-        interval: 1,
-        splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
-        axisLabel: { color: "#6b8a6b", fontSize: 11 },
-        axisLine: { show: false },
-        nameTextStyle: { color: "#6b8a6b", fontSize: 11 },
-      },
-      {
-        type: "value" as const,
-        name: "Weekly",
-        splitLine: { show: false },
-        axisLabel: { color: "#6b8a6b", fontSize: 11 },
-        axisLine: { show: true, lineStyle: { color: "rgba(74, 158, 122, 0.25)" } },
-        nameTextStyle: { color: "#6b8a6b", fontSize: 11 },
-        position: "right" as const,
-      },
+      dofekAxis.value({ name: "Stress (0-3)", min: 0, max: 3 }),
+      dofekAxis.value({ name: "Weekly", position: "right", showSplitLine: false }),
     ],
     visualMap: {
       show: false,
@@ -122,23 +87,22 @@ export function StressChart({ data, loading }: StressChartProps) {
     },
     series: [
       {
-        name: "Daily Stress",
-        type: "bar",
-        data: data.daily.map((d) => [d.date, d.stressScore]),
+        ...dofekSeries.bar(
+          "Daily Stress",
+          data.daily.map((d) => [d.date, d.stressScore]),
+          {},
+        ),
         barMaxWidth: 8,
-        yAxisIndex: 0,
       },
-      {
-        name: "Weekly Avg",
-        type: "line",
-        data: data.weekly.map((w) => [w.weekStart, w.avgDailyStress]),
-        smooth: true,
-        symbol: "circle",
-        symbolSize: 6,
-        lineStyle: { color: "#a78bfa", width: 2 },
-        itemStyle: { color: "#a78bfa" },
-        yAxisIndex: 0,
-      },
+      dofekSeries.line(
+        "Weekly Avg",
+        data.weekly.map((w) => [w.weekStart, w.avgDailyStress]),
+        {
+          color: "#a78bfa",
+          symbol: "circle",
+          symbolSize: 6,
+        },
+      ),
     ],
   };
 
@@ -163,7 +127,7 @@ export function StressChart({ data, loading }: StressChartProps) {
           </span>
         )}
       </div>
-      <ReactECharts option={option} style={{ height: 300 }} notMerge={true} />
+      <DofekChart option={option} height={300} />
     </div>
   );
 }

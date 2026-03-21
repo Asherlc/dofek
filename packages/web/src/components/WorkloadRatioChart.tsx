@@ -1,6 +1,12 @@
 import type { WorkloadRatioRow } from "dofek-server/types";
-import ReactECharts from "echarts-for-react";
-import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
+import {
+  chartThemeColors,
+  dofekAxis,
+  dofekLegend,
+  dofekSeries,
+  dofekTooltip,
+} from "../lib/chartTheme.ts";
+import { DofekChart } from "./DofekChart.tsx";
 
 interface WorkloadRatioChartProps {
   data: WorkloadRatioRow[];
@@ -9,26 +15,17 @@ interface WorkloadRatioChartProps {
 
 export function WorkloadRatioChart({ data, loading }: WorkloadRatioChartProps) {
   if (loading) {
-    return <ChartLoadingSkeleton height={400} />;
+    return <DofekChart option={{}} loading={true} height={400} />;
   }
 
   if (data.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-[400px]">
-        <span className="text-dim text-sm">No workload data</span>
-      </div>
-    );
+    return <DofekChart option={{}} empty={true} height={400} emptyMessage="No workload data" />;
   }
 
   const dates = data.map((d) => d.date);
 
   const option = {
-    backgroundColor: "transparent",
-    tooltip: {
-      trigger: "axis" as const,
-      backgroundColor: "#ffffff",
-      borderColor: "rgba(74, 158, 122, 0.2)",
-      textStyle: { color: "#1a2e1a", fontSize: 12 },
+    tooltip: dofekTooltip({
       formatter: (
         params: {
           seriesName: string;
@@ -55,52 +52,31 @@ export function WorkloadRatioChart({ data, loading }: WorkloadRatioChartProps) {
         }
         return html;
       },
-    },
+    }),
     axisPointer: { link: [{ xAxisIndex: "all" }] },
-    legend: {
-      data: ["Workload Ratio", "Acute Load", "Chronic Load"],
-      textStyle: { color: "#4a6a4a", fontSize: 11 },
-      top: 0,
-    },
+    legend: dofekLegend(true, { data: ["Workload Ratio", "Acute Load", "Chronic Load"] }),
     grid: [
       { top: 40, right: 20, bottom: "55%", left: 50 },
       { top: "55%", right: 20, bottom: 30, left: 50 },
     ],
     xAxis: [
       {
-        type: "time" as const,
+        ...dofekAxis.time({ axisLabel: { show: false } }),
         gridIndex: 0,
-        axisLabel: { show: false },
-        axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.25)" } },
-        splitLine: { show: false },
       },
       {
-        type: "time" as const,
+        ...dofekAxis.time(),
         gridIndex: 1,
-        axisLabel: { color: "#6b8a6b", fontSize: 11 },
-        axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.25)" } },
-        splitLine: { show: false },
       },
     ],
     yAxis: [
       {
-        type: "value" as const,
-        name: "Workload Ratio",
+        ...dofekAxis.value({ name: "Workload Ratio", min: 0 }),
         gridIndex: 0,
-        min: 0,
-        splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
-        axisLabel: { color: "#6b8a6b", fontSize: 11 },
-        axisLine: { show: false },
-        nameTextStyle: { color: "#6b8a6b", fontSize: 11 },
       },
       {
-        type: "value" as const,
-        name: "Load",
+        ...dofekAxis.value({ name: "Load" }),
         gridIndex: 1,
-        splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
-        axisLabel: { color: "#6b8a6b", fontSize: 11 },
-        axisLine: { show: false },
-        nameTextStyle: { color: "#6b8a6b", fontSize: 11 },
       },
     ],
     series: [
@@ -185,16 +161,17 @@ export function WorkloadRatioChart({ data, loading }: WorkloadRatioChartProps) {
       },
       // Workload Ratio line (top grid)
       {
-        name: "Workload Ratio",
-        type: "line",
+        ...dofekSeries.line(
+          "Workload Ratio",
+          data.map((d) => [d.date, d.workloadRatio]),
+          {
+            color: "#f59e0b",
+            width: 2.5,
+            z: 5,
+          },
+        ),
         xAxisIndex: 0,
         yAxisIndex: 0,
-        data: data.map((d) => [d.date, d.workloadRatio]),
-        smooth: true,
-        symbol: "none",
-        lineStyle: { color: "#f59e0b", width: 2.5 },
-        itemStyle: { color: "#f59e0b" },
-        z: 5,
       },
       // Optimal reference line at 1.0
       {
@@ -207,40 +184,40 @@ export function WorkloadRatioChart({ data, loading }: WorkloadRatioChartProps) {
           [dates[dates.length - 1], 1.0],
         ],
         symbol: "none",
-        lineStyle: { color: "#6b8a6b", width: 1, type: "dashed" as const },
+        lineStyle: { color: chartThemeColors.axisLabel, width: 1, type: "dashed" as const },
         z: 1,
         silent: true,
       },
       // Acute load area (bottom grid)
       {
-        name: "Acute Load",
-        type: "line",
+        ...dofekSeries.line(
+          "Acute Load",
+          data.map((d) => [d.date, d.acuteLoad]),
+          {
+            color: "#ec4899",
+            areaStyle: { opacity: 0.15 },
+            z: 3,
+          },
+        ),
         xAxisIndex: 1,
         yAxisIndex: 1,
-        data: data.map((d) => [d.date, d.acuteLoad]),
-        smooth: true,
-        symbol: "none",
-        lineStyle: { color: "#ec4899", width: 2 },
-        areaStyle: { color: "#ec4899", opacity: 0.15 },
-        itemStyle: { color: "#ec4899" },
-        z: 3,
       },
       // Chronic load area (bottom grid)
       {
-        name: "Chronic Load",
-        type: "line",
+        ...dofekSeries.line(
+          "Chronic Load",
+          data.map((d) => [d.date, d.chronicLoad]),
+          {
+            color: "#3b82f6",
+            areaStyle: { opacity: 0.1 },
+            z: 2,
+          },
+        ),
         xAxisIndex: 1,
         yAxisIndex: 1,
-        data: data.map((d) => [d.date, d.chronicLoad]),
-        smooth: true,
-        symbol: "none",
-        lineStyle: { color: "#3b82f6", width: 2 },
-        areaStyle: { color: "#3b82f6", opacity: 0.1 },
-        itemStyle: { color: "#3b82f6" },
-        z: 2,
       },
     ],
   };
 
-  return <ReactECharts option={option} style={{ height: 400 }} notMerge={true} />;
+  return <DofekChart option={option} height={400} />;
 }

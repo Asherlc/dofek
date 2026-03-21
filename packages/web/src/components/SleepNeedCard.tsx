@@ -1,7 +1,13 @@
 import { sleepDebtColor } from "@dofek/scoring/scoring";
 import type { SleepNeedResult } from "dofek-server/types";
-import ReactECharts from "echarts-for-react";
-import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
+import {
+  chartThemeColors,
+  dofekAxis,
+  dofekGrid,
+  dofekSeries,
+  dofekTooltip,
+} from "../lib/chartTheme.ts";
+import { DofekChart } from "./DofekChart.tsx";
 
 interface SleepNeedCardProps {
   data: SleepNeedResult | undefined;
@@ -15,15 +21,15 @@ function formatHoursMinutes(minutes: number): string {
 }
 
 export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
-  if (loading) {
-    return <ChartLoadingSkeleton height={320} />;
-  }
-
-  if (!data) {
+  if (loading || !data) {
     return (
-      <div className="card p-6 flex items-center justify-center h-[320px]">
-        <span className="text-dim text-sm">No sleep data</span>
-      </div>
+      <DofekChart
+        option={{}}
+        loading={loading}
+        empty={!data}
+        height={320}
+        emptyMessage="No sleep data"
+      />
     );
   }
 
@@ -32,13 +38,8 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
 
   // Recent nights bar chart
   const chartOption = {
-    backgroundColor: "transparent",
-    grid: { top: 20, right: 10, bottom: 30, left: 40 },
-    tooltip: {
-      trigger: "axis" as const,
-      backgroundColor: "#ffffff",
-      borderColor: "rgba(74, 158, 122, 0.2)",
-      textStyle: { color: "#1a2e1a", fontSize: 12 },
+    grid: dofekGrid("single", { top: 20, right: 10, bottom: 30, left: 40 }),
+    tooltip: dofekTooltip({
       formatter: (
         params: {
           dataIndex: number;
@@ -63,44 +64,40 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
         }
         return html;
       },
-    },
-    xAxis: {
-      type: "category" as const,
+    }),
+    xAxis: dofekAxis.category({
       data: data.recentNights.map((n) =>
         new Date(n.date).toLocaleDateString("en-US", { weekday: "short" }),
       ),
-      axisLabel: { color: "#6b8a6b", fontSize: 11 },
-      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
-    },
-    yAxis: {
-      type: "value" as const,
+    }),
+    yAxis: dofekAxis.value({
       name: "hours",
-      axisLabel: {
-        color: "#6b8a6b",
-        fontSize: 11,
-        formatter: (v: number) => `${(v / 60).toFixed(0)}h`,
-      },
-      splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
-      axisLine: { show: false },
-      nameTextStyle: { color: "#6b8a6b", fontSize: 11 },
-    },
+      axisLabel: { formatter: (v: number) => `${(v / 60).toFixed(0)}h` },
+    }),
     series: [
       {
-        type: "bar",
-        data: data.recentNights.map((n) => ({
-          value: n.actualMinutes,
-          itemStyle: {
-            color: n.actualMinutes >= n.neededMinutes ? "#22c55e" : "#ef4444",
-          },
-        })),
+        ...dofekSeries.bar(
+          "Actual",
+          data.recentNights.map((n) => ({
+            value: n.actualMinutes,
+            itemStyle: {
+              color: n.actualMinutes >= n.neededMinutes ? "#22c55e" : "#ef4444",
+            },
+          })),
+        ),
         barMaxWidth: 30,
       },
       {
-        type: "line",
-        data: data.recentNights.map((n) => n.neededMinutes),
-        symbol: "none",
-        lineStyle: { color: "#6b8a6b", width: 1.5, type: "dashed" as const },
-        z: 5,
+        ...dofekSeries.line(
+          "Need",
+          data.recentNights.map((n) => n.neededMinutes),
+          {
+            color: chartThemeColors.axisLabel,
+            lineStyle: { type: "dashed" },
+            width: 1.5,
+            z: 5,
+          },
+        ),
       },
     ],
   };
@@ -139,7 +136,7 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
       {data.recentNights.length > 0 && (
         <div>
           <p className="text-subtle text-xs mb-1">Last 7 nights (dashed = need)</p>
-          <ReactECharts option={chartOption} style={{ height: 120 }} notMerge={true} />
+          <DofekChart option={chartOption} height={120} />
         </div>
       )}
     </div>

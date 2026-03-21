@@ -1,6 +1,12 @@
-import type { EChartsOption } from "echarts";
-import ReactECharts from "echarts-for-react";
+import {
+  chartThemeColors,
+  dofekAxis,
+  dofekGrid,
+  dofekSeries,
+  dofekTooltip,
+} from "../lib/chartTheme.ts";
 import { CorrelationStrengthBar } from "./CorrelationStrengthBar.tsx";
+import { DofekChart } from "./DofekChart.tsx";
 
 export interface Insight {
   id: string;
@@ -97,20 +103,19 @@ function ConditionalChart({ insight }: { insight: Insight }) {
 
   const maxVal = Math.max(Math.abs(whenTrue.mean), Math.abs(whenFalse.mean));
 
-  const option: EChartsOption = {
-    grid: { left: 8, right: 60, top: 4, bottom: 4, containLabel: true },
+  const option = {
+    grid: dofekGrid("single", { left: 8, right: 60, top: 4, bottom: 4, containLabel: true }),
     xAxis: {
-      type: "value",
+      ...dofekAxis.value(),
       show: false,
       max: maxVal * 1.15,
     },
     yAxis: {
-      type: "category",
-      data: ["Without", `With ${action}`],
+      ...dofekAxis.category({ data: ["Without", `With ${action}`] }),
       axisLine: { show: false },
       axisTick: { show: false },
       axisLabel: {
-        color: "#4a6a4a",
+        color: chartThemeColors.legendText,
         fontSize: 11,
         width: 120,
         overflow: "truncate",
@@ -118,40 +123,41 @@ function ConditionalChart({ insight }: { insight: Insight }) {
     },
     series: [
       {
-        type: "bar",
-        data: [
-          {
-            value: Math.abs(whenFalse.mean),
-            itemStyle: { color: "#6b8a6b" },
-            label: {
-              show: true,
-              position: "right",
-              formatter: `${formatValue(whenFalse.mean)} (n=${whenFalse.n})`,
-              color: "#4a6a4a",
-              fontSize: 10,
+        ...dofekSeries.bar(
+          "",
+          [
+            {
+              value: Math.abs(whenFalse.mean),
+              itemStyle: { color: chartThemeColors.axisLabel },
+              label: {
+                show: true,
+                position: "right",
+                formatter: `${formatValue(whenFalse.mean)} (n=${whenFalse.n})`,
+                color: chartThemeColors.legendText,
+                fontSize: 10,
+              },
             },
-          },
-          {
-            value: Math.abs(whenTrue.mean),
-            itemStyle: { color: "#34d399" },
-            label: {
-              show: true,
-              position: "right",
-              formatter: `${formatValue(whenTrue.mean)} (n=${whenTrue.n})`,
-              color: "#6ee7b7",
-              fontSize: 10,
+            {
+              value: Math.abs(whenTrue.mean),
+              itemStyle: { color: "#34d399" },
+              label: {
+                show: true,
+                position: "right",
+                formatter: `${formatValue(whenTrue.mean)} (n=${whenTrue.n})`,
+                color: "#6ee7b7",
+                fontSize: 10,
+              },
             },
-          },
-        ],
-        barWidth: 14,
-        barGap: "30%",
+          ],
+          { barWidth: 14, barGap: "30%" },
+        ),
       },
     ],
   };
 
   return (
     <div>
-      <ReactECharts option={option} style={{ height: 64 }} opts={{ renderer: "svg" }} />
+      <DofekChart option={option} height={64} opts={{ renderer: "svg" }} />
       <p className="text-center text-xs text-subtle mt-1">
         <span className={diff > 0 ? "text-emerald-400" : "text-rose-400"}>
           {sign}
@@ -200,49 +206,45 @@ function ScatterPlot({ insight }: { insight: Insight }) {
 
   const trendColor = rho >= 0 ? "#34d399" : "#fb7185";
 
-  const option: EChartsOption = {
-    grid: { left: 8, right: 16, top: 16, bottom: 24, containLabel: true },
+  const option = {
+    grid: dofekGrid("single", { left: 8, right: 16, top: 16, bottom: 24, containLabel: true }),
     xAxis: {
-      type: "value",
-      name: insight.action,
+      ...dofekAxis.value({
+        name: insight.action,
+        showSplitLine: true,
+      }),
       nameLocation: "middle",
       nameGap: 20,
-      nameTextStyle: { color: "#6b8a6b", fontSize: 10 },
-      axisLabel: { color: "#6b8a6b", fontSize: 9 },
-      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
-      splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
+      nameTextStyle: { color: chartThemeColors.axisLabel, fontSize: 10 },
+      axisLabel: { color: chartThemeColors.axisLabel, fontSize: 9 },
+      splitLine: { lineStyle: { color: chartThemeColors.gridLine } },
     },
     yAxis: {
-      type: "value",
-      name: insight.metric,
-      nameTextStyle: { color: "#6b8a6b", fontSize: 10 },
-      axisLabel: { color: "#6b8a6b", fontSize: 9 },
-      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
-      splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
+      ...dofekAxis.value({ name: insight.metric }),
+      nameTextStyle: { color: chartThemeColors.axisLabel, fontSize: 10 },
+      axisLabel: { color: chartThemeColors.axisLabel, fontSize: 9 },
+      splitLine: { lineStyle: { color: chartThemeColors.gridLine } },
     },
     series: [
+      dofekSeries.scatter(
+        "",
+        points.map((p) => [p.x, p.y]),
+        { color: chartThemeColors.legendText, symbolSize: 4, itemStyle: { opacity: 0.5 } },
+      ),
       {
-        type: "scatter",
-        data: points.map((p) => [p.x, p.y]),
-        symbolSize: 4,
-        itemStyle: { color: "#4a6a4a", opacity: 0.5 },
-      },
-      {
-        type: "line",
-        data: [
-          [xMin, slope * xMin + intercept],
-          [xMax, slope * xMax + intercept],
-        ],
-        lineStyle: { color: trendColor, width: 2, type: "dashed" },
-        symbol: "none",
+        ...dofekSeries.line(
+          "",
+          [
+            [xMin, slope * xMin + intercept],
+            [xMax, slope * xMax + intercept],
+          ],
+          { color: trendColor, smooth: false, lineStyle: { type: "dashed" } },
+        ),
         silent: true,
       },
     ],
-    tooltip: {
+    tooltip: dofekTooltip({
       trigger: "item",
-      backgroundColor: "#ffffff",
-      borderColor: "rgba(74, 158, 122, 0.2)",
-      textStyle: { color: "#1a2e1a", fontSize: 11 },
       formatter: (params: unknown) => {
         if (!params || typeof params !== "object" || !("value" in params)) return "";
         const rawValue = Array.isArray(params.value) ? params.value : [0, 0];
@@ -250,12 +252,12 @@ function ScatterPlot({ insight }: { insight: Insight }) {
         const v1 = Number(rawValue[1] ?? 0);
         return `${insight.action}: ${formatValue(v0)}<br/>${insight.metric}: ${formatValue(v1)}`;
       },
-    },
+    }),
   };
 
   return (
     <div>
-      <ReactECharts option={option} style={{ height: 180 }} opts={{ renderer: "svg" }} />
+      <DofekChart option={option} height={180} opts={{ renderer: "svg" }} />
       <div className="mt-1">
         <CorrelationStrengthBar rho={rho} />
       </div>

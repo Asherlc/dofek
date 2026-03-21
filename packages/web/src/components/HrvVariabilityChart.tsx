@@ -1,25 +1,24 @@
 import type { HrvVariabilityRow } from "dofek-server/types";
-import ReactECharts from "echarts-for-react";
-import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
+import {
+  chartColors,
+  dofekAxis,
+  dofekLegend,
+  dofekSeries,
+  dofekTooltip,
+} from "../lib/chartTheme.ts";
+import { DofekChart } from "./DofekChart.tsx";
 
 interface HrvVariabilityChartProps {
   data: HrvVariabilityRow[];
   loading?: boolean;
 }
 
+const COLOR_HRV = chartColors.green;
+const COLOR_ZONE_GREEN = "#22c55e";
+const COLOR_ZONE_YELLOW = "#eab308";
+const COLOR_ZONE_RED = "#ef4444";
+
 export function HrvVariabilityChart({ data, loading }: HrvVariabilityChartProps) {
-  if (loading) {
-    return <ChartLoadingSkeleton height={300} />;
-  }
-
-  if (data.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-[300px]">
-        <span className="text-dim text-sm">No heart rate variability data</span>
-      </div>
-    );
-  }
-
   const dates = data.map((d) => d.date);
   const hrvValues = data.map((d) => (d.hrv != null ? [d.date, d.hrv] : [d.date, null]));
   const cvValues = data.map((d) =>
@@ -37,13 +36,8 @@ export function HrvVariabilityChart({ data, loading }: HrvVariabilityChartProps)
   );
 
   const option = {
-    backgroundColor: "transparent",
     grid: { top: 40, right: 60, bottom: 30, left: 50 },
-    tooltip: {
-      trigger: "axis" as const,
-      backgroundColor: "#ffffff",
-      borderColor: "rgba(74, 158, 122, 0.2)",
-      textStyle: { color: "#1a2e1a", fontSize: 12 },
+    tooltip: dofekTooltip({
       formatter: (
         params: { seriesName: string; data: [string, number | null]; color: string }[],
       ) => {
@@ -65,39 +59,23 @@ export function HrvVariabilityChart({ data, loading }: HrvVariabilityChartProps)
         }
         return html;
       },
-    },
-    legend: {
+    }),
+    legend: dofekLegend(true, {
       data: ["Heart Rate Variability", "Rolling Variability"],
-      textStyle: { color: "#4a6a4a", fontSize: 11 },
-      top: 0,
-    },
-    xAxis: {
-      type: "time" as const,
-      axisLabel: { color: "#6b8a6b", fontSize: 11 },
-      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
-      splitLine: { show: false },
-    },
+    }),
+    xAxis: dofekAxis.time(),
     yAxis: [
-      {
-        type: "value" as const,
+      dofekAxis.value({
         name: "Heart Rate Variability (ms)",
-        splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
-        axisLabel: { color: "#6b8a6b", fontSize: 11 },
-        axisLine: { show: true, lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
-        nameTextStyle: { color: "#6b8a6b", fontSize: 11 },
-        position: "left" as const,
-      },
-      {
-        type: "value" as const,
+        position: "left",
+      }),
+      dofekAxis.value({
         name: "Variability (%)",
         min: 0,
         max: Math.ceil(maxCv),
-        splitLine: { show: false },
-        axisLabel: { color: "#6b8a6b", fontSize: 11 },
-        axisLine: { show: true, lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
-        nameTextStyle: { color: "#6b8a6b", fontSize: 11 },
-        position: "right" as const,
-      },
+        position: "right",
+        showSplitLine: false,
+      }),
     ],
     visualMap: [
       {
@@ -105,9 +83,9 @@ export function HrvVariabilityChart({ data, loading }: HrvVariabilityChartProps)
         seriesIndex: 1,
         dimension: 1,
         pieces: [
-          { lt: 5, color: "#22c55e" },
-          { gte: 5, lt: 10, color: "#eab308" },
-          { gte: 10, color: "#ef4444" },
+          { lt: 5, color: COLOR_ZONE_GREEN },
+          { gte: 5, lt: 10, color: COLOR_ZONE_YELLOW },
+          { gte: 10, color: COLOR_ZONE_RED },
         ],
       },
     ],
@@ -122,7 +100,7 @@ export function HrvVariabilityChart({ data, loading }: HrvVariabilityChartProps)
         ],
         symbol: "none",
         lineStyle: { width: 0 },
-        areaStyle: { color: "#22c55e", opacity: 0.06, origin: "start" },
+        areaStyle: { color: COLOR_ZONE_GREEN, opacity: 0.06, origin: "start" },
         yAxisIndex: 1,
         z: 0,
         silent: true,
@@ -137,7 +115,7 @@ export function HrvVariabilityChart({ data, loading }: HrvVariabilityChartProps)
         ],
         symbol: "none",
         lineStyle: { width: 0 },
-        areaStyle: { color: "#eab308", opacity: 0.06, origin: "start" },
+        areaStyle: { color: COLOR_ZONE_YELLOW, opacity: 0.06, origin: "start" },
         yAxisIndex: 1,
         z: 0,
         silent: true,
@@ -152,19 +130,17 @@ export function HrvVariabilityChart({ data, loading }: HrvVariabilityChartProps)
         ],
         symbol: "none",
         lineStyle: { width: 0 },
-        areaStyle: { color: "#ef4444", opacity: 0.06, origin: "start" },
+        areaStyle: { color: COLOR_ZONE_RED, opacity: 0.06, origin: "start" },
         yAxisIndex: 1,
         z: 0,
         silent: true,
       },
       // Daily HRV dots
       {
-        name: "Heart Rate Variability",
-        type: "scatter",
-        data: hrvValues,
-        symbolSize: 5,
-        itemStyle: { color: "#22c55e", opacity: 0.7 },
-        yAxisIndex: 0,
+        ...dofekSeries.scatter("Heart Rate Variability", hrvValues, {
+          color: COLOR_HRV,
+          symbolSize: 5,
+        }),
         z: 3,
       },
       // Rolling Variability line
@@ -181,5 +157,13 @@ export function HrvVariabilityChart({ data, loading }: HrvVariabilityChartProps)
     ],
   };
 
-  return <ReactECharts option={option} style={{ height: 300 }} notMerge={true} />;
+  return (
+    <DofekChart
+      option={option}
+      loading={loading}
+      empty={data.length === 0}
+      emptyMessage="No heart rate variability data"
+      height={300}
+    />
+  );
 }

@@ -1,6 +1,6 @@
 import type { VolumeOverTimeRow } from "dofek-server/types";
-import ReactECharts from "echarts-for-react";
-import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
+import { chartColors, dofekAxis, dofekGrid, dofekSeries, dofekTooltip } from "../lib/chartTheme.ts";
+import { DofekChart } from "./DofekChart.tsx";
 
 interface StrengthVolumeChartProps {
   data: VolumeOverTimeRow[];
@@ -8,26 +8,9 @@ interface StrengthVolumeChartProps {
 }
 
 export function StrengthVolumeChart({ data, loading }: StrengthVolumeChartProps) {
-  if (loading) {
-    return <ChartLoadingSkeleton height={280} />;
-  }
-
-  if (data.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-[280px]">
-        <span className="text-dim text-sm">No strength volume data</span>
-      </div>
-    );
-  }
-
   const option = {
-    backgroundColor: "transparent",
-    grid: { top: 30, right: 20, bottom: 40, left: 60 },
-    tooltip: {
-      trigger: "axis",
-      backgroundColor: "#ffffff",
-      borderColor: "rgba(74, 158, 122, 0.2)",
-      textStyle: { color: "#1a2e1a", fontSize: 12 },
+    grid: dofekGrid("single", { top: 30, bottom: 40, left: 60 }),
+    tooltip: dofekTooltip({
       formatter(params: { dataIndex: number }[]) {
         const first = params[0];
         if (!first) return "";
@@ -43,32 +26,27 @@ export function StrengthVolumeChart({ data, loading }: StrengthVolumeChartProps)
           Volume: ${Math.round(d.totalVolumeKg).toLocaleString()} kg<br/>
           Sets: ${d.setCount}`;
       },
-    },
-    xAxis: {
-      type: "time" as const,
-      axisLabel: { color: "#6b8a6b", fontSize: 11 },
-      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
-    },
-    yAxis: {
-      type: "value",
+    }),
+    xAxis: dofekAxis.time(),
+    yAxis: dofekAxis.value({
       name: "Volume (kg)",
-      nameTextStyle: { color: "#6b8a6b", fontSize: 11 },
       axisLabel: {
-        color: "#6b8a6b",
-        fontSize: 11,
         formatter(value: number) {
           return value >= 1000 ? `${(value / 1000).toFixed(1)}k` : String(value);
         },
       },
-      splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
-    },
+    }),
     series: [
       {
-        name: "Volume",
-        type: "bar",
-        data: data.map((d) => [d.week, d.totalVolumeKg]),
+        ...dofekSeries.bar(
+          "Volume",
+          data.map((d) => [d.week, d.totalVolumeKg]),
+          {
+            color: chartColors.emerald,
+          },
+        ),
         itemStyle: {
-          color: "#10b981",
+          color: chartColors.emerald,
           borderRadius: [4, 4, 0, 0],
         },
         emphasis: {
@@ -78,5 +56,13 @@ export function StrengthVolumeChart({ data, loading }: StrengthVolumeChartProps)
     ],
   };
 
-  return <ReactECharts option={option} style={{ height: 280 }} />;
+  return (
+    <DofekChart
+      option={option}
+      loading={loading}
+      empty={data.length === 0}
+      height={280}
+      emptyMessage="No strength volume data"
+    />
+  );
 }

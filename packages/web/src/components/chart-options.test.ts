@@ -3,6 +3,16 @@ import { buildPolarizationTrendOption } from "./PolarizationTrendChart.tsx";
 import { buildRampRateOption } from "./RampRateChart.tsx";
 import { buildSleepAnalyticsOption } from "./SleepAnalyticsChart.tsx";
 
+/** Extract callable formatter from an ECharts tooltip config, narrowing unknown to callable */
+function getFormatter(tooltip: { formatter?: unknown }): (params: unknown) => string {
+  const fn = tooltip.formatter;
+  if (typeof fn !== "function") {
+    throw new Error("Expected tooltip.formatter to be a function");
+  }
+  // Runtime-validated: fn is callable. Use a wrapper to satisfy the type checker.
+  return (params: unknown) => fn(params);
+}
+
 describe("PolarizationTrendChart option builder", () => {
   const sampleWeeks = [
     {
@@ -33,13 +43,13 @@ describe("PolarizationTrendChart option builder", () => {
 
   it("tooltip formatter returns empty string for empty params", () => {
     const option = buildPolarizationTrendOption(sampleWeeks);
-    const formatter = option.tooltip.formatter;
+    const formatter = getFormatter(option.tooltip);
     expect(formatter([])).toBe("");
   });
 
   it("tooltip formatter handles params with missing data", () => {
     const option = buildPolarizationTrendOption(sampleWeeks);
-    const formatter = option.tooltip.formatter;
+    const formatter = getFormatter(option.tooltip);
     // Pass empty params to test robustness (formatter should handle gracefully)
     expect(formatter([{ axisValue: "", value: ["", 0], dataIndex: -1, color: "" }])).toBeDefined();
   });
@@ -75,7 +85,7 @@ describe("PolarizationTrendChart option builder", () => {
 
   it("tooltip shows %HRmax zone labels (not Karvonen %HRR)", () => {
     const option = buildPolarizationTrendOption(sampleWeeks);
-    const formatter = option.tooltip.formatter;
+    const formatter = getFormatter(option.tooltip);
     const html = formatter([
       {
         axisValue: "2024-01-01",
@@ -222,7 +232,7 @@ describe("PolarizationTrendChart option builder", () => {
     ];
 
     const option = buildPolarizationTrendOption(weeksWithGap);
-    const formatter = option.tooltip.formatter;
+    const formatter = getFormatter(option.tooltip);
     const html = formatter([
       {
         axisValue: "2024-01-01",
@@ -255,13 +265,13 @@ describe("RampRateChart option builder", () => {
 
   it("tooltip formatter returns empty string for empty params", () => {
     const option = buildRampRateOption(sampleWeeks);
-    const formatter = option.tooltip.formatter;
+    const formatter = getFormatter(option.tooltip);
     expect(formatter([])).toBe("");
   });
 
   it("tooltip formatter handles params with missing data", () => {
     const option = buildRampRateOption(sampleWeeks);
-    const formatter = option.tooltip.formatter;
+    const formatter = getFormatter(option.tooltip);
     // Pass params with out-of-range index to test robustness
     expect(formatter([{ dataIndex: -1, value: ["", 0], marker: "" }])).toBeDefined();
   });

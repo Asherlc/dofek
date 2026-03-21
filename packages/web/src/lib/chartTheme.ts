@@ -148,7 +148,8 @@ export function dofekLegend(show: boolean, overrides?: LegendOverrides) {
 
 interface LineOptions {
   color?: string;
-  smooth?: boolean;
+  /** true for default smooth, false for sharp, or a number 0-1 for tension */
+  smooth?: boolean | number;
   width?: number;
   areaStyle?: boolean | { opacity?: number; color?: unknown };
   yAxisIndex?: number;

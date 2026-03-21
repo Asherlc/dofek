@@ -1,5 +1,5 @@
-import ReactECharts from "echarts-for-react";
-import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
+import { chartColors, dofekAxis, dofekLegend, dofekTooltip } from "../lib/chartTheme.ts";
+import { DofekChart } from "./DofekChart.tsx";
 
 interface HrvBaselineRow {
   date: string;
@@ -15,19 +15,10 @@ interface HrvBaselineChartProps {
   loading?: boolean;
 }
 
+const COLOR_HRV = chartColors.green;
+const COLOR_RESTING_HR = "#ef4444";
+
 export function HrvBaselineChart({ data, loading }: HrvBaselineChartProps) {
-  if (loading) {
-    return <ChartLoadingSkeleton height={280} />;
-  }
-
-  if (data.length === 0) {
-    return (
-      <div className="flex items-center justify-center" style={{ height: 280 }}>
-        <span className="text-dim text-sm">No heart rate variability data</span>
-      </div>
-    );
-  }
-
   // Upper band: mean + SD (capped, used as the visible top)
   const upperBandData = data
     .filter((d) => d.mean_60d != null && d.sd_60d != null)
@@ -50,13 +41,8 @@ export function HrvBaselineChart({ data, loading }: HrvBaselineChartProps) {
   const restingHrData = data.filter((d) => d.resting_hr != null).map((d) => [d.date, d.resting_hr]);
 
   const option = {
-    backgroundColor: "transparent",
     grid: { top: 30, right: 60, bottom: 30, left: 50 },
-    tooltip: {
-      trigger: "axis" as const,
-      backgroundColor: "#ffffff",
-      borderColor: "rgba(74, 158, 122, 0.2)",
-      textStyle: { color: "#1a2e1a", fontSize: 12 },
+    tooltip: dofekTooltip({
       formatter: (params: { seriesName: string; data: [string, number]; color: string }[]) => {
         if (!params || params.length === 0) return "";
         const firstParam = params[0];
@@ -77,44 +63,28 @@ export function HrvBaselineChart({ data, loading }: HrvBaselineChartProps) {
         }
         return html;
       },
-    },
+    }),
     legend: {
-      show: true,
-      textStyle: { color: "#4a6a4a", fontSize: 11 },
-      top: 0,
+      ...dofekLegend(true),
       data: [
         { name: "Heart Rate Variability", icon: "circle" },
         { name: "7d Avg", icon: "roundRect" },
         { name: "Resting Heart Rate", icon: "roundRect" },
       ],
     },
-    xAxis: {
-      type: "time" as const,
-      axisLabel: { color: "#6b8a6b", fontSize: 11 },
-      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.25)" } },
-      splitLine: { show: false },
-    },
+    xAxis: dofekAxis.time(),
     yAxis: [
-      {
-        type: "value" as const,
+      dofekAxis.value({
         name: "Heart Rate Variability (ms)",
         min: "dataMin",
-        splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
-        axisLabel: { color: "#6b8a6b", fontSize: 11 },
-        axisLine: { show: true, lineStyle: { color: "rgba(74, 158, 122, 0.25)" } },
-        nameTextStyle: { color: "#6b8a6b", fontSize: 11 },
-        position: "left" as const,
-      },
-      {
-        type: "value" as const,
+        position: "left",
+      }),
+      dofekAxis.value({
         name: "Resting Heart Rate (bpm)",
         min: "dataMin",
-        splitLine: { show: false },
-        axisLabel: { color: "#6b8a6b", fontSize: 11 },
-        axisLine: { show: true, lineStyle: { color: "rgba(74, 158, 122, 0.25)" } },
-        nameTextStyle: { color: "#6b8a6b", fontSize: 11 },
-        position: "right" as const,
-      },
+        position: "right",
+        showSplitLine: false,
+      }),
     ],
     series: [
       // Lower band (invisible base for the stacked area)
@@ -142,7 +112,7 @@ export function HrvBaselineChart({ data, loading }: HrvBaselineChartProps) {
         smooth: true,
         symbol: "none",
         lineStyle: { width: 0 },
-        areaStyle: { opacity: 0.12, color: "#22c55e" },
+        areaStyle: { opacity: 0.12, color: COLOR_HRV },
         stack: "baseline",
         yAxisIndex: 0,
         z: 1,
@@ -155,8 +125,8 @@ export function HrvBaselineChart({ data, loading }: HrvBaselineChartProps) {
         smooth: false,
         symbol: "circle",
         symbolSize: 4,
-        lineStyle: { width: 1, color: "#22c55e", opacity: 0.6 },
-        itemStyle: { color: "#22c55e" },
+        lineStyle: { width: 1, color: COLOR_HRV, opacity: 0.6 },
+        itemStyle: { color: COLOR_HRV },
         yAxisIndex: 0,
         z: 3,
       },
@@ -167,8 +137,8 @@ export function HrvBaselineChart({ data, loading }: HrvBaselineChartProps) {
         data: rolling7dData,
         smooth: true,
         symbol: "none",
-        lineStyle: { width: 3, color: "#22c55e" },
-        itemStyle: { color: "#22c55e" },
+        lineStyle: { width: 3, color: COLOR_HRV },
+        itemStyle: { color: COLOR_HRV },
         yAxisIndex: 0,
         z: 4,
       },
@@ -179,13 +149,21 @@ export function HrvBaselineChart({ data, loading }: HrvBaselineChartProps) {
         data: restingHrData,
         smooth: true,
         symbol: "none",
-        lineStyle: { width: 2, color: "#ef4444" },
-        itemStyle: { color: "#ef4444" },
+        lineStyle: { width: 2, color: COLOR_RESTING_HR },
+        itemStyle: { color: COLOR_RESTING_HR },
         yAxisIndex: 1,
         z: 2,
       },
     ],
   };
 
-  return <ReactECharts option={option} style={{ height: 280 }} notMerge={true} />;
+  return (
+    <DofekChart
+      option={option}
+      loading={loading}
+      empty={data.length === 0}
+      emptyMessage="No heart rate variability data"
+      height={280}
+    />
+  );
 }

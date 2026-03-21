@@ -1,8 +1,8 @@
 import { scoreColor } from "@dofek/scoring/scoring";
 import type { ReadinessRow } from "dofek-server/types";
-import ReactECharts from "echarts-for-react";
 import { useCountUp } from "../hooks/useCountUp.ts";
-import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
+import { dofekAxis, dofekGrid, dofekSeries, dofekTooltip } from "../lib/chartTheme.ts";
+import { DofekChart } from "./DofekChart.tsx";
 
 interface ReadinessScoreCardProps {
   data: ReadinessRow[];
@@ -31,40 +31,32 @@ export function ReadinessScoreCard({ data, loading }: ReadinessScoreCardProps) {
   const color = score != null ? scoreColor(score) : undefined;
   const displayScore = useCountUp(score, 800);
 
-  if (loading) {
-    return <ChartLoadingSkeleton height={280} />;
-  }
-
-  if (!latest || color == null) {
+  if (loading || !latest || color == null) {
     return (
-      <div className="card p-6 flex items-center justify-center h-[280px]">
-        <span className="text-dim text-sm">No readiness data</span>
-      </div>
+      <DofekChart
+        option={{}}
+        loading={loading}
+        empty={!latest || color == null}
+        height={280}
+        emptyMessage="No readiness data"
+      />
     );
   }
 
   // Sparkline data for the mini chart
   const sparklineOption = {
-    backgroundColor: "transparent",
-    grid: { top: 5, right: 0, bottom: 5, left: 0 },
-    xAxis: {
-      type: "category" as const,
-      show: false,
-      data: data.map((d) => d.date),
-    },
-    yAxis: {
-      type: "value" as const,
-      show: false,
-      min: 0,
-      max: 100,
-    },
+    grid: dofekGrid("single", { top: 5, right: 0, bottom: 5, left: 0 }),
+    xAxis: dofekAxis.category({ data: data.map((d) => d.date), show: false }),
+    yAxis: { type: "value" as const, show: false, min: 0, max: 100 },
     series: [
       {
-        type: "line",
-        data: data.map((d) => d.readinessScore),
-        smooth: true,
-        symbol: "none",
-        lineStyle: { color, width: 2 },
+        ...dofekSeries.line(
+          "Readiness",
+          data.map((d) => d.readinessScore),
+          {
+            color,
+          },
+        ),
         areaStyle: {
           color: {
             type: "linear" as const,
@@ -80,7 +72,7 @@ export function ReadinessScoreCard({ data, loading }: ReadinessScoreCardProps) {
         },
       },
     ],
-    tooltip: { show: false },
+    tooltip: dofekTooltip({ trigger: "none" }),
   };
 
   return (
@@ -103,11 +95,7 @@ export function ReadinessScoreCard({ data, loading }: ReadinessScoreCardProps) {
           </span>
         </div>
         <div className="w-32 h-16">
-          <ReactECharts
-            option={sparklineOption}
-            style={{ height: 64, width: 128 }}
-            notMerge={true}
-          />
+          <DofekChart option={sparklineOption} height={64} />
         </div>
       </div>
 

@@ -1,5 +1,13 @@
 import type { TrainingMonotonyWeek } from "dofek-server/types";
-import ReactECharts from "echarts-for-react";
+import {
+  chartColors,
+  dofekAxis,
+  dofekGrid,
+  dofekLegend,
+  dofekSeries,
+  dofekTooltip,
+} from "../lib/chartTheme.ts";
+import { DofekChart } from "./DofekChart.tsx";
 
 interface TrainingMonotonyChartProps {
   data: TrainingMonotonyWeek[];
@@ -7,30 +15,9 @@ interface TrainingMonotonyChartProps {
 }
 
 export function TrainingMonotonyChart({ data, loading }: TrainingMonotonyChartProps) {
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-[300px]">
-        <span className="text-dim text-sm">Loading monotony data...</span>
-      </div>
-    );
-  }
-
-  if (data.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-[300px]">
-        <span className="text-dim text-sm">No training monotony data available</span>
-      </div>
-    );
-  }
-
   const option = {
-    backgroundColor: "transparent",
-    grid: { top: 50, right: 70, bottom: 50, left: 55 },
-    tooltip: {
-      trigger: "axis" as const,
-      backgroundColor: "#ffffff",
-      borderColor: "rgba(74, 158, 122, 0.2)",
-      textStyle: { color: "#1a2e1a", fontSize: 12 },
+    grid: dofekGrid("dualAxis", { top: 50, bottom: 50 }),
+    tooltip: dofekTooltip({
       formatter(
         params: Array<{
           seriesName: string;
@@ -57,59 +44,36 @@ export function TrainingMonotonyChart({ data, loading }: TrainingMonotonyChartPr
           `Strain: ${d.strain.toFixed(1)}`,
         ].join("<br/>");
       },
-    },
-    legend: {
-      data: ["Monotony", "Strain"],
-      textStyle: { color: "#4a6a4a", fontSize: 11 },
-      top: 0,
-    },
-    xAxis: {
-      type: "time" as const,
-      axisLabel: { color: "#6b8a6b", fontSize: 11 },
-      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.25)" } },
-    },
+    }),
+    legend: dofekLegend(true, { data: ["Monotony", "Strain"] }),
+    xAxis: dofekAxis.time(),
     yAxis: [
-      {
-        type: "value" as const,
-        name: "Monotony",
-        splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
-        axisLabel: { color: "#6b8a6b", fontSize: 11 },
-        axisLine: { show: false },
-        nameTextStyle: { color: "#6b8a6b", fontSize: 11 },
-      },
-      {
-        type: "value" as const,
-        name: "Strain",
-        splitLine: { show: false },
-        axisLabel: { color: "#6b8a6b", fontSize: 11 },
-        axisLine: { show: false },
-        nameTextStyle: { color: "#6b8a6b", fontSize: 11 },
-        position: "right" as const,
-      },
+      dofekAxis.value({ name: "Monotony" }),
+      dofekAxis.value({ name: "Strain", position: "right", showSplitLine: false }),
     ],
     series: [
       {
-        name: "Monotony",
-        type: "bar",
-        data: data.map((d) => ({
-          value: [d.week, d.monotony],
-          itemStyle: {
-            color: d.monotony > 2.0 ? "#ef4444" : "#3b82f6",
-          },
-        })),
-        yAxisIndex: 0,
+        ...dofekSeries.bar(
+          "Monotony",
+          data.map((d) => ({
+            value: [d.week, d.monotony],
+            itemStyle: {
+              color: d.monotony > 2.0 ? "#ef4444" : "#3b82f6",
+            },
+          })),
+          {},
+        ),
       },
-      {
-        name: "Strain",
-        type: "line",
-        data: data.map((d) => [d.week, d.strain]),
-        smooth: true,
-        symbol: "circle",
-        symbolSize: 6,
-        lineStyle: { color: "#f97316", width: 2 },
-        itemStyle: { color: "#f97316" },
-        yAxisIndex: 1,
-      },
+      dofekSeries.line(
+        "Strain",
+        data.map((d) => [d.week, d.strain]),
+        {
+          color: chartColors.orange,
+          symbol: "circle",
+          symbolSize: 6,
+          yAxisIndex: 1,
+        },
+      ),
     ],
   };
 
@@ -118,7 +82,13 @@ export function TrainingMonotonyChart({ data, loading }: TrainingMonotonyChartPr
       <p className="text-xs text-dim mb-2">
         Monotony &gt; 2.0 (red) with high strain indicates elevated overtraining risk.
       </p>
-      <ReactECharts option={option} style={{ height: 300 }} notMerge={true} />
+      <DofekChart
+        option={option}
+        loading={loading}
+        empty={data.length === 0}
+        height={300}
+        emptyMessage="No training monotony data available"
+      />
     </div>
   );
 }

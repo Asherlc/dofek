@@ -1,6 +1,6 @@
 import type { ProgressiveOverloadRow } from "dofek-server/types";
-import ReactECharts from "echarts-for-react";
-import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
+import { dofekAxis, dofekGrid, dofekSeries } from "../lib/chartTheme.ts";
+import { DofekChart } from "./DofekChart.tsx";
 
 interface ProgressiveOverloadCardsProps {
   exercises: ProgressiveOverloadRow[];
@@ -11,42 +11,34 @@ function SparklineChart({ values, isProgressing }: { values: number[]; isProgres
   const color = isProgressing ? "#10b981" : "#ef4444";
 
   const option = {
-    backgroundColor: "transparent",
-    grid: { top: 2, right: 2, bottom: 2, left: 2 },
-    xAxis: {
-      type: "category",
+    grid: dofekGrid("single", { top: 2, right: 2, bottom: 2, left: 2 }),
+    xAxis: dofekAxis.category({
+      data: values.map((_, i) => String(i)),
       show: false,
-      data: values.map((_, i) => i),
-    },
-    yAxis: {
-      type: "value",
-      show: false,
-    },
+    }),
+    yAxis: { type: "value" as const, show: false },
     series: [
-      {
-        type: "line",
-        data: values,
+      dofekSeries.line("Volume", values, {
+        color,
         smooth: 0.3,
-        symbol: "none",
-        lineStyle: { width: 2, color },
-        areaStyle: { color, opacity: 0.1 },
-      },
+        areaStyle: { opacity: 0.1, color },
+      }),
     ],
   };
 
-  return <ReactECharts option={option} style={{ height: 40, width: "100%" }} />;
+  return <DofekChart option={option} height={40} />;
 }
 
 export function ProgressiveOverloadCards({ exercises, loading }: ProgressiveOverloadCardsProps) {
-  if (loading) {
-    return <ChartLoadingSkeleton height={200} />;
-  }
-
-  if (exercises.length === 0) {
+  if (loading || exercises.length === 0) {
     return (
-      <div className="flex items-center justify-center h-[200px]">
-        <span className="text-dim text-sm">No progressive overload data</span>
-      </div>
+      <DofekChart
+        option={{}}
+        loading={loading}
+        empty={exercises.length === 0}
+        height={200}
+        emptyMessage="No progressive overload data"
+      />
     );
   }
 

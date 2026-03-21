@@ -1,7 +1,8 @@
 import type { VerticalAscentRow } from "dofek-server/types";
-import ReactECharts from "echarts-for-react";
+import { chartColors, dofekAxis, dofekGrid, dofekTooltip } from "../lib/chartTheme.ts";
 import { useUnitSystem } from "../lib/unitContext.ts";
 import { convertElevation, elevationLabel } from "../lib/units.ts";
+import { DofekChart } from "./DofekChart.tsx";
 
 interface VerticalAscentChartProps {
   data: VerticalAscentRow[];
@@ -10,19 +11,19 @@ interface VerticalAscentChartProps {
 
 export function VerticalAscentChart({ data, loading }: VerticalAscentChartProps) {
   const { unitSystem } = useUnitSystem();
+
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-[300px]">
-        <span className="text-dim text-sm">Loading vertical ascent data...</span>
-      </div>
-    );
+    return <DofekChart option={{}} loading={true} height={300} />;
   }
 
   if (data.length === 0) {
     return (
-      <div className="flex items-center justify-center h-[300px]">
-        <span className="text-dim text-sm">No activities with altitude data available</span>
-      </div>
+      <DofekChart
+        option={{}}
+        empty={true}
+        height={300}
+        emptyMessage="No activities with altitude data available"
+      />
     );
   }
 
@@ -41,13 +42,9 @@ export function VerticalAscentChart({ data, loading }: VerticalAscentChartProps)
   }));
 
   const option = {
-    backgroundColor: "transparent",
-    grid: { top: 40, right: 20, bottom: 30, left: 55 },
-    tooltip: {
-      trigger: "item" as const,
-      backgroundColor: "#ffffff",
-      borderColor: "rgba(74, 158, 122, 0.2)",
-      textStyle: { color: "#1a2e1a", fontSize: 12 },
+    grid: dofekGrid("single", { top: 40, bottom: 30 }),
+    tooltip: dofekTooltip({
+      trigger: "item",
       formatter: (params: Record<string, unknown>) => {
         const rawData = params.data;
         if (!rawData || typeof rawData !== "object" || !("name" in rawData)) return "";
@@ -68,21 +65,9 @@ export function VerticalAscentChart({ data, loading }: VerticalAscentChartProps)
           `Elevation Gain: ${itemData.elevationGain.toFixed(0)} ${eLabel}`,
         ].join("<br/>");
       },
-    },
-    xAxis: {
-      type: "time" as const,
-      axisLabel: { color: "#6b8a6b", fontSize: 11 },
-      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
-      splitLine: { show: false },
-    },
-    yAxis: {
-      type: "value" as const,
-      name: `VAM (${eLabel}/h)`,
-      splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
-      axisLabel: { color: "#6b8a6b", fontSize: 11 },
-      axisLine: { show: true, lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
-      nameTextStyle: { color: "#6b8a6b", fontSize: 11 },
-    },
+    }),
+    xAxis: dofekAxis.time(),
+    yAxis: dofekAxis.value({ name: `VAM (${eLabel}/h)` }),
     series: [
       {
         name: "Vertical Ascent Rate",
@@ -106,7 +91,7 @@ export function VerticalAscentChart({ data, loading }: VerticalAscentChartProps)
           return minSize;
         },
         itemStyle: {
-          color: "#8b5cf6",
+          color: chartColors.purple,
           opacity: 0.7,
         },
       },
@@ -115,7 +100,7 @@ export function VerticalAscentChart({ data, loading }: VerticalAscentChartProps)
 
   return (
     <div>
-      <ReactECharts option={option} style={{ height: 300 }} notMerge={true} />
+      <DofekChart option={option} height={300} />
       <p className="text-xs text-dim mt-1">
         Bubble size indicates elevation gain. Higher VAM = stronger climbing performance.
       </p>

@@ -1,7 +1,8 @@
 import type { WalkingBiomechanicsRow } from "dofek-server/types";
-import ReactECharts from "echarts-for-react";
+import { dofekAxis, dofekGrid, dofekSeries, dofekTooltip } from "../lib/chartTheme.ts";
 import { useUnitSystem } from "../lib/unitContext.ts";
 import { convertHeight, convertSpeed, heightLabel, speedLabel } from "../lib/units.ts";
+import { DofekChart } from "./DofekChart.tsx";
 
 interface WalkingBiomechanicsChartProps {
   data: WalkingBiomechanicsRow[];
@@ -17,39 +18,20 @@ function buildLineOption(
   convert?: (v: number) => number,
 ) {
   return {
-    backgroundColor: "transparent",
-    grid: { top: 30, right: 15, bottom: 25, left: 50 },
-    tooltip: {
-      trigger: "axis",
-      backgroundColor: "#ffffff",
-      borderColor: "rgba(74, 158, 122, 0.2)",
-      textStyle: { color: "#1a2e1a", fontSize: 12 },
-    },
-    xAxis: {
-      type: "time" as const,
-      axisLabel: { color: "#6b8a6b", fontSize: 10 },
-      axisLine: { lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
-      splitLine: { show: false },
-    },
-    yAxis: {
-      type: "value",
-      name: `${name} (${unit})`,
-      splitLine: { lineStyle: { color: "rgba(74, 158, 122, 0.12)" } },
-      axisLabel: { color: "#6b8a6b", fontSize: 10 },
-      axisLine: { show: true, lineStyle: { color: "rgba(74, 158, 122, 0.2)" } },
-      nameTextStyle: { color: "#6b8a6b", fontSize: 10 },
-    },
+    grid: dofekGrid("single", { top: 30, right: 15, bottom: 25 }),
+    tooltip: dofekTooltip(),
+    xAxis: dofekAxis.time({ axisLabel: { fontSize: 10 } }),
+    yAxis: dofekAxis.value({ name: `${name} (${unit})`, axisLabel: { fontSize: 10 } }),
     series: [
       {
-        type: "line",
-        data: data.map((d) => {
-          const v = valueAccessor(d);
-          return [d.date, v != null && convert ? convert(v) : v];
-        }),
-        smooth: true,
-        symbol: "none",
-        lineStyle: { color, width: 2 },
-        itemStyle: { color },
+        ...dofekSeries.line(
+          name,
+          data.map((d) => {
+            const v = valueAccessor(d);
+            return [d.date, v != null && convert ? convert(v) : v];
+          }),
+          { color },
+        ),
         connectNulls: true,
       },
     ],
@@ -58,19 +40,19 @@ function buildLineOption(
 
 export function WalkingBiomechanicsChart({ data, loading }: WalkingBiomechanicsChartProps) {
   const { unitSystem } = useUnitSystem();
+
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-[400px]">
-        <span className="text-dim text-sm">Loading biomechanics data...</span>
-      </div>
-    );
+    return <DofekChart option={{}} loading={true} height={400} />;
   }
 
   if (data.length === 0) {
     return (
-      <div className="flex items-center justify-center h-[100px]">
-        <span className="text-dim text-sm">No walking biomechanics data available</span>
-      </div>
+      <DofekChart
+        option={{}}
+        empty={true}
+        height={100}
+        emptyMessage="No walking biomechanics data available"
+      />
     );
   }
 
@@ -110,7 +92,7 @@ export function WalkingBiomechanicsChart({ data, loading }: WalkingBiomechanicsC
       <div className="grid grid-cols-2 gap-4">
         {charts.map((chart) => (
           <div key={chart.name} className="bg-surface-solid rounded-lg p-2">
-            <ReactECharts
+            <DofekChart
               option={buildLineOption(
                 data,
                 chart.accessor,
@@ -119,8 +101,7 @@ export function WalkingBiomechanicsChart({ data, loading }: WalkingBiomechanicsC
                 chart.color,
                 chart.convert,
               )}
-              style={{ height: 200 }}
-              notMerge={true}
+              height={200}
             />
           </div>
         ))}
