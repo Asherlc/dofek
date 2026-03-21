@@ -43,56 +43,60 @@ describe("Activity summary deduplication", () => {
           ON CONFLICT DO NOTHING`,
     );
 
-    // Insert the same cycling workout from BOTH providers with overlapping times.
-    // The v_activity dedup view should merge these into one canonical activity.
-    const daysAgo = 3;
+    // Insert overlapping cycling workouts from BOTH providers at two time points
+    // spanning different ISO weeks. The ramp rate endpoint needs 2+ weeks of data
+    // to produce week-over-week deltas, so a single activity isn't enough.
+    // The v_activity dedup view should merge each pair into one canonical activity.
     const durationSec = 1800; // 30 minutes
+    const activityOffsetsDaysAgo = [3, 14]; // two different ISO weeks
 
-    const wahooResult = await testCtx.db.execute<{ id: string }>(
-      sql`INSERT INTO fitness.activity (
-            provider_id, user_id, activity_type, started_at, ended_at, name
-          ) VALUES (
-            'wahoo', ${DEFAULT_USER_ID}, 'cycling',
-            CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day',
-            CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day' + ${durationSec}::int * INTERVAL '1 second',
-            'Morning Ride'
-          ) RETURNING id`,
-    );
-    const wahooActivityId = wahooResult[0]?.id;
+    for (const daysAgo of activityOffsetsDaysAgo) {
+      const wahooResult = await testCtx.db.execute<{ id: string }>(
+        sql`INSERT INTO fitness.activity (
+              provider_id, user_id, activity_type, started_at, ended_at, name
+            ) VALUES (
+              'wahoo', ${DEFAULT_USER_ID}, 'cycling',
+              CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day',
+              CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day' + ${durationSec}::int * INTERVAL '1 second',
+              'Morning Ride'
+            ) RETURNING id`,
+      );
+      const wahooActivityId = wahooResult[0]?.id;
 
-    const appleResult = await testCtx.db.execute<{ id: string }>(
-      sql`INSERT INTO fitness.activity (
-            provider_id, user_id, activity_type, started_at, ended_at, name
-          ) VALUES (
-            'apple_health', ${DEFAULT_USER_ID}, 'cycling',
-            CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day' + INTERVAL '10 seconds',
-            CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day' + ${durationSec}::int * INTERVAL '1 second' - INTERVAL '10 seconds',
-            'Morning Ride'
-          ) RETURNING id`,
-    );
-    const appleActivityId = appleResult[0]?.id;
+      const appleResult = await testCtx.db.execute<{ id: string }>(
+        sql`INSERT INTO fitness.activity (
+              provider_id, user_id, activity_type, started_at, ended_at, name
+            ) VALUES (
+              'apple_health', ${DEFAULT_USER_ID}, 'cycling',
+              CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day' + INTERVAL '10 seconds',
+              CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day' + ${durationSec}::int * INTERVAL '1 second' - INTERVAL '10 seconds',
+              'Morning Ride'
+            ) RETURNING id`,
+      );
+      const appleActivityId = appleResult[0]?.id;
 
-    // Insert metric_stream data for BOTH activities (similar HR profiles)
-    for (const [actId, providerId] of [
-      [wahooActivityId, "wahoo"],
-      [appleActivityId, "apple_health"],
-    ] as const) {
-      if (!actId) continue;
-      for (let batchStart = 0; batchStart < durationSec; batchStart += 100) {
-        const batchEnd = Math.min(batchStart + 100, durationSec);
-        const values: string[] = [];
-        for (let s = batchStart; s < batchEnd; s++) {
-          const hr = 155 + Math.round(Math.sin(s * 0.01) * 8);
-          values.push(
-            `(CURRENT_TIMESTAMP - ${daysAgo} * INTERVAL '1 day' + ${s} * INTERVAL '1 second',
-              '${DEFAULT_USER_ID}', '${actId}', '${providerId}', ${hr})`,
+      // Insert metric_stream data for BOTH activities (similar HR profiles)
+      for (const [actId, providerId] of [
+        [wahooActivityId, "wahoo"],
+        [appleActivityId, "apple_health"],
+      ] as const) {
+        if (!actId) continue;
+        for (let batchStart = 0; batchStart < durationSec; batchStart += 100) {
+          const batchEnd = Math.min(batchStart + 100, durationSec);
+          const values: string[] = [];
+          for (let s = batchStart; s < batchEnd; s++) {
+            const hr = 155 + Math.round(Math.sin(s * 0.01) * 8);
+            values.push(
+              `(CURRENT_TIMESTAMP - ${daysAgo} * INTERVAL '1 day' + ${s} * INTERVAL '1 second',
+                '${DEFAULT_USER_ID}', '${actId}', '${providerId}', ${hr})`,
+            );
+          }
+          await testCtx.db.execute(
+            sql.raw(`INSERT INTO fitness.metric_stream (
+              recorded_at, user_id, activity_id, provider_id, heart_rate
+            ) VALUES ${values.join(",\n")}`),
           );
         }
-        await testCtx.db.execute(
-          sql.raw(`INSERT INTO fitness.metric_stream (
-            recorded_at, user_id, activity_id, provider_id, heart_rate
-          ) VALUES ${values.join(",\n")}`),
-        );
       }
     }
 
@@ -136,8 +140,8 @@ describe("Activity summary deduplication", () => {
       sql`SELECT COUNT(*)::text AS count FROM fitness.activity_summary
           WHERE user_id = ${DEFAULT_USER_ID}`,
     );
-    // With dedup: 1 canonical activity. Without dedup: 2 (one per provider).
-    expect(Number(result[0]?.count)).toBe(1);
+    // With dedup: 2 canonical activities (one per time point). Without dedup: 4 (one per provider per time point).
+    expect(Number(result[0]?.count)).toBe(2);
   });
 
   it("ramp rate does not double-count overlapping activities", async () => {
@@ -148,13 +152,11 @@ describe("Activity summary deduplication", () => {
     expect(status).toBe(200);
 
     const data = result.result.data;
-    // With a single 30-min activity at ~155 bpm, the ramp rate should be modest.
-    // If double-counted, the load would be 2x and the ramp rate would spike.
-    // The exact value depends on EWMA warmup, but it should be < 5 (safe range).
-    if (data.weeks.length > 0) {
-      for (const week of data.weeks) {
-        expect(Math.abs(week.rampRate)).toBeLessThan(10);
-      }
+    // With two 30-min activities at ~155 bpm across 2 ISO weeks, the ramp rate
+    // should be modest. If double-counted, the load would be 2x and spike.
+    expect(data.weeks.length).toBeGreaterThan(0);
+    for (const week of data.weeks) {
+      expect(Math.abs(week.rampRate)).toBeLessThan(10);
     }
   });
 });
