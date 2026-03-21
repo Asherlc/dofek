@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ZodError } from "zod";
 import { OuraClient } from "./oura.ts";
 
 // ============================================================
@@ -155,5 +156,44 @@ describe("OuraClient — getSleepTime pagination", () => {
     await client.getSleepTime("2026-03-01", "2026-03-05", "st-page");
 
     expect(urls[0]).toContain("next_token=st-page");
+  });
+});
+
+describe("OuraClient — Zod runtime validation", () => {
+  it("rejects a sleep response with invalid data shape", async () => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return Response.json({ data: [{ id: 123 }] }); // id should be string
+    };
+
+    const client = new OuraClient("token", mockFetch);
+    await expect(client.getSleep("2026-03-01", "2026-03-05")).rejects.toThrow(ZodError);
+  });
+
+  it("validates and returns a correct daily activity response", async () => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return Response.json({
+        data: [
+          {
+            id: "abc",
+            day: "2026-03-01",
+            steps: 8000,
+            active_calories: 400,
+            equivalent_walking_distance: 6000,
+            high_activity_time: 1800,
+            medium_activity_time: 2400,
+            low_activity_time: 3600,
+            resting_time: 28800,
+            sedentary_time: 43200,
+            total_calories: 2200,
+          },
+        ],
+        next_token: null,
+      });
+    };
+
+    const client = new OuraClient("token", mockFetch);
+    const result = await client.getDailyActivity("2026-03-01", "2026-03-05");
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]?.steps).toBe(8000);
   });
 });

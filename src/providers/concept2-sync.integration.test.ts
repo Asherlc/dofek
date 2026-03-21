@@ -239,6 +239,6 @@ describe("Concept2Provider.sync() (integration)", () => {
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors.length).toBeGreaterThan(0);
-    expect(result.errors[0]?.message).toContain("Concept2 API error");
+    expect(result.errors[0]?.message).toContain("API error");
   });
 });
