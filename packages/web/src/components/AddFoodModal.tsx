@@ -23,6 +23,32 @@ interface AddFoodModalProps {
   submitting?: boolean;
 }
 
+/** Convert a tRPC food.search row into the FoodDatabaseResult shape used by applySearchResult */
+function historyRowToFoodResult(row: {
+  food_name: string;
+  food_description: string | null;
+  category: string | null;
+  calories: number | null;
+  protein_g: number | null;
+  carbs_g: number | null;
+  fat_g: number | null;
+  fiber_g: number | null;
+  number_of_units: number | null;
+}): FoodDatabaseResult {
+  return {
+    barcode: null,
+    name: row.food_name,
+    brand: null,
+    servingSize: row.food_description,
+    calories: row.calories,
+    proteinG: row.protein_g,
+    carbsG: row.carbs_g,
+    fatG: row.fat_g,
+    fiberG: row.fiber_g,
+    imageUrl: null,
+  };
+}
+
 export function AddFoodModal({
   isOpen,
   onClose,
@@ -39,13 +65,20 @@ export function AddFoodModal({
   const [servingDescription, setServingDescription] = useState("");
   const [showMacros, setShowMacros] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
-  const [searchResults, setSearchResults] = useState<FoodDatabaseResult[]>([]);
-  const [searchingFoods, setSearchingFoods] = useState(false);
+  const [historyResults, setHistoryResults] = useState<FoodDatabaseResult[]>([]);
+  const [searchingHistory, setSearchingHistory] = useState(false);
+  const [offResults, setOffResults] = useState<FoodDatabaseResult[]>([]);
+  const [searchingOff, setSearchingOff] = useState(false);
+  const [offSearched, setOffSearched] = useState(false);
+  const [offSectionOpen, setOffSectionOpen] = useState(true);
 
   const nameInputRef = useRef<HTMLInputElement>(null);
-  const searchRequestCounterRef = useRef(0);
+  const historyRequestCounterRef = useRef(0);
   const skipNextSearchRef = useRef(false);
+  const offRequestCounterRef = useRef(0);
   const browserLocale = typeof navigator !== "undefined" ? navigator.language : "en-US";
+
+  const trpcUtils = trpc.useUtils();
 
   const analyzeMutation = trpc.food.analyzeWithAi.useMutation({
     onSuccess: (data) => {
@@ -72,7 +105,8 @@ export function AddFoodModal({
   }, [isOpen, defaultMealType]);
 
   function resetForm() {
-    searchRequestCounterRef.current += 1;
+    historyRequestCounterRef.current += 1;
+    offRequestCounterRef.current += 1;
     skipNextSearchRef.current = false;
     setFoodName("");
     setCalories("");
@@ -82,8 +116,12 @@ export function AddFoodModal({
     setServingDescription("");
     setShowMacros(false);
     setAiError(null);
-    setSearchResults([]);
-    setSearchingFoods(false);
+    setHistoryResults([]);
+    setSearchingHistory(false);
+    setOffResults([]);
+    setSearchingOff(false);
+    setOffSearched(false);
+    setOffSectionOpen(true);
   }
 
   function handleSubmit(event: React.FormEvent) {
@@ -124,18 +162,44 @@ export function AddFoodModal({
     setCarbsGrams(result.carbsG != null ? String(result.carbsG) : "");
     setFatGrams(result.fatG != null ? String(result.fatG) : "");
     setShowMacros(result.proteinG != null || result.carbsG != null || result.fatG != null);
-    setSearchResults([]);
-    setSearchingFoods(false);
+    setHistoryResults([]);
+    setSearchingHistory(false);
+    setOffResults([]);
+    setOffSearched(false);
   }
 
+  function handleSearchFoodDatabase() {
+    const query = foodName.trim();
+    if (query.length < 2) return;
+
+    const requestId = offRequestCounterRef.current + 1;
+    offRequestCounterRef.current = requestId;
+    setSearchingOff(true);
+    setOffSearched(true);
+    setOffSectionOpen(true);
+
+    searchFoods(query, 8, browserLocale)
+      .then((results) => {
+        if (offRequestCounterRef.current !== requestId) return;
+        setOffResults(results);
+        setSearchingOff(false);
+      })
+      .catch(() => {
+        if (offRequestCounterRef.current !== requestId) return;
+        setOffResults([]);
+        setSearchingOff(false);
+      });
+  }
+
+  // Debounced history search via tRPC food.search
   useEffect(() => {
     if (!isOpen) return;
 
     const query = foodName.trim();
     if (query.length < 2) {
-      searchRequestCounterRef.current += 1;
-      setSearchResults([]);
-      setSearchingFoods(false);
+      historyRequestCounterRef.current += 1;
+      setHistoryResults([]);
+      setSearchingHistory(false);
       return;
     }
 
@@ -144,33 +208,40 @@ export function AddFoodModal({
       return;
     }
 
-    const requestId = searchRequestCounterRef.current + 1;
-    searchRequestCounterRef.current = requestId;
-    setSearchingFoods(true);
+    const requestId = historyRequestCounterRef.current + 1;
+    historyRequestCounterRef.current = requestId;
+    setSearchingHistory(true);
+
+    // Clear OFF results when query changes (user needs to explicitly re-search)
+    setOffResults([]);
+    setOffSearched(false);
 
     const timer = setTimeout(() => {
-      searchFoods(query, 8, browserLocale)
-        .then((results) => {
-          if (searchRequestCounterRef.current !== requestId) return;
-          setSearchResults(results);
-          setSearchingFoods(false);
+      trpcUtils.food.search
+        .fetch({ query, limit: 8 })
+        .then((rows) => {
+          if (historyRequestCounterRef.current !== requestId) return;
+          setHistoryResults(rows.map(historyRowToFoodResult));
+          setSearchingHistory(false);
         })
         .catch(() => {
-          if (searchRequestCounterRef.current !== requestId) return;
-          setSearchResults([]);
-          setSearchingFoods(false);
+          if (historyRequestCounterRef.current !== requestId) return;
+          setHistoryResults([]);
+          setSearchingHistory(false);
         });
     }, 250);
 
     return () => {
       clearTimeout(timer);
     };
-  }, [browserLocale, foodName, isOpen]);
+  }, [foodName, isOpen, trpcUtils.food.search]);
 
   if (!isOpen) return null;
 
   const inputClass =
     "w-full rounded-lg border border-border-strong bg-accent/10 px-3 py-2 text-sm text-foreground placeholder-subtle focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
+
+  const queryLongEnough = foodName.trim().length >= 2;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -273,18 +344,18 @@ export function AddFoodModal({
             </div>
           )}
 
-          {foodName.trim().length >= 2 && (
+          {/* Your History results (auto-search via tRPC) */}
+          {queryLongEnough && (searchingHistory || historyResults.length > 0) && (
             <div className="rounded-lg border border-border bg-page/60 overflow-hidden">
               <div className="px-3 py-2 border-b border-border text-xs font-medium uppercase tracking-wide text-subtle">
-                Open Food Facts Results
+                Your History
               </div>
-              {searchingFoods && <div className="px-3 py-3 text-sm text-subtle">Searching...</div>}
-              {!searchingFoods && searchResults.length === 0 && (
-                <div className="px-3 py-3 text-sm text-subtle">No results found</div>
+              {searchingHistory && (
+                <div className="px-3 py-3 text-sm text-subtle">Searching...</div>
               )}
-              {!searchingFoods && searchResults.length > 0 && (
+              {!searchingHistory && historyResults.length > 0 && (
                 <div className="max-h-56 overflow-y-auto">
-                  {searchResults.map((result) => {
+                  {historyResults.map((result) => {
                     const displayName = result.brand
                       ? `${result.name} (${result.brand})`
                       : result.name;
@@ -295,7 +366,7 @@ export function AddFoodModal({
                     ].filter((value): value is string => value !== null);
                     return (
                       <button
-                        key={`${result.barcode ?? "no-barcode"}-${result.name}-${result.brand ?? "no-brand"}-${result.servingSize ?? "no-serving"}-${result.calories ?? "no-calories"}`}
+                        key={`history-${result.name}-${result.servingSize ?? "no-serving"}-${result.calories ?? "no-calories"}`}
                         type="button"
                         onClick={() => applySearchResult(result)}
                         className="w-full px-3 py-2 text-left hover:bg-surface-hover transition-colors border-b border-border last:border-b-0"
@@ -324,6 +395,136 @@ export function AddFoodModal({
                     );
                   })}
                 </div>
+              )}
+            </div>
+          )}
+
+          {/* Search Food Database button */}
+          {queryLongEnough && (
+            <button
+              type="button"
+              onClick={handleSearchFoodDatabase}
+              disabled={searchingOff}
+              className="flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {searchingOff ? (
+                <svg
+                  className="animate-spin h-4 w-4"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <title>Searching</title>
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  />
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  />
+                </svg>
+              ) : (
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                  className="w-4 h-4"
+                >
+                  <title>Search</title>
+                  <path
+                    fillRule="evenodd"
+                    d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+              )}
+              Search Food Database
+            </button>
+          )}
+
+          {/* Food Database (OFF) results - collapsible */}
+          {offSearched && (
+            <div className="rounded-lg border border-border bg-page/60 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setOffSectionOpen(!offSectionOpen)}
+                className="w-full px-3 py-2 border-b border-border text-xs font-medium uppercase tracking-wide text-subtle flex items-center justify-between hover:bg-surface-hover transition-colors"
+              >
+                <span>Food Database</span>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                  className={`w-4 h-4 transition-transform ${offSectionOpen ? "rotate-180" : ""}`}
+                >
+                  <title>{offSectionOpen ? "Collapse" : "Expand"}</title>
+                  <path
+                    fillRule="evenodd"
+                    d="M5.22 8.22a.75.75 0 011.06 0L10 11.94l3.72-3.72a.75.75 0 111.06 1.06l-4.25 4.25a.75.75 0 01-1.06 0L5.22 9.28a.75.75 0 010-1.06z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+              </button>
+              {offSectionOpen && (
+                <>
+                  {searchingOff && (
+                    <div className="px-3 py-3 text-sm text-subtle">Searching...</div>
+                  )}
+                  {!searchingOff && offResults.length === 0 && (
+                    <div className="px-3 py-3 text-sm text-subtle">No results found</div>
+                  )}
+                  {!searchingOff && offResults.length > 0 && (
+                    <div className="max-h-56 overflow-y-auto">
+                      {offResults.map((result) => {
+                        const displayName = result.brand
+                          ? `${result.name} (${result.brand})`
+                          : result.name;
+                        const macroParts = [
+                          result.proteinG != null ? `Protein ${result.proteinG}g` : null,
+                          result.carbsG != null ? `Carbs ${result.carbsG}g` : null,
+                          result.fatG != null ? `Fat ${result.fatG}g` : null,
+                        ].filter((value): value is string => value !== null);
+                        return (
+                          <button
+                            key={`off-${result.barcode ?? "no-barcode"}-${result.name}-${result.brand ?? "no-brand"}-${result.servingSize ?? "no-serving"}-${result.calories ?? "no-calories"}`}
+                            type="button"
+                            onClick={() => applySearchResult(result)}
+                            className="w-full px-3 py-2 text-left hover:bg-surface-hover transition-colors border-b border-border last:border-b-0"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="text-sm text-foreground truncate">
+                                  {displayName}
+                                </div>
+                                {result.servingSize && (
+                                  <div className="text-xs text-subtle truncate mt-0.5">
+                                    {result.servingSize}
+                                  </div>
+                                )}
+                                {macroParts.length > 0 && (
+                                  <div className="text-xs text-subtle mt-1">
+                                    {macroParts.join(" · ")}
+                                  </div>
+                                )}
+                              </div>
+                              {result.calories != null && (
+                                <div className="text-xs font-semibold text-foreground whitespace-nowrap">
+                                  {result.calories} cal
+                                </div>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}

@@ -165,7 +165,11 @@ export default function AddFoodScreen() {
     },
   });
 
-  // ── Search logic ──
+  // ── Open Food Facts on-demand search state ──
+  const [offResults, setOffResults] = useState<SearchResult[]>([]);
+  const [searchingOff, setSearchingOff] = useState(false);
+
+  // ── Search logic (history only for fast typeahead) ──
   const performSearch = useCallback(async (query: string) => {
     if (query.length < 2) {
       setSearchResults([]);
@@ -174,50 +178,60 @@ export default function AddFoodScreen() {
     }
 
     setSearching(true);
+    // Clear previous OFF results when query changes
+    setOffResults([]);
 
-    // Search our history and Open Food Facts in parallel
-    const [historyResults, offResults] = await Promise.all([
-      // Our DB search via tRPC - we call it directly
-      fetch(`${apiUrl}/food.search?batch=1`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders },
-        body: JSON.stringify({ "0": { query, limit: 5 } }),
+    const historyResults = await fetch(`${apiUrl}/food.search?batch=1`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders },
+      body: JSON.stringify({ "0": { query, limit: 5 } }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        const results = data?.[0]?.result?.data ?? [];
+        return results.map((r: Record<string, unknown>): SearchResult => ({
+          source: "history" as const,
+          name: r.food_name as string,
+          brand: null,
+          calories: r.calories as number | null,
+          proteinG: r.protein_g as number | null,
+          carbsG: r.carbs_g as number | null,
+          fatG: r.fat_g as number | null,
+          servingDescription: r.food_description as string | null,
+          barcode: null,
+        }));
       })
-        .then((r) => r.json())
-        .then((data) => {
-          const results = data?.[0]?.result?.data ?? [];
-          return results.map((r: Record<string, unknown>): SearchResult => ({
-            source: "history" as const,
-            name: r.food_name as string,
-            brand: null,
-            calories: r.calories as number | null,
-            proteinG: r.protein_g as number | null,
-            carbsG: r.carbs_g as number | null,
-            fatG: r.fat_g as number | null,
-            servingDescription: r.food_description as string | null,
-            barcode: null,
-          }));
-        })
-        .catch(() => [] as SearchResult[]),
-      searchFoods(query, 10, deviceLocale),
-    ]);
+      .catch(() => [] as SearchResult[]);
 
-    const offMapped: SearchResult[] = offResults.map((r) => ({
-      source: "openfoodfacts",
-      name: r.brand ? `${r.name} (${r.brand})` : r.name,
-      brand: r.brand,
-      calories: r.calories,
-      proteinG: r.proteinG,
-      carbsG: r.carbsG,
-      fatG: r.fatG,
-      servingDescription: r.servingSize,
-      barcode: r.barcode,
-    }));
-
-    // History first, then Open Food Facts
-    setSearchResults([...historyResults, ...offMapped]);
+    setSearchResults(historyResults);
     setSearching(false);
-  }, [apiUrl, authHeaders, deviceLocale]);
+  }, [apiUrl, authHeaders]);
+
+  // ── On-demand Open Food Facts search ──
+  const performOffSearch = useCallback(async () => {
+    if (searchQuery.length < 2) return;
+
+    setSearchingOff(true);
+    try {
+      const results = await searchFoods(searchQuery, 10, deviceLocale);
+      const mapped: SearchResult[] = results.map((r) => ({
+        source: "openfoodfacts",
+        name: r.brand ? `${r.name} (${r.brand})` : r.name,
+        brand: r.brand,
+        calories: r.calories,
+        proteinG: r.proteinG,
+        carbsG: r.carbsG,
+        fatG: r.fatG,
+        servingDescription: r.servingSize,
+        barcode: r.barcode,
+      }));
+      setOffResults(mapped);
+    } catch {
+      setOffResults([]);
+    } finally {
+      setSearchingOff(false);
+    }
+  }, [searchQuery, deviceLocale]);
 
   // Debounced search
   useEffect(() => {
@@ -564,6 +578,73 @@ export default function AddFoodScreen() {
               <Text style={styles.emptyText}>No recent foods. Search or scan to get started.</Text>
             )}
 
+            {/* Search Food Database button (Open Food Facts, on-demand) */}
+            {searchQuery.length >= 2 && (
+              <TouchableOpacity
+                style={styles.searchDatabaseButton}
+                onPress={performOffSearch}
+                activeOpacity={0.7}
+                disabled={searchingOff}
+              >
+                {searchingOff ? (
+                  <ActivityIndicator size="small" color={colors.text} />
+                ) : (
+                  <Text style={styles.searchDatabaseButtonText}>Search Food Database</Text>
+                )}
+              </TouchableOpacity>
+            )}
+
+            {/* Open Food Facts results (shown after explicit search) */}
+            {offResults.length > 0 && (
+              <>
+                <Text style={styles.sectionHeader}>Food Database</Text>
+                {offResults.map((result, index) => {
+                  const macroTags = [
+                    result.proteinG != null ? `Protein ${result.proteinG}g` : null,
+                    result.carbsG != null ? `Carbs ${result.carbsG}g` : null,
+                    result.fatG != null ? `Fat ${result.fatG}g` : null,
+                  ].filter((tag): tag is string => tag !== null);
+
+                  return (
+                    <TouchableOpacity
+                      key={`off-${result.name}-${index}`}
+                      style={styles.resultCard}
+                      onPress={() => handleSelectResult(result)}
+                      activeOpacity={0.75}
+                    >
+                      <View style={styles.resultHeaderRow}>
+                        <Text style={styles.resultName} numberOfLines={2}>
+                          {result.name}
+                        </Text>
+                        {result.calories != null && (
+                          <View style={styles.resultCaloriesBadge}>
+                            <Text style={styles.resultCaloriesText}>{result.calories} cal</Text>
+                          </View>
+                        )}
+                      </View>
+
+                      {result.servingDescription && (
+                        <Text style={styles.resultServing} numberOfLines={2}>
+                          {result.servingDescription}
+                        </Text>
+                      )}
+
+                      <View style={styles.resultMetaRow}>
+                        <View style={styles.resultMacroTags}>
+                          {macroTags.map((macro) => (
+                            <View key={`${result.name}-${macro}`} style={styles.resultMacroTag}>
+                              <Text style={styles.resultMacroTagText}>{macro}</Text>
+                            </View>
+                          ))}
+                        </View>
+                        <Text style={styles.resultSource}>Open Food Facts</Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </>
+            )}
+
             {/* Manual entry option */}
             <TouchableOpacity
               style={styles.manualEntry}
@@ -873,6 +954,20 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.accent,
     fontWeight: "500",
+  },
+  searchDatabaseButton: {
+    marginHorizontal: 14,
+    marginTop: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    alignItems: "center",
+    borderRadius: 12,
+    backgroundColor: colors.accent,
+  },
+  searchDatabaseButtonText: {
+    fontSize: 15,
+    color: colors.text,
+    fontWeight: "600",
   },
 
   // ── Scanning overlay ──
