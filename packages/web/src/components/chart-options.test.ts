@@ -153,6 +153,58 @@ describe("PolarizationTrendChart option builder", () => {
     expect(polarizationIndexSeries.data[2]).toHaveProperty("itemStyle", { color: "#22c55e" });
   });
 
+  it("shows incomplete weeks as distinct markers at yMin", () => {
+    const weeksWithGap = [
+      {
+        week: "2024-01-01",
+        polarizationIndex: null,
+        z1Seconds: 3600,
+        z2Seconds: 0,
+        z3Seconds: 900,
+      },
+      {
+        week: "2024-01-08",
+        polarizationIndex: 1.9,
+        z1Seconds: 2400,
+        z2Seconds: 1200,
+        z3Seconds: 600,
+      },
+      {
+        week: "2024-01-15",
+        polarizationIndex: null,
+        z1Seconds: 1800,
+        z2Seconds: 600,
+        z3Seconds: 0,
+      },
+    ];
+
+    const option = buildPolarizationTrendOption(weeksWithGap);
+    const incompleteSeries = option.series.find(
+      (s: { name?: string }) => s.name === "Incomplete weeks",
+    );
+    expect(incompleteSeries).toBeDefined();
+    if (!incompleteSeries) throw new Error("Expected incomplete weeks series");
+
+    // Should only contain the two null-PI weeks
+    const data = incompleteSeries.data as Array<{ value: [string, number] }>;
+    expect(data).toHaveLength(2);
+    expect(data[0]?.value[0]).toBe("2024-01-01");
+    expect(data[1]?.value[0]).toBe("2024-01-15");
+
+    // Should be scatter type with amber styling
+    expect(incompleteSeries.type).toBe("scatter");
+    const style = incompleteSeries.itemStyle as { color: string };
+    expect(style.color).toBe("#f59e0b");
+  });
+
+  it("omits incomplete weeks series when all weeks have PI", () => {
+    const option = buildPolarizationTrendOption(sampleWeeks);
+    const incompleteSeries = option.series.find(
+      (s: { name?: string }) => s.name === "Incomplete weeks",
+    );
+    expect(incompleteSeries).toBeUndefined();
+  });
+
   it("explains missing zones when PI is unavailable", () => {
     const weeksWithGap = [
       {
