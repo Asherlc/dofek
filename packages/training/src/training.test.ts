@@ -1,10 +1,203 @@
 import { describe, expect, it } from "vitest";
 import {
+  CANONICAL_ACTIVITY_TYPES,
   collapseWeeklyVolumeActivityTypes,
+  createActivityTypeMapper,
+  ENDURANCE_ACTIVITY_TYPES,
   formatActivityTypeLabel,
+  GARMIN_ACTIVITY_TYPE_MAP,
   OTHER_ACTIVITY_TYPE,
+  OURA_ACTIVITY_TYPE_MAP,
+  POLAR_SPORT_MAP,
+  RIDE_WITH_GPS_ACTIVITY_TYPE_MAP,
+  STRAVA_ACTIVITY_TYPE_MAP,
   selectRecentDailyLoad,
+  WAHOO_WORKOUT_TYPE_MAP,
 } from "./training";
+
+// ============================================================
+// Canonical activity types
+// ============================================================
+
+describe("CANONICAL_ACTIVITY_TYPES", () => {
+  it("includes core endurance types", () => {
+    expect(CANONICAL_ACTIVITY_TYPES).toContain("cycling");
+    expect(CANONICAL_ACTIVITY_TYPES).toContain("running");
+    expect(CANONICAL_ACTIVITY_TYPES).toContain("swimming");
+    expect(CANONICAL_ACTIVITY_TYPES).toContain("walking");
+    expect(CANONICAL_ACTIVITY_TYPES).toContain("hiking");
+  });
+
+  it("includes strength and fitness types", () => {
+    expect(CANONICAL_ACTIVITY_TYPES).toContain("strength");
+    expect(CANONICAL_ACTIVITY_TYPES).toContain("yoga");
+    expect(CANONICAL_ACTIVITY_TYPES).toContain("pilates");
+    expect(CANONICAL_ACTIVITY_TYPES).toContain("elliptical");
+    expect(CANONICAL_ACTIVITY_TYPES).toContain("rowing");
+  });
+
+  it("includes 'other' as a catch-all", () => {
+    expect(CANONICAL_ACTIVITY_TYPES).toContain("other");
+  });
+
+  it("has no duplicates", () => {
+    const set = new Set(CANONICAL_ACTIVITY_TYPES);
+    expect(set.size).toBe(CANONICAL_ACTIVITY_TYPES.length);
+  });
+});
+
+// ============================================================
+// ENDURANCE_ACTIVITY_TYPES
+// ============================================================
+
+describe("ENDURANCE_ACTIVITY_TYPES", () => {
+  it("contains expected endurance activities", () => {
+    expect(ENDURANCE_ACTIVITY_TYPES).toContain("cycling");
+    expect(ENDURANCE_ACTIVITY_TYPES).toContain("running");
+    expect(ENDURANCE_ACTIVITY_TYPES).toContain("swimming");
+    expect(ENDURANCE_ACTIVITY_TYPES).toContain("walking");
+    expect(ENDURANCE_ACTIVITY_TYPES).toContain("hiking");
+  });
+
+  it("does not include non-endurance types", () => {
+    const types: readonly string[] = ENDURANCE_ACTIVITY_TYPES;
+    expect(types).not.toContain("strength");
+    expect(types).not.toContain("yoga");
+  });
+
+  it("is a subset of CANONICAL_ACTIVITY_TYPES", () => {
+    for (const t of ENDURANCE_ACTIVITY_TYPES) {
+      expect(CANONICAL_ACTIVITY_TYPES).toContain(t);
+    }
+  });
+});
+
+// ============================================================
+// createActivityTypeMapper
+// ============================================================
+
+describe("createActivityTypeMapper", () => {
+  it("maps known types using the provided mapping", () => {
+    const mapper = createActivityTypeMapper({ foo: "cycling", bar: "running" });
+    expect(mapper("foo")).toBe("cycling");
+    expect(mapper("bar")).toBe("running");
+  });
+
+  it("returns 'other' for unknown types", () => {
+    const mapper = createActivityTypeMapper({ foo: "cycling" });
+    expect(mapper("unknown_type")).toBe("other");
+  });
+
+  it("is case-sensitive (mapping keys are used as-is)", () => {
+    const mapper = createActivityTypeMapper({ Ride: "cycling" });
+    expect(mapper("Ride")).toBe("cycling");
+    expect(mapper("ride")).toBe("other");
+  });
+});
+
+// ============================================================
+// Provider mapping constants
+// ============================================================
+
+describe("STRAVA_ACTIVITY_TYPE_MAP", () => {
+  it("maps Ride to cycling", () => {
+    expect(STRAVA_ACTIVITY_TYPE_MAP.Ride).toBe("cycling");
+  });
+
+  it("maps Run to running", () => {
+    expect(STRAVA_ACTIVITY_TYPE_MAP.Run).toBe("running");
+  });
+
+  it("maps VirtualRide to cycling", () => {
+    expect(STRAVA_ACTIVITY_TYPE_MAP.VirtualRide).toBe("cycling");
+  });
+
+  it("maps WeightTraining to strength", () => {
+    expect(STRAVA_ACTIVITY_TYPE_MAP.WeightTraining).toBe("strength");
+  });
+
+  it("maps all entries to canonical types", () => {
+    for (const [key, value] of Object.entries(STRAVA_ACTIVITY_TYPE_MAP)) {
+      expect(CANONICAL_ACTIVITY_TYPES).toContain(value);
+    }
+  });
+});
+
+describe("WAHOO_WORKOUT_TYPE_MAP", () => {
+  it("maps 0 to cycling", () => {
+    expect(WAHOO_WORKOUT_TYPE_MAP[0]).toBe("cycling");
+  });
+
+  it("maps 1 to running", () => {
+    expect(WAHOO_WORKOUT_TYPE_MAP[1]).toBe("running");
+  });
+
+  it("maps all entries to canonical types", () => {
+    for (const value of Object.values(WAHOO_WORKOUT_TYPE_MAP)) {
+      expect(CANONICAL_ACTIVITY_TYPES).toContain(value);
+    }
+  });
+});
+
+describe("POLAR_SPORT_MAP", () => {
+  it("maps running to running", () => {
+    expect(POLAR_SPORT_MAP.running).toBe("running");
+  });
+
+  it("maps strength_training to strength", () => {
+    expect(POLAR_SPORT_MAP.strength_training).toBe("strength");
+  });
+
+  it("maps indoor_cycling to cycling", () => {
+    expect(POLAR_SPORT_MAP.indoor_cycling).toBe("cycling");
+  });
+});
+
+describe("GARMIN_ACTIVITY_TYPE_MAP", () => {
+  it("maps RUNNING to running", () => {
+    expect(GARMIN_ACTIVITY_TYPE_MAP.RUNNING).toBe("running");
+  });
+
+  it("maps CYCLING to cycling", () => {
+    expect(GARMIN_ACTIVITY_TYPE_MAP.CYCLING).toBe("cycling");
+  });
+
+  it("maps STRENGTH_TRAINING to strength", () => {
+    expect(GARMIN_ACTIVITY_TYPE_MAP.STRENGTH_TRAINING).toBe("strength");
+  });
+
+  it("maps all entries to canonical types", () => {
+    for (const value of Object.values(GARMIN_ACTIVITY_TYPE_MAP)) {
+      expect(CANONICAL_ACTIVITY_TYPES).toContain(value);
+    }
+  });
+});
+
+describe("OURA_ACTIVITY_TYPE_MAP", () => {
+  it("maps walking to walking", () => {
+    expect(OURA_ACTIVITY_TYPE_MAP.walking).toBe("walking");
+  });
+
+  it("maps strength_training to strength", () => {
+    expect(OURA_ACTIVITY_TYPE_MAP.strength_training).toBe("strength");
+  });
+});
+
+describe("RIDE_WITH_GPS_ACTIVITY_TYPE_MAP", () => {
+  it("maps cycling to cycling", () => {
+    expect(RIDE_WITH_GPS_ACTIVITY_TYPE_MAP.cycling).toBe("cycling");
+  });
+
+  it("maps trail_running to running", () => {
+    expect(RIDE_WITH_GPS_ACTIVITY_TYPE_MAP.trail_running).toBe("running");
+  });
+
+  it("maps all entries to canonical types", () => {
+    for (const value of Object.values(RIDE_WITH_GPS_ACTIVITY_TYPE_MAP)) {
+      expect(CANONICAL_ACTIVITY_TYPES).toContain(value);
+    }
+  });
+});
 
 describe("formatActivityTypeLabel", () => {
   it("maps known activity types to human-readable names", () => {
