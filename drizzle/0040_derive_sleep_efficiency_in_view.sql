@@ -7,10 +7,7 @@
 -- since it's now derived in the view.
 UPDATE fitness.sleep_session
 SET efficiency_pct = NULL
-WHERE provider_id IN (
-  SELECT id FROM fitness.provider
-  WHERE slug IN ('apple_health', 'eight_sleep', 'polar', 'apple_health_kit')
-);
+WHERE provider_id IN ('apple_health', 'eight_sleep', 'polar', 'apple_health_kit');
 
 -- Recreate the materialized view with computed efficiency fallback.
 DROP MATERIALIZED VIEW IF EXISTS fitness.v_sleep;
