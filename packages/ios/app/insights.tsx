@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
+import { formatNumber, formatSigned } from "@dofek/format/format";
 import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
 import { statusColors } from "@dofek/scoring/colors";
@@ -60,11 +61,10 @@ function categorize(metric: string): string {
   return "Other";
 }
 
-function formatPercent(whenTrue: number, whenFalse: number): string {
+function formatPercentDifference(whenTrue: number, whenFalse: number): string {
   if (whenFalse === 0) return "--";
   const percentage = ((whenTrue - whenFalse) / Math.abs(whenFalse)) * 100;
-  const sign = percentage >= 0 ? "+" : "";
-  return `${sign}${percentage.toFixed(1)}%`;
+  return `${formatSigned(percentage)}%`;
 }
 
 // ── Components ──
@@ -123,7 +123,7 @@ function EffectSizeBar({ effectSize }: { effectSize: number }) {
       <View style={styles.effectBarTrack}>
         <View style={[styles.effectBarFill, { width: `${fillPercent}%`, backgroundColor: barColor }]} />
       </View>
-      <Text style={styles.effectBarLabel}>{Math.abs(effectSize).toFixed(2)}</Text>
+      <Text style={styles.effectBarLabel}>{formatNumber(Math.abs(effectSize), 2)}</Text>
     </View>
   );
 }
@@ -157,17 +157,17 @@ function InsightCard({ insight }: { insight: Insight }) {
           <View style={styles.comparisonRow}>
             <Text style={styles.comparisonLabel}>With {insight.action}:</Text>
             <Text style={styles.comparisonValue}>
-              {insight.whenTrue.mean.toFixed(1)} (n={insight.whenTrue.n})
+              {formatNumber(insight.whenTrue.mean)} (n={insight.whenTrue.n})
             </Text>
           </View>
           <View style={styles.comparisonRow}>
             <Text style={styles.comparisonLabel}>Without:</Text>
             <Text style={styles.comparisonValue}>
-              {insight.whenFalse.mean.toFixed(1)} (n={insight.whenFalse.n})
+              {formatNumber(insight.whenFalse.mean)} (n={insight.whenFalse.n})
             </Text>
           </View>
           <Text style={styles.comparisonDiff}>
-            {formatPercent(insight.whenTrue.mean, insight.whenFalse.mean)} difference
+            {formatPercentDifference(insight.whenTrue.mean, insight.whenFalse.mean)} difference
           </Text>
         </View>
       )}

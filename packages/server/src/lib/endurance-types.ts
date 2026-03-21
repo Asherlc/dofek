@@ -1,17 +1,8 @@
+import { ENDURANCE_ACTIVITY_TYPES } from "@dofek/training/training";
 import { sql } from "drizzle-orm";
 
-/**
- * Activity types considered "endurance" for training analysis.
- * Used to filter endurance-tab queries (HR zones, polarization, ramp rate, etc.)
- * so that strength training, yoga, etc. don't skew intensity metrics.
- */
-export const ENDURANCE_ACTIVITY_TYPES = [
-  "cycling",
-  "running",
-  "swimming",
-  "walking",
-  "hiking",
-] as const;
+// Re-export so existing imports continue to work
+export { ENDURANCE_ACTIVITY_TYPES };
 
 /**
  * SQL fragment: AND <alias>.activity_type IN ('cycling', 'running', ...)

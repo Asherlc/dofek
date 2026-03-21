@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import type { SyncDatabase } from "../db/index.ts";
 import { exercise, exerciseAlias, strengthSet, strengthWorkout } from "../db/schema.ts";
 import { ensureProvider } from "../db/tokens.ts";
-import type { Provider, SyncError, SyncResult } from "./types.ts";
+import type { ImportProvider, SyncError, SyncResult } from "./types.ts";
 
 // ============================================================
 // Constants
@@ -332,16 +332,12 @@ export async function importStrongCsv(
 // Provider (stub — real import happens via upload endpoint)
 // ============================================================
 
-export class StrongCsvProvider implements Provider {
+export class StrongCsvProvider implements ImportProvider {
   readonly id = STRONG_PROVIDER_ID;
   readonly name = "Strong";
-  readonly importOnly = true;
+  readonly importOnly = true as const;
 
   validate(): string | null {
     return null; // Always valid — file import, no API key needed
-  }
-
-  async sync(_db: SyncDatabase, _since: Date): Promise<SyncResult> {
-    return { provider: this.id, recordsSynced: 0, errors: [], duration: 0 };
   }
 }

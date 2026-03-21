@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import type { z } from "zod";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
@@ -136,25 +135,7 @@ describe("dailyMetricsRouter", () => {
       ];
       const caller = makeCaller(rows);
       const result = await caller.trends({ days: 30 });
-      expect(result).toEqual({
-        avg_resting_hr: 55,
-        avg_hrv: 60,
-        avg_spo2: 98,
-        avg_steps: 8000,
-        avg_active_energy: 500,
-        avg_skin_temp: 36.5,
-        stddev_resting_hr: 3.2,
-        stddev_hrv: 10.5,
-        stddev_spo2: 0.5,
-        stddev_skin_temp: 0.3,
-        latest_resting_hr: 54,
-        latest_hrv: 62,
-        latest_spo2: 98,
-        latest_steps: 9000,
-        latest_active_energy: 550,
-        latest_skin_temp: 36.6,
-        latest_date: "2024-01-16",
-      });
+      expect(result).toEqual(rows[0]);
     });
 
     it("returns null when no data", async () => {

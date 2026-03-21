@@ -14,6 +14,7 @@
     "@ai-sdk/google": "3.0.43",
     "@ai-sdk/mistral": "3.0.24",
     "@dofek/auth": "workspace:*",
+    "@dofek/training": "workspace:*",
     "@dofek/heart-rate-variability": "workspace:*",
     "@dofek/scoring": "workspace:*",
     "@dofek/stats": "workspace:*",

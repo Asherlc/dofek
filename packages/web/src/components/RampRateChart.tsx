@@ -1,6 +1,9 @@
 import { rampRateColor } from "@dofek/scoring/scoring";
 import type { RampRateWeek } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
+import { createChartOptions } from "../lib/chart-theme.ts";
+import { formatNumber } from "../lib/format.ts";
+import { ChartContainer } from "./ChartContainer.tsx";
 
 interface RampRateChartProps {
   data: RampRateWeek[];
@@ -15,14 +18,10 @@ interface RampRateWeekData {
 }
 
 export function buildRampRateOption(data: RampRateWeekData[]) {
-  return {
-    backgroundColor: "transparent",
+  return createChartOptions({
     grid: { top: 50, right: 20, bottom: 50, left: 55 },
     tooltip: {
       trigger: "axis" as const,
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
       formatter(params: Array<{ dataIndex: number; value: [string, number]; marker: string }>) {
         if (!params.length) return "";
         const first = params[0];
@@ -38,22 +37,17 @@ export function buildRampRateOption(data: RampRateWeekData[]) {
         });
         return [
           `<strong>${dateLabel}</strong>`,
-          `Ramp Rate: <span style="color:${color}">${d.rampRate.toFixed(2)}</span>`,
+          `Ramp Rate: <span style="color:${color}">${formatNumber(d.rampRate, 2)}</span>`,
         ].join("<br/>");
       },
     },
     xAxis: {
       type: "time" as const,
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
     },
     yAxis: {
       type: "value" as const,
       name: "Ramp Rate (fitness/week)",
-      splitLine: { lineStyle: { color: "#27272a" } },
-      axisLabel: { color: "#71717a", fontSize: 11 },
       axisLine: { show: false },
-      nameTextStyle: { color: "#71717a", fontSize: 11 },
     },
     series: [
       {
@@ -78,7 +72,7 @@ export function buildRampRateOption(data: RampRateWeekData[]) {
         tooltip: { show: false },
       },
     ],
-  };
+  });
 }
 
 export function RampRateChart({
@@ -87,42 +81,29 @@ export function RampRateChart({
   recommendation,
   loading,
 }: RampRateChartProps) {
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-[300px]">
-        <span className="text-zinc-600 text-sm">Loading ramp rate data...</span>
-      </div>
-    );
-  }
-
-  if (data.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-[300px]">
-        <span className="text-zinc-600 text-sm">No ramp rate data available</span>
-      </div>
-    );
-  }
-
-  const option = buildRampRateOption(data);
-
-  const badgeColor = rampRateColor(currentRampRate);
-
   return (
-    <div>
-      <div className="flex items-center gap-3 mb-2">
-        <span
-          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs border"
-          style={{
-            color: badgeColor,
-            borderColor: `${badgeColor}40`,
-            backgroundColor: `${badgeColor}15`,
-          }}
-        >
-          Current: {currentRampRate.toFixed(2)}
-        </span>
-        <span className="text-xs text-zinc-500">{recommendation}</span>
+    <ChartContainer
+      loading={!!loading}
+      data={data}
+      height={300}
+      emptyMessage="No ramp rate data available"
+    >
+      <div>
+        <div className="flex items-center gap-3 mb-2">
+          <span
+            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs border"
+            style={{
+              color: rampRateColor(currentRampRate),
+              borderColor: `${rampRateColor(currentRampRate)}40`,
+              backgroundColor: `${rampRateColor(currentRampRate)}15`,
+            }}
+          >
+            Current: {formatNumber(currentRampRate, 2)}
+          </span>
+          <span className="text-xs text-zinc-500">{recommendation}</span>
+        </div>
+        <ReactECharts option={buildRampRateOption(data)} style={{ height: 300 }} notMerge={true} />
       </div>
-      <ReactECharts option={option} style={{ height: 300 }} notMerge={true} />
-    </div>
+    </ChartContainer>
   );
 }

@@ -33,9 +33,9 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
   const { ensureProvidersRegistered } = await import("./provider-registration.ts");
   await ensureProvidersRegistered();
 
-  const { getAllProviders } = await import("../providers/index.ts");
+  const { getSyncProviders } = await import("../providers/index.ts");
 
-  let providers = getAllProviders().filter((p) => p.validate() === null);
+  let providers = getSyncProviders().filter((p) => p.validate() === null);
   if (providerId) {
     const specific = providers.find((p) => p.id === providerId);
     if (!specific) throw new Error(`Unknown provider: ${providerId}`);

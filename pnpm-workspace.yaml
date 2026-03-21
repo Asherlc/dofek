@@ -9,6 +9,7 @@ packages:
   - packages/providers-meta
   - packages/auth
   - packages/heart-rate-variability
+  - packages/zones
   - packages/server
   - packages/web
   - packages/ios

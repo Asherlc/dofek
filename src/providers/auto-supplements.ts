@@ -2,7 +2,7 @@ import { asc } from "drizzle-orm";
 import type { SyncDatabase } from "../db/index.ts";
 import { foodEntry, supplement } from "../db/schema.ts";
 import { ensureProvider } from "../db/tokens.ts";
-import type { Provider, SyncError, SyncResult } from "./types.ts";
+import type { SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
 // Entry builder
@@ -129,7 +129,7 @@ function datesInRange(since: Date): string[] {
   return dates;
 }
 
-export class AutoSupplementsProvider implements Provider {
+export class AutoSupplementsProvider implements SyncProvider {
   readonly id = PROVIDER_ID;
   readonly name = PROVIDER_NAME;
 

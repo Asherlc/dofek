@@ -1,6 +1,8 @@
 import type { SleepNightlyRow } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
-import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
+import { createChartOptions } from "../lib/chart-theme.ts";
+import { formatNumber } from "../lib/format.ts";
+import { ChartContainer } from "./ChartContainer.tsx";
 
 interface SleepAnalyticsChartProps {
   nightly: SleepNightlyRow[];
@@ -13,15 +15,11 @@ export function buildSleepAnalyticsOption(nightly: SleepNightlyRow[], sleepDebt:
   const debtLabel = sleepDebt > 0 ? `${debtHours}h deficit` : `${Math.abs(debtHours)}h surplus`;
   const debtColor = sleepDebt > 120 ? "#ef4444" : sleepDebt > 0 ? "#eab308" : "#22c55e";
 
-  return {
-    backgroundColor: "transparent",
+  return createChartOptions({
     // Reserve vertical space for both the legend row and sleep debt status row.
     grid: { top: 82, right: 60, bottom: 40, left: 50 },
     tooltip: {
       trigger: "axis" as const,
-      backgroundColor: "#18181b",
-      borderColor: "#3f3f46",
-      textStyle: { color: "#e4e4e7", fontSize: 12 },
       formatter: (
         params: {
           seriesName: string;
@@ -56,14 +54,13 @@ export function buildSleepAnalyticsOption(nightly: SleepNightlyRow[], sleepDebt:
           }
           if (p.value[1] == null) continue;
           const mins = Math.round((p.value[1] / 100) * night.durationMinutes);
-          html += `<div>${p.marker} ${p.seriesName}: <b>${p.value[1].toFixed(1)}%</b> (${mins}m)</div>`;
+          html += `<div>${p.marker} ${p.seriesName}: <b>${formatNumber(p.value[1])}%</b> (${mins}m)</div>`;
         }
         return html;
       },
     },
     legend: {
       data: ["Deep", "REM", "Light", "Awake", "7d Avg"],
-      textStyle: { color: "#a1a1aa", fontSize: 11 },
       top: 0,
       left: 0,
       right: 0,
@@ -86,8 +83,6 @@ export function buildSleepAnalyticsOption(nightly: SleepNightlyRow[], sleepDebt:
     ],
     xAxis: {
       type: "time" as const,
-      axisLabel: { color: "#71717a", fontSize: 11 },
-      axisLine: { lineStyle: { color: "#3f3f46" } },
     },
     yAxis: [
       {
@@ -158,23 +153,17 @@ export function buildSleepAnalyticsOption(nightly: SleepNightlyRow[], sleepDebt:
         z: 5,
       },
     ],
-  };
+  });
 }
 
 export function SleepAnalyticsChart({ nightly, sleepDebt, loading }: SleepAnalyticsChartProps) {
-  if (loading) {
-    return <ChartLoadingSkeleton height={350} />;
-  }
-
-  if (nightly.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-[350px]">
-        <span className="text-zinc-600 text-sm">No sleep data</span>
-      </div>
-    );
-  }
-
-  const option = buildSleepAnalyticsOption(nightly, sleepDebt);
-
-  return <ReactECharts option={option} style={{ height: 350 }} notMerge={true} />;
+  return (
+    <ChartContainer loading={!!loading} data={nightly} height={350} emptyMessage="No sleep data">
+      <ReactECharts
+        option={buildSleepAnalyticsOption(nightly, sleepDebt)}
+        style={{ height: 350 }}
+        notMerge={true}
+      />
+    </ChartContainer>
+  );
 }

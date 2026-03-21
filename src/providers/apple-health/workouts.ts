@@ -14,7 +14,7 @@ export interface HealthWorkout {
   routeLocations?: RouteLocation[];
 }
 
-// Map HKWorkoutActivityType* to normalized lowercase names
+/** Apple Health HKWorkoutActivityType → normalized lowercase name */
 export const WORKOUT_TYPE_MAP: Record<string, string> = {
   HKWorkoutActivityTypeAmericanFootball: "american_football",
   HKWorkoutActivityTypeArchery: "archery",

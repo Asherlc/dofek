@@ -127,3 +127,22 @@ export function formatTime(iso: string): string {
     hour12: true,
   });
 }
+
+/** Format a number with a fixed number of decimal places. Returns "--" for non-finite values. */
+export function formatNumber(value: number, decimals = 1): string {
+  if (!Number.isFinite(value)) return "--";
+  return value.toFixed(decimals);
+}
+
+/** Format a ratio (0–1) as a percentage string. Returns "--" for non-finite values. */
+export function formatPercent(value: number, decimals = 0): string {
+  if (!Number.isFinite(value)) return "--";
+  return `${(value * 100).toFixed(decimals)}%`;
+}
+
+/** Format a number with explicit +/- sign prefix. Zero has no sign. Returns "--" for non-finite values. */
+export function formatSigned(value: number, decimals = 1): string {
+  if (!Number.isFinite(value)) return "--";
+  if (value > 0) return `+${value.toFixed(decimals)}`;
+  return value.toFixed(decimals);
+}

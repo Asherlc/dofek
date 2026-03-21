@@ -1,5 +1,6 @@
 import type { VolumeOverTimeRow } from "dofek-server/types";
 import ReactECharts from "echarts-for-react";
+import { formatNumber } from "../lib/format.ts";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface StrengthVolumeChartProps {
@@ -57,7 +58,7 @@ export function StrengthVolumeChart({ data, loading }: StrengthVolumeChartProps)
         color: "#71717a",
         fontSize: 11,
         formatter(value: number) {
-          return value >= 1000 ? `${(value / 1000).toFixed(1)}k` : String(value);
+          return value >= 1000 ? `${formatNumber(value / 1000)}k` : String(value);
         },
       },
       splitLine: { lineStyle: { color: "#27272a" } },
