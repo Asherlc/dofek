@@ -23,25 +23,16 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "Overview",
+          title: "Dashboard",
           tabBarIcon: ({ focused }) => (
             <TabIcon label={"\u2764\uFE0F"} focused={focused} />
           ),
         }}
       />
       <Tabs.Screen
-        name="sleep"
-        options={{
-          title: "Sleep",
-          tabBarIcon: ({ focused }) => (
-            <TabIcon label={"\uD83C\uDF19"} focused={focused} />
-          ),
-        }}
-      />
-      <Tabs.Screen
         name="strain"
         options={{
-          title: "Strain",
+          title: "Training",
           tabBarIcon: ({ focused }) => (
             <TabIcon label={"\u26A1"} focused={focused} />
           ),
@@ -50,7 +41,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="food"
         options={{
-          title: "Food",
+          title: "Nutrition",
           tabBarIcon: ({ focused }) => (
             <TabIcon label={"\uD83C\uDF4E"} focused={focused} />
           ),
@@ -59,9 +50,9 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="metrics"
         options={{
-          title: "Trends",
+          title: "Body",
           tabBarIcon: ({ focused }) => (
-            <TabIcon label={"\uD83D\uDCC8"} focused={focused} />
+            <TabIcon label={"\uD83E\uDDA0"} focused={focused} />
           ),
         }}
       />
@@ -70,7 +61,7 @@ export default function TabsLayout() {
         options={{
           title: "More",
           tabBarIcon: ({ focused }) => (
-            <TabIcon label={"\u2699\uFE0F"} focused={focused} />
+            <TabIcon label={"\u2630"} focused={focused} />
           ),
         }}
       />

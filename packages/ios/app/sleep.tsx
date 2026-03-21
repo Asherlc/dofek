@@ -1,14 +1,14 @@
 import { useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
-import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
-import { DaySelector } from "../../components/DaySelector";
-import { MetricCard } from "../../components/MetricCard";
-import { SleepBar } from "../../components/charts/SleepBar";
-import { SparkLine } from "../../components/charts/SparkLine";
+import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
+import { DaySelector } from "../components/DaySelector";
+import { MetricCard } from "../components/MetricCard";
+import { SleepBar } from "../components/charts/SleepBar";
+import { SparkLine } from "../components/charts/SparkLine";
 import { formatHour, formatSleepDebt } from "@dofek/format/format";
-import { trpc } from "../../lib/trpc";
-import type { SleepConsistencyRow, SleepNightlyRow } from "../../types/api";
-import { colors } from "../../theme";
+import { trpc } from "../lib/trpc";
+import type { SleepConsistencyRow, SleepNightlyRow } from "../types/api";
+import { colors } from "../theme";
 
 export default function SleepScreen() {
   const [days, setDays] = useState(30);
