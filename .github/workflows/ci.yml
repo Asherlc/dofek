@@ -76,14 +76,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec vitest run --project unit --reporter=blob --coverage.enabled --coverage.reporter=json --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 --coverage.thresholds.statements=0
-      - run: mv .vitest-reports/blob.json .vitest-reports/unit.json
-      - uses: actions/upload-artifact@v4
-        with:
-          name: blob-unit
-          path: .vitest-reports/
-          include-hidden-files: true
-          retention-days: 1
+      - run: pnpm exec vitest run --project unit
 
   test-integration:
     name: Integration Tests
@@ -122,20 +115,39 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec vitest run --project integration --reporter=blob --reporter=verbose --coverage.enabled --coverage.reporter=json --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 --coverage.thresholds.statements=0
+      - run: pnpm exec vitest run --project integration --reporter=verbose
         timeout-minutes: 10
-      - run: mv .vitest-reports/blob.json .vitest-reports/integration.json
-      - uses: actions/upload-artifact@v4
-        with:
-          name: blob-integration
-          path: .vitest-reports/
-          include-hidden-files: true
-          retention-days: 1
 
   coverage:
     name: Coverage
     needs: [test-unit, test-integration]
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: timescale/timescaledb:latest-pg16
+        env:
+          POSTGRES_DB: test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d test"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      TEST_DATABASE_URL: postgres://test:test@localhost:5432/test
+      REDIS_URL: redis://localhost:6379
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -144,12 +156,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: blob-*
-          path: .vitest-reports/
-          merge-multiple: true
-      - run: pnpm exec vitest --merge-reports --coverage
+      - run: pnpm exec vitest run --coverage
 
   test-ios:
     name: iOS Tests
