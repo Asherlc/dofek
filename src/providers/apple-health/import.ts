@@ -354,6 +354,12 @@ export async function importClinicalRecords(
 ): Promise<{ inserted: number; skipped: number; errors: SyncError[] }> {
   const errors: SyncError[] = [];
 
+  // Delete existing clinical records for this provider so re-imports
+  // don't create duplicate panels (lab_result FK references lab_panel,
+  // so lab_result must be deleted first).
+  await db.delete(labResult).where(eq(labResult.providerId, providerId));
+  await db.delete(labPanel).where(eq(labPanel.providerId, providerId));
+
   // Read all FHIR JSON files from the zip
   const clinicalFiles = await readZipEntries(
     zipPath,
