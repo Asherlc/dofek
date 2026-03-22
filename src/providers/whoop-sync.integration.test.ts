@@ -518,7 +518,7 @@ describe("WhoopProvider.sync() (integration)", () => {
       .where(eq(journalEntry.providerId, "whoop"));
 
     expect(rows.length).toBeGreaterThanOrEqual(3);
-    const caffeine = rows.find((r) => r.question === "caffeine");
+    const caffeine = rows.find((r) => r.questionSlug === "caffeine");
     expect(caffeine).toBeDefined();
     expect(caffeine?.answerNumeric).toBe(2);
     expect(caffeine?.impactScore).toBe(0.5);
@@ -599,7 +599,7 @@ describe("WhoopProvider.sync() (integration)", () => {
       .select()
       .from(journalEntry)
       .where(eq(journalEntry.providerId, "whoop"));
-    const caffeine = rows.find((r) => r.question === "caffeine");
+    const caffeine = rows.find((r) => r.questionSlug === "caffeine");
     expect(caffeine).toBeDefined();
   });
 

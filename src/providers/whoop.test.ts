@@ -1772,14 +1772,14 @@ describe("WhoopProvider.sync() — journal sync", () => {
 
     // Verify journal entry inserts
     const valuesCallArgs = getValuesCallArgs(db);
-    const caffeineInsert = findValuesRecord(valuesCallArgs, (rec) => rec.question === "caffeine");
+    const caffeineInsert = findValuesRecord(valuesCallArgs, (rec) => rec.questionSlug === "caffeine");
     expect(caffeineInsert).toBeDefined();
     expect(caffeineInsert?.providerId).toBe("whoop");
     expect(caffeineInsert?.date).toBe("2026-03-01");
     expect(caffeineInsert?.answerNumeric).toBe(2);
     expect(caffeineInsert?.impactScore).toBe(0.3);
 
-    const alcoholInsert = findValuesRecord(valuesCallArgs, (rec) => rec.question === "alcohol");
+    const alcoholInsert = findValuesRecord(valuesCallArgs, (rec) => rec.questionSlug === "alcohol");
     expect(alcoholInsert).toBeDefined();
     expect(alcoholInsert?.answerText).toBe("none");
     expect(alcoholInsert?.impactScore).toBe(-0.1);
