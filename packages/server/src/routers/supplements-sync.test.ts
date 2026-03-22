@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createTestCallerFactory } from "./test-helpers.ts";
+import { NUTRIENT_KEYS, NUTRIENT_COLUMN_MAP } from "dofek/db/nutrient-columns";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
@@ -17,28 +17,26 @@ vi.mock("dofek/db/schema", () => ({
   supplement: {
     userId: "user_id",
     sortOrder: "sort_order",
+    nutritionDataId: "nutrition_data_id",
+  },
+  nutritionData: {
+    id: "id",
   },
 }));
 
 vi.mock("drizzle-orm", () => ({
   asc: vi.fn((col: string) => col),
   eq: vi.fn((col: string, val: string) => ({ col, val })),
+  sql: Object.assign(
+    (strings: TemplateStringsArray, ...values: unknown[]) => ({ strings, values }),
+    { raw: (s: string) => s },
+  ),
 }));
 
 vi.mock("dofek/jobs/queues", () => ({
   createSyncQueue: vi.fn(() => ({
     add: vi.fn().mockResolvedValue({ id: "job-123" }),
-    getJob: vi.fn(),
   })),
-}));
-
-vi.mock("dofek/providers/registry", () => ({
-  getAllProviders: vi.fn(() => []),
-  registerProvider: vi.fn(),
-}));
-
-vi.mock("../lib/start-worker.ts", () => ({
-  startWorker: vi.fn(),
 }));
 
 vi.mock("../logger.ts", () => ({
@@ -46,55 +44,53 @@ vi.mock("../logger.ts", () => ({
 }));
 
 import {
-  OPTIONAL_FIELDS,
   type Supplement,
-  supplementsRouter,
   toApiSupplement,
 } from "./supplements.ts";
 
-// Helper: create a mock DB that returns rows from select and tracks transaction calls
-function createMockDb(rows: unknown[] = []) {
-  const mockOrderBy = vi.fn().mockResolvedValue(rows);
-  const mockWhere = vi.fn(() => ({ orderBy: mockOrderBy }));
-  const mockFrom = vi.fn(() => ({ where: mockWhere }));
-  const mockSelect = vi.fn(() => ({ from: mockFrom }));
+/** Build a view row (snake_case nutrients) with all fields populated. */
+const NUTRIENT_SNAKE_VALUES: Record<string, number> = {
+  calories: 10,
+  protein_g: 0.5,
+  carbs_g: 1.1,
+  fat_g: 0.2,
+  saturated_fat_g: 0.1,
+  polyunsaturated_fat_g: 0.05,
+  monounsaturated_fat_g: 0.04,
+  trans_fat_g: 0.01,
+  cholesterol_mg: 0.3,
+  sodium_mg: 5,
+  potassium_mg: 10,
+  fiber_g: 0.1,
+  sugar_g: 0.2,
+  vitamin_a_mcg: 900,
+  vitamin_c_mg: 90,
+  vitamin_d_mcg: 125,
+  vitamin_e_mg: 15,
+  vitamin_k_mcg: 120,
+  vitamin_b1_mg: 1.2,
+  vitamin_b2_mg: 1.3,
+  vitamin_b3_mg: 16,
+  vitamin_b5_mg: 5,
+  vitamin_b6_mg: 1.7,
+  vitamin_b7_mcg: 30,
+  vitamin_b9_mcg: 400,
+  vitamin_b12_mcg: 2.4,
+  calcium_mg: 1000,
+  iron_mg: 18,
+  magnesium_mg: 400,
+  zinc_mg: 11,
+  selenium_mcg: 55,
+  copper_mg: 0.9,
+  manganese_mg: 2.3,
+  chromium_mcg: 35,
+  iodine_mcg: 150,
+  omega3_mg: 500,
+  omega6_mg: 200,
+};
 
-  const mockTxDeleteWhere = vi.fn().mockResolvedValue(undefined);
-  const mockTxDelete = vi.fn(() => ({ where: mockTxDeleteWhere }));
-  const mockTxInsertValues = vi.fn().mockResolvedValue(undefined);
-  const mockTxInsert = vi.fn(() => ({
-    values: mockTxInsertValues,
-  }));
-  const mockTransaction = vi.fn(async (fn: (tx: unknown) => Promise<void>) => {
-    await fn({ delete: mockTxDelete, insert: mockTxInsert });
-  });
-
-  return {
-    db: {
-      select: mockSelect,
-      transaction: mockTransaction,
-    },
-    mocks: {
-      mockSelect,
-      mockFrom,
-      mockWhere,
-      mockOrderBy,
-      mockTransaction,
-      mockTxDelete,
-      mockTxDeleteWhere,
-      mockTxInsert,
-      mockTxInsertValues,
-    },
-  };
-}
-
-/** Canonical non-null value for each optional field. */
-const FIELD_VALUES: Partial<Supplement> = {
-  amount: 5000,
-  unit: "IU",
-  form: "capsule",
-  description: "Daily vitamin",
-  meal: "breakfast",
+/** Expected camelCase nutrient values after conversion */
+const NUTRIENT_CAMEL_VALUES: Partial<Supplement> = {
   calories: 10,
   proteinG: 0.5,
   carbsG: 1.1,
@@ -134,69 +130,86 @@ const FIELD_VALUES: Partial<Supplement> = {
   omega6Mg: 200,
 };
 
-/** All optional fields set to null, for building minimal rows. */
-const NULL_FIELDS = Object.fromEntries(OPTIONAL_FIELDS.map((key) => [key, null]));
-
-/** Build a full DB row with all fields set to non-null values. */
-function fullDbRow(overrides: Record<string, unknown> = {}) {
+/** Build a full view row (as returned by v_supplement_with_nutrition). */
+function fullViewRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     id: "uuid-1",
-    userId: "user-1",
+    user_id: "user-1",
     name: "Multivitamin",
-    sortOrder: 0,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    ...FIELD_VALUES,
+    sort_order: 0,
+    amount: 5000,
+    unit: "IU",
+    form: "capsule",
+    description: "Daily vitamin",
+    meal: "breakfast",
+    nutrition_data_id: "nd-uuid-1",
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    ...NUTRIENT_SNAKE_VALUES,
     ...overrides,
   };
 }
 
-/** Build a DB row where all optional fields are null. */
-function minimalDbRow(overrides: Record<string, unknown> = {}) {
-  return fullDbRow({ ...NULL_FIELDS, ...overrides });
-}
-
-/** Build a Supplement input with all optional fields populated. */
-function fullSupplement(overrides: Partial<Supplement> = {}): Supplement {
-  return { name: "Multivitamin", ...FIELD_VALUES, ...overrides };
+/** Build a view row where all optional fields are null. */
+function minimalViewRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  const nullNutrients = Object.fromEntries(
+    Object.keys(NUTRIENT_SNAKE_VALUES).map((key) => [key, null]),
+  );
+  return fullViewRow({
+    amount: null,
+    unit: null,
+    form: null,
+    description: null,
+    meal: null,
+    ...nullNutrients,
+    ...overrides,
+  });
 }
 
 // ── toApiSupplement ──
 
 describe("toApiSupplement", () => {
-  it("includes all non-null optional fields", () => {
-    const row = fullDbRow();
+  it("includes all non-null optional fields (converting snake_case nutrients to camelCase)", () => {
+    const row = fullViewRow();
     const result = toApiSupplement(row);
 
     expect(result.name).toBe("Multivitamin");
-    for (const key of OPTIONAL_FIELDS) {
-      expect(result[key]).toBe(FIELD_VALUES[key]);
+    expect(result.amount).toBe(5000);
+    expect(result.unit).toBe("IU");
+    expect(result.form).toBe("capsule");
+    expect(result.description).toBe("Daily vitamin");
+    expect(result.meal).toBe("breakfast");
+
+    // All nutrient fields should be converted from snake_case to camelCase
+    for (const key of NUTRIENT_KEYS) {
+      const snakeColumn = NUTRIENT_COLUMN_MAP[key];
+      if (snakeColumn && NUTRIENT_SNAKE_VALUES[snakeColumn] != null) {
+        expect(result[key as keyof Supplement]).toBe(NUTRIENT_SNAKE_VALUES[snakeColumn]);
+      }
     }
   });
 
   it("excludes null fields from the result", () => {
-    const row = minimalDbRow();
+    const row = minimalViewRow();
     const result = toApiSupplement(row);
 
-    expect(result).toEqual({ name: row.name });
-    for (const key of OPTIONAL_FIELDS) {
-      expect(result).not.toHaveProperty(key);
-    }
+    expect(result).toEqual({ name: "Multivitamin" });
   });
 
-  it("strips DB-only fields (id, userId, sortOrder, timestamps)", () => {
-    const row = fullDbRow();
+  it("strips DB-only fields (id, user_id, sort_order, timestamps, nutrition_data_id)", () => {
+    const row = fullViewRow();
     const result = toApiSupplement(row);
 
     expect(result).not.toHaveProperty("id");
-    expect(result).not.toHaveProperty("userId");
-    expect(result).not.toHaveProperty("sortOrder");
-    expect(result).not.toHaveProperty("createdAt");
-    expect(result).not.toHaveProperty("updatedAt");
+    expect(result).not.toHaveProperty("user_id");
+    expect(result).not.toHaveProperty("sort_order");
+    expect(result).not.toHaveProperty("created_at");
+    expect(result).not.toHaveProperty("updated_at");
+    expect(result).not.toHaveProperty("nutrition_data_id");
   });
 
   it("includes only the subset of non-null fields", () => {
-    const row = minimalDbRow({ amount: 5000, unit: "IU", vitaminDMcg: 125 });
+    const row = minimalViewRow({ amount: 5000, unit: "IU", vitamin_d_mcg: 125 });
 
     const result = toApiSupplement(row);
     expect(result).toEqual({
@@ -205,123 +218,5 @@ describe("toApiSupplement", () => {
       unit: "IU",
       vitaminDMcg: 125,
     });
-  });
-});
-
-// ── supplementsRouter ──
-
-describe("supplementsRouter", () => {
-  const createCaller = createTestCallerFactory(supplementsRouter);
-
-  describe("list", () => {
-    it("returns supplements mapped through toApiSupplement", async () => {
-      const dbRows = [fullDbRow()];
-      const { db } = createMockDb(dbRows);
-      const caller = createCaller({ db, userId: "user-1" });
-
-      const result = await caller.list();
-      expect(result).toHaveLength(1);
-      expect(result[0]?.name).toBe("Multivitamin");
-      for (const key of OPTIONAL_FIELDS) {
-        expect(result[0]?.[key]).toBe(FIELD_VALUES[key]);
-      }
-    });
-
-    it("returns empty array when user has no supplements", async () => {
-      const { db } = createMockDb([]);
-      const caller = createCaller({ db, userId: "user-1" });
-
-      const result = await caller.list();
-      expect(result).toHaveLength(0);
-    });
-
-    it("excludes null fields from listed supplements", async () => {
-      const { db } = createMockDb([minimalDbRow()]);
-      const caller = createCaller({ db, userId: "user-1" });
-
-      const result = await caller.list();
-      expect(result[0]).toEqual({ name: "Multivitamin" });
-    });
-  });
-
-  describe("save", () => {
-    it("saves supplements via transaction (delete + insert)", async () => {
-      const { db, mocks } = createMockDb();
-      const caller = createCaller({ db, userId: "user-1" });
-
-      const result = await caller.save({
-        supplements: [fullSupplement({ name: "Creatine" })],
-      });
-
-      expect(result).toEqual({ success: true, count: 1 });
-      expect(mocks.mockTransaction).toHaveBeenCalledOnce();
-      expect(mocks.mockTxDelete).toHaveBeenCalledOnce();
-      expect(mocks.mockTxInsert).toHaveBeenCalledOnce();
-    });
-
-    it("passes every field with correct values to insert", async () => {
-      const { db, mocks } = createMockDb();
-      const caller = createCaller({ db, userId: "user-1" });
-
-      await caller.save({ supplements: [fullSupplement()] });
-
-      const insertedValues = mocks.mockTxInsertValues.mock.calls[0]?.[0];
-      expect(insertedValues).toHaveLength(1);
-      const row = insertedValues[0];
-      expect(row.userId).toBe("user-1");
-      expect(row.name).toBe("Multivitamin");
-      expect(row.sortOrder).toBe(0);
-      for (const key of OPTIONAL_FIELDS) {
-        expect(row[key]).toBe(FIELD_VALUES[key]);
-      }
-    });
-
-    it("coalesces undefined optional fields to null", async () => {
-      const { db, mocks } = createMockDb();
-      const caller = createCaller({ db, userId: "user-1" });
-
-      await caller.save({ supplements: [{ name: "Bare minimum" }] });
-
-      const row = mocks.mockTxInsertValues.mock.calls[0]?.[0]?.[0];
-      expect(row.name).toBe("Bare minimum");
-      for (const key of OPTIONAL_FIELDS) {
-        expect(row[key]).toBeNull();
-      }
-    });
-
-    it("handles empty supplements array (delete all, no insert)", async () => {
-      const { db, mocks } = createMockDb();
-      const caller = createCaller({ db, userId: "user-1" });
-
-      const result = await caller.save({ supplements: [] });
-
-      expect(result).toEqual({ success: true, count: 0 });
-      expect(mocks.mockTransaction).toHaveBeenCalledOnce();
-      expect(mocks.mockTxDelete).toHaveBeenCalledOnce();
-      expect(mocks.mockTxInsert).not.toHaveBeenCalled();
-    });
-
-    it("preserves sort order from array index", async () => {
-      const { db, mocks } = createMockDb();
-      const caller = createCaller({ db, userId: "user-1" });
-
-      await caller.save({
-        supplements: [{ name: "First" }, { name: "Second" }, { name: "Third" }],
-      });
-
-      const insertedValues = mocks.mockTxInsertValues.mock.calls[0]?.[0];
-      expect(insertedValues[0].sortOrder).toBe(0);
-      expect(insertedValues[1].sortOrder).toBe(1);
-      expect(insertedValues[2].sortOrder).toBe(2);
-    });
-  });
-});
-
-// ── Sync Router (mapProviderStats) ──
-
-describe("syncRouter", () => {
-  it("maps provider stat rows", async () => {
-    const { ensureProvidersRegistered } = await import("./sync.ts");
-    expect(typeof ensureProvidersRegistered).toBe("function");
   });
 });

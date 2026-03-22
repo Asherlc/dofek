@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { SyncDatabase } from "../db/index.ts";
-import { foodEntry, nutritionDaily } from "../db/schema.ts";
+import { foodEntry, nutritionDaily, nutritionData } from "../db/schema.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import type { ImportProvider, SyncError, SyncResult } from "./types.ts";
 
@@ -281,6 +281,52 @@ export async function importCronometerCsv(
       // Round calories to integer for the integer column
       const caloriesInt = entry.calories !== null ? Math.round(entry.calories) : null;
 
+      // Insert nutrition_data first
+      const nutritionValues = {
+        calories: caloriesInt,
+        proteinG: entry.proteinG,
+        carbsG: entry.carbsG,
+        fatG: entry.fatG,
+        fiberG: entry.fiberG,
+        saturatedFatG: entry.saturatedFatG,
+        polyunsaturatedFatG: entry.polyunsaturatedFatG,
+        monounsaturatedFatG: entry.monounsaturatedFatG,
+        transFatG: entry.transFatG,
+        cholesterolMg: entry.cholesterolMg,
+        sodiumMg: entry.sodiumMg,
+        potassiumMg: entry.potassiumMg,
+        sugarG: entry.sugarG,
+        vitaminAMcg: entry.vitaminAMcg,
+        vitaminCMg: entry.vitaminCMg,
+        vitaminDMcg: entry.vitaminDMcg,
+        vitaminEMg: entry.vitaminEMg,
+        vitaminKMcg: entry.vitaminKMcg,
+        vitaminB1Mg: entry.vitaminB1Mg,
+        vitaminB2Mg: entry.vitaminB2Mg,
+        vitaminB3Mg: entry.vitaminB3Mg,
+        vitaminB5Mg: entry.vitaminB5Mg,
+        vitaminB6Mg: entry.vitaminB6Mg,
+        vitaminB7Mcg: entry.vitaminB7Mcg,
+        vitaminB9Mcg: entry.vitaminB9Mcg,
+        vitaminB12Mcg: entry.vitaminB12Mcg,
+        calciumMg: entry.calciumMg,
+        ironMg: entry.ironMg,
+        magnesiumMg: entry.magnesiumMg,
+        zincMg: entry.zincMg,
+        seleniumMcg: entry.seleniumMcg,
+        copperMg: entry.copperMg,
+        manganeseMg: entry.manganeseMg,
+        chromiumMcg: entry.chromiumMcg,
+        iodineMcg: entry.iodineMcg,
+        omega3Mg: entry.omega3Mg,
+        omega6Mg: entry.omega6Mg,
+      };
+
+      const [ndRow] = await db
+        .insert(nutritionData)
+        .values(nutritionValues)
+        .returning({ id: nutritionData.id });
+
       await db
         .insert(foodEntry)
         .values({
@@ -292,49 +338,7 @@ export async function importCronometerCsv(
           foodName: entry.foodName,
           numberOfUnits: entry.amount,
           servingUnit: entry.unit,
-          // Macros
-          calories: caloriesInt,
-          proteinG: entry.proteinG,
-          carbsG: entry.carbsG,
-          fatG: entry.fatG,
-          fiberG: entry.fiberG,
-          // Fat breakdown
-          saturatedFatG: entry.saturatedFatG,
-          polyunsaturatedFatG: entry.polyunsaturatedFatG,
-          monounsaturatedFatG: entry.monounsaturatedFatG,
-          transFatG: entry.transFatG,
-          // Other
-          cholesterolMg: entry.cholesterolMg,
-          sodiumMg: entry.sodiumMg,
-          potassiumMg: entry.potassiumMg,
-          sugarG: entry.sugarG,
-          // Vitamins
-          vitaminAMcg: entry.vitaminAMcg,
-          vitaminCMg: entry.vitaminCMg,
-          vitaminDMcg: entry.vitaminDMcg,
-          vitaminEMg: entry.vitaminEMg,
-          vitaminKMcg: entry.vitaminKMcg,
-          vitaminB1Mg: entry.vitaminB1Mg,
-          vitaminB2Mg: entry.vitaminB2Mg,
-          vitaminB3Mg: entry.vitaminB3Mg,
-          vitaminB5Mg: entry.vitaminB5Mg,
-          vitaminB6Mg: entry.vitaminB6Mg,
-          vitaminB7Mcg: entry.vitaminB7Mcg,
-          vitaminB9Mcg: entry.vitaminB9Mcg,
-          vitaminB12Mcg: entry.vitaminB12Mcg,
-          // Minerals
-          calciumMg: entry.calciumMg,
-          ironMg: entry.ironMg,
-          magnesiumMg: entry.magnesiumMg,
-          zincMg: entry.zincMg,
-          seleniumMcg: entry.seleniumMcg,
-          copperMg: entry.copperMg,
-          manganeseMg: entry.manganeseMg,
-          chromiumMcg: entry.chromiumMcg,
-          iodineMcg: entry.iodineMcg,
-          // Fatty acids
-          omega3Mg: entry.omega3Mg,
-          omega6Mg: entry.omega6Mg,
+          nutritionDataId: ndRow?.id,
         })
         .onConflictDoUpdate({
           target: [foodEntry.providerId, foodEntry.externalId],
@@ -344,43 +348,7 @@ export async function importCronometerCsv(
             foodName: entry.foodName,
             numberOfUnits: entry.amount,
             servingUnit: entry.unit,
-            calories: caloriesInt,
-            proteinG: entry.proteinG,
-            carbsG: entry.carbsG,
-            fatG: entry.fatG,
-            fiberG: entry.fiberG,
-            saturatedFatG: entry.saturatedFatG,
-            polyunsaturatedFatG: entry.polyunsaturatedFatG,
-            monounsaturatedFatG: entry.monounsaturatedFatG,
-            transFatG: entry.transFatG,
-            cholesterolMg: entry.cholesterolMg,
-            sodiumMg: entry.sodiumMg,
-            potassiumMg: entry.potassiumMg,
-            sugarG: entry.sugarG,
-            vitaminAMcg: entry.vitaminAMcg,
-            vitaminCMg: entry.vitaminCMg,
-            vitaminDMcg: entry.vitaminDMcg,
-            vitaminEMg: entry.vitaminEMg,
-            vitaminKMcg: entry.vitaminKMcg,
-            vitaminB1Mg: entry.vitaminB1Mg,
-            vitaminB2Mg: entry.vitaminB2Mg,
-            vitaminB3Mg: entry.vitaminB3Mg,
-            vitaminB5Mg: entry.vitaminB5Mg,
-            vitaminB6Mg: entry.vitaminB6Mg,
-            vitaminB7Mcg: entry.vitaminB7Mcg,
-            vitaminB9Mcg: entry.vitaminB9Mcg,
-            vitaminB12Mcg: entry.vitaminB12Mcg,
-            calciumMg: entry.calciumMg,
-            ironMg: entry.ironMg,
-            magnesiumMg: entry.magnesiumMg,
-            zincMg: entry.zincMg,
-            seleniumMcg: entry.seleniumMcg,
-            copperMg: entry.copperMg,
-            manganeseMg: entry.manganeseMg,
-            chromiumMcg: entry.chromiumMcg,
-            iodineMcg: entry.iodineMcg,
-            omega3Mg: entry.omega3Mg,
-            omega6Mg: entry.omega6Mg,
+            nutritionDataId: ndRow?.id,
           },
         });
 
