@@ -115,6 +115,47 @@ describe("parseRecovery — edge cases", () => {
   });
 });
 
+describe("parseSleep — invalid timestamps", () => {
+  function sleepRecord(overrides: Partial<WhoopSleepRecord> = {}): WhoopSleepRecord {
+    return {
+      id: 400,
+      user_id: 10129,
+      created_at: "2026-03-01T06:00:00Z",
+      updated_at: "2026-03-01T06:30:00Z",
+      start: "2026-02-28T23:00:00Z",
+      end: "2026-03-01T07:00:00Z",
+      timezone_offset: "-05:00",
+      nap: false,
+      score_state: "PENDING",
+      ...overrides,
+    };
+  }
+
+  it("throws with descriptive message for empty start timestamp", () => {
+    expect(() => parseSleep(sleepRecord({ start: "" }))).toThrow("Invalid start timestamp");
+  });
+
+  it("throws with descriptive message for non-date start timestamp", () => {
+    expect(() => parseSleep(sleepRecord({ start: "not-a-date" }))).toThrow(
+      "Invalid start timestamp",
+    );
+  });
+
+  it("throws with descriptive message for empty end timestamp", () => {
+    expect(() => parseSleep(sleepRecord({ end: "" }))).toThrow("Invalid end timestamp");
+  });
+
+  it("includes the raw value in the error message", () => {
+    expect(() => parseSleep(sleepRecord({ start: "garbage" }))).toThrow('"garbage"');
+  });
+
+  it("succeeds with valid timestamps", () => {
+    const parsed = parseSleep(sleepRecord());
+    expect(parsed.startedAt).toEqual(new Date("2026-02-28T23:00:00Z"));
+    expect(parsed.endedAt).toEqual(new Date("2026-03-01T07:00:00Z"));
+  });
+});
+
 describe("parseSleep — edge cases", () => {
   it("handles sleep record without score", () => {
     const record: WhoopSleepRecord = {

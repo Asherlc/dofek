@@ -116,14 +116,24 @@ export interface ParsedSleep {
 }
 
 export function parseSleep(record: WhoopSleepRecord): ParsedSleep {
+  const startedAt = new Date(record.start);
+  const endedAt = new Date(record.end);
+
+  if (Number.isNaN(startedAt.getTime())) {
+    throw new Error(`Invalid start timestamp: ${JSON.stringify(record.start)}`);
+  }
+  if (Number.isNaN(endedAt.getTime())) {
+    throw new Error(`Invalid end timestamp: ${JSON.stringify(record.end)}`);
+  }
+
   const stages = record.score?.stage_summary;
   const totalSleepMilli =
     (stages?.total_in_bed_time_milli ?? 0) - (stages?.total_awake_time_milli ?? 0);
 
   return {
     externalId: String(record.id),
-    startedAt: new Date(record.start),
-    endedAt: new Date(record.end),
+    startedAt,
+    endedAt,
     durationMinutes: milliToMinutes(totalSleepMilli),
     deepMinutes: milliToMinutes(stages?.total_slow_wave_sleep_time_milli ?? 0),
     remMinutes: milliToMinutes(stages?.total_rem_sleep_time_milli ?? 0),
