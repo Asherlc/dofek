@@ -1,5 +1,4 @@
 export {
   type FoodDatabaseResult,
-  lookupBarcode,
-  searchFoods,
+  OpenFoodFactsClient,
 } from "@dofek/nutrition/open-food-facts";

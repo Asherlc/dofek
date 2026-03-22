@@ -17,13 +17,8 @@ import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { TimeSeriesChart } from "../components/TimeSeriesChart.tsx";
 import { chartColors } from "../lib/chartTheme.ts";
 import { trpc } from "../lib/trpc.ts";
-import { useUnitSystem } from "../lib/unitContext.ts";
-import {
-  convertTemperature,
-  scaleTemperatureStddev,
-  temperatureLabel,
-  type UnitSystem,
-} from "../lib/units.ts";
+import { useUnitConverter } from "../lib/unitContext.ts";
+import type { UnitConverter } from "../lib/units.ts";
 import { assertRows } from "../lib/utils.ts";
 
 const trendRowSchema = z.object({
@@ -71,13 +66,13 @@ function isBodyInsight(metric: string): boolean {
 
 function buildSkinTempSeries(
   metrics: Array<{ date: string; skin_temp_c: number | null }>,
-  unitSystem: UnitSystem,
+  units: UnitConverter,
 ) {
   return {
     name: "Skin Temp",
     data: metrics.map((d): [string, number | null] => [
       d.date,
-      d.skin_temp_c != null ? convertTemperature(d.skin_temp_c, unitSystem) : null,
+      d.skin_temp_c != null ? units.convertTemperature(d.skin_temp_c) : null,
     ]),
     color: chartColors.amber,
     yAxisIndex: 1 as const,
@@ -85,7 +80,7 @@ function buildSkinTempSeries(
 }
 
 export function BodyPage() {
-  const { unitSystem } = useUnitSystem();
+  const units = useUnitConverter();
   const [days, setDays] = useState(30);
 
   const trends = trpc.dailyMetrics.trends.useQuery({ days });
@@ -112,10 +107,7 @@ export function BodyPage() {
     [metrics],
   );
 
-  const skinTempSeries = useMemo(
-    () => buildSkinTempSeries(metrics, unitSystem),
-    [metrics, unitSystem],
-  );
+  const skinTempSeries = useMemo(() => buildSkinTempSeries(metrics, units), [metrics, units]);
 
   const healthMetrics = useMemo(() => {
     if (!trendData) return [];
@@ -145,20 +137,20 @@ export function BodyPage() {
       },
       trendData.latest_skin_temp != null && {
         label: "Skin Temp",
-        value: convertTemperature(trendData.latest_skin_temp, unitSystem),
+        value: units.convertTemperature(trendData.latest_skin_temp),
         avg:
           trendData.avg_skin_temp != null
-            ? convertTemperature(trendData.avg_skin_temp, unitSystem)
+            ? units.convertTemperature(trendData.avg_skin_temp)
             : null,
         stddev:
           trendData.stddev_skin_temp != null
-            ? scaleTemperatureStddev(trendData.stddev_skin_temp, unitSystem)
+            ? units.scaleTemperatureStddev(trendData.stddev_skin_temp)
             : null,
-        unit: temperatureLabel(unitSystem),
+        unit: units.temperatureLabel,
       },
     ];
     return entries.filter((entry): entry is MetricEntry => entry !== false);
-  }, [trendData, unitSystem]);
+  }, [trendData, units]);
 
   const bodyInsights = useMemo(() => {
     const all: Insight[] = insightsQuery.data ?? [];
@@ -177,10 +169,10 @@ export function BodyPage() {
 
   const spo2TempYAxis =
     hasSpO2 && hasSkinTemp
-      ? [{ name: "SpO2 (%)", min: 90 }, { name: temperatureLabel(unitSystem) }]
+      ? [{ name: "SpO2 (%)", min: 90 }, { name: units.temperatureLabel }]
       : hasSpO2
         ? [{ name: "SpO2 (%)", min: 90 }]
-        : [{ name: temperatureLabel(unitSystem) }];
+        : [{ name: units.temperatureLabel }];
 
   return (
     <PageLayout

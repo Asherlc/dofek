@@ -5,8 +5,7 @@ import {
   scoreColor,
   scoreLabel,
   trendDirection,
-  workloadRatioColor,
-  workloadRatioHint,
+  WorkloadRatio,
 } from "./scoring";
 
 describe("scoreColor", () => {
@@ -40,47 +39,49 @@ describe("scoreLabel", () => {
   });
 });
 
-describe("workloadRatioColor", () => {
-  it("returns textSecondary for null", () => {
-    expect(workloadRatioColor(null)).toBe(colors.textSecondary);
+describe("WorkloadRatio", () => {
+  describe("color", () => {
+    it("returns textSecondary for null", () => {
+      expect(new WorkloadRatio(null).color).toBe(colors.textSecondary);
+    });
+
+    it("returns positive for sweet spot (0.8-1.3)", () => {
+      expect(new WorkloadRatio(1.0).color).toBe(colors.positive);
+      expect(new WorkloadRatio(0.8).color).toBe(colors.positive);
+      expect(new WorkloadRatio(1.3).color).toBe(colors.positive);
+    });
+
+    it("returns warning for caution zone", () => {
+      expect(new WorkloadRatio(0.6).color).toBe(colors.warning);
+      expect(new WorkloadRatio(1.4).color).toBe(colors.warning);
+    });
+
+    it("returns danger for extreme values", () => {
+      expect(new WorkloadRatio(0.3).color).toBe(colors.danger);
+      expect(new WorkloadRatio(2.0).color).toBe(colors.danger);
+    });
   });
 
-  it("returns positive for sweet spot (0.8-1.3)", () => {
-    expect(workloadRatioColor(1.0)).toBe(colors.positive);
-    expect(workloadRatioColor(0.8)).toBe(colors.positive);
-    expect(workloadRatioColor(1.3)).toBe(colors.positive);
-  });
+  describe("hint", () => {
+    it("returns optimal for sweet spot", () => {
+      expect(new WorkloadRatio(1.0).hint).toBe("Optimal training zone");
+    });
 
-  it("returns warning for caution zone", () => {
-    expect(workloadRatioColor(0.6)).toBe(colors.warning);
-    expect(workloadRatioColor(1.4)).toBe(colors.warning);
-  });
+    it("returns detraining risk for low ratio", () => {
+      expect(new WorkloadRatio(0.5).hint).toBe(
+        "Detraining risk - increase load gradually",
+      );
+    });
 
-  it("returns danger for extreme values", () => {
-    expect(workloadRatioColor(0.3)).toBe(colors.danger);
-    expect(workloadRatioColor(2.0)).toBe(colors.danger);
-  });
-});
+    it("returns high load warning", () => {
+      expect(new WorkloadRatio(1.4).hint).toBe(
+        "High load - monitor recovery closely",
+      );
+    });
 
-describe("workloadRatioHint", () => {
-  it("returns optimal for sweet spot", () => {
-    expect(workloadRatioHint(1.0)).toBe("Optimal training zone");
-  });
-
-  it("returns detraining risk for low ratio", () => {
-    expect(workloadRatioHint(0.5)).toBe(
-      "Detraining risk - increase load gradually",
-    );
-  });
-
-  it("returns high load warning", () => {
-    expect(workloadRatioHint(1.4)).toBe(
-      "High load - monitor recovery closely",
-    );
-  });
-
-  it("returns injury risk for very high ratio", () => {
-    expect(workloadRatioHint(2.0)).toBe("Injury risk zone - consider rest");
+    it("returns injury risk for very high ratio", () => {
+      expect(new WorkloadRatio(2.0).hint).toBe("Injury risk zone - consider rest");
+    });
   });
 });
 

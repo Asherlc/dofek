@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import { mapXertSport, parseXertActivity, XertProvider, xertOAuthConfig } from "./xert.ts";
+import { getProviderAuthType } from "./types.ts";
+import {
+  mapXertSport,
+  parseXertActivity,
+  signInToXert,
+  XertProvider,
+  xertOAuthConfig,
+} from "./xert.ts";
 
 describe("mapXertSport — all types", () => {
   it("maps all known sports", () => {
@@ -77,15 +84,86 @@ describe("xertOAuthConfig", () => {
   });
 });
 
+describe("signInToXert", () => {
+  it("sends password grant with Basic auth and parses response", async () => {
+    const tokenResponse = {
+      access_token: "test-access-token",
+      refresh_token: "test-refresh-token",
+      expires_in: 3600,
+      token_type: "Bearer",
+    };
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify(tokenResponse), { status: 200 }));
+
+    const result = await signInToXert("user@example.com", "hunter2", mockFetch);
+
+    expect(mockFetch).toHaveBeenCalledOnce();
+    expect(mockFetch).toHaveBeenCalledWith(
+      "https://www.xertonline.com/oauth/token",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          Authorization: expect.stringMatching(/^Basic /),
+          "Content-Type": "application/x-www-form-urlencoded",
+        }),
+      }),
+    );
+
+    const body = new URLSearchParams(String(mockFetch.mock.calls[0]?.[1]?.body));
+    expect(body.get("grant_type")).toBe("password");
+    expect(body.get("username")).toBe("user@example.com");
+    expect(body.get("password")).toBe("hunter2");
+
+    expect(result.accessToken).toBe("test-access-token");
+    expect(result.refreshToken).toBe("test-refresh-token");
+    expect(result.expiresAt).toBeInstanceOf(Date);
+  });
+
+  it("throws on non-OK response", async () => {
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValue(new Response("Invalid credentials", { status: 401 }));
+    await expect(signInToXert("user@example.com", "wrong", mockFetch)).rejects.toThrow(
+      "Xert sign-in failed (401)",
+    );
+  });
+
+  it("uses default 1-year expiry when expires_in is missing", async () => {
+    const tokenResponse = {
+      access_token: "tok",
+      token_type: "Bearer",
+    };
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify(tokenResponse), { status: 200 }));
+    const before = Date.now();
+    const result = await signInToXert("user@example.com", "pass", mockFetch);
+    const oneYearMs = 365 * 24 * 60 * 60 * 1000;
+    expect(result.expiresAt.getTime()).toBeGreaterThanOrEqual(before + oneYearMs - 1000);
+    expect(result.refreshToken).toBeNull();
+  });
+});
+
 describe("XertProvider", () => {
   it("validate returns null (always valid)", () => {
     expect(new XertProvider().validate()).toBeNull();
   });
 
-  it("authSetup returns config", () => {
+  it("authSetup returns config with automatedLogin", () => {
     const setup = new XertProvider().authSetup();
     expect(setup.oauthConfig.clientId).toBeDefined();
     expect(setup.apiBaseUrl).toContain("xertonline.com");
+    expect(setup.automatedLogin).toBeTypeOf("function");
+  });
+
+  it("authSetup.exchangeCode throws (not supported)", async () => {
+    const setup = new XertProvider().authSetup();
+    await expect(setup.exchangeCode("code")).rejects.toThrow("automated login");
+  });
+
+  it("is detected as a credential provider", () => {
+    expect(getProviderAuthType(new XertProvider())).toBe("credential");
   });
 
   it("sync returns error when no tokens", async () => {

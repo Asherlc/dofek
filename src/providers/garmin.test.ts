@@ -1,555 +1,310 @@
-import { afterEach, describe, expect, it } from "vitest";
+import type { GarminTokens } from "garmin-connect";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { TokenSet } from "../auth/oauth.ts";
 import {
-  type GarminActivitySummary,
-  type GarminBodyComposition,
-  GarminClient,
-  type GarminDailySummary,
+  deserializeInternalTokens,
+  eachDay,
+  formatDate,
   GarminProvider,
-  type GarminSleepSummary,
-  garminOAuthConfig,
-  mapGarminActivityType,
-  parseGarminActivity,
-  parseGarminBodyComposition,
-  parseGarminDailySummary,
-  parseGarminSleep,
+  INTERNAL_SCOPE_MARKER,
+  serializeInternalTokens,
 } from "./garmin.ts";
 
 // ============================================================
-// Activity type mapping
+// Hoisted mocks (must be before vi.mock calls)
 // ============================================================
 
-describe("mapGarminActivityType", () => {
-  it("maps running types", () => {
-    expect(mapGarminActivityType("RUNNING")).toBe("running");
-    expect(mapGarminActivityType("TRAIL_RUNNING")).toBe("running");
-    expect(mapGarminActivityType("TREADMILL_RUNNING")).toBe("running");
-    expect(mapGarminActivityType("TRACK_RUNNING")).toBe("running");
+const mocks = vi.hoisted(() => {
+  const client = {
+    getActivities: vi.fn(),
+    getSleepData: vi.fn(),
+    getDailySummary: vi.fn(),
+    getHrvSummary: vi.fn(),
+    getTrainingStatus: vi.fn(),
+    getDailyStress: vi.fn(),
+    getDailyHeartRate: vi.fn(),
+    getActivityDetail: vi.fn(),
+    getTokens: vi.fn(),
+  };
+
+  return {
+    client,
+    signIn: vi.fn(),
+    fromTokens: vi.fn(),
+    parseConnectActivity: vi.fn(),
+    parseConnectSleep: vi.fn(),
+    parseConnectDailySummary: vi.fn(),
+    parseHrvSummary: vi.fn(),
+    parseTrainingStatus: vi.fn(),
+    parseStressTimeSeries: vi.fn(),
+    parseHeartRateTimeSeries: vi.fn(),
+    parseActivityDetail: vi.fn(),
+    loadTokens: vi.fn(),
+    saveTokens: vi.fn(),
+    ensureProvider: vi.fn(),
+    withSyncLog: vi.fn(),
+  };
+});
+
+vi.mock("garmin-connect", () => ({
+  GarminConnectClient: {
+    signIn: mocks.signIn,
+    fromTokens: mocks.fromTokens,
+  },
+  parseConnectActivity: mocks.parseConnectActivity,
+  parseConnectSleep: mocks.parseConnectSleep,
+  parseConnectDailySummary: mocks.parseConnectDailySummary,
+  parseHrvSummary: mocks.parseHrvSummary,
+  parseTrainingStatus: mocks.parseTrainingStatus,
+  parseStressTimeSeries: mocks.parseStressTimeSeries,
+  parseHeartRateTimeSeries: mocks.parseHeartRateTimeSeries,
+  parseActivityDetail: mocks.parseActivityDetail,
+}));
+
+vi.mock("../db/tokens.ts", () => ({
+  loadTokens: mocks.loadTokens,
+  saveTokens: mocks.saveTokens,
+  ensureProvider: mocks.ensureProvider,
+}));
+
+vi.mock("../db/sync-log.ts", () => ({
+  withSyncLog: mocks.withSyncLog,
+}));
+
+vi.mock("../logger.ts", () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
+
+// ============================================================
+// Test helpers
+// ============================================================
+
+function fakeGarminTokens(overrides?: { expiresAt?: number }): GarminTokens {
+  const now = Math.floor(Date.now() / 1000);
+  const expiresAt = overrides?.expiresAt ?? now + 3600;
+  return {
+    oauth1: {
+      oauth_token: "test-oauth1-token",
+      oauth_token_secret: "test-oauth1-secret",
+    },
+    oauth2: {
+      scope: "CONNECT_READ CONNECT_WRITE",
+      jti: "test-jti",
+      token_type: "Bearer",
+      access_token: "test-access-token",
+      refresh_token: "test-refresh-token",
+      expires_in: 3600,
+      expires_at: expiresAt,
+      refresh_token_expires_in: 7776000,
+      refresh_token_expires_at: now + 7776000,
+    },
+  };
+}
+
+function fakeStoredTokens(overrides?: { expiresAt?: Date }): TokenSet {
+  const tokens = fakeGarminTokens();
+  return {
+    accessToken: JSON.stringify(tokens),
+    refreshToken: null,
+    expiresAt: overrides?.expiresAt ?? new Date(Date.now() + 3600000),
+    scopes: INTERNAL_SCOPE_MARKER,
+  };
+}
+
+interface MockDb {
+  select: ReturnType<typeof vi.fn>;
+  from: ReturnType<typeof vi.fn>;
+  where: ReturnType<typeof vi.fn>;
+  limit: ReturnType<typeof vi.fn>;
+  insert: ReturnType<typeof vi.fn>;
+  values: ReturnType<typeof vi.fn>;
+  onConflictDoUpdate: ReturnType<typeof vi.fn>;
+  onConflictDoNothing: ReturnType<typeof vi.fn>;
+}
+
+function createMockDb(): MockDb {
+  const db: MockDb = {
+    select: vi.fn(),
+    from: vi.fn(),
+    where: vi.fn(),
+    limit: vi.fn().mockResolvedValue([]),
+    insert: vi.fn(),
+    values: vi.fn(),
+    onConflictDoUpdate: vi.fn().mockResolvedValue(undefined),
+    onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+  };
+  // Chain: select/from/where/insert/values all return the mock object itself
+  db.select.mockReturnValue(db);
+  db.from.mockReturnValue(db);
+  db.where.mockReturnValue(db);
+  db.insert.mockReturnValue(db);
+  db.values.mockReturnValue(db);
+  return db;
+}
+
+// Typed wrapper to call provider.sync() with a mock DB.
+// The mock DB duck-types SyncDatabase at runtime but cannot satisfy the
+// Drizzle branded type at compile time, so we widen via bind().
+function syncProvider(provider: GarminProvider, db: MockDb, since: Date) {
+  // Use Reflect.apply to call sync() with a mock DB that structurally
+  // matches SyncDatabase at runtime but not at compile time
+  return Reflect.apply(provider.sync, provider, [db, since]) satisfies Promise<{
+    provider: string;
+    recordsSynced: number;
+    errors: { message: string; cause?: unknown }[];
+    duration: number;
+  }>;
+}
+
+// ============================================================
+// Pure functions: serializeInternalTokens
+// ============================================================
+
+describe("serializeInternalTokens", () => {
+  it("serializes GarminTokens to a TokenSet", () => {
+    const tokens = fakeGarminTokens();
+    const result = serializeInternalTokens(tokens);
+
+    expect(result.accessToken).toBe(JSON.stringify(tokens));
+    expect(result.refreshToken).toBeNull();
+    expect(result.expiresAt).toEqual(new Date(tokens.oauth2.expires_at * 1000));
+    expect(result.scopes).toBe(INTERNAL_SCOPE_MARKER);
   });
 
-  it("maps cycling types", () => {
-    expect(mapGarminActivityType("CYCLING")).toBe("cycling");
-    expect(mapGarminActivityType("MOUNTAIN_BIKING")).toBe("cycling");
-    expect(mapGarminActivityType("ROAD_BIKING")).toBe("cycling");
-    expect(mapGarminActivityType("INDOOR_CYCLING")).toBe("cycling");
-    expect(mapGarminActivityType("GRAVEL_CYCLING")).toBe("cycling");
-    expect(mapGarminActivityType("VIRTUAL_RIDE")).toBe("cycling");
+  it("stores the full token blob as JSON in accessToken", () => {
+    const tokens = fakeGarminTokens();
+    const result = serializeInternalTokens(tokens);
+    const parsed = JSON.parse(result.accessToken);
+    expect(parsed.oauth1.oauth_token).toBe("test-oauth1-token");
+    expect(parsed.oauth1.oauth_token_secret).toBe("test-oauth1-secret");
+    expect(parsed.oauth2.access_token).toBe("test-access-token");
+    expect(parsed.oauth2.refresh_token).toBe("test-refresh-token");
   });
 
-  it("maps swimming types", () => {
-    expect(mapGarminActivityType("SWIMMING")).toBe("swimming");
-    expect(mapGarminActivityType("LAP_SWIMMING")).toBe("swimming");
-    expect(mapGarminActivityType("OPEN_WATER_SWIMMING")).toBe("swimming");
-  });
-
-  it("maps walking and hiking", () => {
-    expect(mapGarminActivityType("WALKING")).toBe("walking");
-    expect(mapGarminActivityType("HIKING")).toBe("hiking");
-  });
-
-  it("maps strength training", () => {
-    expect(mapGarminActivityType("STRENGTH_TRAINING")).toBe("strength");
-    expect(mapGarminActivityType("INDOOR_CARDIO")).toBe("cardio");
-  });
-
-  it("maps yoga and other fitness types", () => {
-    expect(mapGarminActivityType("YOGA")).toBe("yoga");
-    expect(mapGarminActivityType("PILATES")).toBe("pilates");
-    expect(mapGarminActivityType("ELLIPTICAL")).toBe("elliptical");
-    expect(mapGarminActivityType("ROWING")).toBe("rowing");
-  });
-
-  it("returns 'other' for unknown types", () => {
-    expect(mapGarminActivityType("PARAGLIDING")).toBe("other");
-    expect(mapGarminActivityType("")).toBe("other");
+  it("computes expiresAt from oauth2.expires_at epoch seconds", () => {
+    const tokens = fakeGarminTokens({ expiresAt: 1700000000 });
+    const result = serializeInternalTokens(tokens);
+    expect(result.expiresAt).toEqual(new Date(1700000000 * 1000));
   });
 });
 
 // ============================================================
-// Activity parsing
+// Pure functions: deserializeInternalTokens
 // ============================================================
 
-// 2024-06-15T14:30:00Z = 1718461800 epoch seconds
-const sampleActivity: GarminActivitySummary = {
-  activityId: 12345678,
-  activityName: "Morning Run",
-  activityType: "RUNNING",
-  startTimeInSeconds: 1718461800, // 2024-06-15T14:30:00Z
-  startTimeOffsetInSeconds: -14400,
-  durationInSeconds: 3600,
-  distanceInMeters: 10000,
-  averageHeartRateInBeatsPerMinute: 155,
-  maxHeartRateInBeatsPerMinute: 185,
-  averageSpeedInMetersPerSecond: 2.78,
-  activeKilocalories: 750,
-  totalElevationGainInMeters: 120.5,
-  totalElevationLossInMeters: 115.2,
-  averageRunCadenceInStepsPerMinute: 170,
-};
+describe("deserializeInternalTokens", () => {
+  it("parses valid serialized tokens", () => {
+    const original = fakeGarminTokens();
+    const stored = serializeInternalTokens(original);
+    const result = deserializeInternalTokens(stored);
 
-describe("parseGarminActivity", () => {
-  it("maps all fields correctly", () => {
-    const result = parseGarminActivity(sampleActivity);
-    expect(result.externalId).toBe("12345678");
-    expect(result.activityType).toBe("running");
-    expect(result.name).toBe("Morning Run");
-    expect(result.startedAt).toEqual(new Date(1718461800 * 1000));
-    expect(result.endedAt).toEqual(new Date((1718461800 + 3600) * 1000));
-    expect(result.raw).toBe(sampleActivity);
-  });
-
-  it("uses epoch seconds for start time", () => {
-    const result = parseGarminActivity(sampleActivity);
-    expect(result.startedAt).toEqual(new Date(1718461800 * 1000));
-  });
-
-  it("computes endedAt from startTimeInSeconds + durationInSeconds", () => {
-    const result = parseGarminActivity(sampleActivity);
-    const expectedEnd = new Date((1718461800 + 3600) * 1000);
-    expect(result.endedAt).toEqual(expectedEnd);
-  });
-
-  it("handles missing optional fields", () => {
-    const minimal: GarminActivitySummary = {
-      activityId: 99999,
-      activityName: "Walk",
-      activityType: "WALKING",
-      startTimeInSeconds: 1718452800,
-      startTimeOffsetInSeconds: -14400,
-      durationInSeconds: 1800,
-      distanceInMeters: 2000,
-    };
-    const result = parseGarminActivity(minimal);
-    expect(result.externalId).toBe("99999");
-    expect(result.activityType).toBe("walking");
-  });
-
-  it("handles zero duration", () => {
-    const zeroDuration = { ...sampleActivity, durationInSeconds: 0 };
-    const result = parseGarminActivity(zeroDuration);
-    expect(result.endedAt).toEqual(result.startedAt);
-  });
-});
-
-// ============================================================
-// Sleep parsing
-// ============================================================
-
-const sampleSleep: GarminSleepSummary = {
-  calendarDate: "2024-06-15",
-  startTimeInSeconds: 1718409600, // 2024-06-15T00:00:00Z
-  startTimeOffsetInSeconds: -14400,
-  durationInSeconds: 25200, // 7 hours
-  deepSleepDurationInSeconds: 5400, // 90 min
-  lightSleepDurationInSeconds: 10800, // 180 min
-  remSleepInSeconds: 7200, // 120 min
-  awakeDurationInSeconds: 1800, // 30 min
-  averageSpO2Value: 96.5,
-  lowestSpO2Value: 92,
-  averageRespirationValue: 15.2,
-  overallSleepScore: 82,
-};
-
-describe("parseGarminSleep", () => {
-  it("converts seconds to minutes", () => {
-    const result = parseGarminSleep(sampleSleep);
-    expect(result.durationMinutes).toBe(420); // 25200 / 60
-    expect(result.deepMinutes).toBe(90); // 5400 / 60
-    expect(result.lightMinutes).toBe(180); // 10800 / 60
-    expect(result.remMinutes).toBe(120); // 7200 / 60
-    expect(result.awakeMinutes).toBe(30); // 1800 / 60
-  });
-
-  it("uses epoch seconds for start/end", () => {
-    const result = parseGarminSleep(sampleSleep);
-    expect(result.startedAt).toEqual(new Date(1718409600 * 1000));
-    expect(result.endedAt).toEqual(new Date((1718409600 + 25200) * 1000));
-  });
-
-  it("uses calendarDate as externalId", () => {
-    const result = parseGarminSleep(sampleSleep);
-    expect(result.externalId).toBe("2024-06-15");
-  });
-
-  it("handles missing optional fields", () => {
-    const minimalSleep: GarminSleepSummary = {
-      calendarDate: "2024-06-15",
-      startTimeInSeconds: 1718409600,
-      startTimeOffsetInSeconds: -14400,
-      durationInSeconds: 25200,
-      deepSleepDurationInSeconds: 5400,
-      lightSleepDurationInSeconds: 10800,
-      remSleepInSeconds: 7200,
-      awakeDurationInSeconds: 1800,
-    };
-    const result = parseGarminSleep(minimalSleep);
-    expect(result.durationMinutes).toBe(420);
-    expect(result.deepMinutes).toBe(90);
-  });
-});
-
-// ============================================================
-// Daily summary parsing
-// ============================================================
-
-const sampleDailySummary: GarminDailySummary = {
-  calendarDate: "2024-06-15",
-  startTimeInSeconds: 1718409600,
-  startTimeOffsetInSeconds: -14400,
-  durationInSeconds: 86400,
-  steps: 12500,
-  distanceInMeters: 9500,
-  activeKilocalories: 450,
-  bmrKilocalories: 1800,
-  restingHeartRateInBeatsPerMinute: 58,
-  maxHeartRateInBeatsPerMinute: 165,
-  averageStressLevel: 35,
-  maxStressLevel: 85,
-  bodyBatteryChargedValue: 65,
-  bodyBatteryDrainedValue: 48,
-  averageSpo2: 97.1,
-  lowestSpo2: 93,
-  respirationAvg: 15.5,
-  floorsClimbed: 12,
-  moderateIntensityDurationInSeconds: 1800, // 30 min
-  vigorousIntensityDurationInSeconds: 900, // 15 min
-};
-
-describe("parseGarminDailySummary", () => {
-  it("maps steps", () => {
-    const result = parseGarminDailySummary(sampleDailySummary);
-    expect(result.steps).toBe(12500);
-  });
-
-  it("converts distance from meters to km", () => {
-    const result = parseGarminDailySummary(sampleDailySummary);
-    expect(result.distanceKm).toBeCloseTo(9.5);
-  });
-
-  it("maps active and basal calories", () => {
-    const result = parseGarminDailySummary(sampleDailySummary);
-    expect(result.activeEnergyKcal).toBe(450);
-    expect(result.basalEnergyKcal).toBe(1800);
-  });
-
-  it("maps resting heart rate", () => {
-    const result = parseGarminDailySummary(sampleDailySummary);
-    expect(result.restingHr).toBe(58);
-  });
-
-  it("maps SpO2 average", () => {
-    const result = parseGarminDailySummary(sampleDailySummary);
-    expect(result.spo2Avg).toBeCloseTo(97.1);
-  });
-
-  it("maps respiratory rate", () => {
-    const result = parseGarminDailySummary(sampleDailySummary);
-    expect(result.respiratoryRateAvg).toBeCloseTo(15.5);
-  });
-
-  it("maps floors climbed to flights climbed", () => {
-    const result = parseGarminDailySummary(sampleDailySummary);
-    expect(result.flightsClimbed).toBe(12);
-  });
-
-  it("converts intensity seconds to exercise minutes", () => {
-    const result = parseGarminDailySummary(sampleDailySummary);
-    expect(result.exerciseMinutes).toBe(45); // (1800 + 900) / 60
-  });
-
-  it("uses calendarDate as date", () => {
-    const result = parseGarminDailySummary(sampleDailySummary);
-    expect(result.date).toBe("2024-06-15");
-  });
-
-  it("handles missing optional fields", () => {
-    const minimal: GarminDailySummary = {
-      calendarDate: "2024-06-15",
-      startTimeInSeconds: 1718409600,
-      startTimeOffsetInSeconds: -14400,
-      durationInSeconds: 86400,
-      steps: 5000,
-      distanceInMeters: 3800,
-      activeKilocalories: 200,
-      bmrKilocalories: 1700,
-    };
-    const result = parseGarminDailySummary(minimal);
-    expect(result.steps).toBe(5000);
-    expect(result.restingHr).toBeUndefined();
-    expect(result.spo2Avg).toBeUndefined();
-    expect(result.exerciseMinutes).toBeUndefined();
-  });
-
-  it("handles only moderate intensity seconds", () => {
-    const withModerate: GarminDailySummary = {
-      ...sampleDailySummary,
-      moderateIntensityDurationInSeconds: 1500, // 25 min
-      vigorousIntensityDurationInSeconds: undefined,
-    };
-    const result = parseGarminDailySummary(withModerate);
-    expect(result.exerciseMinutes).toBe(25);
-  });
-
-  it("handles only vigorous intensity seconds", () => {
-    const withVigorous: GarminDailySummary = {
-      ...sampleDailySummary,
-      moderateIntensityDurationInSeconds: undefined,
-      vigorousIntensityDurationInSeconds: 1200, // 20 min
-    };
-    const result = parseGarminDailySummary(withVigorous);
-    expect(result.exerciseMinutes).toBe(20);
-  });
-});
-
-// ============================================================
-// Body composition parsing
-// ============================================================
-
-const sampleBodyComp: GarminBodyComposition = {
-  measurementTimeInSeconds: 1718438400, // epoch seconds
-  weightInGrams: 75500,
-  bmi: 23.8,
-  bodyFatInPercent: 18.5,
-  muscleMassInGrams: 32000,
-  boneMassInGrams: 3200,
-  bodyWaterInPercent: 55.2,
-};
-
-describe("parseGarminBodyComposition", () => {
-  it("converts weight from grams to kg", () => {
-    const result = parseGarminBodyComposition(sampleBodyComp);
-    expect(result.weightKg).toBeCloseTo(75.5);
-  });
-
-  it("converts muscle mass from grams to kg", () => {
-    const result = parseGarminBodyComposition(sampleBodyComp);
-    expect(result.muscleMassKg).toBeCloseTo(32.0);
-  });
-
-  it("converts bone mass from grams to kg", () => {
-    const result = parseGarminBodyComposition(sampleBodyComp);
-    expect(result.boneMassKg).toBeCloseTo(3.2);
-  });
-
-  it("passes through body fat percentage", () => {
-    const result = parseGarminBodyComposition(sampleBodyComp);
-    expect(result.bodyFatPct).toBeCloseTo(18.5);
-  });
-
-  it("passes through body water percentage", () => {
-    const result = parseGarminBodyComposition(sampleBodyComp);
-    expect(result.waterPct).toBeCloseTo(55.2);
-  });
-
-  it("passes through BMI", () => {
-    const result = parseGarminBodyComposition(sampleBodyComp);
-    expect(result.bmi).toBeCloseTo(23.8);
-  });
-
-  it("uses measurementTimeInSeconds as externalId", () => {
-    const result = parseGarminBodyComposition(sampleBodyComp);
-    expect(result.externalId).toBe("1718438400");
-  });
-
-  it("uses epoch seconds for recordedAt", () => {
-    const result = parseGarminBodyComposition(sampleBodyComp);
-    expect(result.recordedAt).toEqual(new Date(1718438400 * 1000));
-  });
-
-  it("handles missing optional fields", () => {
-    const minimalBodyComp: GarminBodyComposition = {
-      measurementTimeInSeconds: 1718438400,
-      weightInGrams: 80000,
-    };
-    const result = parseGarminBodyComposition(minimalBodyComp);
-    expect(result.weightKg).toBeCloseTo(80.0);
-    expect(result.bodyFatPct).toBeUndefined();
-    expect(result.muscleMassKg).toBeUndefined();
-    expect(result.boneMassKg).toBeUndefined();
-    expect(result.waterPct).toBeUndefined();
-    expect(result.bmi).toBeUndefined();
-  });
-});
-
-// ============================================================
-// Auth, validation, and client tests (merged from garmin-coverage)
-// ============================================================
-
-describe("garminOAuthConfig", () => {
-  const originalEnv = { ...process.env };
-
-  afterEach(() => {
-    process.env = { ...originalEnv };
-  });
-
-  it("returns null when GARMIN_CLIENT_ID is not set", () => {
-    delete process.env.GARMIN_CLIENT_ID;
-    expect(garminOAuthConfig()).toBeNull();
-  });
-
-  it("returns config when GARMIN_CLIENT_ID is set", () => {
-    process.env.GARMIN_CLIENT_ID = "test-id";
-    process.env.GARMIN_CLIENT_SECRET = "test-secret";
-    const config = garminOAuthConfig();
-    expect(config).not.toBeNull();
-    expect(config?.clientId).toBe("test-id");
-    expect(config?.clientSecret).toBe("test-secret");
-    expect(config?.usePkce).toBe(true);
-    expect(config?.scopes).toEqual([]);
-  });
-
-  it("returns config without clientSecret when not set", () => {
-    process.env.GARMIN_CLIENT_ID = "test-id";
-    delete process.env.GARMIN_CLIENT_SECRET;
-    const config = garminOAuthConfig();
-    expect(config).not.toBeNull();
-    expect(config?.clientSecret).toBeUndefined();
-  });
-
-  it("uses custom OAUTH_REDIRECT_URI_unencrypted when set", () => {
-    process.env.GARMIN_CLIENT_ID = "test-id";
-    process.env.OAUTH_REDIRECT_URI_unencrypted = "https://example.com/callback";
-    const config = garminOAuthConfig();
-    expect(config?.redirectUri).toBe("https://example.com/callback");
-  });
-
-  it("uses default redirect URI when OAUTH_REDIRECT_URI_unencrypted is not set", () => {
-    process.env.GARMIN_CLIENT_ID = "test-id";
-    delete process.env.OAUTH_REDIRECT_URI_unencrypted;
-    const config = garminOAuthConfig();
-    expect(config?.redirectUri).toContain("dofek");
-  });
-
-  it("sets authorizeUrl to Garmin Connect OAuth2 authorize endpoint", () => {
-    process.env.GARMIN_CLIENT_ID = "test-id";
-    const config = garminOAuthConfig();
-    expect(config?.authorizeUrl).toBe("https://connect.garmin.com/oauth2/authorize");
-  });
-
-  it("sets tokenUrl to Garmin diauth token endpoint", () => {
-    process.env.GARMIN_CLIENT_ID = "test-id";
-    const config = garminOAuthConfig();
-    expect(config?.tokenUrl).toBe("https://diauth.garmin.com/di-oauth2-service/oauth/token");
-  });
-});
-
-describe("GarminProvider.validate()", () => {
-  const originalEnv = { ...process.env };
-
-  afterEach(() => {
-    process.env = { ...originalEnv };
-  });
-
-  it("returns error when neither GARMIN_CLIENT_ID nor credentials are set", () => {
-    delete process.env.GARMIN_CLIENT_ID;
-    delete process.env.GARMIN_USERNAME;
-    delete process.env.GARMIN_PASSWORD;
-    const provider = new GarminProvider();
-    expect(provider.validate()).toContain("GARMIN_CLIENT_ID");
-  });
-
-  it("returns null when GARMIN_CLIENT_ID is set", () => {
-    process.env.GARMIN_CLIENT_ID = "test-id";
-    const provider = new GarminProvider();
-    expect(provider.validate()).toBeNull();
-  });
-
-  it("returns null when GARMIN_USERNAME and GARMIN_PASSWORD are set", () => {
-    delete process.env.GARMIN_CLIENT_ID;
-    process.env.GARMIN_USERNAME = "user@test.com";
-    process.env.GARMIN_PASSWORD = "pass123";
-    const provider = new GarminProvider();
-    expect(provider.validate()).toBeNull();
-  });
-
-  it("returns error when only GARMIN_USERNAME is set (no password)", () => {
-    delete process.env.GARMIN_CLIENT_ID;
-    process.env.GARMIN_USERNAME = "user@test.com";
-    delete process.env.GARMIN_PASSWORD;
-    const provider = new GarminProvider();
-    const result = provider.validate();
     expect(result).not.toBeNull();
-    expect(result).toContain("GARMIN_CLIENT_ID");
+    expect(result?.oauth1.oauth_token).toBe("test-oauth1-token");
+    expect(result?.oauth1.oauth_token_secret).toBe("test-oauth1-secret");
+    expect(result?.oauth2.access_token).toBe("test-access-token");
+    expect(result?.oauth2.refresh_token).toBe("test-refresh-token");
+    expect(result?.oauth2.scope).toBe("CONNECT_READ CONNECT_WRITE");
+    expect(result?.oauth2.jti).toBe("test-jti");
+    expect(result?.oauth2.token_type).toBe("Bearer");
+    expect(result?.oauth2.expires_in).toBe(3600);
+    expect(result?.oauth2.refresh_token_expires_in).toBe(7776000);
   });
 
-  it("returns error when only GARMIN_PASSWORD is set (no username)", () => {
-    delete process.env.GARMIN_CLIENT_ID;
-    delete process.env.GARMIN_USERNAME;
-    process.env.GARMIN_PASSWORD = "secret123";
-    const provider = new GarminProvider();
-    const result = provider.validate();
-    expect(result).not.toBeNull();
+  it("returns null for non-JSON accessToken", () => {
+    const stored: TokenSet = {
+      accessToken: "plain-bearer-token",
+      refreshToken: null,
+      expiresAt: new Date(),
+      scopes: "",
+    };
+    expect(deserializeInternalTokens(stored)).toBeNull();
   });
 
-  it("returns null when both official API and credentials are set", () => {
-    process.env.GARMIN_CLIENT_ID = "test-id";
-    process.env.GARMIN_USERNAME = "user@test.com";
-    process.env.GARMIN_PASSWORD = "pass123";
-    const provider = new GarminProvider();
-    expect(provider.validate()).toBeNull();
+  it("returns null for JSON that does not match schema", () => {
+    const stored: TokenSet = {
+      accessToken: JSON.stringify({ foo: "bar" }),
+      refreshToken: null,
+      expiresAt: new Date(),
+      scopes: "",
+    };
+    expect(deserializeInternalTokens(stored)).toBeNull();
+  });
+
+  it("returns null for JSON missing required oauth2 fields", () => {
+    const stored: TokenSet = {
+      accessToken: JSON.stringify({
+        oauth1: { oauth_token: "t", oauth_token_secret: "s" },
+        oauth2: { scope: "s" },
+      }),
+      refreshToken: null,
+      expiresAt: new Date(),
+      scopes: "",
+    };
+    expect(deserializeInternalTokens(stored)).toBeNull();
+  });
+
+  it("round-trips through serialize/deserialize", () => {
+    const original = fakeGarminTokens();
+    const stored = serializeInternalTokens(original);
+    const result = deserializeInternalTokens(stored);
+    expect(result).toEqual(original);
+  });
+});
+
+// ============================================================
+// Pure functions: formatDate
+// ============================================================
+
+describe("formatDate", () => {
+  it("returns YYYY-MM-DD for a date", () => {
+    expect(formatDate(new Date("2026-03-01T10:30:00Z"))).toBe("2026-03-01");
+  });
+
+  it("handles midnight UTC", () => {
+    expect(formatDate(new Date("2026-01-15T00:00:00Z"))).toBe("2026-01-15");
+  });
+
+  it("handles end of year", () => {
+    expect(formatDate(new Date("2026-12-31T23:59:59Z"))).toBe("2026-12-31");
   });
 });
 
-describe("GarminProvider.authSetup()", () => {
-  const originalEnv = { ...process.env };
+// ============================================================
+// Pure functions: eachDay
+// ============================================================
 
-  afterEach(() => {
-    process.env = { ...originalEnv };
+describe("eachDay", () => {
+  it("returns a single date for same-day range", () => {
+    const result = eachDay(new Date("2026-03-01T10:00:00Z"), new Date("2026-03-01T23:00:00Z"));
+    expect(result).toEqual(["2026-03-01"]);
   });
 
-  it("returns auth setup with OAuth config", () => {
-    process.env.GARMIN_CLIENT_ID = "test-id";
-    process.env.GARMIN_CLIENT_SECRET = "test-secret";
-    const provider = new GarminProvider();
-    const setup = provider.authSetup();
-    expect(setup.oauthConfig.clientId).toBe("test-id");
-    expect(setup.exchangeCode).toBeTypeOf("function");
-    expect(setup.apiBaseUrl).toContain("garmin.com");
+  it("returns multiple dates for multi-day range", () => {
+    const result = eachDay(new Date("2026-03-01T00:00:00Z"), new Date("2026-03-03T00:00:00Z"));
+    expect(result).toEqual(["2026-03-01", "2026-03-02", "2026-03-03"]);
   });
 
-  it("returns setup with automatedLogin when GARMIN_CLIENT_ID is missing", () => {
-    delete process.env.GARMIN_CLIENT_ID;
-    const provider = new GarminProvider();
-    const setup = provider.authSetup();
-    expect(setup.automatedLogin).toBeTypeOf("function");
-    expect(() => {
-      void setup.exchangeCode("code").catch(() => {});
-    }).not.toThrow();
+  it("returns empty array when since is after until", () => {
+    const result = eachDay(new Date("2026-03-05T00:00:00Z"), new Date("2026-03-01T00:00:00Z"));
+    expect(result).toEqual([]);
   });
 
-  it("exchangeCode rejects when GARMIN_CLIENT_ID is not set", async () => {
-    delete process.env.GARMIN_CLIENT_ID;
-    const provider = new GarminProvider();
-    const setup = provider.authSetup();
-    await expect(setup.exchangeCode("some-code", "some-verifier")).rejects.toThrow(
-      "GARMIN_CLIENT_ID is required for OAuth flow",
-    );
+  it("normalizes times to midnight UTC", () => {
+    const result = eachDay(new Date("2026-03-01T15:30:00Z"), new Date("2026-03-02T04:15:00Z"));
+    expect(result).toEqual(["2026-03-01", "2026-03-02"]);
   });
 
-  it("uses dummy OAuth config when GARMIN_CLIENT_ID is missing", () => {
-    delete process.env.GARMIN_CLIENT_ID;
-    const provider = new GarminProvider();
-    const setup = provider.authSetup();
-    expect(setup.oauthConfig.clientId).toBe("garmin-connect-internal");
-    expect(setup.oauthConfig.authorizeUrl).toBe("");
-    expect(setup.oauthConfig.tokenUrl).toBe("");
-    expect(setup.oauthConfig.redirectUri).toBe("");
-    expect(setup.oauthConfig.scopes).toEqual([]);
-  });
-
-  it("sets apiBaseUrl to Garmin Health API base", () => {
-    process.env.GARMIN_CLIENT_ID = "test-id";
-    const provider = new GarminProvider();
-    const setup = provider.authSetup();
-    expect(setup.apiBaseUrl).toBe("https://apis.garmin.com/wellness-api/rest");
-  });
-
-  it("always provides automatedLogin function", () => {
-    process.env.GARMIN_CLIENT_ID = "test-id";
-    const provider = new GarminProvider();
-    const setup = provider.authSetup();
-    expect(setup.automatedLogin).toBeTypeOf("function");
+  it("includes both endpoints", () => {
+    const result = eachDay(new Date("2026-06-10T00:00:00Z"), new Date("2026-06-12T00:00:00Z"));
+    expect(result).toHaveLength(3);
+    expect(result[0]).toBe("2026-06-10");
+    expect(result[2]).toBe("2026-06-12");
   });
 });
+
+// ============================================================
+// Provider identity
+// ============================================================
 
 describe("GarminProvider — provider identity", () => {
   it("has id 'garmin'", () => {
@@ -564,236 +319,486 @@ describe("GarminProvider — provider identity", () => {
 });
 
 // ============================================================
-// GarminClient tests (merged from garmin-coverage and garmin-coverage-ext)
+// Validation
 // ============================================================
 
-describe("GarminClient — error handling", () => {
-  it("throws on non-OK response from activities endpoint", async () => {
-    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
-      return new Response("Unauthorized", { status: 401 });
-    };
+describe("GarminProvider.validate()", () => {
+  it("always returns null (no env vars required)", () => {
+    const provider = new GarminProvider();
+    expect(provider.validate()).toBeNull();
+  });
+});
 
-    const client = new GarminClient("bad-token", mockFetch);
-    await expect(client.getActivities(0, 1000)).rejects.toThrow("Garmin API error (401)");
+// ============================================================
+// Auth setup
+// ============================================================
+
+describe("GarminProvider.authSetup()", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
   });
 
-  it("throws on non-OK response from sleep endpoint", async () => {
-    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
-      return new Response("Server Error", { status: 500 });
-    };
-
-    const client = new GarminClient("token", mockFetch);
-    await expect(client.getSleep(0, 1000)).rejects.toThrow("Garmin API error (500)");
+  it("provides automatedLogin function", () => {
+    const provider = new GarminProvider();
+    const setup = provider.authSetup();
+    expect(setup.automatedLogin).toBeTypeOf("function");
   });
 
-  it("throws on non-OK response from daily summaries endpoint", async () => {
-    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
-      return new Response("Forbidden", { status: 403 });
-    };
-
-    const client = new GarminClient("token", mockFetch);
-    await expect(client.getDailySummaries(0, 1000)).rejects.toThrow("Garmin API error (403)");
+  it("uses a dummy OAuth config (internal API only)", () => {
+    const provider = new GarminProvider();
+    const setup = provider.authSetup();
+    expect(setup.oauthConfig.clientId).toBe("garmin-connect-internal");
+    expect(setup.oauthConfig.authorizeUrl).toBe("");
+    expect(setup.oauthConfig.tokenUrl).toBe("");
+    expect(setup.oauthConfig.redirectUri).toBe("");
+    expect(setup.oauthConfig.scopes).toEqual([]);
   });
 
-  it("throws on non-OK response from body composition endpoint", async () => {
-    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
-      return new Response("Not Found", { status: 404 });
-    };
-
-    const client = new GarminClient("token", mockFetch);
-    await expect(client.getBodyComposition(0, 1000)).rejects.toThrow("Garmin API error (404)");
-  });
-
-  it("includes response body in error for 400 Bad Request", async () => {
-    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
-      return new Response("Invalid date range parameter", { status: 400 });
-    };
-
-    const client = new GarminClient("token", mockFetch);
-    await expect(client.getActivities(0, 1000)).rejects.toThrow("Garmin API error (400)");
-    await expect(client.getActivities(0, 1000)).rejects.toThrow("Invalid date range parameter");
-  });
-
-  it("handles empty error body", async () => {
-    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
-      return new Response("", { status: 503 });
-    };
-
-    const client = new GarminClient("token", mockFetch);
-    await expect(client.getDailySummaries(0, 1000)).rejects.toThrow("Garmin API error (503)");
-  });
-
-  it("includes error body text in thrown error message", async () => {
-    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
-      return new Response("Rate limit exceeded - try again later", { status: 429 });
-    };
-
-    const client = new GarminClient("token", mockFetch);
-    await expect(client.getActivities(0, 1000)).rejects.toThrow(
-      "Rate limit exceeded - try again later",
+  it("exchangeCode always rejects (credential-only)", async () => {
+    const provider = new GarminProvider();
+    const setup = provider.authSetup();
+    await expect(setup.exchangeCode("some-code")).rejects.toThrow(
+      "Garmin uses credential-based sign-in",
     );
   });
-});
 
-describe("GarminClient — successful API calls", () => {
-  it("getActivities sends correct query params and returns parsed data", async () => {
-    const activities: GarminActivitySummary[] = [
-      {
-        activityId: 111,
-        activityName: "Run",
-        activityType: "RUNNING",
-        startTimeInSeconds: 1700000000,
-        startTimeOffsetInSeconds: 0,
-        durationInSeconds: 1800,
-        distanceInMeters: 5000,
-      },
-    ];
+  it("automatedLogin calls GarminConnectClient.signIn with the provider's fetchFn", async () => {
+    const customFetch: typeof globalThis.fetch = vi.fn();
+    const provider = new GarminProvider(customFetch);
+    const setup = provider.authSetup();
 
-    let capturedUrl = "";
-    const mockFetch: typeof globalThis.fetch = async (
-      input: RequestInfo | URL,
-      init?: RequestInit,
-    ): Promise<Response> => {
-      capturedUrl = input.toString();
-      const headers = new Headers(init?.headers);
-      expect(headers.get("Authorization")).toBe("Bearer test-token-123");
-      return Response.json(activities);
-    };
+    const tokens = fakeGarminTokens();
+    mocks.signIn.mockResolvedValue({ tokens });
 
-    const client = new GarminClient("test-token-123", mockFetch);
-    const result = await client.getActivities(1000, 2000);
+    if (!setup.automatedLogin) throw new Error("expected automatedLogin");
+    const result = await setup.automatedLogin("user@test.com", "pass123");
 
-    expect(result).toHaveLength(1);
-    expect(result[0]?.activityId).toBe(111);
-    expect(capturedUrl).toContain("uploadStartTimeInSeconds=1000");
-    expect(capturedUrl).toContain("uploadEndTimeInSeconds=2000");
-    expect(capturedUrl).toContain("/activities");
-  });
-
-  it("getSleep sends correct query params and returns parsed data", async () => {
-    const sleepData: GarminSleepSummary[] = [
-      {
-        calendarDate: "2026-03-01",
-        startTimeInSeconds: 1772100000,
-        startTimeOffsetInSeconds: 0,
-        durationInSeconds: 28800,
-        deepSleepDurationInSeconds: 5400,
-        lightSleepDurationInSeconds: 12600,
-        remSleepInSeconds: 6300,
-        awakeDurationInSeconds: 4500,
-      },
-    ];
-
-    let capturedUrl = "";
-    const mockFetch: typeof globalThis.fetch = async (
-      input: RequestInfo | URL,
-    ): Promise<Response> => {
-      capturedUrl = input.toString();
-      return Response.json(sleepData);
-    };
-
-    const client = new GarminClient("test-token-123", mockFetch);
-    const result = await client.getSleep(5000, 6000);
-
-    expect(result).toHaveLength(1);
-    expect(result[0]?.calendarDate).toBe("2026-03-01");
-    expect(capturedUrl).toContain("uploadStartTimeInSeconds=5000");
-    expect(capturedUrl).toContain("uploadEndTimeInSeconds=6000");
-    expect(capturedUrl).toContain("/sleep");
-  });
-
-  it("getDailySummaries sends correct query params", async () => {
-    const dailies: GarminDailySummary[] = [
-      {
-        calendarDate: "2026-03-01",
-        startTimeInSeconds: 1772100000,
-        startTimeOffsetInSeconds: 0,
-        durationInSeconds: 86400,
-        steps: 10000,
-        distanceInMeters: 8000,
-        activeKilocalories: 500,
-        bmrKilocalories: 1700,
-      },
-    ];
-
-    let capturedUrl = "";
-    const mockFetch: typeof globalThis.fetch = async (
-      input: RequestInfo | URL,
-    ): Promise<Response> => {
-      capturedUrl = input.toString();
-      return Response.json(dailies);
-    };
-
-    const client = new GarminClient("test-token-123", mockFetch);
-    const result = await client.getDailySummaries(3000, 4000);
-
-    expect(result).toHaveLength(1);
-    expect(result[0]?.steps).toBe(10000);
-    expect(capturedUrl).toContain("uploadStartTimeInSeconds=3000");
-    expect(capturedUrl).toContain("uploadEndTimeInSeconds=4000");
-    expect(capturedUrl).toContain("/dailies");
-  });
-
-  it("getBodyComposition sends correct query params", async () => {
-    const bodyComp: GarminBodyComposition[] = [
-      {
-        measurementTimeInSeconds: 1772100000,
-        weightInGrams: 80000,
-        bmi: 24.5,
-      },
-    ];
-
-    let capturedUrl = "";
-    const mockFetch: typeof globalThis.fetch = async (
-      input: RequestInfo | URL,
-    ): Promise<Response> => {
-      capturedUrl = input.toString();
-      return Response.json(bodyComp);
-    };
-
-    const client = new GarminClient("test-token-123", mockFetch);
-    const result = await client.getBodyComposition(7000, 8000);
-
-    expect(result).toHaveLength(1);
-    expect(result[0]?.weightInGrams).toBe(80000);
-    expect(capturedUrl).toContain("uploadStartTimeInSeconds=7000");
-    expect(capturedUrl).toContain("uploadEndTimeInSeconds=8000");
-    expect(capturedUrl).toContain("/bodyComposition");
+    expect(mocks.signIn).toHaveBeenCalledWith(
+      "user@test.com",
+      "pass123",
+      "garmin.com",
+      customFetch,
+    );
+    expect(result.accessToken).toBe(JSON.stringify(tokens));
+    expect(result.scopes).toBe(INTERNAL_SCOPE_MARKER);
   });
 });
 
-describe("GarminClient — constructor defaults", () => {
-  it("accepts custom fetch function", async () => {
-    let fetchCalled = false;
-    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
-      fetchCalled = true;
-      return Response.json([]);
-    };
+// ============================================================
+// Sync
+// ============================================================
 
-    const client = new GarminClient("token", mockFetch);
-    await client.getActivities(0, 1000);
-    expect(fetchCalled).toBe(true);
+describe("GarminProvider.sync()", () => {
+  let provider: GarminProvider;
+  let db: MockDb;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    provider = new GarminProvider();
+    db = createMockDb();
+
+    // Default: valid internal tokens
+    mocks.loadTokens.mockResolvedValue(fakeStoredTokens());
+
+    // Default: fromTokens returns mock client
+    mocks.fromTokens.mockResolvedValue(mocks.client);
+    mocks.client.getTokens.mockReturnValue(fakeGarminTokens());
+
+    // Default: all client methods return empty/no data
+    mocks.client.getActivities.mockResolvedValue([]);
+    mocks.client.getSleepData.mockRejectedValue(new Error("no data"));
+    mocks.client.getDailySummary.mockRejectedValue(new Error("no data"));
+    mocks.client.getHrvSummary.mockRejectedValue(new Error("no data"));
+    mocks.client.getTrainingStatus.mockRejectedValue(new Error("no data"));
+    mocks.client.getDailyStress.mockRejectedValue(new Error("no data"));
+    mocks.client.getDailyHeartRate.mockRejectedValue(new Error("no data"));
+
+    // Default: withSyncLog calls the function and returns result
+    mocks.withSyncLog.mockImplementation(
+      async (_db: unknown, _pid: string, _dt: string, fn: () => Promise<{ result: unknown }>) => {
+        const res = await fn();
+        return res.result;
+      },
+    );
   });
 
-  it("builds correct URL with base path for each endpoint", async () => {
-    const capturedUrls: string[] = [];
-    const mockFetch: typeof globalThis.fetch = async (
-      input: RequestInfo | URL,
-    ): Promise<Response> => {
-      capturedUrls.push(input.toString());
-      return Response.json([]);
+  it("returns error when no tokens exist", async () => {
+    mocks.loadTokens.mockResolvedValue(null);
+    const result = await syncProvider(provider, db, new Date());
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain("No OAuth tokens");
+    expect(result.recordsSynced).toBe(0);
+  });
+
+  it("returns error when tokens have invalid format", async () => {
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "plain-bearer-token",
+      refreshToken: "refresh",
+      expiresAt: new Date(Date.now() + 3600000),
+      scopes: "regular-oauth",
+    });
+    const result = await syncProvider(provider, db, new Date());
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain("not in the expected format");
+    expect(result.recordsSynced).toBe(0);
+  });
+
+  it("returns error when GarminConnectClient.fromTokens fails", async () => {
+    mocks.fromTokens.mockRejectedValue(new Error("auth failed"));
+    const result = await syncProvider(provider, db, new Date());
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain("Connect API authentication failed");
+    expect(result.recordsSynced).toBe(0);
+  });
+
+  it("refreshes expired tokens via GarminConnectClient.fromTokens", async () => {
+    mocks.loadTokens.mockResolvedValue(fakeStoredTokens({ expiresAt: new Date("2020-01-01") }));
+    const refreshedTokens = fakeGarminTokens();
+    const refreshedClient = {
+      getTokens: vi.fn().mockReturnValue(refreshedTokens),
     };
+    mocks.fromTokens
+      .mockResolvedValueOnce(refreshedClient) // resolveTokens refresh
+      .mockResolvedValueOnce(mocks.client); // syncViaConnectApi
 
-    const client = new GarminClient("token", mockFetch);
+    mocks.client.getTokens.mockReturnValue(refreshedTokens);
+    mocks.client.getActivities.mockResolvedValue([]);
 
-    await client.getActivities(100, 200);
-    await client.getSleep(100, 200);
-    await client.getDailySummaries(100, 200);
-    await client.getBodyComposition(100, 200);
+    const result = await syncProvider(provider, db, new Date());
 
-    expect(capturedUrls[0]).toContain("https://apis.garmin.com/wellness-api/rest/activities");
-    expect(capturedUrls[1]).toContain("https://apis.garmin.com/wellness-api/rest/sleep");
-    expect(capturedUrls[2]).toContain("https://apis.garmin.com/wellness-api/rest/dailies");
-    expect(capturedUrls[3]).toContain("https://apis.garmin.com/wellness-api/rest/bodyComposition");
+    expect(mocks.saveTokens).toHaveBeenCalled();
+    expect(result.provider).toBe("garmin");
+  });
+
+  it("syncs activities with detail streams", async () => {
+    const rawActivity = { activityId: 123, deviceName: "Forerunner 955" };
+    mocks.client.getActivities.mockResolvedValue([rawActivity]);
+
+    mocks.parseConnectActivity.mockReturnValue({
+      externalId: "123",
+      activityType: "running",
+      name: "Morning Run",
+      startedAt: new Date("2026-03-01T10:00:00Z"),
+      endedAt: new Date("2026-03-01T11:00:00Z"),
+      raw: rawActivity,
+    });
+
+    mocks.client.getActivityDetail.mockResolvedValue({});
+    mocks.parseActivityDetail.mockReturnValue({
+      samples: [
+        {
+          directTimestamp: 1709286000000,
+          directHeartRate: 150,
+          directPower: 200,
+          directRunCadence: 85,
+          directBikeCadence: null,
+          directSpeed: 3.5,
+          directElevation: 100,
+          directLatitude: 37.7749,
+          directLongitude: -122.4194,
+          directAirTemperature: 18,
+        },
+        {
+          directTimestamp: null, // should be skipped
+          directHeartRate: 155,
+          directPower: null,
+          directRunCadence: null,
+          directBikeCadence: null,
+          directSpeed: null,
+          directElevation: null,
+          directLatitude: null,
+          directLongitude: null,
+          directAirTemperature: null,
+        },
+        {
+          directTimestamp: 1709286002000,
+          directHeartRate: null,
+          directPower: null,
+          directRunCadence: null,
+          directBikeCadence: 90,
+          directSpeed: null,
+          directElevation: null,
+          directLatitude: null,
+          directLongitude: null,
+          directAirTemperature: null,
+        },
+      ],
+    });
+
+    const result = await syncProvider(provider, db, new Date());
+
+    expect(mocks.parseConnectActivity).toHaveBeenCalledWith(rawActivity);
+    expect(mocks.client.getActivityDetail).toHaveBeenCalledWith(123);
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toHaveLength(0);
+
+    // Verify stream samples were inserted (2 valid, 1 null-timestamp skipped)
+    expect(db.onConflictDoNothing.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("syncs sleep data", async () => {
+    mocks.client.getSleepData.mockResolvedValue({ sleepData: true });
+    mocks.parseConnectSleep.mockReturnValue({
+      externalId: "2026-03-01",
+      startedAt: new Date("2026-03-01T00:00:00Z"),
+      endedAt: new Date("2026-03-01T08:00:00Z"),
+      durationMinutes: 480,
+      deepMinutes: 90,
+      lightMinutes: 210,
+      remMinutes: 120,
+      awakeMinutes: 60,
+    });
+
+    const result = await syncProvider(provider, db, new Date());
+
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toHaveLength(0);
+
+    // Verify sleep values were passed to DB
+    const sleepCall = db.values.mock.calls.find((call) => call[0]?.durationMinutes === 480);
+    if (!sleepCall) throw new Error("expected sleep insert");
+    expect(sleepCall[0].providerId).toBe("garmin");
+    expect(sleepCall[0].deepMinutes).toBe(90);
+    expect(sleepCall[0].lightMinutes).toBe(210);
+    expect(sleepCall[0].remMinutes).toBe(120);
+    expect(sleepCall[0].awakeMinutes).toBe(60);
+  });
+
+  it("skips null sleep data from parseConnectSleep", async () => {
+    mocks.client.getSleepData.mockResolvedValue({});
+    mocks.parseConnectSleep.mockReturnValue(null);
+
+    const result = await syncProvider(provider, db, new Date());
+    expect(result.recordsSynced).toBe(0);
+  });
+
+  it("syncs daily metrics with HRV and training status", async () => {
+    mocks.client.getDailySummary.mockResolvedValue({ privacyProtected: false });
+    mocks.parseConnectDailySummary.mockReturnValue({
+      date: "2026-03-01",
+      steps: 10000,
+      distanceKm: 8.5,
+      activeEnergyKcal: 500,
+      basalEnergyKcal: 1800,
+      restingHr: 55,
+      spo2Avg: 97,
+      respiratoryRateAvg: 15,
+      flightsClimbed: 12,
+      exerciseMinutes: 45,
+    });
+
+    mocks.client.getHrvSummary.mockResolvedValue({});
+    mocks.parseHrvSummary.mockReturnValue({ lastNightAvg: 45, lastNight: 42 });
+
+    mocks.client.getTrainingStatus.mockResolvedValue({});
+    mocks.parseTrainingStatus.mockReturnValue({ vo2MaxRunning: 55, vo2MaxCycling: 52 });
+
+    const result = await syncProvider(provider, db, new Date());
+
+    expect(result.recordsSynced).toBe(1);
+
+    // Verify daily metrics insert values
+    const dailyCall = db.values.mock.calls.find((call) => call[0]?.steps === 10000);
+    if (!dailyCall) throw new Error("expected daily metrics insert");
+    expect(dailyCall[0].providerId).toBe("garmin");
+    expect(dailyCall[0].distanceKm).toBe(8.5);
+    expect(dailyCall[0].activeEnergyKcal).toBe(500);
+    expect(dailyCall[0].basalEnergyKcal).toBe(1800);
+    expect(dailyCall[0].restingHr).toBe(55);
+    expect(dailyCall[0].spo2Avg).toBe(97);
+    expect(dailyCall[0].respiratoryRateAvg).toBe(15);
+    expect(dailyCall[0].flightsClimbed).toBe(12);
+    expect(dailyCall[0].exerciseMinutes).toBe(45);
+    expect(dailyCall[0].hrv).toBe(45);
+    expect(dailyCall[0].vo2max).toBe(55);
+  });
+
+  it("skips privacy-protected daily summaries", async () => {
+    mocks.client.getDailySummary.mockResolvedValue({ privacyProtected: true });
+
+    const result = await syncProvider(provider, db, new Date());
+
+    expect(mocks.parseConnectDailySummary).not.toHaveBeenCalled();
+    expect(result.recordsSynced).toBe(0);
+  });
+
+  it("handles HRV and training status fetch failures gracefully", async () => {
+    mocks.client.getDailySummary.mockResolvedValue({ privacyProtected: false });
+    mocks.parseConnectDailySummary.mockReturnValue({
+      date: "2026-03-01",
+      steps: 5000,
+      distanceKm: 4,
+      activeEnergyKcal: 300,
+      basalEnergyKcal: 1700,
+    });
+    mocks.client.getHrvSummary.mockRejectedValue(new Error("not available"));
+    mocks.client.getTrainingStatus.mockRejectedValue(new Error("not available"));
+
+    const result = await syncProvider(provider, db, new Date());
+
+    expect(result.recordsSynced).toBe(1);
+
+    const dailyCall = db.values.mock.calls.find((call) => call[0]?.steps === 5000);
+    if (!dailyCall) throw new Error("expected daily metrics insert");
+    expect(dailyCall[0].hrv).toBeUndefined();
+    expect(dailyCall[0].vo2max).toBeUndefined();
+  });
+
+  it("syncs stress time-series", async () => {
+    mocks.client.getDailyStress.mockResolvedValue({});
+    mocks.parseStressTimeSeries.mockReturnValue({
+      samples: [
+        { timestamp: new Date("2026-03-01T12:00:00Z"), stressLevel: 35 },
+        { timestamp: new Date("2026-03-01T12:05:00Z"), stressLevel: 42 },
+      ],
+    });
+
+    const result = await syncProvider(provider, db, new Date());
+
+    expect(result.recordsSynced).toBe(2);
+
+    const stressCall = db.values.mock.calls.find((call) => call[0]?.stress === 35);
+    if (!stressCall) throw new Error("expected stress insert");
+    expect(stressCall[0].providerId).toBe("garmin");
+  });
+
+  it("syncs heart rate time-series", async () => {
+    mocks.client.getDailyHeartRate.mockResolvedValue({});
+    mocks.parseHeartRateTimeSeries.mockReturnValue({
+      samples: [
+        { timestamp: new Date("2026-03-01T12:00:00Z"), heartRate: 72 },
+        { timestamp: new Date("2026-03-01T12:05:00Z"), heartRate: 75 },
+      ],
+    });
+
+    const result = await syncProvider(provider, db, new Date());
+
+    expect(result.recordsSynced).toBe(2);
+
+    const hrCall = db.values.mock.calls.find((call) => call[0]?.heartRate === 72);
+    if (!hrCall) throw new Error("expected heart rate insert");
+    expect(hrCall[0].providerId).toBe("garmin");
+  });
+
+  it("syncs all data types together and sums record counts", async () => {
+    mocks.client.getActivities.mockResolvedValue([{ activityId: 1 }]);
+    mocks.parseConnectActivity.mockReturnValue({
+      externalId: "1",
+      activityType: "running",
+      name: "Run",
+      startedAt: new Date(),
+      endedAt: new Date(),
+      raw: {},
+    });
+    mocks.client.getActivityDetail.mockRejectedValue(new Error("no detail"));
+
+    mocks.client.getSleepData.mockResolvedValue({});
+    mocks.parseConnectSleep.mockReturnValue({
+      externalId: "today",
+      startedAt: new Date(),
+      endedAt: new Date(),
+      durationMinutes: 480,
+      deepMinutes: 90,
+      lightMinutes: 210,
+      remMinutes: 120,
+      awakeMinutes: 60,
+    });
+
+    mocks.client.getDailySummary.mockResolvedValue({ privacyProtected: false });
+    mocks.parseConnectDailySummary.mockReturnValue({
+      date: "today",
+      steps: 10000,
+      distanceKm: 8,
+      activeEnergyKcal: 500,
+      basalEnergyKcal: 1800,
+    });
+    mocks.client.getHrvSummary.mockRejectedValue(new Error("n/a"));
+    mocks.client.getTrainingStatus.mockRejectedValue(new Error("n/a"));
+
+    mocks.client.getDailyStress.mockResolvedValue({});
+    mocks.parseStressTimeSeries.mockReturnValue({
+      samples: [{ timestamp: new Date(), stressLevel: 30 }],
+    });
+
+    mocks.client.getDailyHeartRate.mockResolvedValue({});
+    mocks.parseHeartRateTimeSeries.mockReturnValue({
+      samples: [{ timestamp: new Date(), heartRate: 65 }],
+    });
+
+    const result = await syncProvider(provider, db, new Date());
+
+    // 1 activity + 1 sleep + 1 daily + 1 stress + 1 heart rate = 5
+    expect(result.recordsSynced).toBe(5);
+    expect(result.errors).toHaveLength(0);
+    expect(result.provider).toBe("garmin");
+    expect(result.duration).toBeGreaterThanOrEqual(0);
+  });
+
+  it("handles individual sync method failures without failing the whole sync", async () => {
+    mocks.withSyncLog.mockImplementation(
+      async (
+        _db: unknown,
+        _pid: string,
+        dataType: string,
+        fn: () => Promise<{ result: unknown }>,
+      ) => {
+        if (dataType === "activities") {
+          throw new Error("activities sync crashed");
+        }
+        const res = await fn();
+        return res.result;
+      },
+    );
+
+    mocks.client.getSleepData.mockResolvedValue({});
+    mocks.parseConnectSleep.mockReturnValue({
+      externalId: "today",
+      startedAt: new Date(),
+      endedAt: new Date(),
+      durationMinutes: 480,
+      deepMinutes: 90,
+      lightMinutes: 210,
+      remMinutes: 120,
+      awakeMinutes: 60,
+    });
+
+    const result = await syncProvider(provider, db, new Date());
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain("Activities sync failed");
+    expect(result.recordsSynced).toBe(1);
+  });
+
+  it("calls ensureProvider with correct args", async () => {
+    await syncProvider(provider, db, new Date());
+
+    expect(mocks.ensureProvider).toHaveBeenCalledWith(db, "garmin", "Garmin Connect");
+  });
+
+  it("saves refreshed tokens from client after sync", async () => {
+    const refreshedTokens = fakeGarminTokens();
+    mocks.client.getTokens.mockReturnValue(refreshedTokens);
+
+    await syncProvider(provider, db, new Date());
+
+    expect(mocks.saveTokens).toHaveBeenCalledWith(
+      db,
+      "garmin",
+      expect.objectContaining({
+        accessToken: JSON.stringify(refreshedTokens),
+        scopes: INTERNAL_SCOPE_MARKER,
+      }),
+    );
+  });
+
+  it("uses sync cursor when available", async () => {
+    db.limit.mockResolvedValueOnce([{ value: { cursor: "2026-02-15T00:00:00Z" } }]);
+
+    await syncProvider(provider, db, new Date());
+
+    expect(mocks.withSyncLog).toHaveBeenCalledTimes(5);
   });
 });

@@ -1,8 +1,10 @@
+import { DATA_TYPE_LABELS, type ProviderStats } from "@dofek/providers/provider-stats";
 import { Link, useParams } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { ProviderLogo } from "../components/ProviderLogo.tsx";
+import { ProviderStatsBreakdown } from "../components/ProviderStatsBreakdown.tsx";
 import { formatRelativeTime, formatTime } from "../lib/dates.ts";
 import { formatNumber } from "../lib/format.ts";
 import { pollSyncJob } from "../lib/poll-sync-job.ts";
@@ -18,20 +20,7 @@ const oauthPostMessage = z.object({
   providerId: z.string().optional(),
 });
 
-const DATA_TYPES = [
-  { key: "activities", label: "Activities" },
-  { key: "dailyMetrics", label: "Daily Metrics" },
-  { key: "sleepSessions", label: "Sleep" },
-  { key: "bodyMeasurements", label: "Body" },
-  { key: "foodEntries", label: "Food" },
-  { key: "healthEvents", label: "Events" },
-  { key: "metricStream", label: "Metric Stream" },
-  { key: "nutritionDaily", label: "Nutrition" },
-  { key: "labResults", label: "Lab Results" },
-  { key: "journalEntries", label: "Journal" },
-] as const;
-
-type DataType = (typeof DATA_TYPES)[number]["key"];
+type DataType = (typeof DATA_TYPE_LABELS)[number]["key"];
 
 function formatProviderName(id: string): string {
   return id
@@ -284,7 +273,7 @@ export function ProviderDetailPage() {
       )}
 
       {/* Stats overview */}
-      {providerStats && <StatsOverview stats={providerStats} />}
+      {providerStats && <ProviderStatsBreakdown stats={providerStats} variant="full" />}
 
       {/* Sync history */}
       <SyncHistory providerId={providerId} />
@@ -292,61 +281,6 @@ export function ProviderDetailPage() {
       {/* Records browser */}
       <RecordsBrowser providerId={providerId} stats={providerStats} />
     </PageLayout>
-  );
-}
-
-// ── Stats Overview ──
-
-interface ProviderStatsData {
-  activities: number;
-  dailyMetrics: number;
-  sleepSessions: number;
-  bodyMeasurements: number;
-  foodEntries: number;
-  healthEvents: number;
-  metricStream: number;
-  nutritionDaily: number;
-  labResults: number;
-  journalEntries: number;
-}
-
-function StatsOverview({ stats }: { stats: ProviderStatsData }) {
-  const breakdown = [
-    { label: "Activities", count: stats.activities },
-    { label: "Metric Stream", count: stats.metricStream },
-    { label: "Daily Metrics", count: stats.dailyMetrics },
-    { label: "Sleep", count: stats.sleepSessions },
-    { label: "Body", count: stats.bodyMeasurements },
-    { label: "Food", count: stats.foodEntries },
-    { label: "Nutrition", count: stats.nutritionDaily },
-    { label: "Events", count: stats.healthEvents },
-    { label: "Lab Results", count: stats.labResults },
-    { label: "Journal", count: stats.journalEntries },
-  ].filter((b) => b.count > 0);
-
-  const total = breakdown.reduce((sum, b) => sum + b.count, 0);
-
-  if (total === 0) return null;
-
-  return (
-    <section className="card p-4">
-      <div className="flex items-baseline gap-2 mb-3">
-        <span className="text-2xl font-bold text-foreground tabular-nums">
-          {total.toLocaleString()}
-        </span>
-        <span className="text-sm text-subtle">total records</span>
-      </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        {breakdown.map((b) => (
-          <div key={b.label} className="text-center">
-            <div className="text-lg font-semibold text-foreground tabular-nums">
-              {b.count.toLocaleString()}
-            </div>
-            <div className="text-xs text-subtle">{b.label}</div>
-          </div>
-        ))}
-      </div>
-    </section>
   );
 }
 
@@ -465,7 +399,7 @@ function SyncHistory({ providerId }: { providerId: string }) {
 
 // ── Records Browser ──
 
-function getStatCount(stats: ProviderStatsData, key: DataType): number {
+function getStatCount(stats: ProviderStats, key: DataType): number {
   return stats[key];
 }
 
@@ -474,9 +408,9 @@ function RecordsBrowser({
   stats,
 }: {
   providerId: string;
-  stats: ProviderStatsData | undefined;
+  stats: ProviderStats | undefined;
 }) {
-  const availableTypes = DATA_TYPES.filter((dt) => {
+  const availableTypes = DATA_TYPE_LABELS.filter((dt) => {
     if (!stats) return true;
     return getStatCount(stats, dt.key) > 0;
   });
