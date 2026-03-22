@@ -114,10 +114,10 @@ export function wgerOAuthConfig(): OAuthConfig | null {
 export class WgerProvider implements SyncProvider {
   readonly id = "wger";
   readonly name = "Wger";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -129,7 +129,7 @@ export class WgerProvider implements SyncProvider {
   authSetup(): ProviderAuthSetup {
     const config = wgerOAuthConfig();
     if (!config) throw new Error("WGER_CLIENT_ID and CLIENT_SECRET required");
-    const fetchFn = this.fetchFn;
+    const fetchFn = this.#fetchFn;
     return {
       oauthConfig: config,
       exchangeCode: (code) => exchangeCodeForTokens(config, code, fetchFn),
@@ -137,13 +137,13 @@ export class WgerProvider implements SyncProvider {
     };
   }
 
-  private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
+  async #resolveTokens(db: SyncDatabase): Promise<TokenSet> {
     return resolveOAuthTokens({
       db,
       providerId: this.id,
       providerName: this.name,
       getOAuthConfig: () => wgerOAuthConfig(),
-      fetchFn: this.fetchFn,
+      fetchFn: this.#fetchFn,
     });
   }
 
@@ -156,7 +156,7 @@ export class WgerProvider implements SyncProvider {
 
     let accessToken: string;
     try {
-      const tokens = await this.resolveTokens(db);
+      const tokens = await this.#resolveTokens(db);
       accessToken = tokens.accessToken;
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
@@ -175,7 +175,7 @@ export class WgerProvider implements SyncProvider {
             `${WGER_API_BASE}/workoutsession/?format=json&ordering=-date&offset=0&limit=50`;
 
           while (url) {
-            const response = await this.fetchFn(url, {
+            const response = await this.#fetchFn(url, {
               headers: {
                 Authorization: `Bearer ${accessToken}`,
                 Accept: "application/json",
@@ -257,7 +257,7 @@ export class WgerProvider implements SyncProvider {
             `${WGER_API_BASE}/weightentry/?format=json&ordering=-date&offset=0&limit=50`;
 
           while (url) {
-            const response = await this.fetchFn(url, {
+            const response = await this.#fetchFn(url, {
               headers: {
                 Authorization: `Bearer ${accessToken}`,
                 Accept: "application/json",

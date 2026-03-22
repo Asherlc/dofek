@@ -37,10 +37,10 @@ const AUTH_API_BASE = "https://auth-api.8slp.net/v1";
 export class EightSleepProvider implements SyncProvider {
   readonly id = "eight-sleep";
   readonly name = "Eight Sleep";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -49,7 +49,7 @@ export class EightSleepProvider implements SyncProvider {
   }
 
   authSetup(): ProviderAuthSetup {
-    const fetchFn = this.fetchFn;
+    const fetchFn = this.#fetchFn;
     return {
       oauthConfig: {
         clientId: EIGHT_SLEEP_CLIENT_ID,
@@ -99,7 +99,7 @@ export class EightSleepProvider implements SyncProvider {
       if (stored.expiresAt <= new Date()) {
         throw new Error("Eight Sleep token expired — please re-authenticate via Settings");
       }
-      client = new EightSleepClient(stored.accessToken, userId, this.fetchFn);
+      client = new EightSleepClient(stored.accessToken, userId, this.#fetchFn);
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };

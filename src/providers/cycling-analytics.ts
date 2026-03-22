@@ -121,10 +121,10 @@ export function cyclingAnalyticsOAuthConfig(): OAuthConfig | null {
 export class CyclingAnalyticsProvider implements SyncProvider {
   readonly id = "cycling_analytics";
   readonly name = "Cycling Analytics";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -137,7 +137,7 @@ export class CyclingAnalyticsProvider implements SyncProvider {
   authSetup(): ProviderAuthSetup {
     const config = cyclingAnalyticsOAuthConfig();
     if (!config) throw new Error("CYCLING_ANALYTICS_CLIENT_ID and CLIENT_SECRET required");
-    const fetchFn = this.fetchFn;
+    const fetchFn = this.#fetchFn;
     return {
       oauthConfig: config,
       exchangeCode: (code) => exchangeCodeForTokens(config, code, fetchFn),
@@ -145,13 +145,13 @@ export class CyclingAnalyticsProvider implements SyncProvider {
     };
   }
 
-  private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
+  async #resolveTokens(db: SyncDatabase): Promise<TokenSet> {
     return resolveOAuthTokens({
       db,
       providerId: this.id,
       providerName: this.name,
       getOAuthConfig: () => cyclingAnalyticsOAuthConfig(),
-      fetchFn: this.fetchFn,
+      fetchFn: this.#fetchFn,
     });
   }
 
@@ -164,7 +164,7 @@ export class CyclingAnalyticsProvider implements SyncProvider {
 
     let accessToken: string;
     try {
-      const tokens = await this.resolveTokens(db);
+      const tokens = await this.#resolveTokens(db);
       accessToken = tokens.accessToken;
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
@@ -183,7 +183,7 @@ export class CyclingAnalyticsProvider implements SyncProvider {
 
           while (hasMore) {
             const url = `${CYCLING_ANALYTICS_API_BASE}/me/rides?start_date=${since.toISOString()}&page=${page}&limit=50`;
-            const response = await this.fetchFn(url, {
+            const response = await this.#fetchFn(url, {
               headers: {
                 Authorization: `Bearer ${accessToken}`,
                 Accept: "application/json",

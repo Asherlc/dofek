@@ -29,10 +29,10 @@ function formatDate(date: Date): string {
 export class TrainerRoadProvider implements SyncProvider {
   readonly id = "trainerroad";
   readonly name = "TrainerRoad";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -40,7 +40,7 @@ export class TrainerRoadProvider implements SyncProvider {
   }
 
   authSetup(): ProviderAuthSetup {
-    const fetchFn = this.fetchFn;
+    const fetchFn = this.#fetchFn;
     return {
       oauthConfig: {
         clientId: "",
@@ -90,7 +90,7 @@ export class TrainerRoadProvider implements SyncProvider {
       if (stored.expiresAt <= new Date()) {
         throw new Error("TrainerRoad session expired — please re-authenticate via Settings");
       }
-      client = new TrainerRoadClient(stored.accessToken, this.fetchFn);
+      client = new TrainerRoadClient(stored.accessToken, this.#fetchFn);
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };

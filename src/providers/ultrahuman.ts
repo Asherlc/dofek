@@ -112,21 +112,21 @@ export function parseUltrahumanMetrics(
 // ============================================================
 
 export class UltrahumanClient {
-  private token: string;
-  private email: string;
-  private fetchFn: typeof globalThis.fetch;
+  #token: string;
+  #email: string;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(token: string, email: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.token = token;
-    this.email = email;
-    this.fetchFn = fetchFn;
+    this.#token = token;
+    this.#email = email;
+    this.#fetchFn = fetchFn;
   }
 
   async getDailyMetrics(date: string): Promise<UltrahumanDailyMetricsResponse> {
-    const url = `${ULTRAHUMAN_API_BASE}/partner/daily_metrics?email=${encodeURIComponent(this.email)}&date=${date}`;
-    const response = await this.fetchFn(url, {
+    const url = `${ULTRAHUMAN_API_BASE}/partner/daily_metrics?email=${encodeURIComponent(this.#email)}&date=${date}`;
+    const response = await this.#fetchFn(url, {
       headers: {
-        Authorization: this.token,
+        Authorization: this.#token,
         Accept: "application/json",
       },
     });
@@ -155,10 +155,10 @@ function formatDate(date: Date): string {
 export class UltrahumanProvider implements SyncProvider {
   readonly id = "ultrahuman";
   readonly name = "Ultrahuman";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -185,7 +185,7 @@ export class UltrahumanProvider implements SyncProvider {
       if (!token || !email) {
         throw new Error("Ultrahuman API token and email required");
       }
-      client = new UltrahumanClient(token, email, this.fetchFn);
+      client = new UltrahumanClient(token, email, this.#fetchFn);
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };

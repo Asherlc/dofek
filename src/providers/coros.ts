@@ -206,10 +206,10 @@ export class CorosClient extends ProviderHttpClient {
 export class CorosProvider implements SyncProvider {
   readonly id = "coros";
   readonly name = "COROS";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -221,7 +221,7 @@ export class CorosProvider implements SyncProvider {
   authSetup(): ProviderAuthSetup {
     const config = corosOAuthConfig();
     if (!config) throw new Error("COROS_CLIENT_ID and CLIENT_SECRET required");
-    const fetchFn = this.fetchFn;
+    const fetchFn = this.#fetchFn;
     return {
       oauthConfig: config,
       exchangeCode: (code) => exchangeCodeForTokens(config, code, fetchFn),
@@ -229,13 +229,13 @@ export class CorosProvider implements SyncProvider {
     };
   }
 
-  private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
+  async #resolveTokens(db: SyncDatabase): Promise<TokenSet> {
     return resolveOAuthTokens({
       db,
       providerId: this.id,
       providerName: this.name,
       getOAuthConfig: () => corosOAuthConfig(),
-      fetchFn: this.fetchFn,
+      fetchFn: this.#fetchFn,
     });
   }
 
@@ -248,8 +248,8 @@ export class CorosProvider implements SyncProvider {
 
     let client: CorosClient;
     try {
-      const tokens = await this.resolveTokens(db);
-      client = new CorosClient(tokens.accessToken, this.fetchFn);
+      const tokens = await this.#resolveTokens(db);
+      client = new CorosClient(tokens.accessToken, this.#fetchFn);
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };

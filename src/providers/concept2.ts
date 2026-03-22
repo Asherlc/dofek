@@ -179,10 +179,10 @@ export class Concept2Client extends ProviderHttpClient {
 export class Concept2Provider implements SyncProvider {
   readonly id = "concept2";
   readonly name = "Concept2";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -194,7 +194,7 @@ export class Concept2Provider implements SyncProvider {
   authSetup(): ProviderAuthSetup {
     const config = concept2OAuthConfig();
     if (!config) throw new Error("CONCEPT2_CLIENT_ID and CLIENT_SECRET required");
-    const fetchFn = this.fetchFn;
+    const fetchFn = this.#fetchFn;
     return {
       oauthConfig: config,
       exchangeCode: (code) => exchangeCodeForTokens(config, code, fetchFn),
@@ -202,13 +202,13 @@ export class Concept2Provider implements SyncProvider {
     };
   }
 
-  private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
+  async #resolveTokens(db: SyncDatabase): Promise<TokenSet> {
     return resolveOAuthTokens({
       db,
       providerId: this.id,
       providerName: this.name,
       getOAuthConfig: () => concept2OAuthConfig(),
-      fetchFn: this.fetchFn,
+      fetchFn: this.#fetchFn,
     });
   }
 
@@ -221,8 +221,8 @@ export class Concept2Provider implements SyncProvider {
 
     let client: Concept2Client;
     try {
-      const tokens = await this.resolveTokens(db);
-      client = new Concept2Client(tokens.accessToken, this.fetchFn);
+      const tokens = await this.#resolveTokens(db);
+      client = new Concept2Client(tokens.accessToken, this.#fetchFn);
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };

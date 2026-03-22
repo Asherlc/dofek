@@ -53,23 +53,23 @@ const DEFAULT_CONFIG: GradientBoostedTreesConfig = {
 // ── Gradient Boosted Trees ─────────────────────────────────────────────────
 
 export class GradientBoostedTrees {
-  private config: GradientBoostedTreesConfig;
-  private basePrediction = 0;
-  private trees: TreeNode[] = [];
-  private _featureImportances: number[] = [];
-  private _rSquared = 0;
-  private _nFeatures = 0;
+  #config: GradientBoostedTreesConfig;
+  #basePrediction = 0;
+  #trees: TreeNode[] = [];
+  #featureImportances: number[] = [];
+  #rSquared = 0;
+  #nFeatures = 0;
 
   constructor(config?: Partial<GradientBoostedTreesConfig>) {
-    this.config = { ...DEFAULT_CONFIG, ...config };
+    this.#config = { ...DEFAULT_CONFIG, ...config };
   }
 
   get featureImportances(): number[] {
-    return this._featureImportances;
+    return this.#featureImportances;
   }
 
   get rSquared(): number {
-    return this._rSquared;
+    return this.#rSquared;
   }
 
   fit(X: number[][], y: number[]): void {
@@ -80,35 +80,35 @@ export class GradientBoostedTrees {
       throw new Error(`X has ${n} rows but y has ${y.length} elements`);
     }
 
-    this._nFeatures = p;
-    this.basePrediction = mean(y);
-    this.trees = [];
+    this.#nFeatures = p;
+    this.#basePrediction = mean(y);
+    this.#trees = [];
 
     // Raw importances per feature (accumulated variance reduction)
     const rawImportances = new Array<number>(p).fill(0);
 
     // Initialize predictions to the base (mean)
-    const predictions = new Array<number>(n).fill(this.basePrediction);
+    const predictions = new Array<number>(n).fill(this.#basePrediction);
 
-    for (let iter = 0; iter < this.config.nEstimators; iter++) {
+    for (let iter = 0; iter < this.#config.nEstimators; iter++) {
       // Compute negative gradient (residuals for MSE loss)
       const residuals = y.map((yi, i) => (yi ?? 0) - (predictions[i] ?? 0));
 
       // Build a regression tree on residuals
       const indices = Array.from({ length: n }, (_, i) => i);
-      const tree = this.buildTree(X, residuals, indices, 0, rawImportances);
-      this.trees.push(tree);
+      const tree = this.#buildTree(X, residuals, indices, 0, rawImportances);
+      this.#trees.push(tree);
 
       // Update predictions
       for (let i = 0; i < n; i++) {
         predictions[i] =
-          (predictions[i] ?? 0) + this.config.learningRate * predictNode(tree, X[i] ?? []);
+          (predictions[i] ?? 0) + this.#config.learningRate * predictNode(tree, X[i] ?? []);
       }
     }
 
     // Normalize feature importances to sum to 1
     const totalImportance = rawImportances.reduce((a, b) => a + b, 0);
-    this._featureImportances =
+    this.#featureImportances =
       totalImportance > 0 ? rawImportances.map((v) => v / totalImportance) : rawImportances;
 
     // Compute R² on training data
@@ -119,41 +119,41 @@ export class GradientBoostedTrees {
       ssRes += ((y[i] ?? 0) - (predictions[i] ?? 0)) ** 2;
       ssTot += ((y[i] ?? 0) - yMean) ** 2;
     }
-    this._rSquared = ssTot === 0 ? 1 : 1 - ssRes / ssTot;
+    this.#rSquared = ssTot === 0 ? 1 : 1 - ssRes / ssTot;
   }
 
   predict(x: number[]): number {
-    let pred = this.basePrediction;
-    for (const tree of this.trees) {
-      pred += this.config.learningRate * predictNode(tree, x);
+    let pred = this.#basePrediction;
+    for (const tree of this.#trees) {
+      pred += this.#config.learningRate * predictNode(tree, x);
     }
     return pred;
   }
 
   toJSON(): GradientBoostedTreesJSON {
     return {
-      config: this.config,
-      basePrediction: this.basePrediction,
-      trees: this.trees.map(serializeNode),
-      featureImportances: this._featureImportances,
-      rSquared: this._rSquared,
-      nFeatures: this._nFeatures,
+      config: this.#config,
+      basePrediction: this.#basePrediction,
+      trees: this.#trees.map(serializeNode),
+      featureImportances: this.#featureImportances,
+      rSquared: this.#rSquared,
+      nFeatures: this.#nFeatures,
     };
   }
 
   static fromJSON(json: GradientBoostedTreesJSON): GradientBoostedTrees {
     const model = new GradientBoostedTrees(json.config);
-    model.basePrediction = json.basePrediction;
-    model.trees = json.trees.map(deserializeNode);
-    model._featureImportances = json.featureImportances;
-    model._rSquared = json.rSquared;
-    model._nFeatures = json.nFeatures;
+    model.#basePrediction = json.basePrediction;
+    model.#trees = json.trees.map(deserializeNode);
+    model.#featureImportances = json.featureImportances;
+    model.#rSquared = json.rSquared;
+    model.#nFeatures = json.nFeatures;
     return model;
   }
 
   // ── Tree building ──────────────────────────────────────────────────────
 
-  private buildTree(
+  #buildTree(
     X: number[][],
     y: number[],
     indices: number[],
@@ -161,11 +161,11 @@ export class GradientBoostedTrees {
     importances: number[],
   ): TreeNode {
     // Leaf conditions
-    if (depth >= this.config.maxDepth || indices.length <= this.config.minSamplesLeaf * 2) {
+    if (depth >= this.#config.maxDepth || indices.length <= this.#config.minSamplesLeaf * 2) {
       return { value: meanOfIndices(y, indices) };
     }
 
-    const best = this.findBestSplit(X, y, indices);
+    const best = this.#findBestSplit(X, y, indices);
     if (!best) {
       return { value: meanOfIndices(y, indices) };
     }
@@ -187,12 +187,12 @@ export class GradientBoostedTrees {
     return {
       featureIndex: best.featureIndex,
       threshold: best.threshold,
-      left: this.buildTree(X, y, leftIndices, depth + 1, importances),
-      right: this.buildTree(X, y, rightIndices, depth + 1, importances),
+      left: this.#buildTree(X, y, leftIndices, depth + 1, importances),
+      right: this.#buildTree(X, y, rightIndices, depth + 1, importances),
     };
   }
 
-  private findBestSplit(
+  #findBestSplit(
     X: number[][],
     y: number[],
     indices: number[],
@@ -246,7 +246,7 @@ export class GradientBoostedTrees {
         if ((X[i]?.[f] ?? 0) === (X[nextI]?.[f] ?? 0)) continue;
 
         // Skip if either side would be too small
-        if (leftCount < this.config.minSamplesLeaf || rightCount < this.config.minSamplesLeaf) {
+        if (leftCount < this.#config.minSamplesLeaf || rightCount < this.#config.minSamplesLeaf) {
           continue;
         }
 

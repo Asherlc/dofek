@@ -355,10 +355,10 @@ function formatDate(date: Date): string {
 export class FitbitProvider implements SyncProvider {
   readonly id = "fitbit";
   readonly name = "Fitbit";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -372,7 +372,7 @@ export class FitbitProvider implements SyncProvider {
     if (!config) throw new Error("FITBIT_CLIENT_ID and FITBIT_CLIENT_SECRET are required");
     const codeVerifier = generateCodeVerifier();
     const codeChallenge = generateCodeChallenge(codeVerifier);
-    const fetchFn = this.fetchFn;
+    const fetchFn = this.#fetchFn;
 
     return {
       oauthConfig: config,
@@ -399,13 +399,13 @@ export class FitbitProvider implements SyncProvider {
     };
   }
 
-  private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
+  async #resolveTokens(db: SyncDatabase): Promise<TokenSet> {
     return resolveOAuthTokens({
       db,
       providerId: this.id,
       providerName: this.name,
       getOAuthConfig: () => fitbitOAuthConfig(),
-      fetchFn: this.fetchFn,
+      fetchFn: this.#fetchFn,
     });
   }
 
@@ -418,13 +418,13 @@ export class FitbitProvider implements SyncProvider {
 
     let tokens: TokenSet;
     try {
-      tokens = await this.resolveTokens(db);
+      tokens = await this.#resolveTokens(db);
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
-    const client = new FitbitClient(tokens.accessToken, this.fetchFn);
+    const client = new FitbitClient(tokens.accessToken, this.#fetchFn);
     const sinceDate = formatDate(since);
 
     // 1. Sync activities

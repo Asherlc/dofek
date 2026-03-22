@@ -66,16 +66,16 @@ function getLocalePreferences(locale?: string): SearchLocalePreferences {
 }
 
 export class OpenFoodFactsClient {
-  private readonly localePreferences: SearchLocalePreferences;
+  readonly #localePreferences: SearchLocalePreferences;
 
   constructor(locale?: string) {
-    this.localePreferences = getLocalePreferences(locale);
+    this.#localePreferences = getLocalePreferences(locale);
   }
 
   async lookupBarcode(barcode: string): Promise<FoodDatabaseResult | null> {
     try {
       const response = await fetch(
-        `${BASE_URL}/api/v2/product/${barcode}.json?fields=code,product_name,brands,serving_size,nutriments,image_front_small_url,lang,product_name_${this.localePreferences.languageCode}`,
+        `${BASE_URL}/api/v2/product/${barcode}.json?fields=code,product_name,brands,serving_size,nutriments,image_front_small_url,lang,product_name_${this.#localePreferences.languageCode}`,
       );
       if (!response.ok) return null;
 
@@ -84,7 +84,7 @@ export class OpenFoodFactsClient {
       if (!parsedResponse.success) return null;
       if (parsedResponse.data.status !== 1 || !parsedResponse.data.product) return null;
 
-      return this.parseProduct(parsedResponse.data.product, false);
+      return this.#parseProduct(parsedResponse.data.product, false);
     } catch {
       return null;
     }
@@ -92,21 +92,18 @@ export class OpenFoodFactsClient {
 
   async searchFoods(query: string, limit = 20): Promise<FoodDatabaseResult[]> {
     try {
-      const localizedResults = await this.runSearch(query, limit);
-      if (localizedResults.length > 0 || !this.localePreferences.countryTag) {
+      const localizedResults = await this.#runSearch(query, limit);
+      if (localizedResults.length > 0 || !this.#localePreferences.countryTag) {
         return localizedResults;
       }
       // Fallback to global search if country-filtered results are empty.
-      return this.runSearch(query, limit, { ...this.localePreferences, countryTag: null });
+      return this.#runSearch(query, limit, { ...this.#localePreferences, countryTag: null });
     } catch {
       return [];
     }
   }
 
-  private getLocalizedName(
-    product: OpenFoodFactsProduct,
-    preferredLanguageCode: string,
-  ): string | null {
+  #getLocalizedName(product: OpenFoodFactsProduct, preferredLanguageCode: string): string | null {
     const localizedNameField = `product_name_${preferredLanguageCode}`;
     const localizedName = product[localizedNameField];
     if (typeof localizedName === "string" && localizedName.trim()) {
@@ -118,7 +115,7 @@ export class OpenFoodFactsClient {
     return null;
   }
 
-  private languageMatchesPreference(
+  #languageMatchesPreference(
     productLanguage: string | undefined,
     preferredLanguageCode: string,
   ): boolean {
@@ -130,7 +127,7 @@ export class OpenFoodFactsClient {
     );
   }
 
-  private getNumericNutrimentValue(
+  #getNumericNutrimentValue(
     nutriments: Record<string, unknown> | undefined,
     fieldName: string,
   ): number | null {
@@ -145,36 +142,36 @@ export class OpenFoodFactsClient {
     return null;
   }
 
-  private parseProduct(
+  #parseProduct(
     product: OpenFoodFactsProduct,
     enforceLanguageMatch: boolean,
   ): FoodDatabaseResult | null {
-    const preferredLanguageCode = this.localePreferences.languageCode;
-    const name = this.getLocalizedName(product, preferredLanguageCode);
+    const preferredLanguageCode = this.#localePreferences.languageCode;
+    const name = this.#getLocalizedName(product, preferredLanguageCode);
     if (!name) return null;
     if (
       enforceLanguageMatch &&
-      !this.languageMatchesPreference(product.lang, preferredLanguageCode)
+      !this.#languageMatchesPreference(product.lang, preferredLanguageCode)
     ) {
       return null;
     }
 
     const nutriments = product.nutriments;
     const calories =
-      this.getNumericNutrimentValue(nutriments, "energy-kcal_serving") ??
-      this.getNumericNutrimentValue(nutriments, "energy-kcal_100g");
+      this.#getNumericNutrimentValue(nutriments, "energy-kcal_serving") ??
+      this.#getNumericNutrimentValue(nutriments, "energy-kcal_100g");
     const proteinG =
-      this.getNumericNutrimentValue(nutriments, "proteins_serving") ??
-      this.getNumericNutrimentValue(nutriments, "proteins_100g");
+      this.#getNumericNutrimentValue(nutriments, "proteins_serving") ??
+      this.#getNumericNutrimentValue(nutriments, "proteins_100g");
     const carbsG =
-      this.getNumericNutrimentValue(nutriments, "carbohydrates_serving") ??
-      this.getNumericNutrimentValue(nutriments, "carbohydrates_100g");
+      this.#getNumericNutrimentValue(nutriments, "carbohydrates_serving") ??
+      this.#getNumericNutrimentValue(nutriments, "carbohydrates_100g");
     const fatG =
-      this.getNumericNutrimentValue(nutriments, "fat_serving") ??
-      this.getNumericNutrimentValue(nutriments, "fat_100g");
+      this.#getNumericNutrimentValue(nutriments, "fat_serving") ??
+      this.#getNumericNutrimentValue(nutriments, "fat_100g");
     const fiberG =
-      this.getNumericNutrimentValue(nutriments, "fiber_serving") ??
-      this.getNumericNutrimentValue(nutriments, "fiber_100g");
+      this.#getNumericNutrimentValue(nutriments, "fiber_serving") ??
+      this.#getNumericNutrimentValue(nutriments, "fiber_100g");
 
     return {
       barcode: product.code ?? null,
@@ -190,12 +187,12 @@ export class OpenFoodFactsClient {
     };
   }
 
-  private async runSearch(
+  async #runSearch(
     query: string,
     limit: number,
     localeOverride?: SearchLocalePreferences,
   ): Promise<FoodDatabaseResult[]> {
-    const localePreferences = localeOverride ?? this.localePreferences;
+    const localePreferences = localeOverride ?? this.#localePreferences;
     const localizedNameField = `product_name_${localePreferences.languageCode}`;
     const fields = [
       "code",
@@ -231,7 +228,7 @@ export class OpenFoodFactsClient {
     if (!parsedResponse.success) return [];
 
     return parsedResponse.data.products
-      .map((product) => this.parseProduct(product, true))
+      .map((product) => this.#parseProduct(product, true))
       .filter((product): product is FoodDatabaseResult => product !== null);
   }
 }

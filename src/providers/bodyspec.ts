@@ -311,10 +311,10 @@ class BodySpecClient extends ProviderHttpClient {
 export class BodySpecProvider implements SyncProvider {
   readonly id = "bodyspec";
   readonly name = "BodySpec";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -328,18 +328,18 @@ export class BodySpecProvider implements SyncProvider {
     if (!config) return undefined;
     return {
       oauthConfig: config,
-      exchangeCode: (code) => exchangeCodeForTokens(config, code, this.fetchFn),
+      exchangeCode: (code) => exchangeCodeForTokens(config, code, this.#fetchFn),
       apiBaseUrl: BODYSPEC_API_BASE,
     };
   }
 
-  private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
+  async #resolveTokens(db: SyncDatabase): Promise<TokenSet> {
     return resolveOAuthTokens({
       db,
       providerId: this.id,
       providerName: this.name,
       getOAuthConfig: () => bodySpecOAuthConfig(),
-      fetchFn: this.fetchFn,
+      fetchFn: this.#fetchFn,
     });
   }
 
@@ -352,13 +352,13 @@ export class BodySpecProvider implements SyncProvider {
 
     let tokens: TokenSet;
     try {
-      tokens = await this.resolveTokens(db);
+      tokens = await this.#resolveTokens(db);
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
-    const client = new BodySpecClient(tokens.accessToken, this.fetchFn);
+    const client = new BodySpecClient(tokens.accessToken, this.#fetchFn);
 
     try {
       const scanCount = await withSyncLog(
@@ -378,7 +378,7 @@ export class BodySpecProvider implements SyncProvider {
               if (resultTime < since) continue;
 
               try {
-                count += await this.syncResult(db, client, result.result_id, resultTime);
+                count += await this.#syncResult(db, client, result.result_id, resultTime);
               } catch (err) {
                 errors.push({
                   message: err instanceof Error ? err.message : String(err),
@@ -412,7 +412,7 @@ export class BodySpecProvider implements SyncProvider {
     };
   }
 
-  private async syncResult(
+  async #syncResult(
     db: SyncDatabase,
     client: BodySpecClient,
     resultId: string,

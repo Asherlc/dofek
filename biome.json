@@ -1,6 +1,11 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.4.6/schema.json",
-  "plugins": ["./plugins/no-double-cast.grit", "./plugins/no-as-type-assertion.grit"],
+  "plugins": [
+    "./plugins/no-double-cast.grit",
+    "./plugins/no-as-type-assertion.grit",
+    "./plugins/no-private-keyword.grit",
+    "./plugins/no-underscore-private.grit"
+  ],
   "vcs": {
     "enabled": true,
     "clientKind": "git",

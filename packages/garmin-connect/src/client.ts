@@ -45,16 +45,16 @@ const TITLE_RE = /<title>(.+?)<\/title>/;
 const TICKET_RE = /embed\?ticket=([^"]+)"/;
 
 export class GarminConnectClient {
-  private oauth1Token: OAuth1Token | null = null;
-  private oauth2Token: OAuth2Token | null = null;
-  private consumer: OAuthConsumer | null = null;
-  private displayName: string | null = null;
-  private domain: string;
-  private fetchFn: typeof globalThis.fetch;
+  #oauth1Token: OAuth1Token | null = null;
+  #oauth2Token: OAuth2Token | null = null;
+  #consumer: OAuthConsumer | null = null;
+  #displayName: string | null = null;
+  #domain: string;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(domain: string = "garmin.com", fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.domain = domain;
-    this.fetchFn = fetchFn;
+    this.#domain = domain;
+    this.#fetchFn = fetchFn;
   }
 
   // ============================================================
@@ -72,7 +72,7 @@ export class GarminConnectClient {
     fetchFn: typeof globalThis.fetch = globalThis.fetch,
   ): Promise<{ client: GarminConnectClient; tokens: GarminTokens }> {
     const client = new GarminConnectClient(domain, fetchFn);
-    await client.loadConsumer();
+    await client.#loadConsumer();
 
     const ssoBase = `https://sso.${domain}/sso`;
     const ssoEmbed = `${ssoBase}/embed`;
@@ -150,15 +150,15 @@ export class GarminConnectClient {
 
     // Step 4: Extract ticket and get OAuth1 token
     const ticket = extractTicket(loginHtml);
-    const oauth1 = await client.getOAuth1Token(ticket);
-    client.oauth1Token = oauth1;
+    const oauth1 = await client.#getOAuth1Token(ticket);
+    client.#oauth1Token = oauth1;
 
     // Step 5: Exchange for OAuth2
-    const oauth2 = await client.exchangeForOAuth2(oauth1);
-    client.oauth2Token = oauth2;
+    const oauth2 = await client.#exchangeForOAuth2(oauth1);
+    client.#oauth2Token = oauth2;
 
     // Load profile to get displayName
-    await client.loadProfile();
+    await client.#loadProfile();
 
     return {
       client,
@@ -175,17 +175,17 @@ export class GarminConnectClient {
     fetchFn: typeof globalThis.fetch = globalThis.fetch,
   ): Promise<GarminConnectClient> {
     const client = new GarminConnectClient(domain, fetchFn);
-    await client.loadConsumer();
-    client.oauth1Token = tokens.oauth1;
-    client.oauth2Token = tokens.oauth2;
+    await client.#loadConsumer();
+    client.#oauth1Token = tokens.oauth1;
+    client.#oauth2Token = tokens.oauth2;
 
     // Refresh OAuth2 if expired
     if (tokens.oauth2.expires_at < Date.now() / 1000) {
-      const refreshed = await client.exchangeForOAuth2(tokens.oauth1);
-      client.oauth2Token = refreshed;
+      const refreshed = await client.#exchangeForOAuth2(tokens.oauth1);
+      client.#oauth2Token = refreshed;
     }
 
-    await client.loadProfile();
+    await client.#loadProfile();
     return client;
   }
 
@@ -193,29 +193,29 @@ export class GarminConnectClient {
    * Get current tokens for persistence.
    */
   getTokens(): GarminTokens | null {
-    if (!this.oauth1Token || !this.oauth2Token) return null;
-    return { oauth1: this.oauth1Token, oauth2: this.oauth2Token };
+    if (!this.#oauth1Token || !this.#oauth2Token) return null;
+    return { oauth1: this.#oauth1Token, oauth2: this.#oauth2Token };
   }
 
-  private async loadConsumer(): Promise<void> {
-    const response = await this.fetchFn(OAUTH_CONSUMER_URL);
+  async #loadConsumer(): Promise<void> {
+    const response = await this.#fetchFn(OAUTH_CONSUMER_URL);
     if (!response.ok) {
       throw new GarminAuthError("Failed to fetch OAuth consumer credentials");
     }
     const consumer: OAuthConsumer = await response.json();
-    this.consumer = consumer;
+    this.#consumer = consumer;
   }
 
-  private async getOAuth1Token(ticket: string): Promise<OAuth1Token> {
-    if (!this.consumer) throw new GarminAuthError("OAuth consumer not loaded");
+  async #getOAuth1Token(ticket: string): Promise<OAuth1Token> {
+    if (!this.#consumer) throw new GarminAuthError("OAuth consumer not loaded");
 
-    const loginUrl = `https://sso.${this.domain}/sso/embed`;
-    const baseUrl = `https://connectapi.${this.domain}/oauth-service/oauth`;
+    const loginUrl = `https://sso.${this.#domain}/sso/embed`;
+    const baseUrl = `https://connectapi.${this.#domain}/oauth-service/oauth`;
     const url = `${baseUrl}/preauthorized?ticket=${encodeURIComponent(ticket)}&login-url=${encodeURIComponent(loginUrl)}&accepts-mfa-tokens=true`;
 
-    const authHeader = buildOAuth1Header("GET", url, this.consumer);
+    const authHeader = buildOAuth1Header("GET", url, this.#consumer);
 
-    const response = await this.fetchFn(url, {
+    const response = await this.#fetchFn(url, {
       headers: {
         Authorization: authHeader,
         "User-Agent": USER_AGENT,
@@ -238,10 +238,10 @@ export class GarminConnectClient {
     };
   }
 
-  private async exchangeForOAuth2(oauth1: OAuth1Token): Promise<OAuth2Token> {
-    if (!this.consumer) throw new GarminAuthError("OAuth consumer not loaded");
+  async #exchangeForOAuth2(oauth1: OAuth1Token): Promise<OAuth2Token> {
+    if (!this.#consumer) throw new GarminAuthError("OAuth consumer not loaded");
 
-    const baseUrl = `https://connectapi.${this.domain}/oauth-service/oauth`;
+    const baseUrl = `https://connectapi.${this.#domain}/oauth-service/oauth`;
     const url = `${baseUrl}/exchange/user/2.0`;
 
     const bodyParams: Record<string, string> = {};
@@ -249,9 +249,9 @@ export class GarminConnectClient {
       bodyParams.mfa_token = oauth1.mfa_token;
     }
 
-    const authHeader = buildOAuth1Header("POST", url, this.consumer, oauth1, bodyParams);
+    const authHeader = buildOAuth1Header("POST", url, this.#consumer, oauth1, bodyParams);
 
-    const response = await this.fetchFn(url, {
+    const response = await this.#fetchFn(url, {
       method: "POST",
       headers: {
         Authorization: authHeader,
@@ -282,40 +282,40 @@ export class GarminConnectClient {
     };
   }
 
-  private async loadProfile(): Promise<void> {
-    const profile = await this.connectApi<GarminUserProfile>("/userprofile-service/socialProfile");
-    this.displayName = profile.displayName;
+  async #loadProfile(): Promise<void> {
+    const profile = await this.#connectApi<GarminUserProfile>("/userprofile-service/socialProfile");
+    this.#displayName = profile.displayName;
   }
 
   // ============================================================
   // API request helpers
   // ============================================================
 
-  private async ensureValidToken(): Promise<string> {
-    if (!this.oauth2Token) {
+  async #ensureValidToken(): Promise<string> {
+    if (!this.#oauth2Token) {
       throw new GarminAuthError("Not authenticated");
     }
 
-    if (this.oauth2Token.expires_at < Date.now() / 1000) {
-      if (!this.oauth1Token) {
+    if (this.#oauth2Token.expires_at < Date.now() / 1000) {
+      if (!this.#oauth1Token) {
         throw new GarminAuthError("OAuth2 token expired and no OAuth1 token available for refresh");
       }
-      this.oauth2Token = await this.exchangeForOAuth2(this.oauth1Token);
+      this.#oauth2Token = await this.#exchangeForOAuth2(this.#oauth1Token);
     }
 
-    return this.oauth2Token.access_token;
+    return this.#oauth2Token.access_token;
   }
 
-  private async connectApi<T>(path: string, params?: Record<string, string>): Promise<T> {
-    const accessToken = await this.ensureValidToken();
-    const url = new URL(`https://connectapi.${this.domain}${path}`);
+  async #connectApi<T>(path: string, params?: Record<string, string>): Promise<T> {
+    const accessToken = await this.#ensureValidToken();
+    const url = new URL(`https://connectapi.${this.#domain}${path}`);
     if (params) {
       for (const [key, value] of Object.entries(params)) {
         url.searchParams.set(key, value);
       }
     }
 
-    const response = await this.fetchFn(url.toString(), {
+    const response = await this.#fetchFn(url.toString(), {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "User-Agent": API_USER_AGENT,
@@ -343,11 +343,11 @@ export class GarminConnectClient {
     return response.json();
   }
 
-  private async downloadBytes(path: string): Promise<ArrayBuffer> {
-    const accessToken = await this.ensureValidToken();
-    const url = `https://connectapi.${this.domain}${path}`;
+  async #downloadBytes(path: string): Promise<ArrayBuffer> {
+    const accessToken = await this.#ensureValidToken();
+    const url = `https://connectapi.${this.#domain}${path}`;
 
-    const response = await this.fetchFn(url, {
+    const response = await this.#fetchFn(url, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "User-Agent": API_USER_AGENT,
@@ -366,14 +366,14 @@ export class GarminConnectClient {
   // ============================================================
 
   getDisplayName(): string {
-    if (!this.displayName) {
+    if (!this.#displayName) {
       throw new GarminAuthError("Display name not loaded. Call signIn() or fromTokens() first.");
     }
-    return this.displayName;
+    return this.#displayName;
   }
 
   async getUserSettings(): Promise<Record<string, unknown>> {
-    return this.connectApi("/userprofile-service/userprofile/user-settings");
+    return this.#connectApi("/userprofile-service/userprofile/user-settings");
   }
 
   // ============================================================
@@ -381,7 +381,7 @@ export class GarminConnectClient {
   // ============================================================
 
   async getDailySummary(date: string): Promise<ConnectDailySummary> {
-    return this.connectApi(`/usersummary-service/usersummary/daily/${this.getDisplayName()}`, {
+    return this.#connectApi(`/usersummary-service/usersummary/daily/${this.getDisplayName()}`, {
       calendarDate: date,
     });
   }
@@ -391,7 +391,7 @@ export class GarminConnectClient {
   // ============================================================
 
   async getActivities(start: number = 0, limit: number = 20): Promise<ConnectActivitySummary[]> {
-    return this.connectApi("/activitylist-service/activities/search/activities", {
+    return this.#connectApi("/activitylist-service/activities/search/activities", {
       start: String(start),
       limit: String(limit),
     });
@@ -402,14 +402,14 @@ export class GarminConnectClient {
     maxChartSize: number = 2000,
     maxPolylineSize: number = 4000,
   ): Promise<ConnectActivityDetail> {
-    return this.connectApi(`/activity-service/activity/${activityId}/details`, {
+    return this.#connectApi(`/activity-service/activity/${activityId}/details`, {
       maxChartSize: String(maxChartSize),
       maxPolylineSize: String(maxPolylineSize),
     });
   }
 
   async downloadFitFile(activityId: number): Promise<ArrayBuffer> {
-    return this.downloadBytes(`/download-service/files/activity/${activityId}`);
+    return this.#downloadBytes(`/download-service/files/activity/${activityId}`);
   }
 
   // ============================================================
@@ -417,7 +417,7 @@ export class GarminConnectClient {
   // ============================================================
 
   async getSleepData(date: string): Promise<ConnectSleepData> {
-    return this.connectApi(`/wellness-service/wellness/dailySleepData/${this.getDisplayName()}`, {
+    return this.#connectApi(`/wellness-service/wellness/dailySleepData/${this.getDisplayName()}`, {
       date,
     });
   }
@@ -427,7 +427,7 @@ export class GarminConnectClient {
   // ============================================================
 
   async getDailyHeartRate(date: string): Promise<DailyHeartRate> {
-    return this.connectApi(`/wellness-service/wellness/dailyHeartRate/${this.getDisplayName()}`, {
+    return this.#connectApi(`/wellness-service/wellness/dailyHeartRate/${this.getDisplayName()}`, {
       date,
     });
   }
@@ -437,7 +437,7 @@ export class GarminConnectClient {
   // ============================================================
 
   async getDailyStress(date: string): Promise<DailyStress> {
-    return this.connectApi(`/wellness-service/wellness/dailyStress/${date}`);
+    return this.#connectApi(`/wellness-service/wellness/dailyStress/${date}`);
   }
 
   // ============================================================
@@ -445,11 +445,11 @@ export class GarminConnectClient {
   // ============================================================
 
   async getBodyBatteryDaily(date: string): Promise<BodyBatteryDay[]> {
-    return this.connectApi(`/wellness-service/wellness/bodyBattery/reports/daily/${date}`);
+    return this.#connectApi(`/wellness-service/wellness/bodyBattery/reports/daily/${date}`);
   }
 
   async getBodyBatteryEvents(date: string): Promise<Record<string, unknown>> {
-    return this.connectApi(`/wellness-service/wellness/bodyBattery/events/${date}`);
+    return this.#connectApi(`/wellness-service/wellness/bodyBattery/events/${date}`);
   }
 
   // ============================================================
@@ -457,7 +457,7 @@ export class GarminConnectClient {
   // ============================================================
 
   async getHrvSummary(date: string): Promise<HrvSummary> {
-    return this.connectApi(`/hrv-service/hrv/${date}`);
+    return this.#connectApi(`/hrv-service/hrv/${date}`);
   }
 
   // ============================================================
@@ -465,27 +465,27 @@ export class GarminConnectClient {
   // ============================================================
 
   async getTrainingStatus(date: string): Promise<TrainingStatus> {
-    return this.connectApi(`/metrics-service/metrics/trainingstatus/aggregated/${date}`);
+    return this.#connectApi(`/metrics-service/metrics/trainingstatus/aggregated/${date}`);
   }
 
   async getTrainingReadiness(date: string): Promise<TrainingReadiness> {
-    return this.connectApi(`/metrics-service/metrics/trainingreadiness/${date}`);
+    return this.#connectApi(`/metrics-service/metrics/trainingreadiness/${date}`);
   }
 
   async getVo2Max(startDate: string, endDate: string): Promise<Vo2MaxMetric[]> {
-    return this.connectApi(`/metrics-service/metrics/maxmet/daily/${startDate}/${endDate}`);
+    return this.#connectApi(`/metrics-service/metrics/maxmet/daily/${startDate}/${endDate}`);
   }
 
   async getRacePredictions(): Promise<RacePrediction> {
-    return this.connectApi("/metrics-service/metrics/racepredictions");
+    return this.#connectApi("/metrics-service/metrics/racepredictions");
   }
 
   async getHillScore(startDate: string, endDate: string): Promise<HillScore[]> {
-    return this.connectApi(`/metrics-service/metrics/hillscore/${startDate}/${endDate}`);
+    return this.#connectApi(`/metrics-service/metrics/hillscore/${startDate}/${endDate}`);
   }
 
   async getEnduranceScore(startDate: string, endDate: string): Promise<EnduranceScore[]> {
-    return this.connectApi(`/metrics-service/metrics/endurancescore/${startDate}/${endDate}`);
+    return this.#connectApi(`/metrics-service/metrics/endurancescore/${startDate}/${endDate}`);
   }
 
   // ============================================================
@@ -493,11 +493,11 @@ export class GarminConnectClient {
   // ============================================================
 
   async getDailyRespiration(date: string): Promise<DailyRespiration> {
-    return this.connectApi(`/wellness-service/wellness/daily/respiration/${date}`);
+    return this.#connectApi(`/wellness-service/wellness/daily/respiration/${date}`);
   }
 
   async getDailySpO2(date: string): Promise<DailySpO2> {
-    return this.connectApi(`/wellness-service/wellness/daily/spo2/${date}`);
+    return this.#connectApi(`/wellness-service/wellness/daily/spo2/${date}`);
   }
 
   // ============================================================
@@ -505,7 +505,7 @@ export class GarminConnectClient {
   // ============================================================
 
   async getDailyIntensityMinutes(date: string): Promise<DailyIntensityMinutes[]> {
-    return this.connectApi(`/wellness-service/wellness/daily/im/${date}`);
+    return this.#connectApi(`/wellness-service/wellness/daily/im/${date}`);
   }
 
   // ============================================================
@@ -513,7 +513,7 @@ export class GarminConnectClient {
   // ============================================================
 
   async getDailySteps(startDate: string, endDate: string): Promise<Array<Record<string, unknown>>> {
-    return this.connectApi(`/usersummary-service/stats/steps/daily/${startDate}/${endDate}`);
+    return this.#connectApi(`/usersummary-service/stats/steps/daily/${startDate}/${endDate}`);
   }
 
   // ============================================================
@@ -521,7 +521,7 @@ export class GarminConnectClient {
   // ============================================================
 
   async getFloors(date: string): Promise<Record<string, unknown>> {
-    return this.connectApi(`/wellness-service/wellness/floorsChartData/daily/${date}`);
+    return this.#connectApi(`/wellness-service/wellness/floorsChartData/daily/${date}`);
   }
 }
 

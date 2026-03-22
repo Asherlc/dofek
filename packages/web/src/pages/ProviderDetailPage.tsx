@@ -1,8 +1,10 @@
+import { DATA_TYPE_LABELS, type ProviderStats } from "@dofek/providers/provider-stats";
 import { Link, useParams } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
-import { AppHeader } from "../components/AppHeader.tsx";
+import { PageLayout } from "../components/PageLayout.tsx";
 import { ProviderLogo } from "../components/ProviderLogo.tsx";
+import { ProviderStatsBreakdown } from "../components/ProviderStatsBreakdown.tsx";
 import { formatRelativeTime, formatTime } from "../lib/dates.ts";
 import { formatNumber } from "../lib/format.ts";
 import { pollSyncJob } from "../lib/poll-sync-job.ts";
@@ -18,20 +20,7 @@ const oauthPostMessage = z.object({
   providerId: z.string().optional(),
 });
 
-const DATA_TYPES = [
-  { key: "activities", label: "Activities" },
-  { key: "dailyMetrics", label: "Daily Metrics" },
-  { key: "sleepSessions", label: "Sleep" },
-  { key: "bodyMeasurements", label: "Body" },
-  { key: "foodEntries", label: "Food" },
-  { key: "healthEvents", label: "Events" },
-  { key: "metricStream", label: "Metric Stream" },
-  { key: "nutritionDaily", label: "Nutrition" },
-  { key: "labResults", label: "Lab Results" },
-  { key: "journalEntries", label: "Journal" },
-] as const;
-
-type DataType = (typeof DATA_TYPES)[number]["key"];
+type DataType = (typeof DATA_TYPE_LABELS)[number]["key"];
 
 function formatProviderName(id: string): string {
   return id
@@ -143,218 +132,155 @@ export function ProviderDetailPage() {
 
   if (providers.isLoading) {
     return (
-      <div className="min-h-screen bg-page text-foreground">
-        <AppHeader />
-        <main className="mx-auto max-w-7xl px-3 sm:px-6 py-4 sm:py-6">
-          <div className="h-32 rounded-lg bg-skeleton animate-pulse" />
-        </main>
-      </div>
+      <PageLayout>
+        <div className="h-32 rounded-lg bg-skeleton animate-pulse" />
+      </PageLayout>
     );
   }
 
   return (
-    <div className="min-h-screen bg-page text-foreground overflow-x-hidden">
-      <AppHeader />
-      <main className="mx-auto max-w-7xl px-3 sm:px-6 py-4 sm:py-6 space-y-6">
-        {/* Breadcrumb */}
-        <div className="flex items-center gap-2 text-xs text-subtle">
-          <Link to="/providers" className="hover:text-foreground">
-            Providers
-          </Link>
-          <span>/</span>
-          <span className="text-foreground">
-            {provider?.name ?? formatProviderName(providerId)}
-          </span>
-        </div>
+    <PageLayout>
+      {/* Breadcrumb */}
+      <div className="flex items-center gap-2 text-xs text-subtle">
+        <Link to="/providers" className="hover:text-foreground">
+          Providers
+        </Link>
+        <span>/</span>
+        <span className="text-foreground">{provider?.name ?? formatProviderName(providerId)}</span>
+      </div>
 
-        {/* Provider header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <ProviderLogo provider={providerId} size={32} />
-            <div>
-              <h1 className="text-xl font-semibold">
-                {provider?.name ?? formatProviderName(providerId)}
-              </h1>
-              {provider && (
-                <div className="flex items-center gap-2 mt-0.5">
-                  {provider.importOnly ? (
-                    <span className="text-xs text-subtle">Import only</span>
-                  ) : provider.authorized ? (
-                    <span className="text-xs text-emerald-400">Connected</span>
-                  ) : (
-                    <span className="text-xs text-subtle">Not connected</span>
+      {/* Provider header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <ProviderLogo provider={providerId} size={32} />
+          <div>
+            <h1 className="text-xl font-semibold">
+              {provider?.name ?? formatProviderName(providerId)}
+            </h1>
+            {provider && (
+              <div className="flex items-center gap-2 mt-0.5">
+                {provider.importOnly ? (
+                  <span className="text-xs text-subtle">Import only</span>
+                ) : provider.authorized ? (
+                  <span className="text-xs text-emerald-400">Connected</span>
+                ) : (
+                  <span className="text-xs text-subtle">Not connected</span>
+                )}
+                {!provider.importOnly &&
+                  provider.lastSyncedAt &&
+                  formatRelativeTime(provider.lastSyncedAt) && (
+                    <span className="text-xs text-dim">
+                      Last sync: {formatRelativeTime(provider.lastSyncedAt)}
+                    </span>
                   )}
-                  {!provider.importOnly &&
-                    provider.lastSyncedAt &&
-                    formatRelativeTime(provider.lastSyncedAt) && (
-                      <span className="text-xs text-dim">
-                        Last sync: {formatRelativeTime(provider.lastSyncedAt)}
-                      </span>
-                    )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Sync controls */}
+      {!provider?.importOnly && (
+        <section className="card p-4 space-y-3">
+          <h2 className="text-sm font-medium text-foreground">Sync Controls</h2>
+          <div className="flex flex-wrap items-end gap-3">
+            <button
+              type="button"
+              onClick={() => handleSync(false)}
+              disabled={syncStatus === "syncing"}
+              className="px-3 py-1.5 text-xs rounded bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
+            >
+              {syncStatus === "syncing" ? "Syncing..." : "Sync Last 7 Days"}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSync(true)}
+              disabled={syncStatus === "syncing"}
+              className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors"
+            >
+              Full Sync
+            </button>
+            <div className="flex items-end gap-1.5">
+              <div>
+                <label htmlFor="since-days" className="block text-xs text-subtle mb-1">
+                  Days back
+                </label>
+                <input
+                  id="since-days"
+                  type="number"
+                  min="1"
+                  max="3650"
+                  value={sinceDays}
+                  onChange={(e) => setSinceDays(e.target.value)}
+                  className="w-20 px-2 py-1.5 text-xs bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-border-strong"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => handleSync(false, Number(sinceDays))}
+                disabled={syncStatus === "syncing" || !sinceDays}
+                className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors"
+              >
+                Sync Range
+              </button>
+            </div>
+            <div className="ml-auto flex items-center gap-3">
+              {provider?.authType === "oauth" && provider.authorized && (
+                <button
+                  type="button"
+                  onClick={handleReauthorize}
+                  className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover transition-colors"
+                >
+                  Re-authorize
+                </button>
+              )}
+              {showDisconnectConfirm ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted">Are you sure?</span>
+                  <button
+                    type="button"
+                    onClick={handleDisconnect}
+                    disabled={disconnectMutation.isPending}
+                    className="px-3 py-1.5 text-xs rounded bg-red-600 text-white hover:bg-red-500 disabled:opacity-50 transition-colors"
+                  >
+                    {disconnectMutation.isPending ? "Disconnecting..." : "Confirm"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowDisconnectConfirm(false)}
+                    className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover transition-colors"
+                  >
+                    Cancel
+                  </button>
                 </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowDisconnectConfirm(true)}
+                  className="px-3 py-1.5 text-xs rounded bg-accent/10 text-red-400 hover:bg-surface-hover transition-colors"
+                >
+                  Disconnect
+                </button>
               )}
             </div>
           </div>
-        </div>
-
-        {/* Sync controls */}
-        {!provider?.importOnly && (
-          <section className="card p-4 space-y-3">
-            <h2 className="text-sm font-medium text-foreground">Sync Controls</h2>
-            <div className="flex flex-wrap items-end gap-3">
-              <button
-                type="button"
-                onClick={() => handleSync(false)}
-                disabled={syncStatus === "syncing"}
-                className="px-3 py-1.5 text-xs rounded bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
-              >
-                {syncStatus === "syncing" ? "Syncing..." : "Sync Last 7 Days"}
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSync(true)}
-                disabled={syncStatus === "syncing"}
-                className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors"
-              >
-                Full Sync
-              </button>
-              <div className="flex items-end gap-1.5">
-                <div>
-                  <label htmlFor="since-days" className="block text-xs text-subtle mb-1">
-                    Days back
-                  </label>
-                  <input
-                    id="since-days"
-                    type="number"
-                    min="1"
-                    max="3650"
-                    value={sinceDays}
-                    onChange={(e) => setSinceDays(e.target.value)}
-                    className="w-20 px-2 py-1.5 text-xs bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-border-strong"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={() => handleSync(false, Number(sinceDays))}
-                  disabled={syncStatus === "syncing" || !sinceDays}
-                  className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors"
-                >
-                  Sync Range
-                </button>
-              </div>
-              <div className="ml-auto flex items-center gap-3">
-                {provider?.authType === "oauth" && provider.authorized && (
-                  <button
-                    type="button"
-                    onClick={handleReauthorize}
-                    className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover transition-colors"
-                  >
-                    Re-authorize
-                  </button>
-                )}
-                {showDisconnectConfirm ? (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted">Are you sure?</span>
-                    <button
-                      type="button"
-                      onClick={handleDisconnect}
-                      disabled={disconnectMutation.isPending}
-                      className="px-3 py-1.5 text-xs rounded bg-red-600 text-white hover:bg-red-500 disabled:opacity-50 transition-colors"
-                    >
-                      {disconnectMutation.isPending ? "Disconnecting..." : "Confirm"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowDisconnectConfirm(false)}
-                      className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover transition-colors"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setShowDisconnectConfirm(true)}
-                    className="px-3 py-1.5 text-xs rounded bg-accent/10 text-red-400 hover:bg-surface-hover transition-colors"
-                  >
-                    Disconnect
-                  </button>
-                )}
-              </div>
+          {syncMessage && (
+            <div className={`text-xs ${syncStatus === "error" ? "text-red-400" : "text-accent"}`}>
+              {syncMessage}
             </div>
-            {syncMessage && (
-              <div className={`text-xs ${syncStatus === "error" ? "text-red-400" : "text-accent"}`}>
-                {syncMessage}
-              </div>
-            )}
-          </section>
-        )}
+          )}
+        </section>
+      )}
 
-        {/* Stats overview */}
-        {providerStats && <StatsOverview stats={providerStats} />}
+      {/* Stats overview */}
+      {providerStats && <ProviderStatsBreakdown stats={providerStats} variant="full" />}
 
-        {/* Sync history */}
-        <SyncHistory providerId={providerId} />
+      {/* Sync history */}
+      <SyncHistory providerId={providerId} />
 
-        {/* Records browser */}
-        <RecordsBrowser providerId={providerId} stats={providerStats} />
-      </main>
-    </div>
-  );
-}
-
-// ── Stats Overview ──
-
-interface ProviderStatsData {
-  activities: number;
-  dailyMetrics: number;
-  sleepSessions: number;
-  bodyMeasurements: number;
-  foodEntries: number;
-  healthEvents: number;
-  metricStream: number;
-  nutritionDaily: number;
-  labResults: number;
-  journalEntries: number;
-}
-
-function StatsOverview({ stats }: { stats: ProviderStatsData }) {
-  const breakdown = [
-    { label: "Activities", count: stats.activities },
-    { label: "Metric Stream", count: stats.metricStream },
-    { label: "Daily Metrics", count: stats.dailyMetrics },
-    { label: "Sleep", count: stats.sleepSessions },
-    { label: "Body", count: stats.bodyMeasurements },
-    { label: "Food", count: stats.foodEntries },
-    { label: "Nutrition", count: stats.nutritionDaily },
-    { label: "Events", count: stats.healthEvents },
-    { label: "Lab Results", count: stats.labResults },
-    { label: "Journal", count: stats.journalEntries },
-  ].filter((b) => b.count > 0);
-
-  const total = breakdown.reduce((sum, b) => sum + b.count, 0);
-
-  if (total === 0) return null;
-
-  return (
-    <section className="card p-4">
-      <div className="flex items-baseline gap-2 mb-3">
-        <span className="text-2xl font-bold text-foreground tabular-nums">
-          {total.toLocaleString()}
-        </span>
-        <span className="text-sm text-subtle">total records</span>
-      </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        {breakdown.map((b) => (
-          <div key={b.label} className="text-center">
-            <div className="text-lg font-semibold text-foreground tabular-nums">
-              {b.count.toLocaleString()}
-            </div>
-            <div className="text-xs text-subtle">{b.label}</div>
-          </div>
-        ))}
-      </div>
-    </section>
+      {/* Records browser */}
+      <RecordsBrowser providerId={providerId} stats={providerStats} />
+    </PageLayout>
   );
 }
 
@@ -473,7 +399,7 @@ function SyncHistory({ providerId }: { providerId: string }) {
 
 // ── Records Browser ──
 
-function getStatCount(stats: ProviderStatsData, key: DataType): number {
+function getStatCount(stats: ProviderStats, key: DataType): number {
   return stats[key];
 }
 
@@ -482,9 +408,9 @@ function RecordsBrowser({
   stats,
 }: {
   providerId: string;
-  stats: ProviderStatsData | undefined;
+  stats: ProviderStats | undefined;
 }) {
-  const availableTypes = DATA_TYPES.filter((dt) => {
+  const availableTypes = DATA_TYPE_LABELS.filter((dt) => {
     if (!stats) return true;
     return getStatCount(stats, dt.key) > 0;
   });

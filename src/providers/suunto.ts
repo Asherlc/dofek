@@ -132,10 +132,10 @@ export function suuntoOAuthConfig(): OAuthConfig | null {
 export class SuuntoProvider implements SyncProvider {
   readonly id = "suunto";
   readonly name = "Suunto";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -148,7 +148,7 @@ export class SuuntoProvider implements SyncProvider {
   authSetup(): ProviderAuthSetup {
     const config = suuntoOAuthConfig();
     if (!config) throw new Error("SUUNTO_CLIENT_ID and CLIENT_SECRET required");
-    const fetchFn = this.fetchFn;
+    const fetchFn = this.#fetchFn;
     return {
       oauthConfig: config,
       exchangeCode: (code) => exchangeCodeForTokens(config, code, fetchFn),
@@ -156,13 +156,13 @@ export class SuuntoProvider implements SyncProvider {
     };
   }
 
-  private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
+  async #resolveTokens(db: SyncDatabase): Promise<TokenSet> {
     return resolveOAuthTokens({
       db,
       providerId: this.id,
       providerName: this.name,
       getOAuthConfig: () => suuntoOAuthConfig(),
-      fetchFn: this.fetchFn,
+      fetchFn: this.#fetchFn,
     });
   }
 
@@ -175,7 +175,7 @@ export class SuuntoProvider implements SyncProvider {
 
     let accessToken: string;
     try {
-      const tokens = await this.resolveTokens(db);
+      const tokens = await this.#resolveTokens(db);
       accessToken = tokens.accessToken;
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
@@ -192,7 +192,7 @@ export class SuuntoProvider implements SyncProvider {
         async () => {
           const sinceMs = since.getTime();
           const url = `${SUUNTO_API_BASE}/v2/workouts?since=${sinceMs}`;
-          const response = await this.fetchFn(url, {
+          const response = await this.#fetchFn(url, {
             headers: {
               Authorization: `Bearer ${accessToken}`,
               "Ocp-Apim-Subscription-Key": subscriptionKey,

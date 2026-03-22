@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
 import { z } from "zod";
-import { AppHeader } from "../components/AppHeader.tsx";
 import {
   CorrelationCard,
   CorrelationCardSkeleton,
   type Insight,
 } from "../components/CorrelationCard.tsx";
+import { PageLayout } from "../components/PageLayout.tsx";
+import { PageSection } from "../components/PageSection.tsx";
 import { SleepChart } from "../components/SleepChart.tsx";
 import { SleepNeedCard } from "../components/SleepNeedCard.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
@@ -41,54 +42,42 @@ export function SleepPage() {
   }, [insightsQuery.data]);
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 overflow-x-hidden">
-      <AppHeader>
-        <TimeRangeSelector days={days} onChange={setDays} />
-      </AppHeader>
-      <main className="mx-auto max-w-7xl px-3 sm:px-6 py-4 sm:py-6 space-y-6 sm:space-y-8">
-        <div>
-          <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider">Sleep</h2>
-          <p className="text-xs text-zinc-600 mt-0.5">Sleep stages, debt, and patterns over time</p>
-        </div>
+    <PageLayout
+      headerChildren={<TimeRangeSelector days={days} onChange={setDays} />}
+      title="Sleep"
+      subtitle="Sleep stages, debt, and patterns over time"
+    >
+      {/* Sleep Coach */}
+      <SleepNeedCard data={sleepNeed.data} loading={sleepNeed.isLoading} />
 
-        {/* Sleep Coach */}
-        <SleepNeedCard data={sleepNeed.data} loading={sleepNeed.isLoading} />
+      {/* Sleep Stage Chart */}
+      <PageSection title="Sleep Stages">
+        <SleepChart
+          data={assertRows(sleepData.data, sleepRowSchema)}
+          loading={sleepData.isLoading}
+        />
+      </PageSection>
 
-        {/* Sleep Stage Chart */}
-        <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
-          <SleepChart
-            data={assertRows(sleepData.data, sleepRowSchema)}
-            loading={sleepData.isLoading}
-          />
-        </div>
+      {/* Sleep Insights */}
+      {insightsQuery.isLoading && (
+        <PageSection title="Sleep Insights" card={false}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {["s1", "s2"].map((id) => (
+              <CorrelationCardSkeleton key={id} />
+            ))}
+          </div>
+        </PageSection>
+      )}
 
-        {/* Sleep Insights */}
-        {insightsQuery.isLoading && (
-          <section>
-            <h3 className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-3">
-              Sleep Insights
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {["s1", "s2"].map((id) => (
-                <CorrelationCardSkeleton key={id} />
-              ))}
-            </div>
-          </section>
-        )}
-
-        {!insightsQuery.isLoading && sleepInsights.length > 0 && (
-          <section>
-            <h3 className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-3">
-              Sleep Insights
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {sleepInsights.map((insight) => (
-                <CorrelationCard key={insight.id} insight={insight} />
-              ))}
-            </div>
-          </section>
-        )}
-      </main>
-    </div>
+      {!insightsQuery.isLoading && sleepInsights.length > 0 && (
+        <PageSection title="Sleep Insights" card={false}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {sleepInsights.map((insight) => (
+              <CorrelationCard key={insight.id} insight={insight} />
+            ))}
+          </div>
+        </PageSection>
+      )}
+    </PageLayout>
   );
 }

@@ -72,14 +72,14 @@ async function cognitoCall(
 }
 
 export class WhoopClient {
-  private accessToken: string;
-  private userId: number;
-  private fetchFn: typeof globalThis.fetch;
+  #accessToken: string;
+  #userId: number;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(token: WhoopAuthToken, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.accessToken = token.accessToken;
-    this.userId = token.userId;
-    this.fetchFn = fetchFn;
+    this.#accessToken = token.accessToken;
+    this.#userId = token.userId;
+    this.#fetchFn = fetchFn;
   }
 
   /**
@@ -286,7 +286,7 @@ export class WhoopClient {
     return userId;
   }
 
-  private async get<T>(url: string, params?: Record<string, string>): Promise<T> {
+  async #get<T>(url: string, params?: Record<string, string>): Promise<T> {
     const u = new URL(url);
     if (params) {
       for (const [key, value] of Object.entries(params)) {
@@ -295,9 +295,9 @@ export class WhoopClient {
     }
     u.searchParams.set("apiVersion", WHOOP_API_VERSION);
 
-    const response = await this.fetchFn(u.toString(), {
+    const response = await this.#fetchFn(u.toString(), {
       headers: {
-        Authorization: `Bearer ${this.accessToken}`,
+        Authorization: `Bearer ${this.#accessToken}`,
         "User-Agent": "WHOOP/4.0",
       },
     });
@@ -311,16 +311,16 @@ export class WhoopClient {
   }
 
   async getHeartRate(start: string, end: string, step = 6): Promise<WhoopHrValue[]> {
-    const response = await this.get<WhoopHrResponse>(
-      `${WHOOP_API_BASE}/metrics-service/v1/metrics/user/${this.userId}`,
+    const response = await this.#get<WhoopHrResponse>(
+      `${WHOOP_API_BASE}/metrics-service/v1/metrics/user/${this.#userId}`,
       { start, end, step: String(step), name: "heart_rate" },
     );
     return response.values ?? [];
   }
 
   async getCycles(start: string, end: string, limit = 26): Promise<WhoopCycle[]> {
-    const raw = await this.get<unknown>(`${WHOOP_API_BASE}/core-details-bff/v0/cycles/details`, {
-      id: String(this.userId),
+    const raw = await this.#get<unknown>(`${WHOOP_API_BASE}/core-details-bff/v0/cycles/details`, {
+      id: String(this.#userId),
       startTime: start,
       endTime: end,
       limit: String(limit),
@@ -344,13 +344,13 @@ export class WhoopClient {
   }
 
   async getSleep(sleepId: string | number): Promise<WhoopSleepRecord> {
-    return this.get<WhoopSleepRecord>(`${WHOOP_API_BASE}/sleep-service/v1/sleep-events`, {
+    return this.#get<WhoopSleepRecord>(`${WHOOP_API_BASE}/sleep-service/v1/sleep-events`, {
       activityId: String(sleepId),
     });
   }
 
   async getJournal(start: string, end: string): Promise<unknown> {
-    return this.get<unknown>(`${WHOOP_API_BASE}/behavior-impact-service/v1/impact`, {
+    return this.#get<unknown>(`${WHOOP_API_BASE}/behavior-impact-service/v1/impact`, {
       startTime: start,
       endTime: end,
     });
@@ -368,9 +368,9 @@ export class WhoopClient {
     );
     u.searchParams.set("apiVersion", WHOOP_API_VERSION);
 
-    const response = await this.fetchFn(u.toString(), {
+    const response = await this.#fetchFn(u.toString(), {
       headers: {
-        Authorization: `Bearer ${this.accessToken}`,
+        Authorization: `Bearer ${this.#accessToken}`,
         "User-Agent": "WHOOP/4.0",
       },
     });

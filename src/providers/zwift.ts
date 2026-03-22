@@ -26,10 +26,10 @@ import type {
 export class ZwiftProvider implements SyncProvider {
   readonly id = "zwift";
   readonly name = "Zwift";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -37,7 +37,7 @@ export class ZwiftProvider implements SyncProvider {
   }
 
   authSetup(): ProviderAuthSetup {
-    const fetchFn = this.fetchFn;
+    const fetchFn = this.#fetchFn;
     return {
       oauthConfig: {
         clientId: "Zwift Game Client",
@@ -69,9 +69,7 @@ export class ZwiftProvider implements SyncProvider {
     };
   }
 
-  private async resolveTokens(
-    db: SyncDatabase,
-  ): Promise<{ accessToken: string; athleteId: number }> {
+  async #resolveTokens(db: SyncDatabase): Promise<{ accessToken: string; athleteId: number }> {
     const stored = await loadTokens(db, this.id);
     if (!stored) {
       throw new Error("Zwift not connected — authenticate via the web UI");
@@ -89,7 +87,7 @@ export class ZwiftProvider implements SyncProvider {
         throw new Error("Zwift token expired and no refresh token — re-authenticate");
       }
       logger.info("[zwift] Token expired, refreshing...");
-      const refreshed = await ZwiftClient.refreshToken(stored.refreshToken, this.fetchFn);
+      const refreshed = await ZwiftClient.refreshToken(stored.refreshToken, this.#fetchFn);
       const tokens = {
         accessToken: refreshed.accessToken,
         refreshToken: refreshed.refreshToken,
@@ -112,8 +110,8 @@ export class ZwiftProvider implements SyncProvider {
 
     let client: ZwiftClient;
     try {
-      const { accessToken, athleteId } = await this.resolveTokens(db);
-      client = new ZwiftClient(accessToken, athleteId, this.fetchFn);
+      const { accessToken, athleteId } = await this.#resolveTokens(db);
+      client = new ZwiftClient(accessToken, athleteId, this.#fetchFn);
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };

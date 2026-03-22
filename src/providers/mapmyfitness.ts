@@ -135,26 +135,26 @@ export function mapMyFitnessOAuthConfig(): OAuthConfig | null {
 // ============================================================
 
 export class MapMyFitnessClient {
-  private accessToken: string;
-  private clientId: string;
-  private fetchFn: typeof globalThis.fetch;
+  #accessToken: string;
+  #clientId: string;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(
     accessToken: string,
     clientId: string,
     fetchFn: typeof globalThis.fetch = globalThis.fetch,
   ) {
-    this.accessToken = accessToken;
-    this.clientId = clientId;
-    this.fetchFn = fetchFn;
+    this.#accessToken = accessToken;
+    this.#clientId = clientId;
+    this.#fetchFn = fetchFn;
   }
 
-  private async get<T>(path: string): Promise<T> {
+  async #get<T>(path: string): Promise<T> {
     const url = `${MAPMYFITNESS_API_BASE}${path}`;
-    const response = await this.fetchFn(url, {
+    const response = await this.#fetchFn(url, {
       headers: {
-        Authorization: `Bearer ${this.accessToken}`,
-        "Api-Key": this.clientId,
+        Authorization: `Bearer ${this.#accessToken}`,
+        "Api-Key": this.#clientId,
         Accept: "application/json",
       },
     });
@@ -172,7 +172,7 @@ export class MapMyFitnessClient {
     startedAfter: string,
     offset = 0,
   ): Promise<MapMyFitnessWorkoutListResponse> {
-    return this.get<MapMyFitnessWorkoutListResponse>(
+    return this.#get<MapMyFitnessWorkoutListResponse>(
       `/v7.1/workout/?user=${userId}&started_after=${startedAfter}&order_by=-start_datetime&limit=40&offset=${offset}`,
     );
   }
@@ -193,10 +193,10 @@ function formatDate(date: Date): string {
 export class MapMyFitnessProvider implements SyncProvider {
   readonly id = "mapmyfitness";
   readonly name = "MapMyFitness";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -208,7 +208,7 @@ export class MapMyFitnessProvider implements SyncProvider {
   authSetup(): ProviderAuthSetup {
     const config = mapMyFitnessOAuthConfig();
     if (!config) throw new Error("MAPMYFITNESS_CLIENT_ID and CLIENT_SECRET required");
-    const fetchFn = this.fetchFn;
+    const fetchFn = this.#fetchFn;
 
     return {
       oauthConfig: config,
@@ -217,13 +217,13 @@ export class MapMyFitnessProvider implements SyncProvider {
     };
   }
 
-  private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
+  async #resolveTokens(db: SyncDatabase): Promise<TokenSet> {
     return resolveOAuthTokens({
       db,
       providerId: this.id,
       providerName: this.name,
       getOAuthConfig: () => mapMyFitnessOAuthConfig(),
-      fetchFn: this.fetchFn,
+      fetchFn: this.#fetchFn,
     });
   }
 
@@ -236,14 +236,14 @@ export class MapMyFitnessProvider implements SyncProvider {
 
     let tokens: TokenSet;
     try {
-      tokens = await this.resolveTokens(db);
+      tokens = await this.#resolveTokens(db);
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
     const clientId = process.env.MAPMYFITNESS_CLIENT_ID ?? "";
-    const client = new MapMyFitnessClient(tokens.accessToken, clientId, this.fetchFn);
+    const client = new MapMyFitnessClient(tokens.accessToken, clientId, this.#fetchFn);
 
     // Extract user ID from token scopes or use "-" for self
     const userId = tokens.scopes?.match(/user_id:(\S+)/)?.[1] ?? "-";
