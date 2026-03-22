@@ -1,3 +1,4 @@
+import assert from "node:assert";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { refreshDedupViews } from "../db/dedup.ts";
 import { loadProviderPriorityConfig, syncProviderPriorities } from "../db/provider-priority.ts";
@@ -128,9 +129,9 @@ describe("fitSleepFromDb", () => {
     await refreshDedupViews(ctx.db);
 
     const result = await fitSleepFromDb(ctx.db, DEFAULT_USER_ID);
-    expect(result).not.toBeNull();
-    expect(result!.minutes).toBe(sleepDuration);
-    expect(result!.sampleCount).toBeGreaterThanOrEqual(14);
+    assert(result !== null, "expected non-null sleep target");
+    expect(result.minutes).toBe(sleepDuration);
+    expect(result.sampleCount).toBeGreaterThanOrEqual(14);
   });
 
   it("distinguishes above-median and below-median HRV nights", async () => {
@@ -168,7 +169,7 @@ describe("fitSleepFromDb", () => {
 
     const result = await fitSleepFromDb(ctx.db, DEFAULT_USER_ID);
     // All 20 nights should qualify (10 above median, 10 at median)
-    expect(result).not.toBeNull();
-    expect(result!.sampleCount).toBeGreaterThanOrEqual(14);
+    assert(result !== null, "expected non-null sleep target");
+    expect(result.sampleCount).toBeGreaterThanOrEqual(14);
   });
 });
