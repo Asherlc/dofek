@@ -255,7 +255,7 @@ export function parseSleepRows(rows: Record<string, unknown>[]): SleepTargetInpu
   return data;
 }
 
-async function fitSleepFromDb(db: Database, userId: string) {
+export async function fitSleepFromDb(db: Database, userId: string) {
   const rows = await db.execute(
     sql`WITH nightly AS (
           SELECT
