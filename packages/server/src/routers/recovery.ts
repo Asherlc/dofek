@@ -1,6 +1,6 @@
-import { computeReadinessScore, type ReadinessComponents } from "@dofek/recovery/readiness";
+import { type ReadinessComponents, ReadinessScore } from "@dofek/recovery/readiness";
 import { computeSleepConsistencyScore } from "@dofek/recovery/sleep-consistency";
-import { rawLoadToStrain, zScoreToRecoveryScore } from "@dofek/scoring/scoring";
+import { StrainScore, zScoreToRecoveryScore } from "@dofek/scoring/scoring";
 import { selectRecentDailyLoad } from "@dofek/training/training";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
@@ -263,7 +263,7 @@ export const recoveryRouter = router({
         return {
           date: row.date,
           dailyLoad,
-          strain: rawLoadToStrain(dailyLoad),
+          strain: StrainScore.fromRawLoad(dailyLoad).value,
           acuteLoad: Math.round(Number(row.acute_load) * 10) / 10,
           chronicLoad: Math.round(Number(row.chronic_load) * 10) / 10,
           workloadRatio:
@@ -497,10 +497,12 @@ export const recoveryRouter = router({
           respiratoryRateScore: Math.round(respiratoryRateScore),
         };
 
+        const readiness = new ReadinessScore(components, weights);
+
         results.push({
           date: metrics.date,
-          readinessScore: computeReadinessScore(components, weights),
-          components,
+          readinessScore: readiness.score,
+          components: readiness.components,
         });
       }
 

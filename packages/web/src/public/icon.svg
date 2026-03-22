@@ -1,10 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <rect width="1024" height="1024" rx="224" fill="#0f1117"/>
+  <rect width="1024" height="1024" rx="224" fill="#eef3ed"/>
 
   <defs>
     <radialGradient id="glow" cx="50%" cy="50%" r="20%">
-      <stop offset="0%" stop-color="#fff" stop-opacity="0.2"/>
-      <stop offset="100%" stop-color="#fff" stop-opacity="0"/>
+      <stop offset="0%" stop-color="#2d7a56" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#2d7a56" stop-opacity="0"/>
     </radialGradient>
   </defs>
 
@@ -12,23 +12,23 @@
     <!-- Subtle center glow -->
     <circle r="100" fill="url(#glow)"/>
 
-    <!-- Stream 1: Emerald — from top, sweeping clockwise -->
+    <!-- Stream 1: Sage green — from top, sweeping clockwise -->
     <path d="M -80 -380 C -280 -340, -280 -80, 0 0"
-          stroke="#10b981" stroke-width="46" fill="none" stroke-linecap="round"/>
+          stroke="#2d7a56" stroke-width="46" fill="none" stroke-linecap="round"/>
 
     <!-- Stream 2: Teal — from right, sweeping clockwise -->
     <path d="M 380 -80 C 340 -280, 80 -280, 0 0"
-          stroke="#5AC8FA" stroke-width="46" fill="none" stroke-linecap="round"/>
+          stroke="#0ea5e9" stroke-width="46" fill="none" stroke-linecap="round"/>
 
-    <!-- Stream 3: Orange — from bottom, sweeping clockwise -->
+    <!-- Stream 3: Mint — from bottom, sweeping clockwise -->
     <path d="M 80 380 C 280 340, 280 80, 0 0"
-          stroke="#FF8A65" stroke-width="46" fill="none" stroke-linecap="round"/>
+          stroke="#4a9e7a" stroke-width="46" fill="none" stroke-linecap="round"/>
 
-    <!-- Stream 4: Purple — from left, sweeping clockwise -->
+    <!-- Stream 4: Emerald — from left, sweeping clockwise -->
     <path d="M -380 80 C -340 280, -80 280, 0 0"
-          stroke="#7c3aed" stroke-width="46" fill="none" stroke-linecap="round"/>
+          stroke="#059669" stroke-width="46" fill="none" stroke-linecap="round"/>
 
     <!-- Center convergence point -->
-    <circle r="22" fill="#fff"/>
+    <circle r="22" fill="#2d7a56"/>
   </g>
 </svg>

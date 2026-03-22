@@ -20,6 +20,9 @@ importers:
       '@dofek/scoring':
         specifier: workspace:*
         version: link:packages/scoring
+      '@dofek/stats':
+        specifier: workspace:*
+        version: link:packages/stats
       '@dofek/training':
         specifier: workspace:*
         version: link:packages/training

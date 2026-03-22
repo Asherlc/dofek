@@ -26,13 +26,8 @@ import { useScrollReveal } from "../hooks/useScrollReveal.ts";
 import { chartColors } from "../lib/chartTheme.ts";
 import { useDashboardLayout } from "../lib/dashboardLayoutContext.ts";
 import { trpc } from "../lib/trpc.ts";
-import { useUnitSystem } from "../lib/unitContext.ts";
-import {
-  convertTemperature,
-  scaleTemperatureStddev,
-  temperatureLabel,
-  type UnitSystem,
-} from "../lib/units.ts";
+import { useUnitConverter } from "../lib/unitContext.ts";
+import type { UnitConverter } from "../lib/units.ts";
 import { useOnboarding } from "../lib/useOnboarding.ts";
 import { assertRows } from "../lib/utils.ts";
 
@@ -140,13 +135,13 @@ type DailyMetricRow = z.infer<typeof dailyMetricRowSchema>;
 export function spo2TempSectionConfig(
   hasSpO2: boolean,
   hasSkinTemp: boolean,
-  unitSystem: UnitSystem,
+  units: UnitConverter,
 ): { title: string; subtitle: string; yAxis: { name: string; min?: number }[] } {
   if (hasSpO2 && hasSkinTemp) {
     return {
       title: "SpO2 & Skin Temperature",
       subtitle: "Blood oxygen saturation and wrist skin temperature over time",
-      yAxis: [{ name: "SpO2 (%)", min: 90 }, { name: temperatureLabel(unitSystem) }],
+      yAxis: [{ name: "SpO2 (%)", min: 90 }, { name: units.temperatureLabel }],
     };
   }
   if (hasSpO2) {
@@ -159,16 +154,16 @@ export function spo2TempSectionConfig(
   return {
     title: "Skin Temperature",
     subtitle: "Wrist skin temperature over time",
-    yAxis: [{ name: temperatureLabel(unitSystem) }],
+    yAxis: [{ name: units.temperatureLabel }],
   };
 }
 
-export function buildSkinTempSeries(metrics: DailyMetricRow[], unitSystem: UnitSystem) {
+export function buildSkinTempSeries(metrics: DailyMetricRow[], units: UnitConverter) {
   return {
     name: "Skin Temp",
     data: metrics.map((d): [string, number | null] => [
       d.date,
-      d.skin_temp_c != null ? convertTemperature(d.skin_temp_c, unitSystem) : null,
+      d.skin_temp_c != null ? units.convertTemperature(d.skin_temp_c) : null,
     ]),
     color: chartColors.amber,
     yAxisIndex: 1 as const,
@@ -188,7 +183,7 @@ export const DASHBOARD_SECTION_IDS = new Set([
 ]);
 
 export function Dashboard() {
-  const { unitSystem } = useUnitSystem();
+  const units = useUnitConverter();
   const { layout, toggleCollapsed, toggleHidden, moveSection } = useDashboardLayout();
   const [days, setDaysRaw] = useState(30);
   const [activityPage, setActivityPage] = useState(0);
@@ -276,20 +271,20 @@ export function Dashboard() {
       },
       trendData.latest_skin_temp != null && {
         label: "Skin Temp",
-        value: convertTemperature(trendData.latest_skin_temp, unitSystem),
+        value: units.convertTemperature(trendData.latest_skin_temp),
         avg:
           trendData.avg_skin_temp != null
-            ? convertTemperature(trendData.avg_skin_temp, unitSystem)
+            ? units.convertTemperature(trendData.avg_skin_temp)
             : null,
         stddev:
           trendData.stddev_skin_temp != null
-            ? scaleTemperatureStddev(trendData.stddev_skin_temp, unitSystem)
+            ? units.scaleTemperatureStddev(trendData.stddev_skin_temp)
             : null,
-        unit: temperatureLabel(unitSystem),
+        unit: units.temperatureLabel,
       },
     ];
     return entries.filter((entry): entry is MetricEntry => entry !== false);
-  }, [trendData, unitSystem]);
+  }, [trendData, units]);
 
   const metrics = assertRows(dailyMetrics.data, dailyMetricRowSchema);
 
@@ -306,12 +301,9 @@ export function Dashboard() {
     [metrics],
   );
 
-  const skinTempSeries = useMemo(
-    () => buildSkinTempSeries(metrics, unitSystem),
-    [metrics, unitSystem],
-  );
+  const skinTempSeries = useMemo(() => buildSkinTempSeries(metrics, units), [metrics, units]);
 
-  const spo2TempConfig = spo2TempSectionConfig(hasSpO2, hasSkinTemp, unitSystem);
+  const spo2TempConfig = spo2TempSectionConfig(hasSpO2, hasSkinTemp, units);
 
   const stepsSeries = useMemo(
     () => ({

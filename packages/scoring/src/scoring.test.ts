@@ -7,25 +7,19 @@ import {
   FORM_ZONE_GREY,
   FORM_ZONE_OPTIMAL,
   FORM_ZONE_TRANSITION,
-  formZoneColor,
-  formZoneLabel,
+  FormZone,
   healthStatusColor,
   rampRateColor,
-  rawLoadToStrain,
   readinessLevelColor,
+  StrainScore,
+  StrainZone,
+  StressScore,
   scoreColor,
   scoreLabel,
   sleepDebtColor,
-  strainColor,
-  strainLabel,
-  strainZoneColor,
-  strainZoneLabel,
-  stressColor,
-  stressLabel,
   trendColor,
   trendDirection,
-  workloadRatioColor,
-  workloadRatioHint,
+  WorkloadRatio,
   zScoreToRecoveryScore,
 } from "./scoring.ts";
 
@@ -104,61 +98,67 @@ describe("scoreLabel", () => {
   });
 });
 
-describe("workloadRatioColor", () => {
-  it("returns secondary color for null", () => {
-    expect(workloadRatioColor(null)).toBe(textColors.secondary);
+describe("WorkloadRatio", () => {
+  describe("color", () => {
+    it("returns secondary color for null", () => {
+      expect(new WorkloadRatio(null).color).toBe(textColors.secondary);
+    });
+
+    it("returns positive at exact boundaries 0.8 and 1.3", () => {
+      expect(new WorkloadRatio(0.8).color).toBe(statusColors.positive);
+      expect(new WorkloadRatio(1.3).color).toBe(statusColors.positive);
+    });
+
+    it("returns positive in the middle of optimal range", () => {
+      expect(new WorkloadRatio(1.0).color).toBe(statusColors.positive);
+    });
+
+    it("returns warning just outside optimal range", () => {
+      expect(new WorkloadRatio(0.79).color).toBe(statusColors.warning);
+      expect(new WorkloadRatio(1.31).color).toBe(statusColors.warning);
+    });
+
+    it("returns warning at exact boundaries 0.5 and 1.5", () => {
+      expect(new WorkloadRatio(0.5).color).toBe(statusColors.warning);
+      expect(new WorkloadRatio(1.5).color).toBe(statusColors.warning);
+    });
+
+    it("returns danger just outside caution range", () => {
+      expect(new WorkloadRatio(0.49).color).toBe(statusColors.danger);
+      expect(new WorkloadRatio(1.51).color).toBe(statusColors.danger);
+    });
+
+    it("returns danger for extreme values", () => {
+      expect(new WorkloadRatio(0.0).color).toBe(statusColors.danger);
+      expect(new WorkloadRatio(3.0).color).toBe(statusColors.danger);
+    });
   });
 
-  it("returns positive at exact boundaries 0.8 and 1.3", () => {
-    expect(workloadRatioColor(0.8)).toBe(statusColors.positive);
-    expect(workloadRatioColor(1.3)).toBe(statusColors.positive);
-  });
+  describe("hint", () => {
+    it("returns null for null", () => {
+      expect(new WorkloadRatio(null).hint).toBeNull();
+    });
 
-  it("returns positive in the middle of optimal range", () => {
-    expect(workloadRatioColor(1.0)).toBe(statusColors.positive);
-  });
+    it("returns optimal hint for 0.8-1.3", () => {
+      expect(new WorkloadRatio(0.8).hint).toBe("Optimal training zone");
+      expect(new WorkloadRatio(1.3).hint).toBe("Optimal training zone");
+      expect(new WorkloadRatio(1.0).hint).toBe("Optimal training zone");
+    });
 
-  it("returns warning just outside optimal range", () => {
-    expect(workloadRatioColor(0.79)).toBe(statusColors.warning);
-    expect(workloadRatioColor(1.31)).toBe(statusColors.warning);
-  });
+    it("returns detraining hint for < 0.8", () => {
+      expect(new WorkloadRatio(0.79).hint).toBe("Detraining risk - increase load gradually");
+      expect(new WorkloadRatio(0.0).hint).toBe("Detraining risk - increase load gradually");
+    });
 
-  it("returns warning at exact boundaries 0.5 and 1.5", () => {
-    expect(workloadRatioColor(0.5)).toBe(statusColors.warning);
-    expect(workloadRatioColor(1.5)).toBe(statusColors.warning);
-  });
+    it("returns high load hint for > 1.3 and <= 1.5", () => {
+      expect(new WorkloadRatio(1.31).hint).toBe("High load - monitor recovery closely");
+      expect(new WorkloadRatio(1.5).hint).toBe("High load - monitor recovery closely");
+    });
 
-  it("returns danger just outside caution range", () => {
-    expect(workloadRatioColor(0.49)).toBe(statusColors.danger);
-    expect(workloadRatioColor(1.51)).toBe(statusColors.danger);
-  });
-
-  it("returns danger for extreme values", () => {
-    expect(workloadRatioColor(0.0)).toBe(statusColors.danger);
-    expect(workloadRatioColor(3.0)).toBe(statusColors.danger);
-  });
-});
-
-describe("workloadRatioHint", () => {
-  it("returns optimal hint for 0.8-1.3", () => {
-    expect(workloadRatioHint(0.8)).toBe("Optimal training zone");
-    expect(workloadRatioHint(1.3)).toBe("Optimal training zone");
-    expect(workloadRatioHint(1.0)).toBe("Optimal training zone");
-  });
-
-  it("returns detraining hint for < 0.8", () => {
-    expect(workloadRatioHint(0.79)).toBe("Detraining risk - increase load gradually");
-    expect(workloadRatioHint(0.0)).toBe("Detraining risk - increase load gradually");
-  });
-
-  it("returns high load hint for > 1.3 and <= 1.5", () => {
-    expect(workloadRatioHint(1.31)).toBe("High load - monitor recovery closely");
-    expect(workloadRatioHint(1.5)).toBe("High load - monitor recovery closely");
-  });
-
-  it("returns injury risk hint for > 1.5", () => {
-    expect(workloadRatioHint(1.51)).toBe("Injury risk zone - consider rest");
-    expect(workloadRatioHint(3.0)).toBe("Injury risk zone - consider rest");
+    it("returns injury risk hint for > 1.5", () => {
+      expect(new WorkloadRatio(1.51).hint).toBe("Injury risk zone - consider rest");
+      expect(new WorkloadRatio(3.0).hint).toBe("Injury risk zone - consider rest");
+    });
   });
 });
 
@@ -239,63 +239,65 @@ describe("trendDirection", () => {
   });
 });
 
-describe("stressColor", () => {
-  it("returns positive at boundary 0.5", () => {
-    expect(stressColor(0.5)).toBe(statusColors.positive);
+describe("StressScore", () => {
+  describe("color", () => {
+    it("returns positive at boundary 0.5", () => {
+      expect(new StressScore(0.5).color).toBe(statusColors.positive);
+    });
+
+    it("returns positive for zero", () => {
+      expect(new StressScore(0).color).toBe(statusColors.positive);
+    });
+
+    it("returns warning just above 0.5", () => {
+      expect(new StressScore(0.51).color).toBe(statusColors.warning);
+    });
+
+    it("returns warning at boundary 1.5", () => {
+      expect(new StressScore(1.5).color).toBe(statusColors.warning);
+    });
+
+    it("returns elevated just above 1.5", () => {
+      expect(new StressScore(1.51).color).toBe(statusColors.elevated);
+    });
+
+    it("returns elevated at boundary 2.5", () => {
+      expect(new StressScore(2.5).color).toBe(statusColors.elevated);
+    });
+
+    it("returns danger just above 2.5", () => {
+      expect(new StressScore(2.51).color).toBe(statusColors.danger);
+    });
+
+    it("returns danger for high values", () => {
+      expect(new StressScore(3).color).toBe(statusColors.danger);
+    });
   });
 
-  it("returns positive for zero", () => {
-    expect(stressColor(0)).toBe(statusColors.positive);
-  });
+  describe("label", () => {
+    it("returns Low at boundary 0.5", () => {
+      expect(new StressScore(0.5).label).toBe("Low");
+    });
 
-  it("returns warning just above 0.5", () => {
-    expect(stressColor(0.51)).toBe(statusColors.warning);
-  });
+    it("returns Moderate just above 0.5", () => {
+      expect(new StressScore(0.51).label).toBe("Moderate");
+    });
 
-  it("returns warning at boundary 1.5", () => {
-    expect(stressColor(1.5)).toBe(statusColors.warning);
-  });
+    it("returns Moderate at boundary 1.5", () => {
+      expect(new StressScore(1.5).label).toBe("Moderate");
+    });
 
-  it("returns elevated just above 1.5", () => {
-    expect(stressColor(1.51)).toBe(statusColors.elevated);
-  });
+    it("returns High just above 1.5", () => {
+      expect(new StressScore(1.51).label).toBe("High");
+    });
 
-  it("returns elevated at boundary 2.5", () => {
-    expect(stressColor(2.5)).toBe(statusColors.elevated);
-  });
+    it("returns High at boundary 2.5", () => {
+      expect(new StressScore(2.5).label).toBe("High");
+    });
 
-  it("returns danger just above 2.5", () => {
-    expect(stressColor(2.51)).toBe(statusColors.danger);
-  });
-
-  it("returns danger for high values", () => {
-    expect(stressColor(3)).toBe(statusColors.danger);
-  });
-});
-
-describe("stressLabel", () => {
-  it("returns Low at boundary 0.5", () => {
-    expect(stressLabel(0.5)).toBe("Low");
-  });
-
-  it("returns Moderate just above 0.5", () => {
-    expect(stressLabel(0.51)).toBe("Moderate");
-  });
-
-  it("returns Moderate at boundary 1.5", () => {
-    expect(stressLabel(1.5)).toBe("Moderate");
-  });
-
-  it("returns High just above 1.5", () => {
-    expect(stressLabel(1.51)).toBe("High");
-  });
-
-  it("returns High at boundary 2.5", () => {
-    expect(stressLabel(2.5)).toBe("High");
-  });
-
-  it("returns Very High just above 2.5", () => {
-    expect(stressLabel(2.51)).toBe("Very High");
+    it("returns Very High just above 2.5", () => {
+      expect(new StressScore(2.51).label).toBe("Very High");
+    });
   });
 });
 
@@ -376,85 +378,87 @@ describe("sleepDebtColor", () => {
   });
 });
 
-describe("formZoneColor", () => {
-  it("returns transition color for values above transition boundary", () => {
-    expect(formZoneColor(26)).toBe(FORM_ZONE_COLORS.transition);
-    expect(formZoneColor(100)).toBe(FORM_ZONE_COLORS.transition);
+describe("FormZone", () => {
+  describe("color", () => {
+    it("returns transition color for values above transition boundary", () => {
+      expect(new FormZone(26).color).toBe(FORM_ZONE_COLORS.transition);
+      expect(new FormZone(100).color).toBe(FORM_ZONE_COLORS.transition);
+    });
+
+    it("returns fresh color at exactly transition boundary (not above)", () => {
+      expect(new FormZone(FORM_ZONE_TRANSITION).color).toBe(FORM_ZONE_COLORS.fresh);
+    });
+
+    it("returns fresh color for values between fresh and transition", () => {
+      expect(new FormZone(6).color).toBe(FORM_ZONE_COLORS.fresh);
+      expect(new FormZone(24).color).toBe(FORM_ZONE_COLORS.fresh);
+    });
+
+    it("returns grey color at exactly fresh boundary (not above)", () => {
+      expect(new FormZone(FORM_ZONE_FRESH).color).toBe(FORM_ZONE_COLORS.grey);
+    });
+
+    it("returns grey color for values between grey and fresh", () => {
+      expect(new FormZone(0).color).toBe(FORM_ZONE_COLORS.grey);
+      expect(new FormZone(-9).color).toBe(FORM_ZONE_COLORS.grey);
+    });
+
+    it("returns optimal color at exactly grey boundary (not above)", () => {
+      expect(new FormZone(FORM_ZONE_GREY).color).toBe(FORM_ZONE_COLORS.optimal);
+    });
+
+    it("returns optimal color for values between optimal and grey", () => {
+      expect(new FormZone(-11).color).toBe(FORM_ZONE_COLORS.optimal);
+      expect(new FormZone(-29).color).toBe(FORM_ZONE_COLORS.optimal);
+    });
+
+    it("returns high risk color at exactly optimal boundary (not above)", () => {
+      expect(new FormZone(FORM_ZONE_OPTIMAL).color).toBe(FORM_ZONE_COLORS.highRisk);
+    });
+
+    it("returns high risk color for values below optimal", () => {
+      expect(new FormZone(-31).color).toBe(FORM_ZONE_COLORS.highRisk);
+      expect(new FormZone(-100).color).toBe(FORM_ZONE_COLORS.highRisk);
+    });
   });
 
-  it("returns fresh color at exactly transition boundary (not above)", () => {
-    expect(formZoneColor(FORM_ZONE_TRANSITION)).toBe(FORM_ZONE_COLORS.fresh);
-  });
+  describe("label", () => {
+    it("returns Transition for values above transition boundary", () => {
+      expect(new FormZone(26).label).toBe("Transition");
+      expect(new FormZone(100).label).toBe("Transition");
+    });
 
-  it("returns fresh color for values between fresh and transition", () => {
-    expect(formZoneColor(6)).toBe(FORM_ZONE_COLORS.fresh);
-    expect(formZoneColor(24)).toBe(FORM_ZONE_COLORS.fresh);
-  });
+    it("returns Fresh at exactly transition boundary", () => {
+      expect(new FormZone(FORM_ZONE_TRANSITION).label).toBe("Fresh");
+    });
 
-  it("returns grey color at exactly fresh boundary (not above)", () => {
-    expect(formZoneColor(FORM_ZONE_FRESH)).toBe(FORM_ZONE_COLORS.grey);
-  });
+    it("returns Fresh for values between fresh and transition", () => {
+      expect(new FormZone(10).label).toBe("Fresh");
+    });
 
-  it("returns grey color for values between grey and fresh", () => {
-    expect(formZoneColor(0)).toBe(FORM_ZONE_COLORS.grey);
-    expect(formZoneColor(-9)).toBe(FORM_ZONE_COLORS.grey);
-  });
+    it("returns Grey Zone at exactly fresh boundary", () => {
+      expect(new FormZone(FORM_ZONE_FRESH).label).toBe("Grey Zone");
+    });
 
-  it("returns optimal color at exactly grey boundary (not above)", () => {
-    expect(formZoneColor(FORM_ZONE_GREY)).toBe(FORM_ZONE_COLORS.optimal);
-  });
+    it("returns Grey Zone for values between grey and fresh", () => {
+      expect(new FormZone(0).label).toBe("Grey Zone");
+    });
 
-  it("returns optimal color for values between optimal and grey", () => {
-    expect(formZoneColor(-11)).toBe(FORM_ZONE_COLORS.optimal);
-    expect(formZoneColor(-29)).toBe(FORM_ZONE_COLORS.optimal);
-  });
+    it("returns Optimal at exactly grey boundary", () => {
+      expect(new FormZone(FORM_ZONE_GREY).label).toBe("Optimal");
+    });
 
-  it("returns high risk color at exactly optimal boundary (not above)", () => {
-    expect(formZoneColor(FORM_ZONE_OPTIMAL)).toBe(FORM_ZONE_COLORS.highRisk);
-  });
+    it("returns Optimal for values between optimal and grey", () => {
+      expect(new FormZone(-20).label).toBe("Optimal");
+    });
 
-  it("returns high risk color for values below optimal", () => {
-    expect(formZoneColor(-31)).toBe(FORM_ZONE_COLORS.highRisk);
-    expect(formZoneColor(-100)).toBe(FORM_ZONE_COLORS.highRisk);
-  });
-});
+    it("returns High Risk at exactly optimal boundary", () => {
+      expect(new FormZone(FORM_ZONE_OPTIMAL).label).toBe("High Risk");
+    });
 
-describe("formZoneLabel", () => {
-  it("returns Transition for values above transition boundary", () => {
-    expect(formZoneLabel(26)).toBe("Transition");
-    expect(formZoneLabel(100)).toBe("Transition");
-  });
-
-  it("returns Fresh at exactly transition boundary", () => {
-    expect(formZoneLabel(FORM_ZONE_TRANSITION)).toBe("Fresh");
-  });
-
-  it("returns Fresh for values between fresh and transition", () => {
-    expect(formZoneLabel(10)).toBe("Fresh");
-  });
-
-  it("returns Grey Zone at exactly fresh boundary", () => {
-    expect(formZoneLabel(FORM_ZONE_FRESH)).toBe("Grey Zone");
-  });
-
-  it("returns Grey Zone for values between grey and fresh", () => {
-    expect(formZoneLabel(0)).toBe("Grey Zone");
-  });
-
-  it("returns Optimal at exactly grey boundary", () => {
-    expect(formZoneLabel(FORM_ZONE_GREY)).toBe("Optimal");
-  });
-
-  it("returns Optimal for values between optimal and grey", () => {
-    expect(formZoneLabel(-20)).toBe("Optimal");
-  });
-
-  it("returns High Risk at exactly optimal boundary", () => {
-    expect(formZoneLabel(FORM_ZONE_OPTIMAL)).toBe("High Risk");
-  });
-
-  it("returns High Risk for values below optimal", () => {
-    expect(formZoneLabel(-50)).toBe("High Risk");
+    it("returns High Risk for values below optimal", () => {
+      expect(new FormZone(-50).label).toBe("High Risk");
+    });
   });
 });
 
@@ -494,151 +498,151 @@ describe("healthStatusColor", () => {
   });
 });
 
-describe("strainZoneColor", () => {
-  it("returns positive for optimal", () => {
-    expect(strainZoneColor("optimal")).toBe(statusColors.positive);
+describe("StrainZone", () => {
+  describe("color", () => {
+    it("returns positive for optimal", () => {
+      expect(new StrainZone("optimal").color).toBe(statusColors.positive);
+    });
+
+    it("returns danger for overreaching", () => {
+      expect(new StrainZone("overreaching").color).toBe(statusColors.danger);
+    });
+
+    it("returns info for restoring", () => {
+      expect(new StrainZone("restoring").color).toBe(statusColors.info);
+    });
+
+    it("returns secondary for unknown zone", () => {
+      expect(new StrainZone("unknown").color).toBe(textColors.secondary);
+    });
   });
 
-  it("returns danger for overreaching", () => {
-    expect(strainZoneColor("overreaching")).toBe(statusColors.danger);
-  });
+  describe("label", () => {
+    it("returns Optimal for optimal", () => {
+      expect(new StrainZone("optimal").label).toBe("Optimal");
+    });
 
-  it("returns info for restoring", () => {
-    expect(strainZoneColor("restoring")).toBe(statusColors.info);
-  });
+    it("returns Overreaching for overreaching", () => {
+      expect(new StrainZone("overreaching").label).toBe("Overreaching");
+    });
 
-  it("returns secondary for unknown zone", () => {
-    expect(strainZoneColor("unknown")).toBe(textColors.secondary);
-  });
-});
+    it("returns Restoring for restoring", () => {
+      expect(new StrainZone("restoring").label).toBe("Restoring");
+    });
 
-describe("strainZoneLabel", () => {
-  it("returns Optimal for optimal", () => {
-    expect(strainZoneLabel("optimal")).toBe("Optimal");
-  });
-
-  it("returns Overreaching for overreaching", () => {
-    expect(strainZoneLabel("overreaching")).toBe("Overreaching");
-  });
-
-  it("returns Restoring for restoring", () => {
-    expect(strainZoneLabel("restoring")).toBe("Restoring");
-  });
-
-  it("returns the zone string for unknown zones", () => {
-    expect(strainZoneLabel("something")).toBe("something");
-  });
-});
-
-describe("rawLoadToStrain", () => {
-  it("returns 0 for zero raw load", () => {
-    expect(rawLoadToStrain(0)).toBe(0);
-  });
-
-  it("returns 0 for negative raw load", () => {
-    expect(rawLoadToStrain(-5)).toBe(0);
-  });
-
-  it("maps a light 30-min workout (~20 raw) to light strain (8-11)", () => {
-    // 30 min at avg_hr/max_hr ≈ 0.65 → raw load ≈ 19.5
-    const strain = rawLoadToStrain(19.5);
-    expect(strain).toBeGreaterThanOrEqual(8);
-    expect(strain).toBeLessThanOrEqual(11);
-  });
-
-  it("maps a moderate 60-min workout (~45 raw) to moderate strain (12-14)", () => {
-    // 60 min at avg_hr/max_hr ≈ 0.76 → raw load ≈ 45
-    const strain = rawLoadToStrain(45);
-    expect(strain).toBeGreaterThanOrEqual(12);
-    expect(strain).toBeLessThanOrEqual(14);
-  });
-
-  it("maps a hard 90-min workout (~76 raw) to high strain (14-16)", () => {
-    // 90 min at avg_hr/max_hr ≈ 0.84 → raw load ≈ 76
-    const strain = rawLoadToStrain(76);
-    expect(strain).toBeGreaterThanOrEqual(14);
-    expect(strain).toBeLessThanOrEqual(16);
-  });
-
-  it("maps a very hard 2-hour workout (~96 raw) to high strain (15-17)", () => {
-    const strain = rawLoadToStrain(96);
-    expect(strain).toBeGreaterThanOrEqual(15);
-    expect(strain).toBeLessThanOrEqual(17);
-  });
-
-  it("maps an extreme 3-hour endurance effort (~141 raw) to very high strain (17-19)", () => {
-    const strain = rawLoadToStrain(141);
-    expect(strain).toBeGreaterThanOrEqual(17);
-    expect(strain).toBeLessThanOrEqual(19);
-  });
-
-  it("never exceeds 21 even for extreme values", () => {
-    expect(rawLoadToStrain(500)).toBeLessThanOrEqual(21);
-    expect(rawLoadToStrain(1000)).toBeLessThanOrEqual(21);
-  });
-
-  it("increases monotonically with raw load", () => {
-    let previous = rawLoadToStrain(0);
-    for (const load of [10, 20, 50, 100, 200, 500]) {
-      const current = rawLoadToStrain(load);
-      expect(current).toBeGreaterThan(previous);
-      previous = current;
-    }
-  });
-
-  it("shows diminishing returns at higher loads (logarithmic behavior)", () => {
-    // Going from 0→50 should add more strain than going from 100→150
-    const lowGain = rawLoadToStrain(50) - rawLoadToStrain(0);
-    const highGain = rawLoadToStrain(150) - rawLoadToStrain(100);
-    expect(lowGain).toBeGreaterThan(highGain);
-  });
-
-  it("returns a rounded value with 1 decimal place", () => {
-    const strain = rawLoadToStrain(45);
-    expect(strain).toBe(Math.round(strain * 10) / 10);
+    it("returns the zone string for unknown zones", () => {
+      expect(new StrainZone("something").label).toBe("something");
+    });
   });
 });
 
-describe("strainColor", () => {
-  it("returns textSecondary for light strain (< 10)", () => {
-    expect(strainColor(5)).toBe(textColors.secondary);
-    expect(strainColor(9.9)).toBe(textColors.secondary);
+describe("StrainScore", () => {
+  describe("fromRawLoad", () => {
+    it("returns 0 for zero raw load", () => {
+      expect(StrainScore.fromRawLoad(0).value).toBe(0);
+    });
+
+    it("returns 0 for negative raw load", () => {
+      expect(StrainScore.fromRawLoad(-5).value).toBe(0);
+    });
+
+    it("maps a light 30-min workout (~20 raw) to light strain (8-11)", () => {
+      const strain = StrainScore.fromRawLoad(19.5);
+      expect(strain.value).toBeGreaterThanOrEqual(8);
+      expect(strain.value).toBeLessThanOrEqual(11);
+    });
+
+    it("maps a moderate 60-min workout (~45 raw) to moderate strain (12-14)", () => {
+      const strain = StrainScore.fromRawLoad(45);
+      expect(strain.value).toBeGreaterThanOrEqual(12);
+      expect(strain.value).toBeLessThanOrEqual(14);
+    });
+
+    it("maps a hard 90-min workout (~76 raw) to high strain (14-16)", () => {
+      const strain = StrainScore.fromRawLoad(76);
+      expect(strain.value).toBeGreaterThanOrEqual(14);
+      expect(strain.value).toBeLessThanOrEqual(16);
+    });
+
+    it("maps a very hard 2-hour workout (~96 raw) to high strain (15-17)", () => {
+      const strain = StrainScore.fromRawLoad(96);
+      expect(strain.value).toBeGreaterThanOrEqual(15);
+      expect(strain.value).toBeLessThanOrEqual(17);
+    });
+
+    it("maps an extreme 3-hour endurance effort (~141 raw) to very high strain (17-19)", () => {
+      const strain = StrainScore.fromRawLoad(141);
+      expect(strain.value).toBeGreaterThanOrEqual(17);
+      expect(strain.value).toBeLessThanOrEqual(19);
+    });
+
+    it("never exceeds 21 even for extreme values", () => {
+      expect(StrainScore.fromRawLoad(500).value).toBeLessThanOrEqual(21);
+      expect(StrainScore.fromRawLoad(1000).value).toBeLessThanOrEqual(21);
+    });
+
+    it("increases monotonically with raw load", () => {
+      let previous = StrainScore.fromRawLoad(0).value;
+      for (const load of [10, 20, 50, 100, 200, 500]) {
+        const current = StrainScore.fromRawLoad(load).value;
+        expect(current).toBeGreaterThan(previous);
+        previous = current;
+      }
+    });
+
+    it("shows diminishing returns at higher loads (logarithmic behavior)", () => {
+      const lowGain = StrainScore.fromRawLoad(50).value - StrainScore.fromRawLoad(0).value;
+      const highGain = StrainScore.fromRawLoad(150).value - StrainScore.fromRawLoad(100).value;
+      expect(lowGain).toBeGreaterThan(highGain);
+    });
+
+    it("returns a rounded value with 1 decimal place", () => {
+      const strain = StrainScore.fromRawLoad(45);
+      expect(strain.value).toBe(Math.round(strain.value * 10) / 10);
+    });
   });
 
-  it("returns positive for moderate strain (10-13)", () => {
-    expect(strainColor(10)).toBe(statusColors.positive);
-    expect(strainColor(13)).toBe(statusColors.positive);
+  describe("color", () => {
+    it("returns textSecondary for light strain (< 10)", () => {
+      expect(new StrainScore(5).color).toBe(textColors.secondary);
+      expect(new StrainScore(9.9).color).toBe(textColors.secondary);
+    });
+
+    it("returns positive for moderate strain (10-13)", () => {
+      expect(new StrainScore(10).color).toBe(statusColors.positive);
+      expect(new StrainScore(13).color).toBe(statusColors.positive);
+    });
+
+    it("returns warning for high strain (14-17)", () => {
+      expect(new StrainScore(14).color).toBe(statusColors.warning);
+      expect(new StrainScore(17).color).toBe(statusColors.warning);
+    });
+
+    it("returns danger for all-out strain (> 17)", () => {
+      expect(new StrainScore(17.1).color).toBe(statusColors.danger);
+      expect(new StrainScore(21).color).toBe(statusColors.danger);
+    });
   });
 
-  it("returns warning for high strain (14-17)", () => {
-    expect(strainColor(14)).toBe(statusColors.warning);
-    expect(strainColor(17)).toBe(statusColors.warning);
-  });
+  describe("label", () => {
+    it("returns Light for strain < 10", () => {
+      expect(new StrainScore(5).label).toBe("Light");
+      expect(new StrainScore(0).label).toBe("Light");
+    });
 
-  it("returns danger for all-out strain (> 17)", () => {
-    expect(strainColor(17.1)).toBe(statusColors.danger);
-    expect(strainColor(21)).toBe(statusColors.danger);
-  });
-});
+    it("returns Moderate for strain 10-13", () => {
+      expect(new StrainScore(10).label).toBe("Moderate");
+      expect(new StrainScore(13).label).toBe("Moderate");
+    });
 
-describe("strainLabel", () => {
-  it("returns Light for strain < 10", () => {
-    expect(strainLabel(5)).toBe("Light");
-    expect(strainLabel(0)).toBe("Light");
-  });
+    it("returns High for strain 14-17", () => {
+      expect(new StrainScore(14).label).toBe("High");
+      expect(new StrainScore(17).label).toBe("High");
+    });
 
-  it("returns Moderate for strain 10-13", () => {
-    expect(strainLabel(10)).toBe("Moderate");
-    expect(strainLabel(13)).toBe("Moderate");
-  });
-
-  it("returns High for strain 14-17", () => {
-    expect(strainLabel(14)).toBe("High");
-    expect(strainLabel(17)).toBe("High");
-  });
-
-  it("returns All Out for strain > 17", () => {
-    expect(strainLabel(17.1)).toBe("All Out");
-    expect(strainLabel(21)).toBe("All Out");
+    it("returns All Out for strain > 17", () => {
+      expect(new StrainScore(17.1).label).toBe("All Out");
+      expect(new StrainScore(21).label).toBe("All Out");
+    });
   });
 });

@@ -304,7 +304,6 @@ jobs:
   mutation:
     name: Mutation Testing
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -319,11 +318,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: reports/stryker-incremental.json
-          key: stryker-v2-${{ github.head_ref }}-${{ github.sha }}
+          key: stryker-v2-${{ github.head_ref || 'main' }}-${{ github.sha }}
           restore-keys: |
-            stryker-v2-${{ github.head_ref }}-
-            stryker-v2-main
+            stryker-v2-${{ github.head_ref || 'main' }}-
+            stryker-v2-main-
       - name: Get changed files
+        if: github.event_name == 'pull_request'
         id: changed
         run: |
           # Filter to .ts source files, excluding tests, config, etc.
@@ -350,9 +350,12 @@ jobs:
           done
           echo "files=$FILES" >> "$GITHUB_OUTPUT"
           echo "Mutating changed files: $FILES"
-      - name: Run Stryker
-        if: steps.changed.outputs.files != ''
+      - name: Run Stryker (changed files)
+        if: github.event_name == 'pull_request' && steps.changed.outputs.files != ''
         run: pnpm test:mutation --mutate "${{ steps.changed.outputs.files }}"
+      - name: Run Stryker (full suite)
+        if: github.event_name == 'push'
+        run: pnpm test:mutation
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

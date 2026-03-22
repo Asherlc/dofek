@@ -7,11 +7,11 @@ import { SparkLine } from "../../components/charts/SparkLine";
 import { formatNumber } from "@dofek/format/format";
 import { trendDirection as computeTrend } from "../../lib/scoring";
 import { trpc } from "../../lib/trpc";
-import { convertTemperature, temperatureLabel, useUnitSystem } from "../../lib/units";
+import { useUnitConverter } from "../../lib/units";
 import { colors } from "../../theme";
 
 export default function MetricsScreen() {
-  const unitSystem = useUnitSystem();
+  const units = useUnitConverter();
   const [days, setDays] = useState(30);
 
   // HRV trend
@@ -47,7 +47,7 @@ export default function MetricsScreen() {
 
   const skinTempTrend = dailyMetricsData
     .filter((d: Record<string, unknown>) => d.skin_temp_c != null)
-    .map((d: Record<string, unknown>) => convertTemperature(Number(d.skin_temp_c), unitSystem));
+    .map((d: Record<string, unknown>) => units.convertTemperature(Number(d.skin_temp_c)));
 
   const isLoading =
     hrvQuery.isLoading || readinessQuery.isLoading || stressQuery.isLoading;
@@ -213,8 +213,8 @@ export default function MetricsScreen() {
           {trendsData?.latest_skin_temp != null && (
             <MetricCard
               title="Skin Temperature"
-              value={formatNumber(convertTemperature(trendsData.latest_skin_temp, unitSystem))}
-              unit={temperatureLabel(unitSystem)}
+              value={formatNumber(units.convertTemperature(trendsData.latest_skin_temp))}
+              unit={units.temperatureLabel}
               trend={skinTempTrend}
               color={colors.orange}
               trendDirection={

@@ -9,18 +9,18 @@ import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { DaySelector } from "../../components/DaySelector";
 import { StrainGauge } from "../../components/charts/StrainGauge";
 import { SparkLine } from "../../components/charts/SparkLine";
-import { aggregateWeeklyVolume, workloadRatioColor, workloadRatioHint } from "../../lib/scoring";
+import { aggregateWeeklyVolume, WorkloadRatio } from "../../lib/scoring";
 import type { WeekSummary } from "../../lib/scoring";
 import { formatNumber } from "@dofek/format/format";
 import { trpc } from "../../lib/trpc";
-import { useUnitSystem } from "../../lib/units";
+import { useUnitConverter } from "../../lib/units";
 import type { ActivityRow, WorkloadRatioRow } from "../../types/api";
 import { ActivityRowSchema, WeeklyVolumeRowSchema } from "../../types/api";
 import { colors } from "../../theme";
 
 export default function StrainScreen() {
   const [days, setDays] = useState(30);
-  const unitSystem = useUnitSystem();
+  const units = useUnitConverter();
   const workloadQuery = trpc.recovery.workloadRatio.useQuery({ days });
   const workloadResult = workloadQuery.data;
   const workloadData = workloadResult?.timeSeries ?? [];
@@ -47,6 +47,7 @@ export default function StrainScreen() {
   const acuteLoad = todayWorkload?.acuteLoad ?? 0;
   const chronicLoad = todayWorkload?.chronicLoad ?? 0;
   const workloadRatio = todayWorkload?.workloadRatio;
+  const workloadRatioScore = new WorkloadRatio(workloadRatio ?? null);
   const displayedDate = workloadResult?.displayedDate;
   const strainDateLabel =
     displayedDate == null
@@ -102,7 +103,7 @@ export default function StrainScreen() {
                   style={[
                     styles.loadValue,
                     {
-                      color: workloadRatioColor(workloadRatio ?? null),
+                      color: workloadRatioScore.color,
                     },
                   ]}
                 >
@@ -113,7 +114,7 @@ export default function StrainScreen() {
             </View>
             {workloadRatio != null && (
               <Text style={styles.ratioHint}>
-                {workloadRatioHint(workloadRatio)}
+                {workloadRatioScore.hint}
               </Text>
             )}
           </View>
@@ -198,7 +199,7 @@ export default function StrainScreen() {
                     avgPower={activity.avg_power ?? null}
                     distanceKm={activity.distance_meters ? activity.distance_meters / 1000 : null}
                     calories={activity.calories ?? null}
-                    unitSystem={unitSystem}
+                    units={units}
                   />
                 ))}
               </View>

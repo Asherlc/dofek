@@ -7,94 +7,100 @@ const METERS_TO_FEET = 3.28084;
 const CM_TO_INCHES = 0.393701;
 const KM_PER_MILE = 1 / KM_TO_MILES;
 
-// --- Conversion functions (metric input → selected system output) ---
+// --- UnitConverter class ---
 
-export function convertWeight(kg: number, system: UnitSystem): number {
-  return system === "imperial" ? kg * KG_TO_LBS : kg;
-}
+export class UnitConverter {
+  constructor(readonly system: UnitSystem) {}
 
-export function convertDistance(km: number, system: UnitSystem): number {
-  return system === "imperial" ? km * KM_TO_MILES : km;
-}
+  // --- Conversions (metric input → selected system output) ---
 
-export function convertElevation(meters: number, system: UnitSystem): number {
-  return system === "imperial" ? meters * METERS_TO_FEET : meters;
-}
+  convertWeight(kg: number): number {
+    return this.system === "imperial" ? kg * KG_TO_LBS : kg;
+  }
 
-export function convertTemperature(celsius: number, system: UnitSystem): number {
-  return system === "imperial" ? celsius * (9 / 5) + 32 : celsius;
-}
+  convertDistance(km: number): number {
+    return this.system === "imperial" ? km * KM_TO_MILES : km;
+  }
 
-export function scaleTemperatureStddev(stddev: number, system: UnitSystem): number {
-  return system === "imperial" ? stddev * (9 / 5) : stddev;
-}
+  convertElevation(meters: number): number {
+    return this.system === "imperial" ? meters * METERS_TO_FEET : meters;
+  }
 
-export function convertSpeed(kmh: number, system: UnitSystem): number {
-  return system === "imperial" ? kmh * KM_TO_MILES : kmh;
-}
+  scaleTemperatureStddev(stddev: number): number {
+    return this.system === "imperial" ? stddev * (9 / 5) : stddev;
+  }
 
-export function convertHeight(cm: number, system: UnitSystem): number {
-  return system === "imperial" ? cm * CM_TO_INCHES : cm;
-}
+  convertTemperature(celsius: number): number {
+    return this.system === "imperial" ? celsius * (9 / 5) + 32 : celsius;
+  }
 
-export function convertPace(secondsPerKm: number, system: UnitSystem): number {
-  return system === "imperial" ? secondsPerKm * KM_PER_MILE : secondsPerKm;
-}
+  convertSpeed(kmh: number): number {
+    return this.system === "imperial" ? kmh * KM_TO_MILES : kmh;
+  }
 
-// --- Unit labels ---
+  convertHeight(cm: number): number {
+    return this.system === "imperial" ? cm * CM_TO_INCHES : cm;
+  }
 
-export function weightLabel(system: UnitSystem): string {
-  return system === "imperial" ? "lbs" : "kg";
-}
+  convertPace(secondsPerKm: number): number {
+    return this.system === "imperial" ? secondsPerKm * KM_PER_MILE : secondsPerKm;
+  }
 
-export function distanceLabel(system: UnitSystem): string {
-  return system === "imperial" ? "mi" : "km";
-}
+  // --- Unit labels ---
 
-export function elevationLabel(system: UnitSystem): string {
-  return system === "imperial" ? "ft" : "m";
-}
+  get weightLabel(): string {
+    return this.system === "imperial" ? "lbs" : "kg";
+  }
 
-export function temperatureLabel(system: UnitSystem): string {
-  return system === "imperial" ? "°F" : "°C";
-}
+  get distanceLabel(): string {
+    return this.system === "imperial" ? "mi" : "km";
+  }
 
-export function speedLabel(system: UnitSystem): string {
-  return system === "imperial" ? "mph" : "km/h";
-}
+  get elevationLabel(): string {
+    return this.system === "imperial" ? "ft" : "m";
+  }
 
-export function heightLabel(system: UnitSystem): string {
-  return system === "imperial" ? "in" : "cm";
-}
+  get temperatureLabel(): string {
+    return this.system === "imperial" ? "°F" : "°C";
+  }
 
-export function paceLabel(system: UnitSystem): string {
-  return system === "imperial" ? "/mi" : "/km";
-}
+  get speedLabel(): string {
+    return this.system === "imperial" ? "mph" : "km/h";
+  }
 
-// --- Format helpers (convert + label in one call) ---
+  get heightLabel(): string {
+    return this.system === "imperial" ? "in" : "cm";
+  }
 
-export function formatWeight(kg: number, system: UnitSystem): string {
-  return `${convertWeight(kg, system).toFixed(1)} ${weightLabel(system)}`;
-}
+  get paceLabel(): string {
+    return this.system === "imperial" ? "/mi" : "/km";
+  }
 
-export function formatDistance(km: number, system: UnitSystem): string {
-  return `${convertDistance(km, system).toFixed(1)} ${distanceLabel(system)}`;
-}
+  // --- Format helpers (convert + label in one call) ---
 
-export function formatElevation(meters: number, system: UnitSystem): string {
-  return `${convertElevation(meters, system).toFixed(0)} ${elevationLabel(system)}`;
-}
+  formatWeight(kg: number): string {
+    return `${this.convertWeight(kg).toFixed(1)} ${this.weightLabel}`;
+  }
 
-export function formatTemperature(celsius: number, system: UnitSystem): string {
-  return `${convertTemperature(celsius, system).toFixed(1)} ${temperatureLabel(system)}`;
-}
+  formatDistance(km: number): string {
+    return `${this.convertDistance(km).toFixed(1)} ${this.distanceLabel}`;
+  }
 
-export function formatSpeed(kmh: number, system: UnitSystem): string {
-  return `${convertSpeed(kmh, system).toFixed(1)} ${speedLabel(system)}`;
-}
+  formatElevation(meters: number): string {
+    return `${this.convertElevation(meters).toFixed(0)} ${this.elevationLabel}`;
+  }
 
-export function formatHeight(cm: number, system: UnitSystem): string {
-  return `${convertHeight(cm, system).toFixed(1)} ${heightLabel(system)}`;
+  formatTemperature(celsius: number): string {
+    return `${this.convertTemperature(celsius).toFixed(1)} ${this.temperatureLabel}`;
+  }
+
+  formatSpeed(kmh: number): string {
+    return `${this.convertSpeed(kmh).toFixed(1)} ${this.speedLabel}`;
+  }
+
+  formatHeight(cm: number): string {
+    return `${this.convertHeight(cm).toFixed(1)} ${this.heightLabel}`;
+  }
 }
 
 // --- Locale detection ---

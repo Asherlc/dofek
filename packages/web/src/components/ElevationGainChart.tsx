@@ -8,8 +8,7 @@ import {
   dofekTooltip,
 } from "../lib/chartTheme.ts";
 import { formatNumber } from "../lib/format.ts";
-import { useUnitSystem } from "../lib/unitContext.ts";
-import { convertDistance, convertElevation, distanceLabel, elevationLabel } from "../lib/units.ts";
+import { useUnitConverter } from "../lib/unitContext.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
 interface ElevationGainChartProps {
@@ -18,7 +17,7 @@ interface ElevationGainChartProps {
 }
 
 export function ElevationGainChart({ data, loading }: ElevationGainChartProps) {
-  const { unitSystem } = useUnitSystem();
+  const units = useUnitConverter();
 
   const option = {
     ...dofekAnimation,
@@ -41,19 +40,19 @@ export function ElevationGainChart({ data, loading }: ElevationGainChartProps) {
         });
         return [
           `<strong>Week of ${dateLabel}</strong>`,
-          `Elevation Gain: ${formatNumber(convertElevation(row.elevationGainMeters, unitSystem), 0)} ${elevationLabel(unitSystem)}`,
+          `Elevation Gain: ${formatNumber(units.convertElevation(row.elevationGainMeters), 0)} ${units.elevationLabel}`,
           `Activities: ${row.activityCount}`,
-          `Distance: ${formatNumber(convertDistance(row.totalDistanceKm, unitSystem))} ${distanceLabel(unitSystem)}`,
+          `Distance: ${formatNumber(units.convertDistance(row.totalDistanceKm))} ${units.distanceLabel}`,
         ].join("<br/>");
       },
     }),
     xAxis: dofekAxis.time(),
-    yAxis: dofekAxis.value({ name: `Elevation Gain (${elevationLabel(unitSystem)})` }),
+    yAxis: dofekAxis.value({ name: `Elevation Gain (${units.elevationLabel})` }),
     series: [
       {
         ...dofekSeries.bar(
           "",
-          data.map((d) => [d.week, convertElevation(d.elevationGainMeters, unitSystem)]),
+          data.map((d) => [d.week, units.convertElevation(d.elevationGainMeters)]),
           { color: chartColors.amber },
         ),
         barMaxWidth: 30,

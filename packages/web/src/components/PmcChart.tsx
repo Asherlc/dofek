@@ -4,7 +4,7 @@ import {
   FORM_ZONE_GREY,
   FORM_ZONE_OPTIMAL,
   FORM_ZONE_TRANSITION,
-  formZoneColor,
+  FormZone,
 } from "@dofek/scoring/scoring";
 import type { PmcDataPoint, TssModelInfo } from "dofek-server/types";
 import { chartColors, chartThemeColors, dofekTooltip } from "../lib/chartTheme.ts";
@@ -105,7 +105,7 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
           `<span style="color:${chartThemeColors.axisLabel}">Load:</span> ${formatNumber(load)}`,
           `<span style="color:${COLOR_FITNESS}">Fitness:</span> ${formatNumber(fitness)}`,
           `<span style="color:${COLOR_FATIGUE}">Fatigue:</span> ${formatNumber(fatigue)}`,
-          `<span style="color:${formZoneColor(form)}">Form:</span> ${formatNumber(form)}`,
+          `<span style="color:${new FormZone(form).color}">Form:</span> ${formatNumber(form)}`,
         ].join("<br/>");
       },
     }),
@@ -286,7 +286,7 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
                 <div className="text-subtle text-[10px]">Form</div>
                 <div
                   className="text-sm font-semibold"
-                  style={{ color: formZoneColor(lastPoint.tsb) }}
+                  style={{ color: new FormZone(lastPoint.tsb).color }}
                 >
                   {Math.round(lastPoint.tsb)}
                 </div>
