@@ -175,23 +175,23 @@ describe("micronutrient extraction", () => {
     expect(result?.name).toBe("Fortified Cereal");
     expect(result?.calories).toBe(200);
     // Fat breakdown
-    expect(result?.saturatedFatG).toBe(1.2);
-    expect(result?.transFatG).toBe(0);
-    expect(result?.sugarG).toBe(12);
+    expect(result?.nutrients.saturated_fat).toBe(1.2);
+    expect(result?.nutrients.trans_fat).toBe(0);
+    expect(result?.nutrients.sugar).toBe(12);
     // Sodium is stored in grams in OFF, converted to mg
-    expect(result?.sodiumMg).toBe(300);
-    expect(result?.cholesterolMg).toBe(0);
-    expect(result?.potassiumMg).toBe(200);
+    expect(result?.nutrients.sodium).toBe(300);
+    expect(result?.nutrients.cholesterol).toBe(0);
+    expect(result?.nutrients.potassium).toBe(200);
     // Minerals
-    expect(result?.calciumMg).toBe(130);
-    expect(result?.ironMg).toBe(8.1);
-    expect(result?.magnesiumMg).toBe(40);
-    expect(result?.zincMg).toBe(3.8);
+    expect(result?.nutrients.calcium).toBe(130);
+    expect(result?.nutrients.iron).toBe(8.1);
+    expect(result?.nutrients.magnesium).toBe(40);
+    expect(result?.nutrients.zinc).toBe(3.8);
     // Vitamins
-    expect(result?.vitaminAMcg).toBe(150);
-    expect(result?.vitaminCMg).toBe(60);
-    expect(result?.vitaminDMcg).toBe(2.5);
-    expect(result?.vitaminB12Mcg).toBe(1.2);
+    expect(result?.nutrients.vitamin_a).toBe(150);
+    expect(result?.nutrients.vitamin_c).toBe(60);
+    expect(result?.nutrients.vitamin_d).toBe(2.5);
+    expect(result?.nutrients.vitamin_b12).toBe(1.2);
   });
 
   it("falls back to per-100g values when per-serving is unavailable", async () => {
@@ -218,8 +218,8 @@ describe("micronutrient extraction", () => {
     const result = await client.lookupBarcode("456");
 
     expect(result).not.toBeNull();
-    expect(result?.calciumMg).toBe(120);
-    expect(result?.vitaminDMcg).toBe(0.8);
+    expect(result?.nutrients.calcium).toBe(120);
+    expect(result?.nutrients.vitamin_d).toBe(0.8);
   });
 
   it("returns null for micronutrient fields not present in the response", async () => {
@@ -244,10 +244,11 @@ describe("micronutrient extraction", () => {
     const result = await client.lookupBarcode("789");
 
     expect(result).not.toBeNull();
-    expect(result?.vitaminAMcg).toBeNull();
-    expect(result?.calciumMg).toBeNull();
-    expect(result?.ironMg).toBeNull();
-    expect(result?.omega3Mg).toBeNull();
+    // Absent nutrients should not be present in the map
+    expect(result?.nutrients.vitamin_a).toBeUndefined();
+    expect(result?.nutrients.calcium).toBeUndefined();
+    expect(result?.nutrients.iron).toBeUndefined();
+    expect(result?.nutrients.omega_3).toBeUndefined();
   });
 
   it("converts omega-3 and omega-6 from grams to milligrams", async () => {
@@ -274,8 +275,8 @@ describe("micronutrient extraction", () => {
     const result = await client.lookupBarcode("321");
 
     expect(result).not.toBeNull();
-    expect(result?.omega3Mg).toBe(2500);
-    expect(result?.omega6Mg).toBe(800);
+    expect(result?.nutrients.omega_3).toBe(2500);
+    expect(result?.nutrients.omega_6).toBe(800);
   });
 
   it("includes micronutrients in search results", async () => {
@@ -305,8 +306,8 @@ describe("micronutrient extraction", () => {
     const results = await client.searchFoods("orange juice", 5);
 
     expect(results).toHaveLength(1);
-    expect(results[0]?.vitaminCMg).toBe(72);
-    expect(results[0]?.potassiumMg).toBe(450);
-    expect(results[0]?.calciumMg).toBe(20);
+    expect(results[0]?.nutrients.vitamin_c).toBe(72);
+    expect(results[0]?.nutrients.potassium).toBe(450);
+    expect(results[0]?.nutrients.calcium).toBe(20);
   });
 });

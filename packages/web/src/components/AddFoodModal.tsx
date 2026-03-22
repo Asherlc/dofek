@@ -13,8 +13,8 @@ export interface FoodFormData {
   carbsG: number | null;
   fatG: number | null;
   foodDescription: string;
-  /** Full micronutrient data from Open Food Facts (if available) */
-  micronutrients: Partial<FoodDatabaseResult> | null;
+  /** Micronutrient data keyed by nutrient id (e.g. 'vitamin_a' → 150) */
+  nutrients: Record<string, number>;
 }
 
 interface AddFoodModalProps {
@@ -47,7 +47,7 @@ export function AddFoodModal({
   const nameInputRef = useRef<HTMLInputElement>(null);
   const searchRequestCounterRef = useRef(0);
   const skipNextSearchRef = useRef(false);
-  const selectedFoodNutrients = useRef<Partial<FoodDatabaseResult> | null>(null);
+  const selectedFoodNutrients = useRef<Record<string, number>>({});
   const browserLocale = typeof navigator !== "undefined" ? navigator.language : "en-US";
   const foodClient = useMemo(() => new OpenFoodFactsClient(browserLocale), [browserLocale]);
 
@@ -78,7 +78,7 @@ export function AddFoodModal({
   function resetForm() {
     searchRequestCounterRef.current += 1;
     skipNextSearchRef.current = false;
-    selectedFoodNutrients.current = null;
+    selectedFoodNutrients.current = {};
     setFoodName("");
     setCalories("");
     setProteinGrams("");
@@ -104,7 +104,7 @@ export function AddFoodModal({
       carbsG: carbsGrams ? Number.parseFloat(carbsGrams) : null,
       fatG: fatGrams ? Number.parseFloat(fatGrams) : null,
       foodDescription: servingDescription.trim(),
-      micronutrients: selectedFoodNutrients.current,
+      nutrients: selectedFoodNutrients.current,
     });
     resetForm();
   }
@@ -122,7 +122,7 @@ export function AddFoodModal({
 
   function applySearchResult(result: FoodDatabaseResult) {
     skipNextSearchRef.current = true;
-    selectedFoodNutrients.current = result;
+    selectedFoodNutrients.current = result.nutrients;
     const selectedName = result.brand ? `${result.name} (${result.brand})` : result.name;
     setFoodName(selectedName);
     setServingDescription(result.servingSize ?? "");

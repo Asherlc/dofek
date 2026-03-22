@@ -90,7 +90,7 @@ export default function AddFoodScreen() {
   const [servingDescription, setServingDescription] = useState("");
 
   // ── Micronutrient data from selected food result (passed through to create mutation) ──
-  const selectedFoodNutrients = useRef<Partial<FoodDatabaseResult> | null>(null);
+  const selectedFoodNutrients = useRef<Record<string, number>>({});
 
   // ── Recent foods (loaded once on mount) ──
   const [recentFoods, setRecentFoods] = useState<SearchResult[]>([]);
@@ -248,7 +248,7 @@ export default function AddFoodScreen() {
     setScanningBarcode(false);
 
     if (result) {
-      selectedFoodNutrients.current = result;
+      selectedFoodNutrients.current = result.nutrients;
       fillForm({
         source: "openfoodfacts",
         name: result.brand ? `${result.name} (${result.brand})` : result.name,
@@ -284,7 +284,7 @@ export default function AddFoodScreen() {
   }
 
   function handleSelectResult(result: SearchResult) {
-    selectedFoodNutrients.current = result.openFoodFactsData ?? null;
+    selectedFoodNutrients.current = result.openFoodFactsData?.nutrients ?? {};
     fillForm(result);
   }
 
@@ -300,7 +300,6 @@ export default function AddFoodScreen() {
       return;
     }
 
-    const nutrients = selectedFoodNutrients.current;
     createMutation.mutate({
       date,
       foodName: foodName.trim(),
@@ -310,39 +309,7 @@ export default function AddFoodScreen() {
       carbsG: safeParseFloat(carbsGrams),
       fatG: safeParseFloat(fatGrams),
       foodDescription: servingDescription.trim() || null,
-      // Micronutrients from Open Food Facts (if available)
-      saturatedFatG: nutrients?.saturatedFatG ?? null,
-      polyunsaturatedFatG: nutrients?.polyunsaturatedFatG ?? null,
-      monounsaturatedFatG: nutrients?.monounsaturatedFatG ?? null,
-      transFatG: nutrients?.transFatG ?? null,
-      cholesterolMg: nutrients?.cholesterolMg ?? null,
-      sodiumMg: nutrients?.sodiumMg ?? null,
-      potassiumMg: nutrients?.potassiumMg ?? null,
-      sugarG: nutrients?.sugarG ?? null,
-      vitaminAMcg: nutrients?.vitaminAMcg ?? null,
-      vitaminCMg: nutrients?.vitaminCMg ?? null,
-      vitaminDMcg: nutrients?.vitaminDMcg ?? null,
-      vitaminEMg: nutrients?.vitaminEMg ?? null,
-      vitaminKMcg: nutrients?.vitaminKMcg ?? null,
-      vitaminB1Mg: nutrients?.vitaminB1Mg ?? null,
-      vitaminB2Mg: nutrients?.vitaminB2Mg ?? null,
-      vitaminB3Mg: nutrients?.vitaminB3Mg ?? null,
-      vitaminB5Mg: nutrients?.vitaminB5Mg ?? null,
-      vitaminB6Mg: nutrients?.vitaminB6Mg ?? null,
-      vitaminB7Mcg: nutrients?.vitaminB7Mcg ?? null,
-      vitaminB9Mcg: nutrients?.vitaminB9Mcg ?? null,
-      vitaminB12Mcg: nutrients?.vitaminB12Mcg ?? null,
-      calciumMg: nutrients?.calciumMg ?? null,
-      ironMg: nutrients?.ironMg ?? null,
-      magnesiumMg: nutrients?.magnesiumMg ?? null,
-      zincMg: nutrients?.zincMg ?? null,
-      seleniumMcg: nutrients?.seleniumMcg ?? null,
-      copperMg: nutrients?.copperMg ?? null,
-      manganeseMg: nutrients?.manganeseMg ?? null,
-      chromiumMcg: nutrients?.chromiumMcg ?? null,
-      iodineMcg: nutrients?.iodineMcg ?? null,
-      omega3Mg: nutrients?.omega3Mg ?? null,
-      omega6Mg: nutrients?.omega6Mg ?? null,
+      nutrients: selectedFoodNutrients.current,
     });
   }
 
@@ -468,7 +435,7 @@ export default function AddFoodScreen() {
           <View style={styles.formButtons}>
             <TouchableOpacity
               style={styles.backButton}
-              onPress={() => { selectedFoodNutrients.current = null; setShowForm(false); }}
+              onPress={() => { selectedFoodNutrients.current = {}; setShowForm(false); }}
               activeOpacity={0.7}
             >
               <Text style={styles.backButtonText}>Back</Text>
@@ -611,7 +578,7 @@ export default function AddFoodScreen() {
             <TouchableOpacity
               style={styles.manualEntry}
               onPress={() => {
-                selectedFoodNutrients.current = null;
+                selectedFoodNutrients.current = {};
                 setFoodName(searchQuery.trim());
                 setCalories("");
                 setProteinGrams("");

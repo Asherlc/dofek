@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { NUTRIENTS } from "./nutrients.ts";
 
 const BASE_URL = "https://world.openfoodfacts.org";
 const DEFAULT_LOCALE = "en-US";
@@ -17,49 +18,15 @@ export interface FoodDatabaseResult {
   name: string;
   brand: string | null;
   servingSize: string | null;
+  imageUrl: string | null;
+  // Macronutrients (stay as top-level fields — queried on every endpoint)
   calories: number | null;
   proteinG: number | null;
   carbsG: number | null;
   fatG: number | null;
   fiberG: number | null;
-  imageUrl: string | null;
-  // Fat breakdown
-  saturatedFatG: number | null;
-  polyunsaturatedFatG: number | null;
-  monounsaturatedFatG: number | null;
-  transFatG: number | null;
-  // Other macros
-  cholesterolMg: number | null;
-  sodiumMg: number | null;
-  potassiumMg: number | null;
-  sugarG: number | null;
-  // Vitamins
-  vitaminAMcg: number | null;
-  vitaminCMg: number | null;
-  vitaminDMcg: number | null;
-  vitaminEMg: number | null;
-  vitaminKMcg: number | null;
-  vitaminB1Mg: number | null;
-  vitaminB2Mg: number | null;
-  vitaminB3Mg: number | null;
-  vitaminB5Mg: number | null;
-  vitaminB6Mg: number | null;
-  vitaminB7Mcg: number | null;
-  vitaminB9Mcg: number | null;
-  vitaminB12Mcg: number | null;
-  // Minerals
-  calciumMg: number | null;
-  ironMg: number | null;
-  magnesiumMg: number | null;
-  zincMg: number | null;
-  seleniumMcg: number | null;
-  copperMg: number | null;
-  manganeseMg: number | null;
-  chromiumMcg: number | null;
-  iodineMcg: number | null;
-  // Fatty acids
-  omega3Mg: number | null;
-  omega6Mg: number | null;
+  /** Micronutrients keyed by nutrient id (e.g. 'vitamin_a' → 150). Only present nutrients are included. */
+  nutrients: Record<string, number>;
 }
 
 interface SearchLocalePreferences {
@@ -212,6 +179,20 @@ export class OpenFoodFactsClient {
       this.#getNumericNutrimentValue(nutriments, "energy-kcal_serving") ??
       this.#getNumericNutrimentValue(nutriments, "energy-kcal_100g");
 
+    // Build micronutrients map from the canonical catalog
+    const nutrients: Record<string, number> = {};
+    for (const definition of NUTRIENTS) {
+      if (definition.openFoodFactsKey === null) continue;
+      const value = this.#getNutrimentWithConversion(
+        nutriments,
+        definition.openFoodFactsKey,
+        definition.conversionFactor,
+      );
+      if (value !== null) {
+        nutrients[definition.id] = value;
+      }
+    }
+
     return {
       barcode: product.code ?? null,
       name,
@@ -219,48 +200,11 @@ export class OpenFoodFactsClient {
       servingSize: product.serving_size ?? null,
       calories: calories != null ? Math.round(calories) : null,
       imageUrl: product.image_front_small_url ?? null,
-      // Macronutrients
       proteinG: this.#getNutrimentWithConversion(nutriments, "proteins"),
       carbsG: this.#getNutrimentWithConversion(nutriments, "carbohydrates"),
       fatG: this.#getNutrimentWithConversion(nutriments, "fat"),
       fiberG: this.#getNutrimentWithConversion(nutriments, "fiber"),
-      // Fat breakdown
-      saturatedFatG: this.#getNutrimentWithConversion(nutriments, "saturated-fat"),
-      polyunsaturatedFatG: this.#getNutrimentWithConversion(nutriments, "polyunsaturated-fat"),
-      monounsaturatedFatG: this.#getNutrimentWithConversion(nutriments, "monounsaturated-fat"),
-      transFatG: this.#getNutrimentWithConversion(nutriments, "trans-fat"),
-      // Other macros
-      cholesterolMg: this.#getNutrimentWithConversion(nutriments, "cholesterol"),
-      sodiumMg: this.#getNutrimentWithConversion(nutriments, "sodium", 1000), // OFF stores sodium in grams
-      potassiumMg: this.#getNutrimentWithConversion(nutriments, "potassium"),
-      sugarG: this.#getNutrimentWithConversion(nutriments, "sugars"),
-      // Vitamins
-      vitaminAMcg: this.#getNutrimentWithConversion(nutriments, "vitamin-a"),
-      vitaminCMg: this.#getNutrimentWithConversion(nutriments, "vitamin-c"),
-      vitaminDMcg: this.#getNutrimentWithConversion(nutriments, "vitamin-d"),
-      vitaminEMg: this.#getNutrimentWithConversion(nutriments, "vitamin-e"),
-      vitaminKMcg: this.#getNutrimentWithConversion(nutriments, "vitamin-k"),
-      vitaminB1Mg: this.#getNutrimentWithConversion(nutriments, "vitamin-b1"),
-      vitaminB2Mg: this.#getNutrimentWithConversion(nutriments, "vitamin-b2"),
-      vitaminB3Mg: this.#getNutrimentWithConversion(nutriments, "vitamin-pp"), // OFF uses "vitamin-pp" for niacin/B3
-      vitaminB5Mg: this.#getNutrimentWithConversion(nutriments, "pantothenic-acid"),
-      vitaminB6Mg: this.#getNutrimentWithConversion(nutriments, "vitamin-b6"),
-      vitaminB7Mcg: this.#getNutrimentWithConversion(nutriments, "biotin"),
-      vitaminB9Mcg: this.#getNutrimentWithConversion(nutriments, "vitamin-b9"),
-      vitaminB12Mcg: this.#getNutrimentWithConversion(nutriments, "vitamin-b12"),
-      // Minerals
-      calciumMg: this.#getNutrimentWithConversion(nutriments, "calcium"),
-      ironMg: this.#getNutrimentWithConversion(nutriments, "iron"),
-      magnesiumMg: this.#getNutrimentWithConversion(nutriments, "magnesium"),
-      zincMg: this.#getNutrimentWithConversion(nutriments, "zinc"),
-      seleniumMcg: this.#getNutrimentWithConversion(nutriments, "selenium"),
-      copperMg: this.#getNutrimentWithConversion(nutriments, "copper"),
-      manganeseMg: this.#getNutrimentWithConversion(nutriments, "manganese"),
-      chromiumMcg: this.#getNutrimentWithConversion(nutriments, "chromium"),
-      iodineMcg: this.#getNutrimentWithConversion(nutriments, "iodine"),
-      // Fatty acids (OFF stores in grams, DB stores in mg)
-      omega3Mg: this.#getNutrimentWithConversion(nutriments, "omega-3-fat", 1000),
-      omega6Mg: this.#getNutrimentWithConversion(nutriments, "omega-6-fat", 1000),
+      nutrients,
     };
   }
 

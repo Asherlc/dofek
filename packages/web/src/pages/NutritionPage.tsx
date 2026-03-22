@@ -117,7 +117,6 @@ export function NutritionPage() {
   }
 
   function handleAddFood(data: FoodFormData) {
-    const micronutrients = data.micronutrients;
     createMutation.mutate({
       date: dateString,
       foodName: data.foodName,
@@ -127,39 +126,7 @@ export function NutritionPage() {
       carbsG: data.carbsG,
       fatG: data.fatG,
       foodDescription: data.foodDescription || null,
-      // Micronutrients from Open Food Facts (if available)
-      saturatedFatG: micronutrients?.saturatedFatG ?? null,
-      polyunsaturatedFatG: micronutrients?.polyunsaturatedFatG ?? null,
-      monounsaturatedFatG: micronutrients?.monounsaturatedFatG ?? null,
-      transFatG: micronutrients?.transFatG ?? null,
-      cholesterolMg: micronutrients?.cholesterolMg ?? null,
-      sodiumMg: micronutrients?.sodiumMg ?? null,
-      potassiumMg: micronutrients?.potassiumMg ?? null,
-      sugarG: micronutrients?.sugarG ?? null,
-      vitaminAMcg: micronutrients?.vitaminAMcg ?? null,
-      vitaminCMg: micronutrients?.vitaminCMg ?? null,
-      vitaminDMcg: micronutrients?.vitaminDMcg ?? null,
-      vitaminEMg: micronutrients?.vitaminEMg ?? null,
-      vitaminKMcg: micronutrients?.vitaminKMcg ?? null,
-      vitaminB1Mg: micronutrients?.vitaminB1Mg ?? null,
-      vitaminB2Mg: micronutrients?.vitaminB2Mg ?? null,
-      vitaminB3Mg: micronutrients?.vitaminB3Mg ?? null,
-      vitaminB5Mg: micronutrients?.vitaminB5Mg ?? null,
-      vitaminB6Mg: micronutrients?.vitaminB6Mg ?? null,
-      vitaminB7Mcg: micronutrients?.vitaminB7Mcg ?? null,
-      vitaminB9Mcg: micronutrients?.vitaminB9Mcg ?? null,
-      vitaminB12Mcg: micronutrients?.vitaminB12Mcg ?? null,
-      calciumMg: micronutrients?.calciumMg ?? null,
-      ironMg: micronutrients?.ironMg ?? null,
-      magnesiumMg: micronutrients?.magnesiumMg ?? null,
-      zincMg: micronutrients?.zincMg ?? null,
-      seleniumMcg: micronutrients?.seleniumMcg ?? null,
-      copperMg: micronutrients?.copperMg ?? null,
-      manganeseMg: micronutrients?.manganeseMg ?? null,
-      chromiumMcg: micronutrients?.chromiumMcg ?? null,
-      iodineMcg: micronutrients?.iodineMcg ?? null,
-      omega3Mg: micronutrients?.omega3Mg ?? null,
-      omega6Mg: micronutrients?.omega6Mg ?? null,
+      nutrients: data.nutrients,
     });
   }
 

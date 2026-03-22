@@ -121,7 +121,7 @@ describe("foodRouter", () => {
         foodName: "Test Food",
         calories: 200,
       });
-      expect(result).toEqual(created);
+      expect(result).toEqual({ ...created, nutrients: {} });
     });
   });
 
@@ -200,7 +200,7 @@ describe("foodRouter", () => {
         foodName: "Quick Food",
         calories: 500,
       });
-      expect(result).toEqual(created);
+      expect(result).toEqual({ ...created, nutrients: {} });
     });
   });
 });

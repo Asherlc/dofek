@@ -29,46 +29,17 @@ const foodCategoryValues = [
   "other",
 ] as const;
 
-/** Shared schema for nutritional fields (all optional numbers) */
-const nutritionalFieldsSchema = z.object({
+/** Shared schema for macronutrient fields (all optional numbers) */
+const macroFieldsSchema = z.object({
   calories: z.number().int().nonnegative().nullish(),
   proteinG: z.number().nonnegative().nullish(),
   carbsG: z.number().nonnegative().nullish(),
   fatG: z.number().nonnegative().nullish(),
-  saturatedFatG: z.number().nonnegative().nullish(),
-  polyunsaturatedFatG: z.number().nonnegative().nullish(),
-  monounsaturatedFatG: z.number().nonnegative().nullish(),
-  transFatG: z.number().nonnegative().nullish(),
-  cholesterolMg: z.number().nonnegative().nullish(),
-  sodiumMg: z.number().nonnegative().nullish(),
-  potassiumMg: z.number().nonnegative().nullish(),
   fiberG: z.number().nonnegative().nullish(),
-  sugarG: z.number().nonnegative().nullish(),
-  vitaminAMcg: z.number().nonnegative().nullish(),
-  vitaminCMg: z.number().nonnegative().nullish(),
-  vitaminDMcg: z.number().nonnegative().nullish(),
-  vitaminEMg: z.number().nonnegative().nullish(),
-  vitaminKMcg: z.number().nonnegative().nullish(),
-  vitaminB1Mg: z.number().nonnegative().nullish(),
-  vitaminB2Mg: z.number().nonnegative().nullish(),
-  vitaminB3Mg: z.number().nonnegative().nullish(),
-  vitaminB5Mg: z.number().nonnegative().nullish(),
-  vitaminB6Mg: z.number().nonnegative().nullish(),
-  vitaminB7Mcg: z.number().nonnegative().nullish(),
-  vitaminB9Mcg: z.number().nonnegative().nullish(),
-  vitaminB12Mcg: z.number().nonnegative().nullish(),
-  calciumMg: z.number().nonnegative().nullish(),
-  ironMg: z.number().nonnegative().nullish(),
-  magnesiumMg: z.number().nonnegative().nullish(),
-  zincMg: z.number().nonnegative().nullish(),
-  seleniumMcg: z.number().nonnegative().nullish(),
-  copperMg: z.number().nonnegative().nullish(),
-  manganeseMg: z.number().nonnegative().nullish(),
-  chromiumMcg: z.number().nonnegative().nullish(),
-  iodineMcg: z.number().nonnegative().nullish(),
-  omega3Mg: z.number().nonnegative().nullish(),
-  omega6Mg: z.number().nonnegative().nullish(),
 });
+
+/** Schema for the normalized nutrients map (nutrient_id → amount) */
+const nutrientsMapSchema = z.record(z.string(), z.number().nonnegative()).default({});
 
 const createFoodEntrySchema = z
   .object({
@@ -78,8 +49,9 @@ const createFoodEntrySchema = z
     foodDescription: z.string().max(2000).nullish(),
     category: z.enum(foodCategoryValues).nullish(),
     numberOfUnits: z.number().positive().nullish(),
+    nutrients: nutrientsMapSchema,
   })
-  .merge(nutritionalFieldsSchema);
+  .merge(macroFieldsSchema);
 
 const updateFoodEntrySchema = z
   .object({
@@ -93,8 +65,9 @@ const updateFoodEntrySchema = z
     foodDescription: z.string().max(2000).nullish(),
     category: z.enum(foodCategoryValues).nullish(),
     numberOfUnits: z.number().positive().nullish(),
+    nutrients: nutrientsMapSchema.optional(),
   })
-  .merge(nutritionalFieldsSchema.partial());
+  .merge(macroFieldsSchema.partial());
 
 const DOFEK_PROVIDER_ID = "dofek";
 
@@ -109,7 +82,7 @@ async function ensureDofekProvider(
   );
 }
 
-/** Map of camelCase field names to SQL column names */
+/** Map of camelCase field names to SQL column names (structural + macros only) */
 const fieldColumnMap: Record<string, string> = {
   date: "date",
   meal: "meal",
@@ -121,42 +94,10 @@ const fieldColumnMap: Record<string, string> = {
   proteinG: "protein_g",
   carbsG: "carbs_g",
   fatG: "fat_g",
-  saturatedFatG: "saturated_fat_g",
-  polyunsaturatedFatG: "polyunsaturated_fat_g",
-  monounsaturatedFatG: "monounsaturated_fat_g",
-  transFatG: "trans_fat_g",
-  cholesterolMg: "cholesterol_mg",
-  sodiumMg: "sodium_mg",
-  potassiumMg: "potassium_mg",
   fiberG: "fiber_g",
-  sugarG: "sugar_g",
-  vitaminAMcg: "vitamin_a_mcg",
-  vitaminCMg: "vitamin_c_mg",
-  vitaminDMcg: "vitamin_d_mcg",
-  vitaminEMg: "vitamin_e_mg",
-  vitaminKMcg: "vitamin_k_mcg",
-  vitaminB1Mg: "vitamin_b1_mg",
-  vitaminB2Mg: "vitamin_b2_mg",
-  vitaminB3Mg: "vitamin_b3_mg",
-  vitaminB5Mg: "vitamin_b5_mg",
-  vitaminB6Mg: "vitamin_b6_mg",
-  vitaminB7Mcg: "vitamin_b7_mcg",
-  vitaminB9Mcg: "vitamin_b9_mcg",
-  vitaminB12Mcg: "vitamin_b12_mcg",
-  calciumMg: "calcium_mg",
-  ironMg: "iron_mg",
-  magnesiumMg: "magnesium_mg",
-  zincMg: "zinc_mg",
-  seleniumMcg: "selenium_mcg",
-  copperMg: "copper_mg",
-  manganeseMg: "manganese_mg",
-  chromiumMcg: "chromium_mcg",
-  iodineMcg: "iodine_mcg",
-  omega3Mg: "omega3_mg",
-  omega6Mg: "omega6_mg",
 };
 
-/** Zod schema for food_entry rows returned by SELECT * / RETURNING * */
+/** Zod schema for food_entry rows with nutrients from junction table */
 const foodEntryRowSchema = z.object({
   id: z.string(),
   provider_id: z.string(),
@@ -178,40 +119,32 @@ const foodEntryRowSchema = z.object({
   protein_g: z.coerce.number().nullable(),
   carbs_g: z.coerce.number().nullable(),
   fat_g: z.coerce.number().nullable(),
-  saturated_fat_g: z.coerce.number().nullable(),
-  polyunsaturated_fat_g: z.coerce.number().nullable(),
-  monounsaturated_fat_g: z.coerce.number().nullable(),
-  trans_fat_g: z.coerce.number().nullable(),
-  cholesterol_mg: z.coerce.number().nullable(),
-  sodium_mg: z.coerce.number().nullable(),
-  potassium_mg: z.coerce.number().nullable(),
   fiber_g: z.coerce.number().nullable(),
-  sugar_g: z.coerce.number().nullable(),
-  vitamin_a_mcg: z.coerce.number().nullable(),
-  vitamin_c_mg: z.coerce.number().nullable(),
-  vitamin_d_mcg: z.coerce.number().nullable(),
-  vitamin_e_mg: z.coerce.number().nullable(),
-  vitamin_k_mcg: z.coerce.number().nullable(),
-  vitamin_b1_mg: z.coerce.number().nullable(),
-  vitamin_b2_mg: z.coerce.number().nullable(),
-  vitamin_b3_mg: z.coerce.number().nullable(),
-  vitamin_b5_mg: z.coerce.number().nullable(),
-  vitamin_b6_mg: z.coerce.number().nullable(),
-  vitamin_b7_mcg: z.coerce.number().nullable(),
-  vitamin_b9_mcg: z.coerce.number().nullable(),
-  vitamin_b12_mcg: z.coerce.number().nullable(),
-  calcium_mg: z.coerce.number().nullable(),
-  iron_mg: z.coerce.number().nullable(),
-  magnesium_mg: z.coerce.number().nullable(),
-  zinc_mg: z.coerce.number().nullable(),
-  selenium_mcg: z.coerce.number().nullable(),
-  copper_mg: z.coerce.number().nullable(),
-  manganese_mg: z.coerce.number().nullable(),
-  chromium_mcg: z.coerce.number().nullable(),
-  iodine_mcg: z.coerce.number().nullable(),
-  omega3_mg: z.coerce.number().nullable(),
-  omega6_mg: z.coerce.number().nullable(),
   raw: z.unknown().nullable(),
+  confirmed: z.boolean(),
+  created_at: z.string(),
+  /** Nutrients from junction table, aggregated as JSON object { nutrient_id: amount } */
+  nutrients: z.preprocess(
+    (val) => (typeof val === "string" ? JSON.parse(val) : (val ?? {})),
+    z.record(z.string(), z.number()).default({}),
+  ),
+});
+
+/** Zod schema for food_entry rows from RETURNING * (no join, nutrients added separately) */
+const foodEntryInsertRowSchema = z.object({
+  id: z.string(),
+  provider_id: z.string(),
+  user_id: z.string(),
+  date: z.string(),
+  meal: z.string().nullable(),
+  food_name: z.string(),
+  food_description: z.string().nullable(),
+  category: z.string().nullable(),
+  calories: z.coerce.number().nullable(),
+  protein_g: z.coerce.number().nullable(),
+  carbs_g: z.coerce.number().nullable(),
+  fat_g: z.coerce.number().nullable(),
+  fiber_g: z.coerce.number().nullable(),
   confirmed: z.boolean(),
   created_at: z.string(),
 });
@@ -248,29 +181,25 @@ export const foodRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
-      if (input.meal) {
-        const rows = await executeWithSchema(
-          ctx.db,
-          foodEntryRowSchema,
-          sql`SELECT * FROM fitness.food_entry
-              WHERE user_id = ${ctx.userId}
-                AND confirmed = true
-                AND date >= ${input.startDate}::date
-                AND date <= ${input.endDate}::date
-                AND meal = ${input.meal}
-              ORDER BY date ASC, meal ASC, food_name ASC`,
-        );
-        return rows;
-      }
+      const mealFilter = input.meal ? sql`AND fe.meal = ${input.meal}` : sql``;
       const rows = await executeWithSchema(
         ctx.db,
         foodEntryRowSchema,
-        sql`SELECT * FROM fitness.food_entry
-            WHERE user_id = ${ctx.userId}
-              AND confirmed = true
-              AND date >= ${input.startDate}::date
-              AND date <= ${input.endDate}::date
-            ORDER BY date ASC, meal ASC, food_name ASC`,
+        sql`SELECT fe.id, fe.provider_id, fe.user_id, fe.external_id, fe.date,
+              fe.meal, fe.food_name, fe.food_description, fe.category,
+              fe.provider_food_id, fe.provider_serving_id, fe.number_of_units,
+              fe.logged_at, fe.barcode, fe.serving_unit, fe.serving_weight_grams,
+              fe.calories, fe.protein_g, fe.carbs_g, fe.fat_g, fe.fiber_g,
+              fe.raw, fe.confirmed, fe.created_at,
+              COALESCE((SELECT json_object_agg(fen.nutrient_id, fen.amount)
+                FROM fitness.food_entry_nutrient fen WHERE fen.food_entry_id = fe.id), '{}') AS nutrients
+            FROM fitness.food_entry fe
+            WHERE fe.user_id = ${ctx.userId}
+              AND fe.confirmed = true
+              AND fe.date >= ${input.startDate}::date
+              AND fe.date <= ${input.endDate}::date
+              ${mealFilter}
+            ORDER BY fe.date ASC, fe.meal ASC, fe.food_name ASC`,
       );
       return rows;
     }),
@@ -282,11 +211,19 @@ export const foodRouter = router({
       const rows = await executeWithSchema(
         ctx.db,
         foodEntryRowSchema,
-        sql`SELECT * FROM fitness.food_entry
-            WHERE user_id = ${ctx.userId}
-              AND confirmed = true
-              AND date = ${input.date}::date
-            ORDER BY meal ASC, food_name ASC`,
+        sql`SELECT fe.id, fe.provider_id, fe.user_id, fe.external_id, fe.date,
+              fe.meal, fe.food_name, fe.food_description, fe.category,
+              fe.provider_food_id, fe.provider_serving_id, fe.number_of_units,
+              fe.logged_at, fe.barcode, fe.serving_unit, fe.serving_weight_grams,
+              fe.calories, fe.protein_g, fe.carbs_g, fe.fat_g, fe.fiber_g,
+              fe.raw, fe.confirmed, fe.created_at,
+              COALESCE((SELECT json_object_agg(fen.nutrient_id, fen.amount)
+                FROM fitness.food_entry_nutrient fen WHERE fen.food_entry_id = fe.id), '{}') AS nutrients
+            FROM fitness.food_entry fe
+            WHERE fe.user_id = ${ctx.userId}
+              AND fe.confirmed = true
+              AND fe.date = ${input.date}::date
+            ORDER BY fe.meal ASC, fe.food_name ASC`,
       );
       if (rows.length === 0) {
         logger.info(`[food] byDate returned 0 rows for userId=${ctx.userId} date=${input.date}`);
@@ -348,57 +285,48 @@ export const foodRouter = router({
   create: protectedProcedure.input(createFoodEntrySchema).mutation(async ({ ctx, input }) => {
     await ensureDofekProvider(ctx.db);
 
+    // Insert into food_entry (macros only)
     const rows = await executeWithSchema(
       ctx.db,
-      foodEntryRowSchema,
+      foodEntryInsertRowSchema,
       sql`INSERT INTO fitness.food_entry (
-            user_id, provider_id, date, meal, food_name, food_description, category, number_of_units,
-            calories, protein_g, carbs_g, fat_g,
-            saturated_fat_g, polyunsaturated_fat_g, monounsaturated_fat_g, trans_fat_g,
-            cholesterol_mg, sodium_mg, potassium_mg, fiber_g, sugar_g,
-            vitamin_a_mcg, vitamin_c_mg, vitamin_d_mcg, vitamin_e_mg, vitamin_k_mcg,
-            vitamin_b1_mg, vitamin_b2_mg, vitamin_b3_mg, vitamin_b5_mg, vitamin_b6_mg,
-            vitamin_b7_mcg, vitamin_b9_mcg, vitamin_b12_mcg,
-            calcium_mg, iron_mg, magnesium_mg, zinc_mg, selenium_mcg,
-            copper_mg, manganese_mg, chromium_mcg, iodine_mcg,
-            omega3_mg, omega6_mg
+            user_id, provider_id, date, meal, food_name, food_description,
+            category, number_of_units,
+            calories, protein_g, carbs_g, fat_g, fiber_g
           ) VALUES (
             ${ctx.userId}, ${DOFEK_PROVIDER_ID}, ${input.date}::date,
             ${input.meal ?? null}, ${input.foodName}, ${input.foodDescription ?? null},
             ${input.category ?? null}, ${input.numberOfUnits ?? null},
             ${input.calories ?? null}, ${input.proteinG ?? null},
-            ${input.carbsG ?? null}, ${input.fatG ?? null},
-            ${input.saturatedFatG ?? null}, ${input.polyunsaturatedFatG ?? null},
-            ${input.monounsaturatedFatG ?? null}, ${input.transFatG ?? null},
-            ${input.cholesterolMg ?? null}, ${input.sodiumMg ?? null},
-            ${input.potassiumMg ?? null}, ${input.fiberG ?? null}, ${input.sugarG ?? null},
-            ${input.vitaminAMcg ?? null}, ${input.vitaminCMg ?? null},
-            ${input.vitaminDMcg ?? null}, ${input.vitaminEMg ?? null},
-            ${input.vitaminKMcg ?? null},
-            ${input.vitaminB1Mg ?? null}, ${input.vitaminB2Mg ?? null},
-            ${input.vitaminB3Mg ?? null}, ${input.vitaminB5Mg ?? null},
-            ${input.vitaminB6Mg ?? null},
-            ${input.vitaminB7Mcg ?? null}, ${input.vitaminB9Mcg ?? null},
-            ${input.vitaminB12Mcg ?? null},
-            ${input.calciumMg ?? null}, ${input.ironMg ?? null},
-            ${input.magnesiumMg ?? null}, ${input.zincMg ?? null},
-            ${input.seleniumMcg ?? null},
-            ${input.copperMg ?? null}, ${input.manganeseMg ?? null},
-            ${input.chromiumMcg ?? null}, ${input.iodineMcg ?? null},
-            ${input.omega3Mg ?? null}, ${input.omega6Mg ?? null}
+            ${input.carbsG ?? null}, ${input.fatG ?? null}, ${input.fiberG ?? null}
           ) RETURNING *`,
     );
-    return rows[0];
+    const inserted = rows[0];
+    if (!inserted) throw new Error("Failed to insert food entry");
+
+    // Insert nutrients into junction table
+    const nutrientEntries = Object.entries(input.nutrients);
+    if (nutrientEntries.length > 0) {
+      const valuesClauses = nutrientEntries.map(
+        ([nutrientId, amount]) => sql`(${inserted.id}::uuid, ${nutrientId}, ${amount})`,
+      );
+      await ctx.db.execute(
+        sql`INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+            VALUES ${sql.join(valuesClauses, sql`, `)}
+            ON CONFLICT (food_entry_id, nutrient_id) DO UPDATE SET amount = EXCLUDED.amount`,
+      );
+    }
+
+    return { ...inserted, nutrients: input.nutrients };
   }),
 
   /** Update an existing food entry by id */
   update: protectedProcedure.input(updateFoodEntrySchema).mutation(async ({ ctx, input }) => {
-    const { id, ...fields } = input;
+    const { id, nutrients, ...fields } = input;
     const setClauses: ReturnType<typeof sql>[] = [];
 
     for (const [fieldName, columnName] of Object.entries(fieldColumnMap)) {
       if (!Object.hasOwn(fields, fieldName)) continue;
-      // Object.entries always returns string keys; use indexed access after hasOwnProperty check
       const fieldsRecord: Record<string, unknown> = fields;
       const value = fieldsRecord[fieldName];
       if (value !== undefined) {
@@ -416,13 +344,39 @@ export const foodRouter = router({
       }
     }
 
-    if (setClauses.length === 0) return null;
+    if (setClauses.length > 0) {
+      const setExpression = sql.join(setClauses, sql`, `);
+      await ctx.db.execute(
+        sql`UPDATE fitness.food_entry SET ${setExpression}
+            WHERE user_id = ${ctx.userId} AND confirmed = true AND id = ${id}`,
+      );
+    }
 
-    const setExpression = sql.join(setClauses, sql`, `);
+    // Replace nutrients in junction table if provided
+    if (nutrients) {
+      await ctx.db.execute(
+        sql`DELETE FROM fitness.food_entry_nutrient WHERE food_entry_id = ${id}::uuid`,
+      );
+      const nutrientEntries = Object.entries(nutrients);
+      if (nutrientEntries.length > 0) {
+        const valuesClauses = nutrientEntries.map(
+          ([nutrientId, amount]) => sql`(${id}::uuid, ${nutrientId}, ${amount})`,
+        );
+        await ctx.db.execute(
+          sql`INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+              VALUES ${sql.join(valuesClauses, sql`, `)}`,
+        );
+      }
+    }
+
+    // Re-fetch with nutrients
     const rows = await executeWithSchema(
       ctx.db,
       foodEntryRowSchema,
-      sql`UPDATE fitness.food_entry SET ${setExpression} WHERE user_id = ${ctx.userId} AND confirmed = true AND id = ${id} RETURNING *`,
+      sql`SELECT fe.*, COALESCE((SELECT json_object_agg(fen.nutrient_id, fen.amount)
+            FROM fitness.food_entry_nutrient fen WHERE fen.food_entry_id = fe.id), '{}') AS nutrients
+          FROM fitness.food_entry fe
+          WHERE fe.user_id = ${ctx.userId} AND fe.confirmed = true AND fe.id = ${id}`,
     );
     return rows[0] ?? null;
   }),
@@ -462,7 +416,7 @@ export const foodRouter = router({
 
       const rows = await executeWithSchema(
         ctx.db,
-        foodEntryRowSchema,
+        foodEntryInsertRowSchema,
         sql`INSERT INTO fitness.food_entry (
               user_id, provider_id, date, meal, food_name,
               calories, protein_g, carbs_g, fat_g
@@ -473,6 +427,6 @@ export const foodRouter = router({
               ${input.carbsG ?? null}, ${input.fatG ?? null}
             ) RETURNING *`,
       );
-      return rows[0];
+      return rows[0] ? { ...rows[0], nutrients: {} } : undefined;
     }),
 });
