@@ -168,7 +168,8 @@ describe("micronutrient extraction", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await lookupBarcode("123", "en-US");
+    const client = new OpenFoodFactsClient("en-US");
+    const result = await client.lookupBarcode("123");
 
     expect(result).not.toBeNull();
     expect(result?.name).toBe("Fortified Cereal");
@@ -213,7 +214,8 @@ describe("micronutrient extraction", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await lookupBarcode("456", "en-US");
+    const client = new OpenFoodFactsClient("en-US");
+    const result = await client.lookupBarcode("456");
 
     expect(result).not.toBeNull();
     expect(result?.calciumMg).toBe(120);
@@ -238,7 +240,8 @@ describe("micronutrient extraction", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await lookupBarcode("789", "en-US");
+    const client = new OpenFoodFactsClient("en-US");
+    const result = await client.lookupBarcode("789");
 
     expect(result).not.toBeNull();
     expect(result?.vitaminAMcg).toBeNull();
@@ -267,7 +270,8 @@ describe("micronutrient extraction", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await lookupBarcode("321", "en-US");
+    const client = new OpenFoodFactsClient("en-US");
+    const result = await client.lookupBarcode("321");
 
     expect(result).not.toBeNull();
     expect(result?.omega3Mg).toBe(2500);
@@ -297,7 +301,8 @@ describe("micronutrient extraction", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const results = await searchFoods("orange juice", 5, "en-US");
+    const client = new OpenFoodFactsClient("en-US");
+    const results = await client.searchFoods("orange juice", 5);
 
     expect(results).toHaveLength(1);
     expect(results[0]?.vitaminCMg).toBe(72);
