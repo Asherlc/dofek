@@ -31,10 +31,13 @@ export interface TssModelInfo {
 // ── TrainingStressCalculator ─────────────────────────────────────────
 
 export class TrainingStressCalculator {
-  constructor(
-    private readonly genderFactor = 0.64,
-    private readonly exponent = 1.92,
-  ) {}
+  readonly #genderFactor: number;
+  readonly #exponent: number;
+
+  constructor(genderFactor = 0.64, exponent = 1.92) {
+    this.#genderFactor = genderFactor;
+    this.#exponent = exponent;
+  }
 
   /**
    * Compute Bannister TRIMP for an activity.
@@ -46,7 +49,9 @@ export class TrainingStressCalculator {
     if (maxHr <= restingHr || durationMin <= 0) return 0;
     const deltaHrRatio = (avgHr - restingHr) / (maxHr - restingHr);
     if (deltaHrRatio <= 0) return 0;
-    return durationMin * deltaHrRatio * this.genderFactor * Math.exp(this.exponent * deltaHrRatio);
+    return (
+      durationMin * deltaHrRatio * this.#genderFactor * Math.exp(this.#exponent * deltaHrRatio)
+    );
   }
 
   /**
@@ -60,7 +65,10 @@ export class TrainingStressCalculator {
     // Threshold HR at 85% of max HR
     const thresholdDeltaRatio = 0.85;
     const trimpOneHourAtThreshold =
-      60 * thresholdDeltaRatio * this.genderFactor * Math.exp(this.exponent * thresholdDeltaRatio);
+      60 *
+      thresholdDeltaRatio *
+      this.#genderFactor *
+      Math.exp(this.#exponent * thresholdDeltaRatio);
 
     if (trimpOneHourAtThreshold === 0) return 0;
     return (trimp / trimpOneHourAtThreshold) * 100;

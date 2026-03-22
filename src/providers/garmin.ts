@@ -189,7 +189,11 @@ export class GarminProvider implements SyncProvider {
 
     // Refresh via OAuth1→OAuth2 exchange
     logger.info("[garmin] Internal API token expired, refreshing via OAuth1 exchange...");
-    const client = await GarminConnectClient.fromTokens(internalTokens, "garmin.com", this.#fetchFn);
+    const client = await GarminConnectClient.fromTokens(
+      internalTokens,
+      "garmin.com",
+      this.#fetchFn,
+    );
     const refreshed = client.getTokens();
     if (!refreshed) throw new Error("Failed to refresh Garmin Connect tokens");
     await saveTokens(db, this.id, serializeInternalTokens(refreshed));
@@ -341,10 +345,7 @@ export class GarminProvider implements SyncProvider {
   // Connect API sync methods
   // ============================================================
 
-  async #syncConnectActivities(
-    db: SyncDatabase,
-    client: GarminConnectClient,
-  ): Promise<number> {
+  async #syncConnectActivities(db: SyncDatabase, client: GarminConnectClient): Promise<number> {
     // Fetch recent activities (paginated, most recent first)
     const activities = await client.getActivities(0, 50);
     let count = 0;
