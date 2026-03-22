@@ -1,7 +1,7 @@
 import { execSync } from "node:child_process";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../../db/index.ts";
 import {
@@ -457,6 +457,32 @@ describe("importClinicalRecords", () => {
     expect(panelValues[0].externalId).toBe("dr-metabolic-001");
     expect(panelValues[0].name).toBe("Metabolic Panel");
     expect(panelValues[0].providerId).toBe("test-provider");
+    expect(panelValues[0].sourceName).toBe("Unknown");
+  });
+
+  it("only reads JSON files from clinical-records directory", async () => {
+    // Create ZIP with .json both inside and outside clinical-records/
+    const contentDir = join(tmpDir, "filter-content");
+    const clinicalDir = join(contentDir, "apple_health_export", "clinical-records");
+    mkdirSync(clinicalDir, { recursive: true });
+    writeFileSync(join(clinicalDir, "obs-lab.json"), JSON.stringify(labObservation), "utf8");
+    // Non-clinical JSON at the export root — should NOT be read
+    writeFileSync(
+      join(contentDir, "apple_health_export", "export_cda.json"),
+      JSON.stringify({ not: "fhir" }),
+      "utf8",
+    );
+    const zipPath = join(tmpDir, "filter-test.zip");
+    execSync(`cd "${contentDir}" && zip -r "${zipPath}" apple_health_export/`);
+    const xmlPath = createTestXml(tmpDir, "filter.xml", []);
+    const { db } = createImportMockDb();
+
+    const result = await importClinicalRecords(db, "test-provider", zipPath, xmlPath);
+
+    expect(result.inserted).toBe(1);
+    // Non-clinical JSON must not be read (skipped count stays 0)
+    expect(result.skipped).toBe(0);
+    expect(result.errors).toHaveLength(0);
   });
 });
 
@@ -571,6 +597,40 @@ describe("buildSourceNameMap", () => {
     expect(map.has("path/to/file.json")).toBe(true);
     expect(map.has("/path/to/file.json")).toBe(false);
   });
+
+  it("ignores non-ClinicalRecord XML elements", async () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<HealthData locale="en_US">
+  <Record type="HKQuantityTypeIdentifier" sourceName="Device" resourceFilePath="/data/records.json"/>
+  <ClinicalRecord sourceName="Quest" resourceFilePath="/clinical-records/obs.json"/>
+  <Workout sourceName="Watch" resourceFilePath="/data/workout.json"/>
+</HealthData>`;
+    const xmlPath = join(tmpDir, "mixed-elements.xml");
+    writeFileSync(xmlPath, xml, "utf8");
+
+    const map = await buildSourceNameMap(xmlPath);
+
+    // Only ClinicalRecord should be in the map
+    expect(map.size).toBe(1);
+    expect(map.get("clinical-records/obs.json")).toBe("Quest");
+  });
+
+  it("skips ClinicalRecord entries missing sourceName or resourceFilePath", async () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<HealthData locale="en_US">
+  <ClinicalRecord resourceFilePath="/clinical-records/no-source.json"/>
+  <ClinicalRecord sourceName="Quest"/>
+  <ClinicalRecord sourceName="LabCorp" resourceFilePath="/clinical-records/valid.json"/>
+</HealthData>`;
+    const xmlPath = join(tmpDir, "incomplete-attrs.xml");
+    writeFileSync(xmlPath, xml, "utf8");
+
+    const map = await buildSourceNameMap(xmlPath);
+
+    // Only the entry with both attributes should be in the map
+    expect(map.size).toBe(1);
+    expect(map.get("clinical-records/valid.json")).toBe("LabCorp");
+  });
 });
 
 // ============================================================
@@ -622,19 +682,20 @@ describe("findLatestExport", () => {
   });
 
   it("returns the latest export file by modification time", () => {
+    // Use file names where alphabetical order differs from mtime order
+    // to ensure the sort is actually working (not just relying on fs order)
     const dir = join(tmpDir, "multi-files");
     mkdirSync(dir, { recursive: true });
-    // Create files with slightly different modification times
-    writeFileSync(join(dir, "old-export.xml"), "old data");
-    // Touch the second file slightly later
-    writeFileSync(join(dir, "new-export.zip"), "new data");
+    writeFileSync(join(dir, "aaa-old.xml"), "old data");
+    writeFileSync(join(dir, "zzz-new.zip"), "new data");
+    // Force aaa-old.xml to have an old mtime
+    utimesSync(join(dir, "aaa-old.xml"), new Date("2020-01-01"), new Date("2020-01-01"));
     process.env.APPLE_HEALTH_IMPORT_DIR = dir;
 
     const result = findLatestExport();
 
-    expect(result).not.toBeNull();
-    // Should be the .zip file (created last)
-    expect(result).toContain("new-export.zip");
+    // zzz-new.zip is newest by mtime, even though alphabetically last
+    expect(result).toBe(join(dir, "zzz-new.zip"));
   });
 
   it("returns .xml file when it is the only option", () => {
