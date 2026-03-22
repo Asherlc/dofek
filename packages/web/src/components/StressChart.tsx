@@ -24,16 +24,11 @@ export function StressChart({ data, loading }: StressChartProps) {
     return <DofekChart option={{}} empty={true} height={350} emptyMessage="No stress data" />;
   }
 
-  const latest = data.latestScore ?? 0;
+  const latestDaily = data.daily[data.daily.length - 1];
+  const hasToday = latestDaily != null && isToday(new Date(latestDaily.date));
+  const latest = hasToday ? (data.latestScore ?? 0) : 0;
   const latestStress = new StressScore(latest);
   const latestColor = latestStress.color;
-  const latestDaily = data.daily[data.daily.length - 1];
-  const latestDateLabel =
-    latestDaily && isToday(new Date(latestDaily.date))
-      ? "Today"
-      : latestDaily
-        ? new Date(latestDaily.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })
-        : "Latest";
 
   const option = {
     grid: dofekGrid("dualAxis", { top: 50, bottom: 40 }),
@@ -67,19 +62,21 @@ export function StressChart({ data, loading }: StressChartProps) {
       },
     }),
     legend: dofekLegend(true, { data: ["Daily Stress", "Weekly Avg"] }),
-    graphic: [
-      {
-        type: "text" as const,
-        right: 10,
-        top: 5,
-        style: {
-          text: `${latestDateLabel}: ${formatNumber(latest)} ${latestStress.label} ${trendIcon(data.trend)}`,
-          fill: latestColor,
-          fontSize: 13,
-          fontWeight: "bold" as const,
-        },
-      },
-    ],
+    graphic: hasToday
+      ? [
+          {
+            type: "text" as const,
+            right: 10,
+            top: 5,
+            style: {
+              text: `Today: ${formatNumber(latest)} ${latestStress.label} ${trendIcon(data.trend)}`,
+              fill: latestColor,
+              fontSize: 13,
+              fontWeight: "bold" as const,
+            },
+          },
+        ]
+      : [],
     xAxis: dofekAxis.time(),
     yAxis: [
       dofekAxis.value({ name: "Stress (0-3)", min: 0, max: 3 }),
@@ -140,13 +137,10 @@ export function StressChart({ data, loading }: StressChartProps) {
             const startOfThisWeek = new Date(now);
             startOfThisWeek.setDate(now.getDate() - now.getDay());
             startOfThisWeek.setHours(0, 0, 0, 0);
-            const isCurrentWeek = weekDate >= startOfThisWeek;
-            const weekLabel = isCurrentWeek
-              ? "This week"
-              : `Week of ${weekDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
+            if (weekDate < startOfThisWeek) return null;
             return (
               <span className="text-dim text-xs">
-                {weekLabel}: {formatNumber(latestWeek.cumulativeStress ?? 0)} cumulative
+                This week: {formatNumber(latestWeek.cumulativeStress ?? 0)} cumulative
               </span>
             );
           })()}

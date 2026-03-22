@@ -18,7 +18,12 @@ export default function SleepScreen() {
   const sleepResult = sleepQuery.data;
   const nightly = sleepResult?.nightly ?? [];
   const sleepDebt = sleepResult?.sleepDebt ?? 0;
-  const lastNight = nightly[nightly.length - 1];
+  const mostRecentNight = nightly[nightly.length - 1];
+  const lastNight = (() => {
+    if (!mostRecentNight) return undefined;
+    const date = new Date(mostRecentNight.date);
+    return isToday(date) || isYesterday(date) ? mostRecentNight : undefined;
+  })();
   const consistency = consistencyQuery.data ?? [];
   const latestConsistency = consistency[consistency.length - 1];
 
@@ -55,16 +60,10 @@ export default function SleepScreen() {
       ) : (
         <>
           {/* Last night's sleep */}
-          {lastNight && (() => {
-            const lastDate = new Date(lastNight.date);
-            const isRecent = isToday(lastDate) || isYesterday(lastDate);
-            const title = isRecent
-              ? "Last Night"
-              : lastDate.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
-            return (
+          {lastNight && (
             <View style={styles.card}>
               <ChartTitleWithTooltip
-                title={title}
+                title="Last Night"
                 description="This sleep stage bar shows how your most recent night was split across deep, REM, light, and awake time."
                 textStyle={styles.cardTitle}
               />
@@ -82,8 +81,7 @@ export default function SleepScreen() {
                 </Text>
               </View>
             </View>
-            );
-          })()}
+          )}
 
           {/* Sleep debt */}
           <View style={styles.card}>

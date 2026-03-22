@@ -8,7 +8,7 @@ function makeRecommendation(
   overrides?: Partial<NextWorkoutRecommendation>,
 ): NextWorkoutRecommendation {
   return {
-    generatedAt: "2026-03-20T10:00:00Z",
+    generatedAt: new Date().toISOString(),
     recommendationType: "cardio",
     title: "Easy Zone 2 Run",
     shortBlurb: "Keep it easy today to build aerobic base.",

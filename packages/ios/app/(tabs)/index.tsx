@@ -74,7 +74,12 @@ export default function OverviewScreen() {
   const sleepQuery = trpc.recovery.sleepAnalytics.useQuery({ days });
   const sleepResult = sleepQuery.data;
   const nightly = sleepResult?.nightly ?? [];
-  const lastNight = nightly[nightly.length - 1];
+  const mostRecentNight = nightly[nightly.length - 1];
+  const lastNight = (() => {
+    if (!mostRecentNight) return undefined;
+    const date = new Date(mostRecentNight.date);
+    return isToday(date) || isYesterday(date) ? mostRecentNight : undefined;
+  })();
   const sleepDebt = sleepResult?.sleepDebt ?? 0;
 
   // Fetch workload ratio for strain
@@ -159,9 +164,11 @@ export default function OverviewScreen() {
   // Derive data for new sections
   const currentWeek = weeklyReport?.current;
 
-  const latestNutrition = nutritionData.length > 0
-    ? nutritionData[nutritionData.length - 1]
-    : null;
+  const latestNutrition = (() => {
+    const last = nutritionData.length > 0 ? nutritionData[nutritionData.length - 1] : null;
+    if (!last) return null;
+    return isToday(new Date(`${last.date}T00:00:00`)) ? last : null;
+  })();
 
   const latestWeight = weightData.length > 0
     ? weightData[weightData.length - 1]
@@ -293,34 +300,27 @@ export default function OverviewScreen() {
           )}
 
           {/* Sleep summary */}
-          {showDetailedSections && lastNight && (() => {
-            const lastDate = new Date(lastNight.date);
-            const isRecent = isToday(lastDate) || isYesterday(lastDate);
-            const sleepTitle = isRecent
-              ? "Last Night"
-              : lastDate.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
-            return (
-              <View style={styles.card}>
-                <ChartTitleWithTooltip
-                  title={sleepTitle}
-                  description="This sleep stage bar shows how your total sleep was split across deep, REM, light, and awake time."
-                  textStyle={styles.cardTitle}
-                />
-                <SleepBar
-                  durationMinutes={lastNight.durationMinutes}
-                  deepPercentage={lastNight.deepPct}
-                  remPercentage={lastNight.remPct}
-                  lightPercentage={lastNight.lightPct}
-                  awakePercentage={lastNight.awakePct}
-                />
-                {sleepDebt > 0 && (
-                  <Text style={styles.sleepDebt}>
-                    {formatSleepDebtInline(sleepDebt)}
-                  </Text>
-                )}
-              </View>
-            );
-          })()}
+          {showDetailedSections && lastNight && (
+            <View style={styles.card}>
+              <ChartTitleWithTooltip
+                title="Last Night"
+                description="This sleep stage bar shows how your total sleep was split across deep, REM, light, and awake time."
+                textStyle={styles.cardTitle}
+              />
+              <SleepBar
+                durationMinutes={lastNight.durationMinutes}
+                deepPercentage={lastNight.deepPct}
+                remPercentage={lastNight.remPct}
+                lightPercentage={lastNight.lightPct}
+                awakePercentage={lastNight.awakePct}
+              />
+              {sleepDebt > 0 && (
+                <Text style={styles.sleepDebt}>
+                  {formatSleepDebtInline(sleepDebt)}
+                </Text>
+              )}
+            </View>
+          )}
 
           {/* Key metrics row */}
           <View style={styles.metricsGrid}>
@@ -741,14 +741,9 @@ export default function OverviewScreen() {
           )}
 
           {/* Nutrition Summary */}
-          {showDetailedSections && latestNutrition != null && (() => {
-            const nutritionDate = new Date(`${latestNutrition.date}T00:00:00`);
-            const nutritionTitle = isToday(nutritionDate)
-              ? "Nutrition Today"
-              : `Nutrition — ${nutritionDate.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}`;
-            return (
+          {showDetailedSections && latestNutrition != null && (
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>{nutritionTitle}</Text>
+              <Text style={styles.cardTitle}>Nutrition Today</Text>
               <Text style={styles.caloriesValue}>
                 {Number(latestNutrition.calories) > 0
                   ? Math.round(Number(latestNutrition.calories)).toLocaleString()
@@ -776,8 +771,7 @@ export default function OverviewScreen() {
                 />
               </View>
             </View>
-            );
-          })()}
+          )}
 
           {/* Body Weight */}
           {showDetailedSections && latestWeight != null && (
