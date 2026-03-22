@@ -2,7 +2,7 @@ import type { SyncDatabase } from "../db/index.ts";
 import { dailyMetrics, sleepSession } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
-import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
+import type { SyncError, SyncOptions, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
 // Ultrahuman Partner API types
@@ -106,21 +106,21 @@ export function parseUltrahumanMetrics(
 // ============================================================
 
 export class UltrahumanClient {
-  private token: string;
-  private email: string;
-  private fetchFn: typeof globalThis.fetch;
+  #token: string;
+  #email: string;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(token: string, email: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.token = token;
-    this.email = email;
-    this.fetchFn = fetchFn;
+    this.#token = token;
+    this.#email = email;
+    this.#fetchFn = fetchFn;
   }
 
   async getDailyMetrics(date: string): Promise<UltrahumanDailyMetricsResponse> {
-    const url = `${ULTRAHUMAN_API_BASE}/partner/daily_metrics?email=${encodeURIComponent(this.email)}&date=${date}`;
-    const response = await this.fetchFn(url, {
+    const url = `${ULTRAHUMAN_API_BASE}/partner/daily_metrics?email=${encodeURIComponent(this.#email)}&date=${date}`;
+    const response = await this.#fetchFn(url, {
       headers: {
-        Authorization: this.token,
+        Authorization: this.#token,
         Accept: "application/json",
       },
     });
@@ -149,10 +149,10 @@ function formatDate(date: Date): string {
 export class UltrahumanProvider implements SyncProvider {
   readonly id = "ultrahuman";
   readonly name = "Ultrahuman";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -161,7 +161,7 @@ export class UltrahumanProvider implements SyncProvider {
     return null;
   }
 
-  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -179,7 +179,7 @@ export class UltrahumanProvider implements SyncProvider {
       if (!token || !email) {
         throw new Error("Ultrahuman API token and email required");
       }
-      client = new UltrahumanClient(token, email, this.fetchFn);
+      client = new UltrahumanClient(token, email, this.#fetchFn);
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
@@ -191,81 +191,87 @@ export class UltrahumanProvider implements SyncProvider {
 
     // 1. Sync daily metrics + sleep
     try {
-      const count = await withSyncLog(db, this.id, "daily_metrics", async () => {
-        let dailyCount = 0;
+      const count = await withSyncLog(
+        db,
+        this.id,
+        "daily_metrics",
+        async () => {
+          let dailyCount = 0;
 
-        while (currentDate <= today) {
-          const dateStr = formatDate(currentDate);
-          try {
-            const response = await client.getDailyMetrics(dateStr);
-            const dayMetrics = response.data?.metrics?.[dateStr];
-            if (!dayMetrics?.length) {
-              currentDate.setDate(currentDate.getDate() + 1);
-              continue;
-            }
+          while (currentDate <= today) {
+            const dateStr = formatDate(currentDate);
+            try {
+              const response = await client.getDailyMetrics(dateStr);
+              const dayMetrics = response.data?.metrics?.[dateStr];
+              if (!dayMetrics?.length) {
+                currentDate.setDate(currentDate.getDate() + 1);
+                continue;
+              }
 
-            const { daily, sleep } = parseUltrahumanMetrics(dateStr, dayMetrics);
+              const { daily, sleep } = parseUltrahumanMetrics(dateStr, dayMetrics);
 
-            // Upsert daily metrics
-            if (daily.restingHr || daily.hrv || daily.steps || daily.vo2max) {
-              await db
-                .insert(dailyMetrics)
-                .values({
-                  date: daily.date,
-                  providerId: this.id,
-                  restingHr: daily.restingHr,
-                  hrv: daily.hrv,
-                  steps: daily.steps,
-                  vo2max: daily.vo2max,
-                  exerciseMinutes: daily.exerciseMinutes,
-                  skinTempC: daily.skinTempC,
-                })
-                .onConflictDoUpdate({
-                  target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
-                  set: {
+              // Upsert daily metrics
+              if (daily.restingHr || daily.hrv || daily.steps || daily.vo2max) {
+                await db
+                  .insert(dailyMetrics)
+                  .values({
+                    date: daily.date,
+                    providerId: this.id,
                     restingHr: daily.restingHr,
                     hrv: daily.hrv,
                     steps: daily.steps,
                     vo2max: daily.vo2max,
                     exerciseMinutes: daily.exerciseMinutes,
                     skinTempC: daily.skinTempC,
-                  },
-                });
-              dailyCount++;
+                  })
+                  .onConflictDoUpdate({
+                    target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
+                    set: {
+                      restingHr: daily.restingHr,
+                      hrv: daily.hrv,
+                      steps: daily.steps,
+                      vo2max: daily.vo2max,
+                      exerciseMinutes: daily.exerciseMinutes,
+                      skinTempC: daily.skinTempC,
+                    },
+                  });
+                dailyCount++;
+              }
+
+              // Upsert sleep session
+              if (sleep.durationMinutes) {
+                const externalId = `ultrahuman-sleep-${dateStr}`;
+                await db
+                  .insert(sleepSession)
+                  .values({
+                    providerId: this.id,
+                    externalId,
+                    startedAt: new Date(`${dateStr}T00:00:00Z`),
+                    endedAt: new Date(`${dateStr}T08:00:00Z`),
+                    durationMinutes: sleep.durationMinutes,
+                  })
+                  .onConflictDoUpdate({
+                    target: [sleepSession.providerId, sleepSession.externalId],
+                    set: {
+                      durationMinutes: sleep.durationMinutes,
+                    },
+                  });
+                dailyCount++;
+              }
+            } catch (err) {
+              errors.push({
+                message: `${dateStr}: ${err instanceof Error ? err.message : String(err)}`,
+                cause: err,
+              });
             }
 
-            // Upsert sleep session
-            if (sleep.durationMinutes) {
-              const externalId = `ultrahuman-sleep-${dateStr}`;
-              await db
-                .insert(sleepSession)
-                .values({
-                  providerId: this.id,
-                  externalId,
-                  startedAt: new Date(`${dateStr}T00:00:00Z`),
-                  endedAt: new Date(`${dateStr}T08:00:00Z`),
-                  durationMinutes: sleep.durationMinutes,
-                })
-                .onConflictDoUpdate({
-                  target: [sleepSession.providerId, sleepSession.externalId],
-                  set: {
-                    durationMinutes: sleep.durationMinutes,
-                  },
-                });
-              dailyCount++;
-            }
-          } catch (err) {
-            errors.push({
-              message: `${dateStr}: ${err instanceof Error ? err.message : String(err)}`,
-              cause: err,
-            });
+            currentDate.setDate(currentDate.getDate() + 1);
           }
 
-          currentDate.setDate(currentDate.getDate() + 1);
-        }
-
-        return { recordCount: dailyCount, result: dailyCount };
-      });
+          return { recordCount: dailyCount, result: dailyCount };
+        },
+        options?.userId,
+      );
       recordsSynced += count;
     } catch (err) {
       errors.push({

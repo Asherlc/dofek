@@ -17,6 +17,7 @@ import type {
   ProviderAuthSetup,
   ProviderIdentity,
   SyncError,
+  SyncOptions,
   SyncProvider,
   SyncResult,
 } from "./types.ts";
@@ -354,10 +355,10 @@ function formatDate(date: Date): string {
 export class FitbitProvider implements SyncProvider {
   readonly id = "fitbit";
   readonly name = "Fitbit";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -371,7 +372,7 @@ export class FitbitProvider implements SyncProvider {
     if (!config) throw new Error("FITBIT_CLIENT_ID and FITBIT_CLIENT_SECRET are required");
     const codeVerifier = generateCodeVerifier();
     const codeChallenge = generateCodeChallenge(codeVerifier);
-    const fetchFn = this.fetchFn;
+    const fetchFn = this.#fetchFn;
 
     return {
       oauthConfig: config,
@@ -398,17 +399,17 @@ export class FitbitProvider implements SyncProvider {
     };
   }
 
-  private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
+  async #resolveTokens(db: SyncDatabase): Promise<TokenSet> {
     return resolveOAuthTokens({
       db,
       providerId: this.id,
       providerName: this.name,
       getOAuthConfig: () => fitbitOAuthConfig(),
-      fetchFn: this.fetchFn,
+      fetchFn: this.#fetchFn,
     });
   }
 
-  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -417,227 +418,51 @@ export class FitbitProvider implements SyncProvider {
 
     let tokens: TokenSet;
     try {
-      tokens = await this.resolveTokens(db);
+      tokens = await this.#resolveTokens(db);
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
-    const client = new FitbitClient(tokens.accessToken, this.fetchFn);
+    const client = new FitbitClient(tokens.accessToken, this.#fetchFn);
     const sinceDate = formatDate(since);
 
     // 1. Sync activities
     try {
-      const activityCount = await withSyncLog(db, this.id, "activity", async () => {
-        let count = 0;
-        let offset = 0;
-        let hasMore = true;
+      const activityCount = await withSyncLog(
+        db,
+        this.id,
+        "activity",
+        async () => {
+          let count = 0;
+          let offset = 0;
+          let hasMore = true;
 
-        while (hasMore) {
-          const response = await client.getActivities(sinceDate, offset);
+          while (hasMore) {
+            const response = await client.getActivities(sinceDate, offset);
 
-          for (const raw of response.activities) {
-            const parsed = parseFitbitActivity(raw);
-            try {
-              await db
-                .insert(activity)
-                .values({
-                  providerId: this.id,
-                  externalId: parsed.externalId,
-                  activityType: parsed.activityType,
-                  startedAt: parsed.startedAt,
-                  endedAt: parsed.endedAt,
-                  name: parsed.name,
-                  raw: raw,
-                })
-                .onConflictDoUpdate({
-                  target: [activity.providerId, activity.externalId],
-                  set: {
+            for (const raw of response.activities) {
+              const parsed = parseFitbitActivity(raw);
+              try {
+                await db
+                  .insert(activity)
+                  .values({
+                    providerId: this.id,
+                    externalId: parsed.externalId,
                     activityType: parsed.activityType,
                     startedAt: parsed.startedAt,
                     endedAt: parsed.endedAt,
                     name: parsed.name,
                     raw: raw,
-                  },
-                });
-              count++;
-            } catch (err) {
-              errors.push({
-                message: err instanceof Error ? err.message : String(err),
-                externalId: parsed.externalId,
-                cause: err,
-              });
-            }
-          }
-
-          // Fitbit pagination: if next URL is empty, no more pages
-          hasMore = response.pagination.next !== "";
-          offset += response.pagination.limit;
-        }
-
-        return { recordCount: count, result: count };
-      });
-      recordsSynced += activityCount;
-    } catch (err) {
-      errors.push({
-        message: `activity: ${err instanceof Error ? err.message : String(err)}`,
-        cause: err,
-      });
-    }
-
-    // 2. Sync sleep
-    try {
-      const sleepCount = await withSyncLog(db, this.id, "sleep", async () => {
-        let count = 0;
-        let offset = 0;
-        let hasMore = true;
-
-        while (hasMore) {
-          const response = await client.getSleepLogs(sinceDate, offset);
-
-          for (const raw of response.sleep) {
-            const parsed = parseFitbitSleep(raw);
-            try {
-              await db
-                .insert(sleepSession)
-                .values({
-                  providerId: this.id,
-                  externalId: parsed.externalId,
-                  startedAt: parsed.startedAt,
-                  endedAt: parsed.endedAt,
-                  durationMinutes: parsed.durationMinutes,
-                  deepMinutes: parsed.deepMinutes,
-                  remMinutes: parsed.remMinutes,
-                  lightMinutes: parsed.lightMinutes,
-                  awakeMinutes: parsed.awakeMinutes,
-                  efficiencyPct: parsed.efficiencyPct,
-                  sleepType: parsed.sleepType,
-                })
-                .onConflictDoUpdate({
-                  target: [sleepSession.providerId, sleepSession.externalId],
-                  set: {
-                    startedAt: parsed.startedAt,
-                    endedAt: parsed.endedAt,
-                    durationMinutes: parsed.durationMinutes,
-                    deepMinutes: parsed.deepMinutes,
-                    remMinutes: parsed.remMinutes,
-                    lightMinutes: parsed.lightMinutes,
-                    awakeMinutes: parsed.awakeMinutes,
-                    efficiencyPct: parsed.efficiencyPct,
-                    sleepType: parsed.sleepType,
-                  },
-                });
-              count++;
-            } catch (err) {
-              errors.push({
-                message: err instanceof Error ? err.message : String(err),
-                externalId: parsed.externalId,
-                cause: err,
-              });
-            }
-          }
-
-          hasMore = response.pagination.next !== "";
-          offset += response.pagination.limit;
-        }
-
-        return { recordCount: count, result: count };
-      });
-      recordsSynced += sleepCount;
-    } catch (err) {
-      errors.push({
-        message: `sleep: ${err instanceof Error ? err.message : String(err)}`,
-        cause: err,
-      });
-    }
-
-    // 3. Sync daily summaries (day-by-day iteration)
-    try {
-      const dailyCount = await withSyncLog(db, this.id, "daily_metrics", async () => {
-        let count = 0;
-        const today = new Date();
-        const currentDate = new Date(since);
-
-        while (currentDate <= today) {
-          const dateStr = formatDate(currentDate);
-          try {
-            const response = await client.getDailySummary(dateStr);
-            const parsed = parseFitbitDailySummary(dateStr, response);
-
-            await db
-              .insert(dailyMetrics)
-              .values({
-                date: parsed.date,
-                providerId: this.id,
-                steps: parsed.steps,
-                restingHr: parsed.restingHr,
-                activeEnergyKcal: parsed.activeEnergyKcal,
-                exerciseMinutes: parsed.exerciseMinutes,
-                distanceKm: parsed.distanceKm,
-                flightsClimbed: parsed.flightsClimbed,
-              })
-              .onConflictDoUpdate({
-                target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
-                set: {
-                  steps: parsed.steps,
-                  restingHr: parsed.restingHr,
-                  activeEnergyKcal: parsed.activeEnergyKcal,
-                  exerciseMinutes: parsed.exerciseMinutes,
-                  distanceKm: parsed.distanceKm,
-                  flightsClimbed: parsed.flightsClimbed,
-                },
-              });
-            count++;
-          } catch (err) {
-            errors.push({
-              message: `daily_metrics ${dateStr}: ${err instanceof Error ? err.message : String(err)}`,
-              cause: err,
-            });
-          }
-
-          currentDate.setDate(currentDate.getDate() + 1);
-        }
-
-        return { recordCount: count, result: count };
-      });
-      recordsSynced += dailyCount;
-    } catch (err) {
-      errors.push({
-        message: `daily_metrics: ${err instanceof Error ? err.message : String(err)}`,
-        cause: err,
-      });
-    }
-
-    // 4. Sync body weight logs (30-day windows)
-    try {
-      const weightCount = await withSyncLog(db, this.id, "body_measurement", async () => {
-        let count = 0;
-        const today = new Date();
-        const currentDate = new Date(since);
-
-        // Iterate in 30-day windows
-        while (currentDate <= today) {
-          const dateStr = formatDate(currentDate);
-          try {
-            const response = await client.getWeightLogs(dateStr);
-
-            for (const raw of response.weight) {
-              const parsed = parseFitbitWeightLog(raw);
-              try {
-                await db
-                  .insert(bodyMeasurement)
-                  .values({
-                    providerId: this.id,
-                    externalId: parsed.externalId,
-                    recordedAt: parsed.recordedAt,
-                    weightKg: parsed.weightKg,
-                    bodyFatPct: parsed.bodyFatPct,
                   })
                   .onConflictDoUpdate({
-                    target: [bodyMeasurement.providerId, bodyMeasurement.externalId],
+                    target: [activity.providerId, activity.externalId],
                     set: {
-                      weightKg: parsed.weightKg,
-                      bodyFatPct: parsed.bodyFatPct,
+                      activityType: parsed.activityType,
+                      startedAt: parsed.startedAt,
+                      endedAt: parsed.endedAt,
+                      name: parsed.name,
+                      raw: raw,
                     },
                   });
                 count++;
@@ -649,19 +474,219 @@ export class FitbitProvider implements SyncProvider {
                 });
               }
             }
-          } catch (err) {
-            errors.push({
-              message: `weight ${dateStr}: ${err instanceof Error ? err.message : String(err)}`,
-              cause: err,
-            });
+
+            // Fitbit pagination: if next URL is empty, no more pages
+            hasMore = response.pagination.next !== "";
+            offset += response.pagination.limit;
           }
 
-          // Advance by 30 days
-          currentDate.setDate(currentDate.getDate() + 30);
-        }
-
-        return { recordCount: count, result: count };
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
+      recordsSynced += activityCount;
+    } catch (err) {
+      errors.push({
+        message: `activity: ${err instanceof Error ? err.message : String(err)}`,
+        cause: err,
       });
+    }
+
+    // 2. Sync sleep
+    try {
+      const sleepCount = await withSyncLog(
+        db,
+        this.id,
+        "sleep",
+        async () => {
+          let count = 0;
+          let offset = 0;
+          let hasMore = true;
+
+          while (hasMore) {
+            const response = await client.getSleepLogs(sinceDate, offset);
+
+            for (const raw of response.sleep) {
+              const parsed = parseFitbitSleep(raw);
+              try {
+                await db
+                  .insert(sleepSession)
+                  .values({
+                    providerId: this.id,
+                    externalId: parsed.externalId,
+                    startedAt: parsed.startedAt,
+                    endedAt: parsed.endedAt,
+                    durationMinutes: parsed.durationMinutes,
+                    deepMinutes: parsed.deepMinutes,
+                    remMinutes: parsed.remMinutes,
+                    lightMinutes: parsed.lightMinutes,
+                    awakeMinutes: parsed.awakeMinutes,
+                    efficiencyPct: parsed.efficiencyPct,
+                    sleepType: parsed.sleepType,
+                  })
+                  .onConflictDoUpdate({
+                    target: [sleepSession.providerId, sleepSession.externalId],
+                    set: {
+                      startedAt: parsed.startedAt,
+                      endedAt: parsed.endedAt,
+                      durationMinutes: parsed.durationMinutes,
+                      deepMinutes: parsed.deepMinutes,
+                      remMinutes: parsed.remMinutes,
+                      lightMinutes: parsed.lightMinutes,
+                      awakeMinutes: parsed.awakeMinutes,
+                      efficiencyPct: parsed.efficiencyPct,
+                      sleepType: parsed.sleepType,
+                    },
+                  });
+                count++;
+              } catch (err) {
+                errors.push({
+                  message: err instanceof Error ? err.message : String(err),
+                  externalId: parsed.externalId,
+                  cause: err,
+                });
+              }
+            }
+
+            hasMore = response.pagination.next !== "";
+            offset += response.pagination.limit;
+          }
+
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
+      recordsSynced += sleepCount;
+    } catch (err) {
+      errors.push({
+        message: `sleep: ${err instanceof Error ? err.message : String(err)}`,
+        cause: err,
+      });
+    }
+
+    // 3. Sync daily summaries (day-by-day iteration)
+    try {
+      const dailyCount = await withSyncLog(
+        db,
+        this.id,
+        "daily_metrics",
+        async () => {
+          let count = 0;
+          const today = new Date();
+          const currentDate = new Date(since);
+
+          while (currentDate <= today) {
+            const dateStr = formatDate(currentDate);
+            try {
+              const response = await client.getDailySummary(dateStr);
+              const parsed = parseFitbitDailySummary(dateStr, response);
+
+              await db
+                .insert(dailyMetrics)
+                .values({
+                  date: parsed.date,
+                  providerId: this.id,
+                  steps: parsed.steps,
+                  restingHr: parsed.restingHr,
+                  activeEnergyKcal: parsed.activeEnergyKcal,
+                  exerciseMinutes: parsed.exerciseMinutes,
+                  distanceKm: parsed.distanceKm,
+                  flightsClimbed: parsed.flightsClimbed,
+                })
+                .onConflictDoUpdate({
+                  target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
+                  set: {
+                    steps: parsed.steps,
+                    restingHr: parsed.restingHr,
+                    activeEnergyKcal: parsed.activeEnergyKcal,
+                    exerciseMinutes: parsed.exerciseMinutes,
+                    distanceKm: parsed.distanceKm,
+                    flightsClimbed: parsed.flightsClimbed,
+                  },
+                });
+              count++;
+            } catch (err) {
+              errors.push({
+                message: `daily_metrics ${dateStr}: ${err instanceof Error ? err.message : String(err)}`,
+                cause: err,
+              });
+            }
+
+            currentDate.setDate(currentDate.getDate() + 1);
+          }
+
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
+      recordsSynced += dailyCount;
+    } catch (err) {
+      errors.push({
+        message: `daily_metrics: ${err instanceof Error ? err.message : String(err)}`,
+        cause: err,
+      });
+    }
+
+    // 4. Sync body weight logs (30-day windows)
+    try {
+      const weightCount = await withSyncLog(
+        db,
+        this.id,
+        "body_measurement",
+        async () => {
+          let count = 0;
+          const today = new Date();
+          const currentDate = new Date(since);
+
+          // Iterate in 30-day windows
+          while (currentDate <= today) {
+            const dateStr = formatDate(currentDate);
+            try {
+              const response = await client.getWeightLogs(dateStr);
+
+              for (const raw of response.weight) {
+                const parsed = parseFitbitWeightLog(raw);
+                try {
+                  await db
+                    .insert(bodyMeasurement)
+                    .values({
+                      providerId: this.id,
+                      externalId: parsed.externalId,
+                      recordedAt: parsed.recordedAt,
+                      weightKg: parsed.weightKg,
+                      bodyFatPct: parsed.bodyFatPct,
+                    })
+                    .onConflictDoUpdate({
+                      target: [bodyMeasurement.providerId, bodyMeasurement.externalId],
+                      set: {
+                        weightKg: parsed.weightKg,
+                        bodyFatPct: parsed.bodyFatPct,
+                      },
+                    });
+                  count++;
+                } catch (err) {
+                  errors.push({
+                    message: err instanceof Error ? err.message : String(err),
+                    externalId: parsed.externalId,
+                    cause: err,
+                  });
+                }
+              }
+            } catch (err) {
+              errors.push({
+                message: `weight ${dateStr}: ${err instanceof Error ? err.message : String(err)}`,
+                cause: err,
+              });
+            }
+
+            // Advance by 30 days
+            currentDate.setDate(currentDate.getDate() + 30);
+          }
+
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += weightCount;
     } catch (err) {
       errors.push({

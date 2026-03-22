@@ -77,6 +77,15 @@ vi.mock("../../lib/trpc", () => ({
 			get: { useQuery: (...args: unknown[]) => mockSettingsGet(...args) },
 			set: { useMutation: () => ({ mutateAsync: mockSettingsSetMutate }) },
 		},
+		useUtils: () => ({
+			client: {
+				healthKitSync: {
+					pushQuantitySamples: { mutate: mockPushQuantityMutate },
+					pushWorkouts: { mutate: mockPushWorkoutsMutate },
+					pushSleepSamples: { mutate: mockPushSleepMutate },
+				},
+			},
+		}),
 	},
 }));
 

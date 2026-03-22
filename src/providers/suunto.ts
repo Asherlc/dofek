@@ -5,7 +5,13 @@ import type { SyncDatabase } from "../db/index.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
-import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
+import type {
+  ProviderAuthSetup,
+  SyncError,
+  SyncOptions,
+  SyncProvider,
+  SyncResult,
+} from "./types.ts";
 
 // ============================================================
 // Suunto API types
@@ -126,10 +132,10 @@ export function suuntoOAuthConfig(): OAuthConfig | null {
 export class SuuntoProvider implements SyncProvider {
   readonly id = "suunto";
   readonly name = "Suunto";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -142,7 +148,7 @@ export class SuuntoProvider implements SyncProvider {
   authSetup(): ProviderAuthSetup {
     const config = suuntoOAuthConfig();
     if (!config) throw new Error("SUUNTO_CLIENT_ID and CLIENT_SECRET required");
-    const fetchFn = this.fetchFn;
+    const fetchFn = this.#fetchFn;
     return {
       oauthConfig: config,
       exchangeCode: (code) => exchangeCodeForTokens(config, code, fetchFn),
@@ -150,17 +156,17 @@ export class SuuntoProvider implements SyncProvider {
     };
   }
 
-  private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
+  async #resolveTokens(db: SyncDatabase): Promise<TokenSet> {
     return resolveOAuthTokens({
       db,
       providerId: this.id,
       providerName: this.name,
       getOAuthConfig: () => suuntoOAuthConfig(),
-      fetchFn: this.fetchFn,
+      fetchFn: this.#fetchFn,
     });
   }
 
-  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -169,7 +175,7 @@ export class SuuntoProvider implements SyncProvider {
 
     let accessToken: string;
     try {
-      const tokens = await this.resolveTokens(db);
+      const tokens = await this.#resolveTokens(db);
       accessToken = tokens.accessToken;
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
@@ -179,61 +185,67 @@ export class SuuntoProvider implements SyncProvider {
     const subscriptionKey = process.env.SUUNTO_SUBSCRIPTION_KEY ?? "";
 
     try {
-      const activityCount = await withSyncLog(db, this.id, "activity", async () => {
-        const sinceMs = since.getTime();
-        const url = `${SUUNTO_API_BASE}/v2/workouts?since=${sinceMs}`;
-        const response = await this.fetchFn(url, {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            "Ocp-Apim-Subscription-Key": subscriptionKey,
-            Accept: "application/json",
-          },
-        });
+      const activityCount = await withSyncLog(
+        db,
+        this.id,
+        "activity",
+        async () => {
+          const sinceMs = since.getTime();
+          const url = `${SUUNTO_API_BASE}/v2/workouts?since=${sinceMs}`;
+          const response = await this.#fetchFn(url, {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Ocp-Apim-Subscription-Key": subscriptionKey,
+              Accept: "application/json",
+            },
+          });
 
-        if (!response.ok) {
-          const text = await response.text();
-          throw new Error(`Suunto API error (${response.status}): ${text}`);
-        }
+          if (!response.ok) {
+            const text = await response.text();
+            throw new Error(`Suunto API error (${response.status}): ${text}`);
+          }
 
-        const data: SuuntoWorkoutsResponse = await response.json();
-        let count = 0;
+          const data: SuuntoWorkoutsResponse = await response.json();
+          let count = 0;
 
-        for (const raw of data.payload ?? []) {
-          const parsed = parseSuuntoWorkout(raw);
-          try {
-            await db
-              .insert(activity)
-              .values({
-                providerId: this.id,
-                externalId: parsed.externalId,
-                activityType: parsed.activityType,
-                name: parsed.name,
-                startedAt: parsed.startedAt,
-                endedAt: parsed.endedAt,
-                raw: parsed.raw,
-              })
-              .onConflictDoUpdate({
-                target: [activity.providerId, activity.externalId],
-                set: {
+          for (const raw of data.payload ?? []) {
+            const parsed = parseSuuntoWorkout(raw);
+            try {
+              await db
+                .insert(activity)
+                .values({
+                  providerId: this.id,
+                  externalId: parsed.externalId,
                   activityType: parsed.activityType,
                   name: parsed.name,
                   startedAt: parsed.startedAt,
                   endedAt: parsed.endedAt,
                   raw: parsed.raw,
-                },
+                })
+                .onConflictDoUpdate({
+                  target: [activity.providerId, activity.externalId],
+                  set: {
+                    activityType: parsed.activityType,
+                    name: parsed.name,
+                    startedAt: parsed.startedAt,
+                    endedAt: parsed.endedAt,
+                    raw: parsed.raw,
+                  },
+                });
+              count++;
+            } catch (err) {
+              errors.push({
+                message: err instanceof Error ? err.message : String(err),
+                externalId: parsed.externalId,
+                cause: err,
               });
-            count++;
-          } catch (err) {
-            errors.push({
-              message: err instanceof Error ? err.message : String(err),
-              externalId: parsed.externalId,
-              cause: err,
-            });
+            }
           }
-        }
 
-        return { recordCount: count, result: count };
-      });
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += activityCount;
     } catch (err) {
       errors.push({

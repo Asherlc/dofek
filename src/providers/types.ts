@@ -103,6 +103,16 @@ interface BaseProvider {
 }
 
 /**
+ * Options for a sync run, passed as a bag so we can extend without adding positional params.
+ */
+export interface SyncOptions {
+  /** Callback to report progress (0–100%) */
+  onProgress?: SyncProgressCallback;
+  /** User ID for attributing sync log entries */
+  userId?: string;
+}
+
+/**
  * A provider that syncs data from an API on a schedule.
  * The sync framework calls `sync()` periodically.
  */
@@ -111,9 +121,9 @@ export interface SyncProvider extends BaseProvider {
    * Pull data from the provider API and upsert into the database.
    * @param db - Drizzle database instance
    * @param since - Only sync data after this date (incremental sync)
-   * @param onProgress - Optional callback to report progress (0–100%)
+   * @param options - Optional sync options (progress callback, userId, etc.)
    */
-  sync(db: SyncDatabase, since: Date, onProgress?: SyncProgressCallback): Promise<SyncResult>;
+  sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult>;
 }
 
 /**

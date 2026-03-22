@@ -63,12 +63,15 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
 
     try {
       logger.info(`[worker] Starting ${provider.name}...`);
-      const result = await provider.sync(db, since, (percentage, message) => {
-        providerStatus[provider.id] = { status: "running", message };
-        job.updateProgress({
-          providers: providerStatus,
-          percentage: computePercentage(completedCount, percentage, totalProviders),
-        });
+      const result = await provider.sync(db, since, {
+        onProgress: (percentage, message) => {
+          providerStatus[provider.id] = { status: "running", message };
+          job.updateProgress({
+            providers: providerStatus,
+            percentage: computePercentage(completedCount, percentage, totalProviders),
+          });
+        },
+        userId: job.data.userId,
       });
       completedCount++;
       const hasErrors = result.errors.length > 0;
@@ -97,6 +100,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
         recordCount: result.recordsSynced,
         errorMessage: hasErrors ? result.errors.map((e) => e.message).join("; ") : undefined,
         durationMs: Date.now() - syncStart,
+        userId: job.data.userId,
       });
     } catch (err: unknown) {
       completedCount++;
@@ -113,6 +117,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
         status: "error",
         errorMessage: message,
         durationMs: Date.now() - syncStart,
+        userId: job.data.userId,
       });
     }
   }

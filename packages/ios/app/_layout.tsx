@@ -1,11 +1,13 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink } from "@trpc/client";
-import { useMemo, useState } from "react";
-import { ActivityIndicator, StyleSheet, View } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { Stack } from "expo-router";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { trpc } from "../lib/trpc";
 import { AuthProvider, useAuth } from "../lib/auth-context";
+import { initBackgroundHealthKitSync } from "../lib/background-health-kit-sync";
+import type { SyncTrpcClient } from "../lib/health-kit-sync";
 import { getTrpcUrl } from "../lib/server";
 import { initTelemetry } from "../lib/telemetry";
 import { colors } from "../theme";
@@ -41,6 +43,27 @@ function AuthGate() {
     });
   }, [serverUrl, sessionToken]);
 
+  // Set up background HealthKit sync when authenticated
+  useEffect(() => {
+    if (!user || !trpcClient) return;
+    const syncClient: SyncTrpcClient = {
+      healthKitSync: {
+        pushQuantitySamples: {
+          mutate: (input) => trpcClient.healthKitSync.pushQuantitySamples.mutate(input),
+        },
+        pushWorkouts: {
+          mutate: (input) => trpcClient.healthKitSync.pushWorkouts.mutate(input),
+        },
+        pushSleepSamples: {
+          mutate: (input) => trpcClient.healthKitSync.pushSleepSamples.mutate(input),
+        },
+      },
+    };
+    initBackgroundHealthKitSync(syncClient).catch(() => {
+      // Best-effort — don't block the app for background sync setup failures
+    });
+  }, [user, trpcClient]);
+
   if (isLoading) {
     return (
       <View style={styles.loading}>
@@ -64,12 +87,19 @@ function AuthGate() {
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen
             name="food/add"
-            options={{
+            options={({ navigation }) => ({
               presentation: "fullScreenModal",
               title: "Add Food",
               headerStyle: { backgroundColor: colors.background },
               headerTintColor: colors.text,
-            }}
+              headerLeft: () => (
+                <Pressable onPress={() => navigation.goBack()}>
+                  <Text style={{ color: colors.accent, fontSize: 17 }}>
+                    Cancel
+                  </Text>
+                </Pressable>
+              ),
+            })}
           />
           <Stack.Screen
             name="providers"

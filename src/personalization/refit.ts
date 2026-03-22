@@ -255,7 +255,7 @@ export function parseSleepRows(rows: Record<string, unknown>[]): SleepTargetInpu
   return data;
 }
 
-async function fitSleepFromDb(db: Database, userId: string) {
+export async function fitSleepFromDb(db: Database, userId: string) {
   const rows = await db.execute(
     sql`WITH nightly AS (
           SELECT
@@ -268,14 +268,20 @@ async function fitSleepFromDb(db: Database, userId: string) {
         ),
         hrv_with_median AS (
           SELECT
-            date,
-            hrv,
-            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY hrv)
-              OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS median_hrv
-          FROM fitness.v_daily_metrics
-          WHERE user_id = ${userId}
-            AND date > CURRENT_DATE - 425
-            AND hrv IS NOT NULL
+            d.date,
+            d.hrv,
+            m.median_hrv
+          FROM fitness.v_daily_metrics d
+          CROSS JOIN LATERAL (
+            SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY d2.hrv) AS median_hrv
+            FROM fitness.v_daily_metrics d2
+            WHERE d2.user_id = d.user_id
+              AND d2.date BETWEEN d.date - 59 AND d.date
+              AND d2.hrv IS NOT NULL
+          ) m
+          WHERE d.user_id = ${userId}
+            AND d.date > CURRENT_DATE - 425
+            AND d.hrv IS NOT NULL
         )
         SELECT
           n.duration_minutes,

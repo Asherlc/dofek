@@ -2,9 +2,14 @@ import { parseTrainerRoadActivity, TrainerRoadClient } from "trainerroad-client"
 import type { SyncDatabase } from "../db/index.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
-import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
-import { logger } from "../logger.ts";
-import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
+import { ensureProvider, loadTokens } from "../db/tokens.ts";
+import type {
+  ProviderAuthSetup,
+  SyncError,
+  SyncOptions,
+  SyncProvider,
+  SyncResult,
+} from "./types.ts";
 
 const TRAINERROAD_BASE = "https://www.trainerroad.com";
 
@@ -23,10 +28,10 @@ function formatDate(date: Date): string {
 export class TrainerRoadProvider implements SyncProvider {
   readonly id = "trainerroad";
   readonly name = "TrainerRoad";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -34,7 +39,7 @@ export class TrainerRoadProvider implements SyncProvider {
   }
 
   authSetup(): ProviderAuthSetup {
-    const fetchFn = this.fetchFn;
+    const fetchFn = this.#fetchFn;
     return {
       oauthConfig: {
         clientId: "",
@@ -59,7 +64,7 @@ export class TrainerRoadProvider implements SyncProvider {
     };
   }
 
-  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -84,7 +89,7 @@ export class TrainerRoadProvider implements SyncProvider {
       if (stored.expiresAt <= new Date()) {
         throw new Error("TrainerRoad session expired — please re-authenticate via Settings");
       }
-      client = new TrainerRoadClient(stored.accessToken, this.fetchFn);
+      client = new TrainerRoadClient(stored.accessToken, this.#fetchFn);
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
@@ -92,49 +97,55 @@ export class TrainerRoadProvider implements SyncProvider {
 
     // Sync activities
     try {
-      const activityCount = await withSyncLog(db, this.id, "activity", async () => {
-        let count = 0;
-        const sinceDate = formatDate(since);
-        const toDate = formatDate(new Date());
+      const activityCount = await withSyncLog(
+        db,
+        this.id,
+        "activity",
+        async () => {
+          let count = 0;
+          const sinceDate = formatDate(since);
+          const toDate = formatDate(new Date());
 
-        const activities = await client.getActivities(username, sinceDate, toDate);
+          const activities = await client.getActivities(username, sinceDate, toDate);
 
-        for (const raw of activities) {
-          const parsed = parseTrainerRoadActivity(raw);
-          try {
-            await db
-              .insert(activity)
-              .values({
-                providerId: this.id,
-                externalId: parsed.externalId,
-                activityType: parsed.activityType,
-                name: parsed.name,
-                startedAt: parsed.startedAt,
-                endedAt: parsed.endedAt,
-                raw: parsed.raw,
-              })
-              .onConflictDoUpdate({
-                target: [activity.providerId, activity.externalId],
-                set: {
+          for (const raw of activities) {
+            const parsed = parseTrainerRoadActivity(raw);
+            try {
+              await db
+                .insert(activity)
+                .values({
+                  providerId: this.id,
+                  externalId: parsed.externalId,
                   activityType: parsed.activityType,
                   name: parsed.name,
                   startedAt: parsed.startedAt,
                   endedAt: parsed.endedAt,
                   raw: parsed.raw,
-                },
+                })
+                .onConflictDoUpdate({
+                  target: [activity.providerId, activity.externalId],
+                  set: {
+                    activityType: parsed.activityType,
+                    name: parsed.name,
+                    startedAt: parsed.startedAt,
+                    endedAt: parsed.endedAt,
+                    raw: parsed.raw,
+                  },
+                });
+              count++;
+            } catch (err) {
+              errors.push({
+                message: err instanceof Error ? err.message : String(err),
+                externalId: parsed.externalId,
+                cause: err,
               });
-            count++;
-          } catch (err) {
-            errors.push({
-              message: err instanceof Error ? err.message : String(err),
-              externalId: parsed.externalId,
-              cause: err,
-            });
+            }
           }
-        }
 
-        return { recordCount: count, result: count };
-      });
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += activityCount;
     } catch (err) {
       errors.push({

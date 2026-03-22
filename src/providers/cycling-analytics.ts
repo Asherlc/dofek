@@ -5,7 +5,13 @@ import type { SyncDatabase } from "../db/index.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
-import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
+import type {
+  ProviderAuthSetup,
+  SyncError,
+  SyncOptions,
+  SyncProvider,
+  SyncResult,
+} from "./types.ts";
 
 // ============================================================
 // Cycling Analytics API types
@@ -115,10 +121,10 @@ export function cyclingAnalyticsOAuthConfig(): OAuthConfig | null {
 export class CyclingAnalyticsProvider implements SyncProvider {
   readonly id = "cycling_analytics";
   readonly name = "Cycling Analytics";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -131,7 +137,7 @@ export class CyclingAnalyticsProvider implements SyncProvider {
   authSetup(): ProviderAuthSetup {
     const config = cyclingAnalyticsOAuthConfig();
     if (!config) throw new Error("CYCLING_ANALYTICS_CLIENT_ID and CLIENT_SECRET required");
-    const fetchFn = this.fetchFn;
+    const fetchFn = this.#fetchFn;
     return {
       oauthConfig: config,
       exchangeCode: (code) => exchangeCodeForTokens(config, code, fetchFn),
@@ -139,17 +145,17 @@ export class CyclingAnalyticsProvider implements SyncProvider {
     };
   }
 
-  private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
+  async #resolveTokens(db: SyncDatabase): Promise<TokenSet> {
     return resolveOAuthTokens({
       db,
       providerId: this.id,
       providerName: this.name,
       getOAuthConfig: () => cyclingAnalyticsOAuthConfig(),
-      fetchFn: this.fetchFn,
+      fetchFn: this.#fetchFn,
     });
   }
 
-  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -158,7 +164,7 @@ export class CyclingAnalyticsProvider implements SyncProvider {
 
     let accessToken: string;
     try {
-      const tokens = await this.resolveTokens(db);
+      const tokens = await this.#resolveTokens(db);
       accessToken = tokens.accessToken;
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
@@ -166,72 +172,78 @@ export class CyclingAnalyticsProvider implements SyncProvider {
     }
 
     try {
-      const activityCount = await withSyncLog(db, this.id, "activity", async () => {
-        let count = 0;
-        let page = 0;
-        let hasMore = true;
+      const activityCount = await withSyncLog(
+        db,
+        this.id,
+        "activity",
+        async () => {
+          let count = 0;
+          let page = 0;
+          let hasMore = true;
 
-        while (hasMore) {
-          const url = `${CYCLING_ANALYTICS_API_BASE}/me/rides?start_date=${since.toISOString()}&page=${page}&limit=50`;
-          const response = await this.fetchFn(url, {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              Accept: "application/json",
-            },
-          });
+          while (hasMore) {
+            const url = `${CYCLING_ANALYTICS_API_BASE}/me/rides?start_date=${since.toISOString()}&page=${page}&limit=50`;
+            const response = await this.#fetchFn(url, {
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                Accept: "application/json",
+              },
+            });
 
-          if (!response.ok) {
-            const text = await response.text();
-            throw new Error(`Cycling Analytics API error (${response.status}): ${text}`);
-          }
+            if (!response.ok) {
+              const text = await response.text();
+              throw new Error(`Cycling Analytics API error (${response.status}): ${text}`);
+            }
 
-          const data: CyclingAnalyticsRidesResponse = await response.json();
-          const rides = data.rides ?? [];
+            const data: CyclingAnalyticsRidesResponse = await response.json();
+            const rides = data.rides ?? [];
 
-          if (rides.length === 0) {
-            hasMore = false;
-            break;
-          }
+            if (rides.length === 0) {
+              hasMore = false;
+              break;
+            }
 
-          for (const raw of rides) {
-            const parsed = parseCyclingAnalyticsRide(raw);
-            try {
-              await db
-                .insert(activity)
-                .values({
-                  providerId: this.id,
-                  externalId: parsed.externalId,
-                  activityType: parsed.activityType,
-                  name: parsed.name,
-                  startedAt: parsed.startedAt,
-                  endedAt: parsed.endedAt,
-                  raw: parsed.raw,
-                })
-                .onConflictDoUpdate({
-                  target: [activity.providerId, activity.externalId],
-                  set: {
+            for (const raw of rides) {
+              const parsed = parseCyclingAnalyticsRide(raw);
+              try {
+                await db
+                  .insert(activity)
+                  .values({
+                    providerId: this.id,
+                    externalId: parsed.externalId,
                     activityType: parsed.activityType,
                     name: parsed.name,
                     startedAt: parsed.startedAt,
                     endedAt: parsed.endedAt,
                     raw: parsed.raw,
-                  },
+                  })
+                  .onConflictDoUpdate({
+                    target: [activity.providerId, activity.externalId],
+                    set: {
+                      activityType: parsed.activityType,
+                      name: parsed.name,
+                      startedAt: parsed.startedAt,
+                      endedAt: parsed.endedAt,
+                      raw: parsed.raw,
+                    },
+                  });
+                count++;
+              } catch (err) {
+                errors.push({
+                  message: err instanceof Error ? err.message : String(err),
+                  externalId: parsed.externalId,
+                  cause: err,
                 });
-              count++;
-            } catch (err) {
-              errors.push({
-                message: err instanceof Error ? err.message : String(err),
-                externalId: parsed.externalId,
-                cause: err,
-              });
+              }
             }
+
+            page++;
           }
 
-          page++;
-        }
-
-        return { recordCount: count, result: count };
-      });
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += activityCount;
     } catch (err) {
       errors.push({

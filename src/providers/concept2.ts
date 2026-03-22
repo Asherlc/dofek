@@ -7,7 +7,13 @@ import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { ProviderHttpClient } from "./http-client.ts";
-import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
+import type {
+  ProviderAuthSetup,
+  SyncError,
+  SyncOptions,
+  SyncProvider,
+  SyncResult,
+} from "./types.ts";
 
 // ============================================================
 // Concept2 Logbook API Zod schemas
@@ -173,10 +179,10 @@ export class Concept2Client extends ProviderHttpClient {
 export class Concept2Provider implements SyncProvider {
   readonly id = "concept2";
   readonly name = "Concept2";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -188,7 +194,7 @@ export class Concept2Provider implements SyncProvider {
   authSetup(): ProviderAuthSetup {
     const config = concept2OAuthConfig();
     if (!config) throw new Error("CONCEPT2_CLIENT_ID and CLIENT_SECRET required");
-    const fetchFn = this.fetchFn;
+    const fetchFn = this.#fetchFn;
     return {
       oauthConfig: config,
       exchangeCode: (code) => exchangeCodeForTokens(config, code, fetchFn),
@@ -196,17 +202,17 @@ export class Concept2Provider implements SyncProvider {
     };
   }
 
-  private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
+  async #resolveTokens(db: SyncDatabase): Promise<TokenSet> {
     return resolveOAuthTokens({
       db,
       providerId: this.id,
       providerName: this.name,
       getOAuthConfig: () => concept2OAuthConfig(),
-      fetchFn: this.fetchFn,
+      fetchFn: this.#fetchFn,
     });
   }
 
-  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -215,63 +221,69 @@ export class Concept2Provider implements SyncProvider {
 
     let client: Concept2Client;
     try {
-      const tokens = await this.resolveTokens(db);
-      client = new Concept2Client(tokens.accessToken, this.fetchFn);
+      const tokens = await this.#resolveTokens(db);
+      client = new Concept2Client(tokens.accessToken, this.#fetchFn);
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
     try {
-      const activityCount = await withSyncLog(db, this.id, "activity", async () => {
-        let count = 0;
-        let page = 1;
-        let totalPages = 1;
-        const sinceDate = since.toISOString().slice(0, 10);
+      const activityCount = await withSyncLog(
+        db,
+        this.id,
+        "activity",
+        async () => {
+          let count = 0;
+          let page = 1;
+          let totalPages = 1;
+          const sinceDate = since.toISOString().slice(0, 10);
 
-        while (page <= totalPages) {
-          const data = await client.getResults(sinceDate, page);
-          totalPages = data.meta.pagination.total_pages;
+          while (page <= totalPages) {
+            const data = await client.getResults(sinceDate, page);
+            totalPages = data.meta.pagination.total_pages;
 
-          for (const raw of data.data) {
-            const parsed = parseConcept2Result(raw);
-            try {
-              await db
-                .insert(activity)
-                .values({
-                  providerId: this.id,
-                  externalId: parsed.externalId,
-                  activityType: parsed.activityType,
-                  name: parsed.name,
-                  startedAt: parsed.startedAt,
-                  endedAt: parsed.endedAt,
-                  raw: parsed.raw,
-                })
-                .onConflictDoUpdate({
-                  target: [activity.providerId, activity.externalId],
-                  set: {
+            for (const raw of data.data) {
+              const parsed = parseConcept2Result(raw);
+              try {
+                await db
+                  .insert(activity)
+                  .values({
+                    providerId: this.id,
+                    externalId: parsed.externalId,
                     activityType: parsed.activityType,
                     name: parsed.name,
                     startedAt: parsed.startedAt,
                     endedAt: parsed.endedAt,
                     raw: parsed.raw,
-                  },
+                  })
+                  .onConflictDoUpdate({
+                    target: [activity.providerId, activity.externalId],
+                    set: {
+                      activityType: parsed.activityType,
+                      name: parsed.name,
+                      startedAt: parsed.startedAt,
+                      endedAt: parsed.endedAt,
+                      raw: parsed.raw,
+                    },
+                  });
+                count++;
+              } catch (err) {
+                errors.push({
+                  message: err instanceof Error ? err.message : String(err),
+                  externalId: parsed.externalId,
+                  cause: err,
                 });
-              count++;
-            } catch (err) {
-              errors.push({
-                message: err instanceof Error ? err.message : String(err),
-                externalId: parsed.externalId,
-                cause: err,
-              });
+              }
             }
+
+            page++;
           }
 
-          page++;
-        }
-
-        return { recordCount: count, result: count };
-      });
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += activityCount;
     } catch (err) {
       errors.push({

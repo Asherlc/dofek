@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { AppHeader } from "../components/AppHeader.tsx";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import { CorrelationStrengthBar } from "../components/CorrelationStrengthBar.tsx";
 import { DofekChart } from "../components/DofekChart.tsx";
+import { PageLayout } from "../components/PageLayout.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { chartThemeColors, dofekAxis, dofekGrid, dofekTooltip } from "../lib/chartTheme.ts";
 import { formatNumber } from "../lib/format.ts";
@@ -108,171 +108,150 @@ export function CorrelationExplorerPage() {
   const yMetric = metricsQuery.data?.find((m) => m.id === metricY);
 
   return (
-    <div className="min-h-screen bg-page text-foreground overflow-x-hidden">
-      <AppHeader>
-        <TimeRangeSelector days={days} onChange={setDays} />
-      </AppHeader>
-      <main className="mx-auto max-w-7xl px-3 sm:px-6 py-4 sm:py-6 space-y-6">
-        {/* Title */}
-        <div>
-          <h2 className="text-sm font-medium text-muted uppercase tracking-wider">
-            Correlation Explorer
-          </h2>
-          <p className="text-xs text-dim mt-0.5">
-            Pick any two metrics to see how they relate. Correlation does not imply causation.
-          </p>
+    <PageLayout
+      headerChildren={<TimeRangeSelector days={days} onChange={setDays} />}
+      title="Correlation Explorer"
+      subtitle="Pick any two metrics to see how they relate. Correlation does not imply causation."
+    >
+      {/* Controls */}
+      {metricsQuery.data && (
+        <div className="space-y-3">
+          <div className="flex gap-3 items-end">
+            <MetricSelect value={metricX} onChange={setMetricX} grouped={grouped} label="X axis" />
+            <span className="text-dim text-sm pb-2">vs</span>
+            <MetricSelect value={metricY} onChange={setMetricY} grouped={grouped} label="Y axis" />
+          </div>
+
+          {/* Lag selector */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-subtle uppercase tracking-wider">Lag:</span>
+            <div className="flex gap-1">
+              {LAG_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setLag(opt.value)}
+                  className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
+                    lag === opt.value
+                      ? "bg-accent/15 text-foreground"
+                      : "text-subtle hover:text-foreground"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <span className="text-[10px] text-dim ml-1">
+              {lag > 0
+                ? `How ${xMetric?.label ?? "X"} today relates to ${yMetric?.label ?? "Y"} ${lag === 1 ? "tomorrow" : `${lag} days later`}`
+                : "Same-day comparison"}
+            </span>
+          </div>
         </div>
+      )}
 
-        {/* Controls */}
-        {metricsQuery.data && (
-          <div className="space-y-3">
-            <div className="flex gap-3 items-end">
-              <MetricSelect
-                value={metricX}
-                onChange={setMetricX}
-                grouped={grouped}
-                label="X axis"
-              />
-              <span className="text-dim text-sm pb-2">vs</span>
-              <MetricSelect
-                value={metricY}
-                onChange={setMetricY}
-                grouped={grouped}
-                label="Y axis"
-              />
-            </div>
+      {/* Same metric warning */}
+      {metricX === metricY && (
+        <div className="rounded-lg border border-amber-900/30 bg-amber-950/20 p-4 text-sm text-amber-400">
+          Select two different metrics to compare.
+        </div>
+      )}
 
-            {/* Lag selector */}
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] text-subtle uppercase tracking-wider">Lag:</span>
-              <div className="flex gap-1">
-                {LAG_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => setLag(opt.value)}
-                    className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
-                      lag === opt.value
-                        ? "bg-accent/15 text-foreground"
-                        : "text-subtle hover:text-foreground"
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
+      {/* Loading */}
+      {correlationQuery.isLoading && metricX !== metricY && (
+        <div className="space-y-4">
+          <div className="h-48 rounded-lg bg-skeleton animate-pulse" />
+          <div className="h-64 rounded-lg bg-skeleton animate-pulse" />
+        </div>
+      )}
+
+      {/* Results */}
+      {data && metricX !== metricY && (
+        <div className="space-y-4">
+          {/* Summary row */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Correlation stats card */}
+            <div className="card p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs text-subtle uppercase tracking-wider">
+                  Correlation Strength
+                </h3>
+                <span
+                  className={`text-[10px] px-2 py-0.5 rounded-full border ${confidenceBadge[data.confidenceLevel].className}`}
+                >
+                  {confidenceBadge[data.confidenceLevel].label}
+                </span>
               </div>
-              <span className="text-[10px] text-dim ml-1">
-                {lag > 0
-                  ? `How ${xMetric?.label ?? "X"} today relates to ${yMetric?.label ?? "Y"} ${lag === 1 ? "tomorrow" : `${lag} days later`}`
-                  : "Same-day comparison"}
-              </span>
-            </div>
-          </div>
-        )}
 
-        {/* Same metric warning */}
-        {metricX === metricY && (
-          <div className="rounded-lg border border-amber-900/30 bg-amber-950/20 p-4 text-sm text-amber-400">
-            Select two different metrics to compare.
-          </div>
-        )}
-
-        {/* Loading */}
-        {correlationQuery.isLoading && metricX !== metricY && (
-          <div className="space-y-4">
-            <div className="h-48 rounded-lg bg-skeleton animate-pulse" />
-            <div className="h-64 rounded-lg bg-skeleton animate-pulse" />
-          </div>
-        )}
-
-        {/* Results */}
-        {data && metricX !== metricY && (
-          <div className="space-y-4">
-            {/* Summary row */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Correlation stats card */}
-              <div className="card p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xs text-subtle uppercase tracking-wider">
-                    Correlation Strength
-                  </h3>
-                  <span
-                    className={`text-[10px] px-2 py-0.5 rounded-full border ${confidenceBadge[data.confidenceLevel].className}`}
-                  >
-                    {confidenceBadge[data.confidenceLevel].label}
-                  </span>
+              <div className="space-y-2">
+                <div>
+                  <p className="text-[10px] text-dim mb-0.5">Spearman (rank)</p>
+                  <CorrelationStrengthBar rho={data.spearmanRho} />
                 </div>
+                <div>
+                  <p className="text-[10px] text-dim mb-0.5">Pearson (linear)</p>
+                  <CorrelationStrengthBar rho={data.pearsonR} />
+                </div>
+              </div>
 
-                <div className="space-y-2">
+              <div className="flex gap-4 text-[11px] text-dim pt-1">
+                <span>R² = {formatNumber(data.regression.rSquared, 3)}</span>
+                <span>n = {data.sampleCount}</span>
+                <span>
+                  p ={" "}
+                  {data.spearmanPValue < 0.001 ? "< 0.001" : formatNumber(data.spearmanPValue, 3)}
+                </span>
+              </div>
+            </div>
+
+            {/* Insight card */}
+            <div className="card p-4 space-y-3">
+              <h3 className="text-xs text-subtle uppercase tracking-wider">Finding</h3>
+              <p className="text-sm text-foreground leading-relaxed">{data.insight}</p>
+
+              {data.sampleCount > 0 && (
+                <div className="grid grid-cols-2 gap-3 pt-1">
                   <div>
-                    <p className="text-[10px] text-dim mb-0.5">Spearman (rank)</p>
-                    <CorrelationStrengthBar rho={data.spearmanRho} />
+                    <p className="text-[10px] text-dim">{xMetric?.label ?? metricX}</p>
+                    <p className="text-sm text-foreground">
+                      {formatValue(data.xStats.mean)} ± {formatValue(data.xStats.stddev)}{" "}
+                      <span className="text-dim">{xMetric?.unit}</span>
+                    </p>
                   </div>
                   <div>
-                    <p className="text-[10px] text-dim mb-0.5">Pearson (linear)</p>
-                    <CorrelationStrengthBar rho={data.pearsonR} />
+                    <p className="text-[10px] text-dim">{yMetric?.label ?? metricY}</p>
+                    <p className="text-sm text-foreground">
+                      {formatValue(data.yStats.mean)} ± {formatValue(data.yStats.stddev)}{" "}
+                      <span className="text-dim">{yMetric?.unit}</span>
+                    </p>
                   </div>
                 </div>
-
-                <div className="flex gap-4 text-[11px] text-dim pt-1">
-                  <span>R² = {formatNumber(data.regression.rSquared, 3)}</span>
-                  <span>n = {data.sampleCount}</span>
-                  <span>
-                    p ={" "}
-                    {data.spearmanPValue < 0.001 ? "< 0.001" : formatNumber(data.spearmanPValue, 3)}
-                  </span>
-                </div>
-              </div>
-
-              {/* Insight card */}
-              <div className="card p-4 space-y-3">
-                <h3 className="text-xs text-subtle uppercase tracking-wider">Finding</h3>
-                <p className="text-sm text-foreground leading-relaxed">{data.insight}</p>
-
-                {data.sampleCount > 0 && (
-                  <div className="grid grid-cols-2 gap-3 pt-1">
-                    <div>
-                      <p className="text-[10px] text-dim">{xMetric?.label ?? metricX}</p>
-                      <p className="text-sm text-foreground">
-                        {formatValue(data.xStats.mean)} ± {formatValue(data.xStats.stddev)}{" "}
-                        <span className="text-dim">{xMetric?.unit}</span>
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] text-dim">{yMetric?.label ?? metricY}</p>
-                      <p className="text-sm text-foreground">
-                        {formatValue(data.yStats.mean)} ± {formatValue(data.yStats.stddev)}{" "}
-                        <span className="text-dim">{yMetric?.unit}</span>
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </div>
+              )}
             </div>
-
-            {/* Scatter plot */}
-            {data.dataPoints.length > 0 && (
-              <div
-                className="card p-4"
-                title="This chart plots each data point and overlays a trend line so you can see whether two metrics move together."
-              >
-                <div className="mb-2 flex items-center gap-2">
-                  <h3 className="text-xs text-subtle uppercase tracking-wider">Scatter Plot</h3>
-                  <ChartDescriptionTooltip description="This chart plots each data point and overlays a trend line so you can see whether two metrics move together." />
-                </div>
-                <ScatterPlot
-                  dataPoints={data.dataPoints}
-                  regression={data.regression}
-                  rho={data.spearmanRho}
-                  xLabel={`${xMetric?.label ?? metricX} (${xMetric?.unit ?? ""})`}
-                  yLabel={`${yMetric?.label ?? metricY} (${yMetric?.unit ?? ""})`}
-                />
-              </div>
-            )}
           </div>
-        )}
-      </main>
-    </div>
+
+          {/* Scatter plot */}
+          {data.dataPoints.length > 0 && (
+            <div
+              className="card p-4"
+              title="This chart plots each data point and overlays a trend line so you can see whether two metrics move together."
+            >
+              <div className="mb-2 flex items-center gap-2">
+                <h3 className="text-xs text-subtle uppercase tracking-wider">Scatter Plot</h3>
+                <ChartDescriptionTooltip description="This chart plots each data point and overlays a trend line so you can see whether two metrics move together." />
+              </div>
+              <ScatterPlot
+                dataPoints={data.dataPoints}
+                regression={data.regression}
+                rho={data.spearmanRho}
+                xLabel={`${xMetric?.label ?? metricX} (${xMetric?.unit ?? ""})`}
+                yLabel={`${yMetric?.label ?? metricY} (${yMetric?.unit ?? ""})`}
+              />
+            </div>
+          )}
+        </div>
+      )}
+    </PageLayout>
   );
 }
 

@@ -8,8 +8,8 @@ import { statusColors, textColors } from "./colors.ts";
  * scaling that produces diminishing returns at higher loads.
  */
 export class StrainScore {
-  private static readonly SCALE_FACTOR = 3.5;
-  private static readonly MAX = 21;
+  static readonly #SCALE_FACTOR = 3.5;
+  static readonly #MAX = 21;
 
   constructor(readonly value: number) {}
 
@@ -29,8 +29,8 @@ export class StrainScore {
 
   static fromRawLoad(rawLoad: number): StrainScore {
     if (rawLoad <= 0) return new StrainScore(0);
-    const strain = StrainScore.SCALE_FACTOR * Math.log(1 + rawLoad);
-    const value = Math.round(Math.min(strain, StrainScore.MAX) * 10) / 10;
+    const strain = StrainScore.#SCALE_FACTOR * Math.log(1 + rawLoad);
+    const value = Math.round(Math.min(strain, StrainScore.#MAX) * 10) / 10;
     return new StrainScore(value);
   }
 }

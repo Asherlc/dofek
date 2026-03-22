@@ -21,6 +21,7 @@ import { formatDurationMinutes, formatNumber, formatSleepDebtInline } from "@dof
 import { readinessLevelColor, scoreColor, scoreLabel, StrainZone, trendColor, trendDirection as computeTrend } from "../../lib/scoring";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
+import { useAutoSync } from "../../lib/useAutoSync";
 import { useOnboarding } from "../../lib/useOnboarding";
 import { ActivityRowSchema } from "../../types/api";
 import { colors, statusColors } from "../../theme";
@@ -111,6 +112,9 @@ export default function OverviewScreen() {
   // Health metrics (latest)
   const dailyMetricsQuery = trpc.dailyMetrics.trends.useQuery({ days });
   const metrics = dailyMetricsQuery.data;
+
+  // Auto-sync when data is stale (API providers + HealthKit)
+  useAutoSync(metrics?.latest_date);
 
   // Weekly report
   const weeklyReportQuery = trpc.weeklyReport.report.useQuery({ weeks: Math.max(Math.ceil(days / 7), 1) });
@@ -465,7 +469,18 @@ export default function OverviewScreen() {
           {/* Health Status Bar — horizontal scrolling mini metrics */}
           {showDetailedSections && metrics != null && (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Health Status</Text>
+              <Text style={styles.sectionTitle}>
+                {(() => {
+                  if (!metrics.latest_date) return "Health Status";
+                  const today = new Date().toLocaleDateString("en-CA");
+                  if (metrics.latest_date === today) return "Health Status";
+                  const dateLabel = new Date(`${metrics.latest_date}T00:00:00`).toLocaleDateString(
+                    "en-US",
+                    { weekday: "short", month: "short", day: "numeric" },
+                  );
+                  return `Health Status (${dateLabel})`;
+                })()}
+              </Text>
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}

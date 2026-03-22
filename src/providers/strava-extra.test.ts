@@ -574,7 +574,7 @@ describe("StravaProvider.sync — additional coverage", () => {
     const onProgress = vi.fn();
     const provider = new StravaProvider(mockFetch, 0);
 
-    await provider.sync(mockDb, new Date("2026-01-01"), onProgress);
+    await provider.sync(mockDb, new Date("2026-01-01"), { onProgress });
 
     expect(onProgress).toHaveBeenCalledWith(0, "1 activities synced");
   });

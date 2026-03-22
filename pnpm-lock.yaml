@@ -132,6 +132,9 @@ importers:
       cypress:
         specifier: ^15.12.0
         version: 15.12.0
+      drizzle-dbml-generator:
+        specifier: ^0.10.0
+        version: 0.10.0(drizzle-orm@0.38.4(@opentelemetry/api@1.9.0)(@types/pg@8.15.6)(@types/react@19.2.14)(postgres@3.4.8)(react@19.2.4))
       drizzle-kit:
         specifier: 0.30.6
         version: 0.30.6
@@ -147,6 +150,9 @@ importers:
       msw:
         specifier: ^2.12.11
         version: 2.12.11(@types/node@22.19.15)(typescript@5.9.3)
+      plantuml-encoder:
+        specifier: ^1.4.0
+        version: 1.4.0
       postgres:
         specifier: 3.4.8
         version: 3.4.8
@@ -6363,6 +6369,11 @@ packages:
     resolution: {integrity: sha512-47qPchRCykZC03FhkYAhrvwU4xDBFIj1QPqaarj6mdM/hgUzfPHcpkHJOn3mJAufFeeAxAzeGsr5X0M4k6fLZQ==}
     engines: {node: '>=12'}
 
+  drizzle-dbml-generator@0.10.0:
+    resolution: {integrity: sha512-cMZq9E3U3RlmE0uBeXyc6oWJ0royOkC6HiTlc9LDeMe+W87poZTzKoNYUyAxZrs4Q1RQtob+cGKiefV4ZoI8HA==}
+    peerDependencies:
+      drizzle-orm: '>=0.36.0'
+
   drizzle-kit@0.30.6:
     resolution: {integrity: sha512-U4wWit0fyZuGuP7iNmRleQyK2V8wCuv57vf5l3MnG4z4fzNTjY/U13M8owyQ5RavqvqxBifWORaR3wIUzlN64g==}
     hasBin: true
@@ -8097,6 +8108,9 @@ packages:
   pirates@4.0.7:
     resolution: {integrity: sha512-TfySrs/5nm8fQJDcBDuUng3VOUKsd7S+zqvbOTiGXHfxX4wK31ard+hoNuvkicM/2YFzlpDgABOevKSsB4G/FA==}
     engines: {node: '>= 6'}
+
+  plantuml-encoder@1.4.0:
+    resolution: {integrity: sha512-sxMwpDw/ySY1WB2CE3+IdMuEcWibJ72DDOsXLkSmEaSzwEUaYBT6DWgOfBiHGCux4q433X6+OEFWjlVqp7gL6g==}
 
   plist@3.1.0:
     resolution: {integrity: sha512-uysumyrvkUX0rX/dEVqt8gC3sTBzd4zoWfLeS29nb53imdaXVvLINYXTI2GNqzaMuvacNx4uJQ8+b3zXR0pkgQ==}
@@ -16236,6 +16250,10 @@ snapshots:
 
   dotenv@16.4.7: {}
 
+  drizzle-dbml-generator@0.10.0(drizzle-orm@0.38.4(@opentelemetry/api@1.9.0)(@types/pg@8.15.6)(@types/react@19.2.14)(postgres@3.4.8)(react@19.2.4)):
+    dependencies:
+      drizzle-orm: 0.38.4(@opentelemetry/api@1.9.0)(@types/pg@8.15.6)(@types/react@19.2.14)(postgres@3.4.8)(react@19.2.4)
+
   drizzle-kit@0.30.6:
     dependencies:
       '@drizzle-team/brocli': 0.10.2
@@ -18171,6 +18189,8 @@ snapshots:
   pify@2.3.0: {}
 
   pirates@4.0.7: {}
+
+  plantuml-encoder@1.4.0: {}
 
   plist@3.1.0:
     dependencies:

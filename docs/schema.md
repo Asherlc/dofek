@@ -25,6 +25,9 @@ A column is raw if the data originates from a sensor or external system and **ca
 | `activity_interval.avg_cadence` | Same — `AVG(cadence)` over the interval window. |
 | `activity_interval.distance_meters` | Same — computed from GPS within the interval. |
 | `activity_interval.elevation_gain` | Same — computed from altitude deltas within the interval. |
+| `daily_metrics.mindful_minutes` | Never populated by any provider. Dead column removed in migration 0042. |
+| `daily_metrics.environmental_audio_exposure` | Apple Health stores raw audio exposure readings in `metric_stream.audio_exposure` — daily averages can be derived from there. No provider ever populated this column. Removed in migration 0042. |
+| `daily_metrics.headphone_audio_exposure` | Same as environmental — raw readings in `metric_stream.audio_exposure`, never aggregated to daily. Removed in migration 0042. |
 
 The `activity_summary` materialized view computes all of these at refresh time from `metric_stream` data, including total distance (haversine over GPS points) and elevation gain/loss (altitude deltas).
 
@@ -109,12 +112,24 @@ The `activity_summary` materialized view computes all of these at refresh time f
 | `fitness.strength_workout` | Workout sessions |
 | `fitness.strength_set` | Individual sets (exercise, weight, reps, RPE) |
 | `fitness.sleep_session` | Sleep sessions with stage breakdown |
-| `fitness.nutrition_daily` | Daily macros — calories, protein, carbs, fat, fiber, water |
+| `fitness.nutrition_daily` | Daily macros — calories, protein, carbs, fat, fiber, water (see [why this isn't a view](#nutrition_daily-vs-food_entry)) |
 | `fitness.food_entry` | Individual food items with full macro/micronutrient data |
 | `fitness.lab_result` | Clinical lab results (from Apple Health / FHIR) |
 | `fitness.health_event` | Generic health events catch-all |
 | `fitness.journal_entry` | Daily behavioral self-reports (WHOOP journal, etc.) |
 | `fitness.life_events` | Life event markers (travel, illness, etc.) |
+
+### nutrition_daily vs food_entry
+
+`nutrition_daily` is a table, not a materialized view over `food_entry`, because some providers only give numeric quantity samples without food-level detail.
+
+**Apple Health** provides individual `HKQuantityType` samples (e.g., "120 calories at 12:30pm", "30g protein at 1:00pm") but these are just numbers with timestamps — no food name, meal type, serving size, or any food identification. They can't populate `food_entry` rows. The sync code (`src/providers/apple-health/db-insertion.ts`) aggregates these samples into daily totals for `nutrition_daily`.
+
+**Cronometer CSV** writes to both tables: individual foods go into `food_entry`, and daily totals go into `nutrition_daily`. The daily totals are technically redundant (derivable by summing `food_entry` rows), but keeping them avoids cross-provider query complexity since Apple Health only has `nutrition_daily`.
+
+**FatSecret** only writes `food_entry` rows (no `nutrition_daily`).
+
+Routers that need daily macro totals query `nutrition_daily` directly. Routers that need micronutrient detail (e.g., vitamin adequacy) query `food_entry` instead, since `nutrition_daily` only stores macros + water.
 
 ## Deduplication
 
