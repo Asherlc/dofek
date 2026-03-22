@@ -1,5 +1,5 @@
+import { NUTRIENT_COLUMN_MAP, NUTRIENT_KEYS } from "dofek/db/nutrient-columns";
 import { describe, expect, it, vi } from "vitest";
-import { NUTRIENT_KEYS, NUTRIENT_COLUMN_MAP } from "dofek/db/nutrient-columns";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
@@ -43,10 +43,7 @@ vi.mock("../logger.ts", () => ({
   logger: { warn: vi.fn() },
 }));
 
-import {
-  type Supplement,
-  toApiSupplement,
-} from "./supplements.ts";
+import { toApiSupplement } from "./supplements.ts";
 
 /** Build a view row (snake_case nutrients) with all fields populated. */
 const NUTRIENT_SNAKE_VALUES: Record<string, number> = {
@@ -87,47 +84,6 @@ const NUTRIENT_SNAKE_VALUES: Record<string, number> = {
   iodine_mcg: 150,
   omega3_mg: 500,
   omega6_mg: 200,
-};
-
-/** Expected camelCase nutrient values after conversion */
-const NUTRIENT_CAMEL_VALUES: Partial<Supplement> = {
-  calories: 10,
-  proteinG: 0.5,
-  carbsG: 1.1,
-  fatG: 0.2,
-  saturatedFatG: 0.1,
-  polyunsaturatedFatG: 0.05,
-  monounsaturatedFatG: 0.04,
-  transFatG: 0.01,
-  cholesterolMg: 0.3,
-  sodiumMg: 5,
-  potassiumMg: 10,
-  fiberG: 0.1,
-  sugarG: 0.2,
-  vitaminAMcg: 900,
-  vitaminCMg: 90,
-  vitaminDMcg: 125,
-  vitaminEMg: 15,
-  vitaminKMcg: 120,
-  vitaminB1Mg: 1.2,
-  vitaminB2Mg: 1.3,
-  vitaminB3Mg: 16,
-  vitaminB5Mg: 5,
-  vitaminB6Mg: 1.7,
-  vitaminB7Mcg: 30,
-  vitaminB9Mcg: 400,
-  vitaminB12Mcg: 2.4,
-  calciumMg: 1000,
-  ironMg: 18,
-  magnesiumMg: 400,
-  zincMg: 11,
-  seleniumMcg: 55,
-  copperMg: 0.9,
-  manganeseMg: 2.3,
-  chromiumMcg: 35,
-  iodineMcg: 150,
-  omega3Mg: 500,
-  omega6Mg: 200,
 };
 
 /** Build a full view row (as returned by v_supplement_with_nutrition). */
@@ -184,7 +140,8 @@ describe("toApiSupplement", () => {
     for (const key of NUTRIENT_KEYS) {
       const snakeColumn = NUTRIENT_COLUMN_MAP[key];
       if (snakeColumn && NUTRIENT_SNAKE_VALUES[snakeColumn] != null) {
-        expect(result[key as keyof Supplement]).toBe(NUTRIENT_SNAKE_VALUES[snakeColumn]);
+        const resultRecord: Record<string, unknown> = result;
+        expect(resultRecord[key]).toBe(NUTRIENT_SNAKE_VALUES[snakeColumn]);
       }
     }
   });
