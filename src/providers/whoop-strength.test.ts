@@ -33,6 +33,8 @@ const sampleWeightliftingResponse: WhoopWeightliftingWorkoutResponse = {
               time_in_seconds: 60,
               during: "['2026-03-12T21:37:00.000Z','2026-03-12T21:37:00.001Z')",
               complete: true,
+              strap_location: null,
+              strap_location_laterality: null,
             },
             {
               weight_kg: 0,
@@ -41,6 +43,8 @@ const sampleWeightliftingResponse: WhoopWeightliftingWorkoutResponse = {
               time_in_seconds: 60,
               during: "['2026-03-12T21:40:00.000Z','2026-03-12T21:40:00.001Z')",
               complete: true,
+              strap_location: null,
+              strap_location_laterality: null,
             },
             {
               weight_kg: 0,
@@ -49,6 +53,8 @@ const sampleWeightliftingResponse: WhoopWeightliftingWorkoutResponse = {
               time_in_seconds: 60,
               during: "['2026-03-12T21:43:00.000Z','2026-03-12T21:43:00.001Z')",
               complete: true,
+              strap_location: null,
+              strap_location_laterality: null,
             },
           ],
           exercise_details: {
@@ -69,6 +75,8 @@ const sampleWeightliftingResponse: WhoopWeightliftingWorkoutResponse = {
               time_in_seconds: 60,
               during: "['2026-03-12T21:46:00.000Z','2026-03-12T21:46:00.001Z')",
               complete: true,
+              strap_location: null,
+              strap_location_laterality: null,
             },
           ],
           exercise_details: {
@@ -93,6 +101,8 @@ const sampleWeightliftingResponse: WhoopWeightliftingWorkoutResponse = {
               time_in_seconds: 0,
               during: "['2026-03-12T22:00:00.000Z','2026-03-12T22:00:00.001Z')",
               complete: true,
+              strap_location: null,
+              strap_location_laterality: null,
             },
             {
               weight_kg: 55,
@@ -101,6 +111,8 @@ const sampleWeightliftingResponse: WhoopWeightliftingWorkoutResponse = {
               time_in_seconds: 0,
               during: "['2026-03-12T22:03:00.000Z','2026-03-12T22:03:00.001Z')",
               complete: true,
+              strap_location: null,
+              strap_location_laterality: null,
             },
           ],
           exercise_details: {
@@ -203,6 +215,8 @@ describe("parseWeightliftingWorkout", () => {
                   time_in_seconds: 0,
                   during: "['2026-03-12T22:00:00.000Z','2026-03-12T22:00:00.001Z')",
                   complete: true,
+                  strap_location: null,
+                  strap_location_laterality: null,
                 },
                 {
                   weight_kg: 0,
@@ -211,6 +225,8 @@ describe("parseWeightliftingWorkout", () => {
                   time_in_seconds: 0,
                   during: "['2026-03-12T22:03:00.000Z','2026-03-12T22:03:00.001Z')",
                   complete: false,
+                  strap_location: null,
+                  strap_location_laterality: null,
                 },
               ],
               exercise_details: {

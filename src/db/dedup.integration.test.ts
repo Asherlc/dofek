@@ -65,8 +65,6 @@ interface DailyMetricsViewRow extends Record<string, unknown> {
   exercise_minutes: number | null;
   stand_hours: number | null;
   walking_speed: number | string | null;
-  environmental_audio_exposure: number | string | null;
-  headphone_audio_exposure: number | string | null;
   source_providers: string[];
 }
 

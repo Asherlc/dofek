@@ -863,6 +863,279 @@ describe("parseJournalResponse", () => {
 });
 
 // ============================================================
+// parseSleep — sleep need breakdown
+// ============================================================
+
+describe("parseSleep — sleep need breakdown", () => {
+  it("extracts sleep need components when scored", () => {
+    const record: WhoopSleepRecord = {
+      id: 400,
+      user_id: 10129,
+      created_at: "2026-03-01T06:00:00Z",
+      updated_at: "2026-03-01T06:30:00Z",
+      start: "2026-02-28T23:00:00Z",
+      end: "2026-03-01T06:30:00Z",
+      timezone_offset: "-05:00",
+      nap: false,
+      score_state: "SCORED",
+      score: {
+        stage_summary: {
+          total_in_bed_time_milli: 27000000,
+          total_awake_time_milli: 1800000,
+          total_no_data_time_milli: 0,
+          total_light_sleep_time_milli: 10800000,
+          total_slow_wave_sleep_time_milli: 7200000,
+          total_rem_sleep_time_milli: 5400000,
+          sleep_cycle_count: 4,
+          disturbance_count: 2,
+        },
+        sleep_needed: {
+          baseline_milli: 28800000, // 480 min
+          need_from_sleep_debt_milli: 1800000, // 30 min
+          need_from_recent_strain_milli: 900000, // 15 min
+          need_from_recent_nap_milli: -600000, // -10 min
+        },
+        respiratory_rate: 16.1,
+        sleep_performance_percentage: 92,
+        sleep_consistency_percentage: 88,
+        sleep_efficiency_percentage: 91.7,
+      },
+    };
+
+    const parsed = parseSleep(record);
+    expect(parsed.sleepNeedBaselineMinutes).toBe(480);
+    expect(parsed.sleepNeedFromDebtMinutes).toBe(30);
+    expect(parsed.sleepNeedFromStrainMinutes).toBe(15);
+    expect(parsed.sleepNeedFromNapMinutes).toBe(-10);
+  });
+
+  it("returns undefined sleep need when score is missing", () => {
+    const record: WhoopSleepRecord = {
+      id: 401,
+      user_id: 10129,
+      created_at: "2026-03-01T06:00:00Z",
+      updated_at: "2026-03-01T06:30:00Z",
+      start: "2026-02-28T23:00:00Z",
+      end: "2026-03-01T06:30:00Z",
+      timezone_offset: "-05:00",
+      nap: false,
+      score_state: "PENDING",
+    };
+
+    const parsed = parseSleep(record);
+    expect(parsed.sleepNeedBaselineMinutes).toBeUndefined();
+    expect(parsed.sleepNeedFromDebtMinutes).toBeUndefined();
+    expect(parsed.sleepNeedFromStrainMinutes).toBeUndefined();
+    expect(parsed.sleepNeedFromNapMinutes).toBeUndefined();
+  });
+});
+
+// ============================================================
+// parseWorkout — percent recorded
+// ============================================================
+
+describe("parseWorkout — percent recorded", () => {
+  it("extracts percent_recorded from workout record", () => {
+    const record: WhoopWorkoutRecord = {
+      activity_id: "uuid-pct-1",
+      during: "['2026-03-01T10:00:00Z','2026-03-01T11:00:00Z')",
+      timezone_offset: "-05:00",
+      sport_id: 0,
+      percent_recorded: 95,
+    };
+
+    const parsed = parseWorkout(record);
+    expect(parsed.percentRecorded).toBe(95);
+  });
+
+  it("returns undefined when percent_recorded is missing", () => {
+    const record: WhoopWorkoutRecord = {
+      activity_id: "uuid-pct-2",
+      during: "['2026-03-01T10:00:00Z','2026-03-01T11:00:00Z')",
+      timezone_offset: "-05:00",
+      sport_id: 0,
+    };
+
+    const parsed = parseWorkout(record);
+    expect(parsed.percentRecorded).toBeUndefined();
+  });
+});
+
+// ============================================================
+// parseWeightliftingWorkout — MSK strain and strap location
+// ============================================================
+
+describe("parseWeightliftingWorkout — MSK strain breakdown", () => {
+  it("extracts MSK strain scores from response", () => {
+    const response: WhoopWeightliftingWorkoutResponse = {
+      activity_id: "test-msk",
+      user_id: 1,
+      zone_durations: {},
+      workout_groups: [],
+      total_effective_volume_kg: 2047,
+      raw_msk_strain_score: 0.0288,
+      scaled_msk_strain_score: 2.856,
+      cardio_strain_score: 1.549,
+      cardio_strain_contribution_percent: 0.329,
+      msk_strain_contribution_percent: 0.671,
+    };
+
+    const result = parseWeightliftingWorkout(response);
+    expect(result.rawMskStrainScore).toBe(0.0288);
+    expect(result.scaledMskStrainScore).toBe(2.856);
+    expect(result.cardioStrainScore).toBe(1.549);
+    expect(result.cardioStrainContributionPercent).toBe(0.329);
+    expect(result.mskStrainContributionPercent).toBe(0.671);
+  });
+});
+
+describe("parseWeightliftingWorkout — strap location", () => {
+  it("extracts strap location from sets", () => {
+    const response: WhoopWeightliftingWorkoutResponse = {
+      activity_id: "test-strap",
+      user_id: 1,
+      zone_durations: {},
+      workout_groups: [
+        {
+          workout_exercises: [
+            {
+              sets: [
+                {
+                  weight_kg: 20,
+                  number_of_reps: 10,
+                  msk_total_volume_kg: 200,
+                  time_in_seconds: 0,
+                  during: "['2026-03-12T21:37:00.000Z','2026-03-12T21:37:00.001Z')",
+                  complete: true,
+                  strap_location: "BICEP",
+                  strap_location_laterality: "LEFT",
+                },
+              ],
+              exercise_details: {
+                exercise_id: "CURL",
+                name: "Bicep Curl",
+                equipment: "DUMBBELL",
+                exercise_type: "STRENGTH",
+                muscle_groups: ["BICEPS"],
+                volume_input_format: "REPS_AND_WEIGHT",
+              },
+            },
+          ],
+        },
+      ],
+      total_effective_volume_kg: 200,
+      raw_msk_strain_score: 0.01,
+      scaled_msk_strain_score: 1.0,
+      cardio_strain_score: 0.5,
+      cardio_strain_contribution_percent: 0.3,
+      msk_strain_contribution_percent: 0.7,
+    };
+
+    const result = parseWeightliftingWorkout(response);
+    expect(result.exercises[0]?.sets[0]?.strapLocation).toBe("BICEP");
+    expect(result.exercises[0]?.sets[0]?.strapLocationLaterality).toBe("LEFT");
+  });
+
+  it("returns null strap location for manually-logged sets", () => {
+    const response: WhoopWeightliftingWorkoutResponse = {
+      activity_id: "test-no-strap",
+      user_id: 1,
+      zone_durations: {},
+      workout_groups: [
+        {
+          workout_exercises: [
+            {
+              sets: [
+                {
+                  weight_kg: 50,
+                  number_of_reps: 8,
+                  msk_total_volume_kg: 400,
+                  time_in_seconds: 0,
+                  during: "['2026-03-12T22:00:00.000Z','2026-03-12T22:00:00.001Z')",
+                  complete: true,
+                  strap_location: null,
+                  strap_location_laterality: null,
+                },
+              ],
+              exercise_details: {
+                exercise_id: "BENCHPRESS",
+                name: "Bench Press",
+                equipment: "BARBELL",
+                exercise_type: "STRENGTH",
+                muscle_groups: ["CHEST"],
+                volume_input_format: "REPS_AND_WEIGHT",
+              },
+            },
+          ],
+        },
+      ],
+      total_effective_volume_kg: 400,
+      raw_msk_strain_score: 0,
+      scaled_msk_strain_score: 0,
+      cardio_strain_score: 0,
+      cardio_strain_contribution_percent: 0,
+      msk_strain_contribution_percent: 0,
+    };
+
+    const result = parseWeightliftingWorkout(response);
+    expect(result.exercises[0]?.sets[0]?.strapLocation).toBeNull();
+    expect(result.exercises[0]?.sets[0]?.strapLocationLaterality).toBeNull();
+  });
+});
+
+// ============================================================
+// parseWeightliftingWorkout — exercise metadata
+// ============================================================
+
+describe("parseWeightliftingWorkout — exercise metadata", () => {
+  it("extracts muscle groups and exercise type", () => {
+    const response: WhoopWeightliftingWorkoutResponse = {
+      activity_id: "test-metadata",
+      user_id: 1,
+      zone_durations: {},
+      workout_groups: [
+        {
+          workout_exercises: [
+            {
+              sets: [
+                {
+                  weight_kg: 50,
+                  number_of_reps: 8,
+                  msk_total_volume_kg: 400,
+                  time_in_seconds: 0,
+                  during: "['2026-03-12T22:00:00.000Z','2026-03-12T22:00:00.001Z')",
+                  complete: true,
+                  strap_location: null,
+                  strap_location_laterality: null,
+                },
+              ],
+              exercise_details: {
+                exercise_id: "BENCHPRESS",
+                name: "Bench Press",
+                equipment: "BARBELL",
+                exercise_type: "STRENGTH",
+                muscle_groups: ["CHEST", "TRICEPS"],
+                volume_input_format: "REPS_AND_WEIGHT",
+              },
+            },
+          ],
+        },
+      ],
+      total_effective_volume_kg: 400,
+      raw_msk_strain_score: 0,
+      scaled_msk_strain_score: 0,
+      cardio_strain_score: 0,
+      cardio_strain_contribution_percent: 0,
+      msk_strain_contribution_percent: 0,
+    };
+
+    const result = parseWeightliftingWorkout(response);
+    expect(result.exercises[0]?.muscleGroups).toEqual(["CHEST", "TRICEPS"]);
+    expect(result.exercises[0]?.exerciseType).toBe("STRENGTH");
+  });
+});
+
+// ============================================================
 // parseWeightliftingWorkout — additional edge cases
 // ============================================================
 
@@ -895,6 +1168,8 @@ describe("parseWeightliftingWorkout — additional edge cases", () => {
                   time_in_seconds: 0,
                   during: "['2026-03-12T21:37:00.000Z','2026-03-12T21:37:00.001Z')",
                   complete: true,
+                  strap_location: null,
+                  strap_location_laterality: null,
                 },
               ],
               exercise_details: {
@@ -949,6 +1224,8 @@ describe("parseWeightliftingWorkout — additional edge cases", () => {
                   time_in_seconds: 0,
                   during: "['2026-03-12T21:37:00.000Z','2026-03-12T21:37:00.001Z')",
                   complete: true,
+                  strap_location: null,
+                  strap_location_laterality: null,
                 },
               ],
               exercise_details: {
