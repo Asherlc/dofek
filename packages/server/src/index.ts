@@ -5,7 +5,6 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import compression from "compression";
 import cookieParser from "cookie-parser";
 import { createDatabaseFromEnv } from "dofek/db";
-import { runMigrations } from "dofek/db/migrate";
 import { createImportQueue, createSyncQueue } from "dofek/jobs/queues";
 import express from "express";
 import { isAdmin } from "./auth/admin.ts";
@@ -135,9 +134,6 @@ async function main() {
   if (!databaseUrl) {
     throw new Error("DATABASE_URL environment variable is required");
   }
-  // Auto-run pending migrations on startup
-  await runMigrations(databaseUrl);
-
   const db = createDatabaseFromEnv();
   const app = createApp(db);
 

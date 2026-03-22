@@ -27,6 +27,20 @@ vi.mock("postgres", () => ({
   default: vi.fn(() => mockSql),
 }));
 
+/** Build an ordered log of advisory lock and schema calls from mock.calls */
+function buildCallLog(): string[] {
+  const log: string[] = [];
+  for (const call of mockSql.mock.calls) {
+    const first = call[0];
+    if (!Array.isArray(first)) continue;
+    const raw = first.join("?").trim();
+    if (raw.includes("pg_advisory_lock") && !raw.includes("unlock")) log.push("lock");
+    if (raw.includes("pg_advisory_unlock")) log.push("unlock");
+    if (raw.includes("CREATE SCHEMA")) log.push("schema");
+  }
+  return log;
+}
+
 describe("runMigrations", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -122,5 +136,32 @@ describe("runMigrations", () => {
     );
 
     expect(mockSqlEnd).toHaveBeenCalled();
+  });
+
+  it("acquires advisory lock before schema setup and releases it after", async () => {
+    const { runMigrations } = await import("./migrate.ts");
+    mockReaddirSync.mockReturnValue([]);
+
+    await runMigrations("postgres://localhost/test", "/tmp/migrations");
+
+    const log = buildCallLog();
+    expect(log[0]).toBe("lock");
+    expect(log[log.length - 1]).toBe("unlock");
+    expect(log.indexOf("lock")).toBeLessThan(log.indexOf("schema"));
+  });
+
+  it("releases advisory lock even when migrations fail", async () => {
+    const { runMigrations } = await import("./migrate.ts");
+    mockReaddirSync.mockImplementation(() => {
+      throw new Error("fs error");
+    });
+
+    await expect(runMigrations("postgres://localhost/test", "/tmp/migrations")).rejects.toThrow(
+      "fs error",
+    );
+
+    const log = buildCallLog();
+    expect(log).toContain("lock");
+    expect(log).toContain("unlock");
   });
 });
