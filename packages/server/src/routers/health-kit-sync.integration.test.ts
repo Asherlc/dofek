@@ -507,7 +507,7 @@ describe("HealthKit sync router", () => {
       const rows = await testCtx.db.execute(
         sql`SELECT * FROM fitness.sleep_session
             WHERE provider_id = 'apple_health'
-              AND external_id = 'hk:sleep:sleep-inbed-1'`,
+              AND external_id = 'hk:sleep:sleep-inbed-1:Apple Watch'`,
       );
       expect(rows.length).toBe(1);
       expect(rows[0]?.deep_minutes).toBe(60);
@@ -557,7 +557,7 @@ describe("HealthKit sync router", () => {
       const rows = await testCtx.db.execute(
         sql`SELECT * FROM fitness.sleep_session
             WHERE provider_id = 'apple_health'
-              AND external_id = 'hk:sleep:stage-only-light-1'`,
+              AND external_id = 'hk:sleep:stage-only-light-1:Apple Watch'`,
       );
       expect(rows.length).toBe(1);
       expect(rows[0]?.deep_minutes).toBe(180);
@@ -645,7 +645,7 @@ describe("HealthKit sync router", () => {
       const rows = await testCtx.db.execute(
         sql`SELECT * FROM fitness.sleep_session
             WHERE provider_id = 'apple_health'
-              AND external_id = 'hk:sleep:dedup-sleep-inbed-1'`,
+              AND external_id = 'hk:sleep:dedup-sleep-inbed-1:Apple Watch'`,
       );
       expect(rows.length).toBe(1);
     });
