@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
@@ -5,55 +6,64 @@ import type { SyncDatabase } from "../db/index.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
+import { ProviderHttpClient } from "./http-client.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
-// Concept2 Logbook API types
+// Concept2 Logbook API Zod schemas
 // ============================================================
 
 const CONCEPT2_API_BASE = "https://log.concept2.com";
 const DEFAULT_REDIRECT_URI = "https://localhost:9876/callback";
 
-interface Concept2Result {
-  id: number;
-  type: string; // "rower", "skierg", "bikerg"
-  date: string; // "YYYY-MM-DD HH:mm:ss"
-  distance: number; // meters
-  time: number; // tenths of a second
-  time_formatted: string;
-  stroke_rate: number;
-  stroke_count: number;
-  heart_rate?: {
-    average?: number;
-    max?: number;
-    min?: number;
-  };
-  calories_total?: number;
-  drag_factor?: number;
-  weight_class: string;
-  workout_type: string;
-  comments?: string;
-  privacy: string;
-  splits?: Array<{
-    distance: number;
-    time: number;
-    stroke_rate: number;
-    heart_rate?: number;
-  }>;
-}
+const concept2ResultSchema = z.object({
+  id: z.number(),
+  type: z.string(),
+  date: z.string(),
+  distance: z.number(),
+  time: z.number(),
+  time_formatted: z.string(),
+  stroke_rate: z.number(),
+  stroke_count: z.number(),
+  heart_rate: z
+    .object({
+      average: z.number().optional(),
+      max: z.number().optional(),
+      min: z.number().optional(),
+    })
+    .optional(),
+  calories_total: z.number().optional(),
+  drag_factor: z.number().optional(),
+  weight_class: z.string(),
+  workout_type: z.string(),
+  comments: z.string().optional(),
+  privacy: z.string(),
+  splits: z
+    .array(
+      z.object({
+        distance: z.number(),
+        time: z.number(),
+        stroke_rate: z.number(),
+        heart_rate: z.number().optional(),
+      }),
+    )
+    .optional(),
+});
 
-interface Concept2ResultsResponse {
-  data: Concept2Result[];
-  meta: {
-    pagination: {
-      total: number;
-      count: number;
-      per_page: number;
-      current_page: number;
-      total_pages: number;
-    };
-  };
-}
+type Concept2Result = z.infer<typeof concept2ResultSchema>;
+
+const concept2ResultsResponseSchema = z.object({
+  data: z.array(concept2ResultSchema),
+  meta: z.object({
+    pagination: z.object({
+      total: z.number(),
+      count: z.number(),
+      per_page: z.number(),
+      current_page: z.number(),
+      total_pages: z.number(),
+    }),
+  }),
+});
 
 // ============================================================
 // Parsed types
@@ -133,6 +143,30 @@ export function concept2OAuthConfig(): OAuthConfig | null {
 }
 
 // ============================================================
+// Concept2 API client
+// ============================================================
+
+export class Concept2Client extends ProviderHttpClient {
+  constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
+    super(accessToken, CONCEPT2_API_BASE, fetchFn);
+  }
+
+  protected override getHeaders(): Record<string, string> {
+    return { ...super.getHeaders(), Accept: "application/json" };
+  }
+
+  async getResults(
+    sinceDate: string,
+    page = 1,
+  ): Promise<z.infer<typeof concept2ResultsResponseSchema>> {
+    return this.get(
+      `/api/users/me/results?from=${sinceDate}&page=${page}`,
+      concept2ResultsResponseSchema,
+    );
+  }
+}
+
+// ============================================================
 // Provider implementation
 // ============================================================
 
@@ -179,10 +213,10 @@ export class Concept2Provider implements SyncProvider {
 
     await ensureProvider(db, this.id, this.name, CONCEPT2_API_BASE);
 
-    let accessToken: string;
+    let client: Concept2Client;
     try {
       const tokens = await this.resolveTokens(db);
-      accessToken = tokens.accessToken;
+      client = new Concept2Client(tokens.accessToken, this.fetchFn);
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
@@ -196,20 +230,7 @@ export class Concept2Provider implements SyncProvider {
         const sinceDate = since.toISOString().slice(0, 10);
 
         while (page <= totalPages) {
-          const url = `${CONCEPT2_API_BASE}/api/users/me/results?from=${sinceDate}&page=${page}`;
-          const response = await this.fetchFn(url, {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              Accept: "application/json",
-            },
-          });
-
-          if (!response.ok) {
-            const text = await response.text();
-            throw new Error(`Concept2 API error (${response.status}): ${text}`);
-          }
-
-          const data: Concept2ResultsResponse = await response.json();
+          const data = await client.getResults(sinceDate, page);
           totalPages = data.meta.pagination.total_pages;
 
           for (const raw of data.data) {

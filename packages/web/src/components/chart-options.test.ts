@@ -291,6 +291,7 @@ describe("SleepAnalyticsChart option builder", () => {
     {
       date: "2026-03-10",
       durationMinutes: 450,
+      sleepMinutes: 414,
       deepPct: 18,
       remPct: 22,
       lightPct: 52,
@@ -301,6 +302,7 @@ describe("SleepAnalyticsChart option builder", () => {
     {
       date: "2026-03-11",
       durationMinutes: 430,
+      sleepMinutes: 391,
       deepPct: 16,
       remPct: 24,
       lightPct: 51,

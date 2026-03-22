@@ -1,6 +1,6 @@
-import { computeReadinessScore, type ReadinessComponents } from "@dofek/recovery/readiness";
+import { type ReadinessComponents, ReadinessScore } from "@dofek/recovery/readiness";
 import { computeSleepConsistencyScore } from "@dofek/recovery/sleep-consistency";
-import { rawLoadToStrain, zScoreToRecoveryScore } from "@dofek/scoring/scoring";
+import { StrainScore, zScoreToRecoveryScore } from "@dofek/scoring/scoring";
 import { selectRecentDailyLoad } from "@dofek/training/training";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
@@ -35,7 +35,10 @@ export interface WorkloadRatioResult {
 
 export interface SleepNightlyRow {
   date: string;
+  /** Time in bed (includes awake time). Use for stage-percentage math. */
   durationMinutes: number;
+  /** Actual time asleep (deep + REM + light). Use for display and sleep debt. */
+  sleepMinutes: number;
   deepPct: number;
   remPct: number;
   lightPct: number;
@@ -263,7 +266,7 @@ export const recoveryRouter = router({
         return {
           date: row.date,
           dailyLoad,
-          strain: rawLoadToStrain(dailyLoad),
+          strain: StrainScore.fromRawLoad(dailyLoad).value,
           acuteLoad: Math.round(Number(row.acute_load) * 10) / 10,
           chronicLoad: Math.round(Number(row.chronic_load) * 10) / 10,
           workloadRatio:
@@ -289,6 +292,7 @@ export const recoveryRouter = router({
       const sleepRowSchema = z.object({
         date: dateStringSchema,
         duration_minutes: z.coerce.number(),
+        sleep_minutes: z.coerce.number(),
         deep_pct: z.coerce.number(),
         rem_pct: z.coerce.number(),
         light_pct: z.coerce.number(),
@@ -303,6 +307,14 @@ export const recoveryRouter = router({
               SELECT
                 started_at::date AS date,
                 duration_minutes,
+                -- Actual time asleep: for Apple Health, duration = in-bed time,
+                -- so derive sleep time from stages. Other providers already exclude awake.
+                CASE
+                  WHEN provider_id = 'apple_health'
+                    AND (deep_minutes IS NOT NULL OR rem_minutes IS NOT NULL OR light_minutes IS NOT NULL)
+                    THEN COALESCE(deep_minutes, 0) + COALESCE(rem_minutes, 0) + COALESCE(light_minutes, 0)
+                  ELSE duration_minutes
+                END AS sleep_minutes,
                 deep_minutes,
                 rem_minutes,
                 light_minutes,
@@ -321,12 +333,13 @@ export const recoveryRouter = router({
             SELECT
               date::text AS date,
               duration_minutes,
+              sleep_minutes,
               deep_pct,
               rem_pct,
               light_pct,
               awake_pct,
               efficiency_pct AS efficiency,
-              AVG(duration_minutes) OVER (ORDER BY date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS rolling_avg_duration
+              AVG(sleep_minutes) OVER (ORDER BY date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS rolling_avg_duration
             FROM nightly
             ORDER BY date ASC`,
       );
@@ -334,6 +347,7 @@ export const recoveryRouter = router({
       const nightly = rows.map((row) => ({
         date: row.date,
         durationMinutes: Number(row.duration_minutes),
+        sleepMinutes: Number(row.sleep_minutes),
         deepPct: Math.round(Number(row.deep_pct) * 10) / 10,
         remPct: Math.round(Number(row.rem_pct) * 10) / 10,
         lightPct: Math.round(Number(row.light_pct) * 10) / 10,
@@ -345,13 +359,13 @@ export const recoveryRouter = router({
             : null,
       }));
 
-      // Compute 14-day sleep debt vs personalized target
+      // Compute 14-day sleep debt vs personalized target (using actual sleep time)
       const storedParams = await loadPersonalizedParams(ctx.db, ctx.userId);
       const effective = getEffectiveParams(storedParams);
       const last14 = nightly.slice(-14);
       const targetMinutes = effective.sleepTarget.minutes;
       const sleepDebt = last14.reduce((debt, night) => {
-        return debt + (targetMinutes - night.durationMinutes);
+        return debt + (targetMinutes - night.sleepMinutes);
       }, 0);
 
       return {
@@ -497,10 +511,12 @@ export const recoveryRouter = router({
           respiratoryRateScore: Math.round(respiratoryRateScore),
         };
 
+        const readiness = new ReadinessScore(components, weights);
+
         results.push({
           date: metrics.date,
-          readinessScore: computeReadinessScore(components, weights),
-          components,
+          readinessScore: readiness.score,
+          components: readiness.components,
         });
       }
 

@@ -1,8 +1,7 @@
 import type { VerticalAscentRow } from "dofek-server/types";
 import { chartColors, dofekAxis, dofekGrid, dofekTooltip } from "../lib/chartTheme.ts";
 import { formatNumber } from "../lib/format.ts";
-import { useUnitSystem } from "../lib/unitContext.ts";
-import { convertElevation, elevationLabel } from "../lib/units.ts";
+import { useUnitConverter } from "../lib/unitContext.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
 interface VerticalAscentChartProps {
@@ -11,7 +10,7 @@ interface VerticalAscentChartProps {
 }
 
 export function VerticalAscentChart({ data, loading }: VerticalAscentChartProps) {
-  const { unitSystem } = useUnitSystem();
+  const units = useUnitConverter();
 
   if (loading) {
     return <DofekChart option={{}} loading={true} height={300} />;
@@ -29,15 +28,15 @@ export function VerticalAscentChart({ data, loading }: VerticalAscentChartProps)
   }
 
   // Scale bubble size by elevation gain
-  const maxGain = Math.max(...data.map((d) => convertElevation(d.elevationGainMeters, unitSystem)));
+  const maxGain = Math.max(...data.map((d) => units.convertElevation(d.elevationGainMeters)));
   const minSize = 8;
   const maxSize = 40;
 
-  const eLabel = elevationLabel(unitSystem);
+  const eLabel = units.elevationLabel;
   const scatterData = data.map((d) => ({
-    value: [d.date, convertElevation(d.verticalAscentRate, unitSystem)],
+    value: [d.date, units.convertElevation(d.verticalAscentRate)],
     name: d.activityName,
-    elevationGain: convertElevation(d.elevationGainMeters, unitSystem),
+    elevationGain: units.convertElevation(d.elevationGainMeters),
     symbolSize:
       maxGain > 0 ? minSize + (d.elevationGainMeters / maxGain) * (maxSize - minSize) : minSize,
   }));

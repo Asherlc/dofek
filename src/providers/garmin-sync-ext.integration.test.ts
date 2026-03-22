@@ -377,24 +377,12 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
-    // No GARMIN_CLIENT_ID set — forces internal API mode
-    delete process.env.GARMIN_CLIENT_ID;
-    delete process.env.GARMIN_CLIENT_SECRET;
-    process.env.GARMIN_USERNAME = "test@garmin.com";
-    process.env.GARMIN_PASSWORD = "testpass";
     ctx = await setupTestDatabase();
-    await ensureProvider(
-      ctx.db,
-      "garmin",
-      "Garmin Connect",
-      "https://apis.garmin.com/wellness-api/rest",
-    );
+    await ensureProvider(ctx.db, "garmin", "Garmin Connect");
   }, 60_000);
 
   afterAll(async () => {
     if (ctx) await ctx.cleanup();
-    delete process.env.GARMIN_USERNAME;
-    delete process.env.GARMIN_PASSWORD;
   });
 
   it("syncs activities via Connect internal API with detail streams", async () => {

@@ -21,7 +21,7 @@ import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { formatDurationRange, formatNumber } from "@dofek/format/format";
 import { HEART_RATE_ZONE_COLORS } from "@dofek/zones/zones";
 import { trpc } from "../../lib/trpc";
-import { convertDistance, convertElevation, convertSpeed, distanceLabel, elevationLabel, speedLabel, useUnitSystem } from "../../lib/units";
+import { useUnitConverter } from "../../lib/units";
 import { colors } from "../../theme";
 
 const CHART_WIDTH = 340;
@@ -425,7 +425,7 @@ const statsStyles = StyleSheet.create({
 
 export default function ActivityDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const unitSystem = useUnitSystem();
+  const units = useUnitConverter();
 
   const detail = trpc.activity.byId.useQuery(
     { id: id ?? "" },
@@ -477,13 +477,13 @@ export default function ActivityDetailScreen() {
   if (activity.totalDistance != null) {
     stats.push({
       label: "Distance",
-      value: `${formatNumber(convertDistance(activity.totalDistance / 1000, unitSystem))} ${distanceLabel(unitSystem)}`,
+      value: `${formatNumber(units.convertDistance(activity.totalDistance / 1000))} ${units.distanceLabel}`,
     });
   }
   if (activity.elevationGain != null) {
     stats.push({
       label: "Elevation Gain",
-      value: `${Math.round(convertElevation(activity.elevationGain, unitSystem))} ${elevationLabel(unitSystem)}`,
+      value: `${Math.round(units.convertElevation(activity.elevationGain))} ${units.elevationLabel}`,
     });
   }
   if (activity.avgHr != null) {
@@ -513,7 +513,7 @@ export default function ActivityDetailScreen() {
   if (activity.avgSpeed != null) {
     stats.push({
       label: "Avg Speed",
-      value: `${formatNumber(convertSpeed(activity.avgSpeed * 3.6, unitSystem))} ${speedLabel(unitSystem)}`,
+      value: `${formatNumber(units.convertSpeed(activity.avgSpeed * 3.6))} ${units.speedLabel}`,
     });
   }
   if (activity.avgCadence != null) {
@@ -576,10 +576,10 @@ export default function ActivityDetailScreen() {
       {/* Elevation Profile */}
       {hasAltitude && (
         <AreaChart
-          data={points.map((p) => ({ value: p.altitude != null ? convertElevation(p.altitude, unitSystem) : null }))}
+          data={points.map((p) => ({ value: p.altitude != null ? units.convertElevation(p.altitude) : null }))}
           color={CHART_COLORS.altitude}
           label="Elevation Profile"
-          unit={elevationLabel(unitSystem)}
+          unit={units.elevationLabel}
         />
       )}
 

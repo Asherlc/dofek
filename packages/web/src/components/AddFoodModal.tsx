@@ -1,6 +1,6 @@
 import { MEAL_OPTIONS, type MealType } from "@dofek/nutrition/meal";
-import { useEffect, useRef, useState } from "react";
-import { type FoodDatabaseResult, searchFoods } from "../lib/food-database.ts";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { type FoodDatabaseResult, OpenFoodFactsClient } from "../lib/food-database.ts";
 import { trpc } from "../lib/trpc.ts";
 
 export type { MealType } from "@dofek/nutrition/meal";
@@ -77,6 +77,7 @@ export function AddFoodModal({
   const skipNextSearchRef = useRef(false);
   const openFoodFactsRequestCounterRef = useRef(0);
   const browserLocale = typeof navigator !== "undefined" ? navigator.language : "en-US";
+  const foodClient = useMemo(() => new OpenFoodFactsClient(browserLocale), [browserLocale]);
 
   const trpcUtils = trpc.useUtils();
 
@@ -178,7 +179,8 @@ export function AddFoodModal({
     setOpenFoodFactsSearched(true);
     setOpenFoodFactsSectionOpen(true);
 
-    searchFoods(query, 8, browserLocale)
+    foodClient
+      .searchFoods(query, 8)
       .then((results) => {
         if (openFoodFactsRequestCounterRef.current !== requestId) return;
         setOpenFoodFactsResults(results);

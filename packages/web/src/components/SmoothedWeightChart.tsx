@@ -9,8 +9,7 @@ import {
   dofekTooltip,
 } from "../lib/chartTheme.ts";
 import { formatNumber } from "../lib/format.ts";
-import { useUnitSystem } from "../lib/unitContext.ts";
-import { convertWeight, weightLabel } from "../lib/units.ts";
+import { useUnitConverter } from "../lib/unitContext.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
 interface SmoothedWeightChartProps {
@@ -19,7 +18,7 @@ interface SmoothedWeightChartProps {
 }
 
 export function SmoothedWeightChart({ data, loading }: SmoothedWeightChartProps) {
-  const { unitSystem } = useUnitSystem();
+  const units = useUnitConverter();
 
   if (loading) {
     return <DofekChart option={{}} loading={true} height={250} />;
@@ -39,9 +38,9 @@ export function SmoothedWeightChart({ data, loading }: SmoothedWeightChartProps)
     legend: dofekLegend(true),
     xAxis: dofekAxis.time(),
     yAxis: [
-      dofekAxis.value({ name: weightLabel(unitSystem), min: "dataMin" }),
+      dofekAxis.value({ name: units.weightLabel, min: "dataMin" }),
       dofekAxis.value({
-        name: `${weightLabel(unitSystem)}/week`,
+        name: `${units.weightLabel}/week`,
         position: "right",
         showSplitLine: false,
       }),
@@ -49,7 +48,7 @@ export function SmoothedWeightChart({ data, loading }: SmoothedWeightChartProps)
     series: [
       dofekSeries.scatter(
         "Raw Weight",
-        data.map((d) => [d.date, convertWeight(d.rawWeight, unitSystem)]),
+        data.map((d) => [d.date, units.convertWeight(d.rawWeight)]),
         {
           color: chartThemeColors.axisLabel,
           symbolSize: 4,
@@ -59,7 +58,7 @@ export function SmoothedWeightChart({ data, loading }: SmoothedWeightChartProps)
       {
         ...dofekSeries.line(
           "Trend",
-          data.map((d) => [d.date, convertWeight(d.smoothedWeight, unitSystem)]),
+          data.map((d) => [d.date, units.convertWeight(d.smoothedWeight)]),
           {
             color: chartColors.teal,
             width: 3,
@@ -71,7 +70,7 @@ export function SmoothedWeightChart({ data, loading }: SmoothedWeightChartProps)
           "Weekly Change",
           data
             .filter((d) => d.weeklyChange != null)
-            .map((d) => [d.date, convertWeight(d.weeklyChange ?? 0, unitSystem)]),
+            .map((d) => [d.date, units.convertWeight(d.weeklyChange ?? 0)]),
           { yAxisIndex: 1, barWidth: "60%" },
         ),
         itemStyle: {
@@ -90,7 +89,7 @@ export function SmoothedWeightChart({ data, loading }: SmoothedWeightChartProps)
             className={`text-lg font-semibold ${latestWeeklyChange > 0 ? "text-green-400" : latestWeeklyChange < 0 ? "text-red-400" : "text-muted"}`}
           >
             {latestWeeklyChange > 0 ? "+" : ""}
-            {formatNumber(convertWeight(latestWeeklyChange, unitSystem))} {weightLabel(unitSystem)}
+            {formatNumber(units.convertWeight(latestWeeklyChange))} {units.weightLabel}
             /week
           </span>
         </div>

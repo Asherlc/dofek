@@ -8,8 +8,7 @@ import {
   dofekTooltip,
 } from "../lib/chartTheme.ts";
 import { formatNumber } from "../lib/format.ts";
-import { useUnitSystem } from "../lib/unitContext.ts";
-import { convertWeight, weightLabel } from "../lib/units.ts";
+import { useUnitConverter } from "../lib/unitContext.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
 interface BodyRecompositionChartProps {
@@ -18,7 +17,7 @@ interface BodyRecompositionChartProps {
 }
 
 export function BodyRecompositionChart({ data, loading }: BodyRecompositionChartProps) {
-  const { unitSystem } = useUnitSystem();
+  const units = useUnitConverter();
 
   if (data.length === 0) {
     return (
@@ -45,16 +44,16 @@ export function BodyRecompositionChart({ data, loading }: BodyRecompositionChart
     tooltip: dofekTooltip(),
     legend: dofekLegend(true),
     xAxis: dofekAxis.time(),
-    yAxis: dofekAxis.value({ name: weightLabel(unitSystem) }),
+    yAxis: dofekAxis.value({ name: units.weightLabel }),
     series: [
       dofekSeries.line(
         "Fat Mass (smoothed)",
-        data.map((d) => [d.date, convertWeight(d.smoothedFatMass, unitSystem)]),
+        data.map((d) => [d.date, units.convertWeight(d.smoothedFatMass)]),
         { color: chartColors.orange, areaStyle: { opacity: 0.1 } },
       ),
       dofekSeries.line(
         "Lean Mass (smoothed)",
-        data.map((d) => [d.date, convertWeight(d.smoothedLeanMass, unitSystem)]),
+        data.map((d) => [d.date, units.convertWeight(d.smoothedLeanMass)]),
         { color: chartColors.blue, areaStyle: { opacity: 0.1 } },
       ),
     ],
@@ -65,11 +64,11 @@ export function BodyRecompositionChart({ data, loading }: BodyRecompositionChart
       <div className="flex gap-4 text-sm">
         <span className={`font-medium ${fatChange <= 0 ? "text-green-400" : "text-red-400"}`}>
           Fat: {fatChange > 0 ? "+" : ""}
-          {formatNumber(convertWeight(fatChange, unitSystem))} {weightLabel(unitSystem)}
+          {formatNumber(units.convertWeight(fatChange))} {units.weightLabel}
         </span>
         <span className={`font-medium ${leanChange >= 0 ? "text-green-400" : "text-red-400"}`}>
           Lean: {leanChange > 0 ? "+" : ""}
-          {formatNumber(convertWeight(leanChange, unitSystem))} {weightLabel(unitSystem)}
+          {formatNumber(units.convertWeight(leanChange))} {units.weightLabel}
         </span>
       </div>
       <DofekChart option={option} loading={loading} />

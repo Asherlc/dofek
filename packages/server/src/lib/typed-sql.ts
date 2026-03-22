@@ -28,7 +28,7 @@ export async function executeWithSchema<T extends z.ZodType>(
  * and strings on others (macOS). This schema normalizes both to YYYY-MM-DD.
  */
 export const dateStringSchema = z
-  .union([z.string(), z.date()])
+  .union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD date string"), z.date()])
   .transform((value) => (value instanceof Date ? value.toISOString().slice(0, 10) : value));
 
 /**

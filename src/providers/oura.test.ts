@@ -1015,9 +1015,7 @@ describe("OuraClient", () => {
     };
 
     const client = new OuraClient("bad-token", mockFetch);
-    await expect(client.getSleep("2026-03-01", "2026-03-02")).rejects.toThrow(
-      "Oura API error (401)",
-    );
+    await expect(client.getSleep("2026-03-01", "2026-03-02")).rejects.toThrow("API error 401");
   });
 
   it("fetches sleep data with correct URL", async () => {
@@ -1120,9 +1118,7 @@ describe("OuraClient", () => {
     };
 
     const client = new OuraClient("token", mockFetch);
-    await expect(client.getDailySpO2("2026-03-01", "2026-03-02")).rejects.toThrow(
-      "Oura API error (403)",
-    );
+    await expect(client.getDailySpO2("2026-03-01", "2026-03-02")).rejects.toThrow("API error 403");
   });
 
   it("fetches VO2 max data successfully", async () => {
@@ -1164,9 +1160,7 @@ describe("OuraClient", () => {
     };
 
     const client = new OuraClient("token", mockFetch);
-    await expect(client.getVO2Max("2026-03-01", "2026-03-02")).rejects.toThrow(
-      "Oura API error (500)",
-    );
+    await expect(client.getVO2Max("2026-03-01", "2026-03-02")).rejects.toThrow("API error 500");
   });
 
   it("fetches workouts with correct URL", async () => {

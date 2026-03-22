@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { z } from "zod";
-import { AppHeader } from "../components/AppHeader.tsx";
 import { BodyRecompositionChart } from "../components/BodyRecompositionChart.tsx";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import {
@@ -10,19 +9,16 @@ import {
 } from "../components/CorrelationCard.tsx";
 import { HealthStatusBar } from "../components/HealthStatusBar.tsx";
 import { HrvBaselineChart } from "../components/HrvBaselineChart.tsx";
+import { PageLayout } from "../components/PageLayout.tsx";
+import { PageSection } from "../components/PageSection.tsx";
 import { SmoothedWeightChart } from "../components/SmoothedWeightChart.tsx";
 import { StressChart } from "../components/StressChart.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { TimeSeriesChart } from "../components/TimeSeriesChart.tsx";
 import { chartColors } from "../lib/chartTheme.ts";
 import { trpc } from "../lib/trpc.ts";
-import { useUnitSystem } from "../lib/unitContext.ts";
-import {
-  convertTemperature,
-  scaleTemperatureStddev,
-  temperatureLabel,
-  type UnitSystem,
-} from "../lib/units.ts";
+import { useUnitConverter } from "../lib/unitContext.ts";
+import type { UnitConverter } from "../lib/units.ts";
 import { assertRows } from "../lib/utils.ts";
 
 const trendRowSchema = z.object({
@@ -70,13 +66,13 @@ function isBodyInsight(metric: string): boolean {
 
 function buildSkinTempSeries(
   metrics: Array<{ date: string; skin_temp_c: number | null }>,
-  unitSystem: UnitSystem,
+  units: UnitConverter,
 ) {
   return {
     name: "Skin Temp",
     data: metrics.map((d): [string, number | null] => [
       d.date,
-      d.skin_temp_c != null ? convertTemperature(d.skin_temp_c, unitSystem) : null,
+      d.skin_temp_c != null ? units.convertTemperature(d.skin_temp_c) : null,
     ]),
     color: chartColors.amber,
     yAxisIndex: 1 as const,
@@ -84,7 +80,7 @@ function buildSkinTempSeries(
 }
 
 export function BodyPage() {
-  const { unitSystem } = useUnitSystem();
+  const units = useUnitConverter();
   const [days, setDays] = useState(30);
 
   const trends = trpc.dailyMetrics.trends.useQuery({ days });
@@ -111,10 +107,7 @@ export function BodyPage() {
     [metrics],
   );
 
-  const skinTempSeries = useMemo(
-    () => buildSkinTempSeries(metrics, unitSystem),
-    [metrics, unitSystem],
-  );
+  const skinTempSeries = useMemo(() => buildSkinTempSeries(metrics, units), [metrics, units]);
 
   const healthMetrics = useMemo(() => {
     if (!trendData) return [];
@@ -144,20 +137,20 @@ export function BodyPage() {
       },
       trendData.latest_skin_temp != null && {
         label: "Skin Temp",
-        value: convertTemperature(trendData.latest_skin_temp, unitSystem),
+        value: units.convertTemperature(trendData.latest_skin_temp),
         avg:
           trendData.avg_skin_temp != null
-            ? convertTemperature(trendData.avg_skin_temp, unitSystem)
+            ? units.convertTemperature(trendData.avg_skin_temp)
             : null,
         stddev:
           trendData.stddev_skin_temp != null
-            ? scaleTemperatureStddev(trendData.stddev_skin_temp, unitSystem)
+            ? units.scaleTemperatureStddev(trendData.stddev_skin_temp)
             : null,
-        unit: temperatureLabel(unitSystem),
+        unit: units.temperatureLabel,
       },
     ];
     return entries.filter((entry): entry is MetricEntry => entry !== false);
-  }, [trendData, unitSystem]);
+  }, [trendData, units]);
 
   const bodyInsights = useMemo(() => {
     const all: Insight[] = insightsQuery.data ?? [];
@@ -176,122 +169,90 @@ export function BodyPage() {
 
   const spo2TempYAxis =
     hasSpO2 && hasSkinTemp
-      ? [{ name: "SpO2 (%)", min: 90 }, { name: temperatureLabel(unitSystem) }]
+      ? [{ name: "SpO2 (%)", min: 90 }, { name: units.temperatureLabel }]
       : hasSpO2
         ? [{ name: "SpO2 (%)", min: 90 }]
-        : [{ name: temperatureLabel(unitSystem) }];
+        : [{ name: units.temperatureLabel }];
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 overflow-x-hidden">
-      <AppHeader>
-        <TimeRangeSelector days={days} onChange={setDays} />
-      </AppHeader>
-      <main className="mx-auto max-w-7xl px-3 sm:px-6 py-4 sm:py-6 space-y-6 sm:space-y-8">
-        <div>
-          <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider">Body</h2>
-          <p className="text-xs text-zinc-600 mt-0.5">
-            Recovery metrics, vitals, and body composition
-          </p>
+    <PageLayout
+      headerChildren={<TimeRangeSelector days={days} onChange={setDays} />}
+      title="Body"
+      subtitle="Recovery metrics, vitals, and body composition"
+    >
+      {/* Health Status Bar */}
+      <HealthStatusBar metrics={healthMetrics} loading={trends.isLoading} />
+
+      {/* HRV & Resting HR */}
+      <PageSection title="Heart Rate Variability & Resting Heart Rate">
+        <HrvBaselineChart data={hrvBaseline.data ?? []} loading={hrvBaseline.isLoading} />
+      </PageSection>
+
+      {/* Stress */}
+      <PageSection title="Stress Monitor">
+        <StressChart data={stressData.data} loading={stressData.isLoading} />
+      </PageSection>
+
+      {/* SpO2 & Skin Temp */}
+      {(hasSpO2 || hasSkinTemp) && (
+        <PageSection title={spo2TempTitle}>
+          <TimeSeriesChart
+            series={[
+              ...(hasSpO2 ? [spo2Series] : []),
+              ...(hasSkinTemp
+                ? [hasSpO2 ? skinTempSeries : { ...skinTempSeries, yAxisIndex: 0 as const }]
+                : []),
+            ]}
+            height={200}
+            yAxis={spo2TempYAxis}
+            loading={dailyMetrics.isLoading}
+          />
+        </PageSection>
+      )}
+
+      {/* Body Composition */}
+      <PageSection title="Body Composition" card={false}>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="card p-2 sm:p-4">
+            <div className="mb-2 flex items-center gap-2">
+              <h4 className="text-xs font-medium text-subtle uppercase">Weight Trend</h4>
+              <ChartDescriptionTooltip description="This chart shows your smoothed body weight trend over time to highlight your underlying direction." />
+            </div>
+            <SmoothedWeightChart
+              data={smoothedWeight.data ?? []}
+              loading={smoothedWeight.isLoading}
+            />
+          </div>
+          <div className="card p-2 sm:p-4">
+            <div className="mb-2 flex items-center gap-2">
+              <h4 className="text-xs font-medium text-subtle uppercase">Recomposition</h4>
+              <ChartDescriptionTooltip description="This chart shows how fat mass and lean mass have changed so you can track body recomposition, not just scale weight." />
+            </div>
+            <BodyRecompositionChart data={bodyRecomp.data ?? []} loading={bodyRecomp.isLoading} />
+          </div>
         </div>
+      </PageSection>
 
-        {/* Health Status Bar */}
-        <HealthStatusBar metrics={healthMetrics} loading={trends.isLoading} />
-
-        {/* HRV & Resting HR */}
-        <section>
-          <h3 className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-3">
-            Heart Rate Variability & Resting Heart Rate
-          </h3>
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
-            <HrvBaselineChart data={hrvBaseline.data ?? []} loading={hrvBaseline.isLoading} />
+      {/* Body Insights */}
+      {insightsQuery.isLoading && (
+        <PageSection title="Body Insights" card={false}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {["b1", "b2"].map((id) => (
+              <CorrelationCardSkeleton key={id} />
+            ))}
           </div>
-        </section>
+        </PageSection>
+      )}
 
-        {/* Stress */}
-        <section>
-          <h3 className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-3">
-            Stress Monitor
-          </h3>
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
-            <StressChart data={stressData.data} loading={stressData.isLoading} />
+      {!insightsQuery.isLoading && bodyInsights.length > 0 && (
+        <PageSection title="Body Insights" card={false}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {bodyInsights.map((insight) => (
+              <CorrelationCard key={insight.id} insight={insight} />
+            ))}
           </div>
-        </section>
-
-        {/* SpO2 & Skin Temp */}
-        {(hasSpO2 || hasSkinTemp) && (
-          <section>
-            <h3 className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-3">
-              {spo2TempTitle}
-            </h3>
-            <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
-              <TimeSeriesChart
-                series={[
-                  ...(hasSpO2 ? [spo2Series] : []),
-                  ...(hasSkinTemp
-                    ? [hasSpO2 ? skinTempSeries : { ...skinTempSeries, yAxisIndex: 0 as const }]
-                    : []),
-                ]}
-                height={200}
-                yAxis={spo2TempYAxis}
-                loading={dailyMetrics.isLoading}
-              />
-            </div>
-          </section>
-        )}
-
-        {/* Body Composition */}
-        <section>
-          <h3 className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-3">
-            Body Composition
-          </h3>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
-              <div className="mb-2 flex items-center gap-2">
-                <h4 className="text-xs font-medium text-zinc-500 uppercase">Weight Trend</h4>
-                <ChartDescriptionTooltip description="This chart shows your smoothed body weight trend over time to highlight your underlying direction." />
-              </div>
-              <SmoothedWeightChart
-                data={smoothedWeight.data ?? []}
-                loading={smoothedWeight.isLoading}
-              />
-            </div>
-            <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 sm:p-4">
-              <div className="mb-2 flex items-center gap-2">
-                <h4 className="text-xs font-medium text-zinc-500 uppercase">Recomposition</h4>
-                <ChartDescriptionTooltip description="This chart shows how fat mass and lean mass have changed so you can track body recomposition, not just scale weight." />
-              </div>
-              <BodyRecompositionChart data={bodyRecomp.data ?? []} loading={bodyRecomp.isLoading} />
-            </div>
-          </div>
-        </section>
-
-        {/* Body Insights */}
-        {insightsQuery.isLoading && (
-          <section>
-            <h3 className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-3">
-              Body Insights
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {["b1", "b2"].map((id) => (
-                <CorrelationCardSkeleton key={id} />
-              ))}
-            </div>
-          </section>
-        )}
-
-        {!insightsQuery.isLoading && bodyInsights.length > 0 && (
-          <section>
-            <h3 className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-3">
-              Body Insights
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {bodyInsights.map((insight) => (
-                <CorrelationCard key={insight.id} insight={insight} />
-              ))}
-            </div>
-          </section>
-        )}
-      </main>
-    </div>
+        </PageSection>
+      )}
+    </PageLayout>
   );
 }

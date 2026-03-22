@@ -3,7 +3,6 @@ import { type ReactNode, useCallback, useMemo, useState } from "react";
 import { z } from "zod";
 import { ActivityList } from "../components/ActivityList.tsx";
 import { AnomalyAlertBanner } from "../components/AnomalyAlertBanner.tsx";
-import { AppHeader } from "../components/AppHeader.tsx";
 import { BodyRecompositionChart } from "../components/BodyRecompositionChart.tsx";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import { CorrelationCard, type Insight } from "../components/CorrelationCard.tsx";
@@ -13,6 +12,7 @@ import { HrvBaselineChart } from "../components/HrvBaselineChart.tsx";
 import { NextWorkoutCard } from "../components/NextWorkoutCard.tsx";
 import { NutritionChart } from "../components/NutritionChart.tsx";
 import { OnboardingWelcome } from "../components/OnboardingWelcome.tsx";
+import { PageLayout } from "../components/PageLayout.tsx";
 import { SleepChart } from "../components/SleepChart.tsx";
 import { SleepNeedCard } from "../components/SleepNeedCard.tsx";
 import { SmoothedWeightChart } from "../components/SmoothedWeightChart.tsx";
@@ -25,13 +25,8 @@ import { useScrollReveal } from "../hooks/useScrollReveal.ts";
 import { chartColors } from "../lib/chartTheme.ts";
 import { useDashboardLayout } from "../lib/dashboardLayoutContext.ts";
 import { trpc } from "../lib/trpc.ts";
-import { useUnitSystem } from "../lib/unitContext.ts";
-import {
-  convertTemperature,
-  scaleTemperatureStddev,
-  temperatureLabel,
-  type UnitSystem,
-} from "../lib/units.ts";
+import { useUnitConverter } from "../lib/unitContext.ts";
+import type { UnitConverter } from "../lib/units.ts";
 import { useOnboarding } from "../lib/useOnboarding.ts";
 import { assertRows } from "../lib/utils.ts";
 
@@ -127,13 +122,13 @@ type DailyMetricRow = z.infer<typeof dailyMetricRowSchema>;
 export function spo2TempSectionConfig(
   hasSpO2: boolean,
   hasSkinTemp: boolean,
-  unitSystem: UnitSystem,
+  units: UnitConverter,
 ): { title: string; subtitle: string; yAxis: { name: string; min?: number }[] } {
   if (hasSpO2 && hasSkinTemp) {
     return {
       title: "SpO2 & Skin Temperature",
       subtitle: "Blood oxygen saturation and wrist skin temperature over time",
-      yAxis: [{ name: "SpO2 (%)", min: 90 }, { name: temperatureLabel(unitSystem) }],
+      yAxis: [{ name: "SpO2 (%)", min: 90 }, { name: units.temperatureLabel }],
     };
   }
   if (hasSpO2) {
@@ -146,16 +141,16 @@ export function spo2TempSectionConfig(
   return {
     title: "Skin Temperature",
     subtitle: "Wrist skin temperature over time",
-    yAxis: [{ name: temperatureLabel(unitSystem) }],
+    yAxis: [{ name: units.temperatureLabel }],
   };
 }
 
-export function buildSkinTempSeries(metrics: DailyMetricRow[], unitSystem: UnitSystem) {
+export function buildSkinTempSeries(metrics: DailyMetricRow[], units: UnitConverter) {
   return {
     name: "Skin Temp",
     data: metrics.map((d): [string, number | null] => [
       d.date,
-      d.skin_temp_c != null ? convertTemperature(d.skin_temp_c, unitSystem) : null,
+      d.skin_temp_c != null ? units.convertTemperature(d.skin_temp_c) : null,
     ]),
     color: chartColors.amber,
     yAxisIndex: 1 as const,
@@ -175,7 +170,7 @@ export const DASHBOARD_SECTION_IDS = new Set([
 ]);
 
 export function Dashboard() {
-  const { unitSystem } = useUnitSystem();
+  const units = useUnitConverter();
   const { layout, toggleCollapsed, toggleHidden, moveSection } = useDashboardLayout();
   const [days, setDaysRaw] = useState(30);
   const [activityPage, setActivityPage] = useState(0);
@@ -260,20 +255,20 @@ export function Dashboard() {
       },
       trendData.latest_skin_temp != null && {
         label: "Skin Temp",
-        value: convertTemperature(trendData.latest_skin_temp, unitSystem),
+        value: units.convertTemperature(trendData.latest_skin_temp),
         avg:
           trendData.avg_skin_temp != null
-            ? convertTemperature(trendData.avg_skin_temp, unitSystem)
+            ? units.convertTemperature(trendData.avg_skin_temp)
             : null,
         stddev:
           trendData.stddev_skin_temp != null
-            ? scaleTemperatureStddev(trendData.stddev_skin_temp, unitSystem)
+            ? units.scaleTemperatureStddev(trendData.stddev_skin_temp)
             : null,
-        unit: temperatureLabel(unitSystem),
+        unit: units.temperatureLabel,
       },
     ];
     return entries.filter((entry): entry is MetricEntry => entry !== false);
-  }, [trendData, unitSystem]);
+  }, [trendData, units]);
 
   const metrics = assertRows(dailyMetrics.data, dailyMetricRowSchema);
 
@@ -290,12 +285,9 @@ export function Dashboard() {
     [metrics],
   );
 
-  const skinTempSeries = useMemo(
-    () => buildSkinTempSeries(metrics, unitSystem),
-    [metrics, unitSystem],
-  );
+  const skinTempSeries = useMemo(() => buildSkinTempSeries(metrics, units), [metrics, units]);
 
-  const spo2TempConfig = spo2TempSectionConfig(hasSpO2, hasSkinTemp, unitSystem);
+  const spo2TempConfig = spo2TempSectionConfig(hasSpO2, hasSkinTemp, units);
 
   const stepsSeries = useMemo(
     () => ({
@@ -557,8 +549,8 @@ export function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-page text-foreground overflow-x-hidden">
-      <AppHeader>
+    <PageLayout
+      headerChildren={
         <div className="flex items-center gap-2 sm:gap-4 shrink-0">
           <p className="text-xs text-subtle hidden sm:block">
             {trendData?.latest_date
@@ -567,38 +559,36 @@ export function Dashboard() {
           </p>
           <TimeRangeSelector days={days} onChange={setDays} />
         </div>
-      </AppHeader>
+      }
+    >
+      {/* Onboarding — shown to new users with no connected providers */}
+      {onboarding.showOnboarding && (
+        <OnboardingWelcome onDismiss={onboarding.dismiss} providers={onboarding.providers} />
+      )}
 
-      <main className="mx-auto max-w-7xl px-3 sm:px-6 py-4 sm:py-6 space-y-6 sm:space-y-8">
-        {/* Onboarding — shown to new users with no connected providers */}
-        {onboarding.showOnboarding && (
-          <OnboardingWelcome onDismiss={onboarding.dismiss} providers={onboarding.providers} />
-        )}
+      {/* Anomaly Alert — always at the top, not reorderable */}
+      <AnomalyAlertBanner
+        anomalies={anomalyCheck.data?.anomalies ?? []}
+        loading={anomalyCheck.isLoading}
+      />
 
-        {/* Anomaly Alert — always at the top, not reorderable */}
-        <AnomalyAlertBanner
-          anomalies={anomalyCheck.data?.anomalies ?? []}
-          loading={anomalyCheck.isLoading}
-        />
+      <section>
+        <h2 className="text-sm font-medium text-muted uppercase tracking-wider mb-1">
+          Detailed Views
+        </h2>
+        <p className="text-xs text-dim mb-3">
+          Deep dives are available in dedicated pages, not on the dashboard.
+        </p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+          <DashboardLink to="/training" label="Training" />
+          <DashboardLink to="/sleep" label="Sleep" />
+          <DashboardLink to="/nutrition" label="Nutrition" />
+          <DashboardLink to="/body" label="Body" />
+        </div>
+      </section>
 
-        <section>
-          <h2 className="text-sm font-medium text-muted uppercase tracking-wider mb-1">
-            Detailed Views
-          </h2>
-          <p className="text-xs text-dim mb-3">
-            Deep dives are available in dedicated pages, not on the dashboard.
-          </p>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-            <DashboardLink to="/training" label="Training" />
-            <DashboardLink to="/sleep" label="Sleep" />
-            <DashboardLink to="/nutrition" label="Nutrition" />
-            <DashboardLink to="/body" label="Body" />
-          </div>
-        </section>
-
-        {orderedElements}
-      </main>
-    </div>
+      {orderedElements}
+    </PageLayout>
   );
 }
 

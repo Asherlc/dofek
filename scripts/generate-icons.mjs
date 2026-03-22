@@ -6,7 +6,7 @@ import sharp from "sharp";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, "..");
 
-const svgPath = resolve(root, "packages/web/public/icon.svg");
+const svgPath = resolve(root, "packages/web/src/public/icon.svg");
 const svg = readFileSync(svgPath);
 
 const targets = [
@@ -18,22 +18,22 @@ const targets = [
   },
   // Web favicon PNG (32x32)
   {
-    path: resolve(root, "packages/web/public/favicon-32.png"),
+    path: resolve(root, "packages/web/src/public/favicon-32.png"),
     size: 32,
   },
   // Web favicon large (192x192 for PWA/Android)
   {
-    path: resolve(root, "packages/web/public/favicon-192.png"),
+    path: resolve(root, "packages/web/src/public/favicon-192.png"),
     size: 192,
   },
   // Apple touch icon (180x180)
   {
-    path: resolve(root, "packages/web/public/apple-touch-icon.png"),
+    path: resolve(root, "packages/web/src/public/apple-touch-icon.png"),
     size: 180,
   },
   // Logo for use in the app (512x512)
   {
-    path: resolve(root, "packages/web/public/logo-512.png"),
+    path: resolve(root, "packages/web/src/public/logo-512.png"),
     size: 512,
   },
 ];

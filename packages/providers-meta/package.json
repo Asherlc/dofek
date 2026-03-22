@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./providers": "./src/providers.ts"
+    "./providers": "./src/providers.ts",
+    "./provider-stats": "./src/provider-stats.ts"
   }
 }

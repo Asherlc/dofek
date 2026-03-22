@@ -1,6 +1,6 @@
 import { StyleSheet, Text, View } from "react-native";
 import { formatDurationRange, formatNumber, parseValidDate } from "@dofek/format/format";
-import { convertDistance, distanceLabel, type UnitSystem } from "../lib/units";
+import { type UnitConverter } from "../lib/units";
 import { colors } from "../theme";
 
 interface ActivityCardProps {
@@ -13,7 +13,7 @@ interface ActivityCardProps {
   avgPower: number | null;
   distanceKm?: number | null;
   calories?: number | null;
-  unitSystem: UnitSystem;
+  units: UnitConverter;
 }
 
 function formatTime(iso: string): string {
@@ -58,7 +58,7 @@ export function ActivityCard({
   avgPower,
   distanceKm,
   calories,
-  unitSystem,
+  units,
 }: ActivityCardProps) {
   return (
     <View style={styles.card}>
@@ -79,9 +79,9 @@ export function ActivityCard({
       <View style={styles.stats}>
         {distanceKm != null && distanceKm > 0 && (
           <Stat
-            value={formatNumber(convertDistance(distanceKm, unitSystem), 2)}
+            value={formatNumber(units.convertDistance(distanceKm), 2)}
             label="Distance"
-            unit={distanceLabel(unitSystem)}
+            unit={units.distanceLabel}
           />
         )}
         {calories != null && calories > 0 && (

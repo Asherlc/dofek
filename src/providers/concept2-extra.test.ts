@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ZodError } from "zod";
 import {
+  Concept2Client,
   Concept2Provider,
   concept2OAuthConfig,
   mapConcept2Type,
@@ -206,5 +208,94 @@ describe("Concept2Provider", () => {
     const result = await new Concept2Provider().sync(mockDb, new Date("2026-01-01"));
     expect(result.provider).toBe("concept2");
     expect(result.errors.length).toBeGreaterThan(0);
+  });
+});
+
+describe("Concept2Client", () => {
+  it("adds Accept: application/json header", async () => {
+    let capturedHeaders: Record<string, string> = {};
+    const mockFetch: typeof globalThis.fetch = async (
+      _input: RequestInfo | URL,
+      init?: RequestInit,
+    ): Promise<Response> => {
+      capturedHeaders = Object.fromEntries(Object.entries(init?.headers ?? {}));
+      return Response.json({
+        data: [],
+        meta: { pagination: { total: 0, count: 0, per_page: 50, current_page: 1, total_pages: 1 } },
+      });
+    };
+
+    const client = new Concept2Client("test-token", mockFetch);
+    await client.getResults("2026-03-01");
+
+    expect(capturedHeaders.Authorization).toBe("Bearer test-token");
+    expect(capturedHeaders.Accept).toBe("application/json");
+  });
+
+  it("fetches results with correct URL", async () => {
+    let capturedUrl = "";
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
+      capturedUrl = input.toString();
+      return Response.json({
+        data: [],
+        meta: { pagination: { total: 0, count: 0, per_page: 50, current_page: 1, total_pages: 1 } },
+      });
+    };
+
+    const client = new Concept2Client("token", mockFetch);
+    await client.getResults("2026-03-01", 2);
+
+    expect(capturedUrl).toContain("/api/users/me/results");
+    expect(capturedUrl).toContain("from=2026-03-01");
+    expect(capturedUrl).toContain("page=2");
+  });
+
+  it("throws on non-OK response", async () => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response("Unauthorized", { status: 401 });
+    };
+
+    const client = new Concept2Client("bad-token", mockFetch);
+    await expect(client.getResults("2026-03-01")).rejects.toThrow("API error 401");
+  });
+
+  it("rejects invalid response shapes via Zod", async () => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return Response.json({ data: "not-an-array" });
+    };
+
+    const client = new Concept2Client("token", mockFetch);
+    await expect(client.getResults("2026-03-01")).rejects.toThrow(ZodError);
+  });
+
+  it("validates and returns a correct results response", async () => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return Response.json({
+        data: [
+          {
+            id: 12345,
+            type: "rower",
+            date: "2026-03-01 09:00:00",
+            distance: 5000,
+            time: 12000,
+            time_formatted: "20:00.0",
+            stroke_rate: 26,
+            stroke_count: 520,
+            weight_class: "H",
+            workout_type: "FixedDistanceFixedTime",
+            privacy: "public",
+          },
+        ],
+        meta: { pagination: { total: 1, count: 1, per_page: 50, current_page: 1, total_pages: 1 } },
+      });
+    };
+
+    const client = new Concept2Client("token", mockFetch);
+    const result = await client.getResults("2026-03-01");
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]?.id).toBe(12345);
+    expect(result.meta.pagination.total_pages).toBe(1);
   });
 });
