@@ -573,10 +573,10 @@ describe("healthKitSyncRouter", () => {
       const sqlValues = JSON.stringify(insertCall?.[0]);
       // Stage minutes appear as query parameter values in order:
       // deep_minutes, rem_minutes, light_minutes, awake_minutes
-      expect(sqlValues).toContain(",60,");  // deep_minutes = 60
-      expect(sqlValues).toContain(",90,");  // rem_minutes = 90
+      expect(sqlValues).toContain(",60,"); // deep_minutes = 60
+      expect(sqlValues).toContain(",90,"); // rem_minutes = 90
       expect(sqlValues).toContain(",180,"); // light_minutes = 180
-      expect(sqlValues).toContain(",15,");  // awake_minutes = 15
+      expect(sqlValues).toContain(",15,"); // awake_minutes = 15
     });
 
     it("includes duration_minutes and sleep_type in SQL", async () => {
