@@ -17,7 +17,7 @@ import { OnboardingWelcome } from "../../components/OnboardingWelcome";
 import { RecoveryRing } from "../../components/charts/RecoveryRing";
 import { SleepBar } from "../../components/charts/SleepBar";
 import { StrainGauge } from "../../components/charts/StrainGauge";
-import { formatDurationMinutes, formatNumber, formatSleepDebtInline } from "@dofek/format/format";
+import { formatDurationMinutes, formatNumber, formatSleepDebtInline, isToday, isYesterday } from "@dofek/format/format";
 import { readinessLevelColor, scoreColor, scoreLabel, StrainZone, trendColor, trendDirection as computeTrend } from "../../lib/scoring";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
@@ -293,27 +293,34 @@ export default function OverviewScreen() {
           )}
 
           {/* Sleep summary */}
-          {showDetailedSections && lastNight && (
-            <View style={styles.card}>
-              <ChartTitleWithTooltip
-                title="Last Night"
-                description="This sleep stage bar shows how your total sleep was split across deep, REM, light, and awake time."
-                textStyle={styles.cardTitle}
-              />
-              <SleepBar
-                durationMinutes={lastNight.durationMinutes}
-                deepPercentage={lastNight.deepPct}
-                remPercentage={lastNight.remPct}
-                lightPercentage={lastNight.lightPct}
-                awakePercentage={lastNight.awakePct}
-              />
-              {sleepDebt > 0 && (
-                <Text style={styles.sleepDebt}>
-                  {formatSleepDebtInline(sleepDebt)}
-                </Text>
-              )}
-            </View>
-          )}
+          {showDetailedSections && lastNight && (() => {
+            const lastDate = new Date(lastNight.date);
+            const isRecent = isToday(lastDate) || isYesterday(lastDate);
+            const sleepTitle = isRecent
+              ? "Last Night"
+              : lastDate.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+            return (
+              <View style={styles.card}>
+                <ChartTitleWithTooltip
+                  title={sleepTitle}
+                  description="This sleep stage bar shows how your total sleep was split across deep, REM, light, and awake time."
+                  textStyle={styles.cardTitle}
+                />
+                <SleepBar
+                  durationMinutes={lastNight.durationMinutes}
+                  deepPercentage={lastNight.deepPct}
+                  remPercentage={lastNight.remPct}
+                  lightPercentage={lastNight.lightPct}
+                  awakePercentage={lastNight.awakePct}
+                />
+                {sleepDebt > 0 && (
+                  <Text style={styles.sleepDebt}>
+                    {formatSleepDebtInline(sleepDebt)}
+                  </Text>
+                )}
+              </View>
+            );
+          })()}
 
           {/* Key metrics row */}
           <View style={styles.metricsGrid}>

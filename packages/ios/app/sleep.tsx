@@ -5,7 +5,7 @@ import { DaySelector } from "../components/DaySelector";
 import { MetricCard } from "../components/MetricCard";
 import { SleepBar } from "../components/charts/SleepBar";
 import { SparkLine } from "../components/charts/SparkLine";
-import { formatHour, formatSleepDebt } from "@dofek/format/format";
+import { formatHour, formatSleepDebt, isToday, isYesterday } from "@dofek/format/format";
 import { trpc } from "../lib/trpc";
 import type { SleepConsistencyRow, SleepNightlyRow } from "../types/api";
 import { colors } from "../theme";
@@ -55,10 +55,16 @@ export default function SleepScreen() {
       ) : (
         <>
           {/* Last night's sleep */}
-          {lastNight && (
+          {lastNight && (() => {
+            const lastDate = new Date(lastNight.date);
+            const isRecent = isToday(lastDate) || isYesterday(lastDate);
+            const title = isRecent
+              ? "Last Night"
+              : lastDate.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+            return (
             <View style={styles.card}>
               <ChartTitleWithTooltip
-                title="Last Night"
+                title={title}
                 description="This sleep stage bar shows how your most recent night was split across deep, REM, light, and awake time."
                 textStyle={styles.cardTitle}
               />
@@ -76,7 +82,8 @@ export default function SleepScreen() {
                 </Text>
               </View>
             </View>
-          )}
+            );
+          })()}
 
           {/* Sleep debt */}
           <View style={styles.card}>

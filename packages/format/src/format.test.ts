@@ -14,6 +14,7 @@ import {
   formatSleepDebtInline,
   formatTime,
   isToday,
+  isYesterday,
   parseValidDate,
 } from "./format.ts";
 
@@ -211,6 +212,37 @@ describe("isToday", () => {
     const sameDay = new Date();
     sameDay.setMonth(sameDay.getMonth() - 1);
     expect(isToday(sameDay)).toBe(false);
+  });
+});
+
+describe("isYesterday", () => {
+  it("returns true for yesterday", () => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    expect(isYesterday(yesterday)).toBe(true);
+  });
+
+  it("returns false for today", () => {
+    expect(isYesterday(new Date())).toBe(false);
+  });
+
+  it("returns false for two days ago", () => {
+    const twoDaysAgo = new Date();
+    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+    expect(isYesterday(twoDaysAgo)).toBe(false);
+  });
+
+  it("returns false for tomorrow", () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    expect(isYesterday(tomorrow)).toBe(false);
+  });
+
+  it("returns false for same day different year", () => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    yesterday.setFullYear(yesterday.getFullYear() - 1);
+    expect(isYesterday(yesterday)).toBe(false);
   });
 });
 
