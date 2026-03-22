@@ -241,27 +241,43 @@ describe("Router data coverage", () => {
     for (let i = 0; i < 10; i++) {
       const dateOffset = i;
       await testCtx.db.execute(
-        sql`INSERT INTO fitness.food_entry (
+        sql`WITH nd AS (
+              INSERT INTO fitness.nutrition_data (
+                calories, protein_g, carbs_g, fat_g, fiber_g,
+                vitamin_c_mg, calcium_mg, iron_mg
+              ) VALUES (
+                350, 12, 55, 8, 6,
+                15, 200, 4
+              )
+              RETURNING id
+            )
+            INSERT INTO fitness.food_entry (
               user_id, provider_id, date, meal, food_name, food_description,
-              calories, protein_g, carbs_g, fat_g, fiber_g,
-              vitamin_c_mg, calcium_mg, iron_mg, confirmed
+              nutrition_data_id, confirmed
             ) VALUES (
               ${DEFAULT_USER_ID}, 'dofek',
               CURRENT_DATE - ${dateOffset}::int,
               'breakfast', ${`Oatmeal ${i}`}, 'Steel-cut oats with berries',
-              350, 12, 55, 8, 6,
-              15, 200, 4, true
+              (SELECT id FROM nd), true
             )`,
       );
       await testCtx.db.execute(
-        sql`INSERT INTO fitness.food_entry (
+        sql`WITH nd AS (
+              INSERT INTO fitness.nutrition_data (
+                calories, protein_g, carbs_g, fat_g
+              ) VALUES (
+                500, 35, 20, 25
+              )
+              RETURNING id
+            )
+            INSERT INTO fitness.food_entry (
               user_id, provider_id, date, meal, food_name,
-              calories, protein_g, carbs_g, fat_g, confirmed
+              nutrition_data_id, confirmed
             ) VALUES (
               ${DEFAULT_USER_ID}, 'dofek',
               CURRENT_DATE - ${dateOffset}::int,
               'lunch', ${`Chicken Salad ${i}`},
-              500, 35, 20, 25, true
+              (SELECT id FROM nd), true
             )`,
       );
     }
