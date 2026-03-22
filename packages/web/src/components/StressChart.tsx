@@ -1,7 +1,7 @@
 import { StressScore, trendColor } from "@dofek/scoring/scoring";
 import type { StressResult } from "dofek-server/types";
 import { dofekAxis, dofekGrid, dofekLegend, dofekSeries, dofekTooltip } from "../lib/chartTheme.ts";
-import { formatNumber } from "../lib/format.ts";
+import { formatNumber, isToday } from "../lib/format.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
 interface StressChartProps {
@@ -27,6 +27,13 @@ export function StressChart({ data, loading }: StressChartProps) {
   const latest = data.latestScore ?? 0;
   const latestStress = new StressScore(latest);
   const latestColor = latestStress.color;
+  const latestDaily = data.daily[data.daily.length - 1];
+  const latestDateLabel =
+    latestDaily && isToday(new Date(latestDaily.date))
+      ? "Today"
+      : latestDaily
+        ? new Date(latestDaily.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+        : "Latest";
 
   const option = {
     grid: dofekGrid("dualAxis", { top: 50, bottom: 40 }),
@@ -66,7 +73,7 @@ export function StressChart({ data, loading }: StressChartProps) {
         right: 10,
         top: 5,
         style: {
-          text: `Today: ${formatNumber(latest)} ${latestStress.label} ${trendIcon(data.trend)}`,
+          text: `${latestDateLabel}: ${formatNumber(latest)} ${latestStress.label} ${trendIcon(data.trend)}`,
           fill: latestColor,
           fontSize: 13,
           fontWeight: "bold" as const,
@@ -124,12 +131,25 @@ export function StressChart({ data, loading }: StressChartProps) {
               ? "Worsening"
               : "Stable"}
         </span>
-        {data.weekly.length > 0 && (
-          <span className="text-dim text-xs">
-            This week: {formatNumber(data.weekly[data.weekly.length - 1]?.cumulativeStress ?? 0)}{" "}
-            cumulative
-          </span>
-        )}
+        {data.weekly.length > 0 &&
+          (() => {
+            const latestWeek = data.weekly[data.weekly.length - 1];
+            if (!latestWeek) return null;
+            const weekDate = new Date(latestWeek.weekStart);
+            const now = new Date();
+            const startOfThisWeek = new Date(now);
+            startOfThisWeek.setDate(now.getDate() - now.getDay());
+            startOfThisWeek.setHours(0, 0, 0, 0);
+            const isCurrentWeek = weekDate >= startOfThisWeek;
+            const weekLabel = isCurrentWeek
+              ? "This week"
+              : `Week of ${weekDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
+            return (
+              <span className="text-dim text-xs">
+                {weekLabel}: {formatNumber(latestWeek.cumulativeStress ?? 0)} cumulative
+              </span>
+            );
+          })()}
       </div>
       <DofekChart option={option} height={300} />
     </div>

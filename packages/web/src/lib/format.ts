@@ -8,4 +8,5 @@ export {
   formatSigned,
   formatTime,
   isToday,
+  isYesterday,
 } from "@dofek/format/format";

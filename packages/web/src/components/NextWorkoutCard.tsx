@@ -2,6 +2,7 @@ import { chartColors, statusColors } from "@dofek/scoring/colors";
 import { readinessLevelColor } from "@dofek/scoring/scoring";
 import type { NextWorkoutRecommendation } from "dofek-server/types";
 import { useEffect, useState } from "react";
+import { isToday } from "../lib/format.ts";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface NextWorkoutCardProps {
@@ -42,7 +43,11 @@ export function NextWorkoutCard({ data, loading }: NextWorkoutCardProps) {
       <div className="card p-6">
         <div className="flex items-start justify-between gap-3 mb-4">
           <div>
-            <h3 className="text-muted text-sm font-medium mb-1">Today&apos;s Recommendation</h3>
+            <h3 className="text-muted text-sm font-medium mb-1">
+              {isToday(new Date(data.generatedAt))
+                ? "Today\u2019s Recommendation"
+                : `Recommendation from ${new Date(data.generatedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`}
+            </h3>
             <p className="text-2xl font-semibold text-foreground">{data.title}</p>
           </div>
           <span

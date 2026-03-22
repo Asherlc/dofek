@@ -741,9 +741,14 @@ export default function OverviewScreen() {
           )}
 
           {/* Nutrition Summary */}
-          {showDetailedSections && latestNutrition != null && (
+          {showDetailedSections && latestNutrition != null && (() => {
+            const nutritionDate = new Date(`${latestNutrition.date}T00:00:00`);
+            const nutritionTitle = isToday(nutritionDate)
+              ? "Nutrition Today"
+              : `Nutrition — ${nutritionDate.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}`;
+            return (
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>Nutrition Today</Text>
+              <Text style={styles.cardTitle}>{nutritionTitle}</Text>
               <Text style={styles.caloriesValue}>
                 {Number(latestNutrition.calories) > 0
                   ? Math.round(Number(latestNutrition.calories)).toLocaleString()
@@ -771,7 +776,8 @@ export default function OverviewScreen() {
                 />
               </View>
             </View>
-          )}
+            );
+          })()}
 
           {/* Body Weight */}
           {showDetailedSections && latestWeight != null && (
