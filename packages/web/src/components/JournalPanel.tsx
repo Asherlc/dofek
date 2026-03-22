@@ -135,7 +135,11 @@ function DayGroup({
   date,
   entries,
   onDelete,
-}: { date: string; entries: JournalEntry[]; onDelete: (id: string) => void }) {
+}: {
+  date: string;
+  entries: JournalEntry[];
+  onDelete: (id: string) => void;
+}) {
   const dateDisplay = new Date(`${date}T12:00:00`).toLocaleDateString("en-US", {
     weekday: "short",
     month: "short",
@@ -180,7 +184,10 @@ function DayGroup({
 function JournalEntryRow({
   entry,
   onDelete,
-}: { entry: JournalEntry; onDelete: (id: string) => void }) {
+}: {
+  entry: JournalEntry;
+  onDelete: (id: string) => void;
+}) {
   const isManual = entry.provider_id === "dofek";
 
   return (
@@ -198,9 +205,7 @@ function JournalEntryRow({
         )}
       </div>
       <div className="flex items-center gap-2">
-        {!isManual && (
-          <span className="text-xs text-dim">{entry.provider_id}</span>
-        )}
+        {!isManual && <span className="text-xs text-dim">{entry.provider_id}</span>}
         {isManual && (
           <button
             type="button"

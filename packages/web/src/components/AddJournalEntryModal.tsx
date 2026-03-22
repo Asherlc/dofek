@@ -71,16 +71,18 @@ export function AddJournalEntryModal({ isOpen, onClose, onSuccess }: AddJournalE
   if (!isOpen) return null;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Escape") onClose();
-      }}
-    >
-      <div className="bg-surface-solid rounded-xl p-6 w-full max-w-md shadow-xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <button
+        type="button"
+        tabIndex={-1}
+        className="absolute inset-0 bg-black/60"
+        onClick={onClose}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") onClose();
+        }}
+        aria-label="Close modal overlay"
+      />
+      <div className="relative bg-surface-solid rounded-xl p-6 w-full max-w-md shadow-xl">
         <h3 className="text-lg font-semibold text-foreground mb-4">Add Journal Entry</h3>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -98,10 +100,7 @@ export function AddJournalEntryModal({ isOpen, onClose, onSuccess }: AddJournalE
           </div>
 
           <div>
-            <label
-              htmlFor="journal-question"
-              className="block text-sm font-medium text-muted mb-1"
-            >
+            <label htmlFor="journal-question" className="block text-sm font-medium text-muted mb-1">
               Question
             </label>
             <select
