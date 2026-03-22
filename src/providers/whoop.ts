@@ -113,12 +113,17 @@ export interface ParsedSleep {
   efficiencyPct?: number;
   sleepType: "sleep" | "nap";
   isNap: boolean;
+  sleepNeedBaselineMinutes?: number;
+  sleepNeedFromDebtMinutes?: number;
+  sleepNeedFromStrainMinutes?: number;
+  sleepNeedFromNapMinutes?: number;
 }
 
 export function parseSleep(record: WhoopSleepRecord): ParsedSleep {
   const stages = record.score?.stage_summary;
   const totalSleepMilli =
     (stages?.total_in_bed_time_milli ?? 0) - (stages?.total_awake_time_milli ?? 0);
+  const sleepNeeded = record.score?.sleep_needed;
 
   return {
     externalId: String(record.id),
@@ -132,6 +137,16 @@ export function parseSleep(record: WhoopSleepRecord): ParsedSleep {
     efficiencyPct: record.score?.sleep_efficiency_percentage,
     sleepType: record.nap ? "nap" : "sleep",
     isNap: record.nap,
+    sleepNeedBaselineMinutes: sleepNeeded ? milliToMinutes(sleepNeeded.baseline_milli) : undefined,
+    sleepNeedFromDebtMinutes: sleepNeeded
+      ? milliToMinutes(sleepNeeded.need_from_sleep_debt_milli)
+      : undefined,
+    sleepNeedFromStrainMinutes: sleepNeeded
+      ? milliToMinutes(sleepNeeded.need_from_recent_strain_milli)
+      : undefined,
+    sleepNeedFromNapMinutes: sleepNeeded
+      ? milliToMinutes(sleepNeeded.need_from_recent_nap_milli)
+      : undefined,
   };
 }
 
@@ -146,6 +161,7 @@ export interface ParsedWorkout {
   avgHeartRate?: number;
   maxHeartRate?: number;
   totalElevationGain?: number;
+  percentRecorded?: number;
 }
 
 export function parseWorkout(record: WhoopWorkoutRecord): ParsedWorkout {
@@ -172,6 +188,7 @@ export function parseWorkout(record: WhoopWorkoutRecord): ParsedWorkout {
     avgHeartRate: record.average_heart_rate,
     maxHeartRate: record.max_heart_rate,
     totalElevationGain: undefined,
+    percentRecorded: record.percent_recorded,
   };
 }
 
@@ -225,6 +242,8 @@ export interface ParsedStrengthExercise {
   equipment: string | null;
   providerExerciseId: string;
   exerciseIndex: number;
+  muscleGroups: string[];
+  exerciseType: string;
   sets: ParsedStrengthSet[];
 }
 
@@ -233,11 +252,18 @@ export interface ParsedStrengthSet {
   weightKg: number | null;
   reps: number | null;
   durationSeconds: number | null;
+  strapLocation: string | null;
+  strapLocationLaterality: string | null;
 }
 
 export interface ParsedWeightliftingWorkout {
   activityId: string;
   exercises: ParsedStrengthExercise[];
+  rawMskStrainScore: number;
+  scaledMskStrainScore: number;
+  cardioStrainScore: number;
+  cardioStrainContributionPercent: number;
+  mskStrainContributionPercent: number;
 }
 
 export function parseWeightliftingWorkout(
@@ -261,6 +287,8 @@ export function parseWeightliftingWorkout(
           weightKg: set.weight_kg > 0 ? set.weight_kg : null,
           reps: set.number_of_reps > 0 ? set.number_of_reps : null,
           durationSeconds: isTimeFormat && set.time_in_seconds > 0 ? set.time_in_seconds : null,
+          strapLocation: set.strap_location ?? null,
+          strapLocationLaterality: set.strap_location_laterality ?? null,
         });
         setIndex++;
       }
@@ -270,13 +298,23 @@ export function parseWeightliftingWorkout(
         equipment: details.equipment || null,
         providerExerciseId: details.exercise_id,
         exerciseIndex,
+        muscleGroups: details.muscle_groups,
+        exerciseType: details.exercise_type,
         sets,
       });
       exerciseIndex++;
     }
   }
 
-  return { activityId: response.activity_id, exercises };
+  return {
+    activityId: response.activity_id,
+    exercises,
+    rawMskStrainScore: response.raw_msk_strain_score,
+    scaledMskStrainScore: response.scaled_msk_strain_score,
+    cardioStrainScore: response.cardio_strain_score,
+    cardioStrainContributionPercent: response.cardio_strain_contribution_percent,
+    mskStrainContributionPercent: response.msk_strain_contribution_percent,
+  };
 }
 
 // ============================================================
@@ -666,6 +704,10 @@ export class WhoopProvider implements SyncProvider {
                   awakeMinutes: parsed.awakeMinutes,
                   efficiencyPct: parsed.efficiencyPct,
                   sleepType: parsed.sleepType,
+                  sleepNeedBaselineMinutes: parsed.sleepNeedBaselineMinutes,
+                  sleepNeedFromDebtMinutes: parsed.sleepNeedFromDebtMinutes,
+                  sleepNeedFromStrainMinutes: parsed.sleepNeedFromStrainMinutes,
+                  sleepNeedFromNapMinutes: parsed.sleepNeedFromNapMinutes,
                 })
                 .onConflictDoUpdate({
                   target: [sleepSession.providerId, sleepSession.externalId],
@@ -679,6 +721,10 @@ export class WhoopProvider implements SyncProvider {
                     awakeMinutes: parsed.awakeMinutes,
                     efficiencyPct: parsed.efficiencyPct,
                     sleepType: parsed.sleepType,
+                    sleepNeedBaselineMinutes: parsed.sleepNeedBaselineMinutes,
+                    sleepNeedFromDebtMinutes: parsed.sleepNeedFromDebtMinutes,
+                    sleepNeedFromStrainMinutes: parsed.sleepNeedFromStrainMinutes,
+                    sleepNeedFromNapMinutes: parsed.sleepNeedFromNapMinutes,
                   },
                 });
               count++;
@@ -724,6 +770,7 @@ export class WhoopProvider implements SyncProvider {
                 activityType: parsed.activityType,
                 startedAt: parsed.startedAt,
                 endedAt: parsed.endedAt,
+                percentRecorded: parsed.percentRecorded,
                 raw: {
                   strain: workoutRecord.score,
                   avgHeartRate: parsed.avgHeartRate,
@@ -738,6 +785,7 @@ export class WhoopProvider implements SyncProvider {
                   activityType: parsed.activityType,
                   startedAt: parsed.startedAt,
                   endedAt: parsed.endedAt,
+                  percentRecorded: parsed.percentRecorded,
                   raw: {
                     strain: workoutRecord.score,
                     avgHeartRate: parsed.avgHeartRate,
@@ -797,6 +845,11 @@ export class WhoopProvider implements SyncProvider {
                 startedAt,
                 endedAt,
                 name: weightliftingData.name ?? null,
+                rawMskStrainScore: parsed.rawMskStrainScore,
+                scaledMskStrainScore: parsed.scaledMskStrainScore,
+                cardioStrainScore: parsed.cardioStrainScore,
+                cardioStrainContributionPercent: parsed.cardioStrainContributionPercent,
+                mskStrainContributionPercent: parsed.mskStrainContributionPercent,
               })
               .onConflictDoUpdate({
                 target: [strengthWorkout.providerId, strengthWorkout.externalId],
@@ -804,6 +857,11 @@ export class WhoopProvider implements SyncProvider {
                   startedAt,
                   endedAt,
                   name: weightliftingData.name ?? null,
+                  rawMskStrainScore: parsed.rawMskStrainScore,
+                  scaledMskStrainScore: parsed.scaledMskStrainScore,
+                  cardioStrainScore: parsed.cardioStrainScore,
+                  cardioStrainContributionPercent: parsed.cardioStrainContributionPercent,
+                  mskStrainContributionPercent: parsed.mskStrainContributionPercent,
                 },
               })
               .returning({ id: strengthWorkout.id });
@@ -827,6 +885,8 @@ export class WhoopProvider implements SyncProvider {
                   .values({
                     name: ex.exerciseName,
                     equipment: ex.equipment,
+                    muscleGroups: ex.muscleGroups,
+                    exerciseType: ex.exerciseType,
                   })
                   .onConflictDoNothing();
 
@@ -875,6 +935,8 @@ export class WhoopProvider implements SyncProvider {
                   weightKg: set.weightKg,
                   reps: set.reps,
                   durationSeconds: set.durationSeconds,
+                  strapLocation: set.strapLocation,
+                  strapLocationLaterality: set.strapLocationLaterality,
                 });
               }
             }
