@@ -62,7 +62,11 @@ describe("worker module", () => {
     expect(Worker).toHaveBeenCalledWith("sync-queue", expect.any(Function), expect.any(Object));
     expect(Worker).toHaveBeenCalledWith("import-queue", expect.any(Function), expect.any(Object));
     expect(Worker).toHaveBeenCalledWith("export-queue", expect.any(Function), expect.any(Object));
-    expect(Worker).toHaveBeenCalledWith("scheduled-sync-queue", expect.any(Function), expect.any(Object));
+    expect(Worker).toHaveBeenCalledWith(
+      "scheduled-sync-queue",
+      expect.any(Function),
+      expect.any(Object),
+    );
   });
 
   it("registers event handlers on each worker", () => {
