@@ -43,7 +43,7 @@ describe("Cycling Page", () => {
       const body = res.body;
       expect(body).to.have.property("result");
       expect(body.result).to.have.property("data");
-      const data = body.result.data.json;
+      const data = body.result.data;
       expect(data).to.have.property("activities");
       expect(data.activities).to.be.an("array");
     });
