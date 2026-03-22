@@ -544,3 +544,20 @@ export function getNutrientsByCategory(category: NutrientCategory): NutrientDefi
     (first, second) => first.sortOrder - second.sortOrder,
   );
 }
+
+/**
+ * Convert a flat object with legacy camelCase nutrient fields (e.g. { vitaminAMcg: 150, calciumMg: 200 })
+ * into the normalized nutrients map (e.g. { vitamin_a: 150, calcium: 200 }).
+ * Skips null/undefined values. Useful for migrating AI results, provider data, etc.
+ */
+export function legacyFieldsToNutrients(fields: Record<string, unknown>): Record<string, number> {
+  const nutrients: Record<string, number> = {};
+  for (const [fieldName, value] of Object.entries(fields)) {
+    if (value == null || typeof value !== "number") continue;
+    const definition = byLegacyField.get(fieldName);
+    if (definition) {
+      nutrients[definition.id] = value;
+    }
+  }
+  return nutrients;
+}

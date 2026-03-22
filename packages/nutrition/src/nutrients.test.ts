@@ -3,6 +3,7 @@ import {
   getNutrientById,
   getNutrientByLegacyField,
   getNutrientsByCategory,
+  legacyFieldsToNutrients,
   NUTRIENTS,
   type NutrientCategory,
 } from "./nutrients.ts";
@@ -126,5 +127,40 @@ describe("getNutrientsByCategory", () => {
         expect(previous.sortOrder).toBeLessThanOrEqual(current.sortOrder);
       }
     }
+  });
+});
+
+describe("legacyFieldsToNutrients", () => {
+  it("converts legacy camelCase fields to nutrient id map", () => {
+    const result = legacyFieldsToNutrients({
+      vitaminAMcg: 150,
+      calciumMg: 200,
+      omega3Mg: 2500,
+    });
+    expect(result).toEqual({
+      vitamin_a: 150,
+      calcium: 200,
+      omega_3: 2500,
+    });
+  });
+
+  it("skips null, undefined, and non-number values", () => {
+    const result = legacyFieldsToNutrients({
+      vitaminAMcg: null,
+      calciumMg: undefined,
+      ironMg: "not a number",
+      zincMg: 11,
+    });
+    expect(result).toEqual({ zinc: 11 });
+  });
+
+  it("ignores non-nutrient fields", () => {
+    const result = legacyFieldsToNutrients({
+      foodName: "Test",
+      calories: 200,
+      proteinG: 10,
+      vitaminCMg: 60,
+    });
+    expect(result).toEqual({ vitamin_c: 60 });
   });
 });
