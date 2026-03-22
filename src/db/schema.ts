@@ -183,6 +183,37 @@ export const bodyMeasurement = fitness.table(
 );
 
 // ============================================================
+// Body measurement type catalog + junction table
+// ============================================================
+
+export const measurementType = fitness.table("measurement_type", {
+  id: text("id").primaryKey(),
+  displayName: text("display_name").notNull(),
+  unit: text("unit").notNull(),
+  category: text("category").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  isInteger: boolean("is_integer").notNull().default(false),
+});
+
+export const bodyMeasurementValue = fitness.table(
+  "body_measurement_value",
+  {
+    bodyMeasurementId: uuid("body_measurement_id")
+      .notNull()
+      .references(() => bodyMeasurement.id, { onDelete: "cascade" }),
+    measurementTypeId: text("measurement_type_id")
+      .notNull()
+      .references(() => measurementType.id),
+    value: real("value").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.bodyMeasurementId, table.measurementTypeId] }),
+    index("body_measurement_value_entry_idx").on(table.bodyMeasurementId),
+    index("body_measurement_value_type_idx").on(table.measurementTypeId),
+  ],
+);
+
+// ============================================================
 // Strength training
 // ============================================================
 
