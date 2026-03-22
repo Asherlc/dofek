@@ -59,7 +59,9 @@ function AuthGate() {
         },
       },
     };
-    initBackgroundHealthKitSync(syncClient).catch(() => {
+    initBackgroundHealthKitSync(syncClient, () => {
+      queryClient.invalidateQueries();
+    }).catch(() => {
       // Best-effort — don't block the app for background sync setup failures
     });
   }, [user, trpcClient]);

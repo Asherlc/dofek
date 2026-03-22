@@ -15,6 +15,7 @@ vi.mock("../modules/health-kit", () => ({
   querySleepSamples: vi.fn().mockResolvedValue([]),
 }));
 
+import { queryWorkouts } from "../modules/health-kit";
 import {
   initBackgroundHealthKitSync,
   teardownBackgroundHealthKitSync,
@@ -68,6 +69,46 @@ describe("initBackgroundHealthKitSync", () => {
 
     expect(mockSetupBackgroundObservers).not.toHaveBeenCalled();
     expect(mockAddSampleUpdateListener).not.toHaveBeenCalled();
+  });
+
+  it("calls onSyncComplete after successful sync", async () => {
+    vi.useFakeTimers();
+    const client = createMockClient();
+    const onSyncComplete = vi.fn();
+    await initBackgroundHealthKitSync(client, onSyncComplete);
+
+    // Trigger the listener callback
+    const listener = mockAddSampleUpdateListener.mock.calls[0][0];
+    listener();
+
+    // Advance past debounce timer
+    await vi.advanceTimersByTimeAsync(5000);
+    // Let sync promises resolve
+    await vi.runAllTimersAsync();
+
+    expect(onSyncComplete).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
+  it("does not call onSyncComplete on sync failure", async () => {
+    vi.useFakeTimers();
+    // Return workout data so pushWorkouts.mutate gets called
+    vi.mocked(queryWorkouts).mockResolvedValueOnce([
+      { activityType: 1, startDate: "2026-03-22T10:00:00Z", endDate: "2026-03-22T11:00:00Z", duration: 3600, totalEnergyBurned: 500, totalDistance: 10000 },
+    ]);
+    const client = createMockClient();
+    client.healthKitSync.pushWorkouts.mutate.mockRejectedValue(new Error("network"));
+    const onSyncComplete = vi.fn();
+    await initBackgroundHealthKitSync(client, onSyncComplete);
+
+    const listener = mockAddSampleUpdateListener.mock.calls[0][0];
+    listener();
+
+    await vi.advanceTimersByTimeAsync(5000);
+    await vi.runAllTimersAsync();
+
+    expect(onSyncComplete).not.toHaveBeenCalled();
+    vi.useRealTimers();
   });
 
   it("removes previous listener on re-init", async () => {

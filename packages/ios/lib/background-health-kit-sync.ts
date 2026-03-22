@@ -24,7 +24,10 @@ let syncing = false;
  *
  * Call this once after authentication is established.
  */
-export async function initBackgroundHealthKitSync(trpcClient: SyncTrpcClient) {
+export async function initBackgroundHealthKitSync(
+  trpcClient: SyncTrpcClient,
+  onSyncComplete?: () => void,
+) {
   if (!isAvailable()) return;
 
   const status = await getRequestStatus();
@@ -55,6 +58,9 @@ export async function initBackgroundHealthKitSync(trpcClient: SyncTrpcClient) {
         },
         syncRangeDays: 1,
       })
+        .then(() => {
+          onSyncComplete?.();
+        })
         .catch(() => {
           // Best-effort — don't crash the app for background sync failures
         })

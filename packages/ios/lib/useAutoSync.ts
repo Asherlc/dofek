@@ -20,13 +20,13 @@ export function isDataStale(latestDate: string | null | undefined): boolean {
 /**
  * Auto-sync hook for the iOS overview screen.
  * When the app opens and data is stale, triggers:
- * 1. Server-side sync for all API providers
- * 2. HealthKit sync to push local health data to the server
+ * 1. Server-side sync for all API providers (polls until complete, then invalidates cache)
+ * 2. HealthKit sync to push local health data to the server (invalidates cache on completion)
  */
 export function useAutoSync(latestDate: string | null | undefined) {
   const triggered = useRef(false);
   const triggerSync = trpc.sync.triggerSync.useMutation();
-  const trpcClient = trpc.useUtils().client;
+  const trpcUtils = trpc.useUtils();
   const activeSyncs = trpc.sync.activeSyncs.useQuery(undefined, {
     enabled: isDataStale(latestDate),
   });
@@ -39,16 +39,35 @@ export function useAutoSync(latestDate: string | null | undefined) {
 
     triggered.current = true;
 
-    // Trigger API provider sync
-    triggerSync.mutate({ sinceDays: 1 });
+    // Trigger API provider sync and poll until complete
+    triggerSync
+      .mutateAsync({ sinceDays: 1 })
+      .then(async ({ jobId }) => {
+        const pollUntilDone = async (): Promise<void> => {
+          const status = await trpcUtils.sync.syncStatus.fetch(
+            { jobId },
+            { staleTime: 0 },
+          );
+          if (!status || status.status === "done" || status.status === "error") {
+            await trpcUtils.invalidate();
+            return;
+          }
+          await new Promise((r) => setTimeout(r, 2000));
+          return pollUntilDone();
+        };
+        await pollUntilDone();
+      })
+      .catch(() => {
+        // Best-effort — auto-sync is not critical
+      });
 
     // Trigger HealthKit sync (iOS only)
     if (isAvailable()) {
       getRequestStatus()
         .then((status) => {
-          if (status !== "unnecessary") return;
+          if (status !== "unnecessary") return null;
           return syncHealthKitToServer({
-            trpcClient,
+            trpcClient: trpcUtils.client,
             healthKit: {
               queryDailyStatistics,
               queryQuantitySamples,
@@ -58,9 +77,12 @@ export function useAutoSync(latestDate: string | null | undefined) {
             syncRangeDays: 1,
           });
         })
+        .then((result) => {
+          if (result) trpcUtils.invalidate();
+        })
         .catch(() => {
           // Silently fail — auto-sync is best-effort
         });
     }
-  }, [latestDate, activeSyncs.isLoading, activeSyncs.data, triggerSync, trpcClient]);
+  }, [latestDate, activeSyncs.isLoading, activeSyncs.data, triggerSync, trpcUtils]);
 }
