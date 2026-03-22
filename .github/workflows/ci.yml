@@ -271,6 +271,7 @@ jobs:
       - name: Check iOS job results
         run: |
           for result in \
+            "${{ needs.check-ios-changes.result }}" \
             "${{ needs.test-ios.result }}" \
             "${{ needs.build-ios.result }}" \
             "${{ needs.lint-ios-podspecs.result }}" \
