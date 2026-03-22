@@ -263,7 +263,7 @@ jobs:
         timeout-minutes: 20
 
   ios-gate:
-    name: iOS Gate
+    name: iOS Native Gate
     needs: [check-ios-changes, test-ios, build-ios, lint-ios-podspecs, build-ios-native, test-swift]
     if: always()
     runs-on: ubuntu-latest
