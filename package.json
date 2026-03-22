@@ -7,6 +7,7 @@
     "./export": "./src/export.ts",
     "./db": "./src/db/index.ts",
     "./db/schema": "./src/db/schema.ts",
+    "./db/nutrient-columns": "./src/db/nutrient-columns.ts",
     "./db/dedup": "./src/db/dedup.ts",
     "./providers/types": "./src/providers/types.ts",
     "./providers/provider-model": "./src/providers/provider-model.ts",

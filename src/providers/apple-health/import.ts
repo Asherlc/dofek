@@ -8,6 +8,7 @@ import type { SyncDatabase } from "../../db/index.ts";
 import {
   dailyMetrics,
   healthEvent,
+  labPanel,
   labResult,
   metricStream,
   nutritionDaily,
@@ -34,10 +35,10 @@ import {
   upsertWorkoutBatch,
 } from "./db-insertion.ts";
 import {
-  buildPanelMap,
   type FhirDiagnosticReport,
   type FhirObservation,
   fhirResourceSchema,
+  parseFhirDiagnosticReport,
   parseFhirObservation,
 } from "./fhir.ts";
 import type { HealthRecord } from "./records.ts";
@@ -353,6 +354,12 @@ export async function importClinicalRecords(
 ): Promise<{ inserted: number; skipped: number; errors: SyncError[] }> {
   const errors: SyncError[] = [];
 
+  // Delete existing clinical records for this provider so re-imports
+  // don't create duplicate panels (lab_result FK references lab_panel,
+  // so lab_result must be deleted first).
+  await db.delete(labResult).where(eq(labResult.providerId, providerId));
+  await db.delete(labPanel).where(eq(labPanel.providerId, providerId));
+
   // Read all FHIR JSON files from the zip
   const clinicalFiles = await readZipEntries(
     zipPath,
@@ -388,11 +395,60 @@ export async function importClinicalRecords(
     }
   }
 
-  // Build panel map from DiagnosticReports
-  const panelMap = buildPanelMap(diagnosticReports);
-
   // Build source name map from XML stubs
   const sourceNameMap = await buildSourceNameMap(xmlPath);
+
+  // Insert lab panels from DiagnosticReports
+  const panelBatch: (typeof labPanel.$inferInsert)[] = [];
+  const observationToPanelExternalId = new Map<string, string>();
+
+  for (const report of diagnosticReports) {
+    try {
+      const sourceName = "Unknown"; // DiagnosticReports don't have individual file paths
+      const parsed = parseFhirDiagnosticReport(report, sourceName);
+
+      panelBatch.push({
+        providerId,
+        externalId: parsed.externalId,
+        name: parsed.name,
+        loincCode: parsed.loincCode,
+        status: parsed.status,
+        sourceName: parsed.sourceName,
+        recordedAt: parsed.recordedAt,
+        issuedAt: parsed.issuedAt,
+        raw: parsed.raw,
+      });
+
+      for (const obsId of parsed.observationIds) {
+        observationToPanelExternalId.set(obsId, parsed.externalId);
+      }
+    } catch (err) {
+      errors.push({
+        message: `DiagnosticReport ${report.id}: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
+  }
+
+  for (let i = 0; i < panelBatch.length; i += 500) {
+    await db
+      .insert(labPanel)
+      .values(panelBatch.slice(i, i + 500))
+      .onConflictDoNothing();
+  }
+
+  // Query back panel IDs so we can link lab results via FK
+  const panelIdMap = new Map<string, string>();
+  if (panelBatch.length > 0) {
+    const panelRows = await db
+      .select({ id: labPanel.id, externalId: labPanel.externalId })
+      .from(labPanel)
+      .where(eq(labPanel.providerId, providerId));
+    for (const row of panelRows) {
+      if (row.externalId) {
+        panelIdMap.set(row.externalId, row.id);
+      }
+    }
+  }
 
   // Parse and insert Observations
   let inserted = 0;
@@ -417,7 +473,10 @@ export async function importClinicalRecords(
       const normalizedPath = fileName.replace(/^apple_health_export\//, "");
       const sourceName = sourceNameMap.get(normalizedPath) ?? "Unknown";
       const parsed = parseFhirObservation(obs, sourceName);
-      const panelName = panelMap.get(obs.id);
+
+      // Resolve panel FK: obs FHIR ID -> panel external ID -> panel DB UUID
+      const panelExternalId = observationToPanelExternalId.get(obs.id);
+      const panelId = panelExternalId ? panelIdMap.get(panelExternalId) : undefined;
 
       batch.push({
         providerId,
@@ -430,7 +489,7 @@ export async function importClinicalRecords(
         referenceRangeLow: parsed.referenceRangeLow,
         referenceRangeHigh: parsed.referenceRangeHigh,
         referenceRangeText: parsed.referenceRangeText,
-        panelName,
+        panelId,
         status: parsed.status,
         sourceName: parsed.sourceName,
         recordedAt: parsed.recordedAt,

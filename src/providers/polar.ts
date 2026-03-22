@@ -1,8 +1,9 @@
 import { createActivityTypeMapper, POLAR_SPORT_MAP } from "@dofek/training/training";
+import { eq } from "drizzle-orm";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import { activity, dailyMetrics, sleepSession } from "../db/schema.ts";
+import { activity, dailyMetrics, sleepSession, sleepStage } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import type {
@@ -147,6 +148,12 @@ export interface ParsedPolarSleep {
   awakeMinutes: number;
 }
 
+export interface ParsedPolarSleepStage {
+  stage: "deep" | "light" | "rem" | "awake";
+  startedAt: Date;
+  endedAt: Date;
+}
+
 export function parsePolarSleep(sleep: PolarSleep): ParsedPolarSleep {
   const startedAt = new Date(sleep.sleep_start_time);
   const endedAt = new Date(sleep.sleep_end_time);
@@ -166,6 +173,67 @@ export function parsePolarSleep(sleep: PolarSleep): ParsedPolarSleep {
     remMinutes,
     awakeMinutes,
   };
+}
+
+// Polar hypnogram stage codes (from Polar API documentation):
+// 1 = deep, 2 = light, 3 = REM, 4 = interrupted (awake), 5 = awake (at sleep boundary)
+const POLAR_HYPNOGRAM_STAGE_MAP: Record<number, "deep" | "light" | "rem" | "awake"> = {
+  1: "deep",
+  2: "light",
+  3: "rem",
+  4: "awake",
+  5: "awake",
+};
+
+export function parsePolarSleepStages(
+  sleepStartTime: string,
+  hypnogram: Record<string, number>,
+): ParsedPolarSleepStage[] {
+  const startMs = new Date(sleepStartTime).getTime();
+  const entries = Object.entries(hypnogram)
+    .map(([minuteStr, stageValue]) => ({
+      minute: Number(minuteStr),
+      stage: POLAR_HYPNOGRAM_STAGE_MAP[stageValue],
+    }))
+    .filter(
+      (e): e is { minute: number; stage: "deep" | "light" | "rem" | "awake" } => e.stage != null,
+    )
+    .sort((a, b) => a.minute - b.minute);
+
+  const first = entries[0];
+  if (!first) return [];
+
+  // Merge consecutive identical stages into intervals.
+  // Each hypnogram entry represents one minute starting at that offset.
+  const stages: ParsedPolarSleepStage[] = [];
+  let currentStage = first.stage;
+  let currentStart = first.minute;
+  let previousMinute = first.minute;
+
+  for (let i = 1; i < entries.length; i++) {
+    const entry = entries[i];
+    if (!entry) continue;
+    // Start a new interval if stage changed or there's a gap
+    if (entry.stage !== currentStage || entry.minute !== previousMinute + 1) {
+      stages.push({
+        stage: currentStage,
+        startedAt: new Date(startMs + currentStart * 60000),
+        endedAt: new Date(startMs + (previousMinute + 1) * 60000),
+      });
+      currentStage = entry.stage;
+      currentStart = entry.minute;
+    }
+    previousMinute = entry.minute;
+  }
+
+  // Push final interval
+  stages.push({
+    stage: currentStage,
+    startedAt: new Date(startMs + currentStart * 60000),
+    endedAt: new Date(startMs + (previousMinute + 1) * 60000),
+  });
+
+  return stages;
 }
 
 export interface ParsedPolarDailyMetrics {
@@ -448,7 +516,7 @@ export class PolarProvider implements SyncProvider {
             const parsed = parsePolarSleep(sleepRecord);
 
             try {
-              await db
+              const [session] = await db
                 .insert(sleepSession)
                 .values({
                   providerId: this.id,
@@ -472,7 +540,24 @@ export class PolarProvider implements SyncProvider {
                     remMinutes: parsed.remMinutes,
                     awakeMinutes: parsed.awakeMinutes,
                   },
-                });
+                })
+                .returning({ id: sleepSession.id });
+
+              const stages = sleepRecord.hypnogram
+                ? parsePolarSleepStages(sleepRecord.sleep_start_time, sleepRecord.hypnogram)
+                : [];
+              if (session && stages.length > 0) {
+                await db.delete(sleepStage).where(eq(sleepStage.sessionId, session.id));
+                await db.insert(sleepStage).values(
+                  stages.map((s) => ({
+                    sessionId: session.id,
+                    stage: s.stage,
+                    startedAt: s.startedAt,
+                    endedAt: s.endedAt,
+                  })),
+                );
+              }
+
               count++;
             } catch (err) {
               errors.push({

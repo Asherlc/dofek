@@ -1,5 +1,5 @@
 import { zScoreToRecoveryScore } from "@dofek/scoring/scoring";
-import { HEART_RATE_ZONES, ZONE_BOUNDARIES_HRR } from "@dofek/zones/zones";
+import { ZONE_BOUNDARIES_HRR } from "@dofek/zones/zones";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";

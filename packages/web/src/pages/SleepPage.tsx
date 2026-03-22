@@ -5,6 +5,7 @@ import {
   CorrelationCardSkeleton,
   type Insight,
 } from "../components/CorrelationCard.tsx";
+import { Hypnogram } from "../components/Hypnogram.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { PageSection } from "../components/PageSection.tsx";
 import { SleepChart } from "../components/SleepChart.tsx";
@@ -31,6 +32,7 @@ export function SleepPage() {
   const [days, setDays] = useState(30);
 
   const sleepData = trpc.sleep.list.useQuery({ days });
+  const latestStages = trpc.sleep.latestStages.useQuery();
   const sleepNeed = trpc.sleepNeed.calculate.useQuery();
   const insightsQuery = trpc.insights.compute.useQuery({ days: Math.max(days, 90) });
 
@@ -56,6 +58,11 @@ export function SleepPage() {
           data={assertRows(sleepData.data, sleepRowSchema)}
           loading={sleepData.isLoading}
         />
+      </PageSection>
+
+      {/* Last Night Hypnogram */}
+      <PageSection title="Last Night">
+        <Hypnogram data={latestStages.data ?? []} loading={latestStages.isLoading} />
       </PageSection>
 
       {/* Sleep Insights */}

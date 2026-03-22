@@ -104,6 +104,7 @@ describe("providerDetailRouter", () => {
       ["healthEvents", "fitness.health_event", "start_date", "id"],
       ["metricStream", "fitness.metric_stream", "recorded_at", "recorded_at"],
       ["nutritionDaily", "fitness.nutrition_daily", "date", "date"],
+      ["labPanels", "fitness.lab_panel", "recorded_at", "id"],
       ["labResults", "fitness.lab_result", "recorded_at", "id"],
       ["journalEntries", "fitness.journal_entry", "date", "id"],
     ] as const)("returns correct mapping for %s", (dataType, expectedTable, expectedOrder, expectedId) => {
@@ -126,8 +127,8 @@ describe("providerDetailRouter", () => {
   // ── dataTypeEnum ──
 
   describe("dataTypeEnum", () => {
-    it("contains exactly 10 data types", () => {
-      expect(dataTypeEnum.options).toHaveLength(10);
+    it("contains exactly 11 data types", () => {
+      expect(dataTypeEnum.options).toHaveLength(11);
     });
 
     it("includes all expected data types", () => {
@@ -140,6 +141,7 @@ describe("providerDetailRouter", () => {
         "healthEvents",
         "metricStream",
         "nutritionDaily",
+        "labPanels",
         "labResults",
         "journalEntries",
       ];
@@ -150,8 +152,8 @@ describe("providerDetailRouter", () => {
   // ── DISCONNECT_CHILD_TABLES ──
 
   describe("DISCONNECT_CHILD_TABLES", () => {
-    it("contains 15 child tables", () => {
-      expect(DISCONNECT_CHILD_TABLES).toHaveLength(15);
+    it("contains 16 child tables", () => {
+      expect(DISCONNECT_CHILD_TABLES).toHaveLength(16);
     });
 
     it("includes all required child tables", () => {
@@ -164,6 +166,7 @@ describe("providerDetailRouter", () => {
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.nutrition_daily");
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.food_entry");
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.lab_result");
+      expect(DISCONNECT_CHILD_TABLES).toContain("fitness.lab_panel");
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.health_event");
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.journal_entry");
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.dexa_scan");
@@ -175,6 +178,12 @@ describe("providerDetailRouter", () => {
     it("ends with activity then oauth_token (FK order)", () => {
       const lastTwo = DISCONNECT_CHILD_TABLES.slice(-2);
       expect(lastTwo).toEqual(["fitness.activity", "fitness.oauth_token"]);
+    });
+
+    it("deletes lab_result before lab_panel (FK order)", () => {
+      const resultIndex = DISCONNECT_CHILD_TABLES.indexOf("fitness.lab_result");
+      const panelIndex = DISCONNECT_CHILD_TABLES.indexOf("fitness.lab_panel");
+      expect(resultIndex).toBeLessThan(panelIndex);
     });
   });
 
@@ -542,8 +551,8 @@ describe("providerDetailRouter", () => {
       expect(result).toEqual({ success: true });
       expect(mockExecute).toHaveBeenCalledTimes(1);
       expect(mockTransaction).toHaveBeenCalledTimes(1);
-      // 15 child tables + 1 provider delete = 16 deletes inside the transaction
-      expect(txExecute).toHaveBeenCalledTimes(16);
+      // 16 child tables + 1 provider delete = 17 deletes inside the transaction
+      expect(txExecute).toHaveBeenCalledTimes(17);
     });
 
     it("verifies ownership before disconnecting", async () => {
