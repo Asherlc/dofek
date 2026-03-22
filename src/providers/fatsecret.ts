@@ -1,4 +1,5 @@
 import { createHmac, randomBytes } from "node:crypto";
+import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { getOAuthRedirectUri } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
@@ -611,7 +612,17 @@ export class FatSecretProvider implements SyncProvider {
 
         if (entries.length > 0) {
           for (const e of entries) {
-            // Insert nutrition_data first
+            // Skip if food_entry already exists (onConflictDoNothing would leave
+            // a new nutrition_data row orphaned with no FK pointing to it)
+            const existing = await db
+              .select({ id: foodEntry.id })
+              .from(foodEntry)
+              .where(
+                sql`${foodEntry.providerId} = ${this.id} AND ${foodEntry.externalId} = ${e.externalId}`,
+              );
+            if (existing.length > 0) continue;
+
+            // Insert nutrition_data + food_entry for new entries
             const [ndRow] = await db
               .insert(nutritionData)
               .values({

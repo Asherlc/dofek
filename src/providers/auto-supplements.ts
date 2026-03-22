@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import type { SyncDatabase } from "../db/index.ts";
-import { nutrientColumnsToValues } from "../db/nutrient-columns.ts";
+import { NUTRIENT_FIELDS, nutrientColumnsToValues } from "../db/nutrient-columns.ts";
 import { foodEntry, nutritionData } from "../db/schema.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import type { SyncError, SyncProvider, SyncResult } from "./types.ts";
@@ -139,34 +139,52 @@ export class AutoSupplementsProvider implements SyncProvider {
     let synced = 0;
     for (const entry of entries) {
       try {
-        // Insert nutrition_data first
-        const [ndRow] = await db
-          .insert(nutritionData)
-          .values(entry.nutrients)
-          .returning({ id: nutritionData.id });
+        // Check if food_entry already exists to avoid orphaning nutrition_data rows
+        const existing = await db
+          .select({ nutritionDataId: foodEntry.nutritionDataId })
+          .from(foodEntry)
+          .where(
+            sql`${foodEntry.providerId} = ${entry.providerId} AND ${foodEntry.externalId} = ${entry.externalId}`,
+          );
 
-        await db
-          .insert(foodEntry)
-          .values({
-            providerId: entry.providerId,
-            externalId: entry.externalId,
-            userId: entry.userId,
-            date: entry.date,
-            meal: entry.meal,
-            foodName: entry.foodName,
-            foodDescription: entry.foodDescription,
-            category: "supplement",
-            numberOfUnits: entry.numberOfUnits,
-            nutritionDataId: ndRow?.id,
-          })
-          .onConflictDoUpdate({
-            target: [foodEntry.providerId, foodEntry.externalId],
-            set: {
+        if (existing.length > 0 && existing[0]?.nutritionDataId) {
+          // Update existing nutrition_data in-place using raw SQL
+          const setClauses = NUTRIENT_FIELDS.map(
+            (f) => sql`${sql.identifier(f.column)} = ${entry.nutrients[f.key] ?? null}`,
+          );
+          await db.execute(
+            sql`UPDATE fitness.nutrition_data SET ${sql.join(setClauses, sql`, `)}
+                WHERE id = ${existing[0].nutritionDataId}`,
+          );
+          // Update food_entry metadata
+          await db.execute(
+            sql`UPDATE fitness.food_entry
+                SET food_name = ${entry.foodName}, food_description = ${entry.foodDescription}
+                WHERE provider_id = ${entry.providerId} AND external_id = ${entry.externalId}`,
+          );
+        } else {
+          // Insert new nutrition_data + food_entry
+          const [ndRow] = await db
+            .insert(nutritionData)
+            .values(entry.nutrients)
+            .returning({ id: nutritionData.id });
+
+          await db
+            .insert(foodEntry)
+            .values({
+              providerId: entry.providerId,
+              externalId: entry.externalId,
+              userId: entry.userId,
+              date: entry.date,
+              meal: entry.meal,
               foodName: entry.foodName,
               foodDescription: entry.foodDescription,
+              category: "supplement",
+              numberOfUnits: entry.numberOfUnits,
               nutritionDataId: ndRow?.id,
-            },
-          });
+            })
+            .onConflictDoNothing();
+        }
         synced++;
       } catch (e) {
         errors.push({

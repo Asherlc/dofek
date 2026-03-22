@@ -340,10 +340,30 @@ export const foodRouter = router({
     // Update nutrition_data if any nutrient fields changed
     if (nutrientClauses.length > 0) {
       const nutrientSetExpression = sql.join(nutrientClauses, sql`, `);
-      await ctx.db.execute(
-        sql`UPDATE fitness.nutrition_data SET ${nutrientSetExpression}
-            WHERE id = (SELECT nutrition_data_id FROM fitness.food_entry WHERE user_id = ${ctx.userId} AND confirmed = true AND id = ${id})`,
+      // Check if food_entry has a nutrition_data row; create one if missing
+      const ndIdRows = await ctx.db.execute<{ nutrition_data_id: string | null }>(
+        sql`SELECT nutrition_data_id FROM fitness.food_entry WHERE user_id = ${ctx.userId} AND confirmed = true AND id = ${id}`,
       );
+      const existingNdId = ndIdRows[0]?.nutrition_data_id;
+      if (existingNdId) {
+        await ctx.db.execute(
+          sql`UPDATE fitness.nutrition_data SET ${nutrientSetExpression} WHERE id = ${existingNdId}`,
+        );
+      } else if (ndIdRows.length > 0) {
+        // Food entry exists but has no nutrition_data — create one and link it
+        const [newNd] = await ctx.db.execute<{ id: string }>(
+          sql`INSERT INTO fitness.nutrition_data (calories) VALUES (NULL) RETURNING id`,
+        );
+        if (newNd?.id) {
+          await ctx.db.execute(
+            sql`UPDATE fitness.food_entry SET nutrition_data_id = ${newNd.id}
+                WHERE user_id = ${ctx.userId} AND confirmed = true AND id = ${id}`,
+          );
+          await ctx.db.execute(
+            sql`UPDATE fitness.nutrition_data SET ${nutrientSetExpression} WHERE id = ${newNd.id}`,
+          );
+        }
+      }
     }
 
     // Update food_entry if any food fields changed
@@ -358,7 +378,7 @@ export const foodRouter = router({
     const rows = await executeWithSchema(
       ctx.db,
       foodEntryRowSchema,
-      sql`SELECT * FROM fitness.v_food_entry_with_nutrition WHERE id = ${id}`,
+      sql`SELECT * FROM fitness.v_food_entry_with_nutrition WHERE id = ${id} AND user_id = ${ctx.userId}`,
     );
     return rows[0] ?? null;
   }),

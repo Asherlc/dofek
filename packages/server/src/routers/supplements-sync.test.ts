@@ -1,5 +1,6 @@
 import { NUTRIENT_COLUMN_MAP, NUTRIENT_KEYS } from "dofek/db/nutrient-columns";
 import { describe, expect, it, vi } from "vitest";
+import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
@@ -43,7 +44,12 @@ vi.mock("../logger.ts", () => ({
   logger: { warn: vi.fn() },
 }));
 
-import { toApiSupplement } from "./supplements.ts";
+vi.mock("../lib/typed-sql.ts", () => ({
+  executeWithSchema: vi.fn(async (_db: unknown, _schema: unknown, _query: unknown) => []),
+}));
+
+import { executeWithSchema } from "../lib/typed-sql.ts";
+import { supplementsRouter, toApiSupplement } from "./supplements.ts";
 
 /** Build a view row (snake_case nutrients) with all fields populated. */
 const NUTRIENT_SNAKE_VALUES: Record<string, number> = {
@@ -174,6 +180,166 @@ describe("toApiSupplement", () => {
       amount: 5000,
       unit: "IU",
       vitaminDMcg: 125,
+    });
+  });
+});
+
+// ── supplementsRouter ──
+
+// Helper: create a mock DB that tracks transaction calls and executeWithSchema results
+function createMockDb(opts: { viewRows?: Record<string, unknown>[] } = {}) {
+  const mockExecute = vi.fn().mockResolvedValue([]);
+  const mockDeleteWhere = vi.fn().mockResolvedValue(undefined);
+  const mockDelete = vi.fn(() => ({ where: mockDeleteWhere }));
+  const mockSelectWhere = vi.fn().mockResolvedValue([]);
+  const mockSelectFrom = vi.fn(() => ({ where: mockSelectWhere }));
+  const mockSelect = vi.fn(() => ({ from: mockSelectFrom }));
+  const mockInsertReturning = vi.fn().mockResolvedValue([{ id: "nd-new-uuid" }]);
+  const mockInsertValues = vi.fn(() => ({ returning: mockInsertReturning }));
+  const mockInsert = vi.fn(() => ({ values: mockInsertValues }));
+
+  const mockTransaction = vi.fn(async (fn: (tx: unknown) => Promise<void>) => {
+    await fn({
+      select: mockSelect,
+      delete: mockDelete,
+      insert: mockInsert,
+      execute: mockExecute,
+    });
+  });
+
+  // Set up executeWithSchema mock to return view rows for the list handler
+  const mockedExecuteWithSchema = vi.mocked(executeWithSchema);
+  mockedExecuteWithSchema.mockResolvedValue(opts.viewRows ?? []);
+
+  return {
+    db: {
+      execute: mockExecute,
+      transaction: mockTransaction,
+    },
+    mocks: {
+      mockExecute,
+      mockTransaction,
+      mockSelect,
+      mockSelectFrom,
+      mockSelectWhere,
+      mockDelete,
+      mockDeleteWhere,
+      mockInsert,
+      mockInsertValues,
+      mockInsertReturning,
+      mockedExecuteWithSchema,
+    },
+  };
+}
+
+describe("supplementsRouter", () => {
+  const createCaller = createTestCallerFactory(supplementsRouter);
+
+  describe("list", () => {
+    it("returns supplements mapped through toApiSupplement", async () => {
+      const { db } = createMockDb({ viewRows: [fullViewRow()] });
+      const caller = createCaller({ db, userId: "user-1" });
+
+      const result = await caller.list();
+      expect(result).toHaveLength(1);
+      expect(result[0]?.name).toBe("Multivitamin");
+      expect(result[0]?.amount).toBe(5000);
+      expect(result[0]?.unit).toBe("IU");
+    });
+
+    it("returns empty array when user has no supplements", async () => {
+      const { db } = createMockDb({ viewRows: [] });
+      const caller = createCaller({ db, userId: "user-1" });
+
+      const result = await caller.list();
+      expect(result).toHaveLength(0);
+    });
+
+    it("excludes null fields from listed supplements", async () => {
+      const { db } = createMockDb({ viewRows: [minimalViewRow()] });
+      const caller = createCaller({ db, userId: "user-1" });
+
+      const result = await caller.list();
+      expect(result[0]).toEqual({ name: "Multivitamin" });
+    });
+
+    it("calls executeWithSchema with the view query", async () => {
+      const { db, mocks } = createMockDb({ viewRows: [] });
+      const callsBefore = mocks.mockedExecuteWithSchema.mock.calls.length;
+      const caller = createCaller({ db, userId: "user-1" });
+
+      await caller.list();
+      expect(mocks.mockedExecuteWithSchema).toHaveBeenCalledTimes(callsBefore + 1);
+    });
+  });
+
+  describe("save", () => {
+    it("saves supplements via transaction (delete + insert)", async () => {
+      const { db, mocks } = createMockDb();
+      const caller = createCaller({ db, userId: "user-1" });
+
+      const result = await caller.save({
+        supplements: [{ name: "Creatine", calories: 0 }],
+      });
+
+      expect(result).toEqual({ success: true, count: 1 });
+      expect(mocks.mockTransaction).toHaveBeenCalledOnce();
+    });
+
+    it("deletes existing supplements and their nutrition_data in the transaction", async () => {
+      const { db, mocks } = createMockDb();
+      // Simulate existing supplements with nutrition_data
+      mocks.mockSelectWhere.mockResolvedValueOnce([
+        { nutritionDataId: "old-nd-1" },
+        { nutritionDataId: "old-nd-2" },
+      ]);
+      const caller = createCaller({ db, userId: "user-1" });
+
+      await caller.save({ supplements: [{ name: "New Supp" }] });
+
+      // Should call delete for supplement and nutrition_data
+      expect(mocks.mockDelete).toHaveBeenCalledTimes(2);
+    });
+
+    it("inserts nutrition_data then supplement for each supplement", async () => {
+      const { db, mocks } = createMockDb();
+      const caller = createCaller({ db, userId: "user-1" });
+
+      await caller.save({
+        supplements: [
+          { name: "First", vitaminDMcg: 50 },
+          { name: "Second", calories: 10 },
+        ],
+      });
+
+      // Two nutrition_data inserts
+      expect(mocks.mockInsert).toHaveBeenCalledTimes(2);
+      // Two supplement inserts via execute
+      expect(mocks.mockExecute).toHaveBeenCalledTimes(2);
+    });
+
+    it("handles empty supplements array (delete all, no insert)", async () => {
+      const { db, mocks } = createMockDb();
+      const caller = createCaller({ db, userId: "user-1" });
+
+      const result = await caller.save({ supplements: [] });
+
+      expect(result).toEqual({ success: true, count: 0 });
+      expect(mocks.mockTransaction).toHaveBeenCalledOnce();
+      expect(mocks.mockInsert).not.toHaveBeenCalled();
+    });
+
+    it("passes nutrient values through to nutrition_data insert", async () => {
+      const { db, mocks } = createMockDb();
+      const caller = createCaller({ db, userId: "user-1" });
+
+      await caller.save({
+        supplements: [{ name: "Test", vitaminDMcg: 125, calories: 0 }],
+      });
+
+      const insertedValues = mocks.mockInsertValues.mock.calls[0]?.[0];
+      expect(insertedValues.vitaminDMcg).toBe(125);
+      expect(insertedValues.calories).toBe(0);
     });
   });
 });

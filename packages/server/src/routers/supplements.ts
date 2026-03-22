@@ -1,7 +1,12 @@
-import { nutrientColumnsToValues, nutrientFieldsSchema } from "dofek/db/nutrient-columns";
+import {
+  nutrientColumnsToValues,
+  nutrientFieldsSchema,
+  nutrientRowSchema,
+} from "dofek/db/nutrient-columns";
 import { nutritionData, supplement } from "dofek/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 
 const supplementSchema = z
@@ -19,6 +24,24 @@ export type Supplement = z.infer<typeof supplementSchema>;
 
 /** Non-nutrient optional fields on the supplement API shape. */
 const NON_NUTRIENT_OPTIONAL_FIELDS = ["amount", "unit", "form", "description", "meal"] as const;
+
+/** Zod schema for v_supplement_with_nutrition rows */
+const supplementViewRowSchema = z
+  .object({
+    id: z.string(),
+    user_id: z.string(),
+    name: z.string(),
+    amount: z.coerce.number().nullable(),
+    unit: z.string().nullable(),
+    form: z.string().nullable(),
+    description: z.string().nullable(),
+    meal: z.string().nullable(),
+    sort_order: z.number(),
+    nutrition_data_id: z.string().nullable(),
+    created_at: z.string(),
+    updated_at: z.string(),
+  })
+  .merge(nutrientRowSchema);
 
 /** Map a DB view row (snake_case) to the API shape (camelCase). */
 export function toApiSupplement(row: Record<string, unknown>): Supplement {
@@ -40,12 +63,14 @@ export function toApiSupplement(row: Record<string, unknown>): Supplement {
 
 export const supplementsRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
-    const rows = await ctx.db.execute(
+    const rows = await executeWithSchema(
+      ctx.db,
+      supplementViewRowSchema,
       sql`SELECT * FROM fitness.v_supplement_with_nutrition
           WHERE user_id = ${ctx.userId}
           ORDER BY sort_order ASC`,
     );
-    return Array.from(rows).map((row) => toApiSupplement(row));
+    return rows.map((row) => toApiSupplement(row));
   }),
 
   save: protectedProcedure

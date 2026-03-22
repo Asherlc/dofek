@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
+import { sql } from "drizzle-orm";
 import type { SyncDatabase } from "../db/index.ts";
+import { NUTRIENT_FIELDS } from "../db/nutrient-columns.ts";
 import { foodEntry, nutritionDaily, nutritionData } from "../db/schema.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import type { ImportProvider, SyncError, SyncResult } from "./types.ts";
@@ -281,7 +283,6 @@ export async function importCronometerCsv(
       // Round calories to integer for the integer column
       const caloriesInt = entry.calories !== null ? Math.round(entry.calories) : null;
 
-      // Insert nutrition_data first
       const nutritionValues = {
         calories: caloriesInt,
         proteinG: entry.proteinG,
@@ -322,53 +323,72 @@ export async function importCronometerCsv(
         omega6Mg: entry.omega6Mg,
       };
 
-      const [ndRow] = await db
-        .insert(nutritionData)
-        .values(nutritionValues)
-        .returning({ id: nutritionData.id });
+      // Check if food_entry already exists to avoid orphaning nutrition_data rows
+      const existingEntry = await db
+        .select({ nutritionDataId: foodEntry.nutritionDataId })
+        .from(foodEntry)
+        .where(
+          sql`${foodEntry.providerId} = ${CRONOMETER_PROVIDER_ID} AND ${foodEntry.externalId} = ${externalId}`,
+        );
 
-      await db
-        .insert(foodEntry)
-        .values({
-          providerId: CRONOMETER_PROVIDER_ID,
-          userId: effectiveUserId,
-          externalId,
-          date: entry.date,
-          meal: entry.meal,
-          foodName: entry.foodName,
-          numberOfUnits: entry.amount,
-          servingUnit: entry.unit,
-          nutritionDataId: ndRow?.id,
-        })
-        .onConflictDoUpdate({
-          target: [foodEntry.providerId, foodEntry.externalId],
-          set: {
+      if (existingEntry.length > 0 && existingEntry[0]?.nutritionDataId) {
+        // Update existing nutrition_data in-place using raw SQL
+        const nutritionRecord: Record<string, unknown> = nutritionValues;
+        const setClauses = NUTRIENT_FIELDS.map((f) => {
+          const value = nutritionRecord[f.key];
+          return sql`${sql.identifier(f.column)} = ${value ?? null}`;
+        });
+        await db.execute(
+          sql`UPDATE fitness.nutrition_data SET ${sql.join(setClauses, sql`, `)}
+              WHERE id = ${existingEntry[0].nutritionDataId}`,
+        );
+        // Update food_entry metadata
+        await db.execute(
+          sql`UPDATE fitness.food_entry
+              SET date = ${entry.date}, meal = ${entry.meal}, food_name = ${entry.foodName},
+                  number_of_units = ${entry.amount}, serving_unit = ${entry.unit}
+              WHERE provider_id = ${CRONOMETER_PROVIDER_ID} AND external_id = ${externalId}`,
+        );
+      } else {
+        // Insert new nutrition_data + food_entry
+        const [ndRow] = await db
+          .insert(nutritionData)
+          .values(nutritionValues)
+          .returning({ id: nutritionData.id });
+
+        await db
+          .insert(foodEntry)
+          .values({
+            providerId: CRONOMETER_PROVIDER_ID,
+            userId: effectiveUserId,
+            externalId,
             date: entry.date,
             meal: entry.meal,
             foodName: entry.foodName,
             numberOfUnits: entry.amount,
             servingUnit: entry.unit,
             nutritionDataId: ndRow?.id,
-          },
-        });
+          })
+          .onConflictDoNothing();
+      }
 
       recordsSynced++;
 
       // Accumulate daily totals
       const dayKey = entry.date;
-      const existing = dailyAggregates.get(dayKey) ?? {
+      const dayTotals = dailyAggregates.get(dayKey) ?? {
         calories: 0,
         proteinG: 0,
         carbsG: 0,
         fatG: 0,
         fiberG: 0,
       };
-      existing.calories += entry.calories ?? 0;
-      existing.proteinG += entry.proteinG ?? 0;
-      existing.carbsG += entry.carbsG ?? 0;
-      existing.fatG += entry.fatG ?? 0;
-      existing.fiberG += entry.fiberG ?? 0;
-      dailyAggregates.set(dayKey, existing);
+      dayTotals.calories += entry.calories ?? 0;
+      dayTotals.proteinG += entry.proteinG ?? 0;
+      dayTotals.carbsG += entry.carbsG ?? 0;
+      dayTotals.fatG += entry.fatG ?? 0;
+      dayTotals.fiberG += entry.fiberG ?? 0;
+      dailyAggregates.set(dayKey, dayTotals);
     } catch (err) {
       errors.push({
         message: `Failed to import "${entry.foodName}" on ${entry.date}: ${err instanceof Error ? err.message : String(err)}`,
