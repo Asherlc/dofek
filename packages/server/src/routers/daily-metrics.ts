@@ -20,8 +20,6 @@ const dailyMetricsViewRowSchema = z.object({
   exercise_minutes: z.number().nullable(),
   stand_hours: z.number().nullable(),
   walking_speed: z.number().nullable(),
-  environmental_audio_exposure: z.number().nullable(),
-  headphone_audio_exposure: z.number().nullable(),
   source_providers: z.array(z.string()),
 });
 
