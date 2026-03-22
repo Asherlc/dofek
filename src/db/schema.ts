@@ -648,8 +648,36 @@ export const foodEntry = fitness.table(
 );
 
 // ============================================================
-// Lab results (clinical records from Apple Health / FHIR)
+// Lab panels & results (clinical records from Apple Health / FHIR)
 // ============================================================
+
+export const labPanel = fitness.table(
+  "lab_panel",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    providerId: text("provider_id")
+      .notNull()
+      .references(() => provider.id),
+    userId: uuid("user_id")
+      .notNull()
+      .default(DEFAULT_USER_ID)
+      .references(() => userProfile.id),
+    externalId: text("external_id"),
+    name: text("name").notNull(),
+    loincCode: text("loinc_code"),
+    status: labResultStatusEnum("status"),
+    sourceName: text("source_name"),
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+    issuedAt: timestamp("issued_at", { withTimezone: true }),
+    raw: jsonb("raw"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("lab_panel_provider_external_idx").on(table.providerId, table.externalId),
+    index("lab_panel_recorded_idx").on(table.recordedAt),
+    index("lab_panel_user_provider_idx").on(table.userId, table.providerId),
+  ],
+);
 
 export const labResult = fitness.table(
   "lab_result",
@@ -662,6 +690,7 @@ export const labResult = fitness.table(
       .notNull()
       .default(DEFAULT_USER_ID)
       .references(() => userProfile.id),
+    panelId: uuid("panel_id").references(() => labPanel.id),
     externalId: text("external_id"),
     testName: text("test_name").notNull(),
     loincCode: text("loinc_code"),
@@ -671,7 +700,6 @@ export const labResult = fitness.table(
     referenceRangeLow: real("reference_range_low"),
     referenceRangeHigh: real("reference_range_high"),
     referenceRangeText: text("reference_range_text"),
-    panelName: text("panel_name"),
     status: labResultStatusEnum("status"),
     sourceName: text("source_name"),
     recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
@@ -684,6 +712,7 @@ export const labResult = fitness.table(
     index("lab_result_recorded_idx").on(table.recordedAt),
     index("lab_result_loinc_idx").on(table.loincCode),
     index("lab_result_test_name_idx").on(table.testName),
+    index("lab_result_panel_idx").on(table.panelId),
     index("lab_result_user_provider_idx").on(table.userId, table.providerId),
   ],
 );
