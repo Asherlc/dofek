@@ -7,7 +7,13 @@ import { dexaScan, dexaScanRegion } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { ProviderHttpClient } from "./http-client.ts";
-import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
+import type {
+  ProviderAuthSetup,
+  SyncError,
+  SyncOptions,
+  SyncProvider,
+  SyncResult,
+} from "./types.ts";
 
 // ============================================================
 // BodySpec API types & Zod schemas
@@ -337,7 +343,7 @@ export class BodySpecProvider implements SyncProvider {
     });
   }
 
-  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -355,35 +361,41 @@ export class BodySpecProvider implements SyncProvider {
     const client = new BodySpecClient(tokens.accessToken, this.#fetchFn);
 
     try {
-      const scanCount = await withSyncLog(db, this.id, "dexa_scan", async () => {
-        let count = 0;
-        let page = 1;
-        let hasMore = true;
+      const scanCount = await withSyncLog(
+        db,
+        this.id,
+        "dexa_scan",
+        async () => {
+          let count = 0;
+          let page = 1;
+          let hasMore = true;
 
-        while (hasMore) {
-          const listResponse = await client.listResults(page);
+          while (hasMore) {
+            const listResponse = await client.listResults(page);
 
-          for (const result of listResponse.results) {
-            const resultTime = new Date(result.start_time);
-            if (resultTime < since) continue;
+            for (const result of listResponse.results) {
+              const resultTime = new Date(result.start_time);
+              if (resultTime < since) continue;
 
-            try {
-              count += await this.#syncResult(db, client, result.result_id, resultTime);
-            } catch (err) {
-              errors.push({
-                message: err instanceof Error ? err.message : String(err),
-                externalId: result.result_id,
-                cause: err,
-              });
+              try {
+                count += await this.#syncResult(db, client, result.result_id, resultTime);
+              } catch (err) {
+                errors.push({
+                  message: err instanceof Error ? err.message : String(err),
+                  externalId: result.result_id,
+                  cause: err,
+                });
+              }
             }
+
+            hasMore = listResponse.pagination.has_more;
+            page++;
           }
 
-          hasMore = listResponse.pagination.has_more;
-          page++;
-        }
-
-        return { recordCount: count, result: count };
-      });
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += scanCount;
     } catch (err) {
       errors.push({

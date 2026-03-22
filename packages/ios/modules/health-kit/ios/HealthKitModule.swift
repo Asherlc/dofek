@@ -3,9 +3,12 @@ import HealthKit
 
 public class HealthKitModule: Module {
     private let healthStore = HKHealthStore()
+    private var observerQueries: [HKObserverQuery] = []
 
     public func definition() -> ModuleDefinition {
         Name("HealthKit")
+
+        Events("onHealthKitSampleUpdate")
 
         Function("isAvailable") {
             return HKHealthStore.isHealthDataAvailable()
@@ -328,6 +331,37 @@ public class HealthKitModule: Module {
                     promise.reject("BG_DELIVERY_ERROR", error.localizedDescription)
                 }
             }
+        }
+
+        AsyncFunction("setupBackgroundObservers") { (promise: Promise) in
+            guard HKHealthStore.isHealthDataAvailable() else {
+                promise.resolve(false)
+                return
+            }
+
+            // Remove any existing observer queries
+            for query in self.observerQueries {
+                self.healthStore.stop(query)
+            }
+            self.observerQueries.removeAll()
+
+            // Set up an observer for each read type
+            for objectType in readTypes {
+                guard let sampleType = objectType as? HKSampleType else { continue }
+
+                let query = HKObserverQuery(sampleType: sampleType, predicate: nil) { [weak self] _, completionHandler, error in
+                    if error == nil {
+                        self?.sendEvent("onHealthKitSampleUpdate", [
+                            "typeIdentifier": sampleType.identifier,
+                        ])
+                    }
+                    completionHandler()
+                }
+                self.observerQueries.append(query)
+                self.healthStore.execute(query)
+            }
+
+            promise.resolve(true)
         }
     }
 

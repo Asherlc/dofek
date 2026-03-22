@@ -5,7 +5,13 @@ import type { SyncDatabase } from "../db/index.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
-import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
+import type {
+  ProviderAuthSetup,
+  SyncError,
+  SyncOptions,
+  SyncProvider,
+  SyncResult,
+} from "./types.ts";
 
 // ============================================================
 // Komoot API types
@@ -163,7 +169,7 @@ export class KomootProvider implements SyncProvider {
     });
   }
 
-  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -180,69 +186,75 @@ export class KomootProvider implements SyncProvider {
     }
 
     try {
-      const activityCount = await withSyncLog(db, this.id, "activity", async () => {
-        let count = 0;
-        let page = 0;
-        let totalPages = 1;
-        const startDate = since.toISOString();
+      const activityCount = await withSyncLog(
+        db,
+        this.id,
+        "activity",
+        async () => {
+          let count = 0;
+          let page = 0;
+          let totalPages = 1;
+          const startDate = since.toISOString();
 
-        while (page < totalPages) {
-          const url = `${KOMOOT_API_BASE}/users/me/tours/?type=RECORDED&start_date=${startDate}&page=${page}&limit=50&sort_field=date&sort_direction=desc`;
-          const response = await this.#fetchFn(url, {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              Accept: "application/hal+json",
-            },
-          });
+          while (page < totalPages) {
+            const url = `${KOMOOT_API_BASE}/users/me/tours/?type=RECORDED&start_date=${startDate}&page=${page}&limit=50&sort_field=date&sort_direction=desc`;
+            const response = await this.#fetchFn(url, {
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                Accept: "application/hal+json",
+              },
+            });
 
-          if (!response.ok) {
-            const text = await response.text();
-            throw new Error(`Komoot API error (${response.status}): ${text}`);
-          }
+            if (!response.ok) {
+              const text = await response.text();
+              throw new Error(`Komoot API error (${response.status}): ${text}`);
+            }
 
-          const data: KomootToursResponse = await response.json();
-          totalPages = data.page.totalPages;
-          const tours = data._embedded?.tours ?? [];
+            const data: KomootToursResponse = await response.json();
+            totalPages = data.page.totalPages;
+            const tours = data._embedded?.tours ?? [];
 
-          for (const raw of tours) {
-            const parsed = parseKomootTour(raw);
-            try {
-              await db
-                .insert(activity)
-                .values({
-                  providerId: this.id,
-                  externalId: parsed.externalId,
-                  activityType: parsed.activityType,
-                  name: parsed.name,
-                  startedAt: parsed.startedAt,
-                  endedAt: parsed.endedAt,
-                  raw: parsed.raw,
-                })
-                .onConflictDoUpdate({
-                  target: [activity.providerId, activity.externalId],
-                  set: {
+            for (const raw of tours) {
+              const parsed = parseKomootTour(raw);
+              try {
+                await db
+                  .insert(activity)
+                  .values({
+                    providerId: this.id,
+                    externalId: parsed.externalId,
                     activityType: parsed.activityType,
                     name: parsed.name,
                     startedAt: parsed.startedAt,
                     endedAt: parsed.endedAt,
                     raw: parsed.raw,
-                  },
+                  })
+                  .onConflictDoUpdate({
+                    target: [activity.providerId, activity.externalId],
+                    set: {
+                      activityType: parsed.activityType,
+                      name: parsed.name,
+                      startedAt: parsed.startedAt,
+                      endedAt: parsed.endedAt,
+                      raw: parsed.raw,
+                    },
+                  });
+                count++;
+              } catch (err) {
+                errors.push({
+                  message: err instanceof Error ? err.message : String(err),
+                  externalId: parsed.externalId,
+                  cause: err,
                 });
-              count++;
-            } catch (err) {
-              errors.push({
-                message: err instanceof Error ? err.message : String(err),
-                externalId: parsed.externalId,
-                cause: err,
-              });
+              }
             }
+
+            page++;
           }
 
-          page++;
-        }
-
-        return { recordCount: count, result: count };
-      });
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += activityCount;
     } catch (err) {
       errors.push({

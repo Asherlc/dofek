@@ -61,6 +61,28 @@ export function AerobicEfficiencyChart({
   maxHr,
   loading,
 }: AerobicEfficiencyChartProps) {
+  if (loading) {
+    return (
+      <DofekChart
+        option={{}}
+        loading={true}
+        height={280}
+        emptyMessage="No activities with sufficient Zone 2 power + heart rate data"
+      />
+    );
+  }
+
+  if (activities.length === 0) {
+    return (
+      <DofekChart
+        option={{}}
+        empty={true}
+        height={280}
+        emptyMessage="No activities with sufficient Zone 2 power + heart rate data"
+      />
+    );
+  }
+
   // Group by activity type for coloring
   const typeSet = [...new Set(activities.map((a) => a.activityType))];
 
@@ -155,13 +177,7 @@ export function AerobicEfficiencyChart({
           Trend: {trendDirection}
         </span>
       </h3>
-      <DofekChart
-        option={option}
-        loading={loading}
-        empty={activities.length === 0}
-        height={280}
-        emptyMessage="No activities with sufficient Zone 2 power + heart rate data"
-      />
+      <DofekChart option={option} height={280} />
       <p className="text-xs text-dim mt-1">
         Higher efficiency = better aerobic fitness. Each dot is one activity with 5+ min of Zone 2
         data (60-70% max heart rate).

@@ -9,6 +9,7 @@ const {
   mockGetSyncProviders,
   mockRegisterProvider,
   mockLoggerWarn,
+  mockInvalidateByPrefix,
 } = vi.hoisted(() => ({
   mockAdd: vi.fn().mockResolvedValue({ id: "job-123" }),
   mockGetJob: vi.fn(),
@@ -17,6 +18,7 @@ const {
   mockGetSyncProviders: vi.fn(() => []),
   mockRegisterProvider: vi.fn(),
   mockLoggerWarn: vi.fn(),
+  mockInvalidateByPrefix: vi.fn().mockResolvedValue(undefined),
 }));
 
 // Mock trpc
@@ -52,6 +54,15 @@ vi.mock("dofek/providers/types", () => ({
 
 vi.mock("../lib/start-worker.ts", () => ({
   startWorker: vi.fn(),
+}));
+
+vi.mock("../lib/cache.ts", () => ({
+  queryCache: {
+    invalidateByPrefix: mockInvalidateByPrefix,
+    get: vi.fn().mockResolvedValue(undefined),
+    set: vi.fn().mockResolvedValue(undefined),
+    invalidateAll: vi.fn().mockResolvedValue(undefined),
+  },
 }));
 
 vi.mock("../lib/typed-sql.ts", async (importOriginal) => ({
@@ -647,6 +658,60 @@ describe("syncRouter", () => {
 
       const result = await caller.syncStatus({ jobId: "bad-data-job" });
       expect(result).toBeNull();
+    });
+
+    it("invalidates server-side cache when job completes", async () => {
+      mockGetJob.mockResolvedValueOnce({
+        data: { userId: "user-1" },
+        getState: vi.fn().mockResolvedValue("completed"),
+        progress: { providers: {} },
+      });
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+      });
+
+      await caller.syncStatus({ jobId: "done-job" });
+
+      expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-1:sync.providers");
+      expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-1:sync.providerStats");
+      expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-1:sync.logs");
+    });
+
+    it("invalidates server-side cache when job fails", async () => {
+      mockGetJob.mockResolvedValueOnce({
+        data: { userId: "user-1" },
+        getState: vi.fn().mockResolvedValue("failed"),
+        failedReason: "Connection timeout",
+        progress: {},
+      });
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+      });
+
+      await caller.syncStatus({ jobId: "failed-job" });
+
+      expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-1:sync.providers");
+    });
+
+    it("does not invalidate cache for active jobs", async () => {
+      mockGetJob.mockResolvedValueOnce({
+        data: { userId: "user-1" },
+        getState: vi.fn().mockResolvedValue("active"),
+        progress: { providers: { wahoo: { status: "running" } } },
+      });
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+      });
+
+      await caller.syncStatus({ jobId: "active-job" });
+
+      expect(mockInvalidateByPrefix).not.toHaveBeenCalled();
     });
 
     it("returns empty providers when progress has no providers", async () => {

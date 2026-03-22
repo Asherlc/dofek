@@ -4,6 +4,7 @@ import { createDatabaseFromEnv } from "../db/index.ts";
 import { jobContext, logger } from "../logger.ts";
 import { processExportJob } from "./process-export-job.ts";
 import { processImportJob } from "./process-import-job.ts";
+import { processScheduledSyncJob } from "./process-scheduled-sync-job.ts";
 import { processSyncJob } from "./process-sync-job.ts";
 import {
   EXPORT_QUEUE,
@@ -11,9 +12,12 @@ import {
   getRedisConnection,
   IMPORT_QUEUE,
   type ImportJobData,
+  SCHEDULED_SYNC_QUEUE,
+  type ScheduledSyncJobData,
   SYNC_QUEUE,
   type SyncJobData,
 } from "./queues.ts";
+import { setupScheduledSync } from "./scheduled-sync.ts";
 
 const sentryDsn = process.env.SENTRY_DSN || process.env.SENTRY_DSN_unencrypted;
 if (sentryDsn) {
@@ -42,6 +46,11 @@ const exportWorker = new Worker<ExportJobData>(
   (job) => jobContext.run(job, () => processExportJob(job, db)),
   { connection },
 );
+const scheduledSyncWorker = new Worker<ScheduledSyncJobData>(
+  SCHEDULED_SYNC_QUEUE,
+  (job) => jobContext.run(job, () => processScheduledSyncJob(job, db)),
+  { connection },
+);
 
 // ── Idle spin-down ──
 
@@ -63,7 +72,7 @@ function startIdleTimer() {
   }, IDLE_TIMEOUT_MS);
 }
 
-for (const worker of [syncWorker, importWorker, exportWorker]) {
+for (const worker of [syncWorker, importWorker, exportWorker, scheduledSyncWorker]) {
   worker.on("active", () => {
     activeJobs++;
     resetIdleTimer();
@@ -90,6 +99,14 @@ for (const worker of [syncWorker, importWorker, exportWorker]) {
 // Start idle timer immediately (exit if no jobs arrive within timeout)
 startIdleTimer();
 
+// Set up periodic sync for API providers
+const syncIntervalMinutes = process.env.SYNC_INTERVAL_MINUTES
+  ? Number(process.env.SYNC_INTERVAL_MINUTES)
+  : 30;
+setupScheduledSync(syncIntervalMinutes).catch((err) => {
+  logger.error(`[worker] Failed to set up scheduled sync: ${err}`);
+});
+
 // ── Graceful shutdown ──
 
 let shuttingDown = false;
@@ -98,7 +115,12 @@ async function shutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
   logger.info("[worker] Shutting down gracefully...");
-  await Promise.all([syncWorker.close(), importWorker.close(), exportWorker.close()]);
+  await Promise.all([
+    syncWorker.close(),
+    importWorker.close(),
+    exportWorker.close(),
+    scheduledSyncWorker.close(),
+  ]);
   logger.info("[worker] Shutdown complete.");
   process.exit(0);
 }

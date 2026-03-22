@@ -108,12 +108,12 @@ export interface FatSecretFoodEntry {
 }
 
 export interface FatSecretFoodEntriesResponse {
-  food_entries: {
+  food_entries?: {
     food_entry: FatSecretFoodEntry[];
   } | null;
 }
 
-const fatSecretFoodEntriesResponseSchema = z.object({
+export const fatSecretFoodEntriesResponseSchema = z.object({
   food_entries: z
     .object({
       food_entry: z.array(
@@ -145,7 +145,8 @@ const fatSecretFoodEntriesResponseSchema = z.object({
         }),
       ),
     })
-    .nullable(),
+    .nullable()
+    .optional(),
 });
 
 // ============================================================

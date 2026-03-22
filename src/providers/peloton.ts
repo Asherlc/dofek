@@ -538,8 +538,9 @@ export class PelotonProvider implements SyncProvider {
   async sync(
     db: SyncDatabase,
     since: Date,
-    onProgress?: import("./types.ts").SyncProgressCallback,
+    options?: import("./types.ts").SyncOptions,
   ): Promise<SyncResult> {
+    const { onProgress, userId } = options ?? {};
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -557,138 +558,144 @@ export class PelotonProvider implements SyncProvider {
 
     // Single-pass: fetch workouts, then for each fetch performance graph,
     // enrich the activity with summary stats, and insert both activity + streams.
-    const syncResult = await withSyncLog(db, this.id, "workouts", async () => {
-      let workoutCount = 0;
-      let streamCount = 0;
-      let page = 0;
-      let hasMore = true;
+    const syncResult = await withSyncLog(
+      db,
+      this.id,
+      "workouts",
+      async () => {
+        let workoutCount = 0;
+        let streamCount = 0;
+        let page = 0;
+        let hasMore = true;
 
-      while (hasMore) {
-        const response = await client.getWorkouts(page);
-        const totalWorkouts = response.total;
+        while (hasMore) {
+          const response = await client.getWorkouts(page);
+          const totalWorkouts = response.total;
 
-        for (const workout of response.data) {
-          if (workout.status !== "COMPLETE") continue;
+          for (const workout of response.data) {
+            if (workout.status !== "COMPLETE") continue;
 
-          const startedAt = new Date(workout.start_time * 1000);
-          if (startedAt < since) {
-            hasMore = false;
-            break;
-          }
+            const startedAt = new Date(workout.start_time * 1000);
+            if (startedAt < since) {
+              hasMore = false;
+              break;
+            }
 
-          const parsed = parseWorkout(workout);
+            const parsed = parseWorkout(workout);
 
-          // Upsert the activity first so we have an ID for metric_stream
-          let activityId: string | null = null;
-          try {
-            const [row] = await db
-              .insert(activity)
-              .values({
-                providerId: this.id,
-                externalId: parsed.externalId,
-                activityType: parsed.activityType,
-                startedAt: parsed.startedAt,
-                endedAt: parsed.endedAt,
-                name: parsed.name,
-                raw: parsed.raw,
-              })
-              .onConflictDoUpdate({
-                target: [activity.providerId, activity.externalId],
-                set: {
+            // Upsert the activity first so we have an ID for metric_stream
+            let activityId: string | null = null;
+            try {
+              const [row] = await db
+                .insert(activity)
+                .values({
+                  providerId: this.id,
+                  externalId: parsed.externalId,
                   activityType: parsed.activityType,
                   startedAt: parsed.startedAt,
                   endedAt: parsed.endedAt,
                   name: parsed.name,
                   raw: parsed.raw,
-                },
-              })
-              .returning({ id: activity.id });
+                })
+                .onConflictDoUpdate({
+                  target: [activity.providerId, activity.externalId],
+                  set: {
+                    activityType: parsed.activityType,
+                    startedAt: parsed.startedAt,
+                    endedAt: parsed.endedAt,
+                    name: parsed.name,
+                    raw: parsed.raw,
+                  },
+                })
+                .returning({ id: activity.id });
 
-            activityId = row?.id ?? null;
-            workoutCount++;
-            // no-mutate: Progress reporting is UX-only and can't fail in a testable way
-            if (onProgress && totalWorkouts > 0) {
-              // no-mutate
-              onProgress(
-                Math.round((workoutCount / totalWorkouts) * 100),
-                `${workoutCount}/${totalWorkouts} workouts`,
-              );
-            }
-          } catch (err) {
-            errors.push({
-              message: err instanceof Error ? err.message : String(err),
-              externalId: parsed.externalId,
-              cause: err,
-            });
-          }
-
-          // Fetch performance graph for time-series + summary enrichment
-          try {
-            const everyN = 5;
-            const graph = await client.getPerformanceGraph(workout.id, everyN);
-            const series = parsePerformanceGraph(graph, everyN);
-
-            // Insert time-series metric_stream rows linked to the activity
-            const hrSeries = series.find((s) => s.slug === "heart_rate");
-            const powerSeries = series.find((s) => s.slug === "output");
-            const cadenceSeries = series.find((s) => s.slug === "cadence");
-            const speedSeries = series.find((s) => s.slug === "speed");
-
-            const sampleCount =
-              hrSeries?.values.length ??
-              powerSeries?.values.length ??
-              cadenceSeries?.values.length ??
-              0;
-
-            if (sampleCount > 0 && activityId) {
-              // Delete existing metric_stream rows for this activity to avoid duplicates
-              await db
-                .delete(metricStream)
-                .where(
-                  sqlAnd(
-                    sqlEq(metricStream.activityId, activityId),
-                    sqlEq(metricStream.providerId, this.id),
-                  ),
+              activityId = row?.id ?? null;
+              workoutCount++;
+              // no-mutate: Progress reporting is UX-only and can't fail in a testable way
+              if (onProgress && totalWorkouts > 0) {
+                // no-mutate
+                onProgress(
+                  Math.round((workoutCount / totalWorkouts) * 100),
+                  `${workoutCount}/${totalWorkouts} workouts`,
                 );
-
-              const rows = [];
-              for (let i = 0; i < sampleCount; i++) {
-                const recordedAt = new Date(startedAt.getTime() + i * everyN * 1000);
-                rows.push({
-                  providerId: this.id,
-                  activityId,
-                  recordedAt,
-                  heartRate: hrSeries?.values[i] ?? null,
-                  power: powerSeries?.values[i] ?? null,
-                  cadence: cadenceSeries?.values[i] ?? null,
-                  speed: speedSeries?.values[i] ?? null,
-                });
               }
-
-              for (let j = 0; j < rows.length; j += 500) {
-                const chunk = rows.slice(j, j + 500);
-                await db.insert(metricStream).values(chunk);
-              }
-
-              streamCount += rows.length;
+            } catch (err) {
+              errors.push({
+                message: err instanceof Error ? err.message : String(err),
+                externalId: parsed.externalId,
+                cause: err,
+              });
             }
-          } catch (err) {
-            // Performance graph failure is non-fatal — still save the workout
-            errors.push({
-              message: `Performance graph for ${workout.id}: ${err instanceof Error ? err.message : String(err)}`,
-              externalId: workout.id,
-              cause: err,
-            });
+
+            // Fetch performance graph for time-series + summary enrichment
+            try {
+              const everyN = 5;
+              const graph = await client.getPerformanceGraph(workout.id, everyN);
+              const series = parsePerformanceGraph(graph, everyN);
+
+              // Insert time-series metric_stream rows linked to the activity
+              const hrSeries = series.find((s) => s.slug === "heart_rate");
+              const powerSeries = series.find((s) => s.slug === "output");
+              const cadenceSeries = series.find((s) => s.slug === "cadence");
+              const speedSeries = series.find((s) => s.slug === "speed");
+
+              const sampleCount =
+                hrSeries?.values.length ??
+                powerSeries?.values.length ??
+                cadenceSeries?.values.length ??
+                0;
+
+              if (sampleCount > 0 && activityId) {
+                // Delete existing metric_stream rows for this activity to avoid duplicates
+                await db
+                  .delete(metricStream)
+                  .where(
+                    sqlAnd(
+                      sqlEq(metricStream.activityId, activityId),
+                      sqlEq(metricStream.providerId, this.id),
+                    ),
+                  );
+
+                const rows = [];
+                for (let i = 0; i < sampleCount; i++) {
+                  const recordedAt = new Date(startedAt.getTime() + i * everyN * 1000);
+                  rows.push({
+                    providerId: this.id,
+                    activityId,
+                    recordedAt,
+                    heartRate: hrSeries?.values[i] ?? null,
+                    power: powerSeries?.values[i] ?? null,
+                    cadence: cadenceSeries?.values[i] ?? null,
+                    speed: speedSeries?.values[i] ?? null,
+                  });
+                }
+
+                for (let j = 0; j < rows.length; j += 500) {
+                  const chunk = rows.slice(j, j + 500);
+                  await db.insert(metricStream).values(chunk);
+                }
+
+                streamCount += rows.length;
+              }
+            } catch (err) {
+              // Performance graph failure is non-fatal — still save the workout
+              errors.push({
+                message: `Performance graph for ${workout.id}: ${err instanceof Error ? err.message : String(err)}`,
+                externalId: workout.id,
+                cause: err,
+              });
+            }
           }
+
+          hasMore = hasMore && response.show_next;
+          page++;
         }
 
-        hasMore = hasMore && response.show_next;
-        page++;
-      }
-
-      logger.info(`[peloton] ${workoutCount} workouts, ${streamCount} metric stream rows`);
-      return { recordCount: workoutCount + streamCount, result: workoutCount + streamCount };
-    });
+        logger.info(`[peloton] ${workoutCount} workouts, ${streamCount} metric stream rows`);
+        return { recordCount: workoutCount + streamCount, result: workoutCount + streamCount };
+      },
+      userId,
+    );
 
     recordsSynced += syncResult;
 

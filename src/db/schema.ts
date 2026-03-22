@@ -100,7 +100,9 @@ export const exercise = fitness.table(
     id: uuid("id").primaryKey().defaultRandom(),
     name: text("name").notNull(),
     muscleGroup: text("muscle_group"),
+    muscleGroups: text("muscle_groups").array(),
     equipment: text("equipment"),
+    exerciseType: text("exercise_type"),
     movement: text("movement"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -233,6 +235,11 @@ export const strengthWorkout = fitness.table(
     endedAt: timestamp("ended_at", { withTimezone: true }),
     name: text("name"),
     notes: text("notes"),
+    rawMskStrainScore: real("raw_msk_strain_score"),
+    scaledMskStrainScore: real("scaled_msk_strain_score"),
+    cardioStrainScore: real("cardio_strain_score"),
+    cardioStrainContributionPercent: real("cardio_strain_contribution_percent"),
+    mskStrainContributionPercent: real("msk_strain_contribution_percent"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
@@ -257,6 +264,8 @@ export const strengthSet = fitness.table(
     reps: integer("reps"),
     distanceMeters: real("distance_meters"),
     durationSeconds: integer("duration_seconds"),
+    strapLocation: text("strap_location"),
+    strapLocationLaterality: text("strap_location_laterality"),
     rpe: real("rpe"),
     notes: text("notes"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -286,6 +295,7 @@ export const activity = fitness.table(
     name: text("name"),
     notes: text("notes"),
     perceivedExertion: real("perceived_exertion"),
+    percentRecorded: real("percent_recorded"),
     sourceName: text("source_name"),
     raw: jsonb("raw"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -446,15 +456,12 @@ export const dailyMetrics = fitness.table(
     cyclingDistanceKm: real("cycling_distance_km"),
     flightsClimbed: integer("flights_climbed"),
     exerciseMinutes: integer("exercise_minutes"),
-    mindfulMinutes: integer("mindful_minutes"),
     walkingSpeed: real("walking_speed"), // m/s
     walkingStepLength: real("walking_step_length"), // cm
     walkingDoubleSupportPct: real("walking_double_support_pct"), // percent
     walkingAsymmetryPct: real("walking_asymmetry_pct"), // percent
     walkingSteadiness: real("walking_steadiness"), // 0-1
     standHours: integer("stand_hours"),
-    environmentalAudioExposure: real("environmental_audio_exposure"), // dBASPL avg
-    headphoneAudioExposure: real("headphone_audio_exposure"), // dBASPL avg
     skinTempC: real("skin_temp_c"), // celsius (WHOOP)
     stressHighMinutes: integer("stress_high_minutes"), // minutes of high stress (Oura)
     recoveryHighMinutes: integer("recovery_high_minutes"), // minutes of high recovery (Oura)
@@ -526,6 +533,10 @@ export const sleepSession = fitness.table(
     awakeMinutes: integer("awake_minutes"),
     efficiencyPct: real("efficiency_pct"),
     sleepType: text("sleep_type"),
+    sleepNeedBaselineMinutes: integer("sleep_need_baseline_minutes"),
+    sleepNeedFromDebtMinutes: integer("sleep_need_from_debt_minutes"),
+    sleepNeedFromStrainMinutes: integer("sleep_need_from_strain_minutes"),
+    sleepNeedFromNapMinutes: integer("sleep_need_from_nap_minutes"),
     sourceName: text("source_name"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

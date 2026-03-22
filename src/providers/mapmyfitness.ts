@@ -5,7 +5,13 @@ import type { SyncDatabase } from "../db/index.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
-import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
+import type {
+  ProviderAuthSetup,
+  SyncError,
+  SyncOptions,
+  SyncProvider,
+  SyncResult,
+} from "./types.ts";
 
 // ============================================================
 // MapMyFitness API types
@@ -221,7 +227,7 @@ export class MapMyFitnessProvider implements SyncProvider {
     });
   }
 
-  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -243,57 +249,63 @@ export class MapMyFitnessProvider implements SyncProvider {
     const userId = tokens.scopes?.match(/user_id:(\S+)/)?.[1] ?? "-";
 
     try {
-      const activityCount = await withSyncLog(db, this.id, "activity", async () => {
-        let count = 0;
-        let offset = 0;
-        let hasMore = true;
+      const activityCount = await withSyncLog(
+        db,
+        this.id,
+        "activity",
+        async () => {
+          let count = 0;
+          let offset = 0;
+          let hasMore = true;
 
-        while (hasMore) {
-          const response = await client.getWorkouts(userId, formatDate(since), offset);
-          const workouts = response._embedded?.workouts ?? [];
-          if (workouts.length === 0) break;
+          while (hasMore) {
+            const response = await client.getWorkouts(userId, formatDate(since), offset);
+            const workouts = response._embedded?.workouts ?? [];
+            if (workouts.length === 0) break;
 
-          for (const raw of workouts) {
-            const parsed = parseMapMyFitnessWorkout(raw);
-            if (!parsed.externalId) continue;
-            try {
-              await db
-                .insert(activity)
-                .values({
-                  providerId: this.id,
-                  externalId: parsed.externalId,
-                  activityType: parsed.activityType,
-                  name: parsed.name,
-                  startedAt: parsed.startedAt,
-                  endedAt: parsed.endedAt,
-                  raw: parsed.raw,
-                })
-                .onConflictDoUpdate({
-                  target: [activity.providerId, activity.externalId],
-                  set: {
+            for (const raw of workouts) {
+              const parsed = parseMapMyFitnessWorkout(raw);
+              if (!parsed.externalId) continue;
+              try {
+                await db
+                  .insert(activity)
+                  .values({
+                    providerId: this.id,
+                    externalId: parsed.externalId,
                     activityType: parsed.activityType,
                     name: parsed.name,
                     startedAt: parsed.startedAt,
                     endedAt: parsed.endedAt,
                     raw: parsed.raw,
-                  },
+                  })
+                  .onConflictDoUpdate({
+                    target: [activity.providerId, activity.externalId],
+                    set: {
+                      activityType: parsed.activityType,
+                      name: parsed.name,
+                      startedAt: parsed.startedAt,
+                      endedAt: parsed.endedAt,
+                      raw: parsed.raw,
+                    },
+                  });
+                count++;
+              } catch (err) {
+                errors.push({
+                  message: err instanceof Error ? err.message : String(err),
+                  externalId: parsed.externalId,
+                  cause: err,
                 });
-              count++;
-            } catch (err) {
-              errors.push({
-                message: err instanceof Error ? err.message : String(err),
-                externalId: parsed.externalId,
-                cause: err,
-              });
+              }
             }
+
+            hasMore = !!response._links?.next?.length;
+            offset += 40;
           }
 
-          hasMore = !!response._links?.next?.length;
-          offset += 40;
-        }
-
-        return { recordCount: count, result: count };
-      });
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += activityCount;
     } catch (err) {
       errors.push({

@@ -51,6 +51,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
           ? result.errors.map((e) => e.message).join("; ")
           : undefined,
         durationMs: Date.now() - importStart,
+        userId,
       });
     } else if (importType === "strong-csv") {
       const { readFile } = await import("node:fs/promises");
@@ -71,6 +72,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
           ? result.errors.map((e) => e.message).join("; ")
           : undefined,
         durationMs: Date.now() - importStart,
+        userId,
       });
     } else if (importType === "cronometer-csv") {
       const { readFile } = await import("node:fs/promises");
@@ -91,6 +93,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
           ? result.errors.map((e: { message: string }) => e.message).join("; ")
           : undefined,
         durationMs: Date.now() - importStart,
+        userId,
       });
     }
   } finally {

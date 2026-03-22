@@ -32,6 +32,7 @@ import type {
   ProviderAuthSetup,
   ProviderIdentity,
   SyncError,
+  SyncOptions,
   SyncProvider,
   SyncResult,
 } from "./types.ts";
@@ -113,17 +114,32 @@ export interface ParsedSleep {
   efficiencyPct?: number;
   sleepType: "sleep" | "nap";
   isNap: boolean;
+  sleepNeedBaselineMinutes?: number;
+  sleepNeedFromDebtMinutes?: number;
+  sleepNeedFromStrainMinutes?: number;
+  sleepNeedFromNapMinutes?: number;
 }
 
 export function parseSleep(record: WhoopSleepRecord): ParsedSleep {
+  const startedAt = new Date(record.start);
+  const endedAt = new Date(record.end);
+
+  if (Number.isNaN(startedAt.getTime())) {
+    throw new Error(`Invalid start timestamp: ${JSON.stringify(record.start)}`);
+  }
+  if (Number.isNaN(endedAt.getTime())) {
+    throw new Error(`Invalid end timestamp: ${JSON.stringify(record.end)}`);
+  }
+
   const stages = record.score?.stage_summary;
   const totalSleepMilli =
     (stages?.total_in_bed_time_milli ?? 0) - (stages?.total_awake_time_milli ?? 0);
+  const sleepNeeded = record.score?.sleep_needed;
 
   return {
     externalId: String(record.id),
-    startedAt: new Date(record.start),
-    endedAt: new Date(record.end),
+    startedAt,
+    endedAt,
     durationMinutes: milliToMinutes(totalSleepMilli),
     deepMinutes: milliToMinutes(stages?.total_slow_wave_sleep_time_milli ?? 0),
     remMinutes: milliToMinutes(stages?.total_rem_sleep_time_milli ?? 0),
@@ -132,6 +148,16 @@ export function parseSleep(record: WhoopSleepRecord): ParsedSleep {
     efficiencyPct: record.score?.sleep_efficiency_percentage,
     sleepType: record.nap ? "nap" : "sleep",
     isNap: record.nap,
+    sleepNeedBaselineMinutes: sleepNeeded ? milliToMinutes(sleepNeeded.baseline_milli) : undefined,
+    sleepNeedFromDebtMinutes: sleepNeeded
+      ? milliToMinutes(sleepNeeded.need_from_sleep_debt_milli)
+      : undefined,
+    sleepNeedFromStrainMinutes: sleepNeeded
+      ? milliToMinutes(sleepNeeded.need_from_recent_strain_milli)
+      : undefined,
+    sleepNeedFromNapMinutes: sleepNeeded
+      ? milliToMinutes(sleepNeeded.need_from_recent_nap_milli)
+      : undefined,
   };
 }
 
@@ -146,6 +172,7 @@ export interface ParsedWorkout {
   avgHeartRate?: number;
   maxHeartRate?: number;
   totalElevationGain?: number;
+  percentRecorded?: number;
 }
 
 export function parseWorkout(record: WhoopWorkoutRecord): ParsedWorkout {
@@ -172,6 +199,7 @@ export function parseWorkout(record: WhoopWorkoutRecord): ParsedWorkout {
     avgHeartRate: record.average_heart_rate,
     maxHeartRate: record.max_heart_rate,
     totalElevationGain: undefined,
+    percentRecorded: record.percent_recorded,
   };
 }
 
@@ -225,6 +253,8 @@ export interface ParsedStrengthExercise {
   equipment: string | null;
   providerExerciseId: string;
   exerciseIndex: number;
+  muscleGroups: string[];
+  exerciseType: string;
   sets: ParsedStrengthSet[];
 }
 
@@ -233,11 +263,18 @@ export interface ParsedStrengthSet {
   weightKg: number | null;
   reps: number | null;
   durationSeconds: number | null;
+  strapLocation: string | null;
+  strapLocationLaterality: string | null;
 }
 
 export interface ParsedWeightliftingWorkout {
   activityId: string;
   exercises: ParsedStrengthExercise[];
+  rawMskStrainScore: number;
+  scaledMskStrainScore: number;
+  cardioStrainScore: number;
+  cardioStrainContributionPercent: number;
+  mskStrainContributionPercent: number;
 }
 
 export function parseWeightliftingWorkout(
@@ -261,6 +298,8 @@ export function parseWeightliftingWorkout(
           weightKg: set.weight_kg > 0 ? set.weight_kg : null,
           reps: set.number_of_reps > 0 ? set.number_of_reps : null,
           durationSeconds: isTimeFormat && set.time_in_seconds > 0 ? set.time_in_seconds : null,
+          strapLocation: set.strap_location ?? null,
+          strapLocationLaterality: set.strap_location_laterality ?? null,
         });
         setIndex++;
       }
@@ -270,13 +309,23 @@ export function parseWeightliftingWorkout(
         equipment: details.equipment || null,
         providerExerciseId: details.exercise_id,
         exerciseIndex,
+        muscleGroups: details.muscle_groups,
+        exerciseType: details.exercise_type,
         sets,
       });
       exerciseIndex++;
     }
   }
 
-  return { activityId: response.activity_id, exercises };
+  return {
+    activityId: response.activity_id,
+    exercises,
+    rawMskStrainScore: response.raw_msk_strain_score,
+    scaledMskStrainScore: response.scaled_msk_strain_score,
+    cardioStrainScore: response.cardio_strain_score,
+    cardioStrainContributionPercent: response.cardio_strain_contribution_percent,
+    mskStrainContributionPercent: response.msk_strain_contribution_percent,
+  };
 }
 
 // ============================================================
@@ -499,7 +548,7 @@ export class WhoopProvider implements SyncProvider {
     };
   }
 
-  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -572,69 +621,76 @@ export class WhoopProvider implements SyncProvider {
 
     // --- Sync recovery from cycles ---
     try {
-      const recoveryCount = await withSyncLog(db, this.id, "recovery", async () => {
-        let count = 0;
-        for (const cycle of cycles) {
-          if (cycle.recovery) {
-            logger.info(
-              `[whoop] Recovery raw: score_state=${cycle.recovery.score_state}, ` +
-                `has_score=${!!cycle.recovery.score}, ` +
-                `resting_hr=${cycle.recovery.resting_heart_rate}, ` +
-                `skin_temp=${cycle.recovery.skin_temp_celsius}, ` +
-                `score_skin_temp=${cycle.recovery.score?.skin_temp_celsius}, ` +
-                `keys=${Object.keys(cycle.recovery).join(",")}`,
-            );
-          } else {
-            logger.info(
-              `[whoop] Cycle has no recovery object. Cycle keys: ${Object.keys(cycle).join(",")}`,
-            );
-          }
-          const hasLegacyRecovery =
-            cycle.recovery?.score_state === "SCORED" && cycle.recovery.score;
-          const hasBffRecovery =
-            cycle.recovery?.score_state === "complete" && cycle.recovery.resting_heart_rate != null;
-          if (cycle.recovery && (hasLegacyRecovery || hasBffRecovery)) {
-            const parsed = parseRecovery(cycle.recovery);
-            logger.info(
-              `[whoop] Parsed recovery: rhr=${parsed.restingHr}, hrv=${parsed.hrv}, ` +
-                `spo2=${parsed.spo2}, skinTemp=${parsed.skinTemp}`,
-            );
-            const cycleDayRaw =
-              cycle.days?.[0] ?? new Date(cycle.recovery.created_at).toISOString().split("T")[0];
-            if (!cycleDayRaw) throw new Error("Could not determine cycle day");
-            const cycleDay = cycleDayRaw;
+      const recoveryCount = await withSyncLog(
+        db,
+        this.id,
+        "recovery",
+        async () => {
+          let count = 0;
+          for (const cycle of cycles) {
+            if (cycle.recovery) {
+              logger.info(
+                `[whoop] Recovery raw: score_state=${cycle.recovery.score_state}, ` +
+                  `has_score=${!!cycle.recovery.score}, ` +
+                  `resting_hr=${cycle.recovery.resting_heart_rate}, ` +
+                  `skin_temp=${cycle.recovery.skin_temp_celsius}, ` +
+                  `score_skin_temp=${cycle.recovery.score?.skin_temp_celsius}, ` +
+                  `keys=${Object.keys(cycle.recovery).join(",")}`,
+              );
+            } else {
+              logger.info(
+                `[whoop] Cycle has no recovery object. Cycle keys: ${Object.keys(cycle).join(",")}`,
+              );
+            }
+            const hasLegacyRecovery =
+              cycle.recovery?.score_state === "SCORED" && cycle.recovery.score;
+            const hasBffRecovery =
+              cycle.recovery?.score_state === "complete" &&
+              cycle.recovery.resting_heart_rate != null;
+            if (cycle.recovery && (hasLegacyRecovery || hasBffRecovery)) {
+              const parsed = parseRecovery(cycle.recovery);
+              logger.info(
+                `[whoop] Parsed recovery: rhr=${parsed.restingHr}, hrv=${parsed.hrv}, ` +
+                  `spo2=${parsed.spo2}, skinTemp=${parsed.skinTemp}`,
+              );
+              const cycleDayRaw =
+                cycle.days?.[0] ?? new Date(cycle.recovery.created_at).toISOString().split("T")[0];
+              if (!cycleDayRaw) throw new Error("Could not determine cycle day");
+              const cycleDay = cycleDayRaw;
 
-            await db
-              .insert(dailyMetrics)
-              .values({
-                date: cycleDay,
-                providerId: this.id,
-                restingHr: parsed.restingHr,
-                hrv: parsed.hrv,
-                spo2Avg: parsed.spo2,
-                skinTempC: parsed.skinTemp,
-              })
-              .onConflictDoUpdate({
-                target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
-                set: {
+              await db
+                .insert(dailyMetrics)
+                .values({
+                  date: cycleDay,
+                  providerId: this.id,
                   restingHr: parsed.restingHr,
                   hrv: parsed.hrv,
                   spo2Avg: parsed.spo2,
                   skinTempC: parsed.skinTemp,
-                },
-              });
-            count++;
-          } else if (cycle.recovery) {
-            logger.warn(
-              `[whoop] Skipping unrecognized recovery format: score_state=${cycle.recovery.score_state}`,
-            );
+                })
+                .onConflictDoUpdate({
+                  target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
+                  set: {
+                    restingHr: parsed.restingHr,
+                    hrv: parsed.hrv,
+                    spo2Avg: parsed.spo2,
+                    skinTempC: parsed.skinTemp,
+                  },
+                });
+              count++;
+            } else if (cycle.recovery) {
+              logger.warn(
+                `[whoop] Skipping unrecognized recovery format: score_state=${cycle.recovery.score_state}`,
+              );
+            }
           }
-        }
-        logger.info(
-          `[whoop] Recovery sync: ${count} records inserted from ${cycles.length} cycles`,
-        );
-        return { recordCount: count, result: count };
-      });
+          logger.info(
+            `[whoop] Recovery sync: ${count} records inserted from ${cycles.length} cycles`,
+          );
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += recoveryCount;
     } catch (err) {
       errors.push({
@@ -645,35 +701,26 @@ export class WhoopProvider implements SyncProvider {
 
     // --- Sync sleep from cycles ---
     try {
-      const sleepCount = await withSyncLog(db, this.id, "sleep", async () => {
-        let count = 0;
-        const seenSleepIds = new Set<string>();
-        for (const cycle of cycles) {
-          for (const sleepId of extractSleepIdsFromCycle(cycle)) {
-            if (seenSleepIds.has(sleepId)) continue;
-            seenSleepIds.add(sleepId);
-            try {
-              const sleepData = await client.getSleep(sleepId);
-              const parsed = parseSleep(sleepData);
+      const sleepCount = await withSyncLog(
+        db,
+        this.id,
+        "sleep",
+        async () => {
+          let count = 0;
+          const seenSleepIds = new Set<string>();
+          for (const cycle of cycles) {
+            for (const sleepId of extractSleepIdsFromCycle(cycle)) {
+              if (seenSleepIds.has(sleepId)) continue;
+              seenSleepIds.add(sleepId);
+              try {
+                const sleepData = await client.getSleep(sleepId);
+                const parsed = parseSleep(sleepData);
 
-              await db
-                .insert(sleepSession)
-                .values({
-                  providerId: this.id,
-                  externalId: parsed.externalId,
-                  startedAt: parsed.startedAt,
-                  endedAt: parsed.endedAt,
-                  durationMinutes: parsed.durationMinutes,
-                  deepMinutes: parsed.deepMinutes,
-                  remMinutes: parsed.remMinutes,
-                  lightMinutes: parsed.lightMinutes,
-                  awakeMinutes: parsed.awakeMinutes,
-                  efficiencyPct: parsed.efficiencyPct,
-                  sleepType: parsed.sleepType,
-                })
-                .onConflictDoUpdate({
-                  target: [sleepSession.providerId, sleepSession.externalId],
-                  set: {
+                await db
+                  .insert(sleepSession)
+                  .values({
+                    providerId: this.id,
+                    externalId: parsed.externalId,
                     startedAt: parsed.startedAt,
                     endedAt: parsed.endedAt,
                     durationMinutes: parsed.durationMinutes,
@@ -683,20 +730,43 @@ export class WhoopProvider implements SyncProvider {
                     awakeMinutes: parsed.awakeMinutes,
                     efficiencyPct: parsed.efficiencyPct,
                     sleepType: parsed.sleepType,
-                  },
+                    sleepNeedBaselineMinutes: parsed.sleepNeedBaselineMinutes,
+                    sleepNeedFromDebtMinutes: parsed.sleepNeedFromDebtMinutes,
+                    sleepNeedFromStrainMinutes: parsed.sleepNeedFromStrainMinutes,
+                    sleepNeedFromNapMinutes: parsed.sleepNeedFromNapMinutes,
+                  })
+                  .onConflictDoUpdate({
+                    target: [sleepSession.providerId, sleepSession.externalId],
+                    set: {
+                      startedAt: parsed.startedAt,
+                      endedAt: parsed.endedAt,
+                      durationMinutes: parsed.durationMinutes,
+                      deepMinutes: parsed.deepMinutes,
+                      remMinutes: parsed.remMinutes,
+                      lightMinutes: parsed.lightMinutes,
+                      awakeMinutes: parsed.awakeMinutes,
+                      efficiencyPct: parsed.efficiencyPct,
+                      sleepType: parsed.sleepType,
+                      sleepNeedBaselineMinutes: parsed.sleepNeedBaselineMinutes,
+                      sleepNeedFromDebtMinutes: parsed.sleepNeedFromDebtMinutes,
+                      sleepNeedFromStrainMinutes: parsed.sleepNeedFromStrainMinutes,
+                      sleepNeedFromNapMinutes: parsed.sleepNeedFromNapMinutes,
+                    },
+                  });
+                count++;
+              } catch (err) {
+                errors.push({
+                  message: `Sleep ${sleepId}: ${err instanceof Error ? err.message : String(err)}`,
+                  externalId: sleepId,
+                  cause: err,
                 });
-              count++;
-            } catch (err) {
-              errors.push({
-                message: `Sleep ${sleepId}: ${err instanceof Error ? err.message : String(err)}`,
-                externalId: sleepId,
-                cause: err,
-              });
+              }
             }
           }
-        }
-        return { recordCount: count, result: count };
-      });
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += sleepCount;
     } catch (err) {
       errors.push({
@@ -714,34 +784,25 @@ export class WhoopProvider implements SyncProvider {
 
     // --- Sync workouts from cycles ---
     try {
-      const workoutCount = await withSyncLog(db, this.id, "workouts", async () => {
-        let count = 0;
-        for (const workoutRecord of allWorkouts) {
-          try {
-            const parsed = parseWorkout(workoutRecord);
+      const workoutCount = await withSyncLog(
+        db,
+        this.id,
+        "workouts",
+        async () => {
+          let count = 0;
+          for (const workoutRecord of allWorkouts) {
+            try {
+              const parsed = parseWorkout(workoutRecord);
 
-            await db
-              .insert(activity)
-              .values({
-                providerId: this.id,
-                externalId: parsed.externalId,
-                activityType: parsed.activityType,
-                startedAt: parsed.startedAt,
-                endedAt: parsed.endedAt,
-                raw: {
-                  strain: workoutRecord.score,
-                  avgHeartRate: parsed.avgHeartRate,
-                  maxHeartRate: parsed.maxHeartRate,
-                  calories: parsed.calories,
-                  durationSeconds: parsed.durationSeconds,
-                },
-              })
-              .onConflictDoUpdate({
-                target: [activity.providerId, activity.externalId],
-                set: {
+              await db
+                .insert(activity)
+                .values({
+                  providerId: this.id,
+                  externalId: parsed.externalId,
                   activityType: parsed.activityType,
                   startedAt: parsed.startedAt,
                   endedAt: parsed.endedAt,
+                  percentRecorded: parsed.percentRecorded,
                   raw: {
                     strain: workoutRecord.score,
                     avgHeartRate: parsed.avgHeartRate,
@@ -749,19 +810,36 @@ export class WhoopProvider implements SyncProvider {
                     calories: parsed.calories,
                     durationSeconds: parsed.durationSeconds,
                   },
-                },
+                })
+                .onConflictDoUpdate({
+                  target: [activity.providerId, activity.externalId],
+                  set: {
+                    activityType: parsed.activityType,
+                    startedAt: parsed.startedAt,
+                    endedAt: parsed.endedAt,
+                    percentRecorded: parsed.percentRecorded,
+                    raw: {
+                      strain: workoutRecord.score,
+                      avgHeartRate: parsed.avgHeartRate,
+                      maxHeartRate: parsed.maxHeartRate,
+                      calories: parsed.calories,
+                      durationSeconds: parsed.durationSeconds,
+                    },
+                  },
+                });
+              count++;
+            } catch (err) {
+              errors.push({
+                message: `Workout ${workoutRecord.activity_id}: ${err instanceof Error ? err.message : String(err)}`,
+                externalId: workoutRecord.activity_id,
+                cause: err,
               });
-            count++;
-          } catch (err) {
-            errors.push({
-              message: `Workout ${workoutRecord.activity_id}: ${err instanceof Error ? err.message : String(err)}`,
-              externalId: workoutRecord.activity_id,
-              cause: err,
-            });
+            }
           }
-        }
-        return { recordCount: count, result: count };
-      });
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += workoutCount;
     } catch (err) {
       errors.push({
@@ -772,132 +850,152 @@ export class WhoopProvider implements SyncProvider {
 
     // --- Sync strength workouts (exercise-level data) ---
     try {
-      const strengthCount = await withSyncLog(db, this.id, "strength", async () => {
-        let count = 0;
-        const exerciseCache = new Map<string, string>(); // providerExerciseId → exercise UUID
+      const strengthCount = await withSyncLog(
+        db,
+        this.id,
+        "strength",
+        async () => {
+          let count = 0;
+          const exerciseCache = new Map<string, string>(); // providerExerciseId → exercise UUID
 
-        for (const workoutRecord of allWorkouts) {
-          const activityId = workoutRecord.activity_id;
-          if (!activityId) continue;
+          for (const workoutRecord of allWorkouts) {
+            const activityId = workoutRecord.activity_id;
+            if (!activityId) continue;
 
-          try {
-            const weightliftingData = await client.getWeightliftingWorkout(activityId);
-            if (!weightliftingData) continue; // 404 = no exercises for this workout
+            try {
+              const weightliftingData = await client.getWeightliftingWorkout(activityId);
+              if (!weightliftingData) continue; // 404 = no exercises for this workout
 
-            const parsed = parseWeightliftingWorkout(weightliftingData);
-            if (parsed.exercises.length === 0) continue;
+              const parsed = parseWeightliftingWorkout(weightliftingData);
+              if (parsed.exercises.length === 0) continue;
 
-            // Parse workout times from the weightlifting response or fall back to workout record
-            const workoutDuring = weightliftingData.during ?? workoutRecord.during;
-            if (!workoutDuring) continue; // skip if no time range available
-            const { start: startedAt, end: endedAt } = parseDuringRange(workoutDuring);
+              // Parse workout times from the weightlifting response or fall back to workout record
+              const workoutDuring = weightliftingData.during ?? workoutRecord.during;
+              if (!workoutDuring) continue; // skip if no time range available
+              const { start: startedAt, end: endedAt } = parseDuringRange(workoutDuring);
 
-            // Upsert strength_workout
-            const [row] = await db
-              .insert(strengthWorkout)
-              .values({
-                providerId: this.id,
-                externalId: activityId,
-                startedAt,
-                endedAt,
-                name: weightliftingData.name ?? null,
-              })
-              .onConflictDoUpdate({
-                target: [strengthWorkout.providerId, strengthWorkout.externalId],
-                set: {
+              // Upsert strength_workout
+              const [row] = await db
+                .insert(strengthWorkout)
+                .values({
+                  providerId: this.id,
+                  externalId: activityId,
                   startedAt,
                   endedAt,
                   name: weightliftingData.name ?? null,
-                },
-              })
-              .returning({ id: strengthWorkout.id });
+                  rawMskStrainScore: parsed.rawMskStrainScore,
+                  scaledMskStrainScore: parsed.scaledMskStrainScore,
+                  cardioStrainScore: parsed.cardioStrainScore,
+                  cardioStrainContributionPercent: parsed.cardioStrainContributionPercent,
+                  mskStrainContributionPercent: parsed.mskStrainContributionPercent,
+                })
+                .onConflictDoUpdate({
+                  target: [strengthWorkout.providerId, strengthWorkout.externalId],
+                  set: {
+                    startedAt,
+                    endedAt,
+                    name: weightliftingData.name ?? null,
+                    rawMskStrainScore: parsed.rawMskStrainScore,
+                    scaledMskStrainScore: parsed.scaledMskStrainScore,
+                    cardioStrainScore: parsed.cardioStrainScore,
+                    cardioStrainContributionPercent: parsed.cardioStrainContributionPercent,
+                    mskStrainContributionPercent: parsed.mskStrainContributionPercent,
+                  },
+                })
+                .returning({ id: strengthWorkout.id });
 
-            const workoutId = row?.id;
-            if (!workoutId) continue;
+              const workoutId = row?.id;
+              if (!workoutId) continue;
 
-            // Delete old sets, re-insert (same pattern as Strong CSV)
-            await db.delete(strengthSet).where(eq(strengthSet.workoutId, workoutId));
+              // Delete old sets, re-insert (same pattern as Strong CSV)
+              await db.delete(strengthSet).where(eq(strengthSet.workoutId, workoutId));
 
-            const setRows: (typeof strengthSet.$inferInsert)[] = [];
+              const setRows: (typeof strengthSet.$inferInsert)[] = [];
 
-            for (const ex of parsed.exercises) {
-              const cacheKey = ex.providerExerciseId;
-              let exerciseId = exerciseCache.get(cacheKey);
+              for (const ex of parsed.exercises) {
+                const cacheKey = ex.providerExerciseId;
+                let exerciseId = exerciseCache.get(cacheKey);
 
-              if (!exerciseId) {
-                // Upsert exercise
-                await db
-                  .insert(exercise)
-                  .values({
-                    name: ex.exerciseName,
-                    equipment: ex.equipment,
-                  })
-                  .onConflictDoNothing();
-
-                const whereClause = ex.equipment
-                  ? and(eq(exercise.name, ex.exerciseName), eq(exercise.equipment, ex.equipment))
-                  : eq(exercise.name, ex.exerciseName);
-
-                const exerciseRows = await db
-                  .select({ id: exercise.id })
-                  .from(exercise)
-                  .where(whereClause)
-                  .limit(1);
-
-                exerciseId = exerciseRows[0]?.id;
-                if (exerciseId) {
-                  exerciseCache.set(cacheKey, exerciseId);
-
-                  // Upsert alias
+                if (!exerciseId) {
+                  // Upsert exercise
                   await db
-                    .insert(exerciseAlias)
+                    .insert(exercise)
                     .values({
-                      exerciseId,
-                      providerId: this.id,
-                      providerExerciseId: ex.providerExerciseId,
-                      providerExerciseName: ex.exerciseName,
+                      name: ex.exerciseName,
+                      equipment: ex.equipment,
+                      muscleGroups: ex.muscleGroups,
+                      exerciseType: ex.exerciseType,
                     })
                     .onConflictDoNothing();
+
+                  const whereClause = ex.equipment
+                    ? and(eq(exercise.name, ex.exerciseName), eq(exercise.equipment, ex.equipment))
+                    : eq(exercise.name, ex.exerciseName);
+
+                  const exerciseRows = await db
+                    .select({ id: exercise.id })
+                    .from(exercise)
+                    .where(whereClause)
+                    .limit(1);
+
+                  exerciseId = exerciseRows[0]?.id;
+                  if (exerciseId) {
+                    exerciseCache.set(cacheKey, exerciseId);
+
+                    // Upsert alias
+                    await db
+                      .insert(exerciseAlias)
+                      .values({
+                        exerciseId,
+                        providerId: this.id,
+                        providerExerciseId: ex.providerExerciseId,
+                        providerExerciseName: ex.exerciseName,
+                      })
+                      .onConflictDoNothing();
+                  }
+                }
+
+                if (!exerciseId) {
+                  errors.push({
+                    message: `Could not resolve exercise: ${ex.exerciseName}`,
+                    externalId: activityId,
+                  });
+                  continue;
+                }
+
+                for (const set of ex.sets) {
+                  setRows.push({
+                    workoutId,
+                    exerciseId,
+                    exerciseIndex: ex.exerciseIndex,
+                    setIndex: set.setIndex,
+                    setType: "working",
+                    weightKg: set.weightKg,
+                    reps: set.reps,
+                    durationSeconds: set.durationSeconds,
+                    strapLocation: set.strapLocation,
+                    strapLocationLaterality: set.strapLocationLaterality,
+                  });
                 }
               }
 
-              if (!exerciseId) {
-                errors.push({
-                  message: `Could not resolve exercise: ${ex.exerciseName}`,
-                  externalId: activityId,
-                });
-                continue;
+              if (setRows.length > 0) {
+                await db.insert(strengthSet).values(setRows);
               }
-
-              for (const set of ex.sets) {
-                setRows.push({
-                  workoutId,
-                  exerciseId,
-                  exerciseIndex: ex.exerciseIndex,
-                  setIndex: set.setIndex,
-                  setType: "working",
-                  weightKg: set.weightKg,
-                  reps: set.reps,
-                  durationSeconds: set.durationSeconds,
-                });
-              }
+              count++;
+            } catch (err) {
+              errors.push({
+                message: `Strength ${activityId}: ${err instanceof Error ? err.message : String(err)}`,
+                externalId: activityId,
+                cause: err,
+              });
             }
-
-            if (setRows.length > 0) {
-              await db.insert(strengthSet).values(setRows);
-            }
-            count++;
-          } catch (err) {
-            errors.push({
-              message: `Strength ${activityId}: ${err instanceof Error ? err.message : String(err)}`,
-              externalId: activityId,
-              cause: err,
-            });
           }
-        }
 
-        return { recordCount: count, result: count };
-      });
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += strengthCount;
     } catch (err) {
       errors.push({
@@ -908,41 +1006,47 @@ export class WhoopProvider implements SyncProvider {
 
     // --- Sync HR stream (6s intervals) ---
     try {
-      const hrCount = await withSyncLog(db, this.id, "hr_stream", async () => {
-        const weekMs = 7 * 24 * 60 * 60 * 1000;
-        let windowStart = since.getTime();
-        const nowMs = Date.now();
-        let totalRecords = 0;
-        const BATCH_SIZE = 500;
+      const hrCount = await withSyncLog(
+        db,
+        this.id,
+        "hr_stream",
+        async () => {
+          const weekMs = 7 * 24 * 60 * 60 * 1000;
+          let windowStart = since.getTime();
+          const nowMs = Date.now();
+          let totalRecords = 0;
+          const BATCH_SIZE = 500;
 
-        while (windowStart < nowMs) {
-          const windowEnd = Math.min(windowStart + weekMs, nowMs);
-          const startStr = new Date(windowStart).toISOString();
-          const endStr = new Date(windowEnd).toISOString();
+          while (windowStart < nowMs) {
+            const windowEnd = Math.min(windowStart + weekMs, nowMs);
+            const startStr = new Date(windowStart).toISOString();
+            const endStr = new Date(windowEnd).toISOString();
 
-          const values = await client.getHeartRate(startStr, endStr, 6);
-          const parsed = parseHeartRateValues(values);
+            const values = await client.getHeartRate(startStr, endStr, 6);
+            const parsed = parseHeartRateValues(values);
 
-          for (let i = 0; i < parsed.length; i += BATCH_SIZE) {
-            const batch = parsed.slice(i, i + BATCH_SIZE);
-            await db
-              .insert(metricStream)
-              .values(
-                batch.map((r) => ({
-                  providerId: this.id,
-                  recordedAt: r.recordedAt,
-                  heartRate: r.heartRate,
-                })),
-              )
-              .onConflictDoNothing();
+            for (let i = 0; i < parsed.length; i += BATCH_SIZE) {
+              const batch = parsed.slice(i, i + BATCH_SIZE);
+              await db
+                .insert(metricStream)
+                .values(
+                  batch.map((r) => ({
+                    providerId: this.id,
+                    recordedAt: r.recordedAt,
+                    heartRate: r.heartRate,
+                  })),
+                )
+                .onConflictDoNothing();
+            }
+
+            totalRecords += parsed.length;
+            windowStart = windowEnd;
           }
 
-          totalRecords += parsed.length;
-          windowStart = windowEnd;
-        }
-
-        return { recordCount: totalRecords, result: totalRecords };
-      });
+          return { recordCount: totalRecords, result: totalRecords };
+        },
+        options?.userId,
+      );
       recordsSynced += hrCount;
     } catch (err) {
       errors.push({
@@ -953,35 +1057,41 @@ export class WhoopProvider implements SyncProvider {
 
     // --- Sync journal entries ---
     try {
-      const journalCount = await withSyncLog(db, this.id, "journal", async () => {
-        const raw = await client.getJournal(since.toISOString(), new Date().toISOString());
-        logger.info(`[whoop] Journal response shape: ${JSON.stringify(raw).slice(0, 500)}`);
+      const journalCount = await withSyncLog(
+        db,
+        this.id,
+        "journal",
+        async () => {
+          const raw = await client.getJournal(since.toISOString(), new Date().toISOString());
+          logger.info(`[whoop] Journal response shape: ${JSON.stringify(raw).slice(0, 500)}`);
 
-        const entries = parseJournalResponse(raw);
-        let count = 0;
-        for (const entry of entries) {
-          await db
-            .insert(journalEntry)
-            .values({
-              date: entry.date.toISOString().split("T")[0] ?? "",
-              providerId: this.id,
-              question: entry.question,
-              answerText: entry.answerText,
-              answerNumeric: entry.answerNumeric,
-              impactScore: entry.impactScore,
-            })
-            .onConflictDoUpdate({
-              target: [journalEntry.providerId, journalEntry.date, journalEntry.question],
-              set: {
+          const entries = parseJournalResponse(raw);
+          let count = 0;
+          for (const entry of entries) {
+            await db
+              .insert(journalEntry)
+              .values({
+                date: entry.date.toISOString().split("T")[0] ?? "",
+                providerId: this.id,
+                question: entry.question,
                 answerText: entry.answerText,
                 answerNumeric: entry.answerNumeric,
                 impactScore: entry.impactScore,
-              },
-            });
-          count++;
-        }
-        return { recordCount: count, result: count };
-      });
+              })
+              .onConflictDoUpdate({
+                target: [journalEntry.providerId, journalEntry.date, journalEntry.question],
+                set: {
+                  answerText: entry.answerText,
+                  answerNumeric: entry.answerNumeric,
+                  impactScore: entry.impactScore,
+                },
+              });
+            count++;
+          }
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += journalCount;
     } catch (err) {
       errors.push({

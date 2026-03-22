@@ -73,13 +73,13 @@ export function SleepBar({
       <Text style={styles.duration}>{formatDurationMinutes(durationMinutes)}</Text>
       <View style={styles.bar}>
         {stages.map((stage) =>
-          stage.percentage > 0 ? (
+          stage.displayPct > 0 ? (
             <View
               key={stage.key}
               style={[
                 styles.segment,
                 {
-                  flex: stage.percentage,
+                  flex: stage.displayPct,
                   backgroundColor: stage.color,
                 },
               ]}
