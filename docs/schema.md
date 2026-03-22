@@ -25,6 +25,9 @@ A column is raw if the data originates from a sensor or external system and **ca
 | `activity_interval.avg_cadence` | Same — `AVG(cadence)` over the interval window. |
 | `activity_interval.distance_meters` | Same — computed from GPS within the interval. |
 | `activity_interval.elevation_gain` | Same — computed from altitude deltas within the interval. |
+| `daily_metrics.mindful_minutes` | Never populated by any provider. Dead column removed in migration 0042. |
+| `daily_metrics.environmental_audio_exposure` | Apple Health stores raw audio exposure readings in `metric_stream.audio_exposure` — daily averages can be derived from there. No provider ever populated this column. Removed in migration 0042. |
+| `daily_metrics.headphone_audio_exposure` | Same as environmental — raw readings in `metric_stream.audio_exposure`, never aggregated to daily. Removed in migration 0042. |
 
 The `activity_summary` materialized view computes all of these at refresh time from `metric_stream` data, including total distance (haversine over GPS points) and elevation gain/loss (altitude deltas).
 
