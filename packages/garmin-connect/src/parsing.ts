@@ -218,9 +218,26 @@ const GARMIN_SLEEP_LEVEL_MAP: Record<number, "deep" | "light" | "awake"> = {
 export function parseConnectSleepStages(data: ConnectSleepData): ParsedSleepStage[] {
   const stages: ParsedSleepStage[] = [];
 
+  // Build REM time windows — Garmin marks REM as activityLevel 1 (light) in
+  // sleepLevels and provides the correct classification in remSleepData.
+  // We need to exclude overlapping "light" entries that are actually REM.
+  const remWindows = (data.remSleepData ?? []).map((rem) => ({
+    start: new Date(ensureUtcSuffix(rem.startGMT)).getTime(),
+    end: new Date(ensureUtcSuffix(rem.endGMT)).getTime(),
+  }));
+
   for (const level of data.sleepLevels ?? []) {
     const stage = GARMIN_SLEEP_LEVEL_MAP[level.activityLevel];
     if (!stage) continue;
+
+    // Skip "light" entries whose time window overlaps with a REM period
+    if (stage === "light" && remWindows.length > 0) {
+      const start = new Date(ensureUtcSuffix(level.startGMT)).getTime();
+      const end = new Date(ensureUtcSuffix(level.endGMT)).getTime();
+      const overlapsRem = remWindows.some((rem) => start < rem.end && end > rem.start);
+      if (overlapsRem) continue;
+    }
+
     stages.push({
       stage,
       startedAt: new Date(ensureUtcSuffix(level.startGMT)),

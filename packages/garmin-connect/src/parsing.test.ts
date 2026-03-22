@@ -509,6 +509,25 @@ describe("parseConnectSleepStages", () => {
     expect(parseConnectSleepStages(data)).toEqual([]);
   });
 
+  it("excludes light entries that overlap with remSleepData", () => {
+    const data: ConnectSleepData = {
+      dailySleepDTO: { id: 1, userProfilePK: 1, calendarDate: "2024-01-15" },
+      sleepLevels: [
+        { startGMT: "2024-01-15 00:00:00", endGMT: "2024-01-15 00:30:00", activityLevel: 0 },
+        // This "light" entry covers the same window as the REM entry below
+        { startGMT: "2024-01-15 00:30:00", endGMT: "2024-01-15 01:00:00", activityLevel: 1 },
+        { startGMT: "2024-01-15 01:00:00", endGMT: "2024-01-15 01:30:00", activityLevel: 1 },
+      ],
+      remSleepData: [{ startGMT: "2024-01-15 00:30:00", endGMT: "2024-01-15 01:00:00" }],
+    };
+    const stages = parseConnectSleepStages(data);
+    // Should have deep, rem, light (not deep, light, rem, light)
+    expect(stages).toHaveLength(3);
+    expect(stages[0]?.stage).toBe("deep");
+    expect(stages[1]?.stage).toBe("rem");
+    expect(stages[2]?.stage).toBe("light");
+  });
+
   it("parses timestamps correctly with UTC suffix", () => {
     const data: ConnectSleepData = {
       dailySleepDTO: { id: 1, userProfilePK: 1, calendarDate: "2024-01-15" },

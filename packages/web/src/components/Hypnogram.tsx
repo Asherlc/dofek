@@ -42,28 +42,8 @@ function buildHypnogramData(stages: SleepStage[]) {
   return points;
 }
 
-function buildVisualMap(stages: SleepStage[]) {
-  // Build pieces for the visual map so each segment is colored by stage
-  const pieces: { gt: number; lte: number; color: string }[] = [];
-
-  for (let i = 0; i < stages.length; i++) {
-    const stage = stages[i];
-    if (!stage) continue;
-    const color = STAGE_COLOR[stage.stage] ?? "#a78bfa";
-    // Each stage occupies 2 data points (start, end)
-    pieces.push({
-      gt: i * 2 - 1,
-      lte: i * 2 + 1,
-      color,
-    });
-  }
-
-  return pieces;
-}
-
 export function Hypnogram({ data, loading }: HypnogramProps) {
   const points = buildHypnogramData(data);
-  const pieces = buildVisualMap(data);
 
   const option = {
     grid: dofekGrid("single", { top: 15, bottom: 35, left: 55, right: 15 }),
@@ -97,7 +77,6 @@ export function Hypnogram({ data, loading }: HypnogramProps) {
       min: 0.5,
       max: 4.5,
       interval: 1,
-      inverse: true,
       axisLabel: {
         color: chartThemeColors.axisLabel,
         fontSize: 11,
@@ -108,8 +87,13 @@ export function Hypnogram({ data, loading }: HypnogramProps) {
     },
     visualMap: {
       show: false,
-      dimension: 0,
-      pieces,
+      dimension: 1,
+      pieces: [
+        { value: 1, color: STAGE_COLOR.deep },
+        { value: 2, color: STAGE_COLOR.light },
+        { value: 3, color: STAGE_COLOR.rem },
+        { value: 4, color: STAGE_COLOR.awake },
+      ],
     },
     series: [
       {

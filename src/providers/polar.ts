@@ -528,10 +528,9 @@ export class PolarProvider implements SyncProvider {
               })
               .returning({ id: sleepSession.id });
 
-            const stages = parsePolarSleepStages(
-              sleepRecord.sleep_start_time,
-              sleepRecord.hypnogram,
-            );
+            const stages = sleepRecord.hypnogram
+              ? parsePolarSleepStages(sleepRecord.sleep_start_time, sleepRecord.hypnogram)
+              : [];
             if (session && stages.length > 0) {
               await db.delete(sleepStage).where(eq(sleepStage.sessionId, session.id));
               await db.insert(sleepStage).values(

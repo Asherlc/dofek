@@ -1,6 +1,7 @@
 import { selectDailyHeartRateVariability } from "@dofek/heart-rate-variability";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 
@@ -824,7 +825,9 @@ async function processSleepSamples(
     const sourceName = bestStageSource != null ? bestStageSource.sourceName : session.sourceName;
     const externalId = `hk:sleep:${session.uuid}`;
     const durationMinutes = Math.round((sessionEnd - sessionStart) / (1000 * 60));
-    const sessionResult = await db.execute(
+    const sessionResult = await executeWithSchema(
+      db,
+      z.object({ id: z.string().uuid() }),
       sql`INSERT INTO fitness.sleep_session (user_id, provider_id, external_id, started_at, ended_at, duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes, sleep_type, source_name)
           VALUES (
             ${userId},
@@ -854,8 +857,7 @@ async function processSleepSamples(
     );
 
     // Insert individual sleep stage intervals
-    const row = sessionResult[0] as { id: string } | undefined;
-    const sessionId = row?.id;
+    const sessionId = sessionResult[0]?.id;
     if (sessionId && filtered.length > 0) {
       await db.execute(sql`DELETE FROM fitness.sleep_stage WHERE session_id = ${sessionId}::uuid`);
 
