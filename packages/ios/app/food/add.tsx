@@ -17,7 +17,7 @@ import { BarcodeScanner } from "../../components/BarcodeScanner";
 import { useAuth } from "../../lib/auth-context";
 import { colors } from "../../theme";
 
-import { type FoodDatabaseResult, lookupBarcode, searchFoods } from "../../lib/food-database";
+import { type FoodDatabaseResult, OpenFoodFactsClient } from "../../lib/food-database";
 import { MEAL_OPTIONS, type MealType, autoMealType } from "@dofek/nutrition/meal";
 import { formatDateYmd } from "@dofek/format/format";
 import { SERVER_URL, getTrpcUrl } from "../../lib/server";
@@ -101,6 +101,7 @@ export default function AddFoodScreen() {
     () => Intl.DateTimeFormat().resolvedOptions().locale ?? "en-US",
     [],
   );
+  const foodClient = useMemo(() => new OpenFoodFactsClient(deviceLocale), [deviceLocale]);
 
   useEffect(() => {
     if (recentLoaded.current) return;
@@ -204,7 +205,7 @@ export default function AddFoodScreen() {
           }));
         })
         .catch(() => [] as SearchResult[]),
-      searchFoods(query, 10, deviceLocale),
+      foodClient.searchFoods(query, 10),
     ]);
 
     const offMapped: SearchResult[] = offResults.map((r) => ({
@@ -223,7 +224,7 @@ export default function AddFoodScreen() {
     // History first, then Open Food Facts
     setSearchResults([...historyResults, ...offMapped]);
     setSearching(false);
-  }, [apiUrl, authHeaders, deviceLocale]);
+  }, [apiUrl, authHeaders, foodClient]);
 
   // Debounced search
   useEffect(() => {
@@ -243,7 +244,7 @@ export default function AddFoodScreen() {
     setActiveTab("search");
     setScanningBarcode(true);
 
-    const result = await lookupBarcode(barcodeValue);
+    const result = await foodClient.lookupBarcode(barcodeValue);
     setScanningBarcode(false);
 
     if (result) {

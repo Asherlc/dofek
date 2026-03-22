@@ -1,6 +1,7 @@
 import { zScoreToRecoveryScore } from "@dofek/scoring/scoring";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import type { Database } from "../db/typed-sql.ts";
 import { logger } from "../logger.ts";
 import type { ExponentialMovingAverageInput } from "./fit-ewma.ts";
 import { fitExponentialMovingAverage } from "./fit-ewma.ts";
@@ -14,10 +15,6 @@ import type { TrainingImpulseInput } from "./fit-trimp.ts";
 import { fitTrainingImpulseConstants } from "./fit-trimp.ts";
 import type { PersonalizedParams } from "./params.ts";
 import { savePersonalizedParams } from "./storage.ts";
-
-interface Database {
-  execute: (query: ReturnType<typeof sql>) => Promise<Record<string, unknown>[]>;
-}
 
 /**
  * Refit all personalized parameters for a user from their historical data.

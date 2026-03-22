@@ -1,8 +1,6 @@
 import {
   CORRELATION_METRICS,
-  correlationColor,
-  correlationConfidence,
-  generateCorrelationInsight,
+  CorrelationResult,
   linearRegression,
   pearsonCorrelation,
 } from "@dofek/stats/correlation";
@@ -137,20 +135,13 @@ export function computeCorrelation(joined: JoinedDay[], input: CorrelationInput)
   const xStats = computeStats(xs);
   const yStats = computeStats(ys);
 
-  // Confidence
-  const confidenceLevel = correlationConfidence(spearman.rho, pairCount);
+  // Wrap Spearman result in CorrelationResult for derived properties
+  const spearmanResult = new CorrelationResult(spearman.rho, spearman.pValue, pairCount);
 
   // Insight text
   const xLabel = (METRIC_LABEL_MAP.get(metricX) ?? metricX).toLowerCase();
   const yLabel = (METRIC_LABEL_MAP.get(metricY) ?? metricY).toLowerCase();
-  const insight = generateCorrelationInsight({
-    xLabel,
-    yLabel,
-    rho: spearman.rho,
-    pValue: spearman.pValue,
-    n: pairCount,
-    lag,
-  });
+  const insight = spearmanResult.generateInsight({ xLabel, yLabel, lag });
 
   return {
     spearmanRho: spearman.rho,
@@ -163,8 +154,8 @@ export function computeCorrelation(joined: JoinedDay[], input: CorrelationInput)
     xStats,
     yStats,
     insight,
-    confidenceLevel,
-    correlationColor: correlationColor(spearman.rho),
+    confidenceLevel: spearmanResult.confidence,
+    correlationColor: spearmanResult.color,
   };
 }
 

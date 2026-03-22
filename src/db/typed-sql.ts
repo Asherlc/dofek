@@ -1,12 +1,17 @@
-import type { Database } from "dofek/db";
 import type { SQL } from "drizzle-orm";
 import { z } from "zod";
 
 /**
- * Minimal DB interface for executeWithSchema — only needs the execute method.
- * Accepts both the full Drizzle `Database` and narrower `Pick<Database, "execute">`.
+ * Minimal database interface for executeWithSchema and other DB helpers.
+ * The full Drizzle `Database` (from `./index.ts`) structurally satisfies this,
+ * and test mocks can implement it directly without type assertions.
+ *
+ * This follows the Interface Segregation Principle — callers declare only the
+ * DB operations they actually use, making them testable with lightweight mocks.
  */
-type ExecutableDatabase = Pick<Database, "execute">;
+export interface Database {
+  execute: (query: SQL) => Promise<Record<string, unknown>[]>;
+}
 
 /**
  * Execute a raw SQL query and parse each row with a Zod schema.
@@ -14,7 +19,7 @@ type ExecutableDatabase = Pick<Database, "execute">;
  * catching schema drift, missing columns, and type mismatches that generics miss.
  */
 export async function executeWithSchema<T extends z.ZodType>(
-  db: ExecutableDatabase,
+  db: Database,
   schema: T,
   query: SQL,
 ): Promise<z.infer<T>[]> {
@@ -28,7 +33,7 @@ export async function executeWithSchema<T extends z.ZodType>(
  * and strings on others (macOS). This schema normalizes both to YYYY-MM-DD.
  */
 export const dateStringSchema = z
-  .union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD date string"), z.date()])
+  .union([z.string(), z.date()])
   .transform((value) => (value instanceof Date ? value.toISOString().slice(0, 10) : value));
 
 /**

@@ -1,33 +1,13 @@
-import {
-  type ActivityRow,
-  buildTssModel,
-  computeHrTss,
-  computePowerTss,
-  computeTrimp,
-  estimateFtp,
-  type PmcChartResult,
-  type PmcDataPoint,
-  type TssModelInfo,
-} from "@dofek/training/pmc";
+import type { PmcChartResult, PmcDataPoint, TssModelInfo } from "@dofek/training/pmc";
+import { TrainingStressCalculator } from "@dofek/training/training-load";
+export type { PmcChartResult, PmcDataPoint, TssModelInfo };
+
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
-
-// Re-export domain types and functions for backward compatibility with existing tests
-export {
-  type ActivityRow,
-  type PmcChartResult,
-  type PmcDataPoint,
-  type TssModelInfo,
-  buildTssModel,
-  computeHrTss,
-  computePowerTss,
-  computeTrimp,
-  estimateFtp,
-};
 
 export const pmcRouter = router({
   /**
@@ -45,6 +25,7 @@ export const pmcRouter = router({
       const effective = getEffectiveParams(storedParams);
       const { chronicTrainingLoadDays, acuteTrainingLoadDays } = effective.exponentialMovingAverage;
       const { genderFactor, exponent } = effective.trainingImpulseConstants;
+      const calculator = new TrainingStressCalculator(genderFactor, exponent);
 
       // Fetch enough history for EWMA convergence, regardless of display range.
       // A 42-day EWMA needs ~126 days to reach 95% convergence, so we always
@@ -138,7 +119,7 @@ export const pmcRouter = router({
       const npByActivity = new Map(npRows.map((r) => [r.activity_id, Number(r.np)]));
 
       // Estimate FTP from avg_power (not NP, which inflates for intervals)
-      const ftp = estimateFtp(activities);
+      const ftp = TrainingStressCalculator.estimateFtp(activities);
 
       // Build regression model from activities with both power and HR
       let tssModel: { slope: number; intercept: number; r2: number } | null = null;
@@ -152,21 +133,14 @@ export const pmcRouter = router({
 
           // Require NP (computed from metric_stream) for power TSS
           if (np != null && np > 0) {
-            const trimp = computeTrimp(
-              durationMin,
-              avgHr,
-              globalMaxHr,
-              restingHr,
-              genderFactor,
-              exponent,
-            );
-            const powerTss = computePowerTss(np, ftp, durationMin);
+            const trimp = calculator.computeTrimp(durationMin, avgHr, globalMaxHr, restingHr);
+            const powerTss = TrainingStressCalculator.computePowerTss(np, ftp, durationMin);
             if (trimp > 0 && powerTss > 0) {
               pairedData.push({ trimp, powerTss });
             }
           }
         }
-        tssModel = buildTssModel(pairedData);
+        tssModel = TrainingStressCalculator.buildTssModel(pairedData);
       }
 
       // Compute TSS per activity, then aggregate by day
@@ -180,21 +154,14 @@ export const pmcRouter = router({
 
         if (ftp != null && np != null && np > 0) {
           // Activity has NP from metric_stream — use standard power TSS
-          tss = computePowerTss(np, ftp, durationMin);
+          tss = TrainingStressCalculator.computePowerTss(np, ftp, durationMin);
         } else if (tssModel != null) {
           // Activity has only HR — use learned model to predict TSS from TRIMP
-          const trimp = computeTrimp(
-            durationMin,
-            avgHr,
-            globalMaxHr,
-            restingHr,
-            genderFactor,
-            exponent,
-          );
+          const trimp = calculator.computeTrimp(durationMin, avgHr, globalMaxHr, restingHr);
           tss = Math.max(0, tssModel.slope * trimp + tssModel.intercept);
         } else {
           // Fallback: Bannister hrTSS with personalized constants
-          tss = computeHrTss(durationMin, avgHr, globalMaxHr, restingHr, genderFactor, exponent);
+          tss = calculator.computeHrTss(durationMin, avgHr, globalMaxHr, restingHr);
         }
 
         const dateStr = String(act.date);

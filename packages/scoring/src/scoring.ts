@@ -1,42 +1,38 @@
 import { statusColors, textColors } from "./colors.ts";
 
 /**
- * Scaling constant for converting raw training load to Whoop-like 0-21 strain.
- * Calibrated so a moderate 60-min workout (~45 raw) maps to ~13 strain,
- * a hard 90-min workout (~76 raw) maps to ~15, and extreme multi-hour efforts
- * approach but don't exceed 21.
- */
-const STRAIN_SCALE_FACTOR = 3.5;
-const STRAIN_MAX = 21;
-
-/**
- * Convert raw daily training load (duration_min × avg_hr/max_hr) to a
- * Whoop-like 0–21 strain score using logarithmic scaling.
+ * Whoop-like 0–21 strain score with display classification.
  *
- * The logarithmic transformation produces diminishing returns at higher loads,
- * matching Whoop's bounded scale where going from 15→16 requires more effort
- * than going from 5→6.
+ * Construct directly with a strain value or use `fromRawLoad()` to convert
+ * raw daily training load (duration_min × avg_hr/max_hr) using logarithmic
+ * scaling that produces diminishing returns at higher loads.
  */
-export function rawLoadToStrain(rawLoad: number): number {
-  if (rawLoad <= 0) return 0;
-  const strain = STRAIN_SCALE_FACTOR * Math.log(1 + rawLoad);
-  return Math.round(Math.min(strain, STRAIN_MAX) * 10) / 10;
-}
+export class StrainScore {
+  private static readonly SCALE_FACTOR = 3.5;
+  private static readonly MAX = 21;
 
-/** Get the color for a strain score (0-21 Whoop-like scale) */
-export function strainColor(strain: number): string {
-  if (strain > 17) return statusColors.danger;
-  if (strain >= 14) return statusColors.warning;
-  if (strain >= 10) return statusColors.positive;
-  return textColors.secondary;
-}
+  constructor(readonly value: number) {}
 
-/** Get a human-readable label for a strain score (0-21 Whoop-like scale) */
-export function strainLabel(strain: number): string {
-  if (strain > 17) return "All Out";
-  if (strain >= 14) return "High";
-  if (strain >= 10) return "Moderate";
-  return "Light";
+  get color(): string {
+    if (this.value > 17) return statusColors.danger;
+    if (this.value >= 14) return statusColors.warning;
+    if (this.value >= 10) return statusColors.positive;
+    return textColors.secondary;
+  }
+
+  get label(): string {
+    if (this.value > 17) return "All Out";
+    if (this.value >= 14) return "High";
+    if (this.value >= 10) return "Moderate";
+    return "Light";
+  }
+
+  static fromRawLoad(rawLoad: number): StrainScore {
+    if (rawLoad <= 0) return new StrainScore(0);
+    const strain = StrainScore.SCALE_FACTOR * Math.log(1 + rawLoad);
+    const value = Math.round(Math.min(strain, StrainScore.MAX) * 10) / 10;
+    return new StrainScore(value);
+  }
 }
 
 /** Get the color for a recovery/readiness score (0-100) */
@@ -53,36 +49,43 @@ export function scoreLabel(score: number): string {
   return "Poor";
 }
 
-/** Get the color for a strain zone ("restoring" | "optimal" | "overreaching") */
-export function strainZoneColor(zone: string): string {
-  if (zone === "optimal") return statusColors.positive;
-  if (zone === "overreaching") return statusColors.danger;
-  if (zone === "restoring") return statusColors.info;
-  return textColors.secondary;
+/** Strain zone classification with display properties. */
+export class StrainZone {
+  constructor(readonly zone: string) {}
+
+  get color(): string {
+    if (this.zone === "optimal") return statusColors.positive;
+    if (this.zone === "overreaching") return statusColors.danger;
+    if (this.zone === "restoring") return statusColors.info;
+    return textColors.secondary;
+  }
+
+  get label(): string {
+    if (this.zone === "optimal") return "Optimal";
+    if (this.zone === "overreaching") return "Overreaching";
+    if (this.zone === "restoring") return "Restoring";
+    return this.zone;
+  }
 }
 
-/** Get a human-readable label for a strain zone */
-export function strainZoneLabel(zone: string): string {
-  if (zone === "optimal") return "Optimal";
-  if (zone === "overreaching") return "Overreaching";
-  if (zone === "restoring") return "Restoring";
-  return zone;
-}
+/** Workload ratio (ACWR) with display classification. */
+export class WorkloadRatio {
+  constructor(readonly value: number | null) {}
 
-/** Get the color for a workload ratio value */
-export function workloadRatioColor(ratio: number | null): string {
-  if (ratio == null) return textColors.secondary;
-  if (ratio >= 0.8 && ratio <= 1.3) return statusColors.positive;
-  if (ratio >= 0.5 && ratio <= 1.5) return statusColors.warning;
-  return statusColors.danger;
-}
+  get color(): string {
+    if (this.value == null) return textColors.secondary;
+    if (this.value >= 0.8 && this.value <= 1.3) return statusColors.positive;
+    if (this.value >= 0.5 && this.value <= 1.5) return statusColors.warning;
+    return statusColors.danger;
+  }
 
-/** Get a human-readable hint for a workload ratio value */
-export function workloadRatioHint(ratio: number): string {
-  if (ratio >= 0.8 && ratio <= 1.3) return "Optimal training zone";
-  if (ratio < 0.8) return "Detraining risk - increase load gradually";
-  if (ratio <= 1.5) return "High load - monitor recovery closely";
-  return "Injury risk zone - consider rest";
+  get hint(): string | null {
+    if (this.value == null) return null;
+    if (this.value >= 0.8 && this.value <= 1.3) return "Optimal training zone";
+    if (this.value < 0.8) return "Detraining risk - increase load gradually";
+    if (this.value <= 1.5) return "High load - monitor recovery closely";
+    return "Injury risk zone - consider rest";
+  }
 }
 
 export interface WeekSummary {
@@ -115,20 +118,23 @@ export function trendDirection(current: number, previous: number): "up" | "down"
   return "stable";
 }
 
-/** Get the color for a stress score (0-3 scale) */
-export function stressColor(score: number): string {
-  if (score <= 0.5) return statusColors.positive;
-  if (score <= 1.5) return statusColors.warning;
-  if (score <= 2.5) return statusColors.elevated;
-  return statusColors.danger;
-}
+/** Stress score (0-3 Whoop-like scale) with display classification. */
+export class StressScore {
+  constructor(readonly value: number) {}
 
-/** Get a human-readable label for a stress score (0-3 scale) */
-export function stressLabel(score: number): string {
-  if (score <= 0.5) return "Low";
-  if (score <= 1.5) return "Moderate";
-  if (score <= 2.5) return "High";
-  return "Very High";
+  get color(): string {
+    if (this.value <= 0.5) return statusColors.positive;
+    if (this.value <= 1.5) return statusColors.warning;
+    if (this.value <= 2.5) return statusColors.elevated;
+    return statusColors.danger;
+  }
+
+  get label(): string {
+    if (this.value <= 0.5) return "Low";
+    if (this.value <= 1.5) return "Moderate";
+    if (this.value <= 2.5) return "High";
+    return "Very High";
+  }
 }
 
 /** Get the color for a trend direction */
@@ -205,20 +211,23 @@ export const FORM_ZONE_COLORS = {
   highRisk: "#ef4444",
 } as const;
 
-/** Get the color for a form score (training stress balance) value */
-export function formZoneColor(formScore: number): string {
-  if (formScore > FORM_ZONE_TRANSITION) return FORM_ZONE_COLORS.transition;
-  if (formScore > FORM_ZONE_FRESH) return FORM_ZONE_COLORS.fresh;
-  if (formScore > FORM_ZONE_GREY) return FORM_ZONE_COLORS.grey;
-  if (formScore > FORM_ZONE_OPTIMAL) return FORM_ZONE_COLORS.optimal;
-  return FORM_ZONE_COLORS.highRisk;
-}
+/** Form zone (training stress balance) classification with display properties. */
+export class FormZone {
+  constructor(readonly value: number) {}
 
-/** Get a human-readable zone label for a form score value */
-export function formZoneLabel(formScore: number): string {
-  if (formScore > FORM_ZONE_TRANSITION) return "Transition";
-  if (formScore > FORM_ZONE_FRESH) return "Fresh";
-  if (formScore > FORM_ZONE_GREY) return "Grey Zone";
-  if (formScore > FORM_ZONE_OPTIMAL) return "Optimal";
-  return "High Risk";
+  get color(): string {
+    if (this.value > FORM_ZONE_TRANSITION) return FORM_ZONE_COLORS.transition;
+    if (this.value > FORM_ZONE_FRESH) return FORM_ZONE_COLORS.fresh;
+    if (this.value > FORM_ZONE_GREY) return FORM_ZONE_COLORS.grey;
+    if (this.value > FORM_ZONE_OPTIMAL) return FORM_ZONE_COLORS.optimal;
+    return FORM_ZONE_COLORS.highRisk;
+  }
+
+  get label(): string {
+    if (this.value > FORM_ZONE_TRANSITION) return "Transition";
+    if (this.value > FORM_ZONE_FRESH) return "Fresh";
+    if (this.value > FORM_ZONE_GREY) return "Grey Zone";
+    if (this.value > FORM_ZONE_OPTIMAL) return "Optimal";
+    return "High Risk";
+  }
 }

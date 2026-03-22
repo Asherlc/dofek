@@ -1,3 +1,4 @@
+import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { Link } from "@tanstack/react-router";
 import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -6,6 +7,7 @@ import { formatRelativeTime, formatTime } from "../lib/dates.ts";
 import { pollSyncJob } from "../lib/poll-sync-job.ts";
 import { trpc } from "../lib/trpc.ts";
 import { ProviderLogo } from "./ProviderLogo.tsx";
+import { ProviderStatsBreakdown } from "./ProviderStatsBreakdown.tsx";
 
 const oauthBroadcastMessage = z.object({
   type: z.literal("complete"),
@@ -435,19 +437,6 @@ export function DataSourcesPanel() {
 
 // ── Sync Provider Card (unified: controls + stats) ──
 
-interface ProviderStats {
-  activities: number;
-  dailyMetrics: number;
-  sleepSessions: number;
-  bodyMeasurements: number;
-  foodEntries: number;
-  healthEvents: number;
-  metricStream: number;
-  nutritionDaily: number;
-  labResults: number;
-  journalEntries: number;
-}
-
 interface SyncLogEntry {
   status: string;
   syncedAt: string;
@@ -473,34 +462,6 @@ function SyncProviderCard({
   onSync: () => void;
   onFullSync: () => void;
 }) {
-  const totalRecords = stats
-    ? stats.activities +
-      stats.dailyMetrics +
-      stats.sleepSessions +
-      stats.bodyMeasurements +
-      stats.foodEntries +
-      stats.healthEvents +
-      stats.metricStream +
-      stats.nutritionDaily +
-      stats.labResults +
-      stats.journalEntries
-    : 0;
-
-  const breakdown = stats
-    ? [
-        { label: "Activities", count: stats.activities },
-        { label: "Metric Stream", count: stats.metricStream },
-        { label: "Daily Metrics", count: stats.dailyMetrics },
-        { label: "Sleep", count: stats.sleepSessions },
-        { label: "Body", count: stats.bodyMeasurements },
-        { label: "Food", count: stats.foodEntries },
-        { label: "Nutrition", count: stats.nutritionDaily },
-        { label: "Events", count: stats.healthEvents },
-        { label: "Lab Results", count: stats.labResults },
-        { label: "Journal", count: stats.journalEntries },
-      ].filter((b) => b.count > 0)
-    : [];
-
   return (
     <div className="flex flex-col rounded-lg border border-border bg-surface px-4 py-3 transition-colors">
       {/* Header with sync trigger */}
@@ -551,26 +512,7 @@ function SyncProviderCard({
         )}
 
       {/* Stats summary */}
-      {totalRecords > 0 && (
-        <div className="mt-2 pt-2 border-t border-border/50">
-          <div className="flex items-baseline gap-2">
-            <span className="text-lg font-bold text-foreground tabular-nums">
-              {totalRecords.toLocaleString()}
-            </span>
-            <span className="text-xs text-subtle">records</span>
-          </div>
-          {breakdown.length > 1 && (
-            <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 mt-1">
-              {breakdown.map((b) => (
-                <div key={b.label} className="flex justify-between text-xs">
-                  <span className="text-subtle">{b.label}</span>
-                  <span className="text-muted tabular-nums">{b.count.toLocaleString()}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      {stats && <ProviderStatsBreakdown stats={stats} />}
 
       {/* Recent sync dots + full sync button + details link */}
       <div className="flex items-center justify-between mt-2 pt-2 border-t border-border/50">
@@ -1029,34 +971,6 @@ function FileImportZone({
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const totalRecords = stats
-    ? stats.activities +
-      stats.dailyMetrics +
-      stats.sleepSessions +
-      stats.bodyMeasurements +
-      stats.foodEntries +
-      stats.healthEvents +
-      stats.metricStream +
-      stats.nutritionDaily +
-      stats.labResults +
-      stats.journalEntries
-    : 0;
-
-  const breakdown = stats
-    ? [
-        { label: "Activities", count: stats.activities },
-        { label: "Metric Stream", count: stats.metricStream },
-        { label: "Daily Metrics", count: stats.dailyMetrics },
-        { label: "Sleep", count: stats.sleepSessions },
-        { label: "Body", count: stats.bodyMeasurements },
-        { label: "Food", count: stats.foodEntries },
-        { label: "Nutrition", count: stats.nutritionDaily },
-        { label: "Events", count: stats.healthEvents },
-        { label: "Lab Results", count: stats.labResults },
-        { label: "Journal", count: stats.journalEntries },
-      ].filter((b) => b.count > 0)
-    : [];
-
   const pollStatus = useCallback(
     async (jobId: string) => {
       const poll = async (): Promise<void> => {
@@ -1264,26 +1178,7 @@ function FileImportZone({
       )}
 
       {/* Stats summary */}
-      {totalRecords > 0 && (
-        <div className="mt-2 pt-2 border-t border-border/50">
-          <div className="flex items-baseline gap-2">
-            <span className="text-lg font-bold text-foreground tabular-nums">
-              {totalRecords.toLocaleString()}
-            </span>
-            <span className="text-xs text-subtle">records</span>
-          </div>
-          {breakdown.length > 1 && (
-            <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 mt-1">
-              {breakdown.map((b) => (
-                <div key={b.label} className="flex justify-between text-xs">
-                  <span className="text-subtle">{b.label}</span>
-                  <span className="text-muted tabular-nums">{b.count.toLocaleString()}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      {stats && <ProviderStatsBreakdown stats={stats} />}
 
       {/* Recent sync dots + details link */}
       <div className="flex items-center justify-between mt-2 pt-2 border-t border-border/50">

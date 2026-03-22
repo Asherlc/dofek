@@ -195,74 +195,67 @@ export const CORRELATION_METRICS: CorrelationMetric[] = [
   },
 ];
 
-// ── Correlation description ─────────────────────────────────────────────
-
-export function describeCorrelation(rho: number): string {
-  const abs = Math.abs(rho);
-  let strength: string;
-  if (abs >= 0.7) strength = "strong";
-  else if (abs >= 0.4) strength = "moderate";
-  else if (abs >= 0.2) strength = "weak";
-  else return "negligible";
-
-  const direction = rho >= 0 ? "positive" : "negative";
-  return `${strength} ${direction}`;
-}
-
-// ── Confidence classification ───────────────────────────────────────────
+// ── Correlation result ───────────────────────────────────────────────────
 
 export type ConfidenceLevel = "strong" | "emerging" | "early" | "insufficient";
-
-export function correlationConfidence(rho: number, n: number): ConfidenceLevel {
-  const abs = Math.abs(rho);
-  if (abs >= 0.5 && n >= 30) return "strong";
-  if (abs >= 0.35 && n >= 15) return "emerging";
-  if (abs >= 0.2 && n >= 10) return "early";
-  return "insufficient";
-}
-
-// ── Color ───────────────────────────────────────────────────────────────
 
 const EMERALD = chartColors.emerald;
 const ROSE = "#f43f5e";
 const NEUTRAL = textColors.neutral;
 
-export function correlationColor(rho: number): string {
-  const abs = Math.abs(rho);
-  if (abs < 0.2) return NEUTRAL;
-  return rho >= 0 ? EMERALD : ROSE;
-}
+export class CorrelationResult {
+  constructor(
+    readonly rho: number,
+    readonly pValue: number,
+    readonly n: number,
+  ) {}
 
-// ── Insight text generation ─────────────────────────────────────────────
+  get description(): string {
+    const abs = Math.abs(this.rho);
+    let strength: string;
+    if (abs >= 0.7) strength = "strong";
+    else if (abs >= 0.4) strength = "moderate";
+    else if (abs >= 0.2) strength = "weak";
+    else return "negligible";
 
-interface InsightParams {
-  xLabel: string;
-  yLabel: string;
-  rho: number;
-  pValue: number;
-  n: number;
-  lag: number;
-}
-
-export function generateCorrelationInsight(params: InsightParams): string {
-  const { xLabel, yLabel, rho, pValue, n, lag } = params;
-  const abs = Math.abs(rho);
-
-  if (abs < 0.2) {
-    return `No meaningful relationship was found between ${xLabel} and ${yLabel} (rho = ${rho.toFixed(2)}, p = ${pValue.toFixed(2)}, n = ${n}).`;
+    const direction = this.rho >= 0 ? "positive" : "negative";
+    return `${strength} ${direction}`;
   }
 
-  let strengthWord: string;
-  if (abs >= 0.7) strengthWord = "strongly";
-  else if (abs >= 0.4) strengthWord = "moderately";
-  else strengthWord = "weakly";
+  get confidence(): ConfidenceLevel {
+    const abs = Math.abs(this.rho);
+    if (abs >= 0.5 && this.n >= 30) return "strong";
+    if (abs >= 0.35 && this.n >= 15) return "emerging";
+    if (abs >= 0.2 && this.n >= 10) return "early";
+    return "insufficient";
+  }
 
-  const direction = rho > 0 ? "higher" : "lower";
-  const lagText = lag === 0 ? "" : lag === 1 ? " the next day" : ` ${lag} days later`;
+  get color(): string {
+    const abs = Math.abs(this.rho);
+    if (abs < 0.2) return NEUTRAL;
+    return this.rho >= 0 ? EMERALD : ROSE;
+  }
 
-  const pText = pValue < 0.001 ? "p < 0.001" : `p = ${pValue.toFixed(3)}`;
+  generateInsight(params: { xLabel: string; yLabel: string; lag: number }): string {
+    const { xLabel, yLabel, lag } = params;
+    const abs = Math.abs(this.rho);
 
-  return `Higher ${xLabel} is ${strengthWord} associated with ${direction} ${yLabel}${lagText} (rho = ${rho.toFixed(2)}, ${pText}, n = ${n}).`;
+    if (abs < 0.2) {
+      return `No meaningful relationship was found between ${xLabel} and ${yLabel} (rho = ${this.rho.toFixed(2)}, p = ${this.pValue.toFixed(2)}, n = ${this.n}).`;
+    }
+
+    let strengthWord: string;
+    if (abs >= 0.7) strengthWord = "strongly";
+    else if (abs >= 0.4) strengthWord = "moderately";
+    else strengthWord = "weakly";
+
+    const direction = this.rho > 0 ? "higher" : "lower";
+    const lagText = lag === 0 ? "" : lag === 1 ? " the next day" : ` ${lag} days later`;
+
+    const pText = this.pValue < 0.001 ? "p < 0.001" : `p = ${this.pValue.toFixed(3)}`;
+
+    return `Higher ${xLabel} is ${strengthWord} associated with ${direction} ${yLabel}${lagText} (rho = ${this.rho.toFixed(2)}, ${pText}, n = ${this.n}).`;
+  }
 }
 
 // ── Pearson correlation ─────────────────────────────────────────────────

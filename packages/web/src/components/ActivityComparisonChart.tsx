@@ -8,8 +8,7 @@ import {
   seriesColor,
 } from "../lib/chartTheme.ts";
 import { formatPace } from "../lib/format.ts";
-import { useUnitSystem } from "../lib/unitContext.ts";
-import { convertPace, paceLabel } from "../lib/units.ts";
+import { useUnitConverter } from "../lib/unitContext.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
 interface ActivityComparisonChartProps {
@@ -18,14 +17,14 @@ interface ActivityComparisonChartProps {
 }
 
 export function ActivityComparisonChart({ data, loading }: ActivityComparisonChartProps) {
-  const { unitSystem } = useUnitSystem();
+  const units = useUnitConverter();
 
   const series = data.map((route, index) => ({
     ...dofekSeries.line(
       route.activityName,
       route.instances.map((instance) => [
         instance.date,
-        convertPace(instance.averagePaceMinPerKm * 60, unitSystem),
+        units.convertPace(instance.averagePaceMinPerKm * 60),
       ]),
       {
         color: seriesColor(index),
@@ -49,14 +48,14 @@ export function ActivityComparisonChart({ data, loading }: ActivityComparisonCha
         return [
           `<strong>${seriesName}</strong>`,
           `Date: ${date}`,
-          `Pace: ${formatPace(pace)} ${paceLabel(unitSystem)}`,
+          `Pace: ${formatPace(pace)} ${units.paceLabel}`,
         ].join("<br/>");
       },
     }),
     legend: dofekLegend(true, { type: "scroll" }),
     xAxis: dofekAxis.time(),
     yAxis: {
-      ...dofekAxis.value({ name: `Pace (min${paceLabel(unitSystem)})` }),
+      ...dofekAxis.value({ name: `Pace (min${units.paceLabel})` }),
       inverse: true,
       axisLabel: {
         ...dofekAxis.value().axisLabel,
