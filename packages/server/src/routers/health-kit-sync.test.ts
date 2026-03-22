@@ -561,6 +561,22 @@ describe("healthKitSyncRouter", () => {
       });
 
       expect(result.inserted).toBe(1);
+
+      // Verify the computed stage minutes in the INSERT SQL
+      // deep: 22:30-23:30 = 60, REM: 23:30-01:00 = 90,
+      // light (core): 01:00-04:00 = 180, awake: 04:00-04:15 = 15
+      const insertCall = execute.mock.calls.find((call: unknown[]) => {
+        const s = JSON.stringify(call[0]);
+        return s.includes("sleep_session") && s.includes("INSERT");
+      });
+      expect(insertCall).toBeDefined();
+      const sqlValues = JSON.stringify(insertCall?.[0]);
+      // Stage minutes appear as query parameter values in order:
+      // deep_minutes, rem_minutes, light_minutes, awake_minutes
+      expect(sqlValues).toContain(",60,");  // deep_minutes = 60
+      expect(sqlValues).toContain(",90,");  // rem_minutes = 90
+      expect(sqlValues).toContain(",180,"); // light_minutes = 180
+      expect(sqlValues).toContain(",15,");  // awake_minutes = 15
     });
 
     it("includes duration_minutes and sleep_type in SQL", async () => {

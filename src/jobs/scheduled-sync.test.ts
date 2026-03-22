@@ -21,13 +21,16 @@ describe("setupScheduledSync", () => {
     vi.clearAllMocks();
   });
 
-  it("registers a repeatable job scheduler with the correct key", async () => {
+  it("registers a repeatable job scheduler with the correct key and template", async () => {
     await setupScheduledSync();
 
     expect(mockUpsertJobScheduler).toHaveBeenCalledWith(
       SCHEDULER_KEY,
       expect.objectContaining({ every: expect.any(Number) }),
-      expect.any(Object),
+      {
+        name: "scheduled-sync",
+        data: { type: "scheduled-sync-all" },
+      },
     );
   });
 
