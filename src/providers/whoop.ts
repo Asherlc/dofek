@@ -435,10 +435,10 @@ export function parseJournalResponse(raw: unknown): ParsedJournalEntry[] {
 export class WhoopProvider implements SyncProvider {
   readonly id = "whoop";
   readonly name = "WHOOP";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -464,7 +464,7 @@ export class WhoopProvider implements SyncProvider {
       redirectUri: getOAuthRedirectUri(),
       scopes: ["read:profile"],
     };
-    const fetchFn = this.fetchFn;
+    const fetchFn = this.#fetchFn;
 
     return {
       oauthConfig: config,
@@ -515,7 +515,7 @@ export class WhoopProvider implements SyncProvider {
       const storedUserId = storedUserIdMatch ? Number(storedUserIdMatch[1]) : null;
 
       // Refresh the access token using the stored refresh token
-      const token = await WhoopClient.refreshAccessToken(stored.refreshToken, this.fetchFn);
+      const token = await WhoopClient.refreshAccessToken(stored.refreshToken, this.#fetchFn);
 
       // Use the stored userId if available, otherwise use the one from bootstrap
       const userId = storedUserId ?? token.userId;
@@ -534,7 +534,7 @@ export class WhoopProvider implements SyncProvider {
 
       client = new WhoopClient(
         { accessToken: token.accessToken, refreshToken: token.refreshToken, userId },
-        this.fetchFn,
+        this.#fetchFn,
       );
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });

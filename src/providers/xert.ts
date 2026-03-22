@@ -188,10 +188,10 @@ export function xertOAuthConfig(): OAuthConfig | null {
 export class XertProvider implements SyncProvider {
   readonly id = "xert";
   readonly name = "Xert";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -203,7 +203,7 @@ export class XertProvider implements SyncProvider {
   authSetup(): ProviderAuthSetup {
     const config = xertOAuthConfig();
     if (!config) throw new Error("Failed to create Xert OAuth config");
-    const fetchFn = this.fetchFn;
+    const fetchFn = this.#fetchFn;
     return {
       oauthConfig: config,
       automatedLogin: (email, password) => signInToXert(email, password, fetchFn),
@@ -214,13 +214,13 @@ export class XertProvider implements SyncProvider {
     };
   }
 
-  private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
+  async #resolveTokens(db: SyncDatabase): Promise<TokenSet> {
     return resolveOAuthTokens({
       db,
       providerId: this.id,
       providerName: this.name,
       getOAuthConfig: () => xertOAuthConfig(),
-      fetchFn: this.fetchFn,
+      fetchFn: this.#fetchFn,
     });
   }
 
@@ -233,7 +233,7 @@ export class XertProvider implements SyncProvider {
 
     let accessToken: string;
     try {
-      const tokens = await this.resolveTokens(db);
+      const tokens = await this.#resolveTokens(db);
       accessToken = tokens.accessToken;
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
@@ -249,7 +249,7 @@ export class XertProvider implements SyncProvider {
 
         while (hasMore) {
           const url = `${XERT_API_BASE}/oauth/activity/?from=${Math.floor(since.getTime() / 1000)}&page=${page}&limit=${pageSize}`;
-          const response = await this.fetchFn(url, {
+          const response = await this.#fetchFn(url, {
             headers: {
               Authorization: `Bearer ${accessToken}`,
               Accept: "application/json",

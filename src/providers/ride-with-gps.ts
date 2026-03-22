@@ -223,25 +223,25 @@ export function parseTrackPoints(points: RideWithGpsTrackPoint[]): ParsedTrackPo
 const RWGPS_API_BASE = "https://ridewithgps.com";
 
 export class RideWithGpsClient {
-  private accessToken: string;
-  private fetchFn: typeof globalThis.fetch;
+  #accessToken: string;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.accessToken = accessToken;
-    this.fetchFn = fetchFn;
+    this.#accessToken = accessToken;
+    this.#fetchFn = fetchFn;
   }
 
-  private async get<T>(path: string, params?: Record<string, string>): Promise<T> {
+  async #get<T>(path: string, params?: Record<string, string>): Promise<T> {
     const url = new URL(path, RWGPS_API_BASE);
     if (params) {
       for (const [key, value] of Object.entries(params)) {
         url.searchParams.set(key, value);
       }
     }
-    const response = await this.fetchFn(url.toString(), {
+    const response = await this.#fetchFn(url.toString(), {
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${this.accessToken}`,
+        Authorization: `Bearer ${this.#accessToken}`,
       },
     });
     if (!response.ok) {
@@ -252,14 +252,14 @@ export class RideWithGpsClient {
   }
 
   async sync(since: string): Promise<RideWithGpsSyncResponse> {
-    return this.get<RideWithGpsSyncResponse>("/api/v1/sync.json", {
+    return this.#get<RideWithGpsSyncResponse>("/api/v1/sync.json", {
       since,
       assets: "trips",
     });
   }
 
   async getTrip(id: number): Promise<{ trip: RideWithGpsTripDetail }> {
-    const data = await this.get<unknown>(`/api/v1/trips/${id}.json`);
+    const data = await this.#get<unknown>(`/api/v1/trips/${id}.json`);
     return z.object({ trip: rideWithGpsTripDetailSchema }).parse(data);
   }
 }
@@ -306,10 +306,10 @@ const METRIC_STREAM_BATCH_SIZE = 500;
 export class RideWithGpsProvider implements SyncProvider {
   readonly id = "ride-with-gps";
   readonly name = "RideWithGPS";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -328,12 +328,12 @@ export class RideWithGpsProvider implements SyncProvider {
         exchangeCodeForTokens(
           config,
           code,
-          this.fetchFn,
+          this.#fetchFn,
           codeVerifier ? { codeVerifier } : undefined,
         ),
       apiBaseUrl: RWGPS_API_BASE,
       getUserIdentity: async (accessToken: string): Promise<ProviderIdentity> => {
-        const response = await this.fetchFn(`${RWGPS_API_BASE}/users/current.json`, {
+        const response = await this.#fetchFn(`${RWGPS_API_BASE}/users/current.json`, {
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${accessToken}`,
@@ -355,13 +355,13 @@ export class RideWithGpsProvider implements SyncProvider {
     };
   }
 
-  private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
+  async #resolveTokens(db: SyncDatabase): Promise<TokenSet> {
     return resolveOAuthTokens({
       db,
       providerId: this.id,
       providerName: this.name,
       getOAuthConfig: () => rideWithGpsOAuthConfig(),
-      fetchFn: this.fetchFn,
+      fetchFn: this.#fetchFn,
     });
   }
 
@@ -374,7 +374,7 @@ export class RideWithGpsProvider implements SyncProvider {
 
     let tokens: TokenSet;
     try {
-      tokens = await this.resolveTokens(db);
+      tokens = await this.#resolveTokens(db);
     } catch (err) {
       return {
         provider: this.id,
@@ -388,7 +388,7 @@ export class RideWithGpsProvider implements SyncProvider {
       };
     }
 
-    const client = new RideWithGpsClient(tokens.accessToken, this.fetchFn);
+    const client = new RideWithGpsClient(tokens.accessToken, this.#fetchFn);
 
     // Load sync cursor or fall back to since param
     const cursor = (await loadSyncCursor(db)) ?? since.toISOString();
