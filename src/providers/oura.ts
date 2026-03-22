@@ -12,6 +12,7 @@ import type {
   ProviderAuthSetup,
   ProviderIdentity,
   SyncError,
+  SyncOptions,
   SyncProvider,
   SyncResult,
 } from "./types.ts";
@@ -656,7 +657,7 @@ export class OuraProvider implements SyncProvider {
     return tokens.accessToken;
   }
 
-  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -677,33 +678,24 @@ export class OuraProvider implements SyncProvider {
 
     // 1. Sync sleep sessions
     try {
-      const sleepCount = await withSyncLog(db, this.id, "sleep", async () => {
-        let count = 0;
-        const allSleep = await fetchAllPages((nextToken) =>
-          client.getSleep(sinceDate, todayDate, nextToken),
-        );
+      const sleepCount = await withSyncLog(
+        db,
+        this.id,
+        "sleep",
+        async () => {
+          let count = 0;
+          const allSleep = await fetchAllPages((nextToken) =>
+            client.getSleep(sinceDate, todayDate, nextToken),
+          );
 
-        for (const raw of allSleep) {
-          const parsed = parseOuraSleep(raw);
-          try {
-            await db
-              .insert(sleepSession)
-              .values({
-                providerId: this.id,
-                externalId: parsed.externalId,
-                startedAt: parsed.startedAt,
-                endedAt: parsed.endedAt,
-                durationMinutes: parsed.durationMinutes,
-                deepMinutes: parsed.deepMinutes,
-                remMinutes: parsed.remMinutes,
-                lightMinutes: parsed.lightMinutes,
-                awakeMinutes: parsed.awakeMinutes,
-                efficiencyPct: parsed.efficiencyPct,
-                sleepType: parsed.sleepType,
-              })
-              .onConflictDoUpdate({
-                target: [sleepSession.providerId, sleepSession.externalId],
-                set: {
+          for (const raw of allSleep) {
+            const parsed = parseOuraSleep(raw);
+            try {
+              await db
+                .insert(sleepSession)
+                .values({
+                  providerId: this.id,
+                  externalId: parsed.externalId,
                   startedAt: parsed.startedAt,
                   endedAt: parsed.endedAt,
                   durationMinutes: parsed.durationMinutes,
@@ -713,20 +705,35 @@ export class OuraProvider implements SyncProvider {
                   awakeMinutes: parsed.awakeMinutes,
                   efficiencyPct: parsed.efficiencyPct,
                   sleepType: parsed.sleepType,
-                },
+                })
+                .onConflictDoUpdate({
+                  target: [sleepSession.providerId, sleepSession.externalId],
+                  set: {
+                    startedAt: parsed.startedAt,
+                    endedAt: parsed.endedAt,
+                    durationMinutes: parsed.durationMinutes,
+                    deepMinutes: parsed.deepMinutes,
+                    remMinutes: parsed.remMinutes,
+                    lightMinutes: parsed.lightMinutes,
+                    awakeMinutes: parsed.awakeMinutes,
+                    efficiencyPct: parsed.efficiencyPct,
+                    sleepType: parsed.sleepType,
+                  },
+                });
+              count++;
+            } catch (err) {
+              errors.push({
+                message: err instanceof Error ? err.message : String(err),
+                externalId: parsed.externalId,
+                cause: err,
               });
-            count++;
-          } catch (err) {
-            errors.push({
-              message: err instanceof Error ? err.message : String(err),
-              externalId: parsed.externalId,
-              cause: err,
-            });
+            }
           }
-        }
 
-        return { recordCount: count, result: count };
-      });
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += sleepCount;
     } catch (err) {
       errors.push({
@@ -737,47 +744,53 @@ export class OuraProvider implements SyncProvider {
 
     // 2. Sync workouts → activity table
     try {
-      const workoutCount = await withSyncLog(db, this.id, "workouts", async () => {
-        let count = 0;
-        const allWorkouts = await fetchAllPages((nextToken) =>
-          client.getWorkouts(sinceDate, todayDate, nextToken),
-        );
+      const workoutCount = await withSyncLog(
+        db,
+        this.id,
+        "workouts",
+        async () => {
+          let count = 0;
+          const allWorkouts = await fetchAllPages((nextToken) =>
+            client.getWorkouts(sinceDate, todayDate, nextToken),
+          );
 
-        for (const w of allWorkouts) {
-          try {
-            await db
-              .insert(activity)
-              .values({
-                providerId: this.id,
-                externalId: w.id,
-                activityType: mapOuraActivityType(w.activity),
-                startedAt: new Date(w.start_datetime),
-                endedAt: new Date(w.end_datetime),
-                name: w.label,
-                raw: w,
-              })
-              .onConflictDoUpdate({
-                target: [activity.providerId, activity.externalId],
-                set: {
+          for (const w of allWorkouts) {
+            try {
+              await db
+                .insert(activity)
+                .values({
+                  providerId: this.id,
+                  externalId: w.id,
                   activityType: mapOuraActivityType(w.activity),
                   startedAt: new Date(w.start_datetime),
                   endedAt: new Date(w.end_datetime),
                   name: w.label,
                   raw: w,
-                },
+                })
+                .onConflictDoUpdate({
+                  target: [activity.providerId, activity.externalId],
+                  set: {
+                    activityType: mapOuraActivityType(w.activity),
+                    startedAt: new Date(w.start_datetime),
+                    endedAt: new Date(w.end_datetime),
+                    name: w.label,
+                    raw: w,
+                  },
+                });
+              count++;
+            } catch (err) {
+              errors.push({
+                message: `workout ${w.id}: ${err instanceof Error ? err.message : String(err)}`,
+                externalId: w.id,
+                cause: err,
               });
-            count++;
-          } catch (err) {
-            errors.push({
-              message: `workout ${w.id}: ${err instanceof Error ? err.message : String(err)}`,
-              externalId: w.id,
-              cause: err,
-            });
+            }
           }
-        }
 
-        return { recordCount: count, result: count };
-      });
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += workoutCount;
     } catch (err) {
       errors.push({
@@ -788,47 +801,53 @@ export class OuraProvider implements SyncProvider {
 
     // 3. Sync sessions (meditation, breathing, etc.) → activity table
     try {
-      const sessionCount = await withSyncLog(db, this.id, "sessions", async () => {
-        let count = 0;
-        const allSessions = await fetchAllPages((nextToken) =>
-          client.getSessions(sinceDate, todayDate, nextToken),
-        );
+      const sessionCount = await withSyncLog(
+        db,
+        this.id,
+        "sessions",
+        async () => {
+          let count = 0;
+          const allSessions = await fetchAllPages((nextToken) =>
+            client.getSessions(sinceDate, todayDate, nextToken),
+          );
 
-        for (const s of allSessions) {
-          try {
-            await db
-              .insert(activity)
-              .values({
-                providerId: this.id,
-                externalId: s.id,
-                activityType: s.type,
-                startedAt: new Date(s.start_datetime),
-                endedAt: new Date(s.end_datetime),
-                name: s.type,
-                raw: s,
-              })
-              .onConflictDoUpdate({
-                target: [activity.providerId, activity.externalId],
-                set: {
+          for (const s of allSessions) {
+            try {
+              await db
+                .insert(activity)
+                .values({
+                  providerId: this.id,
+                  externalId: s.id,
                   activityType: s.type,
                   startedAt: new Date(s.start_datetime),
                   endedAt: new Date(s.end_datetime),
                   name: s.type,
                   raw: s,
-                },
+                })
+                .onConflictDoUpdate({
+                  target: [activity.providerId, activity.externalId],
+                  set: {
+                    activityType: s.type,
+                    startedAt: new Date(s.start_datetime),
+                    endedAt: new Date(s.end_datetime),
+                    name: s.type,
+                    raw: s,
+                  },
+                });
+              count++;
+            } catch (err) {
+              errors.push({
+                message: `session ${s.id}: ${err instanceof Error ? err.message : String(err)}`,
+                externalId: s.id,
+                cause: err,
               });
-            count++;
-          } catch (err) {
-            errors.push({
-              message: `session ${s.id}: ${err instanceof Error ? err.message : String(err)}`,
-              externalId: s.id,
-              cause: err,
-            });
+            }
           }
-        }
 
-        return { recordCount: count, result: count };
-      });
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += sessionCount;
     } catch (err) {
       errors.push({
@@ -840,38 +859,44 @@ export class OuraProvider implements SyncProvider {
     // 4. Sync heart rate → metricStream table (batched)
     // Oura heart rate API enforces a max 30-day window per request
     try {
-      const hrCount = await withSyncLog(db, this.id, "heart_rate", async () => {
-        const allHr: OuraHeartRate[] = [];
-        const windowMs = 30 * 24 * 60 * 60 * 1000;
-        let windowStart = since.getTime();
-        const end = Date.now();
+      const hrCount = await withSyncLog(
+        db,
+        this.id,
+        "heart_rate",
+        async () => {
+          const allHr: OuraHeartRate[] = [];
+          const windowMs = 30 * 24 * 60 * 60 * 1000;
+          let windowStart = since.getTime();
+          const end = Date.now();
 
-        while (windowStart < end) {
-          const windowEnd = Math.min(windowStart + windowMs, end);
-          const startStr = formatDate(new Date(windowStart));
-          const endStr = formatDate(new Date(windowEnd));
-          const chunk = await fetchAllPages((nextToken) =>
-            client.getHeartRate(startStr, endStr, nextToken),
-          );
-          allHr.push(...chunk);
-          windowStart = windowEnd;
-        }
+          while (windowStart < end) {
+            const windowEnd = Math.min(windowStart + windowMs, end);
+            const startStr = formatDate(new Date(windowStart));
+            const endStr = formatDate(new Date(windowEnd));
+            const chunk = await fetchAllPages((nextToken) =>
+              client.getHeartRate(startStr, endStr, nextToken),
+            );
+            allHr.push(...chunk);
+            windowStart = windowEnd;
+          }
 
-        const rows = allHr.map((hr) => ({
-          providerId: this.id,
-          recordedAt: new Date(hr.timestamp),
-          heartRate: hr.bpm,
-        }));
+          const rows = allHr.map((hr) => ({
+            providerId: this.id,
+            recordedAt: new Date(hr.timestamp),
+            heartRate: hr.bpm,
+          }));
 
-        for (let i = 0; i < rows.length; i += METRIC_STREAM_BATCH_SIZE) {
-          await db
-            .insert(metricStream)
-            .values(rows.slice(i, i + METRIC_STREAM_BATCH_SIZE))
-            .onConflictDoNothing();
-        }
+          for (let i = 0; i < rows.length; i += METRIC_STREAM_BATCH_SIZE) {
+            await db
+              .insert(metricStream)
+              .values(rows.slice(i, i + METRIC_STREAM_BATCH_SIZE))
+              .onConflictDoNothing();
+          }
 
-        return { recordCount: rows.length, result: rows.length };
-      });
+          return { recordCount: rows.length, result: rows.length };
+        },
+        options?.userId,
+      );
       recordsSynced += hrCount;
     } catch (err) {
       errors.push({
@@ -882,35 +907,41 @@ export class OuraProvider implements SyncProvider {
 
     // 5. Sync daily stress → healthEvent table
     try {
-      const stressCount = await withSyncLog(db, this.id, "daily_stress", async () => {
-        const allStress = await fetchAllPages((nextToken) =>
-          client.getDailyStress(sinceDate, todayDate, nextToken),
-        );
+      const stressCount = await withSyncLog(
+        db,
+        this.id,
+        "daily_stress",
+        async () => {
+          const allStress = await fetchAllPages((nextToken) =>
+            client.getDailyStress(sinceDate, todayDate, nextToken),
+          );
 
-        const rows = allStress.map((s) => ({
-          providerId: this.id,
-          externalId: s.id,
-          type: "oura_daily_stress",
-          value: s.stress_high,
-          valueText: s.day_summary,
-          startDate: new Date(`${s.day}T00:00:00`),
-        }));
+          const rows = allStress.map((s) => ({
+            providerId: this.id,
+            externalId: s.id,
+            type: "oura_daily_stress",
+            value: s.stress_high,
+            valueText: s.day_summary,
+            startDate: new Date(`${s.day}T00:00:00`),
+          }));
 
-        for (let i = 0; i < rows.length; i += HEALTH_EVENT_BATCH_SIZE) {
-          await db
-            .insert(healthEvent)
-            .values(rows.slice(i, i + HEALTH_EVENT_BATCH_SIZE))
-            .onConflictDoUpdate({
-              target: [healthEvent.providerId, healthEvent.externalId],
-              set: {
-                value: rows[i]?.value,
-                valueText: rows[i]?.valueText,
-              },
-            });
-        }
+          for (let i = 0; i < rows.length; i += HEALTH_EVENT_BATCH_SIZE) {
+            await db
+              .insert(healthEvent)
+              .values(rows.slice(i, i + HEALTH_EVENT_BATCH_SIZE))
+              .onConflictDoUpdate({
+                target: [healthEvent.providerId, healthEvent.externalId],
+                set: {
+                  value: rows[i]?.value,
+                  valueText: rows[i]?.valueText,
+                },
+              });
+          }
 
-        return { recordCount: rows.length, result: rows.length };
-      });
+          return { recordCount: rows.length, result: rows.length };
+        },
+        options?.userId,
+      );
       recordsSynced += stressCount;
     } catch (err) {
       errors.push({
@@ -921,33 +952,39 @@ export class OuraProvider implements SyncProvider {
 
     // 6. Sync daily resilience → healthEvent table
     try {
-      const resilienceCount = await withSyncLog(db, this.id, "daily_resilience", async () => {
-        const allResilience = await fetchAllPages((nextToken) =>
-          client.getDailyResilience(sinceDate, todayDate, nextToken),
-        );
+      const resilienceCount = await withSyncLog(
+        db,
+        this.id,
+        "daily_resilience",
+        async () => {
+          const allResilience = await fetchAllPages((nextToken) =>
+            client.getDailyResilience(sinceDate, todayDate, nextToken),
+          );
 
-        let count = 0;
-        for (const r of allResilience) {
-          await db
-            .insert(healthEvent)
-            .values({
-              providerId: this.id,
-              externalId: r.id,
-              type: "oura_daily_resilience",
-              valueText: r.level,
-              startDate: new Date(`${r.day}T00:00:00`),
-            })
-            .onConflictDoUpdate({
-              target: [healthEvent.providerId, healthEvent.externalId],
-              set: {
+          let count = 0;
+          for (const r of allResilience) {
+            await db
+              .insert(healthEvent)
+              .values({
+                providerId: this.id,
+                externalId: r.id,
+                type: "oura_daily_resilience",
                 valueText: r.level,
-              },
-            });
-          count++;
-        }
+                startDate: new Date(`${r.day}T00:00:00`),
+              })
+              .onConflictDoUpdate({
+                target: [healthEvent.providerId, healthEvent.externalId],
+                set: {
+                  valueText: r.level,
+                },
+              });
+            count++;
+          }
 
-        return { recordCount: count, result: count };
-      });
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += resilienceCount;
     } catch (err) {
       errors.push({
@@ -958,32 +995,38 @@ export class OuraProvider implements SyncProvider {
 
     // 7. Sync daily cardiovascular age → healthEvent table
     try {
-      const cvAgeCount = await withSyncLog(db, this.id, "cardiovascular_age", async () => {
-        const allCvAge = await fetchAllPages((nextToken) =>
-          client.getDailyCardiovascularAge(sinceDate, todayDate, nextToken),
-        );
+      const cvAgeCount = await withSyncLog(
+        db,
+        this.id,
+        "cardiovascular_age",
+        async () => {
+          const allCvAge = await fetchAllPages((nextToken) =>
+            client.getDailyCardiovascularAge(sinceDate, todayDate, nextToken),
+          );
 
-        let count = 0;
-        for (const cv of allCvAge) {
-          if (cv.vascular_age === null) continue;
-          await db
-            .insert(healthEvent)
-            .values({
-              providerId: this.id,
-              externalId: `oura_cv_age:${cv.day}`,
-              type: "oura_cardiovascular_age",
-              value: cv.vascular_age,
-              startDate: new Date(`${cv.day}T00:00:00`),
-            })
-            .onConflictDoUpdate({
-              target: [healthEvent.providerId, healthEvent.externalId],
-              set: { value: cv.vascular_age },
-            });
-          count++;
-        }
+          let count = 0;
+          for (const cv of allCvAge) {
+            if (cv.vascular_age === null) continue;
+            await db
+              .insert(healthEvent)
+              .values({
+                providerId: this.id,
+                externalId: `oura_cv_age:${cv.day}`,
+                type: "oura_cardiovascular_age",
+                value: cv.vascular_age,
+                startDate: new Date(`${cv.day}T00:00:00`),
+              })
+              .onConflictDoUpdate({
+                target: [healthEvent.providerId, healthEvent.externalId],
+                set: { value: cv.vascular_age },
+              });
+            count++;
+          }
 
-        return { recordCount: count, result: count };
-      });
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += cvAgeCount;
     } catch (err) {
       errors.push({
@@ -994,31 +1037,37 @@ export class OuraProvider implements SyncProvider {
 
     // 8. Sync tags → healthEvent table
     try {
-      const tagCount = await withSyncLog(db, this.id, "tags", async () => {
-        const allTags = await fetchAllPages((nextToken) =>
-          client.getTags(sinceDate, todayDate, nextToken),
-        );
+      const tagCount = await withSyncLog(
+        db,
+        this.id,
+        "tags",
+        async () => {
+          const allTags = await fetchAllPages((nextToken) =>
+            client.getTags(sinceDate, todayDate, nextToken),
+          );
 
-        let count = 0;
-        for (const t of allTags) {
-          await db
-            .insert(healthEvent)
-            .values({
-              providerId: this.id,
-              externalId: t.id,
-              type: "oura_tag",
-              valueText: t.tags.join(", "),
-              startDate: new Date(t.timestamp),
-            })
-            .onConflictDoUpdate({
-              target: [healthEvent.providerId, healthEvent.externalId],
-              set: { valueText: t.tags.join(", ") },
-            });
-          count++;
-        }
+          let count = 0;
+          for (const t of allTags) {
+            await db
+              .insert(healthEvent)
+              .values({
+                providerId: this.id,
+                externalId: t.id,
+                type: "oura_tag",
+                valueText: t.tags.join(", "),
+                startDate: new Date(t.timestamp),
+              })
+              .onConflictDoUpdate({
+                target: [healthEvent.providerId, healthEvent.externalId],
+                set: { valueText: t.tags.join(", ") },
+              });
+            count++;
+          }
 
-        return { recordCount: count, result: count };
-      });
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += tagCount;
     } catch (err) {
       errors.push({
@@ -1029,36 +1078,42 @@ export class OuraProvider implements SyncProvider {
 
     // 9. Sync enhanced tags → healthEvent table
     try {
-      const enhancedTagCount = await withSyncLog(db, this.id, "enhanced_tags", async () => {
-        const allEnhancedTags = await fetchAllPages((nextToken) =>
-          client.getEnhancedTags(sinceDate, todayDate, nextToken),
-        );
+      const enhancedTagCount = await withSyncLog(
+        db,
+        this.id,
+        "enhanced_tags",
+        async () => {
+          const allEnhancedTags = await fetchAllPages((nextToken) =>
+            client.getEnhancedTags(sinceDate, todayDate, nextToken),
+          );
 
-        let count = 0;
-        for (const et of allEnhancedTags) {
-          const tagName = et.custom_name ?? et.tag_type_code ?? "unknown";
-          await db
-            .insert(healthEvent)
-            .values({
-              providerId: this.id,
-              externalId: et.id,
-              type: "oura_enhanced_tag",
-              valueText: tagName,
-              startDate: new Date(et.start_time),
-              endDate: et.end_time ? new Date(et.end_time) : undefined,
-            })
-            .onConflictDoUpdate({
-              target: [healthEvent.providerId, healthEvent.externalId],
-              set: {
+          let count = 0;
+          for (const et of allEnhancedTags) {
+            const tagName = et.custom_name ?? et.tag_type_code ?? "unknown";
+            await db
+              .insert(healthEvent)
+              .values({
+                providerId: this.id,
+                externalId: et.id,
+                type: "oura_enhanced_tag",
                 valueText: tagName,
+                startDate: new Date(et.start_time),
                 endDate: et.end_time ? new Date(et.end_time) : undefined,
-              },
-            });
-          count++;
-        }
+              })
+              .onConflictDoUpdate({
+                target: [healthEvent.providerId, healthEvent.externalId],
+                set: {
+                  valueText: tagName,
+                  endDate: et.end_time ? new Date(et.end_time) : undefined,
+                },
+              });
+            count++;
+          }
 
-        return { recordCount: count, result: count };
-      });
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += enhancedTagCount;
     } catch (err) {
       errors.push({
@@ -1069,40 +1124,46 @@ export class OuraProvider implements SyncProvider {
 
     // 10. Sync rest mode periods → healthEvent table
     try {
-      const restModeCount = await withSyncLog(db, this.id, "rest_mode", async () => {
-        const allRestMode = await fetchAllPages((nextToken) =>
-          client.getRestModePeriods(sinceDate, todayDate, nextToken),
-        );
+      const restModeCount = await withSyncLog(
+        db,
+        this.id,
+        "rest_mode",
+        async () => {
+          const allRestMode = await fetchAllPages((nextToken) =>
+            client.getRestModePeriods(sinceDate, todayDate, nextToken),
+          );
 
-        let count = 0;
-        for (const rm of allRestMode) {
-          const startDate = rm.start_time
-            ? new Date(rm.start_time)
-            : new Date(`${rm.start_day}T00:00:00`);
-          const endDate = rm.end_time
-            ? new Date(rm.end_time)
-            : rm.end_day
-              ? new Date(`${rm.end_day}T23:59:59`)
-              : undefined;
+          let count = 0;
+          for (const rm of allRestMode) {
+            const startDate = rm.start_time
+              ? new Date(rm.start_time)
+              : new Date(`${rm.start_day}T00:00:00`);
+            const endDate = rm.end_time
+              ? new Date(rm.end_time)
+              : rm.end_day
+                ? new Date(`${rm.end_day}T23:59:59`)
+                : undefined;
 
-          await db
-            .insert(healthEvent)
-            .values({
-              providerId: this.id,
-              externalId: rm.id,
-              type: "oura_rest_mode",
-              startDate,
-              endDate,
-            })
-            .onConflictDoUpdate({
-              target: [healthEvent.providerId, healthEvent.externalId],
-              set: { endDate },
-            });
-          count++;
-        }
+            await db
+              .insert(healthEvent)
+              .values({
+                providerId: this.id,
+                externalId: rm.id,
+                type: "oura_rest_mode",
+                startDate,
+                endDate,
+              })
+              .onConflictDoUpdate({
+                target: [healthEvent.providerId, healthEvent.externalId],
+                set: { endDate },
+              });
+            count++;
+          }
 
-        return { recordCount: count, result: count };
-      });
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += restModeCount;
     } catch (err) {
       errors.push({
@@ -1113,31 +1174,37 @@ export class OuraProvider implements SyncProvider {
 
     // 11. Sync sleep time recommendations → healthEvent table
     try {
-      const sleepTimeCount = await withSyncLog(db, this.id, "sleep_time", async () => {
-        const allSleepTime = await fetchAllPages((nextToken) =>
-          client.getSleepTime(sinceDate, todayDate, nextToken),
-        );
+      const sleepTimeCount = await withSyncLog(
+        db,
+        this.id,
+        "sleep_time",
+        async () => {
+          const allSleepTime = await fetchAllPages((nextToken) =>
+            client.getSleepTime(sinceDate, todayDate, nextToken),
+          );
 
-        let count = 0;
-        for (const st of allSleepTime) {
-          await db
-            .insert(healthEvent)
-            .values({
-              providerId: this.id,
-              externalId: st.id,
-              type: "oura_sleep_time",
-              valueText: st.recommendation,
-              startDate: new Date(`${st.day}T00:00:00`),
-            })
-            .onConflictDoUpdate({
-              target: [healthEvent.providerId, healthEvent.externalId],
-              set: { valueText: st.recommendation },
-            });
-          count++;
-        }
+          let count = 0;
+          for (const st of allSleepTime) {
+            await db
+              .insert(healthEvent)
+              .values({
+                providerId: this.id,
+                externalId: st.id,
+                type: "oura_sleep_time",
+                valueText: st.recommendation,
+                startDate: new Date(`${st.day}T00:00:00`),
+              })
+              .onConflictDoUpdate({
+                target: [healthEvent.providerId, healthEvent.externalId],
+                set: { valueText: st.recommendation },
+              });
+            count++;
+          }
 
-        return { recordCount: count, result: count };
-      });
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += sleepTimeCount;
     } catch (err) {
       errors.push({
@@ -1148,87 +1215,80 @@ export class OuraProvider implements SyncProvider {
 
     // 12. Sync daily metrics (readiness + activity + SpO2 + VO2 max + stress + resilience merged by day)
     try {
-      const dailyCount = await withSyncLog(db, this.id, "daily_metrics", async () => {
-        let count = 0;
+      const dailyCount = await withSyncLog(
+        db,
+        this.id,
+        "daily_metrics",
+        async () => {
+          let count = 0;
 
-        const [allReadiness, allActivity, allSpO2, allVO2Max, allStress, allResilience] =
-          await Promise.all([
-            fetchAllPages((nextToken) => client.getDailyReadiness(sinceDate, todayDate, nextToken)),
-            fetchAllPages((nextToken) => client.getDailyActivity(sinceDate, todayDate, nextToken)),
-            fetchAllPages((nextToken) => client.getDailySpO2(sinceDate, todayDate, nextToken)),
-            fetchAllPages((nextToken) => client.getVO2Max(sinceDate, todayDate, nextToken)),
-            fetchAllPages((nextToken) => client.getDailyStress(sinceDate, todayDate, nextToken)),
-            fetchAllPages((nextToken) =>
-              client.getDailyResilience(sinceDate, todayDate, nextToken),
-            ),
+          const [allReadiness, allActivity, allSpO2, allVO2Max, allStress, allResilience] =
+            await Promise.all([
+              fetchAllPages((nextToken) =>
+                client.getDailyReadiness(sinceDate, todayDate, nextToken),
+              ),
+              fetchAllPages((nextToken) =>
+                client.getDailyActivity(sinceDate, todayDate, nextToken),
+              ),
+              fetchAllPages((nextToken) => client.getDailySpO2(sinceDate, todayDate, nextToken)),
+              fetchAllPages((nextToken) => client.getVO2Max(sinceDate, todayDate, nextToken)),
+              fetchAllPages((nextToken) => client.getDailyStress(sinceDate, todayDate, nextToken)),
+              fetchAllPages((nextToken) =>
+                client.getDailyResilience(sinceDate, todayDate, nextToken),
+              ),
+            ]);
+
+          // Index by day for merging
+          const readinessByDay = new Map<string, OuraDailyReadiness>();
+          for (const r of allReadiness) readinessByDay.set(r.day, r);
+
+          const activityByDay = new Map<string, OuraDailyActivity>();
+          for (const a of allActivity) activityByDay.set(a.day, a);
+
+          const spo2ByDay = new Map<string, OuraDailySpO2>();
+          for (const s of allSpO2) spo2ByDay.set(s.day, s);
+
+          const vo2maxByDay = new Map<string, OuraVO2Max>();
+          for (const v of allVO2Max) vo2maxByDay.set(v.day, v);
+
+          const stressByDay = new Map<string, OuraDailyStress>();
+          for (const s of allStress) stressByDay.set(s.day, s);
+
+          const resilienceByDay = new Map<string, OuraDailyResilience>();
+          for (const r of allResilience) resilienceByDay.set(r.day, r);
+
+          // Union of all days
+          const allDays = new Set([
+            ...readinessByDay.keys(),
+            ...activityByDay.keys(),
+            ...spo2ByDay.keys(),
+            ...vo2maxByDay.keys(),
+            ...stressByDay.keys(),
+            ...resilienceByDay.keys(),
           ]);
 
-        // Index by day for merging
-        const readinessByDay = new Map<string, OuraDailyReadiness>();
-        for (const r of allReadiness) readinessByDay.set(r.day, r);
+          for (const day of allDays) {
+            const readiness = readinessByDay.get(day) ?? null;
+            const activityDoc = activityByDay.get(day) ?? null;
+            const spo2 = spo2ByDay.get(day) ?? null;
+            const vo2max = vo2maxByDay.get(day) ?? null;
+            const stress = stressByDay.get(day) ?? null;
+            const resilience = resilienceByDay.get(day) ?? null;
+            const parsed = parseOuraDailyMetrics(
+              readiness,
+              activityDoc,
+              spo2,
+              vo2max,
+              stress,
+              resilience,
+            );
 
-        const activityByDay = new Map<string, OuraDailyActivity>();
-        for (const a of allActivity) activityByDay.set(a.day, a);
-
-        const spo2ByDay = new Map<string, OuraDailySpO2>();
-        for (const s of allSpO2) spo2ByDay.set(s.day, s);
-
-        const vo2maxByDay = new Map<string, OuraVO2Max>();
-        for (const v of allVO2Max) vo2maxByDay.set(v.day, v);
-
-        const stressByDay = new Map<string, OuraDailyStress>();
-        for (const s of allStress) stressByDay.set(s.day, s);
-
-        const resilienceByDay = new Map<string, OuraDailyResilience>();
-        for (const r of allResilience) resilienceByDay.set(r.day, r);
-
-        // Union of all days
-        const allDays = new Set([
-          ...readinessByDay.keys(),
-          ...activityByDay.keys(),
-          ...spo2ByDay.keys(),
-          ...vo2maxByDay.keys(),
-          ...stressByDay.keys(),
-          ...resilienceByDay.keys(),
-        ]);
-
-        for (const day of allDays) {
-          const readiness = readinessByDay.get(day) ?? null;
-          const activityDoc = activityByDay.get(day) ?? null;
-          const spo2 = spo2ByDay.get(day) ?? null;
-          const vo2max = vo2maxByDay.get(day) ?? null;
-          const stress = stressByDay.get(day) ?? null;
-          const resilience = resilienceByDay.get(day) ?? null;
-          const parsed = parseOuraDailyMetrics(
-            readiness,
-            activityDoc,
-            spo2,
-            vo2max,
-            stress,
-            resilience,
-          );
-
-          try {
-            await db
-              .insert(dailyMetrics)
-              .values({
-                date: parsed.date,
-                providerId: this.id,
-                steps: parsed.steps,
-                restingHr: parsed.restingHr,
-                hrv: parsed.hrv,
-                activeEnergyKcal: parsed.activeEnergyKcal,
-                exerciseMinutes: parsed.exerciseMinutes,
-                skinTempC: parsed.skinTempC,
-                spo2Avg: parsed.spo2Avg,
-                vo2max: parsed.vo2max,
-                stressHighMinutes: parsed.stressHighMinutes,
-                recoveryHighMinutes: parsed.recoveryHighMinutes,
-                resilienceLevel: parsed.resilienceLevel,
-              })
-              .onConflictDoUpdate({
-                target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
-                set: {
+            try {
+              await db
+                .insert(dailyMetrics)
+                .values({
+                  date: parsed.date,
+                  providerId: this.id,
                   steps: parsed.steps,
                   restingHr: parsed.restingHr,
                   hrv: parsed.hrv,
@@ -1240,19 +1300,36 @@ export class OuraProvider implements SyncProvider {
                   stressHighMinutes: parsed.stressHighMinutes,
                   recoveryHighMinutes: parsed.recoveryHighMinutes,
                   resilienceLevel: parsed.resilienceLevel,
-                },
+                })
+                .onConflictDoUpdate({
+                  target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
+                  set: {
+                    steps: parsed.steps,
+                    restingHr: parsed.restingHr,
+                    hrv: parsed.hrv,
+                    activeEnergyKcal: parsed.activeEnergyKcal,
+                    exerciseMinutes: parsed.exerciseMinutes,
+                    skinTempC: parsed.skinTempC,
+                    spo2Avg: parsed.spo2Avg,
+                    vo2max: parsed.vo2max,
+                    stressHighMinutes: parsed.stressHighMinutes,
+                    recoveryHighMinutes: parsed.recoveryHighMinutes,
+                    resilienceLevel: parsed.resilienceLevel,
+                  },
+                });
+              count++;
+            } catch (err) {
+              errors.push({
+                message: `daily_metrics ${day}: ${err instanceof Error ? err.message : String(err)}`,
+                cause: err,
               });
-            count++;
-          } catch (err) {
-            errors.push({
-              message: `daily_metrics ${day}: ${err instanceof Error ? err.message : String(err)}`,
-              cause: err,
-            });
+            }
           }
-        }
 
-        return { recordCount: count, result: count };
-      });
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += dailyCount;
     } catch (err) {
       errors.push({

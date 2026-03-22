@@ -132,6 +132,15 @@ const EXPORT_TABLES: ExportTableConfig[] = [
       ),
   },
   {
+    name: "lab-panels.json",
+    query: (db, userId) =>
+      executeWithSchema(
+        db,
+        exportRowSchema,
+        sql`SELECT * FROM fitness.lab_panel WHERE user_id = ${userId} ORDER BY recorded_at`,
+      ),
+  },
+  {
     name: "lab-results.json",
     query: (db, userId) =>
       executeWithSchema(

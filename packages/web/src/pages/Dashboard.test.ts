@@ -1,6 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { UnitConverter } from "../lib/units.ts";
-import { buildSkinTempSeries, DASHBOARD_SECTION_IDS, spo2TempSectionConfig } from "./Dashboard";
+import {
+  buildSkinTempSeries,
+  DASHBOARD_SECTION_IDS,
+  healthMonitorSubtitle,
+  spo2TempSectionConfig,
+} from "./Dashboard";
 
 describe("buildSkinTempSeries", () => {
   const metrics = [
@@ -89,6 +94,44 @@ describe("spo2TempSectionConfig", () => {
   it("uses imperial temperature label when unit system is imperial", () => {
     const config = spo2TempSectionConfig(false, true, new UnitConverter("imperial"));
     expect(config.yAxis[0]?.name).toBe("°F");
+  });
+});
+
+describe("healthMonitorSubtitle", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("returns today's label when latestDate is null", () => {
+    expect(healthMonitorSubtitle(null)).toBe("Today's values vs. rolling average");
+  });
+
+  it("returns today's label when latestDate is undefined", () => {
+    expect(healthMonitorSubtitle(undefined)).toBe("Today's values vs. rolling average");
+  });
+
+  it("returns today's label when latestDate matches today", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-21T10:00:00"));
+    expect(healthMonitorSubtitle("2026-03-21")).toBe("Today's values vs. rolling average");
+  });
+
+  it("shows actual date and stale notice when data is from yesterday", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-21T10:00:00"));
+    const result = healthMonitorSubtitle("2026-03-20");
+    expect(result).toContain("not yet updated today");
+    expect(result).toContain("Mar");
+    expect(result).toContain("20");
+  });
+
+  it("shows actual date and stale notice for older data", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-21T10:00:00"));
+    const result = healthMonitorSubtitle("2026-03-15");
+    expect(result).toContain("not yet updated today");
+    expect(result).toContain("Mar");
+    expect(result).toContain("15");
   });
 });
 

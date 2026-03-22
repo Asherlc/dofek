@@ -1,11 +1,18 @@
 import { createActivityTypeMapper, POLAR_SPORT_MAP } from "@dofek/training/training";
+import { eq } from "drizzle-orm";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import { activity, dailyMetrics, sleepSession } from "../db/schema.ts";
+import { activity, dailyMetrics, sleepSession, sleepStage } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
-import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
+import type {
+  ProviderAuthSetup,
+  SyncError,
+  SyncOptions,
+  SyncProvider,
+  SyncResult,
+} from "./types.ts";
 
 // ============================================================
 // Polar AccessLink API types
@@ -141,6 +148,12 @@ export interface ParsedPolarSleep {
   awakeMinutes: number;
 }
 
+export interface ParsedPolarSleepStage {
+  stage: "deep" | "light" | "rem" | "awake";
+  startedAt: Date;
+  endedAt: Date;
+}
+
 export function parsePolarSleep(sleep: PolarSleep): ParsedPolarSleep {
   const startedAt = new Date(sleep.sleep_start_time);
   const endedAt = new Date(sleep.sleep_end_time);
@@ -160,6 +173,67 @@ export function parsePolarSleep(sleep: PolarSleep): ParsedPolarSleep {
     remMinutes,
     awakeMinutes,
   };
+}
+
+// Polar hypnogram stage codes (from Polar API documentation):
+// 1 = deep, 2 = light, 3 = REM, 4 = interrupted (awake), 5 = awake (at sleep boundary)
+const POLAR_HYPNOGRAM_STAGE_MAP: Record<number, "deep" | "light" | "rem" | "awake"> = {
+  1: "deep",
+  2: "light",
+  3: "rem",
+  4: "awake",
+  5: "awake",
+};
+
+export function parsePolarSleepStages(
+  sleepStartTime: string,
+  hypnogram: Record<string, number>,
+): ParsedPolarSleepStage[] {
+  const startMs = new Date(sleepStartTime).getTime();
+  const entries = Object.entries(hypnogram)
+    .map(([minuteStr, stageValue]) => ({
+      minute: Number(minuteStr),
+      stage: POLAR_HYPNOGRAM_STAGE_MAP[stageValue],
+    }))
+    .filter(
+      (e): e is { minute: number; stage: "deep" | "light" | "rem" | "awake" } => e.stage != null,
+    )
+    .sort((a, b) => a.minute - b.minute);
+
+  const first = entries[0];
+  if (!first) return [];
+
+  // Merge consecutive identical stages into intervals.
+  // Each hypnogram entry represents one minute starting at that offset.
+  const stages: ParsedPolarSleepStage[] = [];
+  let currentStage = first.stage;
+  let currentStart = first.minute;
+  let previousMinute = first.minute;
+
+  for (let i = 1; i < entries.length; i++) {
+    const entry = entries[i];
+    if (!entry) continue;
+    // Start a new interval if stage changed or there's a gap
+    if (entry.stage !== currentStage || entry.minute !== previousMinute + 1) {
+      stages.push({
+        stage: currentStage,
+        startedAt: new Date(startMs + currentStart * 60000),
+        endedAt: new Date(startMs + (previousMinute + 1) * 60000),
+      });
+      currentStage = entry.stage;
+      currentStart = entry.minute;
+    }
+    previousMinute = entry.minute;
+  }
+
+  // Push final interval
+  stages.push({
+    stage: currentStage,
+    startedAt: new Date(startMs + currentStart * 60000),
+    endedAt: new Date(startMs + (previousMinute + 1) * 60000),
+  });
+
+  return stages;
 }
 
 export interface ParsedPolarDailyMetrics {
@@ -324,7 +398,7 @@ export class PolarProvider implements SyncProvider {
     return tokens;
   }
 
-  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -343,37 +417,26 @@ export class PolarProvider implements SyncProvider {
 
     // --- Sync exercises (activities) ---
     try {
-      const exerciseCount = await withSyncLog(db, this.id, "exercises", async () => {
-        const exercises = await client.getExercises();
-        let count = 0;
+      const exerciseCount = await withSyncLog(
+        db,
+        this.id,
+        "exercises",
+        async () => {
+          const exercises = await client.getExercises();
+          let count = 0;
 
-        for (const exercise of exercises) {
-          // Skip exercises before our sync window
-          if (new Date(exercise.start_time) < since) continue;
+          for (const exercise of exercises) {
+            // Skip exercises before our sync window
+            if (new Date(exercise.start_time) < since) continue;
 
-          const parsed = parsePolarExercise(exercise);
+            const parsed = parsePolarExercise(exercise);
 
-          try {
-            await db
-              .insert(activity)
-              .values({
-                providerId: this.id,
-                externalId: parsed.externalId,
-                activityType: parsed.activityType,
-                name: parsed.name,
-                startedAt: parsed.startedAt,
-                endedAt: parsed.endedAt,
-                raw: {
-                  durationSeconds: parsed.durationSeconds,
-                  distanceMeters: parsed.distanceMeters,
-                  calories: parsed.calories,
-                  avgHeartRate: parsed.avgHeartRate,
-                  maxHeartRate: parsed.maxHeartRate,
-                },
-              })
-              .onConflictDoUpdate({
-                target: [activity.providerId, activity.externalId],
-                set: {
+            try {
+              await db
+                .insert(activity)
+                .values({
+                  providerId: this.id,
+                  externalId: parsed.externalId,
                   activityType: parsed.activityType,
                   name: parsed.name,
                   startedAt: parsed.startedAt,
@@ -385,20 +448,37 @@ export class PolarProvider implements SyncProvider {
                     avgHeartRate: parsed.avgHeartRate,
                     maxHeartRate: parsed.maxHeartRate,
                   },
-                },
+                })
+                .onConflictDoUpdate({
+                  target: [activity.providerId, activity.externalId],
+                  set: {
+                    activityType: parsed.activityType,
+                    name: parsed.name,
+                    startedAt: parsed.startedAt,
+                    endedAt: parsed.endedAt,
+                    raw: {
+                      durationSeconds: parsed.durationSeconds,
+                      distanceMeters: parsed.distanceMeters,
+                      calories: parsed.calories,
+                      avgHeartRate: parsed.avgHeartRate,
+                      maxHeartRate: parsed.maxHeartRate,
+                    },
+                  },
+                });
+              count++;
+            } catch (err) {
+              errors.push({
+                message: `Exercise ${exercise.id}: ${err instanceof Error ? err.message : String(err)}`,
+                externalId: exercise.id,
+                cause: err,
               });
-            count++;
-          } catch (err) {
-            errors.push({
-              message: `Exercise ${exercise.id}: ${err instanceof Error ? err.message : String(err)}`,
-              externalId: exercise.id,
-              cause: err,
-            });
+            }
           }
-        }
 
-        return { recordCount: count, result: count };
-      });
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += exerciseCount;
     } catch (err) {
       if (err instanceof PolarUnauthorizedError) {
@@ -422,32 +502,25 @@ export class PolarProvider implements SyncProvider {
 
     // --- Sync sleep ---
     try {
-      const sleepCount = await withSyncLog(db, this.id, "sleep", async () => {
-        const sleepRecords = await client.getSleep();
-        let count = 0;
+      const sleepCount = await withSyncLog(
+        db,
+        this.id,
+        "sleep",
+        async () => {
+          const sleepRecords = await client.getSleep();
+          let count = 0;
 
-        for (const sleepRecord of sleepRecords) {
-          if (new Date(sleepRecord.sleep_start_time) < since) continue;
+          for (const sleepRecord of sleepRecords) {
+            if (new Date(sleepRecord.sleep_start_time) < since) continue;
 
-          const parsed = parsePolarSleep(sleepRecord);
+            const parsed = parsePolarSleep(sleepRecord);
 
-          try {
-            await db
-              .insert(sleepSession)
-              .values({
-                providerId: this.id,
-                externalId: parsed.externalId,
-                startedAt: parsed.startedAt,
-                endedAt: parsed.endedAt,
-                durationMinutes: parsed.durationMinutes,
-                lightMinutes: parsed.lightMinutes,
-                deepMinutes: parsed.deepMinutes,
-                remMinutes: parsed.remMinutes,
-                awakeMinutes: parsed.awakeMinutes,
-              })
-              .onConflictDoUpdate({
-                target: [sleepSession.providerId, sleepSession.externalId],
-                set: {
+            try {
+              const [session] = await db
+                .insert(sleepSession)
+                .values({
+                  providerId: this.id,
+                  externalId: parsed.externalId,
                   startedAt: parsed.startedAt,
                   endedAt: parsed.endedAt,
                   durationMinutes: parsed.durationMinutes,
@@ -455,20 +528,50 @@ export class PolarProvider implements SyncProvider {
                   deepMinutes: parsed.deepMinutes,
                   remMinutes: parsed.remMinutes,
                   awakeMinutes: parsed.awakeMinutes,
-                },
-              });
-            count++;
-          } catch (err) {
-            errors.push({
-              message: `Sleep ${sleepRecord.date}: ${err instanceof Error ? err.message : String(err)}`,
-              externalId: sleepRecord.date,
-              cause: err,
-            });
-          }
-        }
+                })
+                .onConflictDoUpdate({
+                  target: [sleepSession.providerId, sleepSession.externalId],
+                  set: {
+                    startedAt: parsed.startedAt,
+                    endedAt: parsed.endedAt,
+                    durationMinutes: parsed.durationMinutes,
+                    lightMinutes: parsed.lightMinutes,
+                    deepMinutes: parsed.deepMinutes,
+                    remMinutes: parsed.remMinutes,
+                    awakeMinutes: parsed.awakeMinutes,
+                  },
+                })
+                .returning({ id: sleepSession.id });
 
-        return { recordCount: count, result: count };
-      });
+              const stages = sleepRecord.hypnogram
+                ? parsePolarSleepStages(sleepRecord.sleep_start_time, sleepRecord.hypnogram)
+                : [];
+              if (session && stages.length > 0) {
+                await db.delete(sleepStage).where(eq(sleepStage.sessionId, session.id));
+                await db.insert(sleepStage).values(
+                  stages.map((s) => ({
+                    sessionId: session.id,
+                    stage: s.stage,
+                    startedAt: s.startedAt,
+                    endedAt: s.endedAt,
+                  })),
+                );
+              }
+
+              count++;
+            } catch (err) {
+              errors.push({
+                message: `Sleep ${sleepRecord.date}: ${err instanceof Error ? err.message : String(err)}`,
+                externalId: sleepRecord.date,
+                cause: err,
+              });
+            }
+          }
+
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += sleepCount;
     } catch (err) {
       if (err instanceof PolarUnauthorizedError) {
@@ -491,59 +594,65 @@ export class PolarProvider implements SyncProvider {
 
     // --- Sync daily activity + nightly recharge ---
     try {
-      const dailyCount = await withSyncLog(db, this.id, "daily_activity", async () => {
-        const [dailyActivities, nightlyRecharges] = await Promise.all([
-          client.getDailyActivity(),
-          client.getNightlyRecharge(),
-        ]);
+      const dailyCount = await withSyncLog(
+        db,
+        this.id,
+        "daily_activity",
+        async () => {
+          const [dailyActivities, nightlyRecharges] = await Promise.all([
+            client.getDailyActivity(),
+            client.getNightlyRecharge(),
+          ]);
 
-        // Index nightly recharge by date for O(1) lookup
-        const rechargeByDate = new Map<string, PolarNightlyRecharge>();
-        for (const recharge of nightlyRecharges) {
-          rechargeByDate.set(recharge.date, recharge);
-        }
+          // Index nightly recharge by date for O(1) lookup
+          const rechargeByDate = new Map<string, PolarNightlyRecharge>();
+          for (const recharge of nightlyRecharges) {
+            rechargeByDate.set(recharge.date, recharge);
+          }
 
-        let count = 0;
-        for (const daily of dailyActivities) {
-          if (new Date(daily.date) < since) continue;
+          let count = 0;
+          for (const daily of dailyActivities) {
+            if (new Date(daily.date) < since) continue;
 
-          const recharge = rechargeByDate.get(daily.date) ?? null;
-          const parsed = parsePolarDailyActivity(daily, recharge);
+            const recharge = rechargeByDate.get(daily.date) ?? null;
+            const parsed = parsePolarDailyActivity(daily, recharge);
 
-          try {
-            await db
-              .insert(dailyMetrics)
-              .values({
-                date: parsed.date,
-                providerId: this.id,
-                steps: parsed.steps,
-                activeEnergyKcal: parsed.activeEnergyKcal,
-                restingHr: parsed.restingHr,
-                hrv: parsed.hrv,
-                respiratoryRateAvg: parsed.respiratoryRateAvg,
-              })
-              .onConflictDoUpdate({
-                target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
-                set: {
+            try {
+              await db
+                .insert(dailyMetrics)
+                .values({
+                  date: parsed.date,
+                  providerId: this.id,
                   steps: parsed.steps,
                   activeEnergyKcal: parsed.activeEnergyKcal,
                   restingHr: parsed.restingHr,
                   hrv: parsed.hrv,
                   respiratoryRateAvg: parsed.respiratoryRateAvg,
-                },
+                })
+                .onConflictDoUpdate({
+                  target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
+                  set: {
+                    steps: parsed.steps,
+                    activeEnergyKcal: parsed.activeEnergyKcal,
+                    restingHr: parsed.restingHr,
+                    hrv: parsed.hrv,
+                    respiratoryRateAvg: parsed.respiratoryRateAvg,
+                  },
+                });
+              count++;
+            } catch (err) {
+              errors.push({
+                message: `Daily ${daily.date}: ${err instanceof Error ? err.message : String(err)}`,
+                externalId: daily.date,
+                cause: err,
               });
-            count++;
-          } catch (err) {
-            errors.push({
-              message: `Daily ${daily.date}: ${err instanceof Error ? err.message : String(err)}`,
-              externalId: daily.date,
-              cause: err,
-            });
+            }
           }
-        }
 
-        return { recordCount: count, result: count };
-      });
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += dailyCount;
     } catch (err) {
       if (err instanceof PolarUnauthorizedError) {

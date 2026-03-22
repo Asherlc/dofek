@@ -11,11 +11,15 @@ import {
   queryDailyStatistics,
   queryQuantitySamples,
   querySleepSamples,
-  type WorkoutSample,
   queryWorkouts,
   requestPermissions,
 } from "../../modules/health-kit";
 import { trpc } from "../../lib/trpc";
+import {
+  ADDITIVE_QUANTITY_TYPES,
+  NON_ADDITIVE_QUANTITY_TYPES,
+  syncHealthKitToServer,
+} from "../../lib/health-kit-sync";
 
 interface SyncStatus {
   lastSync: Date | null;
@@ -34,47 +38,7 @@ const SYNC_RANGE_OPTIONS: Array<{ label: string; value: number | null }> = [
 
 const HEALTHKIT_BACKFILL_COMPLETED_KEY = "healthkit_backfill_completed";
 
-// Additive types use HKStatisticsCollectionQuery for proper source deduplication.
-// Without this, overlapping samples from iPhone + Apple Watch get summed, roughly
-// doubling the real values (e.g., 3k steps shown when the user walked 1.5k).
-const ADDITIVE_QUANTITY_TYPES = [
-  "HKQuantityTypeIdentifierStepCount",
-  "HKQuantityTypeIdentifierActiveEnergyBurned",
-  "HKQuantityTypeIdentifierBasalEnergyBurned",
-  "HKQuantityTypeIdentifierDistanceWalkingRunning",
-  "HKQuantityTypeIdentifierFlightsClimbed",
-  "HKQuantityTypeIdentifierAppleExerciseTime",
-];
-
-// Non-additive types use raw HKSampleQuery (no deduplication needed since
-// these are point-in-time or discrete measurements, not cumulative sums).
-const NON_ADDITIVE_QUANTITY_TYPES = [
-  "HKQuantityTypeIdentifierBodyMass",
-  "HKQuantityTypeIdentifierBodyFatPercentage",
-  "HKQuantityTypeIdentifierHeartRate",
-  "HKQuantityTypeIdentifierRestingHeartRate",
-  "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
-  "HKQuantityTypeIdentifierVO2Max",
-  "HKQuantityTypeIdentifierOxygenSaturation",
-  "HKQuantityTypeIdentifierRespiratoryRate",
-  "HKQuantityTypeIdentifierAppleSleepingWristTemperature",
-];
-
 const ALL_QUANTITY_TYPES = [...ADDITIVE_QUANTITY_TYPES, ...NON_ADDITIVE_QUANTITY_TYPES];
-
-function daysAgo(days: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  return d.toISOString();
-}
-
-function normalizeWorkoutsForSync(workouts: WorkoutSample[]): WorkoutSample[] {
-  return workouts.map((workout) => ({
-    ...workout,
-    totalEnergyBurned: workout.totalEnergyBurned ?? null,
-    totalDistance: workout.totalDistance ?? null,
-  }));
-}
 
 const NAV_LINKS = [
   { route: "/sleep" as const, label: "Sleep", emoji: "\uD83C\uDF19", description: "Sleep stages, debt & patterns" },
@@ -111,9 +75,7 @@ export default function HealthScreen() {
         ? 7
         : null; // first time = All
 
-  const pushQuantity = trpc.healthKitSync.pushQuantitySamples.useMutation();
-  const pushWorkouts = trpc.healthKitSync.pushWorkouts.useMutation();
-  const pushSleep = trpc.healthKitSync.pushSleepSamples.useMutation();
+  const trpcClient = trpc.useUtils().client;
   const setBackfillComplete = trpc.settings.set.useMutation();
 
   const available = isAvailable();
@@ -151,81 +113,18 @@ export default function HealthScreen() {
     setStatus((prev) => ({ ...prev, syncing: true, lastResult: null, progress: null }));
 
     try {
-      const startDate = effectiveSyncRange === null
-        ? new Date(0).toISOString()
-        : daysAgo(effectiveSyncRange);
-      const endDate = new Date().toISOString();
-
-      // Sync quantity samples
-      const allSamples = [];
-      const totalTypes = ALL_QUANTITY_TYPES.length;
-      let typeIndex = 0;
-
-      // Additive types: use HKStatisticsCollectionQuery for proper deduplication
-      // across sources (iPhone + Apple Watch). Returns one deduplicated total per day.
-      for (const typeId of ADDITIVE_QUANTITY_TYPES) {
-        const shortName = typeId.replace("HKQuantityTypeIdentifier", "");
-        setStatus((prev) => ({
-          ...prev,
-          progress: `Querying ${shortName}... (${typeIndex + 1}/${totalTypes})`,
-        }));
-        const dailyStats = await queryDailyStatistics(typeId, startDate, endDate);
-        for (const stat of dailyStats) {
-          allSamples.push({
-            type: typeId,
-            value: stat.value,
-            unit: "statistics",
-            startDate: `${stat.date}T12:00:00Z`,
-            endDate: `${stat.date}T12:00:00Z`,
-            sourceName: "HealthKit",
-            sourceBundle: "com.apple.Health",
-            uuid: `stat:${typeId}:${stat.date}`,
-          });
-        }
-        typeIndex++;
-      }
-
-      // Non-additive types: use raw sample query (point-in-time values)
-      for (const typeId of NON_ADDITIVE_QUANTITY_TYPES) {
-        const shortName = typeId.replace("HKQuantityTypeIdentifier", "");
-        setStatus((prev) => ({
-          ...prev,
-          progress: `Querying ${shortName}... (${typeIndex + 1}/${totalTypes})`,
-        }));
-        const samples = await queryQuantitySamples(typeId, startDate, endDate);
-        allSamples.push(...samples);
-        typeIndex++;
-      }
-
-      let totalInserted = 0;
-      const errors: string[] = [];
-
-      if (allSamples.length > 0) {
-        setStatus((prev) => ({ ...prev, progress: `Pushing ${allSamples.length} samples...` }));
-        // Push in batches of 500
-        for (let i = 0; i < allSamples.length; i += 500) {
-          const batch = allSamples.slice(i, i + 500);
-          const result = await pushQuantity.mutateAsync({ samples: batch });
-          totalInserted += result.inserted;
-          errors.push(...result.errors);
-        }
-      }
-
-      // Sync workouts
-      setStatus((prev) => ({ ...prev, progress: "Querying workouts..." }));
-      const workouts = normalizeWorkoutsForSync(await queryWorkouts(startDate, endDate));
-      if (workouts.length > 0) {
-        const result = await pushWorkouts.mutateAsync({ workouts });
-        totalInserted += result.inserted;
-      }
-
-      // Sync sleep
-      setStatus((prev) => ({ ...prev, progress: "Querying sleep..." }));
-      const sleepSamples = await querySleepSamples(startDate, endDate);
-      if (sleepSamples.length > 0) {
-        const result = await pushSleep.mutateAsync({ samples: sleepSamples });
-        totalInserted += result.inserted;
-      }
+      const result = await syncHealthKitToServer({
+        trpcClient,
+        healthKit: {
+          queryDailyStatistics,
+          queryQuantitySamples,
+          queryWorkouts,
+          querySleepSamples,
+        },
+        syncRangeDays: effectiveSyncRange,
+        onProgress: (message) =>
+          setStatus((prev) => ({ ...prev, progress: message })),
+      });
 
       // Mark backfill as completed after successful all-time sync
       if (effectiveSyncRange === null) {
@@ -235,9 +134,9 @@ export default function HealthScreen() {
         });
       }
 
-      const resultMessage = errors.length > 0
-        ? `Synced ${totalInserted} records with ${errors.length} errors`
-        : `Synced ${totalInserted} records`;
+      const resultMessage = result.errors.length > 0
+        ? `Synced ${result.inserted} records with ${result.errors.length} errors`
+        : `Synced ${result.inserted} records`;
 
       setStatus({
         lastSync: new Date(),
@@ -254,7 +153,7 @@ export default function HealthScreen() {
         progress: null,
       }));
     }
-  }, [pushQuantity, pushWorkouts, pushSleep, setBackfillComplete, effectiveSyncRange]);
+  }, [trpcClient, setBackfillComplete, effectiveSyncRange]);
 
   async function handleEnableBackground() {
     try {

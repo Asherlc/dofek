@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
 import { DaySelector } from "../components/DaySelector";
+import { Hypnogram } from "../components/charts/Hypnogram";
 import { MetricCard } from "../components/MetricCard";
 import { SleepBar } from "../components/charts/SleepBar";
 import { SparkLine } from "../components/charts/SparkLine";
@@ -13,6 +14,7 @@ import { colors } from "../theme";
 export default function SleepScreen() {
   const [days, setDays] = useState(30);
   const sleepQuery = trpc.recovery.sleepAnalytics.useQuery({ days });
+  const latestStagesQuery = trpc.sleep.latestStages.useQuery();
   const consistencyQuery = trpc.recovery.sleepConsistency.useQuery({ days });
 
   const sleepResult = sleepQuery.data;
@@ -75,6 +77,18 @@ export default function SleepScreen() {
                   {Math.round(lastNight.efficiency)}%
                 </Text>
               </View>
+            </View>
+          )}
+
+          {/* Hypnogram */}
+          {(latestStagesQuery.data?.length ?? 0) > 0 && (
+            <View style={styles.card}>
+              <ChartTitleWithTooltip
+                title="Last Night"
+                description="This hypnogram shows the progression of your sleep stages throughout the night — when you were in deep, REM, light, or awake phases."
+                textStyle={styles.cardTitle}
+              />
+              <Hypnogram data={latestStagesQuery.data ?? []} />
             </View>
           )}
 

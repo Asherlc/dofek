@@ -131,6 +131,8 @@ export interface WhoopWeightliftingSet {
   time_in_seconds: number;
   during: string;
   complete: boolean;
+  strap_location?: string | null;
+  strap_location_laterality?: string | null;
 }
 
 export interface WhoopExerciseDetails {

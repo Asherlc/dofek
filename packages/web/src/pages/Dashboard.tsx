@@ -21,6 +21,7 @@ import { StressChart } from "../components/StressChart.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { TimeSeriesChart } from "../components/TimeSeriesChart.tsx";
 import { WeeklyReportCard } from "../components/WeeklyReportCard.tsx";
+import { useAutoSync } from "../hooks/useAutoSync.ts";
 import { useScrollReveal } from "../hooks/useScrollReveal.ts";
 import { chartColors } from "../lib/chartTheme.ts";
 import { useDashboardLayout } from "../lib/dashboardLayoutContext.ts";
@@ -100,6 +101,18 @@ const activityRowSchema = z.object({
   distance_meters: z.number().nullable().optional(),
   calories: z.number().nullable().optional(),
 });
+
+export function healthMonitorSubtitle(latestDate: string | null | undefined): string {
+  if (!latestDate) return "Today's values vs. rolling average";
+  const today = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD in local tz
+  if (latestDate === today) return "Today's values vs. rolling average";
+  const dateLabel = new Date(`${latestDate}T00:00:00`).toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+  });
+  return `Latest values from ${dateLabel} — not yet updated today`;
+}
 
 /** Sections that render side-by-side in a 2-column grid. The key is the "primary" (left) section. */
 const GRID_PAIRS: Record<string, string> = {
@@ -205,6 +218,9 @@ export function Dashboard() {
     ? trendRowSchema.parse(trends.data)
     : undefined;
 
+  // Auto-sync when data is stale (API providers only — HealthKit requires iOS)
+  useAutoSync(trendData?.latest_date);
+
   const topInsights = useMemo(() => {
     const all: Insight[] = insightsQuery.data ?? [];
     return all
@@ -303,7 +319,7 @@ export function Dashboard() {
   const sectionContent: Record<string, { title: string; subtitle: string; content: ReactNode }> = {
     healthMonitor: {
       title: "Health Monitor",
-      subtitle: "Today's values vs. rolling average",
+      subtitle: healthMonitorSubtitle(trendData?.latest_date),
       content: <HealthStatusBar metrics={healthMetrics} loading={trends.isLoading} />,
     },
     topInsights: {

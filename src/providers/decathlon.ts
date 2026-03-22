@@ -5,7 +5,13 @@ import type { SyncDatabase } from "../db/index.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
-import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
+import type {
+  ProviderAuthSetup,
+  SyncError,
+  SyncOptions,
+  SyncProvider,
+  SyncResult,
+} from "./types.ts";
 
 // ============================================================
 // Decathlon API types
@@ -172,7 +178,7 @@ export class DecathlonProvider implements SyncProvider {
     });
   }
 
-  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -191,66 +197,72 @@ export class DecathlonProvider implements SyncProvider {
     const clientId = process.env.DECATHLON_CLIENT_ID;
 
     try {
-      const activityCount = await withSyncLog(db, this.id, "activity", async () => {
-        let count = 0;
-        let nextUrl: string | undefined =
-          `${DECATHLON_API_BASE}/activities?after=${since.toISOString()}&limit=50`;
+      const activityCount = await withSyncLog(
+        db,
+        this.id,
+        "activity",
+        async () => {
+          let count = 0;
+          let nextUrl: string | undefined =
+            `${DECATHLON_API_BASE}/activities?after=${since.toISOString()}&limit=50`;
 
-        while (nextUrl) {
-          const response = await this.#fetchFn(nextUrl, {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              Accept: "application/json",
-              ...(clientId ? { "x-api-key": clientId } : {}),
-            },
-          });
+          while (nextUrl) {
+            const response = await this.#fetchFn(nextUrl, {
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                Accept: "application/json",
+                ...(clientId ? { "x-api-key": clientId } : {}),
+              },
+            });
 
-          if (!response.ok) {
-            const text = await response.text();
-            throw new Error(`Decathlon API error (${response.status}): ${text}`);
-          }
+            if (!response.ok) {
+              const text = await response.text();
+              throw new Error(`Decathlon API error (${response.status}): ${text}`);
+            }
 
-          const data: DecathlonActivitiesResponse = await response.json();
-          const activities = data.data ?? [];
-          nextUrl = data.links?.next;
+            const data: DecathlonActivitiesResponse = await response.json();
+            const activities = data.data ?? [];
+            nextUrl = data.links?.next;
 
-          for (const raw of activities) {
-            const parsed = parseDecathlonActivity(raw);
-            try {
-              await db
-                .insert(activity)
-                .values({
-                  providerId: this.id,
-                  externalId: parsed.externalId,
-                  activityType: parsed.activityType,
-                  name: parsed.name,
-                  startedAt: parsed.startedAt,
-                  endedAt: parsed.endedAt,
-                  raw: parsed.raw,
-                })
-                .onConflictDoUpdate({
-                  target: [activity.providerId, activity.externalId],
-                  set: {
+            for (const raw of activities) {
+              const parsed = parseDecathlonActivity(raw);
+              try {
+                await db
+                  .insert(activity)
+                  .values({
+                    providerId: this.id,
+                    externalId: parsed.externalId,
                     activityType: parsed.activityType,
                     name: parsed.name,
                     startedAt: parsed.startedAt,
                     endedAt: parsed.endedAt,
                     raw: parsed.raw,
-                  },
+                  })
+                  .onConflictDoUpdate({
+                    target: [activity.providerId, activity.externalId],
+                    set: {
+                      activityType: parsed.activityType,
+                      name: parsed.name,
+                      startedAt: parsed.startedAt,
+                      endedAt: parsed.endedAt,
+                      raw: parsed.raw,
+                    },
+                  });
+                count++;
+              } catch (err) {
+                errors.push({
+                  message: err instanceof Error ? err.message : String(err),
+                  externalId: parsed.externalId,
+                  cause: err,
                 });
-              count++;
-            } catch (err) {
-              errors.push({
-                message: err instanceof Error ? err.message : String(err),
-                externalId: parsed.externalId,
-                cause: err,
-              });
+              }
             }
           }
-        }
 
-        return { recordCount: count, result: count };
-      });
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += activityCount;
     } catch (err) {
       errors.push({

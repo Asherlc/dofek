@@ -1,3 +1,4 @@
+import type { EventSubscription } from "expo-modules-core";
 import HealthKitModule from "./src/HealthKitModule";
 
 export interface HealthKitSample {
@@ -139,4 +140,18 @@ export async function enableBackgroundDelivery(
 	typeIdentifier: string,
 ): Promise<boolean> {
 	return HealthKitModule.enableBackgroundDelivery(typeIdentifier);
+}
+
+/** Set up HKObserverQuery instances for all read types.
+ * When new samples arrive, fires an "onHealthKitSampleUpdate" event. */
+export async function setupBackgroundObservers(): Promise<boolean> {
+	return HealthKitModule.setupBackgroundObservers();
+}
+
+/** Listen for HealthKit sample update events from background observers.
+ * Returns a subscription that can be removed with `.remove()`. */
+export function addSampleUpdateListener(
+	callback: (event: { typeIdentifier: string }) => void,
+): EventSubscription {
+	return HealthKitModule.addListener("onHealthKitSampleUpdate", callback);
 }

@@ -20,6 +20,21 @@ services:
     depends_on:
       - web
 
+  migrate:
+    image: ${DOFEK_IMAGE:-ghcr.io/asherlc/dofek:latest}
+    command: migrate
+    restart: "no"
+    env_file: .env
+    environment:
+      - DATABASE_URL=postgres://health:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/health
+      - NODE_ENV=production
+      - OTEL_SERVICE_NAME=dofek-migrate
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4318
+      - OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://collector:4318/v1/logs
+    depends_on:
+      db:
+        condition: service_healthy
+
   web:
     image: ${DOFEK_IMAGE:-ghcr.io/asherlc/dofek:latest}
     hostname: dofek-web
@@ -44,6 +59,8 @@ services:
       - job_files:/app/job-files
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       db:
         condition: service_healthy
       redis:
@@ -66,6 +83,8 @@ services:
     volumes:
       - job_files:/app/job-files
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       db:
         condition: service_healthy
       redis:
@@ -85,6 +104,8 @@ services:
       - OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://collector:4318/v1/logs
       - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://o4511073249067008.ingest.us.sentry.io/api/4511073388593152/integration/otlp/v1/traces?sentry_key=b421c7fde44434a032c86e3357cae397
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       db:
         condition: service_healthy
 
