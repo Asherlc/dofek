@@ -218,16 +218,24 @@ describe("Router coverage", () => {
     // ── Food entries for nutrition analytics ──
     for (let i = 0; i < 10; i++) {
       await testCtx.db.execute(
-        sql`INSERT INTO fitness.food_entry (
+        sql`WITH nd AS (
+              INSERT INTO fitness.nutrition_data (
+                calories, protein_g, carbs_g, fat_g, fiber_g,
+                vitamin_c_mg, calcium_mg, iron_mg
+              ) VALUES (
+                350, 12, 55, 8, 6,
+                15, 200, 4
+              )
+              RETURNING id
+            )
+            INSERT INTO fitness.food_entry (
               user_id, provider_id, date, meal, food_name,
-              calories, protein_g, carbs_g, fat_g, fiber_g,
-              vitamin_c_mg, calcium_mg, iron_mg, confirmed
+              nutrition_data_id, confirmed
             ) VALUES (
               ${DEFAULT_USER_ID}, 'dofek',
               CURRENT_DATE - ${i}::int,
               'breakfast', ${`Oatmeal ${i}`},
-              350, 12, 55, 8, 6,
-              15, 200, 4, true
+              (SELECT id FROM nd), true
             )`,
       );
     }
