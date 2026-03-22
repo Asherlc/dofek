@@ -14,8 +14,8 @@ export interface MeasurementTypeDefinition {
   readonly id: string;
   /** Human-readable name. e.g. 'Weight', 'Body Fat' */
   readonly displayName: string;
-  /** Unit of measurement. e.g. 'kg', '%', 'cm' */
-  readonly unit: string;
+  /** Unit of measurement. e.g. 'kg', '%', 'cm'. Null for dimensionless values. */
+  readonly unit: string | null;
   /** Grouping category for UI sections */
   readonly category: MeasurementCategory;
   /** Sort order within category for consistent UI rendering */
@@ -104,7 +104,7 @@ const COMPOSITION: MeasurementTypeDefinition[] = [
   {
     id: "visceral_fat",
     displayName: "Visceral Fat Rating",
-    unit: "",
+    unit: null,
     category: "composition",
     sortOrder: 107,
     legacyFieldName: "visceralFat",

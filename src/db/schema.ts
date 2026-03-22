@@ -191,7 +191,7 @@ export const bodyMeasurement = fitness.table(
 export const measurementType = fitness.table("measurement_type", {
   id: text("id").primaryKey(),
   displayName: text("display_name").notNull(),
-  unit: text("unit").notNull(),
+  unit: text("unit"),
   category: text("category").notNull(),
   sortOrder: integer("sort_order").notNull().default(0),
   isInteger: boolean("is_integer").notNull().default(false),
@@ -483,7 +483,7 @@ export const dailyMetrics = fitness.table(
 export const dailyMetricType = fitness.table("daily_metric_type", {
   id: text("id").primaryKey(),
   displayName: text("display_name").notNull(),
-  unit: text("unit").notNull(),
+  unit: text("unit"),
   category: text("category").notNull(),
   priorityCategory: text("priority_category").notNull().default("activity"),
   sortOrder: integer("sort_order").notNull().default(0),

@@ -8,7 +8,7 @@
 CREATE TABLE fitness.measurement_type (
   id TEXT PRIMARY KEY,
   display_name TEXT NOT NULL,
-  unit TEXT NOT NULL,
+  unit TEXT,
   category TEXT NOT NULL,
   sort_order INTEGER NOT NULL DEFAULT 0,
   is_integer BOOLEAN NOT NULL DEFAULT false
@@ -27,7 +27,7 @@ INSERT INTO fitness.measurement_type (id, display_name, unit, category, sort_ord
   ('water_pct',          'Water',                     '%',     'composition',    104, false),
   ('bmi',                'BMI',                       'kg/m²', 'composition',    105, false),
   ('lean_body_mass',     'Lean Body Mass',            'kg',    'composition',    106, false),
-  ('visceral_fat',       'Visceral Fat Rating',       '',      'composition',    107, false),
+  ('visceral_fat',       'Visceral Fat Rating',       NULL,    'composition',    107, false),
   ('metabolic_age',      'Metabolic Age',             'years', 'composition',    108, true),
   -- Dimensions
   ('height',             'Height',                    'cm',    'dimension',      200, false),

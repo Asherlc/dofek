@@ -8,7 +8,7 @@
 CREATE TABLE fitness.daily_metric_type (
   id TEXT PRIMARY KEY,
   display_name TEXT NOT NULL,
-  unit TEXT NOT NULL,
+  unit TEXT,
   category TEXT NOT NULL,
   priority_category TEXT NOT NULL DEFAULT 'activity',
   sort_order INTEGER NOT NULL DEFAULT 0,
@@ -42,7 +42,7 @@ INSERT INTO fitness.daily_metric_type (id, display_name, unit, category, priorit
   ('walking_step_length',         'Walking Step Length',            'cm',          'gait',    'activity', 301, false),
   ('walking_double_support_pct',  'Walking Double Support',        '%',           'gait',    'activity', 302, false),
   ('walking_asymmetry_pct',       'Walking Asymmetry',             '%',           'gait',    'activity', 303, false),
-  ('walking_steadiness',          'Walking Steadiness',            '',            'gait',    'activity', 304, false),
+  ('walking_steadiness',          'Walking Steadiness',            NULL,          'gait',    'activity', 304, false),
   -- Audio
   ('environmental_audio_exposure','Environmental Audio Exposure',  'dBASPL',      'audio',   'activity', 400, false),
   ('headphone_audio_exposure',    'Headphone Audio Exposure',      'dBASPL',      'audio',   'activity', 401, false),
@@ -95,8 +95,6 @@ SELECT id, 'flights_climbed', flights_climbed FROM fitness.daily_metrics WHERE f
 UNION ALL
 SELECT id, 'exercise_minutes', exercise_minutes FROM fitness.daily_metrics WHERE exercise_minutes IS NOT NULL
 UNION ALL
-SELECT id, 'mindful_minutes', mindful_minutes FROM fitness.daily_metrics WHERE mindful_minutes IS NOT NULL
-UNION ALL
 SELECT id, 'stand_hours', stand_hours FROM fitness.daily_metrics WHERE stand_hours IS NOT NULL
 UNION ALL
 SELECT id, 'walking_speed', walking_speed FROM fitness.daily_metrics WHERE walking_speed IS NOT NULL
@@ -108,10 +106,6 @@ UNION ALL
 SELECT id, 'walking_asymmetry_pct', walking_asymmetry_pct FROM fitness.daily_metrics WHERE walking_asymmetry_pct IS NOT NULL
 UNION ALL
 SELECT id, 'walking_steadiness', walking_steadiness FROM fitness.daily_metrics WHERE walking_steadiness IS NOT NULL
-UNION ALL
-SELECT id, 'environmental_audio_exposure', environmental_audio_exposure FROM fitness.daily_metrics WHERE environmental_audio_exposure IS NOT NULL
-UNION ALL
-SELECT id, 'headphone_audio_exposure', headphone_audio_exposure FROM fitness.daily_metrics WHERE headphone_audio_exposure IS NOT NULL
 UNION ALL
 SELECT id, 'stress_high_minutes', stress_high_minutes FROM fitness.daily_metrics WHERE stress_high_minutes IS NOT NULL
 UNION ALL

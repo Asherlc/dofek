@@ -352,10 +352,14 @@ export const foodRouter = router({
       );
     }
 
-    // Replace nutrients in junction table if provided
+    // Replace nutrients in junction table if provided (scoped by user ownership)
     if (nutrients) {
       await ctx.db.execute(
-        sql`DELETE FROM fitness.food_entry_nutrient WHERE food_entry_id = ${id}::uuid`,
+        sql`DELETE FROM fitness.food_entry_nutrient
+            WHERE food_entry_id = (
+              SELECT id FROM fitness.food_entry
+              WHERE id = ${id}::uuid AND user_id = ${ctx.userId}
+            )`,
       );
       const nutrientEntries = Object.entries(nutrients);
       if (nutrientEntries.length > 0) {
@@ -364,7 +368,11 @@ export const foodRouter = router({
         );
         await ctx.db.execute(
           sql`INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
-              VALUES ${sql.join(valuesClauses, sql`, `)}`,
+              SELECT food_entry_id, nutrient_id, amount
+              FROM (VALUES ${sql.join(valuesClauses, sql`, `)}) AS vals(food_entry_id, nutrient_id, amount)
+              WHERE food_entry_id IN (
+                SELECT id FROM fitness.food_entry WHERE id = ${id}::uuid AND user_id = ${ctx.userId}
+              )`,
         );
       }
     }

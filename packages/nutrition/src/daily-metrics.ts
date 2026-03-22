@@ -20,8 +20,8 @@ export interface DailyMetricTypeDefinition {
   readonly id: string;
   /** Human-readable name. e.g. 'Resting Heart Rate', 'Steps' */
   readonly displayName: string;
-  /** Unit of measurement. e.g. 'bpm', 'steps', 'kcal' */
-  readonly unit: string;
+  /** Unit of measurement. e.g. 'bpm', 'steps', 'kcal'. Null for dimensionless values. */
+  readonly unit: string | null;
   /** Grouping category for UI sections */
   readonly category: DailyMetricCategory;
   /** Which priority column to use for dedup in the view */
@@ -261,7 +261,7 @@ const GAIT: DailyMetricTypeDefinition[] = [
   {
     id: "walking_steadiness",
     displayName: "Walking Steadiness",
-    unit: "",
+    unit: null,
     category: "gait",
     priorityCategory: "activity",
     sortOrder: 304,
