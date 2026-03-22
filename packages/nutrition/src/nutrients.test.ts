@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
-  type NutrientCategory,
-  NUTRIENTS,
   getNutrientById,
   getNutrientByLegacyField,
   getNutrientsByCategory,
+  NUTRIENTS,
+  type NutrientCategory,
 } from "./nutrients.ts";
 
 describe("NUTRIENTS catalog", () => {

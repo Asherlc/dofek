@@ -8,7 +8,12 @@
  * every endpoint.
  */
 
-export type NutrientCategory = "fat_breakdown" | "other_macro" | "vitamin" | "mineral" | "fatty_acid";
+export type NutrientCategory =
+  | "fat_breakdown"
+  | "other_macro"
+  | "vitamin"
+  | "mineral"
+  | "fatty_acid";
 
 export interface NutrientDefinition {
   /** Stable identifier, used as DB primary key. e.g. 'vitamin_a', 'calcium' */

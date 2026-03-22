@@ -541,6 +541,55 @@ export const supplement = fitness.table(
 );
 
 // ============================================================
+// Nutrient catalog + junction tables
+// ============================================================
+
+export const nutrient = fitness.table("nutrient", {
+  id: text("id").primaryKey(),
+  displayName: text("display_name").notNull(),
+  unit: text("unit").notNull(),
+  category: text("category").notNull(),
+  rda: real("rda"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  openFoodFactsKey: text("open_food_facts_key"),
+  conversionFactor: real("conversion_factor").notNull().default(1),
+});
+
+export const foodEntryNutrient = fitness.table(
+  "food_entry_nutrient",
+  {
+    foodEntryId: uuid("food_entry_id")
+      .notNull()
+      .references(() => foodEntry.id, { onDelete: "cascade" }),
+    nutrientId: text("nutrient_id")
+      .notNull()
+      .references(() => nutrient.id),
+    amount: real("amount").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.foodEntryId, table.nutrientId] }),
+    index("food_entry_nutrient_entry_idx").on(table.foodEntryId),
+  ],
+);
+
+export const supplementNutrient = fitness.table(
+  "supplement_nutrient",
+  {
+    supplementId: uuid("supplement_id")
+      .notNull()
+      .references(() => supplement.id, { onDelete: "cascade" }),
+    nutrientId: text("nutrient_id")
+      .notNull()
+      .references(() => nutrient.id),
+    amount: real("amount").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.supplementId, table.nutrientId] }),
+    index("supplement_nutrient_supplement_idx").on(table.supplementId),
+  ],
+);
+
+// ============================================================
 // Nutrition
 // ============================================================
 
