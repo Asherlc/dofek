@@ -545,6 +545,7 @@ describe("Router coverage", () => {
       const inBedDuration = deep + rem + light + awake; // 480
       const expectedSleepMinutes = deep + rem + light; // 390
 
+      // Use a future date so this is clearly the latest entry after all seeded data
       await testCtx.db.execute(
         sql`INSERT INTO fitness.sleep_session (
               provider_id, user_id, started_at, ended_at,
@@ -552,8 +553,8 @@ describe("Router coverage", () => {
               awake_minutes, efficiency_pct, sleep_type
             ) VALUES (
               'apple_health', ${DEFAULT_USER_ID},
-              CURRENT_TIMESTAMP - INTERVAL '2 hours',
-              CURRENT_TIMESTAMP,
+              CURRENT_TIMESTAMP + INTERVAL '1 day',
+              CURRENT_TIMESTAMP + INTERVAL '1 day' + INTERVAL '8 hours',
               ${inBedDuration}, ${deep}, ${rem}, ${light}, ${awake}, 81, 'sleep'
             )`,
       );
