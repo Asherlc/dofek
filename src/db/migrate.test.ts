@@ -13,9 +13,20 @@ vi.mock("node:fs", () => ({
 const mockSqlEnd = vi.fn().mockResolvedValue(undefined);
 const mockSqlUnsafe = vi.fn().mockResolvedValue([]);
 
+/** Track the order of tagged-template calls so we can assert lock ordering */
+const callLog: string[] = [];
+
 // Tagged template function mock — returns a promise with rows
 function createMockSql() {
-  return Object.assign(vi.fn().mockResolvedValue([]), {
+  const fn = vi.fn((...args: unknown[]) => {
+    const strings = args[0] as TemplateStringsArray;
+    const raw = strings.join("?").trim();
+    if (raw.includes("pg_advisory_lock")) callLog.push("lock");
+    if (raw.includes("pg_advisory_unlock")) callLog.push("unlock");
+    if (raw.includes("CREATE SCHEMA")) callLog.push("schema");
+    return Promise.resolve([]);
+  });
+  return Object.assign(fn, {
     unsafe: mockSqlUnsafe,
     end: mockSqlEnd,
   });
@@ -30,7 +41,15 @@ vi.mock("postgres", () => ({
 describe("runMigrations", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockSql.mockResolvedValue([]);
+    callLog.length = 0;
+    mockSql.mockImplementation((...args: unknown[]) => {
+      const strings = args[0] as TemplateStringsArray;
+      const raw = strings.join("?").trim();
+      if (raw.includes("pg_advisory_lock")) callLog.push("lock");
+      if (raw.includes("pg_advisory_unlock")) callLog.push("unlock");
+      if (raw.includes("CREATE SCHEMA")) callLog.push("schema");
+      return Promise.resolve([]);
+    });
     mockSqlUnsafe.mockResolvedValue([]);
     mockSqlEnd.mockResolvedValue(undefined);
   });
@@ -122,5 +141,30 @@ describe("runMigrations", () => {
     );
 
     expect(mockSqlEnd).toHaveBeenCalled();
+  });
+
+  it("acquires advisory lock before schema setup and releases it after", async () => {
+    const { runMigrations } = await import("./migrate.ts");
+    mockReaddirSync.mockReturnValue([]);
+
+    await runMigrations("postgres://localhost/test", "/tmp/migrations");
+
+    expect(callLog[0]).toBe("lock");
+    expect(callLog[callLog.length - 1]).toBe("unlock");
+    expect(callLog.indexOf("lock")).toBeLessThan(callLog.indexOf("schema"));
+  });
+
+  it("releases advisory lock even when migrations fail", async () => {
+    const { runMigrations } = await import("./migrate.ts");
+    mockReaddirSync.mockImplementation(() => {
+      throw new Error("fs error");
+    });
+
+    await expect(runMigrations("postgres://localhost/test", "/tmp/migrations")).rejects.toThrow(
+      "fs error",
+    );
+
+    expect(callLog).toContain("lock");
+    expect(callLog).toContain("unlock");
   });
 });

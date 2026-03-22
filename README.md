@@ -207,7 +207,7 @@ sops .env → commit → push → GHA builds ARM Docker images
 → pushes to GHCR → Watchtower polls (5min) → pulls new image → restarts containers
 ```
 
-Migrations run as a separate one-shot `migrate` container before `web`, `worker`, and `sync` start (via `depends_on: { condition: service_completed_successfully }`). In local dev, run `pnpm migrate` manually. Upserts make re-runs safe and idempotent.
+Migrations run at two levels for reliability: a dedicated one-shot `migrate` container runs first during `docker compose up` (via `depends_on: { condition: service_completed_successfully }`), and each service's entrypoint also runs migrations before starting. This belt-and-suspenders approach ensures migrations apply both on initial deploy (Compose ordering) and on Watchtower-triggered restarts (which bypass `depends_on`). A Postgres advisory lock serializes concurrent runs so only one container applies migrations at a time. In local dev, run `pnpm migrate` manually.
 
 ### Deploying from scratch
 
