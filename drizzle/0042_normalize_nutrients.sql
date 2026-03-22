@@ -91,139 +91,141 @@ CREATE TABLE fitness.supplement_nutrient (
 CREATE INDEX supplement_nutrient_supplement_idx ON fitness.supplement_nutrient(supplement_id);
 
 -- ============================================================
--- 5. Migrate existing food_entry column data to junction table
+-- 5. Migrate existing food_entry nutrient data to junction table
+-- (Nutrient columns now live in nutrition_data, linked via food_entry.nutrition_data_id)
 -- ============================================================
 
 INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
-SELECT id, 'saturated_fat', saturated_fat_g FROM fitness.food_entry WHERE saturated_fat_g IS NOT NULL
+SELECT fe.id, 'saturated_fat', nd.saturated_fat_g FROM fitness.food_entry fe JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id WHERE nd.saturated_fat_g IS NOT NULL
 UNION ALL
-SELECT id, 'polyunsaturated_fat', polyunsaturated_fat_g FROM fitness.food_entry WHERE polyunsaturated_fat_g IS NOT NULL
+SELECT fe.id, 'polyunsaturated_fat', nd.polyunsaturated_fat_g FROM fitness.food_entry fe JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id WHERE nd.polyunsaturated_fat_g IS NOT NULL
 UNION ALL
-SELECT id, 'monounsaturated_fat', monounsaturated_fat_g FROM fitness.food_entry WHERE monounsaturated_fat_g IS NOT NULL
+SELECT fe.id, 'monounsaturated_fat', nd.monounsaturated_fat_g FROM fitness.food_entry fe JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id WHERE nd.monounsaturated_fat_g IS NOT NULL
 UNION ALL
-SELECT id, 'trans_fat', trans_fat_g FROM fitness.food_entry WHERE trans_fat_g IS NOT NULL
+SELECT fe.id, 'trans_fat', nd.trans_fat_g FROM fitness.food_entry fe JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id WHERE nd.trans_fat_g IS NOT NULL
 UNION ALL
-SELECT id, 'cholesterol', cholesterol_mg FROM fitness.food_entry WHERE cholesterol_mg IS NOT NULL
+SELECT fe.id, 'cholesterol', nd.cholesterol_mg FROM fitness.food_entry fe JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id WHERE nd.cholesterol_mg IS NOT NULL
 UNION ALL
-SELECT id, 'sodium', sodium_mg FROM fitness.food_entry WHERE sodium_mg IS NOT NULL
+SELECT fe.id, 'sodium', nd.sodium_mg FROM fitness.food_entry fe JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id WHERE nd.sodium_mg IS NOT NULL
 UNION ALL
-SELECT id, 'potassium', potassium_mg FROM fitness.food_entry WHERE potassium_mg IS NOT NULL
+SELECT fe.id, 'potassium', nd.potassium_mg FROM fitness.food_entry fe JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id WHERE nd.potassium_mg IS NOT NULL
 UNION ALL
-SELECT id, 'sugar', sugar_g FROM fitness.food_entry WHERE sugar_g IS NOT NULL
+SELECT fe.id, 'sugar', nd.sugar_g FROM fitness.food_entry fe JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id WHERE nd.sugar_g IS NOT NULL
 UNION ALL
-SELECT id, 'vitamin_a', vitamin_a_mcg FROM fitness.food_entry WHERE vitamin_a_mcg IS NOT NULL
+SELECT fe.id, 'vitamin_a', nd.vitamin_a_mcg FROM fitness.food_entry fe JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id WHERE nd.vitamin_a_mcg IS NOT NULL
 UNION ALL
-SELECT id, 'vitamin_c', vitamin_c_mg FROM fitness.food_entry WHERE vitamin_c_mg IS NOT NULL
+SELECT fe.id, 'vitamin_c', nd.vitamin_c_mg FROM fitness.food_entry fe JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id WHERE nd.vitamin_c_mg IS NOT NULL
 UNION ALL
-SELECT id, 'vitamin_d', vitamin_d_mcg FROM fitness.food_entry WHERE vitamin_d_mcg IS NOT NULL
+SELECT fe.id, 'vitamin_d', nd.vitamin_d_mcg FROM fitness.food_entry fe JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id WHERE nd.vitamin_d_mcg IS NOT NULL
 UNION ALL
-SELECT id, 'vitamin_e', vitamin_e_mg FROM fitness.food_entry WHERE vitamin_e_mg IS NOT NULL
+SELECT fe.id, 'vitamin_e', nd.vitamin_e_mg FROM fitness.food_entry fe JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id WHERE nd.vitamin_e_mg IS NOT NULL
 UNION ALL
-SELECT id, 'vitamin_k', vitamin_k_mcg FROM fitness.food_entry WHERE vitamin_k_mcg IS NOT NULL
+SELECT fe.id, 'vitamin_k', nd.vitamin_k_mcg FROM fitness.food_entry fe JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id WHERE nd.vitamin_k_mcg IS NOT NULL
 UNION ALL
-SELECT id, 'vitamin_b1', vitamin_b1_mg FROM fitness.food_entry WHERE vitamin_b1_mg IS NOT NULL
+SELECT fe.id, 'vitamin_b1', nd.vitamin_b1_mg FROM fitness.food_entry fe JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id WHERE nd.vitamin_b1_mg IS NOT NULL
 UNION ALL
-SELECT id, 'vitamin_b2', vitamin_b2_mg FROM fitness.food_entry WHERE vitamin_b2_mg IS NOT NULL
+SELECT fe.id, 'vitamin_b2', nd.vitamin_b2_mg FROM fitness.food_entry fe JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id WHERE nd.vitamin_b2_mg IS NOT NULL
 UNION ALL
-SELECT id, 'vitamin_b3', vitamin_b3_mg FROM fitness.food_entry WHERE vitamin_b3_mg IS NOT NULL
+SELECT fe.id, 'vitamin_b3', nd.vitamin_b3_mg FROM fitness.food_entry fe JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id WHERE nd.vitamin_b3_mg IS NOT NULL
 UNION ALL
-SELECT id, 'vitamin_b5', vitamin_b5_mg FROM fitness.food_entry WHERE vitamin_b5_mg IS NOT NULL
+SELECT fe.id, 'vitamin_b5', nd.vitamin_b5_mg FROM fitness.food_entry fe JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id WHERE nd.vitamin_b5_mg IS NOT NULL
 UNION ALL
-SELECT id, 'vitamin_b6', vitamin_b6_mg FROM fitness.food_entry WHERE vitamin_b6_mg IS NOT NULL
+SELECT fe.id, 'vitamin_b6', nd.vitamin_b6_mg FROM fitness.food_entry fe JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id WHERE nd.vitamin_b6_mg IS NOT NULL
 UNION ALL
-SELECT id, 'vitamin_b7', vitamin_b7_mcg FROM fitness.food_entry WHERE vitamin_b7_mcg IS NOT NULL
+SELECT fe.id, 'vitamin_b7', nd.vitamin_b7_mcg FROM fitness.food_entry fe JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id WHERE nd.vitamin_b7_mcg IS NOT NULL
 UNION ALL
-SELECT id, 'vitamin_b9', vitamin_b9_mcg FROM fitness.food_entry WHERE vitamin_b9_mcg IS NOT NULL
+SELECT fe.id, 'vitamin_b9', nd.vitamin_b9_mcg FROM fitness.food_entry fe JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id WHERE nd.vitamin_b9_mcg IS NOT NULL
 UNION ALL
-SELECT id, 'vitamin_b12', vitamin_b12_mcg FROM fitness.food_entry WHERE vitamin_b12_mcg IS NOT NULL
+SELECT fe.id, 'vitamin_b12', nd.vitamin_b12_mcg FROM fitness.food_entry fe JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id WHERE nd.vitamin_b12_mcg IS NOT NULL
 UNION ALL
-SELECT id, 'calcium', calcium_mg FROM fitness.food_entry WHERE calcium_mg IS NOT NULL
+SELECT fe.id, 'calcium', nd.calcium_mg FROM fitness.food_entry fe JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id WHERE nd.calcium_mg IS NOT NULL
 UNION ALL
-SELECT id, 'iron', iron_mg FROM fitness.food_entry WHERE iron_mg IS NOT NULL
+SELECT fe.id, 'iron', nd.iron_mg FROM fitness.food_entry fe JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id WHERE nd.iron_mg IS NOT NULL
 UNION ALL
-SELECT id, 'magnesium', magnesium_mg FROM fitness.food_entry WHERE magnesium_mg IS NOT NULL
+SELECT fe.id, 'magnesium', nd.magnesium_mg FROM fitness.food_entry fe JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id WHERE nd.magnesium_mg IS NOT NULL
 UNION ALL
-SELECT id, 'zinc', zinc_mg FROM fitness.food_entry WHERE zinc_mg IS NOT NULL
+SELECT fe.id, 'zinc', nd.zinc_mg FROM fitness.food_entry fe JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id WHERE nd.zinc_mg IS NOT NULL
 UNION ALL
-SELECT id, 'selenium', selenium_mcg FROM fitness.food_entry WHERE selenium_mcg IS NOT NULL
+SELECT fe.id, 'selenium', nd.selenium_mcg FROM fitness.food_entry fe JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id WHERE nd.selenium_mcg IS NOT NULL
 UNION ALL
-SELECT id, 'copper', copper_mg FROM fitness.food_entry WHERE copper_mg IS NOT NULL
+SELECT fe.id, 'copper', nd.copper_mg FROM fitness.food_entry fe JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id WHERE nd.copper_mg IS NOT NULL
 UNION ALL
-SELECT id, 'manganese', manganese_mg FROM fitness.food_entry WHERE manganese_mg IS NOT NULL
+SELECT fe.id, 'manganese', nd.manganese_mg FROM fitness.food_entry fe JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id WHERE nd.manganese_mg IS NOT NULL
 UNION ALL
-SELECT id, 'chromium', chromium_mcg FROM fitness.food_entry WHERE chromium_mcg IS NOT NULL
+SELECT fe.id, 'chromium', nd.chromium_mcg FROM fitness.food_entry fe JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id WHERE nd.chromium_mcg IS NOT NULL
 UNION ALL
-SELECT id, 'iodine', iodine_mcg FROM fitness.food_entry WHERE iodine_mcg IS NOT NULL
+SELECT fe.id, 'iodine', nd.iodine_mcg FROM fitness.food_entry fe JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id WHERE nd.iodine_mcg IS NOT NULL
 UNION ALL
-SELECT id, 'omega_3', omega3_mg FROM fitness.food_entry WHERE omega3_mg IS NOT NULL
+SELECT fe.id, 'omega_3', nd.omega3_mg FROM fitness.food_entry fe JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id WHERE nd.omega3_mg IS NOT NULL
 UNION ALL
-SELECT id, 'omega_6', omega6_mg FROM fitness.food_entry WHERE omega6_mg IS NOT NULL;
+SELECT fe.id, 'omega_6', nd.omega6_mg FROM fitness.food_entry fe JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id WHERE nd.omega6_mg IS NOT NULL;
 
 -- ============================================================
--- 6. Migrate existing supplement column data to junction table
+-- 6. Migrate existing supplement nutrient data to junction table
+-- (Nutrient columns now live in nutrition_data, linked via supplement.nutrition_data_id)
 -- ============================================================
 
 INSERT INTO fitness.supplement_nutrient (supplement_id, nutrient_id, amount)
-SELECT id, 'saturated_fat', saturated_fat_g FROM fitness.supplement WHERE saturated_fat_g IS NOT NULL
+SELECT s.id, 'saturated_fat', nd.saturated_fat_g FROM fitness.supplement s JOIN fitness.nutrition_data nd ON s.nutrition_data_id = nd.id WHERE nd.saturated_fat_g IS NOT NULL
 UNION ALL
-SELECT id, 'polyunsaturated_fat', polyunsaturated_fat_g FROM fitness.supplement WHERE polyunsaturated_fat_g IS NOT NULL
+SELECT s.id, 'polyunsaturated_fat', nd.polyunsaturated_fat_g FROM fitness.supplement s JOIN fitness.nutrition_data nd ON s.nutrition_data_id = nd.id WHERE nd.polyunsaturated_fat_g IS NOT NULL
 UNION ALL
-SELECT id, 'monounsaturated_fat', monounsaturated_fat_g FROM fitness.supplement WHERE monounsaturated_fat_g IS NOT NULL
+SELECT s.id, 'monounsaturated_fat', nd.monounsaturated_fat_g FROM fitness.supplement s JOIN fitness.nutrition_data nd ON s.nutrition_data_id = nd.id WHERE nd.monounsaturated_fat_g IS NOT NULL
 UNION ALL
-SELECT id, 'trans_fat', trans_fat_g FROM fitness.supplement WHERE trans_fat_g IS NOT NULL
+SELECT s.id, 'trans_fat', nd.trans_fat_g FROM fitness.supplement s JOIN fitness.nutrition_data nd ON s.nutrition_data_id = nd.id WHERE nd.trans_fat_g IS NOT NULL
 UNION ALL
-SELECT id, 'cholesterol', cholesterol_mg FROM fitness.supplement WHERE cholesterol_mg IS NOT NULL
+SELECT s.id, 'cholesterol', nd.cholesterol_mg FROM fitness.supplement s JOIN fitness.nutrition_data nd ON s.nutrition_data_id = nd.id WHERE nd.cholesterol_mg IS NOT NULL
 UNION ALL
-SELECT id, 'sodium', sodium_mg FROM fitness.supplement WHERE sodium_mg IS NOT NULL
+SELECT s.id, 'sodium', nd.sodium_mg FROM fitness.supplement s JOIN fitness.nutrition_data nd ON s.nutrition_data_id = nd.id WHERE nd.sodium_mg IS NOT NULL
 UNION ALL
-SELECT id, 'potassium', potassium_mg FROM fitness.supplement WHERE potassium_mg IS NOT NULL
+SELECT s.id, 'potassium', nd.potassium_mg FROM fitness.supplement s JOIN fitness.nutrition_data nd ON s.nutrition_data_id = nd.id WHERE nd.potassium_mg IS NOT NULL
 UNION ALL
-SELECT id, 'sugar', sugar_g FROM fitness.supplement WHERE sugar_g IS NOT NULL
+SELECT s.id, 'sugar', nd.sugar_g FROM fitness.supplement s JOIN fitness.nutrition_data nd ON s.nutrition_data_id = nd.id WHERE nd.sugar_g IS NOT NULL
 UNION ALL
-SELECT id, 'vitamin_a', vitamin_a_mcg FROM fitness.supplement WHERE vitamin_a_mcg IS NOT NULL
+SELECT s.id, 'vitamin_a', nd.vitamin_a_mcg FROM fitness.supplement s JOIN fitness.nutrition_data nd ON s.nutrition_data_id = nd.id WHERE nd.vitamin_a_mcg IS NOT NULL
 UNION ALL
-SELECT id, 'vitamin_c', vitamin_c_mg FROM fitness.supplement WHERE vitamin_c_mg IS NOT NULL
+SELECT s.id, 'vitamin_c', nd.vitamin_c_mg FROM fitness.supplement s JOIN fitness.nutrition_data nd ON s.nutrition_data_id = nd.id WHERE nd.vitamin_c_mg IS NOT NULL
 UNION ALL
-SELECT id, 'vitamin_d', vitamin_d_mcg FROM fitness.supplement WHERE vitamin_d_mcg IS NOT NULL
+SELECT s.id, 'vitamin_d', nd.vitamin_d_mcg FROM fitness.supplement s JOIN fitness.nutrition_data nd ON s.nutrition_data_id = nd.id WHERE nd.vitamin_d_mcg IS NOT NULL
 UNION ALL
-SELECT id, 'vitamin_e', vitamin_e_mg FROM fitness.supplement WHERE vitamin_e_mg IS NOT NULL
+SELECT s.id, 'vitamin_e', nd.vitamin_e_mg FROM fitness.supplement s JOIN fitness.nutrition_data nd ON s.nutrition_data_id = nd.id WHERE nd.vitamin_e_mg IS NOT NULL
 UNION ALL
-SELECT id, 'vitamin_k', vitamin_k_mcg FROM fitness.supplement WHERE vitamin_k_mcg IS NOT NULL
+SELECT s.id, 'vitamin_k', nd.vitamin_k_mcg FROM fitness.supplement s JOIN fitness.nutrition_data nd ON s.nutrition_data_id = nd.id WHERE nd.vitamin_k_mcg IS NOT NULL
 UNION ALL
-SELECT id, 'vitamin_b1', vitamin_b1_mg FROM fitness.supplement WHERE vitamin_b1_mg IS NOT NULL
+SELECT s.id, 'vitamin_b1', nd.vitamin_b1_mg FROM fitness.supplement s JOIN fitness.nutrition_data nd ON s.nutrition_data_id = nd.id WHERE nd.vitamin_b1_mg IS NOT NULL
 UNION ALL
-SELECT id, 'vitamin_b2', vitamin_b2_mg FROM fitness.supplement WHERE vitamin_b2_mg IS NOT NULL
+SELECT s.id, 'vitamin_b2', nd.vitamin_b2_mg FROM fitness.supplement s JOIN fitness.nutrition_data nd ON s.nutrition_data_id = nd.id WHERE nd.vitamin_b2_mg IS NOT NULL
 UNION ALL
-SELECT id, 'vitamin_b3', vitamin_b3_mg FROM fitness.supplement WHERE vitamin_b3_mg IS NOT NULL
+SELECT s.id, 'vitamin_b3', nd.vitamin_b3_mg FROM fitness.supplement s JOIN fitness.nutrition_data nd ON s.nutrition_data_id = nd.id WHERE nd.vitamin_b3_mg IS NOT NULL
 UNION ALL
-SELECT id, 'vitamin_b5', vitamin_b5_mg FROM fitness.supplement WHERE vitamin_b5_mg IS NOT NULL
+SELECT s.id, 'vitamin_b5', nd.vitamin_b5_mg FROM fitness.supplement s JOIN fitness.nutrition_data nd ON s.nutrition_data_id = nd.id WHERE nd.vitamin_b5_mg IS NOT NULL
 UNION ALL
-SELECT id, 'vitamin_b6', vitamin_b6_mg FROM fitness.supplement WHERE vitamin_b6_mg IS NOT NULL
+SELECT s.id, 'vitamin_b6', nd.vitamin_b6_mg FROM fitness.supplement s JOIN fitness.nutrition_data nd ON s.nutrition_data_id = nd.id WHERE nd.vitamin_b6_mg IS NOT NULL
 UNION ALL
-SELECT id, 'vitamin_b7', vitamin_b7_mcg FROM fitness.supplement WHERE vitamin_b7_mcg IS NOT NULL
+SELECT s.id, 'vitamin_b7', nd.vitamin_b7_mcg FROM fitness.supplement s JOIN fitness.nutrition_data nd ON s.nutrition_data_id = nd.id WHERE nd.vitamin_b7_mcg IS NOT NULL
 UNION ALL
-SELECT id, 'vitamin_b9', vitamin_b9_mcg FROM fitness.supplement WHERE vitamin_b9_mcg IS NOT NULL
+SELECT s.id, 'vitamin_b9', nd.vitamin_b9_mcg FROM fitness.supplement s JOIN fitness.nutrition_data nd ON s.nutrition_data_id = nd.id WHERE nd.vitamin_b9_mcg IS NOT NULL
 UNION ALL
-SELECT id, 'vitamin_b12', vitamin_b12_mcg FROM fitness.supplement WHERE vitamin_b12_mcg IS NOT NULL
+SELECT s.id, 'vitamin_b12', nd.vitamin_b12_mcg FROM fitness.supplement s JOIN fitness.nutrition_data nd ON s.nutrition_data_id = nd.id WHERE nd.vitamin_b12_mcg IS NOT NULL
 UNION ALL
-SELECT id, 'calcium', calcium_mg FROM fitness.supplement WHERE calcium_mg IS NOT NULL
+SELECT s.id, 'calcium', nd.calcium_mg FROM fitness.supplement s JOIN fitness.nutrition_data nd ON s.nutrition_data_id = nd.id WHERE nd.calcium_mg IS NOT NULL
 UNION ALL
-SELECT id, 'iron', iron_mg FROM fitness.supplement WHERE iron_mg IS NOT NULL
+SELECT s.id, 'iron', nd.iron_mg FROM fitness.supplement s JOIN fitness.nutrition_data nd ON s.nutrition_data_id = nd.id WHERE nd.iron_mg IS NOT NULL
 UNION ALL
-SELECT id, 'magnesium', magnesium_mg FROM fitness.supplement WHERE magnesium_mg IS NOT NULL
+SELECT s.id, 'magnesium', nd.magnesium_mg FROM fitness.supplement s JOIN fitness.nutrition_data nd ON s.nutrition_data_id = nd.id WHERE nd.magnesium_mg IS NOT NULL
 UNION ALL
-SELECT id, 'zinc', zinc_mg FROM fitness.supplement WHERE zinc_mg IS NOT NULL
+SELECT s.id, 'zinc', nd.zinc_mg FROM fitness.supplement s JOIN fitness.nutrition_data nd ON s.nutrition_data_id = nd.id WHERE nd.zinc_mg IS NOT NULL
 UNION ALL
-SELECT id, 'selenium', selenium_mcg FROM fitness.supplement WHERE selenium_mcg IS NOT NULL
+SELECT s.id, 'selenium', nd.selenium_mcg FROM fitness.supplement s JOIN fitness.nutrition_data nd ON s.nutrition_data_id = nd.id WHERE nd.selenium_mcg IS NOT NULL
 UNION ALL
-SELECT id, 'copper', copper_mg FROM fitness.supplement WHERE copper_mg IS NOT NULL
+SELECT s.id, 'copper', nd.copper_mg FROM fitness.supplement s JOIN fitness.nutrition_data nd ON s.nutrition_data_id = nd.id WHERE nd.copper_mg IS NOT NULL
 UNION ALL
-SELECT id, 'manganese', manganese_mg FROM fitness.supplement WHERE manganese_mg IS NOT NULL
+SELECT s.id, 'manganese', nd.manganese_mg FROM fitness.supplement s JOIN fitness.nutrition_data nd ON s.nutrition_data_id = nd.id WHERE nd.manganese_mg IS NOT NULL
 UNION ALL
-SELECT id, 'chromium', chromium_mcg FROM fitness.supplement WHERE chromium_mcg IS NOT NULL
+SELECT s.id, 'chromium', nd.chromium_mcg FROM fitness.supplement s JOIN fitness.nutrition_data nd ON s.nutrition_data_id = nd.id WHERE nd.chromium_mcg IS NOT NULL
 UNION ALL
-SELECT id, 'iodine', iodine_mcg FROM fitness.supplement WHERE iodine_mcg IS NOT NULL
+SELECT s.id, 'iodine', nd.iodine_mcg FROM fitness.supplement s JOIN fitness.nutrition_data nd ON s.nutrition_data_id = nd.id WHERE nd.iodine_mcg IS NOT NULL
 UNION ALL
-SELECT id, 'omega_3', omega3_mg FROM fitness.supplement WHERE omega3_mg IS NOT NULL
+SELECT s.id, 'omega_3', nd.omega3_mg FROM fitness.supplement s JOIN fitness.nutrition_data nd ON s.nutrition_data_id = nd.id WHERE nd.omega3_mg IS NOT NULL
 UNION ALL
-SELECT id, 'omega_6', omega6_mg FROM fitness.supplement WHERE omega6_mg IS NOT NULL;
+SELECT s.id, 'omega_6', nd.omega6_mg FROM fitness.supplement s JOIN fitness.nutrition_data nd ON s.nutrition_data_id = nd.id WHERE nd.omega6_mg IS NOT NULL;
