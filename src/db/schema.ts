@@ -470,6 +470,38 @@ export const dailyMetrics = fitness.table(
 );
 
 // ============================================================
+// Daily metric type catalog + junction table
+// ============================================================
+
+export const dailyMetricType = fitness.table("daily_metric_type", {
+  id: text("id").primaryKey(),
+  displayName: text("display_name").notNull(),
+  unit: text("unit").notNull(),
+  category: text("category").notNull(),
+  priorityCategory: text("priority_category").notNull().default("activity"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  isInteger: boolean("is_integer").notNull().default(false),
+});
+
+export const dailyMetricValue = fitness.table(
+  "daily_metric_value",
+  {
+    dailyMetricsId: uuid("daily_metrics_id")
+      .notNull()
+      .references(() => dailyMetrics.id, { onDelete: "cascade" }),
+    metricTypeId: text("metric_type_id")
+      .notNull()
+      .references(() => dailyMetricType.id),
+    value: real("value").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.dailyMetricsId, table.metricTypeId] }),
+    index("daily_metric_value_entry_idx").on(table.dailyMetricsId),
+    index("daily_metric_value_type_idx").on(table.metricTypeId),
+  ],
+);
+
+// ============================================================
 // Sleep
 // ============================================================
 
