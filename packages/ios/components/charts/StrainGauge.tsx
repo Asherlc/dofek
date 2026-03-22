@@ -1,4 +1,4 @@
-import { strainColor } from "@dofek/scoring/scoring";
+import { StrainScore } from "@dofek/scoring/scoring";
 import { StyleSheet, Text, View } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 import { formatNumber } from "@dofek/format/format";
@@ -23,7 +23,7 @@ export function StrainGauge({
   const circumference = 2 * Math.PI * radius;
   const fraction = Math.min(strain / maxStrain, 1);
   const strokeDashoffset = circumference * (1 - fraction);
-  const color = strainColor(strain);
+  const color = new StrainScore(strain).color;
   const center = size / 2;
 
   return (

@@ -47,7 +47,7 @@ vi.mock("../../lib/units", async () => {
   const actual = await vi.importActual<typeof import("../../lib/units")>("../../lib/units");
   return {
     ...actual,
-    useUnitSystem: () => "metric" as const,
+    useUnitConverter: () => new actual.UnitConverter("metric"),
   };
 });
 

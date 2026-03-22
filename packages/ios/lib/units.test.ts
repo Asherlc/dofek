@@ -1,10 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  convertDistance,
-  convertWeight,
-  distanceLabel,
-  weightLabel,
-} from "./units";
+import { UnitConverter } from "@dofek/format/units";
 
 const mockSettings = { data: undefined as { value: unknown } | undefined };
 
@@ -16,49 +11,61 @@ vi.mock("./trpc", () => ({
   },
 }));
 
-const { useUnitSystem } = await import("./units");
+const { useUnitConverter } = await import("./units");
 
-describe("useUnitSystem", () => {
-  it("returns 'metric' when no setting exists", () => {
+describe("useUnitConverter", () => {
+  it("returns metric converter when no setting exists", () => {
     mockSettings.data = undefined;
-    expect(useUnitSystem()).toBe("metric");
+    const converter = useUnitConverter();
+    expect(converter).toBeInstanceOf(UnitConverter);
+    expect(converter.system).toBe("metric");
   });
 
-  it("returns 'metric' when setting value is 'metric'", () => {
+  it("returns metric converter when setting value is 'metric'", () => {
     mockSettings.data = { value: "metric" };
-    expect(useUnitSystem()).toBe("metric");
+    const converter = useUnitConverter();
+    expect(converter.system).toBe("metric");
   });
 
-  it("returns 'imperial' when setting value is 'imperial'", () => {
+  it("returns imperial converter when setting value is 'imperial'", () => {
     mockSettings.data = { value: "imperial" };
-    expect(useUnitSystem()).toBe("imperial");
+    const converter = useUnitConverter();
+    expect(converter.system).toBe("imperial");
   });
 
-  it("falls back to 'metric' for unexpected values", () => {
+  it("falls back to metric for unexpected values", () => {
     mockSettings.data = { value: "unknown-system" };
-    expect(useUnitSystem()).toBe("metric");
+    const converter = useUnitConverter();
+    expect(converter.system).toBe("metric");
   });
 
-  it("falls back to 'metric' when value is null", () => {
+  it("falls back to metric when value is null", () => {
     mockSettings.data = { value: null };
-    expect(useUnitSystem()).toBe("metric");
+    const converter = useUnitConverter();
+    expect(converter.system).toBe("metric");
   });
 });
 
-describe("re-exported conversion functions", () => {
+describe("re-exported UnitConverter", () => {
   it("converts weight", () => {
-    expect(convertWeight(80, "metric")).toBeCloseTo(80);
-    expect(convertWeight(80, "imperial")).toBeCloseTo(176.37, 1);
+    const metric = new UnitConverter("metric");
+    const imperial = new UnitConverter("imperial");
+    expect(metric.convertWeight(80)).toBeCloseTo(80);
+    expect(imperial.convertWeight(80)).toBeCloseTo(176.37, 1);
   });
 
   it("converts distance", () => {
-    expect(convertDistance(10, "metric")).toBeCloseTo(10);
-    expect(convertDistance(10, "imperial")).toBeCloseTo(6.214, 2);
+    const metric = new UnitConverter("metric");
+    const imperial = new UnitConverter("imperial");
+    expect(metric.convertDistance(10)).toBeCloseTo(10);
+    expect(imperial.convertDistance(10)).toBeCloseTo(6.214, 2);
   });
 
   it("returns correct labels", () => {
-    expect(weightLabel("metric")).toBe("kg");
-    expect(weightLabel("imperial")).toBe("lbs");
-    expect(distanceLabel("imperial")).toBe("mi");
+    const metric = new UnitConverter("metric");
+    const imperial = new UnitConverter("imperial");
+    expect(metric.weightLabel).toBe("kg");
+    expect(imperial.weightLabel).toBe("lbs");
+    expect(imperial.distanceLabel).toBe("mi");
   });
 });

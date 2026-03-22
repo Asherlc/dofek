@@ -18,9 +18,9 @@ import { RecoveryRing } from "../../components/charts/RecoveryRing";
 import { SleepBar } from "../../components/charts/SleepBar";
 import { StrainGauge } from "../../components/charts/StrainGauge";
 import { formatDurationMinutes, formatNumber, formatSleepDebtInline } from "@dofek/format/format";
-import { readinessLevelColor, scoreColor, scoreLabel, strainZoneColor, strainZoneLabel, trendColor, trendDirection as computeTrend } from "../../lib/scoring";
+import { readinessLevelColor, scoreColor, scoreLabel, StrainZone, trendColor, trendDirection as computeTrend } from "../../lib/scoring";
 import { trpc } from "../../lib/trpc";
-import { convertTemperature, convertWeight, temperatureLabel, useUnitSystem, weightLabel } from "../../lib/units";
+import { useUnitConverter } from "../../lib/units";
 import { useOnboarding } from "../../lib/useOnboarding";
 import { ActivityRowSchema } from "../../types/api";
 import { colors, statusColors } from "../../theme";
@@ -59,7 +59,7 @@ function capitalize(value: string): string {
 export default function OverviewScreen() {
   const router = useRouter();
   const onboarding = useOnboarding();
-  const unitSystem = useUnitSystem();
+  const units = useUnitConverter();
   const [days, setDays] = useState(30);
   const [recentActivityPage, setRecentActivityPage] = useState(0);
   const showDetailedSections = true;
@@ -179,7 +179,7 @@ export default function OverviewScreen() {
 
   const skinTempTrend = stepsData
     .filter((d: Record<string, unknown>) => d.skin_temp_c != null)
-    .map((d: Record<string, unknown>) => convertTemperature(Number(d.skin_temp_c), unitSystem));
+    .map((d: Record<string, unknown>) => units.convertTemperature(Number(d.skin_temp_c)));
 
   return (
     <ScrollView
@@ -365,8 +365,8 @@ export default function OverviewScreen() {
             {metrics?.latest_skin_temp != null && (
               <MetricCard
                 title="Skin Temperature"
-                value={formatNumber(convertTemperature(metrics.latest_skin_temp, unitSystem))}
-                unit={temperatureLabel(unitSystem)}
+                value={formatNumber(units.convertTemperature(metrics.latest_skin_temp))}
+                unit={units.temperatureLabel}
                 trend={skinTempTrend}
                 color={colors.orange}
                 trendDirection={
@@ -407,7 +407,7 @@ export default function OverviewScreen() {
                       avgPower={activity.avg_power ?? null}
                       distanceKm={activity.distance_meters ? activity.distance_meters / 1000 : null}
                       calories={activity.calories ?? null}
-                      unitSystem={unitSystem}
+                      units={units}
                     />
                   </TouchableOpacity>
                 ))}
@@ -497,8 +497,8 @@ export default function OverviewScreen() {
                 />
                 <MiniMetricCard
                   label="Skin Temp"
-                  value={metrics.latest_skin_temp != null ? formatNumber(convertTemperature(metrics.latest_skin_temp, unitSystem)) : "--"}
-                  unit={temperatureLabel(unitSystem)}
+                  value={metrics.latest_skin_temp != null ? formatNumber(units.convertTemperature(metrics.latest_skin_temp)) : "--"}
+                  unit={units.temperatureLabel}
                 />
               </ScrollView>
             </View>
@@ -509,17 +509,22 @@ export default function OverviewScreen() {
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Weekly Report</Text>
               <View style={styles.weeklyReportContent}>
-                <View style={styles.weeklyReportRow}>
-                  <Text style={styles.weeklyLabel}>Strain Balance</Text>
-                  <Text
-                    style={[
-                      styles.weeklyValue,
-                      { color: strainZoneColor(currentWeek.strainZone) },
-                    ]}
-                  >
-                    {strainZoneLabel(currentWeek.strainZone)}
-                  </Text>
-                </View>
+                {(() => {
+                  const zone = new StrainZone(currentWeek.strainZone);
+                  return (
+                    <View style={styles.weeklyReportRow}>
+                      <Text style={styles.weeklyLabel}>Strain Balance</Text>
+                      <Text
+                        style={[
+                          styles.weeklyValue,
+                          { color: zone.color },
+                        ]}
+                      >
+                        {zone.label}
+                      </Text>
+                    </View>
+                  );
+                })()}
                 <View style={styles.weeklyReportRow}>
                   <Text style={styles.weeklyLabel}>Sleep vs Baseline</Text>
                   <Text
@@ -757,9 +762,9 @@ export default function OverviewScreen() {
               <View style={styles.weightRow}>
                 <View>
                   <Text style={styles.weightValue}>
-                    {formatNumber(convertWeight(latestWeight.smoothedWeight, unitSystem))}
+                    {formatNumber(units.convertWeight(latestWeight.smoothedWeight))}
                   </Text>
-                  <Text style={styles.weightUnit}>{weightLabel(unitSystem)}</Text>
+                  <Text style={styles.weightUnit}>{units.weightLabel}</Text>
                 </View>
                 {weightData.length >= 2 && (
                   <WeightSparkline

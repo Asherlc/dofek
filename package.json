@@ -82,6 +82,7 @@
     "@bull-board/express": "^6.20.5",
     "@dofek/heart-rate-variability": "workspace:*",
     "@dofek/scoring": "workspace:*",
+    "@dofek/stats": "workspace:*",
     "@dofek/training": "workspace:*",
     "@opentelemetry/exporter-logs-otlp-proto": "^0.213.0",
     "@opentelemetry/exporter-trace-otlp-proto": "^0.213.0",

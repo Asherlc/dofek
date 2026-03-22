@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { UnitConverter } from "../lib/units";
 import { ActivityCard } from "./ActivityCard";
 
 describe("ActivityCard", () => {
@@ -11,7 +12,7 @@ describe("ActivityCard", () => {
     avgHr: null,
     maxHr: null,
     avgPower: null,
-    unitSystem: "metric" as const,
+    units: new UnitConverter("metric"),
   };
 
   it("renders activity name", () => {
@@ -50,7 +51,7 @@ describe("ActivityCard", () => {
   });
 
   it("shows distance in miles when unit system is imperial", () => {
-    render(<ActivityCard {...baseProps} unitSystem="imperial" distanceKm={5.25} />);
+    render(<ActivityCard {...baseProps} units={new UnitConverter("imperial")} distanceKm={5.25} />);
     expect(screen.getByText("3.26")).toBeTruthy();
     expect(screen.getByText("Distance")).toBeTruthy();
     expect(screen.getByText("mi")).toBeTruthy();

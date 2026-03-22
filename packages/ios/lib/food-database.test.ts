@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { searchFoods } from "./food-database";
+import { OpenFoodFactsClient } from "./food-database";
 
 function createFetchResponse(payload: unknown) {
   return {
@@ -30,7 +30,8 @@ describe("searchFoods", () => {
       );
     vi.stubGlobal("fetch", fetchMock);
 
-    await searchFoods("hamburger", 5, "en-US");
+    const client = new OpenFoodFactsClient("en-US");
+    await client.searchFoods("hamburger", 5);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const requestedUrl = String(fetchMock.mock.calls[0]?.[0] ?? "");
@@ -60,7 +61,8 @@ describe("searchFoods", () => {
       );
     vi.stubGlobal("fetch", fetchMock);
 
-    await searchFoods("hamburger", 5, "en-US");
+    const client = new OpenFoodFactsClient("en-US");
+    await client.searchFoods("hamburger", 5);
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const firstUrl = new URL(String(fetchMock.mock.calls[0]?.[0] ?? ""));
@@ -90,7 +92,8 @@ describe("searchFoods", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const results = await searchFoods("hamburger", 10, "en-US");
+    const client = new OpenFoodFactsClient("en-US");
+    const results = await client.searchFoods("hamburger", 10);
 
     expect(results).toHaveLength(1);
     expect(results[0]?.barcode).toBe("2");
@@ -113,7 +116,8 @@ describe("searchFoods", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const results = await searchFoods("burger", 10, "en-US");
+    const client = new OpenFoodFactsClient("en-US");
+    const results = await client.searchFoods("burger", 10);
 
     expect(results).toHaveLength(1);
     expect(results[0]?.name).toBe("Seeded Burger Buns");
