@@ -245,9 +245,10 @@ export const foodRouter = router({
   create: protectedProcedure.input(createFoodEntrySchema).mutation(async ({ ctx, input }) => {
     await ensureDofekProvider(ctx.db);
 
-    const rows = await executeWithSchema(
+    // Insert nutrition_data + food_entry in a CTE, return the new entry ID
+    const idRows = await executeWithSchema(
       ctx.db,
-      foodEntryRowSchema,
+      z.object({ id: z.string() }),
       sql`WITH new_nutrition AS (
             INSERT INTO fitness.nutrition_data (
               ${sql.raw(NUTRIENT_SQL_COLUMNS)}
@@ -273,20 +274,24 @@ export const foodRouter = router({
               ${input.chromiumMcg ?? null}, ${input.iodineMcg ?? null},
               ${input.omega3Mg ?? null}, ${input.omega6Mg ?? null}
             ) RETURNING id
-          ),
-          new_entry AS (
-            INSERT INTO fitness.food_entry (
-              user_id, provider_id, date, meal, food_name, food_description,
-              category, number_of_units, nutrition_data_id
-            ) VALUES (
-              ${ctx.userId}, ${DOFEK_PROVIDER_ID}, ${input.date}::date,
-              ${input.meal ?? null}, ${input.foodName}, ${input.foodDescription ?? null},
-              ${input.category ?? null}, ${input.numberOfUnits ?? null},
-              (SELECT id FROM new_nutrition)
-            ) RETURNING id
           )
-          SELECT * FROM fitness.v_food_entry_with_nutrition
-          WHERE id = (SELECT id FROM new_entry)`,
+          INSERT INTO fitness.food_entry (
+            user_id, provider_id, date, meal, food_name, food_description,
+            category, number_of_units, nutrition_data_id
+          ) VALUES (
+            ${ctx.userId}, ${DOFEK_PROVIDER_ID}, ${input.date}::date,
+            ${input.meal ?? null}, ${input.foodName}, ${input.foodDescription ?? null},
+            ${input.category ?? null}, ${input.numberOfUnits ?? null},
+            (SELECT id FROM new_nutrition)
+          ) RETURNING id`,
+    );
+    const newId = idRows[0]?.id;
+
+    // Fetch the full row from the view (separate query so the view can see the committed data)
+    const rows = await executeWithSchema(
+      ctx.db,
+      foodEntryRowSchema,
+      sql`SELECT * FROM fitness.v_food_entry_with_nutrition WHERE id = ${newId}`,
     );
     return rows[0];
   }),
@@ -399,26 +404,29 @@ export const foodRouter = router({
     .mutation(async ({ ctx, input }) => {
       await ensureDofekProvider(ctx.db);
 
-      const rows = await executeWithSchema(
+      const idRows = await executeWithSchema(
         ctx.db,
-        foodEntryRowSchema,
+        z.object({ id: z.string() }),
         sql`WITH new_nutrition AS (
               INSERT INTO fitness.nutrition_data (calories, protein_g, carbs_g, fat_g)
               VALUES (${input.calories}, ${input.proteinG ?? null},
                       ${input.carbsG ?? null}, ${input.fatG ?? null})
               RETURNING id
-            ),
-            new_entry AS (
-              INSERT INTO fitness.food_entry (
-                user_id, provider_id, date, meal, food_name, nutrition_data_id
-              ) VALUES (
-                ${ctx.userId}, ${DOFEK_PROVIDER_ID}, ${input.date}::date,
-                ${input.meal}, ${input.foodName},
-                (SELECT id FROM new_nutrition)
-              ) RETURNING id
             )
-            SELECT * FROM fitness.v_food_entry_with_nutrition
-            WHERE id = (SELECT id FROM new_entry)`,
+            INSERT INTO fitness.food_entry (
+              user_id, provider_id, date, meal, food_name, nutrition_data_id
+            ) VALUES (
+              ${ctx.userId}, ${DOFEK_PROVIDER_ID}, ${input.date}::date,
+              ${input.meal}, ${input.foodName},
+              (SELECT id FROM new_nutrition)
+            ) RETURNING id`,
+      );
+      const newId = idRows[0]?.id;
+
+      const rows = await executeWithSchema(
+        ctx.db,
+        foodEntryRowSchema,
+        sql`SELECT * FROM fitness.v_food_entry_with_nutrition WHERE id = ${newId}`,
       );
       return rows[0];
     }),
