@@ -14,6 +14,7 @@ import {
   type FhirObservation,
   type HealthWorkout,
   importAppleHealthFile,
+  importClinicalRecords,
   parseFhirObservation,
   streamHealthExport,
 } from "./index.ts";
@@ -954,5 +955,197 @@ describe("extractExportXml", () => {
     execSync(`cd "${tmpDir}" && zip "${zipPath}" other.txt`);
 
     await expect(extractExportXml(zipPath)).rejects.toThrow("No export.xml");
+  });
+});
+
+// ============================================================
+// importClinicalRecords — lab panel & lab result DB integration
+// ============================================================
+
+// FHIR lab observations that belong to a Lipid Panel
+const FHIR_OBS_CHOL = JSON.stringify({
+  resourceType: "Observation",
+  id: "obs-chol-001",
+  status: "final",
+  category: {
+    coding: [{ system: "http://hl7.org/fhir/observation-category", code: "laboratory" }],
+  },
+  code: {
+    text: "Total Cholesterol",
+    coding: [{ system: "http://loinc.org", display: "Total Cholesterol", code: "2093-3" }],
+  },
+  valueQuantity: { value: 195.0, unit: "mg/dL" },
+  referenceRange: [{ low: { value: 0 }, high: { value: 200, unit: "mg/dL" } }],
+  effectiveDateTime: "2024-03-01T00:00:00-05:00",
+  issued: "2024-03-02T10:00:00-05:00",
+});
+
+const FHIR_OBS_LDL = JSON.stringify({
+  resourceType: "Observation",
+  id: "obs-ldl-001",
+  status: "final",
+  category: {
+    coding: [{ system: "http://hl7.org/fhir/observation-category", code: "laboratory" }],
+  },
+  code: {
+    text: "LDL Cholesterol",
+    coding: [{ system: "http://loinc.org", display: "LDL Cholesterol", code: "13457-7" }],
+  },
+  valueQuantity: { value: 120.0, unit: "mg/dL" },
+  effectiveDateTime: "2024-03-01T00:00:00-05:00",
+});
+
+// A standalone observation NOT in any panel
+const FHIR_OBS_STANDALONE = JSON.stringify({
+  resourceType: "Observation",
+  id: "obs-glucose-001",
+  status: "final",
+  category: {
+    coding: [{ system: "http://hl7.org/fhir/observation-category", code: "laboratory" }],
+  },
+  code: {
+    text: "Glucose",
+    coding: [{ system: "http://loinc.org", display: "Glucose", code: "2345-7" }],
+  },
+  valueQuantity: { value: 90.0, unit: "mg/dL" },
+  effectiveDateTime: "2024-03-01T00:00:00-05:00",
+});
+
+// DiagnosticReport grouping the cholesterol observations
+const FHIR_DR_LIPID = JSON.stringify({
+  resourceType: "DiagnosticReport",
+  id: "dr-lipid-001",
+  status: "final",
+  code: {
+    coding: [{ display: "Lipid Panel", system: "http://loinc.org", code: "57698-3" }],
+  },
+  effectiveDateTime: "2024-03-01T00:00:00-05:00",
+  issued: "2024-03-02T10:00:00-05:00",
+  result: [{ reference: "Observation/obs-chol-001" }, { reference: "Observation/obs-ldl-001" }],
+});
+
+// XML with ClinicalRecord stubs for source name mapping
+const CLINICAL_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<HealthData locale="en_US">
+ <ExportDate value="2024-03-02 12:00:00 -0500"/>
+ <Me HKCharacteristicTypeIdentifierDateOfBirth="1990-01-01"/>
+ <ClinicalRecord type="ClinicalTypeLabResult"
+  sourceName="Quest Diagnostics"
+  resourceFilePath="clinical-records/obs-chol-001.json"/>
+ <ClinicalRecord type="ClinicalTypeLabResult"
+  sourceName="Quest Diagnostics"
+  resourceFilePath="clinical-records/obs-ldl-001.json"/>
+ <ClinicalRecord type="ClinicalTypeLabResult"
+  sourceName="Quest Diagnostics"
+  resourceFilePath="clinical-records/obs-glucose-001.json"/>
+ <ClinicalRecord type="ClinicalTypeLabResult"
+  sourceName="Quest Diagnostics"
+  resourceFilePath="clinical-records/dr-lipid-001.json"/>
+</HealthData>`;
+
+describe("importClinicalRecords — lab panel DB integration", () => {
+  let ctx: TestContext;
+  let tmpDir: string;
+  let zipPath: string;
+  let xmlPath: string;
+
+  beforeAll(async () => {
+    ctx = await setupTestDatabase();
+
+    // Seed the provider row that lab data references
+    const { ensureProvider } = await import("../../db/tokens.ts");
+    await ensureProvider(ctx.db, "apple_health", "Apple Health");
+
+    // Build a ZIP with clinical-records/ JSON files + export.xml
+    tmpDir = join(tmpdir(), `ah-clinical-test-${Date.now()}`);
+    const clinicalDir = join(tmpDir, "clinical-records");
+    mkdirSync(clinicalDir, { recursive: true });
+
+    xmlPath = join(tmpDir, "export.xml");
+    writeFileSync(xmlPath, CLINICAL_XML);
+    writeFileSync(join(clinicalDir, "obs-chol-001.json"), FHIR_OBS_CHOL);
+    writeFileSync(join(clinicalDir, "obs-ldl-001.json"), FHIR_OBS_LDL);
+    writeFileSync(join(clinicalDir, "obs-glucose-001.json"), FHIR_OBS_STANDALONE);
+    writeFileSync(join(clinicalDir, "dr-lipid-001.json"), FHIR_DR_LIPID);
+
+    zipPath = join(tmpDir, "export.zip");
+    execSync(`cd "${tmpDir}" && zip -r "${zipPath}" export.xml clinical-records/`);
+  }, 120_000);
+
+  afterAll(async () => {
+    try {
+      rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      /* best effort */
+    }
+    if (ctx) await ctx.cleanup();
+  });
+
+  it("inserts lab panels from DiagnosticReports", async () => {
+    const result = await importClinicalRecords(ctx.db, "apple_health", zipPath, xmlPath);
+
+    expect(result.errors).toHaveLength(0);
+
+    const panels = await ctx.db.select().from(schema.labPanel);
+    expect(panels).toHaveLength(1);
+
+    const panel = panels[0];
+    expect(panel).toBeDefined();
+    expect(panel?.name).toBe("Lipid Panel");
+    expect(panel?.loincCode).toBe("57698-3");
+    expect(panel?.status).toBe("final");
+    expect(panel?.externalId).toBe("dr-lipid-001");
+    expect(panel?.providerId).toBe("apple_health");
+  }, 60_000);
+
+  it("links lab results to their panel via panel_id FK", async () => {
+    const panels = await ctx.db.select().from(schema.labPanel);
+    const lipidPanel = panels.find((p) => p.externalId === "dr-lipid-001");
+    expect(lipidPanel).toBeDefined();
+
+    const results = await ctx.db.select().from(schema.labResult);
+
+    const chol = results.find((r) => r.externalId === "obs-chol-001");
+    expect(chol).toBeDefined();
+    expect(chol?.panelId).toBe(lipidPanel?.id);
+
+    const ldl = results.find((r) => r.externalId === "obs-ldl-001");
+    expect(ldl).toBeDefined();
+    expect(ldl?.panelId).toBe(lipidPanel?.id);
+  });
+
+  it("leaves panel_id null for observations not in any panel", async () => {
+    const results = await ctx.db.select().from(schema.labResult);
+    const glucose = results.find((r) => r.externalId === "obs-glucose-001");
+    expect(glucose).toBeDefined();
+    expect(glucose?.panelId).toBeNull();
+  });
+
+  it("resolves source names from ClinicalRecord XML stubs", async () => {
+    const results = await ctx.db.select().from(schema.labResult);
+    const chol = results.find((r) => r.externalId === "obs-chol-001");
+    expect(chol?.sourceName).toBe("Quest Diagnostics");
+  });
+
+  it("is idempotent — re-import does not duplicate panels or results", async () => {
+    const panelsBefore = await ctx.db.select().from(schema.labPanel);
+    const resultsBefore = await ctx.db.select().from(schema.labResult);
+
+    await importClinicalRecords(ctx.db, "apple_health", zipPath, xmlPath);
+
+    const panelsAfter = await ctx.db.select().from(schema.labPanel);
+    const resultsAfter = await ctx.db.select().from(schema.labResult);
+
+    expect(panelsAfter).toHaveLength(panelsBefore.length);
+    expect(resultsAfter).toHaveLength(resultsBefore.length);
+  }, 60_000);
+
+  it("preserves panel FK linkage after re-import", async () => {
+    const panels = await ctx.db.select().from(schema.labPanel);
+    const lipidPanel = panels.find((p) => p.externalId === "dr-lipid-001");
+
+    const results = await ctx.db.select().from(schema.labResult);
+    const chol = results.find((r) => r.externalId === "obs-chol-001");
+    expect(chol?.panelId).toBe(lipidPanel?.id);
   });
 });

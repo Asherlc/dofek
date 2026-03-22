@@ -377,6 +377,7 @@ export const syncRouter = router({
       health_events: z.string(),
       metric_stream: z.string(),
       nutrition_daily: z.string(),
+      lab_panels: z.string(),
       lab_results: z.string(),
       journal_entries: z.string(),
     });
@@ -394,6 +395,7 @@ export const syncRouter = router({
         COALESCE(he.cnt, 0)::text AS health_events,
         COALESCE(ms.cnt, 0)::text AS metric_stream,
         COALESCE(nd.cnt, 0)::text AS nutrition_daily,
+        COALESCE(lp.cnt, 0)::text AS lab_panels,
         COALESCE(lr.cnt, 0)::text AS lab_results,
         COALESCE(je.cnt, 0)::text AS journal_entries
       FROM fitness.provider p
@@ -405,6 +407,7 @@ export const syncRouter = router({
       LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.health_event WHERE user_id = ${ctx.userId} GROUP BY provider_id) he ON he.provider_id = p.id
       LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.metric_stream WHERE user_id = ${ctx.userId} GROUP BY provider_id) ms ON ms.provider_id = p.id
       LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.nutrition_daily WHERE user_id = ${ctx.userId} GROUP BY provider_id) nd ON nd.provider_id = p.id
+      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.lab_panel WHERE user_id = ${ctx.userId} GROUP BY provider_id) lp ON lp.provider_id = p.id
       LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.lab_result WHERE user_id = ${ctx.userId} GROUP BY provider_id) lr ON lr.provider_id = p.id
       LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.journal_entry WHERE user_id = ${ctx.userId} GROUP BY provider_id) je ON je.provider_id = p.id
       ORDER BY p.id
@@ -425,6 +428,7 @@ function mapProviderStats(
     health_events: string;
     metric_stream: string;
     nutrition_daily: string;
+    lab_panels: string;
     lab_results: string;
     journal_entries: string;
   }>,
@@ -439,6 +443,7 @@ function mapProviderStats(
     healthEvents: Number(r.health_events),
     metricStream: Number(r.metric_stream),
     nutritionDaily: Number(r.nutrition_daily),
+    labPanels: Number(r.lab_panels),
     labResults: Number(r.lab_results),
     journalEntries: Number(r.journal_entries),
   }));

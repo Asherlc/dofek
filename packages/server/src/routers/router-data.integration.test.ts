@@ -767,6 +767,7 @@ describe("Router data coverage", () => {
             healthEvents: number;
             metricStream: number;
             nutritionDaily: number;
+            labPanels: number;
             labResults: number;
             journalEntries: number;
           }[]
