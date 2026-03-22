@@ -14,6 +14,7 @@ services:
       retries: 15
 
   server:
+    image: e2e-server
     build:
       context: .
       target: server
@@ -32,6 +33,7 @@ services:
     hostname: dofek-web
 
   client:
+    image: e2e-client
     build:
       context: .
       target: client

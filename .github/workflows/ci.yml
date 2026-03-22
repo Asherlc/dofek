@@ -153,6 +153,8 @@ jobs:
 
   test-ios:
     name: iOS Tests
+    needs: check-ios-changes
+    if: needs.check-ios-changes.outputs.changed == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -166,6 +168,8 @@ jobs:
 
   build-ios:
     name: iOS Metro Bundle
+    needs: check-ios-changes
+    if: needs.check-ios-changes.outputs.changed == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -180,6 +184,8 @@ jobs:
 
   lint-ios-podspecs:
     name: iOS Podspec Lint
+    needs: check-ios-changes
+    if: needs.check-ios-changes.outputs.changed == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -256,24 +262,29 @@ jobs:
             | tail -20
         timeout-minutes: 20
 
-  ios-native-gate:
-    name: iOS Native Gate
-    needs: [check-ios-changes, build-ios-native]
+  ios-gate:
+    name: iOS Gate
+    needs: [check-ios-changes, test-ios, build-ios, lint-ios-podspecs, build-ios-native, test-swift]
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - run: |
-          if [ "${{ needs.build-ios-native.result }}" = "failure" ] || [ "${{ needs.build-ios-native.result }}" = "cancelled" ]; then
-            echo "iOS native build failed or was cancelled"
-            exit 1
-          fi
+      - name: Check iOS job results
+        run: |
+          for result in \
+            "${{ needs.test-ios.result }}" \
+            "${{ needs.build-ios.result }}" \
+            "${{ needs.lint-ios-podspecs.result }}" \
+            "${{ needs.build-ios-native.result }}" \
+            "${{ needs.test-swift.result }}"; do
+            if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
+              echo "An iOS job failed or was cancelled"
+              exit 1
+            fi
+          done
 
   test-e2e-web:
     name: E2E Tests (Web)
     runs-on: ubuntu-latest
-    env:
-      DOCKER_BUILDKIT: "1"
-      COMPOSE_DOCKER_CLI_BUILD: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -281,15 +292,22 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - name: Parallel setup — Docker build + deps install
-        run: |
-          docker compose -f docker-compose.e2e.yml build &
-          DOCKER_PID=$!
-          pnpm install --frozen-lockfile
-          pnpm exec cypress install
-          wait $DOCKER_PID
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec cypress install
+      - uses: docker/setup-buildx-action@v3
+      - name: Build E2E images with cache
+        uses: docker/bake-action@v5
+        with:
+          files: docker-compose.e2e.yml
+          targets: |
+            server
+            client
+          load: true
+          set: |
+            *.cache-from=type=gha,scope=e2e
+            *.cache-to=type=gha,mode=max,scope=e2e
       - name: Start e2e stack
-        run: docker compose -f docker-compose.e2e.yml up -d --wait
+        run: docker compose -f docker-compose.e2e.yml up -d --wait --no-build
       - run: pnpm e2e:web:run
       - uses: actions/upload-artifact@v4
         if: failure()
@@ -365,6 +383,8 @@ jobs:
 
   test-swift:
     name: Swift Tests
+    needs: check-ios-changes
+    if: needs.check-ios-changes.outputs.changed == 'true'
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -386,8 +406,9 @@ jobs:
 
   mutation-swift:
     name: Swift Mutation Testing
+    needs: check-ios-changes
     runs-on: macos-14
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && needs.check-ios-changes.outputs.changed == 'true'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -437,7 +458,7 @@ jobs:
 
   docker:
     name: Docker (${{ matrix.target }})
-    needs: [lint, typecheck, knip, coverage, test-e2e-web, test-ios, build-ios, test-swift]
+    needs: [lint, typecheck, knip, coverage, test-e2e-web, ios-gate]
     if: github.ref == 'refs/heads/main'
     concurrency:
       group: docker
