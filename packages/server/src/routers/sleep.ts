@@ -63,6 +63,26 @@ export const sleepRouter = router({
       );
     }),
 
+  latestStages: cachedProtectedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
+    return executeWithSchema(
+      ctx.db,
+      sleepStageRowSchema,
+      sql`SELECT
+            st.stage,
+            to_char(st.started_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS started_at,
+            to_char(st.ended_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS ended_at
+          FROM fitness.sleep_stage st
+          WHERE st.session_id = (
+            SELECT vs.id FROM fitness.v_sleep vs
+            WHERE vs.user_id = ${ctx.userId}
+              AND vs.is_nap = false
+            ORDER BY vs.started_at DESC
+            LIMIT 1
+          )
+          ORDER BY st.started_at ASC`,
+    );
+  }),
+
   latest: cachedProtectedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
     const rows = await executeWithSchema(
       ctx.db,
