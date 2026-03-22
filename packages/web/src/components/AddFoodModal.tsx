@@ -67,15 +67,15 @@ export function AddFoodModal({
   const [aiError, setAiError] = useState<string | null>(null);
   const [historyResults, setHistoryResults] = useState<FoodDatabaseResult[]>([]);
   const [searchingHistory, setSearchingHistory] = useState(false);
-  const [offResults, setOffResults] = useState<FoodDatabaseResult[]>([]);
-  const [searchingOff, setSearchingOff] = useState(false);
-  const [offSearched, setOffSearched] = useState(false);
-  const [offSectionOpen, setOffSectionOpen] = useState(true);
+  const [openFoodFactsResults, setOpenFoodFactsResults] = useState<FoodDatabaseResult[]>([]);
+  const [searchingOpenFoodFacts, setSearchingOpenFoodFacts] = useState(false);
+  const [openFoodFactsSearched, setOpenFoodFactsSearched] = useState(false);
+  const [openFoodFactsSectionOpen, setOpenFoodFactsSectionOpen] = useState(true);
 
   const nameInputRef = useRef<HTMLInputElement>(null);
   const historyRequestCounterRef = useRef(0);
   const skipNextSearchRef = useRef(false);
-  const offRequestCounterRef = useRef(0);
+  const openFoodFactsRequestCounterRef = useRef(0);
   const browserLocale = typeof navigator !== "undefined" ? navigator.language : "en-US";
 
   const trpcUtils = trpc.useUtils();
@@ -106,7 +106,7 @@ export function AddFoodModal({
 
   function resetForm() {
     historyRequestCounterRef.current += 1;
-    offRequestCounterRef.current += 1;
+    openFoodFactsRequestCounterRef.current += 1;
     skipNextSearchRef.current = false;
     setFoodName("");
     setCalories("");
@@ -118,10 +118,10 @@ export function AddFoodModal({
     setAiError(null);
     setHistoryResults([]);
     setSearchingHistory(false);
-    setOffResults([]);
-    setSearchingOff(false);
-    setOffSearched(false);
-    setOffSectionOpen(true);
+    setOpenFoodFactsResults([]);
+    setSearchingOpenFoodFacts(false);
+    setOpenFoodFactsSearched(false);
+    setOpenFoodFactsSectionOpen(true);
   }
 
   function handleSubmit(event: React.FormEvent) {
@@ -164,30 +164,30 @@ export function AddFoodModal({
     setShowMacros(result.proteinG != null || result.carbsG != null || result.fatG != null);
     setHistoryResults([]);
     setSearchingHistory(false);
-    setOffResults([]);
-    setOffSearched(false);
+    setOpenFoodFactsResults([]);
+    setOpenFoodFactsSearched(false);
   }
 
   function handleSearchFoodDatabase() {
     const query = foodName.trim();
     if (query.length < 2) return;
 
-    const requestId = offRequestCounterRef.current + 1;
-    offRequestCounterRef.current = requestId;
-    setSearchingOff(true);
-    setOffSearched(true);
-    setOffSectionOpen(true);
+    const requestId = openFoodFactsRequestCounterRef.current + 1;
+    openFoodFactsRequestCounterRef.current = requestId;
+    setSearchingOpenFoodFacts(true);
+    setOpenFoodFactsSearched(true);
+    setOpenFoodFactsSectionOpen(true);
 
     searchFoods(query, 8, browserLocale)
       .then((results) => {
-        if (offRequestCounterRef.current !== requestId) return;
-        setOffResults(results);
-        setSearchingOff(false);
+        if (openFoodFactsRequestCounterRef.current !== requestId) return;
+        setOpenFoodFactsResults(results);
+        setSearchingOpenFoodFacts(false);
       })
       .catch(() => {
-        if (offRequestCounterRef.current !== requestId) return;
-        setOffResults([]);
-        setSearchingOff(false);
+        if (openFoodFactsRequestCounterRef.current !== requestId) return;
+        setOpenFoodFactsResults([]);
+        setSearchingOpenFoodFacts(false);
       });
   }
 
@@ -212,9 +212,11 @@ export function AddFoodModal({
     historyRequestCounterRef.current = requestId;
     setSearchingHistory(true);
 
-    // Clear OFF results when query changes (user needs to explicitly re-search)
-    setOffResults([]);
-    setOffSearched(false);
+    // Clear Open Food Facts results when query changes (user needs to explicitly re-search)
+    setOpenFoodFactsResults([]);
+    setOpenFoodFactsSearched(false);
+    setSearchingOpenFoodFacts(false);
+    openFoodFactsRequestCounterRef.current += 1;
 
     const timer = setTimeout(() => {
       trpcUtils.food.search
@@ -404,10 +406,10 @@ export function AddFoodModal({
             <button
               type="button"
               onClick={handleSearchFoodDatabase}
-              disabled={searchingOff}
+              disabled={searchingOpenFoodFacts}
               className="flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {searchingOff ? (
+              {searchingOpenFoodFacts ? (
                 <svg
                   className="animate-spin h-4 w-4"
                   xmlns="http://www.w3.org/2000/svg"
@@ -448,12 +450,12 @@ export function AddFoodModal({
             </button>
           )}
 
-          {/* Food Database (OFF) results - collapsible */}
-          {offSearched && (
+          {/* Food Database (Open Food Facts) results - collapsible */}
+          {openFoodFactsSearched && (
             <div className="rounded-lg border border-border bg-page/60 overflow-hidden">
               <button
                 type="button"
-                onClick={() => setOffSectionOpen(!offSectionOpen)}
+                onClick={() => setOpenFoodFactsSectionOpen(!openFoodFactsSectionOpen)}
                 className="w-full px-3 py-2 border-b border-border text-xs font-medium uppercase tracking-wide text-subtle flex items-center justify-between hover:bg-surface-hover transition-colors"
               >
                 <span>Food Database</span>
@@ -461,9 +463,9 @@ export function AddFoodModal({
                   xmlns="http://www.w3.org/2000/svg"
                   viewBox="0 0 20 20"
                   fill="currentColor"
-                  className={`w-4 h-4 transition-transform ${offSectionOpen ? "rotate-180" : ""}`}
+                  className={`w-4 h-4 transition-transform ${openFoodFactsSectionOpen ? "rotate-180" : ""}`}
                 >
-                  <title>{offSectionOpen ? "Collapse" : "Expand"}</title>
+                  <title>{openFoodFactsSectionOpen ? "Collapse" : "Expand"}</title>
                   <path
                     fillRule="evenodd"
                     d="M5.22 8.22a.75.75 0 011.06 0L10 11.94l3.72-3.72a.75.75 0 111.06 1.06l-4.25 4.25a.75.75 0 01-1.06 0L5.22 9.28a.75.75 0 010-1.06z"
@@ -471,17 +473,17 @@ export function AddFoodModal({
                   />
                 </svg>
               </button>
-              {offSectionOpen && (
+              {openFoodFactsSectionOpen && (
                 <>
-                  {searchingOff && (
+                  {searchingOpenFoodFacts && (
                     <div className="px-3 py-3 text-sm text-subtle">Searching...</div>
                   )}
-                  {!searchingOff && offResults.length === 0 && (
+                  {!searchingOpenFoodFacts && openFoodFactsResults.length === 0 && (
                     <div className="px-3 py-3 text-sm text-subtle">No results found</div>
                   )}
-                  {!searchingOff && offResults.length > 0 && (
+                  {!searchingOpenFoodFacts && openFoodFactsResults.length > 0 && (
                     <div className="max-h-56 overflow-y-auto">
-                      {offResults.map((result) => {
+                      {openFoodFactsResults.map((result) => {
                         const displayName = result.brand
                           ? `${result.name} (${result.brand})`
                           : result.name;
