@@ -223,10 +223,10 @@ export function wahooOAuthConfig(): OAuthConfig | null {
 export class WahooProvider implements SyncProvider {
   readonly id = "wahoo";
   readonly name = "Wahoo";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -243,7 +243,7 @@ export class WahooProvider implements SyncProvider {
       exchangeCode: (code) => exchangeCodeForTokens(config, code),
       apiBaseUrl: WAHOO_API_BASE,
       getUserIdentity: async (accessToken: string): Promise<ProviderIdentity> => {
-        const response = await this.fetchFn(`${WAHOO_API_BASE}/v1/user`, {
+        const response = await this.#fetchFn(`${WAHOO_API_BASE}/v1/user`, {
           headers: { Authorization: `Bearer ${accessToken}` },
         });
         if (!response.ok) {
@@ -269,13 +269,13 @@ export class WahooProvider implements SyncProvider {
   /**
    * Resolve a valid access token — refreshing if expired.
    */
-  private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
+  async #resolveTokens(db: SyncDatabase): Promise<TokenSet> {
     return resolveOAuthTokens({
       db,
       providerId: this.id,
       providerName: this.name,
       getOAuthConfig: () => wahooOAuthConfig(),
-      fetchFn: this.fetchFn,
+      fetchFn: this.#fetchFn,
     });
   }
 
@@ -290,13 +290,13 @@ export class WahooProvider implements SyncProvider {
 
     let tokens: TokenSet;
     try {
-      tokens = await this.resolveTokens(db);
+      tokens = await this.#resolveTokens(db);
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
-    const client = new WahooClient(tokens.accessToken, this.fetchFn);
+    const client = new WahooClient(tokens.accessToken, this.#fetchFn);
 
     // Paginate through all workouts
     let page = 1;

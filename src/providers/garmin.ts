@@ -134,10 +134,10 @@ async function saveSyncCursor(db: SyncDatabase, cursor: string): Promise<void> {
 export class GarminProvider implements SyncProvider {
   readonly id = "garmin";
   readonly name = "Garmin Connect";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -163,14 +163,14 @@ export class GarminProvider implements SyncProvider {
           email,
           password,
           "garmin.com",
-          this.fetchFn,
+          this.#fetchFn,
         );
         return serializeInternalTokens(tokens);
       },
     };
   }
 
-  private async resolveTokens(db: SyncDatabase): Promise<GarminTokens> {
+  async #resolveTokens(db: SyncDatabase): Promise<GarminTokens> {
     const tokens = await loadTokens(db, this.id);
     if (!tokens) {
       throw new Error("No OAuth tokens found for Garmin. Sign in via the dashboard first.");
@@ -189,7 +189,11 @@ export class GarminProvider implements SyncProvider {
 
     // Refresh via OAuth1→OAuth2 exchange
     logger.info("[garmin] Internal API token expired, refreshing via OAuth1 exchange...");
-    const client = await GarminConnectClient.fromTokens(internalTokens, "garmin.com", this.fetchFn);
+    const client = await GarminConnectClient.fromTokens(
+      internalTokens,
+      "garmin.com",
+      this.#fetchFn,
+    );
     const refreshed = client.getTokens();
     if (!refreshed) throw new Error("Failed to refresh Garmin Connect tokens");
     await saveTokens(db, this.id, serializeInternalTokens(refreshed));
@@ -202,7 +206,7 @@ export class GarminProvider implements SyncProvider {
 
     let internalTokens: GarminTokens;
     try {
-      internalTokens = await this.resolveTokens(db);
+      internalTokens = await this.#resolveTokens(db);
     } catch (err) {
       return {
         provider: this.id,
@@ -219,7 +223,7 @@ export class GarminProvider implements SyncProvider {
     const effectiveSince = cursor ? new Date(cursor) : since;
     const now = new Date();
 
-    const recordsSynced = await this.syncViaConnectApi(
+    const recordsSynced = await this.#syncViaConnectApi(
       db,
       internalTokens,
       effectiveSince,
@@ -237,7 +241,7 @@ export class GarminProvider implements SyncProvider {
   // Internal Connect API sync
   // ============================================================
 
-  private async syncViaConnectApi(
+  async #syncViaConnectApi(
     db: SyncDatabase,
     tokens: GarminTokens,
     since: Date,
@@ -246,7 +250,7 @@ export class GarminProvider implements SyncProvider {
   ): Promise<number> {
     let client: GarminConnectClient;
     try {
-      client = await GarminConnectClient.fromTokens(tokens, "garmin.com", this.fetchFn);
+      client = await GarminConnectClient.fromTokens(tokens, "garmin.com", this.#fetchFn);
     } catch (err) {
       errors.push({
         message: `Connect API authentication failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -267,7 +271,7 @@ export class GarminProvider implements SyncProvider {
     // Sync activities (paginated)
     try {
       const count = await withSyncLog(db, this.id, "activities", async () => {
-        const activitiesCount = await this.syncConnectActivities(db, client);
+        const activitiesCount = await this.#syncConnectActivities(db, client);
         return { recordCount: activitiesCount, result: activitiesCount };
       });
       recordsSynced += count;
@@ -281,7 +285,7 @@ export class GarminProvider implements SyncProvider {
     // Sync sleep (day-by-day)
     try {
       const count = await withSyncLog(db, this.id, "sleep", async () => {
-        const sleepCount = await this.syncConnectSleep(db, client, dates);
+        const sleepCount = await this.#syncConnectSleep(db, client, dates);
         return { recordCount: sleepCount, result: sleepCount };
       });
       recordsSynced += count;
@@ -295,7 +299,7 @@ export class GarminProvider implements SyncProvider {
     // Sync daily metrics with training data (day-by-day)
     try {
       const count = await withSyncLog(db, this.id, "daily_metrics", async () => {
-        const dailyMetricsCount = await this.syncConnectDailyMetrics(db, client, dates);
+        const dailyMetricsCount = await this.#syncConnectDailyMetrics(db, client, dates);
         return { recordCount: dailyMetricsCount, result: dailyMetricsCount };
       });
       recordsSynced += count;
@@ -309,7 +313,7 @@ export class GarminProvider implements SyncProvider {
     // Sync stress time-series (day-by-day)
     try {
       const count = await withSyncLog(db, this.id, "stress", async () => {
-        const stressCount = await this.syncConnectStress(db, client, dates);
+        const stressCount = await this.#syncConnectStress(db, client, dates);
         return { recordCount: stressCount, result: stressCount };
       });
       recordsSynced += count;
@@ -323,7 +327,7 @@ export class GarminProvider implements SyncProvider {
     // Sync heart rate time-series (day-by-day)
     try {
       const count = await withSyncLog(db, this.id, "heart_rate", async () => {
-        const heartRateCount = await this.syncConnectHeartRate(db, client, dates);
+        const heartRateCount = await this.#syncConnectHeartRate(db, client, dates);
         return { recordCount: heartRateCount, result: heartRateCount };
       });
       recordsSynced += count;
@@ -341,10 +345,7 @@ export class GarminProvider implements SyncProvider {
   // Connect API sync methods
   // ============================================================
 
-  private async syncConnectActivities(
-    db: SyncDatabase,
-    client: GarminConnectClient,
-  ): Promise<number> {
+  async #syncConnectActivities(db: SyncDatabase, client: GarminConnectClient): Promise<number> {
     // Fetch recent activities (paginated, most recent first)
     const activities = await client.getActivities(0, 50);
     let count = 0;
@@ -431,7 +432,7 @@ export class GarminProvider implements SyncProvider {
     return count;
   }
 
-  private async syncConnectSleep(
+  async #syncConnectSleep(
     db: SyncDatabase,
     client: GarminConnectClient,
     dates: string[],
@@ -479,7 +480,7 @@ export class GarminProvider implements SyncProvider {
     return count;
   }
 
-  private async syncConnectDailyMetrics(
+  async #syncConnectDailyMetrics(
     db: SyncDatabase,
     client: GarminConnectClient,
     dates: string[],
@@ -556,7 +557,7 @@ export class GarminProvider implements SyncProvider {
     return count;
   }
 
-  private async syncConnectStress(
+  async #syncConnectStress(
     db: SyncDatabase,
     client: GarminConnectClient,
     dates: string[],
@@ -588,7 +589,7 @@ export class GarminProvider implements SyncProvider {
     return count;
   }
 
-  private async syncConnectHeartRate(
+  async #syncConnectHeartRate(
     db: SyncDatabase,
     client: GarminConnectClient,
     dates: string[],

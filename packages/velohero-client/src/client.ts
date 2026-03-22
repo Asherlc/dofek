@@ -3,19 +3,19 @@ import type { VeloHeroSsoResponse, VeloHeroWorkout, VeloHeroWorkoutsResponse } f
 const VELOHERO_BASE_URL = "https://app.velohero.com";
 
 export class VeloHeroClient {
-  private sessionCookie: string;
-  private fetchFn: typeof globalThis.fetch;
+  #sessionCookie: string;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(sessionCookie: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.sessionCookie = sessionCookie;
-    this.fetchFn = fetchFn;
+    this.#sessionCookie = sessionCookie;
+    this.#fetchFn = fetchFn;
   }
 
-  private async get<T>(path: string, params?: URLSearchParams): Promise<T> {
+  async #get<T>(path: string, params?: URLSearchParams): Promise<T> {
     const url = params ? `${VELOHERO_BASE_URL}${path}?${params}` : `${VELOHERO_BASE_URL}${path}`;
-    const response = await this.fetchFn(url, {
+    const response = await this.#fetchFn(url, {
       headers: {
-        Cookie: this.sessionCookie,
+        Cookie: this.#sessionCookie,
         Accept: "application/json",
       },
     });
@@ -33,12 +33,12 @@ export class VeloHeroClient {
       date_from: dateFrom,
       date_to: dateTo,
     });
-    const data = await this.get<VeloHeroWorkoutsResponse>("/export/workouts/json", params);
+    const data = await this.#get<VeloHeroWorkoutsResponse>("/export/workouts/json", params);
     return data.workouts ?? [];
   }
 
   async getWorkout(id: string): Promise<VeloHeroWorkout> {
-    return this.get<VeloHeroWorkout>(`/export/workouts/json/${id}`);
+    return this.#get<VeloHeroWorkout>(`/export/workouts/json/${id}`);
   }
 
   static async signIn(

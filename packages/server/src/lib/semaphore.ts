@@ -3,36 +3,39 @@
  * Used to prevent overwhelming the database with too many heavy queries at once.
  */
 export class Semaphore {
-  private running = 0;
-  private waiting: Array<() => void> = [];
+  #running = 0;
+  #waiting: Array<() => void> = [];
+  readonly #maxConcurrent: number;
 
-  constructor(private readonly maxConcurrent: number) {}
+  constructor(maxConcurrent: number) {
+    this.#maxConcurrent = maxConcurrent;
+  }
 
   async run<T>(fn: () => Promise<T>): Promise<T> {
-    await this.acquire();
+    await this.#acquire();
     try {
       return await fn();
     } finally {
-      this.release();
+      this.#release();
     }
   }
 
-  private acquire(): Promise<void> {
-    if (this.running < this.maxConcurrent) {
-      this.running++;
+  #acquire(): Promise<void> {
+    if (this.#running < this.#maxConcurrent) {
+      this.#running++;
       return Promise.resolve();
     }
     return new Promise<void>((resolve) => {
-      this.waiting.push(resolve);
+      this.#waiting.push(resolve);
     });
   }
 
-  private release(): void {
-    const next = this.waiting.shift();
+  #release(): void {
+    const next = this.#waiting.shift();
     if (next) {
       next();
     } else {
-      this.running--;
+      this.#running--;
     }
   }
 }

@@ -1,0 +1,8 @@
+JsPrivateClassMemberName() where {
+  $match <: r"#_.*",
+  register_diagnostic(
+    span = $match,
+    message = "Do not prefix #private fields with underscore. The '#' already enforces privacy — rename '#_name' to '#name'.",
+    severity = "error"
+  )
+}

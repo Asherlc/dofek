@@ -501,9 +501,9 @@ export class FatSecretProvider implements SyncProvider {
   readonly id = "fatsecret";
   readonly name = "FatSecret";
 
-  private consumerKey: string;
-  private consumerSecret: string;
-  private fetchFn: FetchFn;
+  #consumerKey: string;
+  #consumerSecret: string;
+  #fetchFn: FetchFn;
 
   constructor(fetchFn: FetchFn = globalThis.fetch) {
     const consumerKey = process.env.FATSECRET_CONSUMER_KEY;
@@ -511,9 +511,9 @@ export class FatSecretProvider implements SyncProvider {
     if (!consumerKey || !consumerSecret) {
       throw new Error("FATSECRET_CONSUMER_KEY and FATSECRET_CONSUMER_SECRET are required");
     }
-    this.consumerKey = consumerKey;
-    this.consumerSecret = consumerSecret;
-    this.fetchFn = fetchFn;
+    this.#consumerKey = consumerKey;
+    this.#consumerSecret = consumerSecret;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -526,9 +526,9 @@ export class FatSecretProvider implements SyncProvider {
    * in the existing oauthToken table (OAuth 1.0 tokens don't expire).
    */
   authSetup() {
-    const consumerKey = this.consumerKey;
-    const consumerSecret = this.consumerSecret;
-    const fetchFn = this.fetchFn;
+    const consumerKey = this.#consumerKey;
+    const consumerSecret = this.#consumerSecret;
+    const fetchFn = this.#fetchFn;
 
     return {
       // OAuth 1.0 uses a different flow, but we provide these for CLI compatibility
@@ -584,8 +584,8 @@ export class FatSecretProvider implements SyncProvider {
 
     if (!tokens.refreshToken) throw new Error("No token secret stored for FatSecret");
     const creds: OAuth1Credentials = {
-      consumerKey: this.consumerKey,
-      consumerSecret: this.consumerSecret,
+      consumerKey: this.#consumerKey,
+      consumerSecret: this.#consumerSecret,
       token: tokens.accessToken,
       tokenSecret: tokens.refreshToken, // OAuth 1.0 token secret stored as refreshToken
     };
@@ -603,7 +603,7 @@ export class FatSecretProvider implements SyncProvider {
           "food_entries.get.v2",
           { date: dateInt },
           creds,
-          this.fetchFn,
+          this.#fetchFn,
         );
         const response = fatSecretFoodEntriesResponseSchema.parse(rawResponse);
 

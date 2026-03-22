@@ -35,17 +35,21 @@ export function defaultReadinessWeights(): ReadinessWeights {
 // ── ReadinessScore ──────────────────────────────────────────────
 
 export class ReadinessScore {
+  readonly #weights: ReadinessWeights;
+
   constructor(
     readonly components: ReadinessComponents,
-    private readonly weights: ReadinessWeights,
-  ) {}
+    weights: ReadinessWeights,
+  ) {
+    this.#weights = weights;
+  }
 
   get score(): number {
     const raw =
-      this.components.hrvScore * this.weights.hrv +
-      this.components.restingHrScore * this.weights.restingHr +
-      this.components.sleepScore * this.weights.sleep +
-      this.components.respiratoryRateScore * this.weights.respiratoryRate;
+      this.components.hrvScore * this.#weights.hrv +
+      this.components.restingHrScore * this.#weights.restingHr +
+      this.components.sleepScore * this.#weights.sleep +
+      this.components.respiratoryRateScore * this.#weights.respiratoryRate;
 
     return Math.max(0, Math.min(100, Math.round(raw)));
   }

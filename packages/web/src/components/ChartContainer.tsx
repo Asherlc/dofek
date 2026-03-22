@@ -30,7 +30,7 @@ export function ChartContainer({
   if (data.length === 0) {
     return (
       <div className="flex items-center justify-center" style={{ height }}>
-        <span className="text-zinc-600 text-sm">{emptyMessage}</span>
+        <span className="text-dim text-sm">{emptyMessage}</span>
       </div>
     );
   }
