@@ -5,16 +5,11 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { queryCache } from "../lib/cache.ts";
 import { startWorker } from "../lib/start-worker.ts";
-import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
 const tokenRowSchema = z.object({ provider_id: z.string() });
-const lastSyncRowSchema = z.object({
-  provider_id: z.string(),
-  last_synced: timestampStringSchema,
-});
-
 // ── Input schemas ──
 export const triggerSyncInput = z.object({
   providerId: z.string().optional(),
@@ -144,7 +139,6 @@ export const syncRouter = router({
     const all = getAllProviders();
 
     // Batch: load all tokens + last sync times in 2 queries instead of 2N
-    const providerIdRowSchema = z.object({ provider_id: z.string() });
     const lastSyncRowSchema = z.object({
       provider_id: z.string(),
       last_synced: z.string(),

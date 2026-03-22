@@ -205,9 +205,9 @@ describe("parsePolarSleepStages", () => {
     };
     const stages = parsePolarSleepStages(sleepStart, hypnogram);
     expect(stages).toHaveLength(3);
-    expect(stages[0].stage).toBe("deep");
-    expect(stages[1].stage).toBe("light");
-    expect(stages[2].stage).toBe("rem");
+    expect(stages[0]?.stage).toBe("deep");
+    expect(stages[1]?.stage).toBe("light");
+    expect(stages[2]?.stage).toBe("rem");
   });
 
   it("merges consecutive identical stages into single intervals", () => {
@@ -218,10 +218,10 @@ describe("parsePolarSleepStages", () => {
     };
     const stages = parsePolarSleepStages(sleepStart, hypnogram);
     expect(stages).toHaveLength(1);
-    expect(stages[0]!.stage).toBe("deep");
-    expect(stages[0]!.startedAt).toEqual(new Date("2024-06-14T22:30:00Z"));
+    expect(stages[0]?.stage).toBe("deep");
+    expect(stages[0]?.startedAt).toEqual(new Date("2024-06-14T22:30:00Z"));
     // 3 minutes of deep: starts at minute 0, ends at minute 3
-    expect(stages[0]!.endedAt).toEqual(new Date("2024-06-14T22:33:00Z"));
+    expect(stages[0]?.endedAt).toEqual(new Date("2024-06-14T22:33:00Z"));
   });
 
   it("maps hypnogram values 4 and 5 to awake", () => {
@@ -232,7 +232,7 @@ describe("parsePolarSleepStages", () => {
     const stages = parsePolarSleepStages(sleepStart, hypnogram);
     // Both map to "awake" and are consecutive — should merge
     expect(stages).toHaveLength(1);
-    expect(stages[0]!.stage).toBe("awake");
+    expect(stages[0]?.stage).toBe("awake");
   });
 
   it("computes timestamps relative to sleep start time", () => {
@@ -241,8 +241,8 @@ describe("parsePolarSleepStages", () => {
       "61": 1,
     };
     const stages = parsePolarSleepStages(sleepStart, hypnogram);
-    expect(stages[0]!.startedAt).toEqual(new Date("2024-06-14T23:30:00Z"));
-    expect(stages[0]!.endedAt).toEqual(new Date("2024-06-14T23:32:00Z"));
+    expect(stages[0]?.startedAt).toEqual(new Date("2024-06-14T23:30:00Z"));
+    expect(stages[0]?.endedAt).toEqual(new Date("2024-06-14T23:32:00Z"));
   });
 
   it("returns empty array for empty hypnogram", () => {
@@ -256,7 +256,7 @@ describe("parsePolarSleepStages", () => {
     };
     const stages = parsePolarSleepStages(sleepStart, hypnogram);
     expect(stages).toHaveLength(1);
-    expect(stages[0]!.stage).toBe("deep");
+    expect(stages[0]?.stage).toBe("deep");
   });
 
   it("handles non-contiguous minutes as separate intervals", () => {
@@ -268,8 +268,8 @@ describe("parsePolarSleepStages", () => {
     };
     const stages = parsePolarSleepStages(sleepStart, hypnogram);
     expect(stages).toHaveLength(2);
-    expect(stages[0]!.endedAt).toEqual(new Date("2024-06-14T22:32:00Z"));
-    expect(stages[1]!.startedAt).toEqual(new Date("2024-06-14T22:40:00Z"));
+    expect(stages[0]?.endedAt).toEqual(new Date("2024-06-14T22:32:00Z"));
+    expect(stages[1]?.startedAt).toEqual(new Date("2024-06-14T22:40:00Z"));
   });
 });
 

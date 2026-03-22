@@ -200,10 +200,8 @@ export function parsePolarSleepStages(
     )
     .sort((a, b) => a.minute - b.minute);
 
-  if (entries.length === 0) return [];
-
-  // Safe: guarded by entries.length === 0 check above
-  const first = entries[0]!;
+  const first = entries[0];
+  if (!first) return [];
 
   // Merge consecutive identical stages into intervals.
   // Each hypnogram entry represents one minute starting at that offset.
@@ -213,7 +211,8 @@ export function parsePolarSleepStages(
   let previousMinute = first.minute;
 
   for (let i = 1; i < entries.length; i++) {
-    const entry = entries[i]!;
+    const entry = entries[i];
+    if (!entry) continue;
     // Start a new interval if stage changed or there's a gap
     if (entry.stage !== currentStage || entry.minute !== previousMinute + 1) {
       stages.push({

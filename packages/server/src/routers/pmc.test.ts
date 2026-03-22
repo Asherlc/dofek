@@ -30,17 +30,12 @@ vi.mock("dofek/personalization/storage", () => ({
   loadPersonalizedParams: vi.fn().mockResolvedValue(null),
 }));
 
-import { type ActivityRow, TrainingStressCalculator } from "@dofek/training/training-load";
+import { TrainingStressCalculator } from "@dofek/training/training-load";
 import { pmcRouter } from "./pmc.ts";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
 // Default calculator for test assertions
 const calc = new TrainingStressCalculator();
-const { computePowerTss, buildTssModel, estimateFtp } = {
-  computePowerTss: TrainingStressCalculator.computePowerTss,
-  buildTssModel: TrainingStressCalculator.buildTssModel,
-  estimateFtp: TrainingStressCalculator.estimateFtp,
-};
 
 // --- pmcRouter ---
 
