@@ -157,6 +157,28 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec vitest run --coverage
+      - name: Coverage summary
+        if: always()
+        run: |
+          node -e "
+            const r = require('./coverage/coverage-summary.json').total;
+            const fmt = (m) => m.pct.toFixed(2) + '%';
+            const lines = [
+              '## Coverage Summary',
+              '',
+              '| Metric | Coverage |',
+              '|--------|----------|',
+              '| Lines | ' + fmt(r.lines) + ' |',
+              '| Branches | ' + fmt(r.branches) + ' |',
+              '| Functions | ' + fmt(r.functions) + ' |',
+              '| Statements | ' + fmt(r.statements) + ' |',
+            ];
+            require('fs').appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n') + '\n');
+          "
+      - uses: codecov/codecov-action@v5
+        with:
+          files: coverage/lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   test-ios:
     name: iOS Tests
