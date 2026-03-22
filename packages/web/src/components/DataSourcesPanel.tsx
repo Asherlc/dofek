@@ -62,9 +62,7 @@ export function DataSourcesPanel() {
         fetchStatus: (id) => trpcUtils.sync.syncStatus.fetch({ jobId: id }, { staleTime: 0 }),
         updateState,
         onComplete: () => {
-          trpcUtils.sync.providers.invalidate();
-          trpcUtils.sync.providerStats.invalidate();
-          trpcUtils.sync.logs.invalidate();
+          trpcUtils.invalidate();
         },
       }),
     [trpcUtils, updateState],

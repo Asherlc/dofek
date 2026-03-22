@@ -32,16 +32,20 @@ vi.mock("../../lib/trpc", () => ({
     bodyAnalytics: { smoothedWeight: q(() => []) },
     anomalyDetection: { check: q() },
     sync: {
-      triggerSync: { useMutation: () => ({ mutate: vi.fn() }) },
+      triggerSync: { useMutation: () => ({ mutateAsync: vi.fn().mockResolvedValue({ jobId: "auto-sync-job" }) }) },
       activeSyncs: { useQuery: () => ({ data: [], isLoading: false }) },
     },
     useUtils: () => ({
+      invalidate: vi.fn(),
       client: {
         healthKitSync: {
           pushQuantitySamples: { mutate: vi.fn().mockResolvedValue({ inserted: 0, errors: [] }) },
           pushWorkouts: { mutate: vi.fn().mockResolvedValue({ inserted: 0 }) },
           pushSleepSamples: { mutate: vi.fn().mockResolvedValue({ inserted: 0 }) },
         },
+      },
+      sync: {
+        syncStatus: { fetch: vi.fn().mockResolvedValue({ status: "done", providers: {} }) },
       },
     }),
   },
