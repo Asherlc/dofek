@@ -107,6 +107,77 @@ describe("recoveryRouter", () => {
 
       expect(result[0]?.consistencyScore).toBeNull();
     });
+
+    it("computes consistency at exactly 7-day window boundary", async () => {
+      const rows = [
+        {
+          date: "2024-01-15",
+          bedtime_hour: 22.5,
+          waketime_hour: 6.5,
+          rolling_bedtime_stddev: 0.3,
+          rolling_waketime_stddev: 0.4,
+          window_count: 7,
+        },
+      ];
+      const caller = makeCaller(rows);
+      const result = await caller.sleepConsistency({ days: 90 });
+
+      expect(result[0]?.consistencyScore).not.toBeNull();
+    });
+
+    it("rounds bedtime and waketime hours to two decimal places", async () => {
+      const rows = [
+        {
+          date: "2024-01-15",
+          bedtime_hour: 22.456789,
+          waketime_hour: 6.123456,
+          rolling_bedtime_stddev: 0.3,
+          rolling_waketime_stddev: 0.4,
+          window_count: 14,
+        },
+      ];
+      const caller = makeCaller(rows);
+      const result = await caller.sleepConsistency({ days: 90 });
+
+      expect(result[0]?.bedtimeHour).toBe(22.46);
+      expect(result[0]?.waketimeHour).toBe(6.12);
+    });
+
+    it("returns null stddev values when rolling stats are null", async () => {
+      const rows = [
+        {
+          date: "2024-01-15",
+          bedtime_hour: 22.5,
+          waketime_hour: 6.5,
+          rolling_bedtime_stddev: null,
+          rolling_waketime_stddev: null,
+          window_count: 14,
+        },
+      ];
+      const caller = makeCaller(rows);
+      const result = await caller.sleepConsistency({ days: 90 });
+
+      expect(result[0]?.rollingBedtimeStddev).toBeNull();
+      expect(result[0]?.rollingWaketimeStddev).toBeNull();
+    });
+
+    it("rounds rolling stddev to two decimal places", async () => {
+      const rows = [
+        {
+          date: "2024-01-15",
+          bedtime_hour: 22.5,
+          waketime_hour: 6.5,
+          rolling_bedtime_stddev: 0.3456,
+          rolling_waketime_stddev: 0.7891,
+          window_count: 14,
+        },
+      ];
+      const caller = makeCaller(rows);
+      const result = await caller.sleepConsistency({ days: 90 });
+
+      expect(result[0]?.rollingBedtimeStddev).toBe(0.35);
+      expect(result[0]?.rollingWaketimeStddev).toBe(0.79);
+    });
   });
 
   describe("hrvVariability", () => {
@@ -127,6 +198,17 @@ describe("recoveryRouter", () => {
 
       expect(result[0]?.hrv).toBeNull();
       expect(result[0]?.rollingMean).toBeNull();
+      expect(result[0]?.rollingCoefficientOfVariation).toBeNull();
+    });
+
+    it("rounds HRV values to one decimal place", async () => {
+      const rows = [{ date: "2024-01-15", hrv: 55.456, rolling_mean: 60.789, rolling_cv: 12.567 }];
+      const caller = makeCaller(rows);
+      const result = await caller.hrvVariability({ days: 90 });
+
+      expect(result[0]?.hrv).toBe(55.5);
+      expect(result[0]?.rollingMean).toBe(60.8);
+      expect(result[0]?.rollingCoefficientOfVariation).toBe(12.57);
     });
   });
 
@@ -164,10 +246,11 @@ describe("recoveryRouter", () => {
   });
 
   describe("sleepAnalytics", () => {
-    it("computes sleep analytics with debt", async () => {
+    it("computes sleep analytics with debt using actual sleep time", async () => {
       const rows = Array.from({ length: 14 }, (_, i) => ({
         date: `2024-01-${String(i + 1).padStart(2, "0")}`,
-        duration_minutes: 420,
+        duration_minutes: 480,
+        sleep_minutes: 420,
         deep_pct: 15,
         rem_pct: 20,
         light_pct: 55,
@@ -179,8 +262,74 @@ describe("recoveryRouter", () => {
       const result = await caller.sleepAnalytics({ days: 90 });
 
       expect(result.nightly).toHaveLength(14);
-      // 14 nights * (480 - 420) = 840 min debt
+      expect(result.nightly[0]?.durationMinutes).toBe(480);
+      expect(result.nightly[0]?.sleepMinutes).toBe(420);
+      // 14 nights * (480 - 420) = 840 min debt (based on sleepMinutes)
       expect(result.sleepDebt).toBe(840);
+    });
+
+    it("rounds stage percentages to one decimal place", async () => {
+      const rows = [
+        {
+          date: "2024-01-15",
+          duration_minutes: 480,
+          sleep_minutes: 420,
+          deep_pct: 15.456,
+          rem_pct: 20.789,
+          light_pct: 55.123,
+          awake_pct: 8.632,
+          efficiency: 88.567,
+          rolling_avg_duration: null,
+        },
+      ];
+      const caller = makeCaller(rows);
+      const result = await caller.sleepAnalytics({ days: 90 });
+
+      expect(result.nightly[0]?.deepPct).toBe(15.5);
+      expect(result.nightly[0]?.remPct).toBe(20.8);
+      expect(result.nightly[0]?.lightPct).toBe(55.1);
+      expect(result.nightly[0]?.awakePct).toBe(8.6);
+      expect(result.nightly[0]?.efficiency).toBe(88.6);
+    });
+
+    it("returns null rolling average when not available", async () => {
+      const rows = [
+        {
+          date: "2024-01-15",
+          duration_minutes: 480,
+          sleep_minutes: 420,
+          deep_pct: 15,
+          rem_pct: 20,
+          light_pct: 55,
+          awake_pct: 10,
+          efficiency: 88,
+          rolling_avg_duration: null,
+        },
+      ];
+      const caller = makeCaller(rows);
+      const result = await caller.sleepAnalytics({ days: 90 });
+
+      expect(result.nightly[0]?.rollingAvgDuration).toBeNull();
+    });
+
+    it("rounds rolling average to one decimal place", async () => {
+      const rows = [
+        {
+          date: "2024-01-15",
+          duration_minutes: 480,
+          sleep_minutes: 420,
+          deep_pct: 15,
+          rem_pct: 20,
+          light_pct: 55,
+          awake_pct: 10,
+          efficiency: 88,
+          rolling_avg_duration: 425.678,
+        },
+      ];
+      const caller = makeCaller(rows);
+      const result = await caller.sleepAnalytics({ days: 90 });
+
+      expect(result.nightly[0]?.rollingAvgDuration).toBe(425.7);
     });
 
     it("returns empty analytics when no data", async () => {
@@ -239,6 +388,91 @@ describe("recoveryRouter", () => {
       if (result.length > 0) {
         // All null defaults to 62 for each component (sigmoid center)
         expect(result[0]?.readinessScore).toBe(62);
+        expect(result[0]?.components.hrvScore).toBe(62);
+        expect(result[0]?.components.restingHrScore).toBe(62);
+        expect(result[0]?.components.sleepScore).toBe(62);
+        expect(result[0]?.components.respiratoryRateScore).toBe(62);
+      }
+    });
+
+    it("computes respiratory rate score when data is available", async () => {
+      const today = new Date().toISOString().slice(0, 10);
+      const rows = [
+        {
+          date: today,
+          hrv: null,
+          resting_hr: null,
+          respiratory_rate: 14,
+          hrv_mean_30d: null,
+          hrv_sd_30d: null,
+          rhr_mean_30d: null,
+          rhr_sd_30d: null,
+          rr_mean_30d: 15,
+          rr_sd_30d: 1,
+          efficiency_pct: null,
+        },
+      ];
+      const caller = makeCaller(rows);
+      const result = await caller.readinessScore({ days: 30 });
+
+      if (result.length > 0) {
+        // Lower respiratory rate than baseline = better recovery
+        expect(result[0]?.components.respiratoryRateScore).toBeGreaterThan(62);
+      }
+    });
+
+    it("uses default respiratory rate score when data is partially null", async () => {
+      const today = new Date().toISOString().slice(0, 10);
+      const rows = [
+        {
+          date: today,
+          hrv: 60,
+          resting_hr: 55,
+          respiratory_rate: null,
+          hrv_mean_30d: 60,
+          hrv_sd_30d: 10,
+          rhr_mean_30d: 55,
+          rhr_sd_30d: 3,
+          rr_mean_30d: 15,
+          rr_sd_30d: 1,
+          efficiency_pct: 90,
+        },
+      ];
+      const caller = makeCaller(rows);
+      const result = await caller.readinessScore({ days: 30 });
+
+      if (result.length > 0) {
+        // Respiratory rate is null → default score 62
+        expect(result[0]?.components.respiratoryRateScore).toBe(62);
+      }
+    });
+
+    it("verifies all component scores are rounded", async () => {
+      const today = new Date().toISOString().slice(0, 10);
+      const rows = [
+        {
+          date: today,
+          hrv: 65,
+          resting_hr: 52,
+          respiratory_rate: 14,
+          hrv_mean_30d: 60,
+          hrv_sd_30d: 10,
+          rhr_mean_30d: 55,
+          rhr_sd_30d: 3,
+          rr_mean_30d: 15,
+          rr_sd_30d: 1,
+          efficiency_pct: 85,
+        },
+      ];
+      const caller = makeCaller(rows);
+      const result = await caller.readinessScore({ days: 30 });
+
+      if (result.length > 0) {
+        const c = result[0]?.components;
+        expect(Number.isInteger(c?.hrvScore)).toBe(true);
+        expect(Number.isInteger(c?.restingHrScore)).toBe(true);
+        expect(Number.isInteger(c?.sleepScore)).toBe(true);
+        expect(Number.isInteger(c?.respiratoryRateScore)).toBe(true);
       }
     });
   });

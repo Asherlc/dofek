@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink } from "@trpc/client";
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { Stack } from "expo-router";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { trpc } from "../lib/trpc";
@@ -87,12 +87,19 @@ function AuthGate() {
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen
             name="food/add"
-            options={{
+            options={({ navigation }) => ({
               presentation: "fullScreenModal",
               title: "Add Food",
               headerStyle: { backgroundColor: colors.background },
               headerTintColor: colors.text,
-            }}
+              headerLeft: () => (
+                <Pressable onPress={() => navigation.goBack()}>
+                  <Text style={{ color: colors.accent, fontSize: 17 }}>
+                    Cancel
+                  </Text>
+                </Pressable>
+              ),
+            })}
           />
           <Stack.Screen
             name="providers"

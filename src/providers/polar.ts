@@ -227,18 +227,18 @@ export class PolarUnauthorizedError extends Error {
 }
 
 export class PolarClient {
-  private accessToken: string;
-  private fetchFn: typeof globalThis.fetch;
+  #accessToken: string;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.accessToken = accessToken;
-    this.fetchFn = fetchFn;
+    this.#accessToken = accessToken;
+    this.#fetchFn = fetchFn;
   }
 
-  private async get<T>(path: string): Promise<T> {
-    const response = await this.fetchFn(`${POLAR_API_BASE}${path}`, {
+  async #get<T>(path: string): Promise<T> {
+    const response = await this.#fetchFn(`${POLAR_API_BASE}${path}`, {
       headers: {
-        Authorization: `Bearer ${this.accessToken}`,
+        Authorization: `Bearer ${this.#accessToken}`,
         Accept: "application/json",
       },
     });
@@ -270,19 +270,19 @@ export class PolarClient {
   }
 
   async getExercises(): Promise<PolarExercise[]> {
-    return this.get<PolarExercise[]>("/exercises");
+    return this.#get<PolarExercise[]>("/exercises");
   }
 
   async getSleep(): Promise<PolarSleep[]> {
-    return this.get<PolarSleep[]>("/sleep");
+    return this.#get<PolarSleep[]>("/sleep");
   }
 
   async getDailyActivity(): Promise<PolarDailyActivity[]> {
-    return this.get<PolarDailyActivity[]>("/activity");
+    return this.#get<PolarDailyActivity[]>("/activity");
   }
 
   async getNightlyRecharge(): Promise<PolarNightlyRecharge[]> {
-    return this.get<PolarNightlyRecharge[]>("/nightly-recharge");
+    return this.#get<PolarNightlyRecharge[]>("/nightly-recharge");
   }
 }
 
@@ -293,10 +293,10 @@ export class PolarClient {
 export class PolarProvider implements SyncProvider {
   readonly id = "polar";
   readonly name = "Polar";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -315,7 +315,7 @@ export class PolarProvider implements SyncProvider {
     };
   }
 
-  private async resolveTokens(db: SyncDatabase): Promise<TokenSet> {
+  async #resolveTokens(db: SyncDatabase): Promise<TokenSet> {
     const tokens = await loadTokens(db, this.id);
     if (!tokens) {
       throw new Error("No OAuth tokens found for Polar. Run: health-data auth polar");
@@ -333,13 +333,13 @@ export class PolarProvider implements SyncProvider {
 
     let tokens: TokenSet;
     try {
-      tokens = await this.resolveTokens(db);
+      tokens = await this.#resolveTokens(db);
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
-    const client = new PolarClient(tokens.accessToken, this.fetchFn);
+    const client = new PolarClient(tokens.accessToken, this.#fetchFn);
 
     // --- Sync exercises (activities) ---
     try {

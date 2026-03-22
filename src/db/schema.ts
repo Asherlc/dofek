@@ -415,15 +415,12 @@ export const dailyMetrics = fitness.table(
     cyclingDistanceKm: real("cycling_distance_km"),
     flightsClimbed: integer("flights_climbed"),
     exerciseMinutes: integer("exercise_minutes"),
-    mindfulMinutes: integer("mindful_minutes"),
     walkingSpeed: real("walking_speed"), // m/s
     walkingStepLength: real("walking_step_length"), // cm
     walkingDoubleSupportPct: real("walking_double_support_pct"), // percent
     walkingAsymmetryPct: real("walking_asymmetry_pct"), // percent
     walkingSteadiness: real("walking_steadiness"), // 0-1
     standHours: integer("stand_hours"),
-    environmentalAudioExposure: real("environmental_audio_exposure"), // dBASPL avg
-    headphoneAudioExposure: real("headphone_audio_exposure"), // dBASPL avg
     skinTempC: real("skin_temp_c"), // celsius (WHOOP)
     stressHighMinutes: integer("stress_high_minutes"), // minutes of high stress (Oura)
     recoveryHighMinutes: integer("recovery_high_minutes"), // minutes of high recovery (Oura)

@@ -1,0 +1,7 @@
+`private` where {
+  register_diagnostic(
+    span = $match,
+    message = "Use #private syntax instead of the 'private' keyword. Replace 'private name' with '#name'.",
+    severity = "error"
+  )
+}

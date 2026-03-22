@@ -24,14 +24,14 @@ export default function SleepScreen() {
 
   const durationTrend = nightly
     .slice(-14)
-    .map((n) => n.durationMinutes);
+    .map((n) => n.sleepMinutes);
   const efficiencyTrend = nightly
     .slice(-14)
     .map((n) => n.efficiency);
 
   const avgDuration =
     nightly.length > 0
-      ? nightly.reduce((sum, n) => sum + n.durationMinutes, 0) / nightly.length
+      ? nightly.reduce((sum, n) => sum + n.sleepMinutes, 0) / nightly.length
       : 0;
 
   const avgEfficiency =

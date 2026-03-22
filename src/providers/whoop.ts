@@ -116,14 +116,24 @@ export interface ParsedSleep {
 }
 
 export function parseSleep(record: WhoopSleepRecord): ParsedSleep {
+  const startedAt = new Date(record.start);
+  const endedAt = new Date(record.end);
+
+  if (Number.isNaN(startedAt.getTime())) {
+    throw new Error(`Invalid start timestamp: ${JSON.stringify(record.start)}`);
+  }
+  if (Number.isNaN(endedAt.getTime())) {
+    throw new Error(`Invalid end timestamp: ${JSON.stringify(record.end)}`);
+  }
+
   const stages = record.score?.stage_summary;
   const totalSleepMilli =
     (stages?.total_in_bed_time_milli ?? 0) - (stages?.total_awake_time_milli ?? 0);
 
   return {
     externalId: String(record.id),
-    startedAt: new Date(record.start),
-    endedAt: new Date(record.end),
+    startedAt,
+    endedAt,
     durationMinutes: milliToMinutes(totalSleepMilli),
     deepMinutes: milliToMinutes(stages?.total_slow_wave_sleep_time_milli ?? 0),
     remMinutes: milliToMinutes(stages?.total_rem_sleep_time_milli ?? 0),
@@ -435,10 +445,10 @@ export function parseJournalResponse(raw: unknown): ParsedJournalEntry[] {
 export class WhoopProvider implements SyncProvider {
   readonly id = "whoop";
   readonly name = "WHOOP";
-  private fetchFn: typeof globalThis.fetch;
+  #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.fetchFn = fetchFn;
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -464,7 +474,7 @@ export class WhoopProvider implements SyncProvider {
       redirectUri: getOAuthRedirectUri(),
       scopes: ["read:profile"],
     };
-    const fetchFn = this.fetchFn;
+    const fetchFn = this.#fetchFn;
 
     return {
       oauthConfig: config,
@@ -515,7 +525,7 @@ export class WhoopProvider implements SyncProvider {
       const storedUserId = storedUserIdMatch ? Number(storedUserIdMatch[1]) : null;
 
       // Refresh the access token using the stored refresh token
-      const token = await WhoopClient.refreshAccessToken(stored.refreshToken, this.fetchFn);
+      const token = await WhoopClient.refreshAccessToken(stored.refreshToken, this.#fetchFn);
 
       // Use the stored userId if available, otherwise use the one from bootstrap
       const userId = storedUserId ?? token.userId;
@@ -534,7 +544,7 @@ export class WhoopProvider implements SyncProvider {
 
       client = new WhoopClient(
         { accessToken: token.accessToken, refreshToken: token.refreshToken, userId },
-        this.fetchFn,
+        this.#fetchFn,
       );
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
