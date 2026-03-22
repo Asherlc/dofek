@@ -1,5 +1,5 @@
 import { selectDailyHeartRateVariability } from "@dofek/heart-rate-variability";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { SyncDatabase } from "../../db/index.ts";
 import {
   activity,
@@ -10,6 +10,7 @@ import {
   metricStream,
   nutritionDaily,
   sleepSession,
+  sleepStage,
 } from "../../db/schema.ts";
 import { logger } from "../../logger.ts";
 import type { HealthRecord } from "./records.ts";
@@ -768,6 +769,15 @@ export async function upsertSleepBatch(
   }
   const inBedRecords = [...inBedDedup.values()];
 
+  // Map Apple Health stage names to canonical stage names
+  const APPLE_HEALTH_STAGE_MAP: Record<string, "deep" | "light" | "rem" | "awake"> = {
+    deep: "deep",
+    core: "light",
+    asleep: "light",
+    rem: "rem",
+    awake: "awake",
+  };
+
   // Build all sleep session rows, then upsert in parallel
   const sleepRows = inBedRecords.map((bed) => {
     const stages = stageRecords.filter(
@@ -800,6 +810,7 @@ export async function upsertSleepBatch(
 
     return {
       bed,
+      stages,
       deepMinutes,
       remMinutes,
       lightMinutes,
@@ -848,5 +859,47 @@ export async function upsertSleepBatch(
           }),
     );
   }
+
+  // Second pass: look up session IDs and insert stage intervals
+  const sessionsWithStages = sleepRows.filter((s) => s.stages.length > 0);
+  if (sessionsWithStages.length > 0) {
+    const sessionIds = await db
+      .select({ id: sleepSession.id, externalId: sleepSession.externalId })
+      .from(sleepSession)
+      .where(
+        sql`${sleepSession.providerId} = ${providerId}
+          AND ${sleepSession.externalId} IN (${sql.join(
+            sessionsWithStages.map((s) => sql`${s.externalId}`),
+            sql`, `,
+          )})`,
+      );
+
+    const idByExternalId = new Map(sessionIds.map((r) => [r.externalId, r.id]));
+
+    for (const row of sessionsWithStages) {
+      const sessionId = idByExternalId.get(row.externalId);
+      if (!sessionId) continue;
+
+      const stageRows = row.stages
+        .map((s) => {
+          const stage = APPLE_HEALTH_STAGE_MAP[s.stage];
+          if (!stage) return null;
+          return {
+            sessionId,
+            stage,
+            startedAt: s.startDate,
+            endedAt: s.endDate,
+            sourceName: s.sourceName,
+          };
+        })
+        .filter((s): s is NonNullable<typeof s> => s !== null);
+
+      if (stageRows.length > 0) {
+        await db.delete(sleepStage).where(eq(sleepStage.sessionId, sessionId));
+        await db.insert(sleepStage).values(stageRows);
+      }
+    }
+  }
+
   return insertRows.length;
 }

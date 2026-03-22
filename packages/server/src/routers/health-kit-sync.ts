@@ -321,6 +321,19 @@ function isGranularStage(value: string): boolean {
   return value === "asleepCore" || value === "asleepDeep" || value === "asleepREM";
 }
 
+const HEALTHKIT_STAGE_MAP: Record<string, string> = {
+  asleepDeep: "deep",
+  asleepCore: "light",
+  asleep: "light",
+  asleepUnspecified: "light",
+  asleepREM: "rem",
+  awake: "awake",
+};
+
+function mapHealthKitStage(value: string): string | null {
+  return HEALTHKIT_STAGE_MAP[value] ?? null;
+}
+
 /**
  * Filter sleep stages for a session to prevent cross-source double-counting.
  *
@@ -811,7 +824,7 @@ async function processSleepSamples(
     const sourceName = bestStageSource != null ? bestStageSource.sourceName : session.sourceName;
     const externalId = `hk:sleep:${session.uuid}`;
     const durationMinutes = Math.round((sessionEnd - sessionStart) / (1000 * 60));
-    await db.execute(
+    const sessionResult = await db.execute(
       sql`INSERT INTO fitness.sleep_session (user_id, provider_id, external_id, started_at, ended_at, duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes, sleep_type, source_name)
           VALUES (
             ${userId},
@@ -836,8 +849,32 @@ async function processSleepSamples(
             light_minutes = ${lightMinutes},
             awake_minutes = ${awakeMinutes},
             sleep_type = ${null},
-            source_name = ${sourceName}`,
+            source_name = ${sourceName}
+          RETURNING id`,
     );
+
+    // Insert individual sleep stage intervals
+    const row = sessionResult[0] as { id: string } | undefined;
+    const sessionId = row?.id;
+    if (sessionId && filtered.length > 0) {
+      await db.execute(sql`DELETE FROM fitness.sleep_stage WHERE session_id = ${sessionId}::uuid`);
+
+      const stageValues = filtered
+        .map((stage) => {
+          const mapped = mapHealthKitStage(stage.value);
+          if (!mapped) return null;
+          return sql`(${sessionId}::uuid, ${mapped}, ${stage.startDate}::timestamptz, ${stage.endDate}::timestamptz, ${stage.sourceName})`;
+        })
+        .filter((v): v is NonNullable<typeof v> => v !== null);
+
+      if (stageValues.length > 0) {
+        await db.execute(
+          sql`INSERT INTO fitness.sleep_stage (session_id, stage, started_at, ended_at, source_name)
+              VALUES ${sql.join(stageValues, sql`, `)}`,
+        );
+      }
+    }
+
     inserted++;
   }
 

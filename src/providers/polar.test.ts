@@ -14,6 +14,7 @@ import {
   parsePolarDuration,
   parsePolarExercise,
   parsePolarSleep,
+  parsePolarSleepStages,
 } from "./polar.ts";
 
 // ============================================================
@@ -188,6 +189,87 @@ describe("parsePolarSleep", () => {
   it("does not include efficiencyPct (derived in v_sleep view)", () => {
     const result = parsePolarSleep(sampleSleep);
     expect(result).not.toHaveProperty("efficiencyPct");
+  });
+});
+
+describe("parsePolarSleepStages", () => {
+  const sleepStart = "2024-06-14T22:30:00Z";
+
+  it("converts hypnogram entries to stage intervals", () => {
+    const hypnogram: Record<string, number> = {
+      "0": 1, // minute 0: deep
+      "1": 1, // minute 1: deep
+      "2": 2, // minute 2: light
+      "3": 2, // minute 3: light
+      "4": 3, // minute 4: rem
+    };
+    const stages = parsePolarSleepStages(sleepStart, hypnogram);
+    expect(stages).toHaveLength(3);
+    expect(stages[0].stage).toBe("deep");
+    expect(stages[1].stage).toBe("light");
+    expect(stages[2].stage).toBe("rem");
+  });
+
+  it("merges consecutive identical stages into single intervals", () => {
+    const hypnogram: Record<string, number> = {
+      "0": 1,
+      "1": 1,
+      "2": 1,
+    };
+    const stages = parsePolarSleepStages(sleepStart, hypnogram);
+    expect(stages).toHaveLength(1);
+    expect(stages[0]!.stage).toBe("deep");
+    expect(stages[0]!.startedAt).toEqual(new Date("2024-06-14T22:30:00Z"));
+    // 3 minutes of deep: starts at minute 0, ends at minute 3
+    expect(stages[0]!.endedAt).toEqual(new Date("2024-06-14T22:33:00Z"));
+  });
+
+  it("maps hypnogram values 4 and 5 to awake", () => {
+    const hypnogram: Record<string, number> = {
+      "0": 4,
+      "1": 5,
+    };
+    const stages = parsePolarSleepStages(sleepStart, hypnogram);
+    // Both map to "awake" and are consecutive — should merge
+    expect(stages).toHaveLength(1);
+    expect(stages[0]!.stage).toBe("awake");
+  });
+
+  it("computes timestamps relative to sleep start time", () => {
+    const hypnogram: Record<string, number> = {
+      "60": 1, // 60 minutes after sleep start
+      "61": 1,
+    };
+    const stages = parsePolarSleepStages(sleepStart, hypnogram);
+    expect(stages[0]!.startedAt).toEqual(new Date("2024-06-14T23:30:00Z"));
+    expect(stages[0]!.endedAt).toEqual(new Date("2024-06-14T23:32:00Z"));
+  });
+
+  it("returns empty array for empty hypnogram", () => {
+    expect(parsePolarSleepStages(sleepStart, {})).toEqual([]);
+  });
+
+  it("skips unknown stage values", () => {
+    const hypnogram: Record<string, number> = {
+      "0": 99,
+      "1": 1,
+    };
+    const stages = parsePolarSleepStages(sleepStart, hypnogram);
+    expect(stages).toHaveLength(1);
+    expect(stages[0]!.stage).toBe("deep");
+  });
+
+  it("handles non-contiguous minutes as separate intervals", () => {
+    const hypnogram: Record<string, number> = {
+      "0": 1,
+      "1": 1,
+      "10": 1, // gap from minute 2 to 10
+      "11": 1,
+    };
+    const stages = parsePolarSleepStages(sleepStart, hypnogram);
+    expect(stages).toHaveLength(2);
+    expect(stages[0]!.endedAt).toEqual(new Date("2024-06-14T22:32:00Z"));
+    expect(stages[1]!.startedAt).toEqual(new Date("2024-06-14T22:40:00Z"));
   });
 });
 
@@ -423,6 +505,7 @@ const POLAR_VALID_TOKEN = {
 };
 
 function createPolarMockDb(tokenRows = [POLAR_VALID_TOKEN]): SyncDatabase {
+  const mockSessionId = "mock-session-id";
   return {
     select: vi.fn().mockReturnValue({
       from: vi.fn().mockReturnValue({
@@ -433,10 +516,15 @@ function createPolarMockDb(tokenRows = [POLAR_VALID_TOKEN]): SyncDatabase {
     }),
     insert: vi.fn().mockReturnValue({
       values: vi.fn().mockImplementation(() => {
+        const onConflictDoUpdate = vi.fn().mockImplementation(() =>
+          Object.assign(Promise.resolve(), {
+            returning: vi.fn().mockResolvedValue([{ id: mockSessionId }]),
+          }),
+        );
         return Object.assign(Promise.resolve(), {
-          onConflictDoUpdate: vi.fn().mockResolvedValue(undefined),
+          onConflictDoUpdate,
           onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
-          returning: vi.fn().mockResolvedValue([{ id: "activity-row-id" }]),
+          returning: vi.fn().mockResolvedValue([{ id: mockSessionId }]),
         });
       }),
     }),

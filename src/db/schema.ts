@@ -472,6 +472,22 @@ export const sleepSession = fitness.table(
   ],
 );
 
+export const sleepStage = fitness.table(
+  "sleep_stage",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sessionId: uuid("session_id")
+      .notNull()
+      .references(() => sleepSession.id, { onDelete: "cascade" }),
+    stage: text("stage").notNull(), // "deep", "light", "rem", "awake"
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    endedAt: timestamp("ended_at", { withTimezone: true }).notNull(),
+    sourceName: text("source_name"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("sleep_stage_session_idx").on(table.sessionId, table.startedAt)],
+);
+
 // ============================================================
 // Supplements — per-user supplement stack definitions
 // ============================================================

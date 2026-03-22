@@ -6,6 +6,7 @@ import {
   parseConnectActivity,
   parseConnectDailySummary,
   parseConnectSleep,
+  parseConnectSleepStages,
   parseHeartRateTimeSeries,
   parseHrvSummary,
   parseStressTimeSeries,
@@ -20,6 +21,7 @@ import {
   dailyMetrics,
   metricStream,
   sleepSession,
+  sleepStage,
   userSettings,
 } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
@@ -444,7 +446,7 @@ export class GarminProvider implements SyncProvider {
         const parsed = parseConnectSleep(raw);
         if (!parsed) continue;
 
-        await db
+        const [session] = await db
           .insert(sleepSession)
           .values({
             providerId: this.id,
@@ -468,7 +470,22 @@ export class GarminProvider implements SyncProvider {
               remMinutes: parsed.remMinutes,
               awakeMinutes: parsed.awakeMinutes,
             },
-          });
+          })
+          .returning({ id: sleepSession.id });
+
+        const stages = parseConnectSleepStages(raw);
+        if (session && stages.length > 0) {
+          // Delete existing stages for this session (re-sync)
+          await db.delete(sleepStage).where(eq(sleepStage.sessionId, session.id));
+          await db.insert(sleepStage).values(
+            stages.map((s) => ({
+              sessionId: session.id,
+              stage: s.stage,
+              startedAt: s.startedAt,
+              endedAt: s.endedAt,
+            })),
+          );
+        }
 
         count++;
       } catch {

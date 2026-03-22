@@ -13,6 +13,12 @@ export const sleepListRowSchema = z.object({
   efficiency_pct: z.coerce.number().nullable(),
 });
 
+const sleepStageRowSchema = z.object({
+  stage: z.string(),
+  started_at: z.string(),
+  ended_at: z.string(),
+});
+
 export const sleepRouter = router({
   list: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(
@@ -36,6 +42,24 @@ export const sleepRouter = router({
             WHERE user_id = ${ctx.userId}
               AND started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
             ORDER BY started_at ASC`,
+      );
+    }),
+
+  stages: cachedProtectedQuery(CacheTTL.MEDIUM)
+    .input(z.object({ sessionId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      return executeWithSchema(
+        ctx.db,
+        sleepStageRowSchema,
+        sql`SELECT
+              st.stage,
+              to_char(st.started_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS started_at,
+              to_char(st.ended_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS ended_at
+            FROM fitness.sleep_stage st
+            JOIN fitness.v_sleep vs ON vs.id = st.session_id
+            WHERE vs.id = ${input.sessionId}
+              AND vs.user_id = ${ctx.userId}
+            ORDER BY st.started_at ASC`,
       );
     }),
 

@@ -83,6 +83,12 @@ export interface ParsedConnectSleep {
   averageRespiration: number | undefined;
 }
 
+export interface ParsedSleepStage {
+  stage: "deep" | "light" | "rem" | "awake";
+  startedAt: Date;
+  endedAt: Date;
+}
+
 export interface ParsedDailyMetrics {
   date: string;
   steps: number;
@@ -201,6 +207,36 @@ export function parseConnectSleep(data: ConnectSleepData): ParsedConnectSleep | 
     averageSpO2: dto.averageSpO2Value,
     averageRespiration: dto.averageRespirationValue,
   };
+}
+
+const GARMIN_SLEEP_LEVEL_MAP: Record<number, "deep" | "light" | "awake"> = {
+  0: "deep",
+  1: "light",
+  2: "awake",
+};
+
+export function parseConnectSleepStages(data: ConnectSleepData): ParsedSleepStage[] {
+  const stages: ParsedSleepStage[] = [];
+
+  for (const level of data.sleepLevels ?? []) {
+    const stage = GARMIN_SLEEP_LEVEL_MAP[level.activityLevel];
+    if (!stage) continue;
+    stages.push({
+      stage,
+      startedAt: new Date(ensureUtcSuffix(level.startGMT)),
+      endedAt: new Date(ensureUtcSuffix(level.endGMT)),
+    });
+  }
+
+  for (const rem of data.remSleepData ?? []) {
+    stages.push({
+      stage: "rem",
+      startedAt: new Date(ensureUtcSuffix(rem.startGMT)),
+      endedAt: new Date(ensureUtcSuffix(rem.endGMT)),
+    });
+  }
+
+  return stages.sort((a, b) => a.startedAt.getTime() - b.startedAt.getTime());
 }
 
 export function parseConnectDailySummary(summary: ConnectDailySummary): ParsedDailyMetrics {
