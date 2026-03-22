@@ -33,6 +33,7 @@ const mocks = vi.hoisted(() => {
     fromTokens: vi.fn(),
     parseConnectActivity: vi.fn(),
     parseConnectSleep: vi.fn(),
+    parseConnectSleepStages: vi.fn().mockReturnValue([]),
     parseConnectDailySummary: vi.fn(),
     parseHrvSummary: vi.fn(),
     parseTrainingStatus: vi.fn(),
@@ -53,6 +54,7 @@ vi.mock("garmin-connect", () => ({
   },
   parseConnectActivity: mocks.parseConnectActivity,
   parseConnectSleep: mocks.parseConnectSleep,
+  parseConnectSleepStages: mocks.parseConnectSleepStages,
   parseConnectDailySummary: mocks.parseConnectDailySummary,
   parseHrvSummary: mocks.parseHrvSummary,
   parseTrainingStatus: mocks.parseTrainingStatus,
@@ -120,6 +122,8 @@ interface MockDb {
   values: ReturnType<typeof vi.fn>;
   onConflictDoUpdate: ReturnType<typeof vi.fn>;
   onConflictDoNothing: ReturnType<typeof vi.fn>;
+  returning: ReturnType<typeof vi.fn>;
+  delete: ReturnType<typeof vi.fn>;
 }
 
 function createMockDb(): MockDb {
@@ -130,8 +134,10 @@ function createMockDb(): MockDb {
     limit: vi.fn().mockResolvedValue([]),
     insert: vi.fn(),
     values: vi.fn(),
-    onConflictDoUpdate: vi.fn().mockResolvedValue(undefined),
+    onConflictDoUpdate: vi.fn(),
     onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+    returning: vi.fn().mockResolvedValue([{ id: "mock-session-id" }]),
+    delete: vi.fn(),
   };
   // Chain: select/from/where/insert/values all return the mock object itself
   db.select.mockReturnValue(db);
@@ -139,6 +145,8 @@ function createMockDb(): MockDb {
   db.where.mockReturnValue(db);
   db.insert.mockReturnValue(db);
   db.values.mockReturnValue(db);
+  db.onConflictDoUpdate.mockReturnValue(db);
+  db.delete.mockReturnValue(db);
   return db;
 }
 

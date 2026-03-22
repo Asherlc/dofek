@@ -1,6 +1,7 @@
 import { selectDailyHeartRateVariability } from "@dofek/heart-rate-variability";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 
@@ -315,6 +316,19 @@ function deriveSleepSessionsFromStages(samples: SleepSample[]): SleepSample[] {
   }
 
   return sessions;
+}
+
+const HEALTHKIT_STAGE_MAP: Record<string, string> = {
+  asleepDeep: "deep",
+  asleepCore: "light",
+  asleep: "light",
+  asleepUnspecified: "light",
+  asleepREM: "rem",
+  awake: "awake",
+};
+
+function mapHealthKitStage(value: string): string | null {
+  return HEALTHKIT_STAGE_MAP[value] ?? null;
 }
 
 async function linkUnassignedHeartRateToWorkouts(
@@ -779,7 +793,9 @@ async function processSleepSamples(
       }
 
       const externalId = `hk:sleep:${session.uuid}:${sourceName}`;
-      await db.execute(
+      const sessionResult = await executeWithSchema(
+        db,
+        z.object({ id: z.string().uuid() }),
         sql`INSERT INTO fitness.sleep_session (user_id, provider_id, external_id, started_at, ended_at, duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes, sleep_type, source_name)
             VALUES (
               ${userId},
@@ -804,8 +820,33 @@ async function processSleepSamples(
               light_minutes = ${lightMinutes},
               awake_minutes = ${awakeMinutes},
               sleep_type = ${null},
-              source_name = ${sourceName}`,
+              source_name = ${sourceName}
+            RETURNING id`,
       );
+
+      // Insert individual sleep stage intervals
+      const sessionId = sessionResult[0]?.id;
+      if (sessionId && stages.length > 0) {
+        await db.execute(
+          sql`DELETE FROM fitness.sleep_stage WHERE session_id = ${sessionId}::uuid`,
+        );
+
+        const stageValues = stages
+          .map((stage) => {
+            const mapped = mapHealthKitStage(stage.value);
+            if (!mapped) return null;
+            return sql`(${sessionId}::uuid, ${mapped}, ${stage.startDate}::timestamptz, ${stage.endDate}::timestamptz, ${stage.sourceName})`;
+          })
+          .filter((v): v is NonNullable<typeof v> => v !== null);
+
+        if (stageValues.length > 0) {
+          await db.execute(
+            sql`INSERT INTO fitness.sleep_stage (session_id, stage, started_at, ended_at, source_name)
+                VALUES ${sql.join(stageValues, sql`, `)}`,
+          );
+        }
+      }
+
       inserted++;
     }
   }

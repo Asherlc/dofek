@@ -9,7 +9,6 @@ import {
 } from "../lib/chartTheme.ts";
 import { formatNumber } from "../lib/format.ts";
 import { DofekChart } from "./DofekChart.tsx";
-import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface SleepNeedCardProps {
   data: SleepNeedResult | undefined;

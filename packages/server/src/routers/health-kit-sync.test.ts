@@ -13,11 +13,7 @@ vi.mock("../trpc.ts", async () => {
   };
 });
 
-import {
-  aggregateDailyMetricSamples,
-  healthKitSyncRouter,
-  type SleepSample,
-} from "./health-kit-sync.ts";
+import { aggregateDailyMetricSamples, healthKitSyncRouter } from "./health-kit-sync.ts";
 
 const createCaller = createTestCallerFactory(healthKitSyncRouter);
 
