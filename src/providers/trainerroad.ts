@@ -2,8 +2,7 @@ import { parseTrainerRoadActivity, TrainerRoadClient } from "trainerroad-client"
 import type { SyncDatabase } from "../db/index.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
-import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
-import { logger } from "../logger.ts";
+import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import type {
   ProviderAuthSetup,
   SyncError,
