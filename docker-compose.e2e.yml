@@ -13,6 +13,21 @@ services:
       timeout: 5s
       retries: 15
 
+  migrate:
+    build:
+      context: .
+      target: server
+      args:
+        INSTALL_EXTRAS: "false"
+    environment:
+      DATABASE_URL: postgres://health:health@db:5432/health
+      NODE_ENV: test
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["migrate"]
+    restart: "no"
+
   server:
     build:
       context: .
@@ -25,6 +40,8 @@ services:
       NODE_ENV: test
       DISABLE_QUERY_CACHE: "true"
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       db:
         condition: service_healthy
     command: ["web"]

@@ -8,10 +8,11 @@ NODE="node --experimental-transform-types --enable-source-maps --disable-warning
 if { [ -n "$SOPS_AGE_KEY" ] || [ -n "$SOPS_AGE_KEY_FILE" ]; } && [ -f .env ]; then
   CMD="$NODE"
   case "${1:-sync}" in
-    web)  CMD="$CMD packages/server/src/index.ts" ;;
-    sync)   CMD="$CMD src/index.ts sync" ;;
-    worker) CMD="$CMD src/jobs/worker.ts" ;;
-    *)      echo "Unknown mode: $1 (expected 'web', 'sync', or 'worker')" >&2; exit 1 ;;
+    web)     CMD="$CMD packages/server/src/index.ts" ;;
+    sync)    CMD="$CMD src/index.ts sync" ;;
+    worker)  CMD="$CMD src/jobs/worker.ts" ;;
+    migrate) CMD="$CMD src/db/run-migrate.ts" ;;
+    *)       echo "Unknown mode: $1 (expected 'web', 'sync', 'worker', or 'migrate')" >&2; exit 1 ;;
   esac
   exec sops exec-env .env "$CMD"
 fi
@@ -27,8 +28,11 @@ case "${1:-sync}" in
   worker)
     exec $NODE src/jobs/worker.ts
     ;;
+  migrate)
+    exec $NODE src/db/run-migrate.ts
+    ;;
   *)
-    echo "Unknown mode: $1 (expected 'web', 'sync', or 'worker')" >&2
+    echo "Unknown mode: $1 (expected 'web', 'sync', 'worker', or 'migrate')" >&2
     exit 1
     ;;
 esac

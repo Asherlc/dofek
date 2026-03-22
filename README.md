@@ -139,9 +139,12 @@ Traefik handles host-based routing and authentication. Nginx owns all path-based
 
 ### Entrypoint modes
 
-The server image runs in two modes via `entrypoint.sh`:
+The server image runs in multiple modes via `entrypoint.sh`:
 
 ```bash
+# Run pending database migrations (runs once, then exits)
+docker run dofek:latest migrate
+
 # API server (Express + tRPC)
 docker run dofek:latest web
 
@@ -189,6 +192,7 @@ Internet → Caddy (auto-HTTPS :443)
 |-----------|-------|---------|
 | `caddy` | caddy:2-alpine | TLS termination + reverse proxy to nginx |
 | `client` | ghcr.io/your-org/dofek-client | Nginx serving Vite bundle + proxying API routes |
+| `migrate` | ghcr.io/your-org/dofek | Runs pending DB migrations (one-shot, exits on completion) |
 | `web` | ghcr.io/your-org/dofek | Express + tRPC API server (port 3000, internal only) |
 | `sync` | ghcr.io/your-org/dofek | Sync runner (provider data sync) |
 | `db` | timescale/timescaledb | TimescaleDB (persistent volume) |
@@ -203,7 +207,7 @@ sops .env → commit → push → GHA builds ARM Docker images
 → pushes to GHCR → Watchtower polls (5min) → pulls new image → restarts containers
 ```
 
-Migrations run automatically on startup (both `web` and `sync` modes call `runMigrations()`). Upserts make re-runs safe and idempotent.
+Migrations run as a separate one-shot `migrate` container before `web`, `worker`, and `sync` start (via `depends_on: { condition: service_completed_successfully }`). In local dev, run `pnpm migrate` manually. Upserts make re-runs safe and idempotent.
 
 ### Deploying from scratch
 
