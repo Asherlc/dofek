@@ -89,14 +89,30 @@ describe("TrainingStressCalculator", () => {
     });
 
     it("returns null for poor fit (random data)", () => {
+      // Alternating extreme values produce near-zero r2
       const paired = Array.from({ length: 15 }, (_, i) => ({
         trimp: 50 + i * 10,
         powerTss: i % 2 === 0 ? 200 : 10,
       }));
-      const model = TrainingStressCalculator.buildTssModel(paired);
-      if (model) {
-        expect(model.r2).toBeGreaterThanOrEqual(0.3);
-      }
+      expect(TrainingStressCalculator.buildTssModel(paired)).toBeNull();
+    });
+
+    it("returns null when slope is negative (inverse correlation)", () => {
+      // powerTss decreases as trimp increases → negative slope
+      const paired = Array.from({ length: 15 }, (_, i) => ({
+        trimp: 50 + i * 10,
+        powerTss: 200 - i * 12,
+      }));
+      expect(TrainingStressCalculator.buildTssModel(paired)).toBeNull();
+    });
+
+    it("returns null when slope is zero (constant powerTss)", () => {
+      // All powerTss values identical → slope = 0
+      const paired = Array.from({ length: 15 }, (_, i) => ({
+        trimp: 50 + i * 10,
+        powerTss: 100,
+      }));
+      expect(TrainingStressCalculator.buildTssModel(paired)).toBeNull();
     });
   });
 

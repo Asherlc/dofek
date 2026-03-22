@@ -43,5 +43,7 @@ export async function processScheduledSyncJob(_job: Job<ScheduledSyncJobData>, d
     }
   }
 
+  await syncQueue.close();
+
   logger.info(`[scheduled-sync] Enqueued ${jobCount} sync jobs for ${userProviders.size} users`);
 }

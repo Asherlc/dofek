@@ -7,6 +7,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { trpc } from "../lib/trpc";
 import { AuthProvider, useAuth } from "../lib/auth-context";
 import { initBackgroundHealthKitSync } from "../lib/background-health-kit-sync";
+import type { SyncTrpcClient } from "../lib/health-kit-sync";
 import { getTrpcUrl } from "../lib/server";
 import { initTelemetry } from "../lib/telemetry";
 import { colors } from "../theme";
@@ -45,8 +46,20 @@ function AuthGate() {
   // Set up background HealthKit sync when authenticated
   useEffect(() => {
     if (!user || !trpcClient) return;
-    const client = trpcClient as unknown as Parameters<typeof initBackgroundHealthKitSync>[0];
-    initBackgroundHealthKitSync(client).catch(() => {
+    const syncClient: SyncTrpcClient = {
+      healthKitSync: {
+        pushQuantitySamples: {
+          mutate: (input) => trpcClient.healthKitSync.pushQuantitySamples.mutate(input),
+        },
+        pushWorkouts: {
+          mutate: (input) => trpcClient.healthKitSync.pushWorkouts.mutate(input),
+        },
+        pushSleepSamples: {
+          mutate: (input) => trpcClient.healthKitSync.pushSleepSamples.mutate(input),
+        },
+      },
+    };
+    initBackgroundHealthKitSync(syncClient).catch(() => {
       // Best-effort — don't block the app for background sync setup failures
     });
   }, [user, trpcClient]);

@@ -15,7 +15,6 @@ vi.mock("../trpc.ts", async () => {
 
 import {
   aggregateDailyMetricSamples,
-  filterStagesByBestSource,
   healthKitSyncRouter,
   type SleepSample,
 } from "./health-kit-sync.ts";
@@ -513,189 +512,6 @@ describe("healthKitSyncRouter", () => {
     });
   });
 
-  describe("filterStagesByBestSource", () => {
-    function makeSleepSample(overrides: Partial<SleepSample> = {}): SleepSample {
-      return {
-        uuid: "test",
-        startDate: "2024-01-15T22:00:00Z",
-        endDate: "2024-01-16T06:00:00Z",
-        value: "asleepCore",
-        sourceName: "Apple Watch",
-        ...overrides,
-      };
-    }
-
-    it("discards iPhone asleep when Apple Watch has granular stages", () => {
-      const stages: SleepSample[] = [
-        // iPhone reports all sleep as unspecified "asleep" (460 min)
-        makeSleepSample({
-          uuid: "iphone-asleep",
-          startDate: "2024-01-15T22:20:00Z",
-          endDate: "2024-01-16T06:00:00Z",
-          value: "asleep",
-          sourceName: "iPhone",
-        }),
-        // Apple Watch reports granular stages
-        makeSleepSample({
-          uuid: "watch-core-1",
-          startDate: "2024-01-15T22:30:00Z",
-          endDate: "2024-01-16T01:00:00Z",
-          value: "asleepCore",
-          sourceName: "Apple Watch",
-        }),
-        makeSleepSample({
-          uuid: "watch-deep",
-          startDate: "2024-01-16T01:00:00Z",
-          endDate: "2024-01-16T02:30:00Z",
-          value: "asleepDeep",
-          sourceName: "Apple Watch",
-        }),
-        makeSleepSample({
-          uuid: "watch-rem",
-          startDate: "2024-01-16T02:30:00Z",
-          endDate: "2024-01-16T04:00:00Z",
-          value: "asleepREM",
-          sourceName: "Apple Watch",
-        }),
-        makeSleepSample({
-          uuid: "watch-awake",
-          startDate: "2024-01-16T04:00:00Z",
-          endDate: "2024-01-16T04:15:00Z",
-          value: "awake",
-          sourceName: "Apple Watch",
-        }),
-      ];
-
-      const filtered = filterStagesByBestSource(stages);
-
-      // Should only contain Apple Watch stages, not iPhone's "asleep"
-      expect(filtered.every((s) => s.sourceName === "Apple Watch")).toBe(true);
-      expect(filtered).toHaveLength(4);
-      expect(filtered.map((s) => s.value).sort()).toEqual([
-        "asleepCore",
-        "asleepDeep",
-        "asleepREM",
-        "awake",
-      ]);
-    });
-
-    it("keeps all stages when only one source provides unspecified sleep", () => {
-      const stages: SleepSample[] = [
-        makeSleepSample({
-          uuid: "iphone-asleep",
-          startDate: "2024-01-15T22:20:00Z",
-          endDate: "2024-01-16T06:00:00Z",
-          value: "asleep",
-          sourceName: "iPhone",
-        }),
-        makeSleepSample({
-          uuid: "iphone-awake",
-          startDate: "2024-01-16T04:00:00Z",
-          endDate: "2024-01-16T04:15:00Z",
-          value: "awake",
-          sourceName: "iPhone",
-        }),
-      ];
-
-      const filtered = filterStagesByBestSource(stages);
-
-      // No granular data, so keep everything
-      expect(filtered).toHaveLength(2);
-    });
-
-    it("picks the source with the most granular stages when multiple have them", () => {
-      const stages: SleepSample[] = [
-        // Oura writes 2 granular stages
-        makeSleepSample({
-          uuid: "oura-deep",
-          startDate: "2024-01-16T01:00:00Z",
-          endDate: "2024-01-16T02:00:00Z",
-          value: "asleepDeep",
-          sourceName: "Oura",
-        }),
-        makeSleepSample({
-          uuid: "oura-rem",
-          startDate: "2024-01-16T02:00:00Z",
-          endDate: "2024-01-16T03:00:00Z",
-          value: "asleepREM",
-          sourceName: "Oura",
-        }),
-        // Apple Watch writes 3 granular stages (more detailed)
-        makeSleepSample({
-          uuid: "watch-core",
-          startDate: "2024-01-15T22:30:00Z",
-          endDate: "2024-01-16T01:00:00Z",
-          value: "asleepCore",
-          sourceName: "Apple Watch",
-        }),
-        makeSleepSample({
-          uuid: "watch-deep",
-          startDate: "2024-01-16T01:00:00Z",
-          endDate: "2024-01-16T02:30:00Z",
-          value: "asleepDeep",
-          sourceName: "Apple Watch",
-        }),
-        makeSleepSample({
-          uuid: "watch-rem",
-          startDate: "2024-01-16T02:30:00Z",
-          endDate: "2024-01-16T04:00:00Z",
-          value: "asleepREM",
-          sourceName: "Apple Watch",
-        }),
-      ];
-
-      const filtered = filterStagesByBestSource(stages);
-
-      // Apple Watch has 3 granular stages vs Oura's 2
-      expect(filtered.every((s) => s.sourceName === "Apple Watch")).toBe(true);
-      expect(filtered).toHaveLength(3);
-    });
-
-    it("includes awake stages from the best granular source", () => {
-      const stages: SleepSample[] = [
-        makeSleepSample({
-          uuid: "iphone-awake",
-          startDate: "2024-01-16T04:00:00Z",
-          endDate: "2024-01-16T04:15:00Z",
-          value: "awake",
-          sourceName: "iPhone",
-        }),
-        makeSleepSample({
-          uuid: "watch-core",
-          startDate: "2024-01-15T22:30:00Z",
-          endDate: "2024-01-16T04:00:00Z",
-          value: "asleepCore",
-          sourceName: "Apple Watch",
-        }),
-        makeSleepSample({
-          uuid: "watch-awake",
-          startDate: "2024-01-16T04:00:00Z",
-          endDate: "2024-01-16T04:10:00Z",
-          value: "awake",
-          sourceName: "Apple Watch",
-        }),
-      ];
-
-      const filtered = filterStagesByBestSource(stages);
-
-      // Should use Apple Watch (has granular core stage), including its awake
-      expect(filtered).toHaveLength(2);
-      expect(filtered.every((s) => s.sourceName === "Apple Watch")).toBe(true);
-    });
-
-    it("handles single source with granular stages unchanged", () => {
-      const stages: SleepSample[] = [
-        makeSleepSample({ uuid: "s1", value: "asleepCore", sourceName: "Apple Watch" }),
-        makeSleepSample({ uuid: "s2", value: "asleepDeep", sourceName: "Apple Watch" }),
-        makeSleepSample({ uuid: "s3", value: "asleepREM", sourceName: "Apple Watch" }),
-        makeSleepSample({ uuid: "s4", value: "awake", sourceName: "Apple Watch" }),
-      ];
-
-      const filtered = filterStagesByBestSource(stages);
-      expect(filtered).toHaveLength(4);
-    });
-  });
-
   describe("pushSleepSamples", () => {
     it("processes sleep session with stages", async () => {
       const execute = makeExecute();
@@ -766,10 +582,10 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      // Find the sleep INSERT call (not the ensureProvider call)
+      // Find the sleep INSERT call (not the ensureProvider or DELETE call)
       const sleepCall = execute.mock.calls.find((call: unknown[]) => {
         const serialized = JSON.stringify(call[0]);
-        return serialized.includes("sleep_session");
+        return serialized.includes("sleep_session") && serialized.includes("INSERT");
       });
       expect(sleepCall).toBeDefined();
       const serialized = JSON.stringify(sleepCall?.[0]);
@@ -799,14 +615,14 @@ describe("healthKitSyncRouter", () => {
       // HealthKit has no native nap flag; raw sleep_type is stored as null.
       const sleepCall = execute.mock.calls.find((call: unknown[]) => {
         const serialized = JSON.stringify(call[0]);
-        return serialized.includes("sleep_session");
+        return serialized.includes("sleep_session") && serialized.includes("INSERT");
       });
       expect(sleepCall).toBeDefined();
       const serialized = JSON.stringify(sleepCall?.[0]);
       expect(serialized).toContain("sleep_type");
     });
 
-    it("uses Apple Watch granular stages and discards iPhone asleep for multi-source data", async () => {
+    it("stores per-source rows for multi-source data (dedup at query time)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
         db: { execute },
@@ -869,20 +685,15 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      expect(result.inserted).toBe(1);
+      // Should insert 2 rows — one per source. The v_sleep view handles dedup.
+      expect(result.inserted).toBe(2);
 
-      // Check the SQL insert contains correct stage minutes
-      const sleepCall = execute.mock.calls.find((call: unknown[]) => {
+      // Both sources should have INSERT calls with source-specific external_ids
+      const insertCalls = execute.mock.calls.filter((call: unknown[]) => {
         const serialized = JSON.stringify(call[0]);
-        return serialized.includes("sleep_session");
+        return serialized.includes("sleep_session") && serialized.includes("INSERT");
       });
-      expect(sleepCall).toBeDefined();
-      const serialized = JSON.stringify(sleepCall?.[0]);
-
-      // deep_minutes should be 90 (1:00 AM - 2:30 AM), NOT 0
-      // The iPhone's 450min "asleep" should NOT inflate light_minutes
-      expect(serialized).toContain("90"); // deep = 90 min
-      expect(serialized).toContain("90"); // rem = 90 min (2:30 - 4:00)
+      expect(insertCalls).toHaveLength(2);
     });
 
     it("derives a sleep session when only stage samples are present", async () => {
