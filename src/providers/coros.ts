@@ -7,7 +7,13 @@ import { activity, dailyMetrics, sleepSession } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { ProviderHttpClient } from "./http-client.ts";
-import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
+import type {
+  ProviderAuthSetup,
+  SyncError,
+  SyncOptions,
+  SyncProvider,
+  SyncResult,
+} from "./types.ts";
 
 // ============================================================
 // COROS API Zod schemas
@@ -233,7 +239,7 @@ export class CorosProvider implements SyncProvider {
     });
   }
 
-  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -254,46 +260,52 @@ export class CorosProvider implements SyncProvider {
 
     // 1. Sync workouts
     try {
-      const activityCount = await withSyncLog(db, this.id, "activity", async () => {
-        const data = await client.getWorkouts(sinceDate, toDate);
-        let count = 0;
+      const activityCount = await withSyncLog(
+        db,
+        this.id,
+        "activity",
+        async () => {
+          const data = await client.getWorkouts(sinceDate, toDate);
+          let count = 0;
 
-        for (const raw of data.data ?? []) {
-          const parsed = parseCorosWorkout(raw);
-          try {
-            await db
-              .insert(activity)
-              .values({
-                providerId: this.id,
-                externalId: parsed.externalId,
-                activityType: parsed.activityType,
-                name: parsed.name,
-                startedAt: parsed.startedAt,
-                endedAt: parsed.endedAt,
-                raw: parsed.raw,
-              })
-              .onConflictDoUpdate({
-                target: [activity.providerId, activity.externalId],
-                set: {
+          for (const raw of data.data ?? []) {
+            const parsed = parseCorosWorkout(raw);
+            try {
+              await db
+                .insert(activity)
+                .values({
+                  providerId: this.id,
+                  externalId: parsed.externalId,
                   activityType: parsed.activityType,
                   name: parsed.name,
                   startedAt: parsed.startedAt,
                   endedAt: parsed.endedAt,
                   raw: parsed.raw,
-                },
+                })
+                .onConflictDoUpdate({
+                  target: [activity.providerId, activity.externalId],
+                  set: {
+                    activityType: parsed.activityType,
+                    name: parsed.name,
+                    startedAt: parsed.startedAt,
+                    endedAt: parsed.endedAt,
+                    raw: parsed.raw,
+                  },
+                });
+              count++;
+            } catch (err) {
+              errors.push({
+                message: err instanceof Error ? err.message : String(err),
+                externalId: parsed.externalId,
+                cause: err,
               });
-            count++;
-          } catch (err) {
-            errors.push({
-              message: err instanceof Error ? err.message : String(err),
-              externalId: parsed.externalId,
-              cause: err,
-            });
+            }
           }
-        }
 
-        return { recordCount: count, result: count };
-      });
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += activityCount;
     } catch (err) {
       errors.push({
@@ -304,79 +316,85 @@ export class CorosProvider implements SyncProvider {
 
     // 2. Sync daily data (sleep, HR, steps)
     try {
-      const dailyCount = await withSyncLog(db, this.id, "daily_metrics", async () => {
-        const data = await client.getDailyData(sinceDate, toDate);
-        let count = 0;
+      const dailyCount = await withSyncLog(
+        db,
+        this.id,
+        "daily_metrics",
+        async () => {
+          const data = await client.getDailyData(sinceDate, toDate);
+          let count = 0;
 
-        for (const raw of data.data ?? []) {
-          const dateStr = `${raw.date.slice(0, 4)}-${raw.date.slice(4, 6)}-${raw.date.slice(6, 8)}`;
-          try {
-            // Daily metrics
-            if (raw.steps || raw.restingHr || raw.hrv) {
-              await db
-                .insert(dailyMetrics)
-                .values({
-                  date: dateStr,
-                  providerId: this.id,
-                  steps: raw.steps,
-                  restingHr: raw.restingHr,
-                  hrv: raw.hrv,
-                  spo2Avg: raw.spo2Avg,
-                  activeEnergyKcal: raw.calories,
-                  distanceKm: raw.distance ? raw.distance / 1000 : undefined,
-                })
-                .onConflictDoUpdate({
-                  target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
-                  set: {
+          for (const raw of data.data ?? []) {
+            const dateStr = `${raw.date.slice(0, 4)}-${raw.date.slice(4, 6)}-${raw.date.slice(6, 8)}`;
+            try {
+              // Daily metrics
+              if (raw.steps || raw.restingHr || raw.hrv) {
+                await db
+                  .insert(dailyMetrics)
+                  .values({
+                    date: dateStr,
+                    providerId: this.id,
                     steps: raw.steps,
                     restingHr: raw.restingHr,
                     hrv: raw.hrv,
                     spo2Avg: raw.spo2Avg,
                     activeEnergyKcal: raw.calories,
                     distanceKm: raw.distance ? raw.distance / 1000 : undefined,
-                  },
-                });
-              count++;
-            }
+                  })
+                  .onConflictDoUpdate({
+                    target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
+                    set: {
+                      steps: raw.steps,
+                      restingHr: raw.restingHr,
+                      hrv: raw.hrv,
+                      spo2Avg: raw.spo2Avg,
+                      activeEnergyKcal: raw.calories,
+                      distanceKm: raw.distance ? raw.distance / 1000 : undefined,
+                    },
+                  });
+                count++;
+              }
 
-            // Sleep
-            if (raw.sleepDuration) {
-              const externalId = `coros-sleep-${raw.date}`;
-              await db
-                .insert(sleepSession)
-                .values({
-                  providerId: this.id,
-                  externalId,
-                  startedAt: new Date(`${dateStr}T00:00:00Z`),
-                  endedAt: new Date(`${dateStr}T08:00:00Z`),
-                  durationMinutes: raw.sleepDuration,
-                  deepMinutes: raw.deepSleep,
-                  lightMinutes: raw.lightSleep,
-                  remMinutes: raw.remSleep,
-                  awakeMinutes: raw.awakeDuration,
-                })
-                .onConflictDoUpdate({
-                  target: [sleepSession.providerId, sleepSession.externalId],
-                  set: {
+              // Sleep
+              if (raw.sleepDuration) {
+                const externalId = `coros-sleep-${raw.date}`;
+                await db
+                  .insert(sleepSession)
+                  .values({
+                    providerId: this.id,
+                    externalId,
+                    startedAt: new Date(`${dateStr}T00:00:00Z`),
+                    endedAt: new Date(`${dateStr}T08:00:00Z`),
                     durationMinutes: raw.sleepDuration,
                     deepMinutes: raw.deepSleep,
                     lightMinutes: raw.lightSleep,
                     remMinutes: raw.remSleep,
                     awakeMinutes: raw.awakeDuration,
-                  },
-                });
-              count++;
+                  })
+                  .onConflictDoUpdate({
+                    target: [sleepSession.providerId, sleepSession.externalId],
+                    set: {
+                      durationMinutes: raw.sleepDuration,
+                      deepMinutes: raw.deepSleep,
+                      lightMinutes: raw.lightSleep,
+                      remMinutes: raw.remSleep,
+                      awakeMinutes: raw.awakeDuration,
+                    },
+                  });
+                count++;
+              }
+            } catch (err) {
+              errors.push({
+                message: `daily ${dateStr}: ${err instanceof Error ? err.message : String(err)}`,
+                cause: err,
+              });
             }
-          } catch (err) {
-            errors.push({
-              message: `daily ${dateStr}: ${err instanceof Error ? err.message : String(err)}`,
-              cause: err,
-            });
           }
-        }
 
-        return { recordCount: count, result: count };
-      });
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += dailyCount;
     } catch (err) {
       errors.push({

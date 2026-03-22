@@ -36,6 +36,7 @@ export async function withSyncLog<T>(
   providerId: string,
   dataType: string,
   fn: () => Promise<{ recordCount: number; result: T }>,
+  userId?: string,
 ): Promise<T> {
   const start = Date.now();
   try {
@@ -46,6 +47,7 @@ export async function withSyncLog<T>(
       status: "success",
       recordCount,
       durationMs: Date.now() - start,
+      userId,
     });
     return result;
   } catch (err) {
@@ -55,6 +57,7 @@ export async function withSyncLog<T>(
       status: "error",
       errorMessage: err instanceof Error ? err.message : String(err),
       durationMs: Date.now() - start,
+      userId,
     });
     throw err;
   }

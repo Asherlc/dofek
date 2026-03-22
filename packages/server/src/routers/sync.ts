@@ -283,9 +283,9 @@ export const syncRouter = router({
     // When a sync job finishes, invalidate the server-side cache so the next
     // providers fetch returns fresh timestamps instead of stale cached data.
     if (state === "completed" || state === "failed") {
-      queryCache.invalidateByPrefix(`${ctx.userId}:sync.providers`);
-      queryCache.invalidateByPrefix(`${ctx.userId}:sync.providerStats`);
-      queryCache.invalidateByPrefix(`${ctx.userId}:sync.logs`);
+      await queryCache.invalidateByPrefix(`${ctx.userId}:sync.providers`);
+      await queryCache.invalidateByPrefix(`${ctx.userId}:sync.providerStats`);
+      await queryCache.invalidateByPrefix(`${ctx.userId}:sync.logs`);
     }
 
     return {

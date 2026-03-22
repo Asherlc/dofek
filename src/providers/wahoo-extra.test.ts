@@ -554,7 +554,7 @@ describe("WahooProvider.sync — onProgress callback", () => {
 
     const onProgress = vi.fn();
     const provider = new WahooProvider(mockFetch);
-    const result = await provider.sync(mockDb, new Date("2026-01-01T00:00:00Z"), onProgress);
+    const result = await provider.sync(mockDb, new Date("2026-01-01T00:00:00Z"), { onProgress });
 
     expect(result.recordsSynced).toBe(1);
     expect(onProgress).toHaveBeenCalledOnce();
@@ -588,7 +588,7 @@ describe("WahooProvider.sync — onProgress callback", () => {
 
     const onProgress = vi.fn();
     const provider = new WahooProvider(mockFetch);
-    await provider.sync(mockDb, new Date("2026-01-01T00:00:00Z"), onProgress);
+    await provider.sync(mockDb, new Date("2026-01-01T00:00:00Z"), { onProgress });
 
     expect(onProgress).not.toHaveBeenCalled();
   });

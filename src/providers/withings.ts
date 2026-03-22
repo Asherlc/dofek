@@ -5,7 +5,13 @@ import { bodyMeasurement } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
-import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
+import type {
+  ProviderAuthSetup,
+  SyncError,
+  SyncOptions,
+  SyncProvider,
+  SyncResult,
+} from "./types.ts";
 
 // ============================================================
 // Withings API types
@@ -318,7 +324,7 @@ export class WithingsProvider implements SyncProvider {
     return refreshed;
   }
 
-  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -338,45 +344,37 @@ export class WithingsProvider implements SyncProvider {
     const nowUnix = Math.floor(Date.now() / 1000);
 
     try {
-      const measCount = await withSyncLog(db, this.id, "body_measurement", async () => {
-        let count = 0;
-        let offset = 0;
-        let more = 1;
+      const measCount = await withSyncLog(
+        db,
+        this.id,
+        "body_measurement",
+        async () => {
+          let count = 0;
+          let offset = 0;
+          let more = 1;
 
-        while (more) {
-          const response = await client.getMeas(sinceUnix, nowUnix, offset);
+          while (more) {
+            const response = await client.getMeas(sinceUnix, nowUnix, offset);
 
-          for (const group of response.measuregrps) {
-            const parsed = parseMeasureGroup(group);
+            for (const group of response.measuregrps) {
+              const parsed = parseMeasureGroup(group);
 
-            // Skip empty groups (objectives or unknown types)
-            if (
-              parsed.weightKg === undefined &&
-              parsed.systolicBp === undefined &&
-              parsed.temperatureC === undefined
-            ) {
-              continue;
-            }
+              // Skip empty groups (objectives or unknown types)
+              if (
+                parsed.weightKg === undefined &&
+                parsed.systolicBp === undefined &&
+                parsed.temperatureC === undefined
+              ) {
+                continue;
+              }
 
-            try {
-              await db
-                .insert(bodyMeasurement)
-                .values({
-                  providerId: this.id,
-                  externalId: parsed.externalId,
-                  recordedAt: parsed.recordedAt,
-                  weightKg: parsed.weightKg,
-                  bodyFatPct: parsed.bodyFatPct,
-                  muscleMassKg: parsed.muscleMassKg,
-                  boneMassKg: parsed.boneMassKg,
-                  systolicBp: parsed.systolicBp,
-                  diastolicBp: parsed.diastolicBp,
-                  heartPulse: parsed.heartPulse,
-                  temperatureC: parsed.temperatureC,
-                })
-                .onConflictDoUpdate({
-                  target: [bodyMeasurement.providerId, bodyMeasurement.externalId],
-                  set: {
+              try {
+                await db
+                  .insert(bodyMeasurement)
+                  .values({
+                    providerId: this.id,
+                    externalId: parsed.externalId,
+                    recordedAt: parsed.recordedAt,
                     weightKg: parsed.weightKg,
                     bodyFatPct: parsed.bodyFatPct,
                     muscleMassKg: parsed.muscleMassKg,
@@ -385,24 +383,38 @@ export class WithingsProvider implements SyncProvider {
                     diastolicBp: parsed.diastolicBp,
                     heartPulse: parsed.heartPulse,
                     temperatureC: parsed.temperatureC,
-                  },
+                  })
+                  .onConflictDoUpdate({
+                    target: [bodyMeasurement.providerId, bodyMeasurement.externalId],
+                    set: {
+                      weightKg: parsed.weightKg,
+                      bodyFatPct: parsed.bodyFatPct,
+                      muscleMassKg: parsed.muscleMassKg,
+                      boneMassKg: parsed.boneMassKg,
+                      systolicBp: parsed.systolicBp,
+                      diastolicBp: parsed.diastolicBp,
+                      heartPulse: parsed.heartPulse,
+                      temperatureC: parsed.temperatureC,
+                    },
+                  });
+                count++;
+              } catch (err) {
+                errors.push({
+                  message: err instanceof Error ? err.message : String(err),
+                  externalId: parsed.externalId,
+                  cause: err,
                 });
-              count++;
-            } catch (err) {
-              errors.push({
-                message: err instanceof Error ? err.message : String(err),
-                externalId: parsed.externalId,
-                cause: err,
-              });
+              }
             }
+
+            more = response.more;
+            offset = response.offset;
           }
 
-          more = response.more;
-          offset = response.offset;
-        }
-
-        return { recordCount: count, result: count };
-      });
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += measCount;
     } catch (err) {
       errors.push({

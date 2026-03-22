@@ -447,8 +447,9 @@ export class StravaProvider implements SyncProvider {
   async sync(
     db: SyncDatabase,
     since: Date,
-    onProgress?: import("./types.ts").SyncProgressCallback,
+    options?: import("./types.ts").SyncOptions,
   ): Promise<SyncResult> {
+    const onProgress = options?.onProgress;
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;

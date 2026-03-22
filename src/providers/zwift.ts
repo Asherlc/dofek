@@ -11,7 +11,13 @@ import { activity, dailyMetrics, metricStream } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
-import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
+import type {
+  ProviderAuthSetup,
+  SyncError,
+  SyncOptions,
+  SyncProvider,
+  SyncResult,
+} from "./types.ts";
 
 // ============================================================
 // Provider implementation
@@ -97,7 +103,7 @@ export class ZwiftProvider implements SyncProvider {
     return { accessToken: stored.accessToken, athleteId };
   }
 
-  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -115,97 +121,103 @@ export class ZwiftProvider implements SyncProvider {
 
     // 1. Sync activities (paginated)
     try {
-      const activityCount = await withSyncLog(db, this.id, "activity", async () => {
-        let count = 0;
-        let offset = 0;
-        const PAGE_SIZE = 20;
-        let done = false;
+      const activityCount = await withSyncLog(
+        db,
+        this.id,
+        "activity",
+        async () => {
+          let count = 0;
+          let offset = 0;
+          const PAGE_SIZE = 20;
+          let done = false;
 
-        while (!done) {
-          const activities = await client.getActivities(offset, PAGE_SIZE);
-          if (activities.length === 0) break;
+          while (!done) {
+            const activities = await client.getActivities(offset, PAGE_SIZE);
+            if (activities.length === 0) break;
 
-          for (const raw of activities) {
-            const actStart = new Date(raw.startDate);
-            if (actStart < since) {
-              done = true;
-              break;
-            }
+            for (const raw of activities) {
+              const actStart = new Date(raw.startDate);
+              if (actStart < since) {
+                done = true;
+                break;
+              }
 
-            const parsed = parseZwiftActivity(raw);
-            try {
-              await db
-                .insert(activity)
-                .values({
-                  providerId: this.id,
-                  externalId: parsed.externalId,
-                  activityType: parsed.activityType,
-                  name: parsed.name,
-                  startedAt: parsed.startedAt,
-                  endedAt: parsed.endedAt,
-                  raw: parsed.raw,
-                })
-                .onConflictDoUpdate({
-                  target: [activity.providerId, activity.externalId],
-                  set: {
+              const parsed = parseZwiftActivity(raw);
+              try {
+                await db
+                  .insert(activity)
+                  .values({
+                    providerId: this.id,
+                    externalId: parsed.externalId,
                     activityType: parsed.activityType,
                     name: parsed.name,
                     startedAt: parsed.startedAt,
                     endedAt: parsed.endedAt,
                     raw: parsed.raw,
-                  },
-                });
-              count++;
+                  })
+                  .onConflictDoUpdate({
+                    target: [activity.providerId, activity.externalId],
+                    set: {
+                      activityType: parsed.activityType,
+                      name: parsed.name,
+                      startedAt: parsed.startedAt,
+                      endedAt: parsed.endedAt,
+                      raw: parsed.raw,
+                    },
+                  });
+                count++;
 
-              // Fetch detailed streams
-              try {
-                const detail = await client.getActivityDetail(raw.id);
-                if (detail.fitnessData?.fullDataUrl) {
-                  const fitnessData = await client.getFitnessData(detail.fitnessData.fullDataUrl);
-                  const samples = parseZwiftFitnessData(fitnessData, parsed.startedAt);
-                  const BATCH_SIZE = 500;
-                  for (let i = 0; i < samples.length; i += BATCH_SIZE) {
-                    const batch = samples.slice(i, i + BATCH_SIZE);
-                    await db
-                      .insert(metricStream)
-                      .values(
-                        batch.map((s) => ({
-                          providerId: this.id,
-                          recordedAt: s.recordedAt,
-                          heartRate: s.heartRate,
-                          power: s.power,
-                          cadence: s.cadence,
-                          speed: s.speed,
-                          altitude: s.altitude,
-                          lat: s.lat,
-                          lng: s.lng,
-                        })),
-                      )
-                      .onConflictDoNothing();
+                // Fetch detailed streams
+                try {
+                  const detail = await client.getActivityDetail(raw.id);
+                  if (detail.fitnessData?.fullDataUrl) {
+                    const fitnessData = await client.getFitnessData(detail.fitnessData.fullDataUrl);
+                    const samples = parseZwiftFitnessData(fitnessData, parsed.startedAt);
+                    const BATCH_SIZE = 500;
+                    for (let i = 0; i < samples.length; i += BATCH_SIZE) {
+                      const batch = samples.slice(i, i + BATCH_SIZE);
+                      await db
+                        .insert(metricStream)
+                        .values(
+                          batch.map((s) => ({
+                            providerId: this.id,
+                            recordedAt: s.recordedAt,
+                            heartRate: s.heartRate,
+                            power: s.power,
+                            cadence: s.cadence,
+                            speed: s.speed,
+                            altitude: s.altitude,
+                            lat: s.lat,
+                            lng: s.lng,
+                          })),
+                        )
+                        .onConflictDoNothing();
+                    }
                   }
+                } catch (streamErr) {
+                  // Non-fatal: log but continue
+                  errors.push({
+                    message: `streams ${parsed.externalId}: ${streamErr instanceof Error ? streamErr.message : String(streamErr)}`,
+                    externalId: parsed.externalId,
+                    cause: streamErr,
+                  });
                 }
-              } catch (streamErr) {
-                // Non-fatal: log but continue
+              } catch (err) {
                 errors.push({
-                  message: `streams ${parsed.externalId}: ${streamErr instanceof Error ? streamErr.message : String(streamErr)}`,
+                  message: err instanceof Error ? err.message : String(err),
                   externalId: parsed.externalId,
-                  cause: streamErr,
+                  cause: err,
                 });
               }
-            } catch (err) {
-              errors.push({
-                message: err instanceof Error ? err.message : String(err),
-                externalId: parsed.externalId,
-                cause: err,
-              });
             }
+
+            offset += PAGE_SIZE;
           }
 
-          offset += PAGE_SIZE;
-        }
-
-        return { recordCount: count, result: count };
-      });
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += activityCount;
     } catch (err) {
       errors.push({
@@ -216,25 +228,31 @@ export class ZwiftProvider implements SyncProvider {
 
     // 2. Sync power curve as daily metrics (FTP, VO2max)
     try {
-      const powerCount = await withSyncLog(db, this.id, "power_curve", async () => {
-        const curve = await client.getPowerCurve();
-        if (!curve.zFtp && !curve.vo2Max) return { recordCount: 0, result: 0 };
+      const powerCount = await withSyncLog(
+        db,
+        this.id,
+        "power_curve",
+        async () => {
+          const curve = await client.getPowerCurve();
+          if (!curve.zFtp && !curve.vo2Max) return { recordCount: 0, result: 0 };
 
-        const today = new Date().toISOString().slice(0, 10);
-        await db
-          .insert(dailyMetrics)
-          .values({
-            date: today,
-            providerId: this.id,
-            vo2max: curve.vo2Max,
-          })
-          .onConflictDoUpdate({
-            target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
-            set: { vo2max: curve.vo2Max },
-          });
+          const today = new Date().toISOString().slice(0, 10);
+          await db
+            .insert(dailyMetrics)
+            .values({
+              date: today,
+              providerId: this.id,
+              vo2max: curve.vo2Max,
+            })
+            .onConflictDoUpdate({
+              target: [dailyMetrics.date, dailyMetrics.providerId, dailyMetrics.sourceName],
+              set: { vo2max: curve.vo2Max },
+            });
 
-        return { recordCount: 1, result: 1 };
-      });
+          return { recordCount: 1, result: 1 };
+        },
+        options?.userId,
+      );
       recordsSynced += powerCount;
     } catch (err) {
       errors.push({

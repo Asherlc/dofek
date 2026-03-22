@@ -326,9 +326,9 @@ describe("processSyncJob", () => {
           async (
             _db: SyncDatabase,
             _since: Date,
-            onProgress?: (percentage: number, message: string) => void,
+            options?: { onProgress?: (percentage: number, message: string) => void },
           ) => {
-            onProgress?.(50, "5/10 activities");
+            options?.onProgress?.(50, "5/10 activities");
             return { provider: "test", recordsSynced: 10, errors: [], duration: 100 };
           },
         ),
@@ -388,7 +388,11 @@ describe("processSyncJob", () => {
     await runSyncJob(createMockJob({ sinceDays: 30 }), mockDb);
 
     const expectedSince = new Date(now - 30 * 24 * 60 * 60 * 1000);
-    expect(provider.sync).toHaveBeenCalledWith(mockDb, expectedSince, expect.any(Function));
+    expect(provider.sync).toHaveBeenCalledWith(
+      mockDb,
+      expectedSince,
+      expect.objectContaining({ onProgress: expect.any(Function), userId: "user-1" }),
+    );
   });
 
   it("uses epoch when sinceDays is not provided", async () => {
@@ -397,6 +401,10 @@ describe("processSyncJob", () => {
 
     await runSyncJob(createMockJob({}), mockDb);
 
-    expect(provider.sync).toHaveBeenCalledWith(mockDb, new Date(0), expect.any(Function));
+    expect(provider.sync).toHaveBeenCalledWith(
+      mockDb,
+      new Date(0),
+      expect.objectContaining({ onProgress: expect.any(Function), userId: "user-1" }),
+    );
   });
 });
