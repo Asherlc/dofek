@@ -3,6 +3,7 @@ import { ProviderModel } from "dofek/providers/provider-model";
 import { getAllProviders, registerProvider } from "dofek/providers/registry";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { queryCache } from "../lib/cache.ts";
 import { startWorker } from "../lib/start-worker.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
@@ -278,6 +279,14 @@ export const syncRouter = router({
     });
     const parsed = progressSchema.safeParse(job.progress);
     const progress = parsed.success ? parsed.data : undefined;
+
+    // When a sync job finishes, invalidate the server-side cache so the next
+    // providers fetch returns fresh timestamps instead of stale cached data.
+    if (state === "completed" || state === "failed") {
+      await queryCache.invalidateByPrefix(`${ctx.userId}:sync.providers`);
+      await queryCache.invalidateByPrefix(`${ctx.userId}:sync.providerStats`);
+      await queryCache.invalidateByPrefix(`${ctx.userId}:sync.logs`);
+    }
 
     return {
       status: mapBullMqStateToSyncStatus(state),

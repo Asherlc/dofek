@@ -4,7 +4,13 @@ import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
-import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
+import type {
+  ProviderAuthSetup,
+  SyncError,
+  SyncOptions,
+  SyncProvider,
+  SyncResult,
+} from "./types.ts";
 
 const VELOHERO_BASE_URL = "https://app.velohero.com";
 
@@ -60,7 +66,7 @@ export class VeloHeroProvider implements SyncProvider {
     };
   }
 
-  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -90,49 +96,55 @@ export class VeloHeroProvider implements SyncProvider {
     const toDate = formatDate(new Date());
 
     try {
-      const activityCount = await withSyncLog(db, this.id, "activity", async () => {
-        let count = 0;
+      const activityCount = await withSyncLog(
+        db,
+        this.id,
+        "activity",
+        async () => {
+          let count = 0;
 
-        logger.info(`[velohero] Fetching workouts from ${sinceDate} to ${toDate}`);
-        const workouts = await client.getWorkouts(sinceDate, toDate);
-        logger.info(`[velohero] Fetched ${workouts.length} workouts`);
+          logger.info(`[velohero] Fetching workouts from ${sinceDate} to ${toDate}`);
+          const workouts = await client.getWorkouts(sinceDate, toDate);
+          logger.info(`[velohero] Fetched ${workouts.length} workouts`);
 
-        for (const workout of workouts) {
-          const parsed = parseVeloHeroWorkout(workout);
-          try {
-            await db
-              .insert(activity)
-              .values({
-                providerId: this.id,
-                externalId: parsed.externalId,
-                activityType: parsed.activityType,
-                name: parsed.name,
-                startedAt: parsed.startedAt,
-                endedAt: parsed.endedAt,
-                raw: parsed.raw,
-              })
-              .onConflictDoUpdate({
-                target: [activity.providerId, activity.externalId],
-                set: {
+          for (const workout of workouts) {
+            const parsed = parseVeloHeroWorkout(workout);
+            try {
+              await db
+                .insert(activity)
+                .values({
+                  providerId: this.id,
+                  externalId: parsed.externalId,
                   activityType: parsed.activityType,
                   name: parsed.name,
                   startedAt: parsed.startedAt,
                   endedAt: parsed.endedAt,
                   raw: parsed.raw,
-                },
+                })
+                .onConflictDoUpdate({
+                  target: [activity.providerId, activity.externalId],
+                  set: {
+                    activityType: parsed.activityType,
+                    name: parsed.name,
+                    startedAt: parsed.startedAt,
+                    endedAt: parsed.endedAt,
+                    raw: parsed.raw,
+                  },
+                });
+              count++;
+            } catch (err) {
+              errors.push({
+                message: err instanceof Error ? err.message : String(err),
+                externalId: parsed.externalId,
+                cause: err,
               });
-            count++;
-          } catch (err) {
-            errors.push({
-              message: err instanceof Error ? err.message : String(err),
-              externalId: parsed.externalId,
-              cause: err,
-            });
+            }
           }
-        }
 
-        return { recordCount: count, result: count };
-      });
+          return { recordCount: count, result: count };
+        },
+        options?.userId,
+      );
       recordsSynced += activityCount;
     } catch (err) {
       errors.push({
