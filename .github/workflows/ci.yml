@@ -76,7 +76,18 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec vitest run --project unit
+      - run: pnpm exec vitest run --project unit --coverage
+        env:
+          VITEST_COVERAGE_SKIP_THRESHOLDS: "true"
+      - uses: codecov/codecov-action@v5
+        with:
+          files: coverage/lcov.info
+          flags: unit
+          token: ${{ secrets.CODECOV_TOKEN }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-unit
+          path: coverage/
 
   test-integration:
     name: Integration Tests
@@ -115,39 +126,24 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec vitest run --project integration --reporter=verbose
+      - run: pnpm exec vitest run --project integration --coverage
         timeout-minutes: 10
+        env:
+          VITEST_COVERAGE_SKIP_THRESHOLDS: "true"
+      - uses: codecov/codecov-action@v5
+        with:
+          files: coverage/lcov.info
+          flags: integration
+          token: ${{ secrets.CODECOV_TOKEN }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-integration
+          path: coverage/
 
   coverage:
     name: Coverage
     needs: [test-unit, test-integration]
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: timescale/timescaledb:latest-pg16
-        env:
-          POSTGRES_DB: test
-          POSTGRES_USER: test
-          POSTGRES_PASSWORD: test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U test -d test"
-          --health-interval 2s
-          --health-timeout 5s
-          --health-retries 15
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 2s
-          --health-timeout 5s
-          --health-retries 15
-    env:
-      TEST_DATABASE_URL: postgres://test:test@localhost:5432/test
-      REDIS_URL: redis://localhost:6379
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -156,29 +152,25 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec vitest run --coverage
-      - name: Coverage summary
-        if: always()
-        run: |
-          node -e "
-            const r = require('./coverage/coverage-summary.json').total;
-            const fmt = (m) => m.pct.toFixed(2) + '%';
-            const lines = [
-              '## Coverage Summary',
-              '',
-              '| Metric | Coverage |',
-              '|--------|----------|',
-              '| Lines | ' + fmt(r.lines) + ' |',
-              '| Branches | ' + fmt(r.branches) + ' |',
-              '| Functions | ' + fmt(r.functions) + ' |',
-              '| Statements | ' + fmt(r.statements) + ' |',
-            ];
-            require('fs').appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n') + '\n');
-          "
-      - uses: codecov/codecov-action@v5
+      - uses: actions/download-artifact@v4
         with:
-          files: coverage/lcov.info
-          token: ${{ secrets.CODECOV_TOKEN }}
+          name: coverage-unit
+          path: coverage-unit
+      - uses: actions/download-artifact@v4
+        with:
+          name: coverage-integration
+          path: coverage-integration
+      - name: Merge and check coverage
+        run: |
+          mkdir -p .nyc_output
+          cp coverage-unit/coverage-final.json .nyc_output/unit.json
+          cp coverage-integration/coverage-final.json .nyc_output/integration.json
+          pnpm exec nyc merge .nyc_output merged-coverage.json
+          mkdir -p final-coverage
+          cp merged-coverage.json final-coverage/coverage-final.json
+          pnpm exec nyc report --temp-dir final-coverage --reporter=text-summary
+          pnpm exec nyc check-coverage --temp-dir final-coverage \
+            --lines 93.5 --branches 89 --functions 94.5 --statements 93.5
 
   test-mobile:
     name: Mobile Tests
@@ -370,6 +362,7 @@ jobs:
           restore-keys: |
             stryker-v2-${{ github.head_ref || 'main' }}-
             stryker-v2-main-
+          save-always: true
       - name: Get changed files
         if: github.event_name == 'pull_request'
         id: changed
@@ -516,17 +509,20 @@ jobs:
 
       - name: Setup code signing
         env:
-          CERTIFICATE_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERT_BASE64 }}
-          CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERT_PASSWORD }}
+          DEV_CERT_BASE64: ${{ secrets.IOS_DEVELOPMENT_CERT_BASE64 }}
+          DEV_CERT_PASSWORD: ${{ secrets.IOS_DEVELOPMENT_CERT_PASSWORD }}
+          DIST_CERT_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERT_BASE64 }}
+          DIST_CERT_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERT_PASSWORD }}
         run: |
           KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
           KEYCHAIN_PASSWORD=$(uuidgen)
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          CERT_PATH=$RUNNER_TEMP/certificate.p12
-          echo -n "$CERTIFICATE_BASE64" | base64 --decode > "$CERT_PATH"
-          security import "$CERT_PATH" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          echo -n "$DEV_CERT_BASE64" | base64 --decode > $RUNNER_TEMP/dev-cert.p12
+          security import $RUNNER_TEMP/dev-cert.p12 -P "$DEV_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          echo -n "$DIST_CERT_BASE64" | base64 --decode > $RUNNER_TEMP/dist-cert.p12
+          security import $RUNNER_TEMP/dist-cert.p12 -P "$DIST_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
           security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security list-keychain -d user -s "$KEYCHAIN_PATH"
 
@@ -555,7 +551,6 @@ jobs:
             -authenticationKeyPath ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8 \
             -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
             -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" \
-            CODE_SIGN_STYLE=Automatic \
             DEVELOPMENT_TEAM=68LEL35DQ9
 
       - name: Export & upload to TestFlight

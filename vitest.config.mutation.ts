@@ -7,7 +7,7 @@ export default defineConfig({
   },
   test: {
     globals: true,
-    testTimeout: 60_000,
+    testTimeout: 30_000,
     hookTimeout: 120_000,
     fileParallelism: false,
     include: [
