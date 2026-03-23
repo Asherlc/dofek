@@ -91,7 +91,11 @@ export class OpenFoodFactsClient {
     }
   }
 
-  async searchFoods(query: string, limit = 20, signal?: AbortSignal): Promise<FoodDatabaseResult[]> {
+  async searchFoods(
+    query: string,
+    limit = 20,
+    signal?: AbortSignal,
+  ): Promise<FoodDatabaseResult[]> {
     try {
       if (!this.#localePreferences.countryTag) {
         return await this.#runSearch(query, limit, undefined, signal);
