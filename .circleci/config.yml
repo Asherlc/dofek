@@ -97,16 +97,16 @@ jobs:
       - store_artifacts:
           path: coverage
 
-  test-ios:
+  test-mobile:
     executor: node
     steps:
       - setup
       - run:
-          name: Run iOS component tests
-          command: pnpm exec vitest run --project ios
+          name: Run mobile component tests
+          command: pnpm exec vitest run --project mobile
       - run:
           name: Verify iOS Metro bundle
-          command: cd packages/ios && pnpm expo export --platform ios --clear
+          command: cd packages/mobile && pnpm expo export --platform ios --clear
 
   test-e2e-web:
     executor: machine
@@ -204,7 +204,7 @@ jobs:
                 | { grep -v '\.config\.' || true; } \
                 | { grep -v 'drizzle/' || true; } \
                 | { grep -v 'scripts/' || true; } \
-                | { grep -v 'packages/ios/' || true; } \
+                | { grep -v 'packages/mobile/' || true; } \
                 | tr '\n' ',' \
                 | sed 's/,$//')
               echo "export MUTATE_FILES=$FILES" >> "$BASH_ENV"
@@ -235,7 +235,7 @@ workflows:
       - typescript
       - knip
       - test
-      - test-ios
+      - test-mobile
       - test-e2e-web
       - mutation:
           filters:

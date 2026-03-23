@@ -4,7 +4,7 @@
  *
  * Usage:
  *   node --experimental-transform-types scripts/generate-ota-metadata.ts \
- *     --dist packages/ios/dist \
+ *     --dist packages/mobile/dist \
  *     --runtime-version 1.0 \
  *     --output /tmp/ota-release/metadata.json
  */
