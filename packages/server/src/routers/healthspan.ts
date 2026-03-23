@@ -1,3 +1,4 @@
+import { scoreToYearsDelta } from "@dofek/scoring/healthspan-years";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
@@ -28,11 +29,15 @@ export interface HealthspanMetric {
   score: number;
   /** Brief interpretation */
   status: "excellent" | "good" | "fair" | "poor";
+  /** Biological age delta in years for this metric alone */
+  yearsDelta: number;
 }
 
 export interface HealthspanResult {
   /** Composite healthspan score 0-100, or null when there is no data */
   healthspanScore: number | null;
+  /** Composite biological age delta in years, or null when no score */
+  yearsDelta: number | null;
   /** Individual metric breakdowns */
   metrics: HealthspanMetric[];
   /** Historical weekly scores derived from resting heart rate, steps, and VO2 max only */
@@ -302,6 +307,7 @@ export const healthspanRouter = router({
       if (!row) {
         return {
           healthspanScore: null,
+          yearsDelta: null,
           metrics: [],
           history: [],
           trend: null,
@@ -321,6 +327,7 @@ export const healthspanRouter = router({
             row.bedtime_stddev_min != null ? Number(row.bedtime_stddev_min) : null,
           ),
           status: "good",
+          yearsDelta: 0,
         },
         {
           name: "Sleep Duration",
@@ -328,6 +335,7 @@ export const healthspanRouter = router({
           unit: "min/night",
           score: scoreSleepDuration(row.avg_sleep_min != null ? Number(row.avg_sleep_min) : null),
           status: "good",
+          yearsDelta: 0,
         },
         {
           name: "Aerobic Activity",
@@ -337,6 +345,7 @@ export const healthspanRouter = router({
             row.weekly_aerobic_min != null ? Number(row.weekly_aerobic_min) : null,
           ),
           status: "good",
+          yearsDelta: 0,
         },
         {
           name: "High Intensity",
@@ -349,6 +358,7 @@ export const healthspanRouter = router({
             row.weekly_high_intensity_min != null ? Number(row.weekly_high_intensity_min) : null,
           ),
           status: "good",
+          yearsDelta: 0,
         },
         {
           name: "Strength Training",
@@ -361,6 +371,7 @@ export const healthspanRouter = router({
             row.sessions_per_week != null ? Number(row.sessions_per_week) : null,
           ),
           status: "good",
+          yearsDelta: 0,
         },
         {
           name: "Daily Steps",
@@ -368,6 +379,7 @@ export const healthspanRouter = router({
           unit: "steps/day",
           score: scoreSteps(row.avg_steps != null ? Number(row.avg_steps) : null),
           status: "good",
+          yearsDelta: 0,
         },
         {
           name: "VO2 Max",
@@ -375,6 +387,7 @@ export const healthspanRouter = router({
           unit: "mL/kg/min",
           score: scoreVo2Max(row.latest_vo2max != null ? Number(row.latest_vo2max) : null),
           status: "good",
+          yearsDelta: 0,
         },
         {
           name: "Resting Heart Rate",
@@ -383,6 +396,7 @@ export const healthspanRouter = router({
           unit: "bpm",
           score: scoreRestingHr(row.avg_resting_hr != null ? Number(row.avg_resting_hr) : null),
           status: "good",
+          yearsDelta: 0,
         },
         {
           name: "Lean Body Mass",
@@ -390,12 +404,14 @@ export const healthspanRouter = router({
           unit: "%",
           score: scoreLeanMassPct(leanMassPct),
           status: "good",
+          yearsDelta: 0,
         },
       ];
 
-      // Set status based on score
+      // Set status and yearsDelta based on score
       for (const m of metricDefs) {
         m.status = scoreToStatus(m.score);
+        m.yearsDelta = scoreToYearsDelta(m.score);
       }
 
       // Composite: equal weight across metrics that have real data.
@@ -441,6 +457,7 @@ export const healthspanRouter = router({
 
       return {
         healthspanScore,
+        yearsDelta: healthspanScore != null ? scoreToYearsDelta(healthspanScore) : null,
         metrics: metricDefs,
         history,
         trend,
