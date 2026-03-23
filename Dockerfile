@@ -147,6 +147,8 @@ COPY --chown=node:node entrypoint.sh .
 
 # Create job-files directory for upload chunks (volume mount point)
 RUN mkdir -p /app/job-files && chown node:node /app/job-files
+# Create updates directory for OTA bundles (bind mount point)
+RUN mkdir -p /app/updates && chown node:node /app/updates
 
 # Run as non-root user (node user is built into node:22-slim, uid 1000)
 USER node
