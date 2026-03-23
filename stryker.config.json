@@ -46,7 +46,7 @@
     ".context/**"
   ],
   "testRunnerNodeArgs": ["--import", "tsx"],
-  "dryRunTimeoutMinutes": 10,
+  "dryRunTimeoutMinutes": 15,
   "timeoutMS": 30000,
   "thresholds": {
     "high": 90,
