@@ -18,6 +18,7 @@ import { Route as ProvidersRouteImport } from './routes/providers'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as PredictionsRouteImport } from './routes/predictions'
 import { Route as NutritionRouteImport } from './routes/nutrition'
+import { Route as MonthlyReportRouteImport } from './routes/monthly-report'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as InsightsRouteImport } from './routes/insights'
 import { Route as DashboardRouteImport } from './routes/dashboard'
@@ -82,6 +83,11 @@ const PredictionsRoute = PredictionsRouteImport.update({
 const NutritionRoute = NutritionRouteImport.update({
   id: '/nutrition',
   path: '/nutrition',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MonthlyReportRoute = MonthlyReportRouteImport.update({
+  id: '/monthly-report',
+  path: '/monthly-report',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -193,6 +199,7 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof DashboardRoute
   '/insights': typeof InsightsRoute
   '/login': typeof LoginRoute
+  '/monthly-report': typeof MonthlyReportRoute
   '/nutrition': typeof NutritionRouteWithChildren
   '/predictions': typeof PredictionsRoute
   '/privacy': typeof PrivacyRoute
@@ -224,6 +231,7 @@ export interface FileRoutesByTo {
   '/dashboard': typeof DashboardRoute
   '/insights': typeof InsightsRoute
   '/login': typeof LoginRoute
+  '/monthly-report': typeof MonthlyReportRoute
   '/predictions': typeof PredictionsRoute
   '/privacy': typeof PrivacyRoute
   '/settings': typeof SettingsRoute
@@ -253,6 +261,7 @@ export interface FileRoutesById {
   '/dashboard': typeof DashboardRoute
   '/insights': typeof InsightsRoute
   '/login': typeof LoginRoute
+  '/monthly-report': typeof MonthlyReportRoute
   '/nutrition': typeof NutritionRouteWithChildren
   '/predictions': typeof PredictionsRoute
   '/privacy': typeof PrivacyRoute
@@ -286,6 +295,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/insights'
     | '/login'
+    | '/monthly-report'
     | '/nutrition'
     | '/predictions'
     | '/privacy'
@@ -317,6 +327,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/insights'
     | '/login'
+    | '/monthly-report'
     | '/predictions'
     | '/privacy'
     | '/settings'
@@ -345,6 +356,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/insights'
     | '/login'
+    | '/monthly-report'
     | '/nutrition'
     | '/predictions'
     | '/privacy'
@@ -377,6 +389,7 @@ export interface RootRouteChildren {
   DashboardRoute: typeof DashboardRoute
   InsightsRoute: typeof InsightsRoute
   LoginRoute: typeof LoginRoute
+  MonthlyReportRoute: typeof MonthlyReportRoute
   NutritionRoute: typeof NutritionRouteWithChildren
   PredictionsRoute: typeof PredictionsRoute
   PrivacyRoute: typeof PrivacyRoute
@@ -452,6 +465,13 @@ declare module '@tanstack/react-router' {
       path: '/nutrition'
       fullPath: '/nutrition'
       preLoaderRoute: typeof NutritionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/monthly-report': {
+      id: '/monthly-report'
+      path: '/monthly-report'
+      fullPath: '/monthly-report'
+      preLoaderRoute: typeof MonthlyReportRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -659,6 +679,7 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardRoute: DashboardRoute,
   InsightsRoute: InsightsRoute,
   LoginRoute: LoginRoute,
+  MonthlyReportRoute: MonthlyReportRoute,
   NutritionRoute: NutritionRouteWithChildren,
   PredictionsRoute: PredictionsRoute,
   PrivacyRoute: PrivacyRoute,
