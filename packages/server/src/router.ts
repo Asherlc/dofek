@@ -4,6 +4,7 @@ import { authRouter } from "./routers/auth.ts";
 import { behaviorImpactRouter } from "./routers/behavior-impact.ts";
 import { bodyRouter } from "./routers/body.ts";
 import { bodyAnalyticsRouter } from "./routers/body-analytics.ts";
+import { breathworkRouter } from "./routers/breathwork.ts";
 import { calendarRouter } from "./routers/calendar.ts";
 import { correlationRouter } from "./routers/correlation.ts";
 import { credentialAuthRouter } from "./routers/credential-auth.ts";
@@ -50,6 +51,7 @@ export const appRouter = router({
   activity: activityRouter,
   anomalyDetection: anomalyDetectionRouter,
   behaviorImpact: behaviorImpactRouter,
+  breathwork: breathworkRouter,
   personalization: personalizationRouter,
   auth: authRouter,
   sleep: sleepRouter,

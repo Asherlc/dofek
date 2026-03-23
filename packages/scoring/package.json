@@ -10,6 +10,7 @@
     "./strain-target": "./src/strain-target.ts",
     "./sleep-performance": "./src/sleep-performance.ts",
     "./healthspan-years": "./src/healthspan-years.ts",
-    "./menstrual-cycle": "./src/menstrual-cycle.ts"
+    "./menstrual-cycle": "./src/menstrual-cycle.ts",
+    "./breathwork": "./src/breathwork.ts"
   }
 }

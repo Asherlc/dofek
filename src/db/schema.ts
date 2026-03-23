@@ -891,6 +891,30 @@ export const lifeEvents = fitness.table(
 );
 
 // ============================================================
+// Breathwork sessions
+// ============================================================
+
+export const breathworkSession = fitness.table(
+  "breathwork_session",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => userProfile.id),
+    techniqueId: text("technique_id").notNull(),
+    rounds: integer("rounds").notNull(),
+    durationSeconds: integer("duration_seconds").notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("breathwork_session_user_idx").on(table.userId),
+    index("breathwork_session_started_at_idx").on(table.startedAt.desc()),
+  ],
+);
+
+// ============================================================
 // Shared health reports
 // ============================================================
 

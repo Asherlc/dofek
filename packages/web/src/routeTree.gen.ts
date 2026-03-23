@@ -25,6 +25,7 @@ import { Route as HealthReportRouteImport } from './routes/health-report'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as CycleRouteImport } from './routes/cycle'
 import { Route as CorrelationRouteImport } from './routes/correlation'
+import { Route as BreathworkRouteImport } from './routes/breathwork'
 import { Route as BodyRouteImport } from './routes/body'
 import { Route as BehaviorImpactRouteImport } from './routes/behavior-impact'
 import { Route as IndexRouteImport } from './routes/index'
@@ -122,6 +123,11 @@ const CorrelationRoute = CorrelationRouteImport.update({
   path: '/correlation',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BreathworkRoute = BreathworkRouteImport.update({
+  id: '/breathwork',
+  path: '/breathwork',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const BodyRoute = BodyRouteImport.update({
   id: '/body',
   path: '/body',
@@ -207,6 +213,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/behavior-impact': typeof BehaviorImpactRoute
   '/body': typeof BodyRoute
+  '/breathwork': typeof BreathworkRoute
   '/correlation': typeof CorrelationRoute
   '/cycle': typeof CycleRoute
   '/dashboard': typeof DashboardRoute
@@ -241,6 +248,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/behavior-impact': typeof BehaviorImpactRoute
   '/body': typeof BodyRoute
+  '/breathwork': typeof BreathworkRoute
   '/correlation': typeof CorrelationRoute
   '/cycle': typeof CycleRoute
   '/dashboard': typeof DashboardRoute
@@ -273,6 +281,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/behavior-impact': typeof BehaviorImpactRoute
   '/body': typeof BodyRoute
+  '/breathwork': typeof BreathworkRoute
   '/correlation': typeof CorrelationRoute
   '/cycle': typeof CycleRoute
   '/dashboard': typeof DashboardRoute
@@ -309,6 +318,7 @@ export interface FileRouteTypes {
     | '/'
     | '/behavior-impact'
     | '/body'
+    | '/breathwork'
     | '/correlation'
     | '/cycle'
     | '/dashboard'
@@ -343,6 +353,7 @@ export interface FileRouteTypes {
     | '/'
     | '/behavior-impact'
     | '/body'
+    | '/breathwork'
     | '/correlation'
     | '/cycle'
     | '/dashboard'
@@ -374,6 +385,7 @@ export interface FileRouteTypes {
     | '/'
     | '/behavior-impact'
     | '/body'
+    | '/breathwork'
     | '/correlation'
     | '/cycle'
     | '/dashboard'
@@ -409,6 +421,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   BehaviorImpactRoute: typeof BehaviorImpactRoute
   BodyRoute: typeof BodyRoute
+  BreathworkRoute: typeof BreathworkRoute
   CorrelationRoute: typeof CorrelationRoute
   CycleRoute: typeof CycleRoute
   DashboardRoute: typeof DashboardRoute
@@ -540,6 +553,13 @@ declare module '@tanstack/react-router' {
       path: '/correlation'
       fullPath: '/correlation'
       preLoaderRoute: typeof CorrelationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/breathwork': {
+      id: '/breathwork'
+      path: '/breathwork'
+      fullPath: '/breathwork'
+      preLoaderRoute: typeof BreathworkRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/body': {
@@ -715,6 +735,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   BehaviorImpactRoute: BehaviorImpactRoute,
   BodyRoute: BodyRoute,
+  BreathworkRoute: BreathworkRoute,
   CorrelationRoute: CorrelationRoute,
   CycleRoute: CycleRoute,
   DashboardRoute: DashboardRoute,
