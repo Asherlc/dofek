@@ -158,7 +158,8 @@ describe("SettingsScreen export flow", () => {
 
     fireEvent.click(screen.getByText("Download My Data"));
 
-    await vi.runAllTimersAsync();
+    await vi.advanceTimersByTimeAsync(2000);
+    vi.useRealTimers();
 
     await waitFor(() => {
       expect(ExpoFile).toHaveBeenCalled();
@@ -168,8 +169,6 @@ describe("SettingsScreen export flow", () => {
         expect.objectContaining({ mimeType: "application/zip" }),
       );
     });
-
-    vi.useRealTimers();
   });
 
   it("shows an error state when the trigger request fails", async () => {
@@ -226,12 +225,11 @@ describe("SettingsScreen export flow", () => {
 
     fireEvent.click(screen.getByText("Download My Data"));
 
-    await vi.runAllTimersAsync();
+    await vi.advanceTimersByTimeAsync(2000);
+    vi.useRealTimers();
 
     await waitFor(() => {
       expect(screen.getByText("Failed to download export")).toBeTruthy();
     });
-
-    vi.useRealTimers();
   });
 });
