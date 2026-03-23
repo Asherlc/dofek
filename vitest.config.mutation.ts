@@ -9,7 +9,7 @@ export default defineConfig({
     globals: true,
     testTimeout: 30_000,
     hookTimeout: 120_000,
-    fileParallelism: false,
+    fileParallelism: true,
     include: [
       "src/**/*.test.ts",
       "packages/format/src/**/*.test.ts",
