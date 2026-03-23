@@ -20,6 +20,7 @@ import {
   exercise,
   exerciseAlias,
   journalEntry,
+  journalQuestion,
   metricStream,
   sleepSession,
   strengthSet,
@@ -121,14 +122,23 @@ export interface ParsedSleep {
 }
 
 export function parseSleep(record: WhoopSleepRecord): ParsedSleep {
-  const startedAt = new Date(record.start);
-  const endedAt = new Date(record.end);
+  // BFF v0 uses `during` range; fall back to legacy `start`/`end`
+  let startedAt: Date;
+  let endedAt: Date;
+  if (record.during) {
+    const range = parseDuringRange(record.during);
+    startedAt = range.start;
+    endedAt = range.end;
+  } else {
+    startedAt = new Date(record.start ?? "");
+    endedAt = new Date(record.end ?? "");
+  }
 
   if (Number.isNaN(startedAt.getTime())) {
-    throw new Error(`Invalid start timestamp: ${JSON.stringify(record.start)}`);
+    throw new Error(`Invalid start timestamp: ${JSON.stringify(record.start ?? record.during)}`);
   }
   if (Number.isNaN(endedAt.getTime())) {
-    throw new Error(`Invalid end timestamp: ${JSON.stringify(record.end)}`);
+    throw new Error(`Invalid end timestamp: ${JSON.stringify(record.end ?? record.during)}`);
   }
 
   const stages = record.score?.stage_summary;
@@ -1068,18 +1078,38 @@ export class WhoopProvider implements SyncProvider {
           const entries = parseJournalResponse(raw);
           let count = 0;
           for (const entry of entries) {
+            // Ensure the question exists in the reference table
+            await db
+              .insert(journalQuestion)
+              .values({
+                slug: entry.question,
+                displayName: entry.question
+                  .replace(/_/g, " ")
+                  .replace(/\b\w/g, (c) => c.toUpperCase()),
+                category: "custom",
+                dataType: "numeric",
+              })
+              .onConflictDoNothing();
+
+            const userId = options?.userId ?? "00000000-0000-0000-0000-000000000001";
             await db
               .insert(journalEntry)
               .values({
                 date: entry.date.toISOString().split("T")[0] ?? "",
                 providerId: this.id,
-                question: entry.question,
+                userId,
+                questionSlug: entry.question,
                 answerText: entry.answerText,
                 answerNumeric: entry.answerNumeric,
                 impactScore: entry.impactScore,
               })
               .onConflictDoUpdate({
-                target: [journalEntry.providerId, journalEntry.date, journalEntry.question],
+                target: [
+                  journalEntry.userId,
+                  journalEntry.date,
+                  journalEntry.questionSlug,
+                  journalEntry.providerId,
+                ],
                 set: {
                   answerText: entry.answerText,
                   answerNumeric: entry.answerNumeric,

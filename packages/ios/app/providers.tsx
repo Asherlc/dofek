@@ -320,9 +320,7 @@ export default function ProvidersScreen() {
           if (pollingJobIds.current.size === 0) {
             setAnySyncing(false);
           }
-          trpcUtils.sync.providers.invalidate();
-          trpcUtils.sync.providerStats.invalidate();
-          trpcUtils.sync.logs.invalidate();
+          trpcUtils.invalidate();
           return;
         }
 
@@ -375,9 +373,7 @@ export default function ProvidersScreen() {
           },
           { readBlob: readBlobFromFileUri },
         );
-        trpcUtils.sync.providers.invalidate();
-        trpcUtils.sync.providerStats.invalidate();
-        trpcUtils.sync.logs.invalidate();
+        trpcUtils.invalidate();
       } catch (error: unknown) {
         setSharedImportState({
           status: "error",

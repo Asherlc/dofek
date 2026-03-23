@@ -154,6 +154,36 @@ describe("parseSleep — invalid timestamps", () => {
     expect(parsed.startedAt).toEqual(new Date("2026-02-28T23:00:00Z"));
     expect(parsed.endedAt).toEqual(new Date("2026-03-01T07:00:00Z"));
   });
+
+  it("parses 'during' Postgres range when start/end are missing", () => {
+    const parsed = parseSleep(
+      sleepRecord({
+        start: undefined,
+        end: undefined,
+        during: "['2026-02-28T23:00:00.000Z','2026-03-01T07:00:00.000Z')",
+      }),
+    );
+    expect(parsed.startedAt).toEqual(new Date("2026-02-28T23:00:00.000Z"));
+    expect(parsed.endedAt).toEqual(new Date("2026-03-01T07:00:00.000Z"));
+  });
+
+  it("prefers 'during' over start/end when both are present", () => {
+    const parsed = parseSleep(
+      sleepRecord({
+        start: "2026-01-01T00:00:00Z",
+        end: "2026-01-01T08:00:00Z",
+        during: "['2026-02-28T23:00:00.000Z','2026-03-01T07:00:00.000Z')",
+      }),
+    );
+    expect(parsed.startedAt).toEqual(new Date("2026-02-28T23:00:00.000Z"));
+    expect(parsed.endedAt).toEqual(new Date("2026-03-01T07:00:00.000Z"));
+  });
+
+  it("throws when start/end are missing and no during is provided", () => {
+    expect(() => parseSleep(sleepRecord({ start: undefined, end: undefined }))).toThrow(
+      "Invalid start timestamp",
+    );
+  });
 });
 
 describe("parseSleep — edge cases", () => {

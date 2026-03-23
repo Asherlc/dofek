@@ -123,6 +123,7 @@ vi.mock("../lib/trpc", () => ({
 			signIn: { useMutation: () => ({ mutateAsync: mockCredentialSignIn }) },
 		},
 		useUtils: () => ({
+			invalidate: mockInvalidate,
 			sync: {
 				providers: { invalidate: mockInvalidate },
 				providerStats: { invalidate: mockInvalidate },
