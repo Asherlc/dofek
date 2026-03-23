@@ -122,14 +122,23 @@ export interface ParsedSleep {
 }
 
 export function parseSleep(record: WhoopSleepRecord): ParsedSleep {
-  const startedAt = new Date(record.start);
-  const endedAt = new Date(record.end);
+  // BFF v0 uses `during` range; fall back to legacy `start`/`end`
+  let startedAt: Date;
+  let endedAt: Date;
+  if (record.during) {
+    const range = parseDuringRange(record.during);
+    startedAt = range.start;
+    endedAt = range.end;
+  } else {
+    startedAt = new Date(record.start ?? "");
+    endedAt = new Date(record.end ?? "");
+  }
 
   if (Number.isNaN(startedAt.getTime())) {
-    throw new Error(`Invalid start timestamp: ${JSON.stringify(record.start)}`);
+    throw new Error(`Invalid start timestamp: ${JSON.stringify(record.start ?? record.during)}`);
   }
   if (Number.isNaN(endedAt.getTime())) {
-    throw new Error(`Invalid end timestamp: ${JSON.stringify(record.end)}`);
+    throw new Error(`Invalid end timestamp: ${JSON.stringify(record.end ?? record.during)}`);
   }
 
   const stages = record.score?.stage_summary;
