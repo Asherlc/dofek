@@ -13,6 +13,8 @@ export interface SleepPerformanceInfo extends SleepPerformanceResult {
   neededMinutes: number;
   efficiency: number;
   recommendedBedtime: string;
+  /** Date of the sleep session (wake-up date), for freshness checking */
+  sleepDate: string;
 }
 
 export interface SleepNeedResult {
@@ -180,14 +182,17 @@ export const sleepNeedRouter = router({
   performance: cachedProtectedQuery(CacheTTL.MEDIUM).query(
     async ({ ctx }): Promise<SleepPerformanceInfo | null> => {
       // Get last night's sleep
+      const tz = ctx.timezone;
       const sleepRows = await executeWithSchema(
         ctx.db,
         z.object({
           duration_minutes: z.number().nullable(),
           efficiency_pct: z.number().nullable(),
+          sleep_date: z.string(),
         }),
         sql`
-          SELECT duration_minutes, efficiency_pct
+          SELECT duration_minutes, efficiency_pct,
+            (COALESCE(ended_at, started_at + interval '8 hours') AT TIME ZONE ${tz})::date::text AS sleep_date
           FROM fitness.sleep_session
           WHERE user_id = ${ctx.userId}
             AND sleep_type = 'sleep'
@@ -229,6 +234,7 @@ export const sleepNeedRouter = router({
         neededMinutes: Math.round(neededMinutes),
         efficiency,
         recommendedBedtime,
+        sleepDate: lastSleep.sleep_date,
       };
     },
   ),

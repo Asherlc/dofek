@@ -386,14 +386,14 @@ describe("selectRecentDailyLoad", () => {
     expect(selectRecentDailyLoad(rows)).toEqual(rows[1]);
   });
 
-  it("falls back to the most recent non-zero row when latest day is zero", () => {
+  it("returns latest row even when load is zero (rest day shows 0 strain)", () => {
     const rows = [
       { date: "2026-03-14", dailyLoad: 31.2 },
       { date: "2026-03-15", dailyLoad: 0 },
       { date: "2026-03-16", dailyLoad: 0 },
     ];
 
-    expect(selectRecentDailyLoad(rows)).toEqual(rows[0]);
+    expect(selectRecentDailyLoad(rows)).toEqual(rows[2]);
   });
 
   it("returns the latest row when all rows are zero", () => {
@@ -410,33 +410,32 @@ describe("selectRecentDailyLoad", () => {
     expect(selectRecentDailyLoad(rows)).toEqual(rows[0]);
   });
 
-  it("falls back correctly with exactly 2 rows (kills length-2 vs length+2)", () => {
+  it("returns latest zero-load row with exactly 2 rows", () => {
     const rows = [
       { date: "2026-03-15", dailyLoad: 25 },
       { date: "2026-03-16", dailyLoad: 0 },
     ];
-    expect(selectRecentDailyLoad(rows)).toEqual(rows[0]);
+    expect(selectRecentDailyLoad(rows)).toEqual(rows[1]);
   });
 
-  it("skips NaN dailyLoad rows (kills Number.isFinite check)", () => {
+  it("returns latest row even when dailyLoad is NaN", () => {
     const rows = [
       { date: "2026-03-14", dailyLoad: 10 },
       { date: "2026-03-15", dailyLoad: Number.NaN },
       { date: "2026-03-16", dailyLoad: 0 },
     ];
-    expect(selectRecentDailyLoad(rows)).toEqual(rows[0]);
+    expect(selectRecentDailyLoad(rows)).toEqual(rows[2]);
   });
 
-  it("skips Infinity dailyLoad rows (kills Number.isFinite check)", () => {
+  it("returns latest row even when dailyLoad is Infinity", () => {
     const rows = [
       { date: "2026-03-14", dailyLoad: 10 },
       { date: "2026-03-15", dailyLoad: Number.POSITIVE_INFINITY },
     ];
-    // Infinity is not finite, so falls back. Latest is Infinity, not finite → loop finds row[0]
-    expect(selectRecentDailyLoad(rows)).toEqual(rows[0]);
+    expect(selectRecentDailyLoad(rows)).toEqual(rows[1]);
   });
 
-  it("returns latest zero-load row when only non-zero rows have NaN load", () => {
+  it("returns latest zero-load row when earlier rows have NaN load", () => {
     const rows = [
       { date: "2026-03-14", dailyLoad: Number.NaN },
       { date: "2026-03-15", dailyLoad: 0 },

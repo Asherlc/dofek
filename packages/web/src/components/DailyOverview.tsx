@@ -3,6 +3,7 @@ import type { ReadinessRow, SleepPerformanceInfo, WorkloadRatioResult } from "do
 import { useEffect, useState } from "react";
 import { useCountUp } from "../hooks/useCountUp.ts";
 import { chartThemeColors } from "../lib/chartTheme.ts";
+import { isToday, isYesterday } from "../lib/dates.ts";
 
 interface DailyOverviewProps {
   readiness: ReadinessRow[] | undefined;
@@ -168,12 +169,24 @@ export function DailyOverview({
   loading,
 }: DailyOverviewProps) {
   const latestReadiness = readiness?.length ? readiness[readiness.length - 1] : undefined;
-  const recoveryScore = latestReadiness?.readinessScore ?? null;
-  const strain = workloadRatio?.displayedStrain ?? 0;
+  const readinessIsToday = latestReadiness
+    ? isToday(new Date(`${latestReadiness.date}T00:00:00`))
+    : false;
+  const recoveryScore = readinessIsToday ? (latestReadiness?.readinessScore ?? null) : null;
+  const strainIsToday = workloadRatio?.displayedDate
+    ? isToday(new Date(`${workloadRatio.displayedDate}T00:00:00`))
+    : false;
+  const strain = strainIsToday ? (workloadRatio?.displayedStrain ?? 0) : 0;
+  const sleepIsFresh = (() => {
+    if (!sleepPerformance?.sleepDate) return false;
+    const d = new Date(`${sleepPerformance.sleepDate}T00:00:00`);
+    return isToday(d) || isYesterday(d);
+  })();
+  const freshSleepPerformance = sleepIsFresh ? sleepPerformance : null;
   const hasAnyData =
     recoveryScore != null ||
     (workloadRatio?.timeSeries?.length ?? 0) > 0 ||
-    sleepPerformance != null;
+    freshSleepPerformance != null;
 
   if (loading) {
     return (
@@ -222,8 +235,8 @@ export function DailyOverview({
           </div>
         )}
 
-        {sleepPerformance != null ? (
-          <SleepRing performance={sleepPerformance} />
+        {freshSleepPerformance != null ? (
+          <SleepRing performance={freshSleepPerformance} />
         ) : (
           <div className="flex flex-col items-center gap-2">
             <ScoreRing value={0} maxValue={100} color={chartThemeColors.gridLine}>

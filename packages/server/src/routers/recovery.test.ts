@@ -393,7 +393,7 @@ describe("recoveryRouter.workloadRatio", () => {
     expect(executeMock).toHaveBeenCalled();
   });
 
-  it("displayedStrain and displayedDate from selectRecentDailyLoad", async () => {
+  it("displayedStrain and displayedDate always reflect the latest row", async () => {
     const rows = [
       {
         date: "2026-03-01",
@@ -417,10 +417,10 @@ describe("recoveryRouter.workloadRatio", () => {
     });
     const result = await caller.workloadRatio({});
 
-    // selectRecentDailyLoad finds the most recent row with dailyLoad > 0
-    // The last row has dailyLoad = 0, so it falls back to the row before
-    expect(result.displayedDate).toBe("2026-03-01");
-    expect(result.displayedStrain).toBeGreaterThan(0);
+    // selectRecentDailyLoad always returns the latest row (today's actual state)
+    // even when daily load is 0 (rest day / no sync yet)
+    expect(result.displayedDate).toBe("2026-03-02");
+    expect(result.displayedStrain).toBe(0);
   });
 });
 
