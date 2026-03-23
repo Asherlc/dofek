@@ -11,9 +11,11 @@ vi.mock("../hooks/useCountUp.ts", () => ({
   useCountUp: (val: number | null) => val ?? 0,
 }));
 
+const today = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD
+
 const mockReadiness = [
   {
-    date: "2026-03-22",
+    date: today,
     readinessScore: 75,
     components: { hrvScore: 80, restingHrScore: 70, sleepScore: 75, respiratoryRateScore: 65 },
   },
@@ -21,10 +23,10 @@ const mockReadiness = [
 
 const mockWorkloadRatio = {
   displayedStrain: 12.5,
-  displayedDate: "2026-03-22",
+  displayedDate: today,
   timeSeries: [
     {
-      date: "2026-03-22",
+      date: today,
       dailyLoad: 100,
       strain: 12.5,
       acuteLoad: 80,
@@ -41,6 +43,7 @@ const mockSleepPerformance = {
   neededMinutes: 480,
   efficiency: 88,
   recommendedBedtime: "22:30",
+  sleepDate: today,
 };
 
 describe("DailyOverview", () => {
@@ -118,5 +121,57 @@ describe("DailyOverview", () => {
     );
     const noDatas = screen.getAllByText("No data");
     expect(noDatas.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("shows placeholders when data is from yesterday (not synced today)", () => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toLocaleDateString("en-CA");
+
+    render(
+      <DailyOverview
+        readiness={[
+          {
+            date: yesterdayStr,
+            readinessScore: 75,
+            components: {
+              hrvScore: 80,
+              restingHrScore: 70,
+              sleepScore: 75,
+              respiratoryRateScore: 65,
+            },
+          },
+        ]}
+        workloadRatio={{
+          displayedStrain: 12.5,
+          displayedDate: yesterdayStr,
+          timeSeries: [
+            {
+              date: yesterdayStr,
+              dailyLoad: 100,
+              strain: 12.5,
+              acuteLoad: 80,
+              chronicLoad: 70,
+              workloadRatio: 1.14,
+            },
+          ],
+        }}
+        sleepPerformance={{
+          score: 82,
+          tier: "Perform" as const,
+          actualMinutes: 420,
+          neededMinutes: 480,
+          efficiency: 88,
+          recommendedBedtime: "22:30",
+          sleepDate: yesterdayStr,
+        }}
+        loading={false}
+      />,
+    );
+    // Recovery should show "No data" since readiness is from yesterday
+    const noDatas = screen.getAllByText("No data");
+    expect(noDatas.length).toBeGreaterThanOrEqual(1);
+    // Score "75" should NOT appear since readiness data is stale
+    expect(screen.queryByText("75")).toBeNull();
   });
 });
