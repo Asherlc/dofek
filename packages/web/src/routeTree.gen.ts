@@ -23,6 +23,7 @@ import { Route as InsightsRouteImport } from './routes/insights'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as CorrelationRouteImport } from './routes/correlation'
 import { Route as BodyRouteImport } from './routes/body'
+import { Route as BehaviorImpactRouteImport } from './routes/behavior-impact'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as TrainingIndexRouteImport } from './routes/training/index'
 import { Route as ProvidersIndexRouteImport } from './routes/providers/index'
@@ -108,6 +109,11 @@ const BodyRoute = BodyRouteImport.update({
   path: '/body',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BehaviorImpactRoute = BehaviorImpactRouteImport.update({
+  id: '/behavior-impact',
+  path: '/behavior-impact',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -181,6 +187,7 @@ const ActivityIdRoute = ActivityIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/behavior-impact': typeof BehaviorImpactRoute
   '/body': typeof BodyRoute
   '/correlation': typeof CorrelationRoute
   '/dashboard': typeof DashboardRoute
@@ -211,6 +218,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/behavior-impact': typeof BehaviorImpactRoute
   '/body': typeof BodyRoute
   '/correlation': typeof CorrelationRoute
   '/dashboard': typeof DashboardRoute
@@ -239,6 +247,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/behavior-impact': typeof BehaviorImpactRoute
   '/body': typeof BodyRoute
   '/correlation': typeof CorrelationRoute
   '/dashboard': typeof DashboardRoute
@@ -271,6 +280,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/behavior-impact'
     | '/body'
     | '/correlation'
     | '/dashboard'
@@ -301,6 +311,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/behavior-impact'
     | '/body'
     | '/correlation'
     | '/dashboard'
@@ -328,6 +339,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/behavior-impact'
     | '/body'
     | '/correlation'
     | '/dashboard'
@@ -359,6 +371,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  BehaviorImpactRoute: typeof BehaviorImpactRoute
   BodyRoute: typeof BodyRoute
   CorrelationRoute: typeof CorrelationRoute
   DashboardRoute: typeof DashboardRoute
@@ -474,6 +487,13 @@ declare module '@tanstack/react-router' {
       path: '/body'
       fullPath: '/body'
       preLoaderRoute: typeof BodyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/behavior-impact': {
+      id: '/behavior-impact'
+      path: '/behavior-impact'
+      fullPath: '/behavior-impact'
+      preLoaderRoute: typeof BehaviorImpactRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -633,6 +653,7 @@ const TrainingRouteWithChildren = TrainingRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  BehaviorImpactRoute: BehaviorImpactRoute,
   BodyRoute: BodyRoute,
   CorrelationRoute: CorrelationRoute,
   DashboardRoute: DashboardRoute,
