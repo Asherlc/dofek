@@ -4,6 +4,13 @@
     "slug": "dofek",
     "scheme": "dofek",
     "version": "1.0.0",
+    "runtimeVersion": "1.0",
+    "updates": {
+      "url": "https://dofek.asherlc.com/api/updates/manifest",
+      "enabled": true,
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 5000
+    },
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",

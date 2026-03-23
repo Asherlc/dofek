@@ -486,6 +486,157 @@ jobs:
           path: packages/ios/modules/health-kit/muter_logs/
           retention-days: 7
 
+  ios-release:
+    name: iOS TestFlight
+    needs: [lint, typecheck, knip, coverage, test-ios, build-ios]
+    if: github.ref == 'refs/heads/main'
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+      APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Cache CocoaPods
+        uses: actions/cache@v4
+        with:
+          path: packages/ios/ios/Pods
+          key: pods-${{ hashFiles('packages/ios/ios/Podfile.lock') }}
+
+      - name: Install CocoaPods
+        run: cd packages/ios/ios && pod install
+
+      - name: Setup code signing
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERT_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          KEYCHAIN_PASSWORD=$(uuidgen)
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          CERT_PATH=$RUNNER_TEMP/certificate.p12
+          echo -n "$CERTIFICATE_BASE64" | base64 --decode > "$CERT_PATH"
+          security import "$CERT_PATH" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+
+      - name: Setup App Store Connect API key
+        env:
+          API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_KEY_BASE64 }}
+        run: |
+          mkdir -p ~/private_keys
+          echo -n "$API_KEY_BASE64" | base64 --decode > ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8
+
+      - name: Set build number
+        run: |
+          cd packages/ios/ios
+          agvtool new-version -all ${{ github.run_number }}
+
+      - name: Build archive
+        run: |
+          cd packages/ios/ios
+          xcodebuild archive \
+            -workspace Dofek.xcworkspace \
+            -scheme Dofek \
+            -configuration Release \
+            -archivePath $RUNNER_TEMP/Dofek.xcarchive \
+            -destination 'generic/platform=iOS' \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8 \
+            -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
+            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" \
+            CODE_SIGN_STYLE=Automatic \
+            DEVELOPMENT_TEAM=68LEL35DQ9
+
+      - name: Export & upload to TestFlight
+        run: |
+          xcodebuild -exportArchive \
+            -archivePath $RUNNER_TEMP/Dofek.xcarchive \
+            -exportOptionsPlist packages/ios/ios/ExportOptions.plist \
+            -exportPath $RUNNER_TEMP/export \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8 \
+            -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
+            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
+
+      - name: Cleanup keychain
+        if: always()
+        run: security delete-keychain $RUNNER_TEMP/app-signing.keychain-db || true
+
+  ota-deploy:
+    name: OTA Deploy
+    needs: [lint, typecheck, knip, coverage, build-ios]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Export iOS bundle
+        run: cd packages/ios && pnpm expo export --platform ios --clear
+
+      - name: Generate metadata and stage release
+        run: |
+          RELEASE_DIR="$(date +%Y-%m-%d)-${GITHUB_SHA::8}"
+          STAGING_DIR="$RUNNER_TEMP/ota/$RELEASE_DIR"
+          mkdir -p "$STAGING_DIR/bundles" "$STAGING_DIR/assets"
+
+          # Generate metadata.json
+          node --experimental-transform-types scripts/generate-ota-metadata.ts \
+            --dist packages/ios/dist \
+            --runtime-version 1.0 \
+            --output "$STAGING_DIR/metadata.json"
+
+          # Copy bundle files
+          find packages/ios/dist -name '*.hbc' -o -name '*.js' | while read -r f; do
+            cp "$f" "$STAGING_DIR/bundles/"
+          done
+
+          # Copy asset files
+          if [ -d packages/ios/dist/assets ]; then
+            cp packages/ios/dist/assets/* "$STAGING_DIR/assets/" 2>/dev/null || true
+          fi
+
+          echo "RELEASE_DIR=$RELEASE_DIR" >> "$GITHUB_ENV"
+          echo "STAGING_DIR=$STAGING_DIR" >> "$GITHUB_ENV"
+
+      - name: Deploy to server
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+          # Upload release directory
+          ssh root@"$SERVER_HOST" "mkdir -p /opt/dofek/updates/$RELEASE_DIR"
+          scp -r "$STAGING_DIR"/* root@"$SERVER_HOST":/opt/dofek/updates/"$RELEASE_DIR"/
+
+          # Atomic symlink switch
+          ssh root@"$SERVER_HOST" "ln -sfn /opt/dofek/updates/$RELEASE_DIR /opt/dofek/updates/current"
+
+          # Clean up old releases (keep last 10)
+          ssh root@"$SERVER_HOST" 'cd /opt/dofek/updates && ls -dt 20*/ | tail -n +11 | xargs rm -rf'
+
+          echo "OTA update deployed: $RELEASE_DIR"
+
   docker:
     name: Docker (${{ matrix.target }})
     needs: [lint, typecheck, knip, coverage, test-e2e-web, ios-gate]
