@@ -23,7 +23,14 @@ const mockWorkloadRatio = {
   displayedStrain: 12.5,
   displayedDate: "2026-03-22",
   timeSeries: [
-    { date: "2026-03-22", dailyLoad: 100, acuteLoad: 80, chronicLoad: 70, workloadRatio: 1.14 },
+    {
+      date: "2026-03-22",
+      dailyLoad: 100,
+      strain: 12.5,
+      acuteLoad: 80,
+      chronicLoad: 70,
+      workloadRatio: 1.14,
+    },
   ],
 };
 

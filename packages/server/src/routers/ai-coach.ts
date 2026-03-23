@@ -23,7 +23,7 @@ const activityRowSchema = z.object({
 
 /** Fetch current user context for the AI coach */
 async function fetchCoachContext(
-  db: { execute: (q: ReturnType<typeof sql>) => Promise<unknown[]> },
+  db: Parameters<typeof executeWithSchema>[0],
   userId: string,
 ): Promise<CoachContext> {
   const metricsRows = await executeWithSchema(

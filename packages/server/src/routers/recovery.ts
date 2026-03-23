@@ -1,4 +1,7 @@
-import { type ReadinessComponents, ReadinessScore } from "@dofek/recovery/readiness";
+import {
+  type ReadinessComponents,
+  ReadinessScore,
+} from "@dofek/recovery/readiness";
 import { computeSleepConsistencyScore } from "@dofek/recovery/sleep-consistency";
 import { StrainScore, zScoreToRecoveryScore } from "@dofek/scoring/scoring";
 import { computeStrainTarget } from "@dofek/scoring/strain-target";
@@ -542,13 +545,6 @@ export const recoveryRouter = router({
       // Get readiness score
       const readinessRows = await executeWithSchema(
         ctx.db,
-        sql`
-          SELECT date, resting_hr, hrv, spo2_avg, respiratory_rate_avg
-          FROM fitness.daily_metrics
-          WHERE user_id = ${ctx.userId}
-          ORDER BY date DESC
-          LIMIT 1
-        `,
         z.object({
           date: dateStringSchema,
           resting_hr: z.number().nullable(),
@@ -556,25 +552,46 @@ export const recoveryRouter = router({
           spo2_avg: z.number().nullable(),
           respiratory_rate_avg: z.number().nullable(),
         }),
+        sql`
+          SELECT date, resting_hr, hrv, spo2_avg, respiratory_rate_avg
+          FROM fitness.daily_metrics
+          WHERE user_id = ${ctx.userId}
+          ORDER BY date DESC
+          LIMIT 1
+        `,
       );
 
       // Get daily loads for ACWR
       const loads = await executeWithSchema(
         ctx.db,
-        sql`${selectRecentDailyLoad(ctx.userId, input.days)}`,
         z.object({
           date: dateStringSchema,
-          daily_load: z.number(),
+          daily_load: z.coerce.number(),
         }),
+        sql`
+          SELECT
+            asum.started_at::date::text AS date,
+            SUM(
+              asum.avg_hr * EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0 / 100.0
+            ) AS daily_load
+          FROM fitness.v_activity asum
+          WHERE asum.user_id = ${ctx.userId}
+            AND asum.started_at::date >= CURRENT_DATE - ${input.days}::int
+            AND asum.ended_at IS NOT NULL
+            AND asum.avg_hr IS NOT NULL
+          GROUP BY asum.started_at::date
+          ORDER BY date ASC
+        `,
       );
 
       // Compute readiness if we have metrics
       let readinessScore = 50; // default moderate
-      if (readinessRows.length > 0) {
-        const m = readinessRows[0];
+      const m = readinessRows[0];
+      if (m) {
         const params = getEffectiveParams(await loadPersonalizedParams(ctx.db, ctx.userId));
         const sleepRows = await executeWithSchema(
           ctx.db,
+          z.object({ efficiency_pct: z.number().nullable() }),
           sql`
             SELECT efficiency_pct
             FROM fitness.sleep_session
@@ -583,16 +600,20 @@ export const recoveryRouter = router({
             ORDER BY started_at DESC
             LIMIT 1
           `,
-          z.object({ efficiency_pct: z.number().nullable() }),
         );
 
-        const score = new ReadinessScore({
-          hrv: m.hrv,
-          restingHr: m.resting_hr,
-          sleepEfficiency: sleepRows[0]?.efficiency_pct ?? null,
-          respiratoryRate: m.respiratory_rate_avg,
-          params,
-        });
+        // Use sleep efficiency as a proxy for sleep score, default 62 for others
+        const sleepEff = sleepRows[0]?.efficiency_pct ?? null;
+        const sleepScore = sleepEff != null ? Math.max(0, Math.min(100, Math.round(sleepEff))) : 62;
+        const components: ReadinessComponents = {
+          hrvScore: m.hrv != null ? Math.max(0, Math.min(100, Math.round(m.hrv))) : 62,
+          restingHrScore:
+            m.resting_hr != null ? Math.max(0, Math.min(100, 120 - m.resting_hr)) : 62,
+          sleepScore,
+          respiratoryRateScore: 62,
+        };
+        const weights = params.readinessWeights;
+        const score = new ReadinessScore(components, weights);
         readinessScore = score.score;
       }
 

@@ -182,6 +182,10 @@ export const sleepNeedRouter = router({
       // Get last night's sleep
       const sleepRows = await executeWithSchema(
         ctx.db,
+        z.object({
+          duration_minutes: z.number().nullable(),
+          efficiency_pct: z.number().nullable(),
+        }),
         sql`
           SELECT duration_minutes, efficiency_pct
           FROM fitness.sleep_session
@@ -190,22 +194,20 @@ export const sleepNeedRouter = router({
           ORDER BY started_at DESC
           LIMIT 1
         `,
-        z.object({
-          duration_minutes: z.number().nullable(),
-          efficiency_pct: z.number().nullable(),
-        }),
       );
 
-      if (sleepRows.length === 0 || sleepRows[0].duration_minutes == null) {
+      const lastSleep = sleepRows[0];
+      if (!lastSleep || lastSleep.duration_minutes == null) {
         return null;
       }
 
-      const actualMinutes = sleepRows[0].duration_minutes;
-      const efficiency = sleepRows[0].efficiency_pct ?? 85;
+      const actualMinutes = lastSleep.duration_minutes;
+      const efficiency = lastSleep.efficiency_pct ?? 85;
 
       // Get sleep need (reuse the baseline calculation logic)
       const baselineRows = await executeWithSchema(
         ctx.db,
+        z.object({ avg_duration: z.number().nullable() }),
         sql`
           SELECT AVG(duration_minutes) AS avg_duration
           FROM fitness.sleep_session
@@ -214,7 +216,6 @@ export const sleepNeedRouter = router({
             AND started_at > NOW() - INTERVAL '90 days'
             AND duration_minutes IS NOT NULL
         `,
-        z.object({ avg_duration: z.number().nullable() }),
       );
 
       const neededMinutes = baselineRows[0]?.avg_duration ?? 480;
