@@ -82,8 +82,8 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 - `pnpm format` — format code with Biome
 
 ## CI
-- **CircleCI** runs on every push/PR: install, check (lint + typecheck + web build), test (unit + integration with coverage), e2e (Docker-based), mutation (Stryker, PR-only).
-- **Use the `circleci` CLI** to check build status and read job logs — never scrape the web UI or use raw API calls with curl. Example: `circleci pipeline list <project-id>`.
+- **GitHub Actions** runs on every push/PR: lint, typecheck, knip, test (unit + integration with coverage), e2e (Docker-based), mutation (Stryker, PR-only).
+- **Use the `gh` CLI** to check build status and read job logs — never scrape the web UI or use raw API calls with curl. Example: `gh run list`, `gh run view <id>`.
 - **Periodically check CI runs** to catch failures early. Before starting work, check if CI is green.
 
 ## Package Manager
