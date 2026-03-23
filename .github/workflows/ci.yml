@@ -145,6 +145,13 @@ jobs:
     needs: [test-unit, test-integration]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
       - uses: actions/download-artifact@v4
         with:
           name: coverage-unit
@@ -155,15 +162,14 @@ jobs:
           path: coverage-integration
       - name: Merge and check coverage
         run: |
-          npm install -g nyc
           mkdir -p .nyc_output
           cp coverage-unit/coverage-final.json .nyc_output/unit.json
           cp coverage-integration/coverage-final.json .nyc_output/integration.json
-          nyc merge .nyc_output merged-coverage.json
+          pnpm exec nyc merge .nyc_output merged-coverage.json
           mkdir -p final-coverage
           cp merged-coverage.json final-coverage/coverage-final.json
-          nyc report --temp-dir final-coverage --reporter=text-summary
-          nyc check-coverage --temp-dir final-coverage \
+          pnpm exec nyc report --temp-dir final-coverage --reporter=text-summary
+          pnpm exec nyc check-coverage --temp-dir final-coverage \
             --lines 93.5 --branches 89 --functions 94.5 --statements 93.5
 
   test-mobile:
