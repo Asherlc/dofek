@@ -1,7 +1,19 @@
+import {
+  computeRecommendedBedtime,
+  computeSleepPerformance,
+  type SleepPerformanceResult,
+} from "@dofek/scoring/sleep-performance";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+
+export interface SleepPerformanceInfo extends SleepPerformanceResult {
+  actualMinutes: number;
+  neededMinutes: number;
+  efficiency: number;
+  recommendedBedtime: string;
+}
 
 export interface SleepNeedResult {
   /** Personalized baseline sleep need in minutes (derived from historical optimum) */
@@ -157,6 +169,66 @@ export const sleepNeedRouter = router({
         accumulatedDebtMinutes: Math.round(accumulatedDebt),
         totalNeedMinutes,
         recentNights,
+      };
+    },
+  ),
+
+  /**
+   * Sleep performance score for last night: how well did you sleep relative to need.
+   * Returns score (0-100), tier (Peak/Perform/Get By/Low), and recommended bedtime.
+   */
+  performance: cachedProtectedQuery(CacheTTL.MEDIUM).query(
+    async ({ ctx }): Promise<SleepPerformanceInfo | null> => {
+      // Get last night's sleep
+      const sleepRows = await executeWithSchema(
+        ctx.db,
+        z.object({
+          duration_minutes: z.number().nullable(),
+          efficiency_pct: z.number().nullable(),
+        }),
+        sql`
+          SELECT duration_minutes, efficiency_pct
+          FROM fitness.sleep_session
+          WHERE user_id = ${ctx.userId}
+            AND sleep_type = 'sleep'
+          ORDER BY started_at DESC
+          LIMIT 1
+        `,
+      );
+
+      const lastSleep = sleepRows[0];
+      if (!lastSleep || lastSleep.duration_minutes == null) {
+        return null;
+      }
+
+      const actualMinutes = lastSleep.duration_minutes;
+      const efficiency = lastSleep.efficiency_pct ?? 85;
+
+      // Get sleep need (reuse the baseline calculation logic)
+      const baselineRows = await executeWithSchema(
+        ctx.db,
+        z.object({ avg_duration: z.number().nullable() }),
+        sql`
+          SELECT AVG(duration_minutes) AS avg_duration
+          FROM fitness.sleep_session
+          WHERE user_id = ${ctx.userId}
+            AND sleep_type = 'sleep'
+            AND started_at > NOW() - INTERVAL '90 days'
+            AND duration_minutes IS NOT NULL
+        `,
+      );
+
+      const neededMinutes = baselineRows[0]?.avg_duration ?? 480;
+
+      const result = computeSleepPerformance(actualMinutes, neededMinutes, efficiency);
+      const recommendedBedtime = computeRecommendedBedtime("07:00", Math.round(neededMinutes));
+
+      return {
+        ...result,
+        actualMinutes,
+        neededMinutes: Math.round(neededMinutes),
+        efficiency,
+        recommendedBedtime,
       };
     },
   ),

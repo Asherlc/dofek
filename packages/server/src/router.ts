@@ -1,8 +1,11 @@
 import { activityRouter } from "./routers/activity.ts";
+import { aiCoachRouter } from "./routers/ai-coach.ts";
 import { anomalyDetectionRouter } from "./routers/anomaly-detection.ts";
 import { authRouter } from "./routers/auth.ts";
+import { behaviorImpactRouter } from "./routers/behavior-impact.ts";
 import { bodyRouter } from "./routers/body.ts";
 import { bodyAnalyticsRouter } from "./routers/body-analytics.ts";
+import { breathworkRouter } from "./routers/breathwork.ts";
 import { calendarRouter } from "./routers/calendar.ts";
 import { correlationRouter } from "./routers/correlation.ts";
 import { credentialAuthRouter } from "./routers/credential-auth.ts";
@@ -13,12 +16,15 @@ import { efficiencyRouter } from "./routers/efficiency.ts";
 import { foodRouter } from "./routers/food.ts";
 import { garminAuthRouter } from "./routers/garmin-auth.ts";
 import { healthKitSyncRouter } from "./routers/health-kit-sync.ts";
+import { healthReportRouter } from "./routers/health-report.ts";
 import { healthspanRouter } from "./routers/healthspan.ts";
 import { hikingRouter } from "./routers/hiking.ts";
 import { insightsRouter } from "./routers/insights.ts";
 import { intervalsRouter } from "./routers/intervals.ts";
 import { journalRouter } from "./routers/journal.ts";
 import { lifeEventsRouter } from "./routers/life-events.ts";
+import { menstrualCycleRouter } from "./routers/menstrual-cycle.ts";
+import { monthlyReportRouter } from "./routers/monthly-report.ts";
 import { nutritionRouter } from "./routers/nutrition.ts";
 import { nutritionAnalyticsRouter } from "./routers/nutrition-analytics.ts";
 import { personalizationRouter } from "./routers/personalization.ts";
@@ -44,7 +50,10 @@ import { router } from "./trpc.ts";
 
 export const appRouter = router({
   activity: activityRouter,
+  aiCoach: aiCoachRouter,
   anomalyDetection: anomalyDetectionRouter,
+  behaviorImpact: behaviorImpactRouter,
+  breathwork: breathworkRouter,
   personalization: personalizationRouter,
   auth: authRouter,
   sleep: sleepRouter,
@@ -81,7 +90,10 @@ export const appRouter = router({
   running: runningRouter,
   settings: settingsRouter,
   stress: stressRouter,
+  healthReport: healthReportRouter,
   healthspan: healthspanRouter,
+  menstrualCycle: menstrualCycleRouter,
+  monthlyReport: monthlyReportRouter,
   weeklyReport: weeklyReportRouter,
   sportSettings: sportSettingsRouter,
   intervals: intervalsRouter,
