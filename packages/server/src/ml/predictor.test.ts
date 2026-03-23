@@ -245,6 +245,8 @@ describe("trainPredictor (multi-target)", () => {
 
     expect(result).not.toBeNull();
     expect(result?.targetId).toBe("sleep_efficiency");
+    expect(result?.targetLabel).toBe("Sleep Efficiency");
+    expect(result?.targetUnit).toBe("%");
 
     // Should not include any sleep metrics as features
     const featureNames = result?.featureImportances.map((f) => f.name);
@@ -254,16 +256,19 @@ describe("trainPredictor (multi-target)", () => {
     expect(featureNames).not.toContain("rem_sleep");
   });
 
-  it("includes target metadata in results", () => {
-    // Shared dataset — generating once avoids redundant work across 4 targets
-    const days = generateSyntheticDays(60);
-    for (const target of PREDICTION_TARGETS) {
-      const result = trainPredictor(days, target);
-      if (!result) continue;
+  it("trains weight prediction", () => {
+    const target = PREDICTION_TARGETS.find((t) => t.id === "weight");
+    if (!target) throw new Error("expected weight target");
+    const days = generateSyntheticDays(200);
+    const result = trainPredictor(days, target);
 
-      expect(result.targetId).toBe(target.id);
-      expect(result.targetLabel).toBe(target.label);
-      expect(result.targetUnit).toBe(target.unit);
-    }
+    expect(result).not.toBeNull();
+    expect(result?.targetId).toBe("weight");
+    expect(result?.targetLabel).toBe("Body Weight");
+    expect(result?.targetUnit).toBe("kg");
+
+    // Should not include weight itself as a feature
+    const featureNames = result?.featureImportances.map((f) => f.name);
+    expect(featureNames).not.toContain("weight_kg");
   });
 });
