@@ -6,7 +6,7 @@ import { Hypnogram } from "../components/charts/Hypnogram";
 import { MetricCard } from "../components/MetricCard";
 import { SleepBar } from "../components/charts/SleepBar";
 import { SparkLine } from "../components/charts/SparkLine";
-import { formatHour, formatSleepDebt } from "@dofek/format/format";
+import { formatHour, formatSleepDebt, isToday, isYesterday } from "@dofek/format/format";
 import { trpc } from "../lib/trpc";
 import type { SleepConsistencyRow, SleepNightlyRow } from "../types/api";
 import { colors } from "../theme";
@@ -20,7 +20,12 @@ export default function SleepScreen() {
   const sleepResult = sleepQuery.data;
   const nightly = sleepResult?.nightly ?? [];
   const sleepDebt = sleepResult?.sleepDebt ?? 0;
-  const lastNight = nightly[nightly.length - 1];
+  const mostRecentNight = nightly[nightly.length - 1];
+  const lastNight = (() => {
+    if (!mostRecentNight) return undefined;
+    const date = new Date(mostRecentNight.date);
+    return isToday(date) || isYesterday(date) ? mostRecentNight : undefined;
+  })();
   const consistency = consistencyQuery.data ?? [];
   const latestConsistency = consistency[consistency.length - 1];
 

@@ -17,7 +17,7 @@ import { OnboardingWelcome } from "../../components/OnboardingWelcome";
 import { RecoveryRing } from "../../components/charts/RecoveryRing";
 import { SleepBar } from "../../components/charts/SleepBar";
 import { StrainGauge } from "../../components/charts/StrainGauge";
-import { formatDurationMinutes, formatNumber, formatSleepDebtInline } from "@dofek/format/format";
+import { formatDurationMinutes, formatNumber, formatSleepDebtInline, isToday, isYesterday } from "@dofek/format/format";
 import { readinessLevelColor, scoreColor, scoreLabel, StrainZone, trendColor, trendDirection as computeTrend } from "../../lib/scoring";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
@@ -74,7 +74,12 @@ export default function OverviewScreen() {
   const sleepQuery = trpc.recovery.sleepAnalytics.useQuery({ days });
   const sleepResult = sleepQuery.data;
   const nightly = sleepResult?.nightly ?? [];
-  const lastNight = nightly[nightly.length - 1];
+  const mostRecentNight = nightly[nightly.length - 1];
+  const lastNight = (() => {
+    if (!mostRecentNight) return undefined;
+    const date = new Date(mostRecentNight.date);
+    return isToday(date) || isYesterday(date) ? mostRecentNight : undefined;
+  })();
   const sleepDebt = sleepResult?.sleepDebt ?? 0;
 
   // Fetch workload ratio for strain
@@ -159,9 +164,11 @@ export default function OverviewScreen() {
   // Derive data for new sections
   const currentWeek = weeklyReport?.current;
 
-  const latestNutrition = nutritionData.length > 0
-    ? nutritionData[nutritionData.length - 1]
-    : null;
+  const latestNutrition = (() => {
+    const last = nutritionData.length > 0 ? nutritionData[nutritionData.length - 1] : null;
+    if (!last) return null;
+    return isToday(new Date(`${last.date}T00:00:00`)) ? last : null;
+  })();
 
   const latestWeight = weightData.length > 0
     ? weightData[weightData.length - 1]
@@ -579,7 +586,7 @@ export default function OverviewScreen() {
           )}
 
           {/* Next Workout */}
-          {nextWorkout != null && (
+          {nextWorkout != null && isToday(new Date(nextWorkout.generatedAt)) && (
             <View style={styles.card}>
               <View style={styles.nextWorkoutHeader}>
                 <View style={styles.nextWorkoutTitleWrap}>
