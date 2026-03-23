@@ -7,6 +7,7 @@
     "./scoring": "./src/scoring.ts",
     "./colors": "./src/colors.ts",
     "./tokens": "./src/tokens.ts",
-    "./strain-target": "./src/strain-target.ts"
+    "./strain-target": "./src/strain-target.ts",
+    "./sleep-performance": "./src/sleep-performance.ts"
   }
 }

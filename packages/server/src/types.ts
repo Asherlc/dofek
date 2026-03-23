@@ -57,7 +57,7 @@ export type {
 // Running router types
 export type { PaceTrendRow, RunningDynamicsRow } from "./routers/running.ts";
 // Sleep need router types
-export type { SleepNeedResult, SleepNight } from "./routers/sleep-need.ts";
+export type { SleepNeedResult, SleepNight, SleepPerformanceInfo } from "./routers/sleep-need.ts";
 // Strength router types
 export type {
   EstimatedOneRepMaxEntry,
